@@ -14,9 +14,7 @@ Les tuples sont utilisés pour le regroupement temporaire de colonnes. Les colon
 
 Les tuples peuvent être le résultat d&#39;une requête. Dans ce cas, pour les formats texte autres que JSON, les valeurs sont séparées par des virgules dans `()`. Dans les formats JSON, les tuples sont renvoyés sous forme de tableaux (dans `[]`).
 
-<div id="creating-tuples">
-  ## Créer des tuples
-</div>
+## Créer des tuples {#creating-tuples}
 
 Vous pouvez utiliser une fonction pour créer un tuple :
 
@@ -64,9 +62,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-<div id="data-type-detection">
-  ## Détection du type de données
-</div>
+## Détection du type de données {#data-type-detection}
 
 Lors de la création de tuples à la volée, ClickHouse déduit le type des arguments du tuple en choisissant les types les plus petits capables de contenir la valeur fournie. Si la valeur est [NULL](/fr/reference/settings/formats/input-format#input_format_null_as_default), le type déduit est [Nullable](/fr/reference/data-types/nullable).
 
@@ -82,9 +78,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └───────────┴─────────────────────────────────┘
 ```
 
-<div id="referring-to-tuple-elements">
-  ## Référence aux éléments d’un Tuple
-</div>
+## Référence aux éléments d’un Tuple {#referring-to-tuple-elements}
 
 On peut faire référence aux éléments d’un Tuple par leur nom ou leur indice :
 
@@ -108,9 +102,7 @@ SELECT a.2 FROM named_tuples; -- by index
 └────────────────────┘
 ```
 
-<div id="comparison-operations-with-tuple">
-  ## Opérations de comparaison avec Tuple
-</div>
+## Opérations de comparaison avec Tuple {#comparison-operations-with-tuple}
 
 Deux tuples sont comparés en examinant successivement leurs éléments de gauche à droite. Si le premier élément du premier tuple est supérieur (inférieur) à l’élément correspondant du second tuple, alors le premier tuple est supérieur (inférieur) au second ; sinon (si les deux éléments sont égaux), on compare l’élément suivant.
 
@@ -188,16 +180,12 @@ ORDER BY key ASC;
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
 
-<div id="nullable-tuple">
-  ## Nullable(Tuple(T1, T2, ...))
-</div>
+## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-<Info>
-  **Fonctionnalité bêta**
-
+<Note title="Fonctionnalité bêta">
   Nécessite `SET enable_nullable_tuple_type = 1`
   Il s&#39;agit d&#39;une fonctionnalité bêta.
-</Info>
+</Note>
 
 Permet au tuple dans son ensemble d’être `NULL`, contrairement à `Tuple(Nullable(T1), Nullable(T2), ...)`, où seuls les éléments individuels peuvent être `NULL`.
 
@@ -206,7 +194,7 @@ Permet au tuple dans son ensemble d’être `NULL`, contrairement à `Tuple(Null
 | `Nullable(Tuple(String, Int64))`           | ✅                       | ❌                              |
 | `Tuple(Nullable(String), Nullable(Int64))` | ❌                       | ✅                              |
 
-Exemple :
+Exemple :
 
 ```sql
 SET enable_nullable_tuple_type = 1;

@@ -2539,12 +2539,10 @@ HTTP 헤더의 값을 가져옵니다.
 해당 헤더가 없거나 현재 요청이 HTTP 인터페이스를 통해 수행되지 않은 경우, 이 함수는 빈 문자열을 반환합니다.
 일부 HTTP 헤더(예: `Authorization`, `Authentication` 및 `X-ClickHouse-*`)는 제한됩니다.
 
-<Info>
-  **`allow_get_client_http_header` 설정이 필요합니다**
-
+<Note title="`allow_get_client_http_header` 설정이 필요합니다">
   이 함수를 사용하려면 `allow_get_client_http_header` 설정이 활성화되어 있어야 합니다.
   `Cookie`와 같은 일부 헤더에는 민감한 정보가 포함될 수 있으므로, 보안상의 이유로 이 설정은 기본적으로 활성화되어 있지 않습니다.
-</Info>
+</Note>
 
 RFC 9110에 따라 HTTP 헤더는 대소문자를 구분하지 않습니다.
 이 함수가 분산 쿼리에서 사용되는 경우, initiator 노드에서만 비어 있지 않은 결과를 반환합니다.
@@ -3052,12 +3050,10 @@ SELECT globalVariable('max_allowed_packet')
 중첩된 데이터 구조의 요소에 대해서는 컬럼의 존재 여부를 확인합니다.
 중첩된 데이터 구조 자체에 대해서는 `0`을 반환합니다.
 
-<Info>
-  **`SHOW COLUMNS` privilege가 필요합니다**
-
-  이 함수는 대상 테이블에 대한 `SHOW COLUMNS` privilege를 필요로 합니다(`DESCRIBE` 및 `SHOW CREATE TABLE`에 필요한 것과 동일한 grant).
+<Note title="`SHOW COLUMNS` 권한가 필요합니다">
+  이 함수는 대상 테이블에 대한 `SHOW COLUMNS` 권한를 필요로 합니다(`DESCRIBE` 및 `SHOW CREATE TABLE`에 필요한 것과 동일한 grant).
   이 권한이 없으면 `1` 또는 `0`을 반환하는 대신 호출이 `ACCESS_DENIED`와 함께 실패하므로, 접근 권한 없이 컬럼명을 확인할 수 없습니다.
-</Info>
+</Note>
 
 <Note>
   이 함수는 비결정적입니다. 동일한 인수에 대해서도 다른 결과를 반환할 수 있습니다.
@@ -5053,9 +5049,7 @@ FROM
 
 데이터 블록의 각 행에 대해 집계 함수의 상태를 누적합니다.
 
-<Warning>
-  **사용 중단 예정**
-
+<Warning title="사용 중단 예정">
   상태는 새 데이터 블록이 시작될 때마다 재설정됩니다.
   이러한 오류를 유발하기 쉬운 동작 때문에 이 함수는 사용 중단 예정이며, 대신 [윈도우 함수](/ko/reference/functions/window-functions/index)를 사용하는 것이 좋습니다.
   이 함수의 사용을 허용하려면 SETTING [`allow_deprecated_error_prone_window_functions`](/ko/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions)를 사용할 수 있습니다.
@@ -5110,18 +5104,14 @@ FROM numbers(5);
 시작 시간과 종료 시간이 있는 컬럼은 동일한 데이터 타입이어야 합니다.
 이 함수는 각 이벤트의 시작 시간마다 활성(동시 실행) 상태인 이벤트의 총수를 계산합니다.
 
-<Tip>
-  **요구 사항**
-
+<Tip title="요구 사항">
   이벤트는 시작 시간을 기준으로 오름차순으로 정렬되어 있어야 합니다.
   이 요구 사항을 충족하지 않으면 함수에서 예외가 발생합니다.
   각 데이터 블록은 개별적으로 처리됩니다.
   서로 다른 데이터 블록에 있는 이벤트가 서로 겹치면 올바르게 처리되지 않습니다.
 </Tip>
 
-<Warning>
-  **사용 중단 예정**
-
+<Warning title="사용 중단 예정">
   대신 [윈도우 함수](/ko/reference/functions/window-functions/index)를 사용하는 것이 좋습니다.
 </Warning>
 
@@ -5171,9 +5161,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 데이터 블록에서 연속된 두 행 값의 차이를 계산합니다.
 첫 번째 행에는 `0`을 반환하고, 이후 행에는 바로 이전 행과의 차이를 반환합니다.
 
-<Warning>
-  **사용 중단 예정**
-
+<Warning title="사용 중단 예정">
   현재 처리 중인 데이터 블록 내부의 차이만 반환합니다.
   이러한 동작은 오류를 유발하기 쉬우므로 이 함수는 사용 중단 예정입니다.
   대신 [윈도우 함수](/ko/reference/functions/window-functions/index)를 사용하는 것이 좋습니다.
@@ -5273,11 +5261,9 @@ WHERE diff != 1;
 
 데이터 블록에서 연속된 행 값 사이의 차이를 계산하지만, [`runningDifference`](#runningDifference)와 달리 첫 번째 행에는 `0`이 아니라 실제 값을 반환합니다.
 
-<Warning>
-  **사용 중단 예정**
-
+<Warning title="사용 중단 예정">
   현재 처리 중인 데이터 블록 내에서의 차이만 반환합니다.
-  이러한 오류 발생 가능성이 높은 동작 때문에 이 함수는 사용 중단 예정입니다.
+  이러한 오류를 유발하기 쉬운 동작 때문에 이 함수는 사용 중단 예정입니다.
   대신 [윈도우 함수](/ko/reference/functions/window-functions/index)를 사용하는 것이 좋습니다.
 
   이 함수 사용을 허용하려면 SETTING `allow_deprecated_error_prone_window_functions`를 사용할 수 있습니다.
@@ -5291,7 +5277,7 @@ runningDifferenceStartingWithFirstValue(x)
 
 **인수**
 
-* `x` — running difference를 계산할 컬럼입니다. [`Any`](/ko/reference/data-types/index)
+* `x` — 연속된 값의 차이를 계산할 컬럼입니다. [`Any`](/ko/reference/data-types/index)
 
 **반환 값**
 

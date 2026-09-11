@@ -79,6 +79,8 @@ true の場合、IN のサブクエリは各フォロワー レプリカで実�
 この設定を、単一の分片と複数のレプリカで構成されるクラスターで使用した場合、それらのレプリカは仮想分片に変換されます。
 それ以外の場合は、`SAMPLE` キーと同様に動作し、各分片の複数のレプリカを使用します。
 
+この式は、ユーザーのカラムレベルの `SELECT` 権限に照らして検査されます。`SQL SECURITY DEFINER` または `NONE` が指定された VIEW の場合、検査は VIEW のカラムに対して適用され、VIEW のボディはその検査なしで読み取られます。
+
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
 <BetaBadge />
@@ -137,7 +139,7 @@ true の場合、ClickHouse はレプリケートされていない MergeTree �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "索引解析は replica-coordinator でのみ実行され、他のレプリカではスキップされます。parallel_replicas_local_plan が有効な場合にのみ適用されます"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "索引解析は replica-coordinator でのみ実行され、他のレプリカではスキップされます。parallel_replicas_local_plan が有効な場合にのみ適用されます"}]}]} />
 
-索引解析は replica-coordinator でのみ実行され、他のレプリカではスキップされます。parallel&#95;replicas&#95;local&#95;pla が有効な場合にのみ適用されます
+索引解析は replica-coordinator でのみ実行され、他のレプリカではスキップされます。parallel&#95;replicas&#95;local&#95;plan が有効な場合にのみ適用されます
 
 ## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 

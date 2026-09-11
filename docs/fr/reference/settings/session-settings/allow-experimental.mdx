@@ -300,6 +300,26 @@ Active le transpileur SQL polyglotte : il convertit le SQL de plus de 30 dialect
 
 Active PRQL, une alternative à SQL.
 
+## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre permettant d'activer la valeur `trino` du paramètre `dialect`, qui traduit la syntaxe SQL de Trino et fait correspondre les noms de fonctions Trino à leurs équivalents ClickHouse."}]}]} />
+
+Active la valeur `trino` du paramètre `dialect`.
+
+Lorsque `dialect` vaut `trino`, les requêtes sont écrites en SQL Trino : la syntaxe
+propre à Trino (littéraux `ARRAY[...]`, `TRY_CAST`, `UNNEST`, types `ROW`, `OFFSET` avant `LIMIT`)
+est traduite en ClickHouse SQL, et les noms de fonctions Trino sont mis en correspondance avec
+leurs équivalents ClickHouse. La requête `SET` reste analysée comme du SQL standard, ce qui permet
+de revenir au dialecte précédent.
+
+Le dialecte aligne également la sémantique des requêtes sur celle de Trino : `join_use_nulls` est
+activé, `use_variant_as_common_type` est désactivé et l’analyseur de requêtes est activé.
+Une clause `SETTINGS` explicite dans la requête conserve la préséance.
+
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

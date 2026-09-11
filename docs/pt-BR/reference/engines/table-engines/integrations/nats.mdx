@@ -73,6 +73,9 @@ Parâmetros opcionais:
 * `nats_token` - Token de autenticação do NATS. Quando é armazenado em uma coleção nomeada definida no arquivo de configuração do servidor, a consulta não pode sobrescrever `nats_url` nem `nats_server_list` da coleção.
 * `nats_credential_file` - Caminho para um arquivo de credentials do NATS. Ele é aceito apenas de uma coleção nomeada definida no arquivo de configuração do servidor cujo `nats_url` e `nats_server_list` não são sobrescritos pela consulta, pois o servidor abre o caminho com seus próprios privilégios. Em uma consulta, informe o conteúdo do arquivo em `nats_credentials`.
 * `nats_credentials` - Conteúdo das credentials do NATS (a mesma carga útil de um arquivo `.creds` com JWT de usuário e seed). Como é a única forma que uma consulta pode usar, substitui um `nats_credential_file` herdado de uma coleção nomeada em vez de entrar em conflito com ele, a menos que o operador tenha bloqueado esse caminho com `<nats_credential_file overridable="false">`. Não pode receber uma string vazia para remover as credentials fornecidas por uma coleção nomeada.
+* `nats_ca_file` - Caminho para um arquivo com os certificados de CA confiáveis usados para verificar o certificado do servidor NATS. Requer `nats_secure`. Assim como `nats_credential_file`, é aceito apenas de uma coleção nomeada definida no arquivo de configuração do servidor cujo `nats_url` e `nats_server_list` não são sobrescritos pela consulta, pois o servidor abre o caminho com seus próprios privilégios.
+* `nats_client_cert_file` - Caminho para o certificado do cliente apresentado ao servidor NATS. Requer `nats_secure` e `nats_client_key_file`. Aceito das mesmas fontes que `nats_ca_file`.
+* `nats_client_key_file` - Caminho para a chave privada de `nats_client_cert_file`. Aceito das mesmas fontes que `nats_ca_file`.
 * `nats_startup_connect_tries` - Número de tentativas de conexão na inicialização. Padrão: `5`.
 * `nats_max_rows_per_message` — O número máximo de linhas gravadas em uma mensagem NATS para formatos baseados em linha. (padrão: `1`).
 * `nats_commit_on_select` - Faz commit das mensagens quando uma consulta é realizada. Aplica-se somente ao JetStream; o NATS Core não tem confirmações. Padrão: `0`.
@@ -81,10 +84,16 @@ Parâmetros opcionais:
 Conexão SSL:
 
 Para uma conexão segura, use `nats_secure = 1`.
-A verificação de certificados é controlada pela variável de ambiente `CLICKHOUSE_NATS_TLS_SECURE`.
-Se o certificado estiver expirado, for autoassinado, estiver ausente ou for inválido por qualquer outro motivo, desative a verificação definindo `CLICKHOUSE_NATS_TLS_SECURE=0`.
+A verificação de certificados é controlada pela variável de ambiente `CLICKHOUSE_NATS_TLS_SECURE`;
+se o certificado estiver expirado, for autossinado, estiver ausente ou for inválido de outra forma, desative a verificação definindo `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
-Gravando em uma tabela NATS:
+Um certificado de servidor assinado por uma CA privada é verificado apontando `nats_ca_file` para o certificado da CA,
+o que é preferível a desativar a verificação. Quando o servidor exige certificados de cliente,
+forneça-os com `nats_client_cert_file` e `nats_client_key_file`. Todos os três são configurações do operador:
+eles vêm de uma coleção nomeada definida no arquivo de configuração do servidor. Cada arquivo é lido quando
+a tabela se conecta; portanto, um arquivo ilegível ou malformado faz a consulta falhar em vez de falhar durante o handshake.
+
+Gravação na tabela NATS:
 
 Se a tabela lê de apenas um subject, qualquer insert publicará nesse mesmo subject.
 No entanto, se a tabela lê de múltiplos subjects, é preciso especificar em qual subject queremos publicar.

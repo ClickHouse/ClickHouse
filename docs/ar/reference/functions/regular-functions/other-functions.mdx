@@ -2540,12 +2540,10 @@ SELECT generateSerialID('id2', 100)
 إذا لم تكن هذه الترويسة موجودة، أو إذا لم يُنفَّذ الطلب الحالي عبر واجهة HTTP، فستُرجِع الدالة سلسلة فارغة.
 تخضع بعض ترويسات HTTP (مثل `Authorization` و`Authentication` و`X-ClickHouse-*`) لقيود.
 
-<Info>
-  **الإعداد `allow_get_client_http_header` مطلوب**
-
+<Note title="الإعداد `allow_get_client_http_header` مطلوب">
   تتطلب الدالة أن يكون الإعداد `allow_get_client_http_header` مفعّلًا.
   لا يكون هذا الإعداد مفعّلًا افتراضيًا لأسباب أمنية، لأن بعض الترويسات، مثل `Cookie`، قد تحتوي على معلومات حساسة.
-</Info>
+</Note>
 
 ترويسات HTTP غير حساسة لحالة الأحرف وفقًا للوثيقة RFC 9110.
 إذا استُخدمت الدالة في سياق استعلام موزّع، فإنها لا تُرجِع قيمة غير فارغة إلا على العقدة المُبادِرة.
@@ -2566,7 +2564,7 @@ echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_
 getClientHTTPHeader(name)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `name` — اسم ترويسة HTTP. [`String`](/ar/reference/data-types/string)
 
@@ -3053,12 +3051,10 @@ SELECT globalVariable('max_allowed_packet')
 وبالنسبة إلى العناصر ضمن بنية بيانات متداخلة، تتحقق الدالة من وجود عمود.
 أما بنية البيانات المتداخلة نفسها، فتعيد الدالة القيمة `0`.
 
-<Info>
-  **امتياز `SHOW COLUMNS` مطلوب**
-
-  تتطلب الدالة امتياز `SHOW COLUMNS` على الجدول الهدف (وهو نفس الامتياز المطلوب للأمرين `DESCRIBE` و`SHOW CREATE TABLE`).
+<Note title="صلاحية `SHOW COLUMNS` مطلوبة">
+  تتطلب الدالة صلاحية `SHOW COLUMNS` على الجدول الهدف (وهو نفس الامتياز المطلوب للأمرين `DESCRIBE` و`SHOW CREATE TABLE`).
   وبدونه يفشل الاستدعاء مع `ACCESS_DENIED` بدلًا من إرجاع `1` أو `0`، لذلك لا يمكن التحقق من أسماء الأعمدة من دون صلاحية وصول.
-</Info>
+</Note>
 
 <Note>
   هذه الدالة غير حتمية: يمكن أن تُرجع نتائج مختلفة للوسائط نفسها.
@@ -3070,7 +3066,7 @@ SELECT globalVariable('max_allowed_packet')
 hasColumnInTable(database, table, column)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `database` — اسم قاعدة البيانات. [`const String`](/ar/reference/data-types/string)
 * `table` — اسم الجدول. [`const String`](/ar/reference/data-types/string)
@@ -5053,9 +5049,7 @@ FROM
 
 تُراكم حالات دالة تجميع لكل صف ضمن كتلة بيانات.
 
-<Warning>
-  **مهملة**
-
+<Warning title="مهملة">
   يُعاد تعيين الحالة مع كل كتلة بيانات جديدة.
   ونظرًا إلى هذا السلوك المعرّض للأخطاء، فقد أُهمِلت هذه الدالة، ويُنصح باستخدام [دوال النافذة](/ar/reference/functions/window-functions/index) بدلًا منها.
   يمكنك استخدام الإعداد [`allow_deprecated_error_prone_window_functions`](/ar/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) للسماح باستخدام هذه الدالة.
@@ -5067,7 +5061,7 @@ FROM
 runningAccumulate(agg_state[, grouping])
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `agg_state` — حالة الدالة التجميعية. [`AggregateFunction`](/ar/reference/data-types/aggregatefunction)
 * `grouping` — اختياري. مفتاح التجميع. تُعاد تهيئة حالة الدالة إذا تغيّرت قيمة `grouping`. ويمكن أن يكون من أيٍّ من أنواع البيانات المدعومة التي يكون فيها عامل المساواة معرّفًا. [`Any`](/ar/reference/data-types/index)
@@ -5110,18 +5104,14 @@ FROM numbers(5);
 يجب أن تكون الأعمدة التي تتضمن وقت بداية ووقت نهاية من نوع البيانات نفسه.
 تحسب الدالة العدد الإجمالي للأحداث النشطة (المتزامنة) لكل وقت بداية حدث.
 
-<Tip>
-  **المتطلبات**
-
+<Tip title="المتطلبات">
   يجب ترتيب الأحداث حسب وقت البداية ترتيبًا تصاعديًا.
   إذا لم يُستوفَ هذا الشرط، فستُطلق الدالة استثناءً.
   تُعالَج كل كتلة بيانات على حدة.
   إذا تداخلت أحداث من كتل بيانات مختلفة، فلن تتم معالجتها على نحو صحيح.
 </Tip>
 
-<Warning>
-  **مهمل**
-
+<Warning title="مهمل">
   يُنصح باستخدام [دوال النافذة](/ar/reference/functions/window-functions/index) بدلًا من ذلك.
 </Warning>
 
@@ -5166,14 +5156,12 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 
 ## runningDifference {#runningDifference}
 
-قُدِّمت في: v1.1.0
+أُضيف في: v1.1.0
 
 تحسب الفرق بين قيمتَي صفّين متتاليين داخل كتلة البيانات.
 وتُرجِع `0` للصف الأول، أما الصفوف اللاحقة فتُرجِع الفرق مقارنةً بالصف السابق.
 
-<Warning>
-  **مهملة**
-
+<Warning title="مهملة">
   لا تُرجِع الفروق إلا داخل كتلة البيانات التي تُعالَج حاليًا.
   وبسبب هذا السلوك المعرّض للأخطاء، أُهمِلت هذه الدالة.
   يُنصَح باستخدام [دوال النافذة](/ar/reference/functions/window-functions/index) بدلًا منها.
@@ -5193,7 +5181,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 runningDifference(x)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `x` — العمود الذي يُحسب له الفرق التراكمي. [`Any`](/ar/reference/data-types/index)
 
@@ -5273,11 +5261,9 @@ WHERE diff != 1;
 
 تحسب الفرق بين قيم الصفوف المتتالية في كتلة بيانات، ولكن بخلاف [`runningDifference`](#runningDifference)، فإنها تُرجع القيمة الفعلية للصف الأول بدلًا من `0`.
 
-<Warning>
-  **مهملة**
-
+<Warning title="مهملة">
   تُرجع الفروق فقط داخل كتلة البيانات الجاري معالجتها حاليًا.
-  ونظرًا لأن هذا السلوك قد يؤدي إلى أخطاء، فقد أُهملت هذه الدالة.
+  ونظرًا إلى هذا السلوك المعرّض للأخطاء، فقد أُهملت هذه الدالة.
   يُنصح باستخدام [دوال النافذة](/ar/reference/functions/window-functions/index) بدلًا من ذلك.
 
   يمكنك استخدام الإعداد `allow_deprecated_error_prone_window_functions` للسماح باستخدام هذه الدالة.
@@ -5289,7 +5275,7 @@ WHERE diff != 1;
 runningDifferenceStartingWithFirstValue(x)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `x` — العمود المراد حساب الفرق التراكمي له. [`Any`](/ar/reference/data-types/index)
 

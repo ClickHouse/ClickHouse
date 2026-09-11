@@ -11,20 +11,18 @@ doc_type: 'reference'
 
 > Especifica os nomes de uma ou mais colunas a serem excluídas do resultado. Todos os nomes de colunas correspondentes são omitidos na saída.
 
-<div id="syntax">
-  ## Sintaxe
-</div>
+## Sintaxe {#syntax}
 
 ```sql
 SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
 ```
 
-<div id="examples">
-  ## Exemplos
-</div>
+Os parênteses são opcionais ao excluir uma única coluna.
+
+## Exemplos {#examples}
 
 ```sql title="Query"
-SELECT * EXCEPT (i) from columns_transformers;
+SELECT * EXCEPT i FROM columns_transformers;
 ```
 
 ```response title="Response"

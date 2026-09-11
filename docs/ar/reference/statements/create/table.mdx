@@ -61,14 +61,21 @@ CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-يؤدي هذا إلى إنشاء جدول له نفس المخطط والبيانات لجدول موجود. وبعد إنشاء الجدول الجديد، تُرفق به جميع التقسيمات من `db.table`. وبعبارة أخرى، تُستنسخ بيانات `db.table` إلى `db2.table_clone` عند إنشائه. وهذا الاستعلام مكافئ لما يلي:
+يؤدي هذا إلى إنشاء جدول له نفس المخطط والبيانات لجدول موجود. وبعد إنشاء الجدول الجديد، تُرفق به جميع التقسيمات من `db.table`. وبعبارة أخرى، تُستنسخ بيانات `db.table` إلى `db2.table_clone` عند إنشائه.
 
-```sql
-CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
-ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
-```
+<Note>
+  `CLONE AS` غير مدعوم عندما تستخدم قاعدة البيانات الهدف محرك قواعد البيانات [Replicated](/ar/reference/engines/database-engines/replicated).
 
-بالنسبة إلى كلتا الخاصيتين، يمكنك تحديد محرك مختلف للجدول. وإذا لم يُحدَّد المحرك، فسيُستخدَم المحرك نفسه المستخدَم للجدول الأصلي (`db.table`).
+  استخدم بدلاً من ذلك:
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+  ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+  ```
+</Note>
+
+بالنسبة إلى كلتا الخاصيتين، يمكنك تحديد محرك مختلف للجدول.
+وإذا لم يُحدَّد المحرك، فسيُستخدَم المحرك نفسه المستخدَم للجدول الأصلي (`db.table`).
 
 ### إنشاء جدول باستخدام دالة الجدول {#from-a-table-function}
 

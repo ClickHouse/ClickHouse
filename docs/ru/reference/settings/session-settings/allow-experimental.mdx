@@ -300,6 +300,26 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает PRQL — альтернативный язык запросов по сравнению с SQL.
 
+## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка, включающая значение `trino` настройки `dialect`, которое транслирует SQL-синтаксис Trino и сопоставляет имена функций Trino с их эквивалентами в ClickHouse."}]}]} />
+
+Включает значение `trino` настройки `dialect`.
+
+Когда `dialect` установлена в `trino`, запросы пишутся на Trino SQL: специфичный для
+Trino синтаксис (литералы `ARRAY[...]`, `TRY_CAST`, `UNNEST`, типы `ROW`, `OFFSET` перед `LIMIT`)
+транслируется в ClickHouse SQL, а имена функций Trino сопоставляются с их
+эквивалентами в ClickHouse. Запрос `SET` по-прежнему разбирается как обычный SQL, чтобы
+можно было переключить диалект обратно.
+
+Диалект также приводит семантику запросов в соответствие с Trino: `join_use_nulls` включается,
+`use_variant_as_common_type` отключается, а анализатор запросов включается.
+Явно указанная в запросе `SETTINGS` clause по-прежнему имеет приоритет.
+
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

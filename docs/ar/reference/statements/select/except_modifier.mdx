@@ -11,20 +11,18 @@ doc_type: 'reference'
 
 > يحدّد اسم عمود واحد أو أكثر لاستبعاده من النتيجة. تُحذف جميع أسماء الأعمدة المطابقة من الناتج.
 
-<div id="syntax">
-  ## البنية
-</div>
+## البنية {#syntax}
 
 ```sql
 SELECT <expr> EXCEPT ( col_name1 [, col_name2, col_name3, ...] ) FROM [db.]table_name
 ```
 
-<div id="examples">
-  ## أمثلة
-</div>
+الأقواس اختيارية عند استثناء عمود واحد فقط.
+
+## أمثلة {#examples}
 
 ```sql title="Query"
-SELECT * EXCEPT (i) from columns_transformers;
+SELECT * EXCEPT i FROM columns_transformers;
 ```
 
 ```response title="Response"

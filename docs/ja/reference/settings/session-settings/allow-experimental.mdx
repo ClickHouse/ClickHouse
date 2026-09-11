@@ -300,6 +300,25 @@ polyglot SQL トランスパイラを有効にします。これにより、30�
 
 SQLの代替となるPRQLを有効にします。
 
+## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Trino SQL 構文を変換し、Trino 関数名を ClickHouse の同等の関数にマッピングする、`dialect` 設定の `trino` 値を有効化するための新しい設定。"}]}]} />
+
+`dialect` 設定の `trino` 値を有効にします。
+
+`dialect` を `trino` に設定すると、クエリを Trino SQL で記述できます。Trino 固有の
+構文 (`ARRAY[...]` リテラル、`TRY_CAST`、`UNNEST`、`ROW` 型、`LIMIT` の前に置く `OFFSET`)
+は ClickHouse SQL に変換され、Trino 関数名は ClickHouse の同等の関数にマッピングされます。`SET` クエリは、
+方言を元に戻せるよう、引き続き通常の SQL として解析されます。
+
+この方言では、クエリのセマンティクスも Trino に合わせます。`join_use_nulls` は
+オンになり、`use_variant_as_common_type` はオフになり、クエリアナライザはオンになります。
+クエリ内で明示的に指定した `SETTINGS` 句は引き続き優先されます。
+
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

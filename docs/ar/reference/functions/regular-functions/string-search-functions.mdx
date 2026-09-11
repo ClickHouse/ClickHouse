@@ -39,14 +39,12 @@ doc_type: 'reference'
 
 يعيد عدد مرات تطابق تعبير نمطي داخل سلسلة نصية.
 
-<Info>
-  **سلوك يعتمد على الإصدار**
-
+<Note title="سلوك يعتمد على الإصدار">
   يعتمد سلوك هذه الدالة على إصدار ClickHouse:
 
   * في الإصدارات &lt; v25.6، تتوقف الدالة عن العد عند أول تطابق فارغ حتى إذا كان النمط يسمح بذلك.
   * في الإصدارات &gt;= 25.6، تواصل الدالة التنفيذ عند حدوث تطابق فارغ. ويمكن استعادة السلوك القديم باستخدام الإعداد `count_matches_stop_at_empty_match = true`;
-</Info>
+</Note>
 
 **البنية**
 
@@ -1464,15 +1462,13 @@ SELECT '50%off' LIKE '50#%off' ESCAPE '#';
 
 مثل [`position`](#position)، ولكن مع تبديل الوسيطين `haystack` و`locate`.
 
-<Info>
-  **سلوك يعتمد على الإصدار**
-
+<Note title="سلوك يعتمد على الإصدار">
   يعتمد سلوك هذه الدالة على إصدار ClickHouse:
 
   * في الإصدارات &lt; v24.3، كانت `locate` اسمًا مستعارًا للدالة `position`، وكانت تقبل الوسائط `(haystack, needle[, start_pos])`.
   * في الإصدارات &gt;= 24.3، أصبحت `locate` دالة مستقلة (لتحقيق توافق أفضل مع MySQL)، وتقبل الوسائط `(needle, haystack[, start_pos])`.
     يمكن استعادة السلوك السابق باستخدام الإعداد `function_locate_has_mysql_compatible_argument_order = false`.
-</Info>
+</Note>
 
 **الصياغة**
 
@@ -1480,7 +1476,7 @@ SELECT '50%off' LIKE '50#%off' ESCAPE '#';
 locate(needle, haystack[, start_pos])
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `needle` — السلسلة الفرعية المطلوب البحث عنها. [`String`](/ar/reference/data-types/string)
 * `haystack` — السلسلة التي يُجرى فيها البحث. [`String`](/ar/reference/data-types/string) أو [`Enum`](/ar/reference/data-types/enum)

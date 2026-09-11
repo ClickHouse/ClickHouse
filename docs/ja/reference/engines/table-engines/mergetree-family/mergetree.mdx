@@ -456,17 +456,13 @@ bloom_filter([false_positive_rate])
 * `UUID`
 * `Map`
 
-<Info>
-  **Map データ型: キーまたは値を指定した索引の作成**
-
+<Note title="Map データ型: キーまたは値を指定した索引の作成">
   `Map` データ型では、クライアントは [`mapKeys`](/ja/reference/functions/regular-functions/tuple-map-functions#mapKeys) または [`mapValues`](/ja/reference/functions/regular-functions/tuple-map-functions#mapValues) 関数を使って、キーに対して索引を作成するか、値に対して索引を作成するかを指定できます。
-</Info>
+</Note>
 
-<Info>
-  **JSON データ型: JSON パスの索引作成**
-
-  [`JSON`](/ja/reference/data-types/newjson) データ型では、[`JSONAllPaths`](/ja/reference/functions/regular-functions/json-functions#JSONAllPaths) 関数を使用して、パスの集合に bloom filter 索引を作成できます。これにより、クエリ対象の JSON パスが存在しない granule をスキップできます。詳細については、[JSON のデータスキッピングインデックス](/ja/reference/data-types/newjson#data-skipping-indexes-for-json) を参照してください。
-</Info>
+<Note title="JSON データ型: JSON パスの索引作成">
+  [`JSON`](/ja/reference/data-types/newjson) データ型では、[`JSONAllPaths`](/ja/reference/functions/regular-functions/json-functions#JSONAllPaths) 関数を使用して、パスの集合にブルームフィルタ索引を作成できます。これにより、クエリ対象の JSON パスが存在しない granule をスキップできます。詳細については、[JSON のデータスキッピングインデックス](/ja/reference/data-types/newjson#data-skipping-indexes-for-json) を参照してください。
+</Note>
 
 #### N-gramブルームフィルタ *(非推奨)* {#n-gram-bloom-filter}
 
@@ -715,9 +711,7 @@ ORDER BY id;
 
 式は、[Date](/ja/reference/data-types/date)、[Date32](/ja/reference/data-types/date32)、[DateTime](/ja/reference/data-types/datetime) または [DateTime64](/ja/reference/data-types/datetime64) のデータ型を返す必要があります。
 
-<Tip>
-  **有効期限 (TTL) 式では非決定論的関数を避けてください**
-
+<Tip title="有効期限 (TTL) 式では非決定論的関数を避けてください">
   有効期限 (TTL) は挿入時ではなく、バックグラウンドマージ時に評価されます。
   `rand()`、`now()`、`now64()` のような関数は、マージのたびに再評価されるため、予測不能な削除動作につながります。
   ClickHouse はカラムにまったく依存しない式をブロックしますが、現在のところ、カラム参照と組み合わせた非決定論的関数 (例: `ts + rand()`) は拒否しません。予測可能な結果を得るため、有効期限 (TTL) 式は決定論的で、カラムから導出される値のみに基づいて記述してください。
@@ -1138,8 +1132,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -1230,11 +1224,9 @@ S3 (およびその他のオブジェクトストレージ) ディスクは、�
 
 共有ストレージ上では、1 つのライターと多数のリーダーという構成で、レプリケーションなしの MergeTree テーブルをセットアップできます。これは、リーダー側で設定できるパーツ一覧の自動更新によって実現されます。これには、レプリカ間でファイルシステムのメタデータが共有されていること (または、テーブルローカルなディスクで `table_disk = true` を使用すること) が必要です。[refresh&#95;parts&#95;interval and table&#95;disk](/ja/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk) を参照してください。
 
-<Info>
-  **cache 構成**
-
+<Note title="cache 構成">
   ClickHouse のバージョン 22.3 から 22.7 では、異なる cache 構成が使用されます。これらのバージョンを使用している場合は、[using local cache](/ja/concepts/features/configuration/server-config/storing-data#using-local-cache) を参照してください。
-</Info>
+</Note>
 
 ## 仮想カラム {#virtual-columns}
 
@@ -1265,6 +1257,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY a
 ```
+
+統計には物理的に保存されるカラムが必要です。`ALIAS` または `EPHEMERAL` カラムはどのパートにも書き込まれないため、これらに統計を宣言すると拒否されます。
 
 `ALTER` 文を使って統計情報を操作することもできます:
 
@@ -1324,17 +1318,17 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `minmax` (非推奨)
 
-<Note>
-  `minmax` 統計情報は非推奨です。`minmax` の機能を包含する `basic` 統計情報を代わりに使用してください。
-</Note>
+  <Note>
+    `minmax` 統計情報は非推奨です。`minmax` の機能を包含する `basic` 統計情報を代わりに使用してください。
+  </Note>
 
 * `tdigest`
 
-<Warning>
-  `tdigest` 型の統計は作成コストが高く、データの取り込みが遅くなる可能性があります。
-</Warning>
+  <Warning>
+    `tdigest` 型の統計は作成コストが高く、データの取り込みが遅くなる可能性があります。
+  </Warning>
 
-数値カラムの近似パーセンタイル (例: 90 パーセンタイル) を計算できる [TDigest](https://github.com/tdunning/t-digest) スケッチです。
+  数値カラムの近似パーセンタイル (例: 90 パーセンタイル) を計算できる [TDigest](https://github.com/tdunning/t-digest) スケッチです。
 
 * `uniq`
 
@@ -1346,11 +1340,11 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `countmin`
 
-<Warning>
-  `countmin` 型の統計は作成コストが高く、データの取り込みが遅くなる可能性があります。
-</Warning>
+  <Warning>
+    `countmin` 型の統計は作成コストが高く、データの取り込みが遅くなる可能性があります。
+  </Warning>
 
-カラム内の各値の出現頻度を近似的に数えられる [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) スケッチです。
+  カラム内の各値の出現頻度を近似的に数えられる [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) スケッチです。
 
 ### サポートされているデータ型 {#supported-data-types}
 

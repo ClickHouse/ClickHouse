@@ -2540,12 +2540,10 @@ Obtiene el valor de una cabecera HTTP.
 Si no existe esa cabecera o la solicitud actual no se realiza a través de la interfaz HTTP, la función devuelve una cadena vacía.
 Algunas cabeceras HTTP (por ejemplo, `Authorization`, `Authentication` y `X-ClickHouse-*`) están restringidas.
 
-<Info>
-  **Se requiere el SETTING `allow_get_client_http_header`**
-
+<Note title="Se requiere el SETTING `allow_get_client_http_header`">
   La función requiere que el SETTING `allow_get_client_http_header` esté habilitado.
   Este SETTING no está habilitado de forma predeterminada por motivos de seguridad, ya que algunas cabeceras, como `Cookie`, pueden contener información sensible.
-</Info>
+</Note>
 
 Las cabeceras HTTP no distinguen entre mayúsculas y minúsculas según la RFC 9110.
 Si la función se usa en el contexto de una consulta distribuida, devuelve un resultado no vacío solo en el nodo iniciador.
@@ -3053,12 +3051,10 @@ Comprueba si una columna específica existe en una tabla de una base de datos.
 En el caso de los elementos de una estructura de datos anidada, la función comprueba si existe una columna.
 En el caso de la propia estructura de datos anidada, la función devuelve `0`.
 
-<Info>
-  **Se requiere el privilegio `SHOW COLUMNS`**
-
+<Note title="Se requiere el privilegio `SHOW COLUMNS`">
   La función requiere el privilegio `SHOW COLUMNS` en la tabla de destino (el mismo grant necesario para `DESCRIBE` y `SHOW CREATE TABLE`).
   Sin él, la llamada falla con `ACCESS_DENIED` en lugar de devolver `1` o `0`, por lo que no es posible comprobar nombres de columna sin acceso.
-</Info>
+</Note>
 
 <Note>
   Esta función no es determinista: puede devolver resultados diferentes para los mismos argumentos.
@@ -5058,9 +5054,7 @@ Introducido en: v1.1.0
 
 Acumula los estados de una función de agregación para cada fila de un bloque de datos.
 
-<Warning>
-  **Obsoleto**
-
+<Warning title="Obsoleto">
   El estado se restablece con cada nuevo bloque de datos.
   Debido a este comportamiento propenso a errores, la función ha quedado obsoleta, y se recomienda usar [funciones de ventana](/es/reference/functions/window-functions/index) en su lugar.
   Puede usar la configuración [`allow_deprecated_error_prone_window_functions`](/es/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) para permitir el uso de esta función.
@@ -5115,18 +5109,14 @@ La hora de inicio se incluye en el evento, mientras que la hora de finalización
 Las columnas con una hora de inicio y una hora de finalización deben tener el mismo tipo de dato.
 La función calcula el número total de eventos activos (concurrentes) para cada hora de inicio de evento.
 
-<Tip>
-  **Requisitos**
-
+<Tip title="Requisitos">
   Los eventos deben estar ordenados por hora de inicio en orden ascendente.
   Si no se cumple este requisito, la función genera una excepción.
   Cada bloque de datos se procesa por separado.
   Si los eventos de distintos bloques de datos se superponen, no se pueden procesar correctamente.
 </Tip>
 
-<Warning>
-  **Obsoleto**
-
+<Warning title="Obsoleto">
   Se recomienda usar [funciones de ventana](/es/reference/functions/window-functions/index) en su lugar.
 </Warning>
 
@@ -5176,9 +5166,7 @@ Introducido en: v1.1.0
 Calcula la diferencia entre los valores de dos filas consecutivas en el bloque de datos.
 Devuelve `0` para la primera fila y, para las siguientes, la diferencia con respecto a la fila anterior.
 
-<Warning>
-  **Obsoleto**
-
+<Warning title="Obsoleto">
   Solo devuelve diferencias dentro del bloque de datos que se está procesando en ese momento.
   Debido a este comportamiento propenso a errores, la función está obsoleta.
   Se recomienda usar [funciones de ventana](/es/reference/functions/window-functions/index) en su lugar.
@@ -5278,9 +5266,7 @@ Introducido en: v1.1.0
 
 Calcula la diferencia entre los valores de filas consecutivas en un bloque de datos, pero, a diferencia de [`runningDifference`](#runningDifference), devuelve el valor real de la primera fila en lugar de `0`.
 
-<Warning>
-  **Obsoleto**
-
+<Warning title="Obsoleto">
   Solo devuelve las diferencias dentro del bloque de datos que se está procesando en ese momento.
   Debido a este comportamiento propenso a errores, la función está obsoleta.
   Se recomienda usar [funciones de ventana](/es/reference/functions/window-functions/index) en su lugar.

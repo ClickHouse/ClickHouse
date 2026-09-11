@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 このエンジンは、S3、GCP、Azure ストレージ上の既存の [Delta Lake](https://github.com/delta-io/delta) テーブルとのインテグレーションを提供し、読み取りと書き込みの両方をサポートします (v25.10 以降) 。
 
-<div id="create-table">
-  ## Delta Lake テーブルを作成する
-</div>
+## Delta Lake テーブルを作成する {#create-table}
 
 Delta Lake テーブルを作成するには、そのテーブルがあらかじめ S3、GCP、または Azure ストレージ上に存在している必要があります。以下のコマンドでは、新しいテーブルを作成するための DDL パラメータは指定できません。
 
@@ -70,11 +68,9 @@ Delta Lake テーブルを作成するには、そのテーブルがあらかじ
     ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
     ```
 
-    <Info>
-      **サポートされていない gsutil URI**
-
+    <Note title="サポートされていない gsutil URI">
       `gs://clickhouse-docs-example-bucket` のような gsutil URI はサポートされていないため、`https://storage.googleapis.com` で始まる URL を使用してください。
-    </Info>
+    </Note>
 
     **引数**
 
@@ -117,9 +113,7 @@ Delta Lake テーブルを作成するには、そのテーブルがあらかじ
   </Tab>
 </Tabs>
 
-<div id="insert-data">
-  ## Delta Lake テーブルを使用してデータを書き込む
-</div>
+## Delta Lake テーブルを使用してデータを書き込む {#insert-data}
 
 Delta Lake テーブルエンジンを使用してテーブルを作成したら、次のようにデータを挿入できます。
 
@@ -137,15 +131,11 @@ Delta Lake への書き込みは、既定では無効になっているベータ
   Azure への書き込みはまだサポートされていませんが、S3 と GCS ではサポートされています。
 </Note>
 
-<div id="data-cache">
-  ### データキャッシュ
-</div>
+### データキャッシュ {#data-cache}
 
 `Delta Lake` テーブルエンジンおよびテーブル関数は、`S3`、`AzureBlobStorage`、`HDFS` ストレージと同様に、データキャッシュをサポートしています。詳細は [&quot;S3テーブルエンジン&quot;](/ja/reference/engines/table-engines/integrations/s3#data-cache) を参照してください。
 
-<div id="see-also">
-  ## 関連項目
-</div>
+## 関連項目 {#see-also}
 
 * [deltaLake テーブル関数](/ja/reference/functions/table-functions/deltalake)
 

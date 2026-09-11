@@ -561,31 +561,69 @@ Expression ((Project names + Projection))
 * **过滤步骤** 会以 SQL 记法显示过滤条件。存在运行时 join 过滤器时，它们会单独显示。
 * **聚合步骤** 会显示键以及聚合函数及其参数 (例如 `sum(c)`、`count()`) 。
 * 来自元组字面量的 **IN 集合** 会显示其值 (大型集合会被截断) ，基于子查询的集合会标记为 `subquery1`、`subquery2` 等，而来自 `Set` engine 表的集合会显示表名。
-* **Join 步骤** 会使用数学记法显示 join 关系、预估结果行数，
-  以及哪些输出列来自左侧或右侧。以下符号用于
+* **Join 步骤** 会使用数学记法显示 join 关系、join 顺序优化器为该步骤生成的预估值
+  (成本、选择性、输出行数和每侧行数) ，以及每一侧的输入列。以下符号用于
   表示不同的 JOIN types：
 
-| 符号                     | Join 类型 |
-| ---------------------- | ------- |
-| `⋈`                    | 内连接     |
-| `⟕`                    | 左连接     |
-| `⟖`                    | 右连接     |
-| `⟗`                    | 全连接     |
-| `⋉`                    | 左半连接    |
-| `⋊`                    | 右半连接    |
-| `⋉` with strikethrough | 左反连接    |
-| `⋊` with strikethrough | 右反连接    |
-| `×`                    | 交叉连接    |
+| 符号       | Join 类型 |
+| -------- | ------- |
+| `⋈`      | 内连接     |
+| `⟕`      | 左连接     |
+| `⟖`      | 右连接     |
+| `⟗`      | 全连接     |
+| `⋉`      | 左半连接    |
+| `⋊`      | 右半连接    |
+| `⋉` 加删除线 | 左反连接    |
+| `⋊` 加删除线 | 右反连接    |
+| `×`      | 交叉连接    |
 
-例如，`t1 ⟕ t2` 表示表 `t1` 与 `t2` 之间的左连接。
-表名后方括号中的数字 (例如 `t1[100]`) 表示预估行数，
+例如，`t1 ⟕ t2` 表示表 `t1` 和 `t2` 之间的左连接。
+表名后的方括号中的数字 (例如 `t1[100]`) 表示预估行数，
 前提是表统计信息可用。
 
-`pretty` 选项与 `compact = 1` 搭配使用效果很好，它会隐藏 `Expression` 步骤和详细的动作信息，使执行计划更易于阅读。
+在 join 关系下方，每个 join 步骤都会输出 join 顺序优化器为其生成的预估值：
 
-一个详细的 JOIN 示例：
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+* `Cost` — 此步骤下整个 join 子树的成本，也是优化器
+  比较候选 JOIN 顺序时要最小化的值。join 的成本是其预估的
+  匹配行对数量，即 `<selectivity> * <left_rows> * <right_rows>`，再加上其输入的成本。
+* `Selectivity` — 两侧笛卡尔积中满足
+  join 条件的预估比例。它根据连接键的不同值数量 (NDV) 计算得出：
+  键相等条件会保留约 `1 / max(NDV_left, NDV_right)` 的行对，并取
+  各 join 条件中最小的比例。
+* `Output rows` — join 产生的预估行数：
+  对于 inner join，为 `<selectivity> * <left_rows> * <right_rows>`；对于
+  `LEFT`，下限为 `<left_rows>`；对于 `RIGHT`，下限为 `<right_rows>`；对于 `FULL`，下限为 `<left_rows> + <right_rows>`，因为
+  outer join 会保留其保留侧的每一行。当 `SEMI` 或 `ANTI` join 参与
+  重排序时，会将其预估为保留侧行数的一部分：
+  `SEMI` 为 `<preserved_rows> * min(1, <selectivity> * <other_rows>)`，`ANTI` 为剩余行数；
+  否则使用相应 join 类型的公式。
+* `Left` / `Right` — 从各侧进入 join 的预估行数。
+
+优化器无法估算的值会显示为 `no stats`。这发生在
+未运行 JOIN 顺序优化时——例如，当
+[`query_plan_optimize_join_order_limit`](/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)
+为 `0` 时——或者缺乏估算依据时。
+
+`Input (left):` 和 `Input (right):` 行列出各侧输入到 join 的列。
+
+`pretty` 选项与 `compact = 1` 配合使用效果很好，后者会隐藏 `Expression` 步骤和详细的操作信息，使计划更易于阅读。
+
+包含 join 的详细示例。仅为了让如此小的表
+仍能构建运行时 join 过滤器，才降低了
+[`join_runtime_filter_min_probe_rows`](/zh/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+设置：
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -601,11 +639,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -771,23 +812,62 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
 
 #### Join 步骤 {#explain-analyze-join-steps}
 
-对于 JOIN 步骤，`EXPLAIN ANALYZE` 会输出每一侧的*参与*行——`Left` 和 `Right`——后面跟着所有特定于该 JOIN 实现的行。`Left` 和 `Right` 对应 SQL 中的逻辑左右侧。在大多数情况下，`Left` 也是 JOIN 的探测侧，`Right` 则是 JOIN 的构建侧。不过，由于 JOIN 执行期间可能发生交换，情况并非总是如此。涵盖了 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 的所有取值 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) ，以及该设置无法选择的两种实现：`CROSS` 或 `COMMA` JOIN、任何不含键相等条件的 `ON` 子句，以及 [`Join`](/zh/reference/engines/table-engines/special/join) 表引擎。大多数实现都会报告两侧；有些仅报告其物化的一侧 (例如，`direct` 只输出 `Left:`) 。
+对于 JOIN 步骤，`EXPLAIN ANALYZE` 会输出用于比较 JOIN 顺序优化器估算值与实际结果的行 (请参阅[估算值与实际 JOIN 指标](#explain-analyze-join-estimation)) ，以及每一侧的*参与*行——`Left` 和 `Right`——后面跟着所有特定于该 JOIN 实现的行。涵盖了 [`join_algorithm`](/zh/reference/settings/session-settings/join#join_algorithm) 的所有取值 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) ，以及该设置无法选择的两种实现：`CROSS` 或 `COMMA` JOIN、任何不含键相等条件的 `ON` 子句，以及 [`Join`](/zh/reference/engines/table-engines/special/join) 表引擎。大多数实现都会报告两侧；有些仅报告其物化的一侧 (例如，`direct` 只输出 `Left:`) 。
 
 各侧的行采用相同的形态：
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 对于每一侧，`EXPLAIN ANALYZE` 会报告：
 
+* `rows estimated <estimated_rows>` — JOIN 顺序优化器对该侧行数的估算，用于与其旁边的实际 `rows` 进行比较；当优化器未生成估算时显示 `no stats` (请参阅[估算与实际 JOIN 指标](#explain-analyze-join-estimation)) 。
 * `rows <rows>` — 该侧经过 JOIN 的行总数。
 * `matched <matched_rows>` — 该侧在另一侧找到至少一个 JOIN 匹配行的行数。这里统计的是*行*，而不是键：如果某个键在右侧出现三次且能够匹配，则这三行右侧行都会计为已匹配。
 * `match rate <match_rate>%` — 该侧已匹配行的占比，计算方式为 `100 * <matched_rows> / <rows>`。
 * `fanout <fanout>` — 该侧平均每个已匹配行产生的输出行数。
 
 无法精确推导的数值会报告为 `not collected`，而不是 `0`。`match rate` 和 `fanout` 都由 `matched` 推导而来，因此没有 `matched` 的一侧会将这三项均报告为 `not collected`。
+
+#### 估算值与实际 JOIN 指标 {#explain-analyze-join-estimation}
+
+join 步骤包含 join 顺序优化器的估算值——即 `EXPLAIN PLAN` 显示的估算值 (请参阅 [EXPLAIN PLAN](#explain-plan) 部分) ——而 `EXPLAIN ANALYZE` 会将每项估算值与实测值并列输出：
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+* `Cost` — 两个值均统计匹配的输出行。估算值是优化器估计的 JOIN 子树成本：`<selectivity> * <left_rows> * <right_rows>`，再加上其输入的成本。实际值的度量方式相同——此 JOIN 的匹配输出行，加上其下方属于同一重排集群的每个 JOIN 的实际成本。
+* `Selectivity` — 估算值根据连接键的不同值数量计算得出；实际值是最终出现在输出中的笛卡尔积占比：`<matched output rows> / (<left rows> * <right rows>)`，因为这正是优化器要估算的值。
+* `Output rows` — JOIN 产生的预估行数和实际行数。当两者均非零时，`q-error` 会报告 `max(estimated / actual, actual / estimated)`，这是衡量基数估算质量的标准指标：`1.00` 表示估算完全准确，较大的值表示优化器基于严重错误的基数估算选择了 JOIN 顺序。
+
+从未进行过的估算会显示为 `no stats`——例如，由于 [`query_plan_optimize_join_order_limit`](/zh/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) 为 `0`，未运行 JOIN 顺序优化时。它不同于 `not collected`，后者表示执行过程中无法测量实际值。右侧已预填充的 JOIN ([`Join`](/zh/reference/engines/table-engines/special/join) 表引擎、`direct` JOIN) 不会经过 JOIN 顺序优化器，只会输出参与行。
+
+JOIN 步骤还会输出 `Input (left):` 和 `Input (right):` 行，列出各侧输入到 JOIN 的列。
+
+对于 [EXPLAIN PLAN](#explain-plan) JOIN 示例中的表，`EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id` 的 JOIN 步骤如下所示：
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
 
 #### 扇出 {#explain-analyze-fanout}
 
@@ -878,7 +958,7 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 对于 `partial_merge` JOIN，`Right:` 行会提供右表缓冲和排序方式的额外信息，排序时间显示在 `Stage (build)` 和 `Stage (probe)` 行中：
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```

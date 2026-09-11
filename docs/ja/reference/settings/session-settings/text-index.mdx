@@ -51,6 +51,8 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 辞書スキャンによるテキスト索引の LIKE 評価を使用するために必要な、LIKE/ILIKE パターン内の英数字 needle、または `startsWith`/`endsWith` の needle の最小長です。
 このしきい値より短いパターンは、一致する辞書トークンが多すぎるため、コストの高いスキャンを避ける目的でスキップされます。
 
+任意のパターンが適格となる `array` トークナイザーでは、しきい値はパターン全体に含まれるワイルドカード以外の文字数と比較されます。
+
 `use_text_index_like_evaluation_by_dictionary_scan` を有効にする必要があります。
 
 ## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}

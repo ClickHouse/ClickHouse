@@ -79,6 +79,8 @@ Prefira expressões simples que usem chaves primárias.
 Se a configuração for usada em um cluster composto por um único shard com várias réplicas, essas réplicas serão convertidas em shards virtuais.
 Caso contrário, ela se comportará da mesma forma que a chave `SAMPLE`, usando várias réplicas de cada shard.
 
+A expressão é verificada em relação aos grants de `SELECT` em nível de coluna do usuário. Para uma VIEW com `SQL SECURITY DEFINER` ou `NONE`, ela é aplicada às colunas da VIEW; o body da VIEW é lido sem essa verificação.
+
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
 <BetaBadge />
@@ -137,7 +139,7 @@ Se true, o ClickHouse também usará o algoritmo de réplicas paralelas para tab
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "A análise de índice é feita apenas na réplica coordenadora e ignorada nas demais réplicas. Só tem efeito com parallel_replicas_local_plan habilitado"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "A análise de índice é feita apenas na réplica coordenadora e ignorada nas demais réplicas. Só tem efeito com parallel_replicas_local_plan habilitado"}]}]} />
 
-A análise de índice é feita apenas na réplica coordenadora e ignorada nas demais réplicas. Só tem efeito com parallel&#95;replicas&#95;local&#95;pla habilitado
+A análise de índice é feita apenas na réplica coordenadora e ignorada nas demais réplicas. Só tem efeito com parallel&#95;replicas&#95;local&#95;plan habilitado
 
 ## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 

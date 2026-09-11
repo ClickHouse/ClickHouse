@@ -436,6 +436,41 @@ graph TD
 * `precedence_allocation` - 静的な優先順位に基づいてエビクションを実施します (値が小さいほど優先順位が高くなります) 。優先順位の高い保留中の割り当ては、優先順位の低い割り当てをエビクションします。子ノードでは `precedence` を指定する必要があります (デフォルトは 0) 。
 * `queue` - 実行中および保留中の割り当てを保持できる階層のリーフです。
 
+## バックアップとリストア {#backup-restore}
+
+SQLで定義されたワークロードとリソースは、ClickHouseのバックアップに含めることができます。
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources TO Disk('backups', 'wl_backup');
+```
+
+バックアップされるのは SQL で定義されたエンティティのみです。設定ベースのワークロードとリソース (サーバー設定ファイル内の `<resources_and_workloads>` で定義されたもの) は含まれません。これらはサーバー設定の一部であるため、別途バックアップしてください。
+
+`system.workloads` と `system.resources` は、常に同一のコマンドでまとめてバックアップおよび復元してください。ワークロード は リソース (`SETTINGS ... FOR <resource>` による指定) や親 ワークロード を参照できますが、`system.workloads` のみをバックアップしても、参照先の リソース 定義は取り込まれません。参照先の リソース がバックアップに含まれておらず、かつ復元先サーバーにも存在しない場合、その ワークロード の復元は失敗します。
+
+バックアップから ワークロード および リソース を復元するには、次のようにします。
+
+```sql
+RESTORE TABLE system.workloads, TABLE system.resources FROM Disk('backups', 'wl_backup');
+```
+
+リストアには `CREATE WORKLOAD` および `CREATE RESOURCE` 権限が必要です。デフォルトでは、既存のエンティティは変更されずに保持されます (`if not exists` のセマンティクス) 。すでに存在するエンティティの扱いは、以下の `create_workloads_and_resources` 設定で選択します。サーバーが ZooKeeper ストレージ (`workload_zookeeper_path`) を使用している場合、各エンティティを作成するのはクラスター内の 1 つのレプリカのみで、他のレプリカは通常のレプリケーション機構を通じてその変更を受け取ります。
+
+レプリケーション構成では、いずれのテーブルも `ON CLUSTER` を使用してバックアップおよびリストアできます:
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' TO S3('https://...', 'key', 'secret');
+RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FROM S3('https://...', 'key', 'secret');
+```
+
+:::note
+`create_workloads_and_resources` restore 設定では、復元時に既に存在するワークロードやリソースの扱い方を指定します (これらのエンティティを復元するかどうかを切り替える設定ではありません) 。指定できる値は次のとおりです。
+
+* `if not exists` (デフォルト)  — 既存のエンティティはそのまま維持し、存在しないものだけを作成します。
+* `create` — 復元対象のエンティティが1つでも既に存在する場合、復元を失敗させます。
+* `replace` — 既存のエンティティをバックアップ内の定義で上書きします (この場合、追加で `DROP WORKLOAD` / `DROP RESOURCE` 権限が必要です) 。
+  :::
+
 ## 関連項目 {#see-also}
 
 * [system.scheduler](/ja/reference/system-tables/scheduler)

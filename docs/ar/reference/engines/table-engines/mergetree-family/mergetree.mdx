@@ -433,7 +433,7 @@ set(max_rows)
 
 #### مرشح Bloom {#bloom-filter}
 
-يُخزَّن [مرشح Bloom](https://en.wikipedia.org/wiki/Bloom_filter) لكل حبيبة فهرس للأعمدة المحددة.
+يُخزَّن [مرشح Bloom](https://en.wikipedia.org/wiki/Bloom_filter) لكل حبيبة فهرس للأعمدة المحددة.
 
 ```text title="Syntax"
 bloom_filter([false_positive_rate])
@@ -456,17 +456,13 @@ bloom_filter([false_positive_rate])
 * `UUID`
 * `Map`
 
-<Info>
-  **نوع البيانات Map: تحديد إنشاء الفهرس على المفاتيح أو القيم**
-
+<Note title="نوع البيانات Map: تحديد إنشاء الفهرس على المفاتيح أو القيم">
   بالنسبة إلى نوع البيانات `Map`، يمكن للعميل تحديد ما إذا كان يجب إنشاء الفهرس على المفاتيح أو على القيم باستخدام الدالتين [`mapKeys`](/ar/reference/functions/regular-functions/tuple-map-functions#mapKeys) أو [`mapValues`](/ar/reference/functions/regular-functions/tuple-map-functions#mapValues).
-</Info>
+</Note>
 
-<Info>
-  **نوع البيانات JSON: فهرسة مسارات JSON**
-
-  بالنسبة إلى نوع البيانات [`JSON`](/ar/reference/data-types/newjson)، يمكن إنشاء فهرس bloom filter على مجموعة المسارات باستخدام الدالة [`JSONAllPaths`](/ar/reference/functions/regular-functions/json-functions#JSONAllPaths). يتيح ذلك تخطي الحبيبات التي لا يحتوي فيها الاستعلام على مسار JSON موجود. راجع [فهارس تخطي البيانات لـ JSON](/ar/reference/data-types/newjson#data-skipping-indexes-for-json) لمزيد من التفاصيل.
-</Info>
+<Note title="نوع البيانات JSON: فهرسة مسارات JSON">
+  بالنسبة إلى نوع البيانات [`JSON`](/ar/reference/data-types/newjson)، يمكن إنشاء فهرس مرشح Bloom على مجموعة المسارات باستخدام الدالة [`JSONAllPaths`](/ar/reference/functions/regular-functions/json-functions#JSONAllPaths). يتيح ذلك تخطي الحبيبات التي لا يحتوي فيها الاستعلام على مسار JSON موجود. راجع [فهارس تخطي البيانات لـ JSON](/ar/reference/data-types/newjson#data-skipping-indexes-for-json) لمزيد من التفاصيل.
+</Note>
 
 #### مرشح Bloom لـ N-gram *(مهمل)* {#n-gram-bloom-filter}
 
@@ -715,15 +711,13 @@ ORDER BY id;
 
 يجب أن ينتج عن تقييم التعبيرات نوع البيانات [Date](/ar/reference/data-types/date) أو [Date32](/ar/reference/data-types/date32) أو [DateTime](/ar/reference/data-types/datetime) أو [DateTime64](/ar/reference/data-types/datetime64).
 
-<Tip>
-  **تجنّب الدوال غير الحتمية في تعبيرات TTL**
-
+<Tip title="تجنّب الدوال غير الحتمية في تعبيرات TTL">
   يُقيَّم TTL أثناء عمليات الدمج في الخلفية، وليس وقت الإدراج.
   تُعاد تقييم دوال مثل `rand()` و`now()` و`now64()` عند كل عملية دمج، مما يؤدي إلى سلوك حذف غير قابل للتنبؤ.
   يمنع ClickHouse التعبيرات التي لا تعتمد على أي عمود على الإطلاق، لكنه لا يرفض حاليًا الدوال غير الحتمية الممزوجة بإشارة إلى عمود (مثل `ts + rand()`). ينبغي أن تستند تعبيرات TTL فقط إلى قيم حتمية مشتقة من الأعمدة للحصول على نتائج قابلة للتنبؤ.
 </Tip>
 
-**البنية**
+**الصياغة**
 
 تعيين مدة بقاء لعمود:
 
@@ -1110,7 +1104,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 ## استخدام التخزين الخارجي لتخزين البيانات {#table_engine-mergetree-s3}
 
-يمكن لمحركات الجداول من عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) تخزين البيانات في `S3` و`AzureBlobStorage` و`HDFS` باستخدام قرص من النوع `s3` أو `azure_blob_storage` أو `hdfs` على الترتيب. راجع [إعداد خيارات التخزين الخارجي](/ar/concepts/features/configuration/server-config/storing-data#configuring-external-storage) لمزيد من التفاصيل.
+يمكن لمحركات الجداول من عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) تخزين البيانات في `S3` و`AzureBlobStorage` و`HDFS` باستخدام قرص من النوع `s3` أو `azure_blob_storage` أو `hdfs` على الترتيب. راجع [تهيئة خيارات التخزين الخارجي](/ar/concepts/features/configuration/server-config/storing-data#configuring-external-storage) لمزيد من التفاصيل.
 
 مثال على استخدام [S3](https://aws.amazon.com/s3/) كتخزين خارجي باستخدام قرص من النوع `s3`.
 
@@ -1138,8 +1132,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -1157,11 +1151,11 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 راجع أيضًا [تهيئة خيارات التخزين الخارجي](/ar/concepts/features/configuration/server-config/storing-data#configuring-external-storage).
 
-### استخدام أقراص S3 مع وحدات تخزين متعددة {#s3-multiple-volumes}
+### استخدام أقراص S3 مع عدة وحدات تخزين {#s3-multiple-volumes}
 
-يمكن استخدام أقراص S3 (وغيرها من أقراص التخزين الكائني) في سياسات التخزين متعددة الأقراص ومتعددة الوحدات بالطريقة نفسها المستخدمة مع الأقراص المحلية. يتيح لك ذلك توزيع البيانات عبر عدة حاويات S3 ضمن وحدة تخزين واحدة (على نمط JBOD)، أو إعداد سياسات تخزين متعددة الطبقات باستخدام وحدات S3.
+يمكن استخدام أقراص S3 (وغيرها من أقراص تخزين الكائنات) في سياسات التخزين متعددة الأقراص ومتعددة الوحدات بالطريقة نفسها المستخدمة مع الأقراص المحلية. يتيح لك ذلك توزيع البيانات عبر عدة حاويات S3 ضمن وحدة تخزين واحدة (على نمط JBOD)، أو إعداد سياسات تخزين متعددة الطبقات باستخدام وحدات S3.
 
-على سبيل المثال، لتوزيع البيانات عبر حاويتَي S3 بأسلوب round-robin:
+على سبيل المثال، لتوزيع البيانات عبر حاويتَي S3 بأسلوب التوزيع بالتناوب:
 
 ```xml
 <storage_configuration>
@@ -1230,11 +1224,9 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 يمكن إعداد جداول MergeTree غير المكررة وفق سيناريو كاتب واحد وعدة قرّاء على وحدة تخزين مشتركة. ويتحقق ذلك عبر التحديث التلقائي لقائمة الأجزاء، الذي يمكن إعداده على القرّاء. لاحظ أن ذلك يتطلب بيانات تعريف نظام ملفات مشتركة عبر النسخ المتماثلة (أو `table_disk = true` مع قرص محلي على مستوى الجدول). راجع [refresh&#95;parts&#95;interval and table&#95;disk](/ar/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk).
 
-<Info>
-  **إعدادات cache**
-
+<Note title="إعدادات cache">
   تستخدم إصدارات ClickHouse من 22.3 إلى 22.7 إعدادات cache مختلفة. راجع [using local cache](/ar/concepts/features/configuration/server-config/storing-data#using-local-cache) إذا كنت تستخدم أحد هذه الإصدارات.
-</Info>
+</Note>
 
 ## الأعمدة الافتراضية {#virtual-columns}
 
@@ -1266,6 +1258,8 @@ ENGINE = MergeTree
 ORDER BY a
 ```
 
+تتطلّب الإحصاءات وجود عمود مُخزَّن فعليًا. فالعمود من نوع `ALIAS` أو `EPHEMERAL` لا يُكتب إلى أي جزء، ولذلك يُرفض تعريف إحصاءات عليه.
+
 يمكننا أيضًا تعديل الإحصاءات باستخدام تعليمات `ALTER`:
 
 ```sql
@@ -1273,7 +1267,7 @@ ALTER TABLE tab ADD STATISTICS b TYPE tdigest, uniq;
 ALTER TABLE tab DROP STATISTICS a;
 ```
 
-توفّر هذه الإحصاءات خفيفة الوزن معلومات مجمّعة عن توزيع القيم في الأعمدة. وتُخزَّن الإحصاءات في كل جزء وتُحدَّث مع كل عملية إدراج.
+توفّر هذه الإحصاءات خفيفة الوزن معلومات مجمّعة عن توزيع القيم في الأعمدة. وتُخزَّن الإحصاءات في كل جزء وتُحدَّث مع كل عملية إدراج.
 ولا يمكن استخدامها لتحسين `PREWHERE` إلا إذا فعّلنا `set use_statistics = 1`.
 
 #### تقليم الأجزاء باستخدام الإحصاءات {#part-pruning-with-statistics}
@@ -1314,27 +1308,27 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `basic`
 
-  حزمة مضغوطة من الملخصات ذات القيمة الواحدة المستمدة من عمود. وبحسب نوع العمود، تُعبَّأ العناصر التالية:
+  حزمة مضغوطة من الملخصات ذات القيمة الواحدة المستمدة من عمود. وبحسب نوع العمود، تُعبَّأ العناصر التالية:
 
-  * لأي عمود: عدد الصفوف التي تساوي القيمة الافتراضية للنوع (`0` للأعداد الصحيحة والأعداد فاصلة عائمة، و`''` لـ `String`، و`[]` لـ `Array`، و`NULL` لـ `Nullable`، إلخ)، مما يتيح للمُحسِّن تقدير مسندات `col = <default>` وعوامل التصفية `IS NULL`؛
-  * لأي عمود تُمثَّل قيمه كأعداد (أعداد صحيحة، أعداد فاصلة عائمة، `Decimal*`، `Date*`، `DateTime*`، `Enum*`، `IPv4`، ...): القيمة الدنيا والقيمة القصوى، مما يتيح تقدير انتقائية عوامل تصفية النطاق وتمكين تقليم الأجزاء؛
+  * لأي عمود: عدد الصفوف التي تساوي القيمة الافتراضية للنوع (`0` للأعداد الصحيحة والأعداد فاصلة عائمة، و`''` لـ `String`، و`[]` لـ `Array`، و`NULL` لـ `Nullable`، إلخ)، مما يتيح للمُحسِّن تقدير مسندات `col = <default>` وعوامل التصفية `IS NULL`؛
+  * لأي عمود تُمثَّل قيمه كأعداد (أعداد صحيحة، أعداد فاصلة عائمة، `Decimal*`، `Date*`، `DateTime*`، `Enum*`، `IPv4`، ...): القيمة الدنيا والقيمة القصوى، مما يتيح تقدير انتقائية عوامل تصفية النطاق وتمكين تقليم الأجزاء؛
   * لأعمدة `String` و`FixedString`: إجمالي طول القيم غير `NULL` بالبايت (الذي يمكن اشتقاق متوسط طول السلسلة منه).
 
-    يمكن لإحصائية `basic` واحدة أن تعبّئ عدة عناصر من هذه في الوقت نفسه — فعلى سبيل المثال، في عمود `Nullable(UInt32)`، تتتبّع كلاً من الحد الأدنى/الأقصى الرقمي وعدد قيم `NULL`. ولأن عدد القيم الافتراضية مُعرَّف لكل نوع من أنواع الأعمدة، يمكن تعريف `basic` على أي عمود، بما في ذلك الأنواع المركبة مثل `Array` و`Tuple` و`Map`.
+    يمكن لإحصائية `basic` واحدة أن تعبّئ عدة عناصر من هذه في الوقت نفسه — فعلى سبيل المثال، في عمود `Nullable(UInt32)`، تتتبّع كلاً من الحد الأدنى/الأقصى الرقمي وعدد قيم `NULL`. ولأن عدد القيم الافتراضية مُعرَّف لكل نوع من أنواع الأعمدة، يمكن تعريف `basic` على أي عمود، بما في ذلك الأنواع المركبة مثل `Array` و`Tuple` و`Map`.
 
 * `minmax` (مهمل)
 
-<Note>
-  إحصاءات `minmax` مهملة. استخدم إحصاءات `basic` بدلاً منها، فهي مجموعة شاملة لـ `minmax`.
-</Note>
+  <Note>
+    إحصاءات `minmax` مهملة. استخدم إحصاءات `basic` بدلاً منها، فهي مجموعة شاملة لـ `minmax`.
+  </Note>
 
 * `tdigest`
 
-<Warning>
-  إحصاءات النوع `tdigest` لها تكاليف إنشاء مرتفعة وقد تؤدي إلى إبطاء استيعاب البيانات.
-</Warning>
+  <Warning>
+    إحصاءات النوع `tdigest` لها تكاليف إنشاء مرتفعة وقد تؤدي إلى إبطاء استيعاب البيانات.
+  </Warning>
 
-هياكل [TDigest](https://github.com/tdunning/t-digest) التقريبية التي تتيح حساب النسب المئوية التقريبية (مثل المئين التسعين) للأعمدة الرقمية.
+  هياكل [TDigest](https://github.com/tdunning/t-digest) التقريبية التي تتيح حساب النسب المئوية التقريبية (مثل المئين التسعين) للأعمدة الرقمية.
 
 * `uniq`
 
@@ -1346,11 +1340,11 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `countmin`
 
-<Warning>
-  إحصاءات النوع `countmin` لها تكاليف إنشاء مرتفعة وقد تؤدي إلى إبطاء استيعاب البيانات.
-</Warning>
+  <Warning>
+    إحصاءات النوع `countmin` لها تكاليف إنشاء مرتفعة وقد تؤدي إلى إبطاء استيعاب البيانات.
+  </Warning>
 
-هياكل [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) التقريبية التي توفّر عدّاً تقريبياً لتكرار كل قيمة في العمود.
+  هياكل [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) التقريبية التي توفّر عدّاً تقريبياً لتكرار كل قيمة في العمود.
 
 ### أنواع البيانات المدعومة {#supported-data-types}
 

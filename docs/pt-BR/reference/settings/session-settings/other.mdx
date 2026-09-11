@@ -360,6 +360,7 @@ Valores compatíveis:
 * `polyglot` — transpila SQL de outros dialetos (MySQL, PostgreSQL etc.) para ClickHouse SQL. Requer a configuração experimental `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (Prometheus Query Language) avaliada em uma tabela TimeSeries, configurada pelas opções `promql_database`, `promql_table` e `promql_evaluation_time`.
 * `clickhouse_json` — em vez de texto SQL, a consulta é interpretada como um AST JSON (a saída de `parseQueryToJSON`). A consulta `SET` continua sendo reconhecida em formato simples para permitir a reversão para outro dialeto. Requer a configuração experimental `enable_json_ast_dialect`.
+* `trino` — Trino SQL: traduz a sintaxe do Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) e mapeia os nomes das funções do Trino para seus equivalentes no ClickHouse. Requer a configuração experimental `allow_experimental_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -1357,7 +1358,7 @@ o próprio `BACKUP FROM SNAPSHOT` não está disponível, faz com que `BACKUP` f
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Fornece o valor exato da estatística rows_before_aggregation, que representa o número de linhas lidas antes da agregação"}]}]} />
 
-Quando habilitada, o ClickHouse fornecerá o valor exato da estatística rows&#95;before&#95;aggregation, que representa o número de linhas lidas antes da agregaçã
+Quando habilitada, o ClickHouse fornecerá o valor exato da estatística rows&#95;before&#95;aggregation, que representa o número de linhas lidas antes da agregação
 
 ## run_query_in_background {#run_query_in_background}
 
@@ -1419,6 +1420,22 @@ Veja também:
 * [insert&#95;quorum](/pt-BR/reference/settings/session-settings/insert-quorum#insert_quorum)
 * [insert&#95;quorum&#95;timeout](/pt-BR/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/pt-BR/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
+
+## session_query_ids_history_size {#session_query_ids_history_size}
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1000"},{"label": "Nova configuração que limita o tamanho do histórico local da sessão de IDs de consulta exposto pela nova tabela de sistema `system.session_query_ids`. O valor anterior `0` (registro desabilitado) reproduz o comportamento anterior à versão 26.9."}]}]} />
+
+O número máximo de IDs de consulta mantidos no histórico local da sessão, exposto pela tabela de sistema [`system.session_query_ids`](/pt-BR/reference/system-tables/session_query_ids).
+O ID de consulta de cada consulta não interna executada na sessão é registrado nessa tabela no início da consulta; quando o histórico ultrapassa esse tamanho, as entradas mais antigas são removidas primeiro.
+
+O valor é lido no início da consulta, antes que ela seja convertida. Portanto, uma cláusula `SETTINGS` na própria consulta não afeta se ela será registrada; use `SET`, um parâmetro de URL HTTP ou um perfil de configurações.
+
+Valores possíveis:
+
+* Inteiro positivo.
+* 0 — O registro é desabilitado; as entradas registradas anteriormente permanecem na tabela.
 
 ## session_timezone {#session_timezone}
 

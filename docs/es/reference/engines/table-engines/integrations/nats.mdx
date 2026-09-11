@@ -73,6 +73,9 @@ Parámetros opcionales:
 * `nats_token` - Token de autenticación de NATS. Cuando se almacena en una colección con nombre definida en el archivo de configuración del servidor, la consulta no puede sobrescribir el `nats_url` ni el `nats_server_list` de la colección.
 * `nats_credential_file` - Ruta a un archivo de credentials de NATS. Solo se acepta desde una colección con nombre definida en el archivo de configuración del servidor cuyo `nats_url` y `nats_server_list` no sean sobrescritos por la consulta, porque el servidor abre la ruta con sus propios privilegios. En una consulta, pasa en su lugar el contenido del archivo en `nats_credentials`.
 * `nats_credentials` - Contenido de las credentials de NATS (la misma carga útil que en un archivo `.creds` con JWT de usuario y seed). Dado que es la única forma que puede usar una consulta, reemplaza un `nats_credential_file` heredado de una colección con nombre en lugar de entrar en conflicto con él, a menos que el operador haya bloqueado esa ruta con `<nats_credential_file overridable="false">`. No se le puede asignar la cadena vacía para eliminar las credentials que contiene una colección con nombre.
+* `nats_ca_file` - Ruta a un archivo con los certificados de CA de confianza usados para verificar el certificado del servidor NATS. Requiere `nats_secure`. Al igual que `nats_credential_file`, solo se acepta desde una colección con nombre definida en el archivo de configuración del servidor cuyo `nats_url` y `nats_server_list` no sean sobrescritos por la consulta, porque el servidor abre la ruta con sus propios privilegios.
+* `nats_client_cert_file` - Ruta al certificado de client presentado al servidor NATS. Requiere `nats_secure` y `nats_client_key_file`. Se acepta desde las mismas fuentes que `nats_ca_file`.
+* `nats_client_key_file` - Ruta a la clave privada de `nats_client_cert_file`. Se acepta desde las mismas fuentes que `nats_ca_file`.
 * `nats_startup_connect_tries` - Número de intentos de conexión al inicio. Valor predeterminado: `5`.
 * `nats_max_rows_per_message` — El número máximo de filas escritas en un mensaje NATS para formatos basados en filas. (valor predeterminado: `1`).
 * `nats_commit_on_select` - Hace commit de los mensajes cuando se realiza una consulta. Solo se aplica a JetStream; NATS core no tiene confirmaciones. Valor predeterminado: `0`.
@@ -81,10 +84,16 @@ Parámetros opcionales:
 Conexión SSL:
 
 Para una conexión segura, usa `nats_secure = 1`.
-La verificación del certificado se controla mediante la variable de entorno `CLICKHOUSE_NATS_TLS_SECURE`;
-si el certificado está expirado, es autofirmado, falta o no es válido por cualquier otro motivo, desactiva la verificación estableciendo `CLICKHOUSE_NATS_TLS_SECURE=0`.
+La verificación de certificados se controla mediante la variable de entorno `CLICKHOUSE_NATS_TLS_SECURE`;
+Si el certificado está expirado, es autofirmado, falta o no es válido por algún otro motivo, desactiva la verificación estableciendo `CLICKHOUSE_NATS_TLS_SECURE=0`.
 
-Escritura en la tabla NATS:
+Un certificado de servidor firmado por una CA privada se verifica indicando el certificado de CA en `nats_ca_file`,
+lo cual es preferible a desactivar la verificación. Cuando el servidor requiere certificados de cliente,
+proporciónalos con `nats_client_cert_file` y `nats_client_key_file`. Los tres son settings del operador:
+provienen de una colección con nombre definida en el archivo de configuración del servidor. Cada archivo se lee cuando
+la tabla se conecta, por lo que uno ilegible o malformado hace que falle la consulta en lugar del handshake.
+
+Escritura en tabla NATS:
 
 Si la tabla lee de un solo subject, cualquier insert publicará en ese mismo subject.
 Sin embargo, si la tabla lee de varios subjects, es necesario especificar en qué subject queremos publicar.

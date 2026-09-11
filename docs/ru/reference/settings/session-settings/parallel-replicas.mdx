@@ -79,6 +79,8 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Если эта настройка используется в кластере, состоящем из одного сегмента и нескольких реплик, эти реплики будут преобразованы в виртуальные сегменты.
 В противном случае она будет работать так же, как ключ `SAMPLE`: будут использоваться несколько реплик каждого сегмента.
 
+Выражение проверяется с учетом привилегий пользователя `SELECT` на уровне столбцов. Для представления с `SQL SECURITY DEFINER` или `NONE` оно применяется к столбцам представления; тело представления читается без такой проверки.
+
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
 <BetaBadge />
@@ -137,7 +139,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "Анализ индекса выполняется только на реплике-координаторе и не выполняется на других репликах. Действует только при включенном parallel_replicas_local_plan"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "Анализ индекса выполняется только на реплике-координаторе и не выполняется на других репликах. Действует только при включенном parallel_replicas_local_plan"}]}]} />
 
-Анализ индекса выполняется только на реплике-координаторе и не выполняется на других репликах. Действует только при включенном parallel&#95;replicas&#95;local&#95;pla
+Анализ индекса выполняется только на реплике-координаторе и не выполняется на других репликах. Действует только при включенном parallel&#95;replicas&#95;local&#95;plan
 
 ## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 

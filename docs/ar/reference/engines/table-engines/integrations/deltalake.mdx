@@ -11,9 +11,7 @@ doc_type: 'مرجع'
 
 يوفّر هذا المحرك تكاملًا مع جداول [Delta Lake](https://github.com/delta-io/delta) الموجودة في S3 وGCP وAzure Storage، ويدعم عمليتَي القراءة والكتابة كلتيهما (بدءًا من v25.10).
 
-<div id="create-table">
-  ## إنشاء جدول DeltaLake
-</div>
+## إنشاء جدول DeltaLake {#create-table}
 
 لإنشاء جدول DeltaLake، يجب أن يكون الجدول موجودًا مسبقًا في S3 أو GCP أو Azure Storage. لا تقبل الأوامر أدناه معلمات DDL لإنشاء جدول جديد.
 
@@ -70,11 +68,9 @@ doc_type: 'مرجع'
     ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
     ```
 
-    <Info>
-      **مُعرّف URI الخاص بـ gsutil غير مدعوم**
-
+    <Note title="مُعرّف URI الخاص بـ gsutil غير مدعوم">
       مُعرّف URI الخاص بـ gsutil مثل `gs://clickhouse-docs-example-bucket` غير مدعوم. يُرجى استخدام عنوان URL يبدأ بـ `https://storage.googleapis.com`
-    </Info>
+    </Note>
 
     **الوسائط**
 
@@ -117,9 +113,7 @@ doc_type: 'مرجع'
   </Tab>
 </Tabs>
 
-<div id="insert-data">
-  ## كتابة البيانات باستخدام جدول DeltaLake
-</div>
+## كتابة البيانات باستخدام جدول DeltaLake {#insert-data}
 
 بعد إنشاء جدول باستخدام محرك جدول DeltaLake، يمكنك إدراج البيانات فيه باستخدام:
 
@@ -137,15 +131,11 @@ VALUES (1, 'John', 'Smith', 'M', 32);
   الكتابة إلى Azure غير مدعومة بعد، لكنها تعمل مع S3 وGCS.
 </Note>
 
-<div id="data-cache">
-  ### ذاكرة التخزين المؤقت للبيانات
-</div>
+### ذاكرة التخزين المؤقت للبيانات {#data-cache}
 
 يدعم محرك جدول `DeltaLake` ودالة الجدول التخزين المؤقت للبيانات، تمامًا كما هو الحال مع أنظمة التخزين `S3` و`AzureBlobStorage` و`HDFS`. راجع [&quot;محرك جدول S3&quot;](/ar/reference/engines/table-engines/integrations/s3#data-cache) لمزيد من التفاصيل.
 
-<div id="see-also">
-  ## راجع أيضًا
-</div>
+## راجع أيضًا {#see-also}
 
 * [دالة الجدول deltaLake](/ar/reference/functions/table-functions/deltalake)
 

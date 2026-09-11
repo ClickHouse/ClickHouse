@@ -13,19 +13,15 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="max_size_to_preallocate_for_aggregation">
-  ## max_size_to_preallocate_for_aggregation
-</div>
+## max_size_to_preallocate_for_aggregation {#max_size_to_preallocate_for_aggregation}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1000000000000"},{"label": "より大きなテーブルに対する最適化を有効にします。"}]}, {"id": "row-2","items": [{"label": "22.12"},{"label": "100000000"},{"label": "パフォーマンスを最適化します。"}]}]} />
 
-集約前に、すべてのハッシュテーブル全体で合計何個の要素に対して事前に領域を確保できるか
+集約前に、すべてのハッシュテーブル全体で合計何個の要素に対して領域を事前割り当てできるか
 
-<div id="max_size_to_preallocate_for_joins">
-  ## max_size_to_preallocate_for_joins
-</div>
+## max_size_to_preallocate_for_joins {#max_size_to_preallocate_for_joins}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000000" />
 

@@ -109,7 +109,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_experimental_*",
-      count: 33,
+      count: 34,
       settings: [
         { name: "allow_experimental_analyzer", path: "/allow-experimental#allow_experimental_analyzer", default: "1" },
         { name: "allow_experimental_cleanup_old_data_files_compaction", path: "/allow-experimental#allow_experimental_cleanup_old_data_files_compaction", default: "0" },
@@ -139,6 +139,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "allow_experimental_parallel_reading_from_replicas", path: "/allow-experimental#allow_experimental_parallel_reading_from_replicas", default: "0" },
         { name: "allow_experimental_polyglot_dialect", path: "/allow-experimental#allow_experimental_polyglot_dialect", default: "0" },
         { name: "allow_experimental_prql_dialect", path: "/allow-experimental#allow_experimental_prql_dialect", default: "0" },
+        { name: "allow_experimental_trino_dialect", path: "/allow-experimental#allow_experimental_trino_dialect", default: "0" },
         { name: "allow_experimental_unique_key", path: "/allow-experimental#allow_experimental_unique_key", default: "0" },
         { name: "allow_experimental_url_wildcard_from_index_pages", path: "/allow-experimental#allow_experimental_url_wildcard_from_index_pages", default: "0" },
         { name: "allow_experimental_ytsaurus_dictionary_source", path: "/allow-experimental#allow_experimental_ytsaurus_dictionary_source", default: "0" },
@@ -2561,8 +2562,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "s3_upload_*",
-      count: 2,
+      count: 3,
       settings: [
+        { name: "s3_upload_checksum_algorithm", path: "/s3-upload#s3_upload_checksum_algorithm", default: '""' },
         { name: "s3_upload_part_size_multiply_factor", path: "/s3-upload#s3_upload_part_size_multiply_factor", default: "2" },
         { name: "s3_upload_part_size_multiply_parts_count_threshold", path: "/s3-upload#s3_upload_part_size_multiply_parts_count_threshold", default: "500" }
       ],
@@ -2864,8 +2866,9 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "use_iceberg_*",
-      count: 2,
+      count: 3,
       settings: [
+        { name: "use_iceberg_manifest_list_partition_pruning", path: "/use-iceberg#use_iceberg_manifest_list_partition_pruning", default: "1" },
         { name: "use_iceberg_metadata_files_cache", path: "/use-iceberg#use_iceberg_metadata_files_cache", default: "1" },
         { name: "use_iceberg_partition_pruning", path: "/use-iceberg#use_iceberg_partition_pruning", default: "1" }
       ],
@@ -3024,7 +3027,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "其他",
-      count: 138,
+      count: 139,
       settings: [
         { name: "adaptive_aggregator_freeze_threshold", path: "/other#adaptive_aggregator_freeze_threshold", default: "16384" },
         { name: "adaptive_aggregator_freeze_threshold_bytes", path: "/other#adaptive_aggregator_freeze_threshold_bytes", default: "4194304" },
@@ -3138,6 +3141,7 @@ const SessionSettingsExplorer = ({ href: baseRoute }) => {
         { name: "secondary_indices_enable_bulk_filtering", path: "/other#secondary_indices_enable_bulk_filtering", default: "1" },
         { name: "select", path: "/other#select", default: '""' },
         { name: "select_sequential_consistency", path: "/other#select_sequential_consistency", default: "0" },
+        { name: "session_query_ids_history_size", path: "/other#session_query_ids_history_size", default: "1000" },
         { name: "session_timezone", path: "/other#session_timezone", default: '""' },
         { name: "set_overflow_mode", path: "/other#set_overflow_mode", default: "throw" },
         { name: "single_join_prefer_left_table", path: "/other#single_join_prefer_left_table", default: "1" },

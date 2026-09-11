@@ -258,11 +258,9 @@ Code: 48. DB::Exception: Received from localhost:9000. DB::Exception: Reading fr
   * 索引。
   * 可以进行 [Zero-copy](/zh/concepts/features/configuration/server-config/storing-data#zero-copy) 复制，但不受支持。
 
-<Info>
-  **Zero-copy 复制尚未准备好用于生产环境**
-
+<Note title="Zero-copy 复制尚未准备好用于生产环境">
   在 ClickHouse 22.8 及更高版本中，Zero-copy 复制默认已禁用。不建议在生产环境中使用此功能。
-</Info>
+</Note>
 
 ## `path` 中的通配符 {#wildcards-in-path}
 

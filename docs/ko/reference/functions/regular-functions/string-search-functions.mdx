@@ -39,14 +39,12 @@ doc_type: 'reference'
 
 문자열에서 정규식과 일치하는 횟수를 반환합니다.
 
-<Info>
-  **버전별 동작 차이**
-
+<Note title="버전별 동작 차이">
   이 함수의 동작은 ClickHouse 버전에 따라 달라집니다.
 
   * 버전 &lt; v25.6에서는 패턴이 빈 문자열과 일치할 수 있더라도 첫 번째 빈 일치에서 개수 계산을 중단합니다.
   * 버전 &gt;= 25.6에서는 빈 일치가 발생해도 함수 실행을 계속합니다. 기존 동작은 설정 `count_matches_stop_at_empty_match = true`를 사용해 복원할 수 있습니다;
-</Info>
+</Note>
 
 **구문**
 
@@ -1464,15 +1462,13 @@ SELECT '50%off' LIKE '50#%off' ESCAPE '#';
 
 [`position`](#position)과 같지만 인수 `haystack`와 `locate`의 순서만 서로 바뀝니다.
 
-<Info>
-  **버전에 따라 달라지는 동작**
-
+<Note title="버전에 따라 달라지는 동작">
   이 함수의 동작은 ClickHouse 버전에 따라 달라집니다.
 
   * 버전 &lt; v24.3에서는 `locate`가 함수 `position`의 별칭이었으며, 인수 `(haystack, needle[, start_pos])`를 받았습니다.
   * 버전 &gt;= 24.3에서는 `locate`가 별도의 함수이며(MySQL과의 호환성을 높이기 위해), 인수 `(needle, haystack[, start_pos])`를 받습니다.
     이전 동작은 설정 `function_locate_has_mysql_compatible_argument_order = false`를 사용해 복원할 수 있습니다.
-</Info>
+</Note>
 
 **구문**
 

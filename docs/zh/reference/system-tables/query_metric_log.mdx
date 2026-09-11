@@ -24,6 +24,8 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 
 * `query_id` ([String](/zh/reference/data-types/string)) — 查询 ID。
 * `hostname` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 执行该查询的服务器主机名。
+* `clickhouse_version` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 生成该行的 ClickHouse 服务器版本。
+* `system_processor` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 生成该行的 ClickHouse 服务器的 CPU 架构。
 * `event_date` ([Date](/zh/reference/data-types/date)) — 事件日期。
 * `event_time` ([DateTime](/zh/reference/data-types/datetime)) — 事件时间。
 * `event_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 精确到微秒的事件时间。
@@ -433,6 +435,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 在外部内存中进行 JOIN 时写入的压缩字节数。
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/zh/reference/data-types/int-uint)) — 在外部内存中进行 JOIN 时写入的数据量 (未压缩，即压缩前) 。
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/zh/reference/data-types/int-uint)) — Iceberg 分区裁剪期间跳过的文件数
+* `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 利用 manifest 列表的分区摘要、无需读取即可跳过的 Iceberg manifest 文件数量
 * `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/zh/reference/data-types/int-uint)) — 从 Iceberg 读取时应用简单 count 优化
 * `ProfileEvent_IcebergVersionHintUsed` ([UInt64](/zh/reference/data-types/int-uint)) — 使用 version-hint.text 的次数。
 * `ProfileEvent_IcebergMinMaxIndexPrunedFiles` ([UInt64](/zh/reference/data-types/int-uint)) — 在 Iceberg 中使用 MinMax index 跳过的文件数。
@@ -461,7 +464,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_UniqueKeyIndexCacheLookupMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 在 `UniqueKeyIndexCache::Lookup` 和 `UniqueKeyIndexCache::Insert` 中消耗的挂钟时间 (RocksDB 块缓存的 ClickHouse 端 `CacheBase` 适配器) 。
 * `ProfileEvent_UniqueKeyIndexCacheHits` ([UInt64](/zh/reference/data-types/int-uint)) — 在 UNIQUE KEY 索引缓存中找到条目的次数，因此无需加载 SST 块。
 * `ProfileEvent_UniqueKeyIndexCacheMisses` ([UInt64](/zh/reference/data-types/int-uint)) — 在 UNIQUE KEY 索引缓存中未找到条目的次数，因此必须从磁盘加载 SST 块。
-* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 单个 `SSTIndexWriter` 生命周期内消耗的总挂钟时间——涵盖 SST `Open`、每次 `addEncoded` Put，以及在 `finalizeToStorage` 中执行的 `Finish` + `WriteBuffer` 收尾操作 (SST 字节会直接流式写入 part 存储的 `WriteBuffer`) 。不包括静态辅助函数在构造 writer 前执行的工作 (编码 + 非前缀路径排序) 。每个 writer 发送一次。
+* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 单个 `SSTIndexWriter` 生命周期内消耗的总挂钟时间——涵盖 SST `Open`、每次 `addEncoded` Put，以及在 `finish` 中执行的 `Finish` + `WriteBuffer` 收尾操作 (+ fsync) (SST 字节会直接流式写入 part 存储的 `WriteBuffer`) 。不包括静态辅助函数在构造 writer 前执行的工作 (编码 + 非前缀路径排序) 。每个 writer 发送一次。
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildCount` ([UInt64](/zh/reference/data-types/int-uint)) — 在刷写前崩溃窗口后，于加载时重建 `unique_key_index.sst` 的 UNIQUE KEY parts 数量。
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 加载时重建 `unique_key_index.sst` 所花费的总时间 (顺序读取 UK 列 + 写入 SST) 。
 * `ProfileEvent_SelectedParts` ([UInt64](/zh/reference/data-types/int-uint)) — 从 MergeTree 表中选中用于读取的数据分区片段数。
@@ -1099,6 +1102,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueRemovedObjects` ([UInt64](/zh/reference/data-types/int-uint)) — 因 after&#95;processing = delete 而删除的 object 数量
 * `ProfileEvent_ObjectStorageQueueTaggedObjects` ([UInt64](/zh/reference/data-types/int-uint)) — 因 after&#95;processing = tag 而添加标签的 object 数量
 * `ProfileEvent_ObjectStorageQueueInsertIterations` ([UInt64](/zh/reference/data-types/int-uint)) — insert 迭代次数
+* `ProfileEvent_ObjectStorageQueueRemoveObjectFailures` ([UInt64](/zh/reference/data-types/int-uint)) — 因 after&#95;processing = delete 而删除失败的 object 数量
 * `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/zh/reference/data-types/int-uint)) — 将文件提交为失败或已处理状态的 keeper 请求数
 * `ProfileEvent_ObjectStorageQueueBucketLockLostOwnership` ([UInt64](/zh/reference/data-types/int-uint)) — 在 S3(Azure)Queue 中检测到失去存储桶锁所有权的次数。非零值表示 persistent&#95;processing&#95;node&#95;ttl&#95;seconds 过小或存在 bug
 * `ProfileEvent_ObjectStorageQueueBucketLockRefreshes` ([UInt64](/zh/reference/data-types/int-uint)) — S3(Azure)Queue 中成功刷新存储桶锁的次数
@@ -1106,6 +1110,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueUnsuccessfulCommits` ([UInt64](/zh/reference/data-types/int-uint)) — 失败的 keeper 提交次数
 * `ProfileEvent_ObjectStorageQueueCancelledFiles` ([UInt64](/zh/reference/data-types/int-uint)) — StorageS3(Azure)Queue 中已取消的文件数量
 * `ProfileEvent_ObjectStorageQueueProcessedRows` ([UInt64](/zh/reference/data-types/int-uint)) — StorageS3(Azure)Queue 中已处理的行数
+* `ProfileEvent_ObjectStorageQueueExclusiveModeProcessingErrors` ([UInt64](/zh/reference/data-types/int-uint)) — S3(Azure)Queue 中的文件因处理错误而未能完成状态最终化的次数。仅适用于 &#39;exclusive&#39; 模式。
 * `ProfileEvent_ObjectStorageListedObjects` ([UInt64](/zh/reference/data-types/int-uint)) — 应用任何过滤之前，对象存储列举 API 返回的对象总数。
 * `ProfileEvent_ObjectStorageGlobFilteredObjects` ([UInt64](/zh/reference/data-types/int-uint)) — 与 glob 或 Regex 模式不匹配并在列举过程中被跳过的对象数。
 * `ProfileEvent_ObjectStoragePredicateFilteredObjects` ([UInt64](/zh/reference/data-types/int-uint)) — 被 &#95;path/&#95;file 上的虚拟列谓词过滤移除的对象数。
@@ -1536,6 +1541,7 @@ import SystemTableCloud from '/snippets/zh/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterRowsChecked` ([UInt64](/zh/reference/data-types/int-uint)) — 经 JOIN 运行时过滤器检查的行数
 * `ProfileEvent_RuntimeFilterRowsPassed` ([UInt64](/zh/reference/data-types/int-uint)) — 通过 JOIN 运行时过滤器的行数 (即未被过滤掉)
 * `ProfileEvent_RuntimeFilterRowsSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 块中被 JOIN 运行时过滤器跳过的行数
+* `ProfileEvent_RuntimeFilterBloomFilterBuildsSkipped` ([UInt64](/zh/reference/data-types/int-uint)) — 由于哈希表统计信息中的构建端键数预测该过滤器将超过最大置位比率而跳过构建 JOIN 运行时过滤器布隆过滤器的次数
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/zh/reference/data-types/int-uint)) — JOIN 运行时过滤器为读取时剪枝而检查的粒度数量
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/zh/reference/data-types/int-uint)) — JOIN 运行时过滤器在读取时剪枝的粒度数量
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/zh/reference/data-types/int-uint)) — 构建 JOIN 右侧后，各后处理步骤的耗时。

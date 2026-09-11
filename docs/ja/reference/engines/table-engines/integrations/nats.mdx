@@ -72,6 +72,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_token` - NATS auth token。サーバー設定ファイルで定義された named collection に保存されている場合、クエリでその collection の `nats_url` または `nats_server_list` を override することはできません。
 * `nats_credential_file` - NATS credentials file への path。server が自身の権限で path を開くため、クエリによって `nats_url` と `nats_server_list` が override されない、サーバー設定ファイルで定義された named collection からのみ受け付けられます。クエリでは、代わりにファイルの内容を `nats_credentials` に渡します。
 * `nats_credentials` - NATS credentials の内容 (user JWT と seed を含む `.creds` file と同じペイロード)。クエリで使用できる唯一の指定方法であるため、`<nats_credential_file overridable="false">` により operator がその path をロックしている場合を除き、競合するのではなく named collection から継承した `nats_credential_file` を置き換えます。named collection が保持する credentials を削除するために空文字列を割り当てることはできません。
+* `nats_ca_file` - NATS server certificate の検証に使用する、信頼された CA certificates を含む file への path。`nats_secure` が必要です。`nats_credential_file` と同様に、server が自身の権限で path を開くため、クエリによって `nats_url` と `nats_server_list` が override されない、サーバー設定ファイルで定義された named collection からのみ受け付けられます。
+* `nats_client_cert_file` - NATS server に提示する client certificate への path。`nats_secure` および `nats_client_key_file` が必要です。`nats_ca_file` と同じソースから受け付けられます。
+* `nats_client_key_file` - `nats_client_cert_file` の秘密鍵への path。`nats_ca_file` と同じソースから受け付けられます。
 * `nats_startup_connect_tries` - 起動時の接続試行回数。デフォルト: `5`。
 * `nats_max_rows_per_message` — 行ベースのフォーマットで、1 つの NATS メッセージ に書き込まれる最大行数。 (デフォルト: `1`) 。
 * `nats_commit_on_select` - クエリ実行時に メッセージ を commit します。JetStream にのみ適用されます。core NATS には acknowledgement はありません。デフォルト: `0`。
@@ -79,11 +82,17 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 SSL 接続:
 
-セキュアな接続には `nats_secure = 1` を使用します。
-証明書の検証は `CLICKHOUSE_NATS_TLS_SECURE` 環境変数によって制御されます。
-証明書が期限切れ、自己署名、欠落、またはその他の理由で無効な場合は、`CLICKHOUSE_NATS_TLS_SECURE=0` を設定して検証を無効にしてください。
+安全な接続には、`nats_secure = 1`を使用します。
+証明書の検証は、`CLICKHOUSE_NATS_TLS_SECURE`環境変数によって制御されます。
+証明書が期限切れ、自己署名、欠落、またはその他の理由で無効な場合は、`CLICKHOUSE_NATS_TLS_SECURE=0`を設定して検証を無効にします。
 
-NATSテーブルへの書き込み:
+private CA によって署名された server certificate は、`nats_ca_file`で CA certificate を指定することで検証します。
+これは検証を無効にするよりも望ましい方法です。server が client certificates を必要とする場合は、
+`nats_client_cert_file`と`nats_client_key_file`で指定します。これら3つはすべて運用者設定です:
+サーバー設定ファイルで定義された named collection から取得されます。各ファイルはテーブルの接続時に読み取られるため、
+読み取り不能または形式不正のファイルがあると、ハンドシェイクではなくクエリが失敗します。
+
+NATS table への書き込み:
 
 テーブルが1つのsubjectのみを読み取る場合、いかなるINSERTも同じsubjectにパブリッシュされます。
 ただし、テーブルが複数のsubjectを読み取る場合は、どのsubjectにパブリッシュするかを指定する必要があります。

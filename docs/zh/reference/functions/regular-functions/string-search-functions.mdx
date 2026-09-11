@@ -39,14 +39,12 @@ doc_type: 'reference'
 
 返回字符串中正则表达式的匹配次数。
 
-<Info>
-  **与版本相关的行为**
-
+<Note title="与版本相关的行为">
   此函数的行为取决于 ClickHouse 版本：
 
   * 在 &lt; v25.6 的版本中，即使模式能够匹配空字符串，函数也会在第一次空匹配时停止计数。
   * 在 &gt;= 25.6 的版本中，发生空匹配时，函数会继续执行。可使用设置 `count_matches_stop_at_empty_match = true` 恢复旧版行为；
-</Info>
+</Note>
 
 **语法**
 
@@ -61,7 +59,7 @@ countMatches(haystack, pattern)
 
 **返回值**
 
-返回找到的匹配项数量。[`UInt64`](/zh/reference/data-types/int-uint)
+返回找到的匹配次数。[`UInt64`](/zh/reference/data-types/int-uint)
 
 **示例**
 
@@ -1464,15 +1462,13 @@ SELECT '50%off' LIKE '50#%off' ESCAPE '#';
 
 与 [`position`](#position) 类似，但参数 `haystack` 和 `locate` 的顺序互换了。
 
-<Info>
-  **与版本相关的行为**
-
+<Note title="与版本相关的行为">
   此函数的行为取决于 ClickHouse 的版本：
 
   * 在 &lt; v24.3 的版本中，`locate` 是函数 `position` 的别名，接受参数 `(haystack, needle[, start_pos])`。
   * 在 &gt;= 24.3 的版本中，`locate` 是一个独立函数 (为了更好地兼容 MySQL) ，接受参数 `(needle, haystack[, start_pos])`。
     可以通过设置 `function_locate_has_mysql_compatible_argument_order = false` 恢复之前的行为。
-</Info>
+</Note>
 
 **语法**
 

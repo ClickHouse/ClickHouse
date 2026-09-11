@@ -561,31 +561,68 @@ Com `pretty` = 1, a árvore do plano é exibida usando caracteres de desenho de 
 * **Passos de filtro** exibem a condição de filtro em notação SQL. Quando há filtros de join em tempo de execução, eles são mostrados separadamente.
 * **Passos de agregação** exibem chaves e funções de agregação com seus argumentos (por exemplo, `sum(c)`, `count()`).
 * **Conjuntos de `IN`** de literais Tuple mostram seus valores (truncados para conjuntos grandes), conjuntos baseados em subconsulta são rotulados como `subquery1`, `subquery2` etc., e conjuntos de tabelas com o motor `Set` mostram o nome da tabela.
-* **Passos de join** exibem a relação de join usando notação matemática, a contagem estimada de linhas do resultado,
-  e quais colunas de saída vêm do lado esquerdo e do lado direito. Os símbolos a seguir são usados para
-  representar diferentes tipos de join:
+* **Passos de join** exibem a relação de join usando notação matemática, as estimativas que o
+  otimizador de ordem de junções produziu para o passo (custo, seletividade, linhas de saída e linhas por lado),
+  e as colunas de entrada de cada lado. Os símbolos a seguir são usados para representar diferentes tipos de join:
 
-| Símbolo                | Tipo de junção          |
-| ---------------------- | ----------------------- |
-| `⋈`                    | Junção interna          |
-| `⟕`                    | Junção à esquerda       |
-| `⟖`                    | Junção à direita        |
-| `⟗`                    | Junção completa         |
-| `⋉`                    | Junção semi à esquerda  |
-| `⋊`                    | Junção semi à direita   |
-| `⋉` with strikethrough | Junção anti à esquerda  |
-| `⋊` with strikethrough | Junção anti à direita   |
-| `×`                    | Junção cruzada          |
+| Símbolo         | Tipo de join    |
+| --------------- | --------------- |
+| `⋈`             | Inner Join      |
+| `⟕`             | Left Join       |
+| `⟖`             | Right Join      |
+| `⟗`             | Full Join       |
+| `⋉`             | Left Semi Join  |
+| `⋊`             | Right Semi Join |
+| `⋉` com tachado | Left Anti Join  |
+| `⋊` com tachado | Right Anti Join |
+| `×`             | Cross Join      |
 
-Por exemplo, `t1 ⟕ t2` significa uma junção à esquerda entre as tabelas `t1` e `t2`.
+Por exemplo, `t1 ⟕ t2` significa um left join entre as tabelas `t1` e `t2`.
 O número entre colchetes após o nome da tabela (por exemplo, `t1[100]`) indica a contagem estimada de linhas
-quando há estatísticas da tabela disponíveis.
+quando estatísticas de tabela estão disponíveis.
 
-A opção `pretty` funciona bem em conjunto com `compact = 1`, que oculta os passos `Expression` e as informações detalhadas de ações, tornando o plano mais fácil de ler.
+Abaixo da relação de join, cada passo de join exibe as estimativas que o otimizador de ordem de junções produziu para ele:
 
-Um exemplo detalhado com junções:
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+* `Cost` — o custo de toda a subárvore de join abaixo desta etapa, que é o valor que o otimizador
+  minimiza ao comparar ordens de join candidatas. O custo de um join é o número estimado de
+  pares de linhas correspondentes, `<selectivity> * <left_rows> * <right_rows>`, mais o custo de suas entradas.
+* `Selectivity` — a fração estimada do produto cartesiano dos dois lados que permanece após
+  a condição de join. Ela é derivada do número de valores distintos (NDV) das chaves de junção:
+  uma igualdade de chave mantém cerca de `1 / max(NDV_left, NDV_right)` dos pares, e é usada a menor
+  fração entre as condições de join.
+* `Output rows` — o número estimado de linhas que o join produz:
+  `<selectivity> * <left_rows> * <right_rows>` para um join interno, limitado inferiormente a `<left_rows>` para
+  `LEFT`, a `<right_rows>` para `RIGHT` e a `<left_rows> + <right_rows>` para `FULL`, porque um
+  join externo mantém todas as linhas do seu lado preservado. Quando um join `SEMI` ou `ANTI` participa da
+  reordenação, ele é estimado como uma fração de seu lado preservado,
+  `<preserved_rows> * min(1, <selectivity> * <other_rows>)` para `SEMI` e as linhas restantes para
+  `ANTI`; caso contrário, usa a fórmula de seu tipo de join.
+* `Left` / `Right` — o número estimado de linhas que entram no join por cada lado.
+
+Um valor que o otimizador não conseguiu estimar é exibido como `no stats`. Isso acontece quando a
+otimização da ordem de join não foi executada — por exemplo, quando
+[`query_plan_optimize_join_order_limit`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)
+é `0` — ou quando não há base para a estimativa.
+
+As linhas `Input (left):` e `Input (right):` listam as colunas que cada lado fornece ao join.
+
+A opção `pretty` funciona bem em conjunto com `compact = 1`, que oculta os passos `Expression` e informações detalhadas das ações, tornando o plano mais fácil de ler.
+
+Um exemplo detalhado com junções. A configuração
+[`join_runtime_filter_min_probe_rows`](/pt-BR/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+é reduzida apenas para que uma tabela tão pequena ainda crie um filtro de join em tempo de execução:
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -601,11 +638,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -772,23 +812,62 @@ Linhas e bytes são informados uma vez para todo o passo (a linha `I/O`). O temp
 
 #### Etapas de junção {#explain-analyze-join-steps}
 
-Em uma etapa de junção, `EXPLAIN ANALYZE` exibe linhas de *participação* para cada lado — `Left` e `Right` — seguidas de linhas específicas da implementação da junção. `Left` e `Right` correspondem aos lados lógicos da instrução SQL. Na maioria dos casos, `Left` também corresponde ao lado de sondagem da junção, enquanto `Right` corresponde ao lado de compilação da junção. No entanto, isso nem sempre ocorre devido à troca que pode acontecer durante a execução da junção. Todos os valores de [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm) são contemplados (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), assim como as duas implementações que essa configuração não pode selecionar: uma junção `CROSS` ou `COMMA`, qualquer seção `ON` sem igualdade de chave e o motor de tabela [`Join`](/pt-BR/reference/engines/table-engines/special/join). A maioria deles informa ambos os lados; alguns informam apenas o lado que materializam (por exemplo, `direct` exibe apenas `Left:`).
+Em uma etapa de junção, `EXPLAIN ANALYZE` exibe linhas que comparam as estimativas do otimizador de ordem de junção com o que realmente ocorreu (consulte [Métricas de junção estimadas versus reais](#explain-analyze-join-estimation)) e linhas de *participação* para cada lado — `Left` e `Right` — seguidas de linhas específicas da implementação da junção. Todos os valores de [`join_algorithm`](/pt-BR/reference/settings/session-settings/join#join_algorithm) são contemplados (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), assim como as duas implementações que essa configuração não pode selecionar: uma junção `CROSS` ou `COMMA`, qualquer seção `ON` sem igualdade de chave e o motor de tabela [`Join`](/pt-BR/reference/engines/table-engines/special/join). A maioria deles informa ambos os lados; alguns informam apenas o lado que materializam (por exemplo, `direct` exibe apenas `Left:`).
 
 As linhas de cada lado seguem o mesmo formato:
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 Para cada lado, `EXPLAIN ANALYZE` informa:
 
+* `rows estimated <estimated_rows>` — a estimativa do otimizador de ordem de junção para as linhas desse lado, exibida para comparação com as `rows` reais ao lado; `no stats` quando o otimizador não produz uma estimativa (consulte [Métricas de junção estimadas versus reais](#explain-analyze-join-estimation)).
 * `rows <rows>` — o número total de linhas desse lado que passaram pela junção.
 * `matched <matched_rows>` — o número de linhas desse lado que encontraram pelo menos uma linha correspondente no outro lado. Isso conta *linhas*, não chaves: se uma chave ocorrer três vezes no lado direito e houver correspondência, as três linhas da direita serão contadas como correspondentes.
 * `match rate <match_rate>%` — a porcentagem de linhas desse lado que tiveram correspondência, calculada como `100 * <matched_rows> / <rows>`.
 * `fanout <fanout>` — quantas linhas de saída, em média, cada linha correspondente desse lado produziu.
 
 Um número que não pode ser calculado com exatidão é informado como `not collected`, em vez de `0`. `match rate` e `fanout` são derivados de `matched`; portanto, um lado sem esse valor informa os três como `not collected`.
+
+#### Métricas de join estimadas vs. reais {#explain-analyze-join-estimation}
+
+Uma etapa de junção traz as estimativas do otimizador de ordem de junção — as mesmas exibidas pelo `EXPLAIN PLAN` (consulte a seção [EXPLAIN PLAN](#explain-plan)) — e o `EXPLAIN ANALYZE` imprime cada uma delas ao lado do valor medido:
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+* `Cost` — ambos os valores contabilizam as linhas de saída correspondentes. A estimativa é o custo, para o otimizador, da subárvore da junção: `<selectivity> * <left_rows> * <right_rows>` mais o custo de suas entradas. O valor real é medido da mesma maneira — as linhas de saída correspondentes desta junção mais o custo real de cada junção abaixo dela que pertença ao mesmo cluster de reordenação.
+* `Selectivity` — a estimativa é derivada do número de valores distintos das chaves de junção; o valor real é a fração medida do produto cartesiano que chegou à saída: `<matched output rows> / (<left rows> * <right rows>)`, pois é isso que o otimizador tenta estimar.
+* `Output rows` — o número estimado e real de linhas produzidas pela junção. Quando ambos são diferentes de zero, `q-error` informa `max(estimated / actual, actual / estimated)`, a medida padrão da qualidade da estimativa de cardinalidade: `1.00` significa uma estimativa perfeita, e um valor alto significa que o otimizador escolheu a ordem das junções com base em uma cardinalidade muito imprecisa.
+
+Uma estimativa que nunca foi feita é informada como `no stats` — por exemplo, quando a otimização da ordem das junções não foi executada porque [`query_plan_optimize_join_order_limit`](/pt-BR/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) é `0`. Isso é diferente de `not collected`, que indica um valor real que a execução não conseguiu medir. Junções com o lado direito pré-preenchido (o motor de tabela [`Join`](/pt-BR/reference/engines/table-engines/special/join), junções `direct`) não passam pelo otimizador de ordem das junções e exibem apenas as linhas de participação.
+
+A etapa de junção também exibe as linhas `Input (left):` e `Input (right):` com as colunas que cada lado fornece à junção.
+
+Para as tabelas do exemplo de junção [EXPLAIN PLAN](#explain-plan), a etapa de junção de `EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id` é assim:
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
 
 #### Fanout {#explain-analyze-fanout}
 
@@ -879,7 +958,7 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 Na junção `partial_merge`, a linha `Right:` contém informações adicionais sobre como a tabela da direita foi armazenada em buffer e ordenada, e o tempo de ordenação é exibido nas linhas `Stage (build)` e `Stage (probe)`:
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```

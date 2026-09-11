@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 该引擎可与 S3、GCP 和 Azure 存储中现有的 [Delta Lake](https://github.com/delta-io/delta) 表集成，并支持读写 (自 v25.10 起) 。
 
-<div id="create-table">
-  ## 创建 DeltaLake 表
-</div>
+## 创建 DeltaLake 表 {#create-table}
 
 要创建 DeltaLake 表，该表必须已存在于 S3、GCP 或 Azure 存储中。以下命令不接受用于创建新表的 DDL 参数。
 
@@ -70,11 +68,9 @@ doc_type: 'reference'
     ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
     ```
 
-    <Info>
-      **不支持 gsutil URI**
-
+    <Note title="不支持 gsutil URI">
       不支持 `gs://clickhouse-docs-example-bucket` 这类 gsutil URI，请使用以 `https://storage.googleapis.com` 开头的 URL
-    </Info>
+    </Note>
 
     **参数**
 
@@ -117,9 +113,7 @@ doc_type: 'reference'
   </Tab>
 </Tabs>
 
-<div id="insert-data">
-  ## 使用 DeltaLake 表写入数据
-</div>
+## 使用 DeltaLake 表写入数据 {#insert-data}
 
 使用 DeltaLake 表引擎创建表后，可以通过以下方式向表中插入数据：
 
@@ -137,15 +131,11 @@ Delta Lake 写入目前处于 Beta 阶段，默认禁用，必须使用 `SET all
   目前尚不支持向 Azure 写入，但支持 S3 和 GCS。
 </Note>
 
-<div id="data-cache">
-  ### 数据缓存
-</div>
+### 数据缓存 {#data-cache}
 
 `DeltaLake` 表引擎和表函数支持数据缓存，与 `S3`、`AzureBlobStorage` 和 `HDFS` 存储相同。更多详情，请参见[&quot;S3 表引擎&quot;](/zh/reference/engines/table-engines/integrations/s3#data-cache)。
 
-<div id="see-also">
-  ## 另请参阅
-</div>
+## 另请参阅 {#see-also}
 
 * [deltaLake 表函数](/zh/reference/functions/table-functions/deltalake)
 

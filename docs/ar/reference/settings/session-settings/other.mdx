@@ -358,8 +358,9 @@ SETTINGS convert_query_to_cnf = true;
 * `kusto` — Kusto Query Language. يتطلب الإعداد التجريبي `allow_experimental_kusto_dialect`.
 * `prql` — PRQL. يتطلب الإعداد التجريبي `allow_experimental_prql_dialect`.
 * `polyglot` — يترجم SQL من لهجات أخرى، مثل MySQL وPostgreSQL، إلى ClickHouse SQL. يتطلب الإعداد التجريبي `allow_experimental_polyglot_dialect`.
-* `promql` — PromQL (لغة استعلام Prometheus)، ويُقيَّم على جدول TimeSeries ويُضبط من خلال الإعدادات `promql_database` و`promql_table` و`promql_evaluation_time`.
-* `clickhouse_json` — بدلًا من نص SQL، يُفسَّر الاستعلام على أنه JSON AST (ناتج `parseQueryToJSON`). يظل استعلام `SET` معروفًا بصيغته العادية، بحيث يمكن التبديل مجددًا إلى لهجة أخرى. يتطلب الإعداد التجريبي `enable_json_ast_dialect`.
+* `promql` — PromQL (لغة استعلام Prometheus)، ويُقيَّم على جدول TimeSeries ويُضبط من خلال الإعدادات `promql_database` و`promql_table` و`promql_evaluation_time`.
+* `clickhouse_json` — بدلًا من نص SQL، يُفسَّر الاستعلام على أنه JSON AST (ناتج `parseQueryToJSON`). يظل استعلام `SET` معروفًا بصيغته العادية، بحيث يمكن التبديل مجددًا إلى لهجة أخرى. يتطلب الإعداد التجريبي `enable_json_ast_dialect`.
+* `trino` — Trino SQL: يترجم صياغة Trino (`ARRAY[...]` و`TRY_CAST` و`UNNEST` وغيرها) ويطابق أسماء دوال Trino مع نظيراتها في ClickHouse. يتطلب الإعداد التجريبي `allow_experimental_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -1356,7 +1357,7 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "يوفّر قيمة دقيقة لإحصائية rows_before_aggregation، التي تمثل عدد الصفوف المقروءة قبل التجميع"}]}]} />
 
-عند التمكين، يوفّر ClickHouse قيمة دقيقة لإحصائية rows&#95;before&#95;aggregation، التي تمثل عدد الصفوف المقروءة قبل التجمي
+عند التمكين، يوفّر ClickHouse قيمة دقيقة لإحصائية rows&#95;before&#95;aggregation، التي تمثل عدد الصفوف المقروءة قبل التجميع
 
 ## run_query_in_background {#run_query_in_background}
 
@@ -1418,6 +1419,22 @@ FORMAT Null;
 * [insert&#95;quorum](/ar/reference/settings/session-settings/insert-quorum#insert_quorum)
 * [insert&#95;quorum&#95;timeout](/ar/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/ar/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
+
+## session_query_ids_history_size {#session_query_ids_history_size}
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1000"},{"label": "إعداد جديد يحدّ حجم سجل معرّفات الاستعلامات المحلي للجلسة المعروض عبر جدول النظام الجديد `system.session_query_ids`. القيمة السابقة `0` (تعطيل التسجيل) تعيد السلوك المتّبع قبل الإصدار 26.9."}]}]} />
+
+الحد الأقصى لعدد معرّفات الاستعلامات المحفوظة في السجل المحلي للجلسة المعروض عبر جدول النظام [`system.session_query_ids`](/ar/reference/system-tables/session_query_ids).
+يُسجَّل فيه معرّف كل استعلام غير داخلي يُنفَّذ في الجلسة عند بدء الاستعلام، وعندما يتجاوز السجل هذا الحجم تُزال أقدم المُدخلات أولًا.
+
+تُقرأ القيمة عند بدء الاستعلام، قبل تحليله، لذا فإن عبارة `SETTINGS` الواردة في الاستعلام نفسه لا تؤثر في تسجيل ذلك الاستعلام؛ استخدم بدلًا من ذلك `SET` أو معلمة URL في HTTP أو ملف تعريف إعدادات.
+
+القيم الممكنة:
+
+* عدد صحيح موجب.
+* 0 — التسجيل معطّل، وتبقى المُدخلات المسجَّلة سابقًا في الجدول.
 
 ## session_timezone {#session_timezone}
 

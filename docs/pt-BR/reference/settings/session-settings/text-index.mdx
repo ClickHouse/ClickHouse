@@ -52,6 +52,8 @@ Comprimento mínimo da substring alfanumérica em um padrão LIKE/ILIKE, ou de u
 necessário para usar a avaliação de LIKE do índice de texto por varredura do dicionário.
 Padrões menores que esse limite correspondem a tokens demais no dicionário e são ignorados para evitar varreduras custosas.
 
+Com o tokenizer `array`, em que qualquer padrão é elegível, o limite é comparado com o número de caracteres que não são wildcard no padrão inteiro.
+
 Requer que `use_text_index_like_evaluation_by_dictionary_scan` esteja habilitado.
 
 ## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}

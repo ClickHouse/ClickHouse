@@ -561,31 +561,69 @@ Expression ((Project names + Projection))
 * **Шаги фильтрации** отображают условие фильтрации в SQL-нотации. Если присутствуют runtime-фильтры JOIN, они показываются отдельно.
 * **Шаги агрегации** отображают ключи и агрегатные функции с их аргументами (например, `sum(c)`, `count()`).
 * **Множества `IN`**, заданные кортежными литералами, показывают свои значения (усечённые для больших множеств), множества на основе подзапросов помечаются как `subquery1`, `subquery2` и т. д., а множества из таблиц с движком `Set` показывают имя таблицы.
-* **Шаги JOIN** отображают отношение JOIN в математической нотации, оценочное количество строк в результате,
-  а также то, какие выходные столбцы поступают с левой, а какие — с правой стороны. Для представления различных типов JOIN
+* **Шаги JOIN** отображают отношение JOIN в математической нотации, оценки, которые
+  оптимизатор порядка JOIN сформировал для этого шага (стоимость, селективность, строки результата и строки по каждой стороне),
+  а также входные столбцы каждой стороны. Для представления различных типов JOIN
   используются следующие символы:
 
-| Символ                 | Тип JOIN        |
-| ---------------------- | --------------- |
-| `⋈`                    | Inner JOIN      |
-| `⟕`                    | Left JOIN       |
-| `⟖`                    | Right JOIN      |
-| `⟗`                    | Full JOIN       |
-| `⋉`                    | Left Semi JOIN  |
-| `⋊`                    | Right Semi JOIN |
-| `⋉` with strikethrough | Left Anti JOIN  |
-| `⋊` with strikethrough | Right Anti JOIN |
-| `×`                    | Cross JOIN      |
+| Символ              | Тип JOIN         |
+| ------------------- | ---------------- |
+| `⋈`                 | Внутренний JOIN  |
+| `⟕`                 | Левый JOIN       |
+| `⟖`                 | Правый JOIN      |
+| `⟗`                 | Полный JOIN      |
+| `⋉`                 | Левый SEMI JOIN  |
+| `⋊`                 | Правый SEMI JOIN |
+| `⋉` с зачёркиванием | Левый ANTI JOIN  |
+| `⋊` с зачёркиванием | Правый ANTI JOIN |
+| `×`                 | CROSS JOIN       |
 
-Например, `t1 ⟕ t2` означает Left JOIN между таблицами `t1` и `t2`.
-Число в скобках после имени таблицы (например, `t1[100]`) указывает на оценочное количество строк,
+Например, `t1 ⟕ t2` означает левый JOIN между таблицами `t1` и `t2`.
+Число в квадратных скобках после имени таблицы (например, `t1[100]`) указывает оценочное количество строк,
 если доступна статистика таблицы.
 
-Параметр `pretty` хорошо работает вместе с `compact = 1`, который скрывает шаги `Expression` и подробную информацию о действиях, делая план более удобным для чтения.
+Под отношением JOIN каждый шаг JOIN выводит оценки, сформированные для него оптимизатором порядка JOIN:
 
-Подробный пример с JOIN:
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+* `Cost` — стоимость всего поддерева JOIN под этим шагом; именно это значение оптимизатор
+  минимизирует при сравнении возможных порядков JOIN. Стоимость JOIN — это оценочное число
+  совпавших пар строк, `<selectivity> * <left_rows> * <right_rows>`, плюс стоимость его входных данных.
+* `Selectivity` — оценочная доля декартова произведения двух сторон, которая проходит
+  условие JOIN. Она выводится из количества уникальных значений (NDV) ключей JOIN:
+  равенство ключей сохраняет примерно `1 / max(NDV_left, NDV_right)` пар, и используется наименьшая
+  доля среди условий JOIN.
+* `Output rows` — оценочное число строк, создаваемых JOIN:
+  `<selectivity> * <left_rows> * <right_rows>` для внутреннего JOIN, не менее `<left_rows>` для
+  `LEFT`, `<right_rows>` для `RIGHT` и `<left_rows> + <right_rows>` для `FULL`, поскольку внешний
+  JOIN сохраняет каждую строку сохраняемой стороны. Когда `SEMI` или `ANTI` JOIN участвует в
+  переупорядочивании, его оценка представляет собой долю от сохраняемой стороны:
+  `<preserved_rows> * min(1, <selectivity> * <other_rows>)` для `SEMI` и оставшиеся строки для
+  `ANTI`; в противном случае используется формула, соответствующая типу JOIN.
+* `Left` / `Right` — оценочное число строк, поступающих в JOIN с каждой стороны.
+
+Значение, которое оптимизатор не смог оценить, обозначается как `no stats`. Это происходит, когда
+оптимизация порядка JOIN не выполнялась — например, когда
+[`query_plan_optimize_join_order_limit`](/ru/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)
+равен `0` — или когда нет оснований для оценки.
+
+Строки `Input (left):` и `Input (right):` перечисляют столбцы, которые каждая сторона передаёт в JOIN.
+
+Параметр `pretty` хорошо работает вместе с `compact = 1`, который скрывает шаги `Expression` и подробную информацию о действиях, упрощая чтение плана.
+
+Подробный пример с JOIN. Параметр
+[`join_runtime_filter_min_probe_rows`](/ru/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+понижен только для того, чтобы даже такая небольшая таблица создавала runtime-фильтр JOIN:
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -601,11 +639,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -772,23 +813,62 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
 
 #### Шаги JOIN {#explain-analyze-join-steps}
 
-Для шага JOIN `EXPLAIN ANALYZE` выводит строки *участия* для каждой стороны — `Left` и `Right`, — за которыми следуют строки, относящиеся к конкретной реализации JOIN. `Left` и `Right` соответствуют логическим сторонам SQL. В большинстве случаев `Left` также является стороной проверки JOIN, а `Right` — стороной построения JOIN. Однако из-за перестановки сторон во время выполнения JOIN это не всегда так. Охвачены все значения [`join_algorithm`](/ru/reference/settings/session-settings/join#join_algorithm) (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), а также две реализации, которые нельзя выбрать этой настройкой: JOIN типа `CROSS` или `COMMA`, JOIN с секцией `ON` без равенства ключей и движок таблицы [`Join`](/ru/reference/engines/table-engines/special/join). Большинство из них выводят сведения об обеих сторонах; некоторые — только о стороне, которую материализуют (например, `direct` выводит только `Left:`).
+Для шага JOIN `EXPLAIN ANALYZE` выводит строки, сопоставляющие оценки оптимизатора порядка JOIN с тем, что произошло в действительности (см. [Оценочные и фактические метрики JOIN](#explain-analyze-join-estimation)), а также строки *участия* для каждой стороны — `Left` и `Right`, — за которыми следуют строки, относящиеся к конкретной реализации JOIN. Охвачены все значения [`join_algorithm`](/ru/reference/settings/session-settings/join#join_algorithm) (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), а также две реализации, которые нельзя выбрать этой настройкой: JOIN типа `CROSS` или `COMMA`, JOIN с секцией `ON` без равенства ключей и движок таблицы [`Join`](/ru/reference/engines/table-engines/special/join). Большинство из них выводят сведения об обеих сторонах; некоторые — только о стороне, которую материализуют (например, `direct` выводит только `Left:`).
 
 Строки для каждой стороны имеют одинаковую структуру:
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 Для каждой стороны `EXPLAIN ANALYZE` выводит:
 
+* `rows estimated <estimated_rows>` — оценка числа строк этой стороны, сделанная оптимизатором порядка JOIN; выводится для сравнения с фактическим значением `rows` рядом; `no stats`, если оптимизатор не выдал оценку (см. [Оценочные и фактические метрики JOIN](#explain-analyze-join-estimation)).
 * `rows <rows>` — общее число строк этой стороны, прошедших через JOIN.
 * `matched <matched_rows>` — число строк этой стороны, для которых нашлась хотя бы одна соответствующая строка на другой стороне JOIN. Подсчитываются *строки*, а не ключи: если ключ встречается три раза справа и имеет совпадение, все три строки справа считаются сопоставленными.
 * `match rate <match_rate>%` — процент строк этой стороны, имеющих совпадение, вычисляемый как `100 * <matched_rows> / <rows>`.
-* `fanout <fanout>` — среднее число выходных строк, создаваемых сопоставленной строкой этой стороны.
+* `fanout <fanout>` — среднее число строк результата, создаваемых сопоставленной строкой этой стороны.
 
 Значение, которое невозможно вычислить точно, указывается как `not collected`, а не как `0`. Значения `match rate` и `fanout` вычисляются на основе `matched`, поэтому для стороны, у которой оно отсутствует, все три значения указываются как `not collected`.
+
+#### Оценочные и фактические метрики JOIN {#explain-analyze-join-estimation}
+
+Шаг JOIN содержит оценки оптимизатора порядка JOIN — те же самые, что показывает `EXPLAIN PLAN` (см. раздел [EXPLAIN PLAN](#explain-plan)), — а `EXPLAIN ANALYZE` выводит каждую из них рядом с измеренным значением:
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+* `Cost` — оба значения учитывают совпавшие строки результата. Оценка — это рассчитанная оптимизатором стоимость поддерева JOIN: `<selectivity> * <left_rows> * <right_rows>` плюс стоимость его входных данных. Фактическое значение измеряется аналогично: совпавшие строки результата этого JOIN плюс фактическая стоимость всех JOIN ниже по дереву, относящихся к тому же кластеру переупорядочивания.
+* `Selectivity` — оценка выводится из числа уникальных значений ключей JOIN; фактическое значение — измеренная доля декартова произведения, попавшая в результат: `<matched output rows> / (<left rows> * <right rows>)`, поскольку именно её пытается оценить оптимизатор.
+* `Output rows` — оценочное и фактическое число строк, созданных JOIN. Когда оба значения ненулевые, `q-error` выводит `max(estimated / actual, actual / estimated)` — стандартную меру качества оценки мощности: `1.00` означает идеальную оценку, а большое значение — что оптимизатор выбрал порядок JOIN на основе существенно неверной оценки мощности.
+
+Оценка, которая не была выполнена, обозначается как `no stats` — например, если оптимизация порядка JOIN не запускалась, поскольку [`query_plan_optimize_join_order_limit`](/ru/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) имеет значение `0`. Это отличается от `not collected`, которым помечается фактическое значение, которое не удалось измерить во время выполнения. JOIN с предварительно заполненной правой стороной (движок таблицы [`Join`](/ru/reference/engines/table-engines/special/join), `direct` JOIN) не проходят через оптимизатор порядка JOIN и выводят только строки участия.
+
+Шаг JOIN также выводит строки `Input (left):` и `Input (right):` со столбцами, которые каждая сторона передаёт в JOIN.
+
+Для таблиц из примера JOIN в разделе [EXPLAIN PLAN](#explain-plan) шаг JOIN команды `EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id` выглядит так:
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
 
 #### Разветвление {#explain-analyze-fanout}
 
@@ -881,7 +961,7 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 Для JOIN `partial_merge` строка `Right:` содержит дополнительную информацию о буферизации и сортировке правой таблицы, а время сортировки указано в строках `Stage (build)` и `Stage (проверки)`:
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```

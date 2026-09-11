@@ -38,14 +38,12 @@ Introduzido em: v21.1.0
 
 Retorna o número de correspondências de uma expressão regular em uma string.
 
-<Info>
-  **Comportamento dependente da versão**
-
+<Note title="Comportamento dependente da versão">
   O comportamento desta função depende da versão do ClickHouse:
 
   * em versões &lt; v25.6, a função para de contar na primeira correspondência vazia, mesmo que o padrão a aceite.
   * em versões &gt;= 25.6, a função continua a execução quando ocorre uma correspondência vazia. O comportamento legado pode ser restaurado usando a configuração `count_matches_stop_at_empty_match = true`;
-</Info>
+</Note>
 
 **Sintaxe**
 
@@ -1463,15 +1461,13 @@ Introduzido em: v18.16.0
 
 Como [`position`](#position), mas com os argumentos `haystack` e `locate` em ordem inversa.
 
-<Info>
-  **Comportamento dependente da versão**
-
+<Note title="Comportamento dependente da versão">
   O comportamento dessa função depende da versão do ClickHouse:
 
   * nas versões &lt; v24.3, `locate` era um alias da função `position` e aceitava os argumentos `(haystack, needle[, start_pos])`.
   * nas versões &gt;= 24.3, `locate` é uma função própria (para melhor compatibilidade com o MySQL) e aceita os argumentos `(needle, haystack[, start_pos])`.
     O comportamento anterior pode ser restaurado usando a configuração `function_locate_has_mysql_compatible_argument_order = false`.
-</Info>
+</Note>
 
 **Sintaxe**
 

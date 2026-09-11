@@ -561,31 +561,69 @@ Con `pretty` = 1, el árbol del plan se muestra con caracteres de dibujo de lín
 * Los **pasos de filtro** muestran la condición de filtro en notación SQL. Cuando hay filtros de join en tiempo de ejecución, se muestran por separado.
 * Los **pasos de agregación** muestran las claves y las funciones de agregación con sus argumentos (por ejemplo, `sum(c)`, `count()`).
 * Los **conjuntos `IN`** de literales de tupla muestran sus valores (truncados para conjuntos grandes), los conjuntos basados en subconsultas se etiquetan como `subquery1`, `subquery2`, etc., y los conjuntos de tablas con motor `Set` muestran el nombre de la tabla.
-* Los **pasos de join** muestran la relación de join mediante notación matemática, el número estimado de filas del resultado,
-  y qué columnas de salida provienen del lado izquierdo frente al derecho. Se usan los siguientes símbolos para
-  representar distintos tipos de JOIN:
+* Los **pasos de join** muestran la relación de join mediante notación matemática, las estimaciones que
+  el optimizador de orden de joins produjo para el paso (coste, selectividad, filas de salida y filas por lado),
+  y las columnas de entrada de cada lado. Se usan los siguientes símbolos para representar distintos tipos
+  de join:
 
-| Símbolo     | Tipo de JOIN        |
-| ----------- | ------------------- |
-| `⋈`         | JOIN interno        |
-| `⟕`         | JOIN izquierdo      |
-| `⟖`         | JOIN derecho        |
-| `⟗`         | JOIN completo       |
-| `⋉`         | JOIN semi izquierdo |
-| `⋊`         | JOIN semi derecho   |
-| `⋉` tachado | JOIN anti izquierdo |
-| `⋊` tachado | JOIN anti derecho   |
-| `×`         | JOIN cruzado        |
+| Símbolo     | Tipo de join    |
+| ----------- | --------------- |
+| `⋈`         | Inner Join      |
+| `⟕`         | Left Join       |
+| `⟖`         | Right Join      |
+| `⟗`         | Full Join       |
+| `⋉`         | Left Semi Join  |
+| `⋊`         | Right Semi Join |
+| `⋉` tachado | Left Anti Join  |
+| `⋊` tachado | Right Anti Join |
+| `×`         | Cross Join      |
 
-Por ejemplo, `t1 ⟕ t2` significa un JOIN izquierdo entre las tablas `t1` y `t2`.
-El número entre corchetes después del nombre de la tabla (p. ej., `t1[100]`) indica el número estimado de filas
+Por ejemplo, `t1 ⟕ t2` significa un left join entre las tablas `t1` y `t2`.
+El número entre corchetes después del nombre de la tabla (por ejemplo, `t1[100]`) indica el número estimado de filas
 cuando hay estadísticas de tabla disponibles.
 
-La opción `pretty` funciona bien junto con `compact = 1`, que oculta los pasos `Expression` y la información detallada de las acciones, lo que hace que el plan sea más fácil de leer.
+Debajo de la relación de join, cada paso de join imprime las estimaciones que el optimizador de orden de joins produjo para él:
 
-Un ejemplo detallado con JOIN:
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+* `Cost` — el coste de todo el subárbol de join bajo este paso, que es el valor que el optimizador
+  minimiza al comparar los órdenes de join candidatos. El coste de un join es su número estimado de
+  pares de filas coincidentes, `<selectivity> * <left_rows> * <right_rows>`, más el coste de sus entradas.
+* `Selectivity` — la fracción estimada del producto cartesiano de ambos lados que sobrevive
+  a la condición de join. Se deriva del número de valores distintos (NDV) de las claves de join:
+  una igualdad de claves conserva aproximadamente `1 / max(NDV_left, NDV_right)` de los pares, y se usa
+  la fracción más pequeña de entre las condiciones de join.
+* `Output rows` — el número estimado de filas que produce el join:
+  `<selectivity> * <left_rows> * <right_rows>` para un INNER JOIN, con un mínimo de `<left_rows>` para
+  `LEFT`, de `<right_rows>` para `RIGHT` y de `<left_rows> + <right_rows>` para `FULL`, porque un
+  OUTER JOIN conserva todas las filas de su lado preservado. Cuando un join `SEMI` o `ANTI` participa en el
+  reordenamiento, se estima como una fracción de su lado preservado:
+  `<preserved_rows> * min(1, <selectivity> * <other_rows>)` para `SEMI` y las filas restantes para
+  `ANTI`; en caso contrario, se usa la fórmula de su tipo de join.
+* `Left` / `Right` — el número estimado de filas que entran en el join desde cada lado.
+
+Un valor que el optimizador no ha podido estimar se indica como `no stats`. Esto ocurre cuando la
+optimización del orden de join no se ha ejecutado —por ejemplo, cuando
+[`query_plan_optimize_join_order_limit`](/es/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)
+es `0`— o cuando no hay base para la estimación.
+
+Las líneas `Input (left):` e `Input (right):` enumeran las columnas que cada lado aporta al join.
+
+La opción `pretty` funciona bien junto con `compact = 1`, que oculta los pasos `Expression` y la información detallada de las acciones, lo que facilita la lectura del plan.
+
+Un ejemplo detallado con joins. La configuración
+[`join_runtime_filter_min_probe_rows`](/es/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+se reduce únicamente para que una tabla tan pequeña siga construyendo un filtro de join en tiempo de ejecución:
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -601,11 +639,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -772,23 +813,62 @@ Las filas y los bytes se informan una vez para todo el paso (la línea `I/O`). E
 
 #### Pasos de join {#explain-analyze-join-steps}
 
-En un paso de join, `EXPLAIN ANALYZE` muestra líneas de *participación* para cada lado —`Left` y `Right`—, seguidas de las líneas específicas de la implementación del join. `Left` y `Right` corresponden a los lados lógicos de SQL. En la mayoría de los casos, `Left` también será el lado de sondeo del join y `Right`, el lado de construcción. Sin embargo, no siempre es así, debido al swap que puede producirse durante la ejecución del join. Se cubren todos los valores de [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), así como las dos implementaciones que esta configuración no puede seleccionar: un join `CROSS` o `COMMA`, cualquier sección `ON` sin igualdad de clave y el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join). La mayoría informa sobre ambos lados; algunas solo informan del lado que materializan (por ejemplo, `direct` solo muestra `Left:`).
+En un paso de join, `EXPLAIN ANALYZE` muestra líneas que comparan las estimaciones del optimizador de orden de join con lo que ocurrió realmente (consulte [Métricas de join estimadas frente a reales](#explain-analyze-join-estimation)) y líneas de *participación* para cada lado —`Left` y `Right`—, seguidas de las líneas específicas de la implementación del join. Se cubren todos los valores de [`join_algorithm`](/es/reference/settings/session-settings/join#join_algorithm) (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), así como las dos implementaciones que esta configuración no puede seleccionar: un join `CROSS` o `COMMA`, cualquier sección `ON` sin igualdad de clave y el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join). La mayoría informa sobre ambos lados; algunas solo informan del lado que materializan (por ejemplo, `direct` solo muestra `Left:`).
 
 Las líneas de cada lado tienen la misma estructura:
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 Para cada lado, `EXPLAIN ANALYZE` informa de lo siguiente:
 
+* `rows estimated <estimated_rows>` — la estimación del optimizador de orden de join sobre las filas de ese lado, mostrada para compararla con el valor real de `rows` que aparece junto a ella; `no stats` cuando el optimizador no produjo ninguna estimación (consulte [Métricas de join estimadas frente a reales](#explain-analyze-join-estimation)).
 * `rows <rows>` — el número total de filas de ese lado que pasaron por el join.
 * `matched <matched_rows>` — el número de filas de ese lado que encontraron al menos una fila correspondiente en el otro lado del join. Esto cuenta *filas*, no claves: si una clave aparece tres veces en el lado derecho y coincide, las tres filas de ese lado se cuentan como coincidentes.
 * `match rate <match_rate>%` — el porcentaje de filas de ese lado que coincidieron, calculado como `100 * <matched_rows> / <rows>`.
 * `fanout <fanout>` — el número de filas de salida que produjo, en promedio, una fila coincidente de ese lado.
 
 Un valor que no puede calcularse con exactitud se informa como `not collected` en lugar de `0`. `match rate` y `fanout` se derivan de `matched`, por lo que, si un lado no dispone de este valor, los tres se informan como `not collected`.
+
+#### Métricas estimadas frente a reales del join {#explain-analyze-join-estimation}
+
+Un paso de join incluye las estimaciones del optimizador de orden de join —las mismas que muestra `EXPLAIN PLAN` (consulta la sección [EXPLAIN PLAN](#explain-plan))— y `EXPLAIN ANALYZE` imprime cada una de ellas junto al valor medido:
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+* `Cost` — ambos valores cuentan las filas de salida coincidentes. La estimación es el coste que el optimizador asigna al subárbol del join: `<selectivity> * <left_rows> * <right_rows>` más el coste de sus entradas. El valor real se mide de la misma forma: las filas de salida coincidentes de este join más el coste real de todos los joins situados por debajo que pertenezcan al mismo cluster de reordenación.
+* `Selectivity` — la estimación se deriva del número de valores distintos de las join keys; el valor real es la fracción medida del producto cartesiano que acabó en la salida: `<matched output rows> / (<left rows> * <right rows>)`, ya que es justo lo que el optimizador intenta estimar.
+* `Output rows` — el número estimado y el real de filas que produjo el join. Cuando ambos son distintos de cero, `q-error` informa de `max(estimated / actual, actual / estimated)`, la medida estándar de la calidad de la estimación de cardinalidad: `1.00` indica una estimación perfecta, y un valor elevado indica que el optimizador eligió el join order a partir de una cardinalidad gravemente errónea.
+
+Una estimación que nunca llegó a realizarse se informa como `no stats`; por ejemplo, cuando la optimización del join order no se ejecutó porque [`query_plan_optimize_join_order_limit`](/es/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) es `0`. Esto es distinto de `not collected`, que marca un valor real que la ejecución no pudo medir. Los joins con un lado derecho precargado (el motor de tabla [`Join`](/es/reference/engines/table-engines/special/join), los joins `direct`) no pasan por el optimizador de orden de join e imprimen únicamente las líneas de participación.
+
+El paso de join también imprime las líneas `Input (left):` e `Input (right):` con las columnas que cada lado aporta al join.
+
+Para las tablas del ejemplo de join de [EXPLAIN PLAN](#explain-plan), el paso de join de `EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id` tiene este aspecto:
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
 
 #### Fanout {#explain-analyze-fanout}
 
@@ -856,7 +936,7 @@ Cuando ambos algoritmos informan un número, los resultados coinciden. Los algor
 
 Veamos las líneas que añade cada implementación de JOIN además de las anteriores.
 
-En los JOIN `hash` y `parallel_hash`, y en el motor de tabla `Join`, una línea `Hash table:` describe la tabla hash creada a partir de la tabla de la derecha:
+En los JOIN `hash` y `parallel_hash`, y en el motor de tabla `Join`, una línea `Hash table:` describe la tabla hash creada a partir de la tabla derecha:
 
 ```txt
 Hash table: unique keys <unique_keys> · memory <peak_memory>
@@ -879,22 +959,22 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 Para el join `partial_merge`, la línea `Right:` incluye información adicional sobre cómo se almacenó temporalmente en el búfer y se ordenó la tabla derecha, y el tiempo de ordenación se muestra en las líneas `Stage (build)` y `Stage (probe)`:
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```
 
-* `size <right_size>` — el tamaño en memoria de los bloques de la tabla de la derecha.
-* `blocks <right_blocks>` — el número de bloques en los que se almacenó temporalmente en el búfer la tabla de la derecha.
-* `storage <in-memory|external>` — indica si la tabla de la derecha cabía en memoria (`in-memory`) o tuvo que volcarse al disco (`external`). Cuando es `external`, un campo adicional `spilled <spilled_bytes>` informa de los bytes comprimidos escritos en disco.
-* `sort time <sort_time>` — el tiempo empleado en ordenar la tabla de la derecha (en la fase de construcción) y cada bloque entrante de la izquierda (en la fase de sondeo).
+* `size <right_size>` — el tamaño en memoria de los bloques de la tabla derecha.
+* `blocks <right_blocks>` — el número de bloques en los que se almacenó temporalmente en el búfer la tabla derecha.
+* `storage <in-memory|external>` — indica si la tabla derecha cabía en memoria (`in-memory`) o tuvo que volcarse al disco (`external`). Cuando es `external`, un campo adicional `spilled <spilled_bytes>` informa de los bytes comprimidos escritos en disco.
+* `sort time <sort_time>` — el tiempo empleado en ordenar la tabla derecha (en la fase de construcción) y cada bloque entrante de la izquierda (en la fase de sondeo).
 * `sort share <sort_share>%` — `sort time` como proporción del *propio tiempo activo de esa fase* (la suma del tiempo transcurrido de sus procesadores), a diferencia del porcentaje `time` de la fase, que representa una proporción del *tiempo de ejecución de toda la consulta*.
 
 Para el join `full_sorting_merge`, solo se muestran las líneas comunes `Left:` y `Right:`.
 
 Para el join `direct`, solo se muestra la línea `Left:`, ya que el lado derecho es un almacén de clave-valor que se consulta directamente en lugar de materializarse en filas.
 
-Para un join `CROSS` o `COMMA`, y para cualquier sección `ON` sin una igualdad de clave, una línea `Buffer:` describe cómo se mantuvo la tabla de la derecha en memoria y una línea `Spill:` informa de si se volcó al disco:
+Para un join `CROSS` o `COMMA`, y para cualquier sección `ON` sin una igualdad de clave, una línea `Buffer:` describe cómo se mantuvo la tabla derecha en memoria y una línea `Spill:` informa de si se volcó al disco:
 
 ```txt
 Buffer: memory <peak_memory> · compressed <yes|no>

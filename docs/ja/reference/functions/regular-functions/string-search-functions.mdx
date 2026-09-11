@@ -39,14 +39,12 @@ doc_type: 'reference'
 
 文字列内で正規表現に一致する回数を返します。
 
-<Info>
-  **バージョン依存の動作**
-
+<Note title="バージョン依存の動作">
   この関数の動作は、ClickHouse のバージョンによって異なります。
 
   * バージョン &lt; v25.6 では、pattern が受理される場合でも、最初の空一致でカウントを停止します。
   * バージョン &gt;= 25.6 では、空一致が発生しても関数は実行を継続します。従来の動作は、setting `count_matches_stop_at_empty_match = true` を使用して復元できます。
-</Info>
+</Note>
 
 **構文**
 
@@ -1464,15 +1462,13 @@ SELECT '50%off' LIKE '50#%off' ESCAPE '#';
 
 [`position`](#position) と似ていますが、引数 `haystack` と `locate` の順序が逆になっています。
 
-<Info>
-  **バージョン依存の動作**
-
+<Note title="バージョン依存の動作">
   この関数の動作は、ClickHouse のバージョンによって異なります。
 
   * バージョン &lt; v24.3 では、`locate` は関数 `position` のエイリアスであり、引数 `(haystack, needle[, start_pos])` を受け付けます。
   * バージョン &gt;= 24.3 では、`locate` は独立した関数となり (MySQL との互換性向上のため) 、引数 `(needle, haystack[, start_pos])` を受け付けます。
     以前の動作は、setting `function_locate_has_mysql_compatible_argument_order = false` を使用して復元できます。
-</Info>
+</Note>
 
 **Syntax**
 

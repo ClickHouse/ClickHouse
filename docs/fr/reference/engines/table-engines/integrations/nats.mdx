@@ -72,16 +72,25 @@ Paramètres facultatifs :
 * `nats_token` - Jeton d’authentification NATS. Lorsqu’il est stocké dans une collection nommée définie dans le fichier de configuration du serveur, la requête ne peut pas remplacer `nats_url` ou `nats_server_list` de la collection.
 * `nats_credential_file` - Chemin vers un fichier d’identifiants NATS. Il est accepté uniquement depuis une collection nommée définie dans le fichier de configuration du serveur, dont `nats_url` et `nats_server_list` ne sont pas remplacés par la requête, car le serveur ouvre le chemin avec ses propres privilèges. Dans une requête, transmettez plutôt le contenu du fichier dans `nats_credentials`.
 * `nats_credentials` - Contenu des identifiants NATS (la même charge utile que dans un fichier `.creds` avec le JWT utilisateur et la seed). Comme c’est la seule syntaxe qu’une requête peut utiliser, elle remplace un `nats_credential_file` hérité d’une collection nommée au lieu d’entrer en conflit avec lui, sauf si l’opérateur a verrouillé ce chemin avec `<nats_credential_file overridable="false">`. Une chaîne vide ne peut pas lui être attribuée pour supprimer les identifiants fournis par une collection nommée.
+* `nats_ca_file` - Chemin vers un fichier contenant les certificats CA de confiance utilisés pour vérifier le certificat du serveur NATS. Nécessite `nats_secure`. Comme `nats_credential_file`, il est accepté uniquement depuis une collection nommée définie dans le fichier de configuration du serveur, dont `nats_url` et `nats_server_list` ne sont pas remplacés par la requête, car le serveur ouvre le chemin avec ses propres privilèges.
+* `nats_client_cert_file` - Chemin vers le certificat client présenté au serveur NATS. Nécessite `nats_secure` et `nats_client_key_file`. Accepté depuis les mêmes sources que `nats_ca_file`.
+* `nats_client_key_file` - Chemin vers la clé privée de `nats_client_cert_file`. Accepté depuis les mêmes sources que `nats_ca_file`.
 * `nats_startup_connect_tries` - Nombre de tentatives de connexion au démarrage. Par défaut : `5`.
-* `nats_max_rows_per_message` — Nombre maximal de lignes écrites dans un message NATS pour les formats basés sur les lignes. (par défaut : `1`).
-* `nats_commit_on_select` - Valider les messages lorsqu’une requête est effectuée. S’applique uniquement à JetStream ; NATS core ne comporte pas d’accusés de réception. Par défaut : `0`.
-* `nats_handle_error_mode` — Comment gérer les erreurs pour le moteur NATS. Valeurs possibles : default (une exception sera levée en cas d’échec de l’analyse d’un message), stream (le message d’exception et le message brut seront enregistrés dans les colonnes virtuelles `_error` et `_raw_message`).
+* `nats_max_rows_per_message` — Nombre maximal de lignes écrites dans un message NATS pour les formats basés sur les lignes. (par défaut : `1`).
+* `nats_commit_on_select` - Valider les messages lorsqu’une requête est effectuée. S’applique uniquement à JetStream ; NATS core ne comporte pas d’accusés de réception. Par défaut : `0`.
+* `nats_handle_error_mode` — Comment gérer les erreurs pour le moteur NATS. Valeurs possibles : default (une exception sera levée en cas d’échec de l’analyse d’un message), stream (le message d’exception et le message brut seront enregistrés dans les colonnes virtuelles `_error` et `_raw_message`).
 
 Connexion SSL :
 
-Pour une connexion sécurisée, utilisez `nats_secure = 1`.
+Pour utiliser une connexion sécurisée, définissez `nats_secure = 1`.
 La vérification du certificat est contrôlée par la variable d’environnement `CLICKHOUSE_NATS_TLS_SECURE` ;
-Si le certificat est expiré, auto-signé, manquant ou invalide pour une autre raison, désactivez la vérification en définissant `CLICKHOUSE_NATS_TLS_SECURE=0`.
+Si le certificat est expiré, auto-signé, manquant ou non valide pour toute autre raison, désactivez la vérification en définissant `CLICKHOUSE_NATS_TLS_SECURE=0`.
+
+Un certificat de serveur signé par une CA privée est vérifié en indiquant le certificat de CA via `nats_ca_file`,
+ce qui est préférable à la désactivation de la vérification. Lorsque le serveur exige des certificats clients,
+fournissez-les avec `nats_client_cert_file` et `nats_client_key_file`. Ces trois éléments sont des paramètres de l’opérateur :
+ils proviennent d’une collection nommée définie dans le fichier de configuration du serveur. Chaque fichier est lu lorsque
+la table établit sa connexion ; un fichier illisible ou malformé fait donc échouer la requête plutôt que la négociation de connexion.
 
 Écriture dans une table NATS :
 
@@ -106,7 +115,7 @@ VALUES (1, 1);
 
 Des paramètres de format peuvent également être ajoutés en plus des paramètres liés à NATS.
 
-Exemple :
+Exemple :
 
 ```sql
 CREATE TABLE queue (
@@ -121,7 +130,7 @@ CREATE TABLE queue (
 ```
 
 Vous pouvez ajouter la configuration du serveur NATS à l’aide du fichier de configuration ClickHouse.
-Plus précisément, vous pouvez ajouter votre mot de passe pour le moteur NATS :
+Plus précisément, vous pouvez ajouter votre mot de passe pour le moteur NATS :
 
 ```xml
 <nats>

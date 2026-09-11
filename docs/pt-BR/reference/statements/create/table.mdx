@@ -61,14 +61,21 @@ Para replicar o esquema e os dados de uma tabela existente:
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-Isso cria uma tabela com o mesmo esquema e os mesmos dados que uma tabela existente.  Depois que a nova tabela é criada, todas as partições de `db.table` são anexadas a ela. Em outras palavras, os dados de `db.table` são clonados para `db2.table_clone` no momento da criação. Esta consulta é equivalente à seguinte:
+Isso cria uma tabela com o mesmo esquema e os mesmos dados que uma tabela existente.  Depois que a nova tabela é criada, todas as partições de `db.table` são anexadas a ela. Em outras palavras, os dados de `db.table` são clonados para `db2.table_clone` no momento da criação.
 
-```sql
-CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
-ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
-```
+<Note>
+  `CLONE AS` não é compatível quando o banco de dados de destino usa o motor de banco de dados [Replicated](/pt-BR/reference/engines/database-engines/replicated).
 
-Para ambas as funcionalidades, você pode especificar um motor diferente para a tabela. Se o motor não for especificado, será usado o mesmo motor da tabela original (`db.table`).
+  Em vez disso, use:
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+  ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+  ```
+</Note>
+
+Para ambas as funcionalidades, você pode especificar um motor diferente para a tabela.
+Se o motor não for especificado, será usado o mesmo motor da tabela original (`db.table`).
 
 ### Criar uma tabela com uma função de tabela {#from-a-table-function}
 

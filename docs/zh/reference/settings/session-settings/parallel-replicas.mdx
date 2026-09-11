@@ -57,7 +57,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "300"},{"label": "并行副本查询的独立连接超时"}]}]} />
 
-使用并行副本执行查询时，连接远程副本的超时时间，单位为毫秒。如果发生超时，则不会使用相应的副本执行查询
+使用并行副本进行查询执行时，连接远程副本的超时时间，单位为毫秒。如果发生超时，则不会使用相应的副本进行查询执行
 
 ## parallel_replicas_count {#parallel_replicas_count}
 
@@ -78,6 +78,8 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 如果该设置用于由单个分片和多个副本组成的集群，这些副本将被转换为虚拟分片。
 否则，其行为将与 `SAMPLE` 键相同，即会使用每个分片的多个副本。
+
+该表达式会依据用户的列级 `SELECT` 授权进行检查。对于使用 `SQL SECURITY DEFINER` 或 `NONE` 的视图，该检查应用于视图的列；读取视图主体时不会应用该检查。
 
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
@@ -137,7 +139,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "索引分析仅在副本协调器上执行，其他副本则跳过。仅在启用 parallel_replicas_local_plan 时生效"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "索引分析仅在副本协调器上执行，其他副本则跳过。仅在启用 parallel_replicas_local_plan 时生效"}]}]} />
 
-索引分析仅在副本协调器上执行，其他副本则跳过。仅在启用 parallel&#95;replicas&#95;local&#95;pla 时生效
+索引分析仅在副本协调器上执行，其他副本则跳过。仅在启用 parallel&#95;replicas&#95;local&#95;plan 时生效
 
 ## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 

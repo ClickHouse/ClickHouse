@@ -456,17 +456,13 @@ Os seguintes tipos de dados são suportados:
 * `UUID`
 * `Map`
 
-<Info>
-  **Tipo de dado Map: especificando a criação do índice com chaves ou valores**
-
+<Note title="Tipo de dado Map: especificando a criação do índice com chaves ou valores">
   Para o tipo de dado `Map`, o cliente pode especificar se o índice deve ser criado para chaves ou para valores usando as funções [`mapKeys`](/pt-BR/reference/functions/regular-functions/tuple-map-functions#mapKeys) ou [`mapValues`](/pt-BR/reference/functions/regular-functions/tuple-map-functions#mapValues).
-</Info>
+</Note>
 
-<Info>
-  **Tipo de dado JSON: indexando caminhos JSON**
-
+<Note title="Tipo de dado JSON: indexando caminhos JSON">
   Para o tipo de dado [`JSON`](/pt-BR/reference/data-types/newjson), um índice de filtro de Bloom pode ser criado sobre o conjunto de caminhos usando a função [`JSONAllPaths`](/pt-BR/reference/functions/regular-functions/json-functions#JSONAllPaths). Isso permite ignorar grânulos em que um caminho JSON consultado está ausente. Consulte [Data skipping indexes para JSON](/pt-BR/reference/data-types/newjson#data-skipping-indexes-for-json) para mais detalhes.
-</Info>
+</Note>
 
 #### Filtro de Bloom de n-gramas *(Obsoleto)* {#n-gram-bloom-filter}
 
@@ -715,9 +711,7 @@ A cláusula `TTL` pode ser definida para a tabela inteira e para cada coluna ind
 
 As expressões devem resultar em um tipo de dado [Date](/pt-BR/reference/data-types/date), [Date32](/pt-BR/reference/data-types/date32), [DateTime](/pt-BR/reference/data-types/datetime) ou [DateTime64](/pt-BR/reference/data-types/datetime64).
 
-<Tip>
-  **Evite funções não determinísticas em expressões TTL**
-
+<Tip title="Evite funções não determinísticas em expressões TTL">
   O TTL é avaliado durante a mesclagem em segundo plano, e não no momento da inserção.
   Funções como `rand()`, `now()` ou `now64()` serão reavaliadas a cada merge, levando a um comportamento de exclusão imprevisível.
   O ClickHouse bloqueia expressões sem qualquer dependência de coluna, mas atualmente não rejeita funções não determinísticas misturadas com uma referência de coluna (por exemplo, `ts + rand()`). As expressões TTL devem se basear exclusivamente em valores determinísticos derivados de colunas para garantir resultados previsíveis.
@@ -1114,7 +1108,7 @@ Os motores de tabela da família [MergeTree](/pt-BR/reference/engines/table-engi
 
 Exemplo de uso do [S3](https://aws.amazon.com/s3/) como armazenamento externo com um disco do tipo `s3`.
 
-Trecho de configuração:
+Markup de configuração:
 
 ```xml
 <storage_configuration>
@@ -1138,8 +1132,8 @@ Trecho de configuração:
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -1230,11 +1224,9 @@ Você também pode combinar volumes locais e do S3 em uma política em camadas, 
 
 É possível configurar tabelas MergeTree não replicadas em um cenário com um gravador e muitos leitores em armazenamento compartilhado. Isso é viabilizado pela atualização automática da lista de partes, que pode ser configurada nos leitores. Observe que isso requer metadados de sistema de arquivos compartilhados entre as réplicas (ou `table_disk = true` com um disco local da tabela). Consulte [refresh&#95;parts&#95;interval and table&#95;disk](/pt-BR/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk).
 
-<Info>
-  **configuração do cache**
-
+<Note title="configuração do cache">
   As versões 22.3 a 22.7 do ClickHouse usam uma configuração de cache diferente. Consulte [using local cache](/pt-BR/concepts/features/configuration/server-config/storing-data#using-local-cache) se você estiver usando uma dessas versões.
-</Info>
+</Note>
 
 ## Colunas virtuais {#virtual-columns}
 
@@ -1265,6 +1257,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY a
 ```
+
+As estatísticas exigem uma coluna armazenada fisicamente. Uma coluna `ALIAS` ou `EPHEMERAL` não é gravada em nenhuma parte, portanto, a declaração de estatísticas em uma delas é rejeitada.
 
 Também é possível manipular estatísticas com instruções `ALTER`:
 
@@ -1324,17 +1318,17 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `minmax` (obsoleto)
 
-<Note>
-  As estatísticas `minmax` estão obsoletas. Use estatísticas `basic` no lugar, pois são um superconjunto de `minmax`.
-</Note>
+  <Note>
+    As estatísticas `minmax` estão obsoletas. Use estatísticas `basic` no lugar, pois são um superconjunto de `minmax`.
+  </Note>
 
 * `tdigest`
 
-<Warning>
-  Estatísticas do tipo `tdigest` têm alto custo de criação e podem desacelerar a ingestão de dados.
-</Warning>
+  <Warning>
+    Estatísticas do tipo `tdigest` têm alto custo de criação e podem desacelerar a ingestão de dados.
+  </Warning>
 
-Sketches [TDigest](https://github.com/tdunning/t-digest) que permitem calcular percentis aproximados (por exemplo, o percentil 90) para colunas numéricas.
+  Sketches [TDigest](https://github.com/tdunning/t-digest) que permitem calcular percentis aproximados (por exemplo, o percentil 90) para colunas numéricas.
 
 * `uniq`
 
@@ -1346,11 +1340,11 @@ Sketches [TDigest](https://github.com/tdunning/t-digest) que permitem calcular p
 
 * `countmin`
 
-<Warning>
-  Estatísticas do tipo `countmin` têm alto custo de criação e podem desacelerar a ingestão de dados.
-</Warning>
+  <Warning>
+    Estatísticas do tipo `countmin` têm alto custo de criação e podem desacelerar a ingestão de dados.
+  </Warning>
 
-Sketches [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) que fornecem uma contagem aproximada da frequência de cada valor em uma coluna.
+  Sketches [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) que fornecem uma contagem aproximada da frequência de cada valor em uma coluna.
 
 ### Tipos de dados compatíveis {#supported-data-types}
 

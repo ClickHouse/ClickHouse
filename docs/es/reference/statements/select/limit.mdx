@@ -301,12 +301,11 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL 
 
 Sin `n` y sin `UNTIL`, cada rango abierto se extiende hasta el final del stream, por lo que `AFTER start_expr ALL` devuelve las mismas filas que `AFTER start_expr`.
 
-:::note
-
-* `WITH TIES`, los valores fraccionarios o negativos de `LIMIT`/`OFFSET`, y `OFFSET` no son compatibles junto con `AFTER`/`UNTIL`.
-* El pushdown preliminar de `LIMIT` se deshabilita cuando se usa `AFTER`/`UNTIL`.
-* `AFTER` y `UNTIL` solo se reconocen como palabras clave cuando les sigue una expresión de límite, por lo que un identificador llamado `after` o `until` sigue funcionando como recuento de filas (`LIMIT after`, `LIMIT after BY x`). Cuando ambas lecturas son posibles, prevalece la palabra clave: `LIMIT after(2)` corresponde al rango `LIMIT AFTER (2)`; escriba `LIMIT (after(2))` para llamar a una función denominada `after`.
-  :::
+<Note>
+  * `WITH TIES`, los valores fraccionarios o negativos de `LIMIT`/`OFFSET`, y `OFFSET` no son compatibles junto con `AFTER`/`UNTIL`.
+  * El pushdown preliminar de `LIMIT` se deshabilita cuando se usa `AFTER`/`UNTIL`.
+  * `AFTER` y `UNTIL` solo se reconocen como palabras clave cuando les sigue una expresión de límite, por lo que un identificador llamado `after` o `until` sigue funcionando como recuento de filas (`LIMIT after`, `LIMIT after BY x`). Cuando ambas lecturas son posibles, prevalece la palabra clave: `LIMIT after(2)` corresponde al rango `LIMIT AFTER (2)`; escriba `LIMIT (after(2))` para llamar a una función denominada `after`.
+</Note>
 
 `UNTIL` por sí solo devuelve las filas desde el inicio del stream hasta la primera fila en la que la condición es true:
 

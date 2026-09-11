@@ -561,31 +561,68 @@ Expression ((Project names + Projection))
 * **フィルタステップ** には、SQL 表記のフィルタ条件が表示されます。ランタイム join フィルタが存在する場合は、それらは別個に表示されます。
 * **集約ステップ** には、キーと、引数付きの集約関数 (例: `sum(c)`、`count()`) が表示されます。
 * タプルリテラルの **IN set** にはその値が表示され (大きな set の場合は切り詰められます) 、サブクエリベースの set には `subquery1`、`subquery2` などのラベルが付き、`Set` engine tables 由来の set にはテーブル名が表示されます。
-* **join ステップ** には、数学的記法を用いた join 関係、推定結果行数、
-  およびどの出力カラムが左側と右側のどちらに由来するかが表示されます。異なる join タイプを
-  表すために、次の記号が使用されます：
+* **join ステップ** には、数学的記法を用いた join 関係、そのステップについて
+  join 順序最適化器が生成した推定値 (コスト、選択性、出力行数、各側の行数)、
+  および各側の入力カラムが表示されます。異なる join タイプを表すために、次の記号が使用されます：
 
-| Symbol                 | Join Type       |
-| ---------------------- | --------------- |
-| `⋈`                    | Inner Join      |
-| `⟕`                    | Left Join       |
-| `⟖`                    | Right Join      |
-| `⟗`                    | Full Join       |
-| `⋉`                    | Left Semi Join  |
-| `⋊`                    | Right Semi Join |
-| `⋉` with strikethrough | Left Anti Join  |
-| `⋊` with strikethrough | Right Anti Join |
-| `×`                    | Cross Join      |
+| 記号           | Join タイプ        |
+| ------------ | --------------- |
+| `⋈`          | Inner Join      |
+| `⟕`          | Left Join       |
+| `⟖`          | Right Join      |
+| `⟗`          | Full Join       |
+| `⋉`          | Left Semi Join  |
+| `⋊`          | Right Semi Join |
+| 取り消し線付きの `⋉` | Left Anti Join  |
+| 取り消し線付きの `⋊` | Right Anti Join |
+| `×`          | Cross Join      |
 
-たとえば、`t1 ⟕ t2` はテーブル `t1` と `t2` の left join を意味します。
-テーブル名の後の角括弧内の数値 (例: `t1[100]`) は、テーブル統計が利用可能な場合の
-推定行数を示します。
+たとえば、`t1 ⟕ t2` はテーブル `t1` と `t2` の間の left join を意味します。
+テーブル名の後の角括弧内の数値 (例: `t1[100]`) は、テーブル統計情報が利用可能な場合の推定行数を
+示します。
 
-`pretty` オプションは `compact = 1` と組み合わせると効果的で、`Expression` ステップと詳細な action 情報が非表示になるため、プランが読みやすくなります。
+join 関係の下には、各 join ステップについて join 順序最適化器が生成した推定値が表示されます：
 
-JOINを使った詳しい例:
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+* `Cost` — このステップ配下の join サブツリー全体のコストであり、オプティマイザが候補となる JOIN 順序を
+  比較する際に最小化する値です。join のコストは、結合した行ペアの推定数
+  `<selectivity> * <left_rows> * <right_rows>` に入力のコストを加えたものです。
+* `Selectivity` — 2 つの側のデカルト積のうち、join 条件を満たして残ると推定される割合です。
+  これは結合キーの distinct values (NDV) 数から導出されます。
+  キーの等価条件ではペアの約 `1 / max(NDV_left, NDV_right)` が残り、join 条件全体では
+  最小の割合が使用されます。
+* `Output rows` — join が生成する推定行数です。
+  inner join では `<selectivity> * <left_rows> * <right_rows>`、`LEFT` では `<left_rows>`、
+  `RIGHT` では `<right_rows>`、`FULL` では `<left_rows> + <right_rows>` を下限とします。これは
+  outer join が保持側のすべての行を残すためです。`SEMI` または `ANTI` join が並べ替えに
+  関与する場合は、保持側の割合として推定されます。`SEMI` では
+  `<preserved_rows> * min(1, <selectivity> * <other_rows>)`、`ANTI` では残りの行数です。
+  それ以外の場合は、その join 種別の式を使用します。
+* `Left` / `Right` — 各側から join に入力される推定行数です。
+
+オプティマイザが推定できなかった値は `no stats` として報告されます。これは、
+join 順序の最適化が実行されなかった場合、たとえば
+[`query_plan_optimize_join_order_limit`](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)
+が `0` の場合、または推定の根拠がない場合に発生します。
+
+`Input (left):` および `Input (right):` の行には、各側が join に入力するカラムが一覧表示されます。
+
+`pretty` オプションは `compact = 1` と組み合わせて使用すると効果的です。これにより、`Expression` ステップと詳細な action 情報が非表示になり、プランが読みやすくなります。
+
+join を含む詳細な例です。
+[`join_runtime_filter_min_probe_rows`](/ja/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+設定は、この程度に小さいテーブルでもランタイム join フィルタが構築されるようにするためだけに引き下げています。
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -601,11 +638,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -771,23 +811,62 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
 
 #### Join ステップ {#explain-analyze-join-steps}
 
-join ステップでは、`EXPLAIN ANALYZE` は各側の*参加*行 (`Left` と `Right`) を出力し、その後に join の実装固有の行を出力します。`Left` と `Right` は、論理的な SQL の左右に対応します。ほとんどの場合、`Left` は join のプローブ側、`Right` はビルド側にもなります。ただし、join の実行中に swap が発生する可能性があるため、常にそうとは限りません。[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) のすべての値 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) に対応しています。また、この設定では選択できない 2 つの実装、すなわち `CROSS` または `COMMA` join、キーの等価条件を含まない `ON` 句、および [`Join`](/ja/reference/engines/table-engines/special/join) テーブルエンジンも対象です。ほとんどの実装では両側が報告されますが、マテリアライズする側のみを報告するものもあります (たとえば、`direct` は `Left:` のみを出力します) 。
+join ステップでは、`EXPLAIN ANALYZE` は結合順序オプティマイザの推定値と実際に起きたことを比較する行 ([推定値と実測値の join メトリクス](#explain-analyze-join-estimation) を参照) と、各側の*参加*行 (`Left` と `Right`) を出力し、その後に join の実装固有の行を出力します。[`join_algorithm`](/ja/reference/settings/session-settings/join#join_algorithm) のすべての値 (`hash`、`parallel_hash`、`grace_hash`、`partial_merge`、`full_sorting_merge`、`parallel_full_sorting_merge`、`direct`) に対応しています。また、この設定では選択できない 2 つの実装、すなわち `CROSS` または `COMMA` join、キーの等価条件を含まない `ON` 句、および [`Join`](/ja/reference/engines/table-engines/special/join) テーブルエンジンも対象です。ほとんどの実装では両側が報告されますが、マテリアライズする側のみを報告するものもあります (たとえば、`direct` は `Left:` のみを出力します) 。
 
 各側の行は同じ形式です。
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 各側について、`EXPLAIN ANALYZE` は以下を報告します。
 
+* `rows estimated <estimated_rows>` — 結合順序オプティマイザによるその側の行数の推定値。隣に表示される実際の `rows` との比較用に出力されます。オプティマイザが推定値を生成しなかった場合は `no stats` となります (「[推定 join メトリクスと実測値](#explain-analyze-join-estimation)」を参照) 。
 * `rows <rows>` — 結合処理を通過したその側の行の総数。
 * `matched <matched_rows>` — もう一方の側で少なくとも1つの結合相手が見つかった、その側の行数。これはキーではなく*行*を数えます。キーが右側に3回出現して一致した場合、右側の3行すべてが一致した行としてカウントされます。
 * `match rate <match_rate>%` — 一致したその側の行の割合。`100 * <matched_rows> / <rows>` として算出されます。
 * `fanout <fanout>` — その側で一致した行1行あたりが平均して生成する出力行数。
 
 正確に導出できない数値は、`0` ではなく `not collected` として報告されます。`match rate` と `fanout` は `matched` から導出されるため、`matched` がない側では、3つすべてが `not collected` として報告されます。
+
+#### 推定値と実測値の join メトリクス {#explain-analyze-join-estimation}
+
+join ステップは、結合順序オプティマイザによる推定値 (`EXPLAIN PLAN` が表示するものと同じ値。[EXPLAIN PLAN](#explain-plan) セクションを参照) を保持しており、`EXPLAIN ANALYZE` はそれぞれを実測値と並べて出力します。
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+* `Cost` — どちらの値も、マッチした出力行数を表します。推定値は、オプティマイザによる join 部分木のコストで、`<selectivity> * <left_rows> * <right_rows>` にその入力のコストを加えたものです。実測値も同様に算出され、この join のマッチした出力行数に、同じ並べ替えクラスターに属する下位のすべての join の実コストを加えたものです。
+* `Selectivity` — 推定値は結合キーの個別値数から導出されます。実測値は、出力に含まれたデカルト積の割合を計測したもので、`<matched output rows> / (<left rows> * <right rows>)` です。これはオプティマイザが推定しようとする値です。
+* `Output rows` — join が生成した推定行数と実測行数です。両方がゼロ以外の場合、`q-error` はカーディナリティ推定の品質を測る標準的な指標である `max(estimated / actual, actual / estimated)` を報告します。`1.00` は完全な推定を意味し、大きな値は、オプティマイザが大きく誤ったカーディナリティに基づいて JOIN 順序を選択したことを意味します。
+
+一度も推定が行われなかった場合は、`no stats` として報告されます。たとえば、[`query_plan_optimize_join_order_limit`](/ja/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) が `0` であるため、JOIN 順序の最適化が実行されなかった場合です。これは、実行時に計測できなかった実測値を示す `not collected` とは異なります。右側が事前に入力済みの join ([`Join`](/ja/reference/engines/table-engines/special/join) テーブルエンジン、`direct` join) は 結合順序オプティマイザを経由せず、参加行のみを出力します。
+
+join ステップでは、各辺が join に渡すカラムを示す `Input (left):` 行と `Input (right):` 行も出力されます。
+
+[EXPLAIN PLAN](#explain-plan) の join 例で使用するテーブルでは、`EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id` の join ステップは次のようになります:
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
 
 #### ファンアウト {#explain-analyze-fanout}
 
@@ -878,7 +957,7 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 `partial_merge` 結合では、`Right:` 行に右テーブルのバッファリング方法とソート方法に関する追加情報が含まれ、ソート時間は `Stage (build)` 行と `Stage (probe)` 行に表示されます。
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```

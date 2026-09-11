@@ -361,6 +361,8 @@ Valores admitidos:
 * `promql` — PromQL (Prometheus Query Language) evaluado sobre una tabla TimeSeries, configurada mediante las opciones `promql_database`, `promql_table` y `promql_evaluation_time`.
 * `clickhouse_json` — en lugar de texto SQL, la consulta se interpreta como un AST JSON (la salida de `parseQueryToJSON`). La consulta `SET` se sigue reconociendo en formato sin procesar para poder volver a cambiar el dialecto. Requiere la configuración experimental `enable_json_ast_dialect`.
 
+- `trino` — Trino SQL: traduce la sintaxis de Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) y asigna los nombres de las funciones de Trino a sus equivalentes de ClickHouse. Requiere la configuración experimental `allow_experimental_trino_dialect`.
+
 ## discard_query_data {#discard_query_data}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
@@ -1419,6 +1421,22 @@ Véase también:
 * [insert&#95;quorum](/es/reference/settings/session-settings/insert-quorum#insert_quorum)
 * [insert&#95;quorum&#95;timeout](/es/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/es/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
+
+## session_query_ids_history_size {#session_query_ids_history_size}
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1000"},{"label": "Nueva configuración que limita el tamaño del historial local de identificadores de consulta de la sesión, expuesto mediante la nueva tabla del sistema `system.session_query_ids`. El valor anterior `0` (registro deshabilitado) reproduce el comportamiento previo a la versión 26.9."}]}]} />
+
+El número máximo de identificadores de consulta que se conservan en el historial local de la sesión expuesto mediante la tabla del sistema [`system.session_query_ids`](/es/reference/system-tables/session_query_ids).
+El identificador de consulta de cada consulta no interna ejecutada en la sesión se registra allí al iniciar la consulta; cuando el historial supera este tamaño, se eliminan primero las entradas más antiguas.
+
+El valor se lee al iniciar la consulta, antes de analizarla, por lo que una cláusula `SETTINGS` de la propia consulta no afecta a si se registra; use `SET`, un parámetro URL de HTTP o un perfil de configuración.
+
+Valores posibles:
+
+* Entero positivo.
+* 0 — El registro está deshabilitado; las entradas registradas anteriormente permanecen en la tabla.
 
 ## session_timezone {#session_timezone}
 

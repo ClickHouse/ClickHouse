@@ -455,17 +455,13 @@ bloom_filter([false_positive_rate])
 * `UUID`
 * `Map`
 
-<Info>
-  **Map 데이터 타입: 키 또는 값에 대한 인덱스 생성 지정**
-
+<Note title="Map 데이터 타입: 키 또는 값에 대한 인덱스 생성 지정">
   `Map` 데이터 타입의 경우, 클라이언트는 [`mapKeys`](/ko/reference/functions/regular-functions/tuple-map-functions#mapKeys) 또는 [`mapValues`](/ko/reference/functions/regular-functions/tuple-map-functions#mapValues) 함수를 사용해 인덱스를 키에 대해 생성할지, 값에 대해 생성할지 지정할 수 있습니다.
-</Info>
+</Note>
 
-<Info>
-  **JSON 데이터 타입: JSON 경로 인덱싱**
-
+<Note title="JSON 데이터 타입: JSON 경로 인덱싱">
   [`JSON`](/ko/reference/data-types/newjson) 데이터 타입의 경우, [`JSONAllPaths`](/ko/reference/functions/regular-functions/json-functions#JSONAllPaths) 함수를 사용해 경로 집합에 블룸 필터 인덱스를 생성할 수 있습니다. 이를 통해 쿼리한 JSON 경로가 없는 그래뉼은 스키핑할 수 있습니다. 자세한 내용은 [JSON용 데이터 스키핑 인덱스](/ko/reference/data-types/newjson#data-skipping-indexes-for-json)를 참조하십시오.
-</Info>
+</Note>
 
 #### N-그램 블룸 필터 *(사용 중단 예정)* {#n-gram-bloom-filter}
 
@@ -714,9 +710,7 @@ ORDER BY id;
 
 표현식은 [Date](/ko/reference/data-types/date), [Date32](/ko/reference/data-types/date32), [DateTime](/ko/reference/data-types/datetime) 또는 [DateTime64](/ko/reference/data-types/datetime64) 데이터 타입으로 평가되어야 합니다.
 
-<Tip>
-  **TTL 표현식에서는 비결정적 함수를 피하십시오**
-
+<Tip title="TTL 표현식에서는 비결정적 함수를 피하십시오">
   TTL은 백그라운드 머지 중에 평가되며, 삽입 시점에는 평가되지 않습니다.
   `rand()`, `now()`, `now64()`와 같은 함수는 머지가 일어날 때마다 다시 평가되므로 예측할 수 없는 삭제 동작이 발생할 수 있습니다.
   ClickHouse는 컬럼 의존성이 전혀 없는 표현식은 차단하지만, 현재는 컬럼 참조와 함께 사용된 비결정적 함수(예: `ts + rand()`)는 거부하지 않습니다. 예측 가능한 결과를 얻으려면 TTL 표현식은 결정적이고 컬럼에서 파생된 값만 기반으로 해야 합니다.
@@ -1113,7 +1107,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 `S3` 타입의 디스크를 사용하여 [S3](https://aws.amazon.com/s3/)를 외부 스토리지로 사용하는 예시입니다.
 
-구성 예시:
+구성 마크업:
 
 ```xml
 <storage_configuration>
@@ -1137,8 +1131,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -1229,11 +1223,9 @@ S3(및 기타 객체 스토리지) 디스크는 로컬 디스크와 동일하게
 
 공유 스토리지에서는 단일 쓰기, 다중 읽기 시나리오로 비복제 MergeTree 테이블을 구성할 수 있습니다. 이는 reader에 설정할 수 있는 파트 목록의 자동 갱신으로 지원됩니다. 이 기능을 사용하려면 레플리카 간에 파일 시스템 메타데이터를 공유해야 합니다(또는 테이블 로컬 디스크에서 `table_disk = true`를 사용해야 합니다). 자세한 내용은 [refresh&#95;parts&#95;interval and table&#95;disk](/ko/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk)를 참조하십시오.
 
-<Info>
-  **cache 구성**
-
+<Note title="cache 구성">
   ClickHouse 22.3~22.7 버전은 다른 cache 구성을 사용합니다. 해당 버전 중 하나를 사용 중이라면 [using local cache](/ko/concepts/features/configuration/server-config/storing-data#using-local-cache)를 참조하십시오.
-</Info>
+</Note>
 
 ## 가상 컬럼 {#virtual-columns}
 
@@ -1264,6 +1256,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY a
 ```
+
+통계에는 물리적으로 저장되는 컬럼이 필요합니다. `ALIAS` 또는 `EPHEMERAL` 컬럼은 어떤 파트에도 기록되지 않으므로, 해당 컬럼에 통계를 선언하면 거부됩니다.
 
 `ALTER` SQL 문으로 통계를 변경할 수도 있습니다:
 
@@ -1323,17 +1317,17 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `minmax` (지원 중단됨)
 
-<Note>
-  `minmax` 통계는 지원 중단되었습니다. `minmax`의 상위 집합인 `basic` 통계를 대신 사용하십시오.
-</Note>
+  <Note>
+    `minmax` 통계는 지원 중단되었습니다. `minmax`의 상위 집합인 `basic` 통계를 대신 사용하십시오.
+  </Note>
 
 * `tdigest`
 
-<Warning>
-  `tdigest` 타입의 통계는 생성 비용이 높아 데이터 수집 속도가 느려질 수 있습니다.
-</Warning>
+  <Warning>
+    `tdigest` 타입의 통계는 생성 비용이 높아 데이터 수집 속도가 느려질 수 있습니다.
+  </Warning>
 
-숫자 컬럼의 근사 백분위수(예: 90번째 백분위수)를 계산할 수 있게 해주는 [TDigest](https://github.com/tdunning/t-digest) 스케치입니다.
+  숫자 컬럼의 근사 백분위수(예: 90번째 백분위수)를 계산할 수 있게 해주는 [TDigest](https://github.com/tdunning/t-digest) 스케치입니다.
 
 * `uniq`
 
@@ -1345,11 +1339,11 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `countmin`
 
-<Warning>
-  `countmin` 타입의 통계는 생성 비용이 높아 데이터 수집 속도가 느려질 수 있습니다.
-</Warning>
+  <Warning>
+    `countmin` 타입의 통계는 생성 비용이 높아 데이터 수집 속도가 느려질 수 있습니다.
+  </Warning>
 
-컬럼의 각 값이 나타나는 빈도를 근사적으로 계산해 주는 [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) 스케치입니다.
+  컬럼의 각 값이 나타나는 빈도를 근사적으로 계산해 주는 [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) 스케치입니다.
 
 ### 지원되는 데이터 타입 {#supported-data-types}
 

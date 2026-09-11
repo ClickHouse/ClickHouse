@@ -61,14 +61,21 @@ ClickHouse позволяет копировать схему и данные с
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-Это создаёт таблицу с той же схемой и теми же данными, что и существующая таблица. После создания новой таблицы к ней присоединяются все партиции из `db.table`. Иными словами, при создании данные из `db.table` клонируются в `db2.table_clone`. Этот запрос эквивалентен следующему:
+Это создаёт таблицу с той же схемой и теми же данными, что и существующая таблица. После создания новой таблицы к ней присоединяются все партиции из `db.table`. Иными словами, при создании данные из `db.table` клонируются в `db2.table_clone`.
 
-```sql
-CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
-ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
-```
+<Note>
+  `CLONE AS` не поддерживается, если в базе данных назначения используется движок базы данных [Replicated](/ru/reference/engines/database-engines/replicated).
 
-Для обеих возможностей можно указать для таблицы другой движок. Если движок не указан, будет использоваться тот же движок, что и у исходной таблицы (`db.table`).
+  Вместо этого используйте:
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+  ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+  ```
+</Note>
+
+Для обеих возможностей можно указать для таблицы другой движок.
+Если движок не указан, будет использоваться тот же движок, что и у исходной таблицы (`db.table`).
 
 ### Создание таблицы с помощью табличной функции {#from-a-table-function}
 

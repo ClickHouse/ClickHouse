@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 Этот движок обеспечивает интеграцию с существующими таблицами [Delta Lake](https://github.com/delta-io/delta) в хранилищах S3, GCP и Azure и поддерживает как чтение, так и запись (начиная с v25.10).
 
-<div id="create-table">
-  ## Создание таблицы DeltaLake
-</div>
+## Создание таблицы DeltaLake {#create-table}
 
 Чтобы создать таблицу DeltaLake, она должна уже существовать в хранилище S3, GCP или Azure. Приведённые ниже команды не принимают DDL-параметры для создания новой таблицы.
 
@@ -70,11 +68,9 @@ doc_type: 'reference'
     ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
     ```
 
-    <Info>
-      **Неподдерживаемый URI gsutil**
-
+    <Note title="Неподдерживаемый URI gsutil">
       URI gsutil, например `gs://clickhouse-docs-example-bucket`, не поддерживается. Используйте URL, начинающийся с `https://storage.googleapis.com`
-    </Info>
+    </Note>
 
     **Аргументы**
 
@@ -117,9 +113,7 @@ doc_type: 'reference'
   </Tab>
 </Tabs>
 
-<div id="insert-data">
-  ## Запись данных с помощью таблицы DeltaLake
-</div>
+## Запись данных с помощью таблицы DeltaLake {#insert-data}
 
 После создания таблицы на движке таблицы DeltaLake вы можете вставлять в неё данные с помощью:
 
@@ -137,15 +131,11 @@ VALUES (1, 'John', 'Smith', 'M', 32);
   Запись в Azure пока не поддерживается, но для S3 и GCS она работает.
 </Note>
 
-<div id="data-cache">
-  ### Кэширование данных
-</div>
+### Кэширование данных {#data-cache}
 
 Движок таблицы `DeltaLake` и табличная функция поддерживают кэширование данных, как и хранилища `S3`, `AzureBlobStorage` и `HDFS`. Подробнее см. в разделе [&quot;движок таблицы S3&quot;](/ru/reference/engines/table-engines/integrations/s3#data-cache).
 
-<div id="see-also">
-  ## См. также
-</div>
+## См. также {#see-also}
 
 * [Табличная функция deltaLake](/ru/reference/functions/table-functions/deltalake)
 

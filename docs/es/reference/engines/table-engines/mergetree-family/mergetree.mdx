@@ -456,17 +456,13 @@ Se admiten los siguientes tipos de datos:
 * `UUID`
 * `Map`
 
-<Info>
-  **Tipo de dato Map: especificar la creación de índices con claves o valores**
-
+<Note title="Tipo de dato Map: especificar la creación de índices con claves o valores">
   Para el tipo de dato `Map`, el cliente puede especificar si el índice debe crearse para las claves o para los valores mediante las funciones [`mapKeys`](/es/reference/functions/regular-functions/tuple-map-functions#mapKeys) o [`mapValues`](/es/reference/functions/regular-functions/tuple-map-functions#mapValues).
-</Info>
+</Note>
 
-<Info>
-  **Tipo de dato JSON: indexación de rutas JSON**
-
-  Para el tipo de dato [`JSON`](/es/reference/data-types/newjson), se puede crear un índice bloom filter sobre el conjunto de rutas mediante la función [`JSONAllPaths`](/es/reference/functions/regular-functions/json-functions#JSONAllPaths). Esto permite omitir gránulos en los que no está presente una ruta JSON consultada. Consulte [índices de omisión de datos para JSON](/es/reference/data-types/newjson#data-skipping-indexes-for-json) para obtener más información.
-</Info>
+<Note title="Tipo de dato JSON: indexación de rutas JSON">
+  Para el tipo de dato [`JSON`](/es/reference/data-types/newjson), se puede crear un índice filtro de Bloom sobre el conjunto de rutas mediante la función [`JSONAllPaths`](/es/reference/functions/regular-functions/json-functions#JSONAllPaths). Esto permite omitir gránulos en los que no está presente una ruta JSON consultada. Consulte [índices de omisión de datos para JSON](/es/reference/data-types/newjson#data-skipping-indexes-for-json) para obtener más información.
+</Note>
 
 #### Filtro de Bloom de n-gramas *(Obsoleto)* {#n-gram-bloom-filter}
 
@@ -715,9 +711,7 @@ La cláusula `TTL` se puede definir para toda la tabla y para cada columna indiv
 
 Las expresiones deben dar como resultado un tipo de dato [Date](/es/reference/data-types/date), [Date32](/es/reference/data-types/date32), [DateTime](/es/reference/data-types/datetime) o [DateTime64](/es/reference/data-types/datetime64).
 
-<Tip>
-  **Evite las funciones no deterministas en las expresiones TTL**
-
+<Tip title="Evite las funciones no deterministas en las expresiones TTL">
   TTL se evalúa durante las fusiones en segundo plano, no durante la inserción.
   Funciones como `rand()`, `now()`, o `now64()` se vuelven a evaluar en cada fusión, lo que provoca un comportamiento de eliminación impredecible.
   ClickHouse bloquea las expresiones sin ninguna dependencia de columna, pero actualmente no rechaza las funciones no deterministas mezcladas con una referencia a columna (por ejemplo, `ts + rand()`). Las expresiones TTL deben basarse únicamente en valores deterministas derivados de columnas para obtener resultados predecibles.
@@ -1138,8 +1132,8 @@ Marcado de configuración:
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -1230,11 +1224,9 @@ También puede combinar volúmenes locales y S3 en una política por niveles; po
 
 Es posible configurar tablas MergeTree no replicadas en un escenario de un escritor y muchos lectores sobre almacenamiento compartido. Esto se consigue mediante la actualización automática de la lista de partes, que puede configurarse en los lectores. Tenga en cuenta que esto requiere metadatos del sistema de archivos compartidos entre réplicas (o `table_disk = true` con un disco local para la tabla). Consulte [refresh&#95;parts&#95;interval and table&#95;disk](/es/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk).
 
-<Info>
-  **configuración de caché**
-
+<Note title="configuración de caché">
   Las versiones 22.3 a 22.7 de ClickHouse usan una configuración de caché distinta; consulte [using local cache](/es/concepts/features/configuration/server-config/storing-data#using-local-cache) si usa una de esas versiones.
-</Info>
+</Note>
 
 ## Columnas virtuales {#virtual-columns}
 
@@ -1265,6 +1257,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY a
 ```
+
+Las estadísticas requieren una columna almacenada físicamente. Una columna `ALIAS` o `EPHEMERAL` no se escribe en ninguna parte, por lo que se rechaza declarar estadísticas en ella.
 
 También podemos modificar las estadísticas con sentencias `ALTER`:
 
@@ -1324,17 +1318,17 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `minmax` (obsoleta)
 
-<Note>
-  Las estadísticas `minmax` están obsoletas. Use estadísticas `basic` en su lugar, ya que constituyen un superconjunto de `minmax`.
-</Note>
+  <Note>
+    Las estadísticas `minmax` están obsoletas. Use estadísticas `basic` en su lugar, ya que constituyen un superconjunto de `minmax`.
+  </Note>
 
 * `tdigest`
 
-<Warning>
-  Las estadísticas de tipo `tdigest` tienen costes de creación elevados y pueden ralentizar la ingesta de datos.
-</Warning>
+  <Warning>
+    Las estadísticas de tipo `tdigest` tienen costes de creación elevados y pueden ralentizar la ingesta de datos.
+  </Warning>
 
-Resúmenes [TDigest](https://github.com/tdunning/t-digest) que permiten calcular percentiles aproximados (por ejemplo, el percentil 90) para columnas numéricas.
+  Resúmenes [TDigest](https://github.com/tdunning/t-digest) que permiten calcular percentiles aproximados (por ejemplo, el percentil 90) para columnas numéricas.
 
 * `uniq`
 
@@ -1346,11 +1340,11 @@ Resúmenes [TDigest](https://github.com/tdunning/t-digest) que permiten calcular
 
 * `countmin`
 
-<Warning>
-  Las estadísticas de tipo `countmin` tienen costes de creación elevados y pueden ralentizar la ingesta de datos.
-</Warning>
+  <Warning>
+    Las estadísticas de tipo `countmin` tienen costes de creación elevados y pueden ralentizar la ingesta de datos.
+  </Warning>
 
-Resúmenes [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) que proporcionan un recuento aproximado de la frecuencia de cada valor en una columna.
+  Resúmenes [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) que proporcionan un recuento aproximado de la frecuencia de cada valor en una columna.
 
 ### Tipos de datos compatibles {#supported-data-types}
 

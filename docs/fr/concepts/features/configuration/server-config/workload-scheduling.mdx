@@ -436,6 +436,41 @@ graph TD
 * `precedence_allocation` - applique l’éviction selon une précédence statique (une valeur plus faible signifie une précédence plus élevée) ; une allocation en attente de précédence plus élevée évince les allocations de précédence plus faible ; les nœuds enfants doivent spécifier `precedence` (la valeur par défaut est 0).
 * `queue` - feuille de la hiérarchie capable de contenir des allocations en cours d’exécution et en attente.
 
+## Sauvegarde et restauration {#backup-restore}
+
+Les workloads et ressources définis en SQL peuvent être inclus dans une sauvegarde ClickHouse :
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources TO Disk('backups', 'wl_backup');
+```
+
+Seules les entités définies en SQL sont sauvegardées. Les workloads et ressources issus de la configuration (définis via `<resources_and_workloads>` dans le fichier de configuration du serveur) ne sont pas inclus : ils font partie de la server configuration, qui doit être sauvegardée séparément.
+
+Sauvegardez et restaurez toujours `system.workloads` et `system.resources` ensemble, dans une même commande. Un workload peut référencer une ressource (via `SETTINGS ... FOR <resource>`) ainsi qu&#39;un workload parent, et une sauvegarde de `system.workloads` seule n&#39;inclut pas les définitions des ressources référencées. La restauration d&#39;un workload dont la ressource référencée n&#39;est ni présente dans la sauvegarde ni déjà présente sur le server target échoue.
+
+Pour restaurer des workloads et des ressources à partir d&#39;une sauvegarde :
+
+```sql
+RESTORE TABLE system.workloads, TABLE system.resources FROM Disk('backups', 'wl_backup');
+```
+
+La restauration nécessite les privilèges `CREATE WORKLOAD` et `CREATE RESOURCE`. Par défaut, les entités existantes sont conservées telles quelles (sémantique `if not exists`) ; le paramètre `create_workloads_and_resources` ci-dessous détermine la façon dont une entité déjà existante est traitée. Si le serveur utilise le stockage ZooKeeper (`workload_zookeeper_path`), une seule réplique du cluster créera chaque entité ; les autres répliques récupèrent la modification via le mécanisme de réplication ordinaire.
+
+Pour les configurations répliquées, les deux tables peuvent être sauvegardées et restaurées avec `ON CLUSTER` :
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' TO S3('https://...', 'key', 'secret');
+RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FROM S3('https://...', 'key', 'secret');
+```
+
+:::note
+Le paramètre de restauration `create_workloads_and_resources` détermine la façon dont un workload ou une ressource déjà existant est traité lors de sa restauration (il n&#39;active ni ne désactive la restauration de ces entités). Il accepte :
+
+* `if not exists` (valeur par défaut) — conserver une entité existante telle quelle et créer uniquement celles qui manquent ;
+* `create` — faire échouer la restauration si l&#39;une des entités restaurées existe déjà ;
+* `replace` — écraser une entité existante avec la définition issue du backup (cela requiert en outre le privilège `DROP WORKLOAD` / `DROP RESOURCE`).
+  :::
+
 ## Voir aussi {#see-also}
 
 * [system.scheduler](/fr/reference/system-tables/scheduler)

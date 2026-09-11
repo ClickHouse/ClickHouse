@@ -561,31 +561,57 @@ Expression ((Project names + Projection))
 * تعرض **خطوات التصفية** شرط التصفية بصياغة SQL. وعند وجود عوامل تصفية للربط وقت التشغيل، تُعرض بشكل منفصل.
 * تعرض **خطوات التجميع** المفاتيح والدوال التجميعية مع وسيطاتها (مثل `sum(c)` و`count()`).
 * تُظهر **مجموعات IN** من قيم `tuple` الحرفية قيمها (مقتطعةً للمجموعات الكبيرة)، وتُوسَم المجموعات المستندة إلى استعلامات فرعية على أنها `subquery1` و`subquery2` وما إلى ذلك، وتُظهر المجموعات من جداول محرك `Set` اسم الجدول.
-* تعرض **خطوات الربط** علاقة الربط باستخدام ترميز رياضي، والعدد التقديري لصفوف النتيجة،
-  وأي أعمدة ناتج تأتي من الجانب الأيسر مقابل الجانب الأيمن. وتُستخدم الرموز التالية
-  لتمثيل أنواع الربط المختلفة:
+* تعرض **خطوات الربط** علاقة الربط باستخدام ترميز رياضي، والتقديرات التي
+  أنتجها مُحسِّن ترتيب الربط للخطوة (التكلفة، والانتقائية، وصفوف الناتج، والصفوف لكل جانب)،
+  وأعمدة الإدخال لكل جانب. وتُستخدم الرموز التالية لتمثيل أنواع الربط المختلفة:
 
-| Symbol                 | Join Type       |
-| ---------------------- | --------------- |
-| `⋈`                    | Inner Join      |
-| `⟕`                    | Left Join       |
-| `⟖`                    | Right Join      |
-| `⟗`                    | Full Join       |
-| `⋉`                    | Left Semi Join  |
-| `⋊`                    | Right Semi Join |
-| `⋉` with strikethrough | Left Anti Join  |
-| `⋊` with strikethrough | Right Anti Join |
-| `×`                    | Cross Join      |
+| الرمز      | نوع الربط     |
+| ---------- | ------------- |
+| `⋈`        | ربط داخلي     |
+| `⟕`        | ربط أيسر      |
+| `⟖`        | ربط أيمن      |
+| `⟗`        | ربط كامل      |
+| `⋉`        | ربط شبه أيسر  |
+| `⋊`        | ربط شبه أيمن  |
+| `⋉` مع شطب | ربط مضاد أيسر |
+| `⋊` مع شطب | ربط مضاد أيمن |
+| `×`        | ربط تبادلي    |
 
-على سبيل المثال، `t1 ⟕ t2` تعني LEFT JOIN بين الجدولين `t1` و`t2`.
-ويشير الرقم بين القوسين بعد اسم الجدول (مثل `t1[100]`) إلى العدد التقديري للصفوف
+على سبيل المثال، تعني `t1 ⟕ t2` ربطًا أيسر بين الجدولين `t1` و`t2`.
+يشير الرقم بين قوسين بعد اسم الجدول (مثلًا، `t1[100]`) إلى العدد التقديري للصفوف
 عندما تكون إحصاءات الجدول متاحة.
 
-يعمل الخيار `pretty` جيدًا مع `compact = 1`، إذ يُخفي خطوات `Expression` ومعلومات الإجراءات التفصيلية، مما يجعل الخطة أسهل في القراءة.
+أسفل علاقة الربط، تطبع كل خطوة ربط التقديرات التي أنتجها مُحسِّن ترتيب الربط لها:
 
-مثال تفصيلي يتضمن عمليات JOIN:
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+* `Cost` — تكلفة شجرة الربط الفرعية بالكامل ضمن هذه الخطوة، وهي القيمة التي يقللها المُحسِّن عند مقارنة ترتيبات الربط المرشحة. تكلفة الربط هي العدد المقدّر لأزواج الصفوف المتطابقة، `<selectivity> * <left_rows> * <right_rows>`، بالإضافة إلى تكلفة مدخلاته.
+* `Selectivity` — النسبة المقدّرة من حاصل الضرب الديكارتي للجانبين التي تبقى بعد تطبيق شرط الربط. تُشتق من عدد القيم المميزة (NDV) لمفاتيح الربط: يحتفظ تساوي المفتاح بنحو `1 / max(NDV_left, NDV_right)` من الأزواج، وتُستخدم أصغر نسبة عبر شروط الربط.
+* `Output rows` — العدد المقدّر للصفوف التي ينتجها الربط:
+  `<selectivity> * <left_rows> * <right_rows>` للربط الداخلي، وبحد أدنى `<left_rows>` لـ`LEFT`، و`<right_rows>` لـ`RIGHT`، و`<left_rows> + <right_rows>` لـ`FULL`، لأن الربط الخارجي يحتفظ بكل صف من جانبه المحفوظ. عندما يشارك ربط `SEMI` أو `ANTI` في إعادة الترتيب، يُقدَّر باعتباره نسبة من جانبه المحفوظ، `<preserved_rows> * min(1, <selectivity> * <other_rows>)` لـ`SEMI`، والصفوف المتبقية لـ`ANTI`؛ وإلا فإنه يستخدم معادلة نوع الربط الخاص به.
+* `Left` / `Right` — العدد المقدّر للصفوف الداخلة إلى الربط من كل جانب.
+
+تُبلَّغ القيمة التي لم يتمكن المُحسِّن من تقديرها على أنها `no stats`. يحدث ذلك عندما لا يُشغَّل تحسين ترتيب الربط — مثلًا، عندما يكون
+[`query_plan_optimize_join_order_limit`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)
+هو `0` — أو عندما لا يوجد أساس للتقدير.
+
+يسرد السطران `Input (left):` و`Input (right):` الأعمدة التي يُدخلها كل جانب إلى الربط.
+
+يعمل خيار `pretty` جيدًا مع `compact = 1`، الذي يُخفي خطوات `Expression` ومعلومات الإجراءات التفصيلية، مما يجعل الخطة أسهل قراءةً.
+
+مثال تفصيلي يتضمن عمليات ربط. يُخفَّض إعداد
+[`join_runtime_filter_min_probe_rows`](/ar/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+فقط لكي ينشئ جدول بهذا الحجم الصغير عامل تصفية للربط وقت التشغيل:
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -601,11 +627,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -772,23 +801,62 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
 
 #### خطوات الربط {#explain-analyze-join-steps}
 
-في خطوة ربط، يطبع `EXPLAIN ANALYZE` أسطر *المشاركة* لكل جانب — `Left` و`Right` — ثم أي أسطر خاصة بتنفيذ الربط. يقابل `Left` و`Right` الجانبين المنطقيين في SQL. في معظم الحالات، يكون `Left` أيضًا جانب الفحص في الربط، بينما يكون `Right` جانب البناء. لكن ليس هذا هو الحال دائمًا بسبب التبديل الذي قد يحدث أثناء تنفيذ الربط. تُغطّى جميع قيم [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) (`hash`، `parallel_hash`، `grace_hash`، `partial_merge`، `full_sorting_merge`، `parallel_full_sorting_merge`، `direct`)، وكذلك التنفيذان اللذان لا يمكن للإعداد اختيارهما: ربط `CROSS` أو `COMMA`، وأي قسم `ON` لا يحتوي على مساواة مفتاح، ومحرك الجدول [`Join`](/ar/reference/engines/table-engines/special/join). يُبلّغ معظمها عن كلا الجانبين، بينما يُبلّغ بعضها فقط عن الجانب الذي يجسّده ماديًا (على سبيل المثال، يطبع `direct` ‏`Left:` فقط).
+في خطوة ربط، يطبع `EXPLAIN ANALYZE` أسطرًا تقارن تقديرات محسّن ترتيب الربط بما حدث فعليًا (انظر [مقاييس الربط المقدّرة مقابل الفعلية](#explain-analyze-join-estimation))، وأسطر *المشاركة* لكل جانب — `Left` و`Right` — ثم أي أسطر خاصة بتنفيذ الربط. تُغطّى جميع قيم [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) (`hash`، `parallel_hash`، `grace_hash`، `partial_merge`، `full_sorting_merge`، `parallel_full_sorting_merge`، `direct`)، وكذلك التنفيذان اللذان لا يمكن للإعداد اختيارهما: ربط `CROSS` أو `COMMA`، وأي قسم `ON` لا يحتوي على مساواة مفتاح، ومحرك الجدول [`Join`](/ar/reference/engines/table-engines/special/join). يُبلّغ معظمها عن كلا الجانبين، بينما يُبلّغ بعضها فقط عن الجانب الذي يجسّده ماديًا (على سبيل المثال، يطبع `direct` ‏`Left:` فقط).
 
 تشترك الأسطر الخاصة بكل جانب في البنية نفسها:
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 لكل جانب، يعرض `EXPLAIN ANALYZE` ما يلي:
 
+* `rows estimated <estimated_rows>` — تقدير محسّن ترتيب الربط لعدد صفوف ذلك الجانب، ويُطبع للمقارنة مع قيمة `rows` الفعلية المجاورة له؛ وتظهر `no stats` عندما لا ينتج المحسّن أي تقدير (انظر [مقاييس الربط المقدّرة مقابل الفعلية](#explain-analyze-join-estimation)).
 * `rows <rows>` — العدد الإجمالي لصفوف ذلك الجانب التي مرّت عبر عملية الربط.
 * `matched <matched_rows>` — عدد صفوف ذلك الجانب التي وجدت شريك ربط واحدًا على الأقل في الجانب الآخر. يحسب هذا *الصفوف* لا المفاتيح: إذا ظهر مفتاح ثلاث مرات في الجانب الأيمن وطابق، تُحسب الصفوف الثلاثة في الجانب الأيمن كلها كصفوف متطابقة.
 * `match rate <match_rate>%` — النسبة المئوية لصفوف ذلك الجانب التي تطابقت، وتُحسب كالتالي: `100 * <matched_rows> / <rows>`.
 * `fanout <fanout>` — عدد صفوف الإخراج التي ينتجها، في المتوسط، كل صف متطابق من ذلك الجانب.
 
 يُعرض الرقم الذي لا يمكن اشتقاقه بدقة على أنه `not collected` بدلًا من `0`. يُشتق كل من `match rate` و`fanout` من `matched`، لذا يعرض الجانب الذي لا تتوفر لديه قيمة `matched` القيم الثلاث كلها باعتبارها `not collected`.
+
+#### مقاييس ربط التقديرية والفعلية {#explain-analyze-join-estimation}
+
+تتضمن خطوة ربط تقديرات محسّن ترتيب الربط — وهي نفسها التي يعرضها `EXPLAIN PLAN` (راجع قسم [EXPLAIN PLAN](#explain-plan)) — ويطبع `EXPLAIN ANALYZE` كلًا منها إلى جانب القيمة المقاسة:
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+* `Cost` — كلتا القيمتين تعدّان صفوف الإخراج المطابقة. التقدير هو التكلفة التي يحسبها المُحسِّن لشجرة الـ ربط الفرعية: `<selectivity> * <left_rows> * <right_rows>` مضافًا إليها تكلفة مدخلاتها. أما القيمة الفعلية فتُقاس بالطريقة نفسها — صفوف الإخراج المطابقة لهذا الـ ربط مضافًا إليها التكلفة الفعلية لكل ربط أسفله ينتمي إلى عنقود إعادة الترتيب نفسه.
+* `Selectivity` — يُشتق التقدير من عدد القيم المميزة لمفاتيح الـ ربط؛ أما القيمة الفعلية فهي النسبة المقيسة من الجداء الديكارتي التي وصلت إلى الإخراج: `<matched output rows> / (<left rows> * <right rows>)`، إذ إن هذا هو ما يحاول المُحسِّن تقديره.
+* `Output rows` — العدد المقدَّر والعدد الفعلي للصفوف التي أنتجها الـ ربط. عندما تكون كلتا القيمتين غير صفرية، يُبلّغ `q-error` عن `max(estimated / actual, actual / estimated)`، وهو المقياس المعياري لجودة تقدير العدّية: القيمة `1.00` تعني تقديرًا مثاليًا، والقيمة الكبيرة تعني أن المُحسِّن اختار ترتيب الـ ربط اعتمادًا على عدّية خاطئة بدرجة كبيرة.
+
+أما التقدير الذي لم يُجرَ أصلًا فيُبلَّغ عنه بـ `no stats` — على سبيل المثال، عندما لا يُشغَّل تحسين ترتيب الـ ربط لأن قيمة [`query_plan_optimize_join_order_limit`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) هي `0`. ويختلف هذا عن `not collected`، الذي يدل على قيمة فعلية لم يتمكن التنفيذ من قياسها. أما عمليات الـ ربط ذات الجانب الأيمن المملوء مسبقًا (محرك الجدول [`Join`](/ar/reference/engines/table-engines/special/join)، وعمليات `direct` ربط) فلا تمرّ عبر محسّن ترتيب الربط وتطبع أسطر المشاركة فقط.
+
+كما تطبع خطوة الـ ربط سطري `Input (left):` و`Input (right):` مع الأعمدة التي يمرّرها كل جانب إلى الـ ربط.
+
+وبالنسبة لجداول مثال الـ ربط في [EXPLAIN PLAN](#explain-plan)، تبدو خطوة الـ ربط في `EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id` على النحو التالي:
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
 
 #### Fanout {#explain-analyze-fanout}
 
@@ -881,13 +949,13 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 بالنسبة إلى ربط `partial_merge`، يحمل السطر `Right:` معلومات إضافية حول كيفية تخزين الجدول الأيمن مؤقتًا وفرزه، ويُعرض وقت الفرز في السطرين `Stage (build)` و`Stage (probe)`:
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```
 
 * `size <right_size>` — حجم الذاكرة الذي تشغله كتل الجدول الأيمن.
-* `blocks <right_blocks>` — عدد الكتل التي خُزِّن فيها الجدول الأيمن مؤقتًا.
+* `blocks <right_blocks>` — عدد الكتل التي خُزِّن فيها الجدول الأيمن مؤقتًا.
 * `storage <in-memory|external>` — ما إذا كان الجدول الأيمن يتسع في الذاكرة (`in-memory`) أو كان يجب ترحيله إلى القرص (`external`). عندما تكون القيمة `external`، يعرض الحقل الإضافي `spilled <spilled_bytes>` عدد البايتات المضغوطة المكتوبة على القرص.
 * `sort time <sort_time>` — الوقت المستغرق في فرز الجدول الأيمن (في مرحلة البناء) وكل كتلة واردة من الجانب الأيسر (في مرحلة الفحص).
 * `sort share <sort_share>%` — قيمة `sort time` كنسبة من *وقت انشغال تلك المرحلة نفسها* (مجموع الوقت المنقضي لمعالجاتها)، بخلاف النسبة المئوية لـ `time` الخاصة بالمرحلة، التي تمثل حصة من *وقت تنفيذ الاستعلام بأكمله*.
@@ -896,15 +964,15 @@ Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> ·
 
 بالنسبة إلى ربط `direct`، لا يُطبع سوى السطر `Left:`، لأن الجانب الأيمن مخزن مفتاح-قيمة يُبحث فيه مباشرةً بدلًا من تحويله إلى صفوف.
 
-بالنسبة إلى ربط `CROSS` أو `COMMA`، ولأي قسم `ON` دون مساواة مفتاح، يصف السطر `Buffer:` كيفية الاحتفاظ بالجدول الأيمن في الذاكرة، ويعرض السطر `Spill:` ما إذا كان قد رُحِّل إلى القرص:
+بالنسبة إلى ربط `CROSS` أو `COMMA`، ولأي قسم `ON` دون مساواة مفتاح، يصف السطر `Buffer:` كيفية الاحتفاظ بالجدول الأيمن في الذاكرة، ويعرض السطر `Spill:` ما إذا كان قد رُحِّل إلى القرص:
 
 ```txt
 Buffer: memory <peak_memory> · compressed <yes|no>
 Spill: yes · right spilled <right_spilled_bytes>
 ```
 
-* `memory <peak_memory>` — ذروة الذاكرة التي استهلكها الجدول الأيمن المُخزَّن مؤقتًا.
-* `compressed <yes|no>` — ما إذا كانت كتلة واحدة مخزَّنة مؤقتًا على الأقل قد ضُغطت؛ وفي هذه الحالة تفكّ القارئات ضغط كل كتلة مخزَّنة.
+* `memory <peak_memory>` — ذروة الذاكرة التي استهلكها الجدول الأيمن المُخزَّن مؤقتًا.
+* `compressed <yes|no>` — ما إذا كانت كتلة واحدة مخزَّنة مؤقتًا على الأقل قد ضُغطت؛ وفي هذه الحالة تفكّ القارئات ضغط كل كتلة مخزَّنة.
 * `Spill:` — علامة `yes`/`no` نفسها المستخدمة مع `grace_hash`، ويعرض `right spilled <right_spilled_bytes>` عدد البايتات المضغوطة المكتوبة على القرص.
 
 يعرض كلا الجانبين هنا `matched not collected`: إذ إن المسند الثابت إما يقرن كل صف من الجدول الأيسر بكل صف من الجدول الأيمن، أو لا يقرن أي صف منها، لذا لا يمكن تحديد الصفوف الفردية التي تطابقت.

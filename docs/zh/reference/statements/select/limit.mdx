@@ -301,12 +301,11 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL 
 
 不使用 `n` 和 `UNTIL` 时，每个已开启的范围都会延伸至 stream 末尾，因此 `AFTER start_expr ALL` 返回的行与 `AFTER start_expr` 相同。
 
-:::note
-
-* `WITH TIES`、小数或负数 `LIMIT`/`OFFSET` 以及 `OFFSET` 不支持与 `AFTER`/`UNTIL` 结合使用。
-* 使用 `AFTER`/`UNTIL` 时，会禁用预先 `LIMIT` 下推。
-* 只有在 `AFTER` 和 `UNTIL` 后跟边界表达式时，它们才会被识别为关键字。因此，名为 `after` 或 `until` 的标识符仍可用作行数 (`LIMIT after`、`LIMIT after BY x`) 。当两种解释均可行时，关键字优先：`LIMIT after(2)` 表示范围 `LIMIT AFTER (2)`；若要调用名为 `after` 的函数，请写作 `LIMIT (after(2))`。
-  :::
+<Note>
+  * `WITH TIES`、小数或负数 `LIMIT`/`OFFSET` 以及 `OFFSET` 不支持与 `AFTER`/`UNTIL` 结合使用。
+  * 使用 `AFTER`/`UNTIL` 时，会禁用预先 `LIMIT` 下推。
+  * 只有在 `AFTER` 和 `UNTIL` 后跟边界表达式时，它们才会被识别为关键字。因此，名为 `after` 或 `until` 的标识符仍可用作行数 (`LIMIT after`、`LIMIT after BY x`) 。当两种解释均可行时，关键字优先：`LIMIT after(2)` 表示范围 `LIMIT AFTER (2)`；若要调用名为 `after` 的函数，请写作 `LIMIT (after(2))`。
+</Note>
 
 单独使用 `UNTIL` 会返回从 stream 开头到条件首次为 true 的行之前的所有行：
 

@@ -13,27 +13,21 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="read_in_order_two_level_merge_threshold">
-  ## read_in_order_two_level_merge_threshold
-</div>
+## read_in_order_two_level_merge_threshold {#read_in_order_two_level_merge_threshold}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 Минимальное количество частей, которое нужно прочитать для запуска этапа предварительного слияния при многопоточном чтении в порядке первичного ключа.
 
-<div id="read_in_order_use_buffering">
-  ## read_in_order_use_buffering
-</div>
+## read_in_order_use_buffering {#read_in_order_use_buffering}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.7"},{"label": "1"},{"label": "Использовать буферизацию перед слиянием при чтении в порядке первичного ключа"}]}]} />
 
-Использовать буферизацию перед слиянием при чтении в порядке первичного ключа. Это повышает параллелизм выполнения запроса.
+Использовать буферизацию перед слиянием при чтении в порядке первичного ключа. Это повышает параллелизм выполнения запроса
 
-<div id="read_in_order_use_virtual_row">
-  ## read_in_order_use_virtual_row
-</div>
+## read_in_order_use_virtual_row {#read_in_order_use_virtual_row}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -41,9 +35,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Использовать виртуальную строку при чтении в порядке первичного ключа или его монотонной функции. Это полезно при поиске по нескольким частям, поскольку читаются только те части, которые действительно могут повлиять на результат, а ограниченное окно предварительного чтения размером не более `max_threads` частей сохраняет параллельность чтения.
 
-<div id="read_in_order_use_virtual_row_per_block">
-  ## read_in_order_use_virtual_row_per_block
-</div>
+## read_in_order_use_virtual_row_per_block {#read_in_order_use_virtual_row_per_block}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 

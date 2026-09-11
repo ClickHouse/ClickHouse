@@ -61,12 +61,18 @@ Para replicar el esquema y los datos de una tabla existente:
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-Esto crea una tabla con el mismo esquema y los mismos datos que una tabla existente.  Una vez creada la nueva tabla, se le adjuntan todas las particiones de `db.table`. En otras palabras, los datos de `db.table` se clonan en `db2.table_clone` en el momento de su creación. Esta consulta es equivalente a la siguiente:
+Esto crea una tabla con el mismo esquema y los mismos datos que una tabla existente.  Una vez creada la nueva tabla, se le adjuntan todas las particiones de `db.table`. En otras palabras, los datos de `db.table` se clonan en `db2.table_clone` en el momento de su creación.
 
-```sql
-CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
-ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
-```
+<Note>
+  `CLONE AS` no se admite cuando la base de datos de destino utiliza el motor de base de datos [Replicated](/es/reference/engines/database-engines/replicated).
+
+  En su lugar, use:
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+  ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+  ```
+</Note>
 
 Para ambas funcionalidades, puede especificar un motor diferente para la tabla. Si no se especifica el motor, se usará el mismo motor que para la tabla original (`db.table`).
 

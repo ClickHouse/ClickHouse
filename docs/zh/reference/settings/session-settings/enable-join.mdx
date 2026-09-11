@@ -10,7 +10,6 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
@@ -33,21 +32,17 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 ## enable_join_runtime_filters {#enable_join_runtime_filters}
 
-<BetaBadge />
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "启用此优化"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "新设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "JOIN 运行时过滤器成为 Production 层级功能。"}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "1"},{"label": "启用此优化"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": "0"},{"label": "新设置"}]}]} />
 
 在运行时，根据从右侧收集到的一组 JOIN 连接键对左侧进行过滤。
 
 ## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<ExperimentalBadge />
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "用于通过动态索引分析启用 join 筛选的新设置"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOIN 运行时过滤器已成为 Production 层级功能。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "用于通过动态索引分析启用 join 筛选的新设置"}]}]} />
 
 执行第二轮索引分析 (通过 use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) ，以对 join 左侧的粒度进行剪枝。
 

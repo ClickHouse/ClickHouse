@@ -301,12 +301,11 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL 
 
 من دون `n` و`UNTIL`، يمتد كل نطاق مفتوح حتى نهاية الـ stream، لذا يعيد `AFTER start_expr ALL` الصفوف نفسها التي يعيدها `AFTER start_expr`.
 
-:::note
-
-* لا يمكن استخدام `WITH TIES` أو `LIMIT`/`OFFSET` الكسري أو السالب أو `OFFSET` مع `AFTER`/`UNTIL`.
-* يُعطَّل pushdown الأولي لـ `LIMIT` عند استخدام `AFTER`/`UNTIL`.
-* لا يُتعرَّف على `AFTER` و`UNTIL` ككلمات مفتاحية إلا إذا تبعهما تعبير حدّي، لذا يظل المعرّف المسمى `after` أو `until` صالحًا كعدد للصفوف (`LIMIT after`، `LIMIT after BY x`). وعندما يكون التفسيران ممكنين، تكون الأولوية للكلمة المفتاحية: يُفسَّر `LIMIT after(2)` على أنه النطاق `LIMIT AFTER (2)`؛ وللاستدعاء دالة باسم `after`، اكتب `LIMIT (after(2))`.
-  :::
+<Note>
+  * لا يمكن استخدام `WITH TIES` أو `LIMIT`/`OFFSET` الكسري أو السالب أو `OFFSET` مع `AFTER`/`UNTIL`.
+  * يُعطَّل pushdown الأولي لـ `LIMIT` عند استخدام `AFTER`/`UNTIL`.
+  * لا يُتعرَّف على `AFTER` و`UNTIL` ككلمات مفتاحية إلا إذا تبعهما تعبير حدّي، لذا يظل المعرّف المسمى `after` أو `until` صالحًا كعدد للصفوف (`LIMIT after`، `LIMIT after BY x`). وعندما يكون التفسيران ممكنين، تكون الأولوية للكلمة المفتاحية: يُفسَّر `LIMIT after(2)` على أنه النطاق `LIMIT AFTER (2)`؛ وللاستدعاء دالة باسم `after`، اكتب `LIMIT (after(2))`.
+</Note>
 
 يعيد `UNTIL` وحده الصفوف من بداية الـ stream حتى أول صف يتحقق فيه الشرط:
 

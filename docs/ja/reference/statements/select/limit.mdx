@@ -299,14 +299,13 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL 
 └────────┘
 ```
 
-`n` も `UNTIL` も指定しない場合、開いた各範囲はストリームの末尾まで続くため、`AFTER start_expr ALL` は `AFTER start_expr` と同じ行を返します。
+`n` も `UNTIL` も指定しない場合、開いた各範囲はストリームの終端まで続くため、`AFTER start_expr ALL` は `AFTER start_expr` と同じ行を返します。
 
-:::note
-
-* `WITH TIES`、小数または負数の `LIMIT`/`OFFSET`、および `OFFSET` は、`AFTER`/`UNTIL` と併用できません。
-* `AFTER`/`UNTIL` を使用すると、予備的な `LIMIT` pushdown は無効になります。
-* `AFTER` と `UNTIL` は、その後に境界式が続く場合にのみキーワードとして認識されます。そのため、`after` または `until` という名前の識別子も行数として使用できます (`LIMIT after`、`LIMIT after BY x`) 。両方に解釈できる場合はキーワードが優先されます。`LIMIT after(2)` は範囲指定の `LIMIT AFTER (2)` として解釈されます。`after` という名前の関数を呼び出すには、`LIMIT (after(2))` と記述します。
-  :::
+<Note>
+  * `WITH TIES`、小数または負数の `LIMIT`/`OFFSET`、および `OFFSET` は、`AFTER`/`UNTIL` と併用できません。
+  * `AFTER`/`UNTIL` を使用すると、予備的な `LIMIT` pushdown は無効になります。
+  * `AFTER` と `UNTIL` は、その後に境界式が続く場合にのみキーワードとして認識されます。そのため、`after` または `until` という名前の識別子も行数として使用できます (`LIMIT after`、`LIMIT after BY x`) 。両方に解釈できる場合はキーワードが優先されます。`LIMIT after(2)` は範囲指定の `LIMIT AFTER (2)` として解釈されます。`after` という名前の関数を呼び出すには、`LIMIT (after(2))` と記述します。
+</Note>
 
 `UNTIL` のみを指定した場合、ストリームの先頭から条件が true となる最初の行までの行を返します。
 

@@ -18,9 +18,7 @@ Ce moteur assure l’intégration avec l’écosystème [Apache Hadoop](https://
 
 Cette fonctionnalité n’est pas prise en charge par les ingénieurs ClickHouse et sa qualité est réputée incertaine. En cas de problème, corrigez-le vous-même et soumettez une pull request.
 
-<div id="usage">
-  ## Utilisation
-</div>
+## Utilisation {#usage}
 
 ```sql
 ENGINE = HDFS(URI, format)
@@ -35,9 +33,7 @@ ENGINE = HDFS(URI, format)
   section [Formats](/fr/reference/formats/index#formats-overview).
 * [PARTITION BY expr]
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` — Facultatif. Dans la plupart des cas, vous n’avez pas besoin de clé de partition et, si c’est nécessaire, vous n’avez généralement pas besoin d’une clé de partition plus fine qu’un partitionnement mensuel. Le partitionnement n’accélère pas les requêtes (contrairement à l’expression ORDER BY). N’utilisez jamais un partitionnement trop fin. Ne partitionnez pas vos données par identifiant ou nom de client (faites plutôt de l’identifiant ou du nom du client la première colonne de l’expression ORDER BY).
 
@@ -70,9 +66,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-<div id="implementation-details">
-  ## Détails d’implémentation
-</div>
+## Détails d’implémentation {#implementation-details}
 
 * Les lectures et les écritures peuvent être parallèles.
 * Non pris en charge :
@@ -80,11 +74,9 @@ SELECT * FROM hdfs_engine_table LIMIT 2
   * les index.
   * La [réplication zero-copy](/fr/concepts/features/configuration/server-config/storing-data#zero-copy) est possible, mais n’est pas recommandée.
 
-<Info>
-  **La réplication zero-copy n’est pas prête pour la production**
-
+<Note title="La réplication zero-copy n’est pas prête pour la production">
   La réplication zero-copy est désactivée par défaut dans ClickHouse 22.8 et les versions ultérieures. Cette fonctionnalité n’est pas recommandée pour une utilisation en production.
-</Info>
+</Note>
 
 **Globs dans le chemin**
 
@@ -110,19 +102,19 @@ Les constructions avec `{}` sont similaires à la fonction de table [remote](/fr
 
 2. Il existe plusieurs façons de créer une table constituée de ces six fichiers :
 
-{/* */}
+{{/* */}}
 
 ```sql
 CREATE TABLE table_with_range (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_{1..3}', 'TSV')
 ```
 
-Autre méthode :
+Autre méthode :
 
 ```sql
 CREATE TABLE table_with_question_mark (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/some_file_?', 'TSV')
 ```
 
-La table comprend tous les fichiers des deux répertoires (tous les fichiers doivent respecter le format et le schéma décrits dans la requête) :
+La table comprend tous les fichiers des deux répertoires (tous les fichiers doivent respecter le format et le schéma décrits dans la requête) :
 
 ```sql
 CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/{some,another}_dir/*', 'TSV')
@@ -140,9 +132,7 @@ Créer une table avec des fichiers nommés `file000`, `file001`, ... , `file999`
 CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 
-<div id="configuration">
-  ## Configuration
-</div>
+## Configuration {#configuration}
 
 Comme GraphiteMergeTree, le moteur HDFS prend en charge une configuration étendue via le fichier de configuration de ClickHouse. Vous pouvez utiliser deux clés de configuration : une globale (`hdfs`) et une au niveau utilisateur (`hdfs_*`). La configuration globale est appliquée en premier, puis celle au niveau utilisateur est appliquée (si elle existe).
 
@@ -160,13 +150,9 @@ Comme GraphiteMergeTree, le moteur HDFS prend en charge une configuration étend
 </hdfs_root>
 ```
 
-<div id="configuration-options">
-  ### Options de configuration
-</div>
+### Options de configuration {#configuration-options}
 
-<div id="supported-by-libhdfs3">
-  #### Pris en charge par libhdfs3
-</div>
+#### Pris en charge par libhdfs3 {#supported-by-libhdfs3}
 
 | **paramètre**                                                           | **valeur par défaut**             |
 | ----------------------------------------------------------------------- | --------------------------------- |
@@ -214,9 +200,7 @@ Comme GraphiteMergeTree, le moteur HDFS prend en charge une configuration étend
 
 La [référence de configuration HDFS](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) peut fournir des explications sur certains paramètres.
 
-<div id="clickhouse-extras">
-  #### Options supplémentaires de ClickHouse
-</div>
+#### Options supplémentaires de ClickHouse {#clickhouse-extras}
 
 | **paramètre**                     | **valeur par défaut** |
 | --------------------------------- | --------------------- |
@@ -224,15 +208,11 @@ La [référence de configuration HDFS](https://hawq.apache.org/docs/userguide/2.
 | hadoop&#95;kerberos&#95;principal | &quot;&quot;          |
 | libhdfs3&#95;conf                 | &quot;&quot;          |
 
-<div id="limitations">
-  ### Limites
-</div>
+### Limites {#limitations}
 
 * `hadoop_security_kerberos_ticket_cache_path` et `libhdfs3_conf` ne peuvent être définis qu&#39;au niveau global, et non au niveau de l&#39;utilisateur
 
-<div id="kerberos-support">
-  ## Prise en charge de Kerberos
-</div>
+## Prise en charge de Kerberos {#kerberos-support}
 
 Si le paramètre `hadoop_security_authentication` a pour valeur `kerberos`, ClickHouse s’authentifie via Kerberos.
 Les paramètres sont disponibles [ici](#clickhouse-extras), et `hadoop_security_kerberos_ticket_cache_path` peut s’avérer utile.
@@ -242,9 +222,7 @@ approche de sécurité). Utilisez `tests/integration/test_storage_kerberized_hdf
 
 Si `hadoop_kerberos_keytab`, `hadoop_kerberos_principal` ou `hadoop_security_kerberos_ticket_cache_path` sont spécifiés, l’authentification Kerberos sera utilisée. Dans ce cas, `hadoop_kerberos_keytab` et `hadoop_kerberos_principal` sont obligatoires.
 
-<div id="namenode-ha">
-  ## Prise en charge de la haute disponibilité du namenode HDFS
-</div>
+## Prise en charge de la haute disponibilité du namenode HDFS {#namenode-ha}
 
 libhdfs3 prend en charge la haute disponibilité du namenode HDFS.
 
@@ -259,9 +237,7 @@ libhdfs3 prend en charge la haute disponibilité du namenode HDFS.
 
 * Utilisez ensuite la valeur de `dfs.nameservices` dans `hdfs-site.xml` comme adresse du namenode dans l’URI HDFS. Par exemple, remplacez `hdfs://appadmin@192.168.101.11:8020/abc/` par `hdfs://appadmin@my_nameservice/abc/`.
 
-<div id="virtual-columns">
-  ## Colonnes virtuelles
-</div>
+## Colonnes virtuelles {#virtual-columns}
 
 * `_path` — Chemin d’accès au fichier. Type : `LowCardinality(String)`.
 * `_file` — Nom du fichier. Type : `LowCardinality(String)`.
@@ -269,9 +245,7 @@ libhdfs3 prend en charge la haute disponibilité du namenode HDFS.
 * `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si l’heure est inconnue, la valeur est `NULL`.
 * `_etag` — ETag du fichier. Type : `LowCardinality(String)`. HDFS ne dispose pas d’ETag natif ; la valeur est donc synthétisée à partir de l’heure de modification et de la taille du fichier, sous la forme `<mtime_seconds>_<size>`. Étant donné que `libhdfs3` n’expose l’heure de modification qu’avec une précision d’une seconde, une réécriture effectuée au cours de la même seconde et conservant la même taille produit la même valeur ; c’est pourquoi cet ETag synthétisé n’est pas utilisé comme clé de cache de contenu.
 
-<div id="storage-settings">
-  ## Paramètres de stockage
-</div>
+## Paramètres de stockage {#storage-settings}
 
 * [hdfs&#95;truncate&#95;on&#95;insert](/fr/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - permet de tronquer le fichier avant d’y insérer des données. Désactivé par défaut.
 * [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/fr/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - permet de créer un nouveau fichier à chaque insertion si le format comporte un suffixe. Désactivé par défaut.

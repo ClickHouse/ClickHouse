@@ -508,7 +508,7 @@ Expression ((Project names + Projection))
 Avec `distributed` = 1, la sortie inclut non seulement le plan de requête local, mais également les plans de requête qui seront exécutés sur les nœuds distants. Cela s&#39;avère utile pour analyser et déboguer les requêtes distribuées.
 
 <Note>
-  `distributed` est affiché uniquement sous la forme `legacy` (non-`pretty`), car la sortie `pretty` n’intègre pas les plans des segments distants dans l’arbre du plan. Pour cette raison, l’activation de `distributed` désactive automatiquement les options par défaut de `pretty` (`actions`, `compact` et `pretty`), quelle que soit la valeur de `explain_query_plan_default`. Vous pouvez toujours définir `actions=1` manuellement. L’option `distributed` n’est pas non plus prise en charge avec `json`.
+  `distributed` est affiché uniquement sous la forme `legacy` (non-`pretty`), car la sortie `pretty` n’intègre pas les plans des segments distants dans l’arborescence du plan. Pour cette raison, l’activation de `distributed` désactive automatiquement les options par défaut de `pretty` (`actions`, `compact` et `pretty`), quelle que soit la valeur de `explain_query_plan_default`. Vous pouvez toujours définir `actions=1` manuellement. L’option `distributed` n’est pas non plus prise en charge avec `json`.
 </Note>
 
 Exemple avec une table distribuée :
@@ -553,7 +553,7 @@ Expression ((Project names + Projection))
 
 Dans les deux exemples, le plan de requête affiche le flux d&#39;exécution complet, y compris les étapes locales et distantes.
 
-Avec `pretty` = 1, l&#39;arbre du plan est affiché à l&#39;aide de caractères de tracé plutôt que par indentation, et des informations supplémentaires sont affichées pour les étapes clés :
+Avec `pretty` = 1, l&#39;arborescence du plan est affichée à l&#39;aide de caractères de dessin de lignes plutôt que par indentation, et des informations supplémentaires sont affichées pour les étapes clés :
 
 * Les **colonnes de sortie de la requête** sont affichées en haut du plan.
 * Les **expressions** dans les filtres, les clés d’agrégation, les descriptions de tri et les fonctions de fenêtre sont affichées dans une notation SQL lisible par l’humain (par ex. `a + 1 > 5` au lieu de `greater(plus(a, 1), 5)`). Les préfixes internes des identifiants de colonnes (tels que `__table1.`) sont supprimés pour plus de clarté.
@@ -561,31 +561,69 @@ Avec `pretty` = 1, l&#39;arbre du plan est affiché à l&#39;aide de caractères
 * Les **étapes de filtre** affichent la condition de filtre en notation SQL. Lorsque des filtres de jointure à l’exécution sont présents, ils sont affichés séparément.
 * Les **étapes d’agrégation** affichent les clés et les fonctions d’agrégation avec leurs arguments (par ex. `sum(c)`, `count()`).
 * Les **ensembles IN** issus de littéraux `Tuple` affichent leurs valeurs (tronquées pour les grands ensembles), les ensembles basés sur des sous-requêtes sont libellés `subquery1`, `subquery2`, etc., et les ensembles provenant de tables utilisant le moteur `Set` affichent le nom de la table.
-* Les **étapes de jointure** affichent la relation de jointure à l’aide d’une notation mathématique, le nombre estimé de lignes du résultat,
-  et quelles colonnes de sortie proviennent du côté gauche ou du côté droit. Les symboles suivants sont utilisés pour
-  représenter les différents types de JOIN :
+* Les **étapes de jointure** affichent la relation de jointure à l’aide d’une notation mathématique, les estimations que
+  l’optimiseur d’ordre des jointures a établies pour l’étape (coût, sélectivité, lignes de sortie et lignes de chaque côté),
+  ainsi que les colonnes d’entrée de chaque côté. Les symboles suivants sont utilisés pour représenter les différents types de
+  JOIN :
 
-| Symbole                | Type de jointure     |
-| ---------------------- | -------------------- |
-| `⋈`                    | Jointure interne     |
-| `⟕`                    | Jointure gauche      |
-| `⟖`                    | Jointure droite      |
-| `⟗`                    | Jointure complète    |
-| `⋉`                    | Semi-jointure gauche |
-| `⋊`                    | Semi-jointure droite |
-| `⋉` with strikethrough | Anti-jointure gauche |
-| `⋊` with strikethrough | Anti-jointure droite |
-| `×`                    | Jointure croisée     |
+| Symbole            | Type de JOIN         |
+| ------------------ | -------------------- |
+| `⋈`                | Jointure interne     |
+| `⟕`                | Jointure gauche      |
+| `⟖`                | Jointure droite      |
+| `⟗`                | Jointure complète    |
+| `⋉`                | Jointure semi gauche |
+| `⋊`                | Jointure semi droite |
+| `⋉` avec une barre | Jointure anti gauche |
+| `⋊` avec une barre | Jointure anti droite |
+| `×`                | Jointure croisée     |
 
 Par exemple, `t1 ⟕ t2` signifie une jointure gauche entre les tables `t1` et `t2`.
 Le nombre entre crochets après le nom de la table (par ex. `t1[100]`) indique le nombre estimé de lignes
-lorsque les statistiques de table sont disponibles.
+lorsque les statistiques de la table sont disponibles.
 
-L’option `pretty` fonctionne bien avec `compact = 1`, qui masque les étapes `Expression` et les informations détaillées sur les actions, ce qui rend le plan plus lisible.
+Sous la relation de jointure, chaque étape de jointure affiche les estimations établies pour elle par l’optimiseur d’ordre des jointures :
 
-Un exemple détaillé avec des jointures :
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+* `Coût` — le coût de l’ensemble du sous-arbre de jointure sous cette étape, qui est la valeur que l’optimiseur
+  minimise lorsqu’il compare les ordres de jointure candidats. Le coût d’une jointure est son nombre estimé de
+  paires de lignes correspondantes, `<selectivity> * <left_rows> * <right_rows>`, plus le coût de ses entrées.
+* `Sélectivité` — la fraction estimée du produit cartésien des deux côtés qui satisfait
+  la condition de jointure. Elle est dérivée du nombre de valeurs distinctes (NDV) des clés de jointure :
+  une égalité de clé conserve environ `1 / max(NDV_left, NDV_right)` des paires, et la plus petite
+  fraction parmi les conditions de jointure est utilisée.
+* `Lignes de sortie` — le nombre estimé de lignes produites par la jointure :
+  `<selectivity> * <left_rows> * <right_rows>` pour une jointure interne, avec un minimum de `<left_rows>` pour
+  `LEFT`, de `<right_rows>` pour `RIGHT` et de `<left_rows> + <right_rows>` pour `FULL`, car une
+  jointure externe conserve chaque ligne de son côté préservé. Lorsqu’une jointure `SEMI` ou `ANTI` participe au
+  réordonnancement, elle est estimée comme une fraction de son côté préservé,
+  `<preserved_rows> * min(1, <selectivity> * <other_rows>)` pour `SEMI` et les lignes restantes pour
+  `ANTI` ; sinon, elle utilise la formule correspondant à son type de jointure.
+* `Gauche` / `Droite` — le nombre estimé de lignes entrant dans la jointure de chaque côté.
+
+Une valeur que l’optimiseur n’a pas pu estimer est signalée comme `no stats`. Cela se produit lorsque
+l’optimisation de l’ordre des jointures n’a pas été exécutée — par exemple, lorsque
+[`query_plan_optimize_join_order_limit`](/fr/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)
+est défini sur `0` — ou lorsqu’il n’existe aucune base pour l’estimation.
+
+Les lignes `Input (left):` et `Input (right):` répertorient les colonnes que chaque côté transmet à la jointure.
+
+L’option `pretty` fonctionne bien avec `compact = 1`, qui masque les étapes `Expression` et les informations détaillées sur les actions, ce qui rend le plan plus facile à lire.
+
+Exemple détaillé avec des jointures. Le paramètre
+[`join_runtime_filter_min_probe_rows`](/fr/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+est abaissé uniquement afin qu’une table aussi petite construise tout de même un filtre de jointure à l’exécution :
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -601,11 +639,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -772,23 +813,62 @@ Le nombre de lignes et d’octets est indiqué une seule fois pour l’ensemble 
 
 #### Étapes de jointure {#explain-analyze-join-steps}
 
-Pour une étape de jointure, `EXPLAIN ANALYZE` affiche, pour chaque côté, des lignes de *participation* — `Left` et `Right` — suivies des éventuelles lignes propres à l’implémentation de la jointure. `Left` et `Right` correspondent aux côtés logiques de l’instruction SQL. Dans la plupart des cas, `Left` correspond également au côté probe de la jointure et `Right` au côté build. Ce n’est toutefois pas systématique, en raison de l’échange qui peut intervenir lors de l’exécution de la jointure. Toutes les valeurs de [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm) sont prises en charge (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), de même que les deux implémentations que ce paramètre ne peut pas sélectionner : les jointures `CROSS` ou `COMMA`, ainsi que toute section `ON` sans égalité de clés, et le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join). La plupart indiquent les deux côtés ; certaines n’indiquent que le côté qu’elles matérialisent (par exemple, `direct` affiche uniquement `Left:`).
+Pour une étape de jointure, `EXPLAIN ANALYZE` affiche des lignes comparant les estimations de l’optimiseur d’ordre de jointure avec ce qui s’est réellement produit (voir [Métriques de jointure estimées et réelles](#explain-analyze-join-estimation)), ainsi que, pour chaque côté, des lignes de *participation* — `Left` et `Right` — suivies des éventuelles lignes propres à l’implémentation de la jointure. Toutes les valeurs de [`join_algorithm`](/fr/reference/settings/session-settings/join#join_algorithm) sont prises en charge (`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`), de même que les deux implémentations que ce paramètre ne peut pas sélectionner : les jointures `CROSS` ou `COMMA`, ainsi que toute section `ON` sans égalité de clés, et le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join). La plupart indiquent les deux côtés ; certaines n’indiquent que le côté qu’elles matérialisent (par exemple, `direct` affiche uniquement `Left:`).
 
 Les lignes associées à chaque côté ont la même structure :
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
-Pour chaque côté, `EXPLAIN ANALYZE` indique :
+Pour chaque côté, `EXPLAIN ANALYZE` indique :
 
+* `rows estimated <estimated_rows>` — l’estimation, par l’optimiseur d’ordre de jointure, du nombre de lignes de ce côté, affichée à titre de comparaison avec la valeur réelle `rows` placée à côté ; `no stats` lorsque l’optimiseur n’a produit aucune estimation (voir [Métriques de jointure estimées et réelles](#explain-analyze-join-estimation)).
 * `rows <rows>` — le nombre total de lignes de ce côté qui ont été traitées par la jointure.
-* `matched <matched_rows>` — le nombre de lignes de ce côté qui ont trouvé au moins une ligne correspondante de l’autre côté. Il s’agit bien de *lignes*, et non de clés : si une clé apparaît trois fois à droite et établit une correspondance, les trois lignes de droite sont comptées comme correspondantes.
-* `match rate <match_rate>%` — le pourcentage de lignes de ce côté ayant établi une correspondance, calculé comme suit : `100 * <matched_rows> / <rows>`.
+* `matched <matched_rows>` — le nombre de lignes de ce côté qui ont trouvé au moins une ligne correspondante de l’autre côté. Il s’agit bien de *lignes*, et non de clés : si une clé apparaît trois fois à droite et établit une correspondance, les trois lignes de droite sont comptées comme correspondantes.
+* `match rate <match_rate>%` — le pourcentage de lignes de ce côté ayant établi une correspondance, calculé comme suit : `100 * <matched_rows> / <rows>`.
 * `fanout <fanout>` — le nombre de lignes de sortie produites en moyenne par une ligne correspondante de ce côté.
 
-Toute valeur qui ne peut pas être calculée exactement est indiquée par `not collected` plutôt que par `0`. `match rate` et `fanout` sont calculés à partir de `matched` ; par conséquent, pour un côté dépourvu de cette valeur, ces trois valeurs sont indiquées comme `not collected`.
+Toute valeur qui ne peut pas être calculée exactement est indiquée par `not collected` plutôt que par `0`. `match rate` et `fanout` sont calculés à partir de `matched` ; par conséquent, pour un côté dépourvu de cette valeur, ces trois valeurs sont indiquées comme `not collected`.
+
+#### Métriques de join estimées et réelles {#explain-analyze-join-estimation}
+
+Une étape de jointure contient les estimations de l&#39;optimiseur d’ordre de jointure — les mêmes que celles affichées par `EXPLAIN PLAN` (voir la section [EXPLAIN PLAN](#explain-plan)) — et `EXPLAIN ANALYZE` affiche chacune d&#39;elles à côté de la valeur mesurée :
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+* `Cost` — les deux valeurs comptabilisent les lignes de sortie correspondantes. L’estimation est le coût, selon l’optimiseur, du sous-arbre de jointure : `<selectivity> * <left_rows> * <right_rows>`, auquel s’ajoute le coût de ses entrées. La valeur réelle est mesurée de la même manière : les lignes de sortie correspondantes de cette jointure, plus le coût réel de chaque jointure située en dessous et appartenant au même cluster de réordonnancement.
+* `Selectivity` — l’estimation est calculée à partir du nombre de valeurs distinctes des clés de jointure ; la valeur réelle est la fraction mesurée du produit cartésien qui se retrouve dans la sortie : `<matched output rows> / (<left rows> * <right rows>)`, puisque c’est ce que l’optimiseur cherche à estimer.
+* `Output rows` — le nombre estimé et réel de lignes produites par la jointure. Lorsque les deux valeurs sont non nulles, `q-error` indique `max(estimated / actual, actual / estimated)`, la mesure standard de la qualité de l’estimation de cardinalité : `1.00` correspond à une estimation parfaite, tandis qu’une valeur élevée signifie que l’optimiseur a choisi l’ordre des jointures sur la base d’une estimation de cardinalité très erronée.
+
+Une estimation qui n’a jamais été calculée est signalée par `no stats` — par exemple, lorsque l’optimisation de l’ordre des jointures n’a pas été exécutée parce que [`query_plan_optimize_join_order_limit`](/fr/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) vaut `0`. Cela se distingue de `not collected`, qui indique une valeur réelle que l’exécution n’a pas pu mesurer. Les jointures dont le côté droit est prérempli (le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join), les jointures `direct`) ne passent pas par l’optimiseur d’ordre des jointures et n’affichent que les lignes de participation.
+
+L’étape de jointure affiche également les lignes `Input (left):` et `Input (right):`, avec les colonnes fournies par chaque côté à la jointure.
+
+Pour les tables de l’exemple de jointure [EXPLAIN PLAN](#explain-plan), l’étape de jointure de `EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id` se présente comme suit :
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
 
 #### Fanout {#explain-analyze-fanout}
 
@@ -858,7 +938,7 @@ Lorsque les deux algorithmes renvoient un nombre, les résultats concordent. Les
 
 Examinons les lignes supplémentaires ajoutées par chaque implémentation de jointure.
 
-Pour les jointures `hash` et `parallel_hash`, ainsi que pour le moteur de table `Join`, une ligne `Hash table:` décrit la table de hachage construite à partir de la table de droite :
+Pour les jointures `hash` et `parallel_hash`, ainsi que pour le moteur de table `Join`, une ligne `Hash table:` décrit la table de hachage construite à partir de la table de droite :
 
 ```txt
 Hash table: unique keys <unique_keys> · memory <peak_memory>
@@ -867,7 +947,7 @@ Hash table: unique keys <unique_keys> · memory <peak_memory>
 * `unique keys <unique_keys>` — le nombre de clés uniques stockées dans la table de hachage pendant la phase de construction.
 * `memory <peak_memory>` — le pic de mémoire utilisé par la table de hachage pendant la phase de construction.
 
-Pour la jointure `grace_hash`, la ligne `Hash table:` indique également comment la jointure s&#39;est adaptée à la limite de mémoire, et une ligne `Spill:` indique si des données ont été déversées sur le disque :
+Pour la jointure `grace_hash`, la ligne `Hash table:` indique également comment la jointure s&#39;est adaptée à la limite de mémoire, et une ligne `Spill:` indique si des données ont été déversées sur le disque :
 
 ```txt
 Hash table: unique keys <unique_keys> · memory <peak_memory> · buckets <buckets> · rehashes <rehashes>
@@ -881,7 +961,7 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 Pour la jointure `partial_merge`, la ligne `Right:` contient des informations supplémentaires sur la mise en mémoire tampon et le tri de la table de droite, et le temps de tri s’affiche sur les lignes `Stage (build)` et `Stage (probe)` :
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```
@@ -894,9 +974,9 @@ Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> ·
 
 Pour la jointure `full_sorting_merge`, seules les lignes communes `Left:` et `Right:` sont affichées.
 
-Pour la jointure `direct`, seule la ligne `Left:` est affichée, car le côté droit est un stockage clé-valeur consulté directement plutôt que matérialisé en lignes.
+Pour la jointure `direct`, seule la ligne `Left:` est affichée, car le côté droit est un magasin clé-valeur consulté directement plutôt que matérialisé en lignes.
 
-Pour une jointure `CROSS` ou `COMMA`, et pour toute section `ON` sans égalité de clés, une ligne `Buffer:` décrit comment la table de droite a été conservée en mémoire et une ligne `Spill:` indique si elle a été écrite sur le disque :
+Pour une jointure `CROSS` ou `COMMA`, et pour toute section `ON` sans égalité de clés, une ligne `Buffer:` décrit comment la table de droite a été conservée en mémoire et une ligne `Spill:` indique si elle a été écrite sur le disque :
 
 ```txt
 Buffer: memory <peak_memory> · compressed <yes|no>
@@ -904,10 +984,10 @@ Spill: yes · right spilled <right_spilled_bytes>
 ```
 
 * `memory <peak_memory>` — le pic de mémoire occupé par la table de droite mise en mémoire tampon.
-* `compressed <yes|no>` — indique si au moins un bloc mis en mémoire tampon a été compressé ; les lecteurs décompressent alors chaque bloc stocké.
+* `compressed <yes|no>` — indique si au moins un bloc mis en mémoire tampon a été compressé ; les lecteurs décompressent alors chaque bloc stocké.
 * `Spill:` — le même indicateur `yes`/`no` que pour `grace_hash`, `right spilled <right_spilled_bytes>` indiquant le nombre d’octets compressés écrits sur le disque.
 
-Les deux côtés indiquent ici `matched not collected` : un prédicat constant associe soit chaque ligne de gauche à chaque ligne de droite, soit aucune ligne ; il n’est donc pas possible d’indiquer quelles lignes individuelles correspondent.
+Les deux côtés indiquent ici `matched not collected` : un prédicat constant associe soit chaque ligne de gauche à chaque ligne de droite, soit aucune ligne ; il n’est donc pas possible d’indiquer quelles lignes individuelles correspondent.
 
 Pour une jointure utilisant le moteur de table [`Join`](/fr/reference/engines/table-engines/special/join), les deux côtés sont indiqués, ainsi que la ligne `Hash table:` qui décrit la table préconstruite. Le côté droit comptabilise les lignes stockées dans le moteur, et non celles créées pour chaque requête.
 

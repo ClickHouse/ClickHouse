@@ -2540,12 +2540,10 @@ SELECT generateSerialID('id2', 100)
 如果不存在该请求头，或者当前请求不是通过 HTTP 接口执行的，则该函数返回空字符串。
 某些 HTTP 请求头 (例如 `Authorization`、`Authentication` 和 `X-ClickHouse-*`) 受到限制。
 
-<Info>
-  **需要启用设置 `allow_get_client_http_header`**
-
+<Note title="需要启用设置 `allow_get_client_http_header`">
   该函数要求启用设置 `allow_get_client_http_header`。
   出于安全原因，该设置默认未启用，因为某些请求头 (例如 `Cookie`) 可能包含敏感信息。
-</Info>
+</Note>
 
 根据 RFC 9110，HTTP 请求头不区分大小写。
 如果该函数用于分布式查询的上下文中，则只有在发起节点上才会返回非空结果。
@@ -3053,12 +3051,10 @@ SELECT globalVariable('max_allowed_packet')
 对于嵌套数据结构中的元素，该函数会检查相应列是否存在。
 对于嵌套数据结构本身，该函数返回 `0`。
 
-<Info>
-  **需要 `SHOW COLUMNS` 权限**
-
+<Note title="需要 `SHOW COLUMNS` 权限">
   该函数要求在目标表上具有 `SHOW COLUMNS` 权限 (这与 `DESCRIBE` 和 `SHOW CREATE TABLE` 所需的 grant 相同) 。
   如果没有该权限，调用会因 `ACCESS_DENIED` 失败，而不是返回 `1` 或 `0`，因此在没有访问权限的情况下无法探测列名。
-</Info>
+</Note>
 
 <Note>
   此函数是非确定性的：对于相同的参数，它可能返回不同的结果。
@@ -5055,9 +5051,7 @@ FROM
 
 对数据块中每一行的聚合函数状态进行累积。
 
-<Warning>
-  **已弃用**
-
+<Warning title="已弃用">
   每当进入新的数据块时，状态都会被重置。
   由于这种行为容易出错，该函数已被弃用，建议改用[窗口函数](/zh/reference/functions/window-functions/index)。
   你可以使用设置 [`allow_deprecated_error_prone_window_functions`](/zh/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) 来允许使用此函数。
@@ -5112,18 +5106,14 @@ FROM numbers(5);
 开始时间列和结束时间列必须具有相同的数据类型。
 该函数会针对每个事件的开始时间，计算处于活动状态的 (并发) 事件总数。
 
-<Tip>
-  **要求**
-
+<Tip title="要求">
   事件必须按开始时间升序排列。
   如果不满足此要求，函数会引发异常。
   每个数据块都会单独处理。
   如果不同数据块中的事件发生重叠，则无法正确处理。
 </Tip>
 
-<Warning>
-  **已弃用**
-
+<Warning title="已弃用">
   建议改用[窗口函数](/zh/reference/functions/window-functions/index)。
 </Warning>
 
@@ -5173,9 +5163,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 计算数据块中相邻两行值之间的差值。
 第一行返回 `0`，后续各行返回与前一行的差值。
 
-<Warning>
-  **已弃用**
-
+<Warning title="已弃用">
   该函数仅返回当前正在处理的数据块内的差值。
   由于这种行为容易出错，该函数已被弃用。
   建议改用[窗口函数](/zh/reference/functions/window-functions/index)。
@@ -5275,9 +5263,7 @@ WHERE diff != 1;
 
 计算数据块中相邻行值之间的差值，但与 [`runningDifference`](#runningDifference) 不同，它返回的是第一行的实际值，而不是 `0`。
 
-<Warning>
-  **已弃用**
-
+<Warning title="已弃用">
   仅返回当前处理的数据块内的差值。
   由于这种行为容易导致错误，该函数已被弃用。
   建议改用[窗口函数](/zh/reference/functions/window-functions/index)。

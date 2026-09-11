@@ -6922,9 +6922,7 @@ SELECT
 يدعم التحويل من String وFixedString وDateTime وDateTime64 أو من الأنواع الرقمية التي تمثل عدد الثواني منذ منتصف الليل.
 تُقيَّد القيم الرقمية الواقعة خارج نطاق النوع (`-999:59:59` إلى `999:59:59`، أي `-3599999` إلى `3599999` ثانية) بحدود النطاق، ولا يمكن تحويل قيم الفاصلة العائمة غير المنتهية (`NaN` و`inf` و`-inf`) وينتج عن ذلك استثناء.
 
-<Info>
-  **`toTime` القديم**
-
+<Note title="`toTime` القديم">
   قبل v25.5، كانت `toTime` دالة مختلفة تحوّل تاريخًا مع وقت إلى تاريخ ثابت (`1970-01-02`) مع الحفاظ على
   مكوّن الوقت. ولا تزال تلك الدالة متاحة بالاسم [`toTimeWithFixedDate`](/ar/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
 
@@ -6932,7 +6930,7 @@ SELECT
   أي إن استدعاءات `toTime` تُفسَّر على أنها `toTimeWithFixedDate` بدلًا من دالة التحويل الموضحة هنا.
   أثناء تمكين الإعداد، استخدم `CAST(x AS Time)` أو `x::Time` للتحويل إلى النوع `Time`.
   تكون القيمة الافتراضية للإعداد `0` منذ v26.7، لكنها كانت `1` من v25.6 إلى v26.6، ولهذا تضبطها الأمثلة أدناه صراحةً.
-</Info>
+</Note>
 
 **البنية**
 
@@ -6940,13 +6938,13 @@ SELECT
 toTime(x)
 ```
 
-**الوسيطات**
+**وسيطات الدالة**
 
 * `x` — قيمة الإدخال المراد تحويلها. [`String`](/ar/reference/data-types/string) أو [`FixedString`](/ar/reference/data-types/fixedstring) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`(U)Int*`](/ar/reference/data-types/int-uint) أو [`BFloat16`](/ar/reference/data-types/float) أو [`Float*`](/ar/reference/data-types/float)
 
 **القيمة المعادة**
 
-تُرجِع القيمة المُحوَّلة. [`Time`](/ar/reference/data-types/time)
+تُرجِع القيمة المُحوَّلة. [`Time`](/ar/reference/data-types/time)
 
 **أمثلة**
 

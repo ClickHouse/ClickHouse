@@ -39,14 +39,12 @@ Introduit dans : v21.1.0
 
 Renvoie le nombre de correspondances d&#39;une expression régulière dans une chaîne.
 
-<Info>
-  **Comportement selon la version**
-
+<Note title="Comportement selon la version">
   Le comportement de cette fonction dépend de la version de ClickHouse :
 
   * dans les versions &lt; v25.6, la fonction arrête le comptage à la première correspondance vide, même si le motif autorise une correspondance vide.
   * dans les versions &gt;= 25.6, la fonction continue à s&#39;exécuter lorsqu&#39;une correspondance vide se produit. Le comportement legacy peut être restauré à l&#39;aide du paramètre `count_matches_stop_at_empty_match = true`;
-</Info>
+</Note>
 
 **Syntaxe**
 
@@ -1464,15 +1462,13 @@ Introduit dans : v18.16.0
 
 Comme [`position`](#position), mais avec les arguments `haystack` et `locate` inversés.
 
-<Info>
-  **Comportement selon la version**
-
+<Note title="Comportement selon la version">
   Le comportement de cette fonction dépend de la version de ClickHouse :
 
   * dans les versions &lt; v24.3, `locate` était un alias de la fonction `position` et acceptait les arguments `(haystack, needle[, start_pos])`.
   * dans les versions &gt;= 24.3, `locate` est une fonction distincte (pour une meilleure compatibilité avec MySQL) et accepte les arguments `(needle, haystack[, start_pos])`.
     Le comportement précédent peut être rétabli à l’aide du paramètre `function_locate_has_mysql_compatible_argument_order = false`.
-</Info>
+</Note>
 
 **Syntaxe**
 

@@ -61,14 +61,21 @@ ClickHouse는 기존 테이블의 스키마와 데이터를 복사할 수 있습
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-기존 테이블과 동일한 스키마(schema)와 데이터를 가진 테이블을 생성합니다. 새 테이블이 생성된 후 `db.table`의 모든 파티션이 이 테이블에 ATTACH됩니다. 즉, 생성과 동시에 `db.table`의 데이터가 `db2.table_clone`으로 복제됩니다. 이 쿼리는 다음과 동일합니다.
+기존 테이블과 동일한 스키마(schema)와 데이터를 가진 테이블을 생성합니다. 새 테이블이 생성된 후 `db.table`의 모든 파티션이 이 테이블에 ATTACH됩니다. 즉, 생성과 동시에 `db.table`의 데이터가 `db2.table_clone`으로 복제됩니다.
 
-```sql
-CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
-ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
-```
+<Note>
+  대상 데이터베이스가 [Replicated](/ko/reference/engines/database-engines/replicated) 데이터베이스 엔진을 사용하는 경우 `CLONE AS`는 지원되지 않습니다.
 
-두 기능 모두에서 테이블에 다른 엔진을 지정할 수 있습니다. 엔진을 지정하지 않으면 원본 테이블(`db.table`)과 동일한 엔진이 사용됩니다.
+  대신 다음을 사용하십시오.
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+  ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+  ```
+</Note>
+
+두 기능 모두에서 테이블에 다른 엔진을 지정할 수 있습니다.
+엔진을 지정하지 않으면 원본 테이블(`db.table`)과 동일한 엔진이 사용됩니다.
 
 ### 테이블 함수를 사용하여 테이블 생성 {#from-a-table-function}
 

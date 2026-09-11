@@ -24,6 +24,8 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 
 * `query_id` ([String](/ja/reference/data-types/string)) — クエリ ID。
 * `hostname` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — クエリを実行するサーバーのホスト名。
+* `clickhouse_version` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — その行を生成した ClickHouse サーバーのバージョン。
+* `system_processor` ([LowCardinality(String)](/ja/reference/data-types/lowcardinality)) — その行を生成した ClickHouse サーバーの CPU アーキテクチャ。
 * `event_date` ([Date](/ja/reference/data-types/date)) — イベント日付。
 * `event_time` ([DateTime](/ja/reference/data-types/datetime)) — イベント時刻。
 * `event_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — マイクロ秒精度のイベント時刻。
@@ -433,6 +435,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでの JOIN のために書き込まれた圧縮バイト数。
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/ja/reference/data-types/int-uint)) — 外部メモリでの JOIN のために書き込まれたデータ量 (非圧縮、圧縮前) 。
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg のパーティションプルーニングでスキップされたファイル数
+* `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/ja/reference/data-types/int-uint)) — マニフェストリストのパーティションサマリーを使用して、読み取らずにスキップされた Iceberg マニフェストファイル数
 * `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg の読み取り時に単純な count 最適化が適用された回数
 * `ProfileEvent_IcebergVersionHintUsed` ([UInt64](/ja/reference/data-types/int-uint)) — version-hint.text が使用された回数。
 * `ProfileEvent_IcebergMinMaxIndexPrunedFiles` ([UInt64](/ja/reference/data-types/int-uint)) — Iceberg で MinMax index を使用してスキップされたファイル数。
@@ -461,7 +464,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_UniqueKeyIndexCacheLookupMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — `UniqueKeyIndexCache::Lookup` と `UniqueKeyIndexCache::Insert` 内の実時間 (RocksDB ブロックキャッシュ用の ClickHouse 側 `CacheBase` アダプター) 。
 * `ProfileEvent_UniqueKeyIndexCacheHits` ([UInt64](/ja/reference/data-types/int-uint)) — UNIQUE KEY 索引キャッシュでエントリが見つかり、SST ブロックを読み込む必要がなかった回数。
 * `ProfileEvent_UniqueKeyIndexCacheMisses` ([UInt64](/ja/reference/data-types/int-uint)) — UNIQUE KEY 索引キャッシュでエントリが見つからず、ディスクから SST ブロックを読み込む必要があった回数。
-* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — `SSTIndexWriter` の存続期間中に費やした合計実時間。SST の `Open`、各 `addEncoded` Put、`finalizeToStorage` 内の `Finish` + `WriteBuffer` の確定処理を対象とします (SST バイトはパートストレージの `WriteBuffer` に直接ストリーミングされます) 。writer の構築前に静的ヘルパーが行う処理 (エンコード + 非プレフィックスパスのソート) は除きます。writer ごとに 1 回出力されます。
+* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — `SSTIndexWriter` の存続期間中に費やした合計実時間。SST の `Open`、各 `addEncoded` Put、`finish` 内の `Finish` + `WriteBuffer` の確定処理 (+ fsync) を対象とします (SST バイトはパートストレージの `WriteBuffer` に直接ストリーミングされます) 。writer の構築前に静的ヘルパーが行う処理 (エンコード + 非プレフィックスパスのソート) は除きます。writer ごとに 1 回出力されます。
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildCount` ([UInt64](/ja/reference/data-types/int-uint)) — クラッシュからフラッシュまでの間に、ロード時に `unique_key_index.sst` が再構築された UNIQUE KEY パーツ数。
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — ロード時に `unique_key_index.sst` を再構築するのに費やした合計時間 (UK カラムの順次読み取り + SST 書き込み) 。
 * `ProfileEvent_SelectedParts` ([UInt64](/ja/reference/data-types/int-uint)) — MergeTree table から読み取る対象として選択された data parts の数。
@@ -958,10 +961,10 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_MetadataFromKeeperCleanupTransactionCommit` ([UInt64](/ja/reference/data-types/int-uint)) — 削除済みオブジェクトのクリーンアップに対するメタデータ取引のコミットが試行された回数。
 * `ProfileEvent_MetadataFromKeeperCleanupTransactionCommitRetry` ([UInt64](/ja/reference/data-types/int-uint)) — 削除済みオブジェクトのクリーンアップに対するメタデータ取引のコミットが再試行された回数。
 * `ProfileEvent_MetadataFromKeeperOperations` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper へのリクエストが行われた回数。
-* `ProfileEvent_MetadataFromKeeperIndividualOperations` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への単一または複数リクエストで読み書きされたパス数。
-* `ProfileEvent_MetadataFromKeeperIndividualOperationsMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への単一または複数リクエスト中に費やした時間。
-* `ProfileEvent_MetadataFromKeeperReconnects` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への再接続が行われた回数。
-* `ProfileEvent_MetadataFromKeeperBackgroundCleanupObjects` ([UInt64](/ja/reference/data-types/int-uint)) — 古い削除済みオブジェクトのクリーンアップがバックグラウンドタスクによって実行された回数。
+* `ProfileEvent_MetadataFromKeeperIndividualOperations` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への単一または複数リクエストで読み書きされたパス数
+* `ProfileEvent_MetadataFromKeeperIndividualOperationsMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への単一または複数リクエスト中に費やした時間
+* `ProfileEvent_MetadataFromKeeperReconnects` ([UInt64](/ja/reference/data-types/int-uint)) — Keeper への再接続が行われた回数
+* `ProfileEvent_MetadataFromKeeperBackgroundCleanupObjects` ([UInt64](/ja/reference/data-types/int-uint)) — 古い削除済みオブジェクトのクリーンアップがバックグラウンドタスクによって実行された回数
 * `ProfileEvent_MetadataFromKeeperBackgroundCleanupTransactions` ([UInt64](/ja/reference/data-types/int-uint)) — 古いトランザクションの冪等性トークンがバックグラウンドタスクによってクリーンアップされた回数
 * `ProfileEvent_MetadataFromKeeperBackgroundCleanupBlobs` ([UInt64](/ja/reference/data-types/int-uint)) — 空のブロブレイアウトパートがバックグラウンドタスクによってクリーンアップされた回数
 * `ProfileEvent_MetadataFromKeeperBackgroundCleanupErrors` ([UInt64](/ja/reference/data-types/int-uint)) — バックグラウンドクリーンアップタスクでエラーが発生した回数
@@ -1099,6 +1102,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueRemovedObjects` ([UInt64](/ja/reference/data-types/int-uint)) — after&#95;processing = delete の一環として削除されたオブジェクト数
 * `ProfileEvent_ObjectStorageQueueTaggedObjects` ([UInt64](/ja/reference/data-types/int-uint)) — after&#95;processing = tag の一環としてタグ付けされたオブジェクト数
 * `ProfileEvent_ObjectStorageQueueInsertIterations` ([UInt64](/ja/reference/data-types/int-uint)) — insert の反復回数
+* `ProfileEvent_ObjectStorageQueueRemoveObjectFailures` ([UInt64](/ja/reference/data-types/int-uint)) — after&#95;processing = delete の一環として削除に失敗したオブジェクト数
 * `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/ja/reference/data-types/int-uint)) — ファイルを失敗または処理済みとしてコミットするためのKeeperリクエスト数
 * `ProfileEvent_ObjectStorageQueueBucketLockLostOwnership` ([UInt64](/ja/reference/data-types/int-uint)) — S3(Azure)Queue でバケットロックの所有権が失われたことを検出した回数。値がゼロ以外の場合は、persistent&#95;processing&#95;node&#95;ttl&#95;seconds が小さすぎるか、バグがあることを示します
 * `ProfileEvent_ObjectStorageQueueBucketLockRefreshes` ([UInt64](/ja/reference/data-types/int-uint)) — S3(Azure)Queue でバケットロックの更新に成功した回数
@@ -1106,6 +1110,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueUnsuccessfulCommits` ([UInt64](/ja/reference/data-types/int-uint)) — 失敗したKeeperコミット数
 * `ProfileEvent_ObjectStorageQueueCancelledFiles` ([UInt64](/ja/reference/data-types/int-uint)) — StorageS3(Azure)Queue でキャンセルされたファイル数
 * `ProfileEvent_ObjectStorageQueueProcessedRows` ([UInt64](/ja/reference/data-types/int-uint)) — StorageS3(Azure)Queue で処理された行数
+* `ProfileEvent_ObjectStorageQueueExclusiveModeProcessingErrors` ([UInt64](/ja/reference/data-types/int-uint)) — S3(Azure)Queue のファイルが処理エラーにより状態を確定できなかった回数。&#39;exclusive&#39; モードのみ。
 * `ProfileEvent_ObjectStorageListedObjects` ([UInt64](/ja/reference/data-types/int-uint)) — フィルタリング前にオブジェクトストレージの一覧 API から返されたオブジェクトの総数。
 * `ProfileEvent_ObjectStorageGlobFilteredObjects` ([UInt64](/ja/reference/data-types/int-uint)) — glob または Regex パターンに一致せず、一覧取得時にスキップされたオブジェクト。
 * `ProfileEvent_ObjectStoragePredicateFilteredObjects` ([UInt64](/ja/reference/data-types/int-uint)) — &#95;path/&#95;file に対する仮想カラムの述語フィルタリングによって除外されたオブジェクト。
@@ -1536,6 +1541,7 @@ import SystemTableCloud from '/snippets/ja/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterRowsChecked` ([UInt64](/ja/reference/data-types/int-uint)) — JOIN Runtime Filters によってチェックされた行数
 * `ProfileEvent_RuntimeFilterRowsPassed` ([UInt64](/ja/reference/data-types/int-uint)) — JOIN Runtime Filters を通過した (フィルタで除外されなかった) 行数
 * `ProfileEvent_RuntimeFilterRowsSkipped` ([UInt64](/ja/reference/data-types/int-uint)) — JOIN Runtime Filters によってスキップされたブロック内の行数
+* `ProfileEvent_RuntimeFilterBloomFilterBuildsSkipped` ([UInt64](/ja/reference/data-types/int-uint)) — hash table 統計の build 側キー数から、filter が set bits の最大比率を超えると予測されたためにスキップされた JOIN Runtime Filter Bloom filter の構築回数
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ja/reference/data-types/int-uint)) — JOIN Runtime Filters による読み取り時のプルーニング対象として検査されたグラニュール数
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ja/reference/data-types/int-uint)) — JOIN Runtime Filters により読み取り時にプルーニングされたグラニュール数
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ja/reference/data-types/int-uint)) — JOIN の右側を構築した後の後処理ステップの経過時間。

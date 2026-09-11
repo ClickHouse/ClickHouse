@@ -349,6 +349,7 @@ true の場合、DESCRIBE クエリの結果にはカラム名と型のみが含
 * `polyglot` — 他のdialect (MySQL、PostgreSQLなど) のSQLをClickHouse SQLにトランスパイルします。実験的設定の`allow_experimental_polyglot_dialect`が必要です。
 * `promql` — `promql_database`、`promql_table`、`promql_evaluation_time`設定で構成されたTimeSeriesテーブルに対して評価されるPromQL (Prometheus Query Language) 。
 * `clickhouse_json` — SQLテキストの代わりに、クエリをJSON AST (`parseQueryToJSON`の出力) として解釈します。dialectを元に戻せるよう、`SET`クエリは引き続き通常の形式で認識されます。実験的設定の`enable_json_ast_dialect`が必要です。
+* `trino` — Trino SQL: Trinoの構文 (`ARRAY[...]`、`TRY_CAST`、`UNNEST`など) を変換し、Trinoの関数名をClickHouseの同等のものにマッピングします。実験的設定の`allow_experimental_trino_dialect`が必要です。
 
 ## discard_query_data {#discard_query_data}
 
@@ -1405,6 +1406,22 @@ FORMAT Null;
 * [insert&#95;quorum](/ja/reference/settings/session-settings/insert-quorum#insert_quorum)
 * [insert&#95;quorum&#95;timeout](/ja/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/ja/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
+
+## session_query_ids_history_size {#session_query_ids_history_size}
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1000"},{"label": "新しい `system.session_query_ids` システムテーブルを通じて公開される、セッションローカルなクエリID履歴のサイズを制限する新しい設定。以前の値 `0`（記録を無効化）は 26.9 より前の動作を再現します。"}]}]} />
+
+[`system.session_query_ids`](/ja/reference/system-tables/session_query_ids) システムテーブルを通じて公開される、セッションローカルな履歴に保持されるクエリIDの最大数です。
+セッション内で実行された内部クエリ以外のすべてのクエリのクエリIDが、クエリ開始時にそこへ記録されます。履歴がこのサイズを超えると、最も古いエントリから順に追い出されます。
+
+この値はクエリ開始時、クエリがパースされる前に読み取られます。そのため、クエリ自身の `SETTINGS` 句では、そのクエリを記録するかどうかを制御できません。代わりに `SET`、HTTP URLパラメータ、または設定プロファイルを使用してください。
+
+設定可能な値:
+
+* 正の整数。
+* 0 — 記録は無効です。それ以前に記録されたエントリはテーブルに残ります。
 
 ## session_timezone {#session_timezone}
 

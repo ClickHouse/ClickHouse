@@ -10,7 +10,6 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذه الإعدادات متاحة في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [المصدر](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -33,21 +32,17 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 ## enable_join_runtime_filters {#enable_join_runtime_filters}
 
-<BetaBadge />
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "تم تمكين هذا التحسين"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "أصبحت عوامل تصفية وقت التشغيل لـ JOIN ميزة من فئة الإنتاج."}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "1"},{"label": "تم تمكين هذا التحسين"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 صفِّ الجانب الأيسر باستخدام مجموعة مفاتيح JOIN التي جُمعت من الجانب الأيمن وقت التشغيل.
 
 ## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<ExperimentalBadge />
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد لتمكين تصفية الربط باستخدام التحليل الديناميكي للفهارس"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "أصبحت عوامل تصفية وقت التشغيل لـ JOIN ميزة من فئة الإنتاج."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "إعداد جديد لتمكين تصفية الربط باستخدام التحليل الديناميكي للفهارس"}]}]} />
 
 شغّل تمريرةً ثانية من تحليل الفهارس (عبر use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) بهدف استبعاد granules على الجانب الأيسر من الربط.
 

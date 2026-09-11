@@ -10,7 +10,6 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/fr/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [code source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -33,21 +32,17 @@ Utiliser des tables de hachage qui ne stockent que les join keys, sans référen
 
 ## enable_join_runtime_filters {#enable_join_runtime_filters}
 
-<BetaBadge />
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Active cette optimisation"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Les JOIN runtime filters sont devenus une fonctionnalité de Production tier."}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "1"},{"label": "Active cette optimisation"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": "0"},{"label": "Nouveau paramètre"}]}]} />
 
 Filtre la partie gauche à l’aide de l’ensemble des clés de JOIN collectées du côté droit à l’exécution.
 
 ## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<ExperimentalBadge />
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nouveau paramètre permettant d’activer le filtrage des jointures à l’aide d’une analyse d’index dynamique"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Les JOIN runtime filters sont devenus une fonctionnalité du Production tier."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nouveau paramètre permettant d’activer le filtrage des jointures à l’aide d’une analyse d’index dynamique"}]}]} />
 
 Exécute une seconde passe d’analyse d’index (via use&#95;skip&#95;indexes&#95;on&#95;data&#95;read) afin d’élaguer les granules du côté gauche (LHS) d’une jointure.
 

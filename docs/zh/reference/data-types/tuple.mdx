@@ -14,9 +14,7 @@ Tuple 用于临时对列进行分组。在查询中使用 IN 表达式时，可�
 
 Tuple 可以作为查询结果返回。在这种情况下，对于 JSON 以外的文本格式，其值以逗号分隔并放在 `()` 中。在 JSON 格式中，Tuple 会以数组形式输出 (使用 `[]`) 。
 
-<div id="creating-tuples">
-  ## 创建 Tuple
-</div>
+## 创建 Tuple {#creating-tuples}
 
 您可以使用函数创建 Tuple：
 
@@ -64,9 +62,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-<div id="data-type-detection">
-  ## 数据类型检测
-</div>
+## 数据类型检测 {#data-type-detection}
 
 在动态创建Tuple时，ClickHouse 会将Tuple参数的类型推断为能够容纳给定参数值的最小类型。如果该值为 [NULL](/zh/reference/settings/formats/input-format#input_format_null_as_default)，则推断出的类型为 [Nullable](/zh/reference/data-types/nullable)。
 
@@ -82,9 +78,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └───────────┴─────────────────────────────────┘
 ```
 
-<div id="referring-to-tuple-elements">
-  ## 引用 Tuple 中的元素
-</div>
+## 引用 Tuple 中的元素 {#referring-to-tuple-elements}
 
 可以按名称或索引引用 Tuple 中的元素：
 
@@ -108,9 +102,7 @@ SELECT a.2 FROM named_tuples; -- 按索引
 └────────────────────┘
 ```
 
-<div id="comparison-operations-with-tuple">
-  ## Tuple 的比较运算
-</div>
+## Tuple 的比较运算 {#comparison-operations-with-tuple}
 
 比较两个 Tuple 时，会按从左到右的顺序依次比较各个元素。如果第一个 Tuple 的某个元素大于 (小于) 第二个 Tuple 中对应的元素，则第一个 Tuple 大于 (小于) 第二个 Tuple；否则 (即这两个元素相等) ，继续比较下一个元素。
 
@@ -188,16 +180,12 @@ ORDER BY key ASC;
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
 
-<div id="nullable-tuple">
-  ## Nullable(Tuple(T1, T2, ...))
-</div>
+## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-<Info>
-  **Beta 功能**
-
+<Note title="Beta 功能">
   需要设置 `SET enable_nullable_tuple_type = 1`
   这是一个 Beta 功能。
-</Info>
+</Note>
 
 允许整个 Tuple 为 `NULL`，而不是像 `Tuple(Nullable(T1), Nullable(T2), ...)` 那样只能让各个单独元素为 `NULL`。
 

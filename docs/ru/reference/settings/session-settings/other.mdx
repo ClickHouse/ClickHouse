@@ -360,6 +360,7 @@ SETTINGS convert_query_to_cnf = true;
 * `polyglot` — транспилирует SQL из других диалектов (MySQL, PostgreSQL и т. д.) в ClickHouse SQL. Требует экспериментальной настройки `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (Prometheus Query Language), выполняемый для таблицы TimeSeries, настроенной с помощью параметров `promql_database`, `promql_table` и `promql_evaluation_time`.
 * `clickhouse_json` — вместо текста SQL запрос интерпретируется как JSON AST (результат работы `parseQueryToJSON`). Запрос `SET` по-прежнему распознаётся в обычной форме, что позволяет переключиться обратно на другой диалект. Требует экспериментальной настройки `enable_json_ast_dialect`.
+* `trino` — Trino SQL: преобразует синтаксис Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) и сопоставляет имена функций Trino с их эквивалентами в ClickHouse. Требует экспериментальной настройки `allow_experimental_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -1419,6 +1420,22 @@ FORMAT Null;
 * [insert&#95;quorum](/ru/reference/settings/session-settings/insert-quorum#insert_quorum)
 * [insert&#95;quorum&#95;timeout](/ru/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/ru/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
+
+## session_query_ids_history_size {#session_query_ids_history_size}
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1000"},{"label": "Новая настройка, ограничивающая размер локальной для сеанса истории query id, доступной через новую системную таблицу `system.session_query_ids`. Значение `0` (запись отключена) воспроизводит поведение до версии 26.9."}]}]} />
+
+Максимальное количество query id, хранимых в локальной для сеанса истории, которая доступна через системную таблицу [`system.session_query_ids`](/ru/reference/system-tables/session_query_ids).
+Query id каждого невнутреннего запроса, выполняемого в сеансе, записывается туда при старте запроса; когда история превышает указанный размер, первыми вытесняются самые старые записи.
+
+Значение считывается при старте запроса, до его разбора, поэтому предложение `SETTINGS` самого запроса не влияет на то, будет ли этот запрос записан; используйте вместо этого `SET`, URL-параметр HTTP-запроса или профиль настроек.
+
+Возможные значения:
+
+* Положительное целое число.
+* 0 — запись отключена; ранее сделанные записи остаются в таблице.
 
 ## session_timezone {#session_timezone}
 

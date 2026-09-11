@@ -340,6 +340,7 @@ SETTINGS convert_query_to_cnf = true;
 * `polyglot` — 将其他方言 (MySQL、PostgreSQL 等) 的 SQL 转译为 ClickHouse SQL。需要启用 Experimental 设置 `allow_experimental_polyglot_dialect`。
 * `promql` — PromQL (Prometheus 查询语言) ，基于由 `promql_database`、`promql_table` 和 `promql_evaluation_time` 设置指定的 TimeSeries 表进行计算。
 * `clickhouse_json` — 查询将不作为 SQL 文本处理，而是解释为 JSON AST (`parseQueryToJSON` 的输出) 。仍可使用普通形式的 `SET` 查询，以便切换回其他方言。需要启用 Experimental 设置 `enable_json_ast_dialect`。
+* `trino` — Trino SQL：转换 Trino 语法 (`ARRAY[...]`、`TRY_CAST`、`UNNEST` 等) ，并将 Trino 函数名映射为对应的 ClickHouse 函数。需要启用 Experimental 设置 `allow_experimental_trino_dialect`。
 
 ## discard_query_data {#discard_query_data}
 
@@ -1336,7 +1337,7 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "提供 rows_before_aggregation 统计信息的精确值，表示聚合前读取的行数"}]}]} />
 
-启用后，ClickHouse 将提供 rows&#95;before&#95;aggregation 统计信息的精确值，表示聚合前读取的行
+启用后，ClickHouse 将提供 rows&#95;before&#95;aggregation 统计信息的精确值，表示聚合前读取的行数
 
 ## run_query_in_background {#run_query_in_background}
 
@@ -1398,6 +1399,22 @@ See also:
 * [insert&#95;quorum](/zh/reference/settings/session-settings/insert-quorum#insert_quorum)
 * [insert&#95;quorum&#95;timeout](/zh/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/zh/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
+
+## session_query_ids_history_size {#session_query_ids_history_size}
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1000"},{"label": "新增设置，用于限制通过新的 `system.session_query_ids` 系统表暴露的会话本地查询 ID 历史记录的大小。设为 `0`（禁用记录）即可恢复 26.9 之前的行为。"}]}]} />
+
+通过 [`system.session_query_ids`](/zh/reference/system-tables/session_query_ids) 系统表暴露的会话本地历史记录中最多保留的查询 ID 数量。
+会话中执行的每个非内部查询，其查询 ID 都会在查询开始时记录其中；当历史记录超出该大小时，最早的记录会被优先淘汰。
+
+该值在查询开始时、查询被解析之前读取，因此查询自身的 `SETTINGS` 子句不会影响该查询是否被记录；请改用 `SET`、HTTP URL 参数或 settings profile。
+
+可能的值：
+
+* 正整数。
+* 0 — 禁用记录；此前已记录的条目仍保留在表中。
 
 ## session_timezone {#session_timezone}
 

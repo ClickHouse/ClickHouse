@@ -301,12 +301,11 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL 
 
 `n`과 `UNTIL`을 모두 지정하지 않으면, 열린 모든 범위는 스트림 끝까지 이어집니다. 따라서 `AFTER start_expr ALL`은 `AFTER start_expr`과 동일한 행을 반환합니다.
 
-:::note
-
-* `WITH TIES`, 소수 또는 음수 `LIMIT`/`OFFSET`, `OFFSET`은 `AFTER`/`UNTIL`과 함께 사용할 수 없습니다.
-* `AFTER`/`UNTIL`을 사용하면 사전 `LIMIT` pushdown이 비활성화됩니다.
-* `AFTER`와 `UNTIL`은 뒤에 경계 표현식이 오는 경우에만 keyword로 인식됩니다. 따라서 `after` 또는 `until`이라는 identifier는 여전히 행 수로 사용할 수 있습니다(`LIMIT after`, `LIMIT after BY x`). 두 해석이 모두 가능하면 keyword가 우선합니다. `LIMIT after(2)`는 범위 `LIMIT AFTER (2)`를 의미합니다. `after`라는 함수를 호출하려면 `LIMIT (after(2))`로 작성하십시오.
-  :::
+<Note>
+  * `WITH TIES`, 소수 또는 음수 `LIMIT`/`OFFSET`, `OFFSET`은 `AFTER`/`UNTIL`과 함께 사용할 수 없습니다.
+  * `AFTER`/`UNTIL`을 사용하면 사전 `LIMIT` pushdown이 비활성화됩니다.
+  * `AFTER`와 `UNTIL`은 뒤에 경계 표현식이 오는 경우에만 키워드로 인식됩니다. 따라서 `after` 또는 `until`이라는 identifier는 여전히 행 개수로 사용할 수 있습니다(`LIMIT after`, `LIMIT after BY x`). 두 해석이 모두 가능하면 키워드가 우선합니다. `LIMIT after(2)`는 범위 `LIMIT AFTER (2)`를 의미합니다. `after`라는 함수를 호출하려면 `LIMIT (after(2))`로 작성하십시오.
+</Note>
 
 `UNTIL`만 사용하면 스트림 시작부터 조건이 true가 되는 첫 번째 행까지의 행을 반환합니다:
 

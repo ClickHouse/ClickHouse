@@ -24,6 +24,8 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 
 * `query_id` ([String](/pt-BR/reference/data-types/string)) — ID da consulta.
 * `hostname` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Nome do host do servidor que executa a consulta.
+* `clickhouse_version` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Versão do servidor ClickHouse que produziu a linha.
+* `system_processor` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Arquitetura de CPU do servidor ClickHouse que produziu a linha.
 * `event_date` ([Date](/pt-BR/reference/data-types/date)) — Data do evento.
 * `event_time` ([DateTime](/pt-BR/reference/data-types/datetime)) — Horário do evento.
 * `event_time_microseconds` ([DateTime64(6)](/pt-BR/reference/data-types/datetime64)) — Horário do evento com resolução de microssegundos.
@@ -265,7 +267,7 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_LocalReadThrottlerBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Bytes que passaram pelo limitador &#39;max&#95;local&#95;read&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;read&#95;bandwidth&#39;.
 * `ProfileEvent_LocalReadThrottlerSleepMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo total em que uma consulta ficou em espera para obedecer à limitação de &#39;max&#95;local&#95;read&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;read&#95;bandwidth&#39;.
 * `ProfileEvent_LocalWriteThrottlerBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Bytes que passaram pelo limitador &#39;max&#95;local&#95;write&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;write&#95;bandwidth&#39;.
-* `ProfileEvent_LocalWriteThrottlerSleepMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo total em que uma consulta ficou em espera para obedecer à limitação de &#39;max&#95;local&#95;write&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;write&#95;bandwidth&#39;.
+* `ProfileEvent_LocalWriteThrottlerSleepMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo total em que uma consulta ficou em espera para obedecer à limitação de &#39;max&#95;local&#95;write&#95;network&#95;bandwidth&#95;for&#95;server&#39;/&#39;max&#95;local&#95;write&#95;network&#95;bandwidth&#39;.
 * `ProfileEvent_BackupThrottlerBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Bytes que passaram pelo limitador &#39;max&#95;backup&#95;bandwidth&#95;for&#95;server&#39;.
 * `ProfileEvent_BackupThrottlerSleepMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo total em que uma consulta ficou em espera para obedecer à limitação de taxa de &#39;max&#95;backup&#95;bandwidth&#95;for&#95;server&#39;.
 * `ProfileEvent_MergesThrottlerBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Bytes que passaram pelo limitador &#39;max&#95;merges&#95;bandwidth&#95;for&#95;server&#39;.
@@ -433,6 +435,7 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de bytes comprimidos gravados para JOIN em memória externa.
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Quantidade de dados (não comprimidos, antes da compressão) gravados para JOIN em memória externa.
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de arquivos ignorados durante a eliminação de partições do Iceberg
+* `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de arquivos de manifesto do Iceberg ignorados sem serem lidos, usando os resumos de partições da lista de manifestos
 * `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Otimização trivial de contagem aplicada durante a leitura do Iceberg
 * `ProfileEvent_IcebergVersionHintUsed` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes que version-hint.text foi usado.
 * `ProfileEvent_IcebergMinMaxIndexPrunedFiles` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de arquivos ignorados com o uso do índice MinMax no Iceberg
@@ -461,7 +464,7 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_UniqueKeyIndexCacheLookupMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo de relógio de parede dentro de `UniqueKeyIndexCache::Lookup` + `UniqueKeyIndexCache::Insert` (adaptador `CacheBase` do lado do ClickHouse para o cache de blocos do RocksDB).
 * `ProfileEvent_UniqueKeyIndexCacheHits` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes que uma entrada foi encontrada no cache de índice UNIQUE KEY, de modo que não foi necessário carregar um bloco SST.
 * `ProfileEvent_UniqueKeyIndexCacheMisses` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes que uma entrada não foi encontrada no cache de índice UNIQUE KEY, de modo que foi necessário carregar um bloco SST do disco.
-* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo total de relógio de parede gasto durante o ciclo de vida de um `SSTIndexWriter` — abrange `Open` do SST, cada Put de `addEncoded` e a finalização de `Finish` + `WriteBuffer` em `finalizeToStorage` (os bytes do SST são transmitidos diretamente para o `WriteBuffer` do armazenamento da parte). Exclui o trabalho realizado pelos auxiliares estáticos antes de construir o writer (codificação + ordenação de caminho sem prefixo). Emitido uma vez por writer.
+* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo total de relógio de parede gasto durante o ciclo de vida de um `SSTIndexWriter` — abrange `Open` do SST, cada Put de `addEncoded` e a finalização de `Finish` + `WriteBuffer` (+ fsync) em `finish` (os bytes do SST são transmitidos diretamente para o `WriteBuffer` do armazenamento da parte). Exclui o trabalho realizado pelos auxiliares estáticos antes de construir o writer (codificação + ordenação de caminho sem prefixo). Emitido uma vez por writer.
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildCount` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de partes UNIQUE KEY cujo `unique_key_index.sst` foi reconstruído no momento do carregamento após a janela de falha antes do flush.
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo total gasto na reconstrução de `unique_key_index.sst` durante o carregamento (leitura sequencial de colunas UK + gravação de SST).
 * `ProfileEvent_SelectedParts` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de partes de dados selecionadas para leitura em uma tabela MergeTree.
@@ -1099,6 +1102,7 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_ObjectStorageQueueRemovedObjects` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de objetos removidos como parte de after&#95;processing = delete
 * `ProfileEvent_ObjectStorageQueueTaggedObjects` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de objetos marcados como parte de after&#95;processing = tag
 * `ProfileEvent_ObjectStorageQueueInsertIterations` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de iterações de insert
+* `ProfileEvent_ObjectStorageQueueRemoveObjectFailures` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de objetos que não puderam ser removidos como parte de after&#95;processing = delete
 * `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de solicitações ao Keeper para fazer commit de arquivos marcados como com falha ou processados
 * `ProfileEvent_ObjectStorageQueueBucketLockLostOwnership` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de vezes em que foi detectada a perda da posse de um bloqueio de bucket em S3(Azure)Queue. Um valor diferente de zero indica que persistent&#95;processing&#95;node&#95;ttl&#95;seconds é muito pequeno ou que há um bug
 * `ProfileEvent_ObjectStorageQueueBucketLockRefreshes` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de renovações bem-sucedidas de bloqueios de bucket em S3(Azure)Queue
@@ -1106,6 +1110,7 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_ObjectStorageQueueUnsuccessfulCommits` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de commits do Keeper malsucedidos
 * `ProfileEvent_ObjectStorageQueueCancelledFiles` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de arquivos cancelados em StorageS3(Azure)Queue
 * `ProfileEvent_ObjectStorageQueueProcessedRows` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de linhas processadas em StorageS3(Azure)Queue
+* `ProfileEvent_ObjectStorageQueueExclusiveModeProcessingErrors` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Contagem de vezes em que um arquivo em S3(Azure)Queue não finalizou o estado devido a um erro de processamento. Apenas para o modo &#39;exclusive&#39;.
 * `ProfileEvent_ObjectStorageListedObjects` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Total de objetos retornados pela API de listagem do armazenamento de objetos antes de qualquer filtragem.
 * `ProfileEvent_ObjectStorageGlobFilteredObjects` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Objetos que não corresponderam ao padrão glob ou regex e foram ignorados durante a listagem.
 * `ProfileEvent_ObjectStoragePredicateFilteredObjects` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Objetos removidos pela filtragem por predicado nas colunas virtuais &#95;path/&#95;file.
@@ -1536,6 +1541,7 @@ por padrão). Os dados também são coletados quando a consulta termina, caso el
 * `ProfileEvent_RuntimeFilterRowsChecked` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de linhas verificadas pelos filtros de runtime de JOIN
 * `ProfileEvent_RuntimeFilterRowsPassed` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de linhas que passaram (ou seja, não foram filtradas pelos) filtros de runtime de JOIN
 * `ProfileEvent_RuntimeFilterRowsSkipped` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de linhas em blocos ignoradas pelos filtros de runtime de JOIN
+* `ProfileEvent_RuntimeFilterBloomFilterBuildsSkipped` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de criações de filtros de Bloom de JOIN Runtime Filter ignoradas porque a contagem de chaves do lado de build, segundo as estatísticas da tabela hash, previa que o filtro excederia a razão máxima de bits definidos
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de grânulos examinados para eliminação durante a leitura pelos JOIN Runtime Filters
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Número de grânulos eliminados durante a leitura pelos JOIN Runtime Filters
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/pt-BR/reference/data-types/int-uint)) — Tempo decorrido das etapas de pós-processamento após a construção do lado direito do JOIN.

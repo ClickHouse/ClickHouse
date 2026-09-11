@@ -79,6 +79,8 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 이 설정을 여러 레플리카를 가진 단일 세그먼트로 구성된 클러스터에서 사용하면, 해당 레플리카는 가상 세그먼트로 변환됩니다.
 그렇지 않으면 `SAMPLE` 키와 동일하게 동작하며, 각 세그먼트의 여러 레플리카를 사용합니다.
 
+표현식은 사용자에게 부여된 컬럼 수준 `SELECT` 권한을 기준으로 검사됩니다. `SQL SECURITY DEFINER` 또는 `NONE`이 적용된 뷰에서는 뷰의 컬럼에 적용되며, 뷰 본문은 이를 적용하지 않고 읽습니다.
+
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
 <BetaBadge />
@@ -137,7 +139,7 @@ true이면 ClickHouse는 복제되지 않은 MergeTree 테이블에도 병렬 �
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "인덱스 분석은 레플리카 코디네이터에서만 수행되며 다른 레플리카에서는 생략됩니다. `parallel_replicas_local_plan`이 활성화된 경우에만 적용됩니다."}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "인덱스 분석은 레플리카 코디네이터에서만 수행되며 다른 레플리카에서는 생략됩니다. `parallel_replicas_local_plan`이 활성화된 경우에만 적용됩니다."}]}]} />
 
-인덱스 분석은 레플리카 코디네이터에서만 수행되며 다른 레플리카에서는 생략됩니다. `parallel_replicas_local_pla`가 활성화된 경우에만 적용됩니다.
+인덱스 분석은 레플리카 코디네이터에서만 수행되며 다른 레플리카에서는 생략됩니다. `parallel_replicas_local_plan`이 활성화된 경우에만 적용됩니다.
 
 ## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 

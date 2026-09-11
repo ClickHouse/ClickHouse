@@ -18,19 +18,15 @@ Permite almacenar un marcador especial ([NULL](/es/reference/syntax)) que denota
 
 Sin embargo, los tipos de datos compuestos **pueden contener** valores de tipo `Nullable`, p. ej., `Array(Nullable(Int8))` o `Tuple(Nullable(String), Nullable(Int64))`.
 
-<Info>
-  **Beta: Tuples Nullable**
-
+<Note title="Beta: Tuples Nullable">
   * [Nullable(Tuple(...))](/es/reference/data-types/tuple#nullable-tuple) es compatible cuando `enable_nullable_tuple_type = 1` está habilitado.
-</Info>
+</Note>
 
 Un campo de tipo `Nullable` no puede incluirse en los índices de tablas.
 
 `NULL` es el valor predeterminado para cualquier tipo `Nullable`, a menos que se especifique lo contrario en la configuración del servidor de ClickHouse.
 
-<div id="storage-features">
-  ## Características de almacenamiento
-</div>
+## Características de almacenamiento {#storage-features}
 
 Para almacenar valores de tipo `Nullable` en una columna de una tabla, ClickHouse utiliza un archivo independiente con máscaras `NULL`, además del archivo normal con los valores. Las entradas del archivo de máscaras permiten a ClickHouse distinguir entre `NULL` y el valor predeterminado del tipo de dato correspondiente para cada fila de la tabla. Debido a este archivo adicional, una columna `Nullable` consume más espacio de almacenamiento que una columna normal equivalente.
 
@@ -38,9 +34,7 @@ Para almacenar valores de tipo `Nullable` en una columna de una tabla, ClickHous
   El uso de `Nullable` casi siempre afecta negativamente al rendimiento; téngalo en cuenta al diseñar sus bases de datos.
 </Note>
 
-<div id="finding-null">
-  ## Cómo encontrar NULL
-</div>
+## Cómo encontrar NULL {#finding-null}
 
 Es posible localizar valores `NULL` en una columna usando la subcolumna `null` sin necesidad de leer la columna completa. Devuelve `1` si el valor correspondiente es `NULL` y `0` en caso contrario.
 
@@ -63,9 +57,7 @@ SELECT n.null FROM nullable;
 └────────┘
 ```
 
-<div id="usage-example">
-  ## Ejemplo de uso
-</div>
+## Ejemplo de uso {#usage-example}
 
 ```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog

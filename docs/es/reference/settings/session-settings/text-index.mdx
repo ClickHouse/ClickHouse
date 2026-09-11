@@ -48,8 +48,10 @@ Requiere que `use_text_index_like_evaluation_by_dictionary_scan` esté habilitad
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "4"},{"label": "Nueva configuración"}]}]} />
 
-Longitud mínima de la subcadena alfanumérica buscada en un patrón LIKE/ILIKE, o de una subcadena buscada de `startsWith`/`endsWith`, necesaria para usar la evaluación LIKE del índice de texto mediante el escaneo del diccionario.
+Longitud mínima de la subcadena alfanumérica buscada en un patrón LIKE/ILIKE, o de una subcadena buscada de `startsWith`/`endsWith`, necesaria para usar la evaluación de LIKE en el índice de texto mediante escaneo del diccionario.
 Los patrones más cortos que este umbral coinciden con demasiados tokens del diccionario y se omiten para evitar escaneos costosos.
+
+Con el tokenizador `array`, donde cualquier patrón es apto, el umbral se compara con el número de caracteres que no son comodines en todo el patrón.
 
 Requiere que `use_text_index_like_evaluation_by_dictionary_scan` esté habilitado.
 

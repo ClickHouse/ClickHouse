@@ -456,17 +456,13 @@ Les types de données suivants sont pris en charge :
 * `UUID`
 * `Map`
 
-<Info>
-  **Type de données Map : spécifier la création d’un index sur les clés ou les valeurs**
-
+<Note title="Type de données Map : spécifier la création d’un index sur les clés ou les valeurs">
   Pour le type de données `Map`, le client peut indiquer si l’index doit être créé sur les clés ou sur les valeurs à l’aide des fonctions [`mapKeys`](/fr/reference/functions/regular-functions/tuple-map-functions#mapKeys) ou [`mapValues`](/fr/reference/functions/regular-functions/tuple-map-functions#mapValues).
-</Info>
+</Note>
 
-<Info>
-  **Type de données JSON : indexation des chemins JSON**
-
-  Pour le type de données [`JSON`](/fr/reference/data-types/newjson), un index de type bloom filter peut être créé sur l’ensemble des chemins à l’aide de la fonction [`JSONAllPaths`](/fr/reference/functions/regular-functions/json-functions#JSONAllPaths). Cela permet d’ignorer les granules dans lesquelles un chemin JSON interrogé est absent. Voir [les index de saut de données pour JSON](/fr/reference/data-types/newjson#data-skipping-indexes-for-json) pour plus de détails.
-</Info>
+<Note title="Type de données JSON : indexation des chemins JSON">
+  Pour le type de données [`JSON`](/fr/reference/data-types/newjson), un index de type filtre de Bloom peut être créé sur l’ensemble des chemins à l’aide de la fonction [`JSONAllPaths`](/fr/reference/functions/regular-functions/json-functions#JSONAllPaths). Cela permet d’ignorer les granules dans lesquelles un chemin JSON interrogé est absent. Voir [les index de saut de données pour JSON](/fr/reference/data-types/newjson#data-skipping-indexes-for-json) pour plus de détails.
+</Note>
 
 #### Filtre de Bloom par n-grammes *(Obsolète)* {#n-gram-bloom-filter}
 
@@ -715,9 +711,7 @@ La clause `TTL` peut être définie pour l’ensemble de la table ainsi que pour
 
 Les expressions doivent s’évaluer en type de données [Date](/fr/reference/data-types/date), [Date32](/fr/reference/data-types/date32), [DateTime](/fr/reference/data-types/datetime) ou [DateTime64](/fr/reference/data-types/datetime64).
 
-<Tip>
-  **Évitez les fonctions non déterministes dans les expressions TTL**
-
+<Tip title="Évitez les fonctions non déterministes dans les expressions TTL">
   TTL est évalué lors des merges en arrière-plan, et non au moment de l’insertion.
   Les fonctions comme `rand()`, `now()` ou `now64()` sont réévaluées à chaque merge, ce qui entraîne un comportement de suppression imprévisible.
   ClickHouse bloque les expressions sans aucune dépendance à une colonne, mais ne rejette pas actuellement les fonctions non déterministes combinées à une référence de colonne (par ex. `ts + rand()`). Les expressions TTL doivent reposer uniquement sur des valeurs déterministes dérivées des colonnes afin d’obtenir des résultats prévisibles.
@@ -1138,8 +1132,8 @@ Extrait de configuration :
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -1192,7 +1186,7 @@ Par exemple, pour répartir les données entre deux buckets S3 en round-robin :
 </storage_configuration>
 ```
 
-Vous pouvez également combiner des volumes locaux et S3 dans une politique hiérarchisée, par exemple en déplaçant les données d’un SSD local vers S3 au fil du temps :
+Vous pouvez également combiner des volumes locaux et S3 dans une politique hiérarchisée, par exemple en déplaçant les données d’un SSD local vers S3 au fil du temps :
 
 ```xml
 <storage_configuration>
@@ -1230,11 +1224,9 @@ Vous pouvez également combiner des volumes locaux et S3 dans une politique hié
 
 Il est possible de configurer des tables MergeTree non répliquées dans un scénario avec un seul writer et plusieurs lecteurs sur un stockage partagé. Cela est rendu possible par l&#39;actualisation automatique de la liste des parts, qui peut être configurée sur les lecteurs. Notez que cela nécessite des métadonnées de système de fichiers partagées entre les répliques (ou `table_disk = true` avec un disque local à la table). Voir [refresh&#95;parts&#95;interval and table&#95;disk](/fr/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk).
 
-<Info>
-  **configuration du cache**
-
+<Note title="configuration du cache">
   Les versions 22.3 à 22.7 de ClickHouse utilisent une configuration du cache différente ; consultez [using local cache](/fr/concepts/features/configuration/server-config/storing-data#using-local-cache) si vous utilisez l&#39;une de ces versions.
-</Info>
+</Note>
 
 ## Colonnes virtuelles {#virtual-columns}
 
@@ -1265,6 +1257,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY a
 ```
+
+Les statistiques nécessitent une colonne physiquement stockée. Une colonne `ALIAS` ou `EPHEMERAL` n’est écrite dans aucune part, la déclaration de statistiques sur une telle colonne est donc rejetée.
 
 Nous pouvons également manipuler les statistiques à l’aide d’instructions `ALTER` :
 
@@ -1324,17 +1318,17 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `minmax` (obsolète)
 
-<Note>
-  Les statistiques `minmax` sont obsolètes. Utilisez plutôt les statistiques `basic`, qui constituent un sur-ensemble de `minmax`.
-</Note>
+  <Note>
+    Les statistiques `minmax` sont obsolètes. Utilisez plutôt les statistiques `basic`, qui constituent un sur-ensemble de `minmax`.
+  </Note>
 
 * `tdigest`
 
-<Warning>
-  Les statistiques de type `tdigest` ont un coût de création élevé et peuvent ralentir l’ingestion des données.
-</Warning>
+  <Warning>
+    Les statistiques de type `tdigest` ont un coût de création élevé et peuvent ralentir l’ingestion des données.
+  </Warning>
 
-Des sketches [TDigest](https://github.com/tdunning/t-digest) qui permettent de calculer des percentiles approximatifs (par ex. le 90e percentile) pour les colonnes numériques.
+  Des sketches [TDigest](https://github.com/tdunning/t-digest) qui permettent de calculer des percentiles approximatifs (par ex. le 90e percentile) pour les colonnes numériques.
 
 * `uniq`
 
@@ -1346,11 +1340,11 @@ Des sketches [TDigest](https://github.com/tdunning/t-digest) qui permettent de c
 
 * `countmin`
 
-<Warning>
-  Les statistiques de type `countmin` ont un coût de création élevé et peuvent ralentir l’ingestion des données.
-</Warning>
+  <Warning>
+    Les statistiques de type `countmin` ont un coût de création élevé et peuvent ralentir l’ingestion des données.
+  </Warning>
 
-Des sketches [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) qui fournissent un décompte approximatif de la fréquence de chaque valeur dans une colonne.
+  Des sketches [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) qui fournissent un décompte approximatif de la fréquence de chaque valeur dans une colonne.
 
 ### Types de données pris en charge {#supported-data-types}
 

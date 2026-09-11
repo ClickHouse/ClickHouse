@@ -300,6 +300,26 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يتيح PRQL، وهو بديل لـ SQL.
 
+## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لتمكين القيمة `trino` في إعداد `dialect`، الذي يترجم بناء جملة Trino SQL ويربط أسماء دوال Trino بمكافئاتها في ClickHouse."}]}]} />
+
+فعّل القيمة `trino` في إعداد `dialect`.
+
+عند ضبط `dialect` على `trino`، تُكتب الاستعلامات بلغة Trino SQL: إذ يُترجم
+بناء الجملة الخاص بـ Trino (القيم الحرفية `ARRAY[...]`، و`TRY_CAST`، و`UNNEST`، وأنواع `ROW`، و`OFFSET` قبل `LIMIT`)
+إلى ClickHouse SQL، وتُربط أسماء دوال Trino بمكافئاتها
+في ClickHouse. ويظل استعلام `SET` محلّلًا باعتباره SQL عاديًا، بحيث يمكن
+إعادة تبديل اللهجة.
+
+تُوائم هذه اللهجة أيضًا دلالات الاستعلام مع Trino: يُفعّل `join_use_nulls`،
+ويُعطّل `use_variant_as_common_type`، ويُفعّل محلّل الاستعلامات.
+وتظل عبارة `SETTINGS` الصريحة في الاستعلام هي صاحبة الأسبقية.
+
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

@@ -436,6 +436,41 @@ graph TD
 * `precedence_allocation` - 按照静态优先次序执行驱逐 (值越小，优先次序越高) ；高优先次序的待处理分配会驱逐低优先次序的分配；子节点应指定 `precedence` (默认为 0) 。
 * `queue` - 层级结构中的叶节点，可容纳正在运行和待处理的分配。
 
+## 备份和恢复 {#backup-restore}
+
+可以将 SQL 定义的工作负载和资源包含在 ClickHouse 备份中：
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources TO Disk('backups', 'wl_backup');
+```
+
+仅会备份由 SQL 定义的对象。基于配置的工作负载和资源 (在服务器配置文件中通过 `<resources_and_workloads>` 定义) 不包括在内——它们属于服务器配置，应另行备份。
+
+始终在同一条命令中同时备份和恢复 `system.workloads` 与 `system.resources`。工作负载可以引用资源 (通过 `SETTINGS ... FOR <resource>`) 和父工作负载，而仅备份 `system.workloads` 不会一并备份所引用的资源定义。如果恢复的工作负载所引用的资源既不在备份中，也不存在于目标服务器上，恢复将失败。
+
+要从备份中恢复工作负载和资源：
+
+```sql
+RESTORE TABLE system.workloads, TABLE system.resources FROM Disk('backups', 'wl_backup');
+```
+
+恢复需要 `CREATE WORKLOAD` 和 `CREATE RESOURCE` 特权。默认情况下，现有对象会保持不变 (即 `if not exists` 语义) ；下方的 `create_workloads_and_resources` 设置用于指定如何处理已存在的对象。如果服务器使用 ZooKeeper 存储 (`workload_zookeeper_path`) ，集群中仅有一个副本会创建各对象；其他副本会通过常规复制机制同步该变更。
+
+对于复制部署，可以使用 `ON CLUSTER` 备份和恢复这两个表：
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' TO S3('https://...', 'key', 'secret');
+RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FROM S3('https://...', 'key', 'secret');
+```
+
+:::note
+`create_workloads_and_resources` 恢复设置用于指定在恢复过程中如何处理已存在的工作负载或资源 (它并不控制是否恢复这些对象) 。可取以下值：
+
+* `if not exists` (默认) — 保持已存在的对象不变，仅创建缺失的对象；
+* `create` — 若待恢复的对象中有任何一个已存在，则恢复失败；
+* `replace` — 使用备份中的定义覆盖已存在的对象 (此选项还需要 `DROP WORKLOAD` / `DROP RESOURCE` 特权) 。
+  :::
+
 ## 另请参阅 {#see-also}
 
 * [system.scheduler](/zh/reference/system-tables/scheduler)

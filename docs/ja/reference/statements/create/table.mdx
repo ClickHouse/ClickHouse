@@ -61,14 +61,21 @@ ClickHouse では、既存テーブルのスキーマとデータをコピーで
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-これにより、既存のテーブルと同じスキーマとデータを持つテーブルが作成されます。新しいテーブルの作成後、`db.table` のすべてのパーティションがそのテーブルにアタッチされます。つまり、`db.table` のデータは作成時に `db2.table_clone` に複製されます。このクエリは、次のものと同等です。
+これにより、既存のテーブルと同じスキーマとデータを持つテーブルが作成されます。新しいテーブルの作成後、`db.table` のすべてのパーティションがそのテーブルにアタッチされます。つまり、`db.table` のデータは作成時に `db2.table_clone` に複製されます。
 
-```sql
-CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
-ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
-```
+<Note>
+  宛先データベースが [Replicated](/ja/reference/engines/database-engines/replicated) データベースエンジンを使用している場合、`CLONE AS` はサポートされていません。
 
-どちらの機能でも、テーブルには別のエンジンを指定できます。エンジンを指定しない場合は、元のテーブル (`db.table`) と同じエンジンが使用されます。
+  代わりに次を使用してください:
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+  ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+  ```
+</Note>
+
+どちらの機能でも、テーブルには別のエンジンを指定できます。
+エンジンを指定しない場合は、元のテーブル (`db.table`) と同じエンジンが使用されます。
 
 ### table function を使用してテーブルを作成する {#from-a-table-function}
 

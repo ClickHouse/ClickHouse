@@ -18,19 +18,15 @@ doc_type: 'reference'
 
 ただし、複合データ型に `Nullable` 型の値を**含める**ことはできます。たとえば、`Array(Nullable(Int8))` や `Tuple(Nullable(String), Nullable(Int64))` です。
 
-<Info>
-  **ベータ: Nullable Tuple**
-
+<Note title="ベータ: Nullable Tuple">
   * `enable_nullable_tuple_type = 1` が有効な場合、[Nullable(Tuple(...))](/ja/reference/data-types/tuple#nullable-tuple) がサポートされます。
-</Info>
+</Note>
 
 `Nullable` 型のフィールドは、テーブルの索引に含めることはできません。
 
 ClickHouse サーバー設定で別途指定されていない限り、`NULL` はすべての `Nullable` 型のデフォルト値です。
 
-<div id="storage-features">
-  ## ストレージ機能
-</div>
+## ストレージ機能 {#storage-features}
 
 テーブルのカラムに `Nullable` 型の値を格納するため、ClickHouse は値を格納する通常のファイルに加えて、`NULL` マスク用の別ファイルを使用します。マスクファイル内のエントリによって、ClickHouse はテーブルの各行について、`NULL` と対応するデータ型のデフォルト値を区別できます。ファイルが 1 つ追加されるため、`Nullable` カラムは同等の通常のカラムと比べてより多くのストレージ領域を消費します。
 
@@ -38,9 +34,7 @@ ClickHouse サーバー設定で別途指定されていない限り、`NULL` �
   `Nullable` を使用すると、ほとんどの場合パフォーマンスに悪影響が生じます。データベースを設計する際は、この点を考慮してください。
 </Note>
 
-<div id="finding-null">
-  ## NULL の検出
-</div>
+## NULL の検出 {#finding-null}
 
 カラム全体を読み取らなくても、`null` サブカラムを使ってカラム内の `NULL` 値を検出できます。対応する値が `NULL` の場合は `1`、それ以外の場合は `0` を返します。
 
@@ -63,9 +57,7 @@ SELECT n.null FROM nullable;
 └────────┘
 ```
 
-<div id="usage-example">
-  ## 使用例
-</div>
+## 使用例 {#usage-example}
 
 ```sql
 CREATE TABLE t_null(x Int8, y Nullable(Int8)) ENGINE TinyLog

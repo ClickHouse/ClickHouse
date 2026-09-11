@@ -13,9 +13,15 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="use_iceberg_metadata_files_cache">
-  ## use_iceberg_metadata_files_cache
-</div>
+## use_iceberg_manifest_list_partition_pruning {#use_iceberg_manifest_list_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "新增设置：无需读取 Iceberg manifest 文件，即可跳过 manifest 列表中分区摘要无法匹配查询过滤器的文件。"}]}]} />
+
+无需读取 Iceberg manifest 文件，即可跳过 manifest 列表中分区摘要无法匹配查询过滤器的整个文件。需要启用 [use&#95;iceberg&#95;partition&#95;pruning](/zh/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning)，且仅当 manifest 文件包含较少的不同分区值时才有帮助；按分区列聚簇的 `rewriteManifests` 会产生这种结果。
+
+## use_iceberg_metadata_files_cache {#use_iceberg_metadata_files_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,9 +34,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 - 已禁用
 * 1 - 已启用
 
-<div id="use_iceberg_partition_pruning">
-  ## use_iceberg_partition_pruning
-</div>
+## use_iceberg_partition_pruning {#use_iceberg_partition_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

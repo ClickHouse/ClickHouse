@@ -57,7 +57,7 @@ Permite que las réplicas paralelas ejecuten la consulta externa de una vista si
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "300"},{"label": "Tiempo de espera de conexión específico para consultas con réplicas paralelas"}]}]} />
 
-Tiempo de espera, en milisegundos, para conectarse a una réplica remota durante la ejecución de consultas con réplicas paralelas. Si se agota el tiempo de espera, la réplica correspondiente no se utiliza para la ejecuc
+Tiempo de espera, en milisegundos, para conectarse a una réplica remota durante la ejecución de consultas con réplicas paralelas. Si se agota el tiempo de espera, la réplica correspondiente no se utiliza para la ejecución de la consulta
 
 ## parallel_replicas_count {#parallel_replicas_count}
 
@@ -78,6 +78,8 @@ Se prefieren las expresiones simples que usan claves primarias.
 
 Si la configuración se usa en un clúster que consta de un solo segmento con varias réplicas, esas réplicas se convertirán en segmentos virtuales.
 De lo contrario, se comportará igual que con la clave `SAMPLE`: usará varias réplicas de cada segmento.
+
+La expresión se comprueba con respecto a los permisos `SELECT` de nivel de columna del usuario. En el caso de una vista con `SQL SECURITY DEFINER` o `NONE`, se aplica a las columnas de la vista; el cuerpo de la vista se lee sin ella.
 
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
@@ -137,7 +139,7 @@ Si es true, ClickHouse también usará el algoritmo de réplicas paralelas en la
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "El análisis de índices se realiza solo en el coordinador de réplicas y se omite en las demás réplicas. Solo surte efecto cuando parallel_replicas_local_plan está habilitado"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "El análisis de índices se realiza solo en el coordinador de réplicas y se omite en las demás réplicas. Solo surte efecto cuando parallel_replicas_local_plan está habilitado"}]}]} />
 
-El análisis de índices se realiza solo en el coordinador de réplicas y se omite en las demás réplicas. Solo surte efecto cuando parallel&#95;replicas&#95;local&#95;pla
+El análisis de índices se realiza solo en el coordinador de réplicas y se omite en las demás réplicas. Solo surte efecto cuando parallel&#95;replicas&#95;local&#95;plan está habilitado
 
 ## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 

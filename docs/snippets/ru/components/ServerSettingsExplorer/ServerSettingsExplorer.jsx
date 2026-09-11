@@ -519,15 +519,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       ],
       children: []
     },
-    {
-      label: "license_*",
-      count: 2,
-      settings: [
-        { name: "license_file", path: "/license#license_file", default: '""' },
-        { name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }
-      ],
-      children: []
-    },
+    { label: "license_*", count: 1, settings: [{ name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }], children: [] },
     {
       label: "listen_*",
       count: 4,
@@ -1642,7 +1634,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       {isSearching && (
         <div className="mt-2 text-right text-xs text-gray-500 dark:text-gray-400">
           <span>
-            {matchingCount} найден{matchingCount === 1 ? "а" : "о"} {matchingCount === 1 ? "настройка" : "настроек"}
+            {matchingCount} {matchingCount === 1 ? "найдена настройка" : "найдено настроек"}
           </span>
         </div>
       )}

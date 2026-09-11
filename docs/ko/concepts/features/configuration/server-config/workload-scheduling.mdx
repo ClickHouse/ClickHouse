@@ -436,6 +436,41 @@ graph TD
 * `precedence_allocation` - 정적 precedence에 따라 축출을 적용합니다(값이 낮을수록 precedence가 높음). precedence가 더 높은 대기 중인 할당은 precedence가 더 낮은 할당을 축출합니다. 자식 노드는 `precedence`를 지정해야 합니다(기본값은 0).
 * `queue` - 실행 중인 할당과 대기 중인 할당을 보관할 수 있는 계층 구조의 리프 노드입니다.
 
+## Backup 및 복원 {#backup-restore}
+
+SQL로 정의된 워크로드와 리소스를 ClickHouse 백업에 포함할 수 있습니다:
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources TO Disk('backups', 'wl_backup');
+```
+
+SQL로 정의된 엔터티만 백업됩니다. 구성 기반 워크로드 및 리소스(서버 구성 파일의 `<resources_and_workloads>`로 정의된 항목)는 포함되지 않습니다. 이들은 서버 구성의 일부이므로 별도로 백업해야 합니다.
+
+`system.workloads`와 `system.resources`는 항상 동일한 명령으로 함께 백업하고 복원하십시오. 워크로드는 리소스(`SETTINGS ... FOR <resource>` 사용)와 parent 워크로드를 참조할 수 있으며, `system.workloads`만 백업할 경우 참조된 리소스 정의는 함께 포함되지 않습니다. 참조 중인 리소스가 백업에도 없고 대상 서버에도 존재하지 않는 워크로드는 복원에 실패합니다.
+
+백업에서 워크로드와 리소스를 복원하려면 다음과 같이 하십시오.
+
+```sql
+RESTORE TABLE system.workloads, TABLE system.resources FROM Disk('backups', 'wl_backup');
+```
+
+복원하려면 `CREATE WORKLOAD` 및 `CREATE RESOURCE` 권한이 필요합니다. 기본적으로 기존 엔터티는 변경하지 않고 유지됩니다(`if not exists` 의미론). 아래의 `create_workloads_and_resources` 설정으로 이미 존재하는 엔터티의 처리 방식을 선택할 수 있습니다. 서버가 ZooKeeper 저장소(`workload_zookeeper_path`)를 사용하는 경우 클러스터의 레플리카 하나만 각 엔터티를 생성하고, 나머지 레플리카는 일반적인 복제 메커니즘을 통해 변경 사항을 반영합니다.
+
+복제된 구성에서는 두 테이블을 모두 `ON CLUSTER`로 백업하고 복원할 수 있습니다:
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' TO S3('https://...', 'key', 'secret');
+RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FROM S3('https://...', 'key', 'secret');
+```
+
+:::note
+`create_workloads_and_resources` 복원 설정은 이미 존재하는 워크로드 또는 리소스를 복원할 때 처리 방식을 지정합니다(이 엔터티의 복원 여부를 켜거나 끄는 설정은 아닙니다). 다음 값을 사용할 수 있습니다.
+
+* `if not exists`(기본값) — 기존 엔터티는 변경하지 않고, 누락된 엔터티만 생성합니다.
+* `create` — 복원하려는 엔터티가 이미 존재하면 복원이 실패합니다.
+* `replace` — 기존 엔터티를 백업의 정의로 덮어씁니다(이 경우 `DROP WORKLOAD` / `DROP RESOURCE` privilege도 필요합니다).
+  :::
+
 ## 관련 항목 {#see-also}
 
 * [system.scheduler](/ko/reference/system-tables/scheduler)

@@ -13,19 +13,15 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="max_size_to_preallocate_for_aggregation">
-  ## max_size_to_preallocate_for_aggregation
-</div>
+## max_size_to_preallocate_for_aggregation {#max_size_to_preallocate_for_aggregation}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1000000000000"},{"label": "Включена оптимизация для более крупных таблиц."}]}, {"id": "row-2","items": [{"label": "22.12"},{"label": "100000000"},{"label": "Оптимизирует производительность"}]}]} />
 
-Для какого количества элементов разрешено суммарно заранее выделять место во всех хеш-таблицах перед агрегац
+Для какого количества элементов разрешено суммарно заранее выделять место во всех хеш-таблицах перед агрегацией
 
-<div id="max_size_to_preallocate_for_joins">
-  ## max_size_to_preallocate_for_joins
-</div>
+## max_size_to_preallocate_for_joins {#max_size_to_preallocate_for_joins}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000000000" />
 

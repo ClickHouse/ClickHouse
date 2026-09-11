@@ -51,6 +51,8 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 要使用通过字典扫描进行的文本索引 LIKE 评估，LIKE/ILIKE 模式中的字母数字 `needle`，或 `startsWith`/`endsWith` 的 `needle` 需要达到的最小长度。
 短于此阈值的模式会匹配过多字典标记，因此会被跳过，以避免代价高昂的扫描。
 
+使用 `array` 分词器时，任何模式都符合条件，此时该阈值会与整个模式中非通配符字符的数量进行比较。
+
 要求启用 `use_text_index_like_evaluation_by_dictionary_scan`。
 
 ## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}

@@ -519,15 +519,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       ],
       children: []
     },
-    {
-      label: "license_*",
-      count: 2,
-      settings: [
-        { name: "license_file", path: "/license#license_file", default: '""' },
-        { name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }
-      ],
-      children: []
-    },
+    { label: "license_*", count: 1, settings: [{ name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }], children: [] },
     {
       label: "listen_*",
       count: 4,

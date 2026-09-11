@@ -300,6 +300,26 @@ Habilita el transpilador SQL políglota: transpila SQL de más de 30 dialectos (
 
 Permite PRQL, una alternativa a SQL.
 
+## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nueva opción de configuración para habilitar el valor `trino` de la opción `dialect`, que traduce la sintaxis SQL de Trino y asigna los nombres de funciones de Trino a sus equivalentes en ClickHouse."}]}]} />
+
+Habilita el valor `trino` de la opción `dialect`.
+
+Cuando `dialect` tiene el valor `trino`, las consultas se escriben en SQL de Trino: la
+sintaxis específica de Trino (literales `ARRAY[...]`, `TRY_CAST`, `UNNEST`, tipos `ROW`, `OFFSET` antes de `LIMIT`)
+se traduce a ClickHouse SQL y los nombres de funciones de Trino se asignan a sus
+equivalentes en ClickHouse. La consulta `SET` se sigue analizando como SQL simple, de modo que
+sea posible volver a cambiar el dialecto.
+
+El dialecto también alinea la semántica de las consultas con la de Trino: `join_use_nulls` se
+activa, `use_variant_as_common_type` se desactiva y el analizador de consultas se activa.
+Una cláusula `SETTINGS` explícita en la consulta sigue teniendo precedencia.
+
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

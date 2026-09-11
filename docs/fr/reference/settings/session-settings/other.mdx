@@ -352,7 +352,7 @@ Si cette valeur est définie sur true, inclut uniquement les noms de colonnes et
 
 Détermine le dialecte utilisé pour analyser la requête.
 
-Valeurs prises en charge :
+Valeurs prises en charge :
 
 * `clickhouse` (par défaut) — ClickHouse SQL standard.
 * `kusto` — Kusto Query Language. Nécessite le paramètre expérimental `allow_experimental_kusto_dialect`.
@@ -360,6 +360,7 @@ Valeurs prises en charge :
 * `polyglot` — convertit le SQL provenant d&#39;autres dialectes (MySQL, PostgreSQL, etc.) en ClickHouse SQL. Nécessite le paramètre expérimental `allow_experimental_polyglot_dialect`.
 * `promql` — PromQL (langage de requêtes Prometheus) évalué sur une table TimeSeries, configurée à l&#39;aide des paramètres `promql_database`, `promql_table` et `promql_evaluation_time`.
 * `clickhouse_json` — au lieu d&#39;un texte SQL, la requête est interprétée comme un AST JSON (la sortie de `parseQueryToJSON`). La requête `SET` reste reconnue sous sa forme habituelle afin de pouvoir rétablir le dialecte. Nécessite le paramètre expérimental `enable_json_ast_dialect`.
+* `trino` — Trino SQL : traduit la syntaxe Trino (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, etc.) et fait correspondre les noms de fonctions Trino à leurs équivalents ClickHouse. Nécessite le paramètre expérimental `allow_experimental_trino_dialect`.
 
 ## discard_query_data {#discard_query_data}
 
@@ -1357,7 +1358,7 @@ entrées des lots déjà terminés. Disponible uniquement dans ClickHouse Cloud,
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "Fournit la valeur exacte de la statistique rows_before_aggregation, qui correspond au nombre de lignes lues avant l’agrégation"}]}]} />
 
-Lorsqu’il est activé, ClickHouse fournit la valeur exacte de la statistique rows&#95;before&#95;aggregation, qui correspond au nombre de lignes lues avant l’agrégatio
+Lorsqu’il est activé, ClickHouse fournit la valeur exacte de la statistique rows&#95;before&#95;aggregation, qui correspond au nombre de lignes lues avant l’agrégation
 
 ## run_query_in_background {#run_query_in_background}
 
@@ -1419,6 +1420,22 @@ Voir aussi :
 * [insert&#95;quorum](/fr/reference/settings/session-settings/insert-quorum#insert_quorum)
 * [insert&#95;quorum&#95;timeout](/fr/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/fr/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
+
+## session_query_ids_history_size {#session_query_ids_history_size}
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1000"},{"label": "Nouveau paramètre limitant la taille de l'historique des query ids propres à la session, exposé via la nouvelle system table `system.session_query_ids`. La valeur précédente `0` (enregistrement désactivé) reproduit le comportement antérieur à la version 26.9."}]}]} />
+
+Nombre maximal de query ids conservés dans l&#39;historique propre à la session, exposé via la system table [`system.session_query_ids`](/fr/reference/system-tables/session_query_ids).
+Le query id de chaque query non interne exécutée dans la session y est enregistré au démarrage de la query ; lorsque l&#39;historique dépasse cette taille, les entrées les plus anciennes sont évincées en premier.
+
+La valeur est lue au démarrage de la query, avant que celle-ci ne soit analysée : une clause `SETTINGS` de la query elle-même n&#39;a donc aucune incidence sur son enregistrement ; utilisez plutôt `SET`, un paramètre d&#39;URL HTTP ou un profil de paramètres.
+
+Valeurs possibles :
+
+* Entier positif.
+* 0 — L&#39;enregistrement est désactivé ; les entrées enregistrées auparavant restent dans la table.
 
 ## session_timezone {#session_timezone}
 

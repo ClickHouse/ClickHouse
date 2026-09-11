@@ -79,6 +79,8 @@ Il est préférable d’utiliser des expressions simples basées sur les clés p
 Si ce paramètre est utilisé sur un cluster composé d’un seul shard avec plusieurs répliques, ces répliques seront converties en shards virtuels.
 Sinon, il se comportera comme pour la clé `SAMPLE` et utilisera plusieurs répliques de chaque shard.
 
+L’expression est vérifiée au regard des autorisations `SELECT` de l’utilisateur au niveau des colonnes. Pour une vue avec `SQL SECURITY DEFINER` ou `NONE`, elle est appliquée aux colonnes de la vue ; le corps de la vue est lu sans cette vérification.
+
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
 <BetaBadge />
@@ -137,7 +139,7 @@ Si la valeur est true, ClickHouse utilisera également l’algorithme des répli
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "L’analyse d’index n’est effectuée que sur la réplique coordinatrice et est ignorée sur les autres répliques. Prend effet uniquement lorsque parallel_replicas_local_plan est activé"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "L’analyse d’index n’est effectuée que sur la réplique coordinatrice et est ignorée sur les autres répliques. Prend effet uniquement lorsque parallel_replicas_local_plan est activé"}]}]} />
 
-L’analyse d’index n’est effectuée que sur la réplique coordinatrice et est ignorée sur les autres répliques. Prend effet uniquement lorsque parallel&#95;replicas&#95;local&#95;pla
+L’analyse d’index n’est effectuée que sur la réplique coordinatrice et est ignorée sur les autres répliques. Prend effet uniquement lorsque parallel&#95;replicas&#95;local&#95;plan est activé
 
 ## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 

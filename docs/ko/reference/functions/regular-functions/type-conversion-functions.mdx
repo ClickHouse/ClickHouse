@@ -6918,9 +6918,7 @@ SELECT
 String, FixedString, DateTime, DateTime64 또는 자정 이후 경과한 초를 나타내는 숫자 타입에서 변환할 수 있습니다.
 타입 범위(`-999:59:59`~~`999:59:59`, 즉 `-3599999`~~`3599999`초)를 벗어나는 숫자 값은 범위 경계값으로 포화되며, 유한하지 않은 부동 소수점 값(`NaN`, `inf`, `-inf`)은 변환할 수 없어 예외가 발생합니다.
 
-<Info>
-  **레거시 `toTime`**
-
+<Note title="레거시 `toTime`">
   v25.5 이전의 `toTime`은 시간 구성 요소를 유지하면서 시간 정보를 포함한 날짜를 고정 날짜(`1970-01-02`)로 변환하는 다른 함수였습니다.
   해당 함수는 현재도 [`toTimeWithFixedDate`](/ko/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate)라는 이름으로 사용할 수 있습니다.
 
@@ -6928,7 +6926,7 @@ String, FixedString, DateTime, DateTime64 또는 자정 이후 경과한 초를 
   함수에 바인딩된 상태로 유지됩니다. 즉, `toTime` 호출은 여기에서 설명한 변환 함수 대신 `toTimeWithFixedDate`로 해석됩니다.
   설정이 활성화되어 있는 동안에는 `CAST(x AS Time)` 또는 `x::Time`을 사용하여 `Time` 타입으로 변환하십시오.
   이 설정은 v26.7부터 기본값이 `0`이지만, v25.6부터 v26.6까지는 기본값이 `1`이었으므로 아래 예시에서는 이를 명시적으로 설정합니다.
-</Info>
+</Note>
 
 **구문**
 

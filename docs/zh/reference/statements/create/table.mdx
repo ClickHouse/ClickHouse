@@ -61,14 +61,21 @@ ClickHouse 支持复制现有表的 schema 和数据。
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-这会创建一个与现有表具有相同 schema 和数据的表。新表创建后，`db.table` 中的所有分区都会附加到该表。换句话说，在创建时，`db.table` 的数据会被克隆到 `db2.table_clone`。该查询等同于以下内容：
+这会创建一个与现有表具有相同 schema 和数据的表。新表创建后，`db.table` 中的所有分区都会附加到该表。换句话说，在创建时，`db.table` 的数据会被克隆到 `db2.table_clone`。
 
-```sql
-CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
-ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
-```
+<Note>
+  当目标数据库使用 [Replicated](/zh/reference/engines/database-engines/replicated) 数据库引擎时，不支持 `CLONE AS`。
 
-对于这两项功能，你都可以为该表指定不同的引擎。如果未指定引擎，则默认使用与原始表 (`db.table`) 相同的引擎。
+  请改用：
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+  ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+  ```
+</Note>
+
+对于这两项功能，你都可以为该表指定不同的引擎。
+如果未指定引擎，则默认使用与原始表 (`db.table`) 相同的引擎。
 
 ### 使用表函数创建表 {#from-a-table-function}
 

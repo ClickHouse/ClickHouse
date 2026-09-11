@@ -6922,9 +6922,7 @@ SELECT
 支持从 String、FixedString、DateTime、DateTime64 或表示自午夜起经过秒数的数值类型进行转换。
 超出该类型范围的数值 (`-999:59:59` 至 `999:59:59`，即 `-3599999` 至 `3599999` 秒) 将被限制在范围边界内；非有限浮点值 (`NaN`、`inf`、`-inf`) 无法转换，并会引发异常。
 
-<Info>
-  **旧版 `toTime`**
-
+<Note title="旧版 `toTime`">
   在 v25.5 之前，`toTime` 是另一个函数，用于将日期时间转换为固定日期 (`1970-01-02`) ，同时保留
   时间部分。该函数仍以 [`toTimeWithFixedDate`](/zh/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate) 的名称提供。
 
@@ -6932,7 +6930,7 @@ SELECT
   函数；即对 `toTime` 的调用会解析为 `toTimeWithFixedDate`，而非此处所述的转换函数。
   启用该设置时，请使用 `CAST(x AS Time)` 或 `x::Time` 转换为 `Time` 类型。
   自 v26.7 起，该设置默认值为 `0`，但在 v25.6 至 v26.6 期间默认值为 `1`，因此以下示例会显式设置该值。
-</Info>
+</Note>
 
 **语法**
 

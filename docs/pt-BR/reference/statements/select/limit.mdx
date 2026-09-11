@@ -301,12 +301,11 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL 
 
 Sem `n` e sem `UNTIL`, todo intervalo aberto se estende até o fim do stream, portanto `AFTER start_expr ALL` retorna as mesmas linhas que `AFTER start_expr`.
 
-:::note
-
-* `WITH TIES`, `LIMIT`/`OFFSET` fracionários/negativos e `OFFSET` não são suportados em conjunto com `AFTER`/`UNTIL`.
-* O pushdown preliminar de `LIMIT` é desabilitado quando `AFTER`/`UNTIL` é usado.
-* `AFTER` e `UNTIL` são reconhecidos como palavras-chave apenas quando são seguidos por uma expressão de fronteira, de modo que um identificador chamado `after` ou `until` continua funcionando como contagem de linhas (`LIMIT after`, `LIMIT after BY x`). Quando as duas leituras são possíveis, a palavra-chave prevalece: `LIMIT after(2)` é o intervalo `LIMIT AFTER (2)`; escreva `LIMIT (after(2))` para chamar uma função chamada `after`.
-  :::
+<Note>
+  * `WITH TIES`, `LIMIT`/`OFFSET` fracionários/negativos e `OFFSET` não são suportados em conjunto com `AFTER`/`UNTIL`.
+  * O pushdown preliminar de `LIMIT` é desabilitado quando `AFTER`/`UNTIL` é usado.
+  * `AFTER` e `UNTIL` são reconhecidos como palavras-chave apenas quando são seguidos por uma expressão de fronteira, de modo que um identificador chamado `after` ou `until` continua funcionando como contagem de linhas (`LIMIT after`, `LIMIT after BY x`). Quando as duas leituras são possíveis, a palavra-chave prevalece: `LIMIT after(2)` é o intervalo `LIMIT AFTER (2)`; escreva `LIMIT (after(2))` para chamar uma função chamada `after`.
+</Note>
 
 `UNTIL` sozinho retorna as linhas desde o início do stream até a primeira linha em que a condição é true:
 

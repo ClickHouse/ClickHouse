@@ -6919,12 +6919,10 @@ SELECT
 導入バージョン: v25.5.0
 
 入力値を [Time](/ja/reference/data-types/time) 型に変換します。
-String、FixedString、DateTime、DateTime64、または深夜0時からの経過秒数を表す数値型からの変換をサポートします。
+String、FixedString、DateTime、DateTime64、または深夜からの経過秒数を表す数値型からの変換をサポートします。
 型の範囲外の数値 (`-999:59:59` ～ `999:59:59`、すなわち `-3599999` ～ `3599999` 秒) は範囲の境界値に飽和され、有限でない浮動小数点値 (`NaN`、`inf`、`-inf`) は変換できず、例外が発生します。
 
-<Info>
-  **レガシー `toTime`**
-
+<Note title="レガシー `toTime`">
   v25.5 より前の `toTime` は別の関数であり、時刻の
   部分を保持したまま日時を固定日付 (`1970-01-02`) に変換していました。この関数は現在も [`toTimeWithFixedDate`](/ja/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate) という名前で利用できます。
 
@@ -6932,7 +6930,7 @@ String、FixedString、DateTime、DateTime64、または深夜0時からの経�
   関数にバインドされたままになります。つまり、`toTime` の呼び出しは、ここで説明する変換関数ではなく `toTimeWithFixedDate` に解決されます。
   この設定が有効な間は、`CAST(x AS Time)` または `x::Time` を使用して `Time` 型に変換してください。
   この設定のデフォルトは v26.7 以降では `0` ですが、v25.6 から v26.6 までは `1` でした。そのため、以下の例では明示的に設定しています。
-</Info>
+</Note>
 
 **構文**
 

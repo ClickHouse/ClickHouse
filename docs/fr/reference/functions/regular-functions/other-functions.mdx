@@ -2534,24 +2534,22 @@ SELECT generateSerialID('id2', 100)
 
 ## getClientHTTPHeader {#getClientHTTPHeader}
 
-Introduit dans : v24.5.0
+Introduit dans : v24.5.0
 
 Renvoie la valeur d&#39;un en-tête HTTP.
 S&#39;il n&#39;existe pas d&#39;en-tête de ce type ou si la requête en cours n&#39;est pas effectuée via l&#39;interface HTTP, la fonction renvoie une chaîne vide.
 Certains en-têtes HTTP (par ex., `Authorization`, `Authentication` et `X-ClickHouse-*`) sont soumis à des restrictions.
 
-<Info>
-  **Le paramètre `allow_get_client_http_header` est requis**
-
+<Note title="Le paramètre `allow_get_client_http_header` est requis">
   La fonction nécessite que le paramètre `allow_get_client_http_header` soit activé.
   Ce paramètre n&#39;est pas activé par défaut pour des raisons de sécurité, car certains en-têtes, tels que `Cookie`, peuvent contenir des informations sensibles.
-</Info>
+</Note>
 
 Les en-têtes HTTP sont insensibles à la casse conformément à la RFC 9110.
 Si la fonction est utilisée dans le contexte d&#39;une requête distribuée, elle ne renvoie un résultat non vide que sur le nœud initiateur.
 
 `getClientHTTPHeader` lit les en-têtes de la requête en cours ; elle ne renvoie donc une valeur non vide que lorsque la requête est envoyée via l&#39;interface HTTP.
-Par exemple, fournissez l&#39;en-tête dans la requête et relisez-le via HTTP :
+Par exemple, fournissez l&#39;en-tête dans la requête et relisez-le via HTTP :
 
 ```bash
 echo "SELECT getClientHTTPHeader('Content-Type') SETTINGS allow_get_client_http_header = 1" | \
@@ -3047,21 +3045,19 @@ SELECT globalVariable('max_allowed_packet')
 
 ## hasColumnInTable {#hasColumnInTable}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Vérifie si une colonne spécifique existe dans une table d’une base de données.
 Pour les éléments d’une structure de données imbriquée, la fonction vérifie l’existence d’une colonne.
 Pour la structure de données imbriquée elle-même, la fonction renvoie `0`.
 
-<Info>
-  **Le privilège `SHOW COLUMNS` est requis**
-
+<Note title="Le privilège `SHOW COLUMNS` est requis">
   La fonction nécessite le privilège `SHOW COLUMNS` sur la table cible (le même privilège que celui requis par `DESCRIBE` et `SHOW CREATE TABLE`).
   Sans ce privilège, l’appel échoue avec `ACCESS_DENIED` au lieu de renvoyer `1` ou `0`, il n’est donc pas possible de tester des noms de colonnes sans y avoir accès.
-</Info>
+</Note>
 
 <Note>
-  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -5054,13 +5050,11 @@ FROM
 
 ## runningAccumulate {#runningAccumulate}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Accumule les états d&#39;une fonction d&#39;agrégation pour chaque ligne d&#39;un bloc de données.
 
-<Warning>
-  **Obsolète**
-
+<Warning title="Obsolète">
   L&#39;état est réinitialisé pour chaque nouveau bloc de données.
   En raison de ce comportement sujet aux erreurs, cette fonction est obsolète ; il est recommandé d&#39;utiliser plutôt les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
   Vous pouvez utiliser le paramètre [`allow_deprecated_error_prone_window_functions`](/fr/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) pour autoriser l&#39;utilisation de cette fonction.
@@ -5107,7 +5101,7 @@ FROM numbers(5);
 
 ## runningConcurrency {#runningConcurrency}
 
-Introduite dans : v21.3.0
+Introduite dans : v21.3.0
 
 Calcule le nombre d’événements simultanés.
 Chaque événement possède un horodatage de début et un horodatage de fin.
@@ -5115,23 +5109,19 @@ L’horodatage de début est inclus dans l’événement, tandis que l’horodat
 Les colonnes contenant l’horodatage de début et l’horodatage de fin doivent être du même type de données.
 La fonction calcule le nombre total d’événements actifs (simultanés) pour chaque horodatage de début d’événement.
 
-<Tip>
-  **Prérequis**
-
+<Tip title="Prérequis">
   Les événements doivent être triés par horodatage de début dans l’ordre croissant.
   Si cette condition n’est pas respectée, la fonction génère une exception.
   Chaque bloc de données est traité séparément.
   Si des événements provenant de différents blocs de données se chevauchent, ils ne peuvent pas être traités correctement.
 </Tip>
 
-<Warning>
-  **Obsolète**
-
+<Warning title="Obsolète">
   Il est recommandé d’utiliser plutôt les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
 </Warning>
 
 <Note>
-  Cette fonction n’est pas déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+  Cette fonction n’est pas déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
 </Note>
 
 **Syntaxe**
@@ -5176,9 +5166,7 @@ Introduit dans : v1.1.0
 Calcule la différence entre les valeurs de deux lignes consécutives dans le bloc de données.
 Renvoie `0` pour la première ligne, puis, pour les lignes suivantes, la différence par rapport à la ligne précédente.
 
-<Warning>
-  **Obsolète**
-
+<Warning title="Obsolète">
   Renvoie uniquement les différences à l’intérieur du bloc de données en cours de traitement.
   En raison de ce comportement sujet aux erreurs, cette fonction est obsolète.
   Il est recommandé d’utiliser à la place les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
@@ -5274,15 +5262,13 @@ WHERE diff != 1;
 
 ## runningDifferenceStartingWithFirstValue {#runningDifferenceStartingWithFirstValue}
 
-Introduit dans : v1.1.0
+Introduit dans : v1.1.0
 
 Calcule la différence entre les valeurs de lignes consécutives dans un bloc de données, mais contrairement à [`runningDifference`](#runningDifference), cette fonction renvoie la valeur réelle de la première ligne au lieu de `0`.
 
-<Warning>
-  **Obsolète**
-
+<Warning title="Obsolète">
   Renvoie uniquement les différences à l’intérieur du bloc de données en cours de traitement.
-  En raison de ce comportement propice aux erreurs, cette fonction est obsolète.
+  En raison de ce comportement sujet aux erreurs, cette fonction est obsolète.
   Il est recommandé d’utiliser plutôt les [fonctions de fenêtre](/fr/reference/functions/window-functions/index).
 
   Vous pouvez utiliser le paramètre `allow_deprecated_error_prone_window_functions` pour autoriser l’utilisation de cette fonction.

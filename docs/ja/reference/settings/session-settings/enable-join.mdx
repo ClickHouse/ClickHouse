@@ -10,7 +10,6 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
@@ -33,21 +32,17 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 ## enable_join_runtime_filters {#enable_join_runtime_filters}
 
-<BetaBadge />
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "この最適化を有効にしました"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "JOIN runtime filters が Production tier の機能になりました。"}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "1"},{"label": "この最適化を有効にしました"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": "0"},{"label": "新しい設定"}]}]} />
 
 実行時に右側から収集した結合キーの集合で左側をフィルタリングします。
 
 ## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<ExperimentalBadge />
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "動的な索引解析を使用した JOIN フィルタリングを有効にする新しい設定"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "JOIN runtime filters が Production tier の機能になりました。"}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "動的な索引解析を使用した JOIN フィルタリングを有効にする新しい設定"}]}]} />
 
 JOIN の左辺にあるグラニュールを刈り込むため、2 回目の索引解析 (`use_skip_indexes_on_data_read` 経由) を実行します。
 

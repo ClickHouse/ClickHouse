@@ -16,9 +16,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 
 此功能不受 ClickHouse engineers 支持，且已知质量较差。如果遇到任何问题，请自行修复并提交拉取请求。
 
-<div id="usage">
-  ## 用法
-</div>
+## 用法 {#usage}
 
 ```sql
 ENGINE = HDFS(URI, format)
@@ -33,9 +31,7 @@ ENGINE = HDFS(URI, format)
   [格式](/zh/reference/formats/index#formats-overview) 部分。
 * [PARTITION BY expr]
 
-<div id="partition-by">
-  ### PARTITION BY
-</div>
+### PARTITION BY {#partition-by}
 
 `PARTITION BY` — 可选。在大多数情况下，不需要分区键；即使需要，通常也不必将分区划分得比按月更细。分区不会加快查询速度 (这一点与 ORDER BY 表达式不同) 。切勿使用粒度过细的分区方式。不要按客户端标识符或名称对数据进行分区 (而应将客户端标识符或名称设为 ORDER BY 表达式中的第一列) 。
 
@@ -68,9 +64,7 @@ SELECT * FROM hdfs_engine_table LIMIT 2
 └──────┴───────┘
 ```
 
-<div id="implementation-details">
-  ## 实现细节
-</div>
+## 实现细节 {#implementation-details}
 
 * 读取和写入可以并行进行。
 * 不支持：
@@ -78,11 +72,9 @@ SELECT * FROM hdfs_engine_table LIMIT 2
   * 索引。
   * 支持[零拷贝](/zh/concepts/features/configuration/server-config/storing-data#zero-copy)复制，但不建议使用。
 
-<Info>
-  **零拷贝复制尚未做好用于生产环境的准备**
-
+<Note title="零拷贝复制尚未做好用于生产环境的准备">
   在 ClickHouse 22.8 及更高版本中，零拷贝复制默认禁用。此功能不建议在生产环境中使用。
-</Info>
+</Note>
 
 **路径中的通配符**
 
@@ -138,9 +130,7 @@ CREATE TABLE table_with_asterisk (name String, value UInt32) ENGINE = HDFS('hdfs
 CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9000/big_dir/file{0..9}{0..9}{0..9}', 'CSV')
 ```
 
-<div id="configuration">
-  ## 配置
-</div>
+## 配置 {#configuration}
 
 与 GraphiteMergeTree 类似，HDFS 引擎支持通过 ClickHouse 配置文件进行扩展配置。你可以使用两个配置项：全局级 (`hdfs`) 和用户级 (`hdfs_*`) 。系统会先应用全局配置，然后再应用用户级配置 (如果存在) 。
 
@@ -158,13 +148,9 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 </hdfs_root>
 ```
 
-<div id="configuration-options">
-  ### 配置选项
-</div>
+### 配置选项 {#configuration-options}
 
-<div id="supported-by-libhdfs3">
-  #### libhdfs3 支持的配置项
-</div>
+#### libhdfs3 支持的配置项 {#supported-by-libhdfs3}
 
 | **参数**                                                                  | **默认值**                           |
 | ----------------------------------------------------------------------- | --------------------------------- |
@@ -212,9 +198,7 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 
 [HDFS 配置参考](https://hawq.apache.org/docs/userguide/2.3.0.0-incubating/reference/HDFSConfigurationParameterReference.html) 或许可以帮助解释其中的一些参数。
 
-<div id="clickhouse-extras">
-  #### ClickHouse 额外配置
-</div>
+#### ClickHouse 额外配置 {#clickhouse-extras}
 
 | **参数**                            | **默认值**      |
 | --------------------------------- | ------------ |
@@ -222,15 +206,11 @@ CREATE TABLE big_table (name String, value UInt32) ENGINE = HDFS('hdfs://hdfs1:9
 | hadoop&#95;kerberos&#95;principal | &quot;&quot; |
 | libhdfs3&#95;conf                 | &quot;&quot; |
 
-<div id="limitations">
-  ### 限制
-</div>
+### 限制 {#limitations}
 
 * `hadoop_security_kerberos_ticket_cache_path` 和 `libhdfs3_conf` 只能为全局配置，不能为用户级配置
 
-<div id="kerberos-support">
-  ## Kerberos 支持
-</div>
+## Kerberos 支持 {#kerberos-support}
 
 如果 `hadoop_security_authentication` 参数的值为 `kerberos`，ClickHouse 将通过 Kerberos 进行身份验证。
 参数见[这里](#clickhouse-extras)，`hadoop_security_kerberos_ticket_cache_path` 也可能会有所帮助。
@@ -240,9 +220,7 @@ datanode 通信不会受到 SASL 保护 (`HADOOP_SECURE_DN_USER` 是这种
 
 如果指定了 `hadoop_kerberos_keytab`、`hadoop_kerberos_principal` 或 `hadoop_security_kerberos_ticket_cache_path`，则会使用 Kerberos 身份验证。在这种情况下，必须指定 `hadoop_kerberos_keytab` 和 `hadoop_kerberos_principal`。
 
-<div id="namenode-ha">
-  ## 支持 HDFS NameNode HA
-</div>
+## 支持 HDFS NameNode HA {#namenode-ha}
 
 libhdfs3 支持 HDFS NameNode 高可用 (HA) 。
 
@@ -257,9 +235,7 @@ libhdfs3 支持 HDFS NameNode 高可用 (HA) 。
 
 * 然后使用 `hdfs-site.xml` 中 `dfs.nameservices` 的值作为 HDFS URI 中的 NameNode 地址。例如，将 `hdfs://appadmin@192.168.101.11:8020/abc/` 替换为 `hdfs://appadmin@my_nameservice/abc/`。
 
-<div id="virtual-columns">
-  ## 虚拟列
-</div>
+## 虚拟列 {#virtual-columns}
 
 * `_path` — 文件路径。类型：`LowCardinality(String)`。
 * `_file` — 文件名。类型：`LowCardinality(String)`。
@@ -268,9 +244,7 @@ libhdfs3 支持 HDFS NameNode 高可用 (HA) 。
 
 - `_etag` — 文件的 ETag。类型：`LowCardinality(String)`。HDFS 没有原生 ETag，因此该值会根据文件的修改时间和大小合成，格式为 `<mtime_seconds>_<size>`。由于 `libhdfs3` 仅以秒级精度提供修改时间，在同一秒内重写且文件大小不变时，会产生相同的值；因此，该合成 ETag 不会用作内容缓存键。
 
-<div id="storage-settings">
-  ## 存储设置
-</div>
+## 存储设置 {#storage-settings}
 
 * [hdfs&#95;truncate&#95;on&#95;insert](/zh/reference/settings/session-settings/hdfs#hdfs_truncate_on_insert) - 允许在向文件插入数据前先将其截断。默认禁用。
 * [hdfs&#95;create&#95;new&#95;file&#95;on&#95;insert](/zh/reference/settings/session-settings/hdfs#hdfs_create_new_file_on_insert) - 如果 格式 带有 suffix，则允许在每次插入时创建新文件。默认禁用。

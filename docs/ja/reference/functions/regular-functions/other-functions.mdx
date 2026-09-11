@@ -2540,12 +2540,10 @@ HTTP ヘッダーの値を取得します。
 該当するヘッダーが存在しない場合、または現在のリクエストが HTTP インターフェイス経由で実行されていない場合、この関数は空文字列を返します。
 一部の HTTP ヘッダー (例: `Authorization`、`Authentication` および `X-ClickHouse-*`) には制限があります。
 
-<Info>
-  **`allow_get_client_http_header` 設定が必要です**
-
+<Note title="`allow_get_client_http_header` 設定が必要です">
   この関数を使用するには、設定 `allow_get_client_http_header` を有効にする必要があります。
   `Cookie` などの一部のヘッダーには機密情報が含まれる可能性があるため、セキュリティ上の理由からこの設定はデフォルトで無効になっています。
-</Info>
+</Note>
 
 RFC 9110 に従い、HTTP ヘッダーでは大文字と小文字は区別されません。
 この関数を分散クエリ内で使用した場合、空でない結果を返すのはイニシエーターノード上のみです。
@@ -3053,12 +3051,10 @@ SELECT globalVariable('max_allowed_packet')
 ネストされたデータ構造内の要素については、この関数はカラムの存在を確認します。
 ネストされたデータ構造そのものに対しては、この関数は `0` を返します。
 
-<Info>
-  **`SHOW COLUMNS` 権限が必要です**
-
+<Note title="`SHOW COLUMNS` 権限が必要です">
   この関数を使用するには、ターゲットテーブルに対する `SHOW COLUMNS` 権限が必要です (`DESCRIBE` および `SHOW CREATE TABLE` に必要な権限と同じです) 。
   この権限がない場合、呼び出しは `1` または `0` を返すのではなく `ACCESS_DENIED` で失敗するため、アクセス権がない状態でカラム名の有無を調べることはできません。
-</Info>
+</Note>
 
 <Note>
   この関数は非決定論的です。同じ引数に対して異なる結果を返すことがあります。
@@ -5051,9 +5047,7 @@ FROM
 
 データブロックの各行について、集約関数の状態を累積します。
 
-<Warning>
-  **非推奨**
-
+<Warning title="非推奨">
   状態は新しいデータブロックごとにリセットされます。
   この挙動は誤りを招きやすいため、この関数は非推奨となっており、代わりに[ウィンドウ関数](/ja/reference/functions/window-functions/index)を使用することを推奨します。
   この関数の使用を許可するには、設定[`allow_deprecated_error_prone_window_functions`](/ja/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions)を使用できます。
@@ -5108,18 +5102,14 @@ FROM numbers(5);
 開始時刻と終了時刻のカラムは、同じデータ型である必要があります。
 この関数は、各イベントの開始時刻ごとに、アクティブな (同時実行中の) イベントの総数を計算します。
 
-<Tip>
-  **要件**
-
+<Tip title="要件">
   イベントは開始時刻の昇順で並んでいる必要があります。
   この要件に違反すると、関数は例外をスローします。
   各データブロックは個別に処理されます。
   異なるデータブロックに属するイベントが重なっている場合、正しく処理できません。
 </Tip>
 
-<Warning>
-  **非推奨**
-
+<Warning title="非推奨">
   代わりに [ウィンドウ関数](/ja/reference/functions/window-functions/index) を使用することを推奨します。
 </Warning>
 
@@ -5169,9 +5159,7 @@ SELECT start, runningConcurrency(start, end) FROM example_table;
 データブロック内で連続する2つの行の値の差を計算します。
 最初の行には `0` を返し、2 行目以降は直前の行との差を返します。
 
-<Warning>
-  **非推奨**
-
+<Warning title="非推奨">
   現在処理中のデータブロック内の差分しか返しません。
   この挙動は誤りを招きやすいため、この関数は非推奨です。
   代わりに [ウィンドウ関数](/ja/reference/functions/window-functions/index) を使用することを推奨します。
@@ -5271,9 +5259,7 @@ WHERE diff != 1;
 
 データブロック内で連続する行の値の差を計算しますが、[`runningDifference`](#runningDifference) とは異なり、最初の行については `0` ではなく実際の値を返します。
 
-<Warning>
-  **非推奨**
-
+<Warning title="非推奨">
   現在処理中のデータブロック内の差分しか返しません。
   この挙動はエラーを招きやすいため、この関数は非推奨です。
   代わりに [ウィンドウ関数](/ja/reference/functions/window-functions/index) を使用することを推奨します。

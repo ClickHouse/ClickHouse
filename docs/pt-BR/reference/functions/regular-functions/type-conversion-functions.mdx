@@ -6923,9 +6923,7 @@ Converte um valor de entrada para o tipo [Time](/pt-BR/reference/data-types/time
 Suporta conversão de String, FixedString, DateTime, DateTime64 ou tipos numéricos que representam segundos desde a meia-noite.
 Valores numéricos fora do intervalo do tipo (`-999:59:59` a `999:59:59`, ou seja, de `-3599999` a `3599999` segundos) são limitados aos limites do intervalo, e valores de ponto flutuante não finitos (`NaN`, `inf`, `-inf`) não podem ser convertidos e resultam em uma exceção.
 
-<Info>
-  **`toTime` legado**
-
+<Note title="`toTime` legado">
   Antes da v25.5, `toTime` era uma função diferente, que convertia uma data com hora em uma data fixa (`1970-01-02`) enquanto preservava o
   componente de hora. Essa função ainda está disponível com o nome [`toTimeWithFixedDate`](/pt-BR/reference/functions/regular-functions/date-time-functions#toTimeWithFixedDate).
 
@@ -6933,7 +6931,7 @@ Valores numéricos fora do intervalo do tipo (`-999:59:59` a `999:59:59`, ou sej
   legada, ou seja, chamadas a `toTime` são resolvidas como `toTimeWithFixedDate` em vez da função de conversão descrita aqui.
   Enquanto a configuração estiver habilitada, use `CAST(x AS Time)` ou `x::Time` para converter para o tipo `Time`.
   A configuração usa `0` por padrão desde a v26.7, mas usava `1` por padrão da v25.6 à v26.6, motivo pelo qual os exemplos abaixo a definem explicitamente.
-</Info>
+</Note>
 
 **Sintaxe**
 

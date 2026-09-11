@@ -456,17 +456,13 @@ bloom_filter([false_positive_rate])
 * `UUID`
 * `Map`
 
-<Info>
-  **Тип данных Map: создание индекса по ключам или значениям**
-
+<Note title="Тип данных Map: создание индекса по ключам или значениям">
   Для типа данных `Map` client может указать, должен ли индекс создаваться по ключам или по значениям, с помощью функций [`mapKeys`](/ru/reference/functions/regular-functions/tuple-map-functions#mapKeys) или [`mapValues`](/ru/reference/functions/regular-functions/tuple-map-functions#mapValues).
-</Info>
+</Note>
 
-<Info>
-  **Тип данных JSON: индексация JSON-путей**
-
+<Note title="Тип данных JSON: индексация JSON-путей">
   Для типа данных [`JSON`](/ru/reference/data-types/newjson) можно создать bloom-фильтр индекс по набору путей с помощью функции [`JSONAllPaths`](/ru/reference/functions/regular-functions/json-functions#JSONAllPaths). Это позволяет пропускать гранулы, в которых отсутствует запрашиваемый JSON-путь. Подробности см. в разделе [Индексы пропуска данных для JSON](/ru/reference/data-types/newjson#data-skipping-indexes-for-json).
-</Info>
+</Note>
 
 #### N-граммный bloom-фильтр *(Устарело)* {#n-gram-bloom-filter}
 
@@ -715,9 +711,7 @@ ORDER BY id;
 
 Выражения должны иметь тип данных [Date](/ru/reference/data-types/date), [Date32](/ru/reference/data-types/date32), [DateTime](/ru/reference/data-types/datetime) или [DateTime64](/ru/reference/data-types/datetime64).
 
-<Tip>
-  **Избегайте недетерминированных функций в TTL-выражениях**
-
+<Tip title="Избегайте недетерминированных функций в TTL-выражениях">
   TTL вычисляется во время фоновых слияний, а не в момент вставки.
   Такие функции, как `rand()`, `now()` или `now64()`, будут вычисляться заново при каждом слиянии, что приведёт к непредсказуемому поведению при удалении.
   ClickHouse блокирует выражения, которые вообще не зависят от столбцов, но в настоящее время не отклоняет недетерминированные функции, используемые вместе со ссылкой на столбец (например, `ts + rand()`). Для предсказуемых результатов TTL-выражения должны основываться исключительно на детерминированных значениях, производных от столбцов.
@@ -1138,8 +1132,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -1161,7 +1155,7 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
 
 S3-диски (и другие диски объектного хранилища) можно использовать в политиках хранения с несколькими дисками и томами так же, как и локальные диски. Это позволяет распределять данные по нескольким S3 бакетам в рамках одного тома (по принципу JBOD) или настраивать политики многоуровневого хранения с S3-томами.
 
-Например, чтобы распределять данные между двумя S3 бакетами по очереди:
+Например, чтобы распределять данные между двумя S3 бакетами в режиме round-robin:
 
 ```xml
 <storage_configuration>
@@ -1230,11 +1224,9 @@ S3-диски (и другие диски объектного хранилищ�
 
 Можно настроить таблицы MergeTree без репликации для сценария с одним пишущим узлом и множеством читающих узлов на общем хранилище. Это обеспечивается автоматическим обновлением списка частей, которое можно настроить на читающих узлах. Обратите внимание, что для этого нужны общие метаданные файловой системы для всех реплик (или `table_disk = true` с локальным для таблицы диском). См. [refresh&#95;parts&#95;interval and table&#95;disk](/ru/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk).
 
-<Info>
-  **конфигурация кэша**
-
+<Note title="конфигурация кэша">
   В версиях ClickHouse с 22.3 по 22.7 используется другая конфигурация кэша; если вы используете одну из этих версий, см. раздел [использование локального кэша](/ru/concepts/features/configuration/server-config/storing-data#using-local-cache).
-</Info>
+</Note>
 
 ## Виртуальные столбцы {#virtual-columns}
 
@@ -1265,6 +1257,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY a
 ```
+
+Для статистики требуется физически сохранённый столбец. Столбцы `ALIAS` и `EPHEMERAL` не записываются ни в одну часть, поэтому объявление статистики для них отклоняется.
 
 Статистикой также можно управлять с помощью команд `ALTER`:
 
@@ -1324,17 +1318,17 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `minmax` (устарело)
 
-<Note>
-  Статистика `minmax` устарела. Вместо неё используйте статистику `basic`, которая является надмножеством `minmax`.
-</Note>
+  <Note>
+    Статистика `minmax` устарела. Вместо неё используйте статистику `basic`, которая является надмножеством `minmax`.
+  </Note>
 
 * `tdigest`
 
-<Warning>
-  Статистика типа `tdigest` требует больших затрат на создание и может замедлять приём данных.
-</Warning>
+  <Warning>
+    Статистика типа `tdigest` требует больших затрат на создание и может замедлять приём данных.
+  </Warning>
 
-Скетчи [TDigest](https://github.com/tdunning/t-digest), которые позволяют вычислять приблизительные перцентили (например, 90-й перцентиль) для числовых столбцов.
+  Скетчи [TDigest](https://github.com/tdunning/t-digest), которые позволяют вычислять приблизительные перцентили (например, 90-й перцентиль) для числовых столбцов.
 
 * `uniq`
 
@@ -1346,11 +1340,11 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `countmin`
 
-<Warning>
-  Статистика типа `countmin` требует больших затрат на создание и может замедлять приём данных.
-</Warning>
+  <Warning>
+    Статистика типа `countmin` требует больших затрат на создание и может замедлять приём данных.
+  </Warning>
 
-Скетчи [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch), которые позволяют приблизительно оценить частоту каждого значения в столбце.
+  Скетчи [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch), которые позволяют приблизительно оценить частоту каждого значения в столбце.
 
 ### Поддерживаемые типы данных {#supported-data-types}
 

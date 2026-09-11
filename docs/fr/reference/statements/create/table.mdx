@@ -61,14 +61,21 @@ Pour répliquer le schéma et les données d&#39;une table existante :
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-Cette instruction crée une table avec le même schéma et les mêmes données qu’une table existante.  Une fois la nouvelle table créée, toutes les partitions de `db.table` lui sont attachées. En d’autres termes, les données de `db.table` sont clonées dans `db2.table_clone` lors de sa création. Cette requête est équivalente à ce qui suit :
+Cette instruction crée une table avec le même schéma et les mêmes données qu’une table existante.  Une fois la nouvelle table créée, toutes les partitions de `db.table` lui sont attachées. En d’autres termes, les données de `db.table` sont clonées dans `db2.table_clone` lors de sa création.
 
-```sql
-CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
-ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
-```
+<Note>
+  `CLONE AS` n’est pas pris en charge lorsque la base de données de destination utilise le moteur de base de données [Replicated](/fr/reference/engines/database-engines/replicated).
 
-Pour ces deux fonctionnalités, vous pouvez spécifier un moteur différent pour la table. Si le moteur n&#39;est pas spécifié, le même moteur que pour la table d&#39;origine (`db.table`) sera utilisé.
+  Utilisez plutôt :
+
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+  ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+  ```
+</Note>
+
+Pour ces deux fonctionnalités, vous pouvez spécifier un moteur différent pour la table.
+Si le moteur n&#39;est pas spécifié, le même moteur que pour la table d&#39;origine (`db.table`) sera utilisé.
 
 ### Créer une table avec une fonction de table {#from-a-table-function}
 

@@ -349,6 +349,7 @@ true로 설정하면 DESCRIBE 쿼리 결과에 컬럼명과 타입만 포함됩�
 * `polyglot` — 다른 방언(MySQL, PostgreSQL 등)의 SQL을 ClickHouse SQL로 트랜스파일합니다. 실험적 설정 `allow_experimental_polyglot_dialect`이 필요합니다.
 * `promql` — `promql_database`, `promql_table`, `promql_evaluation_time` 설정으로 구성된 TimeSeries 테이블에서 평가되는 PromQL(Prometheus Query Language)입니다.
 * `clickhouse_json` — SQL 텍스트 대신 쿼리를 JSON AST(`parseQueryToJSON`의 출력)로 해석합니다. 방언을 다시 전환할 수 있도록 일반 형식의 `SET` 쿼리도 계속 인식됩니다. 실험적 설정 `enable_json_ast_dialect`이 필요합니다.
+* `trino` — Trino SQL: Trino 구문(`ARRAY[...]`, `TRY_CAST`, `UNNEST` 등)을 변환하고 Trino 함수 이름을 이에 상응하는 ClickHouse 함수로 매핑합니다. 실험적 설정 `allow_experimental_trino_dialect`이 필요합니다.
 
 ## discard_query_data {#discard_query_data}
 
@@ -1345,7 +1346,7 @@ FORMAT Null;
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "rows_before_aggregation 통계의 정확한 값을 제공하며, 이는 집계 전에 읽은 행 수를 나타냅니다"}]}]} />
 
-활성화되면 ClickHouse는 rows&#95;before&#95;aggregation 통계의 정확한 값을 제공하며, 이는 집계 전에 읽은 행 수를 나타냅니
+활성화되면 ClickHouse는 rows&#95;before&#95;aggregation 통계의 정확한 값을 제공하며, 이는 집계 전에 읽은 행 수를 나타냅니다
 
 ## run_query_in_background {#run_query_in_background}
 
@@ -1407,6 +1408,22 @@ FORMAT Null;
 * [insert&#95;quorum](/ko/reference/settings/session-settings/insert-quorum#insert_quorum)
 * [insert&#95;quorum&#95;timeout](/ko/reference/settings/session-settings/insert-quorum#insert_quorum_timeout)
 * [insert&#95;quorum&#95;parallel](/ko/reference/settings/session-settings/insert-quorum#insert_quorum_parallel)
+
+## session_query_ids_history_size {#session_query_ids_history_size}
+
+<SettingsInfoBlock type="UInt64" default_value="1000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1000"},{"label": "새로운 `system.session_query_ids` 시스템 테이블을 통해 노출되는 세션 로컬 쿼리 ID 이력의 크기를 제한하는 새로운 설정입니다. 이전 값 `0`(기록 비활성화)은 26.9 이전의 동작을 재현합니다."}]}]} />
+
+[`system.session_query_ids`](/ko/reference/system-tables/session_query_ids) 시스템 테이블을 통해 노출되는 세션 로컬 이력에 보관되는 최대 쿼리 ID 수입니다.
+세션에서 실행되는 모든 비내부 쿼리의 쿼리 ID는 쿼리 시작 시 이력에 기록됩니다. 이력이 이 크기를 초과하면 가장 오래된 항목부터 제거됩니다.
+
+값은 쿼리가 구문 분석되기 전인 쿼리 시작 시 읽히므로, 쿼리 자체의 `SETTINGS` 절은 해당 쿼리가 기록되는지 여부에 영향을 주지 않습니다. 대신 `SET`, HTTP URL 매개변수 또는 설정 프로필을 사용하십시오.
+
+가능한 값:
+
+* 양의 정수.
+* 0 — 기록이 비활성화되며, 이전에 기록된 항목은 테이블에 유지됩니다.
 
 ## session_timezone {#session_timezone}
 

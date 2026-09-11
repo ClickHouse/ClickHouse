@@ -57,7 +57,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.6"},{"label": "300"},{"label": "مهلة اتصال منفصلة لاستعلامات النسخ المتماثلة المتوازية"}]}]} />
 
-المهلة، بالمللي ثانية، للاتصال بنسخة متماثلة بعيدة أثناء تنفيذ الاستعلام باستخدام النسخ المتماثلة المتوازية. إذا انتهت المهلة، فلن تُستخدم النسخة المتماثلة المعنية في تنفيذ الاستعلا
+المهلة، بالمللي ثانية، للاتصال بنسخة متماثلة بعيدة أثناء تنفيذ الاستعلام باستخدام النسخ المتماثلة المتوازية. إذا انتهت المهلة، فلن تُستخدم النسخة المتماثلة المعنية في تنفيذ الاستعلام
 
 ## parallel_replicas_count {#parallel_replicas_count}
 
@@ -74,10 +74,12 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 أي تعبير عددي صحيح يمكن استخدامه لتقسيم العمل بين النسخ المتماثلة لجدول معيّن.
 يمكن أن تكون القيمة أي تعبير عددي صحيح.
 
-يُفضَّل استخدام التعبيرات البسيطة التي تعتمد على المفاتيح الأساسية.
+يُفضَّل استخدام التعبيرات البسيطة التي تعتمد على المفاتيح الأساسية.
 
-إذا استُخدم هذا الإعداد على عنقود يتكون من شظية واحدة تضم عدة نسخ متماثلة، فستُحوَّل هذه النسخ إلى شظايا افتراضية.
+إذا استُخدم هذا الإعداد على عنقود يتكون من شظية واحدة تضم عدة نسخ متماثلة، فستُحوَّل هذه النسخ إلى شظايا افتراضية.
 وإلا فسيتصرف بالطريقة نفسها كما في مفتاح `SAMPLE`، إذ سيستخدم عدة نسخ متماثلة من كل شظية.
+
+يُتحقَّق من التعبير مقابل صلاحيات `SELECT` الممنوحة للمستخدم على مستوى الأعمدة. أما في حالة العرض المعرَّف بـ `SQL SECURITY DEFINER` أو `NONE`، فيُطبَّق على أعمدة العرض؛ ويُقرأ متن العرض من دون ذلك.
 
 ## parallel_replicas_custom_key_range_lower {#parallel_replicas_custom_key_range_lower}
 
@@ -137,7 +139,7 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.12"},{"label": "1"},{"label": "يُجرى تحليل الفهرس فقط على replica-coordinator، ويُتخطى على النسخ المتماثلة الأخرى. ولا يسري ذلك إلا عند تمكين parallel_replicas_local_plan"}]}, {"id": "row-2","items": [{"label": "24.10"},{"label": "1"},{"label": "يُجرى تحليل الفهرس فقط على replica-coordinator، ويُتخطى على النسخ المتماثلة الأخرى. ولا يسري ذلك إلا عند تمكين parallel_replicas_local_plan"}]}]} />
 
-يُجرى تحليل الفهرس فقط على replica-coordinator، ويُتخطى على النسخ المتماثلة الأخرى. ولا يسري ذلك إلا عند تمكين parallel&#95;replicas&#95;local&#95;pla
+يُجرى تحليل الفهرس فقط على replica-coordinator، ويُتخطى على النسخ المتماثلة الأخرى. ولا يسري ذلك إلا عند تمكين parallel&#95;replicas&#95;local&#95;plan
 
 ## parallel_replicas_insert_select_local_pipeline {#parallel_replicas_insert_select_local_pipeline}
 

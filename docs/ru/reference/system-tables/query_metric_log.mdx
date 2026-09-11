@@ -24,6 +24,8 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 
 * `query_id` ([String](/ru/reference/data-types/string)) — ID запроса.
 * `hostname` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Имя хоста сервера, выполняющего запрос.
+* `clickhouse_version` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Версия сервера ClickHouse, создавшего строку.
+* `system_processor` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Архитектура CPU сервера ClickHouse, создавшего строку.
 * `event_date` ([Date](/ru/reference/data-types/date)) — Дата события.
 * `event_time` ([DateTime](/ru/reference/data-types/datetime)) — Время события.
 * `event_time_microseconds` ([DateTime64(6)](/ru/reference/data-types/datetime64)) — Время события с точностью до микросекунд.
@@ -433,6 +435,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество сжатых байт, записанных для JOIN во внешней памяти.
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Объём данных (в несжатом виде, до сжатия), записанных для JOIN во внешней памяти.
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество файлов, пропущенных при отсечении партиций Iceberg
+* `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество manifest-файлов Iceberg, пропущенных без чтения с использованием сводок партиций из списка manifest-файлов
 * `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/ru/reference/data-types/int-uint)) — Применение тривиальной оптимизации count при чтении из Iceberg
 * `ProfileEvent_IcebergVersionHintUsed` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев использования version-hint.text.
 * `ProfileEvent_IcebergMinMaxIndexPrunedFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество файлов, пропущенных при использовании индекса MinMax в Iceberg
@@ -461,7 +464,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_UniqueKeyIndexCacheLookupMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Астрономическое время внутри `UniqueKeyIndexCache::Lookup` + `UniqueKeyIndexCache::Insert` (адаптер `CacheBase` на стороне ClickHouse для кэша блоков RocksDB).
 * `ProfileEvent_UniqueKeyIndexCacheHits` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда запись была найдена в кэше индекса UNIQUE KEY, поэтому не потребовалось загружать блок SST.
 * `ProfileEvent_UniqueKeyIndexCacheMisses` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда запись не была найдена в кэше индекса UNIQUE KEY, поэтому пришлось загрузить блок SST с диска.
-* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее астрономическое время за время существования `SSTIndexWriter` — включает `Open` для SST, каждую операцию Put через `addEncoded`, а также финализацию `Finish` + `WriteBuffer` в `finalizeToStorage` (байты SST передаются напрямую в `WriteBuffer` хранилища части). Не включает работу статических вспомогательных функций до создания writer (кодирование + сортировка пути без префикса). Генерируется один раз для каждого writer.
+* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее астрономическое время за время существования `SSTIndexWriter` — включает `Open` для SST, каждую операцию Put через `addEncoded`, а также финализацию `Finish` + `WriteBuffer` (+ fsync) в `finish` (байты SST передаются напрямую в `WriteBuffer` хранилища части). Не включает работу статических вспомогательных функций до создания writer (кодирование + сортировка пути без префикса). Генерируется один раз для каждого writer.
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildCount` ([UInt64](/ru/reference/data-types/int-uint)) — Количество частей UNIQUE KEY, для которых `unique_key_index.sst` был перестроен во время загрузки после окна сбоя до сброса.
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на перестроение `unique_key_index.sst` при загрузке (последовательное чтение столбцов UK + запись SST).
 * `ProfileEvent_SelectedParts` ([UInt64](/ru/reference/data-types/int-uint)) — Количество частей данных, выбранных для чтения из таблицы семейства MergeTree.
@@ -504,7 +507,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_GatheredColumns` ([UInt64](/ru/reference/data-types/int-uint)) — Количество столбцов, собранных на вертикальной стадии слияния.
 * `ProfileEvent_MergedProjections` ([UInt64](/ru/reference/data-types/int-uint)) — Количество проекций, слитых (не перестроенных) во время слияний MergeTree.
 * `ProfileEvent_RebuiltProjections` ([UInt64](/ru/reference/data-types/int-uint)) — Количество проекций, перестроенных с нуля во время слияний MergeTree.
-* `ProfileEvent_MergedUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Несжатые байты (для столбцов в том виде, в каком они хранятся в памяти), прочитанные для фоновых слияний. Это количество до слияния.
+* `ProfileEvent_MergedUncompressedBytes` ([UInt64](/ru/reference/data-types/int-uint)) — Несжатые байты (для столбцов в том виде, в котором они хранятся в памяти), прочитанные для фоновых слияний. Это количество до слияния.
 * `ProfileEvent_MergeWrittenRows` ([UInt64](/ru/reference/data-types/int-uint)) — Количество строк, записанных во время слияния.
 * `ProfileEvent_MergeTotalMilliseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время, затраченное на фоновые слияния
 * `ProfileEvent_MergeExecuteMilliseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Общее время активной работы, затраченное на выполнение фоновых слияний
@@ -1099,6 +1102,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueRemovedObjects` ([UInt64](/ru/reference/data-types/int-uint)) — Количество объектов, удалённых в рамках after&#95;processing = delete
 * `ProfileEvent_ObjectStorageQueueTaggedObjects` ([UInt64](/ru/reference/data-types/int-uint)) — Количество объектов, помеченных тегом в рамках after&#95;processing = tag
 * `ProfileEvent_ObjectStorageQueueInsertIterations` ([UInt64](/ru/reference/data-types/int-uint)) — Количество итераций вставки
+* `ProfileEvent_ObjectStorageQueueRemoveObjectFailures` ([UInt64](/ru/reference/data-types/int-uint)) — Количество объектов, которые не удалось удалить в рамках after&#95;processing = delete
 * `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/ru/reference/data-types/int-uint)) — Количество запросов к Keeper на коммит файлов как обработанных или неуспешных
 * `ProfileEvent_ObjectStorageQueueBucketLockLostOwnership` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев обнаружения потери владения блокировкой бакета в S3(Azure)Queue. Ненулевое значение указывает на слишком малое значение persistent&#95;processing&#95;node&#95;ttl&#95;seconds или ошибку
 * `ProfileEvent_ObjectStorageQueueBucketLockRefreshes` ([UInt64](/ru/reference/data-types/int-uint)) — Количество успешных обновлений блокировки бакета в S3(Azure)Queue
@@ -1106,6 +1110,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueUnsuccessfulCommits` ([UInt64](/ru/reference/data-types/int-uint)) — Количество неуспешных коммитов в Keeper
 * `ProfileEvent_ObjectStorageQueueCancelledFiles` ([UInt64](/ru/reference/data-types/int-uint)) — Количество отменённых файлов в StorageS3(Azure)Queue
 * `ProfileEvent_ObjectStorageQueueProcessedRows` ([UInt64](/ru/reference/data-types/int-uint)) — Количество обработанных строк в StorageS3(Azure)Queue
+* `ProfileEvent_ObjectStorageQueueExclusiveModeProcessingErrors` ([UInt64](/ru/reference/data-types/int-uint)) — Количество случаев, когда файл в S3(Azure)Queue не перешёл в конечное состояние из-за ошибки обработки. Только для режима &#39;exclusive&#39;.
 * `ProfileEvent_ObjectStorageListedObjects` ([UInt64](/ru/reference/data-types/int-uint)) — Общее количество объектов, возвращённых API перечисления Объектного хранилища до применения какой-либо фильтрации.
 * `ProfileEvent_ObjectStorageGlobFilteredObjects` ([UInt64](/ru/reference/data-types/int-uint)) — Объекты, которые не соответствовали glob-шаблону или шаблону регулярного выражения и были пропущены при перечислении.
 * `ProfileEvent_ObjectStoragePredicateFilteredObjects` ([UInt64](/ru/reference/data-types/int-uint)) — Объекты, отфильтрованные предикатом по виртуальным столбцам &#95;path/&#95;file.
@@ -1536,6 +1541,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterRowsChecked` ([UInt64](/ru/reference/data-types/int-uint)) — Количество строк, проверенных с помощью JOIN Runtime Filters
 * `ProfileEvent_RuntimeFilterRowsPassed` ([UInt64](/ru/reference/data-types/int-uint)) — Количество строк, прошедших через JOIN Runtime Filters (то есть не отфильтрованных ими)
 * `ProfileEvent_RuntimeFilterRowsSkipped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество строк в блоках, пропущенных JOIN Runtime Filters
+* `ProfileEvent_RuntimeFilterBloomFilterBuildsSkipped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество пропущенных построений фильтра Блума JOIN Runtime Filter, поскольку статистика хеш-таблицы по числу ключей на стороне построения предсказывала превышение фильтром максимальной доли установленных битов
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ru/reference/data-types/int-uint)) — Количество гранул, рассмотренных JOIN Runtime Filters для отсечения при чтении
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ru/reference/data-types/int-uint)) — Количество гранул, отсечённых JOIN Runtime Filters при чтении
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ru/reference/data-types/int-uint)) — Время, затраченное на этапы постобработки после построения правой стороны JOIN.

@@ -17,7 +17,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Élimine les agrégateurs min/max/any/anyLast des clés de GROUP BY dans la clause SELECT
+Élimine les agrégateurs min/max/any/anyLast des clés GROUP BY dans la clause SELECT
 
 ## optimize_append_index {#optimize_append_index}
 
@@ -133,7 +133,7 @@ uniquement lorsque col est de type String ou FixedString.
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.1"},{"label": "1"},{"label": "Optimise les expressions WHERE, PREWHERE, ON, HAVING et QUALIFY en extrayant les expressions communes de disjonctions de conjonctions."}]}, {"id": "row-2","items": [{"label": "24.12"},{"label": "0"},{"label": "Introduit un paramètre pour optimiser les expressions WHERE, PREWHERE, ON, HAVING et QUALIFY en extrayant les expressions communes de disjonctions de conjonctions."}]}]} />
 
-Permet d&#39;extraire des expressions communes de disjonctions dans les expressions WHERE, PREWHERE, ON, HAVING et QUALIFY. Une expression logique comme `(A AND B) OR (A AND C)` peut être réécrite en `A AND (B OR C)`, ce qui peut aider à utiliser :
+Permet d&#39;extraire des expressions communes de disjonctions dans les expressions WHERE, PREWHERE, ON, HAVING et QUALIFY. Une expression logique comme `(A AND B) OR (A AND C)` peut être réécrite en `A AND (B OR C)`, ce qui peut aider à utiliser :
 
 * les indices dans des expressions de filtrage simples
 * l&#39;optimisation des CROSS JOIN en INNER JOIN

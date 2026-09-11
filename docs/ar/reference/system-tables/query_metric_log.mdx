@@ -24,6 +24,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 
 * `query_id` ([String](/ar/reference/data-types/string)) — معرّف الاستعلام.
 * `hostname` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — اسم مضيف الخادم الذي ينفّذ الاستعلام.
+* `clickhouse_version` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — إصدار خادم ClickHouse الذي أنتج الصف.
+* `system_processor` ([LowCardinality(String)](/ar/reference/data-types/lowcardinality)) — معمارية CPU لخادم ClickHouse الذي أنتج الصف.
 * `event_date` ([Date](/ar/reference/data-types/date)) — تاريخ الحدث.
 * `event_time` ([DateTime](/ar/reference/data-types/datetime)) — وقت الحدث.
 * `event_time_microseconds` ([DateTime64(6)](/ar/reference/data-types/datetime64)) — وقت الحدث بدقة الميكروثانية.
@@ -433,6 +435,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد البايتات المضغوطة المكتوبة لأغراض JOIN في الذاكرة الخارجية.
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/ar/reference/data-types/int-uint)) — كمية البيانات (غير المضغوطة، قبل الضغط) المكتوبة لأغراض JOIN في الذاكرة الخارجية.
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الملفات التي جرى تخطيها أثناء استبعاد أقسام Iceberg
+* `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/ar/reference/data-types/int-uint)) — عدد ملفات البيان في Iceberg التي جرى تخطيها دون قراءتها، باستخدام ملخصات الأقسام في قائمة البيان
 * `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/ar/reference/data-types/int-uint)) — تم تطبيق تحسين العدّ البسيط أثناء القراءة من Iceberg
 * `ProfileEvent_IcebergVersionHintUsed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد مرات استخدام version-hint.text.
 * `ProfileEvent_IcebergMinMaxIndexPrunedFiles` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الملفات التي تم تخطيها باستخدام MinMax index في Iceberg
@@ -461,7 +464,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_UniqueKeyIndexCacheLookupMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — وقت الساعة الفعلي داخل `UniqueKeyIndexCache::Lookup` + `UniqueKeyIndexCache::Insert` (مهايئ `CacheBase` من جانب ClickHouse لذاكرة التخزين المؤقت للكتل في RocksDB).
 * `ProfileEvent_UniqueKeyIndexCacheHits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي عُثر فيها على entry في UNIQUE KEY index cache، لذا لم تكن هناك حاجة إلى تحميل SST block.
 * `ProfileEvent_UniqueKeyIndexCacheMisses` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم يُعثر فيها على entry في UNIQUE KEY index cache، لذا كان لا بد من تحميل SST block من disk.
-* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي وقت الساعة الفعلي المستغرَق خلال دورة حياة `SSTIndexWriter` — يشمل `Open` لـ SST، وكل عملية Put عبر `addEncoded`، و`Finish` + إنهاء `WriteBuffer` في `finalizeToStorage` (تُدفق بايتات SST مباشرةً إلى `WriteBuffer` الخاص بتخزين الجزء). لا يشمل العمل الذي تنفذه الدوال المساعدة الساكنة قبل إنشاء الكاتب (الترميز + فرز المسار غير ذي البادئة). يُصدر مرة واحدة لكل كاتب.
+* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي وقت الساعة الفعلي المستغرَق خلال دورة حياة `SSTIndexWriter` — يشمل `Open` لـ SST، وكل عملية Put عبر `addEncoded`، و`Finish` + إنهاء `WriteBuffer` (+ `fsync`) في `finish` (تُدفق بايتات SST مباشرةً إلى `WriteBuffer` الخاص بتخزين الجزء). لا يشمل العمل الذي تنفذه الدوال المساعدة الساكنة قبل إنشاء الكاتب (الترميز + فرز المسار غير ذي البادئة). يُصدر مرة واحدة لكل كاتب.
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildCount` ([UInt64](/ar/reference/data-types/int-uint)) — عدد أجزاء UNIQUE KEY التي أُعيد بناء `unique_key_index.sst` الخاص بها عند التحميل بعد نافذة التعطل قبل التفريغ.
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الوقت المستغرَق في إعادة بناء `unique_key_index.sst` عند التحميل (قراءة تسلسلية لأعمدة UK وكتابة SST).
 * `ProfileEvent_SelectedParts` ([UInt64](/ar/reference/data-types/int-uint)) — عدد data parts التي تم اختيارها للقراءة من جدول MergeTree.
@@ -787,8 +790,8 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_WriteBufferFromS3WaitInflightLimitMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الوقت المستغرَق في الانتظار حتى تكتمل بعض الطلبات الحالية عندما يصل عددها إلى الحد الذي يحدده s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file.
 * `ProfileEvent_QueryMemoryLimitExceeded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تم فيها تجاوز حد الذاكرة للاستعلام.
 * `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي تم فيها تجاوز حد الذاكرة العام.
-* `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي خُصِّصت فيها الذاكرة دون التحقق من قيود الذاكرة.
-* `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار البايتات التي خُصِّصت دون التحقق من قيود الذاكرة.
+* `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي خُصِّصت فيها الذاكرة دون التحقق من قيود الذاكرة.
+* `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/ar/reference/data-types/int-uint)) — مقدار البايتات التي خُصِّصت دون التحقق من قيود الذاكرة.
 * `ProfileEvent_AzureGetObject` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات GetObject في واجهة برمجة تطبيقات Azure.
 * `ProfileEvent_AzureUpload` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات Upload في واجهة برمجة تطبيقات Azure Blob Storage
 * `ProfileEvent_AzureStageBlock` ([UInt64](/ar/reference/data-types/int-uint)) — عدد استدعاءات StageBlock في واجهة برمجة تطبيقات Azure Blob Storage
@@ -1099,6 +1102,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueRemovedObjects` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكائنات التي أُزيلت كجزء من after&#95;processing = delete
 * `ProfileEvent_ObjectStorageQueueTaggedObjects` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكائنات التي وُسِمت كجزء من after&#95;processing = tag
 * `ProfileEvent_ObjectStorageQueueInsertIterations` ([UInt64](/ar/reference/data-types/int-uint)) — عدد تكرارات الإدراج
+* `ProfileEvent_ObjectStorageQueueRemoveObjectFailures` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الكائنات التي تعذّرت إزالتها كجزء من after&#95;processing = delete
 * `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/ar/reference/data-types/int-uint)) — عدد طلبات Keeper لتنفيذ commit للملفات باعتبارها إما فاشلة أو تمت معالجتها
 * `ProfileEvent_ObjectStorageQueueBucketLockLostOwnership` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي اكتُشف فيها فقدان ملكية قفل الحاوية في S3(Azure)Queue. تشير القيمة غير الصفرية إلى أن persistent&#95;processing&#95;node&#95;ttl&#95;seconds صغير جدًا أو إلى وجود خلل
 * `ProfileEvent_ObjectStorageQueueBucketLockRefreshes` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات تحديث قفل الحاوية الناجحة في S3(Azure)Queue
@@ -1106,6 +1110,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueUnsuccessfulCommits` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات commit غير الناجحة في Keeper
 * `ProfileEvent_ObjectStorageQueueCancelledFiles` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الملفات التي أُلغيت في StorageS3(Azure)Queue
 * `ProfileEvent_ObjectStorageQueueProcessedRows` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف المُعالجة في StorageS3(Azure)Queue
+* `ProfileEvent_ObjectStorageQueueExclusiveModeProcessingErrors` ([UInt64](/ar/reference/data-types/int-uint)) — عدد المرات التي لم تُثبَّت فيها حالة ملف في S3(Azure)Queue بسبب خطأ في المعالجة. لوضع &#39;exclusive&#39; فقط.
 * `ProfileEvent_ObjectStorageListedObjects` ([UInt64](/ar/reference/data-types/int-uint)) — إجمالي الكائنات التي أعادتها واجهة برمجة تطبيقات سرد تخزين الكائنات قبل أي تصفية.
 * `ProfileEvent_ObjectStorageGlobFilteredObjects` ([UInt64](/ar/reference/data-types/int-uint)) — الكائنات التي لم تطابق نمط glob أو regex وتم تخطيها أثناء السرد.
 * `ProfileEvent_ObjectStoragePredicateFilteredObjects` ([UInt64](/ar/reference/data-types/int-uint)) — الكائنات التي أُزيلت بواسطة التصفية الشرطية على العمودين الافتراضيين &#95;path/&#95;file.
@@ -1536,6 +1541,7 @@ import SystemTableCloud from '/snippets/ar/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterRowsChecked` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي فحصتها مرشحات JOIN وقت التشغيل
 * `ProfileEvent_RuntimeFilterRowsPassed` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف التي مرّت عبر مرشحات JOIN وقت التشغيل (أي لم تُستبعَد بواسطتها)
 * `ProfileEvent_RuntimeFilterRowsSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الصفوف في الكتل التي تخطّتها مرشحات JOIN وقت التشغيل
+* `ProfileEvent_RuntimeFilterBloomFilterBuildsSkipped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد عمليات بناء bloom filter الخاصة بمرشحات وقت تشغيل JOIN التي جرى تخطيها لأن عدد مفاتيح جانب البناء المستمد من إحصاءات hash table توقّع أن يتجاوز المرشح الحد الأقصى لنسبة set bits
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الوحدات الحبيبية التي فُحصت للاستبعاد في وقت القراءة بواسطة مرشحات وقت تشغيل JOIN
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ar/reference/data-types/int-uint)) — عدد الوحدات الحبيبية المستبعَدة في وقت القراءة بواسطة مرشحات وقت تشغيل JOIN
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ar/reference/data-types/int-uint)) — الزمن المنقضي لخطوات المعالجة اللاحقة بعد بناء الجانب الأيمن من JOIN.

@@ -505,7 +505,7 @@ Expression ((Project names + Projection))
             Output: number
 ```
 
-`distributed` = 1로 설정하면 로컬 쿼리 플랜뿐만 아니라 원격 노드에서 실행될 쿼리 플랜도 출력에 포함됩니다. 분산 쿼리를 분석하고 디버깅할 때 유용합니다.
+`distributed` = 1로 설정하면 로컬 쿼리 계획뿐만 아니라 원격 노드에서 실행될 쿼리 계획도 출력에 포함됩니다. 분산 쿼리를 분석하고 디버깅할 때 유용합니다.
 
 <Note>
   `distributed`는 `pretty` 출력이 원격 세그먼트의 계획을 계획 트리에 통합하지 않기 때문에 레거시(`pretty`가 아닌) 형식으로만 표시됩니다. 이러한 이유로 `distributed`를 활성화하면 `explain_query_plan_default`와 관계없이 `pretty` 기본값(`actions`, `compact`, `pretty`)이 자동으로 비활성화됩니다. 그래도 `actions=1`은 수동으로 설정할 수 있습니다. 또한 `distributed` 옵션은 `json`과 함께 사용할 수 없습니다.
@@ -551,9 +551,9 @@ Expression ((Project names + Projection))
               ReadFromMergeTree (default.test_table)
 ```
 
-두 예시 모두에서 쿼리 플랜은 로컬 및 원격 단계를 포함한 전체 실행 흐름을 표시합니다.
+두 예시 모두에서 쿼리 계획은 로컬 및 원격 단계를 포함한 전체 실행 흐름을 표시합니다.
 
-`pretty` = 1로 설정하면 들여쓰기 대신 선 그리기 문자를 사용하여 플랜 트리가 표시되며, 주요 단계에 대한 추가 정보도 함께 표시됩니다:
+`pretty` = 1로 설정하면 들여쓰기 대신 선 그리기 문자를 사용하여 계획 트리가 표시되며, 주요 단계에 대한 추가 정보도 함께 표시됩니다:
 
 * **쿼리 출력 컬럼**은 플랜 상단에 표시됩니다.
 * 필터, 집계 키, 정렬 설명, 윈도우 함수의 **표현식**은 사람이 읽기 쉬운 SQL 유사 표기법으로 표시됩니다(예: `greater(plus(a, 1), 5)` 대신 `a + 1 > 5`). 명확성을 위해 내부 컬럼 식별자 프리픽스(예: `__table1.`)는 제거됩니다.
@@ -561,31 +561,69 @@ Expression ((Project names + Projection))
 * **필터 단계**는 필터 조건을 SQL 표기법으로 표시합니다. 런타임 조인 필터가 있는 경우 별도로 표시됩니다.
 * **집계 단계**는 키와 해당 인수가 포함된 집계 함수를 표시합니다(예: `sum(c)`, `count()`).
 * 튜플 리터럴의 **IN Set**은 값을 표시하며(큰 Set의 경우 잘림), 서브쿼리 기반 Set에는 `subquery1`, `subquery2` 등의 레이블이 지정되고, `Set` 엔진 테이블의 Set은 테이블 이름을 표시합니다.
-* **조인 단계**는 수학적 표기법을 사용한 조인 릴레이션, 예상 결과 행 수,
-  그리고 어떤 출력 컬럼이 왼쪽과 오른쪽에서 오는지를 표시합니다. 다음 기호는
-  서로 다른 JOIN 유형을 나타내는 데 사용됩니다:
+* **조인 단계**는 수학적 표기법을 사용한 조인 릴레이션, 조인 순서 최적화기가 해당 단계에 대해
+  산출한 추정치(비용, selectivity, 출력 행 수, 각 측의 행 수),
+  그리고 각 측의 입력 컬럼을 표시합니다. 다음 기호는 서로 다른 JOIN 유형을
+  나타내는 데 사용됩니다:
 
-| 기호                     | 조인 유형     |
-| ---------------------- | --------- |
-| `⋈`                    | 내부 조인     |
-| `⟕`                    | 왼쪽 조인     |
-| `⟖`                    | 오른쪽 조인    |
-| `⟗`                    | 전체 조인     |
-| `⋉`                    | 왼쪽 세미 조인  |
-| `⋊`                    | 오른쪽 세미 조인 |
-| `⋉` with strikethrough | 왼쪽 안티 조인  |
-| `⋊` with strikethrough | 오른쪽 안티 조인 |
-| `×`                    | 크로스 조인    |
+| 기호          | JOIN 유형         |
+| ----------- | --------------- |
+| `⋈`         | Inner Join      |
+| `⟕`         | Left Join       |
+| `⟖`         | Right Join      |
+| `⟗`         | Full Join       |
+| `⋉`         | Left Semi Join  |
+| `⋊`         | Right Semi Join |
+| 취소선이 있는 `⋉` | Left Anti Join  |
+| 취소선이 있는 `⋊` | Right Anti Join |
+| `×`         | Cross Join      |
 
-예를 들어, `t1 ⟕ t2`는 테이블 `t1`과 `t2` 사이의 왼쪽 조인을 의미합니다.
-테이블 이름 뒤 대괄호 안의 숫자(예: `t1[100]`)는 예상 행 수를 나타내며,
-테이블 통계를 사용할 수 있을 때 표시됩니다.
+예를 들어 `t1 ⟕ t2`는 테이블 `t1`과 `t2` 간의 left join을 의미합니다.
+테이블 이름 뒤의 대괄호 안 숫자(예: `t1[100]`)는 테이블 STATISTICS를 사용할 수 있는 경우의
+예상 행 수를 나타냅니다.
 
-`pretty` 옵션은 `compact = 1`과 함께 사용하면 효과적이며, 이 경우 `Expression` 단계와 자세한 작업 정보가 숨겨져 계획을 더 읽기 쉽게 만듭니다.
+조인 릴레이션 아래에는 각 조인 단계마다 조인 순서 최적화기가 산출한 추정치가 표시됩니다:
 
-조인을 사용하는 더 자세한 예시:
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+* `Cost` — 이 단계 아래에 있는 전체 조인 서브트리의 비용으로, 최적화기가 후보 join order를 비교할 때
+  최소화하려는 값입니다. 조인의 비용은 매칭된 행 쌍의 추정 개수인
+  `<selectivity> * <left_rows> * <right_rows>`에 입력들의 비용을 더한 값입니다.
+* `Selectivity` — 양쪽의 카테시안 곱 중 조인 조건을 통과하는 비율의 추정치입니다.
+  이는 join key의 distinct values 개수(NDV)로부터 도출됩니다.
+  키 동등 조건은 쌍 중 약 `1 / max(NDV_left, NDV_right)`를 남기며, 조인 조건들 중
+  가장 작은 비율이 사용됩니다.
+* `Output rows` — 조인이 생성하는 행 수의 추정치입니다.
+  INNER JOIN의 경우 `<selectivity> * <left_rows> * <right_rows>`이며,
+  `LEFT`는 `<left_rows>`, `RIGHT`는 `<right_rows>`, `FULL`은 `<left_rows> + <right_rows>`를 하한으로 합니다.
+  OUTER JOIN은 보존되는 쪽의 모든 행을 유지하기 때문입니다. `SEMI` 또는 `ANTI` 조인이 재정렬에
+  참여하는 경우, 보존되는 쪽의 일부 비율로 추정되는데, `SEMI`는
+  `<preserved_rows> * min(1, <selectivity> * <other_rows>)`이고 `ANTI`는 나머지 행입니다.
+  그 외의 경우에는 해당 조인 종류의 공식을 사용합니다.
+* `Left` / `Right` — 각 쪽에서 조인으로 들어오는 행 수의 추정치입니다.
+
+최적화기가 추정할 수 없는 값은 `no stats`로 보고됩니다. 이는 join order 최적화가
+실행되지 않은 경우 — 예를 들어
+[`query_plan_optimize_join_order_limit`](/ko/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)이
+`0`인 경우 — 또는 추정할 근거가 없는 경우에 발생합니다.
+
+`Input (left):` 및 `Input (right):` 줄은 각 쪽이 조인에 공급하는 컬럼을 나열합니다.
+
+`pretty` 옵션은 `Expression` 단계와 상세한 action info를 숨기는 `compact = 1`과 함께 사용하면 플랜을 읽기 더 쉬워집니다.
+
+조인을 포함한 상세 예시입니다.
+[`join_runtime_filter_min_probe_rows`](/ko/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+설정은 이처럼 작은 테이블에서도 런타임 조인 필터가 생성되도록 하기 위해서만 낮춘 것입니다:
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -601,11 +639,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -772,23 +813,62 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
 
 #### 조인 단계 {#explain-analyze-join-steps}
 
-조인 단계에서 `EXPLAIN ANALYZE`는 각 측의 *참여* 행인 `Left`와 `Right`를 출력한 후, 조인 구현에 특화된 행을 출력합니다. `Left`와 `Right`는 논리적인 SQL 측면에 해당합니다. 대부분 `Left`는 조인의 프로브 측이고 `Right`는 빌드 측이지만, 조인 실행 중 스왑이 발생할 수 있으므로 항상 그렇지는 않습니다. [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)의 모든 값(`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`)이 지원됩니다. 또한 이 설정으로 선택할 수 없는 두 구현, 즉 `CROSS` 또는 `COMMA` 조인, 키 동등 조건이 없는 모든 `ON` 절 및 [`Join`](/ko/reference/engines/table-engines/special/join) 테이블 엔진도 지원됩니다. 대부분은 양쪽 모두에 대한 정보를 보고하지만, 일부는 구체화하는 측에 대해서만 보고합니다(예: `direct`는 `Left:`만 출력합니다).
+조인 단계에서 `EXPLAIN ANALYZE`는 조인 순서 최적화기의 추정치와 실제 결과를 비교하는 행([추정 조인 메트릭과 실제 조인 메트릭 비교](#explain-analyze-join-estimation) 참고)과 각 측의 *참여* 행인 `Left`와 `Right`를 출력한 후, 조인 구현에 특화된 행을 출력합니다. [`join_algorithm`](/ko/reference/settings/session-settings/join#join_algorithm)의 모든 값(`hash`, `parallel_hash`, `grace_hash`, `partial_merge`, `full_sorting_merge`, `parallel_full_sorting_merge`, `direct`)이 지원됩니다. 또한 이 설정으로 선택할 수 없는 두 구현, 즉 `CROSS` 또는 `COMMA` 조인, 키 동등 조건이 없는 모든 `ON` 절 및 [`Join`](/ko/reference/engines/table-engines/special/join) 테이블 엔진도 지원됩니다. 대부분은 양쪽 모두에 대한 정보를 보고하지만, 일부는 구체화하는 측에 대해서만 보고합니다(예: `direct`는 `Left:`만 출력합니다).
 
 각 측의 행은 동일한 형식을 따릅니다:
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 각 측면에 대해 `EXPLAIN ANALYZE`는 다음을 보고합니다.
 
+* `rows estimated <estimated_rows>` — 조인 순서 최적화기가 추정한 해당 측면의 행 수이며, 옆에 표시되는 실제 `rows`와 비교할 수 있도록 출력됩니다. 최적화기가 추정치를 산출하지 못한 경우 `no stats`로 표시됩니다([추정 조인 메트릭과 실제 조인 메트릭](#explain-analyze-join-estimation) 참조).
 * `rows <rows>` — 해당 측면에서 조인을 거친 전체 행 수입니다.
 * `matched <matched_rows>` — 반대 측면에서 하나 이상의 조인 파트너와 일치한 해당 측면의 행 수입니다. 키가 아닌 *행*을 계산합니다. 예를 들어 키가 오른쪽에 세 번 나타나 일치하는 경우, 오른쪽의 세 행 모두 일치한 것으로 계산됩니다.
 * `match rate <match_rate>%` — 해당 측면에서 일치한 행의 비율이며, `100 * <matched_rows> / <rows>`로 계산됩니다.
 * `fanout <fanout>` — 해당 측면에서 일치한 행 하나당 평균적으로 생성된 출력 행 수입니다.
 
 정확히 산출할 수 없는 수치는 `0`이 아니라 `not collected`로 보고됩니다. `match rate`와 `fanout`은 `matched`에서 산출되므로, `matched`가 없는 측면에서는 세 항목 모두 `not collected`로 보고됩니다.
+
+#### 추정 조인 메트릭과 실제 조인 메트릭 {#explain-analyze-join-estimation}
+
+조인 단계에는 조인 순서 최적화기의 추정치가 담기며, 이는 `EXPLAIN PLAN`이 보여주는 값과 동일합니다([EXPLAIN PLAN](#explain-plan) 섹션 참조). `EXPLAIN ANALYZE`는 이러한 추정치를 각각 실제 측정값과 나란히 출력합니다:
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+* `Cost` — 두 값 모두 매칭된 출력 행 수를 기준으로 합니다. 추정값은 조인 서브트리에 대한 최적화기의 비용으로, `<selectivity> * <left_rows> * <right_rows>`에 그 입력들의 비용을 더한 값입니다. 실제 값도 같은 방식으로 측정됩니다. 즉, 이 조인의 매칭된 출력 행 수에 동일한 재정렬 cluster에 속하는 하위 조인들의 실제 비용을 모두 더한 값입니다.
+* `Selectivity` — 추정값은 조인 키의 distinct values 개수로부터 도출되며, 실제 값은 데카르트 곱 중 실제로 출력에 남은 비율을 측정한 `<matched output rows> / (<left rows> * <right rows>)`입니다. 최적화기가 추정하려는 대상이 바로 이 값이기 때문입니다.
+* `Output rows` — 조인이 생성한 행 수의 추정값과 실제 값입니다. 두 값이 모두 0이 아니면 `q-error`로 `max(estimated / actual, actual / estimated)`가 보고되며, 이는 cardinality 추정 품질을 나타내는 표준 척도입니다. `1.00`은 추정이 완벽했음을 의미하고, 값이 클수록 최적화기가 크게 빗나간 cardinality를 근거로 조인 순서를 선택했다는 뜻입니다.
+
+애초에 추정이 수행되지 않은 경우에는 `no stats`로 보고됩니다. 예를 들어 [`query_plan_optimize_join_order_limit`](/ko/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)가 `0`이어서 조인 순서 최적화가 실행되지 않은 경우가 여기에 해당합니다. 이는 실행 과정에서 측정할 수 없었던 실제 값을 표시하는 `not collected`와는 다릅니다. 오른쪽이 미리 채워진 조인([`Join`](/ko/reference/engines/table-engines/special/join) 테이블 엔진, `direct` 조인)은 조인 순서 최적화기를 거치지 않으므로 참여 라인만 출력합니다.
+
+조인 단계은 양쪽에서 조인으로 전달되는 컬럼을 보여주는 `Input (left):` 및 `Input (right):` 라인도 함께 출력합니다.
+
+[EXPLAIN PLAN](#explain-plan) 조인 예시의 테이블을 대상으로 하면, `EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id`의 조인 단계은 다음과 같습니다:
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
 
 #### 팬아웃 {#explain-analyze-fanout}
 
@@ -878,7 +958,7 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 `partial_merge` 조인의 경우 `Right:` 줄에는 오른쪽 테이블의 버퍼링 및 정렬 방식에 관한 추가 정보가 포함되며, 정렬 시간은 `Stage (build)` 및 `Stage (probe)` 줄에 표시됩니다:
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```
@@ -893,7 +973,7 @@ Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> ·
 
 `direct` 조인에서는 오른쪽이 행으로 구체화되지 않고 직접 조회되는 키-값 저장소이므로 `Left:` 줄만 출력됩니다.
 
-`CROSS` 또는 `COMMA` 조인과 키 동등 조건이 없는 모든 `ON` 섹션에서는 `Buffer:` 줄이 오른쪽 테이블이 메모리에 보관된 방식을 설명하고, `Spill:` 줄이 디스크로 스필되었는지를 표시합니다:
+`CROSS` 또는 `COMMA` 조인과 키 동등 조건이 없는 모든 `ON` 절에서는 `Buffer:` 줄이 오른쪽 테이블이 메모리에 보관된 방식을 설명하고, `Spill:` 줄이 디스크로 스필되었는지를 표시합니다:
 
 ```txt
 Buffer: memory <peak_memory> · compressed <yes|no>

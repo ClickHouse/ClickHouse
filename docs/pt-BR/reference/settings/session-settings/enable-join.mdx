@@ -10,7 +10,6 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
@@ -33,23 +32,19 @@ Usa tabelas hash que armazenam apenas as chaves de junção, sem referência a u
 
 ## enable_join_runtime_filters {#enable_join_runtime_filters}
 
-<BetaBadge />
-
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.2"},{"label": "1"},{"label": "Esta otimização foi habilitada"}]}, {"id": "row-2","items": [{"label": "25.10"},{"label": "0"},{"label": "Nova configuração"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Os JOIN runtime filters passaram a ser um recurso do tier Production."}]}, {"id": "row-2","items": [{"label": "26.2"},{"label": "1"},{"label": "Esta otimização foi habilitada"}]}, {"id": "row-3","items": [{"label": "25.10"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
 Filtra o lado esquerdo usando o conjunto de chaves de JOIN coletado do lado direito em tempo de execução.
 
 ## enable_join_runtime_filters_index_analysis {#enable_join_runtime_filters_index_analysis}
 
-<ExperimentalBadge />
-
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.7"},{"label": "0"},{"label": "Nova configuração para habilitar a filtragem de joins usando análise dinâmica de índices"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Os filtros de runtime de junção passaram a ser um recurso do tier Production."}]}, {"id": "row-2","items": [{"label": "26.7"},{"label": "0"},{"label": "Nova configuração para habilitar a filtragem de junções usando análise dinâmica de índices"}]}]} />
 
-Execute uma segunda etapa de análise de índices (via `use_skip_indexes_on_data_read`) para descartar grânulos no lado esquerdo (LHS) de um join.
+Execute uma segunda etapa de análise de índices (via `use_skip_indexes_on_data_read`) para descartar grânulos no lado esquerdo (LHS) de uma junção.
 
 ## enable_join_transitive_predicates {#enable_join_transitive_predicates}
 

@@ -23,6 +23,8 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 
 * `query_id` ([String](/ko/reference/data-types/string)) — 쿼리 ID.
 * `hostname` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 쿼리를 실행하는 서버의 호스트명.
+* `clickhouse_version` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 해당 행을 생성한 ClickHouse 서버의 버전.
+* `system_processor` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 해당 행을 생성한 ClickHouse 서버의 CPU 아키텍처.
 * `event_date` ([Date](/ko/reference/data-types/date)) — 이벤트 날짜.
 * `event_time` ([DateTime](/ko/reference/data-types/datetime)) — 이벤트 시간.
 * `event_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 마이크로초 해상도의 이벤트 시간.
@@ -432,6 +434,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_ExternalJoinCompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 JOIN을 위해 기록된 압축된 바이트 수입니다.
 * `ProfileEvent_ExternalJoinUncompressedBytes` ([UInt64](/ko/reference/data-types/int-uint)) — 외부 메모리에서 JOIN을 위해 기록된 데이터 양(비압축, 압축 전)입니다.
 * `ProfileEvent_IcebergPartitionPrunedFiles` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg 파티션 프루닝 중 건너뛴 파일 수입니다.
+* `ProfileEvent_IcebergPartitionPrunedManifestFiles` ([UInt64](/ko/reference/data-types/int-uint)) — manifest 목록의 파티션 요약을 사용해 읽지 않고 건너뛴 Iceberg manifest 파일 수입니다.
 * `ProfileEvent_IcebergTrivialCountOptimizationApplied` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg에서 읽는 동안 단순 count 최적화가 적용된 횟수입니다.
 * `ProfileEvent_IcebergVersionHintUsed` ([UInt64](/ko/reference/data-types/int-uint)) — version-hint.text가 사용된 횟수입니다.
 * `ProfileEvent_IcebergMinMaxIndexPrunedFiles` ([UInt64](/ko/reference/data-types/int-uint)) — Iceberg에서 MinMax 인덱스를 사용해 건너뛴 파일 수입니다.
@@ -460,7 +463,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_UniqueKeyIndexCacheLookupMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — `UniqueKeyIndexCache::Lookup` + `UniqueKeyIndexCache::Insert` 내부에서 소요된 실제 경과 시간입니다(RocksDB 블록 캐시용 ClickHouse 측 `CacheBase` 어댑터).
 * `ProfileEvent_UniqueKeyIndexCacheHits` ([UInt64](/ko/reference/data-types/int-uint)) — UNIQUE KEY 인덱스 캐시에서 항목을 찾아 SST 블록을 로드할 필요가 없었던 횟수입니다.
 * `ProfileEvent_UniqueKeyIndexCacheMisses` ([UInt64](/ko/reference/data-types/int-uint)) — UNIQUE KEY 인덱스 캐시에서 항목을 찾지 못해 디스크에서 SST 블록을 로드해야 했던 횟수입니다.
-* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — `SSTIndexWriter`의 수명 동안 내부에서 소요된 총 실제 경과 시간입니다. SST `Open`, 모든 `addEncoded` Put, 그리고 `finalizeToStorage`의 `Finish` + `WriteBuffer` 마무리 작업을 포함합니다(SST 바이트는 파트 스토리지의 `WriteBuffer`로 직접 스트리밍됩니다). writer를 구성하기 전에 정적 헬퍼가 수행하는 작업(인코딩 + 비접두사 경로 정렬)은 제외합니다. writer마다 한 번 기록됩니다.
+* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — `SSTIndexWriter`의 수명 동안 내부에서 소요된 총 실제 경과 시간입니다. SST `Open`, 모든 `addEncoded` Put, 그리고 `finish`의 `Finish` + `WriteBuffer` 마무리 작업(+ fsync)을 포함합니다(SST 바이트는 파트 스토리지의 `WriteBuffer`로 직접 스트리밍됩니다). writer를 구성하기 전에 정적 헬퍼가 수행하는 작업(인코딩 + 비접두사 경로 정렬)은 제외합니다. writer마다 한 번 기록됩니다.
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildCount` ([UInt64](/ko/reference/data-types/int-uint)) — 플러시 전 충돌 구간 이후 로드 시 `unique_key_index.sst`가 다시 빌드된 UNIQUE KEY 파트 수입니다.
 * `ProfileEvent_UniqueKeyLoadTimeSSTRebuildMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 로드 시점에 `unique_key_index.sst`를 재구축하는 데 소요된 총 시간입니다(UK 컬럼 순차 읽기 + SST 쓰기).
 * `ProfileEvent_SelectedParts` ([UInt64](/ko/reference/data-types/int-uint)) — MergeTree 테이블에서 읽도록 선택된 데이터 파트 수입니다.
@@ -1098,6 +1101,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueRemovedObjects` ([UInt64](/ko/reference/data-types/int-uint)) — after&#95;processing = delete에 따라 제거된 객체 수
 * `ProfileEvent_ObjectStorageQueueTaggedObjects` ([UInt64](/ko/reference/data-types/int-uint)) — after&#95;processing = tag에 따라 태그가 지정된 객체 수
 * `ProfileEvent_ObjectStorageQueueInsertIterations` ([UInt64](/ko/reference/data-types/int-uint)) — 삽입 반복 횟수
+* `ProfileEvent_ObjectStorageQueueRemoveObjectFailures` ([UInt64](/ko/reference/data-types/int-uint)) — after&#95;processing = delete에 따라 객체 제거에 실패한 횟수
 * `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/ko/reference/data-types/int-uint)) — 파일을 실패 또는 처리됨 상태로 commit하기 위한 keeper 요청 수
 * `ProfileEvent_ObjectStorageQueueBucketLockLostOwnership` ([UInt64](/ko/reference/data-types/int-uint)) — S3(Azure)Queue에서 버킷 잠금의 소유권이 상실된 것으로 감지된 횟수입니다. 0이 아닌 값은 persistent&#95;processing&#95;node&#95;ttl&#95;seconds가 너무 작거나 버그가 있음을 나타냅니다.
 * `ProfileEvent_ObjectStorageQueueBucketLockRefreshes` ([UInt64](/ko/reference/data-types/int-uint)) — S3(Azure)Queue에서 버킷 잠금을 성공적으로 갱신한 횟수
@@ -1105,6 +1109,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_ObjectStorageQueueUnsuccessfulCommits` ([UInt64](/ko/reference/data-types/int-uint)) — 성공하지 못한 keeper commits 수
 * `ProfileEvent_ObjectStorageQueueCancelledFiles` ([UInt64](/ko/reference/data-types/int-uint)) — StorageS3(Azure)Queue에서 취소된 파일 수
 * `ProfileEvent_ObjectStorageQueueProcessedRows` ([UInt64](/ko/reference/data-types/int-uint)) — StorageS3(Azure)Queue에서 처리된 행 수
+* `ProfileEvent_ObjectStorageQueueExclusiveModeProcessingErrors` ([UInt64](/ko/reference/data-types/int-uint)) — S3(Azure)Queue의 파일이 처리 오류로 인해 상태를 완료하지 못한 횟수입니다. &#39;exclusive&#39; 모드에만 적용됩니다.
 * `ProfileEvent_ObjectStorageListedObjects` ([UInt64](/ko/reference/data-types/int-uint)) — 필터링이 적용되기 전에 객체 스토리지 listing API가 반환한 전체 객체 수
 * `ProfileEvent_ObjectStorageGlobFilteredObjects` ([UInt64](/ko/reference/data-types/int-uint)) — 글롭 또는 Regex pattern과 일치하지 않아 listing 중 건너뛴 객체 수
 * `ProfileEvent_ObjectStoragePredicateFilteredObjects` ([UInt64](/ko/reference/data-types/int-uint)) — &#95;path/&#95;file에 대한 가상 컬럼 프레디케이트 필터링으로 제외된 객체 수
@@ -1190,7 +1195,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_DistrCacheSentDataPacketsBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. Distributed Cache로 전송한 데이터 패킷의 바이트 수
 * `ProfileEvent_DistrCacheUnusedPackets` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. Distributed Cache에서 건너뛴 미사용 패킷 수
 * `ProfileEvent_DistrCacheUnusedDataPacketsBytes` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 무시된 데이터 패킷의 바이트 수
-* `ProfileEvent_DistrCacheUnusedDataPacketsBytesUnknownRequest` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 클라이언트가 더 이상 추적하지 않는 요청에 대해 도착한 무시된 데이터 패킷(`DistrCacheUnusedDataPacketsBytes`의 일부)의 바이트 수입니다(예: 서버가 이미 추가 데이터를 전송한 후 EndRequest를 통해 읽기가 중지된 경우).
+* `ProfileEvent_DistrCacheUnusedDataPacketsBytesUnknownRequest` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 클라이언트가 더 이상 추적하지 않는 요청에 대해 도착한 무시된 데이터 패킷(DistrCacheUnusedDataPacketsBytes의 일부)의 바이트 수입니다(예: 서버가 이미 추가 데이터를 전송한 후 EndRequest를 통해 읽기가 중지된 경우)
 * `ProfileEvent_DistrCacheUnusedDataPacketsBytesReadRangeIdChanged` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 추적 중인 요청에 도착했지만 이전 읽기 범위 ID에 해당하는 무시된 데이터 패킷(`DistrCacheUnusedDataPacketsBytes`의 일부)의 바이트 수입니다(동일한 요청에서 더 새로운 읽기 범위가 요청됨).
 * `ProfileEvent_DistrCacheUnusedPacketsBufferAllocations` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache 클라이언트 이벤트. 기존 버퍼를 재사용할 수 없어서 추가로 발생한 버퍼 할당 수
 * `ProfileEvent_DistrCacheLockRegistryMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — Distributed Cache registry 이벤트. DistributedCacheRegistry 잠금을 획득하는 데 소요된 시간
@@ -1535,6 +1540,7 @@ import SystemTableCloud from '/snippets/ko/_system_table_cloud.mdx';
 * `ProfileEvent_RuntimeFilterRowsChecked` ([UInt64](/ko/reference/data-types/int-uint)) — JOIN Runtime Filters에서 검사한 행 수
 * `ProfileEvent_RuntimeFilterRowsPassed` ([UInt64](/ko/reference/data-types/int-uint)) — JOIN Runtime Filters를 통과한 행 수(즉, 필터링되지 않은 행 수)
 * `ProfileEvent_RuntimeFilterRowsSkipped` ([UInt64](/ko/reference/data-types/int-uint)) — JOIN Runtime Filters에 의해 건너뛴 블록 내 행 수
+* `ProfileEvent_RuntimeFilterBloomFilterBuildsSkipped` ([UInt64](/ko/reference/data-types/int-uint)) — 해시 테이블 통계에서 빌드 측 키 수를 기준으로 필터의 설정 비트 비율이 최대 허용 비율을 초과할 것으로 예측되어 건너뛴 JOIN Runtime Filter 블룸 필터 빌드 수
 * `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/ko/reference/data-types/int-uint)) — JOIN Runtime Filters가 읽기 시점 프루닝을 위해 검사한 그래뉼 수
 * `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/ko/reference/data-types/int-uint)) — JOIN Runtime Filters가 읽기 시점에 프루닝한 그래뉼 수
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/ko/reference/data-types/int-uint)) — 오른쪽 JOIN 측을 빌드한 뒤 후처리 단계에 소요된 시간

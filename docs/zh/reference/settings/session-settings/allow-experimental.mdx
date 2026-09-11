@@ -300,6 +300,26 @@ Cloud 默认值：`1`。
 
 启用 PRQL——作为 SQL 的一种替代方案。
 
+## allow_experimental_trino_dialect {#allow_experimental_trino_dialect}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，用于启用 `dialect` 设置的 `trino` 值；该值会转换 Trino SQL 语法，并将 Trino 函数名称映射为 ClickHouse 中的等效函数。"}]}]} />
+
+启用 `dialect` 设置的 `trino` 值。
+
+当 `dialect` 设置为 `trino` 时，查询采用 Trino SQL 编写：Trino 特有的
+语法 (`ARRAY[...]` 字面量、`TRY_CAST`、`UNNEST`、`ROW` 类型、位于 `LIMIT` 之前的 `OFFSET`)
+会被转换为 ClickHouse SQL，Trino 函数名称会映射为
+ClickHouse 中的等效函数。`SET` 查询仍会按普通 SQL 解析，以便切换回其他
+方言。
+
+该方言还会使查询语义与 Trino 保持一致：启用 `join_use_nulls`、
+禁用 `use_variant_as_common_type`，并启用查询分析器。
+查询中显式指定的 `SETTINGS` 子句仍具有优先权。
+
 ## allow_experimental_unique_key {#allow_experimental_unique_key}
 
 <ExperimentalBadge />

@@ -436,6 +436,41 @@ graph TD
 * `precedence_allocation` - aplica el desalojo según la precedencia estática (un valor más bajo significa una precedencia más alta); la asignación pendiente de mayor precedencia desaloja las asignaciones de menor precedencia; los nodos hijos deben especificar `precedence` (el valor por defecto es 0).
 * `queue` - hoja de la jerarquía capaz de contener asignaciones en ejecución y pendientes.
 
+## Copia de seguridad y restauración {#backup-restore}
+
+Las cargas de trabajo y recursos definidos mediante SQL pueden incluirse en una copia de seguridad de ClickHouse:
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources TO Disk('backups', 'wl_backup');
+```
+
+Solo se incluyen en la copia de seguridad las entidades definidas mediante SQL. Las cargas de trabajo y los recursos basados en la configuración (definidos mediante `<resources_and_workloads>` en el archivo de configuración del servidor) no se incluyen, ya que forman parte de la configuración del servidor, de la que se debe realizar una copia de seguridad por separado.
+
+Realice siempre la copia de seguridad y la restauración de `system.workloads` y `system.resources` conjuntamente en el mismo comando. Una carga de trabajo puede hacer referencia a un recurso (mediante `SETTINGS ... FOR <resource>`) y a una carga de trabajo principal, y una copia de seguridad de `system.workloads` por sí sola no incluye las definiciones de los recursos a los que se hace referencia. La restauración de una carga de trabajo cuyo recurso referenciado no se encuentra ni en la copia de seguridad ni en el servidor de destino genera un error.
+
+Para restaurar cargas de trabajo y recursos desde una copia de seguridad:
+
+```sql
+RESTORE TABLE system.workloads, TABLE system.resources FROM Disk('backups', 'wl_backup');
+```
+
+La restauración requiere los privilegios `CREATE WORKLOAD` y `CREATE RESOURCE`. De forma predeterminada, las entidades existentes se conservan sin cambios (semántica de `if not exists`); el ajuste `create_workloads_and_resources` que se describe a continuación determina cómo se gestiona una entidad que ya existe. Si el servidor utiliza almacenamiento en ZooKeeper (`workload_zookeeper_path`), solo una réplica del clúster creará cada entidad; las demás réplicas reciben el cambio mediante el mecanismo de replicación habitual.
+
+En configuraciones replicadas, ambas tablas pueden respaldarse y restaurarse con `ON CLUSTER`:
+
+```sql
+BACKUP TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' TO S3('https://...', 'key', 'secret');
+RESTORE TABLE system.workloads, TABLE system.resources ON CLUSTER '{cluster}' FROM S3('https://...', 'key', 'secret');
+```
+
+:::note
+La configuración de restauración `create_workloads_and_resources` determina cómo se gestiona una carga de trabajo o recurso ya existente durante su restauración (no activa ni desactiva la restauración de estas entidades). Acepta:
+
+* `if not exists` (predeterminado) — conserva sin cambios las entidades existentes y crea únicamente las que faltan;
+* `create` — la restauración falla si ya existe alguna de las entidades que se van a restaurar;
+* `replace` — sobrescribe una entidad existente con la definición de la copia de seguridad (también requiere el privilegio `DROP WORKLOAD` / `DROP RESOURCE`).
+  :::
+
 ## Véase también {#see-also}
 
 * [system.scheduler](/es/reference/system-tables/scheduler)

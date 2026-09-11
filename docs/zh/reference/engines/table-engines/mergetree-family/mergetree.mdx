@@ -455,17 +455,13 @@ bloom_filter([false_positive_rate])
 * `UUID`
 * `Map`
 
-<Info>
-  **Map 数据类型：使用键或值创建索引**
-
+<Note title="Map 数据类型：使用键或值创建索引">
   对于 `Map` 数据类型，客户端可以使用 [`mapKeys`](/zh/reference/functions/regular-functions/tuple-map-functions#mapKeys) 或 [`mapValues`](/zh/reference/functions/regular-functions/tuple-map-functions#mapValues) 函数来指定索引是基于键还是基于值创建的。
-</Info>
+</Note>
 
-<Info>
-  **JSON 数据类型：为 JSON 路径创建索引**
-
+<Note title="JSON 数据类型：为 JSON 路径创建索引">
   对于 [`JSON`](/zh/reference/data-types/newjson) 数据类型，可以使用 [`JSONAllPaths`](/zh/reference/functions/regular-functions/json-functions#JSONAllPaths) 函数在路径集合上创建 bloom filter 索引。这样可以跳过不存在所查询 JSON 路径的粒度。详见 [JSON 的数据跳过索引](/zh/reference/data-types/newjson#data-skipping-indexes-for-json)。
-</Info>
+</Note>
 
 #### N-gram 布隆过滤器 *(已弃用)* {#n-gram-bloom-filter}
 
@@ -714,9 +710,7 @@ ORDER BY id;
 
 表达式的求值结果必须为 [Date](/zh/reference/data-types/date)、[Date32](/zh/reference/data-types/date32)、[DateTime](/zh/reference/data-types/datetime) 或 [DateTime64](/zh/reference/data-types/datetime64) 数据类型。
 
-<Tip>
-  **避免在 TTL 表达式中使用非确定性函数**
-
+<Tip title="避免在 TTL 表达式中使用非确定性函数">
   TTL 会在后台合并期间计算，而不是在写入时计算。
   `rand()`、`now()` 或 `now64()` 等函数会在每次合并时重新计算，从而导致不可预测的删除行为。
   ClickHouse 会阻止完全不依赖任何列的表达式，但目前不会拒绝与列引用混合使用的非确定性函数 (例如 `ts + rand()`) 。为了获得可预测的结果，TTL 表达式应仅基于确定性的列派生值。
@@ -1137,8 +1131,8 @@ SETTINGS storage_policy = 'moving_from_ssd_to_hdd'
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -1229,11 +1223,9 @@ S3 (以及其他对象存储) 磁盘可像本地磁盘一样用于多磁盘和�
 
 可以在共享存储上为非复制的 MergeTree 表配置单写入者、多读取者的场景。这是通过自动刷新 parts 列表实现的，并且可以在读取端进行设置。请注意，这要求副本之间共享文件系统元数据 (或者在使用表本地磁盘时设置 `table_disk = true`) 。请参阅 [refresh&#95;parts&#95;interval and table&#95;disk](/zh/concepts/features/configuration/server-config/storing-data#refresh-parts-interval-and-table-disk)。
 
-<Info>
-  **缓存配置**
-
+<Note title="缓存配置">
   ClickHouse 22.3 到 22.7 版本使用不同的缓存配置；如果您使用的是其中一个版本，请参阅 [using local cache](/zh/concepts/features/configuration/server-config/storing-data#using-local-cache)。
-</Info>
+</Note>
 
 ## 虚拟列 {#virtual-columns}
 
@@ -1253,7 +1245,7 @@ S3 (以及其他对象存储) 磁盘可像本地磁盘一样用于多磁盘和�
 
 ## 列统计信息 {#column-statistics}
 
-对于 `*MergeTree*` 家族的表，统计信息是在 `CREATE` 查询的 columns 部分中声明的：
+对于 `*MergeTree*` 家族的表，统计信息是在 `CREATE` 查询的 列 部分中声明的：
 
 ```sql
 CREATE TABLE tab
@@ -1264,6 +1256,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY a
 ```
+
+统计信息要求列必须是物理存储的列。`ALIAS` 或 `EPHEMERAL` 列不会写入任何分片，因此在这类列上声明统计信息会被拒绝。
 
 我们也可以使用 `ALTER` 语句来修改统计信息：
 
@@ -1324,17 +1318,17 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `minmax` (已弃用)
 
-<Note>
-  `minmax` 统计信息已弃用。请改用 `basic` 统计信息，后者是 `minmax` 的超集。
-</Note>
+  <Note>
+    `minmax` 统计信息已弃用。请改用 `basic` 统计信息，后者是 `minmax` 的超集。
+  </Note>
 
 * `tdigest`
 
-<Warning>
-  `tdigest` 类型的统计信息创建成本较高，并且可能会降低数据摄取速度。
-</Warning>
+  <Warning>
+    `tdigest` 类型的统计信息创建成本较高，并且可能会降低数据摄取速度。
+  </Warning>
 
-[TDigest](https://github.com/tdunning/t-digest) 草图，可用于计算数值列的近似分位数 (例如第 90 百分位) 。
+  [TDigest](https://github.com/tdunning/t-digest) 草图，可用于计算数值列的近似分位数 (例如第 90 百分位) 。
 
 * `uniq`
 
@@ -1346,11 +1340,11 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
 * `countmin`
 
-<Warning>
-  `countmin` 类型的统计信息创建成本较高，并且可能会降低数据摄取速度。
-</Warning>
+  <Warning>
+    `countmin` 类型的统计信息创建成本较高，并且可能会降低数据摄取速度。
+  </Warning>
 
-[CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) 草图，可提供列中各个值出现频率的近似计数。
+  [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) 草图，可提供列中各个值出现频率的近似计数。
 
 ### 支持的数据类型 {#supported-data-types}
 

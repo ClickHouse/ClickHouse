@@ -2540,12 +2540,10 @@ Obtém o valor de um cabeçalho HTTP.
 Se esse cabeçalho não existir ou se a requisição atual não for feita pela interface HTTP, a função retorna uma string vazia.
 Determinados cabeçalhos HTTP (por exemplo, `Authorization`, `Authentication` e `X-ClickHouse-*`) são restritos.
 
-<Info>
-  **A configuração `allow_get_client_http_header` é obrigatória**
-
+<Note title="A configuração `allow_get_client_http_header` é obrigatória">
   A função exige que a configuração `allow_get_client_http_header` esteja habilitada.
   Essa configuração não vem habilitada por padrão por motivos de segurança, porque alguns cabeçalhos, como `Cookie`, podem conter informações sensíveis.
-</Info>
+</Note>
 
 Os cabeçalhos HTTP não diferenciam maiúsculas de minúsculas de acordo com a RFC 9110.
 Se a função for usada no contexto de uma consulta distribuída, ela retorna um resultado não vazio somente no nó iniciador.
@@ -3053,12 +3051,10 @@ Verifica se uma coluna específica existe em uma tabela de um banco de dados.
 Para elementos em uma estrutura de dados aninhada, a função verifica a existência de uma coluna.
 Para a própria estrutura de dados aninhada, a função retorna `0`.
 
-<Info>
-  **O privilégio `SHOW COLUMNS` é necessário**
-
+<Note title="O privilégio `SHOW COLUMNS` é necessário">
   A função exige o privilégio `SHOW COLUMNS` na tabela de destino (o mesmo privilégio necessário para `DESCRIBE` e `SHOW CREATE TABLE`).
   Sem ele, a chamada falha com `ACCESS_DENIED` em vez de retornar `1` ou `0`, portanto não é possível verificar nomes de colunas sem acesso.
-</Info>
+</Note>
 
 <Note>
   Esta função é não determinística: pode retornar resultados diferentes para os mesmos argumentos.
@@ -5058,9 +5054,7 @@ Introduzido em: v1.1.0
 
 Acumula os estados de uma função de agregação para cada linha de um bloco de dados.
 
-<Warning>
-  **Descontinuado**
-
+<Warning title="Descontinuado">
   O estado é redefinido a cada novo bloco de dados.
   Devido a esse comportamento propenso a erros, a função foi descontinuada, e recomenda-se usar [funções de janela](/pt-BR/reference/functions/window-functions/index) em vez dela.
   Você pode usar a configuração [`allow_deprecated_error_prone_window_functions`](/pt-BR/reference/settings/session-settings/allow-deprecated#allow_deprecated_error_prone_window_functions) para permitir o uso desta função.
@@ -5115,18 +5109,14 @@ O horário de início é incluído no evento, enquanto o horário de término é
 As colunas com horário de início e horário de término devem ser do mesmo tipo de dado.
 A função calcula o número total de eventos ativos (concorrentes) para cada horário de início do evento.
 
-<Tip>
-  **Requisitos**
-
+<Tip title="Requisitos">
   Os eventos devem ser ordenados pelo horário de início em ordem crescente.
   Se esse requisito for violado, a função gera uma exceção.
   Cada bloco de dados é processado separadamente.
   Se eventos de blocos de dados diferentes se sobrepuserem, eles não poderão ser processados corretamente.
 </Tip>
 
-<Warning>
-  **Descontinuado**
-
+<Warning title="Descontinuado">
   É recomendável usar [funções de janela](/pt-BR/reference/functions/window-functions/index).
 </Warning>
 
@@ -5176,9 +5166,7 @@ Introduzido em: v1.1.0
 Calcula a diferença entre os valores de duas linhas consecutivas no bloco de dados.
 Retorna `0` para a primeira linha e, para as linhas subsequentes, a diferença em relação à linha anterior.
 
-<Warning>
-  **Descontinuado**
-
+<Warning title="Descontinuado">
   Retorna diferenças apenas dentro do bloco de dados que está sendo processado no momento.
   Por causa desse comportamento propenso a erros, a função está descontinuada.
   Recomenda-se usar [funções de janela](/pt-BR/reference/functions/window-functions/index) em vez dela.
@@ -5190,7 +5178,7 @@ O resultado da função depende dos blocos de dados envolvidos e da ordem dos da
 A ordem das linhas durante o cálculo de `runningDifference()` pode ser diferente da ordem das linhas retornadas ao usuário.
 Para evitar isso, você pode criar uma subconsulta com [`ORDER BY`](/pt-BR/reference/statements/select/order-by) e chamar a função fora da subconsulta.
 Observe que o tamanho do bloco afeta o resultado.
-O estado interno de `runningDifference` é reiniciado a cada novo bloco.
+O estado interno de `runningDifference` é redefinido a cada novo bloco.
 
 **Sintaxe**
 
@@ -5278,9 +5266,7 @@ Introduzido em: v1.1.0
 
 Calcula a diferença entre os valores de linhas consecutivas em um bloco de dados, mas, ao contrário de [`runningDifference`](#runningDifference), retorna o valor real da primeira linha em vez de `0`.
 
-<Warning>
-  **Descontinuado**
-
+<Warning title="Descontinuado">
   Retorna diferenças apenas dentro do bloco de dados que está sendo processado no momento.
   Devido a esse comportamento sujeito a erros, a função foi descontinuada.
   Recomenda-se usar [funções de janela](/pt-BR/reference/functions/window-functions/index) em vez disso.

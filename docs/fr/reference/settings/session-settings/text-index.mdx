@@ -52,6 +52,8 @@ Longueur minimale de la sous-chaîne alphanumérique recherchée dans un motif L
 pour que l’évaluation LIKE de l’index de texte par parcours du dictionnaire soit utilisée.
 Les motifs plus courts que ce seuil correspondent à trop de tokens du dictionnaire et sont ignorés afin d’éviter des parcours coûteux.
 
+Avec le tokenizer `array`, où tout motif est éligible, le seuil est comparé au nombre de caractères non joker du motif entier.
+
 Nécessite que `use_text_index_like_evaluation_by_dictionary_scan` soit activé.
 
 ## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}

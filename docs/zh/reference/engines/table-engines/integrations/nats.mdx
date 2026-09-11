@@ -72,6 +72,9 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 * `nats_token` - NATS 认证标记。当其存储在服务器配置文件中定义的命名集合内时，查询无法覆盖该集合的 `nats_url` 或 `nats_server_list`。
 * `nats_credential_file` - NATS 凭据文件的 path。仅接受来自服务器配置文件中定义的命名集合的值，且该集合的 `nats_url` 和 `nats_server_list` 未被查询覆盖，因为服务器会使用自身权限打开该 path。在查询中，请改为通过 `nats_credentials` 传入文件内容。
 * `nats_credentials` - NATS 凭据内容 (与包含用户 JWT 和 seed 的 `.creds` 文件中的负载相同) 。由于这是查询唯一可用的写法，它会替换从命名集合继承的 `nats_credential_file`，而不会与之冲突；除非操作员通过 `<nats_credential_file overridable="false">` 锁定了该 path。不能将其赋值为空字符串来移除命名集合携带的凭据。
+* `nats_ca_file` - 包含受信任 CA 证书的文件 path，用于验证 NATS 服务器证书。需要 `nats_secure`。与 `nats_credential_file` 一样，仅接受来自服务器配置文件中定义的命名集合的值，且该集合的 `nats_url` 和 `nats_server_list` 未被查询覆盖，因为服务器会使用自身权限打开该 path。
+* `nats_client_cert_file` - 提供给 NATS 服务器的客户端证书的 path。需要 `nats_secure` 和 `nats_client_key_file`。接受与 `nats_ca_file` 相同来源的值。
+* `nats_client_key_file` - `nats_client_cert_file` 私钥的 path。接受与 `nats_ca_file` 相同来源的值。
 * `nats_startup_connect_tries` - 启动时的连接尝试次数。默认值：`5`。
 * `nats_max_rows_per_message` — 对于按行组织的格式，一条 NATS 消息中写入的最大行数。默认值：`1`。
 * `nats_commit_on_select` - 发出查询时提交消息。仅适用于 JetStream；NATS core 不提供确认机制。默认值：`0`。
@@ -79,9 +82,15 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 SSL 连接：
 
-如需安全连接，请使用 `nats_secure = 1`。
-证书验证由 `CLICKHOUSE_NATS_TLS_SECURE` 环境变量控制；
-如果证书已过期、自签名、缺失或以其他方式无效，可通过设置 `CLICKHOUSE_NATS_TLS_SECURE=0` 来禁用验证。
+要建立安全连接，请使用 `nats_secure = 1`。
+证书验证由环境变量 `CLICKHOUSE_NATS_TLS_SECURE` 控制；
+如果证书已过期、自签名、缺失或存在其他无效情况，可设置 `CLICKHOUSE_NATS_TLS_SECURE=0` 禁用验证。
+
+对于由私有 CA 签名的服务器证书，可将 `nats_ca_file` 指向 CA 证书以进行验证，
+这比关闭验证更可取。当服务器要求客户端证书时，
+请通过 `nats_client_cert_file` 和 `nats_client_key_file` 提供相应文件。这三个都是运维设置：
+它们来自服务器配置文件中定义的命名集合。表建立连接时会读取每个文件，因此
+文件无法读取或格式错误会导致查询失败，而不是握手失败。
 
 写入 NATS 表：
 

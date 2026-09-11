@@ -39,14 +39,12 @@ Introducido en: v21.1.0
 
 Devuelve el número de coincidencias de una expresión regular en una cadena.
 
-<Info>
-  **Comportamiento según la versión**
-
+<Note title="Comportamiento según la versión">
   El comportamiento de esta función depende de la versión de ClickHouse:
 
   * en las versiones &lt; v25.6, la función deja de contar en la primera coincidencia vacía, aunque el patrón la permita.
   * en las versiones &gt;= 25.6, la función sigue ejecutándose cuando se produce una coincidencia vacía. El comportamiento heredado se puede restaurar mediante la configuración `count_matches_stop_at_empty_match = true`;
-</Info>
+</Note>
 
 **Sintaxis**
 
@@ -1464,15 +1462,13 @@ Introducido en: v18.16.0
 
 Igual que [`position`](#position), pero con los argumentos `haystack` y `locate` intercambiados.
 
-<Info>
-  **Comportamiento según la versión**
-
+<Note title="Comportamiento según la versión">
   El comportamiento de esta función depende de la versión de ClickHouse:
 
   * en las versiones &lt; v24.3, `locate` era un alias de la función `position` y aceptaba los argumentos `(haystack, needle[, start_pos])`.
   * en las versiones &gt;= 24.3, `locate` es una función independiente (para mejorar la compatibilidad con MySQL) y acepta los argumentos `(needle, haystack[, start_pos])`.
     El comportamiento anterior puede restaurarse usando el ajuste `function_locate_has_mysql_compatible_argument_order = false`.
-</Info>
+</Note>
 
 **Sintaxis**
 

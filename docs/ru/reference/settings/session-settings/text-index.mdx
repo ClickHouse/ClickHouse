@@ -52,6 +52,8 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 необходимая для использования оценки LIKE текстового индекса при сканировании словаря.
 Шаблоны короче этого порога соответствуют слишком большому количеству токенов словаря и пропускаются во избежание ресурсоемкого сканирования.
 
+При использовании токенизатора `array`, при котором подходит любой шаблон, порог сравнивается с количеством символов без подстановочных знаков во всем шаблоне.
+
 Требует, чтобы `use_text_index_like_evaluation_by_dictionary_scan` был включен.
 
 ## text_index_posting_list_apply_mode {#text_index_posting_list_apply_mode}
