@@ -2,7 +2,7 @@
 
 name: CreateRelease
 concurrency:
-  group: official-docker-library
+  group: ${{ github.workflow }}
 on:
   workflow_dispatch:
     inputs:

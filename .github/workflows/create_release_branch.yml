@@ -2,7 +2,7 @@
 
 name: CreateReleaseBranch
 concurrency:
-  group: official-docker-library
+  group: CreateRelease
 on:
   workflow_dispatch:
     inputs:

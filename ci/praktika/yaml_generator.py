@@ -563,8 +563,7 @@ class PullRequestPushYamlGen:
                 "GH_TOKEN_PERMISSIONS": (
                     YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
                 ),
-                # Four braces here survive the second .format() pass (line ~600) as
-                # the literal `${{ github.workflow }}`; an explicit group is emitted verbatim.
+                # Four braces survive the second .format() pass as `${{ github.workflow }}`.
                 "CONCURRENCY_GROUP": (
                     self.parser.config.concurrency_group
                     or "${{{{ github.workflow }}}}"

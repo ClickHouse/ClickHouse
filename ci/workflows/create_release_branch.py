@@ -26,10 +26,8 @@ workflow = Workflow.Config(
     event=Workflow.Event.DISPATCH,
     jobs=[release_branch_job],
     secrets=SECRETS + [robot_token_secret],
-    # Share one concurrency group with CreateRelease (and WeeklyOfficialDocker) so
-    # a branch cut can never overlap an in-flight patch and publish a stale
-    # `:latest` Docker tag for a superseded branch.
-    concurrency_group="official-docker-library",
+    # Join CreateRelease's group so a branch cut cannot overlap an in-flight patch and publish a stale `:latest`.
+    concurrency_group="CreateRelease",
     # Cutting a branch mutates shared state (tag, branch, master bump PR); the
     # dispatch concurrency group serializes runs. It must never overlap a patch
     # release either - that flow lives in the separate CreateRelease workflow.

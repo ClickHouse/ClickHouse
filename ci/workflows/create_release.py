@@ -24,10 +24,6 @@ workflow = Workflow.Config(
     event=Workflow.Event.DISPATCH,
     jobs=[release_job],
     secrets=SECRETS + [robot_token_secret],
-    # Share one concurrency group with CreateReleaseBranch (and WeeklyOfficialDocker)
-    # so a branch cut can never overlap an in-flight patch and publish a stale
-    # `:latest` Docker tag for a superseded branch.
-    concurrency_group="official-docker-library",
     # Releases mutate shared state (tags, package repos, Docker tags); never run
     # two concurrently. Dispatch workflows always emit `concurrency: group:
     # ${{ github.workflow }}`, which serializes CreateRelease runs. auto_releases.yml
