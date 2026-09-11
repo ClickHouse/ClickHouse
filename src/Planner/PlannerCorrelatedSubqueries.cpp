@@ -1200,10 +1200,8 @@ QueryPlan buildLogicalJoinForLateral(
     /// Determine the physical join kind based on the LATERAL JOIN semantics:
     /// - INNER/CROSS LATERAL: use INNER join (drop outer rows without matches)
     /// - LEFT LATERAL: use LEFT or RIGHT based on decorrelation direction (preserve all outer rows)
-    JoinKind join_kind_to_use;
-    if (lateral_join_kind == JoinKind::Inner || lateral_join_kind == JoinKind::Cross)
-        join_kind_to_use = JoinKind::Inner;
-    else
+    JoinKind join_kind_to_use = JoinKind::Inner;
+    if (lateral_join_kind != JoinKind::Inner && lateral_join_kind != JoinKind::Cross)
         join_kind_to_use = (uses_in_memory_buffer || settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT)
             ? JoinKind::Right : JoinKind::Left;
 
