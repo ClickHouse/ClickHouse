@@ -4,7 +4,9 @@
 import argparse
 import json
 import logging
+import shlex
 import sys
+import tempfile
 import time
 from os import makedirs
 from os import path as p
@@ -17,6 +19,7 @@ from docker_images_helper import DockerImageData, docker_login
 from env_helper import (
     GITHUB_RUN_URL,
     GITHUB_SERVER_URL,
+    REPO_COPY,
     REPORT_PATH,
     S3_BUILDS_BUCKET,
     S3_DOWNLOAD,
@@ -32,6 +35,11 @@ from version_helper import ClickHouseVersion, get_version_from_repo, version_arg
 git = Git(ignore_no_tags=True)
 
 ARCH = ("amd64", "arm64")
+
+# `run.sh` resolves a test name declared by a config against that config's own
+# directory, so the generated config below is written here to make `tests/`
+# reachable.
+DOCKER_SERVER_SCRIPTS = Path(REPO_COPY) / "ci/jobs/scripts/docker_server"
 
 
 class DelOS(argparse.Action):
@@ -318,6 +326,56 @@ def build_and_push_image(
     return result
 
 
+def is_distroless_image(docker_image: str) -> bool:
+    _, tag = docker_image.rsplit(":", 1)
+    return "distroless" in tag.split("-")
+
+
+def get_official_images_variant(docker_image: str) -> str:
+    # The official-images test runner derives its lookup variant from the final
+    # tag suffix. For example, head-distroless-amd64 is looked up as repo:amd64.
+    _, tag = docker_image.rsplit(":", 1)
+    return tag.rsplit("-", 1)[-1]
+
+
+def write_distroless_docker_library_config(docker_image: str, config_dir: Path) -> Path:
+    """Map arch-suffixed distroless tags to the tests that need no shell."""
+    # A distroless image has no shell and no coreutils, so the official-images global
+    # tests cannot run against it. Marking the derived key explicit is what keeps them
+    # away; the `imageTests` entry then supplies the tests that do work.
+    repo, _ = docker_image.rsplit(":", 1)
+    variant = get_official_images_variant(docker_image)
+    image_variant = shlex.quote(f"{repo}:{variant}")
+
+    generated_config = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            "w",
+            prefix="docker-library-distroless-",
+            suffix=".sh",
+            dir=config_dir,
+            delete=False,
+            encoding="utf-8",
+        ) as f:
+            generated_config = Path(f.name)
+            f.write(
+                "#!/usr/bin/env bash\n"
+                "\n"
+                "explicitTests+=(\n"
+                f"\t[{image_variant}]=1\n"
+                ")\n"
+                "\n"
+                "imageTests+=(\n"
+                f'\t[{image_variant}]="clickhouse-distroless-no-shell"\n'
+                ")\n"
+            )
+            return generated_config
+    except Exception:
+        if generated_config:
+            generated_config.unlink(missing_ok=True)
+        raise
+
+
 def test_docker_library(test_results: TestResults) -> None:
     """we test our images vs the official docker library repository to track integrity"""
     check_images = [
@@ -348,22 +406,35 @@ def test_docker_library(test_results: TestResults) -> None:
         run_sh = (repo_path / "test/run.sh").absolute()
         for image in check_images:
             test_sw = Stopwatch()
-            cmd = f"{run_sh} {image}"
-            tag = image.rsplit(":", 1)[-1]
-            log_file = (
-                temp_path / f"docker-library-test-{Utils.normalize_string(image)}.log"
-            )
-            with TeePopen(cmd, log_file) as process:
-                retcode = process.wait()
-            status = OK if retcode == 0 else FAIL
-            test_results.append(
-                TestResult(
-                    f"{test_name} ({tag})",
-                    status,
-                    test_sw.duration_seconds,
-                    [log_file],
+            generated_config = None
+            try:
+                cmd = f"{run_sh} {image}"
+                if is_distroless_image(image):
+                    generated_config = write_distroless_docker_library_config(
+                        image, DOCKER_SERVER_SCRIPTS
+                    )
+                    # Passing -c replaces the default config list, so the
+                    # upstream config has to be named explicitly alongside it.
+                    cmd += f" -c {repo_path / 'test/config.sh'} -c {generated_config}"
+                tag = image.rsplit(":", 1)[-1]
+                log_file = (
+                    temp_path
+                    / f"docker-library-test-{Utils.normalize_string(image)}.log"
                 )
-            )
+                with TeePopen(cmd, log_file) as process:
+                    retcode = process.wait()
+                status = OK if retcode == 0 else FAIL
+                test_results.append(
+                    TestResult(
+                        f"{test_name} ({tag})",
+                        status,
+                        test_sw.duration_seconds,
+                        [log_file],
+                    )
+                )
+            finally:
+                if generated_config:
+                    generated_config.unlink(missing_ok=True)
     except Exception as e:
         logging.error("Failed while testing the docker library image: %s", e)
         test_results.append(
