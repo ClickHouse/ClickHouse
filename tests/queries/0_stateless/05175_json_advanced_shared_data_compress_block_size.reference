@@ -1,4 +1,3 @@
 flat_wide OK
 nested_wide OK
-flat_compact OK
-override_small OK
+compact_override OK

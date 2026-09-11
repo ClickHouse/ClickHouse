@@ -2,17 +2,18 @@
 # Tags: no-random-merge-tree-settings
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/118874: ADVANCED JSON shared data must
-# size its compressed blocks by min_compress_block_size, not one tiny block per path/substream. Uses query_log
-# ProfileEvents (not the .bin files) so it also works on object storage. Covers top-level and nested Array(JSON),
-# Wide and Compact parts, and the per-column min_compress_block_size override.
+# size its compressed blocks by min_compress_block_size, not one tiny block per path/substream. Checks the mean
+# uncompressed size of the compressed blocks a subcolumn read touches (query_log ProfileEvents, so it works on
+# object storage too). Covers Wide and Compact parts, nested Array(JSON) and the per-column override.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# $1 table, $2 column definition, $3 min_bytes/rows_for_wide_part (0 - Wide, large - Compact),
-# $4 inserted JSON-string expression, $5 subcolumn read expression, $6 log_comment, $7 expected ('big'|'small')
-check()
+# Mean uncompressed size of the compressed blocks a read touches (measured on the zero-level insert part).
+# $1 table, $2 column definition, $3 min_bytes/rows_for_wide_part, $4 table min_compress_block_size,
+# $5 inserted JSON-string expression, $6 subcolumn read expression
+block_mean()
 {
     $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS $1"
     $CLICKHOUSE_CLIENT -q "
@@ -21,32 +22,30 @@ check()
         object_shared_data_serialization_version = 'advanced',
         object_shared_data_serialization_version_for_zero_level_parts = 'advanced',
         object_shared_data_buckets_for_wide_part = 8, object_shared_data_buckets_for_compact_part = 8,
-        index_granularity = 8192, min_compress_block_size = 65536, max_compress_block_size = 1048576"
-
-    $CLICKHOUSE_CLIENT -q "INSERT INTO $1 SELECT $4 FROM numbers(50000) SETTINGS type_json_skip_duplicated_paths = 1"
-    $CLICKHOUSE_CLIENT -q "OPTIMIZE TABLE $1 FINAL"
-
-    $CLICKHOUSE_CLIENT -q "SELECT $5 FROM $1 FORMAT Null SETTINGS log_comment = '$6'"
+        index_granularity = 8192, min_compress_block_size = $4, max_compress_block_size = 1048576"
+    $CLICKHOUSE_CLIENT -q "INSERT INTO $1 SELECT $5 FROM numbers(10000) SETTINGS type_json_skip_duplicated_paths = 1, max_insert_block_size = 100000"
+    $CLICKHOUSE_CLIENT -q "SELECT $6 FROM $1 FORMAT Null SETTINGS log_comment = '$1'"
     $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-
-    # 'big': the fix keeps blocks at min_compress_block_size scale (tens of KB). 'small': a per-column
-    # min_compress_block_size override must actually shrink them (a regression would keep them big).
     $CLICKHOUSE_CLIENT -q "
-    SELECT '$6 ' || if(
-        (intDiv(ProfileEvents['CompressedReadBufferBytes'], nullIf(ProfileEvents['CompressedReadBufferBlocks'], 0)) >= 4096) = ('$7' = 'big'),
-        'OK', 'FAIL')
+    SELECT intDiv(ProfileEvents['CompressedReadBufferBytes'], nullIf(ProfileEvents['CompressedReadBufferBlocks'], 0))
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND log_comment = '$6' AND type = 'QueryFinish'
+    WHERE current_database = currentDatabase() AND log_comment = '$1' AND type = 'QueryFinish'
     ORDER BY event_time_microseconds DESC LIMIT 1"
-
     $CLICKHOUSE_CLIENT -q "DROP TABLE $1"
 }
 
-FLAT="toJSONString(mapFromArrays(arrayMap(i -> 'key_' || toString(cityHash64(number, i) % 1000), range(8)), arrayMap(i -> toString(cityHash64(number, i, 1) % 1000), range(8))))"
-NESTED="toJSONString(map('items', [mapFromArrays(arrayMap(i -> 'key_' || toString(cityHash64(number, i) % 1000), range(8)), arrayMap(i -> toString(cityHash64(number, i, 1) % 1000), range(8)))]))"
+FLAT="toJSONString(mapFromArrays(arrayMap(i -> 'key_' || toString(cityHash64(number, i) % 500), range(8)), arrayMap(i -> toString(cityHash64(number, i, 1) % 500), range(8))))"
+NESTED="toJSONString(map('items', [mapFromArrays(arrayMap(i -> 'key_' || toString(cityHash64(number, i) % 500), range(8)), arrayMap(i -> toString(cityHash64(number, i, 1) % 500), range(8)))]))"
+COL="json JSON(max_dynamic_paths = 0)"
 
-check t_json_flat_wide    "json JSON(max_dynamic_paths = 0)" 0          "$FLAT"   "sum(length(json.key_5::String))"   flat_wide    big
-check t_json_nested_wide  "json JSON(max_dynamic_paths = 0)" 0          "$NESTED" "sum(length(toString(json.items)))" nested_wide  big
-check t_json_flat_compact "json JSON(max_dynamic_paths = 0)" 1000000000 "$FLAT"   "sum(length(json.key_5::String))"   flat_compact big
-# Per-column min_compress_block_size override must reach the shared-data block cuts (Compact path).
-check t_json_override "json JSON(max_dynamic_paths = 0) SETTINGS (min_compress_block_size = 1)" 1000000000 "$FLAT" "sum(length(json.key_5::String))" override_small small
+# Wide: a fragmented read lands ~1-2 KB, the fix keeps blocks at min_compress_block_size scale (tens of KB).
+w_flat=$(block_mean flat_wide "$COL" 0 65536 "$FLAT" "sum(length(json.key_5::String))")
+[ "$w_flat" -ge 4096 ] && echo "flat_wide OK" || echo "flat_wide FAIL (mean=$w_flat)"
+w_nested=$(block_mean nested_wide "$COL" 0 65536 "$NESTED" "sum(length(toString(json.items)))")
+[ "$w_nested" -ge 4096 ] && echo "nested_wide OK" || echo "nested_wide FAIL (mean=$w_nested)"
+
+# Compact: a single-path read never lands below a few KB even when fragmented, so compare relative to a
+# per-column min_compress_block_size = 1 override, which must reach the shared-data block cuts.
+ovr=$(block_mean compact_ovr "json JSON(max_dynamic_paths = 0) SETTINGS (min_compress_block_size = 1)" 1000000000 65536 "$FLAT" "sum(length(json.key_5::String))")
+ref=$(block_mean compact_ref "$COL" 1000000000 65536 "$FLAT" "sum(length(json.key_5::String))")
+[ "$ref" -ge $((ovr * 4)) ] && echo "compact_override OK" || echo "compact_override FAIL (ovr=$ovr ref=$ref)"
