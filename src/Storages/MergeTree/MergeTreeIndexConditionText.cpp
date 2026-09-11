@@ -1077,10 +1077,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
 
     /// The array-search functions compare under the zero-padding rule, so a `FixedString` constant
     /// matches multiple `String` values ('ab', 'ab\0', 'ab\0\0'). A term-preserving tokenizer
-    /// keeps those as distinct terms, so no single lookup finds them all and we must fall back to a
-    /// scan instead of pruning matching granules. A `FixedString` index col is unambiguous and
-    /// unaffected, as are `equals`, the token functions and the `Like`/`match` variants, which
-    /// compare exactly. See `zeroPaddedStringConstant` and
+    /// keeps those as distinct terms so we must fall back to a scan instead of pruning matching granules.
+    /// A `FixedString` index col is unambiguous and unaffected, as are `equals`, the token functions
+    /// and the `Like`/`match` variants, which compare exactly. See `zeroPaddedStringConstant` and
     /// https://github.com/ClickHouse/ClickHouse/issues/118669.
     if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll"
         || function_name == "mapContainsKey" || function_name == "mapContainsValue")
