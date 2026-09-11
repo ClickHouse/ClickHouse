@@ -7,6 +7,10 @@
 #include <cstring>
 #include <Columns/ColumnsCommon.h>
 
+#if defined(__aarch64__) && defined(__ARM_NEON)
+#include <arm_neon.h>
+#endif
+
 
 namespace DB
 {
@@ -32,6 +36,9 @@ static UInt64 toBits64(const Int8 * bytes64)
 
 size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
 {
+    if (!filt || start >= end)
+        return 0;
+
     size_t count = 0;
 
     /** NOTE: In theory, `filt` should only contain zeros and ones.
@@ -51,6 +58,60 @@ size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
         count += std::popcount(toBits64(pos));
 
     /// TODO Add duff device for tail?
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+    constexpr size_t chunk_size = 255 * 64;
+    const uint8x16_t zero = vdupq_n_u8(0);
+
+    while (static_cast<size_t>(end_pos - pos) >= chunk_size)
+    {
+        uint8x16_t acc0 = vdupq_n_u8(0);
+        uint8x16_t acc1 = vdupq_n_u8(0);
+        uint8x16_t acc2 = vdupq_n_u8(0);
+        uint8x16_t acc3 = vdupq_n_u8(0);
+
+        for (size_t i = 0; i < 255; ++i)
+        {
+            acc0 = vsubq_u8(acc0, vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos)), zero));
+            acc1 = vsubq_u8(acc1, vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 16)), zero));
+            acc2 = vsubq_u8(acc2, vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 32)), zero));
+            acc3 = vsubq_u8(acc3, vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 48)), zero));
+            pos += 64;
+        }
+
+        uint16x8_t acc16 = vdupq_n_u16(0);
+        acc16 = vpadalq_u8(acc16, acc0);
+        acc16 = vpadalq_u8(acc16, acc1);
+        acc16 = vpadalq_u8(acc16, acc2);
+        acc16 = vpadalq_u8(acc16, acc3);
+
+        count += vaddlvq_u16(acc16);
+    }
+
+    size_t rem_blocks = static_cast<size_t>(end_pos - pos) / 64;
+    if (rem_blocks > 0)
+    {
+        uint8x16_t acc0 = vdupq_n_u8(0);
+        uint8x16_t acc1 = vdupq_n_u8(0);
+        uint8x16_t acc2 = vdupq_n_u8(0);
+        uint8x16_t acc3 = vdupq_n_u8(0);
+
+        for (size_t i = 0; i < rem_blocks; ++i)
+        {
+            acc0 = vsubq_u8(acc0, vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos)), zero));
+            acc1 = vsubq_u8(acc1, vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 16)), zero));
+            acc2 = vsubq_u8(acc2, vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 32)), zero));
+            acc3 = vsubq_u8(acc3, vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 48)), zero));
+            pos += 64;
+        }
+
+        uint16x8_t acc16 = vdupq_n_u16(0);
+        acc16 = vpadalq_u8(acc16, acc0);
+        acc16 = vpadalq_u8(acc16, acc1);
+        acc16 = vpadalq_u8(acc16, acc2);
+        acc16 = vpadalq_u8(acc16, acc3);
+
+        count += vaddlvq_u16(acc16);
+    }
 #endif
 
     for (; pos < end_pos; ++pos)
@@ -66,6 +127,12 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 
 size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map, size_t start, size_t end)
 {
+    if (filt.empty() || start >= end)
+        return 0;
+
+    if (!null_map)
+        return countBytesInFilter(filt.data(), start, end);
+
     size_t count = 0;
 
     /** NOTE: In theory, `filt` should only contain zeros and ones.
@@ -84,10 +151,92 @@ size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * nu
         count += std::popcount(toBits64(pos) & ~toBits64(pos2));
 
         /// TODO Add duff device for tail?
+#elif defined(__aarch64__) && defined(__ARM_NEON)
+    constexpr size_t chunk_size = 255 * 64;
+    const uint8x16_t zero = vdupq_n_u8(0);
+
+    while (static_cast<size_t>(end_pos - pos) >= chunk_size)
+    {
+        uint8x16_t acc0 = vdupq_n_u8(0);
+        uint8x16_t acc1 = vdupq_n_u8(0);
+        uint8x16_t acc2 = vdupq_n_u8(0);
+        uint8x16_t acc3 = vdupq_n_u8(0);
+
+        for (size_t i = 0; i < 255; ++i)
+        {
+            uint8x16_t m0 = vandq_u8(
+                vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos)), zero),
+                vceqzq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos2))));
+            uint8x16_t m1 = vandq_u8(
+                vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 16)), zero),
+                vceqzq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos2 + 16))));
+            uint8x16_t m2 = vandq_u8(
+                vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 32)), zero),
+                vceqzq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos2 + 32))));
+            uint8x16_t m3 = vandq_u8(
+                vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 48)), zero),
+                vceqzq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos2 + 48))));
+
+            acc0 = vsubq_u8(acc0, m0);
+            acc1 = vsubq_u8(acc1, m1);
+            acc2 = vsubq_u8(acc2, m2);
+            acc3 = vsubq_u8(acc3, m3);
+            pos += 64;
+            pos2 += 64;
+        }
+
+        uint16x8_t acc16 = vdupq_n_u16(0);
+        acc16 = vpadalq_u8(acc16, acc0);
+        acc16 = vpadalq_u8(acc16, acc1);
+        acc16 = vpadalq_u8(acc16, acc2);
+        acc16 = vpadalq_u8(acc16, acc3);
+
+        count += vaddlvq_u16(acc16);
+    }
+
+    size_t rem_blocks = static_cast<size_t>(end_pos - pos) / 64;
+    if (rem_blocks > 0)
+    {
+        uint8x16_t acc0 = vdupq_n_u8(0);
+        uint8x16_t acc1 = vdupq_n_u8(0);
+        uint8x16_t acc2 = vdupq_n_u8(0);
+        uint8x16_t acc3 = vdupq_n_u8(0);
+
+        for (size_t i = 0; i < rem_blocks; ++i)
+        {
+            uint8x16_t m0 = vandq_u8(
+                vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos)), zero),
+                vceqzq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos2))));
+            uint8x16_t m1 = vandq_u8(
+                vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 16)), zero),
+                vceqzq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos2 + 16))));
+            uint8x16_t m2 = vandq_u8(
+                vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 32)), zero),
+                vceqzq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos2 + 32))));
+            uint8x16_t m3 = vandq_u8(
+                vcgtq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos + 48)), zero),
+                vceqzq_u8(vld1q_u8(reinterpret_cast<const uint8_t *>(pos2 + 48))));
+
+            acc0 = vsubq_u8(acc0, m0);
+            acc1 = vsubq_u8(acc1, m1);
+            acc2 = vsubq_u8(acc2, m2);
+            acc3 = vsubq_u8(acc3, m3);
+            pos += 64;
+            pos2 += 64;
+        }
+
+        uint16x8_t acc16 = vdupq_n_u16(0);
+        acc16 = vpadalq_u8(acc16, acc0);
+        acc16 = vpadalq_u8(acc16, acc1);
+        acc16 = vpadalq_u8(acc16, acc2);
+        acc16 = vpadalq_u8(acc16, acc3);
+
+        count += vaddlvq_u16(acc16);
+    }
 #endif
 
     for (; pos < end_pos; ++pos, ++pos2)
-        count += (*pos & ~*pos2) != 0;
+        count += (*pos != 0 && *pos2 == 0);
 
     return count;
 }
