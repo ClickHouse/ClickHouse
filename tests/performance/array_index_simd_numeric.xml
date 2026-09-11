@@ -11,8 +11,8 @@
         have a clear signal, not a representative distribution of array lengths.
 
         The threshold table below covers threshold - 1, threshold, threshold + one vector, and
-        twice the threshold for every supported element width. Each boundary is a separate timed
-        query so a regression at one size cannot be hidden by a gain at another size.
+        twice the threshold with an early hit for every supported element width. The additional
+        twice-threshold missing-needle queries force the SIMD loop to scan the full array.
     -->
     <settings>
         <max_threads>1</max_threads>
@@ -116,7 +116,7 @@
         FORMAT Null
     </query>
 
-    <!-- UInt8: below threshold, threshold, threshold + one vector, twice threshold. -->
+    <!-- UInt8: below threshold, threshold, threshold + one vector, twice threshold with an early hit. -->
     <query>
         SELECT sum(has(u8_63, toUInt8(0)) + indexOf(u8_63, toUInt8(62)))
         FROM perf_array_index_simd_thresholds
@@ -138,7 +138,7 @@
         FORMAT Null
     </query>
 
-    <!-- UInt16: below threshold, threshold, threshold + one vector, twice threshold. -->
+    <!-- UInt16: below threshold, threshold, threshold + one vector, twice threshold with an early hit. -->
     <query>
         SELECT sum(has(u16_31, toUInt16(0)) + indexOf(u16_31, toUInt16(30)))
         FROM perf_array_index_simd_thresholds
@@ -160,7 +160,7 @@
         FORMAT Null
     </query>
 
-    <!-- UInt32: below threshold, threshold, threshold + one vector, twice threshold. -->
+    <!-- UInt32: below threshold, threshold, threshold + one vector, twice threshold with an early hit. -->
     <query>
         SELECT sum(has(u32_15, toUInt32(0)) + indexOf(u32_15, toUInt32(14)))
         FROM perf_array_index_simd_thresholds
@@ -182,7 +182,7 @@
         FORMAT Null
     </query>
 
-    <!-- UInt64: below threshold, threshold, threshold + one vector, twice threshold. -->
+    <!-- UInt64: below threshold, threshold, threshold + one vector, twice threshold with an early hit. -->
     <query>
         SELECT sum(has(u64_31, toUInt64(0)) + indexOf(u64_31, toUInt64(30)))
         FROM perf_array_index_simd_thresholds
@@ -202,6 +202,30 @@
     </query>
     <query>
         SELECT sum(has(u64_64, toUInt64(0)) + indexOf(u64_64, toUInt64(0)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+
+    <!-- Missing needles at twice the threshold force a full SIMD scan for every supported width. -->
+    <query>
+        SELECT sum(has(u8_128, toUInt8(255)) + indexOf(u8_128, toUInt8(255)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u16_64, toUInt16(65535)) + indexOf(u16_64, toUInt16(65535)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(has(u32_32, toUInt32(4294967295)) + indexOf(u32_32, toUInt32(4294967295)))
+        FROM perf_array_index_simd_thresholds
+        FORMAT Null
+    </query>
+    <query>
+        SELECT sum(
+            has(u64_64, toUInt64('18446744073709551615'))
+            + indexOf(u64_64, toUInt64('18446744073709551615')))
         FROM perf_array_index_simd_thresholds
         FORMAT Null
     </query>
