@@ -20,6 +20,37 @@ namespace DB::GPU
 /// enough that this should not be called while planning a query that would not use the device.
 const String & deviceProbeError();
 
+
+/// The host side's half of the boundary's type mapping. Shared by the aggregation below and by
+/// `GPUHashJoin`, because both hand the device the same ten fixed-width numeric types and read the
+/// same ten back; a second copy of these switches would be the thing that drifts.
+///
+/// The types are `ClickHouseGPUElementType` values, kept as `int` so that this header does not have
+/// to carry the boundary's enumerators.
+
+/// What a column of `type` is sent as, or nothing when the device has no element type for it. The
+/// switch is on the outermost type, so `Nullable(UInt64)`, `LowCardinality(UInt64)`, every
+/// `Decimal`, and also `Date` and `DateTime` - which are stored as integers but are not integer
+/// types - are all turned away by it rather than by a check of their own.
+std::optional<int> elementTypeOf(const IDataType & type);
+
+/// How many bytes one value of `element_type` occupies. The same on both sides of the boundary,
+/// which is what lets a column's own bytes be the thing that is copied.
+size_t elementSizeOf(int element_type);
+
+/// The bytes of `column`'s values, which is what the device is given - checking on the way that
+/// the column really is a run of `num_rows` values of `element_size` bytes each. A column that is
+/// constant, replicated, sparse or low-cardinality is none of that, and the caller is the one that
+/// has to have made it full - see `IColumn::convertToFullIfWrapped`.
+std::string_view rawValuesOf(const IColumn & column, size_t num_rows, size_t element_size);
+
+/// Resizes `column` to `num_rows` and hands back the bytes its values occupy, so that the device
+/// copies its output straight into the column the query returns instead of into a staging buffer
+/// that would then be copied again. `column` has to be empty and has to be the `ColumnVector`
+/// `element_type` names, which is checked rather than assumed: a column of a different width would
+/// otherwise be filled with a shifted, meaningless run of bytes instead of failing.
+void * resizeForElementType(IColumn & column, size_t num_rows, int element_type);
+
 /// Whether `sum` over an argument of `argument_type` returning `result_type` is an aggregation the
 /// device can do. Decided on the types alone, during planning.
 ///

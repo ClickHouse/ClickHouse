@@ -41,6 +41,8 @@ namespace
 /// Room for a message coming back over the boundary. cuDF's are a line or two.
 constexpr size_t error_buffer_size = 1024;
 
+}
+
 std::optional<int> elementTypeOf(const IDataType & type)
 {
     switch (type.getTypeId())
@@ -81,6 +83,9 @@ size_t elementSizeOf(int element_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU element type {}", element_type);
     }
 }
+
+namespace
+{
 
 /// What ClickHouse's own `sum` returns for such an argument: `UInt64` for any unsigned integer,
 /// `Int64` for any signed one, `Float64` for both floats. The device is asked for exactly that
@@ -285,13 +290,6 @@ bool canGroupBySumOnDevice(const DataTypes & key_types, const DataTypes & argume
     return true;
 }
 
-namespace
-{
-
-/// The bytes of `column`'s values, which is what the device is given - checking on the way that the
-/// column really is a run of `num_rows` values of `element_size` bytes each. A column that is
-/// constant, sparse or low-cardinality is none of that, and the caller is the one that has to have
-/// made it full.
 std::string_view rawValuesOf(const IColumn & column, size_t num_rows, size_t element_size)
 {
     if (column.size() != num_rows)
@@ -314,6 +312,9 @@ std::string_view rawValuesOf(const IColumn & column, size_t num_rows, size_t ele
 
     return raw;
 }
+
+namespace
+{
 
 /// Resizes `column` to `num_rows` and hands back the bytes its values occupy, so that the device
 /// copies the groups straight into the column the query returns instead of into a staging buffer
@@ -343,6 +344,8 @@ void * resizeAndGetValueBytes(IColumn & column, size_t num_rows)
     return data.data();
 }
 
+}
+
 void * resizeForElementType(IColumn & column, size_t num_rows, int element_type)
 {
     switch (element_type)
@@ -360,6 +363,9 @@ void * resizeForElementType(IColumn & column, size_t num_rows, int element_type)
         default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown GPU element type {}", element_type);
     }
 }
+
+namespace
+{
 
 void * resizeForSumType(IColumn & column, size_t num_rows, int sum_type)
 {

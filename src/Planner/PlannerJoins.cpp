@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Planner/PlannerJoins.h>
 
 #include <Columns/ColumnConst.h>
@@ -38,6 +40,7 @@
 #include <Interpreters/ConstantJoin.h>
 #include <Interpreters/DirectJoin.h>
 #include <Interpreters/FullSortingMergeJoin.h>
+#include <Interpreters/GPUHashJoin.h>
 #include <Interpreters/GraceHashJoin.h>
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
@@ -54,6 +57,10 @@
 #include <Core/Joins.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
+
+#if USE_GPU
+#include <GPU/GPUAggregation.h>
+#endif
 
 #include <stack>
 
@@ -92,6 +99,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
     extern const int ILLEGAL_COLUMN;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 void JoinClause::dump(WriteBuffer & buffer) const
@@ -1312,6 +1320,25 @@ static std::shared_ptr<IJoin> tryCreateJoin(
                 params.join_any_take_last_row);
         }
     }
+
+#if USE_GPU
+    if (algorithm == JoinAlgorithm::GPU_HASH
+        && GPUHashJoin::isSupported(*table_join, *left_table_expression_header, *right_table_expression_header))
+    {
+        /// Everything about the join fits, so the only thing left that can stand in the way is the
+        /// machine. Say so rather than returning nullptr and letting another algorithm take the
+        /// query: `gpu_hash` is never reached by `default` or by `auto`, so it was asked for by
+        /// name, and a machine that cannot honor that is worth an error. `Planner.cpp` does the same
+        /// for the GPU aggregation.
+        if (const String & probe_error = GPU::deviceProbeError(); !probe_error.empty())
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot join on a GPU, which `join_algorithm = 'gpu_hash'` asks for: {}",
+                probe_error);
+
+        return std::make_shared<GPUHashJoin>(table_join, left_table_expression_header, right_table_expression_header);
+    }
+#endif
 
     if (algorithm == JoinAlgorithm::AUTO)
     {

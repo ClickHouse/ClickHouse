@@ -1,6 +1,7 @@
 #pragma once
 
 #include <stddef.h>
+#include <stdint.h>
 
 /// The boundary between ClickHouse and the cuDF island.
 ///
@@ -127,5 +128,102 @@ int clickhouseGPUGroupBySumCopyOut(
 /// Releases the partial result and the handle. Does nothing on a null handle, and cannot fail:
 /// it is called from a destructor, where there is nobody left to report a failure to.
 void clickhouseGPUGroupBySumDestroy(void * handle);
+
+
+/// The hash join - `INNER JOIN ... ALL` on a single fixed-width integer key column.
+///
+/// Like the keyed aggregation above and unlike the keyless sum, this cannot be a single stateless
+/// call: the hash table is built once over the whole right table and probed once per left block, so
+/// it has to live on the device between calls and the boundary carries an opaque handle to it.
+///
+/// The order is: one `clickhouseGPUHashJoinCreate`, any number of
+/// `clickhouseGPUHashJoinAddBuildBlock`, one `clickhouseGPUHashJoinFinishBuild`, then per left
+/// block one `clickhouseGPUHashJoinProbe` followed by at most one
+/// `clickhouseGPUHashJoinCopyProbeResultOut`, and finally one `clickhouseGPUHashJoinDestroy`. Every
+/// function returns 0 on success and otherwise a non-zero code with a message in `error`.
+///
+/// A probe's result stays on the device between the probe and the copy out, but not for the reason
+/// the grouped sum's partial result does - it is not accumulated across calls, it is one block's
+/// whole answer. It stays because of two things the caller cannot do otherwise. It cannot size its
+/// host buffers before it knows how many matches there are, and the probe is what computes that.
+/// And the build side's payload columns are gathered with the matched build row indices, a gather
+/// that on the host would mean first fetching the entire build side back - exactly the transfer
+/// this path exists to avoid. Only the ClickHouse-side columns and the probe row indices ever
+/// cross, which is the whole design: the probe side's payload never leaves the host and is indexed
+/// there.
+///
+/// The result lives in the handle rather than behind a handle of its own, which keeps the boundary
+/// to plain C and to the same shape the aggregation has, at the cost of one probe at a time per
+/// handle. `cudf::hash_join` itself allows concurrent probes, so a result handle would allow them
+/// too; the caller serializes instead, which costs nothing it would not have paid anyway - there is
+/// one device, and everything here runs on one stream.
+
+/// Sets up a join whose key column is of `key_element_type` and whose build side carries
+/// `num_payloads` columns of `payload_element_types`, and writes the handle to `*handle`. Both are
+/// `ClickHouseGPUElementType` values; the key has to be an integer one, because the two sides
+/// compare keys bit for bit only for integers - see `canJoinOnDevice` on the ClickHouse side.
+/// `num_payloads` may be zero: a join whose result needs no column of the right table still needs
+/// its keys on the device.
+int clickhouseGPUHashJoinCreate(
+    int key_element_type,
+    const int * payload_element_types,
+    size_t num_payloads,
+    void ** handle,
+    char * error,
+    size_t error_size);
+
+/// Appends `num_rows` rows of the right table: `key_host_data` holds the key column's values
+/// contiguously and without nulls, `payload_host_data[j]` the `j`-th payload column's.
+///
+/// The rows are copied straight to the device and accumulated there; nothing is kept in host
+/// memory, and the caller is free to release the block as soon as this returns.
+int clickhouseGPUHashJoinAddBuildBlock(
+    void * handle,
+    const void * key_host_data,
+    const void * const * payload_host_data,
+    size_t num_rows,
+    char * error,
+    size_t error_size);
+
+/// Says that no more of the right table is coming and builds the hash table over what arrived.
+/// After this the accumulated build side may not grow: the hash table holds a view of it.
+int clickhouseGPUHashJoinFinishBuild(void * handle, char * error, size_t error_size);
+
+/// Probes the hash table with `num_rows` keys read from `key_host_data`, which holds them
+/// contiguously and without nulls, and writes the number of matching pairs of rows to
+/// `*num_matches`. That can be anything from zero to `num_rows` times the largest number of build
+/// rows sharing one key, so it is neither bounded by nor proportional to `num_rows`.
+///
+/// Replaces the previous probe's result, whether or not it was copied out.
+int clickhouseGPUHashJoinProbe(
+    void * handle,
+    const void * key_host_data,
+    size_t num_rows,
+    size_t * num_matches,
+    char * error,
+    size_t error_size);
+
+/// Copies the last probe's result out: the index of the probe-side row of each matching pair into
+/// `probe_row_indices`, and the `j`-th build-side payload column gathered at the matching build
+/// rows into `payload_host_data[j]`. Every buffer has to have room for the number of matches
+/// `clickhouseGPUHashJoinProbe` reported, of the width the corresponding element type implies.
+///
+/// The row indices are the device's own 32-bit indices reinterpreted as unsigned, which is exact
+/// because an inner join's indices are all non-negative - and it is what lets the caller hand them
+/// to `IColumn::index` without a second pass to widen them. The caller still has to check them
+/// against the probe block's row count before indexing with them.
+///
+/// The order of the pairs is whatever the device produced. `JOIN` promises no order on either path.
+int clickhouseGPUHashJoinCopyProbeResultOut(
+    void * handle,
+    uint32_t * probe_row_indices,
+    void * const * payload_host_data,
+    char * error,
+    size_t error_size);
+
+/// Releases the hash table, the build side and the last result, and the handle. Does nothing on a
+/// null handle, and cannot fail: it is called from a destructor, where there is nobody left to
+/// report a failure to.
+void clickhouseGPUHashJoinDestroy(void * handle);
 
 }
