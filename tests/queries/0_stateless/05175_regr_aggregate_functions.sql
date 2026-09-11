@@ -134,6 +134,23 @@ SELECT abs(regr_slope(y, x) - 3) < 1e-12, abs(regr_r2(y, x) - 1) < 1e-12 FROM t;
 WITH t AS (SELECT toUInt64(1757600000000000000) + number * 1000 AS x, 5 * x + 11 AS y FROM numbers(1000))
 SELECT regr_slope(y, x), regr_r2(y, x) FROM t;
 
+-- A span wider than Int64 is legal. Taking the difference in a signed 64-bit type would wrap it
+-- and flip the sign of the slope, so the magnitude is taken unsigned and the sign separately.
+SELECT 'a span wider than Int64 keeps its sign';
+SELECT regr_slope(y, x) > 0 FROM VALUES('x UInt64, y UInt64', (0, 0), (9223372036854775809, 1));
+SELECT regr_slope(y, x) > 0 FROM VALUES('x Int64, y Int64', (-9223372036854775807, 0), (9223372036854775807, 2));
+
+SELECT 'regr_count counts, so it answers with a number even when every row was NULL';
+SELECT toTypeName(regr_count(y, x)), regr_count(y, x)
+FROM VALUES('x Nullable(UInt8), y Nullable(UInt8)', (NULL, NULL));
+SELECT toTypeName(regr_count(NULL, NULL)), regr_count(NULL, NULL);
+SELECT toTypeName(regr_count(y, x)), regr_count(y, x)
+FROM VALUES('x Nullable(UInt8), y Nullable(UInt8)', (1, 2), (NULL, 3), (2, 4));
+
+-- the other eight return a value, so an all-NULL group is NULL for them, as it is for corr
+SELECT toTypeName(regr_slope(y, x)), regr_slope(y, x), toTypeName(corr(y, x))
+FROM VALUES('x Nullable(UInt8), y Nullable(UInt8)', (NULL, NULL));
+
 SELECT 'states shifted by different values merge into the single-pass answer';
 SELECT regr_slopeMerge(a), regr_interceptMerge(b), regr_sxxMerge(c) FROM (
     SELECT regr_slopeState(y, x) AS a, regr_interceptState(y, x) AS b, regr_sxxState(y, x) AS c

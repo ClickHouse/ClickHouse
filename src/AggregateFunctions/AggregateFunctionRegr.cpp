@@ -6,11 +6,14 @@
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
 #include <algorithm>
+#include <type_traits>
 #include <limits>
 #include <memory>
 
@@ -75,16 +78,29 @@ constexpr std::string_view regrKindName(RegrKind kind)
 /// An integer column is not narrowed to Float64 first: a UInt64 timestamp in nanoseconds is past
 /// 2^53, where Float64 no longer has consecutive integers, and the low bits that carry the spread
 /// would be rounded away before the subtraction ever happens - a thousand rows spread over 406
-/// nanoseconds collapse onto four distinct Float64 values. The subtraction is done in the unsigned
-/// domain and reinterpreted, which is exact whenever the true difference fits in Int64, and the
-/// spread of a column that is being fitted always does.
+/// nanoseconds collapse onto four distinct Float64 values.
+///
+/// The 64-bit types are subtracted in a wider one. Their difference does not fit in Int64 across
+/// the whole of their range - UInt64 spans up to 2^64 - and wrapping it would not merely lose
+/// precision, it would flip the sign of the slope.
 template <typename T>
 Float64 exactDelta(T value, T shift)
 {
     if constexpr (is_integer<T>)
-        return static_cast<Float64>(static_cast<Int64>(static_cast<UInt64>(value) - static_cast<UInt64>(shift)));
+    {
+        /// The magnitude is taken in the unsigned domain, where it is exact for the whole range of
+        /// the type, and the sign comes from the comparison of the values themselves.
+        using Unsigned = std::make_unsigned_t<T>;
+        const auto a = static_cast<Unsigned>(value);
+        const auto b = static_cast<Unsigned>(shift);
+        return value >= shift
+            ? static_cast<Float64>(static_cast<Unsigned>(a - b))
+            : -static_cast<Float64>(static_cast<Unsigned>(b - a));
+    }
     else
+    {
         return static_cast<Float64>(value) - static_cast<Float64>(shift);
+    }
 }
 
 template <typename TX, typename TY>
@@ -578,11 +594,18 @@ AggregateFunctionPtr createAggregateFunctionRegrCount(
     assertBinary(name, argument_types);
 
     for (const auto & argument_type : argument_types)
-        if (!isNumber(argument_type))
+    {
+        /// Nothing reaches this creator for `regr_count(NULL, NULL)`: unlike the other eight, this
+        /// one answers with a number even when every row was NULL, so the Null combinator does not
+        /// wrap it and take the literal NULLs off its hands. There is nothing to count in that
+        /// column, which is an answer of zero rather than an error.
+        const auto & nested_type = removeNullable(argument_type);
+        if (!isNumber(nested_type) && !isNothing(nested_type))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal types {} and {} of arguments for aggregate function {}",
                 argument_types[0]->getName(), argument_types[1]->getName(), name);
+    }
 
     return std::make_shared<AggregateFunctionRegrCount>(argument_types);
 }
@@ -615,6 +638,10 @@ void registerAggregateFunctionsRegr(AggregateFunctionFactory & factory)
             FunctionDocumentation::Category::AggregateFunction};
     };
 
+    /// Like count, regr_count answers with a number even when every row was NULL, rather than
+    /// being wrapped by the generic Null combinator and answering NULL.
+    const AggregateFunctionProperties count_properties = {.returns_default_when_only_null = true};
+
     factory.registerFunction(
         "regr_count",
         {createAggregateFunctionRegrCount,
@@ -625,7 +652,8 @@ void registerAggregateFunctionsRegr(AggregateFunctionFactory & factory)
              "UInt64",
              R"(┌─regr_count(y, x)─┐
 │                4 │
-└──────────────────┘)")},
+└──────────────────┘)"),
+         count_properties},
         AggregateFunctionFactory::Case::Insensitive);
 
     factory.registerFunction(

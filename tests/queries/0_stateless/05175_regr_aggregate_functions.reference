@@ -43,6 +43,14 @@ a UInt64 column past 2^53 keeps its spread
 1	1	1
 1	1
 5	1
+a span wider than Int64 keeps its sign
+1
+1
+regr_count counts, so it answers with a number even when every row was NULL
+UInt64	0
+UInt64	0
+UInt64	2
+Nullable(Float64)	\N	Nullable(Float64)
 states shifted by different values merge into the single-pass answer
 3	7	83333250
 every group is fitted on its own
