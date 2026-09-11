@@ -32,6 +32,13 @@ SELECT count() FROM numbers(1000) WHERE trim(BOTH '' FROM toString(number)) != t
 -- The cases of #67792 and #69922, which is why an empty trim character is accepted at all.
 SELECT trim(LEADING '' FROM 'foo'), trim(TRAILING '' FROM 'foo'), trim(BOTH '' FROM 'foo');
 SELECT trim(LEADING concat('') FROM 'foo'), trim(BOTH concat('') FROM ' foo '), trimLeft('foo', concat(''));
+-- ParserStringLiteral spells an empty trim character five ways: quoted, hex, binary, heredoc and fancy quotes.
+SELECT formatQuery($$SELECT trim(BOTH x'' FROM 'x')$$), formatQuery($$SELECT trim(LEADING b'' FROM 'x')$$), formatQuery($$SELECT trim(TRAILING ‘’ FROM 'x')$$), formatQuery($q$SELECT trim(BOTH $$$$ FROM 'x')$q$);
+CREATE TABLE t_stat_hex (c Int64 STATISTICS(trim(BOTH x'' FROM 'x'))) ENGINE = MergeTree ORDER BY c; -- { serverError INCORRECT_QUERY }
+SELECT trim(BOTH x'' FROM 123); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT toTypeName(trim(BOTH b'' FROM CAST('ä' AS FixedString(4)))), hex(trim(BOTH b'' FROM CAST('ä' AS FixedString(4))));
+-- Unicode and non-UTF-8 bytes reach the function untouched, and a non-empty character was never folded.
+SELECT trim(BOTH x'' FROM 'äöü'), trim(BOTH ‘ä’ FROM 'äxä'), hex(trim(BOTH x'' FROM x'FF41FF')), hex(trim(BOTH x'FF' FROM x'FF41FF')), formatQuery($$SELECT trim(BOTH x'20' FROM ' x ')$$);
 -- Slots that accept a function value keep it: the value is evaluated to the same constant.
 CREATE DICTIONARY d (k UInt64, v String) PRIMARY KEY k SOURCE(CLICKHOUSE(HOST trim(BOTH '' FROM 'localhost') PORT 9000 TABLE 'x' DB 'y')) LAYOUT(FLAT()) LIFETIME(0);
 SELECT position(create_table_query, 'SOURCE(CLICKHOUSE(HOST \'localhost\' PORT 9000 TABLE \'x\' DB \'y\'))') > 0 FROM system.tables WHERE database = currentDatabase() AND name = 'd';
