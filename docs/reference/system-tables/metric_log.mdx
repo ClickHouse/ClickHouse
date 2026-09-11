@@ -2155,6 +2155,46 @@ Contains history of metrics values from tables `system.metrics` and `system.even
 
 ## Example {#example}
 
+With the default `bucketed` schema, all the metrics are in the `metrics` column, and `SELECT *`
+returns the physical columns only, because `ALIAS` columns are excluded from `*` unless
+`asterisk_include_alias_columns = 1`:
+
+```sql
+SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+hostname:                clickhouse.eu-central1.internal
+event_date:              2026-09-05
+event_time:              2026-09-05 16:22:33
+event_time_microseconds: 2026-09-05 16:22:33.196807
+metrics:                 {'ProfileEvent_Query':1,'ProfileEvent_SelectQuery':1,'CurrentMetric_Query':1,'CurrentMetric_GlobalThread':74,...}
+histograms.metric:       []
+histograms.labels:       []
+histograms.histogram:    []
+histograms.count:        []
+histograms.sum:          []
+```
+
+Every metric is also addressable under its own name, as an `ALIAS` column over the map:
+
+```sql
+SELECT event_time, ProfileEvent_Query, CurrentMetric_Query FROM system.metric_log LIMIT 1 FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+event_time:         2026-09-05 16:22:33
+ProfileEvent_Query: 1
+CurrentMetric_Query: 1
+```
+
+With the `wide` schema, every metric is a separate column instead, and `SELECT *` returns all of
+them:
+
 ```sql
 SELECT * FROM system.metric_log LIMIT 1 FORMAT Vertical;
 ```
