@@ -1072,6 +1072,13 @@ bool StorageMaterializedView::isRemote() const
     return false;
 }
 
+bool StorageMaterializedView::readsThroughMergeTable() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->readsThroughMergeTable();
+    return false;
+}
+
 void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_type)
 {
     if ((action_type == ActionLocks::ViewRefresh || action_type == ActionLocks::ViewRefreshPause) && refresher)

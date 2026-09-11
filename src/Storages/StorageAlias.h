@@ -174,6 +174,7 @@ public:
     bool prefersLargeBlocks() const override { return getTargetTable()->prefersLargeBlocks(); }
     bool areAsynchronousInsertsEnabled() const override { return getTargetTable()->areAsynchronousInsertsEnabled(); }
     bool isRemote() const override { return getTargetTable()->isRemote(); }
+    bool readsThroughMergeTable() const override { return getTargetTable()->readsThroughMergeTable(); }
     bool isSharedStorage() const override { return getTargetTable()->isSharedStorage(); }
     bool supportsReplication() const override
     {
