@@ -4,6 +4,7 @@
 #include <base/types.h>
 
 #include <bit>
+#include <cstddef>
 #include <cstring>
 
 #if defined(__SSSE3__)
