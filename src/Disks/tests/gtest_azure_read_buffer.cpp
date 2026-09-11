@@ -503,19 +503,21 @@ std::string readWithoutRightBound(
 }
 
 /// Reads a whole blob through an endpoint whose object generation behaves as `etags` says, with
-/// the read pinned to `expected_etag`.
+/// the read pinned to `expected_etag`. With `send_etag` off, the endpoint names no generation in
+/// its responses at all.
 std::string readPinnedToETag(
     size_t max_response_size,
     size_t blob_size,
     size_t buffer_size,
     const std::string & expected_etag,
     const ETagBehaviour & etags,
-    size_t max_read_retries = 4)
+    size_t max_read_retries = 4,
+    bool send_etag = true)
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
     client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(
-        max_response_size, blob_size, blob_size, /* send_etag */ true, /* reported_length */ std::nullopt,
+        max_response_size, blob_size, blob_size, send_etag, /* reported_length */ std::nullopt,
         /* ignore_range */ false, etags);
 
     auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
@@ -543,14 +545,15 @@ std::string readPinnedToETag(
     return result;
 }
 
-/// A positioned-read buffer pinned to `expected_etag` over an endpoint that reports `etags`.
+/// A positioned-read buffer pinned to `expected_etag` over an endpoint that reports `etags`. With
+/// `send_etag` off, the endpoint names no generation in its responses at all.
 std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeFreshBufferPinnedToETag(
-    size_t blob_size, const std::string & expected_etag, const ETagBehaviour & etags)
+    size_t blob_size, const std::string & expected_etag, const ETagBehaviour & etags, bool send_etag = true)
 {
     Azure::Storage::Blobs::BlobClientOptions client_options;
     client_options.Retry.MaxRetries = 0;
     client_options.Transport.Transport = std::make_shared<MisbehavingRangeTransport>(
-        blob_size, blob_size, blob_size, /* send_etag */ true, /* reported_length */ std::nullopt,
+        blob_size, blob_size, blob_size, send_etag, /* reported_length */ std::nullopt,
         /* ignore_range */ false, etags);
 
     auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
@@ -1493,6 +1496,28 @@ TEST(AzureReadPinnedToETag, BareExpectedETagChangedOnReopen)
     }
 }
 
+/// An endpoint that both ignores `If-Match` and names no generation in its responses leaves a
+/// pinned read with no evidence at all that the bytes come from the generation it selected: the
+/// blob is overwritten in place after the first response and the new generation is served, with
+/// nothing in the response to tell the two apart. Such a read must fail closed rather than stitch
+/// the caller one logical file out of two generations of the blob.
+TEST(AzureReadPinnedToETag, ResponseWithoutETagIsRefused)
+{
+    try
+    {
+        readPinnedToETag(
+            /* max_response_size */ 40, /* blob_size */ 100, /* buffer_size */ 64,
+            ETagBehaviour::first_generation,
+            ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation, .honour_if_match = false},
+            /* max_read_retries */ 4, /* send_etag */ false);
+        FAIL() << "Expected an exception on a pinned read whose responses name no generation";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+}
+
 /// A positioned read is pinned to the generation of the object as well: `readBigAt` is used for
 /// column chunks of the same file, and mixing generations between them is just as wrong.
 TEST(AzureReadBigAt, ETagChanged)
@@ -1538,6 +1563,28 @@ TEST(AzureReadBigAt, BareExpectedETag)
 
     ASSERT_EQ(bytes_read, destination.size());
     assertCountsUpFromZero(destination);
+}
+
+/// The same for a positioned read: without an `ETag` in the response there is nothing to compare
+/// the generation of the chunk against, so the read fails closed instead of admitting a chunk of
+/// another generation under the name of the object it was pinned to.
+TEST(AzureReadBigAt, ResponseWithoutETagIsRefused)
+{
+    auto buffer = makeFreshBufferPinnedToETag(
+        /* blob_size */ 100, ETagBehaviour::first_generation,
+        ETagBehaviour{.etag = ETagBehaviour::second_generation, .etag_after_first = "", .honour_if_match = false},
+        /* send_etag */ false);
+
+    std::string destination(16, '\0');
+    try
+    {
+        buffer->readBigAt(destination.data(), destination.size(), /* range_begin */ 0, {});
+        FAIL() << "Expected an exception on a positioned read whose response names no generation";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
 }
 
 /// The read-and-write fallback of a blob-to-blob copy, in several parts, against an endpoint that

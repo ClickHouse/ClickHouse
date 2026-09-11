@@ -77,8 +77,12 @@ void setExpectedETag(Azure::Storage::Blobs::DownloadBlobOptions & download_optio
 }
 
 /// Defence in depth for an endpoint that ignores `If-Match` and answers with the new generation
-/// anyway. An empty `ETag` in the response means the endpoint said nothing about the generation,
-/// which cannot be compared with anything.
+/// anyway. A pinned read has to see the generation it was pinned to named in every response: an
+/// empty `ETag` says nothing about which object the body came from, so it is not evidence that the
+/// read is still on the selected generation, and an endpoint that both ignores `If-Match` and omits
+/// the header would otherwise be able to substitute another generation silently. Such a read fails
+/// closed. An unpinned read makes no claim about the generation, so an empty `ETag` is nothing to
+/// it - every response of a real Azure `Download` names the generation anyway.
 void checkReturnedETag(const Azure::Storage::Blobs::Models::DownloadBlobResult & result, const String & expected_etag, const String & path)
 {
     if (expected_etag.empty())
@@ -87,7 +91,12 @@ void checkReturnedETag(const Azure::Storage::Blobs::Models::DownloadBlobResult &
     /// The listing spells the tag bare and the response header spells it quoted, so the two are
     /// compared by their opaque part - see `normalizeETag`.
     const String response_etag = AzureBlobStorage::getETagOrEmpty(result.Details.ETag);
-    if (response_etag.empty() || AzureBlobStorage::normalizeETag(response_etag) == AzureBlobStorage::normalizeETag(expected_etag))
+    if (response_etag.empty())
+        throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+            "Azure Blob Storage did not report the etag of object {}, so it cannot be confirmed that the read is still "
+            "on the generation {} it was pinned to", path, expected_etag);
+
+    if (AzureBlobStorage::normalizeETag(response_etag) == AzureBlobStorage::normalizeETag(expected_etag))
         return;
 
     throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
