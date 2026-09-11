@@ -147,7 +147,7 @@ CompressionCodecPtr ColumnCodecResolver::getCodec(
         part_default_codec,
         resolved.stream.structural);
 
-    if (apply_adaptive_default && resolved.codec_is_part_default && resolved.stream.leaf_type && !codec->isEncryption())
+    if (apply_adaptive_default && resolved.codec_is_part_default && !codec->isEncryption())
         return std::make_shared<CompressionCodecAdaptive>(resolved.stream.leaf_type, codec);
     return codec;
 }

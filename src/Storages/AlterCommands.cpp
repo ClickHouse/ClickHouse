@@ -2315,6 +2315,15 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::BAD_ARGUMENTS,
                         "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
 
+                /// An explicit restatement must obey its dedicated enable_*_codec gate even when
+                /// it is unchanged. Suspicious-codec checks apply only to effective changes.
+                for (const auto & entry : command.codec_patch)
+                {
+                    const auto & operation = entry.second;
+                    if (operation.kind == ColumnCodecPatchKind::Set)
+                        CompressionCodecFactory::instance().validateCodecDeclaration(operation.codec, codec_validation_settings);
+                }
+
                 if (!changed_codec_declarations.empty())
                     resulting_codec = validateColumnCodecDescriptionForAlter(
                         resulting_codec, resulting_type, changed_codec_declarations, codec_validation_settings);

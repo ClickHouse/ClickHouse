@@ -13,7 +13,7 @@ struct CodecValidationSettings;
 struct ApplicableCodecStream
 {
     CodecPath logical_path;
-    /// Null for structural streams such as Array offsets and Nullable null maps.
+    /// Physical type of the stream, when serialization provides it.
     DataTypePtr leaf_type;
     bool structural = false;
 };

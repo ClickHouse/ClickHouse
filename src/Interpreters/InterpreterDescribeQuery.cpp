@@ -350,7 +350,10 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insert(column.comment);
 
             const auto resolved_codec = codec_resolver.resolve(path);
-            if (resolved_codec.codec)
+            /// Keep the existing root-only DESCRIBE behavior: a column codec is not repeated on
+            /// structural subcolumns. A Tuple-element declaration is shown because this is the
+            /// only row where its effective structural codec can be inspected.
+            if (resolved_codec.codec && (!resolved_codec.stream.structural || !resolved_codec.declaration_path.empty()))
                 res_columns[i++]->insert(resolved_codec.codec->template as<ASTFunction>()->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();

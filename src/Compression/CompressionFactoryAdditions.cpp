@@ -42,7 +42,6 @@ extern const int LOGICAL_ERROR;
 namespace Setting
 {
 extern const SettingsBool allow_suspicious_codecs;
-extern const SettingsBool allow_experimental_codecs;
 }
 
 
@@ -160,8 +159,7 @@ void CompressionCodecFactory::validateCodecDeclaration(
             const String enable_setting_name = fmt::format("enable_{}_codec", Poco::toLower(family));
             Field enabled;
             if (validation_settings.settings->tryGet(enable_setting_name, enabled)
-                && !enabled.safeGet<bool>()
-                && !(*validation_settings.settings)[Setting::allow_experimental_codecs])
+                && !enabled.safeGet<bool>())
                 throw Exception(
                     ErrorCodes::BAD_ARGUMENTS,
                     "Codec {} is experimental and not meant to be used in production. You can enable it with the '{}' setting",

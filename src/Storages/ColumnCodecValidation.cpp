@@ -1,6 +1,7 @@
 #include <Storages/ColumnCodecValidation.h>
 
 #include <Compression/CompressionFactory.h>
+#include <Compression/ICompressionCodec.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnCodecAST.h>
@@ -8,6 +9,7 @@
 #include <Common/Exception.h>
 
 #include <map>
+#include <optional>
 #include <vector>
 
 namespace DB
@@ -35,7 +37,7 @@ ApplicableCodecStream classifyCodecStream(const ISerialization::SubstreamPath & 
     const bool structural = !ISerialization::isSpecialCompressionAllowed(path);
     return {
         .logical_path = getCodecPath(path),
-        .leaf_type = structural ? nullptr : path.back().data.type,
+        .leaf_type = path.back().data.type,
         .structural = structural,
     };
 }
@@ -89,8 +91,9 @@ ColumnCodecDescription validatePolicy(
         const auto stream_group_it = streams_by_declaration.find(declaration_path);
 
         ASTPtr common_normalized;
+        std::optional<UInt64> common_codec_hash;
         bool has_value_stream = false;
-        bool all_normalized_equal = true;
+        bool all_codec_hashes_equal = true;
         if (stream_group_it != streams_by_declaration.end())
         {
             for (const auto & stream : stream_group_it->second)
@@ -99,10 +102,16 @@ ColumnCodecDescription validatePolicy(
                     continue;
                 has_value_stream = true;
                 auto candidate = factory.validateCodecAndGetPreprocessedAST(ast, stream.leaf_type, declaration_settings);
+                /// The AST is not a complete runtime identity: FPC on Float32 and Float64
+                /// normalizes to FPC(12) for both, but its codec hash also includes the float width.
+                const UInt64 candidate_hash = factory.get(candidate, stream.leaf_type)->getHash();
                 if (!common_normalized)
+                {
                     common_normalized = candidate;
-                else if (common_normalized->formatWithSecretsOneLine() != candidate->formatWithSecretsOneLine())
-                    all_normalized_equal = false;
+                    common_codec_hash = candidate_hash;
+                }
+                else if (*common_codec_hash != candidate_hash)
+                    all_codec_hashes_equal = false;
             }
         }
 
@@ -111,7 +120,7 @@ ColumnCodecDescription validatePolicy(
 
         /// With no value type, keep implicit type parameters unresolved. A dormant parent such as
         /// CODEC(Delta) must not turn into CODEC(Delta(1)) before a child override is removed.
-        const ASTPtr stored = has_value_stream && all_normalized_equal ? common_normalized : ast;
+        const ASTPtr stored = has_value_stream && all_codec_hashes_equal ? common_normalized : ast;
         result.set(declaration_path, stored);
         const bool declaration_is_part_default = CompressionCodecFactory::isDefaultCodec(ast);
 
