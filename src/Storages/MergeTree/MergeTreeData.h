@@ -1326,6 +1326,9 @@ public:
     bool storesDataOnDisk() const override { return !isStaticStorage(); }
     Strings getDataPaths() const override;
 
+    /// Every reservation below is clamped up to this size, whatever the estimate says.
+    static constexpr UInt64 RESERVATION_MIN_ESTIMATION_SIZE = 1u * 1024u * 1024u; /// 1MB
+
     /// Reserves space at least 1MB.
     ReservationPtr reserveSpace(UInt64 expected_size) const;
 

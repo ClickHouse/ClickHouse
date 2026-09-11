@@ -542,10 +542,11 @@ disks with unlimited space (such as object storage).
 
 Merges initiated by [OPTIMIZE](/reference/statements/optimize) with `FINAL` or
 with an explicit `PARTITION` ignore this setting, as do merges that only drop
-wholly expired parts: those reserve no space and write an empty part. TTL
-merges that rewrite data (`TTL ... DELETE`, recompression) are not exempt and
-are postponed while the headroom binds. The drop exemption only applies while
-the limit is above zero - at zero nothing is selected, expired-part drops
+wholly expired parts: those write an empty part and reserve only the 1 MiB
+minimum every reservation is clamped to, so they are sized by that minimum
+rather than by their source parts. TTL merges that rewrite data
+(`TTL ... DELETE`, recompression) are not exempt and are postponed while the
+headroom binds. At a limit of zero nothing is selected, expired-part drops
 included.
 
 Once the limit is zero a plain `OPTIMIZE` assigns nothing: it is a no-op, or
