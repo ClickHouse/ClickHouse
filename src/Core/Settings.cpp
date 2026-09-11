@@ -136,6 +136,7 @@ Supported values:
 - `prql` — PRQL. Requires the experimental setting `allow_experimental_prql_dialect`.
 - `polyglot` — transpiles SQL from other dialects (MySQL, PostgreSQL, etc.) into ClickHouse SQL. Requires the experimental setting `allow_experimental_polyglot_dialect`.
 - `promql` — PromQL (Prometheus Query Language) evaluated over a TimeSeries table, configured by the `promql_database`, `promql_table`, and `promql_evaluation_time` settings.
+- `mongo` — MongoDB shell syntax. Requires the experimental setting `allow_experimental_mongo_dialect`.
 - `clickhouse_json` — instead of SQL text, the query is interpreted as a JSON AST (the output of `parseQueryToJSON`). The `SET` query is still recognized in plain form so that the dialect can be switched back. Requires the experimental setting `enable_json_ast_dialect`.
 - `trino` — Trino SQL: translates Trino syntax (`ARRAY[...]`, `TRY_CAST`, `UNNEST`, ...) and maps Trino function names to their ClickHouse equivalents. Requires the experimental setting `allow_experimental_trino_dialect`.
 )", 0)\
@@ -9086,6 +9087,9 @@ Enable the Kusto Query Language (KQL) dialect - an alternative to SQL.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_prql_dialect, false, R"(
 Enable PRQL - an alternative to SQL.
+)", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_mongo_dialect, false, R"(
+Enable the MongoDB query dialect - MongoDB shell syntax over any ClickHouse interface.
 )", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_polyglot_dialect, false, R"(
 Enable polyglot SQL transpiler - transpiles SQL from 30+ dialects (MySQL, PostgreSQL, SQLite, Snowflake, DuckDB, etc.) into ClickHouse SQL.
