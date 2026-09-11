@@ -316,10 +316,10 @@ void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_co
 {
     switch (value_size)
     {
-        case 1: return hashFixedSizeColumnImpl<1>(raw_data, row_count, seed, out_hashes);
-        case 2: return hashFixedSizeColumnImpl<2>(raw_data, row_count, seed, out_hashes);
-        case 4: return hashFixedSizeColumnImpl<4>(raw_data, row_count, seed, out_hashes);
-        case 8: return hashFixedSizeColumnImpl<8>(raw_data, row_count, seed, out_hashes);
+        case 1: hashFixedSizeColumnImpl<1>(raw_data, row_count, seed, out_hashes); return;
+        case 2: hashFixedSizeColumnImpl<2>(raw_data, row_count, seed, out_hashes); return;
+        case 4: hashFixedSizeColumnImpl<4>(raw_data, row_count, seed, out_hashes); return;
+        case 8: hashFixedSizeColumnImpl<8>(raw_data, row_count, seed, out_hashes); return;
         default: break;
     }
     const char * position = raw_data;

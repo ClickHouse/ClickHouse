@@ -2709,9 +2709,9 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     using TableKey = std::decay_t<decltype(std::declval<const typename std::decay_t<decltype(data)>::cell_type &>().getKey())>;
     struct Candidate
     {
-        UInt64 value;
-        TableKey key;
-        AggregateDataPtr mapped;
+        UInt64 value = 0;
+        TableKey key{};
+        AggregateDataPtr mapped = nullptr;
         /// False for a candidate ranked from its state row before its cell was seen.
         bool key_known = true;
     };
