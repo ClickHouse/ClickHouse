@@ -3,6 +3,8 @@
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
 #include <Processors/Transforms/FilterTransform.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinStepLogical.h>
 
 namespace DB
 {
@@ -66,6 +68,25 @@ void ReadFromLocalParallelReplicaStep::restrictFixedColumnsToOwnFilters()
         for (size_t i = 0; i < node->children.size(); ++i)
             stack.push_back({node->children[i], i == 0 ? chain_root : node->children[i]});
     }
+}
+
+bool ReadFromLocalParallelReplicaStep::hasJoin() const
+{
+    if (!query_plan || !query_plan->isInitialized())
+        return false;
+
+    std::vector<const QueryPlan::Node *> stack{query_plan->getRootNode()};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (typeid_cast<const JoinStep *>(node->step.get()) || typeid_cast<const JoinStepLogical *>(node->step.get())
+            || typeid_cast<const FilledJoinStep *>(node->step.get()))
+            return true;
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+    return false;
 }
 
 void ReadFromLocalParallelReplicaStep::addFilter(FilterDAGInfo filter)
