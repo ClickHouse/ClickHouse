@@ -14,7 +14,16 @@ SET enable_join_runtime_filters = 0;
 DROP TABLE IF EXISTS jks2_left;
 DROP TABLE IF EXISTS jks2_right;
 
-CREATE TABLE jks2_left (user_id UInt64, request_id UInt64, payload UInt64)
+-- Both sides carry statistics: which one the join-order optimizer picks as the build side is not
+-- fixed by `query_plan_join_swap_table` alone, and a build side without column statistics has no
+-- NDVs for the demotion to score, so the plan-shape assertions below would fail whenever the
+-- orientation flipped.
+CREATE TABLE jks2_left
+(
+    user_id UInt64 STATISTICS(uniq),
+    request_id UInt64 STATISTICS(uniq),
+    payload UInt64
+)
 ENGINE = MergeTree ORDER BY user_id;
 
 CREATE TABLE jks2_right
@@ -29,6 +38,7 @@ ENGINE = MergeTree ORDER BY user_id;
 -- exercise outer-join NULL-extension. `request_id` (NDV 10) is the low-NDV key demotion keeps.
 INSERT INTO jks2_left SELECT number % 120, number % 10, number FROM numbers(1200);
 INSERT INTO jks2_right SELECT number % 100, number % 10, number FROM numbers(1000);
+OPTIMIZE TABLE jks2_left FINAL;
 OPTIMIZE TABLE jks2_right FINAL;
 
 -- Blocker: the demotion gate only checked whether *some* mixed-capable algorithm is enabled,
@@ -94,9 +104,11 @@ SELECT 'left_outer_extra_cond' AS t,
         SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 0) AS ok;
 
 -- Unlike the result comparisons above, the two checks below assert the SHAPE of the plan, so the
--- inputs to the join-order decision have to be pinned: the test harness randomizes join order
--- (`query_plan_optimize_join_order_randomize`), which moves the build side and with it which
--- column statistics the demotion can see.
+-- inputs to the join-order decision have to be pinned. The demotion only exists inside
+-- `chooseJoinOrder`, so reordering has to be enabled at all - the harness sets
+-- `query_plan_optimize_join_order_limit` to 0 or 1 often enough to matter, and either is too low
+-- to reorder a two-table join. It also randomizes the order itself
+-- (`query_plan_optimize_join_order_randomize`), which moves the build side.
 --
 -- Every case above compares a demoted plan against a non-demoted one, so all of them pass
 -- whether or not the optimization actually fired. Assert that it does fire on this fixture,
@@ -109,6 +121,7 @@ FROM (
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 1,
         query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
+        query_plan_optimize_join_order_limit = 10,
         allow_statistics = 1, use_statistics = 1,
         query_plan_hash_join_subset_keys_min_rows = 0,
         query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001,
@@ -127,6 +140,7 @@ FROM (
         ON l.user_id = r.user_id AND l.request_id = r.request_id
     SETTINGS join_algorithm = 'hash', query_plan_hash_join_subset_keys_auto = 1,
         query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false',
+        query_plan_optimize_join_order_limit = 10,
         allow_statistics = 1, use_statistics = 1,
         query_plan_hash_join_subset_keys_min_rows = 0,
         query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001

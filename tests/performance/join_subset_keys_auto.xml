@@ -3,9 +3,9 @@
         <allow_statistics>1</allow_statistics>
         <use_statistics>1</use_statistics>
         <!--
-            The demote is only attempted when every algorithm in `join_algorithm` evaluates a mixed
-            JOIN ON condition, and the default value includes `direct` and `ie_join`, which do not.
-            Without pinning this the test measures the unoptimized plan on both sides.
+            Pinned for determinism, not necessity: the demotion is reachable under the default
+            `join_algorithm` too. It is pinned so a change in which algorithm gets picked cannot
+            quietly turn this into a measurement of two identical plans.
         -->
         <join_algorithm>parallel_hash</join_algorithm>
     </settings>

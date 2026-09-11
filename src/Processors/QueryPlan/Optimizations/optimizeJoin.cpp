@@ -1369,11 +1369,26 @@ static bool demoteHighNdvKeysToProbe(
             /// the join falls through to `HashJoin`.
             || algorithm == JoinAlgorithm::DEFAULT;
     };
-    if (!std::ranges::all_of(join_settings.join_algorithms, evaluates_mixed_conditions))
+    /// One such algorithm being enabled is enough - the same condition `chooseJoinAlgorithm`
+    /// itself asserts before it picks anything. Every other algorithm declines a mixed condition
+    /// and falls through to the hash family rather than silently dropping it: `tryDirectJoin`
+    /// returns nothing for one, `MergeJoin::isSupported` and `FullSortingMergeJoin::isSupported`
+    /// both return false, and `AUTO` only builds a `JoinSwitcher` when `MergeJoin::isSupported`, so
+    /// it degrades to `HashJoin` too. Requiring it of *every* enabled algorithm instead made the
+    /// optimization unreachable under the default `join_algorithm`, which lists `direct` and
+    /// `ie_join` alongside the hash family.
+    if (!std::ranges::any_of(join_settings.join_algorithms, evaluates_mixed_conditions))
         return false;
 
     auto & join_operator = join_step.getJoinOperator();
     if (!HashJoin::isAdditionalFilterSupported(join_operator.kind, join_operator.strictness))
+        return false;
+
+    /// IEJoin is the one exception to the paragraph above, and it is a question of position rather
+    /// than of applicability: listed first in `join_algorithm` it claims the join before the
+    /// equalities are turned into hash keys, and it evaluates a mixed condition nowhere, so there
+    /// is nothing to fall back to.
+    if (isIEJoinPreferred(join_operator, join_settings))
         return false;
 
     if (!build_rows || *build_rows < join_settings.query_plan_hash_join_subset_keys_min_rows)
@@ -1992,12 +2007,22 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 /// build side is the DP entry the post-swap right child came from.
                 const auto & build_entry = flip_join ? *entry->left : *entry->right;
                 auto & statistics_context = query_graph_builder.context->statistics_context;
-                demoteHighNdvKeysToProbe(
-                    *join_step,
-                    build_entry.estimated_rows,
-                    build_entry.column_stats,
-                    statistics_context,
-                    statistics_context.getRawHash(right_child_node));
+                /// A `Join` engine right side is read through `StorageJoin::getJoinLocked`, which
+                /// rejects a mixed join expression outright and is reached before the algorithm
+                /// loop, so unlike every other declining path there is nothing to fall back to:
+                /// demoting there would turn a working query into an error.
+                auto * right_lookup = typeid_cast<JoinStepLogicalLookup *>(right_child_node->step.get());
+                const bool right_is_join_engine = right_lookup
+                    && right_lookup->getPreparedJoinStorage().storage_join != nullptr;
+                if (!right_is_join_engine)
+                {
+                    demoteHighNdvKeysToProbe(
+                        *join_step,
+                        build_entry.estimated_rows,
+                        build_entry.column_stats,
+                        statistics_context,
+                        statistics_context.getRawHash(right_child_node));
+                }
             }
 
             auto & new_node = nodes.emplace_back();
