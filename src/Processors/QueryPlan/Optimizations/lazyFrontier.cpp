@@ -108,53 +108,71 @@ private:
                 return;
             }
 
-            /// Recomputing costs nothing below the `LIMIT` and at most `limit` rows above it, while a
-            /// crossing column is read for every scanned row and replicated by every join on the way up.
-            /// So recompute, unless doing so drags in more than one column nothing else reads - then one
-            /// crossing column is the smaller price.
-            LazyFrontier attempt = candidate;
-            if (recomputeNode(node, attempt) && countLazyReads(attempt) <= countLazyReads(candidate) + 1)
+            if (!preferRecomputing(node) || !canBePlacedAbove(node))
             {
-                candidate = std::move(attempt);
+                cross(node, candidate);
                 return;
             }
 
+            recomputeNode(node, candidate);
+            return;
+        }
+
+        if (!canBePlacedAbove(node))
+        {
             cross(node, candidate);
             return;
         }
 
-        if (!recomputeNode(node, candidate))
-            cross(node, candidate);
+        recomputeNode(node, candidate);
     }
 
-    /// Returns false when the value cannot be had above the `LIMIT` at all, leaving `candidate` in
-    /// whatever state it reached - the caller either lets it cross or drops the attempt.
-    bool recomputeNode(const ActionsDAG::Node * node, LazyFrontier & candidate)
+    /// Whether the value can be had above the `LIMIT` at all. A local question: what the value reads is
+    /// placed on its own terms, and the worst those terms come to is a column that crosses, which is
+    /// available above just the same. So this never depends on what is below it.
+    bool canBePlacedAbove(const ActionsDAG::Node * node) const
     {
+        /// Without a second read of its source there is no way to get a column up there.
         if (const auto source = findSourceOfInput(merged, node))
+            return lazy_sources[*source];
+
+        /// An input reading no source, or more than one, is not something this can place, and an
+        /// `arrayJoin` changes the number of rows the `LIMIT` already counted.
+        return node->type != ActionsDAG::ActionType::INPUT && node->type != ActionsDAG::ActionType::ARRAY_JOIN;
+    }
+
+    /// Whether to compute a value the main branch already computes a second time above the `LIMIT`,
+    /// rather than have the main branch hand it over.
+    ///
+    /// A crossing column is replicated by every join above it, and a hash join copies it into its build
+    /// side, over every row that reaches there; recomputing touches at most `limit` rows. Where a join
+    /// sits above the value that trade is worth taking, and where none does the value is reused, since
+    /// carrying it past a sort costs little and reading its inputs again costs something.
+    ///
+    /// Which side of a join becomes the build side is not known here - the joins are still logical, and
+    /// `convertLogicalJoinToPhysical` and the `join_swap_table` swap both come later - so the answer
+    /// cannot be sharpened by asking.
+    ///
+    /// What this does not weigh is how expensive the expression is. Recomputing a regular expression
+    /// match over `limit` rows can cost more than carrying a column, and `limit` reaches
+    /// `query_plan_max_limit_for_lazy_materialization`, so this is the place where a per-function
+    /// estimate belongs once there is one to ask.
+    bool preferRecomputing(const ActionsDAG::Node * node) const { return merged.hasJoinAbove(node); }
+
+    /// Puts the value above the `LIMIT`. Only for a value `canBePlacedAbove` accepts.
+    void recomputeNode(const ActionsDAG::Node * node, LazyFrontier & candidate)
+    {
+        if (findSourceOfInput(merged, node))
         {
-            /// Without a second read of that source there is no way to get the column up here.
-            if (!lazy_sources[*source])
-                return false;
-
             candidate.placement[node].above = Placement::Above::LazyRead;
-            return true;
+            return;
         }
-
-        /// An input reading no source, or more than one, is not something this can place.
-        if (node->type == ActionsDAG::ActionType::INPUT)
-            return false;
-
-        /// An `arrayJoin` changes the number of rows the `LIMIT` already counted.
-        if (node->type == ActionsDAG::ActionType::ARRAY_JOIN)
-            return false;
 
         /// A child that has to cross is computed below the `LIMIT`, which `cross` takes care of.
         for (const auto * child : node->children)
             placeNode(child, candidate);
 
         candidate.placement[node].above = Placement::Above::Recomputed;
-        return true;
     }
 
     /// A crossing value is computed below the `LIMIT`, so everything it reads is computed there too.
@@ -162,12 +180,6 @@ private:
     {
         markComputedBelow({node}, candidate);
         candidate.placement[node].above = Placement::Above::Crossing;
-    }
-
-    static size_t countLazyReads(const LazyFrontier & candidate)
-    {
-        return std::ranges::count_if(
-            candidate.placement, [](const auto & entry) { return entry.second.above == Placement::Above::LazyRead; });
     }
 
     const MergedPlanDAG & merged;

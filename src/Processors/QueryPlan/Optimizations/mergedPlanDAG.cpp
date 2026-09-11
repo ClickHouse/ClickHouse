@@ -219,6 +219,8 @@ std::optional<MergedPlanDAG> buildImpl(QueryPlan::Node & node)
         merged->filter_nodes.append_range(right->filter_nodes);
         merged->join_condition_nodes.append_range(right->join_condition_nodes);
 
+        merged->nodes_with_join_above.insert(right->nodes_with_join_above.begin(), right->nodes_with_join_above.end());
+
         const size_t stuffing_shift = merged->stuffings.size();
         merged->stuffings.append_range(std::move(right->stuffings));
         for (const auto & [right_node, stuffing] : right->nearest_stuffing)
@@ -236,6 +238,11 @@ std::optional<MergedPlanDAG> buildImpl(QueryPlan::Node & node)
         dag_outputs.resize(step_dag.getOutputs().size());
 
         const auto & join_operator = join_step->getJoinOperator();
+
+        /// Every value computed below this join, on either side, would be replicated by it if it crossed
+        /// the `LIMIT` as a column.
+        for (const auto & nodes : side_nodes)
+            merged->nodes_with_join_above.insert(nodes.begin(), nodes.end());
 
         /// Every value computed below this join on a side it can leave unmatched is gated by it, unless
         /// a join further down already gates it: that one is the nearer of the two, and its mask column
