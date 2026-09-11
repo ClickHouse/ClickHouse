@@ -42,7 +42,6 @@ private:
 
     StoragePtr source_table;
     MergeTreeIndexPtr text_index;
-    MergeTreeData::DataPartsVector data_parts;
 };
 
 }

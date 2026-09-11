@@ -44,6 +44,7 @@ run_as_user "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_set)"
 run_as_user "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_missing)"
 run_as_user "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab_memory, idx_text)"
 run_as_user "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab_missing, idx_text)"
+run_as_user "INSERT INTO FUNCTION mergeTreeTextIndex(currentDatabase(), tab, idx_text) SELECT 'p', 'x', 'raw', 1, 1, 0, 0, 0"
 
 # A grant on any column implies SHOW TABLES, so index metadata becomes visible,
 # while reading the index still requires SELECT on the indexed column.
@@ -52,6 +53,9 @@ $CLICKHOUSE_CLIENT -q "GRANT SELECT(b) ON $CLICKHOUSE_DATABASE.tab TO $user_name
 run_as_user "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_text)"
 run_as_user "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_set)"
 run_as_user "SELECT * FROM mergeTreeTextIndex(currentDatabase(), tab, idx_missing)"
+
+# The index is read-only: the access check runs before the write is rejected.
+$CLICKHOUSE_CLIENT -q "INSERT INTO FUNCTION mergeTreeTextIndex(currentDatabase(), tab, idx_text) SELECT 'p', 'x', 'raw', 1, 1, 0, 0, 0" 2>&1 | grep -oE '\([A-Z_]+\)' | tail -1 | tr -d '()'
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE tab;

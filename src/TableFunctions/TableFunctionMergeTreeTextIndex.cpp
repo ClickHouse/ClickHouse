@@ -20,6 +20,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ACCESS_DENIED;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
@@ -110,7 +111,7 @@ std::pair<StoragePtr, MergeTreeIndexPtr> TableFunctionMergeTreeTextIndex::resolv
     {
         context = CurrentThread::tryGetQueryContext();
         if (!context)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Table function 'mergeTreeTextIndex' is resolved outside of a query");
+            throw Exception(ErrorCodes::ACCESS_DENIED, "Table function 'mergeTreeTextIndex' cannot check the access of the user outside of a query");
     }
 
     /// Otherwise the errors below would reveal the engine and the indexes of a table the user cannot see.

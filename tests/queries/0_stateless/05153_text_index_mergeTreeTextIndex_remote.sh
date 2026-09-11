@@ -34,14 +34,28 @@ function run_as_user()
 index="mergeTreeTextIndex('$CLICKHOUSE_DATABASE', 'tab', 'idx_s')"
 query="SELECT count() FROM remote('127.0.0.1:$CLICKHOUSE_PORT_TCP', $index)"
 
+function run_remote_as_user()
+{
+    for analyzer in 1 0; do
+        for localhost_replica in 0 1; do
+            run_as_user "$query SETTINGS enable_analyzer = $analyzer, prefer_localhost_replica = $localhost_replica"
+        done
+    done
+}
+
+# Through an interserver connection the shard authenticates the initiating user, so the checks apply to that user.
+cluster_query="SELECT arraySort(groupUniqArray(token)) FROM cluster('test_cluster_interserver_secret', $index) SETTINGS prefer_localhost_replica = 0"
+
 run_as_user "DESCRIBE TABLE $index"
-run_as_user "$query SETTINGS prefer_localhost_replica = 0"
-run_as_user "$query SETTINGS prefer_localhost_replica = 1"
+run_remote_as_user
+run_as_user "$cluster_query"
 
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON $CLICKHOUSE_DATABASE.tab TO $user_name"
 
-run_as_user "$query SETTINGS prefer_localhost_replica = 0"
-run_as_user "$query SETTINGS prefer_localhost_replica = 1"
+# Over an ordinary connection the shard runs the query as the user of the connection, which the function refuses;
+# with the local shortcut it runs as the user itself.
+run_remote_as_user
+run_as_user "$cluster_query"
 
 $CLICKHOUSE_CLIENT -q "
 DROP TABLE tab;

@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/ISource.h>
@@ -360,7 +361,10 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromMergeTreeTextIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(storage->data_parts, virtual_columns_filter);
+    /// Taken at read time: the storage outlives the query in a table created from the function before that was forbidden.
+    auto data_parts = dynamic_cast<const MergeTreeData &>(*storage->source_table).getDataPartsVectorForInternalUsage();
+    std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
+    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(data_parts, virtual_columns_filter);
 
     if (filtered_parts.empty())
     {
@@ -406,12 +410,8 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     , source_table(source_table_)
     , text_index(std::move(text_index_))
 {
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
-    if (!merge_tree)
+    if (!dynamic_cast<const MergeTreeData *>(source_table.get()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table->getName());
-
-    data_parts = merge_tree->getDataPartsVectorForInternalUsage();
-    std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
@@ -429,6 +429,15 @@ VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()
 
 void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const StorageID & source_storage_id, const IMergeTreeIndex & index)
 {
+    /// The checks below are for the user who runs the query. A shard reached through an ordinary connection runs a
+    /// distributed query as the user of that connection and does not know who initiated it; only through an
+    /// interserver connection does the shard authenticate the initiating user itself.
+    const auto & client_info = context->getClientInfo();
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.interface != ClientInfo::Interface::TCP_INTERSERVER)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Table function `mergeTreeTextIndex` checks the access of the user who runs the query, so a shard of a "
+            "distributed query can execute it only when the cluster uses an interserver secret");
+
     context->checkAccess(AccessType::SELECT, source_storage_id, index.getColumnsRequiredForIndexCalc());
 
     /// The index is built over all rows of a part, so it contains tokens of the rows a row policy hides,
