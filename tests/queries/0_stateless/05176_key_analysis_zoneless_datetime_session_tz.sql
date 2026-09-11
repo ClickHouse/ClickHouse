@@ -85,8 +85,8 @@ SETTINGS session_timezone = 'Asia/Tokyo';
 
 SELECT '';
 SELECT '-- negative control: a type that names its zone keeps parsing in it, whatever the session says';
-SELECT (SELECT count() FROM 05176_explicit_zone WHERE dt = '2024-01-02 20:00:00') AS pruned,
-       (SELECT countIf(dt = '2024-01-02 20:00:00') FROM 05176_explicit_zone) AS honest
+SELECT (SELECT count() FROM 05176_explicit_zone WHERE dt = '2024-01-02 03:00:00') AS pruned,
+       (SELECT countIf(dt = '2024-01-02 03:00:00') FROM 05176_explicit_zone) AS honest
 SETTINGS session_timezone = 'Asia/Tokyo';
 
 SELECT '';
