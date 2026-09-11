@@ -977,6 +977,13 @@ private:
             /// We skip the `max_rows_to_group_by` limit check during the merge to avoid race condition.
             /// Therefore here we need to check additional after merges are completed from different threads.
             params->aggregator.ensureLimitsFixedMapMerge(first);
+
+            /// The sources of the parallel merge only merge into `first` and emit nothing, so this is the
+            /// first point at which the merged states exist - the same point the serial branch below records
+            /// them at. Without this the aggregate states are missing from the statistics and only the group
+            /// keys are counted, which understates what replicas ship.
+            if (updater)
+                updater->recordAggregationStateSizes(*first, /*bucket=*/-1);
         }
         else
         {
