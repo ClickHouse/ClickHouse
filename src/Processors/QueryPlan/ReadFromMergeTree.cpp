@@ -1268,6 +1268,11 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
         std::sort(partition_groups.begin(), partition_groups.end(),
             [](const auto & a, const auto & b) { return a.first < b.first; });
 
+    /// All partition pipelines are constructed eagerly, even though `ConcatProcessor` reads them sequentially.
+    /// Share the global split budget between partitions to avoid multiplying range-split
+    /// read pools and source processors by `partition_groups.size()`.
+    const size_t max_streams_per_partition = std::max<size_t>(1, num_streams / partition_groups.size());
+
     Pipes partition_pipes;
     partition_pipes.reserve(partition_groups.size());
 
@@ -1278,7 +1283,7 @@ Pipe ReadFromMergeTree::readInOrderByPartitions(
         {
             PartRangesReadInfo partition_info(partition_parts, context->getSettingsRef(), *data_settings);
             auto streams = splitPartsIntoStreams(
-                std::move(partition_parts), num_streams, partition_info, read_type == ReadType::InReverseOrder ? -1 : 1,
+                std::move(partition_parts), max_streams_per_partition, partition_info, read_type == ReadType::InReverseOrder ? -1 : 1,
                 split_ranges_func, read_limit);
             Pipes stream_pipes;
             stream_pipes.reserve(streams.size());

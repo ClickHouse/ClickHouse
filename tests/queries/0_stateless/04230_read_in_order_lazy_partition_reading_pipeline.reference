@@ -40,3 +40,9 @@ test 19: computed sort key correctness
 2024-01-01 00:00:00	0
 2024-01-01 00:01:00	1
 2024-01-01 00:02:00	2
+test 20: range splits share the global stream budget
+yes
+test 21: spare stream budget is used inside partitions
+yes
+test 22: partitions are not multiplied by the stream budget
+yes

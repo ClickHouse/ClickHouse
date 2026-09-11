@@ -310,3 +310,71 @@ $CLICKHOUSE_CLIENT -q "
     ORDER BY (time, toDate(time)) ASC LIMIT 3"
 
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_lazy_pipeline_computed_sort_key"
+
+# ============================================================================
+# Table 10: Keep one global range-splitting budget across lazy partition pipes.
+# ============================================================================
+
+partition_count=8
+rows_per_partition=4096
+many_threads=32
+few_threads=4
+
+$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_lazy_pipeline_stream_budget"
+$CLICKHOUSE_CLIENT -q "
+    CREATE TABLE t_lazy_pipeline_stream_budget (partition_id UInt8, key UInt64)
+    ENGINE = MergeTree
+    PARTITION BY partition_id
+    ORDER BY (partition_id, key)
+    SETTINGS index_granularity = 1"
+
+$CLICKHOUSE_CLIENT -q "SYSTEM STOP MERGES t_lazy_pipeline_stream_budget"
+$CLICKHOUSE_CLIENT -q "
+    INSERT INTO t_lazy_pipeline_stream_budget
+    SELECT intDiv(number, ${rows_per_partition}), number
+    FROM numbers(${partition_count} * ${rows_per_partition})"
+
+get_stream_budget_pipeline()
+{
+    local max_threads=$1
+    $CLICKHOUSE_CLIENT -q "
+        $SETTINGS;
+        EXPLAIN PIPELINE compact = 0
+        SELECT partition_id, key
+        FROM t_lazy_pipeline_stream_budget
+        ORDER BY partition_id, key
+        LIMIT 5000
+        SETTINGS
+            read_in_order_two_level_merge_threshold = 10000,
+            merge_tree_min_rows_for_concurrent_read = 0,
+            merge_tree_min_bytes_for_concurrent_read = 0,
+            merge_tree_min_read_task_size = 1,
+            max_threads = ${max_threads}"
+}
+
+pipeline_many_threads=$(get_stream_budget_pipeline "$many_threads")
+sources_many_threads=$(grep -c "MergeTreeSelect(pool: ReadPoolInOrder" <<< "$pipeline_many_threads")
+
+echo "test 20: range splits share the global stream budget"
+if (( sources_many_threads <= many_threads )); then
+    echo "yes"
+else
+    echo "no"
+fi
+
+echo "test 21: spare stream budget is used inside partitions"
+if (( sources_many_threads > partition_count )); then
+    echo "yes"
+else
+    echo "no"
+fi
+
+pipeline_many_partitions=$(get_stream_budget_pipeline "$few_threads")
+sources_many_partitions=$(grep -c "MergeTreeSelect(pool: ReadPoolInOrder" <<< "$pipeline_many_partitions")
+
+echo "test 22: partitions are not multiplied by the stream budget"
+if (( sources_many_partitions <= partition_count )); then
+    echo "yes"
+else
+    echo "no"
+fi
