@@ -1552,23 +1552,38 @@ bool JoinStepLogical::isPartialMergeJoinSupported() const
     if (!MergeJoin::isSupported(join_operator.kind, join_operator.strictness))
         return false;
 
-    /// Keep this in sync with `MergeJoin::isSupported(table_join)`: a mixed condition is
-    /// stored on `TableJoin` and cannot be evaluated by `MergeJoin`, while a one-sided
-    /// condition is pushed down and does not affect its selectability. An `OR` condition
-    /// creates multiple clauses, so it is likewise not supported by `MergeJoin`.
+    /// Keep this in sync with `MergeJoin::isSupported(table_join)`, which declines a join whose
+    /// `ON` section is disjunctive or leaves a mixed condition on `TableJoin`: `MergeJoin` matches
+    /// rows on the equality keys only and never evaluates such a condition.
+    ///
+    /// A conjunct that reads from at most one side never becomes the mixed condition. Physicalization
+    /// either pushes it down below the join, or attaches it to the clause as
+    /// `analyzer_left_filter_condition_column_name` / `analyzer_right_filter_condition_column_name`,
+    /// which `MergeJoin` consumes as an auxiliary mask key. This includes a unary predicate such as
+    /// `isNotNull(r.flag)`, which an `ANY` join cannot push down, so the shape of the predicate says
+    /// nothing about selectability - only the set of sides it reads from does.
+    ///
+    /// `ASOF` is not a `MergeJoin` strictness, so the inequality predicate is not considered here:
+    /// the kind and strictness check above has already declined such a join.
     for (const auto & condition : join_operator.expression)
     {
         auto [predicate_op, lhs, rhs] = condition.asBinaryPredicate();
-        const bool is_equality
-            = predicate_op == JoinConditionOperator::Equals || predicate_op == JoinConditionOperator::NullSafeEquals;
-        const bool is_asof_inequality
-            = join_operator.strictness == JoinStrictness::Asof && operatorToAsofInequality(predicate_op).has_value();
 
-        if (predicate_op == JoinConditionOperator::Or || !lhs || !rhs)
+        /// An `OR` condition is split into several clauses, and `MergeJoin` supports one disjunct only.
+        if (predicate_op == JoinConditionOperator::Or)
             return false;
 
-        if (!is_equality && !is_asof_inequality
-            && ((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())))
+        if (condition.fromLeft() || condition.fromRight() || condition.fromNone())
+            continue;
+
+        /// The conjunct reads from both sides. Only an equality of a left-side expression to a
+        /// right-side one is claimed as a join key; anything else is stored as the mixed condition.
+        const bool is_equality
+            = predicate_op == JoinConditionOperator::Equals || predicate_op == JoinConditionOperator::NullSafeEquals;
+        if (!is_equality || !lhs || !rhs)
+            return false;
+
+        if (!((lhs.fromLeft() && rhs.fromRight()) || (lhs.fromRight() && rhs.fromLeft())))
             return false;
     }
 
