@@ -6,9 +6,6 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsDateTime.h>
 #include <Common/DateLUTImpl.h>
-#include <Common/DateLUT.h>
-#include <Core/DecimalFunctions.h>
-#include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <Common/logger_useful.h>
@@ -190,165 +187,12 @@ Field decodePartitionDecimalByType(const String & bytes, const IDataType & type)
 
 }
 
-namespace
-{
-
-enum class PartitionTransformKind : uint8_t
-{
-    Day,
-    Month,
-    Year,
-    Hour,
-    NotInvertible,
-};
-
-PartitionTransformKind parsePartitionTransformKind(const String & transform_name_src)
-{
-    const String transform_name = Poco::toLower(transform_name_src);
-
-    if (transform_name == "day" || transform_name == "days" || transform_name == "date" || transform_name == "dates")
-        return PartitionTransformKind::Day;
-    if (transform_name == "month" || transform_name == "months")
-        return PartitionTransformKind::Month;
-    if (transform_name == "year" || transform_name == "years")
-        return PartitionTransformKind::Year;
-    if (transform_name == "hour" || transform_name == "hours")
-        return PartitionTransformKind::Hour;
-    return PartitionTransformKind::NotInvertible;
-}
-
-/// Half-open: `[first, past_last)`. The transforms map a whole such interval to one partition value,
-/// and every step below stays half-open, so a value from corrupt metadata can only fail an overflow
-/// check and disable pruning, never wrap around.
-struct Interval
-{
-    Int64 first;
-    Int64 past_last;
-};
-
-/// The value covers `[v, v + 1)` of its own unit.
-std::optional<Interval> unitInterval(Int64 value)
-{
-    Int64 past_last = 0;
-    if (common::addOverflow(value, Int64{1}, past_last))
-        return {};
-    return Interval{value, past_last};
-}
-
-/// `[a, b)` in one unit is `[a * factor, b * factor)` in a unit that many times finer.
-std::optional<Interval> refineInterval(std::optional<Interval> interval, Int64 factor)
-{
-    Int64 first = 0;
-    Int64 past_last = 0;
-    if (!interval || common::mulOverflow(interval->first, factor, first) || common::mulOverflow(interval->past_last, factor, past_last))
-        return {};
-    return Interval{first, past_last};
-}
-
-std::optional<Range> closedRange(std::optional<Interval> interval, std::optional<UInt32> decimal_scale)
-{
-    Int64 last = 0;
-    if (!interval || common::subOverflow(interval->past_last, Int64{1}, last))
-        return {};
-
-    if (decimal_scale)
-        return Range(
-            DecimalField<Decimal64>(interval->first, *decimal_scale), true, DecimalField<Decimal64>(last, *decimal_scale), true);
-    return Range(interval->first, true, last, true);
-}
-
-std::optional<Interval> dayIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
-{
-    if (kind == PartitionTransformKind::Day)
-        return unitInterval(value);
-
-    auto own_unit = unitInterval(value);
-    if (!own_unit)
-        return {};
-
-    const auto & utc = DateLUT::instance("UTC");
-    const auto epoch = ExtendedDayNum(0);
-
-    if (kind == PartitionTransformKind::Month)
-    {
-        const auto first = utc.addMonths(epoch, own_unit->first);
-        const auto past_last = utc.addMonths(epoch, own_unit->past_last);
-        if (utc.toMonthNumSinceEpoch(first) != own_unit->first || utc.toMonthNumSinceEpoch(past_last) != own_unit->past_last)
-            return {};
-        return Interval{Int64{first}, Int64{past_last}};
-    }
-
-    if (kind == PartitionTransformKind::Year)
-    {
-        const auto first = utc.addYears(epoch, own_unit->first);
-        const auto past_last = utc.addYears(epoch, own_unit->past_last);
-        if (utc.toYearSinceEpoch(first) != own_unit->first || utc.toYearSinceEpoch(past_last) != own_unit->past_last)
-            return {};
-        return Interval{Int64{first}, Int64{past_last}};
-    }
-
-    return {};
-}
-
-std::optional<Interval> secondIntervalOfPartitionValue(PartitionTransformKind kind, Int64 value)
-{
-    static constexpr Int64 seconds_per_hour = 3600;
-    static constexpr Int64 seconds_per_day = 86400;
-
-    if (kind == PartitionTransformKind::Hour)
-        return refineInterval(unitInterval(value), seconds_per_hour);
-    return refineInterval(dayIntervalOfPartitionValue(kind, value), seconds_per_day);
-}
-
-std::optional<Int64> partitionValueAsInt64(const Field & partition_value)
-{
-    if (partition_value.getType() == Field::Types::Int64)
-        return partition_value.safeGet<Int64>();
-
-    if (partition_value.getType() == Field::Types::UInt64)
-    {
-        const UInt64 value = partition_value.safeGet<UInt64>();
-        if (value <= static_cast<UInt64>(std::numeric_limits<Int64>::max()))
-            return static_cast<Int64>(value);
-    }
-
-    return {};
-}
-
-std::optional<Range> rangeOfPartitionValue(const String & transform_name, const Field & partition_value, const IDataType & source_type)
-{
-    const auto value = partitionValueAsInt64(partition_value);
-    if (!value)
-        return {};
-
-    const PartitionTransformKind kind = parsePartitionTransformKind(transform_name);
-    const WhichDataType which(source_type);
-
-    if (which.isDateOrDate32())
-        return closedRange(dayIntervalOfPartitionValue(kind, *value), std::nullopt);
-
-    if (which.isDateTime())
-        return closedRange(secondIntervalOfPartitionValue(kind, *value), std::nullopt);
-
-    if (which.isDateTime64())
-    {
-        const UInt32 scale = getDecimalScale(source_type);
-        return closedRange(
-            refineInterval(secondIntervalOfPartitionValue(kind, *value), DecimalUtils::scaleMultiplier<Int64>(scale)), scale);
-    }
-
-    return {};
-}
-
-}
-
 PruningReturnStatus ManifestFilesPruner::canBePruned(
     const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const
 {
-    const auto & partition_value = entry->parsed_entry->partition_key_value;
-
     if (partition_key_condition.has_value())
     {
+        const auto & partition_value = entry->parsed_entry->partition_key_value;
         std::vector<FieldRef> index_value(partition_value.begin(), partition_value.end());
         for (size_t i = 0; i < index_value.size(); ++i)
         {
@@ -382,33 +226,15 @@ PruningReturnStatus ManifestFilesPruner::canBePruned(
             continue;
         }
 
+        auto rect_it = entry_hyperrectangles.find(column_id);
+        if (rect_it == entry_hyperrectangles.end())
+            continue;
+
         auto info_it = entry->parsed_entry->columns_infos.find(column_id);
         bool has_no_nulls = info_it != entry->parsed_entry->columns_infos.end() && info_it->second.nulls_count.has_value()
             && *info_it->second.nulls_count == 0;
 
-        const DataTypes data_types{name_and_type->type};
-
-        if (entry->common_partition_specification)
-        {
-            for (const auto & partition_field : *entry->common_partition_specification)
-            {
-                if (partition_field.source_id != column_id || partition_field.tuple_index < 0
-                    || static_cast<size_t>(partition_field.tuple_index) >= partition_value.size())
-                    continue;
-
-                auto range = rangeOfPartitionValue(
-                    partition_field.transform_name,
-                    partition_value[partition_field.tuple_index],
-                    *removeNullable(name_and_type->type));
-
-                if (range && !key_condition.mayBeTrueInRange(1, &range->left, &range->right, data_types))
-                    return PruningReturnStatus::PARTITION_PRUNED;
-            }
-        }
-
-        auto rect_it = entry_hyperrectangles.find(column_id);
-        if (has_no_nulls && rect_it != entry_hyperrectangles.end()
-            && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, data_types))
+        if (has_no_nulls && !key_condition.mayBeTrueInRange(1, &rect_it->second.left, &rect_it->second.right, {name_and_type->type}))
         {
             return PruningReturnStatus::MIN_MAX_INDEX_PRUNED;
         }
