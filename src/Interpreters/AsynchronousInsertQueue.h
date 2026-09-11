@@ -87,7 +87,11 @@ public:
     {
     public:
         ASTPtr query;
-        String query_str;
+        /// The query text formatted with `show_secrets = true`, used as part of the batching key
+        /// (`toTupleCmp`). It stays unmasked on purpose: masking would render two inserts that differ
+        /// only in their credentials equal and coalesce them into one flush. Never put it in a log, an
+        /// exception message or a `system.*` table - format `query` with `serializeQuery` instead.
+        String query_str_with_secrets;
         std::optional<UUID> user_id;
         std::vector<UUID> current_roles;
         /// External (pushed) roles of the originating session. Re-applied via `setUser` on the flush
@@ -140,7 +144,7 @@ public:
     private:
         /// `authentication_grants` is compared by content in `operator==` (a shared_ptr would compare
         /// identity, which is inconsistent with the content-based hash), so it is not part of this tuple.
-        auto toTupleCmp() const { return std::tie(data_kind, query_str, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, setting_changes); }
+        auto toTupleCmp() const { return std::tie(data_kind, query_str_with_secrets, user_id, current_roles, authentication_valid_until, current_user, initial_user, authenticated_user, setting_changes); }
 
         std::vector<SettingChange> setting_changes;
     };
