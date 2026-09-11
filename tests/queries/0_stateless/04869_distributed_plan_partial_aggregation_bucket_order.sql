@@ -11,13 +11,13 @@ DROP TABLE IF EXISTS t_bucket_order;
 CREATE TABLE t_bucket_order (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 256;
 INSERT INTO t_bucket_order SELECT number % 45000, number FROM numbers(50000);
 
--- The hint understates the distinct key count on purpose: it must stay below
--- `distributed_plan_max_rows_to_broadcast` so the aggregation is planned as partial aggregation
--- plus a memory-efficient merge, while the real key count is large enough to fill many two-level
--- buckets in every worker. The row count stays above that limit, so the read is split into
--- parallel reader buckets and the partial aggregation runs fused with them: the workers send
--- two-level buckets into one merge.
-SET param__internal_join_table_stat_hints = '{"t_bucket_order": {"cardinality": 50000, "distinct_keys": {"k": 15000}}}';
+-- Both hinted counts understate reality on purpose: the group estimate is the per-column one, or
+-- the row count where that lookup does not reach the key, and either must stay below
+-- `distributed_plan_max_rows_to_broadcast` for the aggregation to be planned as partial aggregation
+-- plus a memory-efficient merge. The reader-bucket split is unaffected -- it reads the real row
+-- count from range analysis, not the hint -- so the partial aggregation runs fused with those
+-- buckets and the workers send two-level buckets into one merge.
+SET param__internal_join_table_stat_hints = '{"t_bucket_order": {"cardinality": 15000, "distinct_keys": {"k": 15000}}}';
 SET use_statistics = 0;
 
 SET make_distributed_plan = 1;
