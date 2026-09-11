@@ -352,11 +352,11 @@ void optimizeTreeSecondPass(
                 {
                     size_t changed_nodes = 0;
                     if (rewrite_regardless_of_settings || optimization_settings.merge_expressions)
-                        changed_nodes += tryMergeExpressions(&frame_node, nodes, {});
+                        changed_nodes += tryMergeExpressions(&frame_node, nodes, extra_settings);
                     if (rewrite_regardless_of_settings || optimization_settings.merge_filters)
-                        changed_nodes += tryMergeFilters(&frame_node, nodes, {});
+                        changed_nodes += tryMergeFilters(&frame_node, nodes, extra_settings);
                     if (rewrite_regardless_of_settings || optimization_settings.filter_push_down)
-                        changed_nodes += tryPushDownFilter(&frame_node, nodes, {});
+                        changed_nodes += tryPushDownFilter(&frame_node, nodes, extra_settings);
 
                     if (!changed_nodes)
                         break;
