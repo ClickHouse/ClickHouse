@@ -584,20 +584,19 @@ Query:
 
 **Simple case**
 ```sql
-
-SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv;
+SELECT extractKeyValuePairs('name:neymar, age:34 team:santos,nationality:brazil') AS kv;
 
 ┌─kv──────────────────────────────────────────────────────────────────────┐
-│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
+│ {'name':'neymar','age':'34','team':'santos','nationality':'brazil'}        │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Single quote as quoting character**
 ```sql
-SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv;
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':34;team:santos;nationality:brazil,last_key:last_value', ':', ';,', '\'') AS kv;
 
 ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
+│ {'name':'neymar','age':'34','team':'santos','nationality':'brazil','last_key':'last_value'}                                 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -606,7 +605,7 @@ unexpected_quoting_character_strategy examples:
 unexpected_quoting_character_strategy=invalid
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') AS kv;
 ```
 
 ```text
@@ -616,7 +615,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') AS kv;
 ```
 
 ```text
@@ -628,7 +627,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
 unexpected_quoting_character_strategy=accept
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') AS kv;
 ```
 
 ```text
@@ -638,7 +637,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') AS kv;
 ```
 
 ```text
@@ -650,7 +649,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 unexpected_quoting_character_strategy=promote
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') AS kv;
 ```
 
 ```text
@@ -660,7 +659,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') AS kv;
 ```
 
 ```text
@@ -671,11 +670,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 
 **Escape sequences without escape sequences support**
 ```sql
-arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
-
-SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
-
-Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
+SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 
 ┌─kv─────────────────────┐
 │ {'age':'a\\x0A\\n\\0'} │
@@ -704,7 +699,7 @@ Leading escape sequences will be skipped in keys and will be considered invalid 
 
 **Escape sequences with escape sequence support turned on**
 ```sql
-SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
+SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv;
 
 ┌─kv────────────────┐
 │ {'age':'a\n\n\0'} │
