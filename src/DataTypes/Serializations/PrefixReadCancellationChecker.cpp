@@ -5,6 +5,12 @@
 namespace DB
 {
 
+PrefixReadCancellationChecker::ThrottleState & PrefixReadCancellationChecker::throttleState()
+{
+    static thread_local ThrottleState state;
+    return state;
+}
+
 void PrefixReadCancellationChecker::throwIfCancelled()
 {
     try

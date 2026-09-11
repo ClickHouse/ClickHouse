@@ -80,11 +80,9 @@ private:
         UInt64 last_check_time = 0;
     };
 
-    static ThrottleState & throttleState()
-    {
-        static thread_local ThrottleState state;
-        return state;
-    }
+    /// Defined out of line so there is one state per thread, not one per shared library: a mutable
+    /// `thread_local` in an inline function is a distinct object in every library that uses it.
+    static ThrottleState & throttleState();
 
     /// Bounds the cancellation delay contributed by prefix reads to ~10 ms of reading, so the
     /// predicate runs at most ~100 times per second regardless of how many paths there are.
