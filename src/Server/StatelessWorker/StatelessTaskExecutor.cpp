@@ -260,7 +260,6 @@ StatelessTaskExecutor::TaskStatus StatelessTaskExecutor::getStatus(const String 
         return TaskStatus{Result::TaskRunnig, "", std::move(progress_delta), 0, drainLogs(logs_queue)};
     }
 
-    auto error_message = completion_future.get();
     /// Drain only after the future is ready
     Block logs = drainLogs(logs_queue);
     Progress progress_delta = progress->fetchAndResetPiecewiseAtomically();
