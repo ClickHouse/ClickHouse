@@ -2699,7 +2699,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         // (3) if parallel replicas still enabled - replace reading step
                         if (reading_node && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
-                            if (!settings[Setting::parallel_replicas_plan_based])
+                            /// A stable-reference table function takes the query-text path even when the
+                            /// plan-based mode is on. That mode ships a `ReadFromMergeTree` fragment, which
+                            /// carries the id of the storage the call resolved to here - a hidden inner table
+                            /// named after a UUID this server assigned - so a replica that assigned a
+                            /// different one cannot find it. Carrying the call in the fragment instead needs a
+                            /// query-plan serialization version; sending the query text needs nothing, and the
+                            /// replicas resolve the call themselves and coordinate exactly as they do without
+                            /// the plan-based mode. (Only a stable reference reaches here: the branch
+                            /// condition above admits no other table function.)
+                            if (!settings[Setting::parallel_replicas_plan_based] || table_function_node)
                             {
                                 till_stage = QueryProcessingStage::WithMergeableState;
                                 QueryPlan query_plan_parallel_replicas;
@@ -2723,14 +2732,10 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 /// local/remote boundary is done later, as an analysis of the whole plan
                                 /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
                                 ///
-                                /// TODO: this mode does not yet honour `ITableFunction::getReferencedTableID`.
-                                /// The shipped fragment is a `ReadFromMergeTree` and `ReadFromMergeTree::serialize`
-                                /// writes the storage the call resolved to *here*, so a read through a table
-                                /// function names the hidden inner table rather than the table the call names.
-                                /// Replicas that assigned a different UUID to the outer table then fail to find
-                                /// it. Teaching the fragment to carry the call instead needs a query-plan
-                                /// serialization change, so it is left out of the change that introduced
-                                /// `getReferencedTableID` for the query-text path.
+                                /// A read through a stable-reference table function never gets here - it is
+                                /// sent as query text above - because the fragment this builds would name the
+                                /// storage the call resolved to on this server. Teaching the fragment to carry
+                                /// the call instead needs a query-plan serialization version.
                                 QueryPlan query_plan_parallel_replicas;
                                 storage->read(
                                     query_plan_parallel_replicas,

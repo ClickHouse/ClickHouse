@@ -66,6 +66,15 @@ WHERE current_database = currentDatabase() AND log_comment = '05175_used_replica
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
+-- The plan-based mode ships a plan fragment instead of the query, and a fragment can only name the
+-- storage the call resolved to here, so a read through one of these table functions is sent as query
+-- text even when that mode is on. It has to keep returning every row once.
+SELECT '-- plan-based mode';
+SELECT count() FROM (SELECT * FROM timeSeriesSamples(ts))
+    SETTINGS optimize_trivial_count_query = 0, parallel_replicas_plan_based = 1;
+SELECT count() FROM (SELECT * FROM timeSeriesTags(ts))
+    SETTINGS optimize_trivial_count_query = 0, parallel_replicas_plan_based = 1, parallel_replicas_local_plan = 1;
+
 -- The custom-key modes fan out through a different path: it addresses the read by its own table id and
 -- builds the remote context with a different helper, so neither the table identity nor the database
 -- travelled with the read until both were fixed. The key has to be numeric, and `id` is a tuple.

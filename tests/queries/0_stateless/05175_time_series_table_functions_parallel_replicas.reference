@@ -23,6 +23,9 @@ m2	counter
 -- the read is announced to the other replicas
 3
 1
+-- plan-based mode
+3
+2
 -- custom key
 3
 2
