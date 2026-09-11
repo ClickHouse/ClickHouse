@@ -2323,6 +2323,17 @@ Possible values:
 - Positive floating-point number in the range [0..1]. For example, if the setting value is `0.5`, about half of the queries are logged in the system tables.
 - 1 — All queries are logged in the system tables.
 )", 0) \
+    DECLARE(UInt64, session_query_ids_history_size, 1000, R"(
+The maximum number of query ids kept in the session-local history exposed through the [`system.session_query_ids`](/operations/system-tables/session_query_ids) system table.
+The query id of every non-internal query executed in the session is recorded there at query start; when the history exceeds this size, the oldest entries are evicted first.
+
+The value is read at query start, before the query is parsed, so a `SETTINGS` clause of the query itself does not affect whether that query is recorded; use `SET`, an HTTP URL parameter, or a settings profile instead.
+
+Possible values:
+
+- Positive integer.
+- 0 — Recording is disabled; entries recorded earlier stay in the table.
+)", 0) \
     \
     DECLARE(Bool, log_processors_profiles, true, R"(
 Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
@@ -8841,21 +8852,6 @@ Enable transforming the payload of a hash join into a row-major layout.
 )", 0) \
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
-)", 0) \
-    DECLARE(Bool, query_plan_derive_not_null_filters_from_joins, true, R"(
-Derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions.
-
-Only conditions of the form `expr1` <op> `expr2` are considered, where <op> is one of `=`, `<`, `<=`, `>`, `>=`. Each side can be a column or an expression that propagates NULLs, such as `col1` + 1, in which case a filter is derived for every column the expression propagates NULLs from.
-
-The derived filters allow converting `OUTER JOIN` to `INNER JOIN`. This setting is only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled.
-
-The derived filters are not executed unless `query_plan_allow_derived_not_null_filters_execution` is enabled.
-)", 0) \
-    DECLARE(Bool, query_plan_allow_derived_not_null_filters_execution, true, R"(
-Allow `col IS NOT NULL` filters derived from joins by the planner when `query_plan_derive_not_null_filters_from_joins` is enabled to be executed.
-)", 0) \
-    DECLARE(Double, query_plan_max_selectivity_for_not_null_filters_execution, 0.7, R"(
-The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
 )", 0) \
     \
     /* ####################################################### */ \
