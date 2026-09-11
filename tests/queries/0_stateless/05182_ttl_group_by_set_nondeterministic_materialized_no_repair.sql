@@ -10,8 +10,9 @@ DROP TABLE IF EXISTS ttl_det_sort_key;
 DROP TABLE IF EXISTS ttl_nondet_group_by_key;
 DROP TABLE IF EXISTS ttl_det_group_by_key;
 
--- `max_bytes_to_merge_at_max_space_in_pool = 1` keeps the background merge selector off these parts, so
--- the `OPTIMIZE FINAL` below is the only merge and cannot lose the parts to one already running.
+-- Both merge settings below are needed to keep every background merge selector off these parts, so the
+-- `OPTIMIZE FINAL` further down is the only merge and cannot lose them to one already running: a part
+-- whose rows have all expired is picked for a TTL merge at any size, ignoring the size limit.
 
 -- The sort-key repair: `ORDER BY (g, m)` while `SET x = max(x)` feeds `m`.
 CREATE TABLE ttl_nondet_sort_key
@@ -25,7 +26,7 @@ CREATE TABLE ttl_nondet_sort_key
 ENGINE = MergeTree PRIMARY KEY g ORDER BY (g, m)
 TTL ts + toIntervalDay(1) GROUP BY g SET x = max(x)
 SETTINGS min_bytes_for_wide_part = 0, ttl_resort_max_bytes_before_external_sort = 1,
-         max_bytes_to_merge_at_max_space_in_pool = 1;
+         max_bytes_to_merge_at_max_space_in_pool = 1, max_number_of_merges_with_ttl_in_pool = 0;
 
 CREATE TABLE ttl_det_sort_key
 (
@@ -38,7 +39,7 @@ CREATE TABLE ttl_det_sort_key
 ENGINE = MergeTree PRIMARY KEY g ORDER BY (g, m)
 TTL ts + toIntervalDay(1) GROUP BY g SET x = max(x)
 SETTINGS min_bytes_for_wide_part = 0, ttl_resort_max_bytes_before_external_sort = 1,
-         max_bytes_to_merge_at_max_space_in_pool = 1;
+         max_bytes_to_merge_at_max_space_in_pool = 1, max_number_of_merges_with_ttl_in_pool = 0;
 
 -- The `GROUP BY`-key path: a second TTL groups by `m`, which an earlier firing `SET` feeds.
 CREATE TABLE ttl_nondet_group_by_key
@@ -53,7 +54,7 @@ ENGINE = MergeTree ORDER BY (g, m)
 TTL ts + toIntervalDay(1) GROUP BY g SET x = max(x),
     ts + toIntervalDay(1) GROUP BY g, m SET v = max(v)
 SETTINGS min_bytes_for_wide_part = 0, ttl_group_by_unsorted_max_bytes_before_external_group_by = 1,
-         max_bytes_to_merge_at_max_space_in_pool = 1;
+         max_bytes_to_merge_at_max_space_in_pool = 1, max_number_of_merges_with_ttl_in_pool = 0;
 
 CREATE TABLE ttl_det_group_by_key
 (
@@ -67,7 +68,7 @@ ENGINE = MergeTree ORDER BY (g, m)
 TTL ts + toIntervalDay(1) GROUP BY g SET x = max(x),
     ts + toIntervalDay(1) GROUP BY g, m SET v = max(v)
 SETTINGS min_bytes_for_wide_part = 0, ttl_group_by_unsorted_max_bytes_before_external_group_by = 1,
-         max_bytes_to_merge_at_max_space_in_pool = 1;
+         max_bytes_to_merge_at_max_space_in_pool = 1, max_number_of_merges_with_ttl_in_pool = 0;
 
 -- Two parts per table, so the merge below is a real multi-part TTL merge.
 INSERT INTO ttl_nondet_sort_key (g, x, ts) SELECT number % 1000, number, now() - toIntervalDay(2) FROM numbers(2000);
