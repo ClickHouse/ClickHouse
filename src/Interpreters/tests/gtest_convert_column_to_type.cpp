@@ -106,6 +106,33 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Int64", Field(Int64(-128)), "Int8"},
         {"Int64", Field(Int64(-129)), "Int8"},            // overflow -> null
 
+        /// wide integers (Int128/256, UInt128/256): `convertFieldToType` routes them through the same
+        /// `accurate::convertNumeric` as native numbers, so the column-native fast path serves them too.
+        {"Int64", Field(Int64(5)), "Int128"},                           // widen native -> wide
+        {"UInt64", Field(UInt64(5)), "UInt256"},                        // widen native -> wide
+        {"Int128", Field(Int128(5)), "Int64"},                          // wide -> native, in range
+        {"Int128", Field(Int128(5)), "Int256"},                         // widen wide -> wide
+        {"Int256", Field(Int256(200)), "UInt8"},                        // wide -> native, in range
+        {"Int256", Field(Int256(300)), "UInt8"},                        // overflow -> null
+        {"Int128", Field(Int128(-1)), "UInt64"},                        // negative -> null
+        {"Int128", Field(Int128(1) << 70), "Int64"},                    // wide overflows native -> null
+        {"Int128", Field(Int128(1) << 70), "Int256"},                   // wide -> wider, exact
+        {"UInt256", Field(UInt256(255)), "UInt8"},                      // wide -> native, in range
+        {"Float64", Field(Float64(5.0)), "Int128"},                     // float -> wide, exact
+        {"Int128", Field(Int128(5)), "Float64"},                        // wide -> float
+        /// wide integers, strict
+        {"Int128", Field(Int128(5)), "Int64", true},                    // in range -> 5
+        {"Int128", Field(Int128(1) << 70), "Int64", true},              // overflow -> null
+        {"Int256", Field(Int256(300)), "UInt8", true},                  // overflow -> null
+        {"Float64", Field(Float64(3.0)), "Int128", true},               // exact -> 3
+        {"Float64", Field(Float64(3.5)), "Int128", true},               // non-integer -> null
+        {"UInt64", Field(UInt64(5)), "Int256", true},                   // widen across sign -> 5
+        /// wide int -> float precision loss: strict must reject (this is what IN/set building relies on)
+        {"Int128", Field(Int128(9007199254740993ll)), "Float64"},        // 2^53+1: default -> nearest float
+        {"Int128", Field(Int128(9007199254740993ll)), "Float64", true},  // 2^53+1: strict -> null
+        {"UInt256", Field(UInt256(9007199254740993ull)), "Float64", true}, // strict -> null
+        {"Int128", Field(Int128(16777217)), "Float32", true},            // 2^24+1: strict -> null (Float32)
+
         /// floats: exact / inexact in all three modes / overflow / NaN / inf
         {"Float64", Field(Float64(0.5)), "Float32"},
         {"Float64", Field(Float64(0.1)), "Float32"},                      // default: exact -> null
@@ -128,6 +155,20 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         {"Decimal64(2)", Field(DecimalField<Decimal64>(Decimal64(3333), 2)), "Decimal64(1)", true, false}, // strict -> null
         {"Int64", Field(Int64(5)), "Decimal64(2)"},
 
+        /// more decimals (column-native path): int/wide/float/decimal sources into every width, default + strict
+        {"UInt64", Field(UInt64(42)), "Decimal64(2)"},                                                     // 42.00
+        {"Int64", Field(Int64(-5)), "Decimal64(2)"},                                                       // -5.00
+        {"UInt64", Field(UInt64(1000000000000000000ull)), "Decimal32(0)"},                                 // too big -> throws -> null
+        {"Int128", Field(Int128(5)), "Decimal128(3)"},                                                     // wide int -> 5.000
+        {"UInt256", Field(UInt256(7)), "Decimal256(2)"},                                                   // wide int -> 7.00
+        {"Float64", Field(Float64(0.5)), "Decimal64(2)"},                                                  // 0.50
+        {"Float64", Field(Float64(0.5)), "Decimal64(2)", true},                                            // exact -> 0.50
+        {"Float64", Field(Float64(0.125)), "Decimal64(2)", true},                                          // inexact -> null
+        {"Decimal32(2)", Field(DecimalField<Decimal32>(Decimal32(333), 2)), "Decimal64(4)"},               // widen 3.33 -> 3.3300
+        {"Decimal128(4)", Field(DecimalField<Decimal128>(Decimal128(12345), 4)), "Decimal64(2)"},          // narrow 1.2345 -> 1.23 (round)
+        {"Decimal128(4)", Field(DecimalField<Decimal128>(Decimal128(12345), 4)), "Decimal64(2)", true},    // narrow lossy -> null
+        {"Decimal64(1)", Field(DecimalField<Decimal64>(Decimal64(333), 1)), "Decimal128(3)", true},        // widen exact -> 33.300
+
         /// string <-> number
         {"String", Field(String("42")), "Int32"},
         {"String", Field(String("256")), "UInt8"},                       // out of range -> null
@@ -137,6 +178,27 @@ TEST(ConvertColumnToType, MatchesConvertFieldToType)
         /// date / datetime
         {"UInt16", Field(UInt64(19000)), "Date"},
         {"Date", Field(UInt64(19000)), "DateTime('UTC')"},
+
+        /// numeric -> date family (column-native path)
+        {"UInt64", Field(UInt64(19000)), "Date"},                         // 19000
+        {"Int64", Field(Int64(19000)), "Date"},                          // 19000
+        {"UInt64", Field(UInt64(70000)), "Date"},                        // out of UInt16 range -> null
+        {"Int64", Field(Int64(-1)), "Date"},                             // negative -> null
+        {"Int64", Field(Int64(19000)), "Date32"},                        // in window
+        {"UInt64", Field(UInt64(19000)), "Date32"},                      // in window
+        {"Int64", Field(Int64(3000000)), "Date32"},                      // > max extended day -> null
+        {"Int64", Field(Int64(-800000)), "Date32"},                      // < min extended day -> null
+        {"UInt64", Field(UInt64(1700000000)), "DateTime('UTC')"},        // fits UInt32
+        {"UInt64", Field(UInt64(5000000000)), "DateTime('UTC')"},        // > UInt32 max -> truncates (raw, no range check)
+
+        /// cross-calendar Date/Date32 <-> DateTime (timezone-aware): day 19000 == 2022-01-08 == 1641600000 UTC
+        {"DateTime('UTC')", Field(UInt64(1641600000)), "Date"},          // -> day 19000
+        {"Date32", Field(Int64(19000)), "DateTime('UTC')"},              // -> 1641600000
+        {"DateTime('UTC')", Field(UInt64(1641600000)), "Date32"},        // -> day 19000
+        /// non-UTC: proves the timezone object of the DateTime type is actually consulted
+        {"Date32", Field(Int64(19000)), "DateTime('Europe/Berlin')"},    // fromDayNum in Berlin tz
+        {"DateTime('Europe/Berlin')", Field(UInt64(1641600000)), "Date"}, // toDayNum in Berlin tz
+        {"DateTime('Europe/Berlin')", Field(UInt64(1641600000)), "Date32"},
 
         /// nullable / lowcardinality wrappers
         {"Nullable(Int32)", Field(Int64(7)), "Int64"},
