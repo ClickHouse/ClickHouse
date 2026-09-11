@@ -16,6 +16,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/ReadBufferFromString.h>
 #include <Common/assert_cast.h>
+#include <Common/ErrnoException.h>
 #include <base/range.h>
 #include <Common/logger_useful.h>
 
@@ -29,6 +30,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int CANNOT_OPEN_FILE;
     extern const int TOO_MANY_COLUMNS;
 }
 
@@ -136,10 +138,16 @@ void PostgreSQLSource<T>::onStart()
             throw;
         }
 
+        /// Our own handle on the socket, taken on the owning thread before the read starts. Refuse to
+        /// start rather than run a read that could not be interrupted.
+        int fd = ::dup(new_tx->conn().sock());
+        if (fd < 0)
+            throw ErrnoException(
+                ErrorCodes::CANNOT_OPEN_FILE, "Cannot duplicate the socket of the PostgreSQL connection");
+
         std::lock_guard lock(tx_mutex);
         tx = std::move(new_tx);
-        /// Taken on the thread that owns the connection, so it cannot be a descriptor being closed.
-        interrupt_fd = ::dup(tx->conn().sock());
+        interrupt_fd = fd;
     }
 
     /// A cancel during the constructor found `tx` null and could only ask us to stop. Do not open
@@ -294,7 +302,7 @@ void PostgreSQLSource<T>::onCancel() noexcept
 
         /// The connection is ours to discard. Ask the server to cancel first, while the connection can still
         /// address it, then take the transport away, which wakes the read whether or not the server obliged.
-        if (connection_holder && fd >= 0)
+        if (connection_holder)
         {
             /// A finish already under way has nothing left to wake, and its COMMIT must not be broken.
             if (teardown_started.exchange(true))
