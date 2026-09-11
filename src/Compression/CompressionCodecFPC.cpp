@@ -27,6 +27,7 @@ public:
     CompressionCodecFPC(UInt8 float_width_, UInt8 compression_level_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDesc() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -78,7 +79,11 @@ CompressionCodecFPC::CompressionCodecFPC(UInt8 float_width_, UInt8 compression_l
     : float_width(float_width_)
     , compression_level(compression_level_)
 {
-    setCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
+}
+
+ASTPtr CompressionCodecFPC::getCodecDesc() const
+{
+    return makeCodecDescription("FPC", {make_intrusive<ASTLiteral>(static_cast<UInt64>(compression_level))});
 }
 
 UInt32 CompressionCodecFPC::getMaxCompressedDataSize(UInt32 uncompressed_size) const

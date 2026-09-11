@@ -21,6 +21,7 @@ public:
     explicit CompressionCodecDelta(UInt8 delta_bytes_size_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDesc() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -58,7 +59,11 @@ namespace ErrorCodes
 CompressionCodecDelta::CompressionCodecDelta(UInt8 delta_bytes_size_)
     : delta_bytes_size(delta_bytes_size_)
 {
-    setCodecDescription("Delta", {make_intrusive<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
+}
+
+ASTPtr CompressionCodecDelta::getCodecDesc() const
+{
+    return makeCodecDescription("Delta", {make_intrusive<ASTLiteral>(static_cast<UInt64>(delta_bytes_size))});
 }
 
 uint8_t CompressionCodecDelta::getMethodByte() const

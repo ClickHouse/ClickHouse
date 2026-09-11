@@ -476,7 +476,11 @@ String CompressionCodecEncrypted::Configuration::getKey(EncryptionMethod method,
 
 CompressionCodecEncrypted::CompressionCodecEncrypted(EncryptionMethod Method): encryption_method(Method)
 {
-    setCodecDescription(getMethodName(encryption_method));
+}
+
+ASTPtr CompressionCodecEncrypted::getCodecDesc() const
+{
+    return makeCodecDescription(getMethodName(encryption_method));
 }
 
 uint8_t CompressionCodecEncrypted::getMethodByte() const

@@ -107,6 +107,7 @@ public:
     explicit CompressionCodecGorilla(UInt8 data_bytes_size_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDesc() const override;
 
     void updateHash(SipHash & hash) const override;
 
@@ -377,7 +378,11 @@ UInt8 getDataBytesSize(const IDataType * column_type)
 CompressionCodecGorilla::CompressionCodecGorilla(UInt8 data_bytes_size_)
     : data_bytes_size(data_bytes_size_)
 {
-    setCodecDescription("Gorilla", {make_intrusive<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
+}
+
+ASTPtr CompressionCodecGorilla::getCodecDesc() const
+{
+    return makeCodecDescription("Gorilla", {make_intrusive<ASTLiteral>(static_cast<UInt64>(data_bytes_size))});
 }
 
 uint8_t CompressionCodecGorilla::getMethodByte() const

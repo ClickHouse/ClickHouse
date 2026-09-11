@@ -7,9 +7,9 @@
 namespace DB
 {
 
-CompressionCodecNone::CompressionCodecNone()
+ASTPtr CompressionCodecNone::getCodecDesc() const
 {
-    setCodecDescription("NONE");
+    return makeCodecDescription("NONE");
 }
 
 uint8_t CompressionCodecNone::getMethodByte() const

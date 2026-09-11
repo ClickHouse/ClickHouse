@@ -1,10 +1,13 @@
 #include "config.h"
 
+#include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
 #include <IO/ReadBufferFromMemory.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/IParser.h>
 #include <Parsers/TokenIterator.h>
@@ -16,7 +19,6 @@
 #include <Compression/getCompressionCodecForFile.h>
 #include <IO/BufferWithOwnMemory.h>
 
-#include <random>
 #include <bitset>
 #include <cmath>
 #include <initializer_list>
@@ -25,6 +27,7 @@
 #include <iterator>
 #include <memory>
 #include <numbers>
+#include <random>
 #include <typeinfo>
 #include <vector>
 
@@ -1535,6 +1538,41 @@ TEST(T64Test, DecompressMalformedInputShortHeader)
 
     auto codec = makeCodec("T64", std::make_shared<DataTypeUInt64>());
     ASSERT_THROW(codec->decompress(source, source_size, dest.data()), Exception);
+}
+
+TEST(CompressionCodecMultipleTest, UnconfiguredNestedCodec)
+{
+    /// A `LOGICAL_ERROR` aborts in debug and sanitizer builds.
+#ifndef DEBUG_OR_SANITIZER_BUILD
+    auto decoder = std::make_shared<CompressionCodecMultiple>();
+    EXPECT_THROW(decoder->getCodecDesc(), Exception);
+    EXPECT_THROW(decoder->getFullCodecDesc(), Exception);
+    /// Reject an unconfigured nested `Multiple` during construction, before requesting its description.
+    EXPECT_THROW(CompressionCodecMultiple{Codecs{decoder}}, Exception);
+#endif
+
+    /// An explicitly configured empty chain has a description and can be nested.
+    auto empty = std::make_shared<CompressionCodecMultiple>(Codecs{});
+    EXPECT_EQ(empty->getFullCodecDesc()->formatForErrorMessage(), "CODEC()");
+    EXPECT_NO_THROW(CompressionCodecMultiple{Codecs{empty}});
+}
+
+TEST(CompressionCodecMultipleTest, NestedCodecDescription)
+{
+    auto inner = CompressionCodecFactory::instance().get("LZ4, ZSTD(3)");
+    CompressionCodecPtr outer = std::make_shared<CompressionCodecMultiple>(Codecs{inner});
+
+    /// The inner chain is one argument of `CODEC`, even though its description is a list.
+    const auto full_description = outer->getFullCodecDesc();
+    const auto * function = full_description->as<ASTFunction>();
+    ASSERT_NE(function, nullptr);
+    EXPECT_EQ(function->name, "CODEC");
+    ASSERT_EQ(function->arguments->children.size(), 1);
+
+    const auto & inner_description = function->arguments->children.front();
+    ASSERT_NE(inner_description->as<ASTExpressionList>(), nullptr);
+    ASSERT_EQ(inner_description->children.size(), 2);
+    EXPECT_EQ(inner_description->formatForErrorMessage(), "LZ4, ZSTD(3)");
 }
 
 TEST(CompressionCodecMultipleTest, DecompressMalformedInputReversedRange)

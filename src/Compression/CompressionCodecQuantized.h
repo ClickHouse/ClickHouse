@@ -30,6 +30,7 @@ public:
     explicit CompressionCodecQuantized(const QuantizedCodecParams & params_);
 
     uint8_t getMethodByte() const override;
+    ASTPtr getCodecDesc() const override;
     void updateHash(SipHash & hash) const override;
 
     const QuantizedCodecParams & getParams() const { return params; }
