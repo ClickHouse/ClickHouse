@@ -413,7 +413,7 @@
 	url = https://github.com/ClickHouse/geometry.hpp
 [submodule "contrib/zxc"]
 	path = contrib/zxc
-	url = https://github.com/ClickHouse/zxc
+	url = https://github.com/hellobertrand/zxc
 [submodule "contrib/libucontext"]
 	path = contrib/libucontext
 	url = https://github.com/kaniini/libucontext
