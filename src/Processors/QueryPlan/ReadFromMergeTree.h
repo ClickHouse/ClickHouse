@@ -364,6 +364,15 @@ public:
     /// Disables per-part PrefetchingConcat that would collapse streams into one.
     void setPreferMultipleStreams() { prefer_multiple_streams = true; }
 
+    /// Set on a step that replays a read-in-order contract it received only in part.
+    /// `serialize` ships the prefix/direction/limit of `input_order_info` and nothing else, so a
+    /// worker that rebuilds the step from the wire cannot know whether the coordinator had
+    /// disabled the per-part `PrefetchingConcat` path (`prefer_multiple_streams`, `has_outer_limit`,
+    /// `query_task_size_limit`, the virtual-row conversion). Missing contract fields only ever
+    /// *enable* prefetching, so the rebuilt step must fail closed and keep it off rather than
+    /// re-enable a path the coordinator rejected.
+    void disablePerPartPrefetching() { per_part_prefetching_disabled = true; }
+
     /// Restore the full post-`requestReadingInOrder` state that is not carried by `query_info`.
     /// `has_outer_limit`, `prefer_multiple_streams`, `enable_vertical_final`,
     /// `query_task_size_limit` and `virtual_row_conversion` are set by
@@ -586,6 +595,10 @@ private:
     /// True when downstream step (e.g. aggregation-in-order) benefits from
     /// receiving multiple streams for parallel processing.
     bool prefer_multiple_streams = false;
+
+    /// True on a step rebuilt from a serialized plan, where the read-in-order contract arrives
+    /// without the fields that disable per-part prefetching. See `disablePerPartPrefetching`.
+    bool per_part_prefetching_disabled = false;
 
     /// Used for aggregation optimization (see DB::QueryPlanOptimizations::tryAggregateEachPartitionIndependently).
     bool output_each_partition_through_separate_port = false;

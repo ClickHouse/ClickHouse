@@ -2203,8 +2203,12 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsWithOrder(
         /// `read_in_order_use_buffering = 0` asks for no read-ahead at all; then the budget is
         /// zero and every source stalls after the one chunk its port holds, exactly as it does
         /// when the streams are separate merge inputs and buffering is off.
+        /// The row half of the budget comes from `block_size.max_block_size_rows`, which the step
+        /// already carries, rather than from a fresh `max_block_size` lookup: the two can disagree
+        /// for a shipped parallel-replicas fragment, and the carried one is the value the rest of
+        /// the read is sized by.
         const bool use_read_ahead = settings[Setting::read_in_order_use_buffering];
-        const size_t prefetch_max_rows = use_read_ahead ? settings[Setting::max_block_size] : 0;
+        const size_t prefetch_max_rows = use_read_ahead ? block_size.max_block_size_rows : 0;
         const size_t prefetch_max_bytes = use_read_ahead ? settings[Setting::prefer_external_sort_block_bytes] : 0;
 
         if (can_split_parts)
@@ -4174,6 +4178,7 @@ void ReadFromMergeTree::copyReadInOrderContractFrom(const ReadFromMergeTree & so
 {
     has_outer_limit = source.has_outer_limit;
     prefer_multiple_streams = source.prefer_multiple_streams;
+    per_part_prefetching_disabled = source.per_part_prefetching_disabled;
     output_each_partition_through_separate_port = source.output_each_partition_through_separate_port;
     enable_vertical_final = source.enable_vertical_final;
     query_task_size_limit = source.query_task_size_limit;
@@ -7032,11 +7037,22 @@ std::unique_ptr<IQueryPlanStep> ReadFromMergeTree::deserialize(Deserialization &
         /// drives the ordinary in-order path, including the per-layer merge and the reverse transform.
         /// Only a bucketed read carries the contract: findReadingStep installs the order only when the
         /// exchange pair collapses, which means the read was made distributed.
-        if (has_input_order_info
-            && !read_from_merge_tree_step->requestReadingInOrder(
-                input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
-            throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Coordinator asked for a read-in-order distributed read that this node refused");
+        if (has_input_order_info)
+        {
+            if (!read_from_merge_tree_step->requestReadingInOrder(
+                    input_order_prefix_size, static_cast<int>(input_order_direction), input_order_limit))
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Coordinator asked for a read-in-order distributed read that this node refused");
+
+            /// Only the prefix, direction and limit travel on the wire. The rest of the contract --
+            /// `prefer_multiple_streams`, `has_outer_limit`, `query_task_size_limit` and the
+            /// virtual-row conversion -- is not serialized, and every one of those fields can only
+            /// *disable* the per-part `PrefetchingConcat` path. Replaying the contract without them
+            /// would therefore let a worker prefetch where the coordinator had decided it must not
+            /// (a per-stream `LIMIT BY` prefilter, an outer `LIMIT`, aggregation-in-order), so fail
+            /// closed and keep the pre-existing one-stream-per-part read here.
+            read_from_merge_tree_step->disablePerPartPrefetching();
+        }
         read_from_merge_tree_step->setDistributedReadParamName(std::move(distributed_read_param_name));
     }
 
