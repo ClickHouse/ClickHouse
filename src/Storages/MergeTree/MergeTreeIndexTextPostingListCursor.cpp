@@ -47,6 +47,26 @@ void requireRowOffsetRepresentable(size_t row_offset)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Posting-list cursor doesn't support row_offset larger than UINT32_MAX, got {}", row_offset);
 }
 
+void requireDecodedRowIdsValid(const uint32_t * values, size_t count, size_t range_begin, size_t range_end)
+{
+    for (size_t i = 0; i < count; ++i)
+    {
+        const uint32_t v = values[i];
+
+        if (v < range_begin || v > range_end)
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in lazy posting list cursor: decoded row id {} at position {} is outside "
+                "the segment row range [{}, {}]",
+                v, i, range_begin, range_end);
+
+        if (i > 0 && v <= values[i - 1])
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in lazy posting list cursor: decoded row ids are not strictly increasing "
+                "at position {}: previous = {}, current = {}",
+                i, values[i - 1], v);
+    }
+}
+
 namespace
 {
 
@@ -369,6 +389,16 @@ void PostingListCursor::decodeBlock(size_t block_idx)
 
     /// Restore absolute row ids from deltas directly in decoded_values.
     std::inclusive_scan(decoded_values, decoded_values + count, decoded_values, std::plus<uint32_t>{}, last_decoded_doc_id);
+
+    /// The block codec restores absolute ids from deltas with no knowledge of the segment layout, so a
+    /// crafted `.pst` payload (e.g. an out-of-range `first_row_id` making the uint32 `inclusive_scan` wrap)
+    /// can produce ids that are non-monotonic or outside this segment's row range. The apply paths
+    /// (`padColumn`, leapfrog) assume the ids are strictly increasing and clip them with `std::lower_bound`,
+    /// so an unsorted or out-of-range array would turn into an out-of-bounds write. Cross-check against the
+    /// segment's validated row range before the ids reach those paths.
+    const auto & segment_range = info->ranges[current_segment_idx];
+    requireDecodedRowIdsValid(decoded_values, count, segment_range.begin, segment_range.end);
+
     last_decoded_doc_id = count > 0 ? decoded_values[count - 1] : last_decoded_doc_id;
 
     decoded_count = count;

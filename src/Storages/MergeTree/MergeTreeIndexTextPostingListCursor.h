@@ -171,6 +171,12 @@ using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCu
 /// Throw a `LOGICAL_ERROR` rather than wrap the offset and corrupt the output column.
 void requireRowOffsetRepresentable(size_t row_offset);
 
+/// Validate the absolute row ids one block decodes to against the segment's row range, throwing
+/// `CORRUPTED_DATA` if they are not strictly increasing or fall outside `[range_begin, range_end]`.
+/// A crafted `.pst` payload can otherwise make the delta `inclusive_scan` wrap or drift out of range,
+/// which the sorted-array assumption in the apply paths (`padColumn`, leapfrog) turns into an OOB write.
+void requireDecodedRowIdsValid(const uint32_t * values, size_t count, size_t range_begin, size_t range_end);
+
 /// Union (OR) of posting lists: set output[row] = 1 if the row appears in ANY posting list.
 /// The caller is responsible for preparing the cursor vector (resolving search tokens
 /// to cursors and deduplicating if necessary).
