@@ -135,9 +135,10 @@ public:
     /// the pending-range budget trim resumes a hierarchical parent by re-listing it from the beginning with
     /// the '/' delimiter and locally discarding what the kept child ranges already cover, instead of
     /// resuming after the last kept child by key.
-    /// `root_range_end`, when non-empty, is an inclusive upper bound on the keys of interest under
-    /// `root_prefix`: pagination of the root level stops once its listed entries sort past it, so entries
-    /// beyond the bound are neither fetched page by page nor emitted. Used when `root_prefix` is *wider*
+    /// `root_range_end`, when non-empty, is an *exclusive* upper bound on the keys of interest under
+    /// `root_prefix` — the least key that is already out of interest, as returned by
+    /// `leastKeyAfterPrefixRegion`: pagination of the root level stops once its listed entries reach it, so
+    /// entries at or beyond the bound are neither fetched page by page nor emitted. Used when `root_prefix` is *wider*
     /// than the glob's fixed prefix (see `chooseDelimitedListingStartPrefix`) to stop the walk's own level
     /// at the end of the fixed prefix's key region instead of paging through every later loose object.
     /// Sub-"directories" discovered within the bound are walked unbounded — their keys share the
@@ -203,7 +204,14 @@ private:
     {
         std::string prefix;        /// S3 Prefix.
         std::string start_after;   /// Exclusive lower bound; empty = from the beginning of `prefix`.
-        std::string end;           /// Inclusive upper bound key; empty = unbounded.
+        std::string end;           /// Upper bound key; empty = unbounded. Inclusive unless `end_exclusive`.
+        bool end_exclusive = false; /// Makes `end` an *exclusive* upper bound: the key equal to `end` is
+                                   /// itself out of range. Needed for a bound derived from
+                                   /// `leastKeyAfterPrefixRegion`, which is the least key *outside* the
+                                   /// region of interest and therefore has no inclusive spelling. Only the
+                                   /// root range and the sub-ranges that inherit its `end` carry it; the
+                                   /// boundaries a keyspace split tiles an interval with are keys inside
+                                   /// the interval and stay inclusive.
         size_t split_pos = 0;      /// Byte position to split at if this range needs a flat (keyspace) split.
         size_t split_budget = 0;   /// How many more times this branch may flat-split (0 = paginate serially).
         bool use_delimiter = true; /// List with the '/' delimiter to discover (and prune) sub-directories.
@@ -238,6 +246,15 @@ private:
                                    /// prefixes by `skip_prefixes_not_after`, objects by the same bound). The
                                    /// result is identical to a `StartAfter` resume, at the cost of re-listing
                                    /// the pages before the resume point.
+
+        /// Is `key` past this range's upper bound (and therefore, since a listing returns keys in
+        /// ascending order, is every key following it)? Always false for an unbounded range.
+        bool isPastEnd(const std::string & key) const
+        {
+            if (end.empty())
+                return false;
+            return end_exclusive ? key >= end : key > end;
+        }
     };
 
     void worker();

@@ -79,8 +79,8 @@ std::function<bool(const std::string & common_prefix)> makeIsMarkerOnlyPrefixPre
 /// otherwise chosen — with the `Contents` and `CommonPrefixes` of the *first* delimited page; any sampled
 /// entry outside `key_prefix`'s region keeps the glob on the serial iterator. Entries sorting *after* the
 /// region that hide beyond the sampled page are handled at listing time instead: the walk's root range is
-/// bounded by
-/// `leastKeyAfterPrefixRegion(key_prefix)`, so pagination stops once past the last possibly-matching key.
+/// bounded, exclusively, by `leastKeyAfterPrefixRegion(key_prefix)`, so pagination stops as soon as it
+/// reaches that key — the first one that can no longer match — and never admits it either.
 std::optional<std::string> chooseDelimitedListingStartPrefix(
     const std::string & glob_path,
     const std::string & key_prefix,

@@ -82,6 +82,9 @@ ObjectStorageParallelListingIterator::ObjectStorageParallelListingIterator(
     /// the sub-"directories" discovered within the bound carry no bound of their own — their keys sort
     /// within it already. See the constructor comment.
     root.end = std::move(root_range_end_);
+    /// The caller's bound is the least key *outside* the region of interest (`leastKeyAfterPrefixRegion`),
+    /// so it is exclusive: the key equal to it must neither be emitted nor keep the root paginating.
+    root.end_exclusive = true;
     root.split_pos = root.prefix.size();
     /// A zero budget disables flat keyspace splitting (and the `StartAfter` requests it issues), so a flat
     /// directory is paginated serially; the hierarchical delimiter walk is unaffected.
@@ -241,6 +244,7 @@ void ObjectStorageParallelListingIterator::trimToBudgetLocked(
         resume.prefix = range.prefix;
         resume.start_after = kept.back().prefix;
         resume.end = range.end;
+    resume.end_exclusive = range.end_exclusive;
         resume.split_pos = range.split_pos;
         resume.split_budget = range.split_budget;
         resume.use_delimiter = true;
@@ -287,8 +291,10 @@ void ObjectStorageParallelListingIterator::trimToBudgetLocked(
         if (index < follow_up.size())
         {
             std::string tail_end = follow_up.back().end;
+            const bool tail_end_exclusive = follow_up.back().end_exclusive;
             ListRange merged = std::move(follow_up[index]);
             merged.end = std::move(tail_end);
+            merged.end_exclusive = tail_end_exclusive;
             kept.push_back(std::move(merged));
         }
         follow_up = std::move(kept);
@@ -441,7 +447,8 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
             continue;
         std::string boundary = base;
         boundary.push_back(static_cast<char>(static_cast<unsigned char>(v)));
-        /// Keep only boundaries strictly inside the remaining interval (last_key, range.end].
+        /// Keep only boundaries strictly inside the remaining interval, whose upper end is `range.end`
+        /// (inclusive, or exclusive when `range.end_exclusive`).
         if (boundary > last_key && (range.end.empty() || boundary < range.end))
             boundaries.push_back(std::move(boundary));
     }
@@ -463,8 +470,10 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
     if (boundaries.empty())
         return result; /// Nothing to split into; caller paginates the remainder.
 
-    /// Tile (last_key, range.end] into contiguous half-open-then-closed sub-ranges. `end` is inclusive,
-    /// `start_after` is exclusive, so a key equal to a boundary lands in exactly one sub-range.
+    /// Tile the interval after `last_key` up to `range.end` into contiguous half-open-then-closed
+    /// sub-ranges. A sub-range's `end` boundary is inclusive and `start_after` is exclusive, so a key equal
+    /// to a boundary lands in exactly one sub-range. The last slice instead inherits `range.end` itself,
+    /// keeping whatever `range.end_exclusive` says about it.
     ///
     /// The sub-ranges keep the '/' delimiter (`use_delimiter = true`): the keyspace split only decides
     /// *where* to fan the listing out, not *how* to list each slice. Listing each slice with the delimiter
@@ -478,11 +487,29 @@ std::vector<ObjectStorageParallelListingIterator::ListRange> ObjectStorageParall
     result.reserve(boundaries.size() + 1);
     for (auto & boundary : boundaries)
     {
-        ListRange sub{range.prefix, prev, boundary, pos + 1, range.split_budget - 1, /* use_delimiter */ true, /* continuation_token */ {}};
+        ListRange sub{
+            .prefix = range.prefix,
+            .start_after = prev,
+            .end = boundary,
+            .split_pos = pos + 1,
+            .split_budget = range.split_budget - 1,
+            .use_delimiter = true,
+            .continuation_token = {}};
         result.push_back(std::move(sub));
         prev = std::move(boundary);
     }
-    result.push_back(ListRange{range.prefix, prev, range.end, pos + 1, range.split_budget - 1, /* use_delimiter */ true, /* continuation_token */ {}});
+    ListRange tail{
+        .prefix = range.prefix,
+        .start_after = prev,
+        .end = range.end,
+        .split_pos = pos + 1,
+        .split_budget = range.split_budget - 1,
+        .use_delimiter = true,
+        .continuation_token = {}};
+    /// Only the last slice inherits the range's own upper bound, and with it whether that bound is
+    /// exclusive; the boundaries above are keys inside the interval and are always inclusive.
+    tail.end_exclusive = range.end_exclusive;
+    result.push_back(std::move(tail));
     return result;
 }
 
@@ -503,9 +530,9 @@ bool ObjectStorageParallelListingIterator::splitWouldHelp(
     /// Existence-only: use the lightweight probe callback (tags-free, single key) rather than `list_level`,
     /// so that on `S3` a `_tags` scan does not eagerly fetch `GetObjectTagging` for a page we discard.
     auto result = probe_level(range.prefix, delimiter, probe, std::string{});
-    if (!result.objects.empty() && (range.end.empty() || result.objects.front()->getPath() <= range.end))
+    if (!result.objects.empty() && !range.isPastEnd(result.objects.front()->getPath()))
         return true;
-    if (!result.common_prefixes.empty() && (range.end.empty() || result.common_prefixes.front() <= range.end))
+    if (!result.common_prefixes.empty() && !range.isPastEnd(result.common_prefixes.front()))
         return true;
     return false;
 }
@@ -553,7 +580,7 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
             std::vector<ListRange> new_ranges;
             for (auto & common_prefix : result.common_prefixes)
             {
-                if (!range.end.empty() && common_prefix > range.end)
+                if (range.isPastEnd(common_prefix))
                 {
                     reached_end = true;
                     break;
@@ -582,7 +609,7 @@ bool ObjectStorageParallelListingIterator::listRange(const ListRange & range, st
             RelativePathsWithMetadata batch;
             for (auto & object : result.objects)
             {
-                if (!range.end.empty() && object->getPath() > range.end)
+                if (range.isPastEnd(object->getPath()))
                 {
                     reached_end = true;
                     break;

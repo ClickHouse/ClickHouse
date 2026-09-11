@@ -1158,6 +1158,75 @@ TEST(ObjectStorageParallelListing, WidenedWalkIsBoundedToThePrefixRegion)
     EXPECT_EQ(s3.requests_with_start_after.load(), 0u);
 }
 
+TEST(ObjectStorageParallelListing, WidenedWalkBoundExcludesTheExactSuccessorKey)
+{
+    /// `WidenedWalkIsBoundedToThePrefixRegion` only covers loose objects sorting clearly after the region
+    /// (`root/z-log-...`). The boundary case is the bound itself: `leastKeyAfterPrefixRegion` returns the
+    /// least key *outside* the region, so it is exclusive and a real object named exactly like it
+    /// (`root/year>` for `key_prefix = root/year=`) must be neither emitted nor paginated towards. With an
+    /// inclusive bound that key passes the check, is buffered, and lets the root level fetch one more page
+    /// before the next key finally trips the fence.
+    auto directory_bucket = [](const std::string & prefix) { return prefix.empty() || prefix.ends_with('/'); };
+    const std::string glob = "root/year=*/month=*/data_*.parquet";
+    const std::string bound = leastKeyAfterPrefixRegion("root/year=").value();
+    ASSERT_EQ(bound, "root/year>");
+
+    const auto fill = [&](FakeS3 & s3, bool with_the_successor_key)
+    {
+        /// Sized so that the boundary key is the *last* entry of the second page of the `root/` level:
+        /// beyond the sampled first page (which must stay all-matching, or the widening is rejected up
+        /// front), and with nothing after it on its own page to trip an inclusive bound. An inclusive
+        /// bound therefore buffers it and pays a third page to find out that the region is over.
+        s3.page_size = 7;
+        s3.reject_start_after = true;
+        for (int y = 0; y < 13; ++y) /// 13 `root/year=.../` groups, so the 14th root entry is the boundary
+            for (int m = 1; m <= 3; ++m)
+                s3.add(fmt::format("root/year={:04}/month={:02}/data_000.parquet", y, m));
+        if (with_the_successor_key)
+            s3.add(bound);
+        for (int i = 0; i < 200; ++i)
+            s3.add(fmt::format("root/z-log-{:04}", i)); /// after every `root/year=...` key and after `bound`
+        s3.finalize();
+    };
+
+    const auto walk = [&](FakeS3 & s3, size_t threads)
+    {
+        const auto start_prefix = chooseDelimitedListingStartPrefix(glob, "root/year=", directory_bucket, makeWidenedLevelSample(s3));
+        EXPECT_EQ(start_prefix, "root/");
+        s3.requests.store(0);
+        auto got = drain(*std::make_unique<ObjectStorageParallelListingIterator>(
+            *start_prefix, threads, /* max_buffered_keys */ 128, makeListLevel(s3), makeProbeLevel(s3),
+            makeShouldDescendPredicate(glob),
+            /* allow_keyspace_split */ false, /* check_cancellation */ std::function<void()>{},
+            /* max_pending_range_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_PENDING_RANGE_BYTES,
+            /* max_buffered_object_bytes */ ObjectStorageParallelListingIterator::DEFAULT_MAX_BUFFERED_OBJECT_BYTES,
+            /* allow_start_after */ false,
+            bound));
+        std::sort(got.begin(), got.end());
+        return got;
+    };
+
+    for (size_t threads : {1UZ, 2UZ, 4UZ, 16UZ})
+    {
+        /// The same layout without the boundary key: the reference for both the emitted keys and the
+        /// number of requests the bounded walk is allowed to make.
+        FakeS3 without_it;
+        fill(without_it, /* with_the_successor_key */ false);
+        const auto expected = walk(without_it, threads);
+        EXPECT_EQ(expected, expectedUnder(without_it, "root/year=")) << "threads=" << threads;
+        const size_t requests_without_it = without_it.requests.load();
+
+        FakeS3 with_it;
+        fill(with_it, /* with_the_successor_key */ true);
+        const auto got = walk(with_it, threads);
+        /// Adding a key that is out of the region changes neither the result ...
+        EXPECT_EQ(got, expected) << "threads=" << threads;
+        EXPECT_EQ(std::count(got.begin(), got.end(), bound), 0) << "threads=" << threads;
+        /// ... nor the work: an inclusive bound would buffer it and pay one extra continuation request.
+        EXPECT_LE(with_it.requests.load(), requests_without_it) << "threads=" << threads;
+    }
+}
+
 TEST(ObjectStorageParallelListing, Pruning)
 {
     FakeS3 s3;

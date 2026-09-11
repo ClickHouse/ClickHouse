@@ -2046,7 +2046,9 @@ StorageObjectStorageSource::GlobIterator::GlobIterator(
             /// A walk started from a prefix wider than the glob's fixed prefix (directory buckets, see
             /// `chooseDelimitedListingStartPrefix`) is cut off at the end of the fixed prefix's key
             /// region, so loose objects of the widened level sorting after every possibly-matching key —
-            /// which the sampled first page cannot rule out — are not paged through.
+            /// which the sampled first page cannot rule out — are not paged through. The bound is the
+            /// least key already outside that region, and the iterator treats it as exclusive, so even a
+            /// loose object named exactly like it is neither emitted nor paginated towards.
             std::string root_range_end;
             if (*listing_start_prefix != key_prefix)
                 if (auto bound = leastKeyAfterPrefixRegion(key_prefix))
