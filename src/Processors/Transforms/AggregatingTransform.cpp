@@ -405,8 +405,12 @@ private:
 class ConvertingAggregatedToChunksSource final : public ISource
 {
 public:
-    ConvertingAggregatedToChunksSource(AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_)
-        : ISource(std::make_shared<const Block>(params_->getHeader()), false), params(params_), variant(variant_)
+    ConvertingAggregatedToChunksSource(
+        AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        , params(params_)
+        , variant(variant_)
+        , updater(std::move(updater_))
     {
     }
 
@@ -415,19 +419,34 @@ public:
 protected:
     Chunk generate() override
     {
+        /// The states are recorded before the conversion, which finalizes and destroys them, and the
+        /// keys after it - the order `Aggregator::mergeBucket` records in. This source converts one
+        /// thread's own table, and the tables the sources are given are disjoint, so their records sum
+        /// to the whole result without counting a group twice.
         if (variant->isTwoLevel())
         {
             if (current_bucket_num < NUM_BUCKETS)
             {
                 Arena * arena = variant->aggregates_pool;
-                auto agg_chunk = params->aggregator.convertOneBucketToChunk(*variant, arena, params->final, current_bucket_num++);
+                const Int32 bucket = current_bucket_num++;
+                if (updater)
+                    updater->recordAggregationStateSizes(*variant, bucket);
+                auto agg_chunk = params->aggregator.convertOneBucketToChunk(*variant, arena, params->final, bucket);
+                if (updater)
+                    updater->recordAggregationKeySizes(
+                        agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
                 return convertToChunk(std::move(agg_chunk));
             }
         }
         else if (!single_level_converted)
         {
+            if (updater)
+                updater->recordAggregationStateSizes(*variant, /*bucket=*/-1);
             auto agg_chunk = params->aggregator.prepareChunkAndFillSingleLevel<true /* return_single_block */>(*variant, params->final);
             single_level_converted = true;
+            if (updater)
+                updater->recordAggregationKeySizes(
+                    agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
             return convertToChunk(std::move(agg_chunk));
         }
 
@@ -441,6 +460,7 @@ private:
 
     AggregatingTransformParamsPtr params;
     AggregatedDataVariantsPtr variant;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     UInt32 current_bucket_num = 0;
     bool single_level_converted = false;
@@ -1420,15 +1440,12 @@ void AggregatingTransform::initGenerate()
         }
         else
         {
-            if (updater)
-                updater->markUnsupportedCase();
-
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), /*adaptive_session=*/nullptr);
             Pipes pipes;
             for (auto & variant : prepared_data)
             {
                 /// Converts hash tables to blocks with data (finalized or not).
-                pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant));
+                pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant, updater));
             }
 
             Pipe pipe = Pipe::unitePipes(std::move(pipes));
