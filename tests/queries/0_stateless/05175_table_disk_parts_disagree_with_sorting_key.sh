@@ -67,12 +67,14 @@ SETTINGS table_disk = true,
       path = '${disk_path}')
 "
 
+# The injected split is not applied to a parallel-replicas read, so the read has to be a plain local
+# one for the ranges to reach the splitter at all.
 split_read()
 {
     ${CLICKHOUSE_CLIENT} --query "
     SELECT count(), sum(key) FROM $1 SETTINGS
         merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 1,
-        max_threads = 8, use_query_condition_cache = 0"
+        max_threads = 8, use_query_condition_cache = 0, enable_parallel_replicas = 0"
 }
 
 # The error names the offending part, so assert that and not only the code.
