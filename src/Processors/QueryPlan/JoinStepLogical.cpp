@@ -1249,7 +1249,8 @@ static void constructPhysicalStep(
     std::pair<String, bool> residual_filter_condition,
     JoinPtr join_ptr,
     const JoinSettings & join_settings,
-    QueryPlan::Nodes & nodes)
+    QueryPlan::Nodes & nodes,
+    bool disjunctions_optimization_applied)
 {
     if (!join_ptr->isFilled())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join is not filled");
@@ -1259,7 +1260,9 @@ static void constructPhysicalStep(
     auto * join_left_node = node.children[0];
     makeExpressionNodeOnTopOf(*join_left_node, std::move(left_pre_join_actions), nodes, makeDescription("Left Join Actions"));
 
-    node.step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
+    auto filled_join_step = std::make_unique<FilledJoinStep>(join_left_node->step->getOutputHeader(), join_ptr, join_settings.max_block_size);
+    filled_join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
+    node.step = std::move(filled_join_step);
     node.step->setStepDescription("Filled JOIN");
 
     if (!right_after_join_actions.getNodes().empty())
@@ -1283,7 +1286,8 @@ static void constructPhysicalStep(
     const JoinSettings & join_settings,
     const SortingStep::Settings & sorting_settings,
     QueryPlan::Nodes & nodes,
-    LogicalJoinInfo && logical_join_info)
+    LogicalJoinInfo && logical_join_info,
+    bool disjunctions_optimization_applied)
 {
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected 2 children, got {}", node.children.size());
@@ -1315,6 +1319,7 @@ static void constructPhysicalStep(
         false /*optimize_read_in_order*/,
         true /*use_new_analyzer*/);
     join_step->setLogicalJoinInfo(std::move(logical_join_info));
+    join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
     join_step->setStepDescription(fmt::format("JOIN {}", join_ptr->pipelineType()), optimization_settings.max_step_description_length);
     join_step->setOptimized();
     node.step = std::move(join_step);
@@ -1413,7 +1418,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
     const ActionsDAG::NodeRawConstPtrs & actions_after_join,
     const QueryPlanOptimizationSettings & optimization_settings,
     QueryPlan::Nodes & nodes,
-    LogicalJoinInfo && logical_join_info)
+    LogicalJoinInfo && logical_join_info,
+    bool disjunctions_optimization_applied)
 {
     auto * logical_lookup = typeid_cast<JoinStepLogicalLookup *>(children.back()->step.get());
 
@@ -1846,7 +1852,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
     {
         constructPhysicalStep(
             node, std::move(left_dag), std::move(right_dag), std::move(residual_dag), std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
-            std::move(join_algorithm_ptr), optimization_settings, join_settings, sorting_settings, nodes, std::move(logical_join_info));
+            std::move(join_algorithm_ptr), optimization_settings, join_settings, sorting_settings, nodes, std::move(logical_join_info),
+            disjunctions_optimization_applied);
     }
     else
     {
@@ -1867,7 +1874,8 @@ static QueryPlanNode buildPhysicalJoinImpl(
             std::make_pair(residual_filter_condition_name, can_remove_residual_filter),
             std::move(join_algorithm_ptr),
             join_settings,
-            nodes
+            nodes,
+            disjunctions_optimization_applied
         );
     }
     return node;
@@ -1940,7 +1948,13 @@ void JoinStepLogical::buildPhysicalJoin(
         join_step->actions_after_join,
         optimization_settings,
         nodes,
-        std::move(logical_join_info)
+        std::move(logical_join_info),
+        /// The physical step inherits the guard. `tryPushDownFilter` runs a second time over the tree
+        /// once join runtime filters have been added, and by then this join is physical, so it is the
+        /// physical step the guard is read off. That read is inert today - `JoinStep` is built without
+        /// `use_join_disjunctions_push_down`, so the push-down cannot run on it either way - but the
+        /// field is what decides it if that ever changes, and a default `false` would decide it wrong.
+        join_step->isDisjunctionsOptimizationApplied()
     );
 
     new_node.cost_estimation = node.cost_estimation;
@@ -2225,9 +2239,15 @@ static void serializeNodeList(
     }
 }
 
+/// Bits of the flags byte written by `JoinStepLogical::serialize`. A reader that does not know a bit
+/// ignores it, so adding one keeps both directions of the wire compatible.
+static constexpr UInt8 JOIN_LOGICAL_FLAG_DISJUNCTIONS_OPTIMIZATION_APPLIED = 1 << 0;
+
 void JoinStepLogical::serialize(Serialization & ctx) const
 {
     UInt8 flags = 0;
+    if (disjunctions_optimization_applied)
+        flags |= JOIN_LOGICAL_FLAG_DISJUNCTIONS_OPTIMIZATION_APPLIED;
     writeIntBinary(flags, ctx.out);
 
     writeVarUInt(1, ctx.out);
@@ -2288,7 +2308,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     SortingStep::Settings sort_settings(ctx.settings);
     JoinSettings join_settings(ctx.settings);
 
-    return std::make_unique<JoinStepLogical>(
+    auto step = std::make_unique<JoinStepLogical>(
         std::move(left_header),
         std::move(right_header),
         std::move(join_operator),
@@ -2296,6 +2316,12 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
         std::move(actions_after_join),
         std::move(join_settings),
         std::move(sort_settings));
+
+    /// The remote side optimizes the plan it receives, so the guard has to survive the wire: without it
+    /// the disjunction push-down runs a second time there and duplicates a predicate the read already
+    /// applies through PREWHERE.
+    step->setDisjunctionsOptimizationApplied(flags & JOIN_LOGICAL_FLAG_DISJUNCTIONS_OPTIMIZATION_APPLIED);
+    return step;
 }
 
 QueryPlanStepPtr JoinStepLogical::clone() const
