@@ -191,9 +191,21 @@ public:
 
         do
         {
-            void * head_pos = head.pos;
             size_t space = head.end - head.pos;
 
+#if defined(__FILC__)
+            /// FilC's out-of-line `std::align` loses pointer metadata while rounding the address.
+            /// Derive only the byte offset from the integer address and apply it to the original pointer.
+            const size_t padding = (alignment - (reinterpret_cast<uintptr_t>(head.pos) % alignment)) % alignment;
+            if (padding <= space && size <= space - padding)
+            {
+                auto * res = head.pos + padding;
+                head.pos = res + size;
+                ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
+                return res;
+            }
+#else
+            void * head_pos = head.pos;
             auto * res = static_cast<char *>(std::align(alignment, size, head_pos, space));
             if (res)
             {
@@ -202,6 +214,7 @@ public:
                 ASAN_UNPOISON_MEMORY_REGION(res, size + pad_right);
                 return res;
             }
+#endif
 
             addMemoryChunk(size, alignment);
         } while (true);
