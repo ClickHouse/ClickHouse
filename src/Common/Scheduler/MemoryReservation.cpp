@@ -75,15 +75,20 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
             // `insertAllocation` above linked this object into the scheduler. Throwing straight
             // from the constructor would skip `~MemoryReservation`, so `removeAllocation` would
             // never run and the scheduler would keep a dangling pointer to a destroyed object
-            // (the base `~ResourceAllocation` only has debug-only checks). Unlink first (this also
-            // cancels a still-pending allocation on admission timeout), then report the failure.
+            // (the base `~ResourceAllocation` only has debug-only checks). Unlink first, then report
+            // the failure.
             detachFromQueue();
             std::unique_lock lock(mutex);
-            throwIfNeeded();
+            // A timeout takes precedence over the generic failure. Cancelling a still-pending
+            // reservation in `detachFromQueue` routes through `AllocationQueue::processActivation`,
+            // which fails it with a generic cancellation error; so when we stopped waiting because the
+            // deadline passed, report that as the admission timeout instead of letting `throwIfNeeded`
+            // surface the cancellation as `MEMORY_RESERVATION_FAILED`.
             if (timed_out)
                 throw Exception(ErrorCodes::MEMORY_RESERVATION_ACQUISITION_TIMEOUT,
                     "Timed out acquiring a memory reservation for workload scheduling: waited longer than "
                     "workload_admission_timeout_ms = {} ms", admission_timeout_ms_);
+            throwIfNeeded();
         }
     }
 }

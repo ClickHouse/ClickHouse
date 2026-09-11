@@ -7617,7 +7617,7 @@ Possible values:
 
 - Positive integer — timeout in milliseconds.
 - 0 — Infinite timeout: the query waits indefinitely for admission (default). It can still be rejected
-  immediately when the workload's `max_waiting_queries` limit is reached, and interrupted by `KILL QUERY`.
+  immediately when the workload's `max_waiting_queries` limit is reached.
 )", 0) \
     DECLARE(Milliseconds, storage_system_stack_trace_pipe_read_timeout_ms, 100, R"(
 Maximum time to read from a pipe for receiving information from the threads when querying the `system.stack_trace` table. This setting is used for testing purposes and not meant to be changed by users.

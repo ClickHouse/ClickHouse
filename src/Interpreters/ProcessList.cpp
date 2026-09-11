@@ -147,8 +147,11 @@ ProcessList::EntryPtr ProcessList::insert(
         // pre-execution admission wait is bounded by one `workload_admission_timeout_ms` budget (the two
         // resources are acquired sequentially below). 0 means no timeout.
         const UInt64 admission_timeout_ms = static_cast<UInt64>(settings[Setting::workload_admission_timeout_ms].totalMilliseconds());
+        // `saturatedMilliseconds` clamps the timeout so adding it to `steady_clock::now()` cannot
+        // overflow the nanosecond time_point (the `Milliseconds` setting accepts values far larger
+        // than the nanosecond range).
         const auto admission_deadline = admission_timeout_ms
-            ? std::chrono::steady_clock::now() + std::chrono::milliseconds(admission_timeout_ms)
+            ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
             : std::chrono::steady_clock::time_point{};
 
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
