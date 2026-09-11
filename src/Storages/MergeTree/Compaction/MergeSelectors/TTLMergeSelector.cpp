@@ -3,9 +3,19 @@
 namespace DB
 {
 
-static bool canIncludeToRange(size_t part_size, size_t part_rows, time_t part_ttl, time_t current_time, size_t usable_memory, size_t usable_rows)
+/// Shared by center selection and range expansion. Both have to apply it: gating only the
+/// center would still let a merge started on an old-enough part pull in a neighbour whose
+/// rows expired a moment ago and delete those too, which is not what the setting promises.
+static bool isOldEnoughForTTLMerge(time_t part_ttl, time_t current_time, time_t min_ttl_age)
 {
-    return (0 < part_ttl && part_ttl <= current_time) && usable_memory >= part_size && usable_rows >= part_rows;
+    return !min_ttl_age || current_time - part_ttl >= min_ttl_age;
+}
+
+static bool canIncludeToRange(size_t part_size, size_t part_rows, time_t part_ttl, time_t current_time, time_t min_ttl_age, size_t usable_memory, size_t usable_rows)
+{
+    return (0 < part_ttl && part_ttl <= current_time)
+        && isOldEnoughForTTLMerge(part_ttl, current_time, min_ttl_age)
+        && usable_memory >= part_size && usable_rows >= part_rows;
 }
 
 class ITTLMergeSelector::MergeRangesConstructor
@@ -115,6 +125,13 @@ std::vector<ITTLMergeSelector::CenterPosition> ITTLMergeSelector::findCenters(co
             if (!ttl || ttl > current_time)
                 continue;
 
+            /// Postpone the part until its rows have been expired long enough. This
+            /// reproduces the merge_with_ttl_timeout cadence without any in-memory
+            /// state: after a TTL merge the resulting part only holds rows with a
+            /// later TTL, so its ttl moves forward by at least the same interval.
+            if (!isOldEnoughForTTLMerge(ttl, current_time, min_ttl_age))
+                continue;
+
             centers.emplace_back(range, part, ttl);
         }
     }
@@ -144,7 +161,7 @@ PartsIterator ITTLMergeSelector::findLeftRangeBorder(
             break;
 
         auto ttl = getTTLForPart(*next_to_check);
-        if (!canIncludeToRange(next_to_check->size, next_to_check->rows, ttl, current_time, usable_memory, usable_rows))
+        if (!canIncludeToRange(next_to_check->size, next_to_check->rows, ttl, current_time, min_ttl_age, usable_memory, usable_rows))
             break;
 
         usable_memory -= next_to_check->size;
@@ -177,7 +194,7 @@ PartsIterator ITTLMergeSelector::findRightRangeBorder(
             break;
 
         auto ttl = getTTLForPart(*right);
-        if (!canIncludeToRange(right->size, right->rows, ttl, current_time, usable_memory, usable_rows))
+        if (!canIncludeToRange(right->size, right->rows, ttl, current_time, min_ttl_age, usable_memory, usable_rows))
             break;
 
         usable_memory -= right->size;
@@ -192,10 +209,12 @@ PartsIterator ITTLMergeSelector::findRightRangeBorder(
 ITTLMergeSelector::ITTLMergeSelector(
     const PartitionIdToTTLs * merge_due_times_,
     time_t current_time_,
-    size_t max_parts_to_merge_at_once_)
+    size_t max_parts_to_merge_at_once_,
+    time_t min_ttl_age_)
     : current_time(current_time_)
     , merge_due_times(merge_due_times_)
     , max_parts_to_merge_at_once(max_parts_to_merge_at_once_)
+    , min_ttl_age(min_ttl_age_)
 {
 }
 
@@ -236,8 +255,8 @@ bool TTLPartDropMergeSelector::canConsiderPart(const PartProperties & part) cons
     return part.general_ttl_info->has_any_non_finished_ttls;
 }
 
-TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_)
-    : ITTLMergeSelector(&merge_due_times_, current_time_)
+TTLRowDeleteMergeSelector::TTLRowDeleteMergeSelector(const PartitionIdToTTLs & merge_due_times_, time_t current_time_, time_t min_ttl_age_)
+    : ITTLMergeSelector(&merge_due_times_, current_time_, /*max_parts_to_merge_at_once_=*/0, min_ttl_age_)
 {
 }
 
