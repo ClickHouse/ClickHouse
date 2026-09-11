@@ -63,5 +63,11 @@ ${CLICKHOUSE_CLIENT} --query "
     FROM system.query_log
     WHERE type = 'ExceptionBeforeStart'
         AND initial_query_id = '${QUERY_ID}'
+        AND initial_query_id IN
+        (
+            SELECT query_id
+            FROM system.query_log
+            WHERE current_database = currentDatabase() AND query_id = '${QUERY_ID}'
+        )
         AND position(exception, 'TOO_DEEP_RECURSION') > 0
 "
