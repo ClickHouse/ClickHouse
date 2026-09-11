@@ -1358,6 +1358,7 @@ public:
     /// Reserves space for the part based on the distribution of "big parts" in the same partition.
     /// Parts with estimated size larger than `min_bytes_to_rebalance_partition_over_jbod` are
     /// considered as big. The priority is lower than TTL. If reservation fails, return nullptr.
+    /// `time_of_move` is the moment the move TTL rules are evaluated at; 0 means the local clock.
     ReservationPtr balancedReservation(
         const StorageMetadataPtr & metadata_snapshot,
         size_t part_size,
@@ -1367,7 +1368,8 @@ public:
         MergeTreeData::DataPartsVector covered_parts,
         std::optional<CurrentlySubmergingEmergingTagger> * tagger_ptr,
         const IMergeTreeDataPart::TTLInfos * ttl_infos,
-        bool is_insert = false);
+        bool is_insert = false,
+        time_t time_of_move = 0);
 
     /// Choose disk with max available free space
     /// Reserves 0 bytes

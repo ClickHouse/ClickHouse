@@ -247,8 +247,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
     }
 
     /// Start to make the main work
-    /// Size the reservation for the moment the merge itself evaluates TTL at (entry.create_time, passed to
-    /// mergePartsToTemporaryPart below), not for the local clock, which may lag behind the assigning replica's.
+    /// Size and place the reservation for the moment the merge itself evaluates TTL at (entry.create_time, passed
+    /// to mergePartsToTemporaryPart below), not for the local clock, which may lag behind the assigning replica's.
     size_t estimated_space_for_merge = CompactionStatistics::estimateNeededDiskSpace(parts, true, entry.create_time);
 
     /// Can throw an exception while reserving space.
@@ -283,11 +283,13 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         future_merged_part->part_info,
         future_merged_part->parts,
         &tagger,
-        &ttl_infos);
+        &ttl_infos,
+        /*is_insert=*/false,
+        entry.create_time);
 
     if (!reserved_space)
         reserved_space = storage.reserveSpacePreferringTTLRules(
-            metadata_snapshot, estimated_space_for_merge, ttl_infos, time(nullptr), max_volume_index);
+            metadata_snapshot, estimated_space_for_merge, ttl_infos, entry.create_time, max_volume_index);
 
     future_merged_part->uuid = entry.new_part_uuid;
     future_merged_part->updatePath(storage, reserved_space.get());
