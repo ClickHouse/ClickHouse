@@ -22,7 +22,7 @@ namespace DB
 
 /// Each engine namespace declares its own identical `ValueMaskingFunc` alias, hence the spelled-out
 /// type. Unrelated to `CoreSettings::ValueMaskingFunc`, which rewrites a value string in place.
-using EngineSettingsToHide = std::unordered_map<String, std::function<std::string(const Field &)>>;
+using EngineSettingsToHide = std::unordered_map<String, std::function<std::optional<std::string>(const Field &)>>;
 
 /// The table and database engine settings whose value is a secret, and how each one is masked.
 ///
