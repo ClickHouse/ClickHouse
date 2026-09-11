@@ -12,6 +12,7 @@
 #include <Poco/Net/StreamSocket.h>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Block.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Port.h>
@@ -30,6 +31,11 @@ namespace ErrorCodes
     extern const int EXCHANGE_PEER_DISCONNECTED;
     extern const int RECEIVED_ERROR_FROM_REMOTE_IO_SERVER;
 }
+}
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeEarlyCloses;
 }
 
 using namespace DB;
@@ -226,6 +232,7 @@ TEST(StreamingExchangeSourceFailureReport, NoMoreDataNeededToGonePeerIsNotAFailu
     Peer peer(handshakeThenReset);
     auto cancellation = std::make_shared<DistributedQueryCancellation>();
     auto source = makeSource(peer, cancellation);
+    const auto early_closes_before = ProfileEvents::global_counters[ProfileEvents::StreamingExchangeEarlyCloses];
 
     /// Connects and completes the handshake.
     ASSERT_NO_THROW(source->work());
@@ -242,6 +249,8 @@ TEST(StreamingExchangeSourceFailureReport, NoMoreDataNeededToGonePeerIsNotAFailu
     EXPECT_NO_THROW(source->work());
     EXPECT_EQ(source->prepare(), IProcessor::Status::Finished);
     EXPECT_FALSE(cancellation->isCancelled());
+    /// The peer never got the packet, so this is not an early close.
+    EXPECT_EQ(ProfileEvents::global_counters[ProfileEvents::StreamingExchangeEarlyCloses], early_closes_before);
 }
 
 #endif

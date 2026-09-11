@@ -209,7 +209,6 @@ void StreamingExchangeSource::onUpdatePorts()
 
 void StreamingExchangeSource::sendNoMoreDataNeeded()
 {
-    ProfileEvents::increment(ProfileEvents::StreamingExchangeEarlyCloses);
     /// Sent blocking, under the handshake's send timeout: the source sends nothing else, so the send
     /// buffer is empty and the packet never waits.
     socket->setBlocking(true);
@@ -217,6 +216,8 @@ void StreamingExchangeSource::sendNoMoreDataNeeded()
     const UInt64 packet = StreamingExchangeProtocol::PacketType::NoMoreDataNeeded;
     StreamingExchangeProtocol::sendAll(
         *socket, reinterpret_cast<const char *>(&packet), sizeof(packet), "NoMoreDataNeeded for " + stream_name);
+    /// Counted only when the sender got the packet: a sender that is already gone was not stopped early.
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeEarlyCloses);
 }
 
 void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, size_t & position)
