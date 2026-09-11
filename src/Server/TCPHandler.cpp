@@ -1638,8 +1638,10 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
                     else
                         sendLogs(state);
 
-                    // Block might be empty in case of timeout, i.e. there is no data to process
-                    if (!block.empty() && !state.io.null_format && !discard_query_data)
+                    // Block might be empty in case of timeout, i.e. there is no data to process.
+                    // A block with no columns is not empty when it carries rows that hold no values.
+                    const bool block_has_data = !block.empty() || block.info.num_rows_without_columns > 0;
+                    if (block_has_data && !state.io.null_format && !discard_query_data)
                         sendData(state, block);
 
                     out->sync();
