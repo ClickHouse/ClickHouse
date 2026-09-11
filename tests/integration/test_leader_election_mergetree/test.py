@@ -4543,6 +4543,159 @@ def test_moved_parts_followed_on_takeover(started_cluster):
                 pass
 
 
+SHARED_UUID_VANISHED_PATCH_PARTS = "12345678-abcd-abcd-abcd-12345678ab54"
+
+VANISHED_PATCH_COLUMNS = "(x UInt64, y UInt64) ENGINE = MergeTree PARTITION BY x % 2 ORDER BY x"
+
+# Lightweight updates require the two materialized helper columns. The leader must really delete
+# the patch directory from the shared storage during the test - that is the situation under test -
+# so it cleans outdated parts up as soon as they appear.
+VANISHED_PATCH_SETTINGS = (
+    f"{TABLE_SETTINGS},"
+    " enable_block_number_column = 1,"
+    " enable_block_offset_column = 1,"
+    " old_parts_lifetime = 0,"
+    " merge_tree_clear_old_parts_interval_seconds = 1,"
+    " cleanup_delay_period = 1, cleanup_delay_period_random_add = 0"
+)
+
+
+def _active_patch_parts(node, table):
+    """The patch parts the node currently holds active, by name."""
+    return sorted(
+        node.query(
+            f"SELECT name FROM system.parts WHERE database = currentDatabase()"
+            f" AND table = '{table}' AND active AND startsWith(partition_id, 'patch-')"
+        ).split()
+    )
+
+
+def test_vanished_patch_parts_retired_on_refresh_and_takeover(started_cluster):
+    """
+    The refresh reconciliation used to look at `DataPartKind::Regular` parts only, so a patch part
+    was reported as newly appeared but never as vanished. Patch parts are the one kind the leader
+    removes from the shared storage entirely on its own schedule - `clearUnusedPatchParts` drops a
+    patch once every active part of its partition has been raised past it, publishing no covering
+    part - so the storage listing is the only record of that removal, and a follower kept the patch
+    active in memory forever. That keeps `hasPatchParts`, `getPatchPartsVectorForInternalUsage` and
+    `total_uncompressed_bytes_in_patches` non-empty after a failover: the projection, statistics and
+    top-k fast paths stay disabled, and a later lightweight `UPDATE` can be rejected with
+    `TOO_LARGE_LIGHTWEIGHT_UPDATES` on the strength of bytes that are no longer there.
+
+    Both reconciliation paths are asserted in one scenario, because they must agree: the periodic
+    follower refresh first, then the takeover scan, which is the dangerous one (the replica holding
+    the stale patch becomes the writer). The closing `DETACH` / `ATTACH` - a full reload from the
+    shared storage - is what shows the reconciliation converged to the storage rather than to a
+    lucky in-memory state.
+
+    Merges are stopped on the leader until the follower has provably loaded the patch: a background
+    merge would materialize it, and the scenario needs the follower to hold a patch that the leader
+    then deletes.
+    """
+    ensure_node_up(node1)
+    ensure_node_up(node2)
+    table = "test_vanished_patch_parts"
+
+    try:
+        node1.query(
+            f"""
+            CREATE TABLE {table} UUID '{SHARED_UUID_VANISHED_PATCH_PARTS}' {VANISHED_PATCH_COLUMNS}
+            SETTINGS {VANISHED_PATCH_SETTINGS}
+            """
+        )
+        wait_for_leader([node1], table_name=table)
+        # Stopped before the first insert, so no background merge can materialize the patch early.
+        node1.query(f"SYSTEM STOP MERGES {table}")
+        # Two parts in partition 1, so that the `OPTIMIZE` below has a real merge to perform.
+        node1.query(f"INSERT INTO {table} VALUES (1, 1)")
+        node1.query(f"INSERT INTO {table} VALUES (3, 3)")
+        node1.query(f"INSERT INTO {table} VALUES (2, 2), (4, 4)")
+
+        node1.query(
+            f"UPDATE {table} SET y = y + 100 WHERE x = 1",
+            settings={"enable_lightweight_update": 1},
+        )
+        patch_parts = _active_patch_parts(node1, table)
+        assert len(patch_parts) == 1, (
+            f"Precondition: the lightweight update must leave exactly one patch part, got {patch_parts}"
+        )
+
+        node2.query(
+            f"""
+            ATTACH TABLE {table} UUID '{SHARED_UUID_VANISHED_PATCH_PARTS}' {VANISHED_PATCH_COLUMNS}
+            SETTINGS {VANISHED_PATCH_SETTINGS}
+            """
+        )
+        leader, followers = wait_for_leader([node1, node2], table_name=table)
+        assert leader == node1, "node1 must stay the leader for this scenario"
+        follower = followers[0]
+
+        # The follower needs one periodic refresh to pick up the parts: its snapshot of the
+        # `plain_rewritable` path map predates the table.
+        assert _wait_until(
+            lambda: _active_patch_parts(follower, table) == patch_parts
+        ), (
+            "Precondition: the follower must load the patch part written by the leader, it has "
+            f"{_active_patch_parts(follower, table)}"
+        )
+        assert follower.query(f"SELECT y FROM {table} WHERE x = 1").strip() == "101", (
+            "The follower does not apply the patch part it loaded"
+        )
+
+        # Materialize the patch on the leader, which makes it unused, and let the leader clean it
+        # up: dropped from the active set, then deleted from the shared storage.
+        node1.query(f"SYSTEM START MERGES {table}")
+        node1.query(f"OPTIMIZE TABLE {table} PARTITION 1 FINAL")
+        assert _wait_until(lambda: _active_patch_parts(node1, table) == []), (
+            "Precondition: the leader did not remove the now-unused patch part, so the scenario "
+            f"under test was not reached (it still has {_active_patch_parts(node1, table)})"
+        )
+
+        # The whole point: the follower must forget the patch whose directory is gone. Before the
+        # fix it kept it active indefinitely, with its bytes still counted.
+        assert _wait_until(lambda: _active_patch_parts(follower, table) == []), (
+            "The follower did not retire the patch part the leader deleted from the shared "
+            f"storage, it still reports {_active_patch_parts(follower, table)}"
+        )
+        assert follower.query(f"SELECT y FROM {table} WHERE x = 1").strip() == "101", (
+            "The follower lost the update after the patch part was retired"
+        )
+
+        # And the takeover scan must agree, on the replica that held the stale patch.
+        node1.stop_clickhouse(kill=True)
+        wait_for_leader([follower], table_name=table)
+        assert _active_patch_parts(follower, table) == [], (
+            "The takeover scan re-introduced the deleted patch part: "
+            f"{_active_patch_parts(follower, table)}"
+        )
+        assert follower.query(f"SELECT y FROM {table} WHERE x = 1").strip() == "101", (
+            "The new leader lost the update the previous leader had materialized"
+        )
+
+        # A full reload from the shared storage must agree with the reconciled in-memory state - in
+        # particular, nothing deleted the merged part that carries the materialized update.
+        follower.query(f"DETACH TABLE {table}")
+        follower.query(f"ATTACH TABLE {table}")
+        assert _active_patch_parts(follower, table) == []
+        assert follower.query(f"SELECT y FROM {table} ORDER BY x").split() == [
+            "101", "2", "3", "4",
+        ], "The reload from the shared storage disagrees with the reconciled state"
+    finally:
+        for node in (node1, node2):
+            try:
+                ensure_node_up(node)
+            except Exception:
+                pass
+            try:
+                node.query(f"SYSTEM START MERGES {table}")
+            except Exception:
+                pass
+            try:
+                node.query(f"DROP TABLE IF EXISTS {table} SYNC")
+            except Exception:
+                pass
+
+
 SHARED_UUID_RESTORE_BROKEN_SRC = "12345678-abcd-abcd-abcd-12345678ab44"
 SHARED_UUID_RESTORE_BROKEN_DST = "12345678-abcd-abcd-abcd-12345678ab45"
 

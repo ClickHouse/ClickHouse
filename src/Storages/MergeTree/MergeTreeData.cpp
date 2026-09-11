@@ -3395,6 +3395,10 @@ size_t MergeTreeData::retirePartsRelocatedToAnotherDisk(
     /// (`strict_takeover`) removes a duplicate from the shared storage, which here would delete
     /// the only remaining copy of the part.
     ///
+    /// As in `retirePartsVanishedFromStorage`, both part kinds are reconciled: a patch part is an
+    /// ordinary part directory on a disk of the policy and is moved by the same `TTL` and
+    /// `MOVE PARTITION` machinery.
+    ///
     /// This leaves a window in which the part is in neither place, so a concurrent read on this
     /// replica misses it. The window is bounded by the load of a single part, and it is strictly
     /// better than the alternative: by the time the move becomes visible here the copy this
@@ -3408,7 +3412,7 @@ size_t MergeTreeData::retirePartsRelocatedToAnotherDisk(
     {
         auto parts_lock = lockParts();
 
-        for (const auto & part : getDataPartsStateRange(DataPartState::Active, DataPartKind::Regular))
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
         {
             const auto disk_name = part->getDataPartStorage().getDiskName();
             const auto part_directory = part->getDataPartStorage().getPartDirectory();
@@ -3465,6 +3469,19 @@ size_t MergeTreeData::retirePartsVanishedFromStorage(
     /// it on: the same directory name appearing on another disk of the policy means the leader
     /// moved the part, which `retirePartsRelocatedToAnotherDisk` has already handled earlier in
     /// the scan.
+    ///
+    /// Both part kinds are reconciled, not just `DataPartKind::Regular`. A patch part lives in the
+    /// table's data directory under a regular part name (its partition id carries the `patch-`
+    /// prefix), so the scan above lists it and the add path already loads it like any other part —
+    /// and the leader deletes patch parts from the shared storage on its own schedule, through
+    /// `clearUnusedPatchParts`, without publishing any covering part. Skipping `Patch` here would
+    /// therefore keep a patch whose directory is already gone active in memory forever, leaving
+    /// `hasPatchParts`, `getPatchPartsVectorForInternalUsage` and `total_uncompressed_bytes_in_patches`
+    /// non-empty after a failover: that needlessly disables the projection, statistics and top-k
+    /// fast paths, and can reject a later lightweight `UPDATE` with `TOO_LARGE_LIGHTWEIGHT_UPDATES`
+    /// on the strength of bytes that no longer exist. `forgetRetiredParts` already inverts the
+    /// patch-byte accounting (`removePartContributionToUncompressedBytesInPatches`), exactly as the
+    /// commit path adds it, so the two converge together.
     if (!mayRetirePartsFromMemory(strict_takeover))
         return 0;
 
@@ -3473,7 +3490,7 @@ size_t MergeTreeData::retirePartsVanishedFromStorage(
     {
         auto parts_lock = lockParts();
 
-        for (const auto & part : getDataPartsStateRange(DataPartState::Active, DataPartKind::Regular))
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
         {
             /// A broken disk is not scanned at all, so its parts are unknown, not vanished.
             auto directories_on_disk = part_directories_by_disk.find(part->getDataPartStorage().getDiskName());

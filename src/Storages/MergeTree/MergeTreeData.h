@@ -881,8 +881,11 @@ public:
     /// Retire (forget) active parts that are no longer present on the shared storage, according to
     /// the listing collected by `loadNewlyAppearedParts`. Only for `leader_election`, and only on a
     /// replica that is not currently writing (a follower refresh, or a takeover scan that runs
-    /// before writes are enabled). Returns the number of retired parts. See the implementation for
-    /// why this is what makes coverage-based retirements converge across replicas.
+    /// before writes are enabled). Covers both `Regular` and `Patch` parts: the leader removes
+    /// unused patch parts (`clearUnusedPatchParts`) without publishing a covering part, so the
+    /// storage listing is the only record of that removal. Returns the number of retired parts.
+    /// See the implementation for why this is what makes coverage-based retirements converge
+    /// across replicas.
     size_t retirePartsVanishedFromStorage(
         const PartDirectoriesByDisk & part_directories_by_disk, bool strict_takeover);
 
