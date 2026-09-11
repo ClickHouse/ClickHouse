@@ -91,6 +91,7 @@ namespace
     ObjectStorageQueueOrderedFileMetadata::Bucket getBucketForPathImpl(
         const std::string & path,
         size_t buckets_num,
+        size_t buckets_per_partition,
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser)
@@ -98,11 +99,24 @@ namespace
         if (!buckets_num)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Buckets number cannot be zero");
 
-        /// Use partition key for bucketing when bucketing_mode is PARTITION
-        /// This ensures files from the same partition always go to the same bucket
+        /// In PARTITION bucketing the bucket is derived from the partition key, so a partition's
+        /// files are tracked together. With `buckets_per_partition == 1` all of a partition's files
+        /// go to a single bucket; with `buckets_per_partition == K` they are spread across K buckets
+        /// (a per-file offset derived from the path is added to the partition's base bucket) to
+        /// raise parallelism.
+        ///
+        /// This is safe for any K: the file -> bucket mapping is deterministic (a given file always
+        /// resolves to the same bucket, because `buckets` and `buckets_per_partition` are fixed at
+        /// table creation), and the processed watermark is tracked per (bucket, partition_key). A
+        /// file is only ever compared against the watermark of the single bucket it maps to, so
+        /// spreading a partition across several buckets cannot cause a file to be skipped.
         if (bucketing_mode == ObjectStorageQueueBucketingMode::PARTITION)
         {
             auto partition_key = getPartitionKey(path, partitioning_mode, parser);
+
+            if (buckets_per_partition > 1)
+                return (sipHash64(partition_key) + sipHash64(path) % buckets_per_partition) % buckets_num;
+
             return sipHash64(partition_key) % buckets_num;
         }
 
@@ -117,12 +131,13 @@ namespace
         const std::filesystem::path & zk_path,
         const std::string & path,
         size_t buckets_num,
+        size_t buckets_per_partition,
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser)
     {
         if (useBucketsForProcessing(buckets_num))
-            return getProcessedPathWithBucket(zk_path, getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser));
+            return getProcessedPathWithBucket(zk_path, getBucketForPathImpl(path, buckets_num, buckets_per_partition, bucketing_mode, partitioning_mode, parser));
         return getProcessedPathWithoutBucket(zk_path);
     }
 
@@ -133,11 +148,12 @@ namespace
         const std::filesystem::path & zk_path,
         const std::string & path,
         size_t buckets_num,
+        size_t buckets_per_partition,
         ObjectStorageQueueBucketingMode bucketing_mode,
         ObjectStorageQueuePartitioningMode partitioning_mode,
         const ObjectStorageQueueFilenameParser * parser)
     {
-        auto bucket_path = getProcessedBucketPath(zk_path, path, buckets_num, bucketing_mode, partitioning_mode, parser);
+        auto bucket_path = getProcessedBucketPath(zk_path, path, buckets_num, buckets_per_partition, bucketing_mode, partitioning_mode, parser);
         if (hasPartitioningMode(partitioning_mode))
             return std::filesystem::path(std::move(bucket_path)) / getPartitionKey(path, partitioning_mode, parser);
         return bucket_path;
@@ -410,6 +426,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     FileStatusPtr file_status_,
     BucketInfoPtr bucket_info_,
     size_t buckets_num_,
+    size_t buckets_per_partition_,
     size_t max_loading_retries_,
     std::atomic<size_t> & metadata_ref_count_,
     bool use_persistent_processing_nodes_,
@@ -422,7 +439,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
         path_,
         zookeeper_name_,
         /* processing_node_path */zk_path_ / "processing" / getNodeName(path_),
-        /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_),
+        /* processed_node_path */getProcessedPath(zk_path_, path_, buckets_num_, buckets_per_partition_, bucketing_mode_, partitioning_mode_, parser_),
         /* failed_node_path */zk_path_ / "failed" / getNodeName(path_),
         file_status_,
         max_loading_retries_,
@@ -434,7 +451,7 @@ ObjectStorageQueueOrderedFileMetadata::ObjectStorageQueueOrderedFileMetadata(
     , bucket_info(bucket_info_)
     , partitioning_mode(partitioning_mode_)
     , parser(parser_)
-    , processed_bucket_path(getProcessedBucketPath(zk_path_, path_, buckets_num_, bucketing_mode_, partitioning_mode_, parser_))
+    , processed_bucket_path(getProcessedBucketPath(zk_path_, path_, buckets_num_, buckets_per_partition_, bucketing_mode_, partitioning_mode_, parser_))
 {
     chassert(hasPartitioningMode(partitioning_mode) || processed_bucket_path == processed_node_path);
 
@@ -652,11 +669,12 @@ ObjectStorageQueueOrderedFileMetadata::Bucket
 ObjectStorageQueueOrderedFileMetadata::getBucketForPath(
     const std::string & path_,
     size_t buckets_num,
+    size_t buckets_per_partition,
     ObjectStorageQueueBucketingMode bucketing_mode,
     ObjectStorageQueuePartitioningMode partitioning_mode,
     const ObjectStorageQueueFilenameParser * parser)
 {
-    return getBucketForPathImpl(path_, buckets_num, bucketing_mode, partitioning_mode, parser);
+    return getBucketForPathImpl(path_, buckets_num, buckets_per_partition, bucketing_mode, partitioning_mode, parser);
 }
 
 ObjectStorageQueueOrderedFileMetadata::BucketHolderPtr ObjectStorageQueueOrderedFileMetadata::tryAcquireBucket(
@@ -1089,6 +1107,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     std::vector<std::string> & paths,
     const std::filesystem::path & zk_path_,
     size_t buckets_num,
+    size_t buckets_per_partition,
     const std::string & zookeeper_name_,
     ObjectStorageQueueBucketingMode bucketing_mode,
     ObjectStorageQueuePartitioningMode partitioning_mode,
@@ -1134,7 +1153,7 @@ void ObjectStorageQueueOrderedFileMetadata::filterOutProcessedAndFailed(
     {
         const auto & path = paths[i];
         const auto bucket = use_buckets_for_processing
-            ? getBucketForPathImpl(path, buckets_num, bucketing_mode, partitioning_mode, parser)
+            ? getBucketForPathImpl(path, buckets_num, buckets_per_partition, bucketing_mode, partitioning_mode, parser)
             : 0;
         if (!last_processed_file_map.empty())
         {
