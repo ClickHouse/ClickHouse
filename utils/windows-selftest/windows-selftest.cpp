@@ -6,6 +6,7 @@
 /// A check that regresses has to *fail*, not hang, so the socket checks bound their own waiting
 /// with a socket timeout - see `dontWaitOnIdleSocketReportsWouldBlock`.
 
+#include <Poco/Net/DatagramSocket.h>
 #include <Poco/Net/Net.h>
 #include <Poco/Net/ServerSocket.h>
 #include <Poco/Net/SocketAddress.h>
@@ -122,6 +123,79 @@ void dontWaitOnWritableSocketSends()
     }
 }
 
+/// `sendTo` and `receiveFrom` carry the same `MSG_DONTWAIT` contract as `sendBytes` and
+/// `receiveBytes`, and they need their own checks: they take the flag through a different code
+/// path, which used to poll unconditionally and to route the emulated would-block through the
+/// blocking error handling.
+///
+/// A bound datagram socket that nobody has written to is the idle case here. Under the defect
+/// the pre-poll ran first and waited for the whole receive timeout, then raised
+/// `TimeoutException` - so this check fails, bounded by that timeout, instead of hanging.
+void dontWaitOnIdleDatagramSocketReportsWouldBlock()
+{
+    Poco::Net::DatagramSocket socket(Poco::Net::SocketAddress("127.0.0.1", 0));
+    socket.setBlocking(true);
+    socket.setReceiveTimeout(Poco::Timespan(5, 0));
+
+    char buffer[16] = {};
+    Poco::Net::SocketAddress sender;
+    try
+    {
+        const int received = socket.receiveFrom(buffer, sizeof(buffer), sender, MSG_DONTWAIT);
+        const int error = WSAGetLastError();
+        check(received < 0 && error == WSAEWOULDBLOCK,
+            "MSG_DONTWAIT on an idle blocking datagram socket reports would-block "
+            "(received " + std::to_string(received) + ", error " + std::to_string(error) + ")");
+    }
+    catch (const std::exception & e)
+    {
+        check(false, std::string("MSG_DONTWAIT on an idle blocking datagram socket reports would-block, but it threw: ") + e.what());
+    }
+}
+
+/// The other polarity for the datagram pair: a socket with room to send must send, and a socket
+/// with a datagram waiting must deliver it, both with the flag set.
+void dontWaitOnReadyDatagramSocketSendsAndReceives()
+{
+    Poco::Net::DatagramSocket receiver(Poco::Net::SocketAddress("127.0.0.1", 0));
+    receiver.setBlocking(true);
+    receiver.setReceiveTimeout(Poco::Timespan(5, 0));
+
+    Poco::Net::DatagramSocket sender;
+    sender.connect(receiver.address());
+    sender.setBlocking(true);
+    sender.setSendTimeout(Poco::Timespan(5, 0));
+
+    static constexpr char message[] = "datagram";
+    try
+    {
+        const int sent = sender.sendTo(message, sizeof(message), receiver.address(), MSG_DONTWAIT);
+        check(sent == static_cast<int>(sizeof(message)),
+            "MSG_DONTWAIT on a writable blocking datagram socket still sends (sent " + std::to_string(sent) + ")");
+    }
+    catch (const std::exception & e)
+    {
+        check(false, std::string("MSG_DONTWAIT on a writable blocking datagram socket still sends, but it threw: ") + e.what());
+        return;
+    }
+
+    /// Loopback delivery is not instantaneous; wait for the datagram the same way any reader would.
+    check(receiver.poll(Poco::Timespan(5, 0), Poco::Net::Socket::SELECT_READ), "the sent datagram arrives within five seconds");
+
+    char buffer[sizeof(message)] = {};
+    Poco::Net::SocketAddress from;
+    try
+    {
+        const int received = receiver.receiveFrom(buffer, sizeof(buffer), from, MSG_DONTWAIT);
+        check(received == static_cast<int>(sizeof(message)) && std::string(buffer) == message,
+            "MSG_DONTWAIT on a ready blocking datagram socket still receives (received " + std::to_string(received) + ")");
+    }
+    catch (const std::exception & e)
+    {
+        check(false, std::string("MSG_DONTWAIT on a ready blocking datagram socket still receives, but it threw: ") + e.what());
+    }
+}
+
 /// The decision `getMemoryAmountOrZero` makes about a job object, exercised directly. It cannot
 /// be exercised through the operating system here: Wine stubs
 /// `JobObjectExtendedLimitInformation`, zeroing the caller's struct and reporting success (see
@@ -193,6 +267,8 @@ int main(int, char **)
     dontWaitOnIdleSocketReportsWouldBlock();
     dontWaitOnReadySocketReceives();
     dontWaitOnWritableSocketSends();
+    dontWaitOnIdleDatagramSocketReportsWouldBlock();
+    dontWaitOnReadyDatagramSocketSendsAndReceives();
     jobObjectMemoryLimitIsDecidedFromTheFlags();
     memoryAmountRespectsTheJobObject();
 
