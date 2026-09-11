@@ -51,6 +51,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsString marks_compression_codec;
     extern const MergeTreeSettingsString primary_key_compression_codec;
     extern const MergeTreeSettingsNonZeroUInt64 adaptive_write_buffer_initial_size;
+    extern const MergeTreeSettingsFloat max_memory_ratio_to_activate_adaptive_write_buffer;
     extern const MergeTreeSettingsUInt64 max_compress_block_size;
     extern const MergeTreeSettingsUInt64 min_compress_block_size;
     extern const MergeTreeSettingsNonZeroUInt64 primary_key_compress_block_size;
@@ -110,6 +111,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , use_adaptive_write_buffer_for_dynamic_subcolumns((*storage_settings)[MergeTreeSetting::use_adaptive_write_buffer_for_dynamic_subcolumns])
     , min_columns_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::min_columns_to_activate_adaptive_write_buffer])
     , adaptive_write_buffer_initial_size((*storage_settings)[MergeTreeSetting::adaptive_write_buffer_initial_size])
+    , max_memory_ratio_to_activate_adaptive_write_buffer((*storage_settings)[MergeTreeSetting::max_memory_ratio_to_activate_adaptive_write_buffer])
     , compress_per_column_in_compact_parts((*storage_settings)[MergeTreeSetting::compress_per_column_in_compact_parts])
     , apply_adaptive_codec(try_adaptive_codec_ && (*storage_settings)[MergeTreeSetting::enable_adaptive_codec_selection])
 {

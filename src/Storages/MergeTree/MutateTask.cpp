@@ -22,6 +22,7 @@
 #include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/Squashing.h>
+#include <Interpreters/capInsertBlockSizeBytesToMemoryLimit.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
@@ -2106,6 +2107,11 @@ void PartMergerWriter::prepare()
 {
     const auto & settings = ctx->context->getSettingsRef();
 
+    /// The squash buffers below are the same kind of block-sized copies an `INSERT` pipeline holds, and a
+    /// mutation is background work running next to the queries the server is there for, so bound them by
+    /// the memory limit exactly like the insert path does.
+    const size_t min_block_size_bytes = capInsertBlockSizeBytesToMemoryLimit(settings[Setting::min_insert_block_size_bytes]);
+
     /// Pre-calculate squash: accumulate source blocks to produce larger blocks for
     /// projection calculation. Shared across all projections since they all consume
     /// the same source blocks. This drastically reduces the number of temporary
@@ -2118,7 +2124,7 @@ void PartMergerWriter::prepare()
         pre_calculate_squash.emplace(
             std::make_shared<const Block>(),
             settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+            min_block_size_bytes);
 
         /// Collect the union of columns required by all projections. Only these columns
         /// (plus `_row_exists` when present in the source block) are pushed into the
@@ -2135,7 +2141,7 @@ void PartMergerWriter::prepare()
         projection_squashes.emplace_back(
             std::make_shared<const Block>(ctx->updated_header),
             settings[Setting::min_insert_block_size_rows],
-            settings[Setting::min_insert_block_size_bytes]);
+            min_block_size_bytes);
     }
 
     {
