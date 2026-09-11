@@ -141,7 +141,8 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 {
     /// `EXISTS TABLE` requires only `SHOW TABLES`, so answering it without the read source grant turns
     /// this database into an oracle for `user_files`. Claim the table: resolving it reports the denial.
-    if (!context_->getAccess()->isGrantedWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ ""))
+    /// `isGrantedWithFilter` does not exist on this branch; with an empty filter it is `isGranted`.
+    if (!context_->getAccess()->isGranted(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE)))
         return true;
 
     if (tryGetTableFromCache(name))
