@@ -83,7 +83,8 @@ ClickHouse Keeper는 독립형 ZooKeeper 대체재로 사용하거나 ClickHouse
 | `shutdown_timeout`                        | 내부 연결이 종료되고 셧다운이 완료될 때까지 기다리는 시간(ms)입니다.                                                                                                                                                                    | `5000`           |
 | `startup_timeout`                         | 지정된 타임아웃 내에 서버가 다른 쿼럼 참여자에 연결하지 못하면 종료됩니다(ms).                                                                                                                                                              | `30000`          |
 | `async_replication`                       | 비동기 복제를 활성화합니다. 더 나은 성능을 제공하면서도 모든 읽기 및 쓰기 보장은 유지됩니다. 이전 버전과의 호환성이 깨지지 않도록 기본적으로 비활성화되어 있습니다.                                                                                                               | `false`          |
-| `latest_logs_cache_size_threshold`        | 최신 log entries에 대한 인메모리 캐시의 최대 총 크기입니다.                                                                                                                                                                     | `1GiB`           |
+| `latest_logs_cache_entry_count_threshold` | 최신 log entries에 대한 인메모리 캐시에 저장할 수 있는 최대 항목 수입니다.                                                                                                                                                            | `200000`         |
+| `latest_logs_cache_size_threshold`        | 항목별 allocation 오버헤드를 포함하여, 최신 log entries에 대한 인메모리 캐시가 점유하는 최대 메모리입니다.                                                                                                                                      | `1GiB`           |
 | `commit_logs_cache_size_threshold`        | 더 이상 사용되지 않습니다. 이 설정이 지정되지 않은 경우 `log_readahead_commit_window_bytes`에 사용됩니다.                                                                                                                                | -                |
 | `commit_logs_cache_entry_count_threshold` | 더 이상 사용되지 않으며 효과가 없습니다. 대신 `log_readahead_commit_window_bytes`를 사용하십시오.                                                                                                                                     | -                |
 | `log_readahead_enabled`                   | 변경 로그 catch-up 읽기(팔로워 복제)를 위한 피어별 디코딩 read-ahead를 활성화합니다.                                                                                                                                                   | `false`          |
@@ -712,9 +713,14 @@ Keeper 인스턴스에 사용할 수 있는 스토리지 구성 예시는 다음
 요청이 많으면 로그 항목이 메모리를 과도하게 차지할 수 있으므로 캐시되는 로그의 양에 제한이 적용됩니다.
 최신 로그 캐시의 제한은 다음 설정으로 제어됩니다.
 
-* `latest_logs_cache_size_threshold` - 캐시에 저장된 최신 로그의 총 크기
+* `latest_logs_cache_size_threshold` - 캐시된 최신 로그가 차지하는 메모리
+* `latest_logs_cache_entry_count_threshold` - 캐시가 보관할 수 있는 항목 수
 
-기본값이 너무 크면 이 구성을 줄여 메모리 사용량을 낮출 수 있습니다.
+둘 중 먼저 도달한 제한이 캐시 크기를 결정하며, 하나를 `0`으로 설정하면 다른 하나만 적용됩니다.
+
+크기 임계값은 로그 항목 자체의 크기만이 아니라 캐시된 항목이 실제로 차지하는 메모리를 기준으로 계산됩니다. 캐시된 모든 항목은 해당 항목을 연결할 수 있게 유지하는 객체도 함께 가지며, 그 할당은 allocator 크기 클래스에 맞춰 올림됩니다. 작은 항목의 경우 이러한 오버헤드가 항목 크기의 몇 배에 달하므로, 캐시가 실제로 보관하는 항목 수는 임계값을 항목 크기로 나눈 값보다 훨씬 적을 수 있습니다. `KeeperLatestLogsCacheSize`는 이 임계값이 제한하는 것과 동일한 양을 보고합니다.
+
+기본값이 너무 크면 이 구성들을 줄여 메모리 사용량을 낮출 수 있습니다.
 
 다음 커밋에 필요한 로그 항목은 디코딩된 미리 읽기 리더에서 제공되며, 크기는
 `log_readahead_commit_window_bytes`로 지정됩니다(`0`은 커밋 미리 읽기를 비활성화합니다). 이 설정은

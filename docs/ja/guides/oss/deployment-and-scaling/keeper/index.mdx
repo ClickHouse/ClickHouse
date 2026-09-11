@@ -89,7 +89,8 @@ ClickHouse Keeper のメイン設定タグは `<keeper_server>` で、以下の�
 | `shutdown_timeout`                        | 内部接続の終了とシャットダウンの完了を待機する時間 (ms) 。                                                                                                                                                                      | `5000`           |
 | `startup_timeout`                         | サーバーが指定されたタイムアウト内に他のクォーラム参加者に接続できない場合、終了します (ms) 。                                                                                                                                                    | `30000`          |
 | `async_replication`                       | 非同期レプリケーションを有効にします。書き込みと読み取りの保証はすべて維持したまま、より高いパフォーマンスを実現します。後方互換性を損なわないよう、この設定はデフォルトで無効になっています                                                                                                        | `false`          |
-| `latest_logs_cache_size_threshold`        | 最新の log entries を保持するインメモリ cache の合計最大サイズ                                                                                                                                                             | `1GiB`           |
+| `latest_logs_cache_entry_count_threshold` | 最新の log entries を保持するインメモリ cache 内のエントリの最大数                                                                                                                                                           | `200000`         |
+| `latest_logs_cache_size_threshold`        | 最新の log entries を保持するインメモリ cache が使用するメモリの最大量 (エントリごとの割り当てのオーバーヘッドを含む)                                                                                                                                | `1GiB`           |
 | `commit_logs_cache_size_threshold`        | 非推奨。この設定自体が設定されていない場合、`log_readahead_commit_window_bytes` に使用されます。                                                                                                                                    | -                |
 | `commit_logs_cache_entry_count_threshold` | 非推奨。効果はありません。代わりに `log_readahead_commit_window_bytes` を使用してください。                                                                                                                                      | -                |
 | `log_readahead_enabled`                   | changelog の catch-up 読み取り (フォロワーレプリケーション) 向けに、ピアごとのデコード済み先読みを有効にします。                                                                                                                                  | `false`          |
@@ -742,15 +743,20 @@ Keeper インスタンスのストレージ構成例は、次のようになり�
 リクエストが大きい場合、ログエントリがメモリを過度に消費する可能性があるため、キャッシュするログの量には上限が設けられています。
 最新ログキャッシュの上限は、次の設定で制御します。
 
-* `latest_logs_cache_size_threshold` - キャッシュに保存する最新ログの合計サイズ
+* `latest_logs_cache_size_threshold` - キャッシュされた最新ログが保持するメモリ量
+* `latest_logs_cache_entry_count_threshold` - キャッシュが保持できるエントリ数
 
-デフォルト値が大きすぎる場合は、この設定を小さくすることでメモリ使用量を削減できます。
+いずれかの上限に先に達した時点でキャッシュが制限されます。一方を `0` に設定すると、もう一方のみが有効になります。
+
+サイズのしきい値は、ログエントリ自体のサイズだけでなく、キャッシュされたエントリが実際に占有するメモリ量を計上します。キャッシュされた各エントリは、それを到達可能な状態に保つオブジェクトも伴い、その割り当てはアロケータのサイズクラスに切り上げられます。小さなエントリの場合、このオーバーヘッドはエントリ自体の数倍になるため、キャッシュが保持できるエントリ数は、しきい値をエントリサイズで割った値から想定されるよりもはるかに少なくなることがあります。`KeeperLatestLogsCacheSize` は、このしきい値が制限する量と同じ値を報告します。
+
+デフォルト値が大きすぎる場合は、これらの設定を小さくすることでメモリ使用量を削減できます。
 
 次のコミットで必要となるログエントリは、デコード済みの先読みリーダーによって提供されます。このリーダーのサイズは
 `log_readahead_commit_window_bytes` で指定します (`0` を指定すると、コミット時の先読みが無効になります) 。この設定は、
 非推奨の `commit_logs_cache_size_threshold` および `commit_logs_cache_entry_count_threshold` 設定を置き換えるものであり、
 これらは設定の互換性のためにのみ残されています (前者は未設定の場合、引き続き `log_readahead_commit_window_bytes` にマッピングされます。
-後者は効果がありません) 。同じ先読みメカニズムは、`log_readahead_enabled` が `true` の場合、follower の
+後者は効果がありません) 。同じ先読みメカニズムは、`log_readahead_enabled` が `true` の場合、フォロワー の
 レプリケーションのキャッチアップ読み取りにも使用されます。ピア側のチューニング
 パラメータについては、[内部協調設定](#internal-coordination-settings)の
 `log_readahead_window_bytes`、`log_readahead_max_peer_readers`、`log_readahead_eviction_timeout_ms`、

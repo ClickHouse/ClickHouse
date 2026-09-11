@@ -89,7 +89,8 @@ La configuración de coordinación interna se encuentra en la sección `<keeper_
 | `shutdown_timeout`                        | Esperar a que finalicen las conexiones internas y apagar (ms).                                                                                                                                                                                                                                                                                                                                                        | `5000`               |
 | `startup_timeout`                         | Si el servidor no se conecta a otros participantes del quórum dentro del tiempo de espera especificado, finalizará (ms).                                                                                                                                                                                                                                                                                              | `30000`              |
 | `async_replication`                       | Habilitar la replicación asíncrona. Se conservan todas las garantías de lectura y escritura, a la vez que se obtiene un mejor rendimiento. Esta opción está deshabilitada de forma predeterminada para no romper la compatibilidad con versiones anteriores                                                                                                                                                           | `false`              |
-| `latest_logs_cache_size_threshold`        | Tamaño total máximo de la caché en memoria de las últimas entradas de log                                                                                                                                                                                                                                                                                                                                             | `1GiB`               |
+| `latest_logs_cache_entry_count_threshold` | Número máximo de entradas en la caché en memoria de las últimas entradas de log                                                                                                                                                                                                                                                                                                                                       | `200000`             |
+| `latest_logs_cache_size_threshold`        | Memoria máxima ocupada por la caché en memoria de las últimas entradas de log, contando el sobrecoste de asignación por entrada                                                                                                                                                                                                                                                                                       | `1GiB`               |
 | `commit_logs_cache_size_threshold`        | Obsoleto. Se usa para `log_readahead_commit_window_bytes` si esta configuración no se ha establecido.                                                                                                                                                                                                                                                                                                                 | -                    |
 | `commit_logs_cache_entry_count_threshold` | Obsoleto, no tiene efecto. Use `log_readahead_commit_window_bytes` en su lugar.                                                                                                                                                                                                                                                                                                                                       | -                    |
 | `log_readahead_enabled`                   | Habilitar la lectura anticipada decodificada por peer para las lecturas de puesta al día del changelog (replicación de followers).                                                                                                                                                                                                                                                                                    | `false`              |
@@ -736,17 +737,26 @@ La siguiente configuración muestra cómo pasar de la configuración anterior de
 Al arrancar, todos los archivos de registro se moverán de `log_local` y `log_s3_plain` al disco `log_local2`.
 Además, todos los archivos de instantánea se moverán de `snapshot_local` y `snapshot_s3_plain` al disco `snapshot_local2`.
 
-## Configuración de la caché de logs {#configuring-logs-cache}
+## Configuración de la caché de registros {#configuring-logs-cache}
 
-Para minimizar la cantidad de datos leídos del disco, Keeper almacena en caché las entradas de log en memoria.
-Si las solicitudes son grandes, las entradas de log consumirán demasiada memoria, por lo que se limita la cantidad de logs almacenados en caché.
-El límite de la caché de los logs más recientes se controla mediante:
+Para minimizar la cantidad de datos leídos del disco, Keeper almacena en caché las entradas de registro en memoria.
+Si las solicitudes son grandes, las entradas de registro consumirán demasiada memoria, por lo que se limita la cantidad de registros almacenados en caché.
+Los límites de la caché de los registros más recientes se controlan mediante:
 
-* `latest_logs_cache_size_threshold` - tamaño total de los logs más recientes almacenados en caché
+* `latest_logs_cache_size_threshold` - memoria ocupada por los registros más recientes almacenados en caché
+* `latest_logs_cache_entry_count_threshold` - cuántas entradas puede contener la caché
 
-Si el valor predeterminado es demasiado alto, puede reducir el uso de memoria disminuyendo esta configuración.
+El límite que se alcance primero restringe la caché; si se establece uno en `0`, solo queda vigente el otro.
 
-Las entradas de log necesarias para el siguiente commit se sirven mediante un lector de lectura anticipada decodificado, cuyo tamaño se define mediante
+El umbral de tamaño contabiliza la memoria que realmente ocupa una entrada en caché, no solo el tamaño de la propia entrada
+de registro: cada entrada en caché también incluye los objetos que la mantienen accesible, y su asignación
+se redondea al alza hasta una clase de tamaño del allocator. Para entradas pequeñas, ese overhead es varias veces el tamaño de la
+entrada, por lo que el número de entradas que la caché puede contener puede ser mucho menor de lo que sugiere dividir el umbral entre el
+tamaño de la entrada. `KeeperLatestLogsCacheSize` informa de la misma cantidad que el umbral limita.
+
+Si los valores predeterminados son demasiado altos, puede reducir el uso de memoria disminuyendo estas configuraciones.
+
+Las entradas de registro necesarias para el siguiente commit se sirven mediante un lector de lectura anticipada decodificado, cuyo tamaño se define mediante
 `log_readahead_commit_window_bytes` (`0` desactiva la lectura anticipada para commits). Esta configuración reemplaza las
 configuraciones obsoletas `commit_logs_cache_size_threshold` y `commit_logs_cache_entry_count_threshold`,
 que se mantienen únicamente por compatibilidad de configuración (la primera sigue asignándose a `log_readahead_commit_window_bytes` si
@@ -758,7 +768,7 @@ en la [configuración de coordinación interna](#internal-coordination-settings)
 ajuste del lado del par.
 
 <Note>
-  Puede usar el comando `pfev` para comprobar la cantidad de logs leídos de cada caché y de un archivo.
+  Puede usar el comando `pfev` para comprobar la cantidad de registros leídos de cada caché y de un archivo.
   También puede usar las métricas del endpoint de Prometheus para realizar un seguimiento del tamaño actual de ambas cachés.
 </Note>
 

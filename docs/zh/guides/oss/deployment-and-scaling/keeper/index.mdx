@@ -83,7 +83,8 @@ ClickHouse Keeper 既可作为 ZooKeeper 的独立替代方案使用，也可作
 | `shutdown_timeout`                        | 等待内部连接完成并关闭的时间 (毫秒) 。                                                                                                          | `5000`           |
 | `startup_timeout`                         | 如果服务器未在指定超时时间内连接到其他 quorum 参与者，则会终止 (毫秒) 。                                                                                     | `30000`          |
 | `async_replication`                       | 启用异步复制。在提升性能的同时保留所有读写保证。此设置默认禁用，以避免破坏向后兼容性。                                                                                    | `false`          |
-| `latest_logs_cache_size_threshold`        | 最新日志条目的内存缓存最大总大小。                                                                                                              | `1GiB`           |
+| `latest_logs_cache_entry_count_threshold` | 最新日志条目的内存缓存中条目的最大数量                                                                                                            | `200000`         |
+| `latest_logs_cache_size_threshold`        | 最新日志条目的内存缓存所占用的最大内存，包含每个条目的分配开销                                                                                                | `1GiB`           |
 | `commit_logs_cache_size_threshold`        | 已弃用。如果未设置 `log_readahead_commit_window_bytes`，则使用此设置。                                                                          | -                |
 | `commit_logs_cache_entry_count_threshold` | 已弃用，无任何作用。请改用 `log_readahead_commit_window_bytes`。                                                                             | -                |
 | `log_readahead_enabled`                   | 为更新日志追赶读取 (跟随者复制) 启用按 peer 解码的预读。                                                                                              | `false`          |
@@ -712,9 +713,14 @@ Keeper 实例的一种可能存储配置如下所示：
 如果请求较大，日志条目会占用过多内存，因此会限制缓存的日志量。
 最新日志缓存的上限由以下参数控制：
 
-* `latest_logs_cache_size_threshold` - 缓存中存储的最新日志总大小
+* `latest_logs_cache_size_threshold` - 缓存的最新日志所占用的内存
+* `latest_logs_cache_entry_count_threshold` - 缓存可容纳的条目数量
 
-如果默认值过大，可以通过调低此配置来减少内存使用量。
+两个限制中先达到者即为缓存上限；若将其中一个设为 `0`，则仅另一个生效。
+
+大小阈值统计的是缓存条目实际占用的内存，而不仅仅是日志条目本身的大小：每个缓存条目还附带用于保持其可访问的对象，并且其分配会向上取整到某个分配器 size class。对于小条目而言，这部分开销可能是条目本身的数倍，因此缓存实际容纳的条目数可能远低于用阈值除以条目大小所得出的结果。`KeeperLatestLogsCacheSize` 报告的正是该阈值所限制的量。
+
+如果默认值过大，可以通过调低这些配置来减少内存使用量。
 
 后续提交所需的日志条目由已解码的预读读取器提供，其大小由
 `log_readahead_commit_window_bytes` 控制 (`0` 会禁用提交预读) 。此设置取代了

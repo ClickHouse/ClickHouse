@@ -91,7 +91,8 @@ As configurações internas de coordenação ficam na seção `<keeper_server>.<
 | `shutdown_timeout`                        | Aguarda a conclusão das conexões internas e o desligamento (ms).                                                                                                                                                                                                                                                                                                                                                        | `5000`           |
 | `startup_timeout`                         | Se o servidor não se conectar aos outros participantes do quórum dentro do tempo limite especificado, ele será encerrado (ms).                                                                                                                                                                                                                                                                                          | `30000`          |
 | `async_replication`                       | Habilita a replicação assíncrona. Todas as garantias de gravação e leitura são preservadas, com melhor desempenho. Essa configuração fica desabilitada por padrão para não quebrar a compatibilidade com versões anteriores                                                                                                                                                                                             | `false`          |
-| `latest_logs_cache_size_threshold`        | Tamanho total máximo do cache em memória das entradas de log mais recentes                                                                                                                                                                                                                                                                                                                                              | `1GiB`           |
+| `latest_logs_cache_entry_count_threshold` | Número máximo de entradas no cache em memória das entradas de log mais recentes                                                                                                                                                                                                                                                                                                                                         | `200000`         |
+| `latest_logs_cache_size_threshold`        | Memória máxima ocupada pelo cache em memória das entradas de log mais recentes, contabilizando a sobrecarga de alocação por entrada                                                                                                                                                                                                                                                                                     | `1GiB`           |
 | `commit_logs_cache_size_threshold`        | Descontinuado. Usado para `log_readahead_commit_window_bytes` caso essa configuração não esteja definida.                                                                                                                                                                                                                                                                                                               | -                |
 | `commit_logs_cache_entry_count_threshold` | Descontinuado, não tem efeito. Use `log_readahead_commit_window_bytes` em vez disso.                                                                                                                                                                                                                                                                                                                                    | -                |
 | `log_readahead_enabled`                   | Habilita a leitura antecipada decodificada por par para leituras de recuperação do changelog (replicação de seguidores).                                                                                                                                                                                                                                                                                                | `false`          |
@@ -742,11 +743,20 @@ Além disso, todos os arquivos de snapshot serão movidos de `snapshot_local` e 
 
 Para minimizar a quantidade de dados lidos do disco, o Keeper armazena em cache na memória as entradas de log.
 Se as solicitações forem grandes, as entradas de log ocuparão muita memória; por isso, a quantidade de logs armazenados em cache é limitada.
-O limite do cache dos logs mais recentes é controlado por:
+Os limites do cache dos logs mais recentes são controlados por:
 
-* `latest_logs_cache_size_threshold` - tamanho total dos logs mais recentes armazenados no cache
+* `latest_logs_cache_size_threshold` - memória ocupada pelos logs mais recentes armazenados em cache
+* `latest_logs_cache_entry_count_threshold` - quantas entradas o cache pode conter
 
-Se o valor padrão for muito alto, reduza esta configuração para diminuir o uso de memória.
+O limite que for atingido primeiro restringe o cache; definir um deles como `0` deixa apenas o outro em vigor.
+
+O limite de tamanho contabiliza a memória que uma entrada em cache realmente ocupa, e não apenas o tamanho da própria entrada
+de log: cada entrada em cache também carrega os objetos que a mantêm acessível, e sua alocação
+é arredondada para cima até uma size class do allocator. Para entradas pequenas, essa sobrecarga é várias vezes maior que a
+entrada, portanto o número de entradas que o cache mantém pode ser muito menor do que sugere a divisão do threshold pelo
+tamanho da entrada. `KeeperLatestLogsCacheSize` informa a mesma quantidade que o threshold limita.
+
+Se os valores padrão forem muito altos, reduza essas configurações para diminuir o uso de memória.
 
 As entradas de log necessárias para o próximo commit são fornecidas por um leitor de leitura antecipada decodificada, dimensionado por
 `log_readahead_commit_window_bytes` (`0` desativa a leitura antecipada para commit). Essa configuração substitui as

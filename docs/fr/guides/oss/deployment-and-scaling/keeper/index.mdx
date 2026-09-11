@@ -89,7 +89,8 @@ Les paramètres de coordination interne se trouvent dans la section `<keeper_ser
 | `shutdown_timeout`                        | Attendre la fin des connections internes et l’arrêt (ms).                                                                                                                                                                                                                                                                                                                                    | `5000`                  |
 | `startup_timeout`                         | Si le server ne se connecte pas aux autres participants du quorum dans le délai spécifié, il s’arrête (ms).                                                                                                                                                                                                                                                                                  | `30000`                 |
 | `async_replication`                       | Activer la réplication asynchrone. Toutes les garanties d’écriture et de lecture sont préservées tout en améliorant les performances. Ce paramètre est désactivé par défaut afin de ne pas rompre la compatibilité descendante                                                                                                                                                               | `false`                 |
-| `latest_logs_cache_size_threshold`        | Taille totale maximale de l’in-memory cache des dernières log entries                                                                                                                                                                                                                                                                                                                        | `1GiB`                  |
+| `latest_logs_cache_entry_count_threshold` | Nombre maximal d’entries dans l’in-memory cache des dernières log entries                                                                                                                                                                                                                                                                                                                    | `200000`                |
+| `latest_logs_cache_size_threshold`        | Mémoire maximale occupée par l’in-memory cache des dernières log entries, en tenant compte de l’overhead d’allocation par entry                                                                                                                                                                                                                                                              | `1GiB`                  |
 | `commit_logs_cache_size_threshold`        | Obsolète. Utilisé pour `log_readahead_commit_window_bytes` si ce paramètre n’est pas lui-même défini.                                                                                                                                                                                                                                                                                        | -                       |
 | `commit_logs_cache_entry_count_threshold` | Obsolète, sans effet. Utilisez plutôt `log_readahead_commit_window_bytes`.                                                                                                                                                                                                                                                                                                                   | -                       |
 | `log_readahead_enabled`                   | Activer la lecture anticipée décodée par peer pour les lectures de rattrapage du changelog (réplication des followers).                                                                                                                                                                                                                                                                      | `false`                 |
@@ -738,19 +739,28 @@ De même, tous les fichiers d’instantané seront déplacés depuis `snapshot_l
 ## Configuration du cache des logs {#configuring-logs-cache}
 
 Afin de minimiser la quantité de données lues sur le disque, Keeper met les entrées de journal en cache en mémoire.
-Si les requêtes sont volumineuses, les entrées de journal consomment trop de mémoire ; le volume de logs mis en cache est donc plafonné.
-La limite du cache des derniers logs est définie par :
+Si les requêtes sont volumineuses, les entrées de journal consomment trop de mémoire ; le volume de logs mis en cache est donc plafonné.
+Les limites du cache des logs les plus récents sont définies par :
 
-* `latest_logs_cache_size_threshold` - taille totale des derniers logs stockés dans le cache
+* `latest_logs_cache_size_threshold` - mémoire occupée par les logs les plus récents mis en cache
+* `latest_logs_cache_entry_count_threshold` - nombre d&#39;entrées que le cache peut contenir
 
-Si la valeur par défaut est trop élevée, vous pouvez réduire l&#39;utilisation de la mémoire en diminuant cette valeur de configuration.
+La première limite atteinte plafonne le cache ; définir l&#39;une d&#39;elles sur `0` ne laisse que l&#39;autre en vigueur.
+
+Le seuil de taille comptabilise la mémoire réellement occupée par une entrée mise en cache, et non uniquement la taille de l&#39;entrée de journal
+elle-même : chaque entrée mise en cache transporte également les objets qui la rendent joignable, et son allocation
+est arrondie à une size class de l&#39;allocator. Pour les petites entrées, cette surcharge représente plusieurs fois la taille de
+l&#39;entrée ; le nombre d&#39;entrées que le cache peut contenir peut donc être bien inférieur à celui obtenu en divisant le seuil par la
+taille d&#39;une entrée. `KeeperLatestLogsCacheSize` indique la même quantité que celle bornée par le seuil.
+
+Si les valeurs par défaut sont trop élevées, vous pouvez réduire l&#39;utilisation de la mémoire en diminuant ces valeurs de configuration.
 
 Les entrées de journal nécessaires à la validation suivante sont fournies par un lecteur de prélecture décodé, dont la taille est définie par
 `log_readahead_commit_window_bytes` (`0` désactive la prélecture lors de la validation). Ce paramètre remplace les paramètres
 obsolètes `commit_logs_cache_size_threshold` et `commit_logs_cache_entry_count_threshold`,
 conservés uniquement pour assurer la compatibilité de configuration (le premier est toujours associé à `log_readahead_commit_window_bytes` si
-celui-ci n&#39;est pas défini ; le second n&#39;a aucun effet). Le même mécanisme de prélecture prend également en charge les lectures de rattrapage de
-réplication des nœuds followers lorsque `log_readahead_enabled` est défini sur `true` ; consultez
+celui-ci n&#39;est pas défini ; le second n&#39;a aucun effet). Le même mécanisme de prélecture prend également en charge les lectures de rattrapage de
+réplication des nœuds followers lorsque `log_readahead_enabled` est défini sur `true` ; consultez
 `log_readahead_window_bytes`, `log_readahead_max_peer_readers`, `log_readahead_eviction_timeout_ms`,
 `log_readahead_pool_threads`, `log_readahead_serve_wait_timeout_ms` et `log_readahead_chunk_size`
 dans les [paramètres de coordination interne](#internal-coordination-settings) pour les options de réglage
