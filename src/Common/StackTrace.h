@@ -128,6 +128,7 @@ public:
     /// If you turn off addresses, it will be more secure, but we will be unable to help you with debugging.
     /// Please note: addresses are also available in the system.stack_trace and system.trace_log tables.
     static void setShowAddresses(bool show);
+    static bool showAddresses();
 
     /// Renders the demangled name of a frame for display: shortens well-known libc++ spellings, and returns
     /// "?" for frames whose name carries no information. @param file is the source location of the frame.

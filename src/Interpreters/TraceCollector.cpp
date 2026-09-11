@@ -20,6 +20,7 @@
 #include <base/demangle.h>
 #include <base/errnoToString.h>
 #include <Common/logger_useful.h>
+#include <Common/StackTrace.h>
 #include <Common/SymbolIndex.h>
 
 
@@ -39,8 +40,9 @@ namespace
 std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
 {
     std::string result;
+    const bool show_addresses = StackTrace::showAddresses();
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     const SymbolIndex & symbol_index = SymbolIndex::instance();
 #endif
 
@@ -48,7 +50,7 @@ std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
     {
         std::string_view name = "?";
 
-#if defined(__ELF__) && !defined(OS_FREEBSD)
+#if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
         DemangleResult demangled;
         if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
         {
@@ -57,7 +59,10 @@ std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
         }
 #endif
 
-        result += fmt::format("{}{}. 0x{:x} {}", frame ? "\n" : "", frame, trace[frame], name);
+        if (show_addresses)
+            result += fmt::format("{}{}. 0x{:x} {}", frame ? "\n" : "", frame, trace[frame], name);
+        else
+            result += fmt::format("{}{}. {}", frame ? "\n" : "", frame, name);
     }
 
     return result;
@@ -254,8 +259,8 @@ void TraceCollector::run()
                     "(blocked context: {}). Global tracked total when logged: {}. Stack trace:\n{}",
                     ReadableSize(size),
                     thread_id,
-                    memory_blocked_context == TraceSender::MEMORY_CONTEXT_UNKNOWN
-                        ? std::string_view("Unknown")
+                    static_cast<VariableContext>(memory_blocked_context) == VariableContext::Max
+                        ? std::string_view("none")
                         : magic_enum::enum_name(static_cast<VariableContext>(memory_blocked_context)),
                     ReadableSize(total_memory_tracker.get()),
                     symbolizeNormalizedTrace(trace));
