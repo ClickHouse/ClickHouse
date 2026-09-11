@@ -317,21 +317,21 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     UNUSED(limit);
 
     // The victim is the greatest allocation by `ByEvictionKey`: an admitted allocation with the highest
-    // `memory_eviction_score`, then the largest `fair_key`. Not-admitted allocations sort first (killed last),
+    // `eviction_score`, then the largest `fair_key`. Not-admitted allocations sort first (killed last),
     // so a pending/never-admitted allocation is chosen only when no admitted one exists — which cannot happen
-    // under real memory pressure (the memory is held by an admitted allocation), and an impossible grow is
-    // already handled by the self-kill above.
+    // under real pressure (an admitted allocation holds the resource), and an impossible grow is already
+    // handled by the self-kill above.
     ResourceAllocation & victim = *running_allocations.rbegin();
 
     // If this is the least common ancestor of killer and victim - add details
     if (&killer.allocation.queue == this)
     {
         if (&killer.allocation == &victim)
-            details = fmt::format("Evicting allocation of size {} (memory_eviction_score {}) in workload '{}' to satisfy its own increase for {}.",
-                formatReadableCost(victim.allocated), victim.memory_eviction_score, getWorkloadName(), formatReadableCost(killer.size));
+            details = fmt::format("Evicting allocation of size {} (eviction_score {}) in workload '{}' to satisfy its own increase for {}.",
+                formatReadableCost(victim.allocated), victim.eviction_score, getWorkloadName(), formatReadableCost(killer.size));
         else
-            details = fmt::format("Evicting allocation of size {} (memory_eviction_score {}) in workload '{}' to satisfy increase of another allocation.",
-                formatReadableCost(victim.allocated), victim.memory_eviction_score, getWorkloadName());
+            details = fmt::format("Evicting allocation of size {} (eviction_score {}) in workload '{}' to satisfy increase of another allocation.",
+                formatReadableCost(victim.allocated), victim.eviction_score, getWorkloadName());
     }
 
     return &victim;

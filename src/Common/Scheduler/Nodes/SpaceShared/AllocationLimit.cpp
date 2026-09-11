@@ -87,7 +87,7 @@ ResourceAllocation * AllocationLimit::selectAllocationToKill(IncreaseRequest & k
     // increase, so `fair_key > limit` means it cannot fit even with the whole subtree freed.
     if (killer.allocation.fair_key > limit)
     {
-        details = fmt::format("Evicting allocation (memory_eviction_score {}) to satisfy its own increase, its reservation exceeds the limit", killer.allocation.memory_eviction_score);
+        details = fmt::format("Evicting allocation (eviction_score {}) to satisfy its own increase, its reservation exceeds the limit", killer.allocation.eviction_score);
         return &killer.allocation;
     }
     if (!child)
