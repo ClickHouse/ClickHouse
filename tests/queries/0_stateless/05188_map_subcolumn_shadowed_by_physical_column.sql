@@ -76,10 +76,12 @@ SELECT 'text over mapValues', count() FROM t_shadow_text_values WHERE `m.key_nok
 
 -- Only the shadowed name loses the index. A genuine key subcolumn of the same map, in the same table,
 -- must still prune: `m.key_zzz` is not a declared column, and the map has no key `zzz`.
+-- Parallel replicas can plan the read entirely remotely, and EXPLAIN then reports no Indexes section
+-- at all, so both plan assertions pin enable_parallel_replicas = 0.
 SELECT 'genuine key subcolumn still prunes', trim(explain)
 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_shadow_ngrambf WHERE m.key_zzz = 'x')
 WHERE trim(explain) ILIKE 'Granules:%'
-SETTINGS explain_query_plan_default = 'legacy';
+SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 
 -- The counts above also pass whenever the index is merely absent from the plan, so pin the plan too.
 -- Both values come from one row, so the line reddens if EXPLAIN stops reporting an index at all.
@@ -88,7 +90,7 @@ SELECT 'index applied: shadowed, genuine',
         FROM (EXPLAIN indexes = 1 SELECT count() FROM t_shadow_ngrambf WHERE `m.key_nokey` = 'hello')),
        (SELECT countIf(trim(explain) ILIKE 'Name: idx')
         FROM (EXPLAIN indexes = 1 SELECT count() FROM t_shadow_ngrambf WHERE m.key_zzz = 'x'))
-SETTINGS explain_query_plan_default = 'legacy';
+SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 
 DROP TABLE t_shadow_ngrambf;
 DROP TABLE t_shadow_ngrambf_values;
