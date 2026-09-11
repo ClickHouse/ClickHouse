@@ -5,6 +5,9 @@
 -- Validates correctness across all join kinds, strictnesses, key configurations,
 -- NULL handling, and join mask (ON condition) paths.
 
+-- The S3-storage lane may successfully retry transient AWS 5xx responses after logging them at
+-- error level. This test checks join results, not intermediate retry diagnostics.
+SET send_logs_level = 'fatal';
 SET join_algorithm = 'hash';
 SET allow_experimental_analyzer = 1;
 SET session_timezone = 'UTC';

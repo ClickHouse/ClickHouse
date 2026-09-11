@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# no-parallel: enables a global failpoint
+# Tag no-parallel: enables a global failpoint
 
 # Regression for the empty-data_file_name guard in tryRemoveAllFiles on a non-memory writer.
 # An unchanged (fully base-backed) incremental entry has an empty data_file_name. Without the guard,

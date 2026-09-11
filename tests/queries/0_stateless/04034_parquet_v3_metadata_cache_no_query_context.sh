@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database
+# Tags: no-fasttest, no-replicated-database, no-parallel:metadata-caches
+# Tag no-parallel: serializes tests that mutate or assert the shared `metadata-caches` resource
 # Tag no-fasttest: Depends on S3
 # Tag no-replicated-database: the data can be inserted on a different node
 

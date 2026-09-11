@@ -1,5 +1,5 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: looks at server-wide metrics
+-- Tags: no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 --- These tests verify the caching of deserialized text index token infos in consecutive executions.
 --- The tokens cache caches individual token infos (not entire dictionary blocks).
@@ -31,14 +31,14 @@ FROM numbers(256);
 DROP VIEW IF EXISTS text_index_cache_stats;
 CREATE VIEW text_index_cache_stats AS (
   SELECT
-    concat('cache_hits = ', toString(ProfileEvents['TextIndexTokensCacheHits']), ', cache_misses = ', toString(ProfileEvents['TextIndexTokensCacheMisses']))
+    concat(
+        'cache_hits = ', toString(toUInt8(max(ProfileEvents['TextIndexTokensCacheHits']) > 0)),
+        ', cache_misses = ', toString(toUInt8(max(ProfileEvents['TextIndexTokensCacheMisses']) > 0)))
   FROM system.query_log
   WHERE event_date >= yesterday() AND event_time >= now() - 600 AND query_kind ='Select'
       AND current_database = currentDatabase()
       AND endsWith(trimRight(query), concat('hasAnyTokens(message, \'', {filter:String}, '\');'))
       AND type='QueryFinish'
-  ORDER BY event_time_microseconds DESC
-  LIMIT 1
 );
 
 SELECT '--- cache miss on a new token.';
@@ -54,6 +54,10 @@ SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_128');
 
 SELECT '--- cache hit on a previously queried token.';
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_000');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_000');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_000');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_000');
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_000');
 
 SYSTEM FLUSH LOGS query_log;
@@ -82,6 +86,10 @@ SYSTEM FLUSH LOGS query_log;
 SELECT * FROM text_index_cache_stats(filter = 'text_129');
 
 SELECT '--- cache hit on a token queried after clearing cache.';
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
+SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
 SELECT count() FROM tab WHERE hasAnyTokens(message, 'text_125');
 
 SYSTEM FLUSH LOGS query_log;

@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 -- modified from test_01155_ordinary, to test special optimization path for virtual row
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};

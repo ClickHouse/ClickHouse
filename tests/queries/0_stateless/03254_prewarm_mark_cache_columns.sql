@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 
 DROP TABLE IF EXISTS t_prewarm_columns;
 

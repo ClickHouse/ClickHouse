@@ -1,4 +1,7 @@
 -- Tags: no-parallel
+-- Tag no-parallel: runs the global `SYSTEM RELOAD DICTIONARIES` and defines a dictionary
+-- whose source is `DB currentDatabase()`; a concurrent global reload re-resolves the source
+-- in the wrong database context and fails with `UNKNOWN_TABLE`, so it must run sequentially
 
 drop database if exists {CLICKHOUSE_DATABASE_1:Identifier};
 create database {CLICKHOUSE_DATABASE_1:Identifier};

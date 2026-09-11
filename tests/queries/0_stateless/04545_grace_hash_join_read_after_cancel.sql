@@ -1,5 +1,5 @@
 -- Tags: no-parallel, no-fasttest
--- no-parallel: the failpoint is server-global.
+-- Tag no-parallel: the failpoint is server-global.
 -- no-fasttest: the Fast test build has no libfiu, so SYSTEM ENABLE FAILPOINT is unsupported.
 --
 -- A grace_hash join spills to disk, then one shared spilled-block reader fails mid-read while

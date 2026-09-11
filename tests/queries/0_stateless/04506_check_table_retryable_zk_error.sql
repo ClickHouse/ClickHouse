@@ -1,4 +1,5 @@
 -- Tags: zookeeper, no-parallel, no-shared-merge-tree
+-- Tag no-parallel: uses a process-global failpoint
 -- Regression test for CHECK TABLE on a ReplicatedMergeTree table silently reporting a healthy
 -- part as broken (returning 0) when a transient/retryable ZooKeeper error is hit during the check.
 -- A retryable error (e.g. a connection loss) must surface as a query error, not a "broken" result.

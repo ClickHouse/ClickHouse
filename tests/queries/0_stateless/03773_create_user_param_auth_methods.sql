@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel, no-replicated-database
+-- Tags: no-fasttest, no-replicated-database
 -- Tag no-replicated-database: ON CLUSTER is not allowed
 -- Test for issue #92010: Query parameters in authentication methods with ON CLUSTER
 

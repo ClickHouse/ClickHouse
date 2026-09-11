@@ -1,4 +1,5 @@
--- Tags: no-fasttest, no-parallel, no-parallel-replicas, no-random-settings
+-- Tags: no-fasttest, no-parallel-replicas, no-random-settings, no-parallel:metadata-caches
+-- Tag no-parallel: serializes tests that mutate or assert the shared `metadata-caches` resource
 -- no-fasttest: depends on s3 storage
 -- no-parallel: cache is system-wide and tests can affect each other in unexpected way
 -- no-parallel-replicas: profile events are not available on the second replica

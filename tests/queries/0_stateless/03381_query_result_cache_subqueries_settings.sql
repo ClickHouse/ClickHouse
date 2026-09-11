@@ -1,23 +1,23 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
+
+SET query_cache_tag = '03381_query_result_cache_subqueries_settings';
 
 SET enable_analyzer = 1;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '03381_query_result_cache_subqueries_settings';
 
 -- Put only main query result into cache
 SELECT * FROM (SELECT avg(number) as avg FROM numbers(1, 100)) SETTINGS use_query_cache = true;
 
 -- Should be 0 records in system.query_cache with is_subquery = 1 
-SELECT count(*) FROM system.query_cache WHERE is_subquery = 1;
+SELECT count(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_subqueries_settings') AS test_query_cache WHERE is_subquery = 1;
 
-SYSTEM DROP QUERY CACHE; -- Drop QC
+SYSTEM CLEAR QUERY CACHE TAG '03381_query_result_cache_subqueries_settings'; -- Drop QC
 
 -- QC for sub-queries results works only with use_query_cache = true
 SELECT * FROM (SELECT avg(number) as avg FROM numbers(1, 100)) SETTINGS query_cache_for_subqueries = true;
 
 -- Should be 0 records in system.query_cache
-SELECT count(*) FROM system.query_cache;
+SELECT count(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_subqueries_settings') AS test_query_cache;
 
 -- Overriding QC setting in sub-query
 SELECT * FROM (SELECT avg(number) as avg FROM numbers(1, 100) SETTINGS enable_writes_to_query_cache = true)
@@ -51,13 +51,13 @@ WHERE type = 'QueryFinish'
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '03381_query_result_cache_subqueries_settings';
 
 -- Store result only for main query
 SELECT * FROM (SELECT avg(number) as avg FROM numbers(1, 100) SETTINGS query_cache_for_subqueries = false)
 SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 
 -- One record (main query)
-SELECT count(*) FROM system.query_cache WHERE is_subquery = true;
+SELECT count(*) FROM (SELECT * FROM system.query_cache WHERE tag = '03381_query_result_cache_subqueries_settings') AS test_query_cache WHERE is_subquery = true;
 
-SYSTEM DROP QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '03381_query_result_cache_subqueries_settings';

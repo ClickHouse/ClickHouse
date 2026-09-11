@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
 TABLE="default.tm_$RANDOM_$RANDOM"
-PARQUET_FILE="${USER_FILES_PATH}/03793_parquet_complex_types_fix_$RANDOM_$RANDOM.parquet"
+PARQUET_FILE="${CLICKHOUSE_USER_FILES_UNIQUE}/03793_parquet_complex_types_fix_$RANDOM_$RANDOM.parquet"
 
 rm -rf "${PARQUET_FILE}"
 

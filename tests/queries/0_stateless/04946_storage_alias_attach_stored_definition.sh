@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# no-parallel: while a self-referential Alias exists the server-wide dependency graph is cyclic, and
+# Tag no-parallel: while a self-referential `Alias` exists the server-wide dependency graph is cyclic, and
 #              `checkTableCanBeAddedWithNoCyclicDependencies` tests that graph as a whole, so any
 #              concurrent CREATE fails with INFINITE_LOOP. Server-global poisoning, same class as
 #              02391_recursive_buffer.

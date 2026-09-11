@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-replicated-database
 # no-fasttest: the MySQL integration is not available in the fast test build.
+# Tag no-parallel: creates and drops the named collection `mysql_04648`. Named collections are
+#   server-global and this name is not per-test unique, so concurrent repetitions of the test (as the
+#   flaky check runs them) collide - the first one to finish drops the collection the others use.
 # no-parallel, no-replicated-database: a named collection is used.
 
 # TLS credentials of a MySQL source that are given as the contents of a certificate or a key file

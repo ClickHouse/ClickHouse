@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
-# no-parallel -- the failpoint is server-wide and fires for every table, system logs included.
+# Tag no-parallel: the failpoint is server-wide and fires for every table, system logs included.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

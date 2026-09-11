@@ -2,7 +2,7 @@
 # Tags: long, no-random-settings, no-ordinary-database, no-fasttest, no-azure-blob-storage, kills-processes-by-cmdline
 # long: The test inserts 4M+ rows across the initial setup, 20s parallel insert/select/cancel phase,
 #     and final verification. On the encrypted-S3 + ASan+UBSan + meta-in-keeper flaky-check variant
-#     it consistently exceeds the 180s default budget, so we use the 600s budget instead.
+#     it can exceed the 180s slow-test threshold but must remain below the 300s hard limit.
 # no-fasttest: The test is slow (too many small blocks)
 # no-azure-blob-storage: The test uploads many parts to Azure (5k+), and it runs in parallel with other tests.
 #     As a result, they may interfere, and some queries won't be able to finish in 30 seconds timeout leading to a test failure.

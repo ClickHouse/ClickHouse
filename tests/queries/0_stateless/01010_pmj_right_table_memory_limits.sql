@@ -1,8 +1,13 @@
--- Tags: no-parallel, no-fasttest, no-random-settings
+-- Tags: no-fasttest, no-random-settings
 
 SET max_bytes_in_join = 0;
 SET max_rows_in_join = 0;
 SET max_memory_usage = 32000000;
+-- The expected MEMORY_LIMIT_EXCEEDED depends on the join build's allocation pattern.
+-- A size hint from the server-global hash-table statistics cache (seeded by concurrent
+-- tests or earlier runs) enables exact preallocation and can keep the peak under the
+-- limit. Disable the cache to keep the memory profile independent of server state.
+SET collect_hash_table_stats_during_joins = 0;
 SET join_on_disk_max_files_to_merge = 4;
 
 SELECT n, j FROM

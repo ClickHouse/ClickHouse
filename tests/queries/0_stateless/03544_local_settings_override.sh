@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel
-# - no-parallel - spawning bunch of processes with sanitizers can use significant amount of memory
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

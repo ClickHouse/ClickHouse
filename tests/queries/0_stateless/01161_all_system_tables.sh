@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, long, no-object-storage, no-distributed-cache, no-flaky-check
-# Tag no-parallel: since someone may create table in system database
+# Tag no-parallel: lists every table in the shared `system` database and queries each by name; a concurrent test creating/dropping a table there races the listing
 # Tag no-object-storage: it is slow under S3 (and Azure for sure)
 # Tag no-distributed-cache: times out
 # Tag no-flaky-check: flaky check runs with thread fuzzer, which inject sleep for mutexes, and it can be very slow - https://whodidit.you/#profileURL=https://pastila.nl/?0000db87/47c11656acf0cb988e1e3616d3ecc334#hXILEqBNzKufRhUolTA+ww==GCM&view=left-heavy

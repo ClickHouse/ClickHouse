@@ -1,4 +1,5 @@
 -- Tags: no-parallel, no-replicated-database, no-random-settings
+-- Tag no-parallel: uses a process-global failpoint
 -- Tag no-parallel: toggles a server-global failpoint.
 -- Tag no-replicated-database: hypothetical indexes are session-scoped and not replicated.
 -- Tag no-random-settings: keeps the statistics paths and settings deterministic.

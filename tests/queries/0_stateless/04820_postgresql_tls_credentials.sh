@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel, no-replicated-database
+# Tag no-parallel: Creates and drops fixed server-wide named collections, which conflict with concurrent repetitions.
 # no-fasttest: the PostgreSQL integration is not available in the fast test build.
 # no-parallel, no-replicated-database: a named collection is used.
 

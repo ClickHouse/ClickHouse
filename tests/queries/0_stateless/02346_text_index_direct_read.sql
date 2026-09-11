@@ -1,5 +1,4 @@
--- Tags: no-parallel, no-parallel-replicas
--- Tag no-parallel -- due to access to the system.text_log
+-- Tags: no-parallel-replicas
 -- Tag no-parallel-replicas -- direct read is not compatible with parallel replicas
 SET explain_query_plan_default = 'legacy';
 
@@ -41,12 +40,18 @@ SELECT 'Test NOT hasAllTokens:', count() FROM tab WHERE NOT hasAllTokens(text, [
 ----------------------------------------------------
 -- Now check the logs all at once (one by one is too slow)
 ----------------------------------------------------
-SYSTEM FLUSH LOGS text_log;
+SYSTEM FLUSH LOGS text_log, query_log;
 
+-- Scope the text_log scan to queries of this test's database: concurrent tests
+-- also log 'Added:' messages from processAndOptimizeTextIndexFunctions.
 SELECT message
 FROM (
      SELECT event_time_microseconds, message FROM system.text_log
      WHERE event_date >= yesterday() AND event_time >= now() - 600 AND logger_name = 'processAndOptimizeTextIndexFunctions' AND startsWith(message, 'Added:')
+       AND query_id IN (
+           SELECT query_id FROM system.query_log
+           WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+       )
      ORDER BY event_time_microseconds DESC LIMIT 8
 )
 ORDER BY event_time_microseconds ASC;

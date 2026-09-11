@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 drop table if exists table_decimal_dict;
 drop dictionary if exists decimal_dict;

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-msan
+# Tags: no-fasttest, no-msan
 #
 # Regression test for the fail-closed multi-input guard in
 # `tryExtractSpatialFilterFromNode` (src/Processors/Formats/Impl/Parquet/GeoFilter.cpp).

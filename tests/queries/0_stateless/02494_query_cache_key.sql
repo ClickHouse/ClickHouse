@@ -1,14 +1,15 @@
--- Tags: no-parallel, no-flaky-check
--- Tag no-parallel: Messes with internal cache
+-- Tags: no-flaky-check
 
 -- Tests that the key of the query cache is not only formed by the query AST but also by
 -- (1) the current database (`USE db`, issue #64136),
 -- (2) the query settings
 
 
+SET query_cache_tag = '02494_query_cache_key';
+
 SELECT 'Test (1)';
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_key';
 
 DROP DATABASE IF EXISTS db1;
 DROP DATABASE IF EXISTS db2;
@@ -31,7 +32,7 @@ SELECT * FROM tab SETTINGS use_query_cache = 1;
 DROP DATABASE db1;
 DROP DATABASE db2;
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_key';
 
 
 SELECT 'Test (2)';
@@ -43,9 +44,9 @@ SELECT 1 SETTINGS use_query_cache = 1, use_skip_indexes = 1 Format Null;
 SELECT 1 SETTINGS use_query_cache = 1, max_block_size = 1 Format Null;
 
 -- 4x the same query but with different settings each. There should yield four entries in the query cache.
-SELECT count(query) FROM system.query_cache;
+SELECT count(query) FROM (SELECT * FROM system.query_cache WHERE tag = '02494_query_cache_key') AS test_query_cache;
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_key';
 
 -- test with mixed session-level/query-level settings
 SET use_query_cache = 1;
@@ -64,7 +65,7 @@ SET max_block_size = default;
 SET use_query_cache = default;
 
 -- 4x the same query but with different settings each. There should yield four entries in the query cache.
-SELECT count(query) FROM system.query_cache;
+SELECT count(query) FROM (SELECT * FROM system.query_cache WHERE tag = '02494_query_cache_key') AS test_query_cache;
 
-SYSTEM CLEAR QUERY CACHE;
+SYSTEM CLEAR QUERY CACHE TAG '02494_query_cache_key';
 

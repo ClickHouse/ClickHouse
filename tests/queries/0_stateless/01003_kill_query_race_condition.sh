@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, no-parallel
+# Tags: race
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,12 +7,14 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 set -e
 
+QUERY_ID="${CLICKHOUSE_TEST_UNIQUE_NAME}_hello"
+
 function thread1()
 {
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --query_id=hello_01003 --query "SELECT count() FROM numbers(1000000000)" --format Null;
+        $CLICKHOUSE_CLIENT --query_id="$QUERY_ID" --query "SELECT count() FROM numbers(1000000000)" --format Null;
     done
 }
 
@@ -21,7 +23,7 @@ function thread2()
     local TIMELIMIT=$((SECONDS+TIMEOUT))
     while [ $SECONDS -lt "$TIMELIMIT" ]
     do
-        $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = 'hello_01003'" --format Null;
+        $CLICKHOUSE_CLIENT --query "KILL QUERY WHERE query_id = '$QUERY_ID'" --format Null;
         sleep 0.$RANDOM
     done
 }

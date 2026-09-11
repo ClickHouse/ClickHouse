@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: Creates a SQL function with a fixed name in the server-wide function registry.
 -- ^ the UDF case creates a global SQL UDF (CREATE FUNCTION), which cannot run concurrently.
 -- mergeTreeProjection used to ignore the parent table's row policy (clickhouse-private#53773). It now
 -- resolves the policy against the projection with the analyzer and refuses when it can't be enforced.

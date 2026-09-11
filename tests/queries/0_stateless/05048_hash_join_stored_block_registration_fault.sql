@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-parallel, no-parallel-replicas
 -- no-fasttest: needs a build with libfiu to enable the failpoint.
--- no-parallel: the failpoint is server-wide and fires once, so a concurrent copy of this test
+-- Tag no-parallel: the failpoint is server-wide and fires once, so a concurrent copy of this test
 -- consumes the trigger and the first insert below then succeeds.
 -- no-parallel-replicas: EXPLAIN ANALYZE rejects distributed plans (NOT_IMPLEMENTED).
 

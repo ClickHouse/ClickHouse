@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-replicated-database, no-parallel
 # no-replicated-database - path in zookeeper differs with replicated database
-# no-parallel: the `*_lightweight_update_sleep_after_block_allocation` failpoint fires exactly
+# Tag no-parallel: the `*_lightweight_update_sleep_after_block_allocation` failpoint fires exactly
 #   once globally; a concurrent run of a sibling 03100_lwu_* test could steal the pause or
 #   disable the failpoint before this test's UPDATE reaches the injection site.
 

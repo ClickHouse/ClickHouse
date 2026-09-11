@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel, no-msan, no-asan, no-flaky-check, no-tsan
+# Tags: long, no-msan, no-asan, no-flaky-check, no-tsan
 # ^ The test is heavy
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

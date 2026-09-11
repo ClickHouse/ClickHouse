@@ -1,6 +1,3 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
-
 SET parallel_replicas_local_plan = 1;
 
 SET allow_experimental_analyzer = 1;
@@ -21,7 +18,6 @@ SET query_plan_optimize_prewhere = 1;
 -- written to the cache as unmatched. On the second run only mark 1 is selected
 -- (SelectedMarks = 1).
 
-SYSTEM CLEAR QUERY CONDITION CACHE;
 
 DROP TABLE IF EXISTS tab;
 
@@ -40,6 +36,18 @@ SELECT a+1, b+1, a*b FROM tab WHERE b = 1 FORMAT Null
 SETTINGS use_query_condition_cache = true, max_block_size = 1000000, preferred_block_size_bytes = 0,
          log_comment = '04249_qcc_fine_grained_first_run';
 
+-- Second run: uses the cache.
+-- With fine-grained per-granule updates the cache marks 99 granules as non-matching,
+-- so filterPartsByQueryConditionCache reduces the read to only mark 1 (SelectedMarks = 1).
+--
+-- The second run must follow the first one immediately: concurrent tests write their
+-- own entries into the global query condition cache, and an intervening log flush plus
+-- query_log scan gives LRU eviction a seconds-long window to drop this test's entry.
+-- Both query_log checks therefore happen after both runs.
+SELECT a-1, b-1, a*a*b FROM tab WHERE b = 1 FORMAT Null
+SETTINGS use_query_condition_cache = true, max_block_size = 1000000, preferred_block_size_bytes = 0,
+         log_comment = '04249_qcc_fine_grained_second_run';
+
 SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryConditionCacheMisses'] AS cache_misses, ProfileEvents['SelectedMarks'] AS selected_marks
 FROM system.query_log
@@ -49,14 +57,6 @@ WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND log_comment = '04249_qcc_fine_grained_first_run'
 ORDER BY event_time_microseconds;
 
--- Second run: uses the cache.
--- With fine-grained per-granule updates the cache marks 99 granules as non-matching,
--- so filterPartsByQueryConditionCache reduces the read to only mark 1 (SelectedMarks = 1).
-SELECT a-1, b-1, a*a*b FROM tab WHERE b = 1 FORMAT Null
-SETTINGS use_query_condition_cache = true, max_block_size = 1000000, preferred_block_size_bytes = 0,
-         log_comment = '04249_qcc_fine_grained_second_run';
-
-SYSTEM FLUSH LOGS query_log;
 SELECT ProfileEvents['QueryConditionCacheHits'] AS cache_hits, ProfileEvents['SelectedMarks'] AS selected_marks
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600

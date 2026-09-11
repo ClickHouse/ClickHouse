@@ -1,5 +1,5 @@
--- Tags: no-parallel
--- no-parallel: it checks the number of threads, which can be lowered in presence of other queries
+-- The insert below disables concurrency control, so it always gets the `max_threads` it asks for
+-- and the `peak_threads_usage` assertion holds no matter what else runs on the server.
 -- https://github.com/ClickHouse/ClickHouse/issues/37900
 
 drop table if exists t;

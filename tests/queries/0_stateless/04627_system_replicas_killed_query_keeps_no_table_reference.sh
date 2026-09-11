@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-replicated-database
-# no-parallel: the failpoint pauses every concurrent system.replicas query on the server.
+# Tag no-parallel: the failpoint pauses every concurrent `system.replicas` query on the server.
 # no-replicated-database: the replica name is fixed and the failpoint is enabled on one replica only.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

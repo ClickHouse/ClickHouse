@@ -1,7 +1,7 @@
 -- Tags: no-fasttest, no-old-analyzer, no-parallel
 -- no-fasttest: a remote distributed plan needs the stateless worker configuration.
 -- no-old-analyzer: make_distributed_plan requires the analyzer.
--- no-parallel: enables a global failpoint that would disrupt other distributed-plan queries.
+-- Tag no-parallel: enables a global failpoint that would disrupt other distributed-plan queries.
 
 -- A failing worker task records its exception and cancels the query. The failure can land while the
 -- initiator is still dispatching the rest of the stage, so the dispatch loop's cancellation check

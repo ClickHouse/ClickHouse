@@ -2,7 +2,7 @@
 # Tags: long, no-replicated-database, no-parallel
 # long: the lock holds put this at about a minute.
 # no-replicated-database - path in zookeeper differs with replicated database
-# no-parallel: the `infinite_sleep` and `patch_parts_lock_pause_before_cas` failpoints are
+# Tag no-parallel: the `infinite_sleep` and `patch_parts_lock_pause_before_cas` failpoints are
 #   server-global, so a concurrent test would park at them or clear them while this one waits.
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

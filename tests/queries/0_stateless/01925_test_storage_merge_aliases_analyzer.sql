@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 drop table if exists merge;
 set enable_analyzer = 1;

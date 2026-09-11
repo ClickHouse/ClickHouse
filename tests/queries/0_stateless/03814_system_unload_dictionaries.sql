@@ -1,5 +1,6 @@
 -- Tags: no-parallel
--- SYSTEM UNLOAD DICTIONARIES is server-global, so it interferes with dictionaries of other parallel tests.
+-- Tag no-parallel: SYSTEM UNLOAD DICTIONARIES is server-global, so it interferes with
+--   dictionaries of other parallel tests.
 
 DROP DICTIONARY IF EXISTS test_unload_dict;
 DROP TABLE IF EXISTS test_unload_source;

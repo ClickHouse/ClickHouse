@@ -2,7 +2,7 @@
 # Tags: no-fasttest, no-parallel
 # Tag justification:
 #   no-fasttest: needs libpq and libmysql, which are not built in fast test.
-#   no-parallel: the databases created here point at an unreachable host and are visible in
+# Tag no-parallel: the databases created here point at an unreachable host and are visible in
 #     system.tables, so a concurrent scan of it without a database filter would connect there too.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

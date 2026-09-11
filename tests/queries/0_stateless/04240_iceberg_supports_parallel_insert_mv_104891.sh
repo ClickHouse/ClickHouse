@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 # - no-parallel: uses DETACH/ATTACH which serializes per database
 
@@ -34,7 +34,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-BASE_DIR="${USER_FILES_PATH}/test_104891_mv_${CLICKHOUSE_DATABASE}"
+BASE_DIR="${CLICKHOUSE_USER_FILES_UNIQUE}/test_104891_mv_${CLICKHOUSE_DATABASE}"
 trap "rm -rf '${BASE_DIR}' 2>/dev/null" EXIT
 mkdir -p "${BASE_DIR}"
 

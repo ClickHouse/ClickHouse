@@ -6567,7 +6567,7 @@ bool StorageReplicatedMergeTree::optimize(
         {
             /// We must select parts for merge under merge_selecting_mutex because other threads
             /// (merge_selecting_thread or OPTIMIZE queries) could assign new merges.
-            std::lock_guard merge_selecting_lock(merge_selecting_mutex);
+            std::unique_lock merge_selecting_lock(merge_selecting_mutex);
             PartitionIdsHint partition_ids_hint;
             if (partition_id.empty())
             {
@@ -6649,6 +6649,9 @@ bool StorageReplicatedMergeTree::optimize(
                     /// This way `optimize final` won't just silently be a noop (if also `optimize_throw_if_noop=false`), but will wait for the active merges and repeat an attempt to schedule final merge.
                     /// This guarantees are enough for tests, because there we have full control over insertions.
                     const auto wait_timeout = query_context->getSettingsRef()[Setting::receive_timeout].totalMilliseconds() / max_retries;
+                    /// Background mutation selection needs `merge_selecting_mutex` to unblock queued `ALTER_METADATA` entries.
+                    /// Rebuild the merge predicate under the lock on the next attempt after the queue makes progress.
+                    merge_selecting_lock.unlock();
                     /// DEFAULT (and not LIGHTWEIGHT) because merges are not condidered lightweight; empty `source_replicas` means "all replicas"
                     waitForProcessingQueue(wait_timeout, SyncReplicaMode::DEFAULT, {});
                     continue;

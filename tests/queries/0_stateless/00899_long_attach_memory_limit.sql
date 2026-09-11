@@ -1,4 +1,5 @@
 -- Tags: long, no-debug, no-parallel, no-fasttest, no-msan, no-tsan
+-- Tag no-parallel: ATTACH must load 5M-row MergeTree metadata within a tight 39MB per-query memory budget; concurrent-suite memory pressure risks tipping actual allocations over that budget and causing a false failure
 -- This test is slow under MSan or TSan.
 
 DROP TABLE IF EXISTS index_memory;

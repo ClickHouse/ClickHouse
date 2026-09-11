@@ -1,5 +1,8 @@
 -- Tags: no-parallel, shard
 
+-- Tag no-parallel: creates fixed-name shard databases and tables whose distributed query spans shared
+--   `ZooKeeper` and shard state.
+
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/111728 (distinct-shard-values
 -- variant). Two shards hold DISJOINT rows, so a per-shard WITH FILL / INTERPOLATE (the bug) would fill
 -- the gaps and interpolate against each shard's own neighbours and then concatenate, producing extra

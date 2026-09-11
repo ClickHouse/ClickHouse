@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Tags: no-object-storage, no-parallel, no-fasttest
+# Tags: no-object-storage, no-fasttest
 # no-object-storage: s3 has 20 more threads
-# no-parallel: it checks the number of threads, which can be lowered in presence of other queries
+# use_concurrency_control=0: the test asserts exact thread counts, and concurrency control
+# grants fewer thread slots when concurrent queries (other tests) are running
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
@@ -29,6 +30,7 @@ for max_threads in 1 7; do
         SETTINGS="$SETTINGS --max_threads=$max_threads "
         SETTINGS="$SETTINGS --max_insert_threads=$max_insert_threads "
 
+        SETTINGS="$SETTINGS --use_concurrency_control=0 "
         SETTINGS="$SETTINGS --max_block_size=10 "
         SETTINGS="$SETTINGS --min_insert_block_size_rows=10 "
         SETTINGS="$SETTINGS --materialized_views_ignore_errors=1 "

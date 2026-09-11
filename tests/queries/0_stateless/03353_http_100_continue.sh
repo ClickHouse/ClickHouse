@@ -123,3 +123,8 @@ result=$(echo -ne '10\n11\n12\n' | ${CLICKHOUSE_CURL} -vsS "${CLICKHOUSE_URL}&qu
 checkForMissing100ContinueResponse
 checkForMissingBodyUpload
 checkForError QUOTA_EXCEEDED
+
+$CLICKHOUSE_CLIENT -n --query "
+DROP QUOTA quota_${CLICKHOUSE_TEST_UNIQUE_NAME};
+DROP USER user_${CLICKHOUSE_TEST_UNIQUE_NAME};
+"

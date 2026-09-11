@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 EXISTS {CLICKHOUSE_DATABASE_1:Identifier}.t_01048;
 EXISTS TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_01048;

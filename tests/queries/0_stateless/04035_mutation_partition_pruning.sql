@@ -1,4 +1,5 @@
 -- Tags: long, no-replicated-database, no-parallel
+-- Tag no-parallel: Ten synchronous replicated-mutation cases need isolation from concurrent test load to stay within the time limit.
 -- Test automatic partition pruning for mutations.
 -- This optimization works for ReplicatedMergeTree (and SharedMergeTree)
 -- because they use partition-based block number allocation.

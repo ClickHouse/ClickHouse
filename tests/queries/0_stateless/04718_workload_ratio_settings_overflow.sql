@@ -1,4 +1,5 @@
 -- Tags: no-parallel
+-- Tag no-parallel: Creates a root workload, which occupies the single server-wide root-workload slot.
 -- Do not run in parallel: a rootless `CREATE WORKLOAD` claims the single global root-workload
 -- slot enforced in `WorkloadEntityStorageBase::storeEntityImpl`, so it races with any other test
 -- that creates a root workload and one side fails with `The second root is not allowed`.

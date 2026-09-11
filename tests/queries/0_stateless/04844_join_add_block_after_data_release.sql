@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-parallel
 -- no-fasttest: needs a build with libfiu to enable the failpoint.
--- no-parallel: the failpoint is server-wide and fires once, so a concurrent copy of this test
+-- Tag no-parallel: the failpoint is server-wide and fires once, so a concurrent copy of this test
 -- consumes the trigger and this one then gets LIMIT_EXCEEDED instead of the injected fault.
 
 SET join_algorithm = 'grace_hash';

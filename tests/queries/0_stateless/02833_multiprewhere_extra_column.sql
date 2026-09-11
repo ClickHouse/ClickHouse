@@ -1,4 +1,5 @@
--- Tags: no-parallel, no-random-settings, no-random-merge-tree-settings, no-object-storage
+-- Tags: no-random-settings, no-random-merge-tree-settings, no-object-storage, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- add_minmax_index_for_numeric_columns=0: More files opened
 
 drop table if exists t_multi_prewhere;
@@ -11,7 +12,7 @@ settings min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns=0;
 create row policy policy_02834 on t_multi_prewhere using a > 2000 as permissive to all;
 insert into t_multi_prewhere select number, number, number from numbers(10000);
 
-system clear mark cache;
+SYSTEM CLEAR MARK CACHE;
 select sum(b) from t_multi_prewhere prewhere a < 5000;
 
 system flush logs query_log;

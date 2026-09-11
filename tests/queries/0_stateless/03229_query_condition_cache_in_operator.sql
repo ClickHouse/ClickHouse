@@ -1,5 +1,3 @@
--- Tags: no-parallel
--- Tag no-parallel: Messes with internal cache
 
 -- Test for issue #84508 (incorrect results caused by query condition cache when used with IN functions on non-const sets)
 

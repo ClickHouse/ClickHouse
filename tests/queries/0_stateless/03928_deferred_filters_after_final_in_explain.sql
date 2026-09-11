@@ -1,9 +1,8 @@
--- Tags: no-parallel
 -- test that EXPLAIN shows deferred filter information for apply_prewhere_after_final / apply_row_policy_after_final
 SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS tab;
-DROP ROW POLICY IF EXISTS pol1 ON tab;
+DROP ROW POLICY IF EXISTS pol_03928 ON tab;
 
 CREATE TABLE tab (x UInt32, y String, version UInt32) ENGINE = ReplacingMergeTree(version) ORDER BY x;
 
@@ -11,7 +10,7 @@ INSERT INTO tab SELECT 1, 'aaa', 1;
 INSERT INTO tab SELECT 2, 'bbb', 1;
 INSERT INTO tab SELECT 1, 'ccc', 2;
 
-CREATE ROW POLICY pol1 ON tab USING y != 'ccc' TO ALL;
+CREATE ROW POLICY pol_03928 ON tab USING y != 'ccc' TO ALL;
 
 SET enable_analyzer = 1;
 
@@ -44,5 +43,5 @@ SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab FINAL PREWHERE y != 'cc
 SELECT '= no FINAL - no deferred =';
 SELECT explain FROM (EXPLAIN actions=1 SELECT * FROM tab ORDER BY x SETTINGS apply_row_policy_after_final=1, apply_prewhere_after_final=0) WHERE explain LIKE '%Deferred%';
 
-DROP ROW POLICY pol1 ON tab;
+DROP ROW POLICY pol_03928 ON tab;
 DROP TABLE tab;

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: race, no-parallel, no-flaky-check
+# Tag no-parallel: deliberately stress-races 1000 Buffer table create/drop cycles to reproduce a timing race; times out under concurrent-suite CPU contention on busy machines (see FIXME below)
 #  - no-parallel: FIXME start to timeout on bigger machines under high load, no-flaky-check - too long
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

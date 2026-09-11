@@ -1,5 +1,5 @@
 -- Tags: no-parallel, no-parallel-replicas
--- no-parallel: drops the (instance-wide) query condition cache
+-- Tag no-parallel: drops the (instance-wide) query condition cache
 -- no-parallel-replicas: the query condition cache is populated per replica, so the granule
 --                       accounting below is deterministic only on a single replica
 

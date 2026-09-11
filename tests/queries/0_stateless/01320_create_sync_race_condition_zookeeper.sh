@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: race, zookeeper, no-parallel, no-shared-merge-tree
+# Tags: race, zookeeper, no-shared-merge-tree
 # no-shared-merge-tree: database ordinary not supported for shared merge tree
 
 # Creation of a database with Ordinary engine emits a warning.

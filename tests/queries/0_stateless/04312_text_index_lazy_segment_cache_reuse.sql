@@ -1,6 +1,5 @@
--- Tags: no-parallel, no-parallel-replicas
--- no-parallel: uses `SYSTEM CLEAR TEXT INDEX POSTINGS CACHE`, which resets the server-wide
---   cache for every concurrently running query.
+-- Tags: no-parallel-replicas, no-parallel
+-- Tag no-parallel: uses shared cache state and must remain isolated from concurrent cache tests.
 -- no-parallel-replicas: parallel replicas split the granule across replicas, so the per-segment
 --   build/cache counts asserted below would no longer be deterministic.
 

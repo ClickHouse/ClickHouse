@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-parallel, no-fasttest, no-replicated-database
-# no-parallel: uses PAUSEABLE_ONCE failpoints that fire exactly once globally; a concurrent test
-#   from another parallel run could steal the failpoint pause and cause this test to hang.
+# Tag no-parallel: uses PAUSEABLE_ONCE failpoints that fire exactly once globally; a concurrent
+#   test from another parallel run could steal the failpoint pause and cause this test to hang.
 # no-fasttest: requires Keeper, and the Kafka engine is not available in fast tests.
 # no-replicated-database: uses an explicit `kafka_keeper_path` that conflicts with the DDL
 #   replication mechanism of DatabaseReplicated.

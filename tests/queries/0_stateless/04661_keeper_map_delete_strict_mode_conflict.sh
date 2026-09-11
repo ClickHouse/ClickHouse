@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-ordinary-database, zookeeper, no-fasttest, no-parallel
-# no-parallel: uses a PAUSEABLE_ONCE failpoint, which fires exactly once globally; a concurrent
+# Tag no-parallel: uses a PAUSEABLE_ONCE failpoint, which fires exactly once globally; a concurrent
 #   test could steal the pause and make this test hang.
 #
 # Regression test for the documented guarantee that a `DELETE` with `keeper_map_strict_mode = 1`

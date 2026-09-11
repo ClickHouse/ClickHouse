@@ -1,4 +1,3 @@
--- Tags: no-parallel
 
 DROP USER IF EXISTS test_user_01999;
 

@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-flaky-check
 
 SET send_logs_level = 'fatal';
 
@@ -22,7 +22,11 @@ LAYOUT(FLAT());
 
 SELECT status FROM system.dictionaries WHERE database = 'dict_db_01224' AND name = 'dict';
 
-SELECT * FROM system.tables FORMAT Null;
+-- Enumerating the dictionary through system.tables (including the Dictionary-engine
+-- database) must not load it. Scoped to this test's databases: an unfiltered scan
+-- iterates concurrent tests' databases, whose tables may throw (readonly tables,
+-- remote databases with unreachable hosts).
+SELECT * FROM system.tables WHERE database IN ('dict_db_01224', 'dict_db_01224_dictionary') FORMAT Null;
 SELECT status FROM system.dictionaries WHERE database = 'dict_db_01224' AND name = 'dict';
 
 SHOW CREATE TABLE dict_db_01224.dict FORMAT TSVRaw;

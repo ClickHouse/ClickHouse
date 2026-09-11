@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
+# Tag no-parallel: uses a process-global failpoint
 # Reason: enables a server-wide REGULAR failpoint that affects all threads
 # Regression test for OSIOWaitMicroseconds being polluted with thread-lifetime
 # blkio accumulation when TasksStatsCounters::reset throws.

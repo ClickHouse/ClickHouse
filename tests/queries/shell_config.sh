@@ -10,7 +10,7 @@ export CLICKHOUSE_DATABASE_1="${CLICKHOUSE_DATABASE}_1"
 export CLICKHOUSE_DATABASE_2="${CLICKHOUSE_DATABASE}_2"
 export CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=${CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL:="warning"}
 
-# Unique zookeeper path (based on test name and current database) to avoid overlaps
+# Per-run identities supplied by `clickhouse-test`, with a direct-shell fallback.
 export CLICKHOUSE_TEST_PATH="${BASH_SOURCE[1]}"
 CLICKHOUSE_TEST_NAME="$(basename "$CLICKHOUSE_TEST_PATH")"
 CLICKHOUSE_TEST_NAME="${CLICKHOUSE_TEST_NAME%%.*}"

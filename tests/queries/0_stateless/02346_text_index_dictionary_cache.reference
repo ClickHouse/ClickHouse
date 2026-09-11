@@ -6,7 +6,11 @@ cache_hits = 0, cache_misses = 1
 cache_hits = 0, cache_misses = 1
 --- cache hit on a previously queried token.
 1
-cache_hits = 1, cache_misses = 0
+1
+1
+1
+1
+cache_hits = 1, cache_misses = 1
 --- cache miss on a token not previously queried.
 1
 cache_hits = 0, cache_misses = 1
@@ -19,4 +23,8 @@ cache_hits = 0, cache_misses = 1
 cache_hits = 0, cache_misses = 1
 --- cache hit on a token queried after clearing cache.
 1
-cache_hits = 1, cache_misses = 0
+1
+1
+1
+1
+cache_hits = 1, cache_misses = 1

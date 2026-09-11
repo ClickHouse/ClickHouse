@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel
+-- Tags: no-fasttest
 -- no-fasttest because of Parquet
 -- no-parallel because we're writing a file with fixed name
 

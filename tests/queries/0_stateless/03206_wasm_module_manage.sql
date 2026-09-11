@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel, no-msan
+-- Tags: no-fasttest, no-msan
 
 -- Checks general functionality of managing WebAssembly modules and functions (adding modules, creating functions, etc)
 -- And basic wasm engine functionality, such as calling simple functions
@@ -163,7 +163,7 @@ INSERT INTO system.webassembly_modules (name, code) SELECT 'wasm_l', base64Decod
         'aV9kZWNsAAQKUgUGAQF/IAALDgEBf0EsIQIgACABIAILDwEBf0HYACECIAAgASACCxUBAn9BzQAh',
         'AkEsIQMgACABIAIgAwsUAQJ/QSEhAkEsIQMgACABIAIgAws='));
 
-SELECT name FROM system.webassembly_modules WHERE name LIKE 'wasm_%' ORDER BY name;
+SELECT name FROM system.webassembly_modules WHERE name = 'wasm_l';
 
 CREATE FUNCTION multi_decl LANGUAGE WASM ABI ROW_DIRECT FROM 'wasm_l' ARGUMENTS (a UInt32, b UInt32) RETURNS UInt32; -- { serverError WASM_ERROR }
 

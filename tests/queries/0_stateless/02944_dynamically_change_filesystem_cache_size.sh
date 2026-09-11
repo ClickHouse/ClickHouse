@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel, no-object-storage, no-random-settings
+# Tags: no-fasttest, no-object-storage, no-random-settings, no-parallel
+# Tag no-parallel: rewrites server configuration and executes `SYSTEM RELOAD CONFIG`
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -7,14 +8,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 disk_name="s3_cache_02944_lru"
 
-$CLICKHOUSE_CLIENT --query "SYSTEM CLEAR FILESYSTEM CACHE"
+$CLICKHOUSE_CLIENT --query "SYSTEM CLEAR FILESYSTEM CACHE '${disk_name}'"
 $CLICKHOUSE_CLIENT --query "select max_size, max_elements from system.filesystem_cache_settings where cache_name = '${disk_name}'"
 
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS test;
 CREATE TABLE test (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name', serialization_info_version = 'basic';
 INSERT INTO test SELECT randomString(100);
-SYSTEM CLEAR FILESYSTEM CACHE;
+SYSTEM CLEAR FILESYSTEM CACHE '${disk_name}';
 "
 
 $CLICKHOUSE_CLIENT --query "SELECT count() FROM system.filesystem_cache WHERE state = 'DOWNLOADED' and cache_name = '${disk_name}'"

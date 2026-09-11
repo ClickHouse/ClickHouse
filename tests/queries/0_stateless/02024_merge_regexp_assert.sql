@@ -1,5 +1,8 @@
 -- Tags: no-parallel
--- (databases can be removed in background, so this test should not be run in parallel)
+-- Tag no-parallel: `merge(REGEXP('.'), ...)` scans every database on the server: a concurrent
+-- test's table named `t` (with different columns) changes the query outcome, and databases
+-- dropped in the background race with the scan. The `REGEXP` argument must be a literal, so
+-- the pattern cannot be scoped to `currentDatabase()`.
 
 DROP TABLE IF EXISTS t;
 CREATE TABLE t (b UInt8) ENGINE = Memory;

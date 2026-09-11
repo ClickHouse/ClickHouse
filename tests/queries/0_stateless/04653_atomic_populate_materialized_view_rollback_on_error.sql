@@ -1,5 +1,5 @@
 -- Tags: no-parallel, no-replicated-database
--- - no-parallel - due to usage of fail points, and `materialized_views_populate_atomically` is on by
+-- Tag no-parallel: due to usage of fail points, and `materialized_views_populate_atomically` is on by
 --   default, so a concurrent `CREATE MATERIALIZED VIEW ... POPULATE` of another test would hit them too.
 -- - no-replicated-database - in a `Replicated` database the `CREATE` is an entry of the replicated DDL log
 --   and the failed atomic cut is not rolled back locally (that would diverge this replica from the ones

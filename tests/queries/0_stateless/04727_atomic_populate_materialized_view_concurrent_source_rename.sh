@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-replicated-database
-# - no-parallel - due to usage of fail points, and `materialized_views_populate_atomically` is on by
+# Tag no-parallel: due to usage of fail points, and `materialized_views_populate_atomically` is on by
 #   default, so a concurrent `CREATE MATERIALIZED VIEW ... POPULATE` of another test would hit them too.
 # - no-replicated-database - both DDL queries would go through the replicated DDL log, which serializes
 #   them by itself, so the race the test sets up cannot happen there.

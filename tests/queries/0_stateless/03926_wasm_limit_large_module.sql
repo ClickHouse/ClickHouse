@@ -1,4 +1,4 @@
--- Tags: no-fasttest, no-parallel, no-msan
+-- Tags: no-fasttest, no-msan
 
 SET enable_analyzer = 1;
 

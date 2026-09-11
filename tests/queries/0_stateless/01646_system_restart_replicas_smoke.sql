@@ -1,4 +1,7 @@
 -- Tags: replica, no-tsan, no-parallel
+-- Tag no-parallel: runs global `SYSTEM RESTART REPLICAS`, which restarts every replica on the
+-- server and disrupts concurrent tests' replicated tables (e.g. 04283 sequence-consistency), so
+-- it must run fully sequentially
 -- Tag no-tsan: RESTART REPLICAS can acquire too much locks, while only 64 is possible from one thread under TSan
 
 DROP TABLE IF EXISTS data_01646;

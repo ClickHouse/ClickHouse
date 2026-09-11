@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel, no-fasttest, no-random-settings
-# no-parallel: the failpoint below is server-global.
+# Tag no-parallel: the failpoint below is server-global.
 # no-fasttest: requires a cache disk.
 # no-random-settings: randomized buffer sizes change how much data spans file segments.
 

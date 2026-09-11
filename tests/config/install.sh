@@ -129,7 +129,7 @@ function install_build_type_configs()
         ln -sf $SRC_PATH/config.d/serverwide_trace_collector.xml $DEST_SERVER_PATH/config.d/
     fi
 
-    if [ "$is_sanitizer" = "1" ]; then
+    if [ "$is_sanitizer" = "1" ] || [ "$LLVM_COVERAGE" = "1" ]; then
         ln -sf $SRC_PATH/config.d/trace_log_no_symbolize.xml $DEST_SERVER_PATH/config.d/
     else
         rm -f $DEST_SERVER_PATH/config.d/trace_log_no_symbolize.xml

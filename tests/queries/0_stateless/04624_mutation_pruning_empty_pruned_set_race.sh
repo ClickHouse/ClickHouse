@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-parallel, no-replicated-database, no-shared-merge-tree
-# no-parallel: uses a global pauseable failpoint; a predicate mutation from a concurrent test could pause on it.
+# Tag no-parallel: uses a global pauseable failpoint; a predicate mutation from a concurrent test could pause on it.
 # no-replicated-database: the test relies on the mutation running on the same server that waits on the failpoint.
 # no-shared-merge-tree: the failpoint is in the `ReplicatedMergeTree` block allocation path.
 

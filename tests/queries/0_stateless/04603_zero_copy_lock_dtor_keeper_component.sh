@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tags: zookeeper, no-parallel, no-shared-merge-tree, no-replicated-database, no-fasttest
-# no-parallel: uses failpoints that would intersect with concurrent tests
+# Tag no-parallel: uses failpoints that would intersect with concurrent tests
 # no-fasttest: needs the s3 disk (minio) for zero-copy replication
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

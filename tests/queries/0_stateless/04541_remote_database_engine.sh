@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Tags: no-parallel
+# Tag no-parallel: Creates unreachable `Remote` databases that cause concurrent unfiltered `system.tables` queries to fail.
 # The test creates `Remote` databases that point to an unreachable server. Listing the tables of such
 # a database reports the connection error, so a concurrent query that scans `system.tables` over all
 # databases would fail while these databases exist.

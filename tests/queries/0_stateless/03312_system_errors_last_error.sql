@@ -1,5 +1,7 @@
 -- Tags: no-parallel
--- Tag no-parallel: The test checks system.errors values which are global
+-- Tag no-parallel: asserts the exact content of the process-wide `system.errors.last_error_message`
+-- / `last_error_format_string` for `FUNCTION_THROW_IF_VALUE_IS_NON_ZERO`, which any concurrent
+-- `throwIf` call elsewhere would overwrite
 
 -- For the old analyzer last_error_message is slightly different.
 SET enable_analyzer = 1;

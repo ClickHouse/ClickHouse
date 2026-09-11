@@ -1,7 +1,3 @@
--- Tags: no-parallel
--- ^^ required because the parser test mentions SYSTEM DROP subcommands. The
--- EXPLAIN SYNTAX wrapper means no command actually runs.
---
 -- Additional SYSTEM query variants not covered by 04117:
 -- WAIT FAILPOINT (+ PAUSE/RESUME), TEST VIEW, REFRESH/CANCEL/WAIT VIEW,
 -- START/STOP REPLICATED VIEW, ALLOCATE MEMORY, FLUSH LOGS with multiple tables,

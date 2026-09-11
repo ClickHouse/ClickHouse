@@ -1,4 +1,4 @@
--- Tags: no-parallel, no-flaky-check
+-- Tags: no-flaky-check
 -- CNF optimization uses QueryNodeHash to order conditions. We need fixed database.table.column identifier name to stabilize result
 SET explain_query_plan_default = 'legacy';
 DROP DATABASE IF EXISTS db_memory_01625;
