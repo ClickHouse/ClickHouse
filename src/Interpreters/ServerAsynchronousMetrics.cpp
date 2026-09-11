@@ -689,7 +689,10 @@ void ServerAsynchronousMetrics::updateMutationAndDetachedPartsStats()
 
         for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            /// Resolve a lazily loaded table's stand-in, for the same reason as in
+            /// `updateHeavyMetrics`: it is not a `MergeTreeData`, and a loaded lazy table would
+            /// otherwise stay missing from `NumberOfDetachedParts` and `NumberOfPendingMutations`.
+            const auto table = resolveLazyTableIfLoaded(iterator->table());
             if (!table)
                 continue;
 

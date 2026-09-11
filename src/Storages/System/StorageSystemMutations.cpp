@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageTableProxy.h>
 #include <Storages/MergeTree/MergeTreeMutationStatus.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/ContextAccess.h>
@@ -88,7 +89,11 @@ void StorageSystemMutations::fillData(MutableColumns & res_columns, ContextPtr c
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            /// Resolve a lazily loaded table's stand-in: it is not a `MergeTreeData`, so without this
+            /// a loaded lazy table would stay missing from `system.mutations` for as long as the
+            /// server runs. Only the stand-ins whose tables are already loaded - listing mutations
+            /// must not be what loads the catalog and defeats `lazy_load_tables`.
+            const auto table = resolveLazyTableIfLoaded(iterator->table());
             if (!table)
                 continue;
 
