@@ -10,6 +10,7 @@
 
 #include <Common/Logger_fwd.h>
 #include <Core/Types.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Array.h>
@@ -55,6 +56,8 @@ struct ReachableFilesResult
 
 /// Collect all files reachable through the current metadata graph.
 ///
+/// The graph is rooted at the metadata file `catalog` currently points at; without a catalog
+/// (`catalog` is null) the latest metadata file visible in storage is used.
 /// Traverses: metadata JSON files (from metadata-log), manifest lists (from snapshots),
 /// manifest files (from manifest lists), data/delete files (from manifest files),
 /// and statistics files. Base-storage files inside `table_path` go to `files` (as keys); everything
@@ -73,6 +76,8 @@ ReachableFilesResult collectReachableFiles(
     ContextPtr context,
     LoggerPtr log,
     SecondaryStorages & secondary_storages,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_identifier,
     bool scan_metadata_log_history);
 
 }

@@ -296,19 +296,24 @@ ReachableFilesResult collectReachableFiles(
     ContextPtr context,
     LoggerPtr log,
     SecondaryStorages & secondary_storages,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_identifier,
     bool scan_metadata_log_history)
 {
-    auto [version, metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    /// A catalog-backed table has its head in the catalog: the highest `v*.metadata.json` in storage can
+    /// be a version the catalog never committed (an interrupted write, or a rollback), and traversing it
+    /// would report the files of the committed head as unreachable.
+    auto [version, metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
+        catalog,
+        table_identifier,
         persistent_table_components.table_path,
         data_lake_settings,
         persistent_table_components.metadata_cache,
         context,
         log.get(),
         persistent_table_components.table_uuid,
-        persistent_table_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ true);
+        persistent_table_components.metadata_compression_method);
 
     auto metadata = getMetadataJSONObject(
         metadata_path,
@@ -332,9 +337,10 @@ ReachableFilesResult collectReachableFiles(
     if (!base_subtree_prefix.empty() && base_subtree_prefix.back() != '/')
         base_subtree_prefix += '/';
 
-    /// The latest metadata JSON was re-resolved above with `ignore_explicit_metadata_file_path`, so
-    /// every branch of `getLatestOrExplicitMetadataFileAndVersion` (listing, table-UUID selection,
+    /// Without a catalog the metadata JSON is re-resolved above ignoring `iceberg_metadata_file_path`,
+    /// so every branch of `getLatestOrExplicitMetadataFileAndVersion` (listing, table-UUID selection,
     /// version-hint) yields a base-storage key under `table_path/metadata/` — never an external path.
+    /// A catalog location goes through `resolvePathInsideTable`, which rejects anything outside it.
     /// `collectMetadataRootFiles` relies on this to insert it into `reachable` directly.
     chassert(metadata_path.starts_with(base_subtree_prefix));
 

@@ -810,7 +810,8 @@ Pipe IcebergMetadata::executeCommand(
 
         checkTableRootIsQueriedPath("remove_orphan_files");
         return Iceberg::executeRemoveOrphanFiles(
-            args, context, object_storage_, data_lake_settings, persistent_components, *secondary_storages);
+            args, context, object_storage_, data_lake_settings, persistent_components,
+            catalog_, storage_id.getTableName(), *secondary_storages);
     }
     else
     {
@@ -1581,7 +1582,7 @@ void IcebergMetadata::drop(ContextPtr context)
     {
         external_files = Iceberg::collectReachableFiles(
             object_storage, persistent_components, data_lake_settings, context, log, *secondary_storages,
-            /* scan_metadata_log_history */ false).external_files;
+            /* catalog */ nullptr, /* table_identifier */ "", /* scan_metadata_log_history */ false).external_files;
     }
     catch (const Exception & e)
     {
@@ -1608,24 +1609,17 @@ void IcebergMetadata::drop(ContextPtr context)
     }
 
     /// Delete these files leaf-first (reverse of the traversal's append order) so an interrupted drop
-    /// can re-enumerate the rest on retry; batch per storage. Shared files are deleted too, as with `PURGE`.
+    /// can re-enumerate the rest on retry. One object per request: a batch removal can delete part of the
+    /// batch and then throw, which would leave a data file behind while the manifest that references it is
+    /// already gone, and no retry could reach that file again. Shared files are deleted too, as with `PURGE`.
     std::reverse(external_files.begin(), external_files.end());
-    for (size_t i = 0; i < external_files.size();)
+    for (const auto & [storage, key] : external_files)
     {
-        auto storage = external_files[i].first;
-        StoredObjects batch;
-        while (i < external_files.size() && external_files[i].first.get() == storage.get())
-        {
-            batch.emplace_back(external_files[i].second);
-            ++i;
-        }
-        /// Log per object before removal (as in `clearOldFiles`): `removeObjectsIfExist` is best-effort
-        /// and does not confirm each object was present, so record the attempt; a fail-closed interrupt
-        /// then still leaves an audit trail of what this drop was purging.
-        const auto storage_description = storage->getDescription();
-        for (const auto & object : batch)
-            LOG_DEBUG(log, "Removing external file during drop: storage={}, key={}", storage_description, object.remote_path);
-        storage->removeObjectsIfExist(batch);
+        /// Log before removal (as in `clearOldFiles`): `removeObjectIfExists` does not confirm the object
+        /// was present, so record the attempt; a fail-closed interrupt then still leaves an audit trail
+        /// of what this drop was purging.
+        LOG_DEBUG(log, "Removing external file during drop: storage={}, key={}", storage->getDescription(), key);
+        storage->removeObjectIfExists(StoredObject(key));
     }
 
     /// Wipe the base subtree last, restricted to `table_path`: referenced files elsewhere in the bucket

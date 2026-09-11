@@ -30,6 +30,7 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -257,6 +258,8 @@ RemoveOrphanFilesResult removeOrphanFiles(
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_name,
     SecondaryStorages & secondary_storages)
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
@@ -269,7 +272,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     /// orphaned objects in another bucket/prefix that this operation cannot see.
     auto [reachable, metadata_version, external_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, secondary_storages,
-        /* scan_metadata_log_history */ true);
+        catalog, table_name, /* scan_metadata_log_history */ true);
 
     if (!external_files.empty())
         throw Exception(
@@ -299,7 +302,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     /// Only the metadata version matters here (TOCTOU detection), so skip the history walk.
     auto [_recheck_files, recheck_version, _recheck_external_files] = collectReachableFiles(
         object_storage, persistent_table_components, data_lake_settings, context, log, secondary_storages,
-        /* scan_metadata_log_history */ false);
+        catalog, table_name, /* scan_metadata_log_history */ false);
     if (recheck_version != metadata_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Metadata version changed during orphan scan (v{} -> v{}); "
@@ -328,24 +331,34 @@ Pipe executeRemoveOrphanFiles(
     ObjectStoragePtr object_storage,
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_components,
+    std::shared_ptr<DataLake::ICatalog> catalog,
+    const String & table_name,
     SecondaryStorages & secondary_storages)
 {
+    /// A transactional catalog can hold files that are written but not yet committed: they are
+    /// unreachable from the committed head, so the scan below would report them as orphans and delete
+    /// the in-flight transaction's data.
+    if (catalog && catalog->isTransactional())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "remove_orphan_files is not supported for Iceberg tables backed by a transactional catalog");
+
     /// `persistent_components.format_version` is captured when the table was opened and
     /// can become stale if an external tool (e.g. Spark) upgrades the table v1 -> v2
-    /// between queries. Read the latest metadata file to get the authoritative version
+    /// between queries. Read the current metadata file to get the authoritative version
     /// for this command gate.
     auto log = getLogger("IcebergRemoveOrphanFiles");
-    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestOrExplicitMetadataFileAndVersion(
+    auto [_metadata_version, latest_metadata_path, compression_method] = getLatestMetadataFileAndVersionWithCatalog(
         object_storage,
+        catalog,
+        table_name,
         persistent_components.table_path,
         data_lake_settings,
         persistent_components.metadata_cache,
         context,
         log.get(),
         persistent_components.table_uuid,
-        persistent_components.metadata_compression_method,
-        /* force_fetch_latest_metadata */ true,
-        /* ignore_explicit_metadata_file_path */ true);
+        persistent_components.metadata_compression_method);
 
     auto latest_metadata = getMetadataJSONObject(
         latest_metadata_path,
@@ -392,7 +405,9 @@ Pipe executeRemoveOrphanFiles(
         params.location = parsed.getAs<String>("location");
     params.dry_run = parsed.getAs<UInt64>("dry_run") != 0;
 
-    auto result = removeOrphanFiles(params, context, object_storage, data_lake_settings, persistent_components, secondary_storages);
+    auto result = removeOrphanFiles(
+        params, context, object_storage, data_lake_settings, persistent_components,
+        catalog, table_name, secondary_storages);
 
     return resultToPipe(result);
 }
