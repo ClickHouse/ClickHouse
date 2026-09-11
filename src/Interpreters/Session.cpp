@@ -4,6 +4,8 @@
 #include <Access/AccessControl.h>
 #include <Access/Credentials.h>
 #include <Access/ContextAccess.h>
+#include <Access/EnabledRolesInfo.h>
+#include <Access/SettingsProfilesInfo.h>
 #include <Access/User.h>
 #include <Access/Role.h>
 #include <Common/logger_useful.h>
@@ -12,9 +14,11 @@
 #include <Common/setThreadName.h>
 #include <Common/SipHash.h>
 #include <Common/Crypto/X509Certificate.h>
+#include <Common/DateLUT.h>
 #include <IO/WriteHelpers.h>
 #include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
+#include <Core/SettingsSecrets.h>
 #include <Core/UUID.h>
 #include <Common/config_version.h>
 #include <Interpreters/SessionTracker.h>
@@ -834,11 +838,11 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
     if (!login_context)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Session or query context must be created");
 
+    const auto & settings   = login_context->getSettingsRef();
+    const auto access       = login_context->getAccess();
+
     if (auto session_log = getSessionLog())
     {
-        const auto & settings   = login_context->getSettingsRef();
-        const auto access       = login_context->getAccess();
-
         session_log->addLoginSuccess(auth_id,
                                      named_session ? named_session->key.second : "",
                                      settings,
@@ -847,6 +851,38 @@ void Session::recordLoginSuccess(ContextPtr login_context) const
                                      user,
                                      user_authenticated_with,
                                      certificate_info);
+    }
+
+    {
+        SessionRegistry::Entry entry;
+        entry.auth_id = auth_id;
+        entry.session_id = named_session ? named_session->key.second : "";
+
+        const auto now = std::chrono::system_clock::now();
+        entry.event_time = timeInSeconds(now);
+        entry.event_time_microseconds = timeInMicroseconds(now);
+
+        if (user)
+            entry.user = user->getName();
+        entry.auth_type = user_authenticated_with.getType();
+
+        if (const auto roles_info = access->getRolesInfo())
+            entry.roles = roles_info->getCurrentRolesNames();
+        if (const auto profile_info = access->getDefaultProfileInfo())
+            entry.profiles = profile_info->getProfileNames();
+        SettingsChanges changes = settings.changes();
+        for (const auto & change : changes)
+        {
+            String value = Settings::valueToStringUtil(change.name, change.value);
+            CoreSettings::maskSettingValue(change.name, change.value, value);
+            entry.settings.emplace_back(change.name, value);
+        }
+        entry.quotas = access->getQuotaUsages();
+
+        entry.client_info = getClientInfo();
+        entry.certificate_info = certificate_info;
+
+        session_registry_handle = login_context->getSessionRegistry().registerSession(std::move(entry));
     }
 
     notified_session_log_about_login = true;
