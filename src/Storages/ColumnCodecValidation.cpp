@@ -1,6 +1,7 @@
 #include <Storages/ColumnCodecValidation.h>
 
 #include <Compression/CompressionFactory.h>
+#include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
 #include <Parsers/IAST.h>
 #include <Storages/ColumnCodecAST.h>
@@ -9,6 +10,12 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool enable_time_series_table;
+    extern const SettingsBool enable_tuple_element_codecs;
+}
 
 namespace ErrorCodes
 {
@@ -95,6 +102,15 @@ ColumnCodecDescription validateColumnCodecDescriptionForAlter(
     const CodecValidationSettings & settings)
 {
     return validatePolicy(policy, logical_type, settings, &declarations_to_admit);
+}
+
+void checkTupleElementCodecsAreEnabled(const Settings & settings)
+{
+    if (settings[Setting::enable_tuple_element_codecs] || settings[Setting::enable_time_series_table])
+        return;
+    throw Exception(
+        ErrorCodes::BAD_ARGUMENTS,
+        "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
 }
 
 }

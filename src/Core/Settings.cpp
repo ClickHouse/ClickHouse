@@ -8836,6 +8836,7 @@ Use `allow_nullable_tuple_in_extracted_subcolumns` to control whether extracted 
     DECLARE(Bool, enable_tuple_element_codecs, false, R"(
 Allows [`CODEC`](/reference/statements/create/table/codec#tuple-element-codecs) declarations on stored [`Tuple`](/reference/data-types/tuple) elements in `CREATE TABLE` and `ALTER TABLE`.
 Existing Tuple element codec metadata can still be attached, restored, read, preserved, or have declarations removed when this setting is disabled.
+Such declarations are also allowed when [`enable_time_series_table`](/reference/settings/session-settings/enable#enable_time_series_table) is enabled, because the [TimeSeries](/reference/engines/table-engines/integrations/time-series) table engine uses them in the samples tables it generates.
 )", EXPERIMENTAL) \
     DECLARE(UInt64, archive_adaptive_buffer_max_size_bytes, 8 * DBMS_DEFAULT_BUFFER_SIZE, R"(
 Limits the maximum size of the adaptive buffer used when writing to archive files (for example, tar archives)", 0) \

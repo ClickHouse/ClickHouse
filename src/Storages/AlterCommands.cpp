@@ -69,7 +69,6 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_json_lazy_type_hints;
-    extern const SettingsBool enable_tuple_element_codecs;
     extern const SettingsBool allow_metadata_only_named_tuple_alter;
     extern const SettingsBool allow_statistics;
     extern const SettingsBool allow_suspicious_ttl_expressions;
@@ -2238,11 +2237,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                         ErrorCodes::NOT_IMPLEMENTED,
                         "Storage {} does not support Tuple-element CODEC declarations",
                         table->getName());
-                if (declared_codec.hasSubcolumns()
-                    && !context->getSettingsRef()[Setting::enable_tuple_element_codecs])
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
+                if (declared_codec.hasSubcolumns())
+                    checkTupleElementCodecsAreEnabled(context->getSettingsRef());
                 validateColumnCodecDescription(declared_codec, command.data_type, codec_validation_settings);
             }
 
@@ -2289,11 +2285,8 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 const auto declared_codecs = getDeclaredCodecs(command.codec_patch);
                 const bool declares_tuple_element_codec = std::any_of(
                     declared_codecs.begin(), declared_codecs.end(), [](const auto & entry) { return !entry.first.empty(); });
-                if (declares_tuple_element_codec
-                    && !context->getSettingsRef()[Setting::enable_tuple_element_codecs])
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
+                if (declares_tuple_element_codec)
+                    checkTupleElementCodecsAreEnabled(context->getSettingsRef());
 
                 resulting_codec = validateColumnCodecDescriptionForAlter(
                     resulting_codec, resulting_type, declared_codecs, codec_validation_settings);

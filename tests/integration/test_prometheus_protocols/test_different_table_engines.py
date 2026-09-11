@@ -276,7 +276,7 @@ def test_microsecond_precision():
     check(eps=1e-9) # Here eps > 0 because otherwise the check will fail because of different precisions.
     assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(6), Float64))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
-    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`samples` SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(6\),(?:\s|\\n)*value Float64\)\)\)", create_query)
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`samples` SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(6\) CODEC\(DoubleDelta, ZSTD\(1\)\),(?:\s|\\n)*value Float64 CODEC\(ZSTD\(3\)\)\)\)\)", create_query)
     assert re.search(r"(?s)\bsamples\s+SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(6\),(?:\s|\\n)*value Float64\)\)\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
 
     drop_prometheus_table()
@@ -303,7 +303,7 @@ def test_float32_scalar():
     check()
     assert node.query("SELECT type FROM system.columns WHERE database = currentDatabase() AND table = 'prometheus' AND name = 'time_series'") == TSV([["Array(Tuple(DateTime64(3), Float32))"]])
     create_query = node.query("SHOW CREATE TABLE prometheus")
-    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`samples` SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(3\),(?:\s|\\n)*value Float32\)\)\)", create_query)
+    assert re.search(r"(?s)SAMPLES INNER COLUMNS.*`samples` SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(3\) CODEC\(DoubleDelta, ZSTD\(1\)\),(?:\s|\\n)*value Float32 CODEC\(ZSTD\(3\)\)\)\)\)", create_query)
     assert re.search(r"(?s)\bsamples\s+SimpleAggregateFunction\(timeSeriesGroupArray, Array\(Tuple\((?:\s|\\n)*timestamp DateTime64\(3\),(?:\s|\\n)*value Float32\)\)\)", node.query("DESCRIBE timeSeriesSamples(prometheus)"))
 
     drop_prometheus_table()

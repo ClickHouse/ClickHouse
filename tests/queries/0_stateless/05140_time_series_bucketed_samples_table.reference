@@ -44,14 +44,14 @@ time_series	Array(Tuple(DateTime64(3), Float64))
 -- the bucket steps are validated and cannot be altered
 -- the columns of the older layout are rejected
 -- the types of timestamps and values can be adjusted via the outer column or via the samples column
-`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float32))) CODEC(ZSTD(3)), `bucket` UInt32, `min_time` SimpleAggregateFunction(min, UInt32), `max_time` SimpleAggregateFunction(max, UInt32)
+`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3))))), `bucket` UInt32 CODEC(DoubleDelta, ZSTD(1)), `min_time` SimpleAggregateFunction(min, UInt32) CODEC(DoubleDelta, ZSTD(1)), `max_time` SimpleAggregateFunction(max, UInt32) CODEC(DoubleDelta, ZSTD(1))
 [(50,2.5),(100,1.5)]
 0	[(50,2.5),(100,1.5)]	50	100
 id	time_series
 Tuple(UInt64, LowCardinality(UUID))	Array(Tuple(UInt32, Float32))
 (8070480893871644201,'d8188ab2-6029-0c7f-69ad-9c13683453de')	[(100,1.5)]
 Array(Tuple(DateTime64(6), Float32))
-`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))) CODEC(ZSTD(1)), `bucket` DateTime64(6), `min_time` SimpleAggregateFunction(min, DateTime64(6)), `max_time` SimpleAggregateFunction(max, DateTime64(6))
+`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))) CODEC(ZSTD(1)), `bucket` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `min_time` SimpleAggregateFunction(min, DateTime64(6)) CODEC(DoubleDelta, ZSTD(1)), `max_time` SimpleAggregateFunction(max, DateTime64(6)) CODEC(DoubleDelta, ZSTD(1))
 [('1970-01-01 00:01:40.000001',1.5)]
 -- an external samples table can use plain types
 1970-01-01 00:00:00.000	[('1970-01-01 00:01:40.000',2)]	1970-01-01 00:01:40.000	1970-01-01 00:01:40.000
@@ -60,4 +60,4 @@ Array(Tuple(DateTime64(6), Float32))
 -- an external samples table of a wrong layout is rejected
 -- a table created AS a table of an older version gets the new layout with the same types
 `id` Tuple(UInt64, LowCardinality(UUID)), `timestamp` DateTime64(6) CODEC(Delta, ZSTD), `value` Float32	MergeTree ORDER BY (id, timestamp) SETTINGS index_granularity = 512, index_granularity_bytes = 524288
-2	`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))) CODEC(ZSTD(3)), `bucket` DateTime64(6), `min_time` SimpleAggregateFunction(min, DateTime64(6)), `max_time` SimpleAggregateFunction(max, DateTime64(6))	AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 512, index_granularity_bytes = 524288
+2	`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3))))), `bucket` DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), `min_time` SimpleAggregateFunction(min, DateTime64(6)) CODEC(DoubleDelta, ZSTD(1)), `max_time` SimpleAggregateFunction(max, DateTime64(6)) CODEC(DoubleDelta, ZSTD(1))	AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 512, index_granularity_bytes = 524288

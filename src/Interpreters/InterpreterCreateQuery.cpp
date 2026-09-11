@@ -128,7 +128,6 @@ namespace DB
 {
 namespace Setting
 {
-    extern const SettingsBool enable_tuple_element_codecs;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_database_materialized_postgresql;
     extern const SettingsBool enable_full_text_index;
@@ -788,12 +787,9 @@ ColumnsDescription InterpreterCreateQuery::getColumnsDescription(
             ? DataTypeFactory::instance().get(col_decl.getType())
             : column.type;
         column.codec = codecDescriptionFromAST(col_decl, declared_type, column.type, codec_validation_settings);
-        /// The setting controls new metadata only. Existing metadata must load without the setting.
-        if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && column.codec.hasSubcolumns()
-            && !context_->getSettingsRef()[Setting::enable_tuple_element_codecs])
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
+        /// The settings control new metadata only. Existing metadata must load without them.
+        if (mode == LoadingStrictnessLevel::CREATE && !is_restore_from_backup && column.codec.hasSubcolumns())
+            checkTupleElementCodecsAreEnabled(context_->getSettingsRef());
         if (!column.codec.empty())
         {
             if (col_decl.default_specifier == ColumnDefaultSpecifier::Alias)

@@ -92,10 +92,10 @@ DROP TABLE IF EXISTS recent_ext;
 CREATE TABLE recent_ext
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)),
-    `bucket` DateTime64(3),
-    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
-    `max_time` SimpleAggregateFunction(max, DateTime64(3))
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), value Float64 CODEC(ZSTD(3))))),
+    `bucket` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1))
 )
 ENGINE = AggregatingMergeTree PARTITION BY toDate(bucket) ORDER BY (id, bucket);
 

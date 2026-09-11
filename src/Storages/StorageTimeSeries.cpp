@@ -902,7 +902,7 @@ This is equivalent to declaring the `samples` column of the samples table in the
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32, value Float32))) CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp UInt32 CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3))))))
 ```
 
 If both forms are used in the same `CREATE TABLE` statement, the declared types must match.
@@ -944,7 +944,11 @@ The _samples_ table must have columns:
 | `min_time` | [x] | `SimpleAggregateFunction(min, DateTime64(3))` | the type of the timestamps, optionally `Nullable` and optionally wrapped in `SimpleAggregateFunction(min, ...)` | The minimum timestamp of the samples in the row |
 | `max_time` | [x] | `SimpleAggregateFunction(max, DateTime64(3))` | the type of the timestamps, optionally `Nullable` and optionally wrapped in `SimpleAggregateFunction(max, ...)` | The maximum timestamp of the samples in the row |
 
-The `samples` column the engine creates itself gets the compression codec `ZSTD(3)` because it dominates the on-disk size of the samples table.
+The columns the engine creates itself get compression codecs: the `timestamp` element of `samples`, `bucket`, `min_time` and `max_time`
+get `DoubleDelta, ZSTD(1)` because near-monotonic timestamps barely compress under a generic codec, and the `value` element of `samples`
+gets `ZSTD(3)`. The `samples` column dominates the on-disk size of the samples table, so its tuple elements have
+[their own codecs](/reference/statements/create/table/codec#tuple-element-codecs); these declarations are allowed while the
+`enable_time_series_table` setting is enabled, the `enable_tuple_element_codecs` setting is not required.
 See also [Adjusting types of columns](#adjusting-column-types).
 
 Queries reading a time range use the `bucket` column to select granules by the primary key `(id, bucket)`, and the `min_time` and `max_time`
@@ -1022,19 +1026,19 @@ SETTINGS version = 2, recent_samples_ttl_seconds = 345600, samples_bucket_step_s
 SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)),
-    `bucket` DateTime64(3),
-    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
-    `max_time` SimpleAggregateFunction(max, DateTime64(3))
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), value Float64 CODEC(ZSTD(3))))),
+    `bucket` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1))
 )
 SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 512, index_granularity_bytes = 524288
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)),
-    `bucket` DateTime64(3),
-    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
-    `max_time` SimpleAggregateFunction(max, DateTime64(3))
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), value Float64 CODEC(ZSTD(3))))),
+    `bucket` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1))
 )
 RECENT SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toStartOfInterval(bucket, toIntervalHour(5)) ORDER BY (id, bucket) TTL bucket + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 262144, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
@@ -1071,10 +1075,10 @@ and each target table has its own set of columns:
 CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)),
-    `bucket` DateTime64(3),
-    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
-    `max_time` SimpleAggregateFunction(max, DateTime64(3))
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), value Float64 CODEC(ZSTD(3))))),
+    `bucket` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1))
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(bucket)
@@ -1086,10 +1090,10 @@ SETTINGS index_granularity = 512, index_granularity_bytes = 524288
 CREATE TABLE default.`.inner_id.recentsamples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
-    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))) CODEC(ZSTD(3)),
-    `bucket` DateTime64(3),
-    `min_time` SimpleAggregateFunction(min, DateTime64(3)),
-    `max_time` SimpleAggregateFunction(max, DateTime64(3))
+    `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), value Float64 CODEC(ZSTD(3))))),
+    `bucket` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)),
+    `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1)),
+    `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1))
 )
 ENGINE = AggregatingMergeTree
 PARTITION BY toStartOfInterval(bucket, toIntervalHour(5))
@@ -1160,7 +1164,7 @@ The same can be done by declaring the `samples` column of the samples table:
 
 ```sql
 CREATE TABLE my_table ENGINE=TimeSeries
-SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6), value Float32))) CODEC(ZSTD(3)))
+SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(6) CODEC(DoubleDelta, ZSTD(1)), value Float32 CODEC(ZSTD(3))))))
 ```
 
 Specifying inner columns without codecs means using the default codec for them:

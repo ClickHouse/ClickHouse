@@ -2862,7 +2862,7 @@ The following limitations apply:
 - The `Quantized` codec cannot be assigned to a Tuple element.
 - There is no dotted codec target or `MODIFY SUBCOLUMN` syntax. Alter the owning top-level column instead.
 
-The `enable_tuple_element_codecs` setting controls `CODEC` declarations on Tuple elements written in `CREATE TABLE` and `ALTER TABLE`. Existing metadata can still be attached, restored, read, preserved, or have declarations removed while the setting is disabled. This allows a server to load tables that already use the feature without enabling new declarations globally.
+The `enable_tuple_element_codecs` setting controls `CODEC` declarations on Tuple elements written in `CREATE TABLE` and `ALTER TABLE`. Existing metadata can still be attached, restored, read, preserved, or have declarations removed while the setting is disabled. This allows a server to load tables that already use the feature without enabling new declarations globally. The declarations are also allowed while the [`enable_time_series_table`](/reference/settings/session-settings/enable#enable_time_series_table) setting is enabled, because the [`TimeSeries`](/reference/engines/table-engines/integrations/time-series) table engine uses them in the samples tables it generates.
 
 Because the feature uses a new columns metadata version, upgrade every replica and metadata consumer before enabling it. Remove all Tuple element codec declarations before downgrading to a version that does not support the feature.
 

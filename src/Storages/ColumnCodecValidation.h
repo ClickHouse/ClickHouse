@@ -9,6 +9,7 @@ namespace DB
 {
 
 struct CodecValidationSettings;
+struct Settings;
 
 struct ApplicableCodecStream
 {
@@ -36,5 +37,10 @@ ColumnCodecDescription validateColumnCodecDescriptionForAlter(
     const DataTypePtr & logical_type,
     const ColumnCodecDescription::CodecsByPath & declarations_to_admit,
     const CodecValidationSettings & settings);
+
+/// Checks that the session settings allow new declarations of codecs of Tuple elements. They are allowed by
+/// `enable_tuple_element_codecs`, and also by `enable_time_series_table` because the `TimeSeries` table engine
+/// declares such codecs in the samples tables it generates.
+void checkTupleElementCodecsAreEnabled(const Settings & settings);
 
 }
