@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterMoveAccessEntityQuery.h>
+#include <Interpreters/Access/resolveHierarchicalNamesForAccess.h>
 #include <Parsers/Access/ASTMoveAccessEntityQuery.h>
 #include <Parsers/Access/ASTRowPolicyName.h>
 #include <Access/AccessControl.h>
@@ -27,6 +28,8 @@ BlockIO InterpreterMoveAccessEntityQuery::execute()
         return executeDDLQueryOnCluster(query_ptr, getContext());
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    if (query.row_policy_names)
+        resolveHierarchicalNamesForAccess(*query.row_policy_names, getContext());
 
     std::vector<UUID> ids;
     if (query.type == AccessEntityType::ROW_POLICY)

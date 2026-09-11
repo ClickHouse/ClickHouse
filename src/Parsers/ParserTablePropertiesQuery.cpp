@@ -23,7 +23,6 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     ParserKeyword s_table(Keyword::TABLE);
     ParserKeyword s_view(Keyword::VIEW);
     ParserKeyword s_dictionary(Keyword::DICTIONARY);
-    ParserIdentifier name_p(true);
 
     ASTPtr database;
     ASTPtr table;
@@ -103,7 +102,8 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     }
     if (parse_only_database_name)
     {
-        if (!name_p.parse(pos, database, expected))
+        /// `EXISTS DATABASE a.b` and `SHOW CREATE DATABASE a.b` accept a hierarchical database name, the same as `USE`.
+        if (!parseDatabaseAsAST(pos, expected, database))
             return false;
     }
     else

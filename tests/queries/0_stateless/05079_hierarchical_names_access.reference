@@ -21,3 +21,12 @@ ACCESS_DENIED
 --- DROP TABLE db.ns.existing with a grant on the nonexistent database db.ns only
 ACCESS_DENIED
 1
+--- an exact hierarchical name of an access statement names the object it resolves to
+GRANT SELECT ON db.`ns.existing` TO creator_unique
+1
+0
+ACCESS_DENIED
+db	ns.existing
+CREATE ROW POLICY p_unique ON db.`ns.existing` FOR SELECT USING x = 1 TO ALL
+p_unique
+0

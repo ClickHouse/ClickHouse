@@ -79,6 +79,8 @@ Database and table names can contain dots, and such names can be written without
 
 The current database can be hierarchical as well. `USE a.b` is allowed when the database `a.b` exists, when the database `a` has tables named `b.*` (then `b` is a namespace of tables, and `SELECT * FROM c` reads the table `a`.`b.c`), or when there are databases named `a.b.*` (then `SELECT * FROM c.d` reads the table `d` of the database `a.b.c`). `SHOW TABLES` lists the tables under the selected name, with the names relative to it.
 
+A hierarchical name is accepted wherever a database or a table name is written: not only in a query, but also in `RENAME DATABASE`, `EXISTS DATABASE`, `SHOW CREATE DATABASE`, `SYSTEM ... DATABASE REPLICA`, and in the access statements - `GRANT SELECT ON catalog.namespace.table`, `CREATE ROW POLICY p ON catalog.namespace.table`, and the corresponding `REVOKE`, `CHECK GRANT`, `DROP`, `MOVE` and `SHOW` statements. The exact name of an access statement is resolved against the catalog the same way as in a query, so that a privilege or a policy names the object that the same name reads in a `SELECT`; the names of whole databases (`GRANT SELECT ON a.b.*`) and the wildcards are taken as written.
+
 The unquoted parts of a name never create a new namespace: `CREATE TABLE a.b.c` creates the table `a`.`b.c` only if the database `a` already has tables named `b.*`, which protects against typos in database names. The first table of a namespace is created by quoting its name: `CREATE TABLE a."b.c"`.
 
 ```sql

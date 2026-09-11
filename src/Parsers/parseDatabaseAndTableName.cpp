@@ -85,7 +85,8 @@ bool parseDatabaseAndTableAsAST(IParser::Pos & pos, Expected & expected, ASTPtr 
 
 bool parseDatabaseAsAST(IParser::Pos & pos, Expected & expected, ASTPtr & database)
 {
-    ParserIdentifier identifier_parser(/* allow_query_parameter */true);
+    /// A database name can be hierarchical (`a.b`), the same as in `CREATE DATABASE` and `USE`.
+    ParserCompoundIdentifier identifier_parser(/*table_name_with_optional_uuid*/ false, /*allow_query_parameter*/ true);
     return identifier_parser.parse(pos, database, expected);
 }
 
@@ -114,50 +115,58 @@ bool parseDatabaseAndTableNameOrAsterisks(IParser::Pos & pos, Expected & expecte
             return true;
         }
 
-        ASTPtr ast;
-        ParserIdentifier identifier_parser;
-        if (identifier_parser.parse(pos, ast, expected))
+        /// Any number of dot-separated parts is accepted before the optional `.*`: `a.b.c` is a hierarchical name
+        /// (see `parseDatabaseAndTableName`), and the database is everything but the last part. The interpreter of the
+        /// statement resolves the name against the catalog, so that a privilege names the object a query reads.
+        const auto join_parts = [](const std::vector<String> & parts, size_t count)
         {
-            String first_identifier = getIdentifierName(ast);
+            String res;
+            for (size_t i = 0; i < count; ++i)
+            {
+                if (i > 0)
+                    res += '.';
+                res += parts[i];
+            }
+            return res;
+        };
+
+        ParserIdentifier identifier_parser;
+        std::vector<String> parts;
+
+        while (true)
+        {
+            ASTPtr ast;
+            if (!identifier_parser.parse(pos, ast, expected))
+                return false;
+            parts.push_back(getIdentifierName(ast));
+
             if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
                 wildcard = true;
 
             auto pos_before_dot = pos;
+            if (!ParserToken{TokenType::Dot}.ignore(pos, expected))
+                break;
 
-            if (ParserToken{TokenType::Dot}.ignore(pos, expected))
+            if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
             {
-                if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-                {
-                    /// db.*
-                    database = std::move(first_identifier);
-                    table.clear();
-                    return true;
-                }
-                if (identifier_parser.parse(pos, ast, expected))
-                {
-                    /// db.table
-                    database = std::move(first_identifier);
-                    table = getIdentifierName(ast);
-                    if (ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-                        wildcard = true;
-
-                    return true;
-                }
+                /// `db.*`, or `a.b.*` for a hierarchical database name.
+                database = join_parts(parts, parts.size());
+                table.clear();
+                return true;
             }
 
-            /// table
-            pos = pos_before_dot;
-            database.clear();
-            table = std::move(first_identifier);
-            default_database = true;
-
-            if (!wildcard && ParserToken{TokenType::Asterisk}.ignore(pos, expected))
-                wildcard = true;
-
-            return true;
+            if (!identifier_parser.checkWithoutMoving(pos, expected))
+            {
+                pos = pos_before_dot;
+                break;
+            }
         }
 
-        return false;
+        /// `table`, `db.table`, or a hierarchical name `a.b.c`.
+        table = parts.back();
+        database = join_parts(parts, parts.size() - 1);
+        default_database = parts.size() == 1;
+        return true;
     });
 }
 

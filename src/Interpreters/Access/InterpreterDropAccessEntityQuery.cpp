@@ -1,4 +1,5 @@
 #include <Interpreters/Access/InterpreterDropAccessEntityQuery.h>
+#include <Interpreters/Access/resolveHierarchicalNamesForAccess.h>
 #include <Interpreters/InterpreterFactory.h>
 
 #include <Access/AccessControl.h>
@@ -43,6 +44,8 @@ BlockIO InterpreterDropAccessEntityQuery::execute()
         return executeDDLQueryOnCluster(updated_query_ptr, getContext());
 
     query.replaceEmptyDatabase(getContext()->getCurrentDatabase());
+    if (query.row_policy_names)
+        resolveHierarchicalNamesForAccess(*query.row_policy_names, getContext());
 
     auto do_drop = [&](const Strings & names, const String & storage_name)
     {

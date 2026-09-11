@@ -14,12 +14,12 @@ renamer="renamer_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 function run()
 {
-    $CLICKHOUSE_CLIENT -q "$1" 2>&1 | sed "s/${db}/db/g; s/${creator}/creator/g; s/${renamer}/renamer/g"
+    $CLICKHOUSE_CLIENT -q "$1" 2>&1 | sed "s/${CLICKHOUSE_TEST_UNIQUE_NAME}/unique/g; s/${db}/db/g"
 }
 
 function run_as()
 {
-    $CLICKHOUSE_CLIENT --user "$1" -q "$2" 2>&1 | sed "s/${db}/db/g; s/${creator}/creator/g; s/${renamer}/renamer/g"
+    $CLICKHOUSE_CLIENT --user "$1" -q "$2" 2>&1 | sed "s/${CLICKHOUSE_TEST_UNIQUE_NAME}/unique/g; s/${db}/db/g"
 }
 
 run "CREATE TABLE ${db}.\"ns.existing\" (x UInt8) ENGINE = Memory"
@@ -67,5 +67,20 @@ echo '--- DROP TABLE db.ns.existing with a grant on the nonexistent database db.
 run "GRANT DROP TABLE ON \"${db}.ns\".* TO ${creator}"
 run_as "${creator}" "DROP TABLE ${db}.ns.existing" | grep -o 'ACCESS_DENIED' | sort -u
 run "EXISTS TABLE ${db}.\"ns.existing\""
+
+echo '--- an exact hierarchical name of an access statement names the object it resolves to'
+policy="p_${CLICKHOUSE_TEST_UNIQUE_NAME}"
+run "GRANT SELECT ON ${db}.ns.existing TO ${creator}"
+run "SHOW GRANTS FOR ${creator}" | grep SELECT
+run "CHECK GRANT SELECT ON ${db}.ns.existing"
+run_as "${creator}" "SELECT count() FROM ${db}.ns.existing"
+run "REVOKE SELECT ON ${db}.ns.existing FROM ${creator}"
+run_as "${creator}" "SELECT count() FROM ${db}.ns.existing" | grep -o 'ACCESS_DENIED' | sort -u
+run "CREATE ROW POLICY ${policy} ON ${db}.ns.existing USING x = 1 TO ALL"
+run "SELECT database, table FROM system.row_policies WHERE database = '${db}'"
+run "SHOW CREATE ROW POLICY ${policy} ON ${db}.ns.existing"
+run "SHOW ROW POLICIES ON ${db}.ns.existing"
+run "DROP ROW POLICY ${policy} ON ${db}.ns.existing"
+run "SELECT count() FROM system.row_policies WHERE database = '${db}'"
 
 run "DROP USER ${creator}, ${renamer}"
