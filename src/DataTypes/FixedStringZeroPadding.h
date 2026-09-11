@@ -22,8 +22,9 @@ namespace DB
   *
   * Callers: `FunctionComparison`, which compares an `Array`, a `Map` or a `Tuple` through a cast to
   * the common type of its operands; the `arrayIndex.h` functions (`has`, `indexOf`, `countEqual`,
-  * `indexOfAssumeSorted`); and `MergeTreeIndexBloomFilter`, which must agree with them or it prunes
-  * granules holding rows the function would match.
+  * `indexOfAssumeSorted`) and `hasAllAny.h`; and `KeyCondition` and the `bloom_filter`, `ngrambf_v1`
+  * and `text` index conditions, which must agree with them or they prune granules holding rows the
+  * function would match.
   */
 
 /// Whether comparing values of these two types ignores trailing zero bytes. Recurses into `Tuple`,
@@ -60,9 +61,5 @@ inline std::string_view stripTrailingZeros(std::string_view value)
 /// Apply to both operands after a cast to their common type, which strips all trailing '\0' from
 /// FixedString but leaves String untouched.
 ColumnPtr stripTrailingZerosInStrings(const ColumnPtr & column, const DataTypePtr & type);
-
-/// As above, for the elements of an array column: `hasAny`/`hasAll` compare elements of their two
-/// array arguments, so the rule applies one level inside each.
-ColumnPtr stripTrailingZerosInArrayElements(const ColumnPtr & column, const DataTypePtr & element_type);
 
 }

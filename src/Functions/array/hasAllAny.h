@@ -72,19 +72,14 @@ public:
         for (size_t i = 0; i < num_args; ++i)
             preprocessed_columns[i] = castColumn(arguments[i], common_type);
 
-        /// These functions compare the elements of their array arguments, so the zero-padding rule is
-        /// decided by the element types. The cast above dropped the `FixedString` padding of the
-        /// operands it converted and left a `String` operand as it was, so canonicalise every one to
-        /// make the search agree with `equals`, and with `has`. See `zeroPaddedStringComparison`.
-        const auto * first_array_type = typeid_cast<const DataTypeArray *>(arguments[0].type.get());
-        const auto * second_array_type = typeid_cast<const DataTypeArray *>(arguments[1].type.get());
-        if (first_array_type && second_array_type
-            && zeroPaddedStringComparison(first_array_type->getNestedType(), second_array_type->getNestedType()))
-        {
-            const auto & element_type = assert_cast<const DataTypeArray &>(*common_type).getNestedType();
+        /// These functions compare the elements of their array arguments, and
+        /// `zeroPaddedStringComparison` recurses into `Array`, so the argument types decide the rule.
+        /// The cast above dropped the `FixedString` padding of the operands it converted and left a
+        /// `String` operand as it was, so canonicalise every one to make the search agree with
+        /// `equals`, and with `has`.
+        if (zeroPaddedStringComparison(arguments[0].type, arguments[1].type))
             for (auto & preprocessed_column : preprocessed_columns)
-                preprocessed_column = stripTrailingZerosInArrayElements(preprocessed_column, element_type);
-        }
+                preprocessed_column = stripTrailingZerosInStrings(preprocessed_column, common_type);
 
         VectorWithMemoryTracking<std::unique_ptr<GatherUtils::IArraySource>> sources;
 

@@ -163,15 +163,4 @@ ColumnPtr stripTrailingZerosInStrings(const ColumnPtr & column, const DataTypePt
     return column;
 }
 
-ColumnPtr stripTrailingZerosInArrayElements(const ColumnPtr & column, const DataTypePtr & element_type)
-{
-    if (const auto * column_const = typeid_cast<const ColumnConst *>(column.get()))
-        return ColumnConst::create(
-            stripTrailingZerosInArrayElements(column_const->getDataColumnPtr(), element_type), column_const->size());
-
-    const auto & column_array = assert_cast<const ColumnArray &>(*column);
-    return ColumnArray::create(
-        stripTrailingZerosInStrings(column_array.getDataPtr(), element_type), column_array.getOffsetsPtr());
-}
-
 }
