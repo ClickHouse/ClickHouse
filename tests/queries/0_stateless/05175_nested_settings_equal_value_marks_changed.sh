@@ -11,8 +11,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CUR_DIR"/../shell_config.sh
 
 # Settings profiles are server-global, so the name carries the test database.
-SUFFIX="${CLICKHOUSE_DATABASE}"
-PROFILE="p_compat_${SUFFIX}"
+PROFILE="p_compat_05175_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} --query "DROP SETTINGS PROFILE IF EXISTS ${PROFILE}"
 ${CLICKHOUSE_CLIENT} --query "CREATE SETTINGS PROFILE ${PROFILE} SETTINGS compatibility = '26.7'"
