@@ -2,7 +2,7 @@
 
 name: CreateReleaseBranch
 concurrency:
-  group: ${{ github.workflow }}
+  group: official-docker-library
 on:
   workflow_dispatch:
     inputs:

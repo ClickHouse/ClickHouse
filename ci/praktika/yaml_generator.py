@@ -103,7 +103,7 @@ jobs:
 
 name: {NAME}
 concurrency:
-  group: ${{{{{{{{ github.workflow }}}}}}}}
+  group: {CONCURRENCY_GROUP}
 on:
   workflow_dispatch:{DISPATCH_INPUTS_BLOCK}{WORKFLOW_CALL}
 
@@ -562,6 +562,12 @@ class PullRequestPushYamlGen:
                 "WORKFLOW_CALL": workflow_call,
                 "GH_TOKEN_PERMISSIONS": (
                     YamlGenerator.Templates.TEMPLATE_GH_TOKEN_PERMISSIONS
+                ),
+                # Four braces here survive the second .format() pass (line ~600) as
+                # the literal `${{ github.workflow }}`; an explicit group is emitted verbatim.
+                "CONCURRENCY_GROUP": (
+                    self.parser.config.concurrency_group
+                    or "${{{{ github.workflow }}}}"
                 ),
             }
             ENV_CHECKOUT_REFERENCE = (
