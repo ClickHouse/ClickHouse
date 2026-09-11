@@ -810,20 +810,16 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                     "Set the session setting `allow_experimental_unique_key = 1` to enable it.");
             }
 
+            if (is_fresh_definition && merging_params.mode != MergeTreeData::MergingParams::Ordinary)
+            {
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "UNIQUE KEY is only supported on the plain MergeTree engine, not on {}MergeTree",
+                    merging_params.getModeName());
+            }
+
             /// Reject expression-style elements at parse time: runtime consumers
             /// look up keys via `block.getByName(<column name>)`, so an
             /// expression-style UK passes DDL but crashes the first INSERT.
-            ///
-            /// Also reject a UK element that names a non-stored column: an existing
-            /// ALIAS / EPHEMERAL column, or a virtual column (`_part`, ...). The
-            /// INSERT-time SST write (`block.getByName(...)`) and the load-time
-            /// dense-index rebuild (`part->getColumns()`) both read the stored
-            /// block, so such a column would be absent at runtime. `getKeyFromAST`
-            /// below resolves against physical + virtual columns, so it would let a
-            /// virtual element pass DDL entirely, and reject an ALIAS/EPHEMERAL one
-            /// only with a confusing UNKNOWN_IDENTIFIER ("missing column"); this
-            /// gives a clear reason. A name that matches no column at all (not
-            /// physical, not virtual) is left for `getKeyFromAST` (UNKNOWN_IDENTIFIER).
             {
                 const ASTPtr & uk_ast = args.storage_def->unique_key->ptr();
                 auto is_plain_identifier = [](const ASTPtr & node) -> const ASTIdentifier *
@@ -1287,17 +1283,11 @@ void registerStorageMergeTree(StorageFactory & factory)
         .supports_sort_order = true,
         .supports_ttl = true,
         .supports_parallel_insert = true,
-        .supports_unique_key = false,
+        .supports_unique_key = true,
         .has_builtin_setting_fn = MergeTreeSettings::hasBuiltin,
     };
 
-    /// Plain MergeTree only. Every other engine in the family can drop a row on its merge read, and
-    /// a unique-key merge may not: the delete bitmaps it reconciles are keyed by row, so a row that
-    /// vanishes takes its kill mark with it.
-    auto merge_tree_features = features;
-    merge_tree_features.supports_unique_key = true;
-
-    factory.registerStorage("MergeTree", create, merge_tree_features, Documentation{
+    factory.registerStorage("MergeTree", create, features, Documentation{
         .description = String(R"DOCS_MD(
 import ExperimentalBadge from '@theme/badges/ExperimentalBadge';
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
@@ -4413,6 +4403,7 @@ This is a very inefficient way to select data. Don't use it for large tables.
     features.supports_replication = true;
     features.supports_deduplication = true;
     features.supports_schema_inference = true;
+    features.supports_unique_key = false;
 
     factory.registerStorage("ReplicatedMergeTree", create, features, Documentation{
         .description = R"DOCS_MD(

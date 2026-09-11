@@ -3393,7 +3393,12 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
                 tryLogCurrentException(log,
                     fmt::format("The new data part {} has no usable UNIQUE KEY dense index - skip loading", res.part->name));
                 if (res.part->getState() == DataPartState::PreActive)
+                {
                     removePartsFromWorkingSetImmediatelyAndSetTemporaryState({res.part});
+                    /// This removal skips `removePartsFinally`, so it owes the reclaim itself:
+                    /// a link to a part in neither Active nor Outdated throws on every later read.
+                    dropUniqueKeyBitmaps({res.part});
+                }
                 continue;
             }
 
@@ -4685,6 +4690,10 @@ void MergeTreeData::startUniqueKeyGCTaskIfNeeded()
     if (!hasUniqueKey())
         return;
 
+    /// The round unlinks files, which a readonly table promises not to do.
+    if ((*getSettings())[MergeTreeSetting::table_readonly] || isStaticStorage())
+        return;
+
     unique_key_gc_task = getContext()->getSchedulePool()->createTask(
         getStorageID(), "MergeTreeData::uniqueKeyGC",
         [this]
@@ -4709,11 +4718,21 @@ void MergeTreeData::startUniqueKeyGCTaskIfNeeded()
 
 void MergeTreeData::runUniqueKeyGCRound() const
 {
+    /// Re-read per round, not captured at task creation: MODIFY SETTING can flip it under an
+    /// already-scheduled task. Same reason `scheduleDataMovingJob` checks it in its body.
+    if ((*getSettings())[MergeTreeSetting::table_readonly] || isStaticStorage())
+        return;
+
     std::vector<MergeTreePartInfo> part_infos;
     {
         auto parts_lock = readLockParts();
         for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+        {
+            /// Writability is per part: a mixed policy can put one on a readonly disk.
+            if (part->isStoredOnReadonlyDisk())
+                continue;
             part_infos.push_back(part->info);
+        }
     }
 
     if (part_infos.empty())
@@ -6731,6 +6750,10 @@ void MergeTreeData::changeSettings(
         bool has_unique_key_gc_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::unique_key_gc_interval_seconds].totalSeconds() != (*copy)[MergeTreeSetting::unique_key_gc_interval_seconds].totalSeconds();
 
+        /// `startup` creates no task on a readonly table, so clearing the flag must create one.
+        bool has_table_readonly_changed
+            = (*storage_settings.get())[MergeTreeSetting::table_readonly] != (*copy)[MergeTreeSetting::table_readonly];
+
         storage_settings.set(std::move(copy));
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
@@ -6760,7 +6783,7 @@ void MergeTreeData::changeSettings(
             startStatisticsCache();
         }
 
-        if (has_unique_key_gc_interval_changed)
+        if (has_unique_key_gc_interval_changed || has_table_readonly_changed)
             startUniqueKeyGCTaskIfNeeded();
     }
 }
