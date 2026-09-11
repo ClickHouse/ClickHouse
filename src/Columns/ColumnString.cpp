@@ -218,6 +218,8 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     if (result_size_hint > 0)
     {
         const size_t size = offsets.size();
+        if (size != filt.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
         const UInt8 * filt_pos = filt.data();
         UInt64 res_bytes = 0;
         UInt64 prev_offset = 0;
