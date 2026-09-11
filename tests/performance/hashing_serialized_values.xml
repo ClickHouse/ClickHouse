@@ -1,12 +1,12 @@
 <test>
     <create_query>CREATE TABLE states (st AggregateFunction(groupArray, String)) ENGINE = Memory</create_query>
-    <fill_query>INSERT INTO states SELECT groupArrayState(repeat('q', 200)) FROM numbers(1000000) GROUP BY number</fill_query>
+    <fill_query>INSERT INTO states SELECT groupArrayState(repeat('q', 200)) FROM numbers(2000000) GROUP BY number</fill_query>
 
     <!-- Types with no contiguous in-memory representation are hashed by serializing every row. -->
     <query>SELECT count() FROM numbers(20000000) WHERE NOT ignore(xxHash64(number::Variant(UInt64, String)))</query>
-    <query>SELECT count() FROM numbers(3000000) WHERE NOT ignore(sipHash64(concat('{"a":', number::String, '}')::JSON))</query>
+    <query>SELECT count() FROM numbers(2000000) WHERE NOT ignore(sipHash64(concat('{{"a":', number::String, '}}')::JSON))</query>
     <!-- Aggregate states are hashed by serializing each state. -->
-    <query>SELECT uniqExact(st) FROM states</query>
+    <query>SELECT uniqExact(st) FROM states SETTINGS max_threads = 1</query>
 
     <drop_query>DROP TABLE IF EXISTS states</drop_query>
 </test>
