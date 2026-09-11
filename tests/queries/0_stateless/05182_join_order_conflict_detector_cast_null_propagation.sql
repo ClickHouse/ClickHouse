@@ -14,6 +14,7 @@
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 DROP TABLE IF EXISTS t3;
+DROP TABLE IF EXISTS t3v;
 
 CREATE TABLE t1 (a Nullable(Int64)) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE t2 (a Nullable(Int64), k Nullable(Int64)) ENGINE = MergeTree ORDER BY tuple();
@@ -21,6 +22,13 @@ CREATE TABLE t3 (k Nullable(Int64)) ENGINE = MergeTree ORDER BY tuple();
 INSERT INTO t1 VALUES (1), (2);
 INSERT INTO t2 VALUES (1, 10);
 INSERT INTO t3 VALUES (10);
+
+-- A `Variant` (like a `Dynamic`) join key matches NULL to NULL, so an equality over one does not
+-- reject a null-extended row: `Variant(Int64)` keys that are both NULL join, where `Nullable(Int64)`
+-- keys that are both NULL do not. A cast to such a type therefore carries no null-rejection for the
+-- reorderer to use, even though the cast itself returns NULL on a NULL input.
+CREATE TABLE t3v (k Variant(Int64), tag String) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t3v VALUES (10::Int64, 'ten'), (NULL, 'null_key');
 
 SET enable_analyzer = 1, single_join_prefer_left_table = 0;
 -- Pinned because the test asserts on the join plan shape.
@@ -92,6 +100,19 @@ SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
     query_plan_optimize_join_order_algorithm = 'dpsub',
     query_plan_optimize_join_order_use_conflict_detector_a = 1;
 
+-- The null-extended `t1` row reaches `t3v`'s NULL key through the cast, so the reordering the
+-- detector may not take here is the one that would drop that match. Both arms must agree.
+SELECT 'rows variant  noopt', count(), countIf(t3v.tag = 'null_key'), countIf(t3v.tag = 'ten')
+FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3v ON CAST(t2.k AS Variant(Int64)) = t3v.k
+SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 0;
+
+SELECT 'rows variant  cd_a ', count(), countIf(t3v.tag = 'null_key'), countIf(t3v.tag = 'ten')
+FROM t1 LEFT JOIN t2 ON t1.a = t2.a LEFT JOIN t3v ON CAST(t2.k AS Variant(Int64)) = t3v.k
+SETTINGS join_use_nulls = 1, query_plan_optimize_join_order_limit = 10,
+    query_plan_optimize_join_order_algorithm = 'dpsub',
+    query_plan_optimize_join_order_use_conflict_detector_a = 1;
+
 DROP TABLE t1;
 DROP TABLE t2;
 DROP TABLE t3;
+DROP TABLE t3v;

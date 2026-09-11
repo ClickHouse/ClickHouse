@@ -859,9 +859,9 @@ static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
     const auto & name = node.function_base->getName();
     if (!names.contains(name))
         return false;
-    /// A cast yields `NULL` only when its target type can hold one: casting `NULL` to a
-    /// non-`Nullable` type raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` instead of returning
-    /// `NULL`, so such a node is not `NULL` on a null-extended row.
+    /// A cast to a non-`Nullable` type raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` rather than
+    /// returning `NULL`; a cast to `Variant`/`Dynamic` returns `NULL` but a join on such a key
+    /// matches `NULL` to `NULL`. Only the `Nullable` wrappers reject a null-extended row here.
     if (name == "CAST" || name == "_CAST")
         return isNullableOrLowCardinalityNullable(node.result_type);
     return true;

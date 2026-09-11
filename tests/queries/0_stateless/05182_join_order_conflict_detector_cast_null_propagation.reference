@@ -25,3 +25,5 @@ plain         cd_a 	Read(t2)
 plain         cd_a 	Read(t3)
 rows cast-nullable noopt	2	9	9
 rows cast-nullable cd_a 	2	9	9
+rows variant  noopt	2	1	1
+rows variant  cd_a 	2	1	1
