@@ -949,6 +949,7 @@ get `DoubleDelta, ZSTD(1)` because near-monotonic timestamps barely compress und
 gets `ZSTD(3)`. The `samples` column dominates the on-disk size of the samples table, so its tuple elements have
 [their own codecs](/reference/statements/create/table/codec#tuple-element-codecs); these declarations are allowed while the
 `enable_time_series_table` setting is enabled, the `enable_tuple_element_codecs` setting is not required.
+The codecs are generated for MergeTree-family inner engines only, other engines ignore codecs.
 See also [Adjusting types of columns](#adjusting-column-types).
 
 Queries reading a time range use the `bucket` column to select granules by the primary key `(id, bucket)`, and the `min_time` and `max_time`

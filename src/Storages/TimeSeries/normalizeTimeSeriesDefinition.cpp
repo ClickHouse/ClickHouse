@@ -1116,12 +1116,15 @@ namespace
 
     /// Adds missing required columns to an inner table's column list, building them in canonical order.
     /// Existing columns are taken from `inner_table_columns`; missing columns are created with the given type.
+    /// The generated columns get compression codecs only if `inner_engine_is_merge_tree`: other engines ignore
+    /// codecs, and codecs of tuple elements are supported by the MergeTree family only.
     /// Returns true if the column list was modified.
     bool normalizeInnerColumns(
         ASTColumns & inner_table_columns,
         ViewTarget::Kind inner_table_kind,
         const TimeSeriesSettings & time_series_settings,
         const ResolvedTimeSeriesTypes & resolved_types,
+        bool inner_engine_is_merge_tree,
         const StorageID & table_id)
     {
         /// Build a map of the existing inner columns by name.
@@ -1169,34 +1172,45 @@ namespace
                     /// The rows with the same `id` and `bucket` are merged by `timeSeriesGroupArray`, which keeps
                     /// the array sorted and deduplicated. The elements of the tuple get their own codecs
                     /// (see `makeSamplesDataTypeASTWithCodecs`) because the column dominates the table size.
-                    add_column_if_missing(TimeSeriesColumnNames::Samples,
-                        makeSamplesDataTypeASTWithCodecs(resolved_types.timestamp_type, resolved_types.scalar_type));
+                    ASTPtr samples_type_ast;
+                    if (inner_engine_is_merge_tree)
+                        samples_type_ast = makeSamplesDataTypeASTWithCodecs(resolved_types.timestamp_type, resolved_types.scalar_type);
+                    else
+                        samples_type_ast = dataTypeToAST(makeSamplesDataType(resolved_types.timestamp_type, resolved_types.scalar_type));
+                    add_column_if_missing(TimeSeriesColumnNames::Samples, std::move(samples_type_ast));
 
                     /// The start of the bucket, computed on insertion from the `samples_bucket_step_seconds` setting
                     /// (or `recent_samples_bucket_step_seconds` for the recent samples table).
-                    if (auto * bucket_decl = add_column_if_missing(TimeSeriesColumnNames::Bucket, dataTypeToAST(resolved_types.timestamp_type)))
-                        bucket_decl->setCodec(makeTimestampCodecAST());
+                    auto * bucket_decl = add_column_if_missing(TimeSeriesColumnNames::Bucket, dataTypeToAST(resolved_types.timestamp_type));
 
                     /// The time range of the samples in the row: it's used to skip rows when reading a time range.
-                    if (auto * min_time_decl = add_column_if_missing(TimeSeriesColumnNames::MinTime,
-                        dataTypeToAST(makeMinMaxAggregateType("min", resolved_types.timestamp_type))))
+                    auto * min_time_decl = add_column_if_missing(TimeSeriesColumnNames::MinTime,
+                        dataTypeToAST(makeMinMaxAggregateType("min", resolved_types.timestamp_type)));
+                    auto * max_time_decl = add_column_if_missing(TimeSeriesColumnNames::MaxTime,
+                        dataTypeToAST(makeMinMaxAggregateType("max", resolved_types.timestamp_type)));
+
+                    if (inner_engine_is_merge_tree)
                     {
-                        min_time_decl->setCodec(makeTimestampCodecAST());
-                    }
-                    if (auto * max_time_decl = add_column_if_missing(TimeSeriesColumnNames::MaxTime,
-                        dataTypeToAST(makeMinMaxAggregateType("max", resolved_types.timestamp_type))))
-                    {
-                        max_time_decl->setCodec(makeTimestampCodecAST());
+                        for (auto * timestamp_column_decl : {bucket_decl, min_time_decl, max_time_decl})
+                        {
+                            if (timestamp_column_decl)
+                                timestamp_column_decl->setCodec(makeTimestampCodecAST());
+                        }
                     }
                     break;
                 }
 
                 /// Auto-created "timestamp" and "value" columns get compression codecs (see `makeTimestampCodecAST`
                 /// and `makeValueCodecAST`). Explicitly declared columns keep whatever the user wrote.
-                if (auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type)))
-                    timestamp_decl->setCodec(makeTimestampCodecAST());
-                if (auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type)))
-                    value_decl->setCodec(makeValueCodecAST());
+                auto * timestamp_decl = add_column_if_missing(TimeSeriesColumnNames::Timestamp, dataTypeToAST(resolved_types.timestamp_type));
+                auto * value_decl = add_column_if_missing(TimeSeriesColumnNames::Value, dataTypeToAST(resolved_types.scalar_type));
+                if (inner_engine_is_merge_tree)
+                {
+                    if (timestamp_decl)
+                        timestamp_decl->setCodec(makeTimestampCodecAST());
+                    if (value_decl)
+                        value_decl->setCodec(makeValueCodecAST());
+                }
 
                 break;
             }
@@ -2305,25 +2319,27 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
             }
             else
             {
-                /// An inner target table should be used. Normalize its column definitions and assign a table engine if not specified.
+                /// An inner target table should be used. Assign a table engine if not specified and normalize the column definitions.
                 StorageID table_id{create_query.getDatabase(), create_query.getTable()};
+
+                /// The engine goes first: the generated columns depend on its family (see `normalizeInnerColumns`).
+                auto inner_engine = create_query.getTargetInnerEngine(kind)
+                    ? boost::static_pointer_cast<ASTStorage>(create_query.getTargetInnerEngine(kind)->clone())
+                    : make_intrusive<ASTStorage>();
+                if (normalizeInnerEngine(*inner_engine, kind, settings, resolved_types, table_id, context))
+                    create_query.setTargetInnerEngine(kind, inner_engine);
+                bool inner_engine_is_merge_tree = inner_engine->engine->name.ends_with("MergeTree");
 
                 auto inner_columns = create_query.getTargetInnerColumns(kind)
                     ? boost::static_pointer_cast<ASTColumns>(create_query.getTargetInnerColumns(kind)->clone())
                     : make_intrusive<ASTColumns>();
-                if (normalizeInnerColumns(*inner_columns, kind, settings, resolved_types, table_id))
+                if (normalizeInnerColumns(*inner_columns, kind, settings, resolved_types, inner_engine_is_merge_tree, table_id))
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
                 /// Validate the user-provided types of the inner columns the same way external targets are validated.
                 auto inner_columns_description = InterpreterCreateQuery::getColumnsDescription(
                     *inner_columns->columns, context, mode);
                 checkTargetTable(inner_columns_description, kind, settings, resolved_types, table_id);
-
-                auto inner_engine = create_query.getTargetInnerEngine(kind)
-                    ? boost::static_pointer_cast<ASTStorage>(create_query.getTargetInnerEngine(kind)->clone())
-                    : make_intrusive<ASTStorage>();
-                if (normalizeInnerEngine(*inner_engine, kind, settings, resolved_types, table_id, context))
-                    create_query.setTargetInnerEngine(kind, inner_engine);
             }
         }
 

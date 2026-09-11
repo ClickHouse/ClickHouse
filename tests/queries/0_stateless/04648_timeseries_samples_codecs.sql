@@ -52,6 +52,17 @@ WHERE database = currentDatabase() AND table LIKE '.inner_id.samples.%' ORDER BY
 
 DROP TABLE ts_explicit;
 
+-- The columns of a non-MergeTree inner table are generated without codecs: such engines ignore codecs, and they don't
+-- support the codecs of tuple elements.
+DROP TABLE IF EXISTS ts_memory;
+CREATE TABLE ts_memory ENGINE = TimeSeries SETTINGS recent_samples_ttl_seconds = 0 SAMPLES INNER ENGINE = Memory;
+
+SELECT 'no codecs for a Memory inner table:';
+SELECT extract(create_table_query, 'SAMPLES INNER COLUMNS \((.*?)\) SAMPLES INNER ENGINE')
+FROM system.tables WHERE database = currentDatabase() AND name = 'ts_memory';
+
+DROP TABLE ts_memory;
+
 -- Explicitly declared codecs of the tuple elements are kept as well.
 CREATE TABLE ts_explicit ENGINE = TimeSeries
 SAMPLES INNER COLUMNS (samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3) CODEC(Delta, LZ4), value Float64 CODEC(LZ4)))));

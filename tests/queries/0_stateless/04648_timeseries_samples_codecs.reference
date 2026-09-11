@@ -21,5 +21,7 @@ samples	SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp Date
 bucket	DateTime64(3)	CODEC(DoubleDelta, ZSTD(1))
 min_time	SimpleAggregateFunction(min, DateTime64(3))	CODEC(DoubleDelta, ZSTD(1))
 max_time	SimpleAggregateFunction(max, DateTime64(3))	CODEC(DoubleDelta, ZSTD(1))
+no codecs for a Memory inner table:
+`id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))), `bucket` DateTime64(3), `min_time` SimpleAggregateFunction(min, DateTime64(3)), `max_time` SimpleAggregateFunction(max, DateTime64(3))
 explicit tuple element codecs:
 `id` Tuple(UInt64, LowCardinality(UUID)), `samples` SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3) CODEC(Delta, LZ4), value Float64 CODEC(LZ4)))), `bucket` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1)), `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1))
