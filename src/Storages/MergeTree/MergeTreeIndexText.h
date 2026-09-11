@@ -615,4 +615,12 @@ public:
     std::optional<String> normalized_index_column_name;
 };
 
+/// The canonical tokenizer description of a `text` index, e.g. `ngrams(3)`, as accepted by the third
+/// argument of the text-search functions. Empty for any other index type.
+String getTextIndexTokenizerDescription(const IndexDescription & index);
+
+/// The index expression spelled the way queries are analyzed, when that differs from
+/// `IndexDescription::column_names`; `std::nullopt` when the rewrite changes nothing.
+std::optional<String> getNormalizedIndexColumnName(const IndexDescription & index);
+
 }
