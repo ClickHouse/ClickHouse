@@ -415,12 +415,33 @@ CursorPromotersMap StorageMergeTree::buildPromoters()
     return constructPromoters(/*committing_block_numbers=*/{}, std::move(partition_ranges));
 }
 
-std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr) const
+std::optional<UInt64> StorageMergeTree::totalRows(ContextPtr local_context) const
 {
-    UInt64 res = 0;
+    /// `local_context` should not be nullptr, but still preserve the non-transaction-aware behavior in case there's code that
+    /// relies on it.
+    const auto txn = local_context ? local_context->getCurrentTransaction() : nullptr;
+    const auto is_visible = [&](const DataPartPtr & part) -> bool
+    {
+        return txn ? part->version->isVisible(txn->getSnapshot(), txn->tid) : true;
+    };
+
+    /// `Outdated` parts may still be visible to a transaction's snapshot, so check them for the transactional case as well.
+    static constexpr std::array<DataPartState, 2> READABLE_STATES{DataPartState::Active, DataPartState::Outdated};
+    const std::span states(READABLE_STATES.data(), txn ? 2 : 1);
+
     auto lock = readLockParts();
-    for (const auto & part : getDataPartsStateRange(DataPartState::Active, MergeTreePartInfo::Kind::Regular))
-        res += part->rows_count;
+    UInt64 res = 0;
+    for (const auto state : states)
+    {
+        for (const auto & part : getDataPartsStateRange(state, MergeTreePartInfo::Kind::Regular))
+        {
+            if (is_visible(part))
+            {
+                res += part->rows_count;
+            }
+        }
+    }
+
     return res;
 }
 
