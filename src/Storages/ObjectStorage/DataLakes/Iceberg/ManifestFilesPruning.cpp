@@ -10,6 +10,7 @@
 #include <Core/DecimalFunctions.h>
 #include <base/arithmeticOverflow.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Common/logger_useful.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
