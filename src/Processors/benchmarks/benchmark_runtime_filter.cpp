@@ -244,10 +244,11 @@ DataTypePtr lowCardinalityStringType()
     return std::make_shared<DataTypeLowCardinality>(stringType());
 }
 
-UniqueRuntimeFilterPtr makeAdaptiveRuntimeFilter(const DataTypePtr & type, Float64 adaptive_skip_threshold)
+UniqueRuntimeFilterPtr buildAdaptiveRuntimeFilter(
+    const DataTypePtr & type, const ColumnPtr & build_column, Float64 adaptive_skip_threshold = DISABLE_ADAPTIVE_SKIP_THRESHOLD)
 {
     const RuntimeFilterConfig config{adaptive_skip_threshold, BLOCKS_TO_SKIP_BEFORE_REENABLING};
-    return std::make_unique<RuntimeFilter>(
+    auto filter = std::make_unique<RuntimeFilter>(
         /*filters_to_merge_=*/0,
         config,
         AdaptiveSetRuntimeFilter(
@@ -258,12 +259,6 @@ UniqueRuntimeFilterPtr makeAdaptiveRuntimeFilter(const DataTypePtr & type, Float
             DISABLE_BLOOM_FULLNESS_CHECK,
             /*distinct_keys_hint_=*/std::nullopt,
             /*distinct_keys_hint_matches_filter_key_=*/false));
-}
-
-UniqueRuntimeFilterPtr buildAdaptiveRuntimeFilter(
-    const DataTypePtr & type, const ColumnPtr & build_column, Float64 adaptive_skip_threshold = DISABLE_ADAPTIVE_SKIP_THRESHOLD)
-{
-    auto filter = makeAdaptiveRuntimeFilter(type, adaptive_skip_threshold);
     if (build_column)
         filter->insert(build_column);
     filter->finishInsert();
