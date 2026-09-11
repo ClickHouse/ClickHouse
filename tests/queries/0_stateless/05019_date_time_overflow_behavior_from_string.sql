@@ -94,3 +94,12 @@ SELECT j.d FROM format(JSONEachRow, 'j JSON(d DateTime64(3))', '{"j":{"d":"2299-
 SELECT 'throw, JSONExtract keeps returning a default or NULL';
 SELECT JSONExtract('{"d":"2150-12-31"}', 'd', 'Date'), JSONExtract('{"d":"2150-12-31"}', 'd', 'Nullable(Date)'), JSONExtract('{"d":"2149-06-06"}', 'd', 'Date');
 
+SELECT 'throw, an explicitly written year 0000 is not silently replaced';
+SELECT parseDateTimeBestEffort('0000-01-01 00:00:00'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTimeBestEffort('00000101'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTimeBestEffortUS('01/01/0000'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime('0000-01-01 00:00:00'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT * FROM format(JSONEachRow, 'v DateTime', '{"v":"0000-01-01 00:00:00"}'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT parseDateTimeBestEffortOrNull('0000-01-01 00:00:00'), parseDateTimeBestEffortOrZero('0000-01-01 00:00:00');
+-- An absent year is a documented best-effort feature, not an overflow
+SELECT toMonth(parseDateTimeBestEffort('Mar  3 01:33:48'));

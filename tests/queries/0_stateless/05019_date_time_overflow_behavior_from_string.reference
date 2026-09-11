@@ -37,3 +37,6 @@ throw, typed JSON columns are checked like declared ones
 2299-12-31 23:59:59.999
 throw, JSONExtract keeps returning a default or NULL
 1970-01-01	\N	2149-06-06
+throw, an explicitly written year 0000 is not silently replaced
+\N	1970-01-01 00:00:00
+3

@@ -937,6 +937,10 @@ ReturnType parseDateTimeBestEffortImpl(
         if (has_explicit_zero_year)
             *has_explicit_zero_year = zero_year_was_read;
 
+        /// Year 0000 is outside DateTime and the substitution below would hide that, which `throw` forbids
+        if (!is_64 && zero_year_was_read && overflow == DateTimeOverflow::Report)
+            return on_error(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Year 0000 is out of bounds of type DateTime");
+
         if constexpr (strict)
             return on_error(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot read DateTime: year is required");
 
