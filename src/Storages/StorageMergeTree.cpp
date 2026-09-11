@@ -1617,6 +1617,7 @@ void StorageMergeTree::loadMutations()
                         "Cannot resolve the partitions of the commands of mutation {}. "
                         "They will not be applied on the fly until the mutation is materialized", it->name()));
                 }
+
                 LOG_DEBUG(log, "Loading mutation: {} entry, commands size: {}", it->name(), entry.commands->size());
 
                 if (!entry.tid.isNonTransactional() && !entry.csn)
