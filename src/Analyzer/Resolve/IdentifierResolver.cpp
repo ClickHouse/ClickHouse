@@ -1532,12 +1532,16 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             const bool is_table_lookup = identifier_lookup.isTableExpressionLookup();
             const bool is_qualified_expr = identifier_lookup.isExpressionLookup()
                 && identifier_lookup.identifier.getPartsSize() > 1;
-            /// A fully qualified `db.table.column` reference names the skipped table just as well as
-            /// an alias or a bare table name does, so it must be attributed to the skipped side too.
-            /// Otherwise the reference degrades to `UNKNOWN_IDENTIFIER`, which a statically-dead
-            /// `if(false, ...)` branch silently folds away instead of reporting the access violation.
+            /// A fully qualified reference names the skipped table just as well as an alias or a bare
+            /// table name does, so it must be attributed to the skipped side too. Otherwise the
+            /// reference degrades to `UNKNOWN_IDENTIFIER`, which a statically-dead `if(false, ...)`
+            /// branch silently folds away instead of reporting the access violation.
+            /// The `db.table` prefix takes two parts, so it is the whole identifier of a table
+            /// expression lookup (`db.table.*` is looked up by its qualifier `db.table`), while an
+            /// expression lookup needs a third part for the column name (`db.table.column`).
+            const size_t min_database_qualified_parts = is_table_lookup ? 2 : 3;
             const bool binds_qualifier = qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/false)
-                || (identifier_lookup.identifier.getPartsSize() > 2
+                || (identifier_lookup.identifier.getPartsSize() >= min_database_qualified_parts
                     && qualifierBindsToJoinSubtree(join_tree_node, identifier_lookup.identifier, scope, /*database_qualified=*/true));
             if ((is_table_lookup || is_qualified_expr) && binds_qualifier)
                 denied_qualified_access = side;
