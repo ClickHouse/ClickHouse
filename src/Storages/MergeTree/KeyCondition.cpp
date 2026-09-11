@@ -1686,6 +1686,10 @@ static bool applyFunctionChainToColumn(
 
     /// And cast it to the argument type of the first function in the chain
     auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
+    /// A `DateTime`/`DateTime64` with no time zone in its name names instants in the zone its text is
+    /// parsed in, which is the session one. Each function below still runs against its declared type.
+    if (isStringOrFixedString(removeNullable(result_type)))
+        in_argument_type = substituteTimeZoneInDateTimeType(in_argument_type, DateLUT::instance().getTimeZone());
     if (canBeSafelyCast(result_type, in_argument_type))
     {
         result_column = castColumnAccurate({result_column, result_type, ""}, in_argument_type);
@@ -2216,6 +2220,12 @@ static bool convertColumnForDeterministicDag(
         /// Additionally, some round trip might not be possible to do safely. Like String -> Dynamic -> String.
         auto try_apply_direct_cast_fast_path = [&]() -> bool
         {
+            /// Text is a spelling of a value in the input domain, so the CAST cannot be applied to it
+            /// before it is parsed there; take the round trip through `dag.input_type` instead.
+            if (isStringOrFixedString(removeNullable(input_type))
+                && isDateTimeOrDateTime64(removeNullable(removeLowCardinality(dag.input_type))))
+                return false;
+
             const auto & actions_dag = dag.actions->getActionsDAG();
 
             const ActionsDAG::Node * output_node = nullptr;
@@ -2274,8 +2284,15 @@ static bool convertColumnForDeterministicDag(
             return true;
         }
 
-        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type))
+        /// Text names instants in the session's zone, as above, but the DAG below derives a transform's
+        /// zone from its runtime argument type, so it is handed the declared input type back.
+        auto cast_target = dag.input_type;
+        if (isStringOrFixedString(removeNullable(input_type)))
+            cast_target = substituteTimeZoneInDateTimeType(cast_target, DateLUT::instance().getTimeZone());
+
+        if (!castColumnWithoutNulls(input_column, input_type, cast_target))
             return false;
+        input_type = dag.input_type;
     }
 
     out_column = input_column;

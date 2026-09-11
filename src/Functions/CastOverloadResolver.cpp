@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/Utils.h>
 #include <Columns/ColumnString.h>
 #include <Core/Settings.h>
 #include <Interpreters/parseColumnsListForTableFunction.h>
@@ -87,47 +88,6 @@ FunctionBasePtr createFunctionBaseCast(
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
     CastType cast_type);
-
-/// If `target` is a `DateTime` or `DateTime64` (possibly wrapped in `Nullable` and/or `LowCardinality`)
-/// without an explicit time zone, return a copy of it with the given time zone substituted.
-/// Otherwise return `target` unchanged.
-static DataTypePtr substituteTimeZoneInDateTimeType(const DataTypePtr & target, const String & timezone)
-{
-    if (timezone.empty())
-        return target;
-
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(target.get()))
-    {
-        auto nested = substituteTimeZoneInDateTimeType(nullable_type->getNestedType(), timezone);
-        if (nested.get() == nullable_type->getNestedType().get())
-            return target;
-        return std::make_shared<DataTypeNullable>(nested);
-    }
-
-    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(target.get()))
-    {
-        auto nested = substituteTimeZoneInDateTimeType(lc_type->getDictionaryType(), timezone);
-        if (nested.get() == lc_type->getDictionaryType().get())
-            return target;
-        return std::make_shared<DataTypeLowCardinality>(nested);
-    }
-
-    if (const auto * dt_type = typeid_cast<const DataTypeDateTime *>(target.get()))
-    {
-        if (dt_type->hasExplicitTimeZone())
-            return target;
-        return std::make_shared<DataTypeDateTime>(timezone);
-    }
-
-    if (const auto * dt64_type = typeid_cast<const DataTypeDateTime64 *>(target.get()))
-    {
-        if (dt64_type->hasExplicitTimeZone())
-            return target;
-        return std::make_shared<DataTypeDateTime64>(dt64_type->getScale(), timezone);
-    }
-
-    return target;
-}
 
 /// Extract the explicit time zone of the source argument's `DateTime` or `DateTime64` type,
 /// looking through `Nullable` and `LowCardinality` wrappers. Returns an empty string if the

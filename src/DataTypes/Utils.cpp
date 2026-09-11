@@ -1,5 +1,7 @@
 #include <DataTypes/Utils.h>
 #include <DataTypes/DataTypesDecimal.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
@@ -247,6 +249,44 @@ bool canBeSafelyCast(const DataTypePtr & from_type, const DataTypePtr & to_type)
     }
 
     return true;
+}
+
+DataTypePtr substituteTimeZoneInDateTimeType(const DataTypePtr & target, const String & timezone)
+{
+    if (timezone.empty())
+        return target;
+
+    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(target.get()))
+    {
+        auto nested = substituteTimeZoneInDateTimeType(nullable_type->getNestedType(), timezone);
+        if (nested.get() == nullable_type->getNestedType().get())
+            return target;
+        return std::make_shared<DataTypeNullable>(nested);
+    }
+
+    if (const auto * lc_type = typeid_cast<const DataTypeLowCardinality *>(target.get()))
+    {
+        auto nested = substituteTimeZoneInDateTimeType(lc_type->getDictionaryType(), timezone);
+        if (nested.get() == lc_type->getDictionaryType().get())
+            return target;
+        return std::make_shared<DataTypeLowCardinality>(nested);
+    }
+
+    if (const auto * dt_type = typeid_cast<const DataTypeDateTime *>(target.get()))
+    {
+        if (dt_type->hasExplicitTimeZone())
+            return target;
+        return std::make_shared<DataTypeDateTime>(timezone);
+    }
+
+    if (const auto * dt64_type = typeid_cast<const DataTypeDateTime64 *>(target.get()))
+    {
+        if (dt64_type->hasExplicitTimeZone())
+            return target;
+        return std::make_shared<DataTypeDateTime64>(dt64_type->getScale(), timezone);
+    }
+
+    return target;
 }
 
 }
