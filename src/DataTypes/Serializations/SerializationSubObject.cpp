@@ -15,16 +15,17 @@ namespace ErrorCodes
 }
 
 SerializationSubObject::SerializationSubObject(
-    const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_)
+    const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & default_path_type_)
     : paths_prefix(paths_prefix_)
     , typed_paths_serializations(typed_paths_serializations_)
     , dynamic_type(dynamic_type_)
     , dynamic_serialization(dynamic_serialization_)
+    , default_path_type(default_path_type_)
 {
 }
 
 
-UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_)
+UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & default_path_type_)
 {
     SipHash hash;
     hash.update("SubObject");
@@ -34,6 +35,9 @@ UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std:
     hash.update(dynamic_type_name.size());
     hash.update(dynamic_type_name);
     hash.update(dynamic_serialization_->getHash());
+    auto default_path_type_name = default_path_type_ ? default_path_type_->getName() : "";
+    hash.update(default_path_type_name.size());
+    hash.update(default_path_type_name);
     std::vector<String> sorted_paths;
     sorted_paths.reserve(typed_paths_serializations_.size());
     for (const auto & [path, _] : typed_paths_serializations_)
@@ -48,16 +52,16 @@ UInt128 SerializationSubObject::getHash(const String & paths_prefix_, const std:
     return hash.get128();
 }
 
-SerializationPtr SerializationSubObject::create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization)
+SerializationPtr SerializationSubObject::create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization, const DataTypePtr & default_path_type_)
 {
     for (const auto & [_, item] : typed_paths_serializations_)
     {
         if (!item->supportsPooling())
-            return std::shared_ptr<ISerialization>(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization));
+            return std::shared_ptr<ISerialization>(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization, default_path_type_));
     }
     if (!dynamic_serialization->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization));
-    return ISerialization::pooled(getHash(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization), [&] { return new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization); });
+        return std::shared_ptr<ISerialization>(new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization, default_path_type_));
+    return ISerialization::pooled(getHash(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization, default_path_type_), [&] { return new SerializationSubObject(paths_prefix_, typed_paths_serializations_, dynamic_type, dynamic_serialization, default_path_type_); });
 }
 
 bool SerializationSubObject::supportsPooling() const
@@ -210,7 +214,8 @@ void SerializationSubObject::deserializeBinaryBulkStatePrefix(
         structure_state_concrete->shared_data_buckets,
         paths_prefix,
         dynamic_type,
-        dynamic_serialization);
+        dynamic_serialization,
+        default_path_type);
     sub_object_state->shared_data_serialization->deserializeBinaryBulkStatePrefix(settings, sub_object_state->shared_data_state, cache);
     settings.path.pop_back();
 

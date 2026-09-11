@@ -295,6 +295,7 @@ public:
     static size_t findPathLowerBoundInSharedData(std::string_view path, const ColumnString & shared_data_paths, size_t start, size_t end);
     /// Insert all the data from shared data with specified path to dynamic column.
     static void fillPathColumnFromSharedData(IColumn & path_column, std::string_view path, const ColumnPtr & shared_data_column, size_t start, size_t end);
+    static void fillPathColumnFromSharedDataT(IColumn & path_column, std::string_view path, const ColumnPtr & shared_data_column, size_t start, size_t end, const DataTypePtr & default_path_type);
 
     /// Due to previous bugs we can have an invalid state where we have some path
     /// both in shared data and in dynamic paths and only one value is not NULL.

@@ -17,12 +17,12 @@ namespace ErrorCodes
 class SerializationSubObject final : public SimpleTextSerialization
 {
 private:
-    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization);
+    SerializationSubObject(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization, const DataTypePtr & default_path_type_ = nullptr);
 
 public:
-    static UInt128 getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_);
+    static UInt128 getHash(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, const DataTypePtr & default_path_type_ = nullptr);
 
-    static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization);
+    static SerializationPtr create(const String & paths_prefix_, const std::unordered_map<String, SerializationPtr> & typed_paths_serializations_, const DataTypePtr & dynamic_type, const SerializationPtr & dynamic_serialization, const DataTypePtr & default_path_type_ = nullptr);
 
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
@@ -78,6 +78,7 @@ private:
     std::unordered_map<String, SerializationPtr> typed_paths_serializations;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
+    DataTypePtr default_path_type;
 };
 
 }

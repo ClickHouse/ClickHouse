@@ -1,10 +1,15 @@
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeDynamic.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnNullable.h>
 #include <Common/SipHash.h>
 #include <IO/ReadHelpers.h>
+#include <Interpreters/convertFieldToType.h>
 
 
 namespace DB
@@ -60,6 +65,45 @@ size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets)
     SipHash hash;
     hash.update(path);
     return hash.get64() % num_buckets;
+}
+
+namespace
+{
+
+/// Insert a value decoded from a shared data value blob into a dense T column.
+/// The blob is self-describing: binary-encoded type name + serialized value. In the common case
+/// (JSON with DEFAULT PATH TYPE T, values coerced to T at insert) the encoded type is exactly T and
+/// the value is deserialized directly as T. If it doesn't match (e.g. data written by an older
+/// version or after the DEFAULT PATH TYPE was changed), fall back to a full Dynamic decode and
+/// insert the value through Field so it is converted to T.
+void deserializeSharedDataValueToT(
+    const ColumnString * shared_data_values,
+    size_t n,
+    IColumn & value_column,
+    const DataTypePtr & value_type,
+    const SerializationPtr & nested_serialization)
+{
+    auto value_data = shared_data_values->getDataAt(n);
+    ReadBufferFromMemory buf(value_data);
+    auto decoded_type = decodeDataType(buf);
+    if (decoded_type->equals(*value_type))
+    {
+        nested_serialization->deserializeBinary(value_column, buf, FormatSettings{});
+        return;
+    }
+
+    /// Slow path: the value has a different type. Deserialize it into a temporary Dynamic column and
+    /// convert the value to T (a real cast, so e.g. Int64 -> Float64 / String -> UInt64 work).
+    auto dynamic_column = DataTypeObject(DataTypeObject::SchemaFormat::JSON).getDynamicType()->createColumn();
+    ColumnObject::deserializeValueFromSharedData(shared_data_values, n, *dynamic_column);
+    if (dynamic_column->empty() || dynamic_column->isNullAt(0))
+    {
+        value_column.insertDefault();
+        return;
+    }
+    value_column.insert(convertFieldToTypeOrThrow((*dynamic_column)[0], *value_type, decoded_type.get(), FormatSettings{}, /*convert_inexact_floats=*/true));
+}
+
 }
 
 SharedDataBucketsSplitter::SharedDataBucketsSplitter(const IColumn & shared_data_column_, size_t start_, size_t end_, size_t num_buckets_)
@@ -129,9 +173,21 @@ ColumnPtr SharedDataBucketsSplitter::extractBucket(size_t bucket) const
     return bucket_column;
 }
 
-std::vector<std::pair<std::string_view, ColumnPtr>> SharedDataBucketsSplitter::flattenBucket(size_t bucket, const DataTypePtr & dynamic_type) const
+std::vector<std::pair<std::string_view, ColumnPtr>> SharedDataBucketsSplitter::flattenBucket(size_t bucket, const DataTypePtr & dynamic_type, const DataTypePtr & default_path_type) const
 {
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
+
+    /// When the type has DEFAULT PATH TYPE T, flatten path values into dense T columns
+    /// (default = path missing) instead of Dynamic columns, so the ADVANCED shared data serialization
+    /// stores them with the declared type T.
+    DataTypePtr value_type;
+    SerializationPtr nested_value_serialization;
+    if (default_path_type)
+    {
+        value_type = default_path_type;
+        nested_value_serialization = default_path_type->getDefaultSerialization();
+    }
+    const DataTypePtr & column_type = default_path_type ? value_type : dynamic_type;
 
     /// Collect values of the paths belonging to this bucket into separate columns. Each column is
     /// densified to have a value for every row (a default where the path is absent). Gaps are backfilled
@@ -156,13 +212,16 @@ std::vector<std::pair<std::string_view, ColumnPtr>> SharedDataBucketsSplitter::f
             auto it = flattened_shared_data_paths.find(path);
             /// If we see this path for the first time, add it to the list and create a column for it.
             if (it == flattened_shared_data_paths.end())
-                it = flattened_shared_data_paths.emplace(path, dynamic_type->createColumn()).first;
+                it = flattened_shared_data_paths.emplace(path, column_type->createColumn()).first;
 
             /// Backfill defaults for the rows where this path was absent, up to the current row.
             if (it->second->size() < row)
                 it->second->insertManyDefaults(row - it->second->size());
 
-            ColumnObject::deserializeValueFromSharedData(shared_data_values, j, *it->second);
+            if (default_path_type)
+                deserializeSharedDataValueToT(shared_data_values, j, *it->second, default_path_type, nested_value_serialization);
+            else
+                ColumnObject::deserializeValueFromSharedData(shared_data_values, j, *it->second);
         }
     }
 

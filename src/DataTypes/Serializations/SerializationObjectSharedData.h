@@ -74,11 +74,11 @@ public:
     };
 
 private:
-    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
+    SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_, const DataTypePtr & default_path_type_ = nullptr);
 
 public:
-    static UInt128 getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
-    static SerializationPtr create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_);
+    static UInt128 getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_, const DataTypePtr & default_path_type_ = nullptr);
+    static SerializationPtr create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_, const DataTypePtr & default_path_type_ = nullptr);
 
     bool supportsPooling() const override { return dynamic_serialization->supportsPooling(); }
 
@@ -302,6 +302,7 @@ private:
         DeserializeBinaryBulkSettings & settings,
         const DataTypePtr & dynamic_type,
         const SerializationPtr & dynamic_serialization,
+        const DataTypePtr & default_path_type,
         SubstreamsCache * cache);
 
     [[noreturn]] static void throwNoSerialization()
@@ -316,6 +317,9 @@ private:
     SerializationVersion serialization_version;
     DataTypePtr dynamic_type;
     SerializationPtr dynamic_serialization;
+    /// Default type of all non-typed paths (JSON(DEFAULT PATH TYPE T)). When set, shared data path
+    /// values are serialized/deserialized with this exact type instead of Dynamic.
+    DataTypePtr default_path_type;
     size_t buckets;
     SerializationPtr serialization_map;
 };
