@@ -2,7 +2,9 @@ a correlated EXISTS under each algorithm
 14
 14
 14
+14
 and a correlated NOT EXISTS
+86
 86
 86
 86
@@ -11,6 +13,10 @@ the IN to join rewrite of a subquery
 50
 50
 50
+50
+50
 the strictness the plan ends up with
 │  Strictness: SEMI
 │  Strictness: ANY
+│  Strictness: SEMI
+│  Strictness: ANTI
