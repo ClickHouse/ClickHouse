@@ -22,6 +22,11 @@ $CLICKHOUSE_CLIENT -q "
     GRANT SELECT, INSERT ON ${CLICKHOUSE_DATABASE}.* TO ${definer};
 
     CREATE TABLE src (x UInt64) ENGINE = MergeTree ORDER BY x;
+    -- A merge changes the active part set of the source table, which moves its modification hash and
+    -- makes an extra refresh run. That is correct behavior, but it makes the row counts below
+    -- unpredictable. (No backticks in this comment: the whole statement is a double-quoted shell
+    -- string, where they would start a command substitution.)
+    SYSTEM STOP MERGES src;
     INSERT INTO src VALUES (1);
     -- APPEND mode: every refresh that actually runs appends one row.
     CREATE MATERIALIZED VIEW mv REFRESH EVERY 1 SECOND IF CHANGED APPEND
@@ -53,7 +58,7 @@ do
     [ "$changed" -ge 2 ] && break
     sleep 0.5
 done
-[ "$changed" = "2" ] && echo "changed source triggers refresh: yes" || echo "changed source triggers refresh: no ($changed)"
+[ "$changed" -ge 2 ] && echo "changed source triggers refresh: yes" || echo "changed source triggers refresh: no ($changed)"
 
 # And a setting that can change the rows the refresh reads still discards the watermark, so the check
 # above means the query cache settings are excluded rather than the whole settings fold being dead.
@@ -61,10 +66,10 @@ $CLICKHOUSE_CLIENT -q "ALTER USER ${definer} SETTINGS use_query_cache = 1, query
 for _ in {1..60}
 do
     invalidated=$($CLICKHOUSE_CLIENT -q "SELECT count() FROM mv")
-    [ "$invalidated" -ge 3 ] && break
+    [ "$invalidated" -gt "$changed" ] && break
     sleep 0.5
 done
-[ "$invalidated" -ge 3 ] && echo "a row-affecting setting invalidates the watermark: yes" || echo "a row-affecting setting invalidates the watermark: no ($invalidated)"
+[ "$invalidated" -gt "$changed" ] && echo "a row-affecting setting invalidates the watermark: yes" || echo "a row-affecting setting invalidates the watermark: no ($invalidated)"
 
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE mv SYNC;

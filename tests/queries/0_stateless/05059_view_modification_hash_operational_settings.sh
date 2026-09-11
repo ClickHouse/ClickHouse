@@ -33,7 +33,10 @@ baseline=$(hash_of_view)
 logging=$(hash_of_view --log_queries 1 --log_query_threads 1 --log_profile_events 1 --log_queries_min_query_duration_ms 100)
 [ "${baseline}" = "${logging}" ] && echo 'query logging settings do not change the hash'
 
-profiling=$(hash_of_view --query_profiler_real_time_period_ns 1000000 --memory_profiler_step 4194304 --trace_profile_events 1)
+# `query_profiler_real_time_period_ns` and `query_profiler_cpu_time_period_ns` only accept 0 in a
+# MemorySanitizer build, where the sampling profiler is disabled. Setting them explicitly still
+# marks them as changed, so they are folded into the settings map the hash walks either way.
+profiling=$(hash_of_view --query_profiler_real_time_period_ns 0 --query_profiler_cpu_time_period_ns 0 --memory_profiler_sample_probability 0.01 --memory_profiler_step 4194304 --trace_profile_events 1)
 [ "${baseline}" = "${profiling}" ] && echo 'profiler settings do not change the hash'
 
 tracing=$(hash_of_view --opentelemetry_start_trace_probability 1 --opentelemetry_trace_processors 1)
