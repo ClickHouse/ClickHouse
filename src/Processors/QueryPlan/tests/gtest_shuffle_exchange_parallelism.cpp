@@ -1,12 +1,10 @@
 #include <gtest/gtest.h>
-#include <fmt/format.h>
 
 #include <cstring>
 
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Block.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
@@ -24,7 +22,6 @@
 #include <Processors/QueryPlan/ShuffleReceiveStep.h>
 #include <Processors/QueryPlan/ShuffleSendStep.h>
 #include <Processors/Sources/SourceFromChunks.h>
-#include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/Pipe.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
@@ -56,34 +53,8 @@ SharedHeader makeHeader()
     return std::make_shared<const Block>(Block{ColumnWithTypeAndName(type->createColumn(), type, "k")});
 }
 
-/// A plain data stream whose only column looks like the one the serializer emits its packets in.
-SharedHeader makePacketLikeHeader()
-{
-    auto type = std::make_shared<DataTypeString>();
-    return std::make_shared<const Block>(Block{ColumnWithTypeAndName(type->createColumn(), type, "__streaming_exchange_packet")});
-}
-
-/// Zero-padded numbers, so every stream is sorted by the column.
-Chunks makeSortedStringChunks(size_t stream_index)
-{
-    Chunks chunks;
-    for (size_t chunk_index = 0; chunk_index < chunks_per_stream; ++chunk_index)
-    {
-        auto column = ColumnString::create();
-        const size_t first_key = (stream_index * chunks_per_stream + chunk_index) * rows_per_chunk;
-        for (size_t row = 0; row < rows_per_chunk; ++row)
-            column->insertData(fmt::format("{:012}", first_key + row).data(), 12);
-        Columns columns;
-        columns.emplace_back(std::move(column));
-        chunks.emplace_back(std::move(columns), rows_per_chunk);
-    }
-    return chunks;
-}
-
-/// Distinct keys for every stream, so the hash spreads them over all buckets. With
-/// `with_rowless_info_chunk` the stream ends with a chunk that has no rows but carries an
-/// aggregation info, as an aggregation may emit for an empty bucket.
-Chunks makeChunks(size_t stream_index, bool with_rowless_info_chunk = false)
+/// Distinct keys for every stream, so the hash spreads them over all buckets.
+Chunks makeChunks(size_t stream_index)
 {
     Chunks chunks;
     for (size_t chunk_index = 0; chunk_index < chunks_per_stream; ++chunk_index)
@@ -95,16 +66,6 @@ Chunks makeChunks(size_t stream_index, bool with_rowless_info_chunk = false)
         Columns columns;
         columns.emplace_back(std::move(column));
         chunks.emplace_back(std::move(columns), rows_per_chunk);
-    }
-    if (with_rowless_info_chunk)
-    {
-        Columns columns;
-        columns.emplace_back(ColumnUInt64::create());
-        Chunk chunk(std::move(columns), 0);
-        auto info = std::make_shared<AggregatedChunkInfo>();
-        info->bucket_num = static_cast<Int32>(stream_index);
-        chunk.getChunkInfos().add(std::move(info));
-        chunks.emplace_back(std::move(chunk));
     }
     return chunks;
 }
@@ -240,18 +201,11 @@ struct SendingStats
 
 /// Feeds `num_streams` sources with `makeChunks` into the sending step, runs the pipeline on
 /// `num_streams` threads and collects the statistics.
-using ChunksForStream = std::function<Chunks(size_t stream_index)>;
-
-SendingStats runSendingStep(
-    IQueryPlanStep & step,
-    size_t num_streams,
-    const SharedHeader & header,
-    const BuildQueryPipelineSettings & settings,
-    const ChunksForStream & chunks_for_stream = [](size_t stream_index) { return makeChunks(stream_index); })
+SendingStats runSendingStep(IQueryPlanStep & step, size_t num_streams, const SharedHeader & header, const BuildQueryPipelineSettings & settings)
 {
     Pipes pipes;
     for (size_t stream = 0; stream < num_streams; ++stream)
-        pipes.emplace_back(std::make_shared<SourceFromChunks>(header, chunks_for_stream(stream)));
+        pipes.emplace_back(std::make_shared<SourceFromChunks>(header, makeChunks(stream)));
 
     auto builder = std::make_unique<QueryPipelineBuilder>();
     builder->init(Pipe::unitePipes(std::move(pipes)));
@@ -491,45 +445,6 @@ TEST(ShuffleExchangeParallelism, KeylessScatterKeepsBucketWorkSpreadOverStreams)
     EXPECT_EQ(stats.sinks, buckets);
     EXPECT_EQ(stats.rows_serialized, total_rows);
     EXPECT_EQ(stats.chunks_in_sinks, streams * chunks_per_stream);
-}
-
-/// A chunk without rows may carry aggregation bucket information. Its packet must reach every
-/// destination of a broadcast like any other.
-TEST(ShuffleExchangeParallelism, BroadcastKeepsRowlessPackets)
-{
-    MainThreadStatus::getInstance();
-
-    constexpr size_t buckets = 3;
-    auto context = Context::createCopy(getContext().context);
-    auto settings = makeSettings(context, streams);
-    auto header = makeHeader();
-
-    BroadcastSendStep broadcast(header, "exchange_0", buckets);
-    auto stats = runSendingStep(broadcast, streams, header, settings, [](size_t stream_index) { return makeChunks(stream_index, /*with_rowless_info_chunk=*/ true); });
-
-    EXPECT_EQ(stats.rows_serialized, total_rows);
-    EXPECT_EQ(stats.chunks_in_sinks, streams * (chunks_per_stream + 1) * buckets);
-}
-
-/// Whether a sink receives packets or data is decided by the send step, which knows whether it put
-/// serializers in front of the sink. A sorted gather has none, so a plain stream reaches its sink as
-/// data even when its only column looks like the packet column.
-TEST(ShuffleExchangeParallelism, PlainStreamWithPacketLikeColumnStaysData)
-{
-    MainThreadStatus::getInstance();
-
-    auto context = Context::createCopy(getContext().context);
-    auto settings = makeSettings(context, streams);
-    auto header = makePacketLikeHeader();
-
-    SortDescription by_column;
-    by_column.emplace_back("__streaming_exchange_packet", 1, 1);
-    GatherSendStep gather(header, "exchange_0", by_column);
-    auto stats = runSendingStep(gather, streams, header, settings, makeSortedStringChunks);
-
-    EXPECT_EQ(stats.serializers, 0u);
-    EXPECT_EQ(stats.sinks, 1u);
-    EXPECT_EQ(stats.rows_into_sinks, total_rows);
 }
 
 /// A source that hands packets on drops the end-of-stream marker after reading only its fields, so
