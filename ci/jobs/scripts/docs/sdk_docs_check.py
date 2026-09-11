@@ -2,7 +2,7 @@
 """
 Validate the ClickStack SDK docs conventions that in-app onboarding depends on.
 
-The HyperDX in-app onboarding mirrors the SDK guides under
+The ClickStack in-app onboarding mirrors the SDK guides under
 ``docs/clickstack/ingesting-data/sdks/`` from this single source of truth, so it
 parses them by convention: a ``<ClickStackIntegrates signals={[...]} />``
 component whose ``signals`` prop is the source of truth for which signals a
@@ -71,7 +71,7 @@ DEPLOYMENT_TAB_MARKERS = set(CANONICAL_DEPLOYMENT_TAB_TITLES)
 ALLOWED_PLACEHOLDERS = {
     "<YOUR_INGESTION_API_KEY>",
     "<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>",
-    "<MY_SERVICE_NAME>",
+    "<YOUR_SERVICE_NAME>",
     # Page-specific.
     "<APPLICATION_JAR_FILE>",
 }

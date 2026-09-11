@@ -76,7 +76,7 @@ export async function register() {
     const { init } = await import('@hyperdx/node-opentelemetry');
     init({
       apiKey: '<YOUR_INGESTION_API_KEY>', // optionally configure via `HYPERDX_API_KEY` env var
-      service: '<MY_SERVICE_NAME>', // optionally configure via `OTEL_SERVICE_NAME` env var
+      service: '<YOUR_SERVICE_NAME>', // optionally configure via `OTEL_SERVICE_NAME` env var
       additionalInstrumentations: [], // optional, default: []
     });
   }
@@ -94,7 +94,7 @@ server with the following environment variables to point spans towards the OTel 
 <Tab title="Managed ClickStack">
 
 ```sh copy
-OTEL_SERVICE_NAME=<MY_SERVICE_NAME> \
+OTEL_SERVICE_NAME=<YOUR_SERVICE_NAME> \
 OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 npm run dev
 ```
@@ -105,7 +105,7 @@ npm run dev
 
 ```sh copy
 HYPERDX_API_KEY=<YOUR_INGESTION_API_KEY> \
-OTEL_SERVICE_NAME=<MY_SERVICE_NAME> \
+OTEL_SERVICE_NAME=<YOUR_SERVICE_NAME> \
 OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>
 npm run dev
 ```

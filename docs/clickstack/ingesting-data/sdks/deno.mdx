@@ -47,7 +47,7 @@ log.getLogger('my-otel-logger').info('Hello from Deno!');
 
 ```shell
 OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-OTEL_SERVICE_NAME="<MY_SERVICE_NAME>" \
+OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
 deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
 ```
 
@@ -58,7 +58,7 @@ deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
 ```shell
 OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>" \
 OTEL_EXPORTER_OTLP_ENDPOINT=<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT> \
-OTEL_SERVICE_NAME="<MY_SERVICE_NAME>" \
+OTEL_SERVICE_NAME="<YOUR_SERVICE_NAME>" \
 deno run --allow-net --allow-env --allow-read --allow-sys --allow-run app.ts
 ```
 
