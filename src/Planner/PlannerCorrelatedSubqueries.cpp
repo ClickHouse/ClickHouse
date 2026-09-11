@@ -26,6 +26,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinOperator.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <Parsers/SelectUnionMode.h>
 
@@ -961,7 +962,42 @@ QueryPlan decorrelateQueryPlan(
           * A predicate like `dictGet('d', 'attr', key) >= 42` inside a correlated subquery gets one: the
           * `optimize_inverse_dictionary_lookup` rewrite turns it into a membership test against a set the pass
           * builds, and the subquery plan then carries the step that builds it.
+          *
+          * The analyzer rejects a correlated `IN` argument outright (`Correlated subqueries are not supported
+          * as IN function arguments yet`), so a set source reaching here is not expected to be correlated.
+          * Still check it - and the sets nested inside it - rather than rely on that gate: we only rebuild the
+          * step over the decorrelated body, so a correlated set source would stay correlated and later be
+          * optimized and executed standalone by `addPlansForSets`, hitting a `PLACEHOLDER` logical error
+          * instead of this clean message.
           */
+        auto reject_if_correlated = [](const QueryPlan & set_plan)
+        {
+            if (planHasCorrelatedExpressions(set_plan))
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "Cannot decorrelate query, because a set built by the 'DelayedCreatingSets' step is correlated");
+        };
+
+        for (const auto & future_set : delayed_creating_sets_step->getSets())
+        {
+            if (!future_set)
+                continue;
+
+            const auto * set_source = future_set->getQueryPlan();
+            if (!set_source)
+                continue;
+
+            reject_if_correlated(*set_source);
+            forEachSubquerySet(
+                set_source,
+                [&](FutureSetFromSubquery & nested_set)
+                {
+                    if (const auto * nested_source = nested_set.getQueryPlan())
+                        reject_if_correlated(*nested_source);
+                    return true;
+                });
+        }
+
         auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
 
         auto result_step = std::make_unique<DelayedCreatingSetsStep>(
