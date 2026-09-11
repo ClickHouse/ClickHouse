@@ -100,6 +100,44 @@ class SparkAndClickHouseCheck:
             return True, engine
         return engine.startswith(expected), engine
 
+    def _log_time_travel_context(self, client, spark, table: SparkTable, next_time):
+        """Dump both engines' snapshot history after a time-travel mismatch.
+
+        Without this a mismatch reports only the instant, and the table is usually gone by the
+        time anyone looks, so there is no way to tell whether the two engines resolved that
+        instant to the same snapshot. Diagnostic only: never fail the check from here.
+        """
+        if table.lake_format != LakeFormat.Iceberg or next_time is None:
+            return
+        try:
+            rows = spark.sql(
+                f"SELECT made_current_at, snapshot_id, is_current_ancestor "
+                f"FROM {table.get_table_full_path()}.history ORDER BY made_current_at;"
+            ).collect()
+            self.logger.error(
+                f"Spark history for {table.get_clickhouse_path()}: "
+                + ", ".join(
+                    f"{r.made_current_at}={r.snapshot_id}"
+                    f"{'' if r.is_current_ancestor else ' (not ancestor)'}"
+                    for r in rows
+                )
+            )
+        except Exception as e:
+            self.logger.error(f"Could not read Spark history: {e}")
+        try:
+            database, _, name = table.get_clickhouse_path().partition(".")
+            ch_history = client.query(
+                f"SELECT made_current_at, snapshot_id, is_current_ancestor "
+                f"FROM system.iceberg_history WHERE database = '{database}' AND table = '{name}' "
+                f"ORDER BY made_current_at FORMAT TSV;"
+            )
+            self.logger.error(
+                f"ClickHouse history for {table.get_clickhouse_path()}: "
+                f"{ch_history.strip() if isinstance(ch_history, str) else ch_history}"
+            )
+        except Exception as e:
+            self.logger.error(f"Could not read ClickHouse iceberg_history: {e}")
+
     def check_table(
         self,
         cluster,
@@ -113,6 +151,7 @@ class SparkAndClickHouseCheck:
             extra_predicate = ""
             snapshots = []
             timestamps = []
+            next_time = None
 
             client = Client(
                 host=(
@@ -134,10 +173,16 @@ class SparkAndClickHouseCheck:
             # There is multithreading, so time travel is now required
             if table.lake_format == LakeFormat.Iceberg:
                 result = spark.sql(
-                    f"SELECT snapshot_id, committed_at FROM {table.get_table_full_path()}.snapshots;"
+                    f"SELECT snapshot_id FROM {table.get_table_full_path()}.snapshots;"
                 ).collect()
                 snapshots = [r.snapshot_id for r in result]
-                timestamps = [r.committed_at for r in result]
+                # Sample the time-travel instant from `history`, not `snapshots`: both
+                # `TIMESTAMP AS OF` and `iceberg_timestamp_ms` resolve through the snapshot log, so
+                # after a rollback a `committed_at` can name a time that snapshot was never current.
+                result = spark.sql(
+                    f"SELECT made_current_at FROM {table.get_table_full_path()}.history;"
+                ).collect()
+                timestamps = [r.made_current_at for r in result]
             elif table.lake_format == LakeFormat.DeltaLake:
                 result = spark.sql(
                     f"DESCRIBE HISTORY {table.get_table_full_path()};"
@@ -185,6 +230,7 @@ class SparkAndClickHouseCheck:
                 self.logger.error(
                     f"The row count for table {table.get_clickhouse_path()}{extra_predicate} doesn't match between Spark: {spark_count} and ClickHouse: {ch_count}"
                 )
+                self._log_time_travel_context(client, spark, table, next_time)
                 return False
 
             # Big-int CH types (UInt64/128/256, Int128/256) map to Spark Long or an under-precision
@@ -304,6 +350,7 @@ class SparkAndClickHouseCheck:
                 self.logger.error(
                     f"The hash for table {table.get_clickhouse_path()}{extra_predicate} doesn't match between Spark and ClickHouse"
                 )
+                self._log_time_travel_context(client, spark, table, next_time)
                 return False
         except Exception as e:
             # If an error happens, ignore it, but log it
