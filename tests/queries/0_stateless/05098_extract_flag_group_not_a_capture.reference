@@ -17,3 +17,14 @@ zz
 aBcd	Bcd
 abcd	bcd
 zz	
+a capture nested in a flag group, or preceding a non-capturing group, keeps the rewrite
+B	B
+a	a
+SELECT extract(materialize(\'aBcd\'), \'(?i:(b))\') AS `extract(materialize(\'aBcd\'), \'(?i:(b)).*$\')`
+FROM system.one AS __table1
+SELECT extract(materialize(\'abcd\'), \'(a)(?:b)\') AS `extract(materialize(\'abcd\'), \'(a)(?:b).*$\')`
+FROM system.one AS __table1
+SELECT extract(materialize(\'aBcd\'), \'(?i)b.*$\') AS `extract(materialize(\'aBcd\'), \'(?i)b.*$\')`
+FROM system.one AS __table1
+SELECT extract(materialize(\'aBcd\'), \'(?i:b).*$\') AS `extract(materialize(\'aBcd\'), \'(?i:b).*$\')`
+FROM system.one AS __table1
