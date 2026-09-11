@@ -64,8 +64,8 @@ public:
     /// This is used for special requests that should not be throttled, e.g. for CPUSlotsAllocation
     bool ignore_throttling = false;
 
-    /// Query-aware scheduling state (`fair` / `las` / `priority`), grouped so the related fields are
-    /// easy to find. Filled at enqueue by the `RequestQueue` schedulers and reset by `reset()`.
+    /// Query-aware scheduling state (`fair` / `las` / `priority`), filled at enqueue by the
+    /// `RequestQueue` schedulers and reset by `reset()`.
     struct
     {
         /// Per-query scheduling cost for the query's own virtual-runtime / attained-service
