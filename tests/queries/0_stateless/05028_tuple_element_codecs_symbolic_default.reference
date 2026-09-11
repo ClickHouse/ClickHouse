@@ -1,3 +1,0 @@
-{"name":"payload","type":"Tuple(\n    a Array(UInt64))","default_type":"","default_expression":"","comment":"","codec_expression":"","ttl_expression":"","is_subcolumn":0}
-{"name":"payload.a","type":"Array(UInt64)","default_type":"","default_expression":"","comment":"","codec_expression":"Delta(8), Default","ttl_expression":"","is_subcolumn":1}
-{"name":"payload.a.size0","type":"UInt64","default_type":"","default_expression":"","comment":"","codec_expression":"Default","ttl_expression":"","is_subcolumn":1}
