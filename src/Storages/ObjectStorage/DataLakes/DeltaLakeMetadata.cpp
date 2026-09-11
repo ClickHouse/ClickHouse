@@ -15,13 +15,8 @@
 #include <Formats/FormatFactory.h>
 
 #include <IO/ReadBufferFromFileBase.h>
-#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadHelpers.h>
-#include <IO/SeekableReadBuffer.h>
-#include <IO/WithFileSize.h>
-#include <IO/WriteBufferFromString.h>
-#include <IO/copyData.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -545,36 +540,17 @@ struct DeltaLakeMetadataImpl
         /// in parquet file metadata while the type are in fact nullable.
         format_settings.schema_inference_make_columns_nullable = true;
 
-        auto buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
-
-        /// The schema and the data are two passes over the same object. A reader that may seek
-        /// leaves the buffer usable for the next pass: it reads the footer, then the column ranges
-        /// it needs. A reader that may not seek streams the whole object instead and leaves the
-        /// buffer at EOF, so the second pass would find no `PAR1` magic left to read. Materialize
-        /// the object once for that case - it is what such a reader loads anyway, once per pass -
-        /// and keep reading the object directly whenever seeks are available.
-        String checkpoint_contents;
-        std::unique_ptr<ReadBuffer> schema_buf;
-        std::unique_ptr<ReadBuffer> data_buf;
-
-        auto * seekable = dynamic_cast<SeekableReadBuffer *>(buf.get());
-        const bool readers_may_seek = format_settings.seekable_read && seekable && isBufferWithFileSize(*buf)
-            && seekable->checkIfActuallySeekable();
-        if (!readers_may_seek)
+        /// The schema pass gets its own buffer: with `input_format_allow_seeks = 0` the reader
+        /// cannot seek to the footer, so it streams the whole file and leaves the buffer at EOF,
+        /// and the data pass below would then find no `PAR1` magic left to read. Opening the object
+        /// again costs no extra HEAD: `createReadBuffer` memoises the metadata into `object_info`.
+        NamesAndTypesList columns;
         {
-            {
-                WriteBufferFromString out(checkpoint_contents);
-                copyData(*buf, out);
-                out.finalize();
-            }
-            schema_buf = std::make_unique<ReadBufferFromOutsideMemoryFile>(checkpoint_filename, checkpoint_contents);
-            data_buf = std::make_unique<ReadBufferFromOutsideMemoryFile>(checkpoint_filename, checkpoint_contents);
+            auto schema_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
+            columns = NativeParquetSchemaReader(*schema_buf, format_settings).readSchema();
         }
 
-        ReadBuffer & schema_read_buffer = schema_buf ? *schema_buf : static_cast<ReadBuffer &>(*buf);
-        ReadBuffer & data_read_buffer = data_buf ? *data_buf : static_cast<ReadBuffer &>(*buf);
-
-        auto columns = NativeParquetSchemaReader(schema_read_buffer, format_settings).readSchema();
+        auto buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
 
         /// Read only columns that we need.
         auto filter_column_names = NameSet{"add", "metaData"};
@@ -586,7 +562,7 @@ struct DeltaLakeMetadataImpl
         std::atomic<int> is_stopped{0};
 
         auto open_file_res = parquet::arrow::OpenFile(
-            asArrowFile(data_read_buffer, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
+            asArrowFile(*buf, format_settings, is_stopped, "Parquet", PARQUET_MAGIC_BYTES), ArrowMemoryPool::instance());
         if (!open_file_res.ok())
             throwFromArrowStatus(open_file_res.status(), ErrorCodes::BAD_ARGUMENTS, "Failed to open Parquet checkpoint file");
         auto reader = *std::move(open_file_res);
