@@ -3835,6 +3835,39 @@ public:
             return {false, true, false, false};
         }
 
+        /** `divide` and `multiply` by a constant are modelled as monotonic from the constant alone, but a
+          * `Float` key column may hold `±inf`, and `-inf / inf`, `inf * 0` and `0 * inf` are all `NaN`. A
+          * `NaN` endpoint leaves a transformed range that no point compares into, so index analysis prunes
+          * every part and granule and the query silently loses the finite rows that do match. Only the
+          * transform can tell, so evaluate it at both endpoints, as the `plus`/`minus` branches below do for
+          * their own overflow question. Restricted to a `Float` result: no other result type has a `NaN`,
+          * and an integer division by a zero constant would raise here rather than answer one.
+          */
+        if ((name_view == "divide" || name_view == "multiply") && return_type
+            && isFloat(*removeNullable(recursiveRemoveLowCardinality(return_type))))
+        {
+            auto left_type = removeNullable(recursiveRemoveLowCardinality(left.type));
+            auto right_type = removeNullable(recursiveRemoveLowCardinality(right.type));
+            auto ret_type = removeNullable(recursiveRemoveLowCardinality(return_type));
+            const bool left_is_constant = left.column && isColumnConst(*left.column);
+
+            auto transform = [&](const Field & point)
+            {
+                ColumnsWithTypeAndName columns_with_constant
+                    = {{left_type->createColumnConst(1, left_is_constant ? (*left.column)[0] : point), left_type, left.name},
+                       {right_type->createColumnConst(1, left_is_constant ? point : (*right.column)[0]), right_type, right.name}};
+
+                auto col = Base::executeImpl(columns_with_constant, ret_type, 1);
+                Field point_transformed;
+                col->get(0, point_transformed);
+                return point_transformed;
+            };
+
+            if ((left_is_constant || (right.column && isColumnConst(*right.column)))
+                && (isNaNField(transform(left_point)) || isNaNField(transform(right_point))))
+                return {false, true, false, false};
+        }
+
         // For simplicity, we treat every single value interval as positive monotonic,
         // unless the function is undefined at that point (e.g. division by zero).
         if (accurateEquals(left_point, right_point))
