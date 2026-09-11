@@ -29,6 +29,13 @@
 12
 049
 048
+-- only the columns the query sorts by are checked
+99
+99
+99
+99
+15
+15
 -- a smaller decimal scale rounds distinct values together, so it is refused
 50
 -- an equal-width sign change does not preserve the order

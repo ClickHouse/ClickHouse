@@ -22,6 +22,8 @@ DROP TABLE IF EXISTS dist_u32;
 DROP TABLE IF EXISTS t_wide;
 DROP TABLE IF EXISTS dist_wide;
 DROP TABLE IF EXISTS dist_narrow_dec;
+DROP TABLE IF EXISTS t_mixed;
+DROP TABLE IF EXISTS dist_mixed;
 
 CREATE TABLE t_str (s String) ENGINE = MergeTree ORDER BY s;
 INSERT INTO t_str SELECT toString(number % 21) FROM numbers(100);
@@ -81,6 +83,24 @@ SELECT DISTINCT dt FROM dist_wide ORDER BY dt DESC LIMIT 2;
 SELECT DISTINCT dec FROM dist_wide ORDER BY dec DESC LIMIT 2;
 SELECT DISTINCT fs FROM dist_wide ORDER BY fs DESC LIMIT 2;
 
+SELECT '-- only the columns the query sorts by are checked';
+-- A table with one sloppily declared column must not lose the ORDER BY queries that never read it:
+-- a column no sorting key expression reads is converted above the shards' sort like any other
+-- expression and its values are carried along in whatever order the sorted columns dictate.
+CREATE TABLE t_mixed (k Int32, s String) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_mixed SELECT number, toString(number % 21) FROM numbers(100);
+CREATE TABLE dist_mixed (k Int32, s Int8) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_mixed);
+SELECT k FROM dist_mixed ORDER BY k DESC LIMIT 2;
+SELECT k FROM dist_mixed ORDER BY k DESC LIMIT 2 SETTINGS enable_analyzer = 0;
+-- The mismatched column can be selected as long as it is not sorted by.
+SELECT s FROM dist_mixed ORDER BY k DESC LIMIT 2;
+-- Sorting by it is still refused, whether it is selected or not, and through an expression over it.
+SELECT s FROM dist_mixed ORDER BY s DESC LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT k FROM dist_mixed ORDER BY s DESC LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT k FROM dist_mixed ORDER BY s DESC LIMIT 2 SETTINGS enable_analyzer = 0; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT k FROM dist_mixed ORDER BY -s DESC LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+SELECT k FROM dist_mixed ORDER BY k, s LIMIT 2; -- { serverError INCOMPATIBLE_COLUMNS }
+
 SELECT '-- a smaller decimal scale rounds distinct values together, so it is refused';
 CREATE TABLE dist_narrow_dec (dec Decimal(18, 1)) ENGINE = Distributed('test_cluster_two_shards_localhost', currentDatabase(), t_wide);
 SELECT DISTINCT dec FROM dist_narrow_dec ORDER BY dec LIMIT 3; -- { serverError INCOMPATIBLE_COLUMNS }
@@ -92,6 +112,8 @@ SELECT DISTINCT A FROM dist_u32 ORDER BY A ASC LIMIT 3; -- { serverError INCOMPA
 SELECT count() FROM (SELECT DISTINCT A FROM dist_u32);
 
 DROP TABLE dist_u32;
+DROP TABLE dist_mixed;
+DROP TABLE t_mixed;
 DROP TABLE dist_narrow_dec;
 DROP TABLE dist_wide;
 DROP TABLE t_wide;

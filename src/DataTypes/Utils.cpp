@@ -293,8 +293,11 @@ bool conversionPreservesOrder(const IDataType & from, const IDataType & to)
     ///   - `Decimal(P1, S1)` to `Decimal(P2, S2)` with `S2 >= S1` and `P2 - S2 >= P1 - S1`: the value is
     ///     multiplied by `10^(S2 - S1)` and the integer part is not narrowed, so nothing overflows.
     ///     A smaller target scale rounds, which collapses distinct values.
-    ///   - `FixedString(N)` to `String`: the bytes are copied as they are, padding included, and equal-length
-    ///     strings compare byte by byte exactly like the fixed strings do.
+    ///   - `FixedString(N)` to `String`: the cast trims the trailing zero bytes, which is still strictly
+    ///     monotonic on a fixed length. Two distinct fixed strings differ at some byte; the one holding
+    ///     the smaller byte there is the smaller value, and trimming only removes zero bytes - the
+    ///     minimum - from the end, so it can neither change that first difference nor make the trimmed
+    ///     value the prefix of the other unless it was already the smaller one.
     if (which_from.isFloat32() && which_to.isFloat64())
         return true;
     if (which_from.isDate() && which_to.isDate32())

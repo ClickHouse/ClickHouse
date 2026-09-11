@@ -48,6 +48,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -261,18 +262,87 @@ UInt64 getMaximumFileNumber(const std::string & dir_path)
     return res;
 }
 
-/// Whether the query the storage is asked about sorts its result, on either analyzer path.
-bool queryHasOrderBy(const SelectQueryInfo & query_info)
+/// The columns the query the storage is asked about sorts by, on either analyzer path: only those
+/// cross the cast below the shards' sort, so only their conversion can corrupt the merged order.
+/// `std::nullopt` means the query does not sort its result at all. An engaged but empty set means it
+/// sorts by something whose source columns could not be established - a positional `ORDER BY 1` or
+/// an `ORDER BY ALL` on the old analyzer path - and then every column has to be treated as sorted by.
+std::optional<NameSet> getOrderByColumns(const SelectQueryInfo & query_info)
 {
     if (query_info.query_tree)
+    {
         if (const auto * query_node = query_info.query_tree->as<QueryNode>())
-            return query_node->hasOrderBy();
+        {
+            if (!query_node->hasOrderBy())
+                return {};
+
+            /// Positional arguments and `ORDER BY ALL` are already resolved to columns here.
+            NameSet columns;
+            auto collect = [&columns](const QueryTreeNodePtr & node, auto & self) -> void
+            {
+                /// A subquery sorts and returns its own columns; the ones inside it are not what
+                /// this stream is sorted by.
+                const auto node_type = node->getNodeType();
+                if (node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+                    return;
+
+                if (const auto * column_node = node->as<ColumnNode>())
+                    columns.insert(column_node->getColumnName());
+
+                for (const auto & child : node->getChildren())
+                    if (child)
+                        self(child, self);
+            };
+            collect(query_node->getOrderByNode(), collect);
+            return columns;
+        }
+    }
 
     if (query_info.query)
+    {
         if (const auto * select_query = query_info.query->as<ASTSelectQuery>())
-            return select_query->orderBy() != nullptr;
+        {
+            const auto order_by = select_query->orderBy();
+            if (!order_by)
+                return {};
 
-    return false;
+            /// `ORDER BY ALL` names no column: it sorts by everything the query selects.
+            if (select_query->order_by_all)
+                return NameSet{};
+
+            NameSet columns;
+            for (const auto & element : order_by->children)
+            {
+                const auto * order_by_element = element->as<ASTOrderByElement>();
+                if (!order_by_element || order_by_element->children.empty())
+                    return NameSet{};
+
+                const auto & expression = order_by_element->children.front();
+
+                /// A bare literal is a positional argument, which this path sees unresolved.
+                /// Deeper literals are ordinary constants of an expression and say nothing.
+                if (expression->as<ASTLiteral>())
+                    return NameSet{};
+
+                auto collect = [&columns](const ASTPtr & node, auto & self) -> void
+                {
+                    if (node->as<ASTSelectQuery>() || node->as<ASTSelectWithUnionQuery>())
+                        return;
+
+                    if (const auto * identifier = node->as<ASTIdentifier>())
+                        columns.insert(identifier->shortName());
+
+                    for (const auto & child : node->children)
+                        if (child)
+                            self(child, self);
+                };
+                collect(expression, collect);
+            }
+            return columns;
+        }
+    }
+
+    return {};
 }
 
 std::string makeFormattedListOfShards(const ClusterPtr & cluster)
@@ -577,10 +647,15 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
     /// is not a stage this storage can be read at (the shard query is built from the whole query
     /// tree), so there is no stage to fall back to: refuse the query instead of returning wrong rows.
     /// `StorageMerge` refuses the same conversion for its children by dropping to `FetchColumns`.
-    /// Only the order matters: without ORDER BY the shards' sort is not relied upon, and a DISTINCT or
-    /// GROUP BY is redone on the initiator over the converted values.
-    if (nodes > 0 && queryHasOrderBy(query_info))
-        checkRemoteTableConversionPreservesOrder(local_context, storage_snapshot, cluster);
+    /// Only the columns the query sorts by matter: without ORDER BY the shards' sort is not relied
+    /// upon at all (a DISTINCT or GROUP BY is redone on the initiator over the converted values), and
+    /// a column that no sorting key expression reads is just carried along, so a table with one
+    /// sloppily declared column keeps working as long as nothing orders by it.
+    if (nodes > 0)
+    {
+        if (auto order_by_columns = getOrderByColumns(query_info))
+            checkRemoteTableConversionPreservesOrder(local_context, storage_snapshot, cluster, *order_by_columns);
+    }
 
     if (settings[Setting::distributed_group_by_no_merge])
     {
@@ -644,7 +719,10 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 }
 
 void StorageDistributed::checkRemoteTableConversionPreservesOrder(
-    ContextPtr local_context, const StorageSnapshotPtr & storage_snapshot, const ClusterPtr & cluster) const
+    ContextPtr local_context,
+    const StorageSnapshotPtr & storage_snapshot,
+    const ClusterPtr & cluster,
+    const NameSet & order_by_columns) const
 {
     if (remote_table_function_ptr)
         return;
@@ -670,6 +748,13 @@ void StorageDistributed::checkRemoteTableConversionPreservesOrder(
     const auto remote_metadata = remote_table_storage->getInMemoryMetadataPtr(local_context, false);
     for (const auto & remote_column : remote_metadata->getColumns().get(order_relevant_columns))
     {
+        /// A column the query does not sort by is converted above the shards' sort like any other
+        /// expression: its values are wrong nowhere, they are simply carried along, so a mismatch
+        /// there is none of this check's business. An empty set means the sorted-by columns are
+        /// unknown and every column has to be checked.
+        if (!order_by_columns.empty() && !order_by_columns.contains(remote_column.name))
+            continue;
+
         auto declared_column = declared_columns.tryGetColumn(order_relevant_columns, remote_column.name);
         if (declared_column && !conversionPreservesOrder(*remote_column.type, *declared_column->type))
             throw Exception(
