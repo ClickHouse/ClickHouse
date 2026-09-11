@@ -888,6 +888,7 @@ void stopConsumerImpl(
     cppkafka::Consumer& consumer,
     RevocationCb revocation_cb,
     AssignmentCb assignment_cb,
+    bool leave_group,
     const std::chrono::milliseconds drain_timeout,
     const LoggerPtr& log,
     StorageKafkaUtils::ErrorHandler error_handler)
@@ -916,7 +917,63 @@ void stopConsumerImpl(
         LOG_ERROR(log, "Error during pause (stopConsumerImpl): {}", e.what());
     }
 
-    StorageKafkaUtils::drainConsumer(consumer, drain_timeout, log, std::move(error_handler));
+    const auto deadline = std::chrono::steady_clock::now() + drain_timeout;
+
+    if (leave_group)
+    {
+        try
+        {
+            consumer.unsubscribe();
+        }
+        catch (const cppkafka::HandleException & e)
+        {
+            LOG_ERROR(log, "Error during unsubscribe (stopConsumerImpl): {}", e.what());
+        }
+    }
+
+    /// Serve the unsubscribe callbacks before closing: `cppkafka` acknowledges them with synchronous
+    /// `assign` or `unassign` calls, which need the consumer group operations queue to remain active.
+    const auto drain_remaining = std::max(
+        0ms, std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now()));
+    StorageKafkaUtils::drainConsumer(consumer, drain_remaining, log, error_handler);
+
+    if (!leave_group)
+        return;
+
+    /// An empty member ID only means that librdkafka has queued `LeaveGroup`: destruction with
+    /// `RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE` can still discard the request before it is sent.
+    /// Asynchronous close keeps the consumer alive until its outstanding leave request completes.
+    auto * handle = consumer.get_handle();
+    cppkafka::Queue close_queue(rd_kafka_queue_new(handle));
+    std::unique_ptr<rd_kafka_error_t, decltype(&rd_kafka_error_destroy)> close_error(
+        rd_kafka_consumer_close_queue(handle, close_queue.get_handle()), rd_kafka_error_destroy);
+    if (close_error)
+    {
+        LOG_ERROR(log, "Error closing Kafka consumer: {}", rd_kafka_error_string(close_error.get()));
+        error_handler(cppkafka::Error(rd_kafka_error_code(close_error.get())));
+        return;
+    }
+
+    /// Reuse the drain budget because consumers are stopped one by one during table teardown.
+    /// Serve the close queue, including rebalance callbacks, until close finishes or the deadline expires.
+    while (!rd_kafka_consumer_closed(handle))
+    {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - std::chrono::steady_clock::now());
+        if (remaining <= 0ms)
+        {
+            LOG_WARNING(
+                log,
+                "Timeout closing Kafka consumer; its group membership may persist until the session timeout expires");
+            return;
+        }
+
+        auto message = close_queue.consume(std::min(100ms, remaining));
+        if (message && message.get_error() && !message.is_eof())
+        {
+            LOG_ERROR(log, "Error closing Kafka consumer: {}", message.get_error());
+            error_handler(message.get_error());
+        }
+    }
 }
 
 namespace StorageKafkaUtils
@@ -942,20 +999,23 @@ void consumerGracefulStop(
     // Before destruction, our objectives are:
     //   (1) Process all outstanding callbacks by polling the event queue.
     //   (2) Ensure that only special events (e.g. callbacks, rebalances) are polled (we don't want to poll regular messages).
+    //   (3) Leave the consumer group so the broker can reassign its partitions immediately.
     //
-    // Previously, we performed an unsubscribe to stop message consumption and clear 'read' messages.
-    // However, unsubscribe triggers a rebalance that schedules additional background tasks, such as locking
-    // and removal of internal toppar queues. Meanwhile, polling to release callbacks may concurrently
-    // cause those same queues to be destroyed.
+    // `unsubscribe` triggers a rebalance that schedules additional background tasks, such as locking
+    // and removal of internal toppar queues. Polling to release callbacks may concurrently cause those same
+    // queues to be destroyed.
     // This can lead to a situation where the background thread doing rebalance and the current thread doing polling access
     // the toppar queues simultaneously, potentially locking them in a different order, which risks a deadlock.
     //
-    // To mitigate this, we now:
-    //   (1) Avoid calling unsubscribe (letting rebalance occur naturally via consumer group timeout).
-    //   (2) Set up different rebalance callbacks to repeat (3) if a rebalance will occur before consumer destruction.
-    //   (3) Pause the consumer to stop processing new messages.
-    //   (4) Disconnect the toppar queues to reduce the risk of lock inversion (less cascading locks).
-    //   (5) Poll the event queue to process any remaining callbacks.
+    // To avoid the lock inversion while still sending `LeaveGroup`, we:
+    //   (1) Replace the rebalance callbacks so a pending assignment cannot attach new partition queues.
+    //   (2) Pause the consumer to stop processing new messages.
+    //   (3) Disconnect the toppar queues before `unsubscribe` to remove the cascading queue locks.
+    //   (4) Unsubscribe from the consumer group.
+    //   (5) Poll the event queue to process the revocation and any remaining callbacks.
+    //   (6) Close asynchronously and serve the close queue until the outstanding leave request completes,
+    //       using the same deadline as draining. Keep `RD_KAFKA_DESTROY_F_NO_CONSUMER_CLOSE` for destruction
+    //       after a timeout so an unavailable broker cannot make this wait unbounded.
 
     stopConsumerImpl(
         consumer,
@@ -963,17 +1023,13 @@ void consumerGracefulStop(
         {
             // we don't care during the destruction
         },
-        /*assignment*/ [&consumer](const cppkafka::TopicPartitionList & topic_partitions)
+        /*assignment*/ [](cppkafka::TopicPartitionList & topic_partitions)
         {
-            if (!topic_partitions.empty())
-            {
-                consumer.pause_partitions(topic_partitions);
-            }
-
-            // it's not clear if get_partition_queue will work in that context
-            // as just after processing the callback cppkafka will call run assign
-            // and that can reset the queues
+            /// `cppkafka` calls `assign` with this list after the callback. Acknowledge the assignment
+            /// with an empty list so draining cannot start fetching or reconnect partition queues.
+            topic_partitions.clear();
         },
+        /*leave_group*/ true,
         drain_timeout, log, std::move(error_handler));
 }
 
@@ -990,6 +1046,7 @@ void consumerStopWithoutRebalance(
         {
             // we don't care during the destruction
         },
+        /*leave_group*/ false,
         drain_timeout, log, std::move(error_handler));
 }
 
