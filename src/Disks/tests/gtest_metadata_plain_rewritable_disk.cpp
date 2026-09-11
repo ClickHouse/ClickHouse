@@ -2603,6 +2603,13 @@ TEST_F(MetadataPlainRewritableDiskTest, UndoStopsRetryingWhenTheDiskShutsDownWhi
     EXPECT_TRUE(metadata->existsDirectory("A"));
     EXPECT_TRUE(metadata->existsDirectory("A/B"));
     EXPECT_THROW(metadata->createTransaction(), DB::Exception);
+
+    /// One marker was left naming the new path, so a reload would move a directory this transaction never committed.
+    /// It has to do nothing instead.
+    metadata->dropCache();
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("MOVED"));
 }
 
 /// A transaction that is already waiting for the metadata lock when a reversal is abandoned resumes as soon as the
@@ -2631,6 +2638,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CommitIsRefusedAfterAReversalWasAbandone
     FailPointInjection::enableFailPoint("plain_object_storage_pause_on_directory_move");
     SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_pause_on_directory_move"));
 
+    std::atomic<bool> move_threw = false;
     std::thread committing([&]
     {
         auto tx = metadata->createTransaction();
@@ -2643,6 +2651,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CommitIsRefusedAfterAReversalWasAbandone
         catch (...)
         {
             /// Ok, the reversal is abandoned on the shutdown below, which is what this test sets up.
+            move_threw = true;
         }
     });
 
@@ -2658,6 +2667,7 @@ TEST_F(MetadataPlainRewritableDiskTest, CommitIsRefusedAfterAReversalWasAbandone
 
     object_storage->failRequests(false);
 
+    EXPECT_TRUE(move_threw);
     EXPECT_THROW(waiting_tx->commit(DB::NoCommitOptions{}), DB::Exception);
     EXPECT_FALSE(metadata->existsDirectory("B"));
 }

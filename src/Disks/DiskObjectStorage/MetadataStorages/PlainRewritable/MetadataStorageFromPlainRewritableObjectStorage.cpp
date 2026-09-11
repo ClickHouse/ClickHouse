@@ -65,6 +65,12 @@ fs::path normalizeDirectoryPath(const fs::path & path)
 
 void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load, bool do_not_load_unchanged_directories)
 {
+    /// Checked here rather than in the callers that reload, because a reload that passed the check before taking
+    /// `metadata_mutex` resumes on this side of it: loading would then adopt a state no transaction ever committed.
+    /// The initial load runs before anything can be reversed, so it is not affected.
+    if (isBroken())
+        return;
+
     ThreadPool & pool = getIOThreadPool().get();
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
@@ -301,10 +307,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::throwIfBroken() const
 
 void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 {
-    /// Reloading would adopt whatever object storage was left holding, which is a state no transaction ever committed.
-    if (isBroken())
-        return;
-
     std::unique_lock reload_lock(load_mutex);
     std::unique_lock tx_lock(metadata_mutex);
     load(/*is_initial_load=*/false, /*do_not_load_unchanged_directories=*/false);
@@ -312,9 +314,6 @@ void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
 {
-    if (isBroken())
-        return;
-
     if (!previous_refresh.compareAndRestart(0.001 * static_cast<double>(not_sooner_than_milliseconds)))
         return;
 
