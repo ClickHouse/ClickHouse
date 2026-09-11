@@ -14,6 +14,8 @@ namespace DB::Iceberg
 class IcebergPositionDeleteTransform : public ISimpleTransform
 {
 public:
+    using ExcludedRows = DB::DataLakeObjectMetadata::ExcludedRows;
+
     static constexpr const char * positions_column_name = "pos";
     static constexpr const char * data_file_path_column_name = "file_path";
 
@@ -45,6 +47,8 @@ public:
 private:
     void initializeDeleteSources();
 
+    void readDeletionVector(const DeletionVectorObject & deletion_vector_object);
+
 protected:
     LoggerPtr log = getLogger("IcebergPositionDeleteTransform");
     static size_t getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name);
@@ -65,13 +69,14 @@ protected:
     /// We need to keep the read buffers alive since the delete_sources depends on them.
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
     std::vector<std::shared_ptr<IInputFormat>> delete_sources;
+
+    ExcludedRows deletion_vector_rows;
+    bool has_deletion_vectors = false;
 };
 
 class IcebergBitmapPositionDeleteTransform final : public IcebergPositionDeleteTransform
 {
 public:
-    using ExcludedRows = DB::DataLakeObjectMetadata::ExcludedRows;
-
     IcebergBitmapPositionDeleteTransform(
         const SharedHeader & header_,
         IcebergDataObjectInfoPtr iceberg_object_info_,
