@@ -3846,6 +3846,24 @@ Most algorithms affect a query only when they are the one selected for it. Some,
 
 Both apply even when the query eventually runs with `hash` or another algorithm. If this is undesirable, do not list the algorithms above in `join_algorithm` for the affected queries.
 
+Five of the values below are variations of the same sort-merge join, and differ only in where the sorted
+input comes from and whether the join is split across threads. The table tells them apart; each entry is
+described in full in the list that follows.
+
+| Value | Sorts the input | Parallel | Selectable when |
+|---|---|---|---|
+| `partial_merge` | The right side fully, the left side block by block | No | Any `ALL` join, and `SEMI` / `ANY` `LEFT`, spilling to disk |
+| `full_sorting_merge` | Both sides fully, before joining | No | Any join the merge join implements |
+| `parallel_full_sorting_merge` | Both sides fully, after a hash scatter into per-shard joins | Yes | As `full_sorting_merge`; falls back to it when the keys cannot be hash-scattered |
+| `sorted_merge` | Nothing - it reads both sides in the order they are already stored in | No | Only when both inputs can be read in join-key order; otherwise the next algorithm in the list is used |
+| `parallel_sorted_merge` | Nothing, and splits the in-order reads by primary-key ranges | Yes | As `sorted_merge`; falls back to it when there is no common primary-key prefix |
+
+So the choice is: `partial_merge` and `full_sorting_merge` always apply but pay for a sort,
+`sorted_merge` never sorts but applies only to suitably ordered tables, and the two `parallel_` values
+are the multi-threaded variants of the corresponding single-stream ones. Listing a `sorted_merge`
+variant before another algorithm expresses "use the merge join where it is free, otherwise use that
+other algorithm".
+
 Possible values:
 
 - grace_hash
