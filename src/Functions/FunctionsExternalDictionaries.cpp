@@ -55,9 +55,9 @@ static FunctionDocumentation::ReturnedValue getDictGetReturnedValue()
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the content of the `<null_value>` element specified for the attribute in the dictionary configuration.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
     )"};
 }
 
@@ -68,9 +68,9 @@ static FunctionDocumentation::ReturnedValue getDictGetOrDefaultReturnedValue()
 Returns the value of the dictionary attribute that corresponds to `id_expr`,
 otherwise returns the value passed as the `default_value_expr` parameter.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
     )"};
 }
 
@@ -1208,9 +1208,9 @@ Besides returning values of type `Array(T)` instead of `T`, this function behave
 Returns an array of the dictionary attribute values that correspond to `id_expr` for each attribute specified by `attr_names`.
 If there is no key corresponding to `id_expr` in the dictionary, an empty array is returned.
 
-:::note
+<Note>
 ClickHouse throws an exception if it cannot parse the value of the attribute or the value does not match the attribute data type.
-:::
+</Note>
 )", {"Array(T)"}};
         FunctionDocumentation::Examples examples = {
             {"Usage example",
