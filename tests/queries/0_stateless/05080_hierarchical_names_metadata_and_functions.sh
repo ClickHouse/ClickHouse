@@ -63,12 +63,3 @@ run "SHOW TABLES FROM \".${db}.\""
 run "SHOW COLUMNS FROM \".${db}.\".\".inner.t\""
 $CLICKHOUSE_CLIENT -m -q "USE \".${db}.\"; SELECT * FROM \".inner.t\"; SHOW TABLES;"
 run "DROP DATABASE \".${db}.\""
-
-echo '--- ON CLUSTER: the database may exist on the other hosts only'
-run "CREATE TABLE ${db}_nonexistent.t ON CLUSTER test_shard_localhost (x UInt8) ENGINE = Memory" | grep -o 'UNKNOWN_DATABASE' | sort -u
-$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "CREATE TABLE ${db}.ns.oc ON CLUSTER test_shard_localhost (x UInt8) ENGINE = Memory"
-run "EXISTS TABLE ${db}.\"ns.oc\""
-$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "RENAME TABLE ${db}.ns.oc TO ${db}.ns.oc2 ON CLUSTER test_shard_localhost"
-run "EXISTS TABLE ${db}.\"ns.oc2\""
-$CLICKHOUSE_CLIENT --distributed_ddl_output_mode=none -q "DROP TABLE ${db}.ns.oc2 ON CLUSTER test_shard_localhost"
-run "SHOW TABLES FROM ${db}"

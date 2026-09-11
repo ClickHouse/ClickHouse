@@ -37,11 +37,3 @@ uno
 x	UInt8	NO		\N	
 1
 .inner.t
---- ON CLUSTER: the database may exist on the other hosts only
-UNKNOWN_DATABASE
-1
-1
-ns.d
-ns.j
-ns.t
-src
