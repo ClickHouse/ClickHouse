@@ -560,6 +560,8 @@ void MergeTreeReaderWide::prefetchForColumn(
     bool continue_reading,
     ISerialization::SubstreamsCache & cache)
 {
+    const bool prefix_deserialized = deserialize_binary_bulk_state_map.contains(name_and_type.name);
+
     auto callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
         /// Skip ephemeral subcolumns that don't store any real data.
@@ -571,9 +573,12 @@ void MergeTreeReaderWide::prefetchForColumn(
             return;
 
         /// Metadata streams (for example, the structure of `Dynamic` or `JSON`) are read only while deserializing
-        /// the prefix and are released right after that. Prefetching them at the current mark would create the
-        /// stream again and read the file again.
-        if (ISerialization::isMetadataStream(substream_path))
+        /// the prefix, which always reads from the beginning of the file, and are released right after that.
+        /// Prefetching such a stream pays off only in `prefetchBeginOfRange` for a range starting at mark 0:
+        /// there the prefix is not deserialized yet, and it will reuse exactly this prefetch. Otherwise the
+        /// prefetch is either at a wrong offset or the prefix is already deserialized, and the only effect is
+        /// creating the stream again and reading the file a second time.
+        if (ISerialization::isMetadataStream(substream_path) && (prefix_deserialized || from_mark != 0))
             return;
 
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
