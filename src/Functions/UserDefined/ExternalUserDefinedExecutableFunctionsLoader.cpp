@@ -3,7 +3,6 @@
 #include <limits>
 
 #include <Core/UUID.h>
-#include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <boost/algorithm/string/split.hpp>
@@ -33,18 +32,12 @@ namespace Setting
     extern const SettingsSeconds max_execution_time;
 }
 
-namespace ServerSetting
-{
-    extern const ServerSettingsBool allow_experimental_executable_udf_shared_memory;
-}
-
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int FUNCTION_ALREADY_EXISTS;
     extern const int UNSUPPORTED_METHOD;
     extern const int TYPE_MISMATCH;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -249,20 +242,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
 
     if (use_shared_memory)
     {
-        /// The transport is experimental and off by default. Read from the configuration that is
-        /// being loaded rather than from the startup-time server settings: `SYSTEM RELOAD CONFIG`
-        /// does not refresh those, so a toggle would otherwise not take effect until a restart.
-        /// This is the same configuration at startup, and the current one on reload - the same
-        /// reasoning as for `allow_experimental_executable_udf_drivers`.
-        ServerSettings reloaded_server_settings;
-        reloaded_server_settings.loadSettingsFromConfig(getContext()->getConfigRef());
-        if (!reloaded_server_settings[ServerSetting::allow_experimental_executable_udf_shared_memory])
-            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "Executable user defined function {}: the shared-memory transport is experimental. Enable the "
-                "server setting `allow_experimental_executable_udf_shared_memory` to use `use_shared_memory`",
-                name);
-
-        /// Reject invalid combinations before probing the configured shared-memory directory below.
+        /// Reject invalid combinations before probing the platform's support below.
         if (send_chunk_header)
             throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                 "Executable user defined function {}: `use_shared_memory` is incompatible with `send_chunk_header`",

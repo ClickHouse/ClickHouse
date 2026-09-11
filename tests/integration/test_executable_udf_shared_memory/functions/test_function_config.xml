@@ -536,16 +536,6 @@
     </function>
     <function>
         <type>executable</type>
-        <name>test_function_pipe_alongside_shm_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <command>pipe_udf.py</command>
-    </function>
-    <function>
-        <type>executable</type>
         <name>test_function_shm_stderr_then_exit_python</name>
         <return_type>String</return_type>
         <argument>

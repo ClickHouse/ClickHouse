@@ -48,9 +48,6 @@ bench_start_server() {
     <tmp_path>$BENCH_WORK/state/tmp/</tmp_path>
     <user_scripts_path>$BENCH_WORK/user_scripts/</user_scripts_path>
     <user_defined_executable_functions_config>$BENCH_WORK/functions.xml</user_defined_executable_functions_config>
-    <!-- The shared-memory transport is experimental and off by default; the shm variants ask for
-         it, and without this they would simply fail to load. -->
-    <allow_experimental_executable_udf_shared_memory>1</allow_experimental_executable_udf_shared_memory>
     <mark_cache_size>1048576</mark_cache_size>
     <profiles><default/></profiles>
     <users>

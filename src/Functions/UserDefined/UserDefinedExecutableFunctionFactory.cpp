@@ -56,7 +56,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int UNSUPPORTED_METHOD;
-    extern const int SUPPORT_IS_DISABLED;
     extern const int BAD_ARGUMENTS;
     extern const int UDF_EXECUTION_FAILED;
 }
@@ -258,19 +257,6 @@ public:
             /// that fail before the child is ready. The other resource counters are
             /// emitted only when the child actually ran and was observed.
             ProfileEvents::increment(ProfileEvents::ExecutableUserDefinedFunctionInvocations);
-
-            /// Asked per invocation, not only when the function was created. `ExternalLoader`
-            /// re-creates an object only when that function's own XML changed, and keeps the
-            /// previous one alive when a re-creation fails, so the check at load time cannot revoke
-            /// anything: a shared-memory function loaded while the setting was on would keep
-            /// serving queries after it was turned off. The value behind this is refreshed on every
-            /// configuration load, so `SYSTEM RELOAD CONFIG` is enough to close the gate.
-            if (coordinator_configuration.use_shared_memory && !context->isExecutableUdfSharedMemoryAllowed())
-                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                    "Executable user defined function '{}' uses the shared-memory transport, which is "
-                    "experimental and currently disabled. Enable the server setting "
-                    "`allow_experimental_executable_udf_shared_memory` to use it",
-                    getName());
 
             std::shared_ptr<UDFProcessSubtreeSampler> sampler = std::make_shared<UDFProcessSubtreeSampler>();
             shell_command_source_configuration.sampler = sampler;

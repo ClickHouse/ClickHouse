@@ -457,7 +457,6 @@ namespace ServerSetting
     extern const ServerSettingsBool allow_experimental_webassembly_udf;
     extern const ServerSettingsString webassembly_udf_engine;
     extern const ServerSettingsBool allow_experimental_executable_udf_drivers;
-    extern const ServerSettingsBool allow_experimental_executable_udf_shared_memory;
 }
 
 namespace ErrorCodes
@@ -515,13 +514,6 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_user_defined_executable_functions_mutex;
 
-    /// `allow_experimental_executable_udf_shared_memory`, resolved from the configuration that was
-    /// last loaded rather than from the startup-time settings, so that turning it off takes effect
-    /// on `SYSTEM RELOAD CONFIG`. It has to be consulted per invocation and not only when a function
-    /// is created: `ExternalLoader` re-creates an object only when that function's own XML changed,
-    /// and keeps the previous one alive when a re-creation fails, so a load-time check alone would
-    /// leave an already-loaded shared-memory function serving queries after the gate was closed.
-    std::atomic<bool> allow_executable_udf_shared_memory{false};
     /// Separate mutex for storage policies. During server startup we may
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.
@@ -4215,27 +4207,8 @@ void Context::waitForDictionariesLoad() const
         LOG_INFO(shared->log, "Some dictionaries were not loaded");
 }
 
-bool Context::isExecutableUdfSharedMemoryAllowed() const
-{
-    return shared->allow_executable_udf_shared_memory.load(std::memory_order_relaxed);
-}
-
-
 void Context::loadOrReloadUserDefinedExecutableFunctions(const Poco::Util::AbstractConfiguration & config)
 {
-    /// Resolved before the loader runs, because creating a function consults it - and refreshed on
-    /// every reload, which is what makes closing the gate take effect on functions that are already
-    /// loaded. Read from the configuration being loaded for the same reason as in
-    /// `loadUserDefinedExecutableFunctionDrivers`: the startup-time `shared->server_settings` is
-    /// not refreshed by `SYSTEM RELOAD CONFIG`.
-    {
-        ServerSettings reloaded_server_settings;
-        reloaded_server_settings.loadSettingsFromConfig(config);
-        shared->allow_executable_udf_shared_memory.store(
-            reloaded_server_settings[ServerSetting::allow_experimental_executable_udf_shared_memory],
-            std::memory_order_relaxed);
-    }
-
     auto patterns_values = getMultipleValuesFromConfig(config, "", "user_defined_executable_functions_config");
     std::unordered_set<std::string> patterns(patterns_values.begin(), patterns_values.end());
 

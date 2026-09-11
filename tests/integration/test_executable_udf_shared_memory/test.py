@@ -10,11 +10,7 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-node = cluster.add_instance(
-    "node",
-    stay_alive=True,
-    main_configs=["config/allow_shared_memory.xml"],
-)
+node = cluster.add_instance("node", stay_alive=True)
 
 
 def skip_test_msan(instance):
@@ -633,54 +629,6 @@ def test_shared_memory_udf_invalid_config_is_rejected(started_cluster):
         assert node.contains_in_log(diagnostic)
 
     # A valid shared-memory UDF from the same config still works.
-    assert node.query("SELECT test_function_shm_python(1)") == "Key 1\n"
-
-
-def test_shared_memory_udf_requires_the_experimental_setting(started_cluster):
-    skip_test_msan(node)
-
-    # The transport is a new execution mechanism - memory the command may write to, a protocol of
-    # its own, descriptors handed to the command - so it is off by default and a function that asks
-    # for it does not load. The whole suite runs with the setting on; this closes it and reopens it.
-    #
-    # `SYSTEM RELOAD CONFIG` rather than a restart, because that is the part worth testing. A check
-    # made only when a function is created cannot revoke anything: `ExternalLoader` re-creates an
-    # object only when that function's own XML changed, and keeps the previous object alive when a
-    # re-creation fails, so a function loaded while the setting was on would keep serving queries
-    # after it was turned off. The gate is therefore also consulted per invocation.
-    gate = "/etc/clickhouse-server/config.d/allow_shared_memory.xml"
-    enabled_content = node.exec_in_container(["bash", "-c", f"cat {gate}"])
-
-    def set_gate(value):
-        node.exec_in_container(
-            ["bash", "-c",
-             f"printf '%s' '<clickhouse><allow_experimental_executable_udf_shared_memory>{value}"
-             f"</allow_experimental_executable_udf_shared_memory></clickhouse>' > {gate}"]
-        )
-        node.query("SYSTEM RELOAD CONFIG")
-
-    set_gate(0)
-    try:
-        # The function is still loaded - nothing about its own XML changed - and that is exactly the
-        # case the runtime check exists for.
-        with pytest.raises(Exception) as exc:
-            node.query("SELECT test_function_shm_python(1) FORMAT Null")
-        assert "allow_experimental_executable_udf_shared_memory" in str(exc.value), str(exc.value)
-
-        # A pipe-mode function in the same server is unaffected: the gate is about one transport.
-        assert node.query("SELECT test_function_pipe_alongside_shm_python(1)") == "Key 1\n"
-
-        # The load-time half of the gate: re-creating the function while the setting is off is
-        # refused by the loader itself, naming the setting, so a server that starts with the setting
-        # off never gets a shared-memory function at all - not one that fails per call.
-        with pytest.raises(Exception) as exc:
-            node.query("SYSTEM RELOAD FUNCTION test_function_shm_python")
-        assert "allow_experimental_executable_udf_shared_memory" in str(exc.value), str(exc.value)
-    finally:
-        node.exec_in_container(["bash", "-c", f"cat > {gate} <<'XMLEOF'\n{enabled_content}\nXMLEOF"])
-        node.query("SYSTEM RELOAD CONFIG")
-
-    # The gate is a gate, not a one-way door.
     assert node.query("SELECT test_function_shm_python(1)") == "Key 1\n"
 
 

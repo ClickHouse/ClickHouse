@@ -1300,11 +1300,6 @@ public:
     /// Load driver definitions from configuration files matching `<user_defined_executable_function_drivers_config>` patterns.
     void loadUserDefinedExecutableFunctionDrivers(const Poco::Util::AbstractConfiguration & config) const;
 
-    /// Whether the experimental shared-memory transport of executable UDFs may be used right now.
-    /// Refreshed on every configuration load, so closing the gate takes effect for functions that
-    /// are already loaded - which a check made only when a function is created cannot do.
-    bool isExecutableUdfSharedMemoryAllowed() const;
-
     std::shared_ptr<IWorkloadEntityStorage> getWorkloadEntityStoragePtr() const;
 
     bool hasWasmModuleManager() const;
