@@ -2,6 +2,7 @@
 
 #include <bit>
 #include <concepts>
+#include <optional>
 #include <vector>
 #include <Common/logger_useful.h>
 #include <base/types.h>
@@ -123,6 +124,59 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
         dp_table[right_mask].estimated_rows = query_graph.relation_stats[relations[1]].estimated_rows;
         dp_table[right_mask].sel = 1.0; // selectivity of a base relation is trivially 1.0
         dp_table[right_mask].column_stats = query_graph.relation_stats[relations[1]].column_stats;
+    }
+
+    /// A join whose ON clause references only one input side (or none -- a cross product) adds no
+    /// binary edge, so its two subtrees are never linked and DPsub cannot assemble the full set.
+    /// Seed one connectivity link per such operator so its relation set is reachable; the validity
+    /// check still gates every ordering (and rejects a split no operator legitimately spans).
+    ///
+    /// Only the conflict-detector path carries the per-operator subtree sets needed to keep these
+    /// reachable cross-product orderings correct; the per-relation baseline leaves them disconnected.
+    /// This runs once, outside the per-csg-cmp hot loop.
+    if (!(query_graph.use_conflict_detector_a || query_graph.use_conflict_detector_c))
+        return;
+
+    for (const auto & op : query_graph.conflict_ops)
+    {
+        UInt left = 0;
+        UInt right = 0;
+        UInt nel = 0;
+        std::optional<size_t> rep_left;
+        std::optional<size_t> rep_right;
+        for (auto b : op.left)
+        {
+            left |= (static_cast<UInt>(1) << b);
+            if (!rep_left)
+                rep_left = b;
+        }
+        for (auto b : op.right)
+        {
+            right |= (static_cast<UInt>(1) << b);
+            if (!rep_right)
+                rep_right = b;
+        }
+        for (auto b : op.nel)
+            nel |= (static_cast<UInt>(1) << b);
+
+        if (!rep_left || !rep_right)
+            continue;
+        /// Non-degenerate: the predicate already spans both sides, so a binary edge connects them.
+        if ((nel & left) && (nel & right))
+            continue;
+
+        const UInt left_mask = static_cast<UInt>(1) << *rep_left;
+        const UInt right_mask = static_cast<UInt>(1) << *rep_right;
+
+        dp_table[left_mask].neighbor |= right_mask;
+        dp_table[left_mask].estimated_rows = query_graph.relation_stats[*rep_left].estimated_rows;
+        dp_table[left_mask].sel = 1.0;
+        dp_table[left_mask].column_stats = query_graph.relation_stats[*rep_left].column_stats;
+
+        dp_table[right_mask].neighbor |= left_mask;
+        dp_table[right_mask].estimated_rows = query_graph.relation_stats[*rep_right].estimated_rows;
+        dp_table[right_mask].sel = 1.0;
+        dp_table[right_mask].column_stats = query_graph.relation_stats[*rep_right].column_stats;
     }
 }
 
