@@ -133,6 +133,16 @@ UInt64 MultipleFileWriter::getResultBytes() const
     return total_bytes;
 }
 
+UInt64 MultipleFileWriter::getCurrentFileRows() const
+{
+    return current_file_num_rows.value_or(0);
+}
+
+UInt64 MultipleFileWriter::getCurrentFileOnDiskBytes() const
+{
+    return buffer ? buffer->count() : 0;
+}
+
 #endif
 
 }
