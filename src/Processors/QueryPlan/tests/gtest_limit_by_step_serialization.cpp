@@ -90,5 +90,3 @@ TEST(LimitByStepSerialization, FlagRoundTripsAtCurrentVersion)
         EXPECT_EQ(bytes, serializeStep(*restored, current_version));
     }
 }
-
-}
