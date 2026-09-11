@@ -26,7 +26,7 @@ try:
 except ImportError:
     _TEMPORAL_NTZ_TYPES = ()
 
-from .laketables import SparkTable, LakeFormat
+from .laketables import SparkTable, LakeFormat, LakeCatalogs
 from integration.helpers.client import Client
 
 # Row-hash placeholder for SQL NULL, so rows with a NULL in a compared column are
@@ -125,10 +125,18 @@ class SparkAndClickHouseCheck:
         except Exception as e:
             self.logger.error(f"Could not read Spark history: {e}")
         try:
-            database, _, name = table.get_clickhouse_path().partition(".")
+            # `system.iceberg_history.table` holds the unquoted identifier, so build it from the
+            # table's own fields: `get_clickhouse_path()` is SQL text and backticks the namespace
+            # path for catalog-backed tables, which would never match.
+            name = (
+                table.table_name
+                if table.catalog == LakeCatalogs.NoCatalog
+                else table.get_namespace_path()
+            )
             ch_history = client.query(
                 f"SELECT made_current_at, snapshot_id, is_current_ancestor "
-                f"FROM system.iceberg_history WHERE database = '{database}' AND table = '{name}' "
+                f"FROM system.iceberg_history "
+                f"WHERE database = '{table.database_name}' AND table = '{name}' "
                 f"ORDER BY made_current_at FORMAT TSV;"
             )
             self.logger.error(
