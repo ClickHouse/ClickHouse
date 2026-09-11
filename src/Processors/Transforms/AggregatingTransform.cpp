@@ -619,7 +619,7 @@ public:
             source->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
         }
 
-        return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+        return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}, .to_reconnect = {}};
     }
 
     IProcessor::Status prepare() override
@@ -1250,7 +1250,7 @@ IProcessor::PipelineUpdate AggregatingTransform::updatePipeline()
     for (auto & proc : processors)
         proc->inheritQueryPlanStepFromParent(*this, getGeneratingStepGroup());
 
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}, .to_reconnect = {}};
 }
 
 void AggregatingTransform::consume(Chunk chunk)

@@ -9,6 +9,8 @@
 #include <Core/Block_fwd.h>
 #include <Core/Defines.h>
 #include <Processors/Chunk.h>
+#include <Processors/Executors/Runtime/Pipeline/UpdateChannel.h>
+#include <Processors/Executors/Runtime/Pipeline/UpdateInboxEntry.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -23,32 +25,11 @@ namespace ErrorCodes
 extern const int LOGICAL_ERROR;
 }
 
-class Port
+class Port : public UpdateInboxEntry
 {
     friend void connect(OutputPort &, InputPort &, bool);
     friend void disconnect(OutputPort &, InputPort &);
     friend class IProcessor;
-
-public:
-    struct UpdateInfo
-    {
-        using UpdateList = std::vector<void *>;
-
-        UpdateList * update_list = nullptr;
-        void * id = nullptr;
-        UInt64 version = 0;
-        UInt64 prev_version = 0;
-
-        void inline ALWAYS_INLINE update()
-        {
-            if (version == prev_version && update_list)
-                update_list->push_back(id);
-
-            ++version;
-        }
-
-        void inline ALWAYS_INLINE trigger() { prev_version = version; }
-    };
 
 protected:
     /// Shared state of two connected ports.
@@ -211,9 +192,6 @@ protected:
 
     IProcessor * processor = nullptr;
 
-    /// If update_info was set, will call update() for it in case port's state have changed.
-    UpdateInfo * update_info = nullptr;
-
 public:
     using Data = State::Data;
 
@@ -222,9 +200,6 @@ public:
     Port(Block && header_) : header(std::make_shared<const Block>(std::move(header_))) { } // NOLINT(google-explicit-constructor)
     Port(const Block & header_) : header(std::make_shared<const Block>(header_)) { } // NOLINT(google-explicit-constructor)
     Port(Block header_, IProcessor * processor_) : header(std::make_shared<const Block>(std::move(header_))), processor(processor_) { }
-
-    void setUpdateInfo(UpdateInfo * info) { update_info = info; }
-    bool hasUpdateInfo() const { return update_info != nullptr; }
 
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
@@ -263,12 +238,6 @@ public:
     }
 
 protected:
-    void inline ALWAYS_INLINE updateVersion()
-    {
-        if (likely(update_info))
-            update_info->update();
-    }
-
     /// For processors_profile_log
     size_t rows = 0;
     size_t bytes = 0;
@@ -286,16 +255,19 @@ class InputPort : public Port
 
 private:
     OutputPort * output_port = nullptr;
+    UpdateChannel<InputPort> update_channel;
 
     mutable bool is_finished = false;
 
 public:
     using Port::Port;
 
+    UpdateChannel<InputPort> & getUpdateChannel() { return update_channel; }
+
     Data ALWAYS_INLINE pullData(bool set_not_needed = false)
     {
         if (!set_not_needed)
-            updateVersion();
+            update_channel.notifyChanges();
 
         assumeConnected();
 
@@ -354,7 +326,7 @@ public:
         assumeConnected();
 
         if ((state->setFlags(State::IS_NEEDED, State::IS_NEEDED) & State::IS_NEEDED) == 0)
-            updateVersion();
+            update_channel.notifyChanges();
     }
 
     void ALWAYS_INLINE setNotNeeded()
@@ -368,7 +340,7 @@ public:
         assumeConnected();
 
         if ((state->setFlags(State::IS_FINISHED, State::IS_FINISHED) & State::IS_FINISHED) == 0)
-            updateVersion();
+            update_channel.notifyChanges();
 
         is_finished = true;
     }
@@ -410,9 +382,12 @@ class OutputPort : public Port
 
 private:
     InputPort * input_port = nullptr;
+    UpdateChannel<OutputPort> update_channel;
 
 public:
     using Port::Port;
+
+    UpdateChannel<OutputPort> & getUpdateChannel() { return update_channel; }
 
     void ALWAYS_INLINE push(Chunk chunk)
     {
@@ -439,7 +414,7 @@ public:
                 data_.chunk.dumpStructure());
         }
 
-        updateVersion();
+        update_channel.notifyChanges();
 
         assumeConnected();
 
@@ -459,7 +434,7 @@ public:
         auto flags = state->setFlags(State::IS_FINISHED, State::IS_FINISHED);
 
         if ((flags & State::IS_FINISHED) == 0)
-            updateVersion();
+            update_channel.notifyChanges();
     }
 
     bool ALWAYS_INLINE isNeeded() const

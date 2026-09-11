@@ -111,7 +111,7 @@ IProcessor::PipelineUpdate LazyUnorderedReadFromMergeTreeSource::updatePipeline(
         inputs.back().setNeeded();
     }
 
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}, .to_reconnect = {}};
 }
 
 Pipe LazyUnorderedReadFromMergeTreeSource::buildPipe()

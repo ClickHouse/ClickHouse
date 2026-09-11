@@ -1,5 +1,6 @@
 #include <Processors/Executors/PullingAsyncPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/Executor.h>
+#include <Interpreters/ProcessList.h>
 #include <Processors/Formats/LazyOutputFormat.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Sources/NullSource.h>
@@ -20,7 +21,7 @@ namespace ErrorCodes
 
 struct PullingAsyncPipelineExecutor::Data
 {
-    PipelineExecutorPtr executor;
+    std::shared_ptr<Executor> executor;
     std::exception_ptr exception;
     LazyOutputFormat * lazy_format = nullptr;
     std::atomic_bool is_finished = false;
@@ -102,7 +103,7 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
     if (!data)
     {
         data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
+        data->executor = std::make_shared<Executor>(pipeline.processors, pipeline.process_list_element);
         data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
         data->lazy_format = lazy_format.get();
 
@@ -116,8 +117,11 @@ bool PullingAsyncPipelineExecutor::pull(Chunk & chunk, uint64_t milliseconds)
 
     data->rethrowExceptionIfHas();
 
-    bool is_execution_finished
-        = !data->executor->checkTimeLimitSoft() || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
+    const bool time_limit_exceeded = pipeline.process_list_element && !pipeline.process_list_element->checkTimeLimitSoft();
+    if (time_limit_exceeded)
+        data->executor->cancel(IProcessor::CancelReason::CancelledByTimeout);
+
+    bool is_execution_finished = time_limit_exceeded || (lazy_format ? lazy_format->isFinished() : data->is_finished.load());
 
     if (is_execution_finished)
     {
@@ -178,10 +182,10 @@ void PullingAsyncPipelineExecutor::cancel()
     cancelWithExceptionHandling([&]()
     {
         if (!data->is_finished && data->executor)
-            data->executor->cancel();
+            data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
     });
 
-    /// The following code is needed to rethrow exception from PipelineExecutor.
+    /// The following code is needed to rethrow exception from the executor.
     /// It could have been thrown from pull(), but we will not likely call it again.
 
     /// Join thread here to wait for possible exception.

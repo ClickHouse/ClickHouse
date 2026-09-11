@@ -37,7 +37,7 @@ namespace DB
 
 struct Settings;
 class IAST;
-class PipelineExecutor;
+class Executor;
 
 struct ProcessListForUser;
 class QueryStatus;
@@ -164,20 +164,20 @@ protected:
 
     struct ExecutorHolder
     {
-        explicit ExecutorHolder(PipelineExecutor * e) : executor(e) {}
+        explicit ExecutorHolder(Executor * e) : executor(e) {}
 
         void cancel();
 
         void remove();
 
-        PipelineExecutor * executor;
+        Executor * executor;
         std::mutex mutex;
     };
 
     using ExecutorHolderPtr = std::shared_ptr<ExecutorHolder>;
 
-    /// Container of PipelineExecutors to be cancelled when a cancelQuery is received
-    std::unordered_map<PipelineExecutor *, ExecutorHolderPtr> executors;
+    /// Container of executors to be cancelled when a cancelQuery is received
+    std::unordered_map<Executor *, ExecutorHolderPtr> executors;
 
     enum class QueryStreamsStatus : uint8_t
     {
@@ -277,10 +277,10 @@ public:
     void setAllDataSent() { is_all_data_sent = true; }
 
     /// Adds a pipeline to the QueryStatus
-    void addPipelineExecutor(PipelineExecutor * e);
+    void addExecutor(Executor * e);
 
     /// Removes a pipeline to the QueryStatus
-    void removePipelineExecutor(PipelineExecutor * e);
+    void removeExecutor(Executor * e);
 
     /// Checks the query time limits (cancelled or timeout)
     bool checkTimeLimit();
@@ -303,8 +303,8 @@ public:
     void releaseQuerySlot();
 
     /// Release the memory reservation only. MUST NOT be called while the query pipeline is still
-    /// running: pipeline threads hold raw pointers to `MemoryReservation` (see `WorkloadResources`
-    /// in `PipelineExecutor`) and would race with its destruction.
+    /// running: pipeline threads hold raw pointers to `MemoryReservation` (see `WorkerSlot`
+    /// in the executor) and would race with its destruction.
     void releaseMemoryReservation();
 };
 

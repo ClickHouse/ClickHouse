@@ -8,7 +8,7 @@
 #include <Parsers/ASTKillQueryQuery.h>
 #include <Parsers/IAST.h>
 #include <Parsers/queryNormalization.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/Executor.h>
 #include <base/scope_guard.h>
 #include <Common/Exception.h>
 #include <Common/CurrentThread.h>
@@ -568,7 +568,7 @@ void QueryStatus::ExecutorHolder::cancel()
 {
     std::lock_guard lock(mutex);
     if (executor)
-        executor->cancel();
+        executor->cancel(IProcessor::CancelReason::CancelledByUser);
 }
 
 void QueryStatus::ExecutorHolder::remove()
@@ -604,12 +604,12 @@ CancellationCode QueryStatus::cancelQuery(CancelReason reason, std::exception_pt
 
     /// We should call cancel() for each executor with unlocked executors_mutex, because
     /// cancel() can try to lock some internal mutex that is already locked by query executing
-    /// thread, and query executing thread can call removePipelineExecutor and lock executors_mutex,
+    /// thread, and query executing thread can call removeExecutor and lock executors_mutex,
     /// which will lead to deadlock.
     /// Note that the size and the content of executors cannot be changed while
     /// executors_mutex is unlocked, because:
-    /// 1) We don't allow adding new executors while cancelling query in addPipelineExecutor
-    /// 2) We don't actually remove executor holder from executors in removePipelineExecutor,
+    /// 1) We don't allow adding new executors while cancelling query in addExecutor
+    /// 2) We don't actually remove executor holder from executors in removeExecutor,
     /// just mark that executor is invalid.
     /// So, it's ok to use a snapshot created above under a mutex, it won't be any differ from actual executors.
     for (const auto & e : executors_snapshot)
@@ -639,10 +639,10 @@ void QueryStatus::throwProperExceptionIfNeeded(const UInt64 & max_execution_time
     }
 }
 
-void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
+void QueryStatus::addExecutor(Executor * e)
 {
     /// In case of asynchronous distributed queries it is possible to call
-    /// addPipelineExecutor() from the cancelQuery() context, and this will
+    /// addExecutor() from the cancelQuery() context, and this will
     /// lead to deadlock.
     UInt64 max_exec_time = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
     throwProperExceptionIfNeeded(max_exec_time, 0);
@@ -652,7 +652,7 @@ void QueryStatus::addPipelineExecutor(PipelineExecutor * e)
     executors[e] = std::make_shared<ExecutorHolder>(e);
 }
 
-void QueryStatus::removePipelineExecutor(PipelineExecutor * e)
+void QueryStatus::removeExecutor(Executor * e)
 {
     ExecutorHolderPtr executor_holder;
 

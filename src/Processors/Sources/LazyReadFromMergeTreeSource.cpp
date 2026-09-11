@@ -216,7 +216,7 @@ IProcessor::PipelineUpdate LazyReadFromMergeTreeSource::updatePipeline()
 
     next_input_to_process = inputs.begin();
     chunks.resize(processors.size());
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}, .to_reconnect = {}};
 }
 
 Processors LazyReadFromMergeTreeSource::buildReaders()

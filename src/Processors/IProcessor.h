@@ -12,7 +12,6 @@
 #include <Processors/IProcessor_fwd.h>
 #include <fmt/format.h>
 
-class EventCounter;
 
 namespace DB
 {
@@ -242,7 +241,7 @@ public:
       * This method cannot access any port, but it can create new ports for current processor.
       *
       * Method should return set of new already connected processors or disconnected finished processors.
-      * All returned processors must be connected only to each other or current processor.
+      * All returned processors must be connected only to each other, current processor or processors listed in to_reconnect.
       *
       * Method can't move data from/to port or perform calculations.
       * 'prepare' should be called again after this operation.
@@ -251,6 +250,7 @@ public:
     {
         Processors to_add;
         Processors to_remove;
+        Processors to_reconnect;
     };
     virtual PipelineUpdate updatePipeline();
 
@@ -397,15 +397,8 @@ protected:
     bool spillable = false;
 
 private:
-    /// For:
-    /// - elapsed_ns
-    /// - num_executed_jobs
-    /// - query_plan_step_wall_clock_ptr
-    friend class ExecutionThreadContext;
-    /// For
-    /// - input_wait_elapsed_ns
-    /// - output_wait_elapsed_ns
-    friend class ExecutingGraph;
+    /// For the profiling fields: elapsed_ns, num_executed_jobs, query_plan_step_wall_clock_ptr, input_wait_elapsed_ns, output_wait_elapsed_ns
+    friend class Worker;
 
     std::string processor_description;
 

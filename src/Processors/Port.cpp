@@ -32,9 +32,9 @@ void disconnect(OutputPort & output, InputPort & input)
     if (output.input_port != &input || input.output_port != &output)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot disconnect ports that are not connected to each other");
 
-    /// Disconnect from pipeline edges
-    input.update_info = nullptr;
-    output.update_info = nullptr;
+    /// Disconnect from the executor
+    input.update_channel.disconnect();
+    output.update_channel.disconnect();
 
     /// Disconnect from each other
     input.output_port = nullptr;
