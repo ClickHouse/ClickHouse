@@ -66,20 +66,12 @@ void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
     while (auto task = pickTask())
     {
         if (coordinator.needsPoller())
-            if (!coordinator.wake(1))
-                pool.grow(1);
+            wakeOrSpawn(1);
 
         const size_t threads_needed = runTask(*task);
 
-        if (threads_needed)
-        {
-            size_t woken = 0;
-            if (coordinator.idle() > 0)
-                woken = coordinator.wake(threads_needed);
-
-            if (threads_needed > woken)
-                pool.grow(threads_needed - woken);
-        }
+        if (threads_needed > 0)
+            wakeOrSpawn(threads_needed);
 
         if (pipeline.hasReadyForRemoval())
             pipeline.removeReady();
@@ -111,7 +103,20 @@ std::optional<Task> Worker::pickTask()
 
         if (!coordinator.wait(worker_id))
             return std::nullopt;
+
+        if (const size_t fired = scheduler.queued(worker_id); fired > 1)
+            wakeOrSpawn(fired - 1);
     }
+}
+
+void Worker::wakeOrSpawn(size_t threads_needed)
+{
+    size_t woken = 0;
+    if (coordinator.idle() > 0)
+        woken = coordinator.wake(threads_needed);
+
+    if (threads_needed > woken)
+        pool.grow(threads_needed - woken);
 }
 
 size_t Worker::runTask(Task task)

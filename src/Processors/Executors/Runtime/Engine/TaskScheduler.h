@@ -58,6 +58,7 @@ public:
     void drain(size_t worker_id);
 
     size_t queued() const;
+    size_t queued(size_t worker_id) const;
     size_t total() const;
 
 private:

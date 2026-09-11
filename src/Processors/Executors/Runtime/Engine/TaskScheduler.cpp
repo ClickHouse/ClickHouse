@@ -213,6 +213,11 @@ size_t TaskScheduler::queued() const
     return result;
 }
 
+size_t TaskScheduler::queued(size_t worker_id) const
+{
+    return local[worker_id].tasks_count.load();
+}
+
 size_t TaskScheduler::total() const
 {
     return queued() + async.tasks_count.load();
