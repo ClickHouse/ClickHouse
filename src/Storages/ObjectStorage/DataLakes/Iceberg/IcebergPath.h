@@ -3,6 +3,7 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <string_view>
 
 namespace DB
@@ -35,6 +36,10 @@ public:
     /// Should be used only when deserialization is inevitable (the most common case is reading manifest files, which contain metadata paths).
     /// Also needed to get the file which corresponds to a line in the Chunk when used for position-delete algorithms.
     static IcebergPathFromMetadata deserialize(String path_) { return IcebergPathFromMetadata(std::move(path_)); }
+
+    /// Identity of the physical object a path resolves to, as the triple (storage description, namespace, key).
+    /// Lets paths spelled differently (s3:// vs s3a:// vs https) but pointing at the same object compare equal.
+    static IcebergPathFromMetadata makeStorageIdentity(const ObjectStoragePtr & storage, const String & key);
 
     /// Extract the raw path string for writing into Iceberg metadata files,
     /// serialization, cache keys, virtual column values, etc.

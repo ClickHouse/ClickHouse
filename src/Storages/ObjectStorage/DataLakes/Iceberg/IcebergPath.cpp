@@ -3,6 +3,7 @@
 
 #include <Databases/DataLake/ICatalog.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Common/Exception.h>
 #include <Common/FullyQualifiedObjectPath.h>
 
@@ -119,6 +120,11 @@ bool IcebergPathResolver::isInForeignNamespace(const String & raw_path) const
 
     const String path_namespace(qualified->object_namespace);
     return path_namespace != blob_storage.namespace_name && path_namespace != table_location_namespace;
+}
+
+IcebergPathFromMetadata IcebergPathFromMetadata::makeStorageIdentity(const ObjectStoragePtr & storage, const String & key)
+{
+    return IcebergPathFromMetadata(storage->getDescription() + '\0' + storage->getObjectsNamespace() + '\0' + key);
 }
 
 // This function is used to get the file path inside the directory which corresponds to Iceberg table from the full blob path which is written in manifest and metadata files.

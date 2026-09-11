@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Common/SipHash.h>
 #include <consistent_hashing.h>
 #include <optional>
@@ -9,6 +10,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -18,6 +20,26 @@ String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over
 {
     if (send_over_whole_archive && object_info->isArchive())
         return object_info->getIdentifierForPath(object_info->getPathToArchive());
+
+    /// For Iceberg objects addressed by an external (absolute) path, schedule by that metadata path
+    /// so the same physical file maps to a stable replica regardless of the coordinator's key.
+    if (auto metadata_path = getMetadataPathFromObjectInfo(object_info))
+    {
+        /// A `file://` path names the local filesystem of whichever node opens it, and this distributor
+        /// hands tasks to an arbitrary replica, so an external local file -- the data file or one of the
+        /// delete files that come with it -- would be read from the wrong machine (or be missing there).
+        /// There is no node the task could be pinned to either: the coordinator is not necessarily one of
+        /// the replicas. Fail closed instead of returning the contents of a same-named file elsewhere.
+        if (auto local_path = getExternalLocalPathFromObjectInfo(object_info))
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Iceberg metadata references the file '{}' on the local filesystem, outside of the table location. "
+                "Such a file cannot be read by a cluster function, which distributes the work across replicas that "
+                "do not share this filesystem. Read the table without the `*Cluster` function instead",
+                *local_path);
+
+        return object_info->getIdentifierForPath(*metadata_path);
+    }
 
     return object_info->getIdentifier();
 }
@@ -148,7 +170,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         }
         else
         {
-            file_identifier = object_info->getIdentifier();
+            file_identifier = getSchedulingIdentifier(object_info, send_over_whole_archive);
         }
 
         size_t file_replica_idx = getReplicaForFile(file_identifier);

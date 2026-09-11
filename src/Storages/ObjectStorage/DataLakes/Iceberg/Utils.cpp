@@ -44,13 +44,14 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/sortBlock.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Poco/String.h>
 
 #if USE_AVRO
 
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <IO/ReadHelpers.h>
 #include <filesystem>
 #include <regex>
@@ -113,7 +114,6 @@ static constexpr size_t MAX_LIST_RETRIES = 5;
 
 namespace DB::Iceberg
 {
-
 using namespace DB;
 
 /// Best-effort heuristic based on ClickHouse naming conventions.
@@ -1649,3 +1649,66 @@ PartitionColumnValues getIdentityPartitionColumnValues(
 }
 
 #endif
+
+namespace DB
+{
+
+ObjectStoragePtr getResolvedStorageFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info, const ObjectStoragePtr & default_storage)
+{
+#if USE_AVRO
+    if (auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
+    {
+        if (auto resolved = iceberg_info->getResolvedStorage())
+            return resolved;
+    }
+#endif
+    return default_storage;
+}
+
+std::optional<String> getMetadataPathFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info)
+{
+#if USE_AVRO
+    if (auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info))
+        return iceberg_info->getMetadataPath();
+#endif
+    return std::nullopt;
+}
+
+std::optional<String> getExternalLocalPathFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info)
+{
+#if USE_AVRO
+    auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object_info);
+    /// Without `requires_external_storage` every path of this object resolves against the table's own
+    /// storage, which is reached the same way from every node.
+    if (!iceberg_info || !iceberg_info->info.requires_external_storage)
+        return std::nullopt;
+
+    /// A scheme-less absolute path is a local filesystem path only when the table's storage is local;
+    /// elsewhere it is a key relative to the table's bucket.
+    const auto resolved_storage = iceberg_info->getResolvedStorage();
+    const bool absolute_is_local = resolved_storage && resolved_storage->getType() == ObjectStorageType::Local;
+
+    auto is_local = [&](const String & path)
+    {
+        SchemeAuthorityKey decomposed{path};
+        return decomposed.scheme == "file"
+            || (absolute_is_local && decomposed.scheme.empty() && decomposed.key.starts_with('/'));
+    };
+
+    auto metadata_path = iceberg_info->getMetadataPath();
+    if (metadata_path && is_local(*metadata_path))
+        return metadata_path;
+
+    /// The delete files are resolved by whoever reads the object, not by the coordinator, so they are
+    /// part of the task just as much as the data file itself.
+    for (const auto & delete_object : iceberg_info->info.position_deletes_objects)
+        if (is_local(delete_object.file_path))
+            return delete_object.file_path;
+    for (const auto & delete_object : iceberg_info->info.equality_deletes_objects)
+        if (is_local(delete_object.file_path))
+            return delete_object.file_path;
+#endif
+    return std::nullopt;
+}
+
+}

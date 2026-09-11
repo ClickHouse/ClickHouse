@@ -186,3 +186,67 @@ def test_optimize_manifest_per_file_stats(started_cluster_iceberg_with_spark):
             data_entries_checked += 1
 
     assert data_entries_checked > 0
+
+# Regression test: the cleanup of the files `OPTIMIZE` replaced cannot be undone, so it attempts every
+# removal instead of stopping at the first failure and names the leftovers in the exception -- the only
+# pointer left for a file outside the table directory, which `remove_orphan_files` does not scan for.
+# https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3959096995
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_optimize_reports_files_it_could_not_remove(started_cluster_iceberg_with_spark, storage_type):
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    spark = started_cluster_iceberg_with_spark.spark_session
+    TABLE_NAME = "test_optimize_failed_cleanup_" + storage_type + "_" + get_uuid_str()
+
+    # A positional delete file is what makes the table worth compacting.
+    spark.sql(
+        f"""
+        CREATE TABLE {TABLE_NAME} (id long, data string) USING iceberg
+        TBLPROPERTIES ('format-version' = '2', 'write.delete.mode'='merge-on-read')
+        """
+    )
+    spark.sql(f"INSERT INTO {TABLE_NAME} select id, char(id + ascii('a')) from range(10, 100)")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+    spark.sql(f"DELETE FROM {TABLE_NAME} WHERE id < 20")
+    default_upload_directory(
+        started_cluster_iceberg_with_spark,
+        storage_type,
+        f"/iceberg_data/default/{TABLE_NAME}/",
+        f"/iceberg_data/default/{TABLE_NAME}/",
+    )
+
+    create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark)
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
+
+    table_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}"
+
+    def list_dir(subdir):
+        return set(instance.exec_in_container(["bash", "-c", f"ls {table_dir}/{subdir}"]).split())
+
+    metadata_before = list_dir("metadata")
+    data_before = list_dir("data")
+
+    # Fails the first removal of the cleanup, which is one of the metadata files.
+    instance.query("SYSTEM ENABLE FAILPOINT local_object_storage_network_error_during_remove")
+    try:
+        error = instance.query_and_get_error(
+            f"OPTIMIZE TABLE {TABLE_NAME};", settings={"allow_experimental_iceberg_compaction": 1}
+        )
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT local_object_storage_network_error_during_remove")
+
+    # The file the removal failed on is named in the error, not just logged.
+    assert "could not be removed and have to be deleted by hand" in error, error
+    assert "Injected error after remove object" not in error, \
+        f"The cleanup stopped at the first failure instead of attempting every removal: {error}"
+
+    # Every other removal was still carried out, so the rewritten table is current and reads.
+    assert not list_dir("data") & data_before, \
+        f"Replaced data files left behind: {sorted(list_dir('data') & data_before)}"
+    assert not list_dir("metadata") & metadata_before, \
+        f"Replaced metadata files left behind: {sorted(list_dir('metadata') & metadata_before)}"
+    assert int(instance.query(f"SELECT count() FROM {TABLE_NAME}")) == 80
