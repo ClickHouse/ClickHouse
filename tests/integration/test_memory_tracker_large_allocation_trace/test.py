@@ -16,6 +16,8 @@ LOG_LINE = re.compile(r"^\d{4}\.\d{2}\.\d{2} \d{2}:\d{2}:\d{2}\.")
 # "<index>. 0x<address> <symbol>" / "<index>. <symbol>", symbol resolved to something but "?".
 FRAME_WITH_ADDRESS = re.compile(r"^\d+\. 0x[0-9a-f]+ (?!\?$)\S")
 FRAME_WITHOUT_ADDRESS = re.compile(r"^\d+\. (?!\?$)\S")
+# The tracer's own frames. A stack made only of these names no allocation site.
+TRACER_FRAME = re.compile(r"\b(StackTrace|TraceSender|MemoryTracker|CurrentMemoryTracker)\b")
 
 node = cluster.add_instance("node", main_configs=["configs/with_addresses.yaml"])
 # show_addresses_in_stack_traces is applied at startup only, so it needs its own instance rather
@@ -68,12 +70,16 @@ def test_large_allocation_reaches_the_server_log_and_trace_log():
     frames = stack_of_first_record(node)
     # A resolved frame, rather than a specific function name: inlining makes a named frame brittle.
     assert any(FRAME_WITH_ADDRESS.match(frame) for frame in frames), frames
+    # One of them resolves outside the tracer, so the stack reaches the allocation site.
+    assert any(
+        FRAME_WITH_ADDRESS.match(frame) and not TRACER_FRAME.search(frame) for frame in frames
+    ), frames
 
     node.query("SYSTEM FLUSH LOGS trace_log")
-    count, memory_context, max_size = (
+    count, memory_context, max_size, without_stack = (
         node.query(
-            "SELECT count(), any(memory_context), max(size) FROM system.trace_log "
-            "WHERE trace_type = 'MemoryLargeAllocation'"
+            "SELECT count(), any(memory_context), max(size), countIf(length(trace) = 0) "
+            "FROM system.trace_log WHERE trace_type = 'MemoryLargeAllocation'"
         )
         .strip()
         .split("\t")
@@ -81,6 +87,7 @@ def test_large_allocation_reaches_the_server_log_and_trace_log():
     assert int(count) > 0
     assert memory_context == "Global"
     assert int(max_size) >= THRESHOLD
+    assert int(without_stack) == 0
 
 
 def test_addresses_are_hidden_when_disabled():
@@ -90,4 +97,7 @@ def test_addresses_are_hidden_when_disabled():
 
     frames = stack_of_first_record(node_no_addresses)
     assert any(FRAME_WITHOUT_ADDRESS.match(frame) for frame in frames), frames
+    assert any(
+        FRAME_WITHOUT_ADDRESS.match(frame) and not TRACER_FRAME.search(frame) for frame in frames
+    ), frames
     assert not any("0x" in frame for frame in frames), frames
