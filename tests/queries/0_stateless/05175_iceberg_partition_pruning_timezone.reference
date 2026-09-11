@@ -1,6 +1,8 @@
 --- rows as stored ---
 2024-01-02 03:00:00.000000	1
 2024-01-02 20:00:00.000000	2
+--- zone the timestamp column carries, read under a non-UTC session ---
+UTC
 --- day transform, non-UTC session, equality, pruning on then off ---
 1
 1

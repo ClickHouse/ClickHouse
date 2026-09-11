@@ -29,7 +29,11 @@ trap 'rm -rf "${DAY_PATH}" "${HOUR_PATH}" 2>/dev/null' EXIT
 
 # Both rows fall in UTC day 19724 (2024-01-02), and in two different UTC hours. Background Iceberg
 # compaction would rewrite the manifests these arms read, so it is pinned off per table.
-${CLICKHOUSE_CLIENT} --query "
+#
+# The `timestamp` column maps to a `DateTime64(6)` with no time zone in its name, and such a type
+# carries the zone that was current where it was built, so the creating session pins one: a `SETTINGS`
+# clause on `CREATE ... ENGINE = IcebergLocal(...)` is read as storage settings, hence the client flag.
+${CLICKHOUSE_CLIENT} --session_timezone UTC --query "
     CREATE TABLE ${DAY_TABLE} (ts DateTime64(6), id Int32)
     ENGINE = IcebergLocal('${DAY_PATH}', 'Parquet') PARTITION BY (toRelativeDayNum(ts))
     SETTINGS allow_experimental_iceberg_compaction = 0;
@@ -46,6 +50,13 @@ ${CLICKHOUSE_CLIENT} --allow_insert_into_iceberg=1 --query "
 echo "--- rows as stored ---"
 ${CLICKHOUSE_CLIENT} --query "
     SELECT ts, id FROM ${DAY_TABLE} ORDER BY id SETTINGS session_timezone = 'UTC' FORMAT TSV"
+
+# The arms below are only meaningful while the column's zone stays the one pinned above instead of
+# following the session: if that ever changes, this prints the session zone and the test fails here
+# rather than turning every arm into a tautology.
+echo "--- zone the timestamp column carries, read under a non-UTC session ---"
+${CLICKHOUSE_CLIENT} --query "
+    SELECT DISTINCT timeZoneOf(ts) FROM ${DAY_TABLE} SETTINGS session_timezone = 'Asia/Tokyo'"
 
 # 2024-01-03 05:00:00 in Asia/Tokyo is 2024-01-02 20:00:00Z, which is the second row. Pruning must
 # agree with execution: both counts are 1.
