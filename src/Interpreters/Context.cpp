@@ -3186,7 +3186,11 @@ StoragePtr Context::executeTableFunction(const ASTPtr & table_expression, const 
             create.set(create.sql_security, sql_security);
 
             auto view_context = view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
-            auto sample_block = InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
+            /// Analyze the view with the same interpreter the query itself runs under: the legacy interpreter
+            /// resolves some views differently (e.g. qualified column names after multiple joins).
+            auto sample_block = view_context->getSettingsRef()[Setting::allow_experimental_analyzer]
+                ? InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context)
+                : InterpreterSelectWithUnionQuery::getSampleBlock(query, view_context);
             auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
                                                      create,
                                                      ColumnsDescription(sample_block->getNamesAndTypesList()),
