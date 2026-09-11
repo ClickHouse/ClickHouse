@@ -1205,6 +1205,16 @@
     </prometheus>
     -->
 
+    <!-- Embedded Iceberg REST catalog server (experimental). Not recommended for production use.
+         Only a small subset of the Iceberg REST API is implemented, and the catalog state is kept in memory,
+         so it is lost on server restart. Disabled unless the port is set. -->
+    <!--
+    <iceberg_rest_catalog>
+        <port>8182</port>
+        <warehouse>my_warehouse</warehouse>
+    </iceberg_rest_catalog>
+    -->
+
     <!-- Query log. Used only for queries with setting log_queries = 1. -->
     <query_log>
         <!-- What table to insert data. If table is not exist, it will be created.
