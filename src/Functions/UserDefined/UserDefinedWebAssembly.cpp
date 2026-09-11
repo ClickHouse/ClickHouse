@@ -891,7 +891,12 @@ private:
         {
             /// Cut first, materialize second: `ColumnConst::cut` is O(1), while materializing
             /// the whole block first would make the per-row measurement O(rows^2).
-            ColumnPtr column = arguments[i].column->cut(start_idx, length)->convertToFullColumnIfConst();
+            /// Skip the copy when the requested range already covers the whole column -
+            /// the whole-block flush does exactly that for every argument.
+            ColumnPtr column = arguments[i].column;
+            if (start_idx != 0 || length != column->size())
+                column = column->cut(start_idx, length);
+            column = column->convertToFullColumnIfConst();
             String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
             /// Cast to the declared type so serialization uses the correct width.
             /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
