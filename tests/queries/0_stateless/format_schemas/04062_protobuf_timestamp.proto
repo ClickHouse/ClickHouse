@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+import "google/protobuf/timestamp.proto";
+
+message Message
+{
+    google.protobuf.Timestamp ts = 1;
+}
