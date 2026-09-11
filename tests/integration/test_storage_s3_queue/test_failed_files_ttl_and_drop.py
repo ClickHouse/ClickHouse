@@ -1981,6 +1981,149 @@ def test_drop_failed_files_waiter_follows_its_command_across_a_retry(started_clu
     node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
 
 
+def test_drop_failed_files_waiter_survives_the_gap_between_a_retrys_locks(started_cluster):
+    """A waiter that polls while no one holds the lock must take the work over, not report failure.
+
+    `test_drop_failed_files_waiter_follows_its_command_across_a_retry` hands the lock from one
+    attempt to the next in a single Keeper transaction, precisely so the waiter never sees the path
+    empty. Real retries have no such transaction. An attempt that loses its Keeper session releases
+    the lock and publishes nothing, and its retry takes the lock again from a *new* session, so for
+    as long as that session is being re-established the path is simply empty. The waiter polls it ten
+    times a second, so it lands in that gap easily - the window is as wide as session
+    re-establishment, not the microseconds the initial read guards against.
+
+    Finding the lock absent, the waiter used to read that as "the command finished", look for a
+    verdict, find none, fall back to counting `/failed`, and throw because the dead attempt had not
+    emptied it. The retry then finished and reported success: the winner succeeded while every waiter
+    failed - the same outcome the sibling test above exists to prevent, reached through the one door
+    it does not open.
+
+    An absent lock cannot tell a command that died for good from one that is between attempts, and
+    the fix is to stop trying: the lock is ephemeral and unheld, so nobody is doing the work, and
+    taking it over is right either way because re-deleting a deleted node is a no-op.
+
+    So this test opens the gap and never closes it. Nothing recreates the lock, and nothing publishes
+    a verdict - the waiter is given no way to succeed except by doing the drop itself.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_drop_retry_gap_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_lock_path = f"{keeper_path}/cleanup_lock"
+    num_failing_files = 5
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,
+            "failed_files_ttl_sec": 0,
+            "tracked_files_limit": 0,
+        },
+    )
+
+    invalid_csv = b"not,valid,numbers\n"
+    for i in range(num_failing_files):
+        put_s3_file_content(started_cluster, f"{files_path}/failed_{i}.csv", invalid_csv)
+
+    create_mv(node, table_name, dst_table_name)
+
+    def failed_znodes():
+        result = node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return int(result) if result else 0
+
+    def wait_for(predicate, timeout_sec=120):
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.5)
+        return False
+
+    assert wait_for(
+        lambda: failed_znodes() >= num_failing_files
+    ), f"expected {num_failing_files} failed znodes, got {failed_znodes()}"
+
+    # Nothing may write to /failed once the drop is under way, or the count this test reasons about
+    # would move on its own.
+    node.query(f"DROP TABLE {mv_name}")
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    def take_cleanup_lock():
+        try:
+            zk.create(cleanup_lock_path, TEST_DROP_LOCK_VALUE, ephemeral=True)
+            return True
+        except NodeExistsError:
+            return False
+
+    assert wait_for(
+        take_cleanup_lock, timeout_sec=60
+    ), "could not acquire cleanup_lock for the test"
+
+    drop_result = {}
+
+    def run_drop():
+        try:
+            node.query(f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}")
+        except Exception as e:  # noqa: BLE001 - reported through the assertions below
+            drop_result["error"] = e
+
+    drop_thread = threading.Thread(target=run_drop)
+    drop_thread.start()
+    try:
+        # Waiting for this line is what makes the test about the poll loop: it is logged once the
+        # waiter has read the lock and bound itself to the command id in it, so the lock is deleted
+        # below with the waiter already polling, and the separate "lock vanished before it could be
+        # read" path at the initial read cannot be what the test exercises.
+        waiting_message = (
+            f"{keeper_path}): Another replica is executing "
+            f"SYSTEM DROP S3QUEUE FAILED FILES"
+        )
+        assert wait_for(
+            lambda: node.contains_in_log(waiting_message)
+        ), "drop command did not reach the loser branch"
+
+        assert failed_znodes() == num_failing_files, (
+            "the gap must open with /failed still full - the dead attempt is meant to have published "
+            "nothing and deleted nothing, and otherwise this test would pass for a waiter that gave "
+            "up and fell through to the emptiness check"
+        )
+
+        # The attempt dies without publishing and its lock goes with the session. No transaction and
+        # no replacement lock: this is the gap, and the test simply leaves it open.
+        zk.delete(cleanup_lock_path)
+    finally:
+        drop_thread.join(timeout=300)
+
+    assert not drop_thread.is_alive(), "drop command did not return after the lock vanished"
+    assert "error" not in drop_result, (
+        f"waiter reported failure for a drop nobody was doing: {drop_result.get('error')}"
+    )
+
+    # The waiter had no verdict to accept and no one to wait for, so an empty /failed can only mean
+    # it took the lock and did the work itself.
+    assert failed_znodes() == 0, f"failed znodes remain: {failed_znodes()}"
+
+    # Proves the poll loop reached the decision, rather than the drop succeeding by some other route.
+    assert node.contains_in_log(
+        "The cleanup lock is gone and the command left no result"
+    ), "the waiter did not take the vanished-lock branch of the poll loop"
+
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
+
+
 def test_legacy_metadata_inherits_failed_files_ttl_from_tracked_ttl(started_cluster):
     """A table whose Keeper metadata predates `failed_files_ttl_sec` keeps its old cleanup behaviour.
 

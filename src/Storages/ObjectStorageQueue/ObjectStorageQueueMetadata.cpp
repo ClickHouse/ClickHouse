@@ -1922,11 +1922,24 @@ ObjectStorageQueueMetadata::WaitOutcome ObjectStorageQueueMetadata::waitForConcu
 
             const size_t max_total_iterations = ABSOLUTE_MAX_WAIT_MS / POLL_INTERVAL_MS;
 
+            /// What one poll of the lock saw. The two ways a wait can end look identical from the lock
+            /// alone - either way it is no longer the awaited command's - but when the command left no
+            /// verdict behind they call for opposite answers, so the poll records which one it was.
+            enum class PollOutcome
+            {
+                /// The awaited command still holds the lock. Keep waiting.
+                StillHeld,
+                /// Nothing holds the lock. Says nothing about whether the command finished.
+                LockAbsent,
+                /// A different command holds the lock now, so the awaited one is definitely over.
+                DifferentCommand,
+            };
+
             for (size_t i = 0; i < max_total_iterations; ++i)
             {
                 sleepForMilliseconds(POLL_INTERVAL_MS);
 
-                bool attempt_finished = false;
+                PollOutcome poll_outcome = PollOutcome::StillHeld;
                 try
                 {
                     /// Poll the lock. The command being waited on is over when the lock is gone, or when
@@ -1940,9 +1953,9 @@ ObjectStorageQueueMetadata::WaitOutcome ObjectStorageQueueMetadata::waitForConcu
                     Coordination::Stat poll_stat;
                     std::string poll_value;
                     if (!zk_client->tryGet(zookeeper_cleanup_lock_path, poll_value, &poll_stat))
-                        attempt_finished = true;
+                        poll_outcome = PollOutcome::LockAbsent;
                     else if (extractDropCommandId(poll_value) != waited_command_id)
-                        attempt_finished = true;
+                        poll_outcome = PollOutcome::DifferentCommand;
                 }
                 catch (const Coordination::Exception & poll_e)
                 {
@@ -1950,7 +1963,7 @@ ObjectStorageQueueMetadata::WaitOutcome ObjectStorageQueueMetadata::waitForConcu
                     LOG_TEST(log, "Transient Keeper error while polling the cleanup lock: {}", poll_e.displayText());
                 }
 
-                if (attempt_finished)
+                if (poll_outcome != PollOutcome::StillHeld)
                 {
                     /// The attempt is over, which does not by itself mean it succeeded - it could have
                     /// partially failed - so read the result it published.
@@ -1960,6 +1973,35 @@ ObjectStorageQueueMetadata::WaitOutcome ObjectStorageQueueMetadata::waitForConcu
                             waited_command_id, terminal_failed_count))
                         return WaitOutcome::CommandCompleted;
 
+                    if (poll_outcome == PollOutcome::LockAbsent)
+                    {
+                        /// The lock is gone and the command left no verdict. Those two facts together
+                        /// cannot separate a command that died for good from one that is merely between
+                        /// attempts: losing the session releases the lock and publishes nothing, and the
+                        /// retry takes the lock again from a new session, so while that session is being
+                        /// re-established the path is simply empty. That gap is not the microsecond
+                        /// window the initial read guards against - it is as wide as session
+                        /// re-establishment, which a 100ms poll walks straight into.
+                        ///
+                        /// Guessing between the two is what the initial read already refuses to do, and
+                        /// the answer it reaches works here too: the lock is ephemeral and unheld, so
+                        /// nobody is doing the work, and taking it over is correct whether the
+                        /// predecessor finished, died, or is about to retry. Re-deleting an already
+                        /// deleted node is a no-op, so a redundant attempt costs correctness nothing -
+                        /// the same property `dropFailedFiles` relies on to retry an attempt at all.
+                        ///
+                        /// Throwing here instead reported failure for a command whose own retry then
+                        /// completed successfully: the winner succeeded while every waiter failed.
+                        LOG_INFO(log, "The cleanup lock is gone and the command left no result, so there is "
+                                      "no attempt left to wait on; retrying the drop from the start");
+                        return WaitOutcome::LockVanished;
+                    }
+
+                    /// A different command holds the lock and the one waited on published nothing. Unlike
+                    /// the case above there is no work to take over: the path is held, so this replica
+                    /// could not do the drop even if it wanted to, and the awaited verdict is gone for
+                    /// good - the marker is a single node kept in place, so a later command has
+                    /// overwritten it. Nothing here can be recovered, so report it.
                     throw Exception(ErrorCodes::KEEPER_EXCEPTION,
                         "The replica holding the cleanup lock published no usable result and {} terminal failed nodes "
                         "remain in /failed, so the cleanup cannot be confirmed. Please retry the command.",
