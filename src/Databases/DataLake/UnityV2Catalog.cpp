@@ -578,9 +578,10 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
 
     /// On `force_refresh` this resets `iceberg_rest_catalog`, so the catalog below embeds the new token.
     ensureBearerToken(force_refresh);
-    std::string rest_auth_header = "Authorization: Bearer " + access_token->token;
+    /// An empty token means an anonymous Unity deployment, so keep the embedded catalog anonymous too.
+    std::string rest_auth_header = access_token->token.empty() ? "" : "Authorization: Bearer " + access_token->token;
 
-    /// The RestCatalog authenticates via the ready-made auth header, which puts it in header mode.
+    /// With a token, the RestCatalog authenticates via the ready-made auth header, which puts it in header mode.
     /// It never mints a token of its own, so every other auth parameter is left empty.
     iceberg_rest_catalog = std::make_shared<RestCatalog>(
         warehouse,

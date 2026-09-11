@@ -305,6 +305,10 @@ def test_alter_switches_implementation(started_cluster):
     assert "Iceberg" in node.query(f"SHOW CREATE TABLE {db_name}.`{UNIFORM_TABLE}`")
     assert_seeded_rows(node, db_name, UNIFORM_TABLE)
 
+    # Re-applying the current value on an initialized catalog is a no-op.
+    node.query(f"ALTER DATABASE {db_name} MODIFY SETTING {V2_SETTING} = 1")
+    assert "Iceberg" in node.query(f"SHOW CREATE TABLE {db_name}.`{UNIFORM_TABLE}`")
+
     # The switch survives a restart, and it can be reverted.
     node.restart_clickhouse()
     assert "Iceberg" in node.query(f"SHOW CREATE TABLE {db_name}.`{UNIFORM_TABLE}`")

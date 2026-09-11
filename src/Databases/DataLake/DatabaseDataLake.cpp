@@ -1350,6 +1350,15 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
         storage->set(storage->settings, storage_settings_ast);
     }
 
+    /// `use_unity_catalog_v2` is consumed by the database, not by the catalog object, so it is
+    /// never handed to the catalog. Re-applying the current value is a metadata-only no-op.
+    SettingsChanges catalog_settings_changes;
+    for (const auto & change : settings_changes)
+    {
+        if (change.name != "use_unity_catalog_v2")
+            catalog_settings_changes.push_back(change);
+    }
+
     std::shared_ptr<DataLake::ICatalog> local_catalog_snapshot;
     if (!implementation_changed)
     {
@@ -1360,8 +1369,9 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     /// Prepare the new catalog state without publishing it: validation, the eager token
     /// fetch and the config reload may throw, and then nothing has changed yet.
     DataLake::ICatalog::PreparedSettingsChangesPtr prepared_catalog_changes;
-    if (local_catalog_snapshot)
-        prepared_catalog_changes = local_catalog_snapshot->prepareSettingsChanges(settings_changes);
+    const bool alter_catalog = local_catalog_snapshot && !catalog_settings_changes.empty();
+    if (alter_catalog)
+        prepared_catalog_changes = local_catalog_snapshot->prepareSettingsChanges(catalog_settings_changes);
 
     /// Persist the new metadata before publishing anything: if the write fails, the live
     /// state is untouched and matches the old metadata on disk. The create query is built
@@ -1373,7 +1383,7 @@ void DatabaseDataLake::applySettingsChanges(const SettingsChanges & settings_cha
     DatabaseCatalog::instance().updateMetadataFile(getDatabaseName(), new_create_query);
 
     /// Publish. Nothing below throws.
-    if (local_catalog_snapshot)
+    if (alter_catalog)
         local_catalog_snapshot->commitSettingsChanges(std::move(prepared_catalog_changes));
     database_settings.set(std::move(new_settings));
     {
