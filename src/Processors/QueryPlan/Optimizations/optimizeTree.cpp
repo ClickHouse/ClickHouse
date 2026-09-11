@@ -625,6 +625,9 @@ void optimizeTreeSecondPass(
         else if (auto * read_from_time_series = typeid_cast<ReadFromTimeSeriesStep *>(frame.node->step.get()))
         {
             QueryPlanOptimizationSettings sub_settings(read_from_time_series->getReadContext());
+            /// The sub-plan becomes part of the current plan, so it must follow the current plan's
+            /// distributed-plan decision, which the read context (copied before that decision) does not carry.
+            sub_settings.make_distributed_plan = optimization_settings.make_distributed_plan;
             auto sub_plan = read_from_time_series->extractQueryPlan();
             sub_plan->optimize(sub_settings);
 
