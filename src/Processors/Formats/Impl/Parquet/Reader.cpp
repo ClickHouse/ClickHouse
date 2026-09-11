@@ -68,6 +68,7 @@ namespace DB::ErrorCodes
     extern const int CANNOT_DECOMPRESS;
     extern const int CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN;
     extern const int FEATURE_IS_NOT_ENABLED_AT_BUILD_TIME;
+    extern const int ILLEGAL_COLUMN;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
@@ -3619,11 +3620,15 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
 
         if (!parsed_subcolumn || !parsed_subcolumn_type)
         {
+            /// Reachable from the file contents: the payload is parsed into the type requested by
+            /// the query (or into the type the writer recorded), and that type may have no such
+            /// subcolumn - e.g. a `Dynamic` payload has type-name subcolumns, not JSON paths.
             throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot extract subcolumn {} from parsed `Parquet` object column {}",
-                output_info.source_subcolumn_name,
-                source.storage_name);
+                ErrorCodes::ILLEGAL_COLUMN,
+                "`Parquet` column {} is read as {}, which has no subcolumn {}",
+                source.storage_name,
+                source.parsed_object_type->getName(),
+                output_info.source_subcolumn_name);
         }
 
         auto column = castColumn({parsed_subcolumn, parsed_subcolumn_type, output_info.name}, output_info.output_type);

@@ -102,11 +102,10 @@ DataTypePtr makeExplicitParsedObjectTypeFromMetadataHint(std::string_view hint, 
         return {};
     }
 
-    if (hint.starts_with("Nullable("))
-        type = std::make_shared<DataTypeNullable>(std::move(type));
-
-    if (primitive_output_nullable && !type->isNullable())
-        type = std::make_shared<DataTypeNullable>(std::move(type));
+    /// `makeNullableSafe` rather than `DataTypeNullable`: `Dynamic` cannot be wrapped in
+    /// `Nullable`, and it already represents missing values on its own.
+    if (hint.starts_with("Nullable(") || primitive_output_nullable)
+        type = makeNullableSafe(std::move(type));
 
     return type;
 }
@@ -154,7 +153,7 @@ DataTypePtr makeExplicitParsedObjectTypeFromTypeHint(const DataTypePtr & type_hi
     }
 
     if (nullable || primitive_output_nullable)
-        type = std::make_shared<DataTypeNullable>(std::move(type));
+        type = makeNullableSafe(std::move(type));
 
     return type;
 }
@@ -1046,11 +1045,19 @@ bool SchemaConverter::processSubtreePrimitive(TraversalNode & node)
     {
         auto get_parsed_object_type = [&]() -> DataTypePtr
         {
+            /// An explicit object-like type hint from the query wins over the type recorded by the
+            /// writer, so that reading `j.a` agrees with reading the whole `j`: the full-column
+            /// path also parses the payload into the requested type. Otherwise a file written from
+            /// a `Dynamic` column and read back as `JSON(...)` would extract its subcolumns from a
+            /// `Dynamic`, which has no such subcolumns.
+            if (node.type_hint)
+            {
+                if (auto type_from_hint = makeExplicitParsedObjectTypeFromTypeHint(node.type_hint, primitive_output_nullable))
+                    return type_from_hint;
+            }
+
             if (auto it = clickhouse_variant_type_hints.find(node.name); it != clickhouse_variant_type_hints.end())
                 return makeExplicitParsedObjectTypeFromMetadataHint(it->second, primitive_output_nullable);
-
-            if (node.type_hint)
-                return makeExplicitParsedObjectTypeFromTypeHint(node.type_hint, primitive_output_nullable);
 
             /// Compatibility fallback for projected subcolumn reads from opaque `BYTE_ARRAY`.
             /// When the query only requests `j.a`, the parent `j JSON(...)` type hint is not
