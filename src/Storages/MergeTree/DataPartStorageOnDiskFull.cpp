@@ -157,11 +157,13 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskFull::writeFile(
     const String & name,
     size_t buf_size,
     WriteMode mode,
-    const WriteSettings & settings)
+    const WriteSettings & settings,
+    std::function<void()> cancellation_hook)
 {
-    if (transaction)
-        return transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
-    return volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+    auto buffer = transaction ? transaction->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings, cancellation_hook)
+                              : volume->getDisk()->writeFile(fs::path(root_path) / part_dir / name, buf_size, mode, settings);
+    buffer->setCancellationHook(std::move(cancellation_hook));
+    return buffer;
 }
 
 void DataPartStorageOnDiskFull::createFile(const String & name)
@@ -214,7 +216,11 @@ void DataPartStorageOnDiskFull::createHardLinkFrom(const IDataPartStorage & sour
     });
 }
 
-void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to)
+void DataPartStorageOnDiskFull::copyFileFrom(
+    const IDataPartStorage & source,
+    const std::string & from,
+    const std::string & to,
+    const std::function<void()> & cancellation_hook)
 {
     const auto * source_on_disk = typeid_cast<const DataPartStorageOnDiskFull *>(&source);
     if (!source_on_disk)
@@ -229,7 +235,9 @@ void DataPartStorageOnDiskFull::copyFileFrom(const IDataPartStorage & source, co
         fs::path(source_on_disk->getRelativePath()) / from,
         *volume->getDisk(),
         fs::path(root_path) / part_dir / to,
-        getReadSettings());
+        getReadSettings(),
+        {},
+        cancellation_hook);
 }
 
 void DataPartStorageOnDiskFull::createProjection(const std::string & name)

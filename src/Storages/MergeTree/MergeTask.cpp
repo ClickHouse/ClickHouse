@@ -1167,6 +1167,16 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         && !use_const_adaptive_granularity
         && global_ctx->chosen_merge_algorithm == MergeAlgorithm::Vertical;
 
+    global_ctx->write_settings = global_ctx->context->getWriteSettings();
+    std::weak_ptr<GlobalRuntimeContext> weak_global_ctx = global_ctx;
+    global_ctx->cancellation_hook = [weak_global_ctx]
+    {
+        if (auto locked_global_ctx = weak_global_ctx.lock())
+            locked_global_ctx->checkOperationIsNotCanceled();
+        else
+            throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts");
+    };
+
     /// For TTLDrop merges, all source parts are fully expired.
     /// Skip creating the read pipeline to avoid opening source parts
     /// and allocating read/prefetch buffers.
@@ -1258,9 +1268,10 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         global_ctx->merge_list_element_ptr->total_size_bytes_compressed,
         /*reset_columns=*/true,
         ctx->blocks_are_granules_size,
-        global_ctx->context->getWriteSettings(),
+        global_ctx->write_settings,
         &global_ctx->written_offset_substreams,
-        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression);
+        /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
+        global_ctx->cancellation_hook);
 
     global_ctx->rows_written = 0;
     ctx->initial_reservation = global_ctx->space_reservation ? global_ctx->space_reservation->getSize() : 0;
@@ -2204,7 +2215,9 @@ void MergeTask::VerticalMergeStage::prepareVerticalMergeForOneColumn() const
         global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed,
         &global_ctx->written_offset_substreams,
         /*try_adaptive_codec=*/ !global_ctx->is_explicit_recompression,
-        global_ctx->to->getSkipIndicesPackedWriter());
+        global_ctx->write_settings,
+        global_ctx->to->getSkipIndicesPackedWriter(),
+        global_ctx->cancellation_hook);
 
     ctx->column_elems_written = 0;
 }
@@ -3248,7 +3261,8 @@ void MergeTask::addBuildTextIndexesStep(QueryPlan & plan, const IMergeTreeDataPa
 
     MergeTreeWriterSettings writer_settings(
         global_ctx->data->getContext()->getSettingsRef(),
-        global_ctx->context->getWriteSettings(),
+        global_ctx->write_settings,
+        global_ctx->cancellation_hook,
         global_ctx->data->getSettings(),
         global_ctx->new_data_part,
         global_ctx->new_data_part->index_granularity_info.mark_type.adaptive,

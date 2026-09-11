@@ -201,7 +201,7 @@ void createPacked(const DiskPtr & disk_in, const String & input_dir, const DiskP
     if (!disk_out->existsDirectory(parent_path))
         disk_out->createDirectories(parent_path);
 
-    PackedFilesWriter writer;
+    PackedFilesWriter writer(getWriteSettings());
     auto read_settings = getReadSettings();
 
     for (auto it = disk_in->iterateDirectory(input_dir); it->isValid(); it->next())

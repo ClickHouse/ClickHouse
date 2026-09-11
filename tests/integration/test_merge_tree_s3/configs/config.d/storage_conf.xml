@@ -53,6 +53,61 @@
                 <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
                 <persistent_removal_log>true</persistent_removal_log>
             </broken_s3_always_multi_part>
+            <encrypted_broken_s3_always_multi_part>
+                <type>encrypted</type>
+                <disk>broken_s3_always_multi_part</disk>
+                <key>1234567812345678</key>
+                <path>encrypted/</path>
+                <skip_access_check>true</skip_access_check>
+            </encrypted_broken_s3_always_multi_part>
+            <!-- Cancellation regressions need a long background retry budget, not query-level overrides. -->
+            <broken_s3_long_retries>
+                <type>s3</type>
+                <endpoint>http://resolver:8085/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>true</skip_access_check>
+                <s3_retry_attempts>100</s3_retry_attempts>
+                <connect_timeout_ms>20000</connect_timeout_ms>
+                <request_timeout_ms>20000</request_timeout_ms>
+                <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
+                <persistent_removal_log>true</persistent_removal_log>
+            </broken_s3_long_retries>
+            <encrypted_broken_s3_long_retries>
+                <type>encrypted</type>
+                <disk>broken_s3_long_retries</disk>
+                <key>1234567812345678</key>
+                <path>encrypted/</path>
+                <skip_access_check>true</skip_access_check>
+            </encrypted_broken_s3_long_retries>
+            <broken_s3_long_retries_always_multi_part>
+                <type>s3</type>
+                <endpoint>http://resolver:8085/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>true</skip_access_check>
+                <s3_retry_attempts>100</s3_retry_attempts>
+                <connect_timeout_ms>20000</connect_timeout_ms>
+                <request_timeout_ms>20000</request_timeout_ms>
+                <s3_max_single_part_upload_size>0</s3_max_single_part_upload_size>
+                <s3_max_inflight_parts_for_one_file>1</s3_max_inflight_parts_for_one_file>
+                <persistent_removal_log>true</persistent_removal_log>
+            </broken_s3_long_retries_always_multi_part>
+            <cached_broken_s3_long_retries_always_multi_part>
+                <type>cache</type>
+                <disk>broken_s3_long_retries_always_multi_part</disk>
+                <path>/cached_broken_s3_long_retries_always_multi_part/</path>
+                <max_size>1000000000</max_size>
+                <cache_on_write_operations>1</cache_on_write_operations>
+                <skip_access_check>true</skip_access_check>
+            </cached_broken_s3_long_retries_always_multi_part>
+            <encrypted_broken_s3_long_retries_always_multi_part>
+                <type>encrypted</type>
+                <disk>broken_s3_long_retries_always_multi_part</disk>
+                <key>1234567812345678</key>
+                <path>encrypted/</path>
+                <skip_access_check>true</skip_access_check>
+            </encrypted_broken_s3_long_retries_always_multi_part>
             <hdd>
                 <type>local</type>
                 <path>/</path>
@@ -160,6 +215,48 @@
                     </main>
                 </volumes>
             </broken_s3_always_multi_part>
+            <encrypted_broken_s3_always_multi_part>
+                <volumes>
+                    <main>
+                        <disk>encrypted_broken_s3_always_multi_part</disk>
+                    </main>
+                </volumes>
+            </encrypted_broken_s3_always_multi_part>
+            <broken_s3_long_retries>
+                <volumes>
+                    <main>
+                        <disk>broken_s3_long_retries</disk>
+                    </main>
+                </volumes>
+            </broken_s3_long_retries>
+            <encrypted_broken_s3_long_retries>
+                <volumes>
+                    <main>
+                        <disk>encrypted_broken_s3_long_retries</disk>
+                    </main>
+                </volumes>
+            </encrypted_broken_s3_long_retries>
+            <broken_s3_long_retries_always_multi_part>
+                <volumes>
+                    <main>
+                        <disk>broken_s3_long_retries_always_multi_part</disk>
+                    </main>
+                </volumes>
+            </broken_s3_long_retries_always_multi_part>
+            <cached_broken_s3_long_retries_always_multi_part>
+                <volumes>
+                    <main>
+                        <disk>cached_broken_s3_long_retries_always_multi_part</disk>
+                    </main>
+                </volumes>
+            </cached_broken_s3_long_retries_always_multi_part>
+            <encrypted_broken_s3_long_retries_always_multi_part>
+                <volumes>
+                    <main>
+                        <disk>encrypted_broken_s3_long_retries_always_multi_part</disk>
+                    </main>
+                </volumes>
+            </encrypted_broken_s3_long_retries_always_multi_part>
         </policies>
     </storage_configuration>
 

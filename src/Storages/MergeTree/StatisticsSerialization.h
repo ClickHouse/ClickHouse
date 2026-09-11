@@ -3,6 +3,8 @@
 #include <Storages/Statistics/Statistics.h>
 #include <IO/WriteBuffer.h>
 
+#include <functional>
+
 namespace DB
 {
 
@@ -22,7 +24,8 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     MergeTreeDataPartChecksums & out_checksums,
     const ColumnsStatistics & statistics,
     const CompressionCodecPtr & compression_codec,
-    const WriteSettings & write_settings);
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook);
 
 /// Serialize statistics as separate compressed files (column_name.stats each).
 WrittenFiles serializeStatisticsWide(
@@ -30,6 +33,7 @@ WrittenFiles serializeStatisticsWide(
     MergeTreeDataPartChecksums & out_checksums,
     const ColumnsStatistics & statistics,
     const CompressionCodecPtr & compression_codec,
-    const WriteSettings & write_settings);
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook);
 
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <list>
 #include <memory>
 
@@ -13,6 +14,7 @@
 
 #include <Interpreters/Squashing.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <IO/WriteSettings.h>
 
 #include <Processors/Executors/PullingPipelineExecutor.h>
 
@@ -224,6 +226,8 @@ private:
         IMergeTreeDataPart * parent_part{nullptr};
         MergedPartOffsetsPtr merged_part_offsets;
         ContextPtr context{nullptr};
+        WriteSettings write_settings;
+        std::function<void()> cancellation_hook;
         time_t time_of_merge{0};
         ReservationSharedPtr space_reservation{nullptr};
         DiskPtr disk{nullptr};

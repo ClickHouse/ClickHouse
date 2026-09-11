@@ -2,7 +2,10 @@
 
 #include <Storages/MergeTree/IMergedBlockOutputStream.h>
 #include <Storages/Statistics/Statistics.h>
+#include <IO/WriteSettings.h>
 #include <Storages/MergeTree/ColumnsSubstreams.h>
+
+#include <functional>
 
 namespace DB
 {
@@ -26,7 +29,9 @@ public:
         size_t part_uncompressed_bytes,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
-        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr);
+        const WriteSettings & write_settings,
+        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr,
+        std::function<void()> cancellation_hook = {});
 
     void write(const Block & block) override;
     void finalizeIndexGranularity();

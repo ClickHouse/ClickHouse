@@ -71,6 +71,7 @@ namespace MergeTreeSetting
 MergeTreeWriterSettings::MergeTreeWriterSettings(
     const Settings & global_settings,
     const WriteSettings & query_write_settings_,
+    std::function<void()> cancellation_hook_,
     const MergeTreeSettingsPtr & storage_settings,
     const MergeTreeDataPartPtr & data_part,
     bool can_use_adaptive_granularity_,
@@ -96,6 +97,7 @@ MergeTreeWriterSettings::MergeTreeWriterSettings(
     , save_primary_index_in_memory(save_primary_index_in_memory_)
     , blocks_are_granules_size(blocks_are_granules_size_)
     , query_write_settings(query_write_settings_)
+    , cancellation_hook(std::move(cancellation_hook_))
     , low_cardinality_max_dictionary_size(global_settings[Setting::low_cardinality_max_dictionary_size])
     , low_cardinality_use_single_dictionary_for_part(global_settings[Setting::low_cardinality_use_single_dictionary_for_part] != 0)
     , use_compact_variant_discriminators_serialization((*storage_settings)[MergeTreeSetting::use_compact_variant_discriminators_serialization])

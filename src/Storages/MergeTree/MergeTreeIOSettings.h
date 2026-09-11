@@ -1,5 +1,6 @@
 #pragma once
 #include <cstddef>
+#include <functional>
 #include <Compression/ICompressionCodec.h>
 #include <Core/MergeTreeSerializationEnums.h>
 #include <IO/ReadSettings.h>
@@ -105,6 +106,7 @@ struct MergeTreeWriterSettings
     MergeTreeWriterSettings(
         const Settings & global_settings,
         const WriteSettings & query_write_settings_,
+        std::function<void()> cancellation_hook_,
         const MergeTreeSettingsPtr & storage_settings,
         const MergeTreeDataPartPtr & data_part,
         bool can_use_adaptive_granularity_,
@@ -134,6 +136,7 @@ struct MergeTreeWriterSettings
     bool save_primary_index_in_memory{};
     bool blocks_are_granules_size{};
     WriteSettings query_write_settings;
+    std::function<void()> cancellation_hook;
 
     size_t low_cardinality_max_dictionary_size{};
     bool low_cardinality_use_single_dictionary_for_part{};

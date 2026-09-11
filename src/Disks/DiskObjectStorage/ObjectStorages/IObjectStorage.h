@@ -363,7 +363,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
-        std::optional<ObjectAttributes> object_to_attributes = {});
+        std::optional<ObjectAttributes> object_to_attributes = {},
+        const std::function<void()> & cancellation_hook = {});
 
     virtual ~IObjectStorage() = default;
 
@@ -471,6 +472,15 @@ public:
     /// Returns the inner (unwrapped) object storage for decorator types such as `CachedObjectStorage`.
     /// Returns nullptr for non-decorator types, meaning this storage is already the base.
     virtual ObjectStoragePtr getUnderlying() { return nullptr; }
+
+    /// A copy-owned reader can observe operation cancellation independently of query cancellation.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readObjectForCopy(
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        const std::function<void()> & cancellation_hook,
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const;
 
 private:
     mutable std::mutex io_scheduling_mutex;

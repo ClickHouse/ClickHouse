@@ -47,6 +47,7 @@ struct MergeTreeWriterStream
         const CompressionCodecPtr & marks_compression_codec_,
         size_t marks_compress_block_size_,
         const WriteSettings & query_write_settings,
+        std::function<void()> cancellation_hook,
         const SizeAdaptivePacking & packing = {});
 
     ~MergeTreeWriterStream()

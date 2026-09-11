@@ -21,14 +21,15 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     MergeTreeDataPartChecksums & out_checksums,
     const ColumnsStatistics & statistics,
     const CompressionCodecPtr & compression_codec,
-    const WriteSettings & write_settings)
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
 {
-    PackedFilesWriter packed_writer;
+    PackedFilesWriter packed_writer(write_settings, cancellation_hook);
 
     for (const auto & [column_name, stat] : statistics)
     {
         String filename = getStatisticsFilename(column_name);
-        auto out = packed_writer.writeFile(filename, write_settings);
+        auto out = packed_writer.writeFile(filename);
 
         CompressedWriteBuffer compressor(*out, compression_codec, 1024 * 1024);
         stat->serialize(compressor);
@@ -37,7 +38,7 @@ std::unique_ptr<WriteBufferFromFileBase> serializeStatisticsPacked(
     }
 
     String statistics_filename = String(ColumnsStatistics::FILENAME);
-    auto out_packed = data_part_storage.writeFile(statistics_filename, 4096, write_settings);
+    auto out_packed = data_part_storage.writeFile(statistics_filename, 4096, write_settings, cancellation_hook);
     HashingWriteBuffer out_hashing_packed(*out_packed);
 
     packed_writer.finalize(out_hashing_packed, {}, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
@@ -55,7 +56,8 @@ WrittenFiles serializeStatisticsWide(
     MergeTreeDataPartChecksums & out_checksums,
     const ColumnsStatistics & statistics,
     const CompressionCodecPtr & compression_codec,
-    const WriteSettings & write_settings)
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
 {
     WrittenFiles written_files;
 
@@ -64,7 +66,7 @@ WrittenFiles serializeStatisticsWide(
         String filename = getStatisticsFilename(column_name);
 
         /// Buffer chain: plain_file <- plain_hashing <- compressor <- compressed_hashing
-        auto plain_file = data_part_storage.writeFile(filename, 4096, write_settings);
+        auto plain_file = data_part_storage.writeFile(filename, 4096, write_settings, cancellation_hook);
         HashingWriteBuffer plain_hashing(*plain_file);
         CompressedWriteBuffer compressor(plain_hashing, compression_codec, 1024 * 1024);
         HashingWriteBuffer compressed_hashing(compressor);

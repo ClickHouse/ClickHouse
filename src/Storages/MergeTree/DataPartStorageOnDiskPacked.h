@@ -14,6 +14,8 @@ namespace DB
 class DataPartStorageOnDiskPacked final : public DataPartStorageOnDiskBase
 {
 public:
+    using DataPartStorageOnDiskBase::writeFile;
+
     static constexpr auto DATA_FILE_EXTENSION = PackedFilesIO::ARCHIVE_EXTENSION;
     inline static const String DATA_FILE_NAME = String("data") + DATA_FILE_EXTENSION;
 
@@ -64,7 +66,8 @@ public:
         const String & name,
         size_t buf_size,
         WriteMode mode,
-        const WriteSettings & settings) override;
+        const WriteSettings & settings,
+        std::function<void()> cancellation_hook) override;
 
     void createFile(const String & name) override;
     void moveFile(const String & from_name, const String & to_name) override;
@@ -77,7 +80,11 @@ public:
     void removeSharedRecursive(bool keep_in_remote_fs) override;
 
     void createHardLinkFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
-    void copyFileFrom(const IDataPartStorage & source, const std::string & from, const std::string & to) override;
+    void copyFileFrom(
+        const IDataPartStorage & source,
+        const std::string & from,
+        const std::string & to,
+        const std::function<void()> & cancellation_hook) override;
 
     void beginTransaction() override;
     void commitTransaction() override;
@@ -156,12 +163,14 @@ private:
     /// path. We route the inner-archive header read through the outer reader instead. The archive
     /// helpers (copy/filter/seedFrom/hasSkipIndicesPackedArchive) rely on this returning the inner
     /// reader for packed source parts.
-    std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader() const override;
+    std::shared_ptr<const PackedFilesReader> getSkipIndicesPackedReader(
+        const std::function<void()> & cancellation_hook = {}) const override;
 
     /// Disable the base file-read overlay for packed storage: its standalone-archive read
     /// composition can't reach a skp_idx.packed that lives inside data.packed. The *Impl hooks above
     /// serve the index substreams instead (via the inner-archive composition).
-    std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(const std::string &) const override { return nullptr; }
+    std::shared_ptr<const PackedFilesReader> getArchiveReaderForFile(
+        const std::string &, const std::function<void()> & = {}) const override { return nullptr; }
 
     void resetReader(const ReadSettings & read_settings);
     void resetWriterFromTransaction();

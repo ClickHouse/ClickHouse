@@ -14,7 +14,8 @@ using ObjectStoragePtr = std::shared_ptr<IObjectStorage>;
 class ObjectStorageSourceReader : public IFileBasedSourceReader
 {
 public:
-    ObjectStorageSourceReader(ObjectStoragePtr storage, const ReadSettings & read_settings);
+    ObjectStorageSourceReader(
+        ObjectStoragePtr storage, const ReadSettings & read_settings, std::function<void()> cancellation_hook = {});
 
     std::unique_ptr<ReadBufferFromFileBase> open(const StoredObject & object) override;
 
@@ -23,6 +24,7 @@ public:
 private:
     ObjectStoragePtr storage;
     ReadSettings read_settings;
+    std::function<void()> cancellation_hook;
     LoggerPtr log = getLogger("ObjectStorageSourceReader");
 };
 

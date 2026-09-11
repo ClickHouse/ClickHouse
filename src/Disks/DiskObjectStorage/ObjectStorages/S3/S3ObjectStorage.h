@@ -135,7 +135,8 @@ public:
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
         IObjectStorage & object_storage_to,
-        std::optional<ObjectAttributes> object_to_attributes = {}) override;
+        std::optional<ObjectAttributes> object_to_attributes,
+        const std::function<void()> & cancellation_hook) override;
 
     void shutdown() override;
 
@@ -167,6 +168,21 @@ public:
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
     void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects = nullptr);
+
+    std::unique_ptr<ReadBufferFromFileBase> readObjectForCopy(
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        const std::function<void()> & cancellation_hook,
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const override;
+
+    std::unique_ptr<ReadBufferFromFileBase> readObjectImpl(
+        const StoredObject & object,
+        const ReadSettings & read_settings,
+        bool use_external_buffer,
+        bool restrict_seek,
+        const std::function<void()> & cancellation_hook) const;
 
     std::pair<std::string, std::string> splitBucketAndKey(const std::string & remote_path) const;
     std::map<std::string, StoredObjects> groupByBucket(const StoredObjects & objects) const;

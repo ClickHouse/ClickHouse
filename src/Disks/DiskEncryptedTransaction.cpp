@@ -59,6 +59,17 @@ void DiskEncryptedTransaction::copyFile(const std::string & from_file_path, cons
     delegate_transaction->copyFile(wrapped_from_path, wrapped_to_path, read_settings, write_settings);
 }
 
+void DiskEncryptedTransaction::copyFile(
+    const std::string & from_file_path,
+    const std::string & to_file_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings,
+    const std::function<void()> & cancellation_hook)
+{
+    delegate_transaction->copyFile(
+        wrappedPath(from_file_path), wrappedPath(to_file_path), read_settings, write_settings, cancellation_hook);
+}
+
 std::unique_ptr<WriteBufferFromFileBase>
 DiskEncryptedTransaction::writeFileWithAutoCommit(
     const std::string & path,
@@ -79,12 +90,19 @@ DiskEncryptedTransaction::writeFile(
     return writeFileImpl(/*autocommit*/ false, path, buf_size, mode, settings);
 }
 
+std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFile(
+    const std::string & path, size_t buf_size, WriteMode mode, const WriteSettings & settings, std::function<void()> cancellation_hook)
+{
+    return writeFileImpl(/*autocommit*/ false, path, buf_size, mode, settings, std::move(cancellation_hook));
+}
+
 std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl(
     bool autocommit,
     const std::string & path,
     size_t buf_size,
     WriteMode mode,
-    const WriteSettings & settings)
+    const WriteSettings & settings,
+    std::function<void()> cancellation_hook)
 {
     auto wrapped_path = wrappedPath(path);
     FileEncryption::Header header;
@@ -111,9 +129,8 @@ std::unique_ptr<WriteBufferFromFileBase> DiskEncryptedTransaction::writeFileImpl
         header.init_vector = FileEncryption::InitVector::random();
     }
 
-    auto buffer = autocommit
-        ? delegate_transaction->writeFileWithAutoCommit(wrapped_path, buf_size, mode, settings)
-        : delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings);
+    auto buffer = autocommit ? delegate_transaction->writeFileWithAutoCommit(wrapped_path, buf_size, mode, settings)
+                             : delegate_transaction->writeFile(wrapped_path, buf_size, mode, settings, std::move(cancellation_hook));
 
     return std::make_unique<WriteBufferFromEncryptedFile>(buf_size, std::move(buffer), key, header, old_file_size, settings.use_adaptive_write_buffer, settings.adaptive_write_buffer_initial_size);
 }

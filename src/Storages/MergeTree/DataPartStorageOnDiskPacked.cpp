@@ -14,10 +14,16 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char packed_part_freeze_pause_before_copy[];
+}
 
 namespace ErrorCodes
 {
@@ -330,7 +336,7 @@ void DataPartStorageOnDiskPacked::prepareReadImpl(
     /// outer reader at the part's current location).
     if (looksLikePackedSkipIndexFile(name))
     {
-        if (auto skip_reader = getSkipIndicesPackedReader(); skip_reader && skip_reader->exists(name))
+        if (auto skip_reader = getSkipIndicesPackedReader(pipeline.getCancellationHook()); skip_reader && skip_reader->exists(name))
         {
             if (!reader)
                 throw Exception(ErrorCodes::NOT_INITIALIZED,
@@ -338,11 +344,12 @@ void DataPartStorageOnDiskPacked::prepareReadImpl(
 
             auto inner = skip_reader->getFileOffsetAndSize(name);
             ReadPipeline::BufferCreator creator =
-                [this, file_name = name, inner](const StoredObject &, const ReadSettings & s, bool, bool)
+                [this, file_name = name, inner, cancellation_hook = pipeline.getCancellationHook()]
+                (const StoredObject &, const ReadSettings & s, bool, bool)
                     -> std::unique_ptr<ReadBufferFromFileBase>
                 {
                     auto outer_buf = reader->readFile(
-                        volume->getDisk(), getRelativeDataPath(), String(SKIP_INDICES_PACKED_FILENAME), s, std::nullopt);
+                        volume->getDisk(), getRelativeDataPath(), String(SKIP_INDICES_PACKED_FILENAME), s, std::nullopt, cancellation_hook);
                     return std::make_unique<ReadBufferFromFileView>(std::move(outer_buf), file_name, inner.offset, inner.offset + inner.size);
                 };
             pipeline.setSource(std::move(creator), StoredObjects{StoredObject{}}, settings);
@@ -362,10 +369,11 @@ void DataPartStorageOnDiskPacked::prepareReadImpl(
     /// Packed files are read via PackedFilesReader which handles archive offsets internally.
     /// Wrap it as a CustomSource so the pipeline can build it.
     pipeline.setSource(
-        [this, file_name = name, read_hint](const StoredObject &, const ReadSettings & read_settings, bool, bool)
+        [this, file_name = name, read_hint, cancellation_hook = pipeline.getCancellationHook()]
+        (const StoredObject &, const ReadSettings & read_settings, bool, bool)
             -> std::unique_ptr<ReadBufferFromFileBase>
         {
-            return reader->readFile(volume->getDisk(), getRelativeDataPath(), file_name, read_settings, read_hint);
+            return reader->readFile(volume->getDisk(), getRelativeDataPath(), file_name, read_settings, read_hint, cancellation_hook);
         },
         StoredObjects{StoredObject(name, "", reader->getFileSize(name))},
         settings);
@@ -409,21 +417,25 @@ std::unique_ptr<WriteBufferFromFileBase> DataPartStorageOnDiskPacked::writeFile(
     const String & name,
     size_t buf_size,
     WriteMode mode,
-    const WriteSettings & settings)
+    const WriteSettings & settings,
+    std::function<void()> cancellation_hook)
 {
     if (isWrittenSeparately(name))
     {
         auto file_path = fs::path(root_path) / part_dir / name;
-        if (transaction)
-            return transaction->writeFile(file_path, buf_size, mode, settings);
-
-        return volume->getDisk()->writeFile(file_path, buf_size, mode, settings);
+        auto buffer = transaction ? transaction->writeFile(file_path, buf_size, mode, settings, cancellation_hook)
+                                  : volume->getDisk()->writeFile(file_path, buf_size, mode, settings);
+        buffer->setCancellationHook(std::move(cancellation_hook));
+        return buffer;
     }
 
-    if (writer)
-        return writer->writeFile(name, settings);
+    if (!writer)
+        throw Exception(ErrorCodes::NOT_INITIALIZED, "Cannot write file {} because writer is not initialized", name);
 
-    throw Exception(ErrorCodes::NOT_INITIALIZED, "Cannot write file {} because writer is not initialized", name);
+    if (!writer->hasWriteSettings())
+        writer->setArchiveWriteSettings(settings, std::move(cancellation_hook));
+
+    return writer->writeFile(name);
 }
 
 void DataPartStorageOnDiskPacked::createFile(const String & name)
@@ -504,7 +516,8 @@ void DataPartStorageOnDiskPacked::createHardLinkFrom(const IDataPartStorage &, c
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DataPartStorageOnDiskPacked does not support creating hardlinks");
 }
 
-void DataPartStorageOnDiskPacked::copyFileFrom(const IDataPartStorage &, const std::string &, const std::string &)
+void DataPartStorageOnDiskPacked::copyFileFrom(
+    const IDataPartStorage &, const std::string &, const std::string &, const std::function<void()> &)
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "DataPartStorageOnDiskPacked does not support copying files");
 }
@@ -658,8 +671,11 @@ void DataPartStorageOnDiskPacked::resetReader(const ReadSettings & read_settings
         reader.emplace(volume->getDisk(), data_path, read_settings);
 }
 
-std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipIndicesPackedReader() const
+std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipIndicesPackedReader(
+    const std::function<void()> & cancellation_hook) const
 {
+    if (cancellation_hook)
+        cancellation_hook();
     {
         std::lock_guard lock(skip_indices_packed_mutex);
         if (skip_indices_packed_probed)
@@ -688,12 +704,14 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskPacked::getSkipInd
         try
         {
             auto inner_archive_buf = reader->readFile(
-                volume->getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt);
+                volume->getDisk(), data_path, String(SKIP_INDICES_PACKED_FILENAME), getReadSettings(), std::nullopt, cancellation_hook);
             auto inner_index = PackedFilesReader::readIndex(*inner_archive_buf);
             seedSkipIndicesPackedReader(inner_index);
         }
         catch (const Exception &)
         {
+            if (cancellation_hook)
+                cancellation_hook();
             if (volume->getDisk()->existsFile(data_path))
                 throw;
         }
@@ -725,6 +743,10 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
         return;
     }
 
+    /// Metadata-only transactions use default settings. Member writes select their settings and callback in `writeFile`.
+    if (!writer->hasWriteSettings())
+        writer->setArchiveWriteSettings(WriteSettings{});
+
     PackedFilesIO::Index old_index;
     bool file_is_rewriten = false;
 
@@ -741,10 +763,10 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
             if (writer->isWritten(name))
                 continue;
 
-            auto in = reader->readFile(volume->getDisk(), getRelativeDataPath(), name, {}, {});
+            auto in = reader->readFile(volume->getDisk(), getRelativeDataPath(), name, {}, {}, writer->getCancellationHook());
             auto out = writer->writeFile(name);
 
-            copyData(*in, *out);
+            copyData(*in, *out, writer->getCancellationHook());
             out->finalize();
         }
     }
@@ -765,8 +787,8 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
     /// The writer keeps the whole part in memory, so stream the archive directly into the
     /// destination file: serializing it into a string first would hold a second copy of the part.
     auto buf = transaction->writeFile(
-        archive_path, DBMS_DEFAULT_BUFFER_SIZE,
-        WriteMode::Rewrite, writer->getWriteSettings());
+        archive_path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, writer->getWriteSettings(), writer->getCancellationHook());
+    buf->setCancellationHook(writer->getCancellationHook());
 
     writer->finalize(*buf, plan);
 
@@ -889,6 +911,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
     bool need_commit = false;
     if (!to_detached && (params.copy_instead_of_hardlink || cloneCopiesWholeArchive(params)))
     {
+        FailPointInjection::pauseFailPoint(FailPoints::packed_part_freeze_pause_before_copy);
+
         if (!dest_storage->transaction)
         {
             dest_storage->beginTransaction();
@@ -907,7 +931,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
                 /// keep_metadata_version = false).
                 if (params.metadata_version_to_write.has_value())
                 {
-                    auto write_buf = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
+                    auto write_buf = dest_storage->writeFile(
+                        file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings, params.cancellation_hook);
                     writeIntText(*params.metadata_version_to_write, *write_buf);
                     write_buf->finalize();
                     metadata_version_emitted = true;
@@ -920,9 +945,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
                     continue;
             }
 
-            auto read_buf = reader->readFile(volume->getDisk(), getRelativeDataPath(), file, read_settings, {});
-            auto write_buf = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
-            copyData(*read_buf, *write_buf);
+            auto read_buf = reader->readFile(volume->getDisk(), getRelativeDataPath(), file, read_settings, {}, params.cancellation_hook);
+            auto write_buf
+                = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings, params.cancellation_hook);
+            copyData(*read_buf, *write_buf, params.cancellation_hook);
             write_buf->finalize();
         }
 
@@ -934,7 +960,11 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
         if (params.metadata_version_to_write.has_value() && !metadata_version_emitted)
         {
             auto write_buf = dest_storage->writeFile(
-                IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
+                IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                WriteMode::Rewrite,
+                write_settings,
+                params.cancellation_hook);
             writeIntText(*params.metadata_version_to_write, *write_buf);
             write_buf->finalize();
         }
@@ -951,9 +981,16 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freeze(
         if (params.copy_instead_of_hardlink || anyArchivedFileRequestedForCopy(params.files_to_copy_instead_of_hardlinks))
         {
             if (params.external_transaction)
-                params.external_transaction->copyFile(getRelativeDataPath(), dest_storage->getRelativeDataPath(), read_settings, write_settings);
+                params.external_transaction->copyFile(
+                    getRelativeDataPath(), dest_storage->getRelativeDataPath(), read_settings, write_settings, params.cancellation_hook);
             else
-                disk->copyFile(getRelativeDataPath(), *disk, dest_storage->getRelativeDataPath(), read_settings);
+                disk->copyFile(
+                    getRelativeDataPath(),
+                    *disk,
+                    dest_storage->getRelativeDataPath(),
+                    read_settings,
+                    write_settings,
+                    params.cancellation_hook);
         }
         else if (params.external_transaction)
             params.external_transaction->createHardLink(getRelativeDataPath(), dest_storage->getRelativeDataPath());
@@ -1047,7 +1084,8 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
                 /// keep_metadata_version = false).
                 if (params.metadata_version_to_write.has_value())
                 {
-                    auto write_buf = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
+                    auto write_buf = dest_storage->writeFile(
+                        file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings, params.cancellation_hook);
                     writeIntText(*params.metadata_version_to_write, *write_buf);
                     write_buf->finalize();
                     metadata_version_emitted = true;
@@ -1060,9 +1098,10 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
                     continue;
             }
 
-            auto read_buf = reader->readFile(volume->getDisk(), getRelativeDataPath(), file, read_settings, {});
-            auto write_buf = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
-            copyData(*read_buf, *write_buf);
+            auto read_buf = reader->readFile(volume->getDisk(), getRelativeDataPath(), file, read_settings, {}, params.cancellation_hook);
+            auto write_buf
+                = dest_storage->writeFile(file, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings, params.cancellation_hook);
+            copyData(*read_buf, *write_buf, params.cancellation_hook);
             write_buf->finalize();
         }
 
@@ -1074,7 +1113,11 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
         if (params.metadata_version_to_write.has_value() && !metadata_version_emitted)
         {
             auto write_buf = dest_storage->writeFile(
-                IMergeTreeDataPart::METADATA_VERSION_FILE_NAME, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
+                IMergeTreeDataPart::METADATA_VERSION_FILE_NAME,
+                DBMS_DEFAULT_BUFFER_SIZE,
+                WriteMode::Rewrite,
+                write_settings,
+                params.cancellation_hook);
             writeIntText(*params.metadata_version_to_write, *write_buf);
             write_buf->finalize();
         }
@@ -1085,20 +1128,32 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::freezeRemote(
         {
             if (dst_disk->getDataSourceDescription() == src_disk->getDataSourceDescription() && dst_disk->getMetadataStorage().get() == src_disk->getMetadataStorage().get())
             {
-                params.external_transaction->copyFile(getRelativeDataPath(), dest_storage->getRelativeDataPath(), read_settings, write_settings);
+                params.external_transaction->copyFile(
+                    getRelativeDataPath(), dest_storage->getRelativeDataPath(), read_settings, write_settings, params.cancellation_hook);
             }
             else
             {
                 /// Transactions doesn't support copy between different metadata storages, so doing it manually
-                auto write_buf = dest_storage->transaction->writeFile(dest_storage->getRelativeDataPath(), DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Rewrite, write_settings);
-                auto read_buf = src_disk->readFile(getRelativeDataPath(), read_settings);
-                copyData(*read_buf, *write_buf);
+                auto write_buf = dest_storage->transaction->writeFile(
+                    dest_storage->getRelativeDataPath(),
+                    DBMS_DEFAULT_BUFFER_SIZE,
+                    WriteMode::Rewrite,
+                    write_settings,
+                    params.cancellation_hook);
+                auto read_buf = src_disk->readFile(getRelativeDataPath(), read_settings, {}, params.cancellation_hook);
+                copyData(*read_buf, *write_buf, params.cancellation_hook);
                 write_buf->finalize();
             }
         }
         else
         {
-            src_disk->copyFile(getRelativeDataPath(), *dst_disk, dest_storage->getRelativeDataPath(), read_settings, write_settings);
+            src_disk->copyFile(
+                getRelativeDataPath(),
+                *dst_disk,
+                dest_storage->getRelativeDataPath(),
+                read_settings,
+                write_settings,
+                params.cancellation_hook);
         }
     }
 

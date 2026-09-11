@@ -26,6 +26,7 @@
 #include <array>
 
 #include <IO/WriteBufferFromS3.h>
+#include <IO/WriteBufferFromFileDecorator.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Requests.h>
 #include <IO/FileEncryptionCommon.h>
@@ -34,12 +35,16 @@
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/ReadSettings.h>
+#include <IO/SessionAwareIOStream.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/copyS3File.h>
+
+#include <Poco/Net/HTTPBasicStreamBuf.h>
 
 #include <Disks/IO/ThreadPoolRemoteFSReader.h>
 #include <Disks/IO/ReadBufferFromRemoteFSGather.h>
 #include <Disks/IO/AsynchronousBoundedReadBuffer.h>
+#include <Disks/DiskObjectStorage/ObjectStorages/S3/S3ObjectStorage.h>
 
 #include <Common/filesystemHelpers.h>
 #include <Common/Crypto/OpenSSLInitializer.h>
@@ -68,6 +73,7 @@ namespace S3RequestSetting
 
 namespace ErrorCodes
 {
+    extern const int ABORTED;
     extern const int INVALID_SETTING_VALUE;
     extern const int LOGICAL_ERROR;
     extern const int S3_ERROR;
@@ -202,6 +208,25 @@ private:
     std::map<std::string, BucketMemStore> buckets;
 };
 
+class StringHTTPBasicStreamBuf : public Poco::Net::HTTPBasicStreamBuf
+{
+public:
+    explicit StringHTTPBasicStreamBuf(std::string body_)
+        : BasicBufferedStreamBuf(body_.size(), IOS::in)
+        , body(std::move(body_))
+    {
+    }
+
+private:
+    std::stringstream body;
+
+    int readFromDevice(char_type * buffer, std::streamsize size) override
+    {
+        body.read(buffer, size);
+        return static_cast<int>(body.gcount());
+    }
+};
+
 struct EventCounts
 {
     size_t headObject = 0;
@@ -255,7 +280,9 @@ struct InjectionModel
         return std::nullopt; \
     }
     DeclareInjectCall(PutObject)
+    DeclareInjectCall(GetObject)
     DeclareInjectCall(HeadObject)
+    DeclareInjectCall(CopyObject)
     DeclareInjectCall(CreateMultipartUpload)
     DeclareInjectCall(CompleteMultipartUpload)
     DeclareInjectCall(AbortMultipartUpload)
@@ -358,6 +385,14 @@ struct Client : DB::S3::Client
     {
         ++counters.getObject;
 
+        if (injections)
+        {
+            if (auto opt_val = injections->call(request))
+            {
+                return std::move(*opt_val);
+            }
+        }
+
         auto & bStore = store->GetBucketStore(request.GetBucket());
         const String data = bStore.objects[request.GetKey()];
 
@@ -372,9 +407,10 @@ struct Client : DB::S3::Client
             chassert(ret == 2);
         }
 
-        auto factory = request.GetResponseStreamFactory();
-        Aws::Utils::Stream::ResponseStream responseStream(factory);
-        responseStream.GetUnderlyingStream() << std::stringstream(data.substr(begin, end - begin + 1)).rdbuf();
+        auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>(data.substr(begin, end - begin + 1));
+        auto responseStream = Aws::Utils::Stream::ResponseStream(
+            Aws::New<DB::SessionAwareIOStream<std::shared_ptr<StringHTTPBasicStreamBuf>>>(
+                "mock response stream", stream_buf, stream_buf.get()));
 
         Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> awsStream(std::move(responseStream), Aws::Http::HeaderValueCollection());
         Aws::S3::Model::GetObjectResult getObjectResult(std::move(awsStream));
@@ -502,6 +538,14 @@ struct Client : DB::S3::Client
     Aws::S3::Model::CopyObjectOutcome CopyObject(const Aws::S3::Model::CopyObjectRequest & request) const override
     {
         ++counters.copyObject;
+
+        if (injections)
+        {
+            if (auto opt_val = injections->call(request))
+            {
+                return std::move(*opt_val);
+            }
+        }
 
         const auto [src_bucket, src_key] = splitCopySource(request.GetCopySource());
         const String & src_data = store->GetBucketStore(src_bucket).objects[src_key];
@@ -1057,6 +1101,146 @@ INSTANTIATE_TEST_SUITE_P(WBS3
         std::string name = info_param.param ? "async" : "sync";
         return name;
   });
+
+namespace
+{
+
+enum class PostUploadCheck
+{
+    UploadExists,
+    DecoratedUploadExists,
+    UploadSize,
+    CopyExists,
+};
+
+struct CancelDuringHead : MockS3::InjectionModel
+{
+    explicit CancelDuringHead(size_t successful_heads_) : successful_heads(successful_heads_)
+    {
+    }
+
+    size_t successful_heads;
+    bool cancelled = false;
+
+    std::optional<Aws::S3::Model::HeadObjectOutcome> call(const Aws::S3::Model::HeadObjectRequest & request) override
+    {
+        if (successful_heads)
+        {
+            --successful_heads;
+            return std::nullopt;
+        }
+
+        /// Exercise the retry callback, not the cancellation check after a successful HEAD.
+        const auto & retry = request.GetRequestRetryHandler();
+        EXPECT_TRUE(retry);
+        if (retry)
+        {
+            cancelled = true;
+            retry(request);
+        }
+        return std::nullopt;
+    }
+};
+
+struct AccessDeniedNativeCopyAndBufferedPut : MockS3::InjectionModel
+{
+    std::optional<Aws::S3::Model::CopyObjectOutcome> call(const Aws::S3::Model::CopyObjectRequest &) override
+    {
+        return Aws::Client::AWSError<Aws::S3::S3Errors>(
+            Aws::S3::S3Errors::ACCESS_DENIED, "AccessDenied", "Native copy denied", false);
+    }
+
+    std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest &) override
+    {
+        return Aws::Client::AWSError<Aws::S3::S3Errors>(
+            Aws::S3::S3Errors::ACCESS_DENIED, "AccessDenied", "Buffered put denied", false);
+    }
+};
+
+struct CancelDuringGetRequestRetry : MockS3::InjectionModel
+{
+    explicit CancelDuringGetRequestRetry(bool & cancelled_) : cancelled(cancelled_)
+    {
+    }
+
+    std::optional<Aws::S3::Model::GetObjectOutcome> call(const Aws::S3::Model::GetObjectRequest & request) override
+    {
+        const auto & retry = request.GetRequestRetryHandler();
+        EXPECT_TRUE(retry);
+        if (retry)
+        {
+            cancelled = true;
+            retry(request);
+        }
+        return std::nullopt;
+    }
+
+    bool & cancelled;
+};
+
+class PostUploadCancellation : public WBS3Test, public ::testing::WithParamInterface<PostUploadCheck>
+{
+};
+
+}
+
+TEST_P(PostUploadCancellation, StopsVerification)
+{
+    const bool check_size = GetParam() == PostUploadCheck::UploadSize;
+    auto injection = std::make_shared<CancelDuringHead>(check_size ? 1 : 0);
+    setInjectionModel(injection);
+    getSettings()[Setting::s3_check_objects_after_upload] = true;
+    const auto cancel = [injection]
+    {
+        if (injection->cancelled)
+            throw Exception(ErrorCodes::ABORTED, "Test operation cancelled");
+    };
+
+    try
+    {
+        if (GetParam() == PostUploadCheck::CopyExists)
+        {
+            client->store->GetBucketStore(bucket).PutObject("source", "x");
+            S3::S3RequestSettings request_settings;
+            request_settings.updateFromSettings(getSettings(), true, false);
+            copyS3File(client, bucket, "source", 1, client, bucket, "destination",
+                request_settings, ReadSettings{}, nullptr, {}, {}, std::nullopt, cancel);
+        }
+        else
+        {
+            std::unique_ptr<WriteBufferFromFileBase> buffer = getWriteBuffer();
+            if (GetParam() == PostUploadCheck::DecoratedUploadExists)
+                buffer = std::make_unique<WriteBufferFromFileDecorator>(std::move(buffer));
+            buffer->setCancellationHook(cancel);
+            buffer->write('x');
+            buffer->finalize();
+        }
+        FAIL() << "Post-upload verification ignored cancellation";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ABORTED);
+    }
+    EXPECT_EQ(client->counters.headObject, check_size ? 2 : 1);
+}
+
+INSTANTIATE_TEST_SUITE_P(S3, PostUploadCancellation,
+    ::testing::Values(
+        PostUploadCheck::UploadExists,
+        PostUploadCheck::DecoratedUploadExists,
+        PostUploadCheck::UploadSize,
+        PostUploadCheck::CopyExists),
+    [](const ::testing::TestParamInfo<PostUploadCheck> & info_param)
+    {
+        switch (info_param.param)
+        {
+            case PostUploadCheck::UploadExists: return "UploadExists";
+            case PostUploadCheck::DecoratedUploadExists: return "DecoratedUploadExists";
+            case PostUploadCheck::UploadSize: return "UploadSize";
+            case PostUploadCheck::CopyExists: return "CopyExists";
+        }
+        UNREACHABLE();
+    });
 
 TEST_P(SyncAsync, ExceptionOnHead) {
     setInjectionModel(std::make_shared<MockS3::HeadObjectFailIngection>());
@@ -2194,6 +2378,83 @@ TEST_F(CopyS3FileRoutingTest, RangedCopyOfSmallSourceUsesBuffers)
     EXPECT_EQ(client->counters.uploadPartCopy, 0u);
     EXPECT_EQ(client->counters.copyObject, 0u);
     EXPECT_EQ(client->store->GetBucketStore(bucket).objects["dst"], source.substr(10, 20));
+}
+
+/// After an S3-native copy and its buffered upload both fail with `AccessDenied`, the refreshed
+/// client must enter the base buffered path without reentering the unhooked same-storage `copyObject`.
+TEST_F(WBS3Test, SameStorageFallbackAfterCredentialRefreshPreservesCancellationHook)
+{
+    const String payload = "source payload";
+    client->store->GetBucketStore(bucket).PutObject("src", payload);
+
+    auto initial_client = std::make_unique<MockS3::Client>(client->store);
+    initial_client->setInjectionModel(std::make_shared<AccessDeniedNativeCopyAndBufferedPut>());
+
+    bool cancelled = false;
+    size_t refresh_calls = 0;
+    MockS3::Client * refreshed_client = nullptr;
+    auto refreshed_injection = std::make_shared<CancelDuringGetRequestRetry>(cancelled);
+    S3ObjectStorage::S3CredentialsRefreshCallback credentials_refresh_callback
+        = [&]() -> std::unique_ptr<const S3::Client>
+    {
+        ++refresh_calls;
+        auto replacement = std::make_unique<MockS3::Client>(client->store);
+        replacement->setInjectionModel(refreshed_injection);
+        refreshed_client = replacement.get();
+        return replacement;
+    };
+
+    auto object_storage_settings = std::make_unique<S3Settings>();
+    object_storage_settings->request_settings.updateFromSettings(
+        getSettings(), /* if_changed= */ true, /* validate_settings= */ false);
+    S3::URI uri;
+    uri.bucket = bucket;
+    S3Capabilities capabilities;
+    ObjectStorageKeyGeneratorPtr key_generator;
+    S3ObjectStorage object_storage(
+        std::move(initial_client),
+        std::move(object_storage_settings),
+        std::move(uri),
+        capabilities,
+        key_generator,
+        "s3",
+        /* for_disk_s3= */ true,
+        credentials_refresh_callback);
+
+    const auto initial_client_handle = object_storage.getS3StorageClient();
+    const auto * initial_client_ptr = dynamic_cast<const MockS3::Client *>(initial_client_handle.get());
+    ASSERT_NE(initial_client_ptr, nullptr);
+
+    const auto cancellation_hook = [&]
+    {
+        if (cancelled)
+            throw Exception(ErrorCodes::ABORTED, "Copy cancelled");
+    };
+
+    try
+    {
+        object_storage.copyObjectToAnotherObjectStorage(
+            StoredObject{"src", "src", payload.size()},
+            StoredObject{"dst", "dst", payload.size()},
+            ReadSettings{},
+            WriteSettings{},
+            object_storage,
+            /* object_to_attributes= */ {},
+            cancellation_hook);
+        FAIL() << "Expected cancellation from refreshed source GET";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::ABORTED);
+    }
+
+    ASSERT_NE(refreshed_client, nullptr);
+    EXPECT_EQ(refresh_calls, 1u);
+    EXPECT_EQ(initial_client_ptr->counters.copyObject, 1u);
+    EXPECT_EQ(initial_client_ptr->counters.getObject, 1u);
+    EXPECT_EQ(initial_client_ptr->counters.putObject, 1u);
+    EXPECT_EQ(refreshed_client->counters.copyObject, 0u);
+    EXPECT_EQ(refreshed_client->counters.getObject, 1u);
 }
 
 TEST_P(SyncAsync, ExceptionOnUploadPart) {
