@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tags: no-fasttest, no-parallel
-# Tag no-fasttest: the two deterministic 3-second waits below, plus the 4-second sleep, are most of
-# a test that runs in about 13 seconds, which is a large share of the fast test per-test timeout.
+# Tag no-fasttest: the three deterministic 3-second waits below, plus the 4-second sleep, are 13 of
+# the roughly 18 seconds this test takes, which is a large share of the fast test per-test timeout.
 # Tag no-parallel: this test WAITS on a process-global PAUSEABLE failpoint, so a concurrent
 # instance pausing or resuming the same channel would break the synchronisation.
 
@@ -16,6 +16,9 @@ FP_TABLE="storage_merge_schema_inference_table_pause"
 KILL_QID="merge_structure_kill_${CLICKHOUSE_DATABASE}_$$"
 BREAK_QID="merge_structure_break_${CLICKHOUSE_DATABASE}_$$"
 TABLE_QID="merge_structure_table_${CLICKHOUSE_DATABASE}_$$"
+HIDDEN_DB="${CLICKHOUSE_DATABASE}_hidden"
+DEST_DB="${CLICKHOUSE_DATABASE}_dest"
+BLIND_USER="merge_structure_blind_${CLICKHOUSE_DATABASE}"
 
 # The two channels are separate so that each arm can only be stopped by the checkpoint it is about:
 # every ${FP} poll happens inside ONE column's substream walk, which a per-table checkpoint could not
@@ -38,6 +41,9 @@ function cleanup()
         SYSTEM DISABLE FAILPOINT ${FP};
         SYSTEM DISABLE FAILPOINT ${FP_TABLE};
         KILL QUERY WHERE query_id IN ('${KILL_QID}', '${BREAK_QID}', '${TABLE_QID}') FORMAT Null;
+        DROP DATABASE IF EXISTS ${HIDDEN_DB};
+        DROP DATABASE IF EXISTS ${DEST_DB};
+        DROP USER IF EXISTS ${BLIND_USER};
     " 2>/dev/null ||:
     wait 2>/dev/null ||:
 }
@@ -242,3 +248,53 @@ else
     cat "${CLICKHOUSE_TMP}/05158_table.err"
 fi
 rm -f "${CLICKHOUSE_TMP}/05158_table.err"
+
+# ---- a source table the user may not see has to fail alike whether or not it exists ----
+# The per-table checkpoint sits after the SHOW_TABLES filter. Ahead of it, a traversal already past
+# its deadline throws TIMEOUT_EXCEEDED once it reaches an unreadable table but reports "no tables"
+# when the pattern matches none, which tells the user the table is there. The Merge engine and
+# merge() share the inference routine, so either caller shows it; this arm goes through the engine.
+$CLICKHOUSE_CLIENT --query "
+    DROP DATABASE IF EXISTS ${HIDDEN_DB};
+    DROP DATABASE IF EXISTS ${DEST_DB};
+    CREATE DATABASE ${HIDDEN_DB};
+    CREATE DATABASE ${DEST_DB};
+    CREATE TABLE ${HIDDEN_DB}.hidden0 (k UInt32) ENGINE = MergeTree ORDER BY k;
+    CREATE TABLE ${HIDDEN_DB}.hidden1 (k UInt32) ENGINE = MergeTree ORDER BY k;
+    CREATE TABLE ${HIDDEN_DB}.hidden2 (k UInt32) ENGINE = MergeTree ORDER BY k;
+    DROP USER IF EXISTS ${BLIND_USER};
+    CREATE USER ${BLIND_USER} IDENTIFIED WITH plaintext_password BY 'blind';
+    GRANT TABLE ENGINE ON Merge TO ${BLIND_USER};
+    GRANT SHOW ON ${HIDDEN_DB}.* TO ${BLIND_USER};
+    GRANT CREATE TABLE ON ${DEST_DB}.* TO ${BLIND_USER};
+    REVOKE ALL ON ${HIDDEN_DB}.hidden0 FROM ${BLIND_USER};
+    REVOKE ALL ON ${HIDDEN_DB}.hidden1 FROM ${BLIND_USER};
+    REVOKE ALL ON ${HIDDEN_DB}.hidden2 FROM ${BLIND_USER};
+"
+
+# Any grant on a table implies SHOW_TABLES for it, so a destination-database grant that reached the
+# sources would leave them visible and the arm would assert nothing.
+blind_visible=$($CLICKHOUSE_CLIENT --user "${BLIND_USER}" --password blind --query "
+    SELECT count() FROM system.tables WHERE database = '${HIDDEN_DB}'")
+if [ "${blind_visible}" != "0" ]; then
+    echo "FAIL: the user sees ${blind_visible} of the source tables, so this arm proves nothing"
+fi
+
+# A microsecond is spent before the traversal starts, so the checkpoint fires on the first source
+# table it is allowed to reach.
+function blind_merge_code()
+{
+    $CLICKHOUSE_CLIENT --user "${BLIND_USER}" --password blind --query "
+        CREATE TABLE ${DEST_DB}.$1 ENGINE = Merge(${HIDDEN_DB}, '$2')
+        SETTINGS max_execution_time = 0.000001
+    " 2>&1 | grep -oE 'Code: [0-9]+' | head -1 ||:
+}
+hidden_code=$(blind_merge_code probe_exists '^hidden')
+absent_code=$(blind_merge_code probe_absent '^matches_no_table')
+if [ -z "${hidden_code}" ] || [ -z "${absent_code}" ]; then
+    echo "FAIL: a Merge over unreadable sources was created (hidden='${hidden_code}' absent='${absent_code}')"
+elif [ "${hidden_code}" = "${absent_code}" ]; then
+    echo "an unreadable source table is indistinguishable from an absent one"
+else
+    echo "FAIL: existing unreadable sources gave ${hidden_code} but an absent one gave ${absent_code}"
+fi

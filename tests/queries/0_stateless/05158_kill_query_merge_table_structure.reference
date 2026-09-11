@@ -18,3 +18,4 @@ part loading did not reach the enumeration checkpoint
 0
 cancelled: structure inference stopped between source tables
 the cancelled DESCRIBE failed with QUERY_WAS_CANCELLED
+an unreadable source table is indistinguishable from an absent one
