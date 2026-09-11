@@ -331,6 +331,31 @@ def test_tracked_files_limit_still_caps_the_failed_set(started_cluster):
     node.query(f"DROP TABLE {dst_table_name}")
 
 
+def _plant_terminal_failed_nodes(zk, failed_path, count, prefix="zz_terminal"):
+    """Create `count` synthetic terminal failed znodes (no `.retriable` suffix) under `failed_path`.
+
+    Bypasses the real failure pipeline (which populates /failed asynchronously via the
+    background processing thread) so the test does not depend on processing timing.
+    """
+    names = []
+    for i in range(count):
+        name = f"{prefix}_{i}.csv"
+        zk.create(
+            f"{failed_path}/{name}",
+            json.dumps(
+                {
+                    "file_path": f"{prefix}_{i}.csv",
+                    "last_processed_timestamp": int(time.time()),
+                    "last_exception": "planted by the test",
+                    "retries": 1,
+                    "processor_id": "",
+                }
+            ).encode(),
+        )
+        names.append(name)
+    return names
+
+
 def _plant_retriable_markers(zk, failed_path, count):
     """Create `count` synthetic `.retriable` markers under `failed_path` and return their names.
 
@@ -2326,3 +2351,65 @@ def test_legacy_metadata_inherits_failed_files_ttl_from_tracked_ttl(started_clus
     )
 
     node.query(f"DROP TABLE {table_name}")
+
+
+def test_drop_failed_files_retries_partial_failure_if_lock_lost_before_publish(started_cluster):
+    import threading
+    import uuid
+
+    node = started_cluster.instances["instance"]
+    table_name = f"test_drop_partial_retry_{uuid.uuid4().hex[:8]}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_lock_path = f"{keeper_path}/cleanup_lock"
+
+    for i in range(3):
+        put_s3_file_content(started_cluster, f"{files_path}/failed_{i}.csv", b"invalid\\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 0,
+            "failed_files_ttl_sec": 0,
+            "tracked_files_limit": 0,
+            "use_persistent_processing_nodes": False,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    # Plant terminal failed znodes directly instead of waiting on the async
+    # processing pipeline - deterministic and avoids depending on processing timing.
+    zk.ensure_path(failed_path)
+    failed_children = _plant_terminal_failed_nodes(zk, failed_path, 3)
+    assert len(failed_children) == 3, f"Expected 3 failed nodes in ZK, got {len(failed_children)}"
+
+    blocker_path = f"{failed_path}/{failed_children[0]}/blocker"
+    zk.create(blocker_path, b"")
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_pause_before_partial_failure_publish")
+
+    def run_drop():
+        node.query(f"SYSTEM DROP S3QUEUE FAILED FILES {table_name}")
+
+    drop_thread = threading.Thread(target=run_drop)
+    drop_thread.start()
+
+    node.query(
+        "SYSTEM WAIT FAILPOINT object_storage_queue_pause_before_partial_failure_publish PAUSE"
+    )
+
+    if zk.exists(cleanup_lock_path):
+        zk.delete(cleanup_lock_path)
+    zk.delete(blocker_path)
+
+    node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_pause_before_partial_failure_publish")
+    drop_thread.join()
+
+    assert len(zk.get_children(failed_path)) == 0

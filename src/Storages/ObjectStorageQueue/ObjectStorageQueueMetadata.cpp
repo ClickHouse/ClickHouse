@@ -58,6 +58,7 @@ namespace DB
 namespace FailPoints
 {
     extern const char object_storage_queue_pause_before_cleanup_lock_read[];
+    extern const char object_storage_queue_pause_before_partial_failure_publish[];
 }
 
 namespace ErrorCodes
@@ -1776,6 +1777,8 @@ size_t ObjectStorageQueueMetadata::removeStaleFailedCacheEntries(
 
 void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
 {
+    try
+    {
     /// Reconcile local cache with Keeper state by removing cache entries
     /// for files that no longer have /failed nodes in Keeper.
     /// Used by losing replicas in ON CLUSTER execution to achieve cache consistency
@@ -1890,6 +1893,12 @@ void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
 /// it is `manual_drop_failed:<command_id>`: the prefix distinguishes it from the background sweep's
 /// `background_cleanup`, and the id identifies the statement, so a waiter can tell one attempt of the
 /// command it waits for from a different command that happened to take the path next.
+    catch (...)
+    {
+        tryLogCurrentException(log, "Best-effort cache reconciliation failed");
+    }
+}
+
 static constexpr const char * LOCK_OPERATION_DROP_FAILED_PREFIX = "manual_drop_failed:";
 
 namespace
@@ -2554,10 +2563,14 @@ bool ObjectStorageQueueMetadata::dropFailedFilesUnderLock(
         /// Published before the throw, and so before the lock is released, so the replicas waiting on this
         /// one are told the cleanup failed instead of having to guess it from what remains in `/failed`.
         ///
-        /// Terminal: a partial failure is a verdict, and the caller does not retry it. Retrying would
-        /// either contradict a verdict already published or withhold one, and a waiting replica has no way
-        /// to reconcile that. Only an attempt that produced no verdict at all is started over.
-        publish_if_still_ours(/* success */ false, failed_nodes.size(), total_deleted, error_msg);
+        /// A partial failure is a verdict once published, and the caller does not retry it: retrying
+        /// would either contradict a verdict already published or withhold one, and a waiting replica has
+        /// no way to reconcile that. But if we lost `cleanup_lock` before publishing, this attempt produced
+        /// no verdict at all - nothing to contradict - so it is safe (and necessary) to start over instead
+        /// of throwing terminally and stranding replicas waiting on this command_id.
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_partial_failure_publish);
+        if (!publish_if_still_ours(/* success */ false, failed_nodes.size(), total_deleted, error_msg))
+            return false;
         throw Exception(ErrorCodes::KEEPER_EXCEPTION, "{}", error_msg);
     }
 
