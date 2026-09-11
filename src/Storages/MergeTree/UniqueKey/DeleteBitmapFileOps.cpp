@@ -4,12 +4,14 @@
 #include <Storages/MergeTree/IDataPartStorage.h>
 
 #include <IO/ReadSettings.h>
+#include <IO/copyData.h>
 #include <IO/WriteBufferFromFileBase.h>
 #include <IO/WriteSettings.h>
 
 #include <Common/Exception.h>
 
 #include <algorithm>
+#include <tuple>
 
 namespace DB
 {
@@ -22,13 +24,17 @@ namespace ErrorCodes
 namespace DeleteBitmapFileOps
 {
 
+std::string BitmapFile::toString() const
+{
+    return isCarried() ? fmt::format("{}_for_{}", version, target) : fmt::format("for_{}", target);
+}
+
 void sortByVersion(std::vector<BitmapFile> & files)
 {
     std::sort(files.begin(), files.end(), [](const BitmapFile & l, const BitmapFile & r)
     {
-        if (l.isStaged() != r.isStaged())
-            return r.isStaged();
-        return l.isStaged() ? l.staged_for_target < r.staged_for_target : l.version < r.version;
+        /// One part can hold several versions of one target: its own, and any it carried in.
+        return std::tie(l.target, l.version) < std::tie(r.target, r.version);
     });
 }
 
@@ -38,10 +44,13 @@ std::vector<BitmapFile> enumerateFiles(const IDataPartStorage & storage)
     for (auto it = storage.iterate(); it->isValid(); it->next())
     {
         const auto & file_name = it->name();
-        if (DeleteBitmap::isDeleteBitmapFile(file_name))
-            result.push_back({DeleteBitmap::parseCSNFromFileName(file_name), file_name, /*staged_for_target=*/{}});
-        else if (DeleteBitmap::isStagedBitmapFile(file_name))
-            result.push_back({/*version=*/0, file_name, DeleteBitmap::parseStagedTargetFromFileName(file_name)});
+        if (DeleteBitmap::isStagedBitmapFile(file_name))
+            result.push_back({/*version=*/0, DeleteBitmap::parseStagedTargetFromFileName(file_name)});
+        else if (DeleteBitmap::isCarriedBitmapFile(file_name))
+        {
+            auto carried = DeleteBitmap::parseCarriedFromFileName(file_name);
+            result.push_back({carried.csn, std::move(carried.target_part_name)});
+        }
     }
     return result;
 }
@@ -49,7 +58,9 @@ std::vector<BitmapFile> enumerateFiles(const IDataPartStorage & storage)
 namespace
 {
 
-void writeBitmapUnderName(IDataPartStorage & storage, const String & final_name, const DeleteBitmap & bitmap)
+/// Both writers land the bytes the same way; only what produces them differs.
+template <typename WriteBody>
+void writeUnderName(IDataPartStorage & storage, const String & final_name, WriteBody && write_body)
 {
     const String tmp_name = final_name + ".tmp";
 
@@ -59,7 +70,7 @@ void writeBitmapUnderName(IDataPartStorage & storage, const String & final_name,
     {
         WriteSettings write_settings;
         auto buf = storage.writeFile(tmp_name, /*buf_size=*/4096, WriteMode::Rewrite, write_settings);
-        bitmap.serialize(*buf);
+        write_body(*buf);
         /// fsync the tmp file before rename: a power loss after rename but before flush would otherwise resurrect deleted rows.
         buf->sync();
         buf->finalize();
@@ -77,9 +88,9 @@ DeleteBitmapPtr openAndDeserialize(const IDataPartStorage & storage, const Strin
     return DeleteBitmap::deserialize(*buf);
 }
 
-/// Opens without an `existsFile` first, and catches instead: a concurrent settle publishing and
-/// unlinking is exactly the case these callers exist to survive, and a check-then-read would race
-/// with it -- the check would pass and the open would then throw from the disk layer.
+/// Opens without an `existsFile` first, and catches instead: a check-then-read would race with a
+/// concurrent reclaim of the same version -- the check would pass and the open would then throw
+/// from the disk layer.
 DeleteBitmapPtr tryReadBitmapFile(const IDataPartStorage & storage, const String & file_name)
 {
     try
@@ -96,74 +107,41 @@ DeleteBitmapPtr tryReadBitmapFile(const IDataPartStorage & storage, const String
 
 }
 
-void writeBitmapToStorage(
-    IDataPartStorage & storage,
-    BitmapVersion version,
-    const DeleteBitmap & bitmap)
-{
-    writeBitmapUnderName(storage, DeleteBitmap::fileNameForCSN(version), bitmap);
-}
-
-void writeStagedBitmapToStorage(
-    IDataPartStorage & storage,
+void stageBitmap(
+    IDataPartStorage & holder,
     const String & target_part_name,
     const DeleteBitmap & bitmap)
 {
-    writeBitmapUnderName(storage, DeleteBitmap::fileNameForStagedTarget(target_part_name), bitmap);
+    writeUnderName(
+        holder,
+        DeleteBitmap::fileNameForStagedTarget(target_part_name),
+        [&](WriteBuffer & buf) { bitmap.serialize(buf); });
 }
 
-DeleteBitmapPtr readBitmapFile(
-    const IDataPartStorage & storage,
-    const String & file_name,
-    const String & diag_part_name)
+void carryBitmap(
+    const IDataPartStorage & from,
+    const BitmapFile & from_file,
+    IDataPartStorage & to,
+    const BitmapFile & to_file)
 {
-    /// Checked first only to name the part in the message; the callers that tolerate a missing file
-    /// go through `tryReadBitmapFile`, which does not pre-check.
-    if (!storage.existsFile(file_name))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST,
-            "Delete bitmap file '{}' does not exist in part '{}'",
-            file_name, diag_part_name);
+    /// Without one the name reads as a staged bitmap, whose version comes from whoever holds it.
+    chassert(to_file.isCarried());
 
-    return openAndDeserialize(storage, file_name);
+    ReadSettings read_settings;
+    auto in = from.readFile(from_file.fileName(), read_settings, /*read_hint=*/{});
+    writeUnderName(to, to_file.fileName(), [&](WriteBuffer & buf) { copyData(*in, buf); });
 }
 
-DeleteBitmapPtr tryReadVersion(const IDataPartStorage & storage, BitmapVersion version)
+DeleteBitmapPtr tryReadBitmap(const IDataPartStorage & holder, const BitmapFile & file)
 {
-    return tryReadBitmapFile(storage, DeleteBitmap::fileNameForCSN(version));
+    return tryReadBitmapFile(holder, file.fileName());
 }
 
-DeleteBitmapPtr tryReadStagedFor(const IDataPartStorage & storage, const String & target_part_name)
+bool removeBitmapFile(IDataPartStorage & holder, const BitmapFile & file)
 {
-    return tryReadBitmapFile(storage, DeleteBitmap::fileNameForStagedTarget(target_part_name));
-}
-
-void settleStagedFile(
-    IDataPartStorage & owner,
-    const String & staged_file_name,
-    IDataPartStorage & target,
-    BitmapVersion version,
-    const String & diag_owner_name)
-{
-    const String published_name = DeleteBitmap::fileNameForCSN(version);
-    if (!target.existsFile(published_name))
-    {
-        const auto bitmap = readBitmapFile(owner, staged_file_name, diag_owner_name);
-        writeBitmapUnderName(target, published_name, *bitmap);
-    }
-
-    owner.removeFileIfExists(staged_file_name);
-}
-
-void removeStagedFile(IDataPartStorage & owner, const String & staged_file_name)
-{
-    owner.removeFileIfExists(staged_file_name);
-}
-
-bool removeVersion(IDataPartStorage & storage, BitmapVersion version)
-{
-    const String file_name = DeleteBitmap::fileNameForCSN(version);
-    const bool existed = storage.existsFile(file_name);
-    storage.removeFileIfExists(file_name);
+    const String file_name = file.fileName();
+    const bool existed = holder.existsFile(file_name);
+    holder.removeFileIfExists(file_name);
     return existed;
 }
 

@@ -23,23 +23,23 @@
 #include <Common/tests/gtest_global_context.h>
 #include <Common/tests/gtest_global_register.h>
 
-#include <algorithm>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace DB;
 
 namespace
 {
 
-/// The store asks the table three questions -- resolve a part, the format version, whether the
-/// outdated load has finished -- so it needs a real `MergeTreeData`. Attached, never started: no
-/// background task runs, and the part set holds only what `addPart` puts there.
+bool isPinned(const MergeTreeBitmapStore & store, StorageMergeTree & table, const IMergeTreeDataPart & part)
+{
+    const auto lock = table.readLockParts();
+    return store.isPinned(part, lock);
+}
 struct TableFixture
 {
-    /// A unique key gives the table its own `UniqueKeyTxnManager`, and so the store that
-    /// `MergeTreeData` itself consults. The store tests build a standalone store instead.
     ContextMutablePtr context;
     std::shared_ptr<StorageMergeTree> table;
     std::string relative_path;
@@ -61,7 +61,6 @@ struct TableFixture
         columns.add(ColumnDescription("id", std::make_shared<DataTypeUInt64>()));
         metadata.setColumns(columns);
 
-        /// A UNIQUE KEY has to sit on a real sorting key; nothing else here cares what it is.
         auto order_by_ast = with_unique_key
             ? makeASTFunction("tuple", make_intrusive<ASTIdentifier>("id"))
             : makeASTFunction("tuple");
@@ -78,8 +77,7 @@ struct TableFixture
             columns, partition_key, metadata.getColumnsRequiredForPartitionKey(),
             metadata.primary_key, &metadata.partition_key, context));
 
-        /// Per instance, not shared: `addPart` writes real files, and a fixed path would let one
-        /// test's parts be loaded by the next test's `loadDataParts`.
+        /// Per instance, not shared: `addPart` writes real files under this path.
         const auto unique_id
             = std::to_string(::getpid()) + "_" + std::to_string(reinterpret_cast<uintptr_t>(this));
         relative_path = "store/test_uk_bitmap_store_" + unique_id + "/";
@@ -107,9 +105,7 @@ struct TableFixture
         return MergeTreePartInfo::fromPartName(name, table->format_version);
     }
 
-    /// A real part in the Active set, under the name the caller asks for. Every settle and every
-    /// sweep resolves its parts through `getPartIfExists`, so those paths cannot be reached from a
-    /// fixture whose part set is empty -- unlike the index-only tests, which never leave the store.
+    /// A real part in the Active set, under the name the caller asks for.
     DataPartPtr addPart(const std::string & part_name, UInt64 first_id, size_t rows) const
     {
         auto id_column = ColumnUInt64::create();
@@ -128,9 +124,7 @@ struct TableFixture
         auto temporary = writer.writeTempPart(block_with_partition, metadata_snapshot, context);
         temporary->finalize();
 
-        /// `fillNewPartName` is private to StorageMergeTree, so the test names the part itself --
-        /// which is what lets the assertions below talk about `all_1_1_0` rather than whatever
-        /// block number the insert increment happened to hand out.
+        /// `fillNewPartName` is private to StorageMergeTree, so the test names the part itself.
         auto part = temporary->part;
         part->info = partInfo(part_name);
         part->setName(part_name);
@@ -145,9 +139,6 @@ struct TableFixture
     }
 };
 
-/// The sidecar writers take a mutable storage, and a part in the set hands out a const one. Same
-/// `const_cast` the store itself does, and for the same reason: the rows are immutable, the
-/// directory is not.
 IDataPartStorage & partStorage(const IMergeTreeDataPart & part)
 {
     return const_cast<IDataPartStorage &>(part.getDataPartStorage());
@@ -159,129 +150,105 @@ DeleteBitmap bitmapWithRow(UInt64 row)
     bitmap.add(row);
     return bitmap;
 }
-
 }
 
-TEST(MergeTreeBitmapStoreTest, UnknownPartReadsEmptyAtVersionZero)
+TEST(MergeTreeBitmapStoreTest, LoadPartIndexesEveryVersionOneHolderHas)
 {
     TableFixture tbl;
     MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
-    /// No index entry means no version, and no version really is "no rows deleted".
-    const auto [bitmap, csn] = store.readBitmap(tbl.partInfo("all_1_1_0"), UNBOUNDED_CSN);
-    ASSERT_NE(bitmap, nullptr);
-    EXPECT_TRUE(bitmap->empty());
-    EXPECT_EQ(csn, 0u);
-}
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4);
+    const auto holder = tbl.addPart("all_9_9_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto target_name = target->info.getPartNameV1();
 
-TEST(MergeTreeBitmapStoreTest, LoadPartIndexesEverySettledVersionOnce)
-{
-    TableFixture tbl;
-    PartStorageFixture fx("settled");
-    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+    writeCarried(
+        partStorage(*holder), /*version=*/12, target_name, bitmapWithRow(1));
+    writeCarried(
+        partStorage(*holder), /*version=*/7, target_name, bitmapWithRow(2));
 
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, /*version=*/12, bitmapWithRow(1));
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, /*version=*/7, bitmapWithRow(2));
+    store.loadPart(holder->info, holder->getDataPartStorage());
 
-    const auto info = tbl.partInfo("all_1_1_0");
-    auto added = store.loadPart(info, *fx.storage);
-    std::sort(added.begin(), added.end());
-    EXPECT_EQ(added, std::vector<CSN>({7, 12}));
+    EXPECT_TRUE(isPinned(store, *tbl.table, *holder));
 
-    /// Idempotent: a second announce of the same directory adds nothing.
-    EXPECT_TRUE(store.loadPart(info, *fx.storage).empty());
+    EXPECT_EQ(store.readBitmap(target->info, /*snapshot_csn=*/ 12).second, 12u);
+    EXPECT_EQ(store.readBitmap(target->info, /*snapshot_csn=*/ 7).second, 7u);
 }
 
 TEST(MergeTreeBitmapStoreTest, LoadPartRegistersStagedTargets)
 {
     TableFixture tbl;
-    PartStorageFixture fx("staged");
     MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
-    const auto owner = tbl.partInfo("all_9_9_0");
-    const auto target = tbl.partInfo("all_1_1_0");
-    DeleteBitmapFileOps::writeStagedBitmapToStorage(*fx.storage, target.getPartNameV1(), bitmapWithRow(3));
+    const auto holder = tbl.addPart("all_9_9_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 200, /*rows=*/ 1);
+    DeleteBitmapFileOps::stageBitmap(partStorage(*holder), target->name, bitmapWithRow(3));
 
-    /// A staged file is a version of the target, not of the part holding it.
-    EXPECT_TRUE(store.loadPart(owner, *fx.storage).empty());
-    EXPECT_EQ(store.stagedTargetsOf(owner), std::vector<MergeTreePartInfo>({target}));
+    store.loadPart(holder->info, holder->getDataPartStorage());
+    EXPECT_TRUE(isPinned(store, *tbl.table, *holder));
 }
 
-TEST(MergeTreeBitmapStoreTest, ForgettingStagedBitmapsClearsBothDirections)
+TEST(MergeTreeBitmapStoreTest, RemovingStagedBitmapsClearsBothDirections)
 {
     TableFixture tbl;
     MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
-    const auto owner = tbl.partInfo("all_9_9_0");
-    const auto target = tbl.partInfo("all_1_1_0");
-    store.registerStagedBitmaps(owner, {target});
-    EXPECT_EQ(store.stagedTargetsOf(owner), std::vector<MergeTreePartInfo>({target}));
+    const auto holder = tbl.addPart("all_9_9_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 200, /*rows=*/ 1);
+    store.registerStagedBitmaps(holder->info, {target->info});
+    EXPECT_TRUE(isPinned(store, *tbl.table, *holder));
 
-    store.forgetStagedBitmaps(owner, {target});
-    EXPECT_TRUE(store.stagedTargetsOf(owner).empty());
+    store.removeStagedBitmaps(holder->info, {target->info});
+    EXPECT_FALSE(isPinned(store, *tbl.table, *holder));
 
-    /// The target's side is gone too, so resolving it no longer reaches the owner at all.
-    const auto [bitmap, csn] = store.readBitmap(target, UNBOUNDED_CSN);
+    const auto [bitmap, csn] = store.readBitmap(target->info, UNBOUNDED_CSN);
     EXPECT_TRUE(bitmap->empty());
     EXPECT_EQ(csn, 0u);
 }
 
-TEST(MergeTreeBitmapStoreTest, SettleBelowTheNewestVersionIsVisibleAtItsOwnSnapshot)
+TEST(MergeTreeBitmapStoreTest, VersionsOfOnePartInterleaveAcrossTheHoldersOfThem)
 {
     TableFixture tbl;
     MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
     const auto target = tbl.addPart("all_1_1_0", /*first_id=*/0, /*rows=*/4);
-    const auto owner = tbl.addPart("all_9_9_0", /*first_id=*/100, /*rows=*/1);
+    const auto older = tbl.addPart("all_8_8_0", /*first_id=*/100, /*rows=*/1);
+    const auto newer = tbl.addPart("all_9_9_0", /*first_id=*/200, /*rows=*/1);
 
-    /// The target already carries a later version, so the settle below has to land in the middle of
-    /// the index rather than append to it.
-    DeleteBitmapFileOps::writeBitmapToStorage(partStorage(*target), /*version=*/9, bitmapWithRow(3));
-    ASSERT_EQ(store.loadPart(target->info, target->getDataPartStorage()), std::vector<CSN>({9}));
+    writeCarried(
+        partStorage(*newer), /*version=*/9, target->info.getPartNameV1(), bitmapWithRow(3));
+    store.loadPart(newer->info, newer->getDataPartStorage());
 
-    DeleteBitmapFileOps::writeStagedBitmapToStorage(
-        partStorage(*owner), target->info.getPartNameV1(), bitmapWithRow(1));
-    ASSERT_TRUE(store.loadPart(owner->info, owner->getDataPartStorage()).empty());
+    writeCarried(
+        partStorage(*older), /*version=*/5, target->info.getPartNameV1(), bitmapWithRow(1));
+    store.loadPart(older->info, older->getDataPartStorage());
 
-    const auto report = store.settleStagedBitmaps(owner->info, {target->info}, /*csn=*/5);
-    EXPECT_EQ(report.settled, 1u);
-    EXPECT_FALSE(report.anyOutstanding());
-
-    /// DISCRIMINATING: place the insert with `upper_bound` instead of `lower_bound`, or guard it on
-    /// `pos == end()`, and csn 5 never enters the index -- this read goes empty while the file it
-    /// should resolve to sits in the target's directory.
     const auto [at_five, five_csn] = store.readBitmap(target->info, /*snapshot_csn=*/5);
     EXPECT_EQ(five_csn, 5u);
     EXPECT_TRUE(at_five->contains(1));
 
-    /// And the version above it still wins at its own snapshot.
     const auto [at_nine, nine_csn] = store.readBitmap(target->info, /*snapshot_csn=*/9);
     EXPECT_EQ(nine_csn, 9u);
     EXPECT_TRUE(at_nine->contains(3));
 }
 
-TEST(MergeTreeBitmapStoreTest, SettleForAMissingTargetUnlinksTheStagedFile)
+namespace
 {
-    TableFixture tbl;
-    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
-
-    const auto owner = tbl.addPart("all_9_9_0", /*first_id=*/100, /*rows=*/1);
-    const auto missing_target = tbl.partInfo("all_1_1_0");
-
-    const auto staged_name = DeleteBitmap::fileNameForStagedTarget(missing_target.getPartNameV1());
-    DeleteBitmapFileOps::writeStagedBitmapToStorage(
-        partStorage(*owner), missing_target.getPartNameV1(), bitmapWithRow(1));
-    ASSERT_TRUE(store.loadPart(owner->info, owner->getDataPartStorage()).empty());
-    ASSERT_EQ(store.stagedTargetsOf(owner->info), std::vector<MergeTreePartInfo>({missing_target}));
-
-    /// The target is in no state at all and the part set is complete, so "reclaimed" is the only
-    /// reading left: the bitmap is unlinked rather than carried by an owner nothing can resolve.
-    const auto report = store.settleStagedBitmaps(owner->info, {missing_target}, /*csn=*/5);
-    EXPECT_EQ(report.settled, 1u);
-    EXPECT_FALSE(report.anyOutstanding());
-
-    EXPECT_FALSE(owner->getDataPartStorage().existsFile(staged_name));
-    EXPECT_TRUE(store.stagedTargetsOf(owner->info).empty());
+DataPartPtr carryVersionsOfOneTarget(
+    TableFixture & tbl, MergeTreeBitmapStore & store, const std::vector<CSN> & versions)
+{
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4);
+    UInt64 block = 20;
+    for (const CSN version : versions)
+    {
+        const auto holder = tbl.addPart(
+            fmt::format("all_{}_{}_0", block, block), /*first_id=*/ 100 * block, /*rows=*/ 1);
+        writeCarried(
+        partStorage(*holder), version, target->info.getPartNameV1(), bitmapWithRow(version));
+        store.loadPart(holder->info, holder->getDataPartStorage());
+        ++block;
+    }
+    return target;
+}
 }
 
 TEST(MergeTreeBitmapStoreTest, ObsoleteSweepKeepsTheFloorVersionAndEverythingAbove)
@@ -289,23 +256,16 @@ TEST(MergeTreeBitmapStoreTest, ObsoleteSweepKeepsTheFloorVersionAndEverythingAbo
     TableFixture tbl;
     MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
-    const auto part = tbl.addPart("all_1_1_0", /*first_id=*/0, /*rows=*/4);
-    for (const CSN version : {3, 7, 12})
-        DeleteBitmapFileOps::writeBitmapToStorage(partStorage(*part), version, bitmapWithRow(version));
-    ASSERT_EQ(store.loadPart(part->info, part->getDataPartStorage()).size(), 3u);
+    const auto target = carryVersionsOfOneTarget(tbl, store, {3, 7, 12});
 
-    /// A snapshot at 10 resolves to version 7, so 7 is the floor and only what is strictly below it
-    /// is unreachable. Reclaiming 7 as well would change what that snapshot reads.
-    EXPECT_EQ(store.removeObsoleteBitmaps(part->info, /*oldest_snapshot_csn=*/10), 1u);
+    EXPECT_EQ(store.removeObsoleteBitmaps(target->info, /*oldest_snapshot_csn=*/10), 1u);
 
-    std::vector<CSN> left;
-    for (const auto & file : store.listBitmaps(part->info))
-        left.push_back(file.version);
-    EXPECT_EQ(left, std::vector<CSN>({7, 12}));
-
-    const auto [at_ten, ten_csn] = store.readBitmap(part->info, /*snapshot_csn=*/10);
+    const auto [at_ten, ten_csn] = store.readBitmap(target->info, /*snapshot_csn=*/10);
     EXPECT_EQ(ten_csn, 7u);
     EXPECT_TRUE(at_ten->contains(7));
+
+    EXPECT_EQ(store.readBitmap(target->info, /*snapshot_csn=*/3).second, 0u);
+    EXPECT_EQ(store.readBitmap(target->info, /*snapshot_csn=*/12).second, 12u);
 }
 
 TEST(MergeTreeBitmapStoreTest, ObsoleteSweepKeepsOnlyTheNewestWhenNothingIsPinned)
@@ -313,141 +273,339 @@ TEST(MergeTreeBitmapStoreTest, ObsoleteSweepKeepsOnlyTheNewestWhenNothingIsPinne
     TableFixture tbl;
     MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
-    const auto part = tbl.addPart("all_1_1_0", /*first_id=*/0, /*rows=*/4);
-    for (const CSN version : {3, 7, 12})
-        DeleteBitmapFileOps::writeBitmapToStorage(partStorage(*part), version, bitmapWithRow(version));
-    ASSERT_EQ(store.loadPart(part->info, part->getDataPartStorage()).size(), 3u);
+    const auto target = carryVersionsOfOneTarget(tbl, store, {3, 7, 12});
 
-    /// No open snapshot means the floor is the newest version, and the newest always stays --
-    /// it is the current state of the part, not a reclaimable predecessor.
-    EXPECT_EQ(store.removeObsoleteBitmaps(part->info, UNBOUNDED_CSN), 2u);
+    EXPECT_EQ(store.removeObsoleteBitmaps(target->info, UNBOUNDED_CSN), 2u);
 
-    std::vector<CSN> left;
-    for (const auto & file : store.listBitmaps(part->info))
-        left.push_back(file.version);
-    EXPECT_EQ(left, std::vector<CSN>({12}));
+    const auto [newest, newest_csn] = store.readBitmap(target->info, UNBOUNDED_CSN);
+    EXPECT_EQ(newest_csn, 12u);
+    EXPECT_TRUE(newest->contains(12));
 
-    /// A second round has nothing left to reclaim, and says so rather than double-counting.
-    EXPECT_EQ(store.removeObsoleteBitmaps(part->info, UNBOUNDED_CSN), 0u);
+    EXPECT_EQ(store.removeObsoleteBitmaps(target->info, UNBOUNDED_CSN), 0u);
 }
 
-/// A LOGICAL_ERROR aborts rather than throwing under debug and sanitizer builds, so the two
-/// rejections below are only assertable where it stays an exception.
 #ifndef DEBUG_OR_SANITIZER_BUILD
 
-TEST(MergeTreeBitmapStoreTest, IndexedVersionWhosePartIsGoneIsRejected)
+TEST(MergeTreeBitmapStoreTest, ABitmapWhoseTargetLeftThePartSetIsRejected)
 {
     TableFixture tbl;
-    PartStorageFixture fx("orphan_version");
+    PartStorageFixture fx("holder");
     MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
-    const auto info = tbl.partInfo("all_1_1_0");
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, /*version=*/7, bitmapWithRow(1));
-    ASSERT_EQ(store.loadPart(info, *fx.storage).size(), 1u);
+    const auto holder = tbl.addPart("all_9_9_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto vanished = tbl.partInfo("all_1_1_0");
+    store.registerStagedBitmaps(holder->info, {vanished});
 
-    /// The index holds version 7 and the part set holds nothing. An empty bitmap here would report
-    /// "no rows deleted" for a version that kills one, so INV-LOCATION makes it an error.
-    EXPECT_THROW(store.readBitmap(info, UNBOUNDED_CSN), Exception);
+    EXPECT_THROW(store.readBitmap(vanished, UNBOUNDED_CSN), Exception);
 }
 
-TEST(MergeTreeBitmapStoreTest, StagedOwnerThatLeftThePartSetIsRejected)
+TEST(MergeTreeBitmapStoreTest, AHolderThatLeftThePartSetIsRejected)
 {
     TableFixture tbl;
     MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
-    const auto owner = tbl.partInfo("all_9_9_0");
+    const auto holder = tbl.partInfo("all_9_9_0");
     const auto target = tbl.partInfo("all_1_1_0");
-    store.registerStagedBitmaps(owner, {target});
+    store.registerStagedBitmaps(holder, {target});
 
-    /// INV-SETTLE is what keeps a staging owner in the part set, so an owner that is not there is a
-    /// divergence -- and skipping it would silently drop whatever the staged bitmap kills.
     EXPECT_THROW(store.readBitmap(target, UNBOUNDED_CSN), Exception);
 }
 
 #endif
 
-/// Goes red if the `hasUnsettledBitmaps` guard in `grabOldParts` is dropped: a retire leaves the
-/// owner Outdated while it still owes, and only that guard keeps it from being removed.
-TEST(MergeTreeBitmapStoreTest, GrabOldPartsHoldsBackAPartWithUnsettledStagedBitmaps)
+TEST(MergeTreeBitmapStoreTest, GrabOldPartsHoldsBackAPartHoldingAnotherPartsBitmap)
 {
     TableFixture tbl{/*with_unique_key=*/ true};
 
-    auto owner = tbl.addPart("all_2_2_0", /*first_id=*/ 100, /*rows=*/ 4);
-    ASSERT_NE(owner, nullptr);
-    const auto owner_info = owner->info;
-    tbl.table->uniqueKeyTxnManager().bitmapStore().registerStagedBitmaps(
-        owner_info, {tbl.partInfo("all_1_1_0")});
+    auto holder = tbl.addPart("all_2_2_0", /*first_id=*/ 100, /*rows=*/ 4);
+    ASSERT_NE(holder, nullptr);
+    const auto holder_info = holder->info;
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4);
+    tbl.table->uniqueKeyTxnManager().bitmapStore().registerStagedBitmaps(holder_info, {target->info});
 
     {
         auto lock = tbl.table->lockParts();
         tbl.table->removePartsFromWorkingSet(
-            NO_TRANSACTION_RAW, {owner}, /*clear_without_timeout=*/ true, lock);
+            NO_TRANSACTION_RAW, {holder}, /*clear_without_timeout=*/ true, lock);
     }
 
-    /// `grabOldParts` skips a part any second holder can still see, so the fixture's own reference
-    /// has to go -- otherwise the part is held back for the wrong reason and the test proves nothing.
-    owner.reset();
+    /// The fixture's own reference has to go, otherwise the part is held back for the wrong
+    /// reason and the test proves nothing.
+    holder.reset();
 
     EXPECT_TRUE(tbl.table->grabOldParts(/*force=*/ true).empty());
 
-    const auto held = tbl.table->getPartIfExists(owner_info, {MergeTreeData::DataPartState::Outdated});
+    const auto held = tbl.table->getPartIfExists(holder_info, {MergeTreeData::DataPartState::Outdated});
     ASSERT_NE(held, nullptr);
-    EXPECT_EQ(held->removal_state.load(), DataPartRemovalState::HAS_UNSETTLED_BITMAPS);
+    EXPECT_EQ(held->removal_state.load(), DataPartRemovalState::PINNED_BY_DELETE_BITMAP);
 }
 
-/// Goes red if the guard over-triggers. It does NOT catch the guard being dropped -- read it with
-/// the test above, not instead of it.
-TEST(MergeTreeBitmapStoreTest, GrabOldPartsTakesAPartWithNoStagedBitmaps)
-{
-    TableFixture tbl{/*with_unique_key=*/ true};
-
-    auto owner = tbl.addPart("all_2_2_0", /*first_id=*/ 100, /*rows=*/ 4);
-    ASSERT_NE(owner, nullptr);
-
-    {
-        auto lock = tbl.table->lockParts();
-        tbl.table->removePartsFromWorkingSet(
-            NO_TRANSACTION_RAW, {owner}, /*clear_without_timeout=*/ true, lock);
-    }
-    owner.reset();
-
-    EXPECT_EQ(tbl.table->grabOldParts(/*force=*/ true).size(), 1u);
-}
-
-/// Goes red if the `RolledBackCSN` exemption is dropped: the part would be pinned forever, because
-/// its staged bitmaps can never publish.
 TEST(MergeTreeBitmapStoreTest, GrabOldPartsTakesARolledBackPartWithStagedBitmaps)
 {
     TableFixture tbl{/*with_unique_key=*/ true};
 
-    auto owner = tbl.addPart("all_2_2_0", /*first_id=*/ 100, /*rows=*/ 4);
-    ASSERT_NE(owner, nullptr);
-    tbl.table->uniqueKeyTxnManager().bitmapStore().registerStagedBitmaps(
-        owner->info, {tbl.partInfo("all_1_1_0")});
-    owner->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
+    auto holder = tbl.addPart("all_2_2_0", /*first_id=*/ 100, /*rows=*/ 4);
+    ASSERT_NE(holder, nullptr);
+    /// A real target, in the set: against a vanished one the pin lets go for another reason and
+    /// the rolled-back exemption goes untested.
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4);
+    tbl.table->uniqueKeyTxnManager().bitmapStore().registerStagedBitmaps(holder->info, {target->info});
+    holder->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
 
     {
         auto lock = tbl.table->lockParts();
         tbl.table->removePartsFromWorkingSet(
-            NO_TRANSACTION_RAW, {owner}, /*clear_without_timeout=*/ true, lock);
+            NO_TRANSACTION_RAW, {holder}, /*clear_without_timeout=*/ true, lock);
     }
-    owner.reset();
+    holder.reset();
 
     EXPECT_EQ(tbl.table->grabOldParts(/*force=*/ true).size(), 1u);
 }
 
-/// Goes red if the unresolvable-owner branch reports a guessed count instead of the whole list.
-TEST(MergeTreeBitmapStoreTest, SettleCountsEveryTargetFailedWhenTheOwnerIsGone)
+namespace
+{
+void carryInto(
+    MergeTreeBitmapStore & store,
+    const IMergeTreeDataPart & merged,
+    const std::vector<IBitmapStore::CarriedBitmap> & carried)
+{
+    std::vector<IBitmapStore::BitmapLink> links;
+    for (const auto & [link, held_in, file] : carried)
+    {
+        DeleteBitmapFileOps::carryBitmap(
+            held_in->getDataPartStorage(), file,
+            partStorage(merged), {link.csn, link.target.getPartNameV1()});
+        links.push_back(link);
+    }
+    store.registerLinks(merged.info, links);
+}
+
+void outdate(TableFixture & tbl, const DataPartPtr & part)
+{
+    auto lock = tbl.table->lockParts();
+    tbl.table->removePartsFromWorkingSet(
+        NO_TRANSACTION_RAW, {part}, /*clear_without_timeout=*/ true, lock);
+}
+
+void retire(TableFixture & tbl, MergeTreeBitmapStore & store, DataPartPtr & part)
+{
+    {
+        auto lock = tbl.table->lockParts();
+        tbl.table->removePartsFromWorkingSet(
+            NO_TRANSACTION_RAW, {part}, /*clear_without_timeout=*/ true, lock);
+    }
+    store.dropPart(*part);
+    part.reset();
+    tbl.table->grabOldParts(/*force=*/ true);
+}
+}
+
+TEST(MergeTreeBitmapStoreTest, ACarriedBitmapOutlivesTheOwnerThatWroteIt)
 {
     TableFixture tbl;
     MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
 
-    const std::vector<MergeTreePartInfo> targets{
-        tbl.partInfo("all_1_1_0"), tbl.partInfo("all_2_2_0")};
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4);
+    auto holder = tbl.addPart("all_9_9_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto co_source = tbl.addPart("all_8_8_0", /*first_id=*/ 200, /*rows=*/ 1);
+    /// Stands in for the merge result. Not named `all_8_9_1`: the store only cares which part
+    /// holds the file, not whether its name covers the sources.
+    const auto merged = tbl.addPart("all_20_20_0", /*first_id=*/ 300, /*rows=*/ 2);
 
-    const auto report = store.settleStagedBitmaps(tbl.partInfo("all_9_9_0"), targets, /*csn=*/7);
-    EXPECT_EQ(report.failed, targets.size());
-    EXPECT_EQ(report.settled, 0u);
-    EXPECT_TRUE(report.anyOutstanding());
+    DeleteBitmapFileOps::stageBitmap(
+        partStorage(*holder), target->info.getPartNameV1(), bitmapWithRow(1));
+    store.loadPart(holder->info, holder->getDataPartStorage());
+    ASSERT_TRUE(store.readBitmap(target->info, UNBOUNDED_CSN).first->contains(1));
+
+    const auto carried = store.selectCarriedBitmaps({holder->info, co_source->info});
+    ASSERT_EQ(carried.size(), 1u);
+    EXPECT_EQ(carried[0].link.target, target->info);
+    EXPECT_EQ(carried[0].link.csn, Tx::NonTransactionalCSN);
+
+    ASSERT_NE(carried[0].held_in, nullptr);
+    EXPECT_EQ(carried[0].held_in->info, holder->info);
+    const auto at_source = DeleteBitmapFileOps::tryReadBitmap(
+        carried[0].held_in->getDataPartStorage(), carried[0].file);
+    ASSERT_NE(at_source, nullptr);
+    EXPECT_TRUE(at_source->contains(1));
+
+    carryInto(store, *merged, carried);
+    retire(tbl, store, holder);
+
+    const auto [bitmap, csn] = store.readBitmap(target->info, UNBOUNDED_CSN);
+    EXPECT_EQ(csn, Tx::NonTransactionalCSN);
+    EXPECT_TRUE(bitmap->contains(1));
 }
 
+TEST(MergeTreeBitmapStoreTest, ACarriedBitmapKeepsTheVersionItWasCreatedWith)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4)->info;
+    const auto carrier = tbl.addPart("all_9_9_0", /*first_id=*/ 100, /*rows=*/ 1);
+    ASSERT_EQ(carrier->version->getInfo().creation_csn, Tx::NonTransactionalCSN);
+
+    writeCarried(
+        partStorage(*carrier), /*version=*/ 5, target.getPartNameV1(), bitmapWithRow(1));
+    store.loadPart(carrier->info, carrier->getDataPartStorage());
+
+    EXPECT_EQ(store.readBitmap(target, /*snapshot_csn=*/ 4).second, 0u);
+
+    const auto [bitmap, csn] = store.readBitmap(target, /*snapshot_csn=*/ 5);
+    EXPECT_EQ(csn, 5u);
+    EXPECT_TRUE(bitmap->contains(1));
+}
+
+/// Two sources, two versions of one outside target. Carrying the older would resurrect every row
+/// the newer one killed, so the fold has to take the newest.
+TEST(MergeTreeBitmapStoreTest, TheCarryTakesTheNewestVersionAcrossTheSources)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4);
+    const auto older = tbl.addPart("all_8_8_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto newer = tbl.addPart("all_9_9_0", /*first_id=*/ 200, /*rows=*/ 1);
+    const auto target_name = target->info.getPartNameV1();
+
+    writeCarried(partStorage(*older), /*version=*/ 5, target_name, bitmapWithRow(1));
+    store.loadPart(older->info, older->getDataPartStorage());
+    writeCarried(partStorage(*newer), /*version=*/ 9, target_name, bitmapWithRow(3));
+    store.loadPart(newer->info, newer->getDataPartStorage());
+
+    /// Both orders: the fold has to pick by version, and a merge does not promise the order it
+    /// hands its sources over in. Without it whichever source came last would win.
+    for (const auto & sources : {std::vector{older->info, newer->info}, std::vector{newer->info, older->info}})
+    {
+        const auto carried = store.selectCarriedBitmaps(sources);
+        ASSERT_EQ(carried.size(), 1u);
+        EXPECT_EQ(carried[0].link.csn, 9u);
+        EXPECT_EQ(carried[0].held_in->info, newer->info);
+    }
+}
+
+TEST(MergeTreeBitmapStoreTest, AKillAgainstAnotherSourceIsAbsorbedNotCarried)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 4);
+    const auto holder = tbl.addPart("all_9_9_0", /*first_id=*/ 100, /*rows=*/ 1);
+
+    DeleteBitmapFileOps::stageBitmap(
+        partStorage(*holder), target->info.getPartNameV1(), bitmapWithRow(1));
+    store.loadPart(holder->info, holder->getDataPartStorage());
+
+    EXPECT_TRUE(store.selectCarriedBitmaps({holder->info, target->info}).empty());
+}
+
+TEST(MergeTreeBitmapStoreTest, ABitmapForAVanishedTargetIsNotCarried)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto holder = tbl.addPart("all_9_9_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto vanished = tbl.partInfo("all_1_1_0");
+
+    DeleteBitmapFileOps::stageBitmap(
+        partStorage(*holder), vanished.getPartNameV1(), bitmapWithRow(1));
+    store.loadPart(holder->info, holder->getDataPartStorage());
+
+    EXPECT_FALSE(isPinned(store, *tbl.table, *holder));
+    EXPECT_TRUE(store.selectCarriedBitmaps({holder->info}).empty());
+}
+
+TEST(MergeTreeBitmapStoreTest, TheCarryFailsOnASourceThatIsNotInThePartSet)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    EXPECT_THROW(store.selectCarriedBitmaps({tbl.partInfo("all_9_9_0")}), Exception);
+}
+
+TEST(MergeTreeBitmapStoreTest, ALateKillAgainstTheMergeResultDoesNotPinIt)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto merged = tbl.addPart("all_1_5_1", /*first_id=*/ 100, /*rows=*/ 1);
+    store.registerStagedBitmaps(merged->info, {merged->info});
+
+    EXPECT_FALSE(isPinned(store, *tbl.table, *merged));
+}
+
+TEST(MergeTreeBitmapStoreTest, ACarriedBitmapUnpinsTheSourceItCameFrom)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto source = tbl.addPart("all_4_4_0", /*first_id=*/ 200, /*rows=*/ 1);
+
+    store.registerStagedBitmaps(source->info, {target->info});
+    EXPECT_TRUE(isPinned(store, *tbl.table, *source));
+
+    outdate(tbl, source);
+    const auto merged = tbl.addPart("all_4_9_1", /*first_id=*/ 300, /*rows=*/ 1);
+    ASSERT_TRUE(merged->info.contains(source->info));
+    store.registerLinks(merged->info, {{target->info, source->version->getInfo().creation_csn}});
+
+    EXPECT_FALSE(isPinned(store, *tbl.table, *source));
+
+    EXPECT_TRUE(isPinned(store, *tbl.table, *merged));
+}
+
+TEST(MergeTreeBitmapStoreTest, ACarrierThatDoesNotCoverTheSourceDoesNotUnpinIt)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto source = tbl.addPart("all_4_4_0", /*first_id=*/ 200, /*rows=*/ 1);
+    const auto sibling = tbl.addPart("all_7_7_0", /*first_id=*/ 300, /*rows=*/ 1);
+    ASSERT_FALSE(sibling->info.contains(source->info));
+
+    store.registerStagedBitmaps(source->info, {target->info});
+    store.registerLinks(sibling->info, {{target->info, source->version->getInfo().creation_csn}});
+
+    EXPECT_TRUE(isPinned(store, *tbl.table, *source));
+}
+
+TEST(MergeTreeBitmapStoreTest, ANewerCarriedVersionDoesNotUnpinTheOlderOne)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto source = tbl.addPart("all_4_4_0", /*first_id=*/ 200, /*rows=*/ 1);
+
+    store.registerStagedBitmaps(source->info, {target->info});
+
+    outdate(tbl, source);
+    const auto merged = tbl.addPart("all_4_9_1", /*first_id=*/ 300, /*rows=*/ 1);
+    store.registerLinks(merged->info, {{target->info, source->version->getInfo().creation_csn + 1}});
+
+    EXPECT_TRUE(isPinned(store, *tbl.table, *source));
+}
+
+TEST(MergeTreeBitmapStoreTest, AnUnpublishedCarrierDoesNotUnpinTheSource)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto source = tbl.addPart("all_4_4_0", /*first_id=*/ 200, /*rows=*/ 1);
+    const CSN version = source->version->getInfo().creation_csn;
+    store.registerStagedBitmaps(source->info, {target->info});
+
+    /// In the set and covering the source, so everything but the commit says it carried -- which
+    /// is the state a merge is in between linking its copies and reaching its commit point.
+    outdate(tbl, source);
+    const auto merged = tbl.addPart("all_4_9_1", /*first_id=*/ 300, /*rows=*/ 1);
+    ASSERT_TRUE(merged->info.contains(source->info));
+    merged->version->setAndStoreCreationCSN(Tx::RolledBackCSN);
+    store.registerLinks(merged->info, {{target->info, version}});
+
+    EXPECT_TRUE(isPinned(store, *tbl.table, *source));
+}

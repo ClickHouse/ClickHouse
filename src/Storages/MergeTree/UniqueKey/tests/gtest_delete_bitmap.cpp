@@ -530,29 +530,33 @@ TEST(DeleteBitmapTest, TrailingBytesAfterCRCRejected)
     }
 }
 
-TEST(DeleteBitmapTest, FileNameRoundtrip)
+TEST(DeleteBitmapTest, CarriedFileNameRoundtrip)
 {
-    EXPECT_EQ(DeleteBitmap::fileNameForCSN(0), "delete_bitmap_0.rbm");
-    EXPECT_EQ(DeleteBitmap::fileNameForCSN(12345), "delete_bitmap_12345.rbm");
+    EXPECT_EQ(DeleteBitmap::fileNameForCarriedTarget(19, "all_1_5_1"), "delete_bitmap_19_for_all_1_5_1.rbm");
 
-    EXPECT_TRUE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_0.rbm"));
-    EXPECT_TRUE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_999.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_abc.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("foo.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_1"));
-    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_1.rbm.tmp"));
-    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile(""));
-    /// Noncanonical numeric forms must be rejected so two filenames cannot
-    /// resolve to the same csn (would confuse sidecar resolution).
-    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_+7.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_-7.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_007.rbm"));
-    EXPECT_FALSE(DeleteBitmap::isDeleteBitmapFile("delete_bitmap_ 7.rbm"));
+    EXPECT_TRUE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_19_for_all_1_5_1.rbm"));
+    EXPECT_EQ(DeleteBitmap::parseCarriedFromFileName("delete_bitmap_19_for_all_1_5_1.rbm").csn, 19U);
+    EXPECT_EQ(DeleteBitmap::parseCarriedFromFileName("delete_bitmap_19_for_all_1_5_1.rbm").target_part_name,
+        "all_1_5_1");
 
-    EXPECT_EQ(DeleteBitmap::parseCSNFromFileName("delete_bitmap_0.rbm"), 0U);
-    EXPECT_EQ(DeleteBitmap::parseCSNFromFileName("delete_bitmap_999.rbm"), 999U);
-    EXPECT_THROW(DeleteBitmap::parseCSNFromFileName("foo.rbm"), Exception);
+    /// DISCRIMINATING: put the csn after the target instead and this pair collapses -- a trailing
+    /// number is indistinguishable from the mutation component of a part name.
+    EXPECT_EQ(DeleteBitmap::parseCarriedFromFileName("delete_bitmap_19_for_all_1_5_1_19.rbm").target_part_name,
+        "all_1_5_1_19");
+
+    /// A partition id may contain the infix; the csn may not, so the FIRST one splits.
+    EXPECT_EQ(DeleteBitmap::parseCarriedFromFileName("delete_bitmap_7_for_a_for_b_1_1_0.rbm").target_part_name,
+        "a_for_b_1_1_0");
+
+    /// The two forms are disjoint, which is what lets `enumerateFiles` classify by name alone.
+    EXPECT_FALSE(DeleteBitmap::isStagedBitmapFile("delete_bitmap_19_for_all_1_5_1.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_for_all_1_5_1.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_19.rbm"));
+
+    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_19_for_.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap__for_all_1_1_0.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_007_for_all_1_1_0.rbm"));
+    EXPECT_FALSE(DeleteBitmap::isCarriedBitmapFile("delete_bitmap_19_for_all_1_5_1.rbm.tmp"));
 }
 
 /// ---------- cache ----------

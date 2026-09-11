@@ -1048,8 +1048,10 @@ public:
 
     UniqueKeyTxnManager & uniqueKeyTxnManager() const;
 
-    /// Index-only -- no part lookup, no i/o -- so it is safe to call under the part-set lock.
-    bool hasUnsettledBitmaps(const IMergeTreeDataPart & part) const;
+    /// Whether `part` holds the only copy of some other part's kills, in which case no removal
+    /// path may take it. The overload taking a lock is for a caller that already holds one.
+    bool isPinnedByDeleteBitmap(const IMergeTreeDataPart & part) const;
+    bool isPinnedByDeleteBitmap(const IMergeTreeDataPart & part, const DataPartsAnyLock & lock) const;
 
     /// Announce a part's directory to the bitmap store, which indexes the sidecars in it.
     void loadUniqueKeyBitmaps(const DataPartPtr & part);
@@ -2173,9 +2175,6 @@ protected:
     /// started from `startup` and `changeSettings`, drained by `StorageMergeTree::shutdown`.
     void startUniqueKeyGCTaskIfNeeded();
     void runUniqueKeyGCRound() const;
-
-    /// Publish staged bitmaps into their targets.
-    void runUniqueKeySettleRound() const;
 
     mutable std::mutex stats_mutex;
     ConditionSelectivityEstimatorPtr cached_estimator;

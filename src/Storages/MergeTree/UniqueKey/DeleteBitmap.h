@@ -49,9 +49,8 @@ constexpr CSN UNBOUNDED_CSN = Tx::MaxCommittedCSN;
   * auto-upgrades to `roaring::Roaring64Map` on the first value above. The
   * choice is internal — the public API is uniformly `UInt64`.
   *
-  * Persistence: one file per bitmap version, named
-  *   `delete_bitmap_{csn}.rbm`
-  * inside the part directory. Format (all little-endian on the wire):
+  * Persistence: one file per bitmap version, named for the part it kills and
+  * kept in the part that wrote it (see the naming block below). Format (all little-endian on the wire):
   *   magic(4) "RBM1" | version(4) | body_size(4) | body[body_size] | crc32(4)
   * `version` (`VERSION_R32` / `VERSION_R64`) selects which roaring layout
   * the body uses. CRC covers the LE-encoded magic + version + body_size +
@@ -126,27 +125,40 @@ public:
     /// throws on mismatch. Returned bitmap is independent of `in`.
     static std::unique_ptr<DeleteBitmap> deserialize(ReadBuffer & in);
 
-    /// File name convention:
-    ///   staged   `<owner>/delete_bitmap_for_{target_part_name}.rbm`
-    ///   settled  `<target>/delete_bitmap_{csn}.rbm`
-    static std::string fileNameForCSN(BitmapVersion csn);
+    /// A bitmap file always sits in the part that WROTE it and is named for the part it kills:
+    ///   staged   `<writer>/delete_bitmap_for_{target_part_name}.rbm`
+    ///   carried  `<writer>/delete_bitmap_{csn}_for_{target_part_name}.rbm`
+    ///
+    /// A writer cannot name its own csn -- that arrives after the commit point -- so a staged
+    /// bitmap takes its writer's `creation_csn`. A carried one was copied in from another part by
+    /// a merge, so its version has to survive the copy, and the name is where it is kept.
+    /// The csn leads the target because a part name ends in a number: with a trailing csn,
+    /// `delete_bitmap_for_all_1_5_1_19.rbm` reads as either target `all_1_5_1` at 19 or target
+    /// `all_1_5_1_19`.
     static std::string fileNameForStagedTarget(std::string_view target_part_name);
+    static std::string fileNameForCarriedTarget(BitmapVersion csn, std::string_view target_part_name);
 
-    /// True if `file_name` matches the canonical `delete_bitmap_{csn}.rbm` form.
-    static bool isDeleteBitmapFile(std::string_view file_name);
     /// True if `file_name` matches the canonical `delete_bitmap_for_{target}.rbm` form.
     static bool isStagedBitmapFile(std::string_view file_name);
+    /// True if `file_name` matches the canonical `delete_bitmap_{csn}_for_{target}.rbm` form.
+    static bool isCarriedBitmapFile(std::string_view file_name);
 
     static bool isAnyDeleteBitmapFile(std::string_view file_name)
     {
-        return isDeleteBitmapFile(file_name) || isStagedBitmapFile(file_name);
+        return isStagedBitmapFile(file_name) || isCarriedBitmapFile(file_name);
     }
 
-    /// Extract csn from `delete_bitmap_{csn}.rbm`. Caller must have screened
-    /// the name via `isDeleteBitmapFile`; throws if `file_name` does not match.
-    static BitmapVersion parseCSNFromFileName(std::string_view file_name);
-    /// Extract the target part name from `delete_bitmap_for_{target}.rbm`; same contract.
+    /// Extract the target part name from `delete_bitmap_for_{target}.rbm`. Caller must have
+    /// screened the name via `isStagedBitmapFile`; throws if `file_name` does not match.
     static std::string parseStagedTargetFromFileName(std::string_view file_name);
+
+    struct CarriedName
+    {
+        BitmapVersion csn = 0;
+        std::string target_part_name;
+    };
+    /// Split `delete_bitmap_{csn}_for_{target}.rbm`; same contract as the two above.
+    static CarriedName parseCarriedFromFileName(std::string_view file_name);
 
     /// File-format constants. Exposed so tests can corrupt bytes deterministically.
     static constexpr UInt32 MAGIC = 0x314D4252; /// "RBM1" little-endian

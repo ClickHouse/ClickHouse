@@ -3,6 +3,8 @@
 #include <Disks/DiskLocal.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmap.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 
 #include <filesystem>
 #include <memory>
@@ -42,5 +44,16 @@ struct PartStorageFixture
 
     std::filesystem::path partFile(const std::string & name) const { return base_path / part_dir / name; }
 };
+
+/// A carried file, built the way the tests need one. Production only ever gets one by copying a
+/// source's, so there is no entry point that writes a bitmap straight under that name.
+inline void writeCarried(
+    IDataPartStorage & storage, UInt64 version, const String & target, const DeleteBitmap & bitmap)
+{
+    const DeleteBitmapFileOps::BitmapFile staged{/*version=*/ 0, target};
+    DeleteBitmapFileOps::stageBitmap(storage, target, bitmap);
+    DeleteBitmapFileOps::carryBitmap(storage, staged, storage, {version, target});
+    DeleteBitmapFileOps::removeBitmapFile(storage, staged);
+}
 
 }

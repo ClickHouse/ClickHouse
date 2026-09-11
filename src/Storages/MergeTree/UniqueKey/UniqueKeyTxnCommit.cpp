@@ -91,14 +91,15 @@ public:
             rejectUndeterminedTransactions("cumulative delete bitmap");
 
         auto versions = cumulativeKills();
+        auto carried = selectCarriedBitmaps();
 
         /// Before the first deref of `own_part`: a write that stages anything must publish the part
         /// that resolves it, and `own_kills` is a bitmap for that part itself.
-        if (!own_part && (own_kills || !versions.empty()))
+        if (!own_part && (own_kills || !versions.empty() || !carried.empty()))
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR,
                 "UNIQUE KEY write staged {} bitmap(s) but publishes no part to resolve them against",
-                versions.size() + (own_kills ? 1 : 0));
+                versions.size() + carried.size() + (own_kills ? 1 : 0));
 
         if (own_kills && !versions.emplace(own_part->info, own_kills).second)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -108,7 +109,7 @@ public:
         for (const auto & [target, bitmap] : versions)
         {
             /// The name is the file's, not the index's: the store is keyed by info
-            DeleteBitmapFileOps::writeStagedBitmapToStorage(
+            DeleteBitmapFileOps::stageBitmap(
                 own_part->getDataPartStorage(), target.getPartNameV1(), *bitmap);
             staged.targets.push_back(target);
 
@@ -116,6 +117,24 @@ public:
                 writeKind(), partitionId(), bitmap->cardinality(), target.getPartNameV1(), own_part->name);
         }
 
+        staged.carried.reserve(carried.size());
+        for (const auto & [link, held_in, file] : carried)
+        {
+            /// The version travels with the bytes: this part did not create the kills and its own
+            /// csn says nothing about when they apply.
+            const DeleteBitmapFileOps::BitmapFile in_result{link.csn, link.target.getPartNameV1()};
+            DeleteBitmapFileOps::carryBitmap(
+                held_in->getDataPartStorage(), file, own_part->getDataPartStorage(), in_result);
+            staged.carried.push_back(link);
+
+            LOG_TRACE(log, "UNIQUE KEY {} (partition {}): carried the delete bitmap of part {} "
+                "at csn {} from {} into {}",
+                writeKind(), partitionId(), link.target.getPartNameV1(), link.csn,
+                held_in->name, own_part->name);
+        }
+
+        /// The bytes stop here: what the commit carries on is the links, and holding every
+        /// carried bitmap of the merge until it returns would be the whole merge's worth.
         return staged;
     }
 
@@ -126,6 +145,10 @@ protected:
     /// Resolve conflicts with concurrent writes and fill the members below; `stage` writes
     /// what this leaves behind. False means there is nothing to commit.
     virtual bool resolveConflicts() = 0;
+
+    /// What this write has to copy in rather than originate -- see
+    /// `IBitmapStore::selectCarriedBitmaps`. Only a merge has any.
+    virtual std::vector<IBitmapStore::CarriedBitmap> selectCarriedBitmaps() { return {}; }
 
     /// Turn every delta in `kills_per_part` into the cumulative version that may actually go to disk
     CumulativeByPart cumulativeKills()
@@ -485,6 +508,16 @@ public:
     const DeleteBitmapPtr & lateKills() const { return own_kills; }
 
 protected:
+    std::vector<IBitmapStore::CarriedBitmap> selectCarriedBitmaps() override
+    {
+        std::vector<MergeTreePartInfo> sources;
+        sources.reserve(request.source_parts.size());
+        for (const auto & source : request.source_parts)
+            sources.push_back(source->info);
+
+        return store.selectCarriedBitmaps(sources);
+    }
+
     bool resolveConflicts() override
     {
         rejectUndeterminedTransactions("merge late-kill reconciliation");

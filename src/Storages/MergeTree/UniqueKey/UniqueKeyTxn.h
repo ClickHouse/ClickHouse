@@ -33,8 +33,7 @@ class PartitionWriteGuard;
 ///       1. stage:   check conflicts, write the bitmaps, register them in the store. Durable,
 ///                   not yet visible.
 ///       2. publish: register the part on the transaction. Active, not yet visible.
-///       3. commit:  csn = TransactionLog::commitTransaction(). Staged bitmaps become visible.
-///       4. settle:  move the staged bitmaps into their targets under the assigned csn.
+///       3. commit:  csn = TransactionLog::commitTransaction(). The bitmaps become visible.
 ///     Exit the critical section for the partition
 ///
 /// A write may stage several bitmaps and publishes one part. `UniqueKeyTxnManager` drives the
@@ -46,6 +45,18 @@ public:
     {
         /// The parts a staged bitmap was written for
         std::vector<MergeTreePartInfo> targets;
+        /// The links to the bitmaps this write copied in rather than originated -- see
+        /// `IBitmapStore::selectCarriedBitmaps`. The bytes are already on disk by then.
+        std::vector<IBitmapStore::BitmapLink> carried;
+
+        /// Every target this write is now on the hook for, in either role.
+        std::vector<MergeTreePartInfo> allTargets() const
+        {
+            std::vector<MergeTreePartInfo> all = targets;
+            for (const auto & link : carried)
+                all.push_back(link.target);
+            return all;
+        }
     };
 
     virtual ~IUniqueKeyCommit() = default;
@@ -84,9 +95,6 @@ public:
 
     /// Commit a write under a transaction, returning the commit sequence number of the commit point.
     CSN commitTransaction(MergeTreeTransactionHolder & transaction, IUniqueKeyCommit & write);
-
-    /// Settle every bitmap staged inside `part`, into its targets, at `part`'s own `creation_csn`.
-    IBitmapStore::SettleReport settleStagedBitmaps(const IMergeTreeDataPart & part);
 
     /// Reclaim delete-bitmap versions of `parts` that no live snapshot can still read.
     size_t runGCRound(const std::vector<MergeTreePartInfo> & parts);

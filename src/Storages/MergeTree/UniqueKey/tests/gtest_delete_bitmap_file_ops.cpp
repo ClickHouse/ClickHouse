@@ -4,7 +4,6 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/UniqueKey/tests/gtest_part_storage_fixture.h>
 
-#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <memory>
@@ -32,18 +31,18 @@ TEST(DeleteBitmapFileOpsTest, EnumerateFilesIgnoresUnrelatedFiles)
     {
         std::ofstream f1(fx.partFile("columns.txt").string());
         f1 << "x";
-        std::ofstream f2(fx.partFile("delete_bitmap_5.rbm.tmp").string());
+        std::ofstream f2(fx.partFile("delete_bitmap_5_for_all_1_1_0.rbm.tmp").string());
         f2 << "y"; /// `.tmp` sibling — not a finalized version
     }
 
     DeleteBitmap bm;
     bm.add(0);
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, /*version=*/3, bm);
+    writeCarried(*fx.storage, /*version=*/3, "all_1_1_0", bm);
 
     auto entries = DeleteBitmapFileOps::enumerateFiles(*fx.storage);
     ASSERT_EQ(entries.size(), 1u);
     EXPECT_EQ(entries[0].version, 3u);
-    EXPECT_EQ(entries[0].name, "delete_bitmap_3.rbm");
+    EXPECT_EQ(entries[0].fileName(), "delete_bitmap_3_for_all_1_1_0.rbm");
 }
 
 /// ---------- write / read ----------
@@ -56,12 +55,12 @@ TEST(DeleteBitmapFileOpsTest, WriteAndReadRoundtrip)
     in.add(3);
     in.add(7);
     in.add(12345);
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, /*version=*/5, in);
+    writeCarried(*fx.storage, /*version=*/5, "all_1_1_0", in);
 
-    EXPECT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_5.rbm")));
-    EXPECT_FALSE(std::filesystem::exists(fx.partFile("delete_bitmap_5.rbm.tmp")));
+    EXPECT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_5_for_all_1_1_0.rbm")));
+    EXPECT_FALSE(std::filesystem::exists(fx.partFile("delete_bitmap_5_for_all_1_1_0.rbm.tmp")));
 
-    auto loaded = DeleteBitmapFileOps::readBitmapFile(*fx.storage, DeleteBitmap::fileNameForCSN(5));
+    auto loaded = DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {5, "all_1_1_0"});
     ASSERT_NE(loaded, nullptr);
     EXPECT_EQ(loaded->cardinality(), 3u);
     EXPECT_TRUE(loaded->contains(3));
@@ -69,69 +68,59 @@ TEST(DeleteBitmapFileOpsTest, WriteAndReadRoundtrip)
     EXPECT_TRUE(loaded->contains(12345));
 }
 
-TEST(DeleteBitmapFileOpsTest, ReadMissingVersionThrows)
+TEST(DeleteBitmapFileOpsTest, ReadMissingVersionReportsAbsence)
 {
+    /// Null, not a throw: the caller has to tell "no such version" from a read that failed, and
+    /// only the store knows whether the index promised this one.
     PartStorageFixture fx{"file_ops"};
-    EXPECT_ANY_THROW({
-        auto _ = DeleteBitmapFileOps::readBitmapFile(*fx.storage, DeleteBitmap::fileNameForCSN(99));
-    });
+    EXPECT_EQ(DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {99, "all_1_1_0"}), nullptr);
 }
 
-TEST(DeleteBitmapFileOpsTest, TmpFileAbsentAfterWrite)
-{
-    /// Atomic-rename semantics: after `writeBitmapToStorage` returns, the
-    /// final file exists and the `.tmp` sibling does not.
-    PartStorageFixture fx{"file_ops"};
-    DeleteBitmap bm;
-    bm.add(42);
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, 9, bm);
-
-    EXPECT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_9.rbm")));
-    EXPECT_FALSE(std::filesystem::exists(fx.partFile("delete_bitmap_9.rbm.tmp")));
-}
 
 TEST(DeleteBitmapFileOpsTest, WriteClearsStaleTmpLeftover)
 {
     /// Simulate a crash-left-over `.tmp` from a previous run. A fresh
-    /// `writeBitmapToStorage` must not fail because of it — the
+    /// `carryBitmap` must not fail because of it — the
     /// implementation `removeFileIfExists` the tmp before opening.
     PartStorageFixture fx{"file_ops"};
 
     /// Plant a stale `.tmp` (fixture already created the part directory).
     {
-        std::ofstream stale(fx.partFile("delete_bitmap_4.rbm.tmp").string());
+        std::ofstream stale(fx.partFile("delete_bitmap_4_for_all_1_1_0.rbm.tmp").string());
         stale << "garbage";
     }
-    ASSERT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_4.rbm.tmp")));
+    ASSERT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_4_for_all_1_1_0.rbm.tmp")));
 
     DeleteBitmap bm;
     bm.add(11);
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, 4, bm);
+    writeCarried(*fx.storage, 4, "all_1_1_0", bm);
 
-    EXPECT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_4.rbm")));
-    EXPECT_FALSE(std::filesystem::exists(fx.partFile("delete_bitmap_4.rbm.tmp")));
+    EXPECT_TRUE(std::filesystem::exists(fx.partFile("delete_bitmap_4_for_all_1_1_0.rbm")));
+    EXPECT_FALSE(std::filesystem::exists(fx.partFile("delete_bitmap_4_for_all_1_1_0.rbm.tmp")));
 
-    auto loaded = DeleteBitmapFileOps::readBitmapFile(*fx.storage, DeleteBitmap::fileNameForCSN(4));
+    auto loaded = DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {4, "all_1_1_0"});
+    ASSERT_NE(loaded, nullptr);
     EXPECT_TRUE(loaded->contains(11));
 }
 
 TEST(DeleteBitmapFileOpsTest, OverwriteSameVersionIsIdempotent)
 {
-    /// `replaceFile` semantics: calling `writeBitmapToStorage` twice for the
+    /// `replaceFile` semantics: calling `carryBitmap` twice for the
     /// same version overwrites the previous file. Idempotent retry on flaky
     /// I/O lands the final bitmap.
     PartStorageFixture fx{"file_ops"};
 
     DeleteBitmap first;
     first.add(1);
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, 2, first);
+    writeCarried(*fx.storage, 2, "all_1_1_0", first);
 
     DeleteBitmap second;
     second.add(1);
     second.add(2);
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, 2, second);
+    writeCarried(*fx.storage, 2, "all_1_1_0", second);
 
-    auto loaded = DeleteBitmapFileOps::readBitmapFile(*fx.storage, DeleteBitmap::fileNameForCSN(2));
+    auto loaded = DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {2, "all_1_1_0"});
+    ASSERT_NE(loaded, nullptr);
     EXPECT_EQ(loaded->cardinality(), 2u);
     EXPECT_TRUE(loaded->contains(1));
     EXPECT_TRUE(loaded->contains(2));
@@ -139,79 +128,47 @@ TEST(DeleteBitmapFileOpsTest, OverwriteSameVersionIsIdempotent)
 
 /// ---------- tolerant reads ----------
 
-TEST(DeleteBitmapFileOpsTest, TryReadIsNullForAMissingFile)
+
+/// ---------- the carried name ----------
+
+TEST(DeleteBitmapFileOpsTest, ACarriedBitmapRoundTripsUnderItsOwnVersion)
 {
     PartStorageFixture fx{"file_ops"};
-    EXPECT_EQ(DeleteBitmapFileOps::tryReadVersion(*fx.storage, 7), nullptr);
-    EXPECT_EQ(DeleteBitmapFileOps::tryReadStagedFor(*fx.storage, "all_1_1_0"), nullptr);
 
-    DeleteBitmap bm;
-    bm.add(4);
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, 7, bm);
+    DeleteBitmap carried;
+    carried.add(2);
+    carried.add(9);
+    writeCarried(*fx.storage, /*version=*/12, "all_1_1_0", carried);
 
-    auto loaded = DeleteBitmapFileOps::tryReadVersion(*fx.storage, 7);
+    auto loaded = DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {12, "all_1_1_0"});
     ASSERT_NE(loaded, nullptr);
-    EXPECT_TRUE(loaded->contains(4));
+    EXPECT_TRUE(loaded->contains(2));
+    EXPECT_TRUE(loaded->contains(9));
+
+    /// Version and target both address it: neither alone finds the file.
+    EXPECT_EQ(DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {11, "all_1_1_0"}), nullptr);
+    EXPECT_EQ(DeleteBitmapFileOps::tryReadBitmap(*fx.storage, {0, "all_1_1_0"}), nullptr);
+
+    /// And it enumerates as a sidecar that knows its own version, not as one taking its holder's.
+    const auto files = DeleteBitmapFileOps::enumerateFiles(*fx.storage);
+    ASSERT_EQ(files.size(), 1u);
+    EXPECT_TRUE(files[0].isCarried());
+    EXPECT_EQ(files[0].version, 12u);
+    EXPECT_EQ(files[0].target, "all_1_1_0");
+    EXPECT_EQ(files[0].toString(), "12_for_all_1_1_0");
 }
 
-/// ---------- settleStagedFile ----------
-
-TEST(DeleteBitmapFileOpsTest, SettleStagedFilePublishesThenUnlinks)
-{
-    PartStorageFixture owner;
-    PartStorageFixture target{"file_ops_target"};
-
-    DeleteBitmap staged;
-    staged.add(2);
-    staged.add(9);
-    DeleteBitmapFileOps::writeStagedBitmapToStorage(*owner.storage, "all_1_1_0", staged);
-    const String staged_name = DeleteBitmap::fileNameForStagedTarget("all_1_1_0");
-
-    DeleteBitmapFileOps::settleStagedFile(*owner.storage, staged_name, *target.storage, /*version=*/12);
-
-    auto published = DeleteBitmapFileOps::tryReadVersion(*target.storage, 12);
-    ASSERT_NE(published, nullptr);
-    EXPECT_TRUE(published->contains(2));
-    EXPECT_TRUE(published->contains(9));
-    /// The staged copy is the durable record until the target has the bytes, and not after
-    EXPECT_FALSE(std::filesystem::exists(owner.partFile(staged_name)));
-}
-
-TEST(DeleteBitmapFileOpsTest, SettleStagedFileLeavesAVersionTheTargetAlreadyHas)
-{
-    /// A settle retried past a crash that published but did not unlink. Re-publishing would be
-    /// harmless here, but a target version is immutable once written, so prove it is not touched.
-    PartStorageFixture owner;
-    PartStorageFixture target{"file_ops_target"};
-
-    DeleteBitmap published;
-    published.add(5);
-    DeleteBitmapFileOps::writeBitmapToStorage(*target.storage, 12, published);
-
-    DeleteBitmap staged;
-    staged.add(77);
-    DeleteBitmapFileOps::writeStagedBitmapToStorage(*owner.storage, "all_1_1_0", staged);
-    const String staged_name = DeleteBitmap::fileNameForStagedTarget("all_1_1_0");
-
-    DeleteBitmapFileOps::settleStagedFile(*owner.storage, staged_name, *target.storage, /*version=*/12);
-
-    auto loaded = DeleteBitmapFileOps::tryReadVersion(*target.storage, 12);
-    ASSERT_NE(loaded, nullptr);
-    EXPECT_EQ(loaded->cardinality(), 1u);
-    EXPECT_TRUE(loaded->contains(5));
-    EXPECT_FALSE(std::filesystem::exists(owner.partFile(staged_name)));
-}
-
-TEST(DeleteBitmapFileOpsTest, RemoveVersionReportsWhetherTheFileWasThere)
+TEST(DeleteBitmapFileOpsTest, RemoveReportsWhetherTheFileWasThere)
 {
     PartStorageFixture fx{"file_ops"};
 
     DeleteBitmap bm;
     bm.add(1);
-    DeleteBitmapFileOps::writeBitmapToStorage(*fx.storage, 3, bm);
+    const DeleteBitmapFileOps::BitmapFile file{3, "all_1_1_0"};
+    writeCarried(*fx.storage, file.version, file.target, bm);
 
-    EXPECT_TRUE(DeleteBitmapFileOps::removeVersion(*fx.storage, 3));
-    EXPECT_FALSE(std::filesystem::exists(fx.partFile(DeleteBitmap::fileNameForCSN(3))));
+    EXPECT_TRUE(DeleteBitmapFileOps::removeBitmapFile(*fx.storage, file));
+    EXPECT_FALSE(std::filesystem::exists(fx.partFile(file.fileName())));
     /// The gc counts what it unlinked, so a version whose file is already gone must report false
-    EXPECT_FALSE(DeleteBitmapFileOps::removeVersion(*fx.storage, 3));
+    EXPECT_FALSE(DeleteBitmapFileOps::removeBitmapFile(*fx.storage, file));
 }

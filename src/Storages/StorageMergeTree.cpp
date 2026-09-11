@@ -233,9 +233,6 @@ StorageMergeTree::StorageMergeTree(
                         "You must either clear directory by hand or use ATTACH TABLE instead "
                         "of CREATE TABLE if you need to use those parts");
 
-    if (hasUniqueKey())
-        runUniqueKeySettleRound();
-
     increment.set(getMaxBlockNumber());
 
     loadMutations();

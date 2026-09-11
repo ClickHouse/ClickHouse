@@ -47,6 +47,13 @@ namespace Tx
     /// Maximum possible CSN for committed transactions (used for visibility checks)
     const CSN MaxCommittedCSN = RolledBackCSN - 1;
 
+    /// Whether `csn` names a point in the log. `UnknownCSN` and `CommittingCSN` are not one yet,
+    /// and `RolledBackCSN` never will be.
+    inline bool isCommittedCSN(CSN csn)
+    {
+        return csn != UnknownCSN && csn != CommittingCSN && csn != RolledBackCSN;
+    }
+
     const LocalTID NonTransactionalLocalTID = 1;
     const LocalTID DummyLocalTID = 2;
     const LocalTID MaxReservedLocalTID = 32;

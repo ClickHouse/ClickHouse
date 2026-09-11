@@ -18,13 +18,14 @@ namespace DB
 
 class IDataPartStorage;
 class IMergeTreeDataPart;
+class DataPartsAnyLock;
 class MergeTreeData;
 
 using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 
-/// MergeTree-backed bitmap store: one cumulative bitmap per part per commit, settled in that part's
-/// own directory as `delete_bitmap_<csn>.rbm`. A read at `snapshot_csn` takes the highest csn at or
-/// below it from an in-memory index.
+/// MergeTree-backed bitmap store: one cumulative bitmap per part per commit, written into the part
+/// whose transaction produced it and named for the part it kills. A read at `snapshot_csn` takes
+/// the highest csn at or below it from an in-memory index, wherever the bytes happen to live.
 class MergeTreeBitmapStore : public IBitmapStore
 {
 public:
@@ -37,50 +38,52 @@ public:
 
     size_t removeObsoleteBitmaps(const MergeTreePartInfo & part, CSN oldest_snapshot_csn) override;
 
-    std::vector<CSN> loadPart(const MergeTreePartInfo & part, const IDataPartStorage & storage) override;
+    void loadPart(const MergeTreePartInfo & part, const IDataPartStorage & storage) override;
     void dropPart(const IMergeTreeDataPart & part) override;
 
-    void registerStagedBitmaps(const MergeTreePartInfo & owner, const std::vector<MergeTreePartInfo> & targets) override;
-    std::vector<MergeTreePartInfo> stagedTargetsOf(const MergeTreePartInfo & owner) const override;
+    void registerStagedBitmaps(const MergeTreePartInfo & holder, const std::vector<MergeTreePartInfo> & targets) override;
+    void removeStagedBitmaps(const MergeTreePartInfo & holder, const std::vector<MergeTreePartInfo> & targets) override;
 
-    std::vector<MergeTreePartInfo> stagedOwners() const override;
-
-    SettleReport settleStagedBitmaps(
-        const MergeTreePartInfo & owner, const std::vector<MergeTreePartInfo> & targets, CSN csn) override;
-    SettleReport settleStagedBitmaps(const MergeTreePartInfo & owner, CSN csn) override;
-    void forgetStagedBitmaps(const MergeTreePartInfo & owner, const std::vector<MergeTreePartInfo> & targets) override;
+    bool isPinned(const IMergeTreeDataPart & part, const DataPartsAnyLock & lock) const override;
+    std::vector<CarriedBitmap> selectCarriedBitmaps(const std::vector<MergeTreePartInfo> & sources) const override;
+    void registerLinks(const MergeTreePartInfo & holder, const std::vector<BitmapLink> & links) override;
 
 private:
-    /// A bitmap file stages at the owner part until it's settled, so we use bi-directional links to find it
+    /// A bitmap file sits in the part that WROTE it, for good -- nothing moves it afterwards -- so
+    /// the index links the two ends and a read follows the link to the bytes.
     ///
-    ///     entries               PartEntry of all_1_1_0 (target)         the files those rows name
+    ///     entries               PartEntry of all_1_1_0 (the target)     the files those rows name
     ///     +-----------+         +-----------------------------+
-    ///     | all_1_1_0 |-------->| mutex   this part's lock    |         all_1_1_0/
-    ///     +-----------+         | settled       = [7, 12] ----|-->        delete_bitmap_7.rbm
-    ///     | all_5_5_0 |         |                             |-->        delete_bitmap_12.rbm
-    ///     +-----------+         | staged_owners = [all_9_9_0] |--+
-    ///     | all_9_9_0 |--+      | staged_for    = []          |  |      all_9_9_0/
-    ///     +-----------+  |      +-----------------------------+  +->      delete_bitmap_for_all_1_1_0.rbm
-    ///                    |                                       |
-    ///                    |      PartEntry of all_9_9_0 (owner)   |
-    ///                    |      +-----------------------------+  |
-    ///                    +----->| settled       = []          |  |
-    ///                           | staged_owners = []          |  |
-    ///                           | staged_for    = [all_1_1_0] |--+
+    ///     | all_1_1_0 |-------->| mutex   this part's lock    |
+    ///     +-----------+         | outward  = []               |
+    ///     | all_5_5_0 |         | inward   = [all_9_9_0]      |--+
+    ///     +-----------+         +-----------------------------+  |      all_9_9_0/
+    ///     | all_9_9_0 |--+                                       +->      delete_bitmap_for_all_1_1_0.rbm
+    ///     +-----------+  |      PartEntry of all_9_9_0 (the holder) |
+    ///                    |      +-----------------------------+     |
+    ///                    +----->| outward  = [all_1_1_0]      |-----+
+    ///                           | inward   = []               |
     ///                           +-----------------------------+
+
+    /// The same link read from the target's end. One field differs from `BitmapLink` and it is
+    /// the one that matters: the part named here HOLDS the bitmap. Two types rather than one
+    /// alias, so the compiler refuses a holder where a target is wanted -- collapsing them cost
+    /// a real bug once.
+    struct HeldBy
+    {
+        MergeTreePartInfo holder;
+        CSN csn = 0;
+        bool operator==(const HeldBy & other) const = default;
+    };
+
+    /// Both vectors hold the same links, from the two ends: `outward` is what this part keeps
+    /// for others, `inward` is who keeps this part's.
     struct PartEntry
     {
         std::mutex mutex;
 
-        /// The publish of one of this part's staged bitmaps, so two settlers of one version cannot
-        /// both stage through `<name>.tmp`. Not `mutex`: that one is on the read path.
-        /// Order is settle_mutex -> mutex.
-        std::mutex settle_mutex;
-        /// Ascending csns of the settled files in the part's own directory.
-        std::vector<CSN> settled;
-
-        std::vector<MergeTreePartInfo> staged_owners;
-        std::vector<MergeTreePartInfo> staged_for;
+        std::vector<BitmapLink> outward;
+        std::vector<HeldBy> inward;
     };
     using PartEntryPtr = std::shared_ptr<PartEntry>;
 
@@ -91,54 +94,55 @@ private:
     PartEntryPtr getOrCreateEntry(const MergeTreePartInfo & part) const;
     PartEntryPtr findEntry(const MergeTreePartInfo & part) const;
 
-    void removeStagedFor(const MergeTreePartInfo & owner, const MergeTreePartInfo & target);
-    void removeStagedOwner(const MergeTreePartInfo & owner, const MergeTreePartInfo & target);
-
     /// The part in {Active, Outdated}, or null. The returned pointer IS the pin on its directory.
     DataPartPtr findPart(const MergeTreePartInfo & info) const;
 
-    /// One version of one part, and where its bytes are.
+    /// Remove every link between two parts, or just the one version.
+    void removeAllLinks(const MergeTreePartInfo & holder, const MergeTreePartInfo & target);
+    void removeLink(const MergeTreePartInfo & holder, const MergeTreePartInfo & target, CSN csn);
+
+    /// What `holder` holds for other parts, and who holds `target`'s.
+    std::vector<BitmapLink> getOutwardLinks(const MergeTreePartInfo & holder) const;
+    std::vector<HeldBy> getInwardLinks(const MergeTreePartInfo & target) const;
+
+    /// Whether a committed part other than `holder` already carries version `csn` of `target`,
+    /// which is what lets `holder` go without losing the kill.
+    bool hasPublishedInwardLink(
+        const MergeTreePartInfo & target,
+        const MergeTreePartInfo & holder,
+        CSN csn,
+        const DataPartsAnyLock & lock) const;
+
+    /// One version of one part, and which part's directory the bytes are in.
     struct Version
     {
         CSN csn = 0;
-        /// Null: the part's own `delete_bitmap_<csn>.rbm`. Otherwise the part still holding this
-        /// version staged, where it is named after the target instead.
-        DataPartPtr staged_in;
+        DataPartPtr held_in;
+        /// Which of the two names `held_in` filed it under. Recorded rather than derived from
+        /// `csn != held_in->creation_csn`: the index is ours to shape here, and a resolver that
+        /// guesses cannot tell a wrong name from a missing file.
+        bool carried = false;
+
+        /// Where the bytes are filed: a carried name records its version, a staged one leaves it
+        /// to whoever holds the file.
+        DeleteBitmapFileOps::BitmapFile fileFor(const String & target_name) const
+        {
+            return {carried ? csn : 0, target_name};
+        }
     };
 
-    /// The staged versions those owners hold, csn-resolved.
-    std::vector<Version> stagedVersions(const std::vector<MergeTreePartInfo> & owners) const;
+    /// The versions those links point at, csn-resolved.
+    std::vector<Version> heldVersions(const std::vector<HeldBy> & links) const;
+
+    /// The version a part's own writes have -- its `creation_csn` -- or nothing while that csn is
+    /// not yet a committed one.
+    static std::optional<Version> resolveOwnVersion(const DataPartPtr & holder);
 
     /// The highest version <= `snapshot_csn`
     std::optional<Version> versionAt(const MergeTreePartInfo & part, CSN snapshot_csn) const;
 
-    /// Read one version's bytes, following it if a settle moved them meanwhile.
+    /// Read one version's bytes, from whichever of the two names its writer filed it under.
     DeleteBitmapPtr readVersion(const IMergeTreeDataPart & part, const Version & version) const;
-
-    /// Private, not on the interface: a caller of `IBitmapStore` sees only the `SettleReport` these
-    /// collapse into.
-    enum class SettleOutcome
-    {
-        Published,
-        Unlinked,
-        Deferred,
-        Failed,
-    };
-
-    SettleOutcome settleOneStagedFile(
-        const IMergeTreeDataPart & owner,
-        const MergeTreePartInfo & target,
-        CSN csn);
-
-    /// The two halves of the above, each holding at most one entry lock at a time.
-    SettleOutcome sweepOrphanTarget(
-        const IMergeTreeDataPart & owner,
-        const MergeTreePartInfo & target);
-
-    SettleOutcome publishStagedFile(
-        const IMergeTreeDataPart & owner,
-        const IMergeTreeDataPart & target,
-        CSN csn);
 
     LoggerPtr log;
     /// Co-owned with `Context`, so it cannot dangle; null when bitmap caching is off.

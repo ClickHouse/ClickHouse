@@ -12,7 +12,6 @@
 
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/Exception.h>
-#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -31,11 +30,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int SUPPORT_IS_DISABLED;
-}
-
-namespace FailPoints
-{
-    extern const char unique_key_defer_bitmap_settle[];
 }
 
 class PartitionWriteGuard
@@ -84,7 +78,14 @@ size_t UniqueKeyTxnManager::runGCRound(const std::vector<MergeTreePartInfo> & pa
 
     size_t reclaimed = 0;
     for (const auto & part : parts)
+    {
+        /// A sweep removes bitmap files, which makes it a writer in the part's partition like any
+        /// other. Without the guard a merge can pick a file to carry and find it gone by the time
+        /// it copies: the version it picked is the newest its SOURCES hold, which a part outside
+        /// the merge can already have superseded, putting it below the floor this round reclaims.
+        PartitionWriteGuard write_guard(partitionLock(part.getPartitionId()));
         reclaimed += bitmap_store->removeObsoleteBitmaps(part, oldest_snapshot);
+    }
 
     return reclaimed;
 }
@@ -109,7 +110,7 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
     chassert(txn, "UNIQUE KEY commit requires the transaction the part was written under");
 
     std::optional<IUniqueKeyCommit::StagedWrite> staged;
-    std::optional<MergeTreePartInfo> registered_owner;
+    std::optional<MergeTreePartInfo> registered_holder;
     CSN csn = INVALID_CSN;
 
     const std::string_view kind = write.writeKind();
@@ -131,43 +132,27 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
             return INVALID_CSN;
         }
 
-        LOG_TRACE(log, "UNIQUE KEY {} (partition {}): staged bitmaps for {} target(s)",
-            kind, partition_id, staged->targets.size());
+        LOG_TRACE(log, "UNIQUE KEY {} (partition {}): staged bitmaps for {} target(s), carried {}",
+            kind, partition_id, staged->targets.size(), staged->carried.size());
 
         /// Must precede the commit, which moves the transaction to `CommittingCSN`: `addNewPart`
         /// rejects a transaction already there. The part is Active but not yet visible.
-        const IMergeTreeDataPart & owner = write.publish(write_guard, txn, *staged);
+        const IMergeTreeDataPart & holder = write.publish(write_guard, txn, *staged);
 
         LOG_TRACE(log, "UNIQUE KEY {} (partition {}): published part {}, not yet visible",
-            kind, partition_id, owner.name);
+            kind, partition_id, holder.name);
 
         /// Before the commit point, so the moment this part becomes visible its staged bitmaps
         /// are already discoverable from their targets.
-        bitmapStore().registerStagedBitmaps(owner.info, staged->targets);
-        registered_owner = owner.info;
+        bitmapStore().registerStagedBitmaps(holder.info, staged->targets);
+        bitmapStore().registerLinks(holder.info, staged->carried);
+        registered_holder = holder.info;
 
         /// Commit point
         csn = TransactionLog::instance().commitTransaction(txn, /*throw_on_unknown_status=*/true);
 
         LOG_TRACE(log, "UNIQUE KEY {} (partition {}): committed part {} at csn {}",
-            kind, partition_id, owner.name, csn);
-
-        bool defer_settle = false;
-        fiu_do_on(FailPoints::unique_key_defer_bitmap_settle, { defer_settle = true; });
-
-        if (!defer_settle)
-        {
-            /// TODO(unique-key): move the settle out of the write lock
-            const auto report = bitmapStore().settleStagedBitmaps(owner.info, staged->targets, csn);
-            LOG_TRACE(log, "UNIQUE KEY {} (partition {}): settled {} of {} staged bitmap(s) of part {} at csn {}",
-                kind, partition_id, staged->targets.size() - report.deferred - report.failed,
-                staged->targets.size(), owner.name, csn);
-            if (report.anyOutstanding())
-                LOG_WARNING(log,
-                    "Staged bitmaps of part {} are not fully settled at csn {} ({} deferred, {} "
-                    "failed); the next settle will retry",
-                    owner.name, csn, report.deferred, report.failed);
-        }
+            kind, partition_id, holder.name, csn);
     }
     catch (...)
     {
@@ -175,8 +160,8 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
             kind, partition_id, csn, txn->tid);
         rollbackTransaction(txn);
 
-        if (registered_owner && txn && txn->getState() == MergeTreeTransaction::ROLLED_BACK)
-            bitmapStore().forgetStagedBitmaps(*registered_owner, staged->targets);
+        if (registered_holder && txn && txn->getState() == MergeTreeTransaction::ROLLED_BACK)
+            bitmapStore().removeStagedBitmaps(*registered_holder, staged->allTargets());
 
         throw;
     }
@@ -186,21 +171,6 @@ CSN UniqueKeyTxnManager::commitTransaction(MergeTreeTransactionHolder & transact
     TransactionLog::instance().waitForCSNLoaded(csn);
 
     return csn;
-}
-
-IBitmapStore::SettleReport UniqueKeyTxnManager::settleStagedBitmaps(const IMergeTreeDataPart & part)
-{
-    /// Read the authoritative CSN
-    const CSN csn = part.version->getInfo().creation_csn;
-
-    if (csn == Tx::UnknownCSN || csn == Tx::RolledBackCSN)
-        return {};
-
-    /// Defer the settle
-    if (csn == Tx::CommittingCSN)
-        return {.deferred = bitmap_store->stagedTargetsOf(part.info).size()};
-
-    return bitmap_store->settleStagedBitmaps(part.info, csn);
 }
 
 }

@@ -34,6 +34,8 @@ namespace
     constexpr std::string_view FILE_PREFIX = "delete_bitmap_";
     /// Longer than FILE_PREFIX and sharing it, so every name check must try this one first.
     constexpr std::string_view STAGED_FILE_PREFIX = "delete_bitmap_for_";
+    /// Separates the csn from the target in the carried form.
+    constexpr std::string_view CARRIED_INFIX = "_for_";
     constexpr std::string_view FILE_SUFFIX = ".rbm";
 
     /// Keeps `memoryUsage()` non-zero for an empty bitmap so cache weighting works.
@@ -70,7 +72,7 @@ namespace
     }
 
     /// The slice between `prefix` and the `.rbm` suffix, or an empty view if `file_name` does
-    /// not have that shape. Numeric for the settled form, a part name for the staged one.
+    /// not have that shape.
     std::string_view extractSlice(std::string_view file_name, std::string_view prefix)
     {
         if (file_name.size() <= prefix.size() + FILE_SUFFIX.size())
@@ -82,19 +84,29 @@ namespace
         return file_name.substr(prefix.size(), file_name.size() - prefix.size() - FILE_SUFFIX.size());
     }
 
-    std::string_view extractCSNPart(std::string_view file_name)
-    {
-        /// A staged bitmap also starts with FILE_PREFIX, so screen it out first.
-        if (file_name.starts_with(STAGED_FILE_PREFIX))
-            return {};
-        return extractSlice(file_name, FILE_PREFIX);
-    }
-
     bool isCanonicalDecimal(std::string_view digits)
     {
         /// `tryParse<UInt64>` accepts a leading `+` and ignores leading zeros, so a noncanonical
         /// name would resolve to the same number as the canonical one and confuse the reader.
         return !digits.empty() && std::ranges::all_of(digits, isNumericASCII);
+    }
+
+    /// The `{csn}` and `{target}` slices of a carried name, or two empty views if `file_name` is
+    /// not one. Splits on the FIRST `_for_`, because a partition id may itself contain one and the
+    /// csn may not -- `isCanonicalDecimal` is what rules the leading slice in or out.
+    std::pair<std::string_view, std::string_view> splitCarried(std::string_view file_name)
+    {
+        const auto slice = extractSlice(file_name, FILE_PREFIX);
+        const auto infix = slice.find(CARRIED_INFIX);
+        if (infix == std::string_view::npos)
+            return {};
+
+        const auto csn_part = slice.substr(0, infix);
+        const auto target = slice.substr(infix + CARRIED_INFIX.size());
+        if (!isCanonicalDecimal(csn_part) || target.empty())
+            return {};
+
+        return {csn_part, target};
     }
 
     /// Public `DeleteBitmap` methods dispatch into the right overload below via
@@ -652,22 +664,6 @@ DeleteBitmapInspection inspectDeleteBitmap(ReadBuffer & in, bool collect_values)
     return result;
 }
 
-std::string DeleteBitmap::fileNameForCSN(BitmapVersion csn)
-{
-    return fmt::format("{}{}{}", FILE_PREFIX, csn, FILE_SUFFIX);
-}
-
-bool DeleteBitmap::isDeleteBitmapFile(std::string_view file_name)
-{
-    auto csn_part = extractCSNPart(file_name);
-    if (!isCanonicalDecimal(csn_part))
-        return false;
-    UInt64 parsed = 0;
-    if (!tryParse<UInt64>(parsed, csn_part))
-        return false;
-    return fileNameForCSN(parsed) == file_name;
-}
-
 std::string DeleteBitmap::fileNameForStagedTarget(std::string_view target_part_name)
 {
     return fmt::format("{}{}{}", STAGED_FILE_PREFIX, target_part_name, FILE_SUFFIX);
@@ -686,13 +682,29 @@ std::string DeleteBitmap::parseStagedTargetFromFileName(std::string_view file_na
     return std::string(extractSlice(file_name, STAGED_FILE_PREFIX));
 }
 
-BitmapVersion DeleteBitmap::parseCSNFromFileName(std::string_view file_name)
+std::string DeleteBitmap::fileNameForCarriedTarget(BitmapVersion csn, std::string_view target_part_name)
 {
-    /// Caller is expected to have screened the name via `isDeleteBitmapFile`.
-    /// If they didn't, `parse<UInt64>` throws on a malformed slice rather than
-    /// silently returning 0.
-    auto csn_part = extractCSNPart(file_name);
-    return parse<BitmapVersion>(csn_part);
+    return fmt::format("{}{}{}{}{}", FILE_PREFIX, csn, CARRIED_INFIX, target_part_name, FILE_SUFFIX);
+}
+
+bool DeleteBitmap::isCarriedBitmapFile(std::string_view file_name)
+{
+    const auto [csn_part, target] = splitCarried(file_name);
+    if (csn_part.empty())
+        return false;
+
+    BitmapVersion parsed = 0;
+    if (!tryParse<BitmapVersion>(parsed, csn_part))
+        return false;
+    return fileNameForCarriedTarget(parsed, target) == file_name;
+}
+
+DeleteBitmap::CarriedName DeleteBitmap::parseCarriedFromFileName(std::string_view file_name)
+{
+    /// Caller is expected to have screened the name via `isCarriedBitmapFile`; `parse` throws on a
+    /// malformed slice rather than silently returning csn 0, which would read as "no version".
+    const auto [csn_part, target] = splitCarried(file_name);
+    return {parse<BitmapVersion>(csn_part), std::string(target)};
 }
 
 }

@@ -18,9 +18,8 @@ namespace DB
 class StorageMergeTree;
 
 /// The three writes that implement `IUniqueKeyCommit`, one entry point each. The protocol they
-/// run -- stage, publish, commit, settle, all inside one hold of the partition guard -- is
-/// described on `IUniqueKeyCommit`; what differs per write is only what it kills and what it
-/// publishes.
+/// run -- stage, publish, commit, all inside one hold of the partition guard -- is described on
+/// `IUniqueKeyCommit`; what differs per write is only what it kills and what it publishes.
 class UniqueKeyTxnCommit
 {
 public:

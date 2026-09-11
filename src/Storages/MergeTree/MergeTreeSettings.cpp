@@ -2419,8 +2419,7 @@ Possible values:
 The interval of refreshing statistics cache in seconds. If it is set to zero, the refreshing will be disabled.
 )", 0) \
     DECLARE(Seconds, unique_key_gc_interval_seconds, 60, R"(
-For UNIQUE KEY tables, the interval in seconds between background rounds that reclaim obsolete delete-bitmap versions.
-If set to zero, that reclamation is disabled; staged bitmaps are still settled, because reads depend on it.
+For UNIQUE KEY tables, the interval in seconds between background rounds that reclaim superseded delete-bitmap versions. Zero disables them.
 )", EXPERIMENTAL) \
     DECLARE(UniqueKeyConflictAction, unique_key_conflict_action, UniqueKeyConflictAction::Overwrite, R"(
 For `UNIQUE KEY` tables, how an INSERT resolves a key that already exists live in the partition:
