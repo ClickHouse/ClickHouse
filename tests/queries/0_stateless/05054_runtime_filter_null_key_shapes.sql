@@ -4,6 +4,7 @@
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET join_algorithm = 'hash';
+SET join_runtime_filter_from_fixed_hash_table = 0;
 SET join_runtime_filter_min_probe_rows = 0;
 SET query_plan_join_swap_table = 0;
 SET query_plan_optimize_join_order_algorithm = 'greedy';

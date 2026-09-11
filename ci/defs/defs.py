@@ -101,6 +101,23 @@ SECRETS = [
     ),
 ]
 
+# Push-only secrets: consumed by the loom code.refresh pre_hook, which runs
+# only in MasterCI and ReleaseBranchCI. Kept out of the shared SECRETS list
+# so untrusted lanes (pull_request, backport) never register them and PR
+# code cannot resolve the loom writer token via Info.get_secret.
+LOOM_SECRETS = [
+    Secret.Config(
+        name="loom-url",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+    Secret.Config(
+        name="loom-ci-token",
+        type=Secret.Type.AWS_SSM_PARAMETER,
+        region="us-east-1",
+    ),
+]
+
 # In-region AWS Ubuntu mirror. Canonical's archive.ubuntu.com (amd64) /
 # ports.ubuntu.com (arm64) are frequently unreachable over IPv4 from the runners
 # and have no IPv6 route; the in-region mirror is reachable and fast. Passed as
@@ -381,7 +398,7 @@ class BuildTypes(metaclass=MetaClasses.WithIter):
     # browser. A CMake project of its own rather than a target of this tree, with its own
     # toolchain and its own job script - see `build_wasm_parser.py`.
     WASM_PARSER = "wasm_parser"
-    ARM_FUZZERS = "arm_fuzzers"
+    AMD_FUZZERS = "amd_fuzzers"
     AMD_CFI = "amd_cfi"
 
 
@@ -451,6 +468,7 @@ class JobNames:
     JEPSEN_KEEPER = "ClickHouse Keeper Jepsen"
     JEPSEN_SERVER = "ClickHouse Server Jepsen"
     LIBFUZZER_TEST = "libFuzzer tests"
+    LIBFUZZER_CORPUS_MINIMIZATION = "libFuzzer corpus minimization"
     PARSER_MEMORY_CHECK = "Parser memory check"
     BUILD_TOOLCHAIN = "Build Toolchain (PGO, BOLT)"
     UPDATE_TOOLCHAIN_DOCKERFILE = "Update Toolchain Dockerfile"
@@ -524,7 +542,7 @@ class ArtifactNames:
     TGZ_AMD_RELEASE = "TGZ_AMD_RELEASE"
     TGZ_ARM_RELEASE = "TGZ_ARM_RELEASE"
 
-    ARM_FUZZERS = "ARM_FUZZERS"
+    AMD_FUZZERS = "AMD_FUZZERS"
     FUZZERS_CORPUS = "FUZZERS_CORPUS"
     CLICKHOUSE_EXAMPLES = "CLICKHOUSE_EXAMPLES"
 
@@ -754,7 +772,7 @@ class ArtifactConfigs:
         ],
     )
     fuzzers = Artifact.Config(
-        name=ArtifactNames.ARM_FUZZERS,
+        name=ArtifactNames.AMD_FUZZERS,
         type=Artifact.Type.S3,
         path=[
             f"{TEMP_DIR}/build/programs/*_fuzzer",
