@@ -35,12 +35,13 @@ struct YTsaurusSettings
 
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     void loadFromQuery(ASTStorage & storage_def);
+    // For table engine
     void loadFromQuery(const ASTSetQuery & settings_def);
     void loadFromNamedCollection(const NamedCollection & named_collection);
+    // For Dictionary source
+    void loadFromConfig(const Poco::Util::AbstractConfiguration & config, const String & prefix);
     void set(const std::string & name, const std::string & value);
 
-    static YTsaurusSettings createFromQuery(ASTStorage & storage_def);
-    static YTsaurusSettings createFromQuery(const ASTSetQuery & settings_def);
     static bool hasBuiltin(std::string_view name);
 
 private:
