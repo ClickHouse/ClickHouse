@@ -7,16 +7,33 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
-ClickHouse Managed Postgres é um serviço gerenciado de Postgres de nível empresarial, criado para desempenho e escala. Com armazenamento NVMe fisicamente colocalizado com o processamento, ele oferece desempenho até 10 vezes superior para workloads com gargalo de disco, em comparação com alternativas que usam armazenamento conectado à rede, como o EBS.
+ClickHouse Managed Postgres é um serviço gerenciado de Postgres de nível empresarial, criado para desempenho e escala. Com armazenamento NVMe fisicamente colocalizado com o processamento, ele oferece desempenho até 10 vezes superior para cargas de trabalho com gargalo de disco, em comparação com alternativas que usam armazenamento conectado à rede, como o EBS.
 
 Desenvolvido em parceria com a [Ubicloud](https://www.ubicloud.com/), cuja equipe fundadora tem um histórico de oferecer Postgres de classe mundial na Citus Data, Heroku e Microsoft, o ClickHouse Managed Postgres resolve os desafios de desempenho que aplicações em rápido crescimento costumam enfrentar: ingestão e atualizações mais lentas, vacuums lentos, aumento da latência de cauda e picos de WAL causados por IOPS de disco limitados.
 
-{/* TODO: Diagrama de arquitetura mostrando a integração entre Postgres e ClickHouse
-    Caminho: /images/cloud/managed-postgres/architecture-overview.png */}
+## Postgres para transações, ClickHouse para analytics {#transactions-and-analytics}
+
+Use o Postgres para cargas de trabalho transacionais de aplicação (OLTP), como criação de pedidos, atualização de estoque e gerenciamento de contas de usuário. O Postgres é a sua fonte da verdade: alterações relacionadas podem receber commit ou ser revertidas em conjunto dentro de uma transação.
+
+Quando sua aplicação também precisar de analytics sobre grandes volumes de dados, adicione um serviço ClickHouse e conecte os dois com o ClickPipes:
+
+```mermaid
+flowchart LR
+    Application -->|Reads and writes| Postgres
+    Postgres -->|Committed changes via ClickPipes| ClickHouse
+    Analytics -->|Queries| ClickHouse
+```
+
+1. Sua aplicação lê e grava dados operacionais no Postgres, usando transações para agrupar alterações relacionadas.
+2. [Configure o ClickPipes](/pt-BR/products/managed-postgres/clickhouse-integration) para copiar tabelas selecionadas para o ClickHouse e replicar continuamente inserções, atualizações e exclusões confirmadas por meio de change data capture (CDC).
+3. Execute consultas analíticas no ClickHouse. Você pode se conectar diretamente ao ClickHouse ou consultar suas tabelas a partir do Postgres por meio da extensão [`pg_clickhouse`](/pt-BR/products/managed-postgres/extensions/pg_clickhouse/introduction).
+
+A replicação é assíncrona, portanto os resultados analíticos podem ficar defasados em relação às alterações já confirmadas no Postgres. Os dois bancos de dados têm limites de transação separados: o CDC e o `pg_clickhouse` não oferecem uma transação compartilhada entre Postgres e ClickHouse. Leituras que exijam o estado mais recente confirmado da aplicação devem usar o Postgres.
+
+Você pode começar apenas com o Postgres e adicionar o ClickHouse quando precisar. Siga o [quickstart do ClickHouse Managed Postgres](/pt-BR/products/managed-postgres/quickstart) para experimentar os dois serviços ou vá direto para [adicionar analytics](/pt-BR/products/managed-postgres/quickstart#part-2) se você já tiver um serviço Postgres.
 
 ## Desempenho impulsionado por NVMe {#nvme-performance}
 

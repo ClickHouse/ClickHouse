@@ -10,7 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <div id="what-is-standard-onboarding">
-  ## 標準オンボーディングとは？
+  ## 標準オンボーディングとは？ {#what-is-standard-onboarding}
 </div>
 
 **標準オンボーディング** は、BYOC を使用してお客様自身のクラウドアカウントに ClickHouse をデプロイするための、標準的なガイド付きワークフローです。この方式では、ClickHouse Cloud が、デプロイに必要な主要なクラウドリソース (VPC/VNet、サブネット、セキュリティグループ、Kubernetes (EKS/GKE/AKS) クラスター、関連する IAM ロール、サービスアカウント、サービスプリンシパルなど) を、お客様の AWS アカウント、GCP プロジェクト、または Azure サブスクリプション内にまとめてプロビジョニングします。これにより、一貫性のある安全な構成を確保しつつ、お客様のチームに必要な手動作業を最小限に抑えられます。
@@ -26,18 +26,16 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Note>
 
 <div id="request-access">
-  ## アクセスを申請する
+  ## アクセスを申請する {#request-access}
 </div>
 
 オンボーディングを開始するには、[お問い合わせください](https://clickhouse.com/cloud/bring-your-own-cloud)。当社のチームがBYOCの要件をご案内し、最適なデプロイメントオプションの選定を支援するとともに、お客様のアカウントを許可リストに追加します。
 
 <div id="onboarding-process">
-  ## オンボーディング
+  ## オンボーディング {#onboarding-process}
 </div>
 
-<div id="prepare-an-aws-account">
-  ### AWS アカウント/GCP プロジェクト/Azure サブスクリプションを準備する
-</div>
+### AWS アカウント/GCP プロジェクト/Azure サブスクリプションを準備する {#prepare-an-aws-account}
 
 組織配下に新しい AWS アカウント、GCP プロジェクト、または Azure サブスクリプションを用意します。
 
@@ -59,7 +57,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       ClickHouseの実行に必要なStorage buckets、VPC/VNet、Kubernetes cluster、コンピュートリソースは、この初期セットアップには含まれません。これらは次のステップでプロビジョニングされます。
     </Note>
 
-    #### AWS向けTerraform Module
+    #### AWS向けTerraform Module {#terraform-module-aws}
 
     AWSデプロイメントでCloudFormationではなくTerraformを使用する場合は、[terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) moduleを使用してください。
 
@@ -78,7 +76,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
       このモジュールは以前、`https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`でtarballとして配布されていました。このURLは現在も利用できますが、非推奨です。上記のGitHubモジュールを使用してください。
     </Note>
 
-    #### AWS 外部ID
+    #### AWS 外部ID {#aws-external-id}
 
     AWSでは、セットアップ時に作成されるIAMロールが、混乱した代理者問題を防ぐために[外部ID](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) を使用してClickHouse Cloudを信頼します。ClickHouse Cloud consoleは、オンボーディングを開始するとAWSアカウント用の外部IDを生成し、CloudFormationリンクにあらかじめ入力します。Terraformを使用する場合は、同じ値を`external_id`として渡してください。同じAWSアカウント上のすべてのBYOCインフラストラクチャは、同じ外部IDを共有します。
 
@@ -102,9 +100,9 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     * **アベイラビリティゾーン**: VPC peering を予定している場合は、ソースアカウントと BYOC アカウントのアベイラビリティゾーンを揃えることで、AZ 間トラフィックのコスト削減につながる場合があります。たとえば AWS では、アベイラビリティゾーンの接尾辞 (`a`、`b`、`c`) が、アカウントごとに異なる物理ゾーン ID を表すことがあります。詳細については、[AWS ガイド](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)を参照してください。
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC インフラストラクチャの設定" background="black" />
+    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="BYOC インフラストラクチャをセットアップする" background="black" />
 
-    #### 事前検証
+    #### 事前検証 {#preflight-validation}
 
     **Set up Infrastructure** をクリックすると、ClickHouse Cloud はリソースを作成する前に、アカウントに対して一連の**読み取り専用**のプリフライトチェックを実行します。すべてのチェックに合格すると、プロビジョニングが続行されます。チェックに失敗した場合、セットアップは一時停止され、問題の内容が console に正確に表示されるため、リソースが作成される前に修正できます。
 
@@ -113,6 +111,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
     * **権限** — 管理ID (IAM role / service account / service principal) に、ClickHouse Cloudがデプロイメントをプロビジョニングおよび運用するために必要な権限が付与されています。
     * **有効化されたサービス** *(GCP)* — 必要なGoogle Cloud API (Compute Engine、Kubernetes Engine、Cloud Storage、Network Connectivity、IAM) がプロジェクトで有効になっています。
     * **ネットワーク** *(AWS の既存VPC使用)* — VPCとサブネットが、サブネットサイズ、必要なタグ、アベイラビリティゾーンの分散、アウトバウンド接続、利用可能なIPアドレスに関する[ネットワーク要件](/ja/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)を満たしています。
+    * **ネットワーク** *(GCP の既存VPC使用)* — VPCとサブネットが[ネットワーク要件](/ja/products/bring-your-own-cloud/onboarding/customization-gcp#configure-existing-vpc)を満たしています。すなわち、ネットワークとサブネットが解決でき、サブネットのプライマリ範囲とポッド用のセカンダリ範囲が十分に大きく、Cloud NAT ゲートウェイがそのネットワークをカバーしています。
     * **クォータとガードレール** *(AWS)* — アカウントに十分なサービスクォータ (VPC、NAT ゲートウェイ、Elastic IP、EKS クラスター、vCPUs) があり、必要なアクションを妨げる組織ポリシー (SCP) が設定されていません。
 
     チェックが失敗した場合、各チェックには対応するアクションと失敗理由が併記されて一覧表示されます (例: `iam:CreateRole · explicitDeny`)。成功したチェックをすべて確認するには、**Show passed checks** を展開してください。
@@ -126,21 +125,20 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     よくある障害の解決には、以下の表を参照してください。
 
-    | 検証エラー                                                                                                                       | 考えられる原因                                                                                        | 解決方法                                                                                                                     |
-    | --------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-    | **管理ロールを引き受けられない** *(AWS)*                                                                                                  | オンボーディングスタックが完了していないか、ロールまたは外部 ID が一致していません                                                    | 最新のオンボーディングスタックを再実行し、consoleに表示される[外部ID](#aws-external-id)がtrust policyのものと一致することを確認してください                               |
-    | **管理用service accountを偽装できません** *(GCP)*                                                                                      | オンボーディング用Terraformが完了していないか、`clickhouse-management`サービスアカウントが存在しないか、ClickHouseによる権限借用を許可していません | 最新のオンボーディング用Terraformを再実行し、`clickhouse-management` サービスアカウントが存在し、ClickHouseにそのサービスアカウントを偽装する権限が付与されていることを確認してください        |
-    | **必要な権限がない** (例: VPCの作成、IAMロールの作成、Kubernetesクラスターの作成)                                                                       | 管理アイデンティティに必要な権限がありません。多くの場合、カスタマイズされたスタックまたは古いスタックが原因です                                       | すべての権限セットを付与する最新のオンボーディングスタックを再実行します。意図的に権限を制限している場合は、報告された権限を追加します                                                      |
-    | **必要な API が有効になっていません** *(GCP)*                                                                                             | プロジェクトで必要な Google Cloud サービス API が無効になっている                                                     | たとえば、`gcloud services enable compute.googleapis.com --project <your-project>`を実行して有効にします                                 |
-    | **サブネットまたはVPCの設定に関する問題** *(AWS bring-your-own-VPC)* — CIDRが小さすぎる、タグがない、アベイラビリティゾーンが少なすぎる、アウトバウンドegressがない、または空きIPアドレスが少なすぎる | 指定された VPC が BYOC のネットワーク要件を満たしていない                                                             | VPCを調整して、[ネットワーク要件](/ja/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)を満たしてください         |
-    | **サービスクォータが不足しています** *(AWS)*                                                                                                | 必要なリソースに対するアカウントのクォータが不足しています                                                                  | クラウドプロバイダーにクォータの引き上げを依頼してください。詳細については、[AWS サービス制限](/ja/products/bring-your-own-cloud/reference/aws-service-limits)を参照してください |
-    | **組織ポリシー / SCP によってブロック** *(AWS)*                                                                                           | 組織のガードレールにより、アカウントに必要なアクションが拒否されています                                                           | クラウド管理者と連携し、BYOCアカウントでそのアクションを許可してください                                                                                   |
+    | 検証エラー                                                                                                                                          | 考えられる原因                                                                                        | 解決方法                                                                                                                     |
+    | ---------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+    | **管理ロールを引き受けられない** *(AWS)*                                                                                                                     | オンボーディングスタックが完了していないか、ロールまたは外部 ID が一致していません                                                    | 最新のオンボーディングスタックを再実行し、consoleに表示される[外部ID](#aws-external-id)がtrust policyのものと一致することを確認してください                               |
+    | **管理用service accountを偽装できません** *(GCP)*                                                                                                         | オンボーディング用Terraformが完了していないか、`clickhouse-management`サービスアカウントが存在しないか、ClickHouseによる権限借用を許可していません | 最新のオンボーディング用Terraformを再実行し、`clickhouse-management` サービスアカウントが存在し、ClickHouseにそのサービスアカウントを偽装する権限が付与されていることを確認してください        |
+    | **必要な権限がない** (例: VPCの作成、IAMロールの作成、Kubernetesクラスターの作成)                                                                                          | 管理アイデンティティに必要な権限がありません。多くの場合、カスタマイズされたスタックまたは古いスタックが原因です                                       | すべての権限セットを付与する最新のオンボーディングスタックを再実行します。意図的に権限を制限している場合は、報告された権限を追加します                                                      |
+    | **必要な API が有効になっていません** *(GCP)*                                                                                                                | プロジェクトで必要な Google Cloud サービス API が無効になっている                                                     | たとえば、`gcloud services enable compute.googleapis.com --project <your-project>`を実行して有効にします                                 |
+    | **サブネットまたはVPCの設定に関する問題** *(AWS bring-your-own-VPC)* — CIDRが小さすぎる、タグがない、アベイラビリティゾーンが少なすぎる、アウトバウンドegressがない、または空きIPアドレスが少なすぎる                    | 指定された VPC が BYOC のネットワーク要件を満たしていない                                                             | VPCを調整して、[ネットワーク要件](/ja/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)を満たしてください         |
+    | **サブネットまたはVPCの設定に関する問題** *(GCP bring-your-own-VPC)* — ネットワークまたはサブネットが見つからない、プライマリ範囲またはポッドのセカンダリ範囲が小さすぎる、あるいはそのネットワークをカバーする Cloud NAT ゲートウェイがない | 指定された VPC が BYOC のネットワーク要件を満たしていない                                                             | VPCを調整して、[ネットワーク要件](/ja/products/bring-your-own-cloud/onboarding/customization-gcp#configure-existing-vpc)を満たしてください         |
+    | **サービスクォータが不足しています** *(AWS)*                                                                                                                   | 必要なリソースに対するアカウントのクォータが不足しています                                                                  | クラウドプロバイダーにクォータの引き上げを依頼してください。詳細については、[AWS サービス制限](/ja/products/bring-your-own-cloud/reference/aws-service-limits)を参照してください |
+    | **組織ポリシー / SCP によってブロック** *(AWS)*                                                                                                              | 組織のガードレールにより、アカウントに必要なアクションが拒否されています                                                           | クラウド管理者と連携し、BYOCアカウントでそのアクションを許可してください                                                                                   |
   </Step>
 </Steps>
 
-<div id="create-clickhouse-service">
-  ### 最初の BYOC ClickHouse サービスを作成する
-</div>
+### 最初の BYOC ClickHouse サービスを作成する {#create-clickhouse-service}
 
 BYOC インフラストラクチャのプロビジョニングが完了したら、最初の ClickHouse サービスを起動する準備は整っています。ClickHouse Cloud コンソールを開き、BYOC 環境を選択して、画面の案内に従って新しいサービスを作成します。
 

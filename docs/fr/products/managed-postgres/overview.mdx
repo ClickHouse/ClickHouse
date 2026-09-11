@@ -1,22 +1,39 @@
 ---
 slug: /cloud/managed-postgres
 title: 'ClickHouse Managed Postgres'
-description: 'Postgres rapide, évolutif et de qualité entreprise, avec stockage NVMe et intégration native à ClickHouse pour des analyses en temps réel'
+description: 'Postgres rapide, évolutif et de niveau entreprise, avec stockage NVMe et intégration native à ClickHouse pour des analyses en temps réel'
 keywords: ['Managed Postgres', 'PostgreSQL', 'base de données cloud', 'service Postgres', 'Postgres NVMe', 'intégration ClickHouse']
 doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
 ClickHouse Managed Postgres est un service Managed Postgres de niveau entreprise conçu pour la performance et le passage à l’échelle. Reposant sur un stockage NVMe physiquement colocalisé avec les ressources de calcul, il offre jusqu’à 10x plus de performances pour les charges de travail limitées par le disque que les alternatives reposant sur du stockage réseau comme EBS.
 
-Conçu en partenariat avec [Ubicloud](https://www.ubicloud.com/), dont l’équipe fondatrice a fait ses preuves dans la fourniture d’un Postgres de classe mondiale chez Citus Data, Heroku et Microsoft, ClickHouse Managed Postgres résout les problèmes de performance que rencontrent souvent les applications en forte croissance : ingestion et mises à jour plus lentes, vacuums lents, hausse de la latence des requêtes les plus lentes et pics de WAL dus à des IOPS disque limitées.
+Conçu en partenariat avec [Ubicloud](https://www.ubicloud.com/), dont l’équipe fondatrice a fait ses preuves dans la fourniture d’un Postgres de classe mondiale chez Citus Data, Heroku et Microsoft, ClickHouse Managed Postgres résout les problèmes de performance que rencontrent souvent les applications en forte croissance : ingestion et mises à jour plus lentes, vacuums lents, hausse de la latence des requêtes les plus lentes et pics de WAL dus à des IOPS disque limitées.
 
-{/* TODO : Schéma d’architecture illustrant l’intégration entre Postgres et ClickHouse
-    Chemin : /images/cloud/managed-postgres/architecture-overview.png */}
+## Postgres pour les transactions, ClickHouse pour l&#39;analytique {#transactions-and-analytics}
+
+Utilisez Postgres pour les charges de travail applicatives transactionnelles (OLTP), comme la création de commandes, la mise à jour des stocks et la gestion des comptes utilisateurs. Postgres est votre système de référence : les modifications liées peuvent être validées ou annulées ensemble au sein d&#39;une même transaction.
+
+Lorsque votre application a également besoin d&#39;analytique sur de grands jeux de données, ajoutez un service ClickHouse et reliez les deux avec ClickPipes :
+
+```mermaid
+flowchart LR
+    Application -->|Reads and writes| Postgres
+    Postgres -->|Committed changes via ClickPipes| ClickHouse
+    Analytics -->|Queries| ClickHouse
+```
+
+1. Votre application lit et écrit des données opérationnelles dans Postgres, en utilisant des transactions pour regrouper les modifications liées.
+2. [Configurez ClickPipes](/fr/products/managed-postgres/clickhouse-integration) pour copier les tables sélectionnées vers ClickHouse et répliquer en continu les insertions, mises à jour et suppressions validées grâce au change data capture (CDC).
+3. Exécutez vos requêtes analytiques dans ClickHouse. Vous pouvez vous connecter directement à ClickHouse ou interroger ses tables depuis Postgres via l&#39;extension [`pg_clickhouse`](/fr/products/managed-postgres/extensions/pg_clickhouse/introduction).
+
+La réplication est asynchrone : les résultats analytiques peuvent donc accuser un retard par rapport aux modifications validées dans Postgres. Les deux bases de données ont des limites transactionnelles distinctes : le CDC et `pg_clickhouse` ne fournissent pas de transaction partagée entre Postgres et ClickHouse. Les lectures qui nécessitent l&#39;état applicatif validé le plus récent doivent passer par Postgres.
+
+Vous pouvez commencer avec Postgres seul et ajouter ClickHouse lorsque le besoin s&#39;en fait sentir. Suivez le [démarrage rapide ClickHouse Managed Postgres](/fr/products/managed-postgres/quickstart) pour essayer les deux services, ou rendez-vous directement à la section [ajout des fonctionnalités analytiques](/fr/products/managed-postgres/quickstart#part-2) si vous disposez déjà d&#39;un service Postgres.
 
 ## Performances propulsées par le NVMe {#nvme-performance}
 

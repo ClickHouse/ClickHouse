@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
@@ -15,8 +14,26 @@ ClickHouse Managed Postgres는 성능과 확장성을 위해 설계된 엔터프
 
 Citus Data, Heroku, Microsoft에서 세계적 수준의 Postgres를 제공한 경험을 보유한 창립 팀의 [Ubicloud](https://www.ubicloud.com/)와 협력해 구축된 ClickHouse Managed Postgres는 빠르게 성장하는 애플리케이션이 흔히 겪는 성능 문제, 즉 느린 수집 및 업데이트, 지연되는 VACUUM 작업, 증가하는 테일 지연 시간, 그리고 제한된 디스크 IOPS로 인한 WAL 스파이크를 해결합니다.
 
-{/* TODO: Postgres + ClickHouse 통합 아키텍처 다이어그램
-    경로: /images/cloud/managed-postgres/architecture-overview.png */}
+## 트랜잭션에는 Postgres, 분석에는 ClickHouse {#transactions-and-analytics}
+
+주문 생성, 재고 업데이트, 사용자 계정 관리와 같은 트랜잭션 애플리케이션 워크로드(OLTP)에는 Postgres를 사용하십시오. Postgres는 신뢰할 수 있는 기록 시스템(system of record)으로서, 연관된 변경 사항을 하나의 트랜잭션으로 함께 커밋하거나 롤백할 수 있습니다.
+
+애플리케이션에서 대규모 데이터셋에 대한 분석까지 필요하다면, ClickHouse 서비스를 추가하고 ClickPipes로 두 시스템을 연결하십시오:
+
+```mermaid
+flowchart LR
+    Application -->|Reads and writes| Postgres
+    Postgres -->|Committed changes via ClickPipes| ClickHouse
+    Analytics -->|Queries| ClickHouse
+```
+
+1. 애플리케이션은 트랜잭션으로 관련 변경 사항을 묶어 Postgres에서 운영 데이터를 읽고 씁니다.
+2. [ClickPipes를 구성](/ko/products/managed-postgres/clickhouse-integration)하여 선택한 테이블을 ClickHouse로 복사하고, CDC(Change Data Capture)를 통해 커밋된 삽입, UPDATE, 삭제를 지속적으로 복제합니다.
+3. ClickHouse에서 분석 쿼리를 실행합니다. ClickHouse에 직접 연결하거나, [`pg_clickhouse`](/ko/products/managed-postgres/extensions/pg_clickhouse/introduction) 확장 기능을 통해 Postgres에서 ClickHouse의 테이블을 쿼리할 수 있습니다.
+
+복제는 비동기 방식이므로 분석 결과가 Postgres에 커밋된 변경 사항보다 지연될 수 있습니다. 두 데이터베이스는 트랜잭션 경계가 서로 분리되어 있으며, CDC와 `pg_clickhouse`는 Postgres와 ClickHouse에 걸친 공유 트랜잭션을 제공하지 않습니다. 최신 커밋된 애플리케이션 상태가 필요한 읽기에는 Postgres를 사용하십시오.
+
+Postgres만으로 시작한 뒤 필요할 때 ClickHouse를 추가할 수 있습니다. 두 서비스를 모두 사용해 보려면 [ClickHouse Managed Postgres 빠른 시작](/ko/products/managed-postgres/quickstart)을 따라 진행하고, 이미 Postgres 서비스를 사용하고 있다면 [분석 기능 추가](/ko/products/managed-postgres/quickstart#part-2)로 바로 이동하십시오.
 
 ## NVMe 기반 성능 {#nvme-performance}
 

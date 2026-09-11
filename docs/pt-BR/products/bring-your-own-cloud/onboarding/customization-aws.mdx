@@ -10,7 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/pt-BR/components/Image.jsx";
 
 <div id="customer-managed-vpc-aws">
-  ## VPC gerenciada pelo cliente (BYO-VPC) para AWS
+  ## VPC gerenciada pelo cliente (BYO-VPC) para AWS {#customer-managed-vpc-aws}
 </div>
 
 Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez de deixar que o ClickHouse Cloud provisione uma nova VPC, siga as etapas abaixo. Essa abordagem oferece maior controle sobre a configuração da rede e permite integrar o ClickHouse BYOC à infraestrutura de rede existente.
@@ -54,7 +54,7 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
       Storage buckets, Kubernetes cluster, and compute resources required for running ClickHouse aren&#39;t included in this initial setup. They will be provisioned in a later step. While you control your VPC, ClickHouse Cloud still requires IAM permissions to create and manage the Kubernetes cluster, IAM roles for service accounts, S3 buckets, and other essential resources in your AWS account.
     </Note>
 
-    #### Módulo do Terraform
+    #### Módulo do Terraform {#terraform-module-aws}
 
     Se você preferir usar Terraform em vez de CloudFormation, use o módulo [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -98,9 +98,16 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
   </Step>
 </Steps>
 
-<div id="customer-managed-iam-roles">
-  ## IAM roles gerenciados pelo cliente
-</div>
+### Subnets compartilhadas de outra conta (AWS RAM) {#shared-subnets-ram}
+
+Você pode executar o BYOC em uma conta spoke usando subnets compartilhadas por uma conta hub com o [AWS Resource Access Manager (RAM)](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html), o que permite manter a rede centralizada. A configuração é a mesma descrita acima, com duas diferenças decorrentes do comportamento dos compartilhamentos do RAM:
+
+* **Aplique as tags a partir da conta spoke.** Recursos compartilhados via RAM têm uma visão de tags por conta, portanto as tags aplicadas na conta hub não ficam visíveis para a spoke. Aplique `clickhouse-byoc="true"` à VPC e `kubernetes.io/role/internal-elb=1` junto com `clickhouse-byoc="true"` a cada subnet compartilhada, **a partir da conta spoke**. Sem isso, a validação de pré-verificação reporta tags ausentes e o provisionamento falha.
+* **O roteamento permanece com a conta hub.** As route tables das subnets compartilhadas continuam pertencendo à conta hub, que é, portanto, responsável pelo NAT e pelo roteamento de egress, bem como pelo endpoint gateway do S3, já que esse é um recurso no nível da VPC. Confirme que as subnets compartilhadas ainda atendem ao requisito de conectividade de saída descrito acima.
+
+Todo o restante permanece igual: três private subnets distribuídas em três availability zones, um CIDR mínimo de `/25` por subnet e a configuração do `ClickHouseManagementRole` na conta spoke onde a infraestrutura BYOC é executada.
+
+## IAM roles gerenciados pelo cliente {#customer-managed-iam-roles}
 
 Para organizações com requisitos avançados de segurança ou políticas rígidas de compliance, você pode fornecer seus próprios IAM roles em vez de deixar que o ClickHouse Cloud os crie. Essa abordagem dá a você controle total sobre as permissões do IAM e permite aplicar as políticas de segurança da sua organização.
 

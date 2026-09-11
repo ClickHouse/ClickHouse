@@ -9,45 +9,47 @@ doc_type: 'reference'
 
 ## FAQ {#faq}
 
-### Intégration et provisionnement {#onboarding-and-provisioning}
+### Onboarding et provisionnement {#onboarding-and-provisioning}
 
-<Accordion title="Comment démarrer avec BYOC ?">
-  Contactez ClickHouse via le [formulaire de contact](https://clickhouse.com/cloud/bring-your-own-cloud) afin que l&#39;équipe active BYOC pour votre organisation. Préparez ensuite un compte cloud dédié (compte AWS, projet GCP ou abonnement Azure) et suivez le [guide d’intégration standard](/fr/products/bring-your-own-cloud/onboarding/standard). Nous recommandons vivement d&#39;utiliser un compte, projet ou abonnement exclusivement réservé à BYOC.
+<Accordion title="Comment démarrer avec BYOC ?">
+  Contactez ClickHouse via le [formulaire de contact](https://clickhouse.com/cloud/bring-your-own-cloud) afin que l&#39;équipe active BYOC pour votre organisation. Préparez ensuite un compte cloud dédié (compte AWS, projet GCP ou abonnement Azure) et suivez le [guide d’onboarding standard](/fr/products/bring-your-own-cloud/onboarding/standard). Nous recommandons vivement d&#39;utiliser un compte, projet ou abonnement exclusivement réservé à BYOC.
 </Accordion>
 
-<Accordion title="Combien de temps prend le provisionnement de l’infrastructure et quelles sont les causes courantes de blocage ?">
-  Comptez environ 45 à 90 minutes de bout en bout. Cette fourchette est large, car la majeure partie de ce temps est consacrée au provisionnement des ressources par le fournisseur cloud (cluster Kubernetes, équilibreurs de charge, composants réseau), dont la durée varie d&#39;une exécution à l&#39;autre et échappe au contrôle de ClickHouse. Lorsque le provisionnement se bloque, les causes les plus fréquentes sont liées au compte :
+<Accordion title="Combien de temps prend le provisionnement de l’infrastructure et quelles sont les causes courantes de blocage ?">
+  Comptez environ 45 à 90 minutes de bout en bout. Cette fourchette est large, car la majeure partie de ce temps est consacrée au provisionnement des ressources par le fournisseur cloud (cluster Kubernetes, équilibreurs de charge, composants réseau), dont la durée varie d&#39;une exécution à l&#39;autre et échappe au contrôle de ClickHouse. Lorsque le provisionnement se bloque, les causes les plus fréquentes sont liées au compte :
 
   * Le modèle CloudFormation ou le module Terraform a été modifié avant d&#39;être appliqué — par exemple, par l&#39;ajout d&#39;un `PermissionsBoundary` ou le renommage du rôle IAM pour respecter une convention de nommage (sur AWS, conservez le nom par défaut `ClickHouseManagementRole`, sauf si ClickHouse a explicitement approuvé un autre nom). Appliquez les artefacts tels qu&#39;ils sont fournis — les personnalisations prises en charge sont disponibles sous forme de paramètres, et toute autre modification doit d&#39;abord être approuvée par ClickHouse.
   * Des politiques au niveau de l&#39;organisation (SCP AWS, politiques d&#39;organisation GCP telles que `iam.allowedPolicyMemberDomains`, ou politiques Azure restreignant les attributions de rôles) empêchent l&#39;assumption de rôles ou les liaisons IAM.
-  * Une non-correspondance de l&#39;ID externe du rôle d’intégration (voir la question sur l&#39;ID externe ci-dessous).
+  * Une non-correspondance de l&#39;ID externe du rôle d’onboarding (voir la question sur l&#39;ID externe ci-dessous).
   * Des quotas de compte atteints (par exemple, pour les Elastic IP ou les VPC sur AWS).
 
   Le provisionnement réessaie automatiquement et se rétablit une fois le problème sous-jacent résolu. Si votre infrastructure reste bloquée pendant plus de quelques heures, contactez l&#39;assistance.
 </Accordion>
 
-<Accordion title="Quelle valeur utiliser pour l’ID externe dans le modèle d’intégration ?">
-  La console ClickHouse Cloud génère un ID externe pour votre compte AWS lorsque vous démarrez l’intégration et le préremplit dans le lien CloudFormation (le paramètre `ExternalID`) ; si vous utilisez Terraform, transmettez la même valeur sous la forme `external_id`. Toutes les infrastructures BYOC d&#39;un même compte AWS partagent le même ID externe. Ne choisissez pas votre propre valeur : elle doit correspondre à celle attendue par l&#39;automatisation de ClickHouse, faute de quoi le rôle intercompte ne peut pas être assumé et le provisionnement échoue. Consultez [ID externe AWS](/fr/products/bring-your-own-cloud/onboarding/standard#aws-external-id) pour plus de détails.
+<Accordion title="Quelle valeur utiliser pour l’ID externe dans le modèle d’onboarding ?">
+  La console ClickHouse Cloud génère un ID externe pour votre compte AWS lorsque vous démarrez l’onboarding et le préremplit dans le lien CloudFormation (le paramètre `ExternalID`) ; si vous utilisez Terraform, transmettez la même valeur sous la forme `external_id`. Toutes les infrastructures BYOC d&#39;un même compte AWS partagent le même ID externe. Ne choisissez pas votre propre valeur : elle doit correspondre à celle attendue par l&#39;automatisation de ClickHouse, faute de quoi le rôle intercompte ne peut pas être assumé et le provisionnement échoue. Consultez [ID externe AWS](/fr/products/bring-your-own-cloud/onboarding/standard#aws-external-id) pour plus de détails.
 </Accordion>
 
-<Accordion title="Pourquoi mon ID externe est-il emptyid ?">
-  Les infrastructures BYOC intégrées avant l&#39;introduction des ID externes utilisent la valeur d&#39;espace réservé `emptyid` afin d&#39;assurer la compatibilité descendante. Lorsque vous ajoutez une nouvelle infrastructure à un compte AWS comportant un déploiement hérité, la console réutilise cet espace réservé afin que toutes les infrastructures du compte conservent une configuration de confiance cohérente. Si vous souhaitez passer à un ID externe unique, contactez ClickHouse Support.
+<Accordion title="Pourquoi mon ID externe est-il emptyid ?">
+  Les infrastructures BYOC onboardées avant l&#39;introduction des ID externes utilisent la valeur d&#39;espace réservé `emptyid` afin d&#39;assurer la compatibilité descendante. Lorsque vous ajoutez une nouvelle infrastructure à un compte AWS comportant un déploiement hérité, la console réutilise cet espace réservé afin que toutes les infrastructures du compte conservent une configuration de confiance cohérente. Si vous souhaitez passer à un ID externe unique, contactez ClickHouse Support.
 </Accordion>
 
-<Accordion title="BYOC peut-il utiliser un VPC existant ? Qu’en est-il des VPC partagés ?">
-  Sur AWS et GCP, vous pouvez effectuer le déploiement dans un VPC existant appartenant au **même** compte ou projet que l&#39;infrastructure BYOC. Consultez les guides de personnalisation pour [AWS](/fr/products/bring-your-own-cloud/onboarding/customization-aws) et [GCP](/fr/products/bring-your-own-cloud/onboarding/customization-gcp). Sur GCP, un **VPC partagé** d&#39;un projet hôte distinct est également pris en charge : le [module d’intégration](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) accepte directement le projet hôte et le sous-réseau — consultez sa section « Shared VPC » pour connaître la configuration requise et les prérequis. La possibilité d&#39;utiliser votre propre VNet sur Azure sera bientôt disponible.
+<Accordion title="BYOC peut-il utiliser un VPC existant ? Qu’en est-il des VPC partagés ?">
+  Sur AWS et GCP, vous pouvez effectuer le déploiement dans un VPC existant appartenant au **même** compte ou projet que l&#39;infrastructure BYOC. Consultez les guides de personnalisation pour [AWS](/fr/products/bring-your-own-cloud/onboarding/customization-aws) et [GCP](/fr/products/bring-your-own-cloud/onboarding/customization-gcp). Sur GCP, un **VPC partagé** d&#39;un projet hôte distinct est également pris en charge : le [module d’onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) accepte directement le projet hôte et le sous-réseau — consultez sa section « Shared VPC » pour connaître la configuration requise et les prérequis. La possibilité d&#39;utiliser votre propre VNet sur Azure sera bientôt disponible.
 
-  Sur AWS, les sous-réseaux partagés depuis un autre compte (AWS RAM) ne sont pas pris en charge — utilisez plutôt un compte dédié connecté à votre réseau existant via l&#39;appairage VPC ou PrivateLink. Notez qu&#39;avec un VPC géré par le client, seul l&#39;équilibreur de charge privé est activé par défaut (voir [configuration](/fr/products/bring-your-own-cloud/configuration/configurations)).
+  Sur AWS, les sous-réseaux partagés depuis un autre compte avec AWS Resource Access Manager (RAM) sont également pris en charge, ce qui vous permet de centraliser le réseau dans un compte hub et d&#39;exécuter l&#39;infrastructure BYOC dans un compte spoke. Un prérequis est propre à cette configuration : les ressources partagées via RAM disposent d&#39;une vue des tags propre à chaque compte, si bien que le compte **spoke** doit appliquer lui-même les tags requis sur le VPC et les sous-réseaux — les tags appliqués depuis le compte hub ne sont pas visibles depuis le compte spoke, et le provisionnement échoue en leur absence. Les tables de routage restent la propriété du compte hub, qui demeure responsable du NAT et du routage sortant sur les sous-réseaux partagés. Consultez le [guide de personnalisation AWS](/fr/products/bring-your-own-cloud/onboarding/customization-aws) pour connaître les tags et les autres exigences.
+
+  Notez qu&#39;avec un VPC géré par le client, seul l&#39;équilibreur de charge privé est activé par défaut (voir [configuration](/fr/products/bring-your-own-cloud/configuration/configurations)).
 </Accordion>
 
-<Accordion title="BYOC peut-il être installé dans un cluster Kubernetes existant ?">
-  Non. Le cluster Kubernetes (EKS, GKE ou AKS) est créé et entièrement géré par ClickHouse. Cela est nécessaire pour que ClickHouse puisse exploiter la plateforme de manière fiable et la maintenir à jour.
+<Accordion title="BYOC peut-il être installé dans un cluster Kubernetes existant ?">
+  Non. Le cluster Kubernetes (EKS, GKE ou AKS) est créé et entièrement géré par ClickHouse. C&#39;est nécessaire pour que ClickHouse puisse exploiter la plateforme de manière fiable et la maintenir à jour.
 </Accordion>
 
-<Accordion title="Pouvons-nous exécuter nos propres charges de travail dans le cluster BYOC ou le compte cloud ?">
-  Dans le compte cloud : c&#39;est possible, mais les ressources colocalisées relèvent toujours, dans une certaine mesure, du périmètre d&#39;autorisations de ClickHouse — sur AWS, la plupart des autorisations d&#39;écriture sont limitées par tag et préfixe (les ressources provisionnées par ClickHouse portent `clickhouse-byoc=true`), mais un petit nombre d&#39;actions EC2 ne peuvent pas être limitées par tag ; sur GCP et Azure, les identités d&#39;onboarding disposent d&#39;autorisations limitées au projet ou à l&#39;abonnement. Séparez vos ressources de celles provisionnées par ClickHouse et privilégiez un compte, un projet ou un abonnement dédié dans chaque cloud : cela reste vivement recommandé.
+<Accordion title="Pouvons-nous exécuter nos propres charges de travail dans le cluster BYOC ou le compte cloud ?">
+  Dans le compte cloud : c&#39;est possible, mais les ressources colocalisées relèvent toujours, dans une certaine mesure, du périmètre d&#39;autorisations de ClickHouse — sur AWS, la plupart des autorisations d&#39;écriture sont limitées par tag et préfixe (les ressources provisionnées par ClickHouse portent `clickhouse-byoc=true`), mais un petit nombre d&#39;actions EC2 ne peuvent pas être limitées par tag ; sur GCP et Azure, les identités d&#39;onboarding disposent d&#39;autorisations limitées au projet ou à l&#39;abonnement. Séparez vos ressources de celles provisionnées par ClickHouse et privilégiez un compte, un projet ou un abonnement dédié dans chaque cloud : cela reste vivement recommandé.
 
-  Dans le cluster Kubernetes : c&#39;est possible sous certaines contraintes — utilisez vos propres groupes de nœuds avec des taints et des tolerations, n&#39;utilisez pas les espaces de noms gérés par ClickHouse et n&#39;installez pas de contrôleurs d&#39;admission ni de moteurs de politiques à l&#39;échelle du cluster, car ils peuvent bloquer la réconciliation des composants ClickHouse. Décrivez votre projet au support afin que nous puissions confirmer qu&#39;il n&#39;y a pas de conflits.
+  Dans le cluster Kubernetes : c&#39;est possible sous certaines contraintes — utilisez vos propres groupes de nœuds avec des taints et des tolerations, n&#39;utilisez pas les espaces de noms gérés par ClickHouse et n&#39;installez pas de contrôleurs d&#39;admission ni de moteurs de politiques à l&#39;échelle du cluster, car ils peuvent bloquer la réconciliation des composants ClickHouse. Décrivez votre projet au support afin que nous puissions confirmer qu&#39;il n&#39;y a pas de conflits.
 </Accordion>
 
 ### Calcul et mise à l’échelle {#compute}

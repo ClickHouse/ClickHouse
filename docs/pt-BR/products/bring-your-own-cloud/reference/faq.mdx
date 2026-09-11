@@ -37,11 +37,13 @@ doc_type: 'reference'
 <Accordion title="O BYOC pode usar uma VPC existente? E VPCs compartilhadas?">
   Na AWS e no GCP, é possível implantar em uma VPC existente que esteja na **mesma** conta ou projeto da infraestrutura BYOC. Consulte os guias de personalização para [AWS](/pt-BR/products/bring-your-own-cloud/onboarding/customization-aws) e [GCP](/pt-BR/products/bring-your-own-cloud/onboarding/customization-gcp). No GCP, também há suporte para uma **VPC compartilhada** de um projeto host separado: o [módulo de onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) aceita diretamente o projeto host e a sub-rede — consulte a seção &quot;Shared VPC&quot; para instruções de configuração e pré-requisitos. A opção de usar sua própria VNet no Azure estará disponível em breve.
 
-  Na AWS, não há suporte para sub-redes compartilhadas de outra conta (AWS RAM) — em vez disso, use uma conta dedicada conectada à sua rede existente por meio de VPC peering ou PrivateLink. Observe que, com uma VPC gerenciada pelo cliente, apenas o balanceador de carga privado é habilitado por padrão (consulte a [configuração](/pt-BR/products/bring-your-own-cloud/configuration/configurations)).
+  Na AWS, também há suporte para sub-redes compartilhadas de outra conta com o AWS Resource Access Manager (RAM), o que permite manter a rede centralizada em uma conta hub e executar a infraestrutura BYOC em uma conta spoke. Há um pré-requisito específico dessa configuração: recursos compartilhados via RAM têm uma visão de tags por conta, portanto a própria conta **spoke** deve aplicar as tags necessárias de VPC e sub-rede — tags aplicadas a partir da conta hub não são visíveis para a spoke, e o provisionamento falha sem elas. As tabelas de rotas continuam sob propriedade da conta hub, que permanece responsável pelo NAT e pelo roteamento de saída nas sub-redes compartilhadas. Consulte o [guia de personalização da AWS](/pt-BR/products/bring-your-own-cloud/onboarding/customization-aws) para conhecer as tags e outros requisitos.
+
+  Observe que, com uma VPC gerenciada pelo cliente, apenas o balanceador de carga privado é habilitado por padrão (consulte a [configuração](/pt-BR/products/bring-your-own-cloud/configuration/configurations)).
 </Accordion>
 
-<Accordion title="O BYOC pode ser instalado em um cluster do Kubernetes existente?">
-  Não. O cluster do Kubernetes (EKS, GKE ou AKS) é criado e totalmente gerenciado pela ClickHouse. Isso é necessário para que a ClickHouse possa operar a plataforma de forma confiável e mantê-la atualizada.
+<Accordion title="O BYOC pode ser instalado em um cluster do Kubernetes já existente?">
+  Não. O cluster do Kubernetes (EKS, GKE ou AKS) é criado e totalmente gerenciado pelo ClickHouse. Isso é necessário para que o ClickHouse possa operar a plataforma de forma confiável e mantê-la atualizada.
 </Accordion>
 
 <Accordion title="Podemos executar nossas próprias cargas de trabalho no cluster ou na conta de Cloud do BYOC?">

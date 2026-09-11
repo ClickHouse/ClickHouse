@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
@@ -15,8 +14,26 @@ ClickHouse Managed Postgres es un servicio gestionado de Postgres de nivel empre
 
 Desarrollado en colaboración con [Ubicloud](https://www.ubicloud.com/), cuyo equipo fundador cuenta con una trayectoria ofreciendo Postgres de primer nivel en Citus Data, Heroku y Microsoft, ClickHouse Managed Postgres resuelve los problemas de rendimiento a los que suelen enfrentarse las aplicaciones de rápido crecimiento: ingestión y actualizaciones más lentas, operaciones de vacuum lentas, mayor latencia de cola y picos de WAL provocados por IOPS de disco limitados.
 
-{/* TODO: Diagrama de arquitectura de la integración entre Postgres y ClickHouse
-    Ruta: /images/cloud/managed-postgres/architecture-overview.png */}
+## Postgres para transacciones, ClickHouse para analítica {#transactions-and-analytics}
+
+Use Postgres para las cargas de trabajo transaccionales de las aplicaciones (OLTP), como crear pedidos, actualizar el inventario y gestionar cuentas de usuario. Postgres es su sistema de registro: los cambios relacionados pueden confirmarse (commit) o revertirse en conjunto dentro de una misma transacción.
+
+Cuando su aplicación además necesite analítica sobre grandes conjuntos de datos, agregue un servicio de ClickHouse y conecte ambos con ClickPipes:
+
+```mermaid
+flowchart LR
+    Application -->|Reads and writes| Postgres
+    Postgres -->|Committed changes via ClickPipes| ClickHouse
+    Analytics -->|Queries| ClickHouse
+```
+
+1. Su aplicación lee y escribe datos operativos en Postgres, usando transacciones para agrupar cambios relacionados.
+2. [Configure ClickPipes](/es/products/managed-postgres/clickhouse-integration) para copiar tablas seleccionadas a ClickHouse y replicar de forma continua las inserciones, actualizaciones y eliminaciones confirmadas mediante change data capture (CDC).
+3. Ejecute consultas analíticas en ClickHouse. Puede conectarse directamente a ClickHouse o consultar sus tablas desde Postgres a través de la extensión [`pg_clickhouse`](/es/products/managed-postgres/extensions/pg_clickhouse/introduction).
+
+La replicación es asíncrona, por lo que los resultados analíticos pueden ir con retraso respecto a los cambios confirmados en Postgres. Ambas bases de datos tienen límites de transacción independientes: CDC y `pg_clickhouse` no ofrecen una transacción compartida entre Postgres y ClickHouse. Las lecturas que requieran el último estado confirmado de la aplicación deben realizarse en Postgres.
+
+Puede comenzar solo con Postgres y añadir ClickHouse cuando lo necesite. Siga la [guía de inicio rápido de ClickHouse Managed Postgres](/es/products/managed-postgres/quickstart) para probar ambos servicios, o vaya directamente a [añadir analítica](/es/products/managed-postgres/quickstart#part-2) si ya cuenta con un servicio de Postgres.
 
 ## Rendimiento impulsado por NVMe {#nvme-performance}
 

@@ -37,11 +37,13 @@ doc_type: 'reference'
 <Accordion title="BYOC で既存の VPC を使用できますか？共有 VPC はどうですか？">
   AWS および GCP では、BYOC インフラストラクチャと**同じ**アカウントまたはプロジェクトにある既存の VPC にデプロイできます。[AWS](/ja/products/bring-your-own-cloud/onboarding/customization-aws) および [GCP](/ja/products/bring-your-own-cloud/onboarding/customization-gcp) のカスタマイズガイドを参照してください。GCP では、別のホストプロジェクトの **Shared VPC** もサポートされています。[オンボーディングモジュール](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)ではホストプロジェクトとサブネットを直接指定できます。セットアップと前提条件については、その「Shared VPC」セクションを参照してください。Azure で独自の VNet を使用する機能は近日提供予定です。
 
-  AWS では、別のアカウントから共有されたサブネット (AWS RAM) はサポートされていません。代わりに、VPC peering または PrivateLink を介して既存のネットワークに接続された専用アカウントを使用してください。customer-managed VPC では、デフォルトで private load balancer のみが有効になることに注意してください ([configuration](/ja/products/bring-your-own-cloud/configuration/configurations)を参照) 。
+  AWS では、AWS Resource Access Manager (RAM) を使用して別のアカウントから共有されたサブネットもサポートされているため、ネットワークをハブアカウントに集約したまま、BYOC インフラストラクチャをスポークアカウントで実行できます。この構成に固有の前提条件が 1 つあります。RAM で共有されたリソースはアカウントごとにタグのビューが分かれているため、**スポーク**アカウント自身が必要な VPC およびサブネットのタグを適用する必要があります。ハブアカウントから適用されたタグはスポークからは見えず、タグがないとプロビジョニングは失敗します。ルートテーブルはハブアカウントの所有のままであり、共有サブネット上の NAT および egress ルーティングについてはハブアカウントが引き続き責任を負います。タグやその他の要件については、[AWS カスタマイズガイド](/ja/products/bring-your-own-cloud/onboarding/customization-aws)を参照してください。
+
+  customer-managed VPC では、デフォルトで プライベートロードバランサー のみが有効になることに注意してください ([configuration](/ja/products/bring-your-own-cloud/configuration/configurations)を参照) 。
 </Accordion>
 
-<Accordion title="BYOC を既存の Kubernetes クラスターにインストールできますか？">
-  いいえ。Kubernetes クラスター (EKS、GKE、または AKS) は ClickHouse が作成し、完全に管理します。これは、ClickHouse がプラットフォームを確実に運用し、常に最新の状態に保つために必要です。
+<Accordion title="既存の Kubernetes クラスターに BYOC をインストールできますか？">
+  いいえ。Kubernetes クラスター (EKS、GKE、または AKS) は ClickHouse によって作成され、完全に管理されます。これは、ClickHouse がプラットフォームを確実に運用し、アップグレードされた状態を維持するために必要です。
 </Accordion>
 
 <Accordion title="BYOC クラスターまたはクラウドアカウントで独自のワークロードを実行できますか？">

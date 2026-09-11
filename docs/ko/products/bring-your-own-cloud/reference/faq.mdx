@@ -35,17 +35,19 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="BYOC에서 기존 VPC를 사용할 수 있나요? 공유 VPC는 어떤가요?">
-  AWS 및 GCP에서는 BYOC 인프라와 **동일한** 계정 또는 프로젝트에 있는 기존 VPC에 배포할 수 있습니다. [AWS](/ko/products/bring-your-own-cloud/onboarding/customization-aws) 및 [GCP](/ko/products/bring-your-own-cloud/onboarding/customization-gcp) 사용자 지정 가이드를 참조하십시오. GCP에서는 별도의 호스트 프로젝트에 있는 **Shared VPC**도 지원합니다. [onboarding module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)은 호스트 프로젝트와 서브넷을 직접 지정할 수 있도록 지원합니다. 설정 및 사전 요구 사항은 해당 모듈의 &quot;Shared VPC&quot; 섹션을 참조하십시오. Azure에서 자체 VNet을 사용하는 기능은 곧 제공될 예정입니다.
+  AWS 및 GCP에서는 BYOC 인프라와 **동일한** 계정 또는 프로젝트에 있는 기존 VPC에 배포할 수 있습니다. [AWS](/ko/products/bring-your-own-cloud/onboarding/customization-aws) 및 [GCP](/ko/products/bring-your-own-cloud/onboarding/customization-gcp) 사용자 지정 가이드를 참조하십시오. GCP에서는 별도의 호스트 프로젝트에 있는 **Shared VPC**도 지원합니다. [온보딩 모듈](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)은 호스트 프로젝트와 서브넷을 직접 지정할 수 있도록 지원합니다. 설정 및 사전 요구 사항은 해당 모듈의 &quot;Shared VPC&quot; 섹션을 참조하십시오. Azure에서 자체 VNet을 사용하는 기능은 곧 제공될 예정입니다.
 
-  AWS에서는 다른 계정에서 공유된 서브넷(AWS RAM)을 지원하지 않습니다. 대신 VPC peering 또는 PrivateLink를 통해 기존 네트워크에 연결된 전용 계정을 사용하십시오. 고객 관리형 VPC에서는 기본적으로 프라이빗 로드 밸런서만 활성화됩니다([구성](/ko/products/bring-your-own-cloud/configuration/configurations) 참조).
+  AWS에서는 AWS Resource Access Manager(RAM)를 통해 다른 계정에서 공유된 서브넷도 지원하므로, 네트워킹을 허브 계정에 중앙화하고 BYOC 인프라는 스포크 계정에서 실행할 수 있습니다. 이 구성에 특화된 사전 요구 사항이 하나 있습니다. RAM으로 공유된 리소스는 계정별 태그 뷰를 가지므로 **스포크** 계정이 직접 필요한 VPC 및 서브넷 태그를 적용해야 합니다. 허브 계정에서 적용한 태그는 스포크에서 보이지 않으며, 태그가 없으면 프로비저닝이 실패합니다. 라우트 테이블은 계속 허브 계정이 소유하며, 허브 계정이 공유 서브넷의 NAT 및 이그레스 라우팅을 계속 담당합니다. 태그 및 기타 요구 사항은 [AWS 사용자 지정 가이드](/ko/products/bring-your-own-cloud/onboarding/customization-aws)를 참조하십시오.
+
+  고객 관리형 VPC에서는 기본적으로 프라이빗 로드 밸런서만 활성화됩니다([구성](/ko/products/bring-your-own-cloud/configuration/configurations) 참조).
 </Accordion>
 
-<Accordion title="기존 Kubernetes 클러스터에 BYOC를 설치할 수 있나요?">
-  아니요. Kubernetes 클러스터(EKS, GKE 또는 AKS)는 ClickHouse가 생성하고 완전히 관리합니다. 이는 ClickHouse가 플랫폼을 안정적으로 운영하고 최신 상태로 유지하기 위해 필요합니다.
+<Accordion title="기존 Kubernetes 클러스터에 BYOC를 설치할 수 있습니까?">
+  아니요. Kubernetes 클러스터(EKS, GKE 또는 AKS)는 ClickHouse가 생성하고 전적으로 관리합니다. 이는 ClickHouse가 플랫폼을 안정적으로 운영하고 최신 버전으로 유지하기 위해 필요합니다.
 </Accordion>
 
 <Accordion title="BYOC 클러스터 또는 클라우드 계정에서 자체 워크로드를 실행할 수 있습니까?">
-  클라우드 계정에서는 가능하지만, 함께 배치된 리소스는 항상 어느 정도 ClickHouse의 권한 범위에 속합니다. AWS에서는 대부분의 쓰기 권한이 태그 및 prefix 범위로 제한되며(ClickHouse가 프로비저닝한 리소스에는 `clickhouse-byoc=true`가 지정됨), 일부 EC2 작업은 태그 범위로 제한할 수 없습니다. GCP 및 Azure에서는 온보딩 ID에 프로젝트 또는 subscription 범위의 권한이 부여됩니다. 리소스를 ClickHouse가 프로비저닝한 리소스와 분리하고, 모든 cloud에서 전용 account, 프로젝트 또는 subscription을 사용하는 것을 권장합니다. 이는 여전히 강력히 권장되는 방식입니다.
+  클라우드 계정에서는 가능하지만, 함께 배치된 리소스는 항상 어느 정도 ClickHouse의 권한 범위에 속합니다. AWS에서는 대부분의 쓰기 권한이 태그 및 접두사 범위로 제한되며(ClickHouse가 프로비저닝한 리소스에는 `clickhouse-byoc=true`가 지정됨), 일부 EC2 작업은 태그 범위로 제한할 수 없습니다. GCP 및 Azure에서는 온보딩 아이덴티티에 프로젝트 또는 subscription 범위의 권한이 부여됩니다. 리소스를 ClickHouse가 프로비저닝한 리소스와 분리하고, 모든 cloud에서 전용 account, 프로젝트 또는 subscription을 사용하는 것을 권장합니다. 이는 여전히 강력히 권장되는 방식입니다.
 
   Kubernetes 클러스터에서는 몇 가지 제약 조건을 준수하면 가능합니다. taint 및 toleration을 적용한 자체 노드 그룹을 사용하고, ClickHouse가 관리하는 네임스페이스를 피하며, ClickHouse 구성 요소의 리컨실리에이션을 차단할 수 있는 cluster-wide admission controller 또는 policy engine을 설치하지 마십시오. 충돌이 없는지 확인할 수 있도록 지원팀에 계획을 설명하십시오.
 </Accordion>

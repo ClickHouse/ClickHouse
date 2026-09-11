@@ -18,7 +18,7 @@ doc_type: '参考'
 <Accordion title="基础设施预配需要多长时间？常见的卡住原因有哪些？">
   整个过程预计约需 45–90 分钟。时间跨度较大，是因为大部分时间都用于等待云提供商预配资源 (Kubernetes 集群、负载均衡器和网络组件) ；每次执行所需时间并不固定，且不受 ClickHouse 控制。预配停滞时，最常见的原因通常与账户有关：
 
-  * 在应用 CloudFormation 模板或 Terraform 模块前对其进行了修改——例如添加 `PermissionsBoundary`，或为符合命名规范而重命名 IAM 角色 (在 AWS 上，请保留默认的 `ClickHouseManagementRole` 名称，除非 ClickHouse 已明确批准使用其他名称) 。请按原样应用这些文件——支持的自定义项会以参数形式提供，其他任何更改均需先获得 ClickHouse 批准。
+  * 在应用 CloudFormation 模板或 Terraform 模块前对其进行了修改——例如添加 `PermissionsBoundary`，或为符合命名规范而重命名 IAM 角色 (在 AWS 上，请保留默认的 `ClickHouseManagementRole` 名称，除非 ClickHouse 已明确批准使用其他名称) 。请按原样应用这些制品——支持的自定义项会以参数形式提供，其他任何更改均需先获得 ClickHouse 批准。
   * 组织级策略 (AWS SCP、GCP 组织策略，例如 `iam.allowedPolicyMemberDomains`，或限制角色分配的 Azure 策略) 阻止角色承担或 IAM 绑定。
   * 引导角色的外部 ID 不匹配 (请参阅下方关于外部 ID 的问题) 。
   * 账户配额限制 (例如 AWS 上的 Elastic IP 或 VPC) 。
@@ -37,11 +37,13 @@ doc_type: '参考'
 <Accordion title="BYOC 可以使用现有 VPC 吗？共享 VPC 呢？">
   在 AWS 和 GCP 上，您可以部署到与 BYOC 基础设施位于**同一**账户或项目中的现有 VPC。请参阅 [AWS](/zh/products/bring-your-own-cloud/onboarding/customization-aws) 和 [GCP](/zh/products/bring-your-own-cloud/onboarding/customization-gcp) 自定义指南。在 GCP 上，还支持来自独立宿主项目的**共享 VPC**：[引导模块](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)可直接接受宿主项目和子网——有关设置和前置条件，请参阅其“共享 VPC”部分。Azure 的自带 VNet 支持即将推出。
 
-  在 AWS 上，不支持来自其他账户的共享子网 (AWS RAM) ——请改用通过 VPC peering 或 PrivateLink 连接到现有网络的专用账户。请注意，使用客户管理的 VPC 时，默认仅启用私网负载均衡器 (请参阅[配置](/zh/products/bring-your-own-cloud/configuration/configurations)) 。
+  在 AWS 上，也支持通过 AWS Resource Access Manager (RAM) 从其他账户共享的子网，因此您可以将网络集中保留在中心账户中，而在分支账户中运行 BYOC 基础设施。此方案有一项特定的前置条件：RAM 共享资源的标签视图是按账户隔离的，因此**分支**账户必须自行应用所需的 VPC 和子网标签——从中心账户应用的标签对分支账户不可见，缺少这些标签将导致预配失败。路由表仍归中心账户所有，该账户继续负责共享子网上的 NAT 和出口路由。有关标签和其他要求，请参阅 [AWS 自定义指南](/zh/products/bring-your-own-cloud/onboarding/customization-aws)。
+
+  请注意，使用客户管理的 VPC 时，默认仅启用私网负载均衡器 (请参阅[配置](/zh/products/bring-your-own-cloud/configuration/configurations)) 。
 </Accordion>
 
-<Accordion title="可以将 BYOC 安装到现有 Kubernetes 集群中吗？">
-  不可以。Kubernetes 集群 (EKS、GKE 或 AKS) 由 ClickHouse 创建并完全管理。这是确保 ClickHouse 能够可靠运营平台并持续保持其更新所必需的。
+<Accordion title="BYOC 能否安装到已有的 Kubernetes 集群中？">
+  不能。Kubernetes 集群 (EKS、GKE 或 AKS) 由 ClickHouse 创建并全托管。这是必要条件，以便 ClickHouse 能够可靠地运营该平台并持续完成版本升级。
 </Accordion>
 
 <Accordion title="我们能否在 BYOC 集群或云账户中运行自己的工作负载？">

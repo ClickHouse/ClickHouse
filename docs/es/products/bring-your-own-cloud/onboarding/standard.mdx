@@ -10,7 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <div id="what-is-standard-onboarding">
-  ## ¿Qué es el onboarding estándar?
+  ## ¿Qué es el onboarding estándar? {#what-is-standard-onboarding}
 </div>
 
 **El onboarding estándar** es el flujo de trabajo guiado predeterminado para implementar ClickHouse en tu propia cuenta en la nube mediante BYOC. En este enfoque, ClickHouse Cloud aprovisiona todos los recursos principales en la nube necesarios para tu implementación, como la VPC/VNet, las subredes, los grupos de seguridad, el clúster de Kubernetes (EKS/GKE/AKS) y los roles de IAM/cuentas de servicio/entidades de servicio necesarios, dentro de tu cuenta de AWS, proyecto de GCP o suscripción de Azure. Esto garantiza una configuración coherente y segura, y minimiza los pasos manuales que debe realizar tu equipo.
@@ -26,18 +26,16 @@ Si necesitas una configuración más personalizada (por ejemplo, implementar en 
 </Note>
 
 <div id="request-access">
-  ## Solicitar acceso
+  ## Solicitar acceso {#request-access}
 </div>
 
 Para iniciar el proceso de onboarding, [contáctenos](https://clickhouse.com/cloud/bring-your-own-cloud). Nuestro equipo le guiará a lo largo de los requisitos de BYOC, le ayudará a seleccionar las opciones de implementación más adecuadas y añadirá su cuenta a la lista de acceso autorizado.
 
 <div id="onboarding-process">
-  ## Onboarding
+  ## Onboarding {#onboarding-process}
 </div>
 
-<div id="prepare-an-aws-account">
-  ### Prepara una cuenta de AWS, un proyecto de GCP o una suscripción de Azure
-</div>
+### Prepara una cuenta de AWS, un proyecto de GCP o una suscripción de Azure {#prepare-an-aws-account}
 
 Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure en tu organización.
 
@@ -59,7 +57,7 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
       Los buckets de almacenamiento, la VPC/VNet, el clúster de Kubernetes y los recursos de computación necesarios para ejecutar ClickHouse no se incluyen en esta configuración inicial. Se aprovisionarán en el siguiente paso.
     </Note>
 
-    #### Módulo de Terraform para AWS
+    #### Módulo de Terraform para AWS {#terraform-module-aws}
 
     Si prefiere usar Terraform en lugar de CloudFormation para las implementaciones de AWS, use el módulo [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -78,7 +76,7 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
       Anteriormente, el módulo se distribuía como un archivo tarball en `https://s3.us-east-2.amazonaws.com/clickhouse-public-resources.clickhouse.cloud/tf/byoc.tar.gz`. Esa URL sigue disponible, pero está obsoleta; utilice el módulo de GitHub anterior.
     </Note>
 
-    #### ID externo de AWS
+    #### ID externo de AWS {#aws-external-id}
 
     En AWS, el rol de IAM creado durante la configuración establece una relación de confianza con ClickHouse Cloud mediante un [ID externo](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_create_for-user_externalid.html) (`sts:ExternalId`) para protegerse contra ataques de suplantación de autoridad. La ClickHouse Cloud console genera un ID externo para su cuenta de AWS al iniciar el onboarding y lo rellena previamente en el enlace de CloudFormation; si utiliza Terraform, proporcione el mismo valor como `external_id`. Todas las infraestructuras BYOC de la misma cuenta de AWS comparten el mismo ID externo.
 
@@ -104,7 +102,7 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
 
     <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="Configure la infraestructura BYOC" background="black" />
 
-    #### Validación previa
+    #### Validación previa {#preflight-validation}
 
     Al hacer clic en **Set up Infrastructure**, ClickHouse Cloud ejecuta un conjunto de comprobaciones previas de **solo lectura** sobre su cuenta antes de crear ningún recurso. Si todas se superan, el aprovisionamiento continúa. Si una comprobación falla, la configuración se pausa y la consola muestra exactamente cuál es el problema, de modo que pueda corregirlo antes de que se cree ningún recurso.
 
@@ -113,11 +111,12 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
     * **Permisos** — la identidad de administración (rol de IAM / cuenta de servicio / entidad de servicio) cuenta con los permisos que ClickHouse Cloud necesita para aprovisionar y operar su implementación.
     * **Servicios habilitados** *(GCP)* — las API de Google Cloud requeridas (Compute Engine, Kubernetes Engine, Cloud Storage, Network Connectivity, IAM) están habilitadas en su proyecto.
     * **Red** *(AWS con VPC propia)* — su VPC y sus subredes cumplen los [requisitos de red](/es/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc): tamaños de subred, tags obligatorios, distribución entre zonas de disponibilidad, conectividad saliente y direcciones IP disponibles.
+    * **Red** *(GCP con VPC propia)* — su VPC y su subred cumplen los [requisitos de red](/es/products/bring-your-own-cloud/onboarding/customization-gcp#configure-existing-vpc): la red y la subred se resuelven, el rango primario de la subred y el rango secundario de los pods de Kubernetes son lo bastante grandes, y un Cloud NAT gateway cubre la red.
     * **Cuotas y limitaciones** *(AWS)* — su cuenta dispone de cuotas de servicio suficientes (VPC, gateways NAT, Elastic IP, clústeres de EKS, vCPU) y ninguna política de la organización (SCP) bloquea una acción necesaria.
 
     Cuando fallan comprobaciones, cada una aparece con la acción a la que corresponde y el motivo del fallo (por ejemplo, `iam:CreateRole · explicitDeny`). Despliegue **Show passed checks** para revisar todo lo que se completó correctamente.
 
-    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="La validación previa de BYOC informa sobre comprobaciones fallidas de la configuración de la nube" background="black" />
+    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="La validación previa de BYOC informa de comprobaciones fallidas de la configuración de la nube" background="black" />
 
     Para resolver los fallos, vuelva a ejecutar la última pila de CloudFormation o de Terraform de ClickHouse —o conceda las acciones notificadas a la identidad de administración (rol de IAM / cuenta de servicio / entidad de servicio)— y, a continuación, elija una de estas opciones:
 
@@ -126,21 +125,20 @@ Prepara una cuenta nueva de AWS, un proyecto de GCP o una suscripción de Azure 
 
     Utilice la siguiente tabla para resolver los fallos más habituales.
 
-    | Error de validación                                                                                                                                                                                                 | Causa probable                                                                                                                                    | Cómo resolverlo                                                                                                                                                                |
-    | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-    | **No se puede asumir el rol de administración** *(AWS)*                                                                                                                                                             | No se completó la pila de onboarding o el rol o el ID externo no coinciden                                                                        | Vuelva a ejecutar la pila de onboarding más reciente y confirme que el [ID externo](#aws-external-id) que se muestra en la consola coincide con el de su política de confianza |
-    | **No se puede suplantar la cuenta de servicio de administración** *(GCP)*                                                                                                                                           | No se completó el Terraform de onboarding, falta la cuenta de servicio `clickhouse-management` o no concede a ClickHouse permiso para suplantarla | Vuelva a ejecutar el Terraform de onboarding más reciente y confirme que la cuenta de servicio `clickhouse-management` existe y otorga a ClickHouse permiso para suplantarla   |
-    | **Permiso faltante** (p. ej., crear VPC, crear rol de IAM, crear clúster de Kubernetes)                                                                                                                             | La identidad de administración no tiene un permiso requerido, a menudo debido a una pila personalizada u obsoleta                                 | Vuelva a ejecutar la pila de onboarding más reciente, que otorga el conjunto completo de permisos; si restringe los permisos intencionadamente, añada el permiso indicado      |
-    | **API requerida no habilitada** *(GCP)*                                                                                                                                                                             | Una API de servicio de Google Cloud necesaria está deshabilitada en el proyecto                                                                   | Habilítela; por ejemplo: `gcloud services enable compute.googleapis.com --project <your-project>`                                                                              |
-    | **Problema de configuración de la subred o la VPC** *(AWS con VPC propia)* — CIDR demasiado pequeño, falta una etiqueta, muy pocas zonas de disponibilidad, sin salida a Internet o muy pocas direcciones IP libres | La VPC proporcionada no cumple los requisitos de red de BYOC                                                                                      | Ajuste la VPC para que cumpla los [requisitos de red](/es/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)                                      |
-    | **CUOTA de servicio insuficiente** *(AWS)*                                                                                                                                                                          | La cuota de su cuenta para un recurso necesario es demasiado baja                                                                                 | Solicite un aumento de cuota a su proveedor de nube; consulte los [límites de servicio de AWS](/es/products/bring-your-own-cloud/reference/aws-service-limits)                    |
-    | **Bloqueado por una política de la organización / SCP** *(AWS)*                                                                                                                                                     | Una política de control de la organización deniega una acción necesaria para la cuenta                                                            | Trabaje con su administrador de Cloud para permitir la acción en la cuenta BYOC                                                                                                |
+    | Error de validación                                                                                                                                                                                                                                         | Causa probable                                                                                                                                    | Cómo resolverlo                                                                                                                                                                |
+    | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+    | **No se puede asumir el rol de administración** *(AWS)*                                                                                                                                                                                                     | No se completó la pila de onboarding o el rol o el ID externo no coinciden                                                                        | Vuelva a ejecutar la pila de onboarding más reciente y confirme que el [ID externo](#aws-external-id) que se muestra en la consola coincide con el de su política de confianza |
+    | **No se puede suplantar la cuenta de servicio de administración** *(GCP)*                                                                                                                                                                                   | No se completó el Terraform de onboarding, falta la cuenta de servicio `clickhouse-management` o no concede a ClickHouse permiso para suplantarla | Vuelva a ejecutar el Terraform de onboarding más reciente y confirme que la cuenta de servicio `clickhouse-management` existe y otorga a ClickHouse permiso para suplantarla   |
+    | **Permiso faltante** (p. ej., crear VPC, crear rol de IAM, crear clúster de Kubernetes)                                                                                                                                                                     | La identidad de administración no tiene un permiso requerido, a menudo debido a una pila personalizada u obsoleta                                 | Vuelva a ejecutar la pila de onboarding más reciente, que otorga el conjunto completo de permisos; si restringe los permisos intencionadamente, añada el permiso indicado      |
+    | **API requerida no habilitada** *(GCP)*                                                                                                                                                                                                                     | Una API de servicio de Google Cloud necesaria está deshabilitada en el proyecto                                                                   | Habilítela; por ejemplo: `gcloud services enable compute.googleapis.com --project <your-project>`                                                                              |
+    | **Problema de configuración de la subred o la VPC** *(AWS con VPC propia)* — CIDR demasiado pequeño, falta una etiqueta, muy pocas zonas de disponibilidad, sin salida a Internet o muy pocas direcciones IP libres                                         | La VPC proporcionada no cumple los requisitos de red de BYOC                                                                                      | Ajuste la VPC para que cumpla los [requisitos de red](/es/products/bring-your-own-cloud/onboarding/customization-aws#configure-existing-vpc)                                      |
+    | **Problema de configuración de la subred o la VPC** *(GCP con VPC propia)* — no se encuentra la red o la subred, el rango principal o el rango secundario del pod de Kubernetes es demasiado pequeño, o no hay ningún gateway NAT de Cloud que cubra la red | La VPC proporcionada no cumple los requisitos de red de BYOC                                                                                      | Ajuste la VPC para que cumpla los [requisitos de red](/es/products/bring-your-own-cloud/onboarding/customization-gcp#configure-existing-vpc)                                      |
+    | **CUOTA de servicio insuficiente** *(AWS)*                                                                                                                                                                                                                  | La cuota de su cuenta para un recurso necesario es demasiado baja                                                                                 | Solicite un aumento de cuota a su proveedor de nube; consulte los [límites de servicio de AWS](/es/products/bring-your-own-cloud/reference/aws-service-limits)                    |
+    | **Bloqueado por una política de la organización / SCP** *(AWS)*                                                                                                                                                                                             | Una política de control de la organización deniega una acción necesaria para la cuenta                                                            | Trabaje con su administrador de Cloud para permitir la acción en la cuenta BYOC                                                                                                |
   </Step>
 </Steps>
 
-<div id="create-clickhouse-service">
-  ### Crea tu primer servicio de ClickHouse BYOC
-</div>
+### Crea tu primer servicio de ClickHouse BYOC {#create-clickhouse-service}
 
 Una vez aprovisionada tu infraestructura BYOC, ya puedes lanzar tu primer servicio de ClickHouse. Abre la consola de ClickHouse Cloud, selecciona tu entorno BYOC y sigue las indicaciones para crear un nuevo servicio.
 

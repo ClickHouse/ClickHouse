@@ -10,7 +10,7 @@ doc_type: 'مرجع'
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <div id="customer-managed-vpc-aws">
-  ## VPC مُدار من قِبل العميل (BYO-VPC) لـ AWS
+  ## VPC مُدار من قِبل العميل (BYO-VPC) لـ AWS {#customer-managed-vpc-aws}
 </div>
 
 إذا كنت تفضّل استخدام VPC حاليًا لنشر ClickHouse BYOC بدلًا من أن يوفّر ClickHouse Cloud شبكة VPC جديدة، فاتبع الخطوات أدناه. يوفّر هذا النهج قدرًا أكبر من التحكم في إعدادات الشبكة، ويتيح لك دمج ClickHouse BYOC في البنية التحتية الشبكية الحالية لديك.
@@ -54,7 +54,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       حاويات التخزين وعنقود Kubernetes وموارد الحوسبة المطلوبة لتشغيل ClickHouse ليست مضمنة في هذا الإعداد الأولي. سيتم توفيرها في خطوة لاحقة. وعلى الرغم من أنك تتحكم في VPC الخاصة بك، لا تزال ClickHouse Cloud بحاجة إلى أذونات IAM لإنشاء عنقود Kubernetes وإدارته، وأدوار IAM لحسابات الخدمة، وS3 buckets، وغيرها من الموارد الأساسية في حساب AWS الخاص بك.
     </Note>
 
-    #### وحدة Terraform
+    #### وحدة Terraform {#terraform-module-aws}
 
     إذا كنت تفضل استخدام Terraform بدلاً من CloudFormation، فاستخدم وحدة [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding):
 
@@ -98,9 +98,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="customer-managed-iam-roles">
-  ## أدوار IAM المُدارة من قِبل العميل
-</div>
+### الشبكات الفرعية المشتركة من حساب آخر (AWS RAM) {#shared-subnets-ram}
+
+يمكنك تشغيل BYOC في حساب فرعي (spoke) على شبكات فرعية مشتركة من حساب مركزي (hub) عبر [AWS Resource Access Manager (RAM)](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html)، ما يتيح لك إبقاء إدارة الشبكات مركزية. الإعداد مطابق لما ورد أعلاه، مع اختلافين ناتجين عن طريقة عمل مشاركات RAM:
+
+* **طبّق الوسوم من الحساب الفرعي.** للموارد المشتركة عبر RAM عرضٌ للوسوم خاص بكل حساب، لذا فإن الوسوم المطبّقة في الحساب المركزي لا تظهر للحساب الفرعي. طبّق `clickhouse-byoc="true"` على شبكة VPC، وطبّق `kubernetes.io/role/internal-elb=1` مع `clickhouse-byoc="true"` على كل شبكة فرعية مشتركة، **من الحساب الفرعي**. وبدون ذلك، سيُبلّغ التحقق المسبق عن وسوم مفقودة وسيفشل التجهيز.
+* **يبقى التوجيه لدى الحساب المركزي.** تظل جداول التوجيه الخاصة بالشبكات الفرعية المشتركة مملوكة للحساب المركزي، وهو بالتالي المسؤول عن NAT وتوجيه حركة المرور الصادرة، وعن نقطة نهاية S3 من نوع gateway لأنها مورد على مستوى VPC. تأكّد من أن الشبكات الفرعية المشتركة ما زالت تستوفي متطلب الاتصال الصادر المذكور أعلاه.
+
+أما ما عدا ذلك فيبقى دون تغيير: ثلاث شبكات فرعية خاصة موزّعة على ثلاث مناطق توافر، ونطاق CIDR لا يقل عن `/25` لكل شبكة فرعية، وإعداد `ClickHouseManagementRole` في الحساب الفرعي الذي تعمل فيه بنية BYOC التحتية.
+
+## أدوار IAM المُدارة من قِبل العميل {#customer-managed-iam-roles}
 
 بالنسبة إلى المؤسسات ذات متطلبات الأمان المتقدمة أو سياسات الامتثال الصارمة، يمكنك توفير أدوار IAM الخاصة بك بدلًا من أن ينشئها ClickHouse Cloud. يتيح لك هذا النهج تحكمًا كاملًا في أذونات IAM، كما يسمح لك بفرض سياسات الأمان الخاصة بمؤسستك.
 

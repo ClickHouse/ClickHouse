@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
@@ -15,8 +14,26 @@ ClickHouse Managed Postgres — это управляемый сервис Postg
 
 Созданный в партнёрстве с [Ubicloud](https://www.ubicloud.com/), чья команда основателей ранее создавала решения мирового уровня для Postgres в Citus Data, Heroku и Microsoft, ClickHouse Managed Postgres решает типичные проблемы производительности быстрорастущих приложений: замедление ингестии и обновлений, медленное выполнение VACUUM, рост tail latency и всплески WAL из-за ограниченного числа дисковых IOPS.
 
-{/* TODO: Схема архитектуры с интеграцией с ClickHouse
-    Путь: /images/cloud/managed-postgres/architecture-overview.png */}
+## Postgres для транзакций, ClickHouse для аналитики {#transactions-and-analytics}
+
+Используйте Postgres для транзакционных рабочих нагрузок приложения (OLTP): создания заказов, обновления складских запасов и управления учётными записями пользователей. Postgres выступает вашей системой учёта: связанные изменения фиксируются или откатываются вместе в рамках одной транзакции.
+
+Когда приложению дополнительно требуется аналитика по большим датасетам, добавьте сервис ClickHouse и свяжите их с помощью ClickPipes:
+
+```mermaid
+flowchart LR
+    Application -->|Reads and writes| Postgres
+    Postgres -->|Committed changes via ClickPipes| ClickHouse
+    Analytics -->|Queries| ClickHouse
+```
+
+1. Ваше приложение читает и записывает операционные данные в Postgres, группируя связанные изменения в транзакции.
+2. [Настройте ClickPipes](/ru/products/managed-postgres/clickhouse-integration), чтобы скопировать выбранные таблицы в ClickHouse и непрерывно реплицировать зафиксированные вставки, обновления и удаления с помощью CDC (фиксации изменений данных).
+3. Выполняйте аналитические запросы в ClickHouse. Подключаться к ClickHouse можно напрямую или обращаться к его таблицам из Postgres через расширение [`pg_clickhouse`](/ru/products/managed-postgres/extensions/pg_clickhouse/introduction).
+
+Репликация асинхронна, поэтому аналитические результаты могут отставать от зафиксированных изменений в Postgres. У этих двух баз данных разные границы транзакций: ни CDC, ни `pg_clickhouse` не обеспечивают общую транзакцию между Postgres и ClickHouse. Если для чтения требуется самое актуальное зафиксированное состояние приложения, используйте Postgres.
+
+Можно начать с одного лишь Postgres и добавить ClickHouse, когда он понадобится. Пройдите [краткое руководство по ClickHouse Managed Postgres](/ru/products/managed-postgres/quickstart), чтобы попробовать оба сервиса, или сразу перейдите к [добавлению аналитики](/ru/products/managed-postgres/quickstart#part-2), если сервис Postgres у вас уже есть.
 
 ## Производительность на базе NVMe {#nvme-performance}
 

@@ -7,16 +7,33 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
-ClickHouse Managed Postgres هي خدمة Postgres مُدارة على مستوى المؤسسات، ومصممة للأداء وقابلية التوسع. وبالاستناد إلى تخزين NVMe المتواجد فعليًا إلى جانب موارد المعالجة، توفّر أداءً أسرع بما يصل إلى 10 أضعاف لأعباء العمل المقيّدة بأداء القرص مقارنةً بالبدائل التي تستخدم التخزين المتصل بالشبكة مثل EBS.
+ClickHouse Managed Postgres هي خدمة Postgres مُدارة على مستوى المؤسسات، ومصممة للأداء وقابلية التوسع. وبالاستناد إلى تخزين NVMe المتواجد فعليًا إلى جانب موارد المعالجة، توفّر أداءً أسرع بما يصل إلى 10 أضعاف لأعباء العمل المقيّدة بأداء القرص مقارنةً بالبدائل التي تستخدم وحدة تخزين متصلة بالشبكة مثل EBS.
 
 وقد طُوّرت بالشراكة مع [Ubicloud](https://www.ubicloud.com/)، إذ يمتلك فريقها المؤسس سجلًا حافلًا في تقديم Postgres عالمي المستوى في Citus Data وHeroku وMicrosoft. ويعالج ClickHouse Managed Postgres تحديات الأداء التي تواجهها التطبيقات سريعة النمو عادةً، مثل بطء إدخال البيانات والتحديثات، وبطء عمليات VACUUM، وارتفاع زمن الاستجابة عند الذيل، وارتفاعات WAL المفاجئة الناتجة عن محدودية IOPS الخاصة بالقرص.
 
-{/* TODO: مخطط معمارية يوضّح التكامل بين Postgres وClickHouse
-    المسار: /images/cloud/managed-postgres/architecture-overview.png */}
+## Postgres للمعاملات، ClickHouse للتحليلات {#transactions-and-analytics}
+
+استخدم Postgres لأحمال عمل التطبيقات المعاملاتية (OLTP)، مثل إنشاء الطلبات وتحديث المخزون وإدارة حسابات المستخدمين. فـ Postgres هو نظام السجل المرجعي لديك: حيث يمكن تثبيت التغييرات المرتبطة أو التراجع عنها معًا ضمن معاملة واحدة.
+
+وعندما يحتاج تطبيقك أيضًا إلى تحليلات على مجموعات بيانات كبيرة، أضف خدمة ClickHouse واربط بينهما باستخدام ClickPipes:
+
+```mermaid
+flowchart LR
+    Application -->|Reads and writes| Postgres
+    Postgres -->|Committed changes via ClickPipes| ClickHouse
+    Analytics -->|Queries| ClickHouse
+```
+
+1. يقرأ تطبيقك البيانات التشغيلية ويكتبها في Postgres، مستخدماً المعاملات لتجميع التغييرات المرتبطة معاً.
+2. [قم بتهيئة ClickPipes](/ar/products/managed-postgres/clickhouse-integration) لنسخ جداول محددة إلى ClickHouse ونسخ عمليات الإدراج والتحديث والحذف المُثبَّتة نسخاً متماثلاً مستمراً باستخدام التقاط تغييرات البيانات (CDC).
+3. نفّذ الاستعلامات التحليلية في ClickHouse. يمكنك الاتصال بـ ClickHouse مباشرةً أو الاستعلام عن جداوله من Postgres عبر امتداد [`pg_clickhouse`](/ar/products/managed-postgres/extensions/pg_clickhouse/introduction).
+
+النسخ المتماثل غير متزامن، لذا قد تتأخر النتائج التحليلية عن تغييرات Postgres المُثبَّتة. ولكل من قاعدتي البيانات حدود معاملات منفصلة: فلا يوفر CDC ولا `pg_clickhouse` معاملة مشتركة بين Postgres وClickHouse. أما عمليات القراءة التي تتطلب أحدث حالة مُثبَّتة للتطبيق، فينبغي أن تستخدم Postgres.
+
+يمكنك البدء بـ Postgres وحده ثم إضافة ClickHouse عند الحاجة. اتبع [دليل البدء السريع لـ ClickHouse Managed Postgres](/ar/products/managed-postgres/quickstart) لتجربة الخدمتين، أو انتقل مباشرةً إلى [إضافة التحليلات](/ar/products/managed-postgres/quickstart#part-2) إن كانت لديك خدمة Postgres بالفعل.
 
 ## أداء يعتمد على NVMe {#nvme-performance}
 

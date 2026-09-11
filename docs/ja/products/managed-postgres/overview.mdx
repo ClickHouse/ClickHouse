@@ -7,16 +7,33 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
 ClickHouse Managed Postgres は、パフォーマンスとスケールを重視して設計された、エンタープライズ向けのマネージド Postgres サービスです。コンピュートと物理的に同じ場所に配置された NVMe ストレージを基盤としており、EBS のようなネットワーク接続型ストレージを使用する代替手段と比べて、ディスクI/Oが律速となるワークロードで最大 10 倍高速なパフォーマンスを実現します。
 
-[Citus Data](https://www.citusdata.com/)、Heroku、Microsoft で世界最高水準の Postgres を提供してきた実績を持つ創業チームによる [Ubicloud](https://www.ubicloud.com/) との協業で構築された ClickHouse Managed Postgres は、急成長するアプリケーションでよく課題となる、インジェストや更新の遅延、低速なバキューム、テールレイテンシの増大、そしてディスク IOPS の制約によって引き起こされる WAL スパイクといったパフォーマンス上の問題を解決します。
+Citus Data、Heroku、Microsoft で世界最高水準の Postgres を提供してきた実績を持つ創業チームによる [Ubicloud](https://www.ubicloud.com/) との協業で構築された ClickHouse Managed Postgres は、急成長するアプリケーションでよく課題となる、インジェストや更新の遅延、低速なバキューム、テールレイテンシの増大、そしてディスク IOPS の制約によって引き起こされる WAL スパイクといったパフォーマンス上の問題を解決します。
 
-{/* TODO: Postgres + ClickHouse 連携のアーキテクチャ図
-    パス: /images/cloud/managed-postgres/architecture-overview.png */}
+## トランザクションにはPostgres、分析にはClickHouse {#transactions-and-analytics}
+
+注文の作成、在庫の更新、ユーザーアカウントの管理といったトランザクション型のアプリケーションワークロード (OLTP) にはPostgresを使用します。Postgresはシステム・オブ・レコード (信頼できる記録元) であり、関連する変更をトランザクション内でまとめてコミットまたはロールバックできます。
+
+アプリケーションで大規模なデータセットに対する分析も必要になった場合は、ClickHouseサービスを追加し、ClickPipesで両者を接続します。
+
+```mermaid
+flowchart LR
+    Application -->|Reads and writes| Postgres
+    Postgres -->|Committed changes via ClickPipes| ClickHouse
+    Analytics -->|Queries| ClickHouse
+```
+
+1. アプリケーションは Postgres で運用データの読み書きを行い、関連する変更をトランザクションでまとめます。
+2. [ClickPipes を設定](/ja/products/managed-postgres/clickhouse-integration)して、選択したテーブルを ClickHouse にコピーし、コミット済みの挿入・更新・削除をCDC (変更データキャプチャ) で継続的にレプリケーションします。
+3. 分析クエリは ClickHouse で実行します。ClickHouse に直接接続することも、[`pg_clickhouse`](/ja/products/managed-postgres/extensions/pg_clickhouse/introduction) 拡張機能を使って Postgres から ClickHouse のテーブルをクエリすることもできます。
+
+レプリケーションは非同期であるため、分析結果は Postgres でコミットされた変更よりも遅れる場合があります。2 つのデータベースはトランザクション境界が別々であり、CDC (変更データキャプチャ) も `pg_clickhouse` も Postgres と ClickHouse にまたがる共通のトランザクションは提供しません。最新のコミット済みアプリケーション状態を必要とする読み取りには、Postgres を使用してください。
+
+まずは Postgres だけで始め、必要になった時点で ClickHouse を追加するという進め方も可能です。両方のサービスを試すには [ClickHouse Managed Postgres のクイックスタート](/ja/products/managed-postgres/quickstart)に従ってください。すでに Postgres サービス をお持ちの場合は、[分析機能の追加](/ja/products/managed-postgres/quickstart#part-2)から始めてください。
 
 ## NVMe による高性能 {#nvme-performance}
 

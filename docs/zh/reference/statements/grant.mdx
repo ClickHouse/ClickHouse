@@ -634,7 +634,7 @@ Not enough privileges. To execute this query, it's necessary to have the grant C
 
 ### SOURCES {#sources}
 
-允许使用外部数据源。适用于[表引擎](/zh/reference/engines/table-engines/index)和[表函数](/zh/reference/functions/table-functions/index)。
+允许使用外部数据源。适用于基于数据源的[数据库引擎](/zh/reference/engines/database-engines/index)、[表引擎](/zh/reference/engines/table-engines/index)和[表函数](/zh/reference/functions/table-functions/index)。
 备份位置也需要此授权：`BACKUP`/`RESTORE` 和 `ENGINE = Backup` 会根据这些授权验证其位置。
 
 * `READ`。级别：`GLOBAL_WITH_PARAMETER`

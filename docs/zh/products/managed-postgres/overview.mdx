@@ -7,7 +7,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.overview-beta" />
 
@@ -15,8 +14,26 @@ ClickHouse Managed Postgres 是一项企业级托管 Postgres 服务，专为高
 
 ClickHouse Managed Postgres 与 [Ubicloud](https://www.ubicloud.com/) 联合打造。Ubicloud 的创始团队曾在 Citus Data、Heroku 和 Microsoft 打造世界一流的 Postgres 产品，拥有卓越的业绩。ClickHouse Managed Postgres 解决了快速增长的应用常见的性能挑战：摄取和更新变慢、vacuum 操作缓慢、尾延迟升高，以及因磁盘 IOPS 受限导致的 WAL 峰值。
 
-{/* TODO: 展示 Postgres + ClickHouse 集成架构图
-    Path: /images/cloud/managed-postgres/architecture-overview.png */}
+## Postgres 负责事务，ClickHouse 负责分析 {#transactions-and-analytics}
+
+将 Postgres 用于事务型应用负载 (OLTP) ，例如创建订单、更新库存和管理用户账户。Postgres 是你的记录系统 (system of record) ：相关变更可以在同一个事务中一并提交或回滚。
+
+当应用还需要对大规模数据集进行分析时，可以添加一个 ClickHouse 服务，并通过 ClickPipes 将两者连接起来：
+
+```mermaid
+flowchart LR
+    Application -->|Reads and writes| Postgres
+    Postgres -->|Committed changes via ClickPipes| ClickHouse
+    Analytics -->|Queries| ClickHouse
+```
+
+1. 您的应用程序在 Postgres 中读写业务数据，并使用事务将相关变更归为一组。
+2. [配置 ClickPipes](/zh/products/managed-postgres/clickhouse-integration)，将选定的表复制到 ClickHouse，并通过 CDC (变更数据捕获) 持续复制已提交的插入、更新和删除操作。
+3. 在 ClickHouse 中运行分析查询。您可以直接连接 ClickHouse，也可以通过 [`pg_clickhouse`](/zh/products/managed-postgres/extensions/pg_clickhouse/introduction) 扩展从 Postgres 查询其中的表。
+
+复制是异步进行的，因此分析结果可能滞后于 Postgres 中已提交的变更。这两个数据库各自拥有独立的事务边界：CDC (变更数据捕获)  和 `pg_clickhouse` 并不提供跨 Postgres 与 ClickHouse 的共享事务。若读取操作要求获取最新已提交的应用状态，应使用 Postgres。
+
+您可以先只使用 Postgres，待有需要时再引入 ClickHouse。请按照 [ClickHouse Managed Postgres 快速入门](/zh/products/managed-postgres/quickstart)试用这两项服务；如果您已有 Postgres service，也可以直接前往[添加分析能力](/zh/products/managed-postgres/quickstart#part-2)。
 
 ## 基于 NVMe 的性能优势 {#nvme-performance}
 
