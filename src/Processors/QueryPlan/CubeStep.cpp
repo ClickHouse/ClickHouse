@@ -4,6 +4,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
+#include <Core/ProtocolDefines.h>
 #include <Core/Settings.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
@@ -57,10 +58,12 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
-CubeStep::CubeStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_)
+CubeStep::CubeStep(
+    const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_, std::vector<size_t> key_positions_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(generateOutputHeader(params_.getHeader(*input_header_, final_), params_.keys, use_nulls_)), getTraits())
     , keys_size(params_.keys_size)
     , params(std::move(params_))
+    , key_positions(std::move(key_positions_))
     , final(final_)
     , use_nulls(use_nulls_)
 {
@@ -107,7 +110,7 @@ void CubeStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQue
             return addGroupingSetForTotals(header, params.keys, use_nulls, settings, (UInt64(1) << keys_size) - 1);
 
         auto transform_params = std::make_shared<AggregatingTransformParams>(header, std::move(params), final);
-        return std::make_shared<CubeTransform>(header, std::move(transform_params), use_nulls);
+        return std::make_shared<CubeTransform>(header, std::move(transform_params), use_nulls, key_positions);
     });
 }
 
@@ -165,6 +168,25 @@ void CubeStep::serialize(Serialization & ctx) const
     /// states, so the argument columns do not exist in its input), which the generic
     /// `serializeAggregateDescriptions` rejects.
     serializeAggregateDescriptionsWithoutArguments(params.aggregates, ctx.out);
+
+    /// A peer too old for the positions would expand from the deduplicated key list and answer a
+    /// repeated-key CUBE or ROLLUP with the grouping sets this change exists to correct. Dropping
+    /// them silently is a wrong result on a mixed-version cluster, so fail instead - and only when
+    /// the query actually repeats a key, which leaves every other plan shippable as before.
+    if (!key_positions.empty() && ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+        throw Exception(
+            ErrorCodes::SUPPORT_IS_DISABLED,
+            "Serializing a {} whose GROUP BY list repeats a key requires query plan serialization version >= {}; "
+            "the receiving server is too old and would expand the wrong grouping sets",
+            "CubeStep",
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS);
+
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    {
+        writeVarUInt(key_positions.size(), ctx.out);
+        for (size_t position : key_positions)
+            writeVarUInt(position, ctx.out);
+    }
 }
 
 QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
@@ -213,7 +235,51 @@ QueryPlanStepPtr CubeStep::deserialize(Deserialization & ctx)
     /// planner-built params carry `only_merge = false` as well.
     params.only_merge = false;
 
-    return std::make_unique<CubeStep>(ctx.input_headers.front(), std::move(params), final, use_nulls);
+    std::vector<size_t> key_positions;
+    if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_REPEATED_GROUPING_KEYS)
+    {
+        UInt64 num_positions = 0;
+        readVarUInt(num_positions, ctx.in);
+        key_positions.resize(num_positions);
+        size_t keys_referenced = 0;
+        for (auto & position : key_positions)
+        {
+            UInt64 value = 0;
+            readVarUInt(value, ctx.in);
+            if (value >= keys.size())
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Grouping key position {} is out of range", value);
+
+            /// The planner walks the GROUP BY list and assigns a new key index to each expression
+            /// the first time it sees it, so in any payload the sender can build, first appearances
+            /// arrive as 0, 1, 2, ... and, below, every key ends up referenced. Together the two
+            /// checks characterise the valid payloads exactly - any sequence passing both is
+            /// realisable from some GROUP BY list, anything else is not. Executing an out-of-order
+            /// payload would miscompute `GROUPING()`: `RollupTransform`'s `__grouping_set` numbering
+            /// relies on the drop order being the reverse of the key order, which only holds under
+            /// first-occurrence ordering.
+            if (value > keys_referenced)
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Grouping key position {} is out of first-occurrence order ({} keys introduced so far)",
+                    value,
+                    keys_referenced);
+            if (value == keys_referenced)
+                ++keys_referenced;
+
+            position = value;
+        }
+
+        if (!key_positions.empty() && keys_referenced != keys.size())
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Grouping key positions must reference every key at least once "
+                "({} of {} keys referenced by {} positions)",
+                keys_referenced,
+                keys.size(),
+                key_positions.size());
+    }
+
+    return std::make_unique<CubeStep>(ctx.input_headers.front(), std::move(params), final, use_nulls, std::move(key_positions));
 }
 
 void registerCubeStep(QueryPlanStepRegistry & registry);

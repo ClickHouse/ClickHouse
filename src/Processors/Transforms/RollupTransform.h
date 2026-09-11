@@ -1,4 +1,5 @@
 #pragma once
+#include <limits>
 #include <memory>
 #include <Core/ColumnNumbers.h>
 #include <Processors/IAccumulatingTransform.h>
@@ -40,7 +41,10 @@ protected:
 class RollupTransform final : public GroupByModifierTransform
 {
 public:
-    RollupTransform(SharedHeader header, AggregatingTransformParamsPtr params, bool use_nulls_);
+    /// `key_positions_` maps each element of the GROUP BY list, in order and keeping repetitions,
+    /// onto its index in the deduplicated key list. Empty means the trivial 0..keys-1 mapping.
+    RollupTransform(SharedHeader header, AggregatingTransformParamsPtr params, bool use_nulls_,
+                    const std::vector<size_t> & key_positions_ = {});
     String getName() const override { return "RollupTransform"; }
 
 protected:
@@ -49,7 +53,14 @@ protected:
 private:
     const ColumnsMask aggregates_mask;
 
-    size_t last_removed_key = 0;
+    /// Number of elements written in the GROUP BY list, which is what ROLLUP takes the prefixes of.
+    size_t num_group_by_elements = 0;
+    /// For each GROUP BY position, the key to drop when the prefix shrinks past it, or `no_key` when
+    /// the key written there also occurs earlier and so is still held by that earlier position.
+    static constexpr size_t no_key = std::numeric_limits<size_t>::max();
+    std::vector<size_t> key_dropped_at_position;
+
+    size_t last_removed_position = 0;
     size_t set_counter = 0;
 };
 

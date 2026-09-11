@@ -36,6 +36,11 @@ struct AggregationAnalysisResult
 {
     ActionsAndProjectInputsFlagPtr before_aggregation_actions;
     Names aggregation_keys;
+    /// One entry per element of the GROUP BY list, in order and keeping repetitions, holding that
+    /// element's index in `aggregation_keys`. Left empty unless an element repeats, since only
+    /// CUBE and ROLLUP - which take the power set and the prefixes of the list as written - can
+    /// tell the difference.
+    std::vector<size_t> aggregation_key_positions;
     AggregateDescriptions aggregate_descriptions;
     GroupingSetsParamsList grouping_sets_parameters_list;
     bool group_by_with_constant_keys = false;

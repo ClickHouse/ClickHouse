@@ -13,7 +13,10 @@ using AggregatingTransformParamsPtr = std::shared_ptr<AggregatingTransformParams
 class RollupStep : public ITransformingStep
 {
 public:
-    RollupStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_);
+    /// `key_positions_` maps each element of the GROUP BY list, in order and keeping repetitions,
+    /// onto its index in `params_.keys`, which is deduplicated. Empty means no key was repeated.
+    RollupStep(const SharedHeader & input_header_, Aggregator::Params params_, bool final_, bool use_nulls_,
+               std::vector<size_t> key_positions_ = {});
 
     String getName() const override { return "Rollup"; }
 
@@ -32,6 +35,7 @@ private:
     void updateOutputHeader() override;
 
     Aggregator::Params params;
+    std::vector<size_t> key_positions;
     size_t keys_size;
     bool final;
     bool use_nulls;
