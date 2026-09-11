@@ -25,6 +25,7 @@ CLIENT_OPT=$(echo "${CLICKHOUSE_CLIENT_OPT}" | sed "s/--host=[^ ]*//g; s/--port=
 
 # shellcheck disable=SC2086
 ${CLICKHOUSE_CLIENT_BINARY} ${CLIENT_OPT} --config-file "$CLIENT_CONFIG" --host 127.0.0.1 --port "$PROXY_PORT" --multiquery "
+    SELECT toString(getSetting('sync_request_timeout'));
     SET sync_request_timeout = 1.75;
     CREATE TEMPORARY TABLE t_05175_before ENGINE = Memory AS SELECT 1 AS x;
     SELECT throwIf(1); -- { serverError FUNCTION_THROW_IF_VALUE_IS_NON_ZERO }

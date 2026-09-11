@@ -2939,6 +2939,7 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
+            updateConnectionSyncRequestTimeout();
             connection->setFormatSettings(getFormatSettings(client_context));
         });
         /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
@@ -2946,6 +2947,7 @@ void ClientBase::processParsedSingleQuery(
         /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
+        updateConnectionSyncRequestTimeout();
         connection->setFormatSettings(getFormatSettings(client_context));
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
@@ -2958,6 +2960,7 @@ void ClientBase::processParsedSingleQuery(
             connect();
 
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
+        updateConnectionSyncRequestTimeout();
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
         /// zone. The client parses synchronous INSERT literals itself, but literals interpreted server-side
@@ -3998,8 +4001,6 @@ void ClientBase::applySettingsFromServerIfNeeded()
     }
 
     client_context->applySettingsChanges(changes_to_apply);
-    if (changes_to_apply.tryGet("sync_request_timeout"))
-        connection_parameters.timeouts.withSyncRequestTimeout(settings[Setting::sync_request_timeout]);
 }
 
 void ClientBase::startKeystrokeInterceptorIfExists()
