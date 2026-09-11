@@ -17,7 +17,7 @@ clickhouse_add_executable (memcpy-bench
     glibc/memmove-avx512-no-vzeroupper.S
     )
 
-add_compile_options(memcpy-bench PRIVATE -fno-tree-loop-distribute-patterns)
+target_compile_options(memcpy-bench PRIVATE -fno-tree-loop-distribute-patterns)
 
 if (OS_SUNOS)
     target_compile_options(memcpy-bench PRIVATE "-Wa,--divide")
