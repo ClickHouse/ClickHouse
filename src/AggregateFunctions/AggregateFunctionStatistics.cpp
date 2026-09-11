@@ -474,6 +474,206 @@ public:
 };
 
 
+/** Parallel and incremental algorithm for calculating skewness and kurtosis.
+  * Source: Pébay, Terriberry, Kolla, Bennett (2016) "Numerically stable, scalable formulas for
+  *         parallel and online computation of higher-order multivariate central moments with
+  *         arbitrary weights", Computational Statistics 31:1305–1325, DOI 10.1007/s00180-015-0637-z.
+  *         Corollary 3.2 for the incremental update; Proposition 3.1 for the parallel merge.
+  */
+struct AggregateFunctionHigherMomentsData
+{
+    void ALWAYS_INLINE add(Float64 x)
+    {
+        UInt64 n0 = count;
+        ++count;
+        Float64 delta = x - mean;
+        Float64 delta_n = delta / static_cast<Float64>(count);
+        Float64 delta_n2 = delta_n * delta_n;
+        Float64 term1 = delta * delta_n * static_cast<Float64>(n0);
+        Float64 count_f = static_cast<Float64>(count);
+        /// Update order is mandatory: M4 → M3 → M2 (each reads the not-yet-updated lower moment)
+        m4 += term1 * delta_n2 * (count_f * count_f - 3.0 * count_f + 3.0)
+              + 6.0 * delta_n2 * m2 - 4.0 * delta_n * m3;
+        m3 += term1 * delta_n * (count_f - 2.0) - 3.0 * delta_n * m2;
+        m2 += term1;
+        mean += delta_n;
+    }
+
+    void update(const IColumn & column, size_t row_num)
+    {
+        add(column.getFloat64(row_num));
+    }
+
+    void mergeWith(const AggregateFunctionHigherMomentsData & source)
+    {
+        UInt64 n_a = count;
+        UInt64 n_b = source.count;
+        UInt64 n = n_a + n_b;
+        if (n == 0)
+            return;
+
+        Float64 na = static_cast<Float64>(n_a);
+        Float64 nb = static_cast<Float64>(n_b);
+        Float64 nf = static_cast<Float64>(n);
+
+        Float64 delta = source.mean - mean;
+        Float64 delta2 = delta * delta;
+        Float64 delta3 = delta2 * delta;
+        Float64 delta4 = delta3 * delta;
+
+        m4 += source.m4
+              + delta4 * (na * nb * (na * na - na * nb + nb * nb)) / (nf * nf * nf)
+              + 6.0 * delta2 * (na * na * source.m2 + nb * nb * m2) / (nf * nf)
+              + 4.0 * delta * (na * source.m3 - nb * m3) / nf;
+        m3 += source.m3
+              + delta3 * na * nb * (na - nb) / (nf * nf)
+              + 3.0 * delta * (na * source.m2 - nb * m2) / nf;
+        m2 += source.m2 + delta2 * na * nb / nf;
+
+        if (areComparable(n_a, n_b))
+            mean = (nb * source.mean + na * mean) / nf;
+        else
+            mean = mean + delta * (nb / nf);
+
+        count = n;
+    }
+
+    void serialize(WriteBuffer & buf) const
+    {
+        writeVarUInt(count, buf);
+        writeBinary(mean, buf);
+        writeBinary(m2, buf);
+        writeBinary(m3, buf);
+        writeBinary(m4, buf);
+    }
+
+    void deserialize(ReadBuffer & buf)
+    {
+        readVarUInt(count, buf);
+        readBinary(mean, buf);
+        readBinary(m2, buf);
+        readBinary(m3, buf);
+        readBinary(m4, buf);
+    }
+
+    UInt64 count = 0;
+    Float64 mean = 0.0;
+    Float64 m2 = 0.0;
+    Float64 m3 = 0.0;
+    Float64 m4 = 0.0;
+};
+
+enum class MomentKind : uint8_t
+{
+    skewPopStable,
+    skewSampStable,
+    kurtPopStable,
+    kurtSampStable,
+};
+
+class AggregateFunctionHigherMoments final
+    : public IAggregateFunctionDataHelper<AggregateFunctionHigherMomentsData, AggregateFunctionHigherMoments>
+{
+private:
+    MomentKind kind;
+
+    Float64 getResult(ConstAggregateDataPtr __restrict place) const
+    {
+        const auto & d = data(place);
+        const Float64 nan = std::numeric_limits<Float64>::quiet_NaN();
+
+        if (d.count == 0)
+            return nan;
+
+        /// varPop = m2 / count; guard varPop > 0 matches the naive path
+        bool pop_pos = d.m2 > 0;
+        bool samp_pos = d.count > 1 && d.m2 > 0;
+
+        switch (kind)
+        {
+            case MomentKind::skewPopStable:
+            {
+                if (!pop_pos)
+                    return nan;
+                /// (m3/count) / (m2/count)^1.5 = m3 * sqrt(count) / m2^1.5
+                return d.m3 * std::sqrt(static_cast<Float64>(d.count))
+                       / std::pow(d.m2, 1.5);
+            }
+            case MomentKind::skewSampStable:
+            {
+                if (!samp_pos)
+                    return nan;
+                Float64 count_m1 = static_cast<Float64>(d.count - 1);
+                return d.m3 * std::pow(count_m1, 1.5)
+                       / (static_cast<Float64>(d.count) * std::pow(d.m2, 1.5));
+            }
+            case MomentKind::kurtPopStable:
+            {
+                if (!pop_pos)
+                    return nan;
+                /// (m4/count) / (m2/count)^2 = m4 * count / m2^2
+                return d.m4 * static_cast<Float64>(d.count) / (d.m2 * d.m2);
+            }
+            case MomentKind::kurtSampStable:
+            {
+                if (!samp_pos)
+                    return nan;
+                Float64 count_m1 = static_cast<Float64>(d.count - 1);
+                return d.m4 * count_m1 * count_m1
+                       / (static_cast<Float64>(d.count) * d.m2 * d.m2);
+            }
+        }
+        UNREACHABLE();
+    }
+
+public:
+    explicit AggregateFunctionHigherMoments(MomentKind kind_, const DataTypePtr & arg)
+        : IAggregateFunctionDataHelper<AggregateFunctionHigherMomentsData, AggregateFunctionHigherMoments>(
+              {arg}, {}, std::make_shared<DataTypeFloat64>()),
+          kind(kind_)
+    {
+    }
+
+    String getName() const override
+    {
+        switch (kind)
+        {
+            case MomentKind::skewPopStable:  return "skewPopStable";
+            case MomentKind::skewSampStable: return "skewSampStable";
+            case MomentKind::kurtPopStable:  return "kurtPopStable";
+            case MomentKind::kurtSampStable: return "kurtSampStable";
+        }
+    }
+
+    bool allocatesMemoryInArena() const override { return false; }
+
+    void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
+    {
+        data(place).update(*columns[0], row_num);
+    }
+
+    void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena *) const override
+    {
+        data(place).mergeWith(data(rhs));
+    }
+
+    void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> /* version */) const override
+    {
+        data(place).serialize(buf);
+    }
+
+    void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> /* version */, Arena *) const override
+    {
+        data(place).deserialize(buf);
+    }
+
+    void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
+    {
+        assert_cast<ColumnFloat64 &>(to).getData().push_back(getResult(place));
+    }
+};
+
+
 template <template <typename> typename FunctionTemplate>
 AggregateFunctionPtr createAggregateFunctionStatisticsUnary(
     const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
@@ -897,6 +1097,159 @@ FROM series
         },
         corrStable_documentation
     });
+
+    auto make_higher_moment = [](MomentKind mk)
+    {
+        return [mk](const std::string & name, const DataTypes & argument_types, const Array & parameters, const Settings *)
+        {
+            assertNoParameters(name, parameters);
+            assertUnary(name, argument_types);
+            return std::make_shared<AggregateFunctionHigherMoments>(mk, argument_types[0]);
+        };
+    };
+
+    /// skewPopStable documentation
+    FunctionDocumentation::Description description_skewPopStable = R"(
+Computes the [population skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
+
+Unlike [`skewPop`](/sql-reference/aggregate-functions/reference/skewpop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) single-pass algorithm based on Terriberry (2007) and is accurate even when the mean is large relative to the standard deviation.
+    )";
+    FunctionDocumentation::Syntax syntax_skewPopStable = R"(
+skewPopStable(expr)
+    )";
+    FunctionDocumentation::Parameters parameters_skewPopStable = {};
+    FunctionDocumentation::Arguments arguments_skewPopStable = {
+        {"expr", "An expression returning a number.", {"Expression"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_skewPopStable = {"Returns the population skewness of the distribution. Returns `nan` if `m2 = 0` (constant input).", {"Float64"}};
+    FunctionDocumentation::Examples examples_skewPopStable = {
+    {
+        "Symmetric distribution",
+        R"(
+SELECT skewPopStable(number) FROM numbers(100);
+        )",
+        R"(
+┌─skewPopStable(number)─┐
+│                     0 │
+└───────────────────────┘
+        )"
+    },
+    {
+        "Numerically stable at large offset",
+        R"(
+SELECT skewPopStable(number + 1e15) FROM numbers(100);
+        )",
+        R"(
+┌─skewPopStable(number + 1e15)─┐
+│                            0 │
+└──────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_skewPopStable = {26, 7};
+    FunctionDocumentation::Category category_skewPopStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_skewPopStable = {description_skewPopStable, syntax_skewPopStable, arguments_skewPopStable, parameters_skewPopStable, returned_value_skewPopStable, examples_skewPopStable, introduced_in_skewPopStable, category_skewPopStable};
+
+    factory.registerFunction("skewPopStable", {make_higher_moment(MomentKind::skewPopStable), documentation_skewPopStable});
+
+    /// skewSampStable documentation
+    FunctionDocumentation::Description description_skewSampStable = R"(
+Computes the [sample skewness](https://en.wikipedia.org/wiki/Skewness) of a sequence.
+
+Unlike [`skewSamp`](/sql-reference/aggregate-functions/reference/skewsamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) single-pass algorithm based on Terriberry (2007) and is accurate even when the mean is large relative to the standard deviation.
+    )";
+    FunctionDocumentation::Syntax syntax_skewSampStable = R"(
+skewSampStable(expr)
+    )";
+    FunctionDocumentation::Parameters parameters_skewSampStable = {};
+    FunctionDocumentation::Arguments arguments_skewSampStable = {
+        {"expr", "An expression returning a number.", {"Expression"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_skewSampStable = {"Returns the sample skewness of the distribution. Returns `nan` if `n <= 1` or `m2 = 0` (constant input).", {"Float64"}};
+    FunctionDocumentation::Examples examples_skewSampStable = {
+    {
+        "Symmetric distribution",
+        R"(
+SELECT skewSampStable(number) FROM numbers(100);
+        )",
+        R"(
+┌─skewSampStable(number)─┐
+│                      0 │
+└────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_skewSampStable = {26, 7};
+    FunctionDocumentation::Category category_skewSampStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_skewSampStable = {description_skewSampStable, syntax_skewSampStable, arguments_skewSampStable, parameters_skewSampStable, returned_value_skewSampStable, examples_skewSampStable, introduced_in_skewSampStable, category_skewSampStable};
+
+    factory.registerFunction("skewSampStable", {make_higher_moment(MomentKind::skewSampStable), documentation_skewSampStable});
+
+    /// kurtPopStable documentation
+    FunctionDocumentation::Description description_kurtPopStable = R"(
+Computes the [population kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
+
+Unlike [`kurtPop`](/sql-reference/aggregate-functions/reference/kurtpop), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) single-pass algorithm based on Terriberry (2007) and is accurate even when the mean is large relative to the standard deviation.
+    )";
+    FunctionDocumentation::Syntax syntax_kurtPopStable = R"(
+kurtPopStable(expr)
+    )";
+    FunctionDocumentation::Parameters parameters_kurtPopStable = {};
+    FunctionDocumentation::Arguments arguments_kurtPopStable = {
+        {"expr", "An expression returning a number.", {"Expression"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_kurtPopStable = {"Returns the population kurtosis of the distribution. Returns `nan` if `m2 = 0` (constant input).", {"Float64"}};
+    FunctionDocumentation::Examples examples_kurtPopStable = {
+    {
+        "Uniform distribution",
+        R"(
+SELECT kurtPopStable(number) FROM numbers(100);
+        )",
+        R"(
+┌─kurtPopStable(number)─┐
+│    1.7997599759975997 │
+└───────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_kurtPopStable = {26, 7};
+    FunctionDocumentation::Category category_kurtPopStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_kurtPopStable = {description_kurtPopStable, syntax_kurtPopStable, arguments_kurtPopStable, parameters_kurtPopStable, returned_value_kurtPopStable, examples_kurtPopStable, introduced_in_kurtPopStable, category_kurtPopStable};
+
+    factory.registerFunction("kurtPopStable", {make_higher_moment(MomentKind::kurtPopStable), documentation_kurtPopStable});
+
+    /// kurtSampStable documentation
+    FunctionDocumentation::Description description_kurtSampStable = R"(
+Computes the [sample kurtosis](https://en.wikipedia.org/wiki/Kurtosis) of a sequence.
+
+Unlike [`kurtSamp`](/sql-reference/aggregate-functions/reference/kurtsamp), this function uses a [numerically stable](https://en.wikipedia.org/wiki/Numerical_stability) single-pass algorithm based on Terriberry (2007) and is accurate even when the mean is large relative to the standard deviation.
+    )";
+    FunctionDocumentation::Syntax syntax_kurtSampStable = R"(
+kurtSampStable(expr)
+    )";
+    FunctionDocumentation::Parameters parameters_kurtSampStable = {};
+    FunctionDocumentation::Arguments arguments_kurtSampStable = {
+        {"expr", "An expression returning a number.", {"Expression"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_kurtSampStable = {"Returns the sample kurtosis of the distribution. Returns `nan` if `n <= 1` or `m2 = 0` (constant input).", {"Float64"}};
+    FunctionDocumentation::Examples examples_kurtSampStable = {
+    {
+        "Uniform distribution",
+        R"(
+SELECT kurtSampStable(number) FROM numbers(100);
+        )",
+        R"(
+┌─kurtSampStable(number)─┐
+│     1.7639447524752476 │
+└────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_kurtSampStable = {26, 7};
+    FunctionDocumentation::Category category_kurtSampStable = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_kurtSampStable = {description_kurtSampStable, syntax_kurtSampStable, arguments_kurtSampStable, parameters_kurtSampStable, returned_value_kurtSampStable, examples_kurtSampStable, introduced_in_kurtSampStable, category_kurtSampStable};
+
+    factory.registerFunction("kurtSampStable", {make_higher_moment(MomentKind::kurtSampStable), documentation_kurtSampStable});
 }
 
 }
