@@ -37,3 +37,48 @@ mid-closure failure can't be rolled back (stop-at-first-failure keeps the common
 permission/config case clean); and drop-on-failure trades transient resilience
 for immediate visibility (acceptable — post-SDK-retry failures here are almost
 always permanent).
+
+---
+
+## Report: finish making the orchestrator the sole summary writer, then drop result versioning
+
+**Problem.** On the native path the workflow report summary
+(`PRs/<pr>/<sha>/<workflow>/…json`) is a single mutable object with several
+concurrent writers: the orchestrator (`create_initial_report` + `publish_report`
+each loop) *and* every job's runner (`hook_html.pre_run`, `post_run`) *and* the
+Config job (`hook_html.configure`). Each does a whole-object read → modify →
+re-upload via `_ResultS3.update_workflow_results`. Because more than one writer
+touches the same object, the writes must be serialized by optimistic locking —
+`copy_result_*_with_version`'s version CAS + the `MAX_ATTEMPTS` retry loop —
+or concurrent RMWs lose each other's rows.
+
+Creation ownership already moved to the orchestrator (Config's
+`push_pending_ci_report` no-ops under `ORCHESTRATOR_OWNS_REPORT`; the orchestrator
+does the sole `version=0` create). But the *row/message* writers on the runner
+side did not, so versioning is still load-bearing.
+
+**Status.** Open — version CAS is still required because `pre_run`/`post_run`
+still write the summary. Item 3 below (`configure`) is **done**: the orchestrator
+now authors the cached/filtered SKIPPED rows (`apply_workflow_config` stashes the
+cache link, `publish_report` writes the rows), and `configure` no-ops on the
+native path — one fewer concurrent writer (see REPORT_OWNERSHIP.md increment 4).
+`post_run`'s `update_workflow_results` still can't be gated off "without first
+splitting usage aggregation out (a larger change)."
+
+**Direction to consider.** Stand the runner-side summary writers down on the
+native path so the orchestrator is the *only* writer, then drop the CAS:
+1. `post_run` — skip the summary `update_workflow_results` on native. The
+   orchestrator already re-asserts each row from `final.json`; move the two things
+   `post_run` still contributes into it: **report messages** (warnings/errors) and
+   **DROPPED-dependee rows** (computed on a blocking job failure).
+2. `pre_run` — move its stale-report-message clear into the orchestrator's reset
+   path.
+3. `configure` — **done.** The orchestrator authors the cached/filtered SKIPPED
+   rows (`apply_workflow_config` + `publish_report`); `configure` no-ops on native.
+4. Runners keep writing only their own `result_<job>.json`; nothing but the
+   orchestrator mutates the summary object.
+
+Once no runner touches the summary, the single writer makes the version CAS
+unnecessary — every summary write becomes an unconditional `version=0` (or a
+plain PUT), which is simpler and faster. This is the natural continuation of the
+creation-ownership move: create → rows/messages → versioning falls away.

@@ -585,6 +585,15 @@ def _orchestrate_single(workflow, event, gh_token=None, local_mode=False, existi
                     local_mode=local_mode,
                 )
                 state.print_plan()
+                # Native path: the orchestrator owns the workflow report. Create
+                # the initial summary (all jobs PENDING) here, once, at fresh-run
+                # start — the Config job's push_pending_ci_report no-ops under
+                # ORCHESTRATOR_OWNS_REPORT, and a resume (_orchestrate_resume)
+                # deliberately does NOT recreate it. Inside the retry block and
+                # before any job is dispatched: a transient failure is retried,
+                # and a hard failure is an infra fault the controller re-runs on a
+                # fresh instance (nothing dispatched yet).
+                state.create_initial_report()
                 break
             except Exception as e:
                 # Discard any partial startup state before retrying.
@@ -628,8 +637,14 @@ def _orchestrate_single(workflow, event, gh_token=None, local_mode=False, existi
             state.cleanup()
             # Persist the terminal snapshot with finalized=True — the lambda
             # reads this flag to route a re-run to a fresh orchestrator (resume)
-            # instead of a live one.
-            state.save_snapshot(finalized=True)
+            # instead of a live one. required=True: this is the sole durable
+            # "no live orchestrator" signal, so if it can't land after retries
+            # we must NOT exit as if finalized (that would route every later
+            # re-run to a dead orchestrator). Raising here escapes to run() →
+            # INFRA_EXIT_CODE → the controller re-drives on a fresh instance
+            # (which re-reads the terminal snapshot and finalizes once S3 is
+            # back). Ordinary mid-loop writes stay best-effort.
+            state.save_snapshot(finalized=True, required=True)
             # praktika_debug: attach the orchestrator instance's controller +
             # orchestrate logs to the top-level result (best-effort).
             state.attach_debug_logs()

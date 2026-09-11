@@ -65,15 +65,27 @@ them back for the **CIDB usage insert** (`runner.py`). CIDB stays on the runner,
 so `post_run`'s `update_workflow_results` must stay too — you can't gate it off
 without first splitting usage aggregation out (a larger change).
 
-So instead of gating the writers, we **neutralise the one destructive
-operation** — `push_pending_ci_report`'s `version=0` reset:
+So instead of gating the writers, we **move the one destructive operation** —
+the `version=0` create/reset — out of the Config job and onto the orchestrator:
 
-- `hook_html.push_pending_ci_report` → on the native path (`ORCHESTRATOR_OWNS_REPORT`),
-  **create the summary once; never reset an existing one** (`_report_summary_exists`
-  guard). A duplicate/late Config from a restart no longer wipes finished rows.
-  GitHub Actions keeps the `version=0` reset (no orchestrator to rebuild rows).
-- `hook_html.configure` / `pre_run` / `post_run` → **unchanged** (rows + usage +
-  the per-job `result_<job>.json` keep flowing; CIDB untouched).
+- `hook_html.push_pending_ci_report` → on the native path (`ORCHESTRATOR_OWNS_REPORT`)
+  it is a **no-op**. The orchestrator, not the Config job, creates the summary.
+  GitHub Actions keeps the `version=0` create here (no orchestrator to do it).
+- `state.create_initial_report` (called once by `_orchestrate_single` at
+  fresh-run start, inside the startup-retry block) is the **sole** `version=0`
+  writer on the native path. A resume (`_orchestrate_resume`) never calls it, so
+  a re-run keeps the finished run's rows. Because the single owner does the
+  create at its own run boundary, there is **no create-once guard and no run_id
+  in the report**: a fresh run resets with a new `start_time`, a resume doesn't
+  touch it — which also closes the same-sha report-reuse hazard (a new
+  orchestrator at the same PR/sha no longer inherits the previous run's stale
+  `start_time`/`duration`).
+- `hook_html.configure` → **no-op on the native path** (`ORCHESTRATOR_OWNS_REPORT`).
+  The orchestrator now authors the cached/filtered SKIPPED rows itself (see
+  increment 4 below), so the Config job no longer writes them — one fewer
+  concurrent summary writer. On GitHub Actions (no orchestrator) it is unchanged.
+- `pre_run` / `post_run` → **unchanged** (rows + usage + the per-job
+  `result_<job>.json` keep flowing; CIDB untouched).
 - `native_jobs._finish_workflow` → **unchanged**: with no destructive reset and
   the orchestrator re-asserting rows, a row that is still non-terminal at Finish
   time is a *genuine* problem, so its `NOT_FINALIZED` marking is now correct
@@ -95,8 +107,9 @@ orchestrator restores it next loop.
 2. For every job with a terminal `js.result` (parsed from `final.json`), call
    `_ResultS3.update_workflow_results(new_sub_results=[Result.from_dict(js.result)])`
    — the same version-CAS merge the runner uses (`drop_nested_results=True`), so
-   rows render identically. Only jobs the orchestrator knows finished are
-   re-asserted; cached/pending rows are left to the runner's `configure`/plan.
+   rows render identically. Jobs the orchestrator knows finished are re-asserted
+   from their `final.json`; **cached/filtered SKIPPED jobs (which never run and
+   have no `final.json`) get their rows authored here too** (increment 4).
 3. Called each `_drive_dag` loop (after `save_snapshot`), so the summary is
    corrected continuously — including while Finish Workflow is running.
 
@@ -118,13 +131,37 @@ each loop — idempotent, so re-publishing can't multiply the totals. The runner
 rows / report messages and still sets `result.ext` for the orchestrator to read.
 CIDB usage insertion stays on the runner and reads the totals off the summary.
 
+### Increment 4 (shipped) — orchestrator authors the SKIPPED rows
+
+`hook_html.configure` (run inside the Config job) used to write the cached/
+filtered SKIPPED rows into the summary, making the runner a concurrent writer
+racing the orchestrator's per-loop re-assert. Worse, its
+`assert update_workflow_results(...) is None` guard tripped against the
+orchestrator-seeded summary: the orchestrator seeds the summary `RUNNING` with
+every job (incl. Config) `PENDING` (`config_job_running=False`), so the first
+`update_sub_result` recomputed the status `RUNNING → PENDING` and the guard
+raised. `configure` now **no-ops on the native path**; instead:
+
+- `WorkflowState.apply_workflow_config` already marks `filtered_jobs` +
+  `cache_success` jobs SKIPPED in the DAG. It now also stashes the cache-hit
+  report link on the `JobState` (`skip_details_url`, persisted in the snapshot
+  so it survives a resume).
+- `publish_report` builds a SKIPPED `Result` row for each such job (cache hit →
+  its reused-report link + "reused from cache"; filtered → its reason as info)
+  and writes them in the same `update_workflow_results` call as the terminal
+  rows. SKIPPED rows carry **no usage** (the job never ran) so they are built
+  separately and kept out of the usage aggregation.
+
+One fewer runner-side summary writer. See BACKLOG.md "sole summary writer".
+
 ### Deferred (follow-up, not correctness)
 
-- **Retire the runner's row-writes (true "runner writes nothing").** Now that
-  usage is off the runner, only rows/messages remain. Retiring those needs the
-  orchestrator to author cached-job (SKIPPED) rows and per-job report messages,
-  the top-level ext, and Finish Workflow to read the summary from S3. Larger
-  change, no correctness benefit over the current state.
+- **Retire the remaining runner row-writes (`pre_run` / `post_run`).** With
+  `configure` done (increment 4), these two are the last runner writers of the
+  summary. Retiring them needs the orchestrator to own per-job report messages,
+  DROPPED-dependee rows, and the top-level ext — after which the version CAS can
+  be dropped (see BACKLOG.md). Larger change, no correctness benefit over the
+  current state.
 - **Finish Workflow's own usage.** The orchestrator counts a job's usage only
   after its `final.json` lands; Finish Workflow reads the summary for the CIDB
   insert *before* it finishes, so its own (cheap, native) usage isn't counted.
@@ -151,11 +188,17 @@ run) no longer shows `NOT_FINALIZED`.
 - `praktika/_environment.py` — `ORCHESTRATOR_OWNS_REPORT` field.
 - `praktika/orchestrator/job_runner.py` — set it True in `_build_ci_environment`
   (False for local runs).
-- `praktika/orchestrator/state.py` — `publish_report()` + `_ensure_report_env()`.
+- `praktika/orchestrator/state.py` — `publish_report()` + `_ensure_report_env()`;
+  `apply_workflow_config`/`JobState.skip` stash `skip_details_url`; `publish_report`
+  authors the SKIPPED rows (increment 4).
 - `praktika/orchestrator/__init__.py` — call `publish_report()` each `_drive_dag`
   loop.
-- `praktika/hook_html.py` — `push_pending_ci_report` is create-once (no
-  destructive reset) on the native path; `_report_summary_exists` guard.
+- `praktika/hook_html.py` — `push_pending_ci_report` and `configure` no-op on the
+  native path; the shared skeleton builder (`_build_pending_summary` +
+  `_write_summary_to_s3`) is driven by `create_initial_report` (orchestrator) and
+  the GHA Config path.
+- `praktika/orchestrator/state.py` — `create_initial_report()` is the sole
+  native-path `version=0` writer (called from `_orchestrate_single`).
 
-Deferred (see above): splitting usage aggregation out of `update_workflow_results`
-so `post_run`/`configure`/Finish row-writes can be retired on the native path.
+Deferred (see above): retiring `pre_run`/`post_run` row-writes on the native path,
+after which the version CAS can be dropped.
