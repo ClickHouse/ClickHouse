@@ -116,6 +116,12 @@ private:
             LongConnectionHits,
             LongConnectionFallbacks,
             LongConnectionBytes,
+            /// Waits on a concurrent downloader of a cache segment. `Timeouts` counts the waits that
+            /// came back short, i.e. where this query tracked the peer's download speed instead of
+            /// reading the same bytes from source at its own.
+            ConcurrentDownloadWaits,
+            ConcurrentDownloadWaitTimeouts,
+            ConcurrentDownloadWaitMicroseconds,
             NumCounters,
         };
 

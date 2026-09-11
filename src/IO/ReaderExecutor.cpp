@@ -28,6 +28,9 @@ namespace ProfileEvents
     extern const Event ReaderExecutorLongConnectionHits;
     extern const Event ReaderExecutorLongConnectionFallbacks;
     extern const Event ReaderExecutorLongConnectionBytes;
+    extern const Event ReaderExecutorConcurrentDownloadWaits;
+    extern const Event ReaderExecutorConcurrentDownloadWaitTimeouts;
+    extern const Event ReaderExecutorConcurrentDownloadWaitMicroseconds;
 }
 
 namespace CurrentMetrics
@@ -131,6 +134,15 @@ void ReaderExecutor::Stats::add(Counter c, UInt64 value)
             break;
         case LongConnectionBytes:
             ProfileEvents::increment(ProfileEvents::ReaderExecutorLongConnectionBytes, value);
+            break;
+        case ConcurrentDownloadWaits:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorConcurrentDownloadWaits, value);
+            break;
+        case ConcurrentDownloadWaitTimeouts:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorConcurrentDownloadWaitTimeouts, value);
+            break;
+        case ConcurrentDownloadWaitMicroseconds:
+            ProfileEvents::increment(ProfileEvents::ReaderExecutorConcurrentDownloadWaitMicroseconds, value);
             break;
         case NumCounters:
             break;
@@ -485,7 +497,18 @@ ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range,
             return writer->read(ByteRange{pos, serve_len(writer->committed())});
         if (covers_head && !role)
         {
-            ChainedBuffers waited = writer->waitAndRead(ByteRange{pos, serve_len(fetch_range.end())});
+            const ByteRange want{pos, serve_len(fetch_range.end())};
+            stats.add(Stats::ConcurrentDownloadWaits);
+            ChainedBuffers waited;
+            {
+                StatTimer wait_timer(stats, Stats::ConcurrentDownloadWaitMicroseconds);
+                waited = writer->waitAndRead(want);
+            }
+            /// Short of the request clamped to this writer's segment means the wait timed out - the
+            /// request itself may legitimately reach past the segment end.
+            const size_t want_here = std::min(want.end(), writer->range().end()) - want.offset;
+            if (waited.totalBytes() < want_here)
+                stats.add(Stats::ConcurrentDownloadWaitTimeouts);
             if (!waited.empty())
                 return waited;
         }

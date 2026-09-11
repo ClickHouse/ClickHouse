@@ -48,6 +48,8 @@ namespace ProfileEvents
     extern const Event ReaderExecutorLongConnectionHits;
     extern const Event ReaderExecutorLongConnectionFallbacks;
     extern const Event ReaderExecutorLongConnectionBytes;
+    extern const Event ReaderExecutorConcurrentDownloadWaits;
+    extern const Event ReaderExecutorConcurrentDownloadWaitTimeouts;
 }
 
 namespace DB::ErrorCodes
@@ -720,6 +722,10 @@ TEST_F(ReaderExecutorTest, ConcurrentDownloadIsWaitedForAndServedFromCache)
 
     /// The concurrently-downloaded [0,256) was served via waitAndRead, so only [256,1024) hit source.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 768u);
+    /// The wait is counted, and a wait that DID deliver is not a timeout - the request reaches past the
+    /// 256-byte cell, so this only holds because the check clamps to the writer's range.
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorConcurrentDownloadWaits), 1u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorConcurrentDownloadWaitTimeouts), 0u);
     for (const auto & wr : state->writes)
         EXPECT_GE(wr.offset, 256u) << "wrote into the concurrently-downloaded block";
 }
@@ -748,6 +754,10 @@ TEST_F(ReaderExecutorTest, ConcurrentDownloadWaitTimesOutFallsBackToSource)
 
     /// Wait failed, so everything came from source; still no write into the concurrently-downloaded cell.
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u);
+    /// A timed-out wait is counted as both a wait and a timeout, so the pair measures how often a query
+    /// advances at a peer's download pace instead of reading from source.
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorConcurrentDownloadWaits), 1u);
+    EXPECT_GE(tg.get(ProfileEvents::ReaderExecutorConcurrentDownloadWaitTimeouts), 1u);
     for (const auto & wr : state->writes)
         EXPECT_GE(wr.offset, 256u) << "wrote into the concurrently-downloaded block";
     EXPECT_FALSE(state->resident.subtract(ByteRange{0, block}).empty());

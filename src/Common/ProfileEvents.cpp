@@ -287,6 +287,9 @@
     M(ReaderExecutorLongConnectionHits, "Number of windows ReaderExecutor served by reading from an already-open long source connection.", ValueType::Number) \
     M(ReaderExecutorLongConnectionFallbacks, "Number of times ReaderExecutor wanted a long connection but fell back to a one-shot read because no slot was available.", ValueType::Number) \
     M(ReaderExecutorLongConnectionBytes, "Total bytes read through long source connections.", ValueType::Bytes) \
+    M(ReaderExecutorConcurrentDownloadWaits, "Number of times the ReaderExecutor waited for a concurrent downloader to commit a cache segment range.", ValueType::Number) \
+    M(ReaderExecutorConcurrentDownloadWaitTimeouts, "Number of those waits that timed out and returned a short read, so the query advanced at the concurrent downloader's pace instead of reading from source.", ValueType::Number) \
+    M(ReaderExecutorConcurrentDownloadWaitMicroseconds, "Total time the ReaderExecutor spent blocked on concurrent downloaders of cache segments.", ValueType::Microseconds) \
     M(QueryRemoteWriteThrottlerBytes, "Bytes passed through 'max_remote_write_network_bandwidth' throttler.", ValueType::Bytes) \
     M(QueryRemoteWriteThrottlerSleepMicroseconds, "Total time a query was sleeping to conform 'max_remote_write_network_bandwidth' throttling.", ValueType::Microseconds) \
     M(QueryLocalReadThrottlerBytes, "Bytes passed through 'max_local_read_bandwidth' throttler.", ValueType::Bytes) \
