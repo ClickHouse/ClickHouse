@@ -79,10 +79,13 @@ private:
 
 /** Extracts the metadata of a query. `database` overrides the database named by the query
   * itself: the wire protocol takes it from `$db`, so it must not depend on the text at all,
-  * while a query written by a user names the database itself.
+  * while a query written by a user names the database itself. `collection` overrides the
+  * collection the same way, which is what makes a dotted Mongo namespace such as `fs.files`
+  * usable: the name of a collection is not a word, so it cannot be recovered from the text of
+  * the statement, where a `.` separates the namespace from the operation.
   */
-std::shared_ptr<QueryMetadata>
-extractMetadataFromRequest(const char * begin, const char * end, const std::string & database = "");
+std::shared_ptr<QueryMetadata> extractMetadataFromRequest(
+    const char * begin, const char * end, const std::string & database = "", const std::string & collection = "");
 
 }
 

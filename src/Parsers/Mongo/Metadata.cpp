@@ -84,7 +84,8 @@ QueryMetadata::QueryMetadata(
     }
 }
 
-std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, const char * end, const std::string & database)
+std::shared_ptr<QueryMetadata>
+extractMetadataFromRequest(const char * begin, const char * end, const std::string & database, const std::string & collection)
 {
     auto [token_begin, token_end] = getMetadataSubstring(begin, end);
 
@@ -108,10 +109,26 @@ std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, co
     }
 
     std::string collection_name(token_begin_collection_name, token_end_collection_name);
+    std::string key(token_begin_query_type, token_end_query_type);
+
+    /// A caller that knows the collection - the wire protocol, which takes it from the command
+    /// itself - may name a collection whose own name contains a `.`, e.g. `fs.files`. The text
+    /// then holds more than three dotted components, so the operation is the last one of them
+    /// and everything before it is the namespace, which is not read from the text at all.
+    if (!collection.empty())
+    {
+        collection_name = collection;
+
+        const char * operation_begin = token_begin;
+        for (const char * position = token_begin; position != token_end; ++position)
+            if (*position == '.')
+                operation_begin = position + 1;
+        key.assign(operation_begin, token_end);
+    }
+
     if (collection_name.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: the collection name is empty");
 
-    std::string key(token_begin_query_type, token_end_query_type);
     std::optional<QueryMetadata::QueryType> query_type;
 
     for (const auto & [key_query, query] : QueryMetadata::queryTypeKeyWords)

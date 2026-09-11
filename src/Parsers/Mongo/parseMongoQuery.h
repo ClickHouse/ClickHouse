@@ -38,7 +38,9 @@ ASTPtr parseMongoQueryAndMovePosition(
 
 
 /** Parses a query in the Mongo dialect. `database` overrides the database named by the query
-  * itself and is what the wire protocol handlers pass, since they take it from `$db`.
+  * itself and is what the wire protocol handlers pass, since they take it from `$db`;
+  * `collection` overrides the collection the same way, which lets a namespace whose collection
+  * name contains a `.` - such as `fs.files` - be addressed at all.
   */
 ASTPtr parseMongoQuery(
     IParser & parser,
@@ -48,7 +50,8 @@ ASTPtr parseMongoQuery(
     size_t max_query_size,
     size_t max_parser_depth,
     size_t max_parser_backtracks,
-    const std::string & database = "");
+    const std::string & database = "",
+    const std::string & collection = "");
 
 }
 

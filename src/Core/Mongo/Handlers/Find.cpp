@@ -106,7 +106,8 @@ std::vector<Document> FindHandler::handle(const std::vector<OpMessageSection> & 
         10000,
         10000,
         10000,
-        collection.database);
+        collection.database,
+        collection.collection);
 
     String sql_query;
     {
