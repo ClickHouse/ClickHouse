@@ -7002,6 +7002,10 @@ void StorageReplicatedMergeTree::alter(
 
         if (statistics_changed)
         {
+            /// changeSettings has already committed the index filename policy; re-apply it so the
+            /// implicit statistics commit below does not revert it.
+            applyEscapeIndexFilenamesFromSettings(future_metadata);
+
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
             ScopedJemallocThreadArena mergetree_arena_scope(JemallocMergeTreeArena::getArenaIndex());
             setInMemoryMetadata(future_metadata);
@@ -7034,13 +7038,9 @@ void StorageReplicatedMergeTree::alter(
         merge_strategy_picker.refreshState();
         changeSettings(future_metadata.settings_changes, table_lock_holder);
 
-        /// changeSettings is the sole writer of the setting-derived escape fields and has
-        /// already committed them; carry them into future_metadata so the comment commit
-        /// below does not revert the index filename policy (commands.apply never sets them).
-        auto committed_metadata = getInMemoryMetadataPtr(query_context, /*bypass_metadata_cache=*/true);
-        future_metadata.escape_index_filenames = committed_metadata->escape_index_filenames;
-        for (auto & index : future_metadata.secondary_indices)
-            index.escape_filenames = committed_metadata->escape_index_filenames;
+        /// changeSettings has already committed the index filename policy; re-apply it so the
+        /// comment commit below does not revert it.
+        applyEscapeIndexFilenamesFromSettings(future_metadata);
 
         {
             /// Route the long-lived metadata snapshot clone into the dedicated MergeTree arena.
@@ -7172,7 +7172,14 @@ void StorageReplicatedMergeTree::alter(
 
             /// Just change settings
             if (settings_are_changed)
+            {
                 changeSettings(metadata_copy.settings_changes, table_lock_holder);
+
+                /// changeSettings has already committed the index filename policy; re-apply it so
+                /// the comment commit below does not revert it (metadata_copy was taken from
+                /// current_metadata before changeSettings).
+                applyEscapeIndexFilenamesFromSettings(metadata_copy);
+            }
 
             /// The comment is not replicated as of today, but we can implement it later.
             if (comment_is_changed)

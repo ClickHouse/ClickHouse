@@ -3423,6 +3423,25 @@ bool IMergeTreeDataPart::hasSecondaryIndex(const String & index_name, const Stor
         || getStreamNameOrHashResolved(file_name, ".idx2").has_value();
 }
 
+bool IMergeTreeDataPart::hasMaterializedSecondaryIndex(const IMergeTreeIndex & skip_index) const
+{
+    auto component_guard = Coordination::setCurrentComponent("IMergeTreeDataPart::hasMaterializedSecondaryIndex");
+
+    /// A name containing '/' can only be serialized under the escaping policy (`getIndexFileName`),
+    /// and `ALTER TABLE ... MODIFY SETTING escape_index_filenames = 0` is rejected for such a table
+    /// (`MergeTreeData::checkAlterIsPossible`). A table that reached that state before the check
+    /// existed keeps its index unreadable, so report it as absent rather than surfacing the
+    /// filename-encoding exception from a `SELECT` on `system.parts`.
+    if (!skip_index.index.escape_filenames && skip_index.index.name.contains('/'))
+        return false;
+
+    /// `getDeserializedFormat` is the read path's own gate: it reports nothing unless the part owns
+    /// a complete and decodable copy of the index - every substream of the layout the reader would
+    /// open, together with each substream's marks file. Asking exactly that question here is what
+    /// keeps this column in agreement with what a query can actually use.
+    return !!skip_index.getDeserializedFormat(*this, skip_index.getFileName());
+}
+
 bool IMergeTreeDataPart::isSkipIndexInPackedArchive(const IMergeTreeIndex & skip_index) const
 {
     const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&getDataPartStorage());

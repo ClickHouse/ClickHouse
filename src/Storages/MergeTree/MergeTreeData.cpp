@@ -5473,6 +5473,49 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
     }
 
+    /// A skip index whose name contains '/' can only be serialized with escaping on: without it the
+    /// name becomes a part of the file name as is (`getIndexFileName`), so `getIndexFromAST` rejects
+    /// such a name at CREATE / ADD INDEX time. Turning the setting off afterwards would leave the
+    /// table in a state where the index cannot be named at all - every read path and
+    /// `system.parts.secondary_indices_materialized` would surface a filename-encoding exception
+    /// instead of using the index - so reject the settings change instead of reaching that state.
+    {
+        bool touches_escape_index_filenames = false;
+        for (const auto & command : commands)
+        {
+            if ((command.type == AlterCommand::MODIFY_SETTING && command.settings_changes.tryGet("escape_index_filenames"))
+                || (command.type == AlterCommand::RESET_SETTING && command.settings_resets.contains("escape_index_filenames")))
+            {
+                touches_escape_index_filenames = true;
+                break;
+            }
+        }
+
+        if (touches_escape_index_filenames)
+        {
+            /// Resolve the value the same way `changeSettings` does: it rebuilds from the defaults and
+            /// applies the metadata's whole settings list, so a RESET lands on the configured default.
+            auto new_settings = getDefaultSettings();
+            if (new_metadata.settings_changes)
+                new_settings->applyChanges(
+                    new_metadata.settings_changes->as<const ASTSetQuery &>().changes,
+                    local_context,
+                    /*is_loading_from_existing_metadata=*/true);
+
+            if (!(*new_settings)[MergeTreeSetting::escape_index_filenames])
+            {
+                for (const auto & index : new_metadata.secondary_indices)
+                {
+                    if (index.name.contains('/'))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "Cannot disable setting `escape_index_filenames`: skip index name ({}) contains '/', "
+                            "which can only be stored with escaping enabled. Drop or rename the index first.",
+                            index.name);
+                }
+            }
+        }
+    }
+
     auto [auto_statistics_types, statistics_changed] = getNewImplicitStatisticsTypes(new_metadata, *settings_from_storage);
     addImplicitStatistics(new_metadata.columns, auto_statistics_types);
 
@@ -6621,6 +6664,14 @@ void MergeTreeData::changeSettings(
             startStatisticsCache();
         }
     }
+}
+
+void MergeTreeData::applyEscapeIndexFilenamesFromSettings(StorageInMemoryMetadata & metadata) const
+{
+    const bool escape_filenames = (*getSettings())[MergeTreeSetting::escape_index_filenames];
+    metadata.escape_index_filenames = escape_filenames;
+    for (auto & index : metadata.secondary_indices)
+        index.escape_filenames = escape_filenames;
 }
 
 std::pair<String, bool> MergeTreeData::getNewImplicitStatisticsTypes(const StorageInMemoryMetadata & new_metadata, const MergeTreeSettings & old_settings) const
