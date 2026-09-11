@@ -1311,7 +1311,7 @@ arrow::Status ArrowFlightServer::DoAction(
     {
         LOG_INFO(log, "DoAction is called for action {} {}", action.type, action.ToString());
 
-        const auto & auth = AuthMiddleware::get(context);
+        auto & auth = AuthMiddleware::get(context);
         auto session = auth.getSession();
 
         std::vector<arrow::flight::Result> results;
@@ -1464,6 +1464,26 @@ arrow::Status ArrowFlightServer::DoAction(
                     result.session_options[name_chunk.GetString(i)] = value_chunk.GetString(i);
                 }
             }
+
+            ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
+            ARROW_ASSIGN_OR_RAISE(auto packed_result, arrow::Result<arrow::flight::Result>{arrow::flight::Result{arrow::Buffer::FromString(std::move(serialized))}})
+
+            results.push_back(std::move(packed_result));
+        }
+        else if (action.type == arrow::flight::ActionType::kCloseSession.type)
+        {
+            std::string_view body_view = action.body
+                ? std::string_view{action.body->data_as<char>(), static_cast<size_t>(action.body->size())}
+                : std::string_view{};
+            ARROW_RETURN_NOT_OK(arrow::flight::CloseSessionRequest::Deserialize(body_view));
+
+            const bool enable_close = server.config().getBool("enable_arrow_close_session", true);
+            arrow::flight::CloseSessionResult result{
+                enable_close
+                    ? arrow::flight::CloseSessionStatus::kClosed
+                    : arrow::flight::CloseSessionStatus::kNotClosable};
+
+            auth.closeSession(enable_close);
 
             ARROW_ASSIGN_OR_RAISE(auto serialized, result.SerializeToString())
             ARROW_ASSIGN_OR_RAISE(auto packed_result, arrow::Result<arrow::flight::Result>{arrow::flight::Result{arrow::Buffer::FromString(std::move(serialized))}})

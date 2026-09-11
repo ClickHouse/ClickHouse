@@ -50,6 +50,8 @@ public:
     const std::string & getSessionId() const { return session_id; }
     std::chrono::steady_clock::duration getSessionTimeout() const { return session_timeout; }
 
+    void closeSession(bool enable_close);
+
     void SendingHeaders(arrow::flight::AddCallHeaders * outgoing_headers) override;
     void CallCompleted(const arrow::Status & /*status*/) override;
 
