@@ -7,6 +7,7 @@ select makeDate32(2020, 08);
 select makeDate32(2024, 366);
 select makeDate32(2023, 366);
 select makeDate32(2024, 367);
+select makeDate32(0, 366);
 select makeDate32(-1980, 10);
 select makeDate32(1980, -10);
 select makeDate32(1980.0, 9);

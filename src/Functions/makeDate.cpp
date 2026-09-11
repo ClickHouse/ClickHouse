@@ -157,7 +157,7 @@ public:
                 Int32 day_num = 0;
 
                 if (year >= Traits::MIN_YEAR && year <= Traits::MAX_YEAR &&
-                    dayofyear >= 1 && dayofyear <= date_lut.calc_days_in_year(static_cast<Int16>(year)))
+                    dayofyear >= 1 && dayofyear <= date_lut.calc_days_in_year(static_cast<Int16>(year)) + (year == 0 ? 1 : 0))
                 {
                     Int32 days_since_epoch = date_lut.makeDayNum(static_cast<Int16>(year), 1, 1) + static_cast<Int32>(dayofyear) - 1;
                     if (days_since_epoch <= max_days_since_epoch)
