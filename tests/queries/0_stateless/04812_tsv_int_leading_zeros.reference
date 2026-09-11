@@ -142,3 +142,20 @@ group 14: index analysis accepts the same literal
 Condition: (id in [7, 7])
 Name: bf_04812
 group 15: a lone plus reports the reader code, as a float target already does
+group 16: the JSON formats that yield strings read them as whole text
+7
+7
+-7
+7
+7
+group 16: the same values in the siblings that do not, which the JSON override already read
+7
+7
+7
+group 16: a Form field, and a Regexp capture group
+7
+7
+group 16: an element of a composite type cast from a string, read with the Quoted rule
+[7]	[7]	(7)
+group 16: a Map key spelled in a subcolumn name
+x

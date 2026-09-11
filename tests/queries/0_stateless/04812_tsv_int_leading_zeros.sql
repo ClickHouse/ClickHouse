@@ -153,10 +153,10 @@ SELECT 'group 12: whole file reads';
 SELECT count() FROM format(TSV, '-007\n123\n456');
 SELECT count() FROM format(TSV, '+1\n123\n456');
 
--- 13. The carriers that reach this reader outside the four formats above, one witness each.
--- `MySQLDump` reads values with the `Quoted` rule; a query parameter other than `_request_body` uses
--- the `Escaped` rule; a dictionary `null_value` is read with `deserializeWholeText`, which
--- `SimpleTextSerialization` routes into the same `deserializeText`.
+-- 13. Carriers outside the four formats above that name an escaping rule, one witness each; group 16
+-- covers the ones that read a whole field instead. `MySQLDump` reads values with the `Quoted` rule; a
+-- query parameter other than `_request_body` uses the `Escaped` rule; a dictionary `null_value` is read
+-- with `deserializeWholeText`, which `SimpleTextSerialization` routes into the same `deserializeText`.
 SELECT 'group 13: MySQLDump, the Quoted rule';
 SELECT * FROM format(MySQLDump, 'a Int64', 'INSERT INTO t VALUES (007),(-007),(+7);');
 SELECT 'group 13: a query parameter';
@@ -215,3 +215,20 @@ SET param_lone = '+';
 SELECT {lone:Int64}; -- { serverError CANNOT_PARSE_NUMBER }
 SELECT {lone:Float64}; -- { serverError CANNOT_PARSE_NUMBER }
 DROP TABLE cmp_04812;
+
+-- 16. The set of carriers is open, so these are keyed on the mechanism rather than on a format name:
+-- `SimpleTextSerialization` funnels `deserializeWholeText` and the `Escaped`, `Raw` and `Quoted` rules into
+-- the single `deserializeText` that reads an integer, so a carrier moves exactly when it uses one of them. The
+-- `JSON` and `CSV` overrides do not, which the second row asserts against its own strings-yielding sibling.
+SELECT 'group 16: the JSON formats that yield strings read them as whole text';
+SELECT * FROM format(JSONStringsEachRow, 'a Int64', '{"a":"007"}\n{"a":"+7"}\n{"a":"-007"}');
+SELECT * FROM format(JSONCompactStringsEachRow, 'a Int64', '["007"]\n["+7"]');
+SELECT 'group 16: the same values in the siblings that do not, which the JSON override already read';
+SELECT * FROM format(JSONEachRow, 'a Int64', '{"a":"007"}\n{"a":007}\n{"a":"+7"}');
+SELECT 'group 16: a Form field, and a Regexp capture group';
+SELECT * FROM format(Form, 'a Int64', 'a=007');
+SELECT * FROM format(Regexp, 'a Int64', 'v=+7') SETTINGS format_regexp = 'v=(.+)', format_regexp_escaping_rule = 'Raw';
+SELECT 'group 16: an element of a composite type cast from a string, read with the Quoted rule';
+SELECT CAST('[007]' AS Array(Int64)), CAST('[+7]' AS Array(Int64)), CAST('(007)' AS Tuple(Int64));
+SELECT 'group 16: a Map key spelled in a subcolumn name';
+SELECT m.key_007 FROM (SELECT map(7::Int64, 'x'::String) AS m);
