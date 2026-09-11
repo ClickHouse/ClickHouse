@@ -4727,12 +4727,7 @@ void MergeTreeData::runUniqueKeyGCRound() const
     {
         auto parts_lock = readLockParts();
         for (const auto & part : getDataPartsStateRange(DataPartState::Active))
-        {
-            /// Writability is per part: a mixed policy can put one on a readonly disk.
-            if (part->isStoredOnReadonlyDisk())
-                continue;
             part_infos.push_back(part->info);
-        }
     }
 
     if (part_infos.empty())

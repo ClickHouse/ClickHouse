@@ -14,6 +14,9 @@ node = cluster.add_instance(
     main_configs=["configs/config.d/storage_policy.xml"],
     stay_alive=True,
     with_minio=True,
+    # UNIQUE KEY reads and writes both open a transaction, and `TransactionLog` loads from
+    # Keeper, so every query here needs one.
+    with_zookeeper=True,
     # The tests operate on local part/metadata files directly; with the remote
     # database disk ("db disk" CI flavor) the table metadata .sql lives in S3
     # and the metadata edit below would have nothing to sed.

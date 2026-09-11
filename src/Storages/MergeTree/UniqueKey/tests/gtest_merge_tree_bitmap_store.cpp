@@ -205,6 +205,34 @@ TEST(MergeTreeBitmapStoreTest, RemovingStagedBitmapsClearsBothDirections)
     EXPECT_EQ(csn, 0u);
 }
 
+TEST(MergeTreeBitmapStoreTest, AStagedVersionTakesItsPlaceAmongTheCarriedOnes)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 8);
+    const auto stager = tbl.addPart("all_5_5_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto carrier = tbl.addPart("all_9_9_0", /*first_id=*/ 200, /*rows=*/ 1);
+
+    writeCarried(
+        partStorage(*carrier), /*version=*/ 7, target->info.getPartNameV1(), bitmapWithRow(5));
+    store.loadPart(carrier->info, carrier->getDataPartStorage());
+
+    /// Indexed after the higher carried one, so only the order decides which a snapshot reads.
+    DeleteBitmapFileOps::stageBitmap(partStorage(*stager), target->name, bitmapWithRow(3));
+    store.loadPart(stager->info, stager->getDataPartStorage());
+
+    const auto [newest, newest_csn] = store.readBitmap(target->info, UNBOUNDED_CSN);
+    EXPECT_EQ(newest_csn, 7u);
+    EXPECT_TRUE(newest->contains(5));
+
+    /// ... and a snapshot below it still reads the staged one.
+    const auto [older, older_csn] = store.readBitmap(target->info, /*snapshot_csn=*/ 6);
+    ASSERT_LT(older_csn, 7u);
+    ASSERT_GT(older_csn, 0u);
+    EXPECT_TRUE(older->contains(3));
+}
+
 TEST(MergeTreeBitmapStoreTest, VersionsOfOnePartInterleaveAcrossTheHoldersOfThem)
 {
     TableFixture tbl;

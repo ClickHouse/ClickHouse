@@ -4,8 +4,11 @@
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/UniqueKey/DeleteBitmapFileOps.h>
 #include <Storages/MergeTree/UniqueKey/IBitmapStore.h>
+#include <Common/HashTable/Hash.h>
 #include <Common/Logger.h>
 #include <Common/TransactionID.h>
+
+#include <absl/container/flat_hash_set.h>
 
 #include <memory>
 #include <mutex>
@@ -65,24 +68,53 @@ private:
     ///                           | inward   = []               |
     ///                           +-----------------------------+
 
-    /// The same link read from the target's end. One field differs from `BitmapLink` and it is
-    /// the one that matters: the part named here HOLDS the bitmap. Two types rather than one
-    /// alias, so the compiler refuses a holder where a target is wanted -- collapsing them cost
-    /// a real bug once.
+    /// A link from the target's end. Two types rather than one alias, so the compiler refuses a
+    /// holder where a target is wanted -- collapsing them cost a real bug once. Its `csn` gets
+    /// resolved once the holder commits, so `carried` has to say the file name separately.
     struct HeldBy
     {
         MergeTreePartInfo holder;
-        CSN csn = 0;
+        CSN csn = Tx::UnknownCSN;   /// the version, once `holder` has committed
+        bool carried = false;       /// which of the two file names the bytes have
+
         bool operator==(const HeldBy & other) const = default;
     };
 
-    /// Both vectors hold the same links, from the two ends: `outward` is what this part keeps
-    /// for others, `inward` is who keeps this part's.
+    /// `BitmapLink` is interface currency, so its hash lives with the index that needs one.
+    struct HashBitmapLink
+    {
+        size_t operator()(const BitmapLink & link) const
+        {
+            return intHashCRC32(link.csn, std::hash<MergeTreePartInfo>{}(link.target));
+        }
+    };
+    using OutwardLinks = absl::flat_hash_set<BitmapLink, HashBitmapLink>;
+
+    struct ByCsn
+    {
+        /// A link with no csn yet sorts above every snapshot -- sorting it low would let
+        /// `upper_bound` return a stale version instead. Deliberately `Tx::RolledBackCSN`, which
+        /// is one above `UNBOUNDED_CSN` and is what a rolled-back holder resolves to anyway.
+        static constexpr CSN UNKNOWN_CSN_ORDER = Tx::RolledBackCSN;
+        static CSN orderOf(const HeldBy & link) { return link.csn == Tx::UnknownCSN ? UNKNOWN_CSN_ORDER : link.csn; }
+
+        bool operator()(const HeldBy & a, const HeldBy & b) const
+        {
+            const CSN ka = orderOf(a);
+            const CSN kb = orderOf(b);
+            return ka != kb ? ka < kb : a.holder < b.holder;
+        }
+        bool operator()(const HeldBy & a, CSN b) const { return orderOf(a) < b; }
+        bool operator()(CSN a, const HeldBy & b) const { return a < orderOf(b); }
+    };
+
+    /// The same links from the two ends: `inward` sorted by csn, `outward` keyed by the link
+    /// itself -- the sweep removes one per obsolete version, and scanning for it there was quadratic.
     struct PartEntry
     {
         std::mutex mutex;
 
-        std::vector<BitmapLink> outward;
+        OutwardLinks outward;
         std::vector<HeldBy> inward;
     };
     using PartEntryPtr = std::shared_ptr<PartEntry>;
@@ -95,15 +127,31 @@ private:
     PartEntryPtr findEntry(const MergeTreePartInfo & part) const;
 
     /// The part in {Active, Outdated}, or null. The returned pointer IS the pin on its directory.
-    DataPartPtr findPart(const MergeTreePartInfo & info) const;
+    /// `lock` is the caller's parts lock where it holds one -- taking a second is a self-deadlock.
+    DataPartPtr findPart(const MergeTreePartInfo & info, const DataPartsAnyLock * lock = nullptr) const;
 
-    /// Remove every link between two parts, or just the one version.
+    /// What a caller wants done with a link whose holder has left the part set. The read path
+    /// says the index is corrupt; the pin says let go, because throwing would hold the part for
+    /// good. Not derivable from `lock`: those two happen to differ there as well, today.
+    enum class OnMissingHolder
+    {
+        Throw,
+        Skip,
+    };
+
+    /// Give each link with no csn yet the one its holder committed at, and move it into place.
+    /// Runs before every ordered search: a link left at the top is one a reader above its
+    /// version misses.
+    void resolveUnknownVersions(PartEntry & entry, const DataPartsAnyLock * lock, OnMissingHolder on_missing) const;
+
+    static void addInwardLink(PartEntry & entry, const HeldBy & link);
+
+    /// Every link between two parts. Scans `inward` by holder, which the csn order cannot answer.
     void removeAllLinks(const MergeTreePartInfo & holder, const MergeTreePartInfo & target);
-    void removeLink(const MergeTreePartInfo & holder, const MergeTreePartInfo & target, CSN csn);
+    /// `csn` is what the outward side records: 0 for a staged link, resolved or not.
+    void removeOutwardLink(const MergeTreePartInfo & holder, const MergeTreePartInfo & target, CSN csn);
 
-    /// What `holder` holds for other parts, and who holds `target`'s.
     std::vector<BitmapLink> getOutwardLinks(const MergeTreePartInfo & holder) const;
-    std::vector<HeldBy> getInwardLinks(const MergeTreePartInfo & target) const;
 
     /// Whether a committed part other than `holder` already carries version `csn` of `target`,
     /// which is what lets `holder` go without losing the kill.
@@ -113,14 +161,13 @@ private:
         CSN csn,
         const DataPartsAnyLock & lock) const;
 
-    /// One version of one part, and which part's directory the bytes are in.
+    /// One version of one part, and a live handle on the part holding the bytes. The handle is
+    /// the point: `removePartsFinally` takes a part out of the set BEFORE `dropUniqueKeyBitmaps`
+    /// drops its links, so a winner chosen without one can be retired before it is read.
     struct Version
     {
-        CSN csn = 0;
+        CSN csn = Tx::UnknownCSN;
         DataPartPtr held_in;
-        /// Which of the two names `held_in` filed it under. Recorded rather than derived from
-        /// `csn != held_in->creation_csn`: the index is ours to shape here, and a resolver that
-        /// guesses cannot tell a wrong name from a missing file.
         bool carried = false;
 
         /// Where the bytes are filed: a carried name records its version, a staged one leaves it
@@ -130,9 +177,6 @@ private:
             return {carried ? csn : 0, target_name};
         }
     };
-
-    /// The versions those links point at, csn-resolved.
-    std::vector<Version> heldVersions(const std::vector<HeldBy> & links) const;
 
     /// The version a part's own writes have -- its `creation_csn` -- or nothing while that csn is
     /// not yet a committed one.
