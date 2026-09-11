@@ -34,4 +34,11 @@ the count is exact under a filter and under NULLs
 Float32 arguments still accumulate and return Float64
 UInt64	Float64	Float64	Float64
 1	1	1	1
+an offset that dwarfs the spread does not cancel the sums away
+3	7	1	83333250
+3	7	1
+states shifted by different values merge into the single-pass answer
+3	7	83333250
+every group is fitted on its own
+100	100
 wrong argument types are rejected

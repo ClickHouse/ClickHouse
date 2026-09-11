@@ -99,6 +99,29 @@ SELECT
     abs(regr_intercept(y, x) - 7) < 1e-6
 FROM t;
 
+SELECT 'an offset that dwarfs the spread does not cancel the sums away';
+WITH t AS (SELECT 1e12 + number AS x, 3 * (1e12 + number) + 7 AS y FROM numbers(1000))
+SELECT regr_slope(y, x), regr_intercept(y, x), regr_r2(y, x), regr_sxx(y, x) FROM t;
+
+WITH t AS (SELECT 1e15 + number AS x, 3 * (1e15 + number) + 7 AS y FROM numbers(1000))
+SELECT regr_slope(y, x), regr_intercept(y, x), regr_r2(y, x) FROM t;
+
+SELECT 'states shifted by different values merge into the single-pass answer';
+SELECT regr_slopeMerge(a), regr_interceptMerge(b), regr_sxxMerge(c) FROM (
+    SELECT regr_slopeState(y, x) AS a, regr_interceptState(y, x) AS b, regr_sxxState(y, x) AS c
+    FROM (SELECT 1e12 + number AS x, 3 * (1e12 + number) + 7 AS y FROM numbers(500))
+    UNION ALL
+    SELECT regr_slopeState(y, x), regr_interceptState(y, x), regr_sxxState(y, x)
+    FROM (SELECT 1e12 + 500 + number AS x, 3 * (1e12 + 500 + number) + 7 AS y FROM numbers(500))
+);
+
+SELECT 'every group is fitted on its own';
+SELECT countIf(abs(s - 3) < 1e-6), count() FROM (
+    SELECT number % 100 AS g, regr_slope(y, x) AS s
+    FROM (SELECT number, 1e12 + number AS x, 3 * (1e12 + number) + 7 AS y FROM numbers(100000))
+    GROUP BY g
+);
+
 SELECT 'wrong argument types are rejected';
 SELECT regr_slope('a', 'b'); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
 SELECT regr_slope(1); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }

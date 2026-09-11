@@ -2,7 +2,6 @@
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/Helpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/Moments.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/assert_cast.h>
@@ -59,34 +58,188 @@ constexpr std::string_view regrKindName(RegrKind kind)
     }
 }
 
+/// The state of the eight aggregates that are read off the sums.
+///
+/// The sums are taken around the first pair that is added rather than around zero. Summing raw
+/// squares and reconstructing `Sxx = sum(x^2) - n * avg(x)^2` cancels catastrophically as soon as
+/// the values carry an offset that dwarfs their spread, which is the ordinary shape of a timestamp:
+/// on `x = 1e12 + number` over a thousand rows the reconstruction returns 0 for every sum, and the
+/// fit of an exact line comes back as nan. Shifting by a value from the data itself keeps every
+/// term at the scale of the spread, and leaves the loop a plain sequence of multiply-adds that
+/// still vectorizes, which a Welford-style incremental mean does not.
+///
+/// Every quantity the aggregates need is invariant under the shift, so it cancels in the results.
+struct RegrMoments
+{
+    UInt64 count = 0;
+    /// The shift, set from the first pair added to an empty state.
+    Float64 x0 = 0;
+    Float64 y0 = 0;
+    Float64 sx = 0;
+    Float64 sy = 0;
+    Float64 sxx = 0;
+    Float64 syy = 0;
+    Float64 sxy = 0;
+
+    void setShift(Float64 x, Float64 y)
+    {
+        x0 = x;
+        y0 = y;
+    }
+
+    void add(Float64 x, Float64 y)
+    {
+        if (count == 0)
+            setShift(x, y);
+        addShifted(x - x0, y - y0);
+    }
+
+    void addShifted(Float64 dx, Float64 dy)
+    {
+        ++count;
+        sx += dx;
+        sy += dy;
+        sxx += dx * dx;
+        syy += dy * dy;
+        sxy += dx * dy;
+    }
+
+    template <typename ValueX, typename ValueY>
+    void addMany(const ValueX * __restrict x_ptr, const ValueY * __restrict y_ptr, size_t row_begin, size_t row_end)
+    {
+        if (row_begin >= row_end)
+            return;
+        if (count == 0)
+            setShift(static_cast<Float64>(x_ptr[row_begin]), static_cast<Float64>(y_ptr[row_begin]));
+
+        Float64 acc_sx = 0;
+        Float64 acc_sy = 0;
+        Float64 acc_sxx = 0;
+        Float64 acc_syy = 0;
+        Float64 acc_sxy = 0;
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            const Float64 dx = static_cast<Float64>(x_ptr[i]) - x0;
+            const Float64 dy = static_cast<Float64>(y_ptr[i]) - y0;
+            acc_sx += dx;
+            acc_sy += dy;
+            acc_sxx += dx * dx;
+            acc_syy += dy * dy;
+            acc_sxy += dx * dy;
+        }
+
+        count += row_end - row_begin;
+        sx += acc_sx;
+        sy += acc_sy;
+        sxx += acc_sxx;
+        syy += acc_syy;
+        sxy += acc_sxy;
+    }
+
+    template <typename ValueX, typename ValueY, bool add_if_zero>
+    void addManyConditional(
+        const ValueX * __restrict x_ptr,
+        const ValueY * __restrict y_ptr,
+        const UInt8 * __restrict condition_map,
+        size_t row_begin,
+        size_t row_end)
+    {
+        if (count == 0)
+        {
+            /// The shift has to come from a row that is actually added.
+            for (size_t i = row_begin; i < row_end; ++i)
+            {
+                if (!!condition_map[i] ^ add_if_zero)
+                {
+                    setShift(static_cast<Float64>(x_ptr[i]), static_cast<Float64>(y_ptr[i]));
+                    break;
+                }
+            }
+        }
+
+        UInt64 acc_count = 0;
+        Float64 acc_sx = 0;
+        Float64 acc_sy = 0;
+        Float64 acc_sxx = 0;
+        Float64 acc_syy = 0;
+        Float64 acc_sxy = 0;
+        for (size_t i = row_begin; i < row_end; ++i)
+        {
+            const bool add = !!condition_map[i] ^ add_if_zero;
+            const Float64 dx = (static_cast<Float64>(x_ptr[i]) - x0) * add;
+            const Float64 dy = (static_cast<Float64>(y_ptr[i]) - y0) * add;
+            acc_count += add;
+            acc_sx += dx;
+            acc_sy += dy;
+            acc_sxx += dx * dx;
+            acc_syy += dy * dy;
+            acc_sxy += dx * dy;
+        }
+
+        count += acc_count;
+        sx += acc_sx;
+        sy += acc_sy;
+        sxx += acc_sxx;
+        syy += acc_syy;
+        sxy += acc_sxy;
+    }
+
+    /// Rebases the sums of `rhs` onto this shift before adding them. The two states were filled by
+    /// different threads and were shifted by whatever each of them saw first.
+    void merge(const RegrMoments & rhs)
+    {
+        if (rhs.count == 0)
+            return;
+        if (count == 0)
+        {
+            *this = rhs;
+            return;
+        }
+
+        const Float64 dx = rhs.x0 - x0;
+        const Float64 dy = rhs.y0 - y0;
+        const auto rhs_count = static_cast<Float64>(rhs.count);
+
+        sxx += rhs.sxx + 2 * dx * rhs.sx + rhs_count * dx * dx;
+        syy += rhs.syy + 2 * dy * rhs.sy + rhs_count * dy * dy;
+        sxy += rhs.sxy + dx * rhs.sy + dy * rhs.sx + rhs_count * dx * dy;
+        sx += rhs.sx + rhs_count * dx;
+        sy += rhs.sy + rhs_count * dy;
+        count += rhs.count;
+    }
+
+    void write(WriteBuffer & buf) const { writePODBinary(*this, buf); }
+    void read(ReadBuffer & buf) { readPODBinary(*this, buf); }
+};
+
 /// Computes the regression aggregates of a finished state.
 ///
-/// The sums of squares are non-negative by construction, but computing them as `Sxx - n * avgx^2`
-/// can land just below zero for a constant input, so they are clamped.
-template <typename T>
+/// The shift cancels in every one of them: the sums of squares and the cross-product are already
+/// taken around the shift, and the averages add it back. The sums of squares are non-negative by
+/// construction, but subtracting the square of the sum can land just below zero for a constant
+/// input, so they are clamped.
 struct RegrResult
 {
-    T n;
-    T avg_x;
-    T avg_y;
-    T sxx;
-    T syy;
-    T sxy;
+    Float64 n;
+    Float64 avg_x;
+    Float64 avg_y;
+    Float64 sxx;
+    Float64 syy;
+    Float64 sxy;
 
-    template <typename Data>
-    explicit RegrResult(const Data & data)
-        : n(data.m0)
-        , avg_x(data.x1 / n)
-        , avg_y(data.y1 / n)
-        , sxx(std::max(T{0}, data.x2 - data.x1 * avg_x))
-        , syy(std::max(T{0}, data.y2 - data.y1 * avg_y))
-        , sxy(data.xy - data.x1 * avg_y)
+    explicit RegrResult(const RegrMoments & data)
+        : n(static_cast<Float64>(data.count))
+        , avg_x(data.x0 + data.sx / n)
+        , avg_y(data.y0 + data.sy / n)
+        , sxx(std::max(0.0, data.sxx - data.sx * data.sx / n))
+        , syy(std::max(0.0, data.syy - data.sy * data.sy / n))
+        , sxy(data.sxy - data.sx * data.sy / n)
     {
     }
 
-    T get(RegrKind kind) const
+    Float64 get(RegrKind kind) const
     {
-        static constexpr auto nan = std::numeric_limits<T>::quiet_NaN();
+        static constexpr auto nan = std::numeric_limits<Float64>::quiet_NaN();
 
         switch (kind)
         {
@@ -110,7 +263,7 @@ struct RegrResult
                 if (sxx == 0)
                     return nan;
                 if (syy == 0)
-                    return T{1};
+                    return 1.0;
                 return (sxy * sxy) / (sxx * syy);
         }
     }
@@ -121,15 +274,15 @@ struct RegrResult
 /// The sums are always accumulated in Float64, whatever the arguments are. corr and covar* narrow
 /// their state to Float32 for a pair of Float32 columns, but the regression aggregates add up
 /// squares and cross-products, and Float32 loses them: over two million rows of an exact
-/// y = 3x + 7, a Float32 state returns an intercept of -23.25 instead of 7. Float64 also keeps
+/// y = 3x + 7, a Float32 state returned an intercept of -23.25 instead of 7. Float64 also keeps
 /// regr_avgx and regr_avgy equal to avg(x) and avg(y), which finalize to Float64 as well.
 template <typename TY, typename TX>
 class AggregateFunctionRegr final
-    : public IAggregateFunctionDataHelper<CorrMoments<Float64>, AggregateFunctionRegr<TY, TX>>
+    : public IAggregateFunctionDataHelper<RegrMoments, AggregateFunctionRegr<TY, TX>>
 {
 public:
     using ResultType = Float64;
-    using Data = CorrMoments<ResultType>;
+    using Data = RegrMoments;
     using ColVecTY = ColumnVector<TY>;
     using ColVecTX = ColumnVector<TX>;
     using ColVecResult = ColumnVector<ResultType>;
@@ -227,10 +380,10 @@ public:
         const auto & data = this->data(place);
         auto & dst = static_cast<ColVecResult &>(to).getData();
 
-        if (data.m0 == 0)
+        if (data.count == 0)
             dst.push_back(std::numeric_limits<ResultType>::quiet_NaN());
         else
-            dst.push_back(RegrResult<ResultType>(data).get(kind));
+            dst.push_back(RegrResult(data).get(kind));
     }
 
 private:
