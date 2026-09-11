@@ -1,0 +1,13 @@
+a constant dividend whose range endpoint maps to NaN
+3
+3
+each pruning layer on its own
+3
+3
+a constant multiplier that maps the inf endpoint to NaN
+3
+3
+pruning still applies with a constant dividend and a finite range
+49
+49
+1
