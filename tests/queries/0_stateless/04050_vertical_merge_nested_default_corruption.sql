@@ -616,3 +616,70 @@ WHERE database = currentDatabase() AND table = 't_nested_alias_packed' AND activ
     AND column = 'n.b';
 
 DROP TABLE t_nested_alias_packed;
+
+-- A projection rebuilt during the merge reads the affected column out of the merged block, and
+-- `merge_required_columns` does not cover it. Such a column must stay on the merge path, otherwise
+-- nothing produces it and `ProjectionDescription::calculateByQuery` fails with
+-- `NOT_FOUND_COLUMN_IN_BLOCK`.
+DROP TABLE IF EXISTS t_nested_default_projection;
+
+CREATE TABLE t_nested_default_projection (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_default_projection;
+
+INSERT INTO t_nested_default_projection VALUES (1, [10,20]);
+INSERT INTO t_nested_default_projection VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_default_projection ADD COLUMN `n.urls` Array(String);
+ALTER TABLE t_nested_default_projection ADD COLUMN `n.domains` Array(String)
+    DEFAULT arrayMap(x -> domain(x), `n.urls`);
+ALTER TABLE t_nested_default_projection ADD PROJECTION p_domains
+    (SELECT id, `n.domains` ORDER BY id);
+
+SYSTEM START MERGES t_nested_default_projection;
+OPTIMIZE TABLE t_nested_default_projection FINAL;
+
+SELECT count(), countDistinct(_part) FROM t_nested_default_projection;
+SELECT id, `n.a`, `n.urls`, `n.domains` FROM t_nested_default_projection ORDER BY id;
+
+DROP TABLE t_nested_default_projection;
+
+-- The same for a single-column skip index, which is built in the vertical stage from the gathered
+-- column: the column must not be erased from `gathering_columns` while the index is still rebuilt.
+DROP TABLE IF EXISTS t_nested_default_skip_index;
+
+CREATE TABLE t_nested_default_skip_index (
+    id UInt32,
+    `n.a` Array(UInt32)
+) ENGINE = MergeTree() ORDER BY id
+SETTINGS
+    min_bytes_for_wide_part = 1,
+    vertical_merge_algorithm_min_rows_to_activate = 1,
+    vertical_merge_algorithm_min_bytes_to_activate = 1,
+    vertical_merge_algorithm_min_columns_to_activate = 1;
+
+SYSTEM STOP MERGES t_nested_default_skip_index;
+
+INSERT INTO t_nested_default_skip_index VALUES (1, [10,20]);
+INSERT INTO t_nested_default_skip_index VALUES (2, [30,40]);
+
+ALTER TABLE t_nested_default_skip_index ADD COLUMN `n.urls` Array(String);
+ALTER TABLE t_nested_default_skip_index ADD COLUMN `n.domains` Array(String)
+    DEFAULT arrayMap(x -> domain(x), `n.urls`);
+ALTER TABLE t_nested_default_skip_index ADD INDEX idx_domains `n.domains` TYPE bloom_filter GRANULARITY 1;
+
+SYSTEM START MERGES t_nested_default_skip_index;
+OPTIMIZE TABLE t_nested_default_skip_index FINAL;
+
+SELECT count(), countDistinct(_part) FROM t_nested_default_skip_index;
+SELECT id, `n.a`, `n.urls`, `n.domains` FROM t_nested_default_skip_index ORDER BY id;
+
+DROP TABLE t_nested_default_skip_index;
