@@ -86,13 +86,22 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     /// remaining bytes (`MergeTree` readers size the buffer to the mark range), so the connection stays
     /// occupied until the buffer is destroyed, and every new stream has to open a new connection.
     ///
-    /// The end of an object bounds the position only if its size is known. An object of `UnknownSize`
-    /// is always the only object of its file - the offsets of the objects after it could not be
-    /// computed - so a bound past `start_offset` is always inside it. It happens when an HTTP server
-    /// answers without `Content-Length`, on a `web` disk and in S3.
-    if (read_until_position > start_offset
-        && (object.bytes_size == StoredObject::UnknownSize
-            || read_until_position <= start_offset + object.bytes_size))
+    /// The end of an object bounds the position only if its size is known. The size is unknown when an
+    /// HTTP server answers without `Content-Length`, which happens on a `web` disk and in S3. Such an
+    /// object extends to the end of the file - the offsets of the objects after it could not be computed
+    /// - so the bound, which is inside the file, is inside the object as well. Do not take that for
+    /// granted though: require the object of an unknown size to be the last one, and leave the read
+    /// open-ended otherwise, because a bound applied to a wrong object would cut the data short.
+    const bool is_last_object = current_buf_idx + 1 == blobs_to_read.size();
+    const bool has_known_size = object.bytes_size != StoredObject::UnknownSize;
+
+    bool pass_bound = read_until_position > start_offset;
+    if (has_known_size)
+        pass_bound = pass_bound && read_until_position <= start_offset + object.bytes_size;
+    else
+        pass_bound = pass_bound && is_last_object;
+
+    if (pass_bound)
         buf->setReadUntilPosition(read_until_position - start_offset);
 
     return buf;

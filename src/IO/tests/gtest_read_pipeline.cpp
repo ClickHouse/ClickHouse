@@ -324,6 +324,44 @@ catch (...)
 }
 
 
+TEST(ReadPipeline, GatherLeavesUnknownSizeObjectUnboundedWhenAnotherFollows)
+try
+{
+    /// An object of an unknown size is expected to be the last one of its file, because the offsets of
+    /// the objects after it could not be computed. When it is not the last one, the bound cannot be
+    /// translated into the coordinates of the object, so the read is left open-ended instead of being
+    /// cut at a wrong offset.
+    auto bound = std::make_shared<std::optional<size_t>>();
+
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        [bound](const StoredObject & object, const ReadSettings & /* settings */,
+            bool /* use_external_buffer */, bool /* restrict_seek */)
+            -> std::unique_ptr<ReadBufferFromFileBase>
+        {
+            if (object.remote_path == "obj/a")
+                return std::make_unique<TestReadBuffer>("ABCDEFGHIJ", bound);
+            return std::make_unique<TestReadBuffer>("XYZ");
+        },
+        StoredObjects{testObject("obj/a", StoredObject::UnknownSize), testObject("obj/b", 3)},
+        ReadSettings{});
+    pipeline.needGather();
+    auto buf = pipeline.build();
+
+    buf->setReadUntilPosition(4);
+
+    char prefix[4];
+    buf->readStrict(prefix, sizeof(prefix));
+    EXPECT_EQ(String(prefix, sizeof(prefix)), "ABCD");
+
+    EXPECT_FALSE(bound->has_value());
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
 TEST(ReadPipeline, GatherEmptyRangeAtObjectBoundary)
 try
 {
