@@ -64,7 +64,8 @@ protected:
         const String & endpoint,
         Poco::JSON::Object::Ptr request_body,
         const String & method,
-        bool ignore_result) const override;
+        bool ignore_result,
+        std::unordered_set<Poco::Net::HTTPResponse::HTTPStatus> custom_non_retryable_errors) const override;
 
 private:
     const String region;
