@@ -1,0 +1,8 @@
+-- the 40000 centroids really are distinct, or the checks below would be vacuous
+40000
+-- above the threshold a probe still finds the centroid it was copied from
+101	101
+-- scaling and shifting a probe keeps the same nearest centroid, and the answer follows
+101	101
+-- a dimension that is not a multiple of 8 cannot be RaBitQ encoded, so it stays exact
+10	10
