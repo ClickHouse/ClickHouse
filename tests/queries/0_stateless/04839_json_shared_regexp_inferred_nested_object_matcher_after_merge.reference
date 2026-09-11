@@ -1,0 +1,6 @@
+parts before merge	2
+before merge	1	['keep']	['forced']
+before merge	2	['keep']	['forced']
+parts after merge	1
+after merge	1	['forced']	['keep']
+after merge	2	['forced']	['keep']

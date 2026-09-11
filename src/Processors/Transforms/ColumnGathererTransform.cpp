@@ -4,6 +4,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Columns/ColumnObject.h>
 #include <Columns/ColumnSparse.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/Port.h>
@@ -36,13 +37,15 @@ ColumnGathererStream::ColumnGathererStream(
     size_t block_preferred_size_rows_,
     size_t block_preferred_size_bytes_,
     std::optional<size_t> max_dynamic_subcolumns_,
-    bool is_result_sparse_)
+    bool is_result_sparse_,
+    DataTypePtr result_type_)
     : sources(num_inputs)
     , row_sources_buf(row_sources_buf_)
     , block_preferred_size_rows(block_preferred_size_rows_)
     , block_preferred_size_bytes(block_preferred_size_bytes_)
     , max_dynamic_subcolumns(max_dynamic_subcolumns_)
     , is_result_sparse(is_result_sparse_)
+    , result_type(std::move(result_type_))
 {
     if (num_inputs == 0)
         throw Exception(ErrorCodes::EMPTY_DATA_PASSED, "There are no streams to gather");
@@ -79,7 +82,10 @@ void ColumnGathererStream::initialize(Inputs inputs)
         result_column = ColumnSparse::create(std::move(result_column));
 
     if (result_column->hasDynamicStructure())
+    {
+        setSharedDataPathMatcherRecursively(*result_column, result_type);
         result_column->chooseDynamicStructureForMerge(source_columns, max_dynamic_subcolumns);
+    }
     if (result_column->hasStatistics())
         result_column->takeOrCalculateStatisticsFrom(source_columns);
 }
@@ -130,7 +136,26 @@ IMergingAlgorithm::Status ColumnGathererStream::merge()
             next_required_source = 0;
             Chunk res;
             updateStats(*sources.front().column);
-            res.addColumn(std::move(sources.front().column));
+
+            /// Same dynamic-structure/statistics handling as the source_to_fully_copy case above:
+            /// this bypasses row-by-row gather() too, so it needs the same re-normalization.
+            if (result_column->hasDynamicStructure())
+            {
+                auto col = result_column->cloneEmpty();
+                col->insertRangeFrom(*sources.front().column, 0, sources.front().column->size());
+                res.addColumn(std::move(col));
+            }
+            else if (result_column->hasStatistics())
+            {
+                auto col = IColumn::mutate(std::move(sources.front().column));
+                col->takeOrCalculateStatisticsFrom({result_column->getPtr()});
+                res.addColumn(std::move(col));
+            }
+            else
+            {
+                res.addColumn(std::move(sources.front().column));
+            }
+
             sources.front().pos = sources.front().size = 0;
             return Status(std::move(res));
         }
@@ -213,10 +238,11 @@ ColumnGathererTransform::ColumnGathererTransform(
     size_t block_preferred_size_rows_,
     size_t block_preferred_size_bytes_,
     std::optional<size_t> max_dynamic_subcolumns_,
-    bool is_result_sparse_)
+    bool is_result_sparse_,
+    DataTypePtr result_type_)
     : IMergingTransform<ColumnGathererStream>(
         num_inputs, header, header, /*have_all_inputs_=*/ true, /*limit_hint_=*/ 0, /*always_read_till_end_=*/ false,
-        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, max_dynamic_subcolumns_, is_result_sparse_)
+        num_inputs, *row_sources_buf_, block_preferred_size_rows_, block_preferred_size_bytes_, max_dynamic_subcolumns_, is_result_sparse_, std::move(result_type_))
     , row_sources_buf_holder(std::move(row_sources_buf_))
     , log(getLogger("ColumnGathererStream"))
 {

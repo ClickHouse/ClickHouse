@@ -1,0 +1,16 @@
+JSONEachRow partial
+['keep']	['foo','foobar']
+JSONEachRow full
+['foobar','keep']	['foo']
+RowBinary partial
+['keep']	['foo','foobar']
+RowBinary full
+['foobar','keep']	['foo']
+Native flattened partial
+['keep']	['foo','foobar']
+Native flattened full
+['foobar','keep']	['foo']
+Native flattened conversion
+['keep']	['foo','foobar']
+Native flattened sub-object prefix
+1	['keep']	['forced']

@@ -1,0 +1,145 @@
+-- Tags: no-fasttest, no-random-settings, no-random-merge-tree-settings, no-replicated-database
+
+SET enable_json_type = 1;
+
+-- Each case wraps/unwraps a JSON column through a different expression shape (Nullable, Array,
+-- Map key/value, Tuple) to exercise provenance fallback through each wrapper type.
+{% for case in [
+    {
+      "suffix": "",
+      "col_def": "j Nullable(JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_'))",
+      "retire_def": "j Nullable(JSON(max_dynamic_paths=5))",
+      "insert_val": "(1, '{\"tag_a\":1,\"keep\":1}')",
+      "proj_expr": "assumeNotNull(j)",
+      "expected_col": "assumeNotNull(j)",
+      "type_check": "1",
+      "control_label": "projection column name",
+      "regression_label": "projection expression provenance"
+    },
+    {
+      "suffix": "_nullable",
+      "col_def": "j JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')",
+      "retire_def": "j JSON(max_dynamic_paths=5)",
+      "insert_val": "(1, '{\"tag_a\":1,\"keep\":1}')",
+      "proj_expr": "toNullable(j)",
+      "expected_col": "toNullable(j)",
+      "type_check": "startsWith(type, 'Nullable')",
+      "control_label": "projection column name and type",
+      "regression_label": "projection expression nullable provenance"
+    },
+    {
+      "suffix": "_array",
+      "col_def": "j JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')",
+      "retire_def": "j JSON(max_dynamic_paths=5)",
+      "insert_val": "(1, '{\"tag_a\":1,\"keep\":1}')",
+      "proj_expr": "array(j)",
+      "expected_col": "array(j)",
+      "type_check": "startsWith(type, 'Array')",
+      "control_label": "projection column name and type",
+      "regression_label": "projection expression array provenance"
+    },
+    {
+      "suffix": "_array_element",
+      "col_def": "arr Array(JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_'))",
+      "retire_def": "arr Array(JSON(max_dynamic_paths=5))",
+      "insert_val": "(1, ['{\"tag_a\":1,\"keep\":1}'])",
+      "proj_expr": "arr[1]",
+      "expected_col": "arrayElement(arr, 1)",
+      "type_check": "NOT startsWith(type, 'Array')",
+      "control_label": "projection column name and type",
+      "regression_label": "projection expression array element provenance"
+    },
+    {
+      "suffix": "_map",
+      "col_def": "j JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')",
+      "retire_def": "j JSON(max_dynamic_paths=5)",
+      "insert_val": "(1, '{\"tag_a\":1,\"keep\":1}')",
+      "proj_expr": "map('k', j)",
+      "expected_col": "map('k', j)",
+      "type_check": "startsWith(type, 'Map')",
+      "control_label": "projection column name and type",
+      "regression_label": "projection expression map provenance"
+    },
+    {
+      "suffix": "_map_key",
+      "col_def": "j JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')",
+      "retire_def": "j JSON(max_dynamic_paths=5)",
+      "insert_val": "(1, '{\"tag_a\":1,\"keep\":1}')",
+      "proj_expr": "map(j, 1)",
+      "expected_col": "map(j, 1)",
+      "type_check": "startsWith(type, 'Map')",
+      "control_label": "projection column name and type",
+      "regression_label": "projection expression map key provenance"
+    },
+    {
+      "suffix": "_map_value",
+      "col_def": "m Map(String, JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_'))",
+      "retire_def": "m Map(String, JSON(max_dynamic_paths=5))",
+      "insert_val": "(1, map('k', '{\"tag_a\":1,\"keep\":1}'))",
+      "proj_expr": "m['k']",
+      "expected_col": "arrayElement(m, 'k')",
+      "type_check": "NOT startsWith(type, 'Map')",
+      "control_label": "projection column name and type",
+      "regression_label": "projection expression map value provenance"
+    },
+    {
+      "suffix": "_tuple",
+      "col_def": "j JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_')",
+      "retire_def": "j JSON(max_dynamic_paths=5)",
+      "insert_val": "(1, '{\"tag_a\":1,\"keep\":1}')",
+      "proj_expr": "tuple(j)",
+      "expected_col": "tuple(j)",
+      "type_check": "startsWith(type, 'Tuple')",
+      "control_label": "projection column name and type",
+      "regression_label": "projection expression tuple provenance"
+    },
+    {
+      "suffix": "_tuple_element",
+      "col_def": "t Tuple(JSON(max_dynamic_paths=5, SHARED REGEXP '^tag_'))",
+      "retire_def": "t Tuple(JSON(max_dynamic_paths=5))",
+      "insert_val": "(1, ('{\"tag_a\":1,\"keep\":1}'))",
+      "proj_expr": "tupleElement(t, 1)",
+      "expected_col": "tupleElement(t, 1)",
+      "type_check": "NOT startsWith(type, 'Tuple')",
+      "control_label": "projection column name and type",
+      "regression_label": "projection expression tuple element provenance"
+    }
+  ] -%}
+DROP TABLE IF EXISTS projection_expression{{ case.suffix }}_04839;
+
+CREATE TABLE projection_expression{{ case.suffix }}_04839
+(
+    id UInt64,
+    {{ case.col_def }}
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS min_bytes_for_wide_part=0, min_rows_for_wide_part=0;
+
+INSERT INTO projection_expression{{ case.suffix }}_04839 VALUES {{ case.insert_val }};
+
+-- Retire the rule at the table level; the existing part's own column type still carries it as history.
+ALTER TABLE projection_expression{{ case.suffix }}_04839 MODIFY COLUMN {{ case.retire_def }};
+
+ALTER TABLE projection_expression{{ case.suffix }}_04839
+    ADD PROJECTION p (SELECT id, {{ case.proj_expr }} WHERE id > 0 ORDER BY id);
+ALTER TABLE projection_expression{{ case.suffix }}_04839 MATERIALIZE PROJECTION p SETTINGS mutations_sync=2;
+
+-- Control: the projection's own column really is named after the expression, not the source.
+SELECT
+    '{{ case.control_label }}',
+    countIf(column = '{{ case.expected_col | replace("'", "''") }}' AND {{ case.type_check }})
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='projection_expression{{ case.suffix }}_04839' AND part_name='p' AND active;
+
+-- The regression: this must be 1. Without resolving the expression back to its referenced source
+-- identifier and looking through/into the wrapper type on either side, this comes back 0.
+SELECT
+    '{{ case.regression_label }}',
+    countIf(position(type, 'SHARED REGEXP') > 0)
+FROM system.projection_parts_columns
+WHERE database=currentDatabase() AND table='projection_expression{{ case.suffix }}_04839' AND column='{{ case.expected_col | replace("'", "''") }}' AND active;
+
+DROP TABLE projection_expression{{ case.suffix }}_04839;
+
+{% endfor -%}

@@ -1,0 +1,3 @@
+before ALTER	{'forced':'Int64','keep':'Int64'}	{'forced':'Int64','other':'Int64'}
+after ALTER	{'forced':'Int64','keep':'Int64'}	{'forced':'Int64','other':'Int64'}
+after reload	{'forced':'Int64','keep':'Int64'}	{'forced':'Int64','other':'Int64'}
