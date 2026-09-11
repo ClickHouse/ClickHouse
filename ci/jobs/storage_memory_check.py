@@ -40,7 +40,12 @@ def find_heap_profile(profiles_dir: Path, prefix: str, checkpoint: str) -> str:
     return matches[0]
 
 
-def run_scenarios(binary_path: str, version: str, scenarios: list[Path]) -> dict:
+def run_scenarios(
+    binary_path: str,
+    version: str,
+    scenarios: list[Path],
+    extra_args: tuple[str, ...] = (),
+) -> dict:
     profiles_dir = Path(TEMP_DIR) / f"storage-memory-{version}-profiles"
     data_dir = Path(TEMP_DIR) / f"storage-memory-{version}-data"
     for path in (profiles_dir, data_dir):
@@ -59,6 +64,7 @@ def run_scenarios(binary_path: str, version: str, scenarios: list[Path]) -> dict
         "--prefix",
         prefix,
     ]
+    args.extend(extra_args)
     for scenario in scenarios:
         args.extend(["--file", str(scenario)])
 
@@ -201,6 +207,48 @@ def main():
         Result.create_from(results=setup_results, stopwatch=stopwatch).complete_job()
         return
     setup_results.append(Result(name="Run storage scenarios", status=Result.Status.OK))
+
+    async_no_cache_scenario = Path(TEMP_DIR) / "storage_async_no_cache.sql"
+    async_no_cache_scenario.write_text(
+        """
+CREATE TABLE async_no_cache
+(
+    id UInt64,
+    value UInt64,
+    INDEX idx_value value TYPE minmax GRANULARITY 1
+)
+ENGINE = MergeTree
+ORDER BY id
+SETTINGS index_granularity = 1;
+
+INSERT INTO async_no_cache SELECT number, number % 128 FROM numbers(1024);
+
+SELECT count()
+FROM async_no_cache
+WHERE value = 42
+SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 1, max_threads = 1;
+""".strip()
+    )
+    async_no_cache_run = run_scenarios(
+        pr_binary,
+        "pr-async-no-cache",
+        [async_no_cache_scenario],
+        extra_args=("--no-mark-caches",),
+    )
+    if async_no_cache_run["error"]:
+        setup_results.append(
+            make_error_result(
+                "Run async marks without caches", async_no_cache_run["error"]
+            )
+        )
+        Result.create_from(results=setup_results, stopwatch=stopwatch).complete_job()
+        return
+    setup_results.append(
+        Result(name="Run async marks without caches", status=Result.Status.OK)
+    )
+    cleanup_heap_profiles(async_no_cache_run["profiles_dir"])
+    shutil.rmtree(async_no_cache_run["data_dir"])
+    async_no_cache_scenario.unlink()
 
     if not batch_symbolize(master_binary, master_run["heap_files"]):
         setup_results.append(
