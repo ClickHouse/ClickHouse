@@ -8,4 +8,4 @@ ALTER TABLE test_mt MATERIALIZE INDEX idx_value SETTINGS mutations_sync = 2;
 SELECT count()
 FROM test_mt
 WHERE name = 'name_42'
-SETTINGS force_data_skipping_indices = 'idx_name';
+SETTINGS force_data_skipping_indices = 'idx_name', load_marks_asynchronously = 0;
