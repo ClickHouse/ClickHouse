@@ -9,6 +9,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
 }
 
@@ -279,11 +280,21 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
 
                 if (bucket == 0)
                     num_new_rows = bucket_shared_data_paths_column->size();
+                /// All buckets store the same rows, and the number of rows of the first one is used as
+                /// the number of rows of the result.
+                else if (bucket_shared_data_paths_column->size() != num_new_rows)
+                    throw Exception(
+                        ErrorCodes::LOGICAL_ERROR,
+                        "Bucket {} of Object shared data has {} rows, but bucket 0 has {} rows",
+                        bucket,
+                        bucket_shared_data_paths_column->size(),
+                        num_new_rows);
             }
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
         {
+            std::shared_ptr<SerializationObjectSharedData::StructureGranules> first_bucket_structure_granules;
             for (size_t bucket = 0; bucket < object_structure_state->shared_data_buckets; ++bucket)
             {
                 settings.path.push_back(Substream::Bucket);
@@ -291,6 +302,11 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
 
                 auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(object_distinct_paths_state->bucket_shared_data_structure_states[bucket]);
                 auto structure_granules = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
+                if (bucket == 0)
+                    first_bucket_structure_granules = structure_granules;
+                else
+                    SerializationObjectSharedData::checkGranulesMatchFirstBucket(*structure_granules, *first_bucket_structure_granules, bucket);
+
                 for (const auto & structure_granule : *structure_granules)
                 {
                     for (const auto & path : structure_granule.all_paths)
