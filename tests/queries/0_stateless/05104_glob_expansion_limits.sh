@@ -24,14 +24,12 @@ ${CLICKHOUSE_CLIENT} -q "
 ${CLICKHOUSE_CLIENT} -q "
     SELECT * FROM file(file('${CLICKHOUSE_DATABASE}_data.jsonl'), JSONEachRow, 'x UInt32')" 2>&1 | grep -q -F "globs to expand" && echo 'OK' || echo 'FAIL'
 
-# A single group with an enormous number of alternatives, which is what a whole file passed as a
-# path looks like. The limit has to fire while the group is being scanned: checked only after the
-# group has been parsed, it would still let the parser take memory proportional to the size of the
-# file.
-${CLICKHOUSE_CLIENT} -q "
-    INSERT INTO FUNCTION file('${CLICKHOUSE_DATABASE}_one_group.txt', RawBLOB)
-    SELECT '{' || repeat('a,', 2000000) || 'a}' SETTINGS engine_file_truncate_on_insert = 1"
-${CLICKHOUSE_CLIENT} -q "SELECT * FROM file(file('${CLICKHOUSE_DATABASE}_one_group.txt'), JSONEachRow, 'x UInt32')" 2>&1 | grep -q -F 'expand to more than' && echo 'OK' || echo 'FAIL'
+# A single group with an enormous number of alternatives - a million of them, which is the shape a
+# whole file passed as a path takes. The limit has to fire while the group is being scanned: checked
+# only after the group has been parsed, it would still let the parser keep one offset and one
+# `string_view` per alternative, so its memory would grow with the size of the pattern even though
+# nothing is ever expanded.
+${CLICKHOUSE_CLIENT} -q "SELECT * FROM file('{' || repeat('a,', 1000000) || 'a}')" 2>&1 | grep -q -F 'expand to more than' && echo 'OK' || echo 'FAIL'
 
 # The server is still fine after refusing these patterns.
 ${CLICKHOUSE_CLIENT} -q "SELECT 1"
@@ -45,4 +43,4 @@ do
 done
 ${CLICKHOUSE_CLIENT} -q "SELECT sum(x) FROM file('${CLICKHOUSE_DATABASE}_{1,2,3}.jsonl', JSONEachRow, 'x UInt32')"
 
-rm "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}_data.jsonl" "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}_one_group.txt" "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}_1.jsonl" "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}_2.jsonl" "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}_3.jsonl"
+rm "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}_data.jsonl" "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}_1.jsonl" "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}_2.jsonl" "${USER_FILES_PATH:?}/${CLICKHOUSE_DATABASE}_3.jsonl"
