@@ -93,13 +93,19 @@ Um único servidor ClickHouse usa várias [threads de mesclagem](/pt-BR/referenc
 
 Cada thread de mesclagem executa um loop:
 
-① Decide quais partes mesclar em seguida e carrega essas partes na memória.
+<Steps>
+  <Step title="Carregar partes na memória">
+    Decide quais partes mesclar em seguida e carrega essas partes na memória.
+  </Step>
 
-② Mescla as partes na memória em uma parte maior.
+  <Step title="Mesclar partes">
+    Mescla as partes na memória em uma parte maior.
+  </Step>
 
-③ Grava a parte mesclada no disco.
-
-Volta para ①
+  <Step title="Gravar no disco">
+    Grava a parte mesclada no disco e retorna ao passo 1.
+  </Step>
+</Steps>
 
 Observe que aumentar o número de núcleos de CPU e a quantidade de RAM permite aumentar a taxa de transferência das mesclagens em segundo plano.
 
@@ -121,17 +127,27 @@ O diagrama abaixo ilustra como uma única [thread de mesclagem](/pt-BR/concepts/
 
 A mesclagem de partes é realizada em várias etapas:
 
-**① Descompressão e carregamento**: Os [arquivos binários comprimidos das colunas](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) das partes a serem mescladas são descomprimidos e carregados na memória.
+<Steps>
+  <Step title="Descompressão e carregamento">
+    Os [arquivos binários comprimidos das colunas](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) das partes a serem mescladas são descomprimidos e carregados na memória.
+  </Step>
 
-**② Mesclagem**: Os dados são mesclados em arquivos de coluna maiores.
+  <Step title="Mesclagem">
+    Os dados são mesclados em arquivos de coluna maiores.
+  </Step>
 
-**③ Indexação**: Um novo [índice primário esparso](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) é gerado para os arquivos de coluna mesclados.
+  <Step title="Indexação">
+    Um novo [índice primário esparso](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) é gerado para os arquivos de coluna mesclados.
+  </Step>
 
-**④ Compressão e armazenamento**: Os novos arquivos de coluna e o índice são [comprimidos](/pt-BR/reference/statements/create/table/codec) e salvos em um novo [diretório](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que representa a parte de dados mesclada.
+  <Step title="Compressão e armazenamento">
+    Os novos arquivos de coluna e o índice são [comprimidos](/pt-BR/reference/statements/create/table/codec) e salvos em um novo [diretório](/pt-BR/concepts/core-concepts/parts#what-are-table-parts-in-clickhouse) que representa a parte de dados mesclada.
+  </Step>
+</Steps>
 
 Metadados adicionais nas [partes de dados](/pt-BR/concepts/core-concepts/parts), como índices secundários de data skipping, estatísticas de coluna, checksum e índices min-max, também são recriados com base nos arquivos de coluna mesclados. Omitimos esses detalhes para simplificar.
 
-A mecânica da etapa ② depende do [motor MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index) específico usado, pois motores diferentes tratam a mesclagem de maneiras diferentes. Por exemplo, as linhas podem ser agregadas ou substituídas se estiverem desatualizadas. Como mencionado anteriormente, essa abordagem **transfere todo o processamento de dados para as mesclagens em segundo plano**, permitindo **inserções extremamente rápidas** ao manter as operações de gravação leves e eficientes.
+A mecânica da etapa de mesclagem depende do [motor MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index) específico usado, pois motores diferentes tratam a mesclagem de maneiras diferentes. Por exemplo, as linhas podem ser agregadas ou substituídas se estiverem desatualizadas. Como mencionado anteriormente, essa abordagem **transfere todo o processamento de dados para as mesclagens em segundo plano**, permitindo **inserções extremamente rápidas** ao manter as operações de gravação leves e eficientes.
 
 Em seguida, apresentaremos brevemente a mecânica de mesclagem de motores específicos da família MergeTree.
 

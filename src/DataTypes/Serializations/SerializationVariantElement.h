@@ -50,6 +50,7 @@ public:
         size_t num_variants_,
         bool nullable_added_by_extraction_);
     size_t allocatedBytes() const override;
+    MutableColumnPtr wrapColumnForDeserialization(MutableColumnPtr column) const override;
 
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
