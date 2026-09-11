@@ -1,6 +1,9 @@
 #pragma once
 
+#include <array>
 #include <mutex>
+#include <span>
+#include <string_view>
 #include <tuple>
 #include <base/defines.h>
 #include <Common/AggregatedMetrics.h>
@@ -1039,10 +1042,20 @@ public:
     /// That allows to schedule them for deletion a bit later
     size_t clearPartsFromFilesystemAndRollbackIfError(const DataPartsVector & parts_to_delete, const String & parts_type);
 
-    /// Delete all directories which names begin with "tmp"
+    /// Root-level temporary directory prefixes used by periodic cleanup.
+    /// Intentionally does not include `delete_tmp_`: active part removal owns those directories.
+    static constexpr std::array<std::string_view, 2> ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_BACKGROUND_CLEANUP = {"tmp_", "tmp-fetch_"};
+
+    /// Root-level temporary directory prefixes used by startup/drop recovery and by ownership checks.
+    /// Includes `delete_tmp_` because it can be left by interrupted part removal.
+    static constexpr std::array<std::string_view, 3> ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY = {"tmp_", "delete_tmp_", "tmp-fetch_"};
+
+    /// Delete all directories which names begin with one of the valid prefixes.
     /// Must be called with locked lockForShare() because it's using relative_data_path.
-    size_t clearOldTemporaryDirectories(size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes = {"tmp_", "tmp-fetch_"});
-    size_t clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, const NameSet & valid_prefixes);
+    size_t clearOldTemporaryDirectories(
+        size_t custom_directories_lifetime_seconds,
+        std::span<const std::string_view> valid_prefixes = ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_BACKGROUND_CLEANUP);
+    size_t clearOldTemporaryDirectories(const String & root_path, size_t custom_directories_lifetime_seconds, std::span<const std::string_view> valid_prefixes);
 
     size_t clearEmptyParts();
 
@@ -1086,6 +1099,10 @@ public:
     /// - columns corresponding to primary key, indices, sign, sampling expression, summed columns, and date are not affected.
     /// If something is wrong, throws an exception.
     void checkAlterIsPossible(const AlterCommands & commands, ContextPtr context) const override;
+
+    /// the half of checkAlterIsPossible that depends only on metadata and settings, without the
+    /// transient guards. lets a caller ask whether a command is eligible at all
+    void checkAlterEligibility(const AlterCommands & commands, ContextPtr context) const;
 
     /// Throw exception if command is some kind of DROP command (drop column, drop index, etc) or rename command
     /// and we have unfinished mutation which need this column to finish.
@@ -1808,10 +1825,8 @@ protected:
 
     MergeTreePartsMover parts_mover;
 
-    /// UNIQUE KEY — sidecar lifecycle helper (orphan sweep + load-time SST
-    /// rebuild). Constructed unconditionally; methods are no-ops on non-UK
-    /// tables. The sweep also clears stray SSTs left on tables that used to
-    /// have UK metadata.
+    /// UNIQUE KEY - sidecar lifecycle helper (load-time SST rebuild).
+    /// Constructed unconditionally; methods are no-ops on non-UK tables.
     std::unique_ptr<UniqueKeyDenseIndexOps> unique_key_dense_index_ops;
 
     /// Executors are common for both ReplicatedMergeTree and plain MergeTree
@@ -1924,6 +1939,9 @@ protected:
     void checkTTLExpressions(const StorageInMemoryMetadata & new_metadata, const StorageInMemoryMetadata & old_metadata) const;
 
     void checkStoragePolicy(const StoragePolicyPtr & new_storage_policy) const;
+
+    void validateFormatVersion(const DiskPtr & disk) const;
+    bool containsTableDataOnNewDisk(const DiskPtr & disk) const;
 
     /// Calculates column and secondary indexes sizes in compressed form for the current state of data_parts. Call with data_parts mutex under lock.
     void calculateColumnAndSecondaryIndexSizesImpl(DataPartsLock & parts_lock) const;

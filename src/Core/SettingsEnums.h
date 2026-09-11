@@ -334,6 +334,7 @@ enum class Dialect : uint8_t
     promql,
     polyglot,
     clickhouse_json,
+    trino,
 };
 
 DECLARE_SETTING_ENUM(Dialect)
@@ -404,6 +405,7 @@ enum class ObjectStorageQueueMode : uint8_t
 {
     ORDERED,
     UNORDERED,
+    EXCLUSIVE,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageQueueMode)

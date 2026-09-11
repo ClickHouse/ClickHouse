@@ -109,7 +109,7 @@ void DataTypeNullable::forEachChild(const ChildCallback & callback) const
 }
 
 
-std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeNullable &>(*data.type).nested_data_type;
     const auto & nullable_serialization = assert_cast<const SerializationNullable &>(*removeNamedSerialization(data.serialization));
@@ -117,16 +117,21 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeNullable::getDynamicSubco
     nested_data.type = nested_type;
     nested_data.column = data.column ? assert_cast<const ColumnNullable &>(*data.column).getNestedColumnPtr() : nullptr;
 
-    auto nested_subcolumn_data = DB::IDataType::getSubcolumnData(subcolumn_name, nested_data, initial_array_level, throw_if_null);
-    if (!nested_subcolumn_data)
+    auto nested_subcolumn_info = DB::IDataType::getSubcolumnInfo(subcolumn_name, nested_data, initial_array_level, throw_if_null);
+    if (!nested_subcolumn_info)
         return nullptr;
 
     auto creator = NullableSubcolumnCreator(data.column ? assert_cast<const ColumnNullable &>(*data.column).getNullMapColumnPtr() : nullptr);
-    auto res = std::make_unique<ISerialization::SubstreamData>();
-    res->serialization = creator.create(nested_subcolumn_data->serialization, nested_subcolumn_data->type);
-    res->type = creator.create(nested_subcolumn_data->type);
+    auto res = std::make_unique<SubcolumnInfo>();
+    res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
+    res->data.type = creator.create(nested_subcolumn_info->data.type);
     if (data.column)
-        res->column = creator.create(nested_subcolumn_data->column);
+        res->data.column = creator.create(nested_subcolumn_info->data.column);
+
+    /// Reached through the nullable elements, exactly as the static enumeration would reach it.
+    res->substreams_path.emplace_back(ISerialization::Substream::NullableElements);
+    res->substreams_path.insert(
+        res->substreams_path.end(), nested_subcolumn_info->substreams_path.begin(), nested_subcolumn_info->substreams_path.end());
 
     return res;
 }

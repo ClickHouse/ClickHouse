@@ -40,3 +40,11 @@ Para modificar un parámetro, selecciona el botón **Edit parameters**. Seleccio
 Todos los cambios realizados en los parámetros de configuración suelen persistirse en la instancia en un plazo de un minuto. Algunos parámetros requieren reiniciar la base de datos para que surtan efecto. Estos cambios se aplicarán después del siguiente reinicio, que puedes activar manualmente desde la barra de herramientas **Service actions**.
 
 Consulta la [documentación](https://www.postgresql.org/docs/current/runtime-config.html) oficial sobre los parámetros de configuración. La lista de parámetros disponibles para configurar se ampliará pronto. Mientras tanto, ponte en contacto con [soporte](https://clickhouse.com/support/program) para solicitar un parámetro que actualmente no esté admitido.
+
+<div id="scheduled-upgrades">
+  ## Actualizaciones programadas
+</div>
+
+La sección **Configuración** también le permite controlar cuándo se aplican a su instancia las tareas de mantenimiento de la plataforma —actualizaciones de versiones menores de PostgreSQL, actualizaciones de funciones del servicio gestionado y parches del sistema operativo—. Seleccione **Configurar programación** en la subsección **Actualizaciones programadas** para elegir una ventana de dos horas en UTC y, opcionalmente, los días de la semana en que se pueden aplicar las actualizaciones.
+
+Para consultar las ventanas disponibles y lo que cubre y no cubre una programación, vea [actualizaciones programadas](/es/products/managed-postgres/upgrades#scheduled-upgrades).

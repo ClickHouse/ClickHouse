@@ -279,7 +279,9 @@ ProbeTargetPartPtr UniqueKeyTxnCommit::InsertCommit::makeSSTProbeTarget(const Me
             target->name, target->rows_count);
 #if USE_ROCKSDB
     return std::make_shared<SSTProbeTargetPart>(
-        target.get(), store.readLatestBitmap(target->info), openSSTReaderFromPath(*sst_path));
+        target.get(),
+        store.readLatestBitmap(target->info),
+        openSSTReaderFromStorage(target->getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, context->getReadSettings()));
 #else
     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
         "UNIQUE KEY duplicate probing requires RocksDB support (USE_ROCKSDB=1)");
@@ -563,10 +565,13 @@ DeleteBitmapPtr UniqueKeyTxnCommit::MergeCommit::computeMergeLateKills()
     /// No cap, for the same reason as the load-time rebuild in `ensureValidDenseIndex`.
     constexpr UInt64 max_encoded_size = std::numeric_limits<UInt64>::max();
 
-    /// The merged part is still staged in its tmp dir, so its freshly-written SST is opened
-    /// by local path. Bound checks against the merged row count run inside the probe target.
-    const String sst_path = merged_part.getDataPartStorage().getFullPath() + "/" + SSTIndexWriter::FILE_NAME;
-    SSTProbeTargetPart probe(&merged_part, /*pinned_bitmap=*/nullptr, openSSTReaderFromPath(sst_path));
+    /// The merged part is still staged in its tmp dir, and its freshly-written SST is read back
+    /// through that storage. Bound checks against the merged row count run inside the probe target.
+    SSTProbeTargetPart probe(
+        &merged_part,
+        /*pinned_bitmap=*/nullptr,
+        openSSTReaderFromStorage(
+            merged_part.getDataPartStoragePtr(), SSTIndexWriter::FILE_NAME, storage.getContext()->getReadSettings()));
 
     auto self_kills = std::make_shared<DeleteBitmap>();
 

@@ -1,4 +1,5 @@
 #include <Databases/DatabaseReplicatedHelpers.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
@@ -10,6 +11,7 @@
 
 #include <Compression/CompressionFactory.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/NestedUtils.h>
 #include <Core/Settings.h>
 #include <Common/Jemalloc.h>
 #include <Common/JemallocMergeTreeArena.h>
@@ -41,6 +43,9 @@
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/DDLTask.h>
+#if CLICKHOUSE_CLOUD
+#include <Interpreters/SharedDatabaseCatalog.h>
+#endif
 
 
 namespace DB
@@ -94,6 +99,7 @@ namespace ErrorCodes
     extern const int NO_REPLICA_NAME_GIVEN;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
     extern const int SUPPORT_IS_DISABLED;
+    extern const int ILLEGAL_STATISTICS;
 }
 
 
@@ -682,6 +688,46 @@ static StoragePtr create(const StorageFactory::Arguments & args)
     metadata.setColumns(columns);
     metadata.setComment(args.comment);
 
+    /// A full-definition `ATTACH TABLE t UUID '...' (...)` is CREATE-like user input even though it
+    /// runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from metadata stored on this
+    /// server (short `ATTACH`, `ATTACH DATABASE`, restart) carry `attach_short_syntax`, and
+    /// `SECONDARY_CREATE` (`Replicated`-database DDL replay, `RESTORE`) also replays validated ones.
+    const bool is_fresh_definition = isFreshTableDefinition(args.mode, args.query.attach_short_syntax);
+
+    /// A `Replicated` database replays a full-definition `ATTACH` on every secondary with
+    /// `LoadingStrictnessLevel::ATTACH` (`attach` outranks `secondary`), so only the initial execution
+    /// judges it: a secondary refusing what the initiator committed would retry its queue entry forever.
+    const auto metadata_txn = args.getLocalContext()->getZooKeeperMetadataTransaction();
+    const bool is_ddl_replay = metadata_txn && !metadata_txn->isInitialQuery();
+
+    /// A definition re-derived from metadata stored in Keeper arrives as a plain `CREATE` with no
+    /// metadata transaction, so neither `mode` nor `is_ddl_replay` can tell it apart from user input.
+    const bool is_stored_definition = args.getLocalContext()->isRecoveryFromStoredMetadata();
+
+    /// Shared Catalog secondaries re-execute the initiator's DDL without a metadata transaction, so
+    /// they are told apart by the client info instead (the same marker `AlterCommands` and
+    /// `StorageKeeperMap` use); an older initiator may have committed a definition this check refuses.
+#if CLICKHOUSE_CLOUD
+    const bool is_shared_catalog_replay = args.getLocalContext()->getClientInfo().is_shared_catalog_internal
+        && !SharedDatabaseCatalog::isInitialQuery(args.getLocalContext());
+#else
+    const bool is_shared_catalog_replay = false;
+#endif
+
+    /// Statistics of a column that is not physically stored can never be built: the column is absent
+    /// from every written block. Columns inferred from ZooKeeper describe an already existing table,
+    /// so a new replica of a table predating this check still starts.
+    if (is_fresh_definition && !is_ddl_replay && !is_stored_definition && !is_shared_catalog_replay && !args.columns.empty())
+    {
+        for (const auto & column : columns)
+        {
+            if (!columns.hasPhysical(column.name) && column.statistics.hasExplicitStatistics())
+                throw Exception(ErrorCodes::ILLEGAL_STATISTICS,
+                    "Cannot add statistics to column '{}': it is not physically stored",
+                    column.name);
+        }
+    }
+
     const auto & initial_storage_settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
     std::unique_ptr<MergeTreeSettings> storage_settings = std::make_unique<MergeTreeSettings>(initial_storage_settings);
 
@@ -754,14 +800,6 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (args.storage_def->sample_by)
             metadata.sampling_key = KeyDescription::getKeyFromAST(args.storage_def->sample_by->ptr(), metadata.columns, metadata.virtuals, context);
 
-        /// A full-definition `ATTACH TABLE t UUID '...' (...) ENGINE = MergeTree ...` is CREATE-like
-        /// user input that also runs under `LoadingStrictnessLevel::ATTACH`. Definitions read back from
-        /// metadata stored on this server (short `ATTACH TABLE t`, `ATTACH DATABASE`, server restart)
-        /// are marked with `attach_short_syntax` (see `createTableFromAST`); `SECONDARY_CREATE` (DDL
-        /// replay in `Replicated` databases, `RESTORE`) also replays previously validated definitions.
-        const bool is_fresh_definition = args.mode <= LoadingStrictnessLevel::CREATE
-            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
-
         if (args.storage_def->unique_key)
         {
             /// Fresh definitions only; previously validated metadata loads with the setting off.
@@ -810,6 +848,35 @@ static StoragePtr create(const StorageFactory::Arguments & args)
                             "UNIQUE KEY column `{}` must be a physical (stored) column; "
                             "ALIAS and EPHEMERAL columns are not allowed",
                             name);
+                    /// A subcolumn (`c.null`, `c.size0`, `c.1`, ...) is absent from the stored block
+                    /// yet resolvable by `getKeyFromAST`, and lives in an index `has` does not search.
+                    /// `!has(name)` comes before `hasSubcolumn`: a stored column may be named after
+                    /// another column's subcolumn, and a flattened `Nested` member is itself a stored
+                    /// column. Gated on fresh definitions so an already-created table stays
+                    /// attachable, hence droppable.
+                    if (is_fresh_definition && !metadata.columns.has(name)
+                        && metadata.columns.hasSubcolumn(GetColumnsOptions::All, name))
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "UNIQUE KEY column `{}` is a subcolumn; UNIQUE KEY must name whole "
+                            "stored columns",
+                            name);
+                    /// A virtual column's subcolumn (`_partition_value.1`) is in neither index above:
+                    /// the virtual lookup is exact-name, and the subcolumn index holds only subcolumns
+                    /// of `metadata.columns`. `getKeyFromAST` sees virtuals, so it does resolve one.
+                    /// Every dot position is tried: the subcolumn can itself have one.
+                    if (is_fresh_definition && !metadata.columns.has(name))
+                    {
+                        for (const auto & [parent, subcolumn] : Nested::getAllColumnAndSubcolumnPairs(name))
+                        {
+                            auto virtual_parent = metadata.virtuals.tryGet(
+                                String(parent), VirtualsKind::All, VirtualsMaterializationPlace::All);
+                            if (virtual_parent && virtual_parent->type->tryGetSubcolumnType(subcolumn))
+                                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "UNIQUE KEY columns must be real stored columns; "
+                                    "virtual columns such as `{}` are not allowed",
+                                    parent);
+                        }
+                    }
                 };
 
                 const auto * as_function = uk_ast->as<ASTFunction>();
@@ -894,21 +961,34 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             *args.storage_def, args.getLocalContext(), isLoadingFromExistingMetadata(args.mode),
             args.table_id.database_name == DatabaseCatalog::SYSTEM_DATABASE);
 
+        /// What this query changes from the settings the server has in effect, which already include the
+        /// `merge_tree` config section and `compatibility`: those are not changes made by the query. A
+        /// full-definition `ATTACH` states its settings itself, so it is checked like a `CREATE`.
+        if (is_fresh_definition)
+            args.getLocalContext()->checkMergeTreeSettingsConstraints(
+                initial_storage_settings, storage_settings->changesFrom(initial_storage_settings));
+
+        /// `MergeTreeData` runs `sanityCheck` on the settings it is given when the mode says `CREATE`, so a
+        /// full-definition `ATTACH` is the fresh definition left to check. Without this it can state a value
+        /// such as `index_granularity = 0` that the same `CREATE` refuses, and the table is created broken.
+        if (is_fresh_definition && args.mode > LoadingStrictnessLevel::CREATE)
+        {
+            context->getGlobalContext()->initializeBackgroundExecutorsIfNeeded();
+            storage_settings->sanityCheck(
+                context->getMergeMutateExecutor()->getMaxTasksCount(), context->wasBackgroundPoolAutoLowered());
+        }
+
         /// Updates the default storage_settings with settings specified via SETTINGS arg in a query
         if (args.storage_def->settings)
-        {
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
-                args.getLocalContext()->checkMergeTreeSettingsConstraints(initial_storage_settings, storage_settings->changes());
             metadata.settings_changes = args.storage_def->settings->ptr();
-        }
 
         /// The codec-valued MergeTree settings accept an arbitrary codec expression and are applied without
         /// going through the codec gate that column codecs and `TTL ... RECOMPRESS` use, so a gated codec
         /// could slip in through `SETTINGS default_compression_codec = ...`.
         /// For freshly introduced definitions (`is_fresh_definition` above) the merged value (explicit or
         /// inherited from the current `<merge_tree>` config defaults) is checked against
-        /// the codec gate (`validateCodecString` handles the per-tier `enable_<family>_codec` settings and the
-        /// `allow_experimental_codecs` umbrella). For stored definitions values written in the stored
+        /// the codec gate (`validateCodecString` handles the per-family `enable_<family>_codec` settings).
+        /// For stored definitions, values written in the stored
         /// `SETTINGS` clause were already gated when they were introduced and are exempt, so existing tables
         /// remain loadable. Values *not* stored in the definition, however, fall back to the *current*
         /// `<merge_tree>` config defaults, so they are validated even on load — otherwise an operator could
@@ -1022,7 +1102,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
             {
                 try
                 {
-                    auto projection = ProjectionDescription::getProjectionFromAST(projection_ast, columns, &metadata.partition_key, context, args.mode);
+                    auto projection = ProjectionDescription::getProjectionFromAST(
+                        projection_ast, columns, &metadata.partition_key, context, args.mode, args.query.attach_short_syntax);
                     metadata.projections.add(std::move(projection));
                 }
                 catch (...)
@@ -1103,7 +1184,8 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         if (ast && ast->value.getType() == Field::Types::UInt64)
         {
             (*storage_settings)[MergeTreeSetting::index_granularity] = ast->value.safeGet<UInt64>();
-            if (args.mode <= LoadingStrictnessLevel::CREATE)
+            /// The old syntax states `index_granularity` as an engine argument instead of a setting
+            if (is_fresh_definition)
             {
                 SettingsChanges changes;
                 changes.emplace_back("index_granularity", Field((*storage_settings)[MergeTreeSetting::index_granularity]));
@@ -1776,7 +1858,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | sparse_grams | text |
 |--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|--------------|------|
 | [equals (=, ==)](/reference/functions/regular-functions/comparison-functions#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notEquals(!=, &lt;&gt;)](/reference/functions/regular-functions/comparison-functions#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
+| [notEquals(!=, &lt;&gt;)](/reference/functions/regular-functions/comparison-functions#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
 | [like](/reference/functions/regular-functions/string-search-functions#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
 | [notLike](/reference/functions/regular-functions/string-search-functions#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
 | [match](/reference/functions/regular-functions/string-search-functions#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
@@ -1786,7 +1868,7 @@ Indexes of type `set` can be utilized by all functions. The other index types ar
 | [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
 | [in](/reference/functions/regular-functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✗    |
+| [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
 | [less (`<`)](/reference/functions/regular-functions/comparison-functions#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
 | [greater (`>`)](/reference/functions/regular-functions/comparison-functions#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
 | [lessOrEquals (`<=`)](/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
@@ -2329,8 +2411,8 @@ Configuration markup:
             </proxy>
             <connect_timeout_ms>10000</connect_timeout_ms>
             <request_timeout_ms>5000</request_timeout_ms>
-            <retry_attempts>10</retry_attempts>
-            <single_read_retries>4</single_read_retries>
+            <s3_retry_attempts>10</s3_retry_attempts>
+            <s3_max_single_read_retries>4</s3_max_single_read_retries>
             <min_bytes_for_seek>1000</min_bytes_for_seek>
             <metadata_path>/var/lib/clickhouse/disks/s3/</metadata_path>
             <skip_access_check>false</skip_access_check>
@@ -2454,6 +2536,8 @@ CREATE TABLE tab
 ENGINE = MergeTree
 ORDER BY a
 ```
+
+Statistics require a physically stored column. An `ALIAS` or `EPHEMERAL` column is not written to any part, so declaring statistics on one is rejected.
 
 We can also manipulate statistics with `ALTER` statements:
 

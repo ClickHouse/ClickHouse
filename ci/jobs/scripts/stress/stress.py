@@ -19,6 +19,17 @@ from typing import List, Optional
 # Failpoint that delays every background mutation by a bounded random amount.
 MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
 
+# Databases the hung check keeps attached. The log export sends the system logs
+# of the run from the `Distributed` tables of `ci_logs_export` (the default of
+# `LOG_EXPORT_DATABASE` in `ci/jobs/scripts/functional_tests/setup_log_cluster.sh`),
+# and they are created with `flush_on_detach=0`, so detaching that database
+# drops whatever is still queued and exports nothing for the rest of the run.
+KEEP_DATABASES = ("system", "ci_logs_export")
+
+# GNU `tar` exit statuses: 0 - success, 1 - some files differ (a file changed
+# or shrank while it was being read), 2 and above - a fatal error.
+TAR_EXIT_DIFFERS = 1
+
 
 class ServerDied(Exception):
     pass
@@ -715,11 +726,41 @@ def run_func_test(
 
 
 def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
-    cmd = (
-        f"cd {output_path} && tar --zstd --create --file=stress_run_logs.tar.zst "
-        f"{files_prefix}* && rm {files_prefix}*"
+    """Archive the per-process `clickhouse-test` logs into a single file.
+
+    A log can still be growing while it is archived: when the global time
+    limit is reached, `clickhouse-test` force-kills its workers and exits,
+    but a worker - or a `clickhouse client` the worker spawned - can outlive
+    it and keep appending through the inherited stdout descriptor. `tar`
+    notices the size change and exits with `TAR_EXIT_DIFFERS`, which used to
+    fail the whole stress test job right before the hung check, even though
+    the archive itself is written and only the tail of one log is missing.
+    Only a fatal `tar` status is treated as a failure here.
+    """
+    archive = "stress_run_logs.tar.zst"
+    result = subprocess.run(
+        f"cd {output_path} && tar --zstd --create --file={archive} {files_prefix}*",
+        shell=True,
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    check_output(cmd, shell=True)
+    if result.returncode == TAR_EXIT_DIFFERS:
+        logging.warning(
+            "Some logs changed while %s was being created: %s",
+            archive,
+            result.stderr.strip(),
+        )
+    elif result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to create {archive}, tar exit code {result.returncode}:\n"
+            f"{result.stdout}\n{result.stderr}"
+        )
+
+    # Not chained after `tar` with `&&`: the logs have to be removed on the
+    # `TAR_EXIT_DIFFERS` path as well, otherwise they are uploaded twice.
+    for path in output_path.glob(f"{files_prefix}*"):
+        path.unlink()
 
 
 def call_with_retry(
@@ -860,7 +901,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                     .split()
                 )
                 for db in databases:
-                    if db == "system":
+                    if db in KEEP_DATABASES:
                         continue
                     command = make_query_command(f"DETACH DATABASE {db}")
                     # we don't wait for drop
