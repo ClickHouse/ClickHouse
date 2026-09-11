@@ -79,8 +79,15 @@ private:
         MutableColumns accumulated_columns;
     };
 
-    /// The number of complete granules, starting from the current mark, that the first `rows` rows form.
-    size_t getNumCompleteGranules(size_t rows) const;
+    struct CompleteGranules
+    {
+        /// The number of complete granules, starting from the current mark, that the first `rows` rows form.
+        size_t num_granules = 0;
+        /// The number of rows in these granules (less than `rows` if the last granule is not complete yet).
+        size_t rows = 0;
+    };
+
+    CompleteGranules getCompleteGranules(size_t rows) const;
 
     /// Whether the buffered rows should be written as a stripe now.
     bool shouldWriteStripe(size_t rows, size_t bytes) const;

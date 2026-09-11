@@ -263,9 +263,9 @@ void MergeTreeDataPartWriterCompact::write(const Block & block, const IColumnPer
         header = result_block.cloneEmpty();
 
     /// Rows are accumulated in the buffer until they form a stripe (see `writeDataBlock`), or at least one granule
-    /// when the limits of a stripe are reached. The index granularity is filled so that every block ends at a mark
-    /// (see `fillIndexGranularityImpl`), so the buffer always contains a whole number of granules, unless the first
-    /// granule is not complete yet.
+    /// when the limits of a stripe are reached. Only a whole number of granules is written (see `shouldWriteStripe`),
+    /// so the beginning of an incomplete granule stays in the buffer until the next blocks complete it, and the
+    /// incomplete granule of the very last block is written by `finalizeIndexGranularity`.
     Block flushed_block;
     if (columns_buffer.size() == 0 && shouldWriteStripe(result_block.rows(), result_block.bytes()))
     {
@@ -451,33 +451,39 @@ void MergeTreeDataPartWriterCompact::writeStripe(const Block & block, const Gran
     data_written = true;
 }
 
-size_t MergeTreeDataPartWriterCompact::getNumCompleteGranules(size_t rows) const
+MergeTreeDataPartWriterCompact::CompleteGranules MergeTreeDataPartWriterCompact::getCompleteGranules(size_t rows) const
 {
-    size_t num_granules = 0;
+    CompleteGranules result;
     for (size_t mark = getCurrentMark(); mark < index_granularity->getMarksCount(); ++mark)
     {
         size_t rows_in_mark = index_granularity->getMarkRows(mark);
-        if (rows < rows_in_mark)
+        if (rows - result.rows < rows_in_mark)
             break;
 
-        rows -= rows_in_mark;
-        ++num_granules;
+        result.rows += rows_in_mark;
+        ++result.num_granules;
     }
 
-    return num_granules;
+    return result;
 }
 
 bool MergeTreeDataPartWriterCompact::shouldWriteStripe(size_t rows, size_t bytes) const
 {
-    size_t num_granules = getNumCompleteGranules(rows);
-    if (num_granules == 0)
+    auto complete_granules = getCompleteGranules(rows);
+    if (complete_granules.num_granules == 0)
+        return false;
+
+    /// The rows are written with `getGranulesToWrite(last_block = false)`, which requires every granule to be
+    /// complete, so the beginning of the next granule has to wait in the buffer until the granule is complete.
+    if (complete_granules.rows != rows)
         return false;
 
     /// All columns of a granule must share a compressed block, so they have to be adjacent: one granule per stripe.
     if (!settings.compress_per_column_in_compact_parts)
         return true;
 
-    return num_granules >= settings.compact_parts_max_granules_to_buffer || bytes >= settings.compact_parts_max_bytes_to_buffer;
+    return complete_granules.num_granules >= settings.compact_parts_max_granules_to_buffer
+        || bytes >= settings.compact_parts_max_bytes_to_buffer;
 }
 
 void MergeTreeDataPartWriterCompact::finalizeIndexGranularity()
