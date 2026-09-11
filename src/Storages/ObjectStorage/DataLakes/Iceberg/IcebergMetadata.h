@@ -235,6 +235,7 @@ private:
 
     void backgroundMetadataPrefetcherThread();
 };
+
 }
 
 #endif
