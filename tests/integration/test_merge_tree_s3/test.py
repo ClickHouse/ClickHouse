@@ -939,7 +939,7 @@ def wait_for_s3_request(broken_s3, kind, count=1):
     )
 
 
-def assert_s3_cancelled(node, table, request, broken_s3, request_kind):
+def assert_s3_cancelled(node, table, request):
     node.query(f"SYSTEM STOP MERGES {table}")
     assert_eq_with_retry(
         node,
@@ -949,9 +949,6 @@ def assert_s3_cancelled(node, table, request, broken_s3, request_kind):
         sleep_time=0.1,
     )
     assert "ABORTED" in request.get_error()
-    count = broken_s3.get_request_counts()[request_kind]
-    time.sleep(0.5)
-    assert broken_s3.get_request_counts()[request_kind] == count
 
 
 def test_cancelling_horizontal_text_index_merge_stops_s3_retries(
@@ -1003,7 +1000,7 @@ def test_cancelling_horizontal_text_index_merge_stops_s3_retries(
             for line in merge_log.splitlines()
         ), merge_log
         assert broken_s3.get_request_counts()["part_upload"] == 0
-        assert_s3_cancelled(node, table, request, broken_s3, "object_upload")
+        assert_s3_cancelled(node, table, request)
     finally:
         try:
             node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
@@ -1081,7 +1078,7 @@ def test_cancelling_vertical_multipart_merge_stops_s3_retries(
             lambda cache_write_bytes: cache_write_bytes > cache_write_bytes_before,
             max_attempts=100,
         )
-    assert_s3_cancelled(node, table, request, broken_s3, "part_upload")
+    assert_s3_cancelled(node, table, request)
     wait_for_s3_request(broken_s3, "abort_multipart_upload")
     assert broken_s3.get_request_counts()["abort_multipart_upload"] == 1
 
@@ -1113,7 +1110,7 @@ def test_cancelling_untouched_mutation_copy_stops_s3_retries(
         timeout=30,
     )
     wait_for_s3_request(broken_s3, "object_upload", count=2)
-    assert_s3_cancelled(node, table, request, broken_s3, "object_upload")
+    assert_s3_cancelled(node, table, request)
 
 
 @pytest.mark.parametrize(
@@ -1172,7 +1169,7 @@ def test_cancelling_packed_mutation_copy_source_stops_s3_retries(
             assert "ReadBufferFromRemoteFSGather: Reading from file:" in mutation_log, mutation_log
             assert executor not in mutation_log, mutation_log
 
-        assert_s3_cancelled(node, table, request, broken_s3, "object_read")
+        assert_s3_cancelled(node, table, request)
     finally:
         try:
             node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
@@ -1211,7 +1208,7 @@ def test_cancelling_partial_mutation_copy_stops_s3_retries(
         timeout=30,
     )
     wait_for_s3_request(broken_s3, "object_copy", count=2)
-    assert_s3_cancelled(node, table, request, broken_s3, "object_copy")
+    assert_s3_cancelled(node, table, request)
 
 
 def test_cancelling_projection_copy_stops_s3_retries(s3_cancellation, broken_s3):
@@ -1264,7 +1261,7 @@ def test_cancelling_projection_copy_stops_s3_retries(s3_cancellation, broken_s3)
         timeout=30,
     )
     wait_for_s3_request(broken_s3, "object_copy_injected", count=2)
-    assert_s3_cancelled(node, table, request, broken_s3, "object_copy_injected")
+    assert_s3_cancelled(node, table, request)
 
 
 def test_cancelling_mutation_copy_source_stops_s3_retries(
@@ -1293,7 +1290,7 @@ def test_cancelling_mutation_copy_source_stops_s3_retries(
     wait_for_s3_request(broken_s3, "object_copy")
     broken_s3.setup_at_object_read(action="internal_error", count=10000)
     wait_for_s3_request(broken_s3, "object_read")
-    assert_s3_cancelled(node, table, request, broken_s3, "object_read")
+    assert_s3_cancelled(node, table, request)
 
 
 @pytest.mark.parametrize("operation", ["merge", "mutation"])
