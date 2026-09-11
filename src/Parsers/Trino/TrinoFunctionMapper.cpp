@@ -384,11 +384,12 @@ const std::unordered_map<String, String> & getRenames()
         {"url_encode", "encodeURLFormComponent"},
         {"url_decode", "decodeURLFormComponent"},
 
-        /// Bitwise.
+        /// Bitwise. bitwise_left_shift is mapped by a rewriter below: an untyped
+        /// Trino literal is INTEGER-wide, but ClickHouse would infer a minimal
+        /// width for it and silently shift within that narrow type.
         {"bitwise_and", "bitAnd"},
         {"bitwise_or", "bitOr"},
         {"bitwise_xor", "bitXor"},
-        {"bitwise_left_shift", "bitShiftLeft"},
         {"bitwise_right_shift_arithmetic", "bitShiftRight"},
 
         /// Binary. ClickHouse hash names are case-sensitive, so lowercase
@@ -836,14 +837,34 @@ const std::unordered_map<String, Rewriter> & getRewriters()
             requireArguments(function, arguments, 1, 1, "(value)");
             node = makeFunctionWithArguments("bitNot", {makeFunctionWithArguments("toInt64", {arguments[0]})});
         }},
+        {"bitwise_left_shift", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
+        {
+            /// An untyped Trino literal is INTEGER-wide, but ClickHouse infers a
+            /// minimal width for it, so e.g. bitwise_left_shift(1, 8) would shift
+            /// within UInt8 and return 0. Promote only untyped literals to 64-bit;
+            /// explicitly typed arguments (e.g. TINYINT '1') keep their Trino width.
+            requireArguments(function, arguments, 2, 2, "(value, shift)");
+            auto promote_literal = [](const ASTPtr & argument) -> ASTPtr
+            {
+                if (argument->as<ASTLiteral>())
+                    return makeFunctionWithArguments("toInt64", {argument});
+                return argument;
+            };
+            node = makeFunctionWithArguments(
+                "bitShiftLeft", {promote_literal(arguments[0]), promote_literal(arguments[1])});
+        }},
         {"bitwise_right_shift", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
             /// Trino wants a logical (zero-fill) shift; ClickHouse shifts signed types arithmetically.
+            /// Promote an untyped literal like bitwise_left_shift does, so the
+            /// reinterpret below sees a 64-bit value instead of a narrow one.
             requireArguments(function, arguments, 2, 2, "(value, shift)");
+            ASTPtr value = arguments[0];
+            if (value->as<ASTLiteral>())
+                value = makeFunctionWithArguments("toInt64", {value});
             node = makeFunctionWithArguments(
                 "reinterpretAsInt64",
-                {makeFunctionWithArguments(
-                    "bitShiftRight", {makeFunctionWithArguments("reinterpretAsUInt64", {arguments[0]}), arguments[1]})});
+                {makeFunctionWithArguments("bitShiftRight", {makeFunctionWithArguments("reinterpretAsUInt64", {value}), arguments[1]})});
         }},
         {"bit_count", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
