@@ -4,6 +4,13 @@
 
 SET explain_query_plan_default = 'legacy';
 
+-- The `Statistics` index sections in EXPLAIN below come from implicit `basic`
+-- statistics on `ts`. Both the collection on insert and the implicit declaration
+-- are pinned here because CI randomizes `materialize_statistics_on_insert` and
+-- `auto_statistics_types`, either of which would remove those sections:
+-- `test_non_null` pins `auto_statistics_types = 'basic'` in its table settings.
+SET materialize_statistics_on_insert = 1;
+
 -- { echoOn }
 
 DROP VIEW IF EXISTS view_ifnull;
@@ -105,7 +112,7 @@ CREATE TABLE test_non_null
 )
 ENGINE = MergeTree()
 ORDER BY ts
-SETTINGS index_granularity = 1, allow_nullable_key = 1;
+SETTINGS index_granularity = 1, allow_nullable_key = 1, auto_statistics_types = 'basic';
 
 INSERT INTO test_non_null VALUES
     (toDateTime64('2026-01-01 00:00:00', 3)),

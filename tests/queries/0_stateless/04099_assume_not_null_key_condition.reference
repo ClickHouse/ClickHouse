@@ -106,21 +106,25 @@ OPTIMIZE TABLE test FINAL;
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2024-01-01';
 []
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d >= '2024-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+Keys:
+Parts: 0/1
+Granules: 0/1
 PrimaryKey
 Keys:
 Condition: (assumeNotNull(d) in [19723, +Inf))
-Parts: 0/1
-Granules: 0/1
-Search Algorithm: binary search
+Parts: 0/0
+Granules: 0/0
 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01';
 []
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT arraySort(groupArray(if(isNull(d), 'NULL', toString(d)))) FROM test WHERE d = '1970-01-01') WHERE explain LIKE '%Condition%' OR explain LIKE '%Parts%' OR explain LIKE '%Granules%' OR explain LIKE '%Keys%' OR explain LIKE '%Search Algorithm%' OR explain LIKE '%Min-Max%' OR explain LIKE '%Partition%' OR explain LIKE '%PrimaryKey%';
+Keys:
+Parts: 0/1
+Granules: 0/1
 PrimaryKey
 Keys:
 Condition: (assumeNotNull(d) in [0, 0])
-Parts: 1/1
-Granules: 1/1
-Search Algorithm: binary search
+Parts: 0/0
+Granules: 0/0
 DROP TABLE test;
 -- Partition pruning with `NULL` present.
 DROP TABLE IF EXISTS test;
