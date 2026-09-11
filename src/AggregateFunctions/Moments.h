@@ -110,6 +110,77 @@ struct VarMoments
         addManyImpl(ptr, row_begin, row_end);
     }
 
+    /// `addManyImpl` for elements that carry a scale: the division happens inside the accumulation
+    /// loop. Only callers on targets without x86-64's register pressure use this - see
+    /// `AggregateFunctionVarianceSimple::addBatchSinglePlace` - so there is no multitarget variant.
+    /// One was tried: on `x86-64-v4` it does get `vcvtqq2pd` on `zmm` and stops spilling, but it
+    /// still vectorizes only half its lanes and measured slower than converting into a buffer.
+    template <typename Value>
+    void NO_INLINE addManyDividedImpl(const Value * __restrict ptr, T divisor, size_t row_begin, size_t row_end)
+    {
+        T partials[_level][unroll_count]{};
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                T x = static_cast<T>(ptr[i + j].value) / divisor;
+                partials[0][j] += x;
+                partials[1][j] += x * x;
+                if constexpr (_level >= 3) partials[2][j] += x * x * x;
+                if constexpr (_level >= 4) partials[3][j] += x * x * x * x;
+            }
+        }
+        m[0] += static_cast<T>(i - row_begin);
+        for (size_t k = 1; k <= _level; ++k)
+            for (size_t j = 0; j < unroll_count; ++j)
+                m[k] += partials[k - 1][j];
+        for (; i < row_end; ++i)
+            add(static_cast<T>(ptr[i].value) / divisor);
+    }
+
+    template <typename Value>
+    void addManyDivided(const Value * __restrict ptr, T divisor, size_t row_begin, size_t row_end)
+    {
+        addManyDividedImpl(ptr, divisor, row_begin, row_end);
+    }
+
+    /// `addManyConditionalImpl` for elements that carry a scale, with the same placement rule and
+    /// the same absence of a multitarget variant as `addManyDividedImpl`.
+    template <typename Value, bool add_if_zero>
+    void NO_INLINE addManyConditionalDividedImpl(
+        const Value * __restrict ptr, T divisor, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
+    {
+        T partials[_level + 1][unroll_count]{};
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                bool keep = !condition_map[i + j] == add_if_zero;
+                T x = maskFloatingPoint(static_cast<T>(ptr[i + j].value) / divisor, keep);
+                partials[0][j] += keep;
+                partials[1][j] += x;
+                partials[2][j] += x * x;
+                if constexpr (_level >= 3) partials[3][j] += x * x * x;
+                if constexpr (_level >= 4) partials[4][j] += x * x * x * x;
+            }
+        }
+        for (size_t k = 0; k <= _level; ++k)
+            for (size_t j = 0; j < unroll_count; ++j)
+                m[k] += partials[k][j];
+        for (; i < row_end; ++i)
+            if (!condition_map[i] == add_if_zero)
+                add(static_cast<T>(ptr[i].value) / divisor);
+    }
+
+    template <typename Value, bool add_if_zero>
+    void addManyConditionalDivided(
+        const Value * __restrict ptr, T divisor, const UInt8 * __restrict condition_map, size_t row_begin, size_t row_end)
+    {
+        addManyConditionalDividedImpl<Value, add_if_zero>(ptr, divisor, condition_map, row_begin, row_end);
+    }
+
     MULTITARGET_FUNCTION_X86_V4(
     MULTITARGET_FUNCTION_HEADER(
     template <typename Value, bool add_if_zero>
