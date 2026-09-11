@@ -314,7 +314,7 @@
 	url = https://github.com/sqids/sqids-cpp.git
 [submodule "contrib/idna"]
 	path = contrib/idna
-	url = https://github.com/ada-url/idna.git
+	url = https://github.com/ClickHouse/idna
 [submodule "contrib/google-cloud-cpp"]
 	path = contrib/google-cloud-cpp
 	url = https://github.com/ClickHouse/google-cloud-cpp.git
