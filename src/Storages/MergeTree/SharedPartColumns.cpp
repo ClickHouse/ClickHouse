@@ -100,14 +100,10 @@ void sweepExpiredEntries(Cache & cache, size_t & size_after_sweep, AggregatedMet
 SharedPartColumns::SharedPartColumns(
     NamesAndTypesList columns_,
     std::shared_ptr<const ColumnsDescription> columns_description_,
-    std::shared_ptr<const ColumnsDescription> columns_description_with_collected_nested_,
-    bool collect_nested_,
     String interning_key_)
     : columns(std::move(columns_))
     , column_name_to_position(buildColumnPositions(columns))
     , columns_description(std::move(columns_description_))
-    , columns_description_with_collected_nested(std::move(columns_description_with_collected_nested_))
-    , collect_nested(collect_nested_)
     , interning_key(std::move(interning_key_))
     , serializations_cache_metric_handle(CurrentMetrics::SharedPartSerializationsCacheSize)
     , serialization_groups_metric_handle(CurrentMetrics::SharedPartSerializationGroupsCacheSize)
@@ -207,7 +203,7 @@ PartSerializations::ColumnGroupPtr SharedPartColumns::buildSerializationGroup(co
             group->names.push_back(std::move(full_name));
             group->serializations.push_back(subdata.serialization);
         }
-    }, ISerialization::SubstreamData(serialization));
+    }, ISerialization::SubstreamData(serialization).withType(column.type));
 
     /// The group is shared and long-lived: don't keep the growth overshoot of the vectors.
     group->serializations.shrink_to_fit();
@@ -616,8 +612,8 @@ const SharedPartColumnsPtr & SharedPartColumns::getEmpty()
 {
     static const SharedPartColumnsPtr empty = []
     {
-        auto description = std::make_shared<const ColumnsDescription>();
-        return std::make_shared<const SharedPartColumns>(NamesAndTypesList{}, description, description, false, String{});
+        return std::make_shared<const SharedPartColumns>(
+            NamesAndTypesList{}, std::make_shared<const ColumnsDescription>(), String{});
     }();
     return empty;
 }

@@ -24,6 +24,8 @@ struct SerializationInfoSettings
     MergeTreeNullableSerializationVersion nullable_serialization_version = MergeTreeNullableSerializationVersion::BASIC;
     MergeTreeMapSerializationVersion map_serialization_version = MergeTreeMapSerializationVersion::BASIC;
     bool propagate_types_serialization_versions_to_nested_types = false;
+    /// Part-global, unlike the versions above.
+    MergeTreeSubstreamNamingVersion substream_naming_version = MergeTreeSubstreamNamingVersion::BASIC;
 
     SerializationInfoSettings() = default;
 
@@ -35,7 +37,8 @@ struct SerializationInfoSettings
         MergeTreeStringSerializationVersion string_serialization_version_,
         MergeTreeNullableSerializationVersion nullable_serialization_version_,
         MergeTreeMapSerializationVersion map_serialization_version_,
-        bool propagate_types_serialization_versions_to_nested_types_);
+        bool propagate_types_serialization_versions_to_nested_types_,
+        MergeTreeSubstreamNamingVersion substream_naming_version_);
 
     bool operator==(const SerializationInfoSettings & other) const = default;
 

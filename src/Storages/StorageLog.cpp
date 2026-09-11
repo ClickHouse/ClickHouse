@@ -28,6 +28,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 
 #include <Interpreters/Context.h>
 #include <Processors/ISource.h>
@@ -197,7 +198,7 @@ NameAndTypePair LogSource::getColumnOnDisk(const NameAndTypePair & column) const
     /// A special case when we read subcolumn of shared offsets of Nested.
     /// E.g. instead of requested column "n.arr1.size0" we must read column "n.size0" from disk.
     auto name_in_storage = column.getNameInStorage();
-    if (column.getSubcolumnName() == "size0" && Nested::isSubcolumnOfNested(name_in_storage, storage_columns))
+    if (SerializationArray::isTopLevelArraySizesSubcolumn(column) && Nested::isSubcolumnOfNested(name_in_storage, storage_columns))
     {
         auto nested_name_in_storage = Nested::splitName(name_in_storage).first;
         auto new_name = Nested::concatenateName(nested_name_in_storage, column.getSubcolumnName());
@@ -307,9 +308,11 @@ void LogSource::readPrefix(const NameAndTypePair & name_and_type, ISerialization
     auto serialization = IDataType::getSerialization(name_and_type);
 
     ISerialization::DeserializeBinaryBulkSettings settings;
+    settings.name_in_storage = name_and_type.getNameInStorage();
     settings.getter = [&](const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(
+                name_and_type.getNameInStorage(), path, /*share_nested_offsets=*/ true)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});
@@ -333,12 +336,14 @@ void LogSource::readData(const NameAndTypePair & name_and_type, MutableColumnPtr
     size_t max_rows_to_read, ISerialization::SubstreamsCache & cache)
 {
     ISerialization::DeserializeBinaryBulkSettings settings; /// TODO Use avg_value_size_hint.
+    settings.name_in_storage = name_and_type.getNameInStorage();
     const auto & [name, type] = name_and_type;
     auto serialization = IDataType::getSerialization(name_and_type);
 
     settings.getter = [&] (const ISerialization::SubstreamPath & path) -> ReadBuffer *
     {
-        if (cache.contains(ISerialization::getSubcolumnNameForStream(path)))
+        if (cache.contains(ISerialization::getSubstreamsCacheKeyForStream(
+                name_and_type.getNameInStorage(), path, /*share_nested_offsets=*/ true)))
             return nullptr;
 
         String data_file_name = ISerialization::getFileNameForStream(name_and_type, path, {});

@@ -1,0 +1,41 @@
+two parts, two schemes
+2
+read across both parts
+1	ab	[1,2]	[10,20]	[30,40]
+2	\N	[3]	[50]	[60]
+1	0	2	2
+2	1	1	1
+names reported per part
+all_1_1_0	['a','a.size0']
+all_2_2_0	['a.arr_elems','a.size']
+reload from metadata
+1	ab	[1,2]	[10,20]	[30,40]
+2	\N	[3]	[50]	[60]
+merge the two schemes into one part
+1
+1	ab	[1,2]	[10,20]	[30,40]
+2	\N	[3]	[50]	[60]
+mutate
+1	[2,3]
+2	[3]
+rename a column
+1	ab	0
+2	\N	1
+naming version survives a reload on its own
+['ab',NULL,'cde']	3	[0,1,0]
+switched back
+[1,2]	2
+[3]	1
+[1,2]	2
+[3]	1
+scheme is independent of the info version
+[1,NULL,3]	3	[0,1,0]
+5
+1	1
+both schemes under a basic info version
+[1,NULL,3]
+[7]
+all_1_1_0	0
+all_2_2_0	2
+[1,NULL,3]
+[7]

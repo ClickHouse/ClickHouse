@@ -369,7 +369,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
     settings.path.push_back(Substream::DynamicStructure);
 
     DeserializeBinaryBulkStatePtr state = nullptr;
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings.path))
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings))
     {
         state = std::move(cached_state);
     }
@@ -472,7 +472,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         }
 
         state = structure_state;
-        addToSubstreamsDeserializeStatesCache(cache, settings.path, state);
+        addToSubstreamsDeserializeStatesCache(cache, settings, state);
 
         /// We won't read from this stream anymore so we can release it.
         if (settings.release_stream_callback)

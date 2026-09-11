@@ -163,6 +163,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool materialize_statistics_on_merge;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeSubstreamNamingVersion substream_naming_version;
 }
 
 namespace ErrorCodes
@@ -995,6 +996,7 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         (*merge_tree_settings)[MergeTreeSetting::nullable_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::map_serialization_version],
         (*merge_tree_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+        (*merge_tree_settings)[MergeTreeSetting::substream_naming_version],
     };
 
     SerializationInfoByName infos(global_ctx->storage_columns, info_settings);

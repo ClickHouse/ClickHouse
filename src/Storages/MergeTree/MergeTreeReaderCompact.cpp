@@ -6,6 +6,7 @@
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationArray.h>
 #include <Interpreters/Context.h>
 #include <ranges>
 
@@ -153,7 +154,7 @@ void MergeTreeReaderCompact::findPositionForMissedNested(size_t pos)
     auto & column = columns_to_read[pos];
 
     bool is_array = isArray(column.type);
-    bool is_offsets_subcolumn = isArray(column.getTypeInStorage()) && column.getSubcolumnName() == "size0";
+    bool is_offsets_subcolumn = isArray(column.getTypeInStorage()) && SerializationArray::isTopLevelArraySizesSubcolumn(column);
 
     if (!is_array && !is_offsets_subcolumn)
         return;
@@ -215,7 +216,7 @@ void MergeTreeReaderCompact::readData(
 
         if (seek_to_substream_mark)
         {
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
+            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, stream_file_name_settings);
             stream.seekToMarkAndColumn(from_mark, substream_position);
         }
 
@@ -225,13 +226,15 @@ void MergeTreeReaderCompact::readData(
     try
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+        deserialize_settings.name_in_storage = name_and_type.getNameInStorage();
+        deserialize_settings.share_nested_offsets = stream_file_name_settings.share_nested_offsets;
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
         deserialize_settings.get_avg_value_size_hint_callback
             = [&](const ISerialization::SubstreamPath & substream_path) -> double
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), stream_file_name_settings);
             if (!stream_name)
                 return 0.0;
 
@@ -241,7 +244,7 @@ void MergeTreeReaderCompact::readData(
         deserialize_settings.update_avg_value_size_hint_callback
             = [&](const ISerialization::SubstreamPath & substream_path, const IColumn & column_)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), stream_file_name_settings);
             if (!stream_name)
                 return;
 
@@ -257,7 +260,7 @@ void MergeTreeReaderCompact::readData(
 
             deserialize_settings.seek_stream_to_current_mark_callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, storage_settings);
+                size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], name_and_type, substream_path, stream_file_name_settings);
                 stream.seekToMarkAndColumn(from_mark, substream_position);
             };
         }
@@ -407,10 +410,10 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
         /// that do not exist in this part (e.g. MapBucketIndexes in old bucketed Map parts).
         enumerate_settings.check_stream_exists_callback = [&, column_pos = *pos](const ISerialization::SubstreamPath & substream_path) -> bool
         {
-            return columns_substreams.tryGetSubstreamPosition(column_pos, column_from_part, substream_path, storage_settings).has_value();
+            return columns_substreams.tryGetSubstreamPosition(column_pos, column_from_part, substream_path, stream_file_name_settings).has_value();
         };
 
-        auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, ISerialization::StreamFileNameSettings(*storage_settings));
+        auto order = getSubcolumnsDeserializationOrder(column, subcolumns_data, columns_substreams.getColumnSubstreams(*pos), enumerate_settings, stream_file_name_settings);
         deserialization_order.reserve(subcolumns_indexes.size());
         for (size_t i : order)
             deserialization_order.push_back(subcolumn_data_index_to_subcolumn_index[i]);
@@ -445,7 +448,7 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
 
         if (seek_to_substream_mark)
         {
-            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings);
+            size_t substream_position = columns_substreams.getSubstreamPosition(*column_positions[column_idx], column, substream_path, stream_file_name_settings);
             stream.seekToMarkAndColumn(from_mark, substream_position);
         }
 
@@ -458,7 +461,7 @@ void MergeTreeReaderCompact::readPrefix(size_t column_idx, size_t from_mark, Mer
     {
         check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
         {
-            return columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], column, substream_path, storage_settings).has_value();
+            return columns_substreams.tryGetSubstreamPosition(*column_positions[column_idx], column, substream_path, stream_file_name_settings).has_value();
         };
     }
 
@@ -500,6 +503,8 @@ void MergeTreeReaderCompact::readPrefix(
     try
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
+        deserialize_settings.name_in_storage = name_and_type.getNameInStorage();
+        deserialize_settings.share_nested_offsets = stream_file_name_settings.share_nested_offsets;
         deserialize_settings.getter = buffer_getter;
         deserialize_settings.object_and_dynamic_read_statistics = true;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;

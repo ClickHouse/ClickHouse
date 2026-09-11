@@ -528,6 +528,7 @@ DECLARE_SETTING_ENUM(MergeTreeDynamicSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreePatchPartsVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapSerializationVersion)
 DECLARE_SETTING_ENUM(MergeTreeMapBucketsStrategy)
+DECLARE_SETTING_ENUM(MergeTreeSubstreamNamingVersion)
 
 
 enum class SearchOrphanedPartsDisks : uint8_t

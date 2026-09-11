@@ -879,7 +879,7 @@ void SerializationTuple::deserializeBinaryBulkWithMultipleStreams(
             size_t prev_size = column.size();
             auto ignored_size = stream->tryIgnore(limit);
             typeid_cast<ColumnTuple &>(column).addSize(ignored_size);
-            addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), column.size() - prev_size);
+            addColumnWithNumReadRowsToSubstreamsCache(cache, settings, column.getPtr(), column.size() - prev_size);
         }
 
         return;

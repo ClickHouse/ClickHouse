@@ -89,11 +89,11 @@ void SerializationObjectDynamicPath::enumerateStreams(
     if (!deserialize_state)
         return;
 
-    settings.path.push_back(Substream::ObjectData);
     const auto * structure_state = checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(deserialize_state->structure_state);
     /// Check if we have our path in dynamic paths.
     if (structure_state->dynamic_paths.contains(path))
     {
+        settings.path.push_back(Substream::ObjectPaths);
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
         auto path_data = SubstreamData(nested_serialization)
@@ -103,6 +103,7 @@ void SerializationObjectDynamicPath::enumerateStreams(
                              .withDeserializeState(deserialize_state->nested_state);
         settings.path.back().data = path_data;
         nested_serialization->enumerateStreams(settings, callback, path_data);
+        settings.path.pop_back();
         settings.path.pop_back();
     }
     /// Otherwise we will have to read all shared data and try to find our path there.
@@ -115,8 +116,6 @@ void SerializationObjectDynamicPath::enumerateStreams(
         deserialize_state->shared_data_path_serialization->enumerateStreams(settings, callback, shared_data_path_substream_data);
         settings.path.pop_back();
     }
-
-    settings.path.pop_back();
 }
 
 void SerializationObjectDynamicPath::serializeBinaryBulkStatePrefix(const IColumn &, SerializeBinaryBulkSettings &, SerializeBinaryBulkStatePtr &) const
@@ -143,7 +142,6 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
     /// Remember if we need to read from shared data or we have this path in dynamic paths.
     auto * object_structure_state = checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(dynamic_path_state->structure_state);
     dynamic_path_state->read_from_shared_data = !object_structure_state->dynamic_paths.contains(path);
-    settings.path.push_back(Substream::ObjectData);
     if (dynamic_path_state->read_from_shared_data)
     {
         settings.path.push_back(Substream::ObjectSharedData);
@@ -161,13 +159,14 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkStatePrefix(
     }
     else
     {
+        settings.path.push_back(Substream::ObjectPaths);
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
         nested_serialization->deserializeBinaryBulkStatePrefix(settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
+        settings.path.pop_back();
     }
 
-    settings.path.pop_back();
     state = std::move(dynamic_path_state);
 }
 
@@ -187,13 +186,14 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
         return;
 
     auto * dynamic_path_state = checkAndGetState<DeserializeBinaryBulkStateObjectDynamicPath>(state);
-    settings.path.push_back(Substream::ObjectData);
     /// Check if we don't need to read shared data. In this case just read data from dynamic path.
     if (!dynamic_path_state->read_from_shared_data)
     {
+        settings.path.push_back(Substream::ObjectPaths);
         settings.path.push_back(Substream::ObjectDynamicPath);
         settings.path.back().object_path_name = path;
         nested_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
+        settings.path.pop_back();
         settings.path.pop_back();
     }
     else
@@ -202,8 +202,6 @@ void SerializationObjectDynamicPath::deserializeBinaryBulkWithMultipleStreams(
         dynamic_path_state->shared_data_path_serialization->deserializeBinaryBulkWithMultipleStreams(result_column, limit, settings, dynamic_path_state->nested_state, cache);
         settings.path.pop_back();
     }
-
-    settings.path.pop_back();
 }
 
 size_t SerializationObjectDynamicPath::allocatedBytes() const

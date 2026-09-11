@@ -12,6 +12,8 @@
 #include <Storages/NamedCollectionsHelpers.h>
 #include <Common/escapeForFileName.h>
 
+#include <algorithm>
+
 #include <boost/range/adaptor/map.hpp>
 
 namespace DB
@@ -121,10 +123,24 @@ static NameSet getAllPossibleStreamNames(
     auto main_stream_name = escapeForFileName(column.name);
     all_streams.insert(Nested::concatenateName(main_stream_name, "mark"));
 
+    /// The result must be a superset of the streams of every part, and parts can use different
+    /// naming schemes, so enumerate once per scheme present. The table setting covers a table
+    /// without parts.
+    VectorWithMemoryTracking<ISerialization::StreamFileNameSettings> all_stream_file_name_settings{ISerialization::StreamFileNameSettings(*storage_settings)};
+    for (const auto & part : data_parts)
+    {
+        auto part_settings = part->getStreamFileNameSettings();
+        if (std::ranges::none_of(all_stream_file_name_settings, [&](const auto & s) { return s.substream_naming_version == part_settings.substream_naming_version; }))
+            all_stream_file_name_settings.push_back(part_settings);
+    }
+
     auto callback = [&](const auto & substream_path)
     {
-        auto stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
-        all_streams.insert(Nested::concatenateName(stream_name, "mark"));
+        for (const auto & stream_file_name_settings : all_stream_file_name_settings)
+        {
+            auto stream_name = ISerialization::getFileNameForStream(column, substream_path, stream_file_name_settings);
+            all_streams.insert(Nested::concatenateName(stream_name, "mark"));
+        }
     };
 
     auto serialization = IDataType::getSerialization(column);

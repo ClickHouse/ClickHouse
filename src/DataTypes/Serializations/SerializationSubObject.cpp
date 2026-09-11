@@ -109,7 +109,7 @@ void SerializationSubObject::enumerateStreams(
     const auto * type_object = data.type ? &assert_cast<const DataTypeObject &>(*data.type) : nullptr;
     const auto * deserialize_state = data.deserialize_state ? checkAndGetState<DeserializeBinaryBulkStateSubObject>(data.deserialize_state) : nullptr;
 
-    settings.path.push_back(Substream::ObjectData);
+    settings.path.push_back(Substream::ObjectPaths);
 
     /// typed_paths_serializations contains only typed paths with requested prefix from original Object column.
     for (const auto & [path, serialization] : typed_paths_serializations)
@@ -126,36 +126,39 @@ void SerializationSubObject::enumerateStreams(
         settings.path.pop_back();
     }
 
-    /// If deserialize state is provided, enumerate streams for dynamic paths and shared data.
-    if (deserialize_state)
+    /// Dynamic paths and shared data are known only from a deserialization state.
+    if (!deserialize_state)
     {
-        DataTypePtr type = std::make_shared<DataTypeDynamic>();
-        for (const auto & [path, state] : deserialize_state->dynamic_path_states)
-        {
-            settings.path.push_back(Substream::ObjectDynamicPath);
-            settings.path.back().object_path_name = path;
-            auto path_data = SubstreamData(dynamic_serialization)
-                                 .withType(type_object ? type : nullptr)
-                                 .withColumn(nullptr)
-                                 .withSerializationInfo(data.serialization_info)
-                                 .withDeserializeState(state);
-            settings.path.back().data = path_data;
-            dynamic_serialization->enumerateStreams(settings, callback, path_data);
-            settings.path.pop_back();
-        }
+        settings.path.pop_back();
+        return;
+    }
 
-        /// We will need to read shared data to find all paths with requested prefix.
-        settings.path.push_back(Substream::ObjectSharedData);
-        auto shared_data_substream_data = SubstreamData(deserialize_state->shared_data_serialization)
-                                              .withType(DataTypeObject::getTypeOfSharedData())
-                                              .withColumn(column_object ? column_object->getSharedDataPtr() : nullptr)
-                                              .withSerializationInfo(data.serialization_info)
-                                              .withDeserializeState(deserialize_state ? deserialize_state->shared_data_state : nullptr);
-        settings.path.back().data = shared_data_substream_data;
-        deserialize_state->shared_data_serialization->enumerateStreams(settings, callback, shared_data_substream_data);
+    DataTypePtr type = std::make_shared<DataTypeDynamic>();
+    for (const auto & [path, state] : deserialize_state->dynamic_path_states)
+    {
+        settings.path.push_back(Substream::ObjectDynamicPath);
+        settings.path.back().object_path_name = path;
+        auto path_data = SubstreamData(dynamic_serialization)
+                             .withType(type_object ? type : nullptr)
+                             .withColumn(nullptr)
+                             .withSerializationInfo(data.serialization_info)
+                             .withDeserializeState(state);
+        settings.path.back().data = path_data;
+        dynamic_serialization->enumerateStreams(settings, callback, path_data);
         settings.path.pop_back();
     }
 
+    settings.path.pop_back();
+
+    /// We will need to read shared data to find all paths with requested prefix.
+    settings.path.push_back(Substream::ObjectSharedData);
+    auto shared_data_substream_data = SubstreamData(deserialize_state->shared_data_serialization)
+                                          .withType(DataTypeObject::getTypeOfSharedData())
+                                          .withColumn(column_object ? column_object->getSharedDataPtr() : nullptr)
+                                          .withSerializationInfo(data.serialization_info)
+                                          .withDeserializeState(deserialize_state->shared_data_state);
+    settings.path.back().data = shared_data_substream_data;
+    deserialize_state->shared_data_serialization->enumerateStreams(settings, callback, shared_data_substream_data);
     settings.path.pop_back();
 }
 
@@ -181,7 +184,7 @@ void SerializationSubObject::deserializeBinaryBulkStatePrefix(
 
     auto * structure_state_concrete = checkAndGetState<SerializationObject::DeserializeBinaryBulkStateObjectStructure>(structure_state);
     auto sub_object_state = std::make_shared<DeserializeBinaryBulkStateSubObject>();
-    settings.path.push_back(Substream::ObjectData);
+    settings.path.push_back(Substream::ObjectPaths);
     for (const auto & [path, serialization] : typed_paths_serializations)
     {
         settings.path.push_back(Substream::ObjectTypedPath);
@@ -204,6 +207,8 @@ void SerializationSubObject::deserializeBinaryBulkStatePrefix(
         }
     }
 
+    settings.path.pop_back();
+
     settings.path.push_back(Substream::ObjectSharedData);
     sub_object_state->shared_data_serialization = SerializationSubObjectSharedData::create(
         structure_state_concrete->shared_data_serialization_version,
@@ -214,7 +219,6 @@ void SerializationSubObject::deserializeBinaryBulkStatePrefix(
     sub_object_state->shared_data_serialization->deserializeBinaryBulkStatePrefix(settings, sub_object_state->shared_data_state, cache);
     settings.path.pop_back();
 
-    settings.path.pop_back();
     state = std::move(sub_object_state);
 }
 
@@ -245,7 +249,7 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
     auto & typed_paths = column_object.getTypedPaths();
     auto & dynamic_paths = column_object.getDynamicPaths();
 
-    settings.path.push_back(Substream::ObjectData);
+    settings.path.push_back(Substream::ObjectPaths);
     for (const auto & [path, serialization] : typed_paths_serializations)
     {
         settings.path.push_back(Substream::ObjectTypedPath);
@@ -262,10 +266,10 @@ void SerializationSubObject::deserializeBinaryBulkWithMultipleStreams(
         settings.path.pop_back();
     }
 
-    settings.path.push_back(Substream::ObjectSharedData);
-    sub_object_state->shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSharedDataColumn(), limit, settings, sub_object_state->shared_data_state, cache);
     settings.path.pop_back();
 
+    settings.path.push_back(Substream::ObjectSharedData);
+    sub_object_state->shared_data_serialization->deserializeBinaryBulkWithMultipleStreams(column_object.getSharedDataColumn(), limit, settings, sub_object_state->shared_data_state, cache);
     settings.path.pop_back();
 }
 

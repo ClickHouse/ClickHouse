@@ -180,7 +180,6 @@
 #include <unordered_set>
 #include <filesystem>
 
-#include <boost/container_hash/hash.hpp>
 #include <fmt/format.h>
 #include <Poco/Net/NetException.h>
 
@@ -380,6 +379,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeStringSerializationVersion string_serialization_version;
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeSubstreamNamingVersion substream_naming_version;
     extern const MergeTreeSettingsUInt32 min_level_for_wide_part;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
 }
@@ -11749,9 +11749,8 @@ void MergeTreeData::checkColumnFilenamesForCollision(const StorageInMemoryMetada
 void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & columns, const MergeTreeSettings & settings, bool throw_on_error) const
 {
     std::unordered_map<String, std::pair<String, String>> stream_name_to_full_name;
-    auto columns_list = settings[MergeTreeSetting::share_nested_offsets]
-        ? Nested::collect(columns.getAllPhysical())
-        : columns.getAllPhysical();
+    /// Physical columns, because that is what the writer renders stream names from.
+    auto columns_list = columns.getAllPhysical();
     SerializationInfo::Settings serialization_settings
     {
         static_cast<double>(settings[MergeTreeSetting::ratio_of_defaults_for_sparse_serialization]),
@@ -11762,15 +11761,24 @@ void MergeTreeData::checkColumnFilenamesForCollision(const ColumnsDescription & 
         settings[MergeTreeSetting::nullable_serialization_version],
         settings[MergeTreeSetting::map_serialization_version],
         settings[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+        settings[MergeTreeSetting::substream_naming_version],
     };
 
     for (const auto & column : columns_list)
     {
         std::unordered_map<String, String> column_streams;
 
+        /// A flattened Nested group shares one offsets stream on purpose, and that is the only way a
+        /// stream name escapes its own column's prefix. Skipping it keeps the comparison below from
+        /// reporting the sharing as a collision.
+        auto column_prefix = escapeForFileName(column.getNameInStorage());
+
         auto callback = [&](const auto & substream_path)
         {
             auto full_stream_name = ISerialization::getFileNameForStream(column, substream_path, ISerialization::StreamFileNameSettings(settings));
+            if (!full_stream_name.starts_with(column_prefix))
+                return;
+
             String stream_name = replaceFileNameToHashIfNeeded(full_stream_name, settings, nullptr);
             column_streams.emplace(stream_name, full_stream_name);
         };
@@ -13384,6 +13392,7 @@ void MergeTreeData::resetSerializationHints(const DataPartsLock & /*lock*/)
         (*getSettings())[MergeTreeSetting::nullable_serialization_version],
         (*getSettings())[MergeTreeSetting::map_serialization_version],
         (*getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+        (*getSettings())[MergeTreeSetting::substream_naming_version],
     };
 
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
@@ -13682,6 +13691,7 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
         (*settings)[MergeTreeSetting::nullable_serialization_version],
         (*settings)[MergeTreeSetting::map_serialization_version],
         (*settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+        (*settings)[MergeTreeSetting::substream_naming_version],
     };
 
     new_data_part->setColumns(columns, SerializationInfoByName{info_settings}, metadata_snapshot->getMetadataVersion());
@@ -13905,19 +13915,13 @@ bool MergeTreeData::sortingKeyChanged(const KeyDescription & old_sorting_key, co
 
 size_t MergeTreeData::SharedPartColumnsCacheKeyHash::operator()(const SharedPartColumnsCacheKey & key) const noexcept
 {
-    size_t hash = std::hash<std::string_view>{}(key.interning_key.get());
-    boost::hash_combine(hash, key.collect_nested);
-    return hash;
+    return std::hash<std::string_view>{}(key.interning_key.get());
 }
 
 SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const NamesAndTypesList & columns) const
 {
-    /// The value of `share_nested_offsets` is part of the key defensively: the setting is
-    /// read-only (see `isReadonlySetting` and `isSMTReadonlySetting`) because the read path
-    /// resolves the stream file names from its live value, so it never changes on a live table;
-    /// the key just guarantees that a bundle can never be shared across different values of it.
     String interning_key = SharedPartColumns::describeColumns(columns);
-    const SharedPartColumnsCacheKey key{std::cref(interning_key), (*getSettings())[MergeTreeSetting::share_nested_offsets]};
+    const SharedPartColumnsCacheKey key{std::cref(interning_key)};
 
     /// After the first part of each schema every lookup is a hit that does not modify the map,
     /// so a shared lock keeps concurrent part loads parallel (copying the shared_ptr only
@@ -13942,25 +13946,13 @@ SharedPartColumnsHolder MergeTreeData::getSharedPartColumnsForColumns(const Name
     /// Building under the lock makes concurrent loads of parts with the same columns wait and then
     /// reuse the finished bundle (build-exactly-once). The build is pure CPU on already-loaded
     /// inputs and the cache is per-table, so only same-table loads can wait here.
-    auto original = std::make_shared<const ColumnsDescription>(columns);
-    std::shared_ptr<const ColumnsDescription> with_collected_nested;
-    if (key.collect_nested)
-    {
-        auto collected = std::make_shared<const ColumnsDescription>(Nested::collect(columns));
-        /// Keep a distinct object only when `Nested::collect` produced a distinct list.
-        if (!(*collected == *original))
-            with_collected_nested = std::move(collected);
-    }
-
     auto shared_part_columns = std::make_shared<const SharedPartColumns>(
         columns,
-        original,
-        with_collected_nested ? std::move(with_collected_nested) : original,
-        key.collect_nested,
+        std::make_shared<const ColumnsDescription>(columns),
         std::move(interning_key));
 
     shared_part_columns_cache.emplace(
-        SharedPartColumnsCacheKey{std::cref(shared_part_columns->interning_key), key.collect_nested}, shared_part_columns);
+        SharedPartColumnsCacheKey{std::cref(shared_part_columns->interning_key)}, shared_part_columns);
     shared_part_columns_metric_handle.add(1);
     return SharedPartColumnsHolder(*this, shared_part_columns);
 }
@@ -13978,7 +13970,7 @@ void MergeTreeData::releaseSharedPartColumns(SharedPartColumnsPtr shared_part_co
     {
         std::lock_guard lock(shared_part_columns_cache_mutex);
         auto it = shared_part_columns_cache.find(
-            SharedPartColumnsCacheKey{std::cref(shared_part_columns->interning_key), shared_part_columns->collect_nested});
+            SharedPartColumnsCacheKey{std::cref(shared_part_columns->interning_key)});
         chassert(it != shared_part_columns_cache.end() && it->second == shared_part_columns);
 
         /// Drop the caller's reference under the exclusive lock: every reference drop happens here,

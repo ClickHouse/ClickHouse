@@ -16,6 +16,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeNullableSerializationVersion nullable_serialization_version;
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeSubstreamNamingVersion substream_naming_version;
 }
 
 IMergedBlockOutputStream::IMergedBlockOutputStream(
@@ -38,6 +39,7 @@ IMergedBlockOutputStream::IMergedBlockOutputStream(
         (*storage_settings)[MergeTreeSetting::nullable_serialization_version],
         (*storage_settings)[MergeTreeSetting::map_serialization_version],
         (*storage_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+        (*storage_settings)[MergeTreeSetting::substream_naming_version],
     }
     , new_serialization_infos(info_settings)
 {
@@ -80,7 +82,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
         data_part->getSerialization(column.name)->enumerateStreams(
             [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part->storage.getSettings());
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column, substream_path, ".bin", checksums, data_part->getStreamFileNameSettings());
                 if (stream_name)
                     ++stream_counts[*stream_name];
             });
@@ -96,7 +98,7 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
 
         ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
-            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->storage.getSettings());
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", checksums, data_part->getStreamFileNameSettings());
 
             /// Delete files if they are no longer shared with another column.
             if (stream_name && --stream_counts[*stream_name] == 0)

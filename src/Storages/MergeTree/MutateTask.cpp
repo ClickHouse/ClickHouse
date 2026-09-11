@@ -103,6 +103,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsBool share_nested_offsets;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
+    extern const MergeTreeSettingsMergeTreeSubstreamNamingVersion substream_naming_version;
 }
 
 namespace FailPoints
@@ -873,6 +874,7 @@ getColumnsForNewDataPart(
         serialization_infos.getSettings().nullable_serialization_version,
         serialization_infos.getSettings().map_serialization_version,
         serialization_infos.getSettings().propagate_types_serialization_versions_to_nested_types,
+        serialization_infos.getSettings().substream_naming_version,
     };
     SerializationInfo::Settings storage_serialization_settings = SerializationInfo::Settings
     {
@@ -884,6 +886,7 @@ getColumnsForNewDataPart(
         (*source_part->storage.getSettings())[MergeTreeSetting::nullable_serialization_version],
         (*source_part->storage.getSettings())[MergeTreeSetting::map_serialization_version],
         (*source_part->storage.getSettings())[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+        (*source_part->storage.getSettings())[MergeTreeSetting::substream_naming_version],
     };
 
     SerializationInfo::Settings settings;
@@ -1251,7 +1254,7 @@ static std::unordered_map<String, size_t> getStreamCounts(
         {
             auto callback = [&](const ISerialization::SubstreamPath & substream_path)
             {
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->storage.getSettings());
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part_checksums, data_part->getStreamFileNameSettings());
                 if (stream_name)
                     ++stream_counts[*stream_name];
             };
@@ -1471,7 +1474,7 @@ static NameToNameVector collectFilesForRenames(
             {
                 ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                 {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->getStreamFileNameSettings());
 
                     /// Delete files if they are no longer shared with another column.
                     if (stream_name && --stream_counts[*stream_name] == 0)
@@ -1527,11 +1530,12 @@ static NameToNameVector collectFilesForRenames(
                     ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
                     {
                         auto storage_settings = source_part->storage.getSettings();
+                        auto stream_file_name_settings = source_part->getStreamFileNameSettings();
 
-                        String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, ISerialization::StreamFileNameSettings(*storage_settings));
+                        String full_stream_from = ISerialization::getFileNameForStream(command.column_name, substream_path, stream_file_name_settings);
                         String full_stream_to = boost::replace_first_copy(full_stream_from, escaped_name_from, escaped_name_to);
 
-                        auto stream_from = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, storage_settings);
+                        auto stream_from = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, stream_file_name_settings);
                         if (!stream_from)
                             return;
 

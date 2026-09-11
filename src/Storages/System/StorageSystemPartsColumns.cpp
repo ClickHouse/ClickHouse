@@ -365,8 +365,8 @@ void StorageSystemPartsColumns::processNextStorage(
             {
                 serialization->enumerateStreams([&](const auto & subpath)
                 {
-                    auto substream = ISerialization::getFileNameForStream(column.name, subpath, ISerialization::StreamFileNameSettings(*info.data->getSettings()));
-                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, ".bin", part->checksums, info.data->getSettings());
+                    auto substream = ISerialization::getFileNameForStream(column.name, subpath, part->getStreamFileNameSettings());
+                    auto filename = IMergeTreeDataPart::getStreamNameForColumn(column.name, subpath, ".bin", part->checksums, part->getStreamFileNameSettings());
 
                     substreams.push_back(std::move(substream));
                     filenames.push_back(filename.value_or(""));
@@ -404,7 +404,7 @@ void StorageSystemPartsColumns::processNextStorage(
                 ColumnSize size;
                 NameAndTypePair subcolumn(column.name, name, column.type, data.type);
 
-                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, info.data->getSettings());
+                auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(subcolumn, subpath, ".bin", part->checksums, part->getStreamFileNameSettings());
                 if (stream_name)
                 {
                     auto bin_checksum = part->checksums.files.find(*stream_name + ".bin");

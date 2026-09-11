@@ -322,7 +322,7 @@ void SerializationLowCardinality::deserializeBinaryBulkStatePrefix(
     const auto dictionary_keys_path = settings.path;
     settings.path.pop_back();
 
-    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, dictionary_keys_path))
+    if (auto cached_state = getFromSubstreamsDeserializeStatesCache(cache, settings, dictionary_keys_path))
     {
         state = std::move(cached_state);
         return;
@@ -793,7 +793,7 @@ void SerializationLowCardinality::deserializeBinaryBulkWithMultipleStreams(
     }
 
     size_t num_read_rows = column.size() - prev_size;
-    addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, column.getPtr(), num_read_rows);
+    addColumnWithNumReadRowsToSubstreamsCache(cache, settings, column.getPtr(), num_read_rows);
 }
 
 void SerializationLowCardinality::serializeBinary(const Field & field, WriteBuffer & ostr, const FormatSettings & settings) const

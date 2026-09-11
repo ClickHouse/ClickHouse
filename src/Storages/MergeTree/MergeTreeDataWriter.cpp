@@ -110,6 +110,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool propagate_types_serialization_versions_to_nested_types;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version;
     extern const MergeTreeSettingsMergeTreeMapSerializationVersion map_serialization_version_for_zero_level_parts;
+    extern const MergeTreeSettingsMergeTreeSubstreamNamingVersion substream_naming_version;
     extern const MergeTreeSettingsBool materialize_projections_on_insert;
 }
 
@@ -1018,6 +1019,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
         (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+        (*data_settings)[MergeTreeSetting::substream_naming_version],
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);
@@ -1231,6 +1233,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
         (*data_settings)[MergeTreeSetting::nullable_serialization_version],
         (*data_settings)[MergeTreeSetting::map_serialization_version_for_zero_level_parts],
         (*data_settings)[MergeTreeSetting::propagate_types_serialization_versions_to_nested_types],
+        (*data_settings)[MergeTreeSetting::substream_naming_version],
     };
     SerializationInfoByName infos(columns, settings);
     infos.add(block);

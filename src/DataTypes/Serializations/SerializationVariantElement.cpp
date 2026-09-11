@@ -131,7 +131,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
     std::optional<size_t> variant_limit;
     size_t num_read_discriminators = 0;
     ColumnPtr discriminators;
-    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings.path))
+    if (auto cached_column_with_num_read_rows = getColumnWithNumReadRowsFromSubstreamsCache(cache, settings))
     {
         variant_element_state = checkAndGetState<DeserializeBinaryBulkStateVariantElement>(state);
         std::tie(discriminators, num_read_discriminators) = *cached_column_with_num_read_rows;
@@ -166,7 +166,7 @@ void SerializationVariantElement::deserializeBinaryBulkWithMultipleStreams(
         }
 
         num_read_discriminators = discriminators->size();
-        addColumnWithNumReadRowsToSubstreamsCache(cache, settings.path, discriminators, num_read_discriminators);
+        addColumnWithNumReadRowsToSubstreamsCache(cache, settings, discriminators, num_read_discriminators);
     }
     else
     {
