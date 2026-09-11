@@ -196,10 +196,16 @@ ColumnPtr makeNullableUInt64Column(size_t rows, size_t key_count, HitRatio hit_r
     auto null_map = ColumnUInt8::create(rows);
     auto & null_map_data = null_map->getData();
 
+    const auto bounded_null_percent = std::min<size_t>(null_percent, 100);
+    const auto null_count = (rows / 100) * bounded_null_percent + ((rows % 100) * bounded_null_percent + 99) / 100;
+    /// Avoid clustering nulls in mixed probe data while preserving their exact count.
+    const auto null_order = pattern == ValuePattern::Mixed && null_count != 0 ? makeShuffledKeyPermutation(rows) : std::vector<UInt64>{};
+
     for (size_t row = 0; row < rows; ++row)
     {
         nested_data[row] = probeKey(row, key_count, hit_ratio, pattern);
-        null_map_data[row] = null_percent != 0 && rows != 0 && (row * 100 / rows) < null_percent;
+        const auto null_rank = null_order.empty() ? row : null_order[row];
+        null_map_data[row] = null_rank < null_count;
     }
 
     return ColumnNullable::create(std::move(nested), std::move(null_map));
