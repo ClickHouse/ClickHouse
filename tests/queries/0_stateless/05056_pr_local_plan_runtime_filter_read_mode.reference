@@ -12,6 +12,7 @@ Read type: Default
 Prewhere filter column:  tenant = 5
 Runtime filters: RF1(tenant, a from default.b_rf_read_mode)
 Filter column:  tenant = 5
+Runtime filters: RF1(tenant, a from default.b_rf_read_mode)
 Filter column: a = 5
 Read type: Default
 5
