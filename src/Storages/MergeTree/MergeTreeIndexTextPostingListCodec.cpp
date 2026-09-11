@@ -325,10 +325,29 @@ std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder() const
     return std::make_unique<PostingListEncoderNone>();
 }
 
+/// Upper bound of the portable serialization of a Roaring bitmap with at most `max_cardinality` values.
+/// Every container takes at most 2 bytes per value: arrays hold up to 4096 values of 2 bytes, bitsets take 8192 bytes
+/// for more values, and `runOptimize` turns them into runs only when the runs are smaller (see `finishSegment`).
+/// The header takes 8 bytes plus at most 9 bytes per container, and every container holds at least one value.
+static UInt64 getMaxPortableBitmapBytes(UInt64 max_cardinality)
+{
+    return 8 + 11 * max_cardinality;
+}
+
 void PostingListCodecNone::decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const
 {
     size_t num_bytes = 0;
     readVarUInt(num_bytes, in);
+
+    /// The size prefix comes from disk: bound it before growing any buffer to it.
+    const UInt64 max_bytes = getMaxPortableBitmapBytes(max_cardinality);
+    if (num_bytes > max_bytes)
+    {
+        throw Exception(ErrorCodes::CORRUPTED_DATA,
+            "Corrupted posting list segment: bitmap of {} bytes exceeds the upper bound of {} bytes for {} row ids",
+            num_bytes, max_bytes, max_cardinality);
+    }
+
     postings = PostingList::readSafe(readContiguousBytes(in, num_bytes, buffer), num_bytes);
 
     /// The bitmap is bounded by its size prefix; its row ids are bounded by the token metadata.

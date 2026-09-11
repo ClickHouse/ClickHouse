@@ -74,7 +74,8 @@ public:
     virtual std::unique_ptr<IPostingListEncoder> createEncoder() const = 0;
 
     /// Reads a single encoded segment of a posting list and decodes it into `postings`, which must be empty.
-    /// `max_cardinality` is the max number of row ids the segment may hold according to the token metadata: the sizes
+    /// `max_cardinality` is the max number of row ids the segment may hold according to the token metadata.
+    /// The sizes claimed by the segment are checked against it before any buffer grows to them.
     /// `buffer` is a caller-owned scratch buffer, reused across calls.
     virtual void decode(ReadBuffer & in, UInt64 max_cardinality, PostingList & postings, PaddedPODArray<char> & buffer) const = 0;
 
