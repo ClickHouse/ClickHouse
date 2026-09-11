@@ -17,9 +17,9 @@ Les quotas sont configurés dans la configuration utilisateur, généralement da
 
 Le système dispose également d’une fonctionnalité permettant de limiter la complexité d’une requête individuelle. Voir la section [Restrictions sur la complexité des requêtes](/fr/concepts/features/configuration/settings/query-complexity).
 
-Contrairement aux restrictions sur la complexité des requêtes, les quotas :
+Contrairement aux restrictions sur la complexité des requêtes, les quotas :
 
-* imposent des restrictions sur un ensemble de requêtes pouvant être exécutées sur une période donnée, au lieu de limiter une seule requête ;
+* imposent des restrictions sur un ensemble de requêtes pouvant être exécutées sur une période donnée, au lieu de limiter une seule requête ;
 * prennent en compte les ressources consommées sur tous les serveurs distants dans le cadre du traitement distribué des requêtes.
 
 Examinons la section du fichier &#39;users.xml&#39; qui définit les quotas.
@@ -84,11 +84,11 @@ La consommation des ressources calculée pour chaque intervalle est consignée d
 </statbox>
 ```
 
-Pour le quota &#39;statbox&#39;, des restrictions sont définies pour chaque heure et pour chaque période de 24 heures (86 400 secondes). L’intervalle de temps est compté à partir d’un point fixe dans le temps, défini par l’implémentation. Autrement dit, la période de 24 heures ne commence pas nécessairement à minuit.
+Pour le quota &#39;statbox&#39;, des restrictions sont définies pour chaque heure et pour chaque période de 24 heures (86 400 secondes). L’intervalle de temps est compté à partir d’un point fixe dans le temps, défini par l’implémentation. Autrement dit, la période de 24 heures ne commence pas nécessairement à minuit.
 
 Lorsque l’intervalle prend fin, toutes les valeurs collectées sont réinitialisées. Pour l’heure suivante, le calcul du quota repart de zéro.
 
-Voici les quantités pouvant être limitées :
+Voici les quantités pouvant être limitées :
 
 `queries` – Le nombre total de requêtes.
 
@@ -119,7 +119,7 @@ Si la limite est dépassée sur au moins un intervalle de temps, une exception e
 <Note>
   **Requêtes exclues du calcul des quotas**
 
-  Pour permettre d’examiner la configuration et l’utilisation des quotas même lorsqu’un quota est épuisé, les requêtes `SELECT` qui lisent exclusivement l’une des tables système suivantes ne sont pas imputées aux quotas et ne sont pas soumises aux limites de complexité des requêtes :
+  Pour permettre d’examiner la configuration et l’utilisation des quotas même lorsqu’un quota est épuisé, les requêtes `SELECT` qui lisent exclusivement l’une des tables système suivantes ne sont pas imputées aux quotas et ne sont pas soumises aux limites de complexité des requêtes :
 
   * `system.quotas`
   * `system.quota_limits`
@@ -128,7 +128,7 @@ Si la limite est dépassée sur au moins un intervalle de temps, une exception e
   * `system.one`
 </Note>
 
-Les quotas peuvent utiliser la fonctionnalité de « clé de quota » pour suivre l’utilisation des ressources indépendamment pour plusieurs clés. En voici un exemple :
+Les quotas peuvent utiliser la fonctionnalité de « clé de quota » pour suivre l’utilisation des ressources indépendamment pour plusieurs clés. En voici un exemple :
 
 ```xml
 <!-- For the global reports designer. -->
@@ -169,7 +169,7 @@ Vous pouvez également définir les quotas en fonction du hash de la requête no
 </my_quota>
 ```
 
-On peut exprimer la même chose avec la syntaxe DDL :
+On peut exprimer la même chose avec la syntaxe DDL :
 
 ```sql
 CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX queries = 100 TO my_user;
@@ -184,7 +184,7 @@ Pour le traitement distribué des requêtes, les quantités cumulées sont stock
 Lorsque le serveur redémarre, les quotas sont réinitialisés.
 
 <div id="related-content">
-  ## Contenu connexe
+  ## Contenu connexe {#related-content}
 </div>
 
 * Blog : [Développer des applications monopage avec ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

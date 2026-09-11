@@ -53,7 +53,7 @@ PRIMARY KEY Id
 * `AttrName AttrType` — 데이터 컬럼. 속성은 여러 개일 수 있습니다.
 
 <div id="key">
-  ## 키
+  ## 키 {#key}
 </div>
 
 ClickHouse는 다음과 같은 키 타입을 지원합니다:
@@ -68,7 +68,7 @@ XML 구조에는 `<id>` 또는 `<key>` 중 하나만 포함할 수 있습니다.
 </Note>
 
 <div id="numeric-key">
-  ### 숫자 키
+  ### 숫자 키 {#numeric-key}
 </div>
 
 유형: `UInt64`.
@@ -98,9 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – 키를 포함하는 컬럼의 이름입니다.
 
-<div id="composite-key">
-  ### 복합 키
-</div>
+### 복합 키 {#composite-key}
 
 키는 어떤 타입의 필드로 구성된 `tuple`일 수 있습니다. 이 경우 [레이아웃](/ko/reference/statements/create/dictionary/layouts/overview)은 `complex_key_hashed` 또는 `complex_key_cache`여야 합니다.
 
@@ -144,7 +142,7 @@ PRIMARY KEY field1, field2
 복합 키가 단일 속성 하나로 이루어진 경우에는 `tuple`로 감싸지 않고 키 값을 직접 전달할 수 있습니다. 예를 들어 `dictGetString('dict_name', 'attr_name', 'key')`와 `dictGetString('dict_name', 'attr_name', tuple('key'))`는 모두 유효합니다.
 
 <div id="attributes">
-  ## 속성
+  ## 속성 {#attributes}
 </div>
 
 구성 예시:

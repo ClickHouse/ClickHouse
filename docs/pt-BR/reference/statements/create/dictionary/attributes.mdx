@@ -53,7 +53,7 @@ Os atributos são descritos no corpo da consulta:
 * `AttrName AttrType` — coluna de dados. Pode haver vários atributos.
 
 <div id="key">
-  ## Chave
+  ## Chave {#key}
 </div>
 
 O ClickHouse oferece suporte aos seguintes tipos de chaves:
@@ -68,7 +68,7 @@ Uma estrutura XML pode conter `<id>` ou `<key>`. A consulta DDL deve conter uma 
 </Note>
 
 <div id="numeric-key">
-  ### Chave numérica
+  ### Chave numérica {#numeric-key}
 </div>
 
 Tipo: `UInt64`.
@@ -98,9 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – O nome da coluna que contém as chaves.
 
-<div id="composite-key">
-  ### Chave composta
-</div>
+### Chave composta {#composite-key}
 
 A chave pode ser uma `tuple` formada por campos de qualquer tipo. O [layout](/pt-BR/reference/statements/create/dictionary/layouts/overview) nesse caso deve ser `complex_key_hashed` ou `complex_key_cache`.
 
@@ -144,7 +142,7 @@ Para uma consulta à função `dictGet*`, uma tupla é usada como chave. Exemplo
 Quando a chave composta consiste em um único atributo, o valor da chave pode ser passado diretamente, sem encapsulá-lo em `tuple`. Por exemplo, tanto `dictGetString('dict_name', 'attr_name', 'key')` quanto `dictGetString('dict_name', 'attr_name', tuple('key'))` são válidos.
 
 <div id="attributes">
-  ## Atributos
+  ## Atributos {#attributes}
 </div>
 
 Exemplo de configuração:

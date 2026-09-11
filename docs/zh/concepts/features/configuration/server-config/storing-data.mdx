@@ -583,11 +583,11 @@ ORDER BY (postcode1, postcode2, addr1, addr2)
 
 ### 可选参数 {#optional-parameters-encrypted-disk}
 
-| 参数               | 类型     | 默认值           | 描述                                                                                                        |
-| ---------------- | ------ | ------------- | --------------------------------------------------------------------------------------------------------- |
-| `path`           | String | 根目录           | 数据在磁盘上的保存位置。                                                                                              |
-| `current_key_id` | String | -             | 用于加密的密钥 ID。所有指定的密钥均可用于解密。                                                                                 |
-| `algorithm`      | 枚举     | `AES_128_CTR` | 加密算法。可选值：<br />- `AES_128_CTR` (16 字节密钥) <br />- `AES_192_CTR` (24 字节密钥) <br />- `AES_256_CTR` (32 字节密钥)  |
+| 参数               | 类型     | 默认值           | 描述                                                                                                       |
+| ---------------- | ------ | ------------- | -------------------------------------------------------------------------------------------------------- |
+| `path`           | String | 根目录           | 数据在磁盘上的保存位置。                                                                                             |
+| `current_key_id` | String | -             | 用于加密的密钥 ID。所有指定的密钥均可用于解密。                                                                                |
+| `algorithm`      | 枚举     | `AES_128_CTR` | 加密算法。可选值：<br />- `AES_128_CTR` (16 字节密钥) <br />- `AES_192_CTR` (24 字节密钥) <br />- `AES_256_CTR` (32 字节密钥) |
 
 磁盘配置示例：
 
@@ -685,7 +685,7 @@ File Cache **磁盘配置设置**：
 | ------------------------------------- | ------- | ---------- | ------------------------------------------------------------------------------------------------- |
 | `path`                                | String  | -          | **必填**。用于存储缓存的目录路径。                                                                               |
 | `max_size`                            | Size    | -          | **必填**。缓存的最大大小，单位可以是字节或可读格式 (例如 `10Gi`) 。达到限制时，文件会按 LRU 策略被逐出。支持 `ki`、`Mi`、`Gi` 格式 (自 v22.10 起) 。 |
-| `cache_on_write_operations`           | Boolean | `false`    | 为 `INSERT` 查询和后台合并启用直写缓存。可通过 `enable_filesystem_cache_on_write_operations` 按查询覆盖。                 |
+| `cache_on_write_operations`           | Boolean | `false`    | 为 `INSERT` 查询和后台合并启用写穿缓存。可通过 `enable_filesystem_cache_on_write_operations` 按查询覆盖。                 |
 | `enable_filesystem_query_cache_limit` | Boolean | `false`    | 基于 `max_query_cache_size` 启用按查询的缓存大小限制。                                                           |
 | `enable_cache_hits_threshold`         | Boolean | `false`    | 启用后，数据仅在被读取多次后才会被缓存。                                                                              |
 | `cache_hits_threshold`                | Integer | `0`        | 数据被缓存前所需的读取次数 (需要 `enable_cache_hits_threshold`) 。                                                |

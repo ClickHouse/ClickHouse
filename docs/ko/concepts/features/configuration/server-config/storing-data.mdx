@@ -689,20 +689,20 @@ HDFS는 일부 예외적인 상황에서는 작동하지 않을 수 있다는 �
 
 이 설정은 디스크 구성 섹션에 정의해야 합니다.
 
-| Parameter                             | Type    | Default    | Description                                                                                                                 |
+| 매개변수                             | 유형    | 기본값    | 설명                                                                                                                 |
 | ------------------------------------- | ------- | ---------- | --------------------------------------------------------------------------------------------------------------------------- |
 | `path`                                | String  | -          | **필수**. 캐시가 저장될 디렉터리 경로입니다.                                                                                                 |
-| `max_size`                            | Size    | -          | **필수**. 바이트 또는 읽기 쉬운 형식(예: `10Gi`)으로 지정하는 최대 캐시 크기입니다. 한도에 도달하면 파일은 LRU 정책에 따라 제거됩니다. `ki`, `Mi`, `Gi` 포맷을 지원합니다(v22.10부터). |
-| `cache_on_write_operations`           | Boolean | `false`    | `INSERT` 쿼리와 백그라운드 머지에 대해 write-through 캐시를 활성화합니다. 쿼리별로 `enable_filesystem_cache_on_write_operations`를 사용해 재정의할 수 있습니다.    |
-| `enable_filesystem_query_cache_limit` | Boolean | `false`    | `max_query_cache_size`를 기준으로 쿼리별 캐시 크기 제한을 활성화합니다.                                                                          |
-| `enable_cache_hits_threshold`         | Boolean | `false`    | 활성화하면 데이터를 여러 번 읽은 뒤에만 캐시합니다.                                                                                               |
+| `max_size`                            | 크기    | -          | **필수**. 바이트 또는 읽기 쉬운 형식(예: `10Gi`)으로 지정하는 최대 캐시 크기입니다. 한도에 도달하면 파일은 LRU 정책에 따라 제거됩니다. `ki`, `Mi`, `Gi` 포맷을 지원합니다(v22.10부터). |
+| `cache_on_write_operations`           | 불리언 | `false`    | `INSERT` 쿼리와 백그라운드 머지에 대해 write-through 캐시를 활성화합니다. 쿼리별로 `enable_filesystem_cache_on_write_operations`를 사용해 재정의할 수 있습니다.    |
+| `enable_filesystem_query_cache_limit` | 불리언 | `false`    | `max_query_cache_size`를 기준으로 쿼리별 캐시 크기 제한을 활성화합니다.                                                                          |
+| `enable_cache_hits_threshold`         | 불리언 | `false`    | 활성화하면 데이터를 여러 번 읽은 뒤에만 캐시합니다.                                                                                               |
 | `cache_hits_threshold`                | Integer | `0`        | 데이터가 캐시되기 전에 필요한 읽기 횟수입니다(`enable_cache_hits_threshold` 필요).                                                                |
-| `enable_bypass_cache_with_threshold`  | Boolean | `false`    | 큰 읽기 범위에서는 캐시를 건너뜁니다.                                                                                                       |
-| `bypass_cache_threshold`              | Size    | `256Mi`    | 이 값을 초과하는 읽기 범위 크기에서는 캐시를 우회합니다(`enable_bypass_cache_with_threshold` 필요).                                                   |
-| `max_file_segment_size`               | Size    | `8Mi`      | 바이트 또는 읽기 쉬운 형식으로 지정하는 단일 캐시 파일의 최대 크기입니다.                                                                                  |
+| `enable_bypass_cache_with_threshold`  | 불리언 | `false`    | 큰 읽기 범위에서는 캐시를 건너뜁니다.                                                                                                       |
+| `bypass_cache_threshold`              | 크기    | `256Mi`    | 이 값을 초과하는 읽기 범위 크기에서는 캐시를 우회합니다(`enable_bypass_cache_with_threshold` 필요).                                                   |
+| `max_file_segment_size`               | 크기    | `8Mi`      | 바이트 또는 읽기 쉬운 형식으로 지정하는 단일 캐시 파일의 최대 크기입니다.                                                                                  |
 | `max_elements`                        | Integer | `10000000` | 캐시 파일의 최대 개수입니다.                                                                                                            |
 | `load_metadata_threads`               | Integer | `16`       | 시작 시 캐시 메타데이터를 로드하는 데 사용할 스레드 수입니다.                                                                                         |
-| `use_split_cache`                     | Boolean | `false`    | 파일을 시스템/데이터로 분리해 사용합니다.                                                                                                     |
+| `use_split_cache`                     | 불리언 | `false`    | 파일을 시스템/데이터로 분리해 사용합니다.                                                                                                     |
 | `split_cache_ratio`                   | Double  | `0.1`      | split&#95;cache에서 시스템 세그먼트가 전체 캐시 크기에서 차지하는 비율입니다.                                                                          |
 
 > **참고**: 크기 값은 `ki`, `Mi`, `Gi` 등의 단위를 지원합니다(예: `10Gi`).

@@ -25,16 +25,16 @@ doc_type: 'guide'
 Рассмотрим раздел файла &#39;users.xml&#39;, в котором задаются квоты.
 
 ```xml
-<!-- Квоты -->
+<!-- Quotas -->
 <quotas>
-    <!-- Имя квоты. -->
+    <!-- Quota name. -->
     <default>
-        <!-- Ограничения для временного периода. Можно задать несколько интервалов с разными ограничениями. -->
+        <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
         <interval>
-            <!-- Длина интервала. -->
+            <!-- Length of the interval. -->
             <duration>3600</duration>
 
-            <!-- Без ограничений. Только сбор данных за указанный временной интервал. -->
+            <!-- Unlimited. Just collect data for the specified time interval. -->
             <queries>0</queries>
             <query_selects>0</query_selects>
             <query_inserts>0</query_inserts>
@@ -52,9 +52,9 @@ doc_type: 'guide'
 
 ```xml
 <statbox>
-    <!-- Ограничения для временного периода. Можно задать несколько интервалов с разными ограничениями. -->
+    <!-- Restrictions for a time period. You can set many intervals with different restrictions. -->
     <interval>
-        <!-- Длина интервала. -->
+        <!-- Length of the interval. -->
         <duration>3600</duration>
 
         <queries>1000</queries>
@@ -184,7 +184,7 @@ CREATE QUOTA my_quota KEYED BY normalized_query_hash FOR INTERVAL 1 hour MAX que
 При перезапуске сервера квоты сбрасываются.
 
 <div id="related-content">
-  ## Дополнительные материалы
+  ## Дополнительные материалы {#related-content}
 </div>
 
 * Блог: [Как создавать одностраничные приложения с ClickHouse](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)

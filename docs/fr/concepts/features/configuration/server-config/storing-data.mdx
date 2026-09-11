@@ -599,9 +599,9 @@ Lors de l’écriture du même fichier sur `disk2`, il est en réalité écrit s
 | ---------------- | ------ | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `path`           | String | Répertoire racine | Emplacement sur le disque où les données seront enregistrées.                                                                                                   |
 | `current_key_id` | String | -                 | ID de la clé utilisée pour le chiffrement. Toutes les clés indiquées peuvent être utilisées pour le déchiffrement.                                              |
-| `algorithm`      | Enum   | `AES_128_CTR`     | Algorithme de chiffrement. Options : <br />- `AES_128_CTR` (clé de 16 octets) <br />- `AES_192_CTR` (clé de 24 octets) <br />- `AES_256_CTR` (clé de 32 octets) |
+| `algorithm`      | Enum   | `AES_128_CTR`     | Algorithme de chiffrement. Options : <br />- `AES_128_CTR` (clé de 16 octets) <br />- `AES_192_CTR` (clé de 24 octets) <br />- `AES_256_CTR` (clé de 32 octets) |
 
-Exemple de configuration du disque :
+Exemple de configuration du disque :
 
 ```xml
 <clickhouse>
@@ -662,7 +662,7 @@ Exemple de configuration pour les versions supérieures ou égales à 22.8 :
 </clickhouse>
 ```
 
-Exemple de configuration pour les versions antérieures à 22.8 :
+Exemple de configuration pour les versions antérieures à 22.8 :
 
 ```xml
 <clickhouse>
@@ -689,7 +689,7 @@ Exemple de configuration pour les versions antérieures à 22.8 :
 </clickhouse>
 ```
 
-Paramètres de **configuration du disque** pour File Cache :
+Paramètres de **configuration du disque** pour File Cache :
 
 Ces paramètres doivent être définis dans la section de configuration du disque.
 
@@ -709,7 +709,7 @@ Ces paramètres doivent être définis dans la section de configuration du disqu
 | `use_split_cache`                     | Boolean | `false`    | Sépare les fichiers système des fichiers de données.                                                                                                                                                                                                    |
 | `split_cache_ratio`                   | Double  | `0.1`      | Ratio du segment système par rapport à la taille totale du cache pour split&#95;cache.                                                                                                                                                                  |
 
-> **Remarque** : les valeurs de taille prennent en charge des unités comme `ki`, `Mi`, `Gi`, etc. (par ex. `10Gi`).
+> **Remarque** : les valeurs de taille prennent en charge des unités comme `ki`, `Mi`, `Gi`, etc. (par ex. `10Gi`).
 
 ## Paramètres de requête/profil de File Cache {#file-cache-query-profile-settings}
 
