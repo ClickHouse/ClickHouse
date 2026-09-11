@@ -1,7 +1,12 @@
--- A nested correlated subquery that references a column from a scope beyond its immediate outer query
--- is not supported. The planner says so where it buffers the outer stream; without a buffer the plan
--- reached the join's actions DAG and failed there with an internal `Cannot find column ... in actions
--- DAG input` instead.
+-- Tags: no-old-analyzer
+-- Correlated subqueries are only supported by the analyzer; the old analyzer rejects the
+-- correlated reference with `UNKNOWN_IDENTIFIER` before this feature's `NOT_IMPLEMENTED`
+-- path is reached.
+
+-- Some shapes of nested correlated subqueries are not supported yet, because the correlated column
+-- is not available in the outer query plan where they are decorrelated. The planner says so where it
+-- buffers the outer stream; without a buffer the plan reached the join's actions DAG and failed there
+-- with an internal `Cannot find column ... in actions DAG input` instead.
 
 SET allow_experimental_correlated_subqueries = 1;
 
@@ -23,6 +28,11 @@ SELECT 'each level referencing its own immediate outer query still works';
 SELECT count() FROM t_nested_correlated AS o WHERE EXISTS (
     SELECT 1 FROM t_nested_correlated AS i WHERE i.ver = o.ver AND EXISTS (
         SELECT 1 FROM t_nested_correlated AS i2 WHERE i2.ver = i.ver));
+
+SELECT 'a correlated reference through a derived table works';
+SELECT count() FROM t_nested_correlated AS o WHERE EXISTS (
+    SELECT 1 FROM (
+        SELECT 1 FROM t_nested_correlated AS i2 WHERE i2.ver = o.ver));
 
 SELECT 'and a single level of correlation works';
 SELECT count() FROM t_nested_correlated AS o WHERE EXISTS (
