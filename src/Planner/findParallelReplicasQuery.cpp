@@ -542,12 +542,20 @@ StorageID getStorageIDForParallelReplicas(const ITableExpressionNode & table_exp
 
     const auto * table_function_node = table_expression_node.as<TableFunctionNode>();
     chassert(table_function_node);
-    /// Not `TableFunctionNode::getStorageID()`: that is the storage the call resolved to *here*, and for a
-    /// hidden inner table its name is derived from a UUID this server assigned, so asking another replica
-    /// about it can fail even though the call itself resolves fine there.
+
+    /// For a stable reference, not `TableFunctionNode::getStorageID()`: that is the storage the call
+    /// resolved to *here*, and for a hidden inner table its name is derived from a UUID this server
+    /// assigned, so asking another replica about it can fail even though the call itself resolves fine
+    /// there.
     const auto & referenced_table_id = table_function_node->getReferencedTableID();
-    chassert(!referenced_table_id.empty());
-    return referenced_table_id;
+    if (!referenced_table_id.empty())
+        return referenced_table_id;
+
+    /// Anything else is addressed by the storage it resolved to, as it was before stable references
+    /// existed. A parameterized view arrives here: it is a table function node carrying no
+    /// `ITableFunction` at all (`QueryAnalyzer::resolveTableFunction`), and its own storage id is a name
+    /// the other replicas can resolve, so it is the right one to ask them about.
+    return table_function_node->getStorageID();
 }
 
 const ITableExpressionNode * findTableForParallelReplicas(const QueryTreeNodePtr & query_tree_node, const SelectQueryOptions & select_query_options)

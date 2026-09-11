@@ -27,7 +27,8 @@ const ITableExpressionNode * findTableForParallelReplicas(const QueryTreeNodePtr
 /// The table the parallel-replicas read is addressed by on the other replicas: it names the read in the
 /// coordinator's logs and is the table each replica is asked about before it joins the read
 /// (`RemoteQueryExecutor::main_table`). It must therefore be a name the *other* replicas can resolve, which
-/// for a table function is the table it references and not the storage it resolved to locally.
+/// for a table function that is a stable reference is the table it references, and not the storage it
+/// resolved to locally. Any other table function keeps being addressed by its own resolved storage.
 StorageID getStorageIDForParallelReplicas(const ITableExpressionNode & table_expression_node);
 
 class IStorage;
