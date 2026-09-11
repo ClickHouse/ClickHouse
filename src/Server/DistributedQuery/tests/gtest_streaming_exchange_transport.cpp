@@ -1,6 +1,6 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
-#include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <mutex>
 #include <optional>
@@ -10,7 +10,9 @@
 #include <fmt/format.h>
 
 #include <Columns/ColumnsNumber.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 #include <Common/assert_cast.h>
 #include <Common/ThreadStatus.h>
 #include <Core/Block.h>
@@ -19,7 +21,7 @@
 #include <IO/WriteHelpers.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/ISink.h>
-#include <Processors/ISource.h>
+#include <Processors/LimitTransform.h>
 #include <Processors/Sources/SourceFromChunks.h>
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <QueryPipeline/Pipe.h>
@@ -32,6 +34,21 @@
 #include <Server/DistributedQuery/StreamingExchangeSink.h>
 #include <Server/DistributedQuery/StreamingExchangeSource.h>
 #include <Server/DistributedQuery/tests/FakeExchangePeer.h>
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeSendBytes;
+    extern const Event StreamingExchangeReceiveBytes;
+    extern const Event StreamingExchangePacketsSent;
+    extern const Event StreamingExchangePacketsReceived;
+    extern const Event StreamingExchangeSendQueueFullMicroseconds;
+    extern const Event StreamingExchangeEarlyCloses;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric StreamingExchangeSinksWithFullSendQueue;
+}
 
 namespace DB::ErrorCodes
 {
@@ -151,15 +168,25 @@ QueryPipeline makeSendingPipeline(
     return QueryPipelineBuilder::getPipeline(std::move(builder));
 }
 
-/// The receiving task: one real source connected to `port`.
-QueryPipeline makeReceivingPipeline(const SharedHeader & header, UInt16 port, std::shared_ptr<CollectingSink> sink)
+/// The receiving task: one real source connected to `port`. With `limit_rows` the receiver stops
+/// after that many rows, as a `LIMIT` does.
+QueryPipeline makeReceivingPipeline(
+    const SharedHeader & header, UInt16 port, std::shared_ptr<CollectingSink> sink, std::optional<UInt64> limit_rows = {})
 {
     auto source = std::make_shared<StreamingExchangeSource>(header, "query", "stream", "127.0.0.1", port, /*cancellation_=*/ nullptr);
 
     QueryPipelineBuilder builder;
     builder.init(Pipe(source));
+    if (limit_rows)
+        builder.addTransform(std::make_shared<LimitTransform>(header, *limit_rows, /*offset_=*/ 0));
     builder.setSinks([&](const SharedHeader &, Pipe::StreamType) { return sink; });
     return QueryPipelineBuilder::getPipeline(std::move(builder));
+}
+
+/// The value of a global profile event, for deltas around a run.
+UInt64 eventCount(ProfileEvents::Event event)
+{
+    return ProfileEvents::global_counters[event];
 }
 
 UInt64 sumOfValues(const std::vector<Chunk> & chunks)
@@ -208,6 +235,11 @@ TEST(StreamingExchangeTransport, EveryPacketShapeCrossesTheSocket)
             auto sink = std::make_shared<CollectingSink>(header);
             auto receiving = makeReceivingPipeline(header, exchange.server.port(), sink);
 
+            const UInt64 sent_bytes_before = eventCount(ProfileEvents::StreamingExchangeSendBytes);
+            const UInt64 received_bytes_before = eventCount(ProfileEvents::StreamingExchangeReceiveBytes);
+            const UInt64 packets_sent_before = eventCount(ProfileEvents::StreamingExchangePacketsSent);
+            const UInt64 packets_received_before = eventCount(ProfileEvents::StreamingExchangePacketsReceived);
+
             std::optional<int> sending_code;
             std::thread sender([&] { sending_code = run(sending, streams); });
             const auto receiving_code = run(receiving, 2);
@@ -215,6 +247,13 @@ TEST(StreamingExchangeTransport, EveryPacketShapeCrossesTheSocket)
 
             EXPECT_EQ(sending_code, std::nullopt);
             EXPECT_EQ(receiving_code, std::nullopt);
+
+            /// The events see the same bytes and packets on both ends: 14 data chunks and the marker.
+            const UInt64 sent_bytes = eventCount(ProfileEvents::StreamingExchangeSendBytes) - sent_bytes_before;
+            EXPECT_GT(sent_bytes, 0u);
+            EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangeReceiveBytes) - received_bytes_before, sent_bytes);
+            EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsSent) - packets_sent_before, streams * chunks_per_stream + 2);
+            EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsReceived) - packets_received_before, streams * chunks_per_stream + 2);
 
             size_t rows = 0;
             size_t rowless_with_info = 0;
@@ -258,7 +297,6 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
     /// 512 KiB are far more than the cap plus what the loopback socket buffers can hold.
     constexpr size_t chunks = 96;
     constexpr size_t rows_per_chunk = 64 * 1024;
-    std::atomic<size_t> chunks_emitted = 0;
     Chunks input;
     UInt64 value = 1;
     UInt64 expected_sum = 0;
@@ -276,35 +314,9 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
 
     auto header = makeHeader();
     LoopbackExchange exchange;
-    /// Emits the chunks and counts them. The sink accepts chunks until its pending bytes reach the
-    /// cap, whatever the socket does, so at least the cap's worth is always emitted.
-    class CountingSource : public ISource
-    {
-    public:
-        CountingSource(SharedHeader header_, Chunks chunks_, std::atomic<size_t> & emitted_)
-            : ISource(std::move(header_)), chunks(std::move(chunks_)), emitted(emitted_)
-        {
-        }
-
-        String getName() const override { return "CountingSource"; }
-
-    protected:
-        Chunk generate() override
-        {
-            if (next == chunks.size())
-                return {};
-            ++emitted;
-            return std::move(chunks[next++]);
-        }
-
-    private:
-        Chunks chunks;
-        size_t next = 0;
-        std::atomic<size_t> & emitted;
-    };
 
     QueryPipelineBuilder builder;
-    builder.init(Pipe(std::make_shared<CountingSource>(header, std::move(input), chunks_emitted)));
+    builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(input))));
     builder.addSimpleTransform([](const SharedHeader & stream_header) { return std::make_shared<StreamingExchangeSerializingTransform>(stream_header); });
     auto future_connection = exchange.connections->getConnection("query", "stream");
     builder.setSinks([&](const SharedHeader & stream_header, Pipe::StreamType)
@@ -316,17 +328,19 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
     auto sink = std::make_shared<CollectingSink>(header, /*hold_chunks=*/ true);
     auto receiving = makeReceivingPipeline(header, exchange.server.port(), sink);
 
-    /// Chunks the sink certainly took before the receiver drains anything: the cap (16 MiB) over
-    /// 512 KiB packets, minus one for the packet in flight.
-    constexpr size_t chunks_the_cap_holds = 16 * 1024 * 1024 / (rows_per_chunk * sizeof(UInt64)) - 1;
+    const UInt64 stall_time_before = eventCount(ProfileEvents::StreamingExchangeSendQueueFullMicroseconds);
 
     std::optional<int> sending_code;
     std::optional<int> receiving_code;
     std::thread sender([&] { sending_code = run(sending, 2); });
     std::thread receiver([&] { receiving_code = run(receiving, 2); });
 
-    while (chunks_emitted.load() < chunks_the_cap_holds)
+    /// Release the receiver only after the sink has hit the cap, so the stall does not depend on
+    /// timing. The deadline turns a sink that never stalls into a failed test, not a hung one.
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(1);
+    while (CurrentMetrics::get(CurrentMetrics::StreamingExchangeSinksWithFullSendQueue) == 0 && std::chrono::steady_clock::now() < deadline)
         std::this_thread::yield();
+    const bool stalled_before_release = CurrentMetrics::get(CurrentMetrics::StreamingExchangeSinksWithFullSendQueue) > 0;
     sink->release();
 
     sender.join();
@@ -334,11 +348,51 @@ TEST(StreamingExchangeTransport, SenderStallsAtThePendingCapAndResumes)
 
     EXPECT_EQ(sending_code, std::nullopt);
     EXPECT_EQ(receiving_code, std::nullopt);
+    EXPECT_TRUE(stalled_before_release);
+    EXPECT_GT(eventCount(ProfileEvents::StreamingExchangeSendQueueFullMicroseconds) - stall_time_before, 0u);
+    EXPECT_EQ(CurrentMetrics::get(CurrentMetrics::StreamingExchangeSinksWithFullSendQueue), 0);
     size_t rows = 0;
     for (const auto & chunk : sink->chunks)
         rows += chunk.getNumRows();
     EXPECT_EQ(rows, chunks * rows_per_chunk);
     EXPECT_EQ(sumOfValues(sink->chunks), expected_sum);
+}
+
+/// A receiver that stops after its first rows tells the sender that no more data is needed; the
+/// source counts that as an early close and both sides finish without an error. The test checks
+/// the close and the counts, not how much the sender still had to send.
+TEST(StreamingExchangeTransport, ReceiverThatStopsEarlyClosesTheStream)
+{
+    MainThreadStatus::getInstance();
+
+    constexpr size_t chunks = 4;
+    constexpr size_t rows_per_chunk = 1000;
+    std::vector<Chunks> chunks_per_stream_list(1);
+    for (size_t index = 0; index < chunks; ++index)
+        chunks_per_stream_list[0].push_back(makeChunk(index * rows_per_chunk, rows_per_chunk));
+
+    auto header = makeHeader();
+    LoopbackExchange exchange;
+    auto sending = makeSendingPipeline(header, std::move(chunks_per_stream_list), exchange, /*sink_takes_packets=*/ true);
+    auto sink = std::make_shared<CollectingSink>(header);
+    auto receiving = makeReceivingPipeline(header, exchange.server.port(), sink, /*limit_rows=*/ 1);
+
+    const UInt64 early_closes_before = eventCount(ProfileEvents::StreamingExchangeEarlyCloses);
+
+    std::optional<int> sending_code;
+    std::optional<int> receiving_code;
+    std::thread sender([&] { sending_code = run(sending, 2); });
+    std::thread receiver([&] { receiving_code = run(receiving, 2); });
+    sender.join();
+    receiver.join();
+
+    EXPECT_EQ(sending_code, std::nullopt);
+    EXPECT_EQ(receiving_code, std::nullopt);
+    EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangeEarlyCloses) - early_closes_before, 1u);
+    size_t rows = 0;
+    for (const auto & chunk : sink->chunks)
+        rows += chunk.getNumRows();
+    EXPECT_EQ(rows, 1u);
 }
 
 namespace

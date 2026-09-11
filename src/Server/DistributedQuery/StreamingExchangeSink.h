@@ -5,6 +5,9 @@
 #include <Common/DequeWithMemoryTracking.h>
 #include <variant>
 #include <Common/Epoll.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/Stopwatch.h>
+#include <optional>
 #include <Common/Logger.h>
 #include <Common/WakeupFd.h>
 #include <Core/Types.h>
@@ -60,6 +63,8 @@ private:
 
     /// Checks if out buffer has not too much data already if so, it is possible to add new chunk.
     bool canAddChunk() const;
+    /// The status of a sink that must wait for room in its send queue; counts the wait.
+    Status waitForSendQueueRoom();
 
     /// Move the data serialized into `out` to `send_queue` and reset `out`.
     void flushSerializedData();
@@ -104,6 +109,16 @@ private:
 
     size_t chunks_written = 0;
     size_t total_bytes_sent = 0;
+    /// Runs while the sink waits for the receiving task to connect.
+    std::optional<Stopwatch> connection_wait;
+    /// Present while the sink takes no chunks because its send queue is full: the metric counts
+    /// such sinks, the stopwatch feeds the profile event when the stall ends.
+    struct SendQueueFull
+    {
+        Stopwatch since;
+        CurrentMetrics::Increment sinks_metric;
+    };
+    std::optional<SendQueueFull> send_queue_full;
 
     const size_t FLUSH_BUFFER_TO_SOCKET_THRESHOLD = 128 * 1024;
     /// Cap on total unsent bytes (`send_queue` + `out`); back-pressure trips here.

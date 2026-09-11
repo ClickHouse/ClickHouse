@@ -1,6 +1,8 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Compression/CompressedWriteBuffer.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
@@ -17,6 +19,12 @@
 #include <cerrno>
 #include <cstddef>
 #include <cstring>
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeSerializedBytes;
+    extern const Event StreamingExchangeSerializeMicroseconds;
+}
 
 namespace DB
 {
@@ -74,6 +82,7 @@ namespace
 
 size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out)
 {
+    Stopwatch watch;
     const size_t packet_offset = out.count();
     PacketHeader packet_header{.packet_type = PacketType::Data, .bytes_size = 0};
     out.write(reinterpret_cast<const char *>(&packet_header), sizeof(packet_header));
@@ -117,6 +126,7 @@ size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBu
             writer.write(block);
             writer.flush();
             compressed_buf.finalize();
+            ProfileEvents::increment(ProfileEvents::StreamingExchangeSerializedBytes, compressed_buf.count());
         }
         catch (...)
         {
@@ -125,6 +135,7 @@ size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBu
         }
     }
 
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeSerializeMicroseconds, watch.elapsedMicroseconds());
     return packet_offset;
 }
 
