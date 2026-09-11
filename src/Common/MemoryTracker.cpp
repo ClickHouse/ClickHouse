@@ -291,12 +291,13 @@ void MemoryTracker::setMinAllocationSizeToLogStackTrace(UInt64 value)
         value = 0;
     }
 
-    /// Reset the budget while the threshold is still 0, so no thread can be spending it, then
-    /// publish. A reload that leaves the value unchanged is not a transition and refills nothing.
-    if (value && !min_allocation_size_to_log_stack_trace.load(std::memory_order_relaxed))
-        large_allocations_traced.store(0, std::memory_order_relaxed);
-    /// Release pairs with the acquire at the detect sites, so a thread that sees the threshold also sees the reset budget.
+    /// Release pairs with the acquire at the detect sites, so a thread that sees the threshold also sees the collector's budget reset.
     min_allocation_size_to_log_stack_trace.store(value, std::memory_order_release);
+}
+
+void MemoryTracker::resetLargeAllocationTraceBudget()
+{
+    large_allocations_traced.store(0, std::memory_order_relaxed);
 }
 
 UInt64 MemoryTracker::getMinAllocationSizeToLogStackTrace()

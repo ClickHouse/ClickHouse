@@ -443,7 +443,7 @@ Minimum size, in bytes, of a single allocation charged to the global (server-wid
 
 This is a diagnostic for a global tracked total that has grown far beyond the process's real memory usage. In that state the server refuses every allocation, down to zero-byte ones, while using a fraction of its limit, and ordinary telemetry cannot attribute the step: allocations charged under a `MemoryTrackerBlockerInThread` are neither limit-checked nor traced, and the `system.trace_log` inserts that would carry the rest fail once the server is wedged. The server log keeps being written, so the stack trace reaches it.
 
-At most 10 traces are captured each time the diagnostic is switched on, because capturing and symbolizing a stack is expensive and the trigger tends to repeat. Setting the value back to `0` and then to a nonzero value again refills that budget; a configuration reload that leaves the value unchanged does not.
+At most 10 traces are captured per server run, because capturing and symbolizing a stack is expensive and the trigger tends to repeat. Changing this setting at runtime, in either direction, does not raise that bound.
 
 Requires `trace_log` to be configured. Without a running trace collector the value is ignored and reported as `0` in [`system.server_settings`](/operations/system-tables/server_settings), since the trace could only be captured and discarded.
 

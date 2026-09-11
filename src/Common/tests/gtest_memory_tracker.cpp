@@ -367,8 +367,8 @@ void chargeAndRelease(Int64 size, size_t times = 1)
 
 /// A live collector is required twice over: the setter refuses a threshold without one, and its
 /// thread is what runs the symbolize-and-log path, which the destructor drains before returning.
-/// Switching the threshold off in TearDown and on again in SetUp also refills the trace budget, so
-/// every case below starts from a full one and can assert exact counts.
+/// Constructing one in SetUp also refills the trace budget, so every case below starts from a full
+/// one and can assert exact counts.
 class MemoryTrackerLargeAllocationTrace : public ::testing::Test
 {
 protected:
@@ -449,13 +449,13 @@ TEST_F(MemoryTrackerLargeAllocationTrace, StopsFiringOnceTheBudgetIsSpent)
     EXPECT_EQ(second, 0u);
 }
 
-TEST_F(MemoryTrackerLargeAllocationTrace, BudgetRefillsOnlyWhenSwitchedOn)
+TEST_F(MemoryTrackerLargeAllocationTrace, BudgetIsNotRaisedByReconfiguration)
 {
     chargeAndRelease(QUALIFYING_ALLOCATION, TRACE_BUDGET + 1);
     const auto spent = tracedLargeAllocations();
 
-    /// Re-applying the same value is what a configuration reload does, and it must not refill the
-    /// budget: a server that reloads periodically would otherwise have no bound at all.
+    /// Re-applying the value is what a configuration reload does, and switching it off and on again
+    /// is the obvious way to ask for more. Neither raises the bound: only a new collector does.
     MemoryTracker::setMinAllocationSizeToLogStackTrace(TRACE_THRESHOLD);
     chargeAndRelease(QUALIFYING_ALLOCATION);
     EXPECT_EQ(tracedLargeAllocations(), spent);
@@ -463,7 +463,7 @@ TEST_F(MemoryTrackerLargeAllocationTrace, BudgetRefillsOnlyWhenSwitchedOn)
     MemoryTracker::setMinAllocationSizeToLogStackTrace(0);
     MemoryTracker::setMinAllocationSizeToLogStackTrace(TRACE_THRESHOLD);
     chargeAndRelease(QUALIFYING_ALLOCATION);
-    EXPECT_EQ(tracedLargeAllocations(), spent + 1);
+    EXPECT_EQ(tracedLargeAllocations(), spent);
 }
 
 TEST_F(MemoryTrackerLargeAllocationTrace, DoesNotDisturbAccounting)

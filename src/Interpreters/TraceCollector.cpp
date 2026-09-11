@@ -72,6 +72,10 @@ std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
 
 TraceCollector::TraceCollector()
 {
+    /// The budget belongs to this collector's lifetime: a trace can only be delivered while one
+    /// exists, and the server constructs exactly one, before any threshold can be published.
+    MemoryTracker::resetLargeAllocationTraceBudget();
+
     TraceSender::pipe.open();
 
     /** Turn write end of pipe to non-blocking mode to avoid deadlocks
