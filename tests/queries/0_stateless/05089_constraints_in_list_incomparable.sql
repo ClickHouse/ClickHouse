@@ -27,6 +27,9 @@ SELECT 'the same through the old analyzer';
 SELECT count() FROM t_constraint_in WHERE a IN (5, 8, 12) SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1, enable_analyzer = 0;
 
 -- The constraint is still used: it proves `a > 100` always false, so the condition folds to a constant.
+-- `EXPLAIN QUERY TREE` is only supported with the analyzer, and the old analyzer runs turn it off for
+-- the whole session, so ask for it back here.
+SET enable_analyzer = 1;
 SELECT 'the constraint still applies';
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_constraint_in WHERE a > 100 SETTINGS convert_query_to_cnf = 1, optimize_using_constraints = 1)
 WHERE explain LIKE '%constant_value: UInt64_0%';
