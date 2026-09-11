@@ -154,6 +154,10 @@ using PartitionColumnValues = std::vector<std::pair<String, DB::Field>>;
 
 PartitionColumnValues getIdentityPartitionColumnValues(
     const ProcessedManifestFileEntry & manifest_file_entry, const IcebergSchemaProcessor & schema_processor);
+
+/// True when a commit attempt neither proved it took effect nor proved it did not. Files staged
+/// for such a commit may belong to the table's current snapshot, so they must not be deleted.
+bool isCommitStateUnknown(const DB::Exception & e);
 }
 
 #endif

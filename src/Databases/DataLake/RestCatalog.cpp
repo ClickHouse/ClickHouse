@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <mutex>
 #include <chrono>
+#include <stdexcept>
 #include <unordered_set>
 #include <Core/SettingsEnums.h>
 #include "config.h"
@@ -46,9 +47,11 @@
 #include <Poco/Net/HTTPClientSession.h>
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPSClientSession.h>
+#include <Poco/Net/NetException.h>
 #include <Poco/Net/SSLManager.h>
 #include <Poco/StreamCopier.h>
 #include <Poco/Util/AbstractConfiguration.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Stopwatch.h>
@@ -63,6 +66,7 @@ namespace DB::ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int FAULT_INJECTED;
     extern const int ACCESS_DENIED;
+    extern const int UNKNOWN_STATUS_OF_TRANSACTION;
 }
 
 namespace DB::Setting
@@ -73,10 +77,22 @@ namespace DB::Setting
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
+    extern const char iceberg_catalog_commit_response_lost[];
+    extern const char iceberg_catalog_commit_reconcile_fail[];
+    extern const char iceberg_catalog_commit_transport_fail[];
+    extern const char iceberg_catalog_commit_transport_net_fail[];
+    extern const char iceberg_catalog_commit_rejected[];
+    extern const char iceberg_catalog_commit_rejected_dispatched[];
+    extern const char iceberg_catalog_commit_net_fail_before_body[];
+    extern const char iceberg_catalog_commit_std_throw_before_body[];
+    extern const char iceberg_catalog_commit_conflict[];
+    extern const char iceberg_catalog_commit_predispatch_fail[];
+    extern const char iceberg_catalog_commit_std_throw[];
 }
 
 namespace ProfileEvents
 {
+    extern const Event ReadWriteBufferFromHTTPRequestsSent;
     extern const Event OneLakeAccessTokenRequests;
     extern const Event OneLakeAccessTokenRequestFailures;
     extern const Event OneLakeAccessTokenRequestMicroseconds;
@@ -1754,7 +1770,14 @@ bool RestCatalog::getTableMetadataImpl(
     return true;
 }
 
-void RestCatalog::sendRequest(const CatalogState & catalog_state, const String & endpoint, Poco::JSON::Object::Ptr request_body, const String & method, bool ignore_result) const
+void RestCatalog::sendRequest(
+    const CatalogState & catalog_state,
+    const String & endpoint,
+    Poco::JSON::Object::Ptr request_body,
+    const String & method,
+    bool ignore_result,
+    const std::optional<DB::ReadSettings> & read_settings,
+    bool * request_body_written) const
 {
     std::ostringstream oss;  // STYLE_CHECK_ALLOW_STD_STRING_STREAM
     if (request_body)
@@ -1772,9 +1795,73 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str](std::ostream & os)
+        out_stream_callback = [body_str, endpoint, request_body_written](std::ostream & os)
         {
+            /// No HTTP status and no body on the socket: models the transport failing to connect or
+            /// to write the headers, both of which happen after the request is counted.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_net_fail_before_body,
+            {
+                throw Poco::Net::NetException("Injected net failure before the body");
+            });
+
+            /// Same position, but outside the Poco hierarchy: reaches the catch-all handler.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_std_throw_before_body,
+            {
+                throw std::runtime_error("Injected std failure before the body");
+            });
+
+            /// Before the body is written but after the request is counted: the attempt is
+            /// dispatched, so it cannot have taken effect.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected_dispatched,
+            {
+                throw DB::HTTPException(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    endpoint,
+                    Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+                    "Injected dispatched rejection",
+                    "");
+            });
+
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_conflict,
+            {
+                throw DB::HTTPException(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    endpoint,
+                    Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT,
+                    "Injected conflict",
+                    "");
+            });
+
             os << body_str;
+
+            if (request_body_written)
+                *request_body_written = true;
+
+            /// Inside the transport's retried region, after the request is counted, so the number
+            /// of attempts the request policy allows is observable.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_transport_fail,
+            {
+                throw DB::HTTPException(
+                    DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                    endpoint,
+                    Poco::Net::HTTPResponse::HTTPStatus::HTTP_INTERNAL_SERVER_ERROR,
+                    "Injected transport failure",
+                    "");
+            });
+
+            /// Same site, but a plain Poco type: a connection dropped mid-request reaches the
+            /// caller as one of these, carrying no HTTP status to classify the attempt by.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_transport_net_fail,
+            {
+                throw Poco::Net::NetException("Injected net failure");
+            });
+
+            /// Same site, but outside the Poco hierarchy: an allocation failure while the response
+            /// body is read arrives this way, and the transport's retry handlers do not cover it.
+            fiu_do_on(DB::FailPoints::iceberg_catalog_commit_std_throw,
+            {
+                throw std::runtime_error("Injected std failure");
+            });
         };
     }
 
@@ -1784,7 +1871,7 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
     auto wb = DB::BuilderRWBufferFromHTTP(url)
         .withConnectionGroup(DB::HTTPConnectionGroupType::HTTP)
         .withMethod(method)
-        .withSettings(context->getReadSettings())
+        .withSettings(read_settings.value_or(context->getReadSettings()))
         .withTimeouts(DB::ConnectionTimeouts::getHTTPTimeouts(context->getSettingsRef(), context->getServerSettings()))
         .withHostFilter(&context->getRemoteHostFilter())
         .withHeaders(headers)
@@ -1812,7 +1899,14 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
         = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
     try
     {
-        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
+        sendRequest(
+            *state_snapshot,
+            check_endpoint,
+            /* request_body */ nullptr,
+            Poco::Net::HTTPRequest::HTTP_GET,
+            /* ignore_result */ true,
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
         return;
     }
     catch (const DB::HTTPException & e)
@@ -1837,7 +1931,14 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            /* ignore_result */ false,
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
     }
     catch (const DB::HTTPException & e)
     {
@@ -1881,7 +1982,14 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            /* ignore_result */ false,
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -1889,6 +1997,60 @@ void RestCatalog::createTable(const String & namespace_name, const String & tabl
     }
 }
 
+
+std::optional<Int64> RestCatalog::readMainRefSnapshotId(const std::string & namespace_name, const std::string & table_name) const
+{
+    fiu_do_on(DB::FailPoints::iceberg_catalog_commit_reconcile_fail,
+    {
+        return std::nullopt;
+    });
+
+    const auto state_snapshot = state.get();
+    const std::string endpoint
+        = std::filesystem::path(NAMESPACES_ENDPOINT) / encodeNamespaceForURI(namespace_name) / "tables" / table_name;
+
+    try
+    {
+        auto buf = createReadBuffer(
+            *state_snapshot, state_snapshot->config.prefix / endpoint, /* params */ {}, /* headers */ {}, /* auth_headers */ std::nullopt);
+        if (buf->eof())
+            return std::nullopt;
+
+        String json_str;
+        readJSONObjectPossiblyInvalid(json_str, *buf);
+
+        Poco::JSON::Parser parser;
+        const auto object = parser.parse(json_str).extract<Poco::JSON::Object::Ptr>();
+        if (!object || !object->has("metadata"))
+            return std::nullopt;
+
+        const auto metadata_object = object->get("metadata").extract<Poco::JSON::Object::Ptr>();
+        if (!metadata_object)
+            return std::nullopt;
+
+        /// The `main` ref is what `updateMetadata` sets; `current-snapshot-id` is its equivalent
+        /// for catalogs that do not materialise `refs`.
+        if (metadata_object->has(DB::Iceberg::f_refs))
+        {
+            if (const auto refs = metadata_object->getObject(DB::Iceberg::f_refs); refs && refs->has(DB::Iceberg::f_main))
+            {
+                if (const auto main_ref = refs->getObject(DB::Iceberg::f_main);
+                    main_ref && main_ref->has(DB::Iceberg::f_metadata_snapshot_id))
+                    return main_ref->getValue<Int64>(DB::Iceberg::f_metadata_snapshot_id);
+            }
+        }
+
+        if (metadata_object->has(DB::Iceberg::f_current_snapshot_id) && !metadata_object->isNull(DB::Iceberg::f_current_snapshot_id))
+            return metadata_object->getValue<Int64>(DB::Iceberg::f_current_snapshot_id);
+
+        return std::nullopt;
+    }
+    catch (...)
+    {
+        LOG_DEBUG(log, "Could not read back the current snapshot of {}.{}: {}", namespace_name, table_name, DB::getCurrentExceptionMessage(false));
+        return std::nullopt;
+    }
+}
 
 bool RestCatalog::updateMetadata(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr new_snapshot) const
 {
@@ -1946,27 +2108,132 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
         request_body->set("updates", updates);
     }
 
+    /// The commit is not idempotent: a transport retry re-POSTs it, and the second attempt is
+    /// rejected by the `assert-ref-snapshot-id` requirement the first one satisfied, so the
+    /// received status describes an unknown attempt. One attempt keeps the status meaningful.
+    DB::ReadSettings commit_read_settings = getContext()->getReadSettings();
+    commit_read_settings.http_settings.max_tries = 1;
+
+    const Int64 new_snapshot_id = new_snapshot->getValue<Int64>("snapshot-id");
+
+    /// Counted in `ReadWriteBufferFromHTTP::callImpl` before the transport connects and writes the
+    /// headers, so an unchanged value proves nothing of this commit reached the catalog.
+    const auto requests_sent_before
+        = DB::CurrentThread::getProfileEvents()[ProfileEvents::ReadWriteBufferFromHTTPRequestsSent];
+    const auto nothing_was_dispatched = [&]
+    { return DB::CurrentThread::getProfileEvents()[ProfileEvents::ReadWriteBufferFromHTTPRequestsSent] == requests_sent_before; };
+
+    bool commit_body_written = false;
+
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        /// Models a request the catalog rejects outright, so the commit never takes effect.
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_rejected,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
+                "Injected rejection",
+                "");
+        });
+
+        /// Models a failure raised before the request is dispatched, e.g. minting an access token.
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_predispatch_fail,
+        {
+            throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Injected pre-dispatch failure");
+        });
+
+        sendRequest(
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            /* ignore_result */ false,
+            commit_read_settings,
+            &commit_body_written);
+
+        fiu_do_on(DB::FailPoints::iceberg_catalog_commit_response_lost,
+        {
+            throw DB::HTTPException(
+                DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+                endpoint,
+                Poco::Net::HTTPResponse::HTTPStatus::HTTP_INTERNAL_SERVER_ERROR,
+                "Injected lost response",
+                "");
+        });
     }
     catch (const DB::HTTPException & ex)
     {
-        /// 409 Conflict: caller retries after re-reading the latest metadata tip.
-        if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+        /// A commit that never reached the catalog cannot have taken effect, whatever type reports
+        /// it: it keeps its own error and the caller's usual cleanup of the files staged for it.
+        if (nothing_was_dispatched())
+            throw;
+
+        const auto status = ex.getHTTPStatus();
+
+        /// The server rejected the `assert-ref-snapshot-id` requirement: another writer took this
+        /// version, so the staged files are provably unreachable.
+        if (status == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
         {
-            LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
+            LOG_TRACE(log, "Lost the commit race for {}.{}: {}", namespace_name, table_name, ex.what());
             return false;
         }
-        LOG_ERROR(log, "updateMetadata failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
-        throw DB::Exception(
-            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
-            "Iceberg catalog commit failed for table {}.{}: {}",
+
+        /// A status the transport never retries proves the request was rejected before it could
+        /// take effect. Keep the original error rather than obscuring an auth or request problem.
+        if (!DB::isRetriableHTTPError(status))
+            throw;
+
+        classifyAmbiguousCommit(namespace_name, table_name, new_snapshot_id, ex);
+    }
+    catch (const Poco::Exception & ex)
+    {
+        /// No status, so the catalog never answered and only a body that reached the socket can have
+        /// applied: anything earlier keeps its own error and the caller's cleanup of its files.
+        if (!commit_body_written)
+            throw;
+
+        /// `doWithRetries` rethrows `Poco::Net::NetException` verbatim, so such a failure carries no status.
+        classifyAmbiguousCommit(
+            namespace_name, table_name, new_snapshot_id, DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", ex.displayText()));
+    }
+    catch (...)
+    {
+        if (!commit_body_written)
+            throw;
+
+        /// Every failure of a commit whose body was written is classified, whatever its type.
+        classifyAmbiguousCommit(
             namespace_name,
             table_name,
-            ex.displayText());
+            new_snapshot_id,
+            DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "{}", DB::getCurrentExceptionMessage(false)));
     }
     return true;
+}
+
+void RestCatalog::classifyAmbiguousCommit(
+    const String & namespace_name, const String & table_name, Int64 new_snapshot_id, const Poco::Exception & original) const
+{
+    /// One logical read: the HTTP transport already retries it with backoff.
+    const auto committed_snapshot_id = readMainRefSnapshotId(namespace_name, table_name);
+
+    if (committed_snapshot_id == new_snapshot_id)
+    {
+        LOG_INFO(
+            log,
+            "Commit of snapshot {} to {}.{} took effect despite a failed response ({}), continuing",
+            new_snapshot_id, namespace_name, table_name, original.displayText());
+        return;
+    }
+
+    throw DB::Exception(
+        DB::ErrorCodes::UNKNOWN_STATUS_OF_TRANSACTION,
+        "Cannot tell whether snapshot {} was committed to {}.{}: the request failed with \"{}\" and the table's current "
+        "snapshot could not be confirmed to be it. Files staged for this commit are kept because deleting them would "
+        "destroy the snapshot if it did take effect",
+        new_snapshot_id, namespace_name, table_name, original.displayText());
 }
 
 bool RestCatalog::updateSchema(
@@ -2022,7 +2289,14 @@ bool RestCatalog::updateSchema(
 
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_POST, /* ignore_result */ false);
+        sendRequest(
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_POST,
+            /* ignore_result */ false,
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
     }
     catch (const DB::HTTPException & ex)
     {
@@ -2040,7 +2314,14 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
     {
-        sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
+        sendRequest(
+            *state_snapshot,
+            endpoint,
+            request_body,
+            Poco::Net::HTTPRequest::HTTP_DELETE,
+            /* ignore_result */ true,
+            /* read_settings */ std::nullopt,
+            /* request_body_written */ nullptr);
     }
     catch (const DB::HTTPException & ex)
     {
