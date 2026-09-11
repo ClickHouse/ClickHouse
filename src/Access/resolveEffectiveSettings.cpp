@@ -9,6 +9,7 @@
 
 #include <map>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 
 
@@ -97,6 +98,7 @@ namespace
     /// role and override that reaches that user has been applied. `setting_name` stays empty: the name
     /// is the key this is stored under.
     using ResolvedSettings = std::map<String, SettingsProfileElement>;
+    using AccessEntityIDs = std::unordered_set<UUID>;
 
     /// Folds a list of profile elements into one element per setting, using the same constraint merge
     /// rules as `SettingsConstraints`, and treats the two names of a `MergeTree` setting as one setting.
@@ -311,6 +313,89 @@ namespace
         const std::unordered_map<UUID, RolePtr> & allRoles() const { return roles; }
         const SettingsProfilesByID & allProfiles() const { return profiles; }
 
+        /// Returns the entities whose effective settings can change after `pending`. Dependencies
+        /// point from a setting carrier to the entity which uses it; profile targets point the other
+        /// way, so both directions are recorded before walking the affected subgraph.
+        AccessEntityIDs findAffectedEntities(const AccessGraph & after, const PendingAccessEntities & pending) const
+        {
+            std::unordered_multimap<UUID, UUID> dependents;
+            AccessEntityIDs profiles_targeting_all;
+            AccessEntityIDs default_profiles;
+
+            auto add_graph = [&](const AccessGraph & graph)
+            {
+                auto add_dependencies = [&](const auto & entities)
+                {
+                    for (const auto & [id, entity] : entities)
+                    {
+                        for (const auto & dependency : entity->findDependencies())
+                            dependents.emplace(dependency, id);
+                    }
+                };
+
+                add_dependencies(graph.users);
+                add_dependencies(graph.roles);
+                add_dependencies(graph.profiles);
+
+                for (const auto & [profile_id, profile] : graph.profiles)
+                {
+                    if (profile->to_roles.all)
+                    {
+                        profiles_targeting_all.emplace(profile_id);
+                        continue;
+                    }
+                    for (const auto & target_id : profile->to_roles.ids)
+                        dependents.emplace(profile_id, target_id);
+                }
+
+                if (graph.default_profile_id)
+                    default_profiles.emplace(*graph.default_profile_id);
+            };
+
+            add_graph(*this);
+            add_graph(after);
+
+            AccessEntityIDs affected;
+            std::vector<UUID> queue;
+            auto add_affected = [&](const UUID & id)
+            {
+                if (affected.emplace(id).second)
+                    queue.emplace_back(id);
+            };
+            for (const auto & item : pending)
+                add_affected(item.first);
+
+            auto add_all = [&](const auto & entities)
+            {
+                for (const auto & item : entities)
+                    add_affected(item.first);
+            };
+
+            size_t position = 0;
+            while (position != queue.size())
+            {
+                const UUID id = queue[position++];
+
+                auto [begin, end] = dependents.equal_range(id);
+                for (auto it = begin; it != end; ++it)
+                    add_affected(it->second);
+
+                if (profiles_targeting_all.contains(id))
+                {
+                    add_all(users);
+                    add_all(after.users);
+                    add_all(roles);
+                    add_all(after.roles);
+                }
+                if (default_profiles.contains(id))
+                {
+                    add_all(users);
+                    add_all(after.users);
+                }
+            }
+            return affected;
+        }
+
     private:
         const AccessControl & access_control;
         std::unordered_map<UUID, UserPtr> users;
@@ -468,6 +553,7 @@ namespace
 
         AccessGraph after = before;
         after.apply(pending);
+        auto affected = before.findAffectedEntities(after, pending);
 
         auto check_user = [&](const UUID & user_id, const UserPtr & user)
         {
@@ -514,51 +600,63 @@ namespace
         else
         {
             for (const auto & [id, user] : after.allUsers())
-                check_user(id, user);
-            for (const auto & item : after.allRoles())
-                check_role(item.first);
-            for (const auto & item : after.allProfiles())
-                check_profile(item.first);
-        }
-    }
-    }
-
-
-    FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
-        const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current, bool force)
-    {
-        if (!isAnyFeatureTierRestricted(access_control))
-            return {};
-
-        if (!force)
-        {
-            bool relevant = false;
-            for (const auto & [id, entity] : pending)
             {
-                auto current_it = current.find(id);
-                auto old_entity = current_it == current.end() ? access_control.tryRead(id) : current_it->second;
-                if (mayChangeSettingsInEffect(old_entity, entity))
-                {
-                    relevant = true;
-                    break;
-                }
+                if (affected.contains(id))
+                    check_user(id, user);
             }
-            if (!relevant)
-                return {};
+            for (const auto & item : after.allRoles())
+            {
+                if (affected.contains(item.first))
+                    check_role(item.first);
+            }
+            for (const auto & item : after.allProfiles())
+            {
+                if (affected.contains(item.first))
+                    check_profile(item.first);
+            }
         }
-
-        bool changes_only_users = changesOnlyUsers(access_control, pending, current);
-        auto graph = std::make_shared<AccessGraph>(access_control, !changes_only_users, pending, current);
-        return [&access_control, graph](const PendingAccessEntities & pending_, const PendingAccessEntities & current_)
-        { checkFeatureTierForPendingAccessEntitiesWithGraph(*graph, access_control, pending_, current_); };
     }
+}
 
 
-    void checkFeatureTierForPendingAccessEntities(
-        const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current)
+FeatureTierAccessEntityChecker prepareFeatureTierAccessEntityChecker(
+    const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current, bool force)
+{
+    if (!isAnyFeatureTierRestricted(access_control))
+        return {};
+
+    if (!force)
     {
-        auto checker = prepareFeatureTierAccessEntityChecker(access_control, pending, current);
-        if (checker)
-            checker(pending, current);
+        bool relevant = false;
+        for (const auto & [id, entity] : pending)
+        {
+            auto current_it = current.find(id);
+            auto old_entity = current_it == current.end() ? access_control.tryRead(id) : current_it->second;
+            if (mayChangeSettingsInEffect(old_entity, entity))
+            {
+                relevant = true;
+                break;
+            }
+        }
+        if (!relevant)
+            return {};
     }
+
+    bool changes_only_users = changesOnlyUsers(access_control, pending, current);
+    auto graph = std::make_shared<AccessGraph>(access_control, !changes_only_users, pending, current);
+    return [&access_control, graph](const PendingAccessEntities & pending_, const PendingAccessEntities & current_)
+    {
+        checkFeatureTierForPendingAccessEntitiesWithGraph(*graph, access_control, pending_, current_);
+    };
+}
+
+
+void checkFeatureTierForPendingAccessEntities(
+    const AccessControl & access_control, const PendingAccessEntities & pending, const PendingAccessEntities & current)
+{
+    auto checker = prepareFeatureTierAccessEntityChecker(access_control, pending, current);
+    if (checker)
+        checker(pending, current);
+}
+
 }
