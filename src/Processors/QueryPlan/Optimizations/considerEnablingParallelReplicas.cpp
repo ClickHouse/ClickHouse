@@ -8,9 +8,12 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/LimitStep.h>
+#include <Processors/QueryPlan/NegativeLimitStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
+#include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
@@ -386,11 +389,19 @@ void considerEnablingParallelReplicas(
     /// decide whether replicas pay off, and optimizing it would otherwise re-run every `IN` subquery.
     auto plan_with_parallel_replicas = optimization_settings.query_plan_with_parallel_replicas_builder(collectBuiltSets(query_plan));
     if (!plan_with_parallel_replicas)
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "Cannot build a plan with parallel replicas. Skipping optimization");
         return;
+    }
 
     const auto * final_node_in_replica_plan = findTopNodeOfReplicasPlan(plan_with_parallel_replicas->getRootNode());
     if (!final_node_in_replica_plan)
+    {
+        LOG_DEBUG(
+            getLogger("optimizeTree"),
+            "The plan built with parallel replicas contains no read from the other replicas. Skipping optimization");
         return;
+    }
     LOG_DEBUG(getLogger("optimizeTree"), "Top node of replicas plan: {}", final_node_in_replica_plan->step->getName());
 
     const auto [corresponding_node_in_single_replica_plan, single_replica_plan_node_hash]
@@ -462,9 +473,20 @@ void considerEnablingParallelReplicas(
                 ? stats->input_bytes / optimization_settings.min_bytes_per_task_for_reading + 1
                 : SIZE_MAX;
             const auto num_replicas = optimization_settings.max_parallel_replicas;
+            /// Dividing `output_bytes` by `num_replicas` assumes the replicas partition the output
+            /// between them, as they do for `Aggregating` or a plain `Sorting`. A boundary that keeps a
+            /// bounded top-N per replica instead makes every replica ship the whole `output_bytes`:
+            /// `LIMIT n`, `LIMIT -n` (the last `n` rows) and a `Sorting` carrying a limit. Dividing
+            /// those underestimates the parallel-replicas plan by a factor of `num_replicas`.
+            const auto * boundary_step = corresponding_node_in_single_replica_plan->step.get();
+            const auto * boundary_sorting_step = typeid_cast<const SortingStep *>(boundary_step);
+            const bool output_is_replicated = typeid_cast<const LimitStep *>(boundary_step)
+                || typeid_cast<const NegativeLimitStep *>(boundary_step)
+                || (boundary_sorting_step && boundary_sorting_step->getLimit() != 0);
+            const size_t output_replicas_divisor = output_is_replicated ? 1 : num_replicas;
             const auto local_plan_cost_estimation = stats->input_bytes / std::min<size_t>(max_threads, effective_max_reading_threads);
             const auto replicas_plan_cost_estimation
-                = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / num_replicas;
+                = (stats->input_bytes / std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads)) + stats->output_bytes / output_replicas_divisor;
             LOG_DEBUG(
                 getLogger("optimizeTree"),
                 "The applied formula: {} / {} ? ({} / {} + {} / {}) ≡ {} ? {}",
@@ -473,7 +495,7 @@ void considerEnablingParallelReplicas(
                 stats->input_bytes,
                 std::min<size_t>(max_threads * num_replicas, effective_max_reading_threads),
                 stats->output_bytes,
-                num_replicas,
+                output_replicas_divisor,
                 local_plan_cost_estimation,
                 replicas_plan_cost_estimation);
             if (local_plan_cost_estimation > replicas_plan_cost_estimation)
