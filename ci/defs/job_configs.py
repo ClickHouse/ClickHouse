@@ -2020,7 +2020,10 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
+                "./ci/defs/defs.py",
+                "./ci/defs/job_configs.py",
                 "./ci/jobs/parser_memory_check.py",
+                "./ci/workflows/pull_request.py",
                 "./utils/parser-memory-profiler/",
             ],
         ),
