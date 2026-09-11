@@ -41,6 +41,11 @@ void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info)
     current_connection_info = info;
 }
 
+void clearCurrentHTTPConnectionInfo()
+{
+    current_connection_info = {};
+}
+
 HTTPConnectionInfo takeCurrentHTTPConnectionInfo()
 {
     HTTPConnectionInfo result = current_connection_info;

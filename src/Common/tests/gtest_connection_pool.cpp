@@ -582,9 +582,9 @@ static DB::HTTPConnectionInfo echoRequestAndTakeConnectionInfo(String data, HTTP
 }
 
 /// The connection info published for a request must describe the socket that actually carried it.
-/// Both tests below exercise `PooledConnection::reconnect`, which swaps the whole socket - and the
-/// bookkeeping that goes with it - out from under a session that is already in the middle of a
-/// request.
+/// The three tests below exercise `PooledConnection::reconnect`, which swaps the whole socket - and
+/// the bookkeeping that goes with it - out from under a session that is already in the middle of a
+/// request, or fails trying.
 
 TEST_F(ConnectionPoolTest, ConnectionInfoNewIdAfterReconnect)
 {
@@ -642,6 +642,46 @@ TEST_F(ConnectionPoolTest, ConnectionInfoIdleTimeAfterReconnect)
     /// And the idle time is how long that socket really waited, not the sample taken for its
     /// previous request.
     ASSERT_GE(reused.idle_microseconds, idle_for_microseconds / 2);
+}
+
+/// A reconnect can also fail, and then the request never reaches a socket at all. The caller learns
+/// that from the exception and writes its error row inside the same scope - failed requests being
+/// among the rows users inspect most closely - so the slot must not still be holding the identity of
+/// the socket that was discarded on the way.
+TEST_F(ConnectionPoolTest, ConnectionInfoClearedWhenReconnectFails)
+{
+    /// A hard limit of one, reached by the connection below, so its reconnect cannot obtain a
+    /// replacement: `PooledConnection::create` throws `HTTP_CONNECTION_LIMIT_REACHED` before any
+    /// connect attempt is made. The store limit of zero keeps the pool empty, so there is no stored
+    /// connection to be reused instead.
+    DB::HTTPConnectionPools::Limits limits {0, 0, 0, 1};
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
+
+    auto pool = getPool();
+
+    auto connection = pool->getConnection(timeouts, nullptr);
+
+    auto first = echoRequestAndTakeConnectionInfo("Hello", *connection);
+    ASSERT_TRUE(first.has_value);
+    ASSERT_NE(0, first.id);
+
+    connection->abort(); // further usage requires a reconnect - the one that is going to fail
+
+    {
+        DB::HTTPConnectionInfoScope scope;
+
+        auto data = String("Hello");
+        Poco::Net::HTTPRequest request(Poco::Net::HTTPRequest::HTTP_PUT, "/", "HTTP/1.1");
+        request.setContentLength(data.size());
+        ASSERT_ANY_THROW(connection->sendRequest(request));
+
+        /// This is where the caller logs the failure. No socket carried the request, so the row
+        /// reports zeroes - and in particular neither the id, nor the request count, nor the age of
+        /// the socket that was dropped.
+        auto info = DB::takeCurrentHTTPConnectionInfo();
+        ASSERT_FALSE(info.has_value);
+        ASSERT_NE(first.id, info.id);
+    }
 }
 
 /// The pool is shared with everything that speaks HTTP - `StorageURL`, dictionary sources, the

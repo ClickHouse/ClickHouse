@@ -88,6 +88,13 @@ private:
 /// session; does nothing outside of an `HTTPConnectionInfoScope`.
 void setCurrentHTTPConnectionInfo(const HTTPConnectionInfo & info);
 
+/// Drop whatever is published on this thread, without reading it. Called by the pooled session
+/// when the connection it published for the request in flight is discarded before that request
+/// reaches the wire — a borrowed keep-alive socket that turns out to be dead. The row the caller
+/// writes for such a failure has to report zeroes rather than the identity of a socket that never
+/// carried it.
+void clearCurrentHTTPConnectionInfo();
+
 /// Return the info for the most recent recorded request on this thread, and clear it. Clearing is
 /// deliberate: a batched delete writes one entry per object for a single request, and only the
 /// first of them should carry the connection. Must be called inside the scope that made the request.

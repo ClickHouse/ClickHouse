@@ -491,6 +491,13 @@ private:
         {
             Session::close();
             forgetSocketIdentity();
+            /// The socket published for the request in flight - by `sendRequest`, before Poco found
+            /// out that the borrowed connection was dead - has just been dropped. Unpublish it
+            /// before anything below can throw: on a failed reconnect the request never reaches any
+            /// socket, and the row the caller then writes for the error must not claim the one that
+            /// was discarded. On a successful reconnect the publish at the end of this function puts
+            /// the replacement in its place.
+            clearCurrentHTTPConnectionInfo();
 
             if (auto lock = pool.lock())
             {
