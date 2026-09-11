@@ -1195,7 +1195,11 @@ void updateHashWithRowAffectingSettings(SipHash & hash, const Settings & setting
     /// setting is added in the middle of `Settings.cpp`. A refresh watermark outlives an upgrade, so
     /// the fold is sorted by name here: the hash then depends only on which settings are set to what,
     /// not on the order they were applied in nor on the version that computed it.
-    const FlatStringMap changed = settings.changedToFlatMap();
+    /// Secrets are not masked here: the values are folded into a hash and never rendered. A masked
+    /// value would make two distinct credentials hash the same, and a setting that does change the
+    /// rows a query reads - a different account behind `s3_*` credentials, for example - would then
+    /// leave the hash unmoved and a stale result would be served as up to date.
+    const FlatStringMap changed = settings.changedToFlatMap(/* show_secrets */ true);
     std::vector<std::pair<std::string_view, std::string_view>> row_affecting;
     row_affecting.reserve(changed.size());
     changed.forEach([&](std::string_view name, std::string_view value)
