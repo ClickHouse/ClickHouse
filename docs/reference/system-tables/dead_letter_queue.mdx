@@ -12,7 +12,6 @@ doc_type: 'reference'
 
 Contains information about messages received via a streaming engine and parsed with errors. Currently implemented for Kafka and RabbitMQ.
 
-
 **Availability**
 
 `system.dead_letter_queue` is created only when the server configuration contains a `dead_letter_queue` section. The streaming engine must also set its engine-specific `handle_error_mode` setting to `dead_letter_queue` to write rejected messages. Without the server configuration section, queries against the table fail with `UNKNOWN_TABLE`.
@@ -28,7 +27,6 @@ Contains information about messages received via a streaming engine and parsed w
 </clickhouse>
 ```
 
-
 Logging is enabled by specifying `dead_letter_queue` for the engine specific `handle_error_mode` setting.
 
 The flushing period of data is set in `flush_interval_milliseconds` parameter of the [dead_letter_queue](/reference/settings/server-settings/settings/other#dead_letter_queue) server settings section. To force flushing, use the [SYSTEM FLUSH LOGS](/reference/statements/system#flush-logs) query.
@@ -39,6 +37,8 @@ It is safe to truncate or drop this table at any time.
 
 ## Columns {#columns}
 
+- `clickhouse_version` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Version of the ClickHouse server that produced the row.
+- `system_processor` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — CPU architecture of the ClickHouse server that produced the row.
 - `table_engine` ([Enum8('Kafka' = 1, 'RabbitMQ' = 2)](/reference/data-types/enum)) — Stream type. Possible values: 'Kafka', 'RabbitMQ'.
 - `event_date` ([Date](/reference/data-types/date)) — Message consuming date.
 - `event_time` ([DateTime](/reference/data-types/datetime)) — Message consuming date and time.

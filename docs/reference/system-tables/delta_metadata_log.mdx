@@ -18,9 +18,7 @@ The `system.delta_lake_metadata_log` table records metadata access and parsing e
 
 This table logs every metadata file read from Delta Lake tables. It helps users trace how ClickHouse interprets Delta table metadata and diagnose issues related to schema evolution, snapshot resolution, or query planning.
 
-
 This table is primarily intended for debugging purposes.
-
 
 ### Controlling log verbosity {#controlling-log-verbosity}
 
@@ -44,6 +42,8 @@ It is safe to truncate or drop this table at any time.
 ## Columns {#columns}
 
 - `hostname` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Hostname of the server executing the query.
+- `clickhouse_version` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Version of the ClickHouse server that produced the row.
+- `system_processor` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — CPU architecture of the ClickHouse server that produced the row.
 - `event_date` ([Date](/reference/data-types/date)) — Date of the entry.
 - `event_time` ([DateTime](/reference/data-types/datetime)) — Event time.
 - `query_id` ([String](/reference/data-types/string)) — Query id.

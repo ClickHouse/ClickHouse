@@ -18,7 +18,6 @@ Contains information about the number of events that have occurred in the system
 
 ## Event descriptions {#event-descriptions}
 
-
 ### ACMEAPIRequests {#acmeapirequests}
 
 Number of ACME API requests issued.
@@ -59,6 +58,10 @@ How many times the adaptive aggregation drained staged records early because of 
 
 How many threads stopped probing their frozen local table in the adaptive aggregation because almost no row hit it.
 
+### AdaptiveAggregationResidueReleases {#adaptiveaggregationresiduereleases}
+
+How many times the adaptive aggregation wrote its shared drain table out because a thread back on the baseline algorithm was about to spill on account of it.
+
 ### AdaptiveAggregationSealedChunks {#adaptiveaggregationsealedchunks}
 
 How many coalesced chunks the adaptive aggregation sealed from buffered staging batches.
@@ -67,9 +70,29 @@ How many coalesced chunks the adaptive aggregation sealed from buffered staging 
 
 How many staged argument columns the adaptive aggregation seal normalized from a wrapped representation (Const, Replicated, Sparse, LowCardinality) to the dense form the drain consumes.
 
+### AdaptiveAggregationSharedTableSpills {#adaptiveaggregationsharedtablespills}
+
+How many times the adaptive aggregation wrote its shared drain table out because it reached the part bound under memory pressure.
+
+### AdaptiveAggregationSpillBacklogSheds {#adaptiveaggregationspillbacklogsheds}
+
+How many times the adaptive aggregation shed the staged backlog because a thread on the baseline algorithm - one the thaw put back there, or one that stood down on its own - was about to spill while staged records were still resident.
+
 ### AdaptiveAggregationStagedBytes {#adaptiveaggregationstagedbytes}
 
 How many key bytes the adaptive aggregation staged for the merge-time drain.
+
+### AdaptiveAggregationStagedChunkPiecesOverBound {#adaptiveaggregationstagedchunkpiecesoverbound}
+
+How many pieces of a cut staged chunk the adaptive aggregation published still over the bound the chunk was cut to meet. A chunk is cut along bucket boundaries, and record by record inside a bucket that is over the bound on its own, so this is a single record whose staged bytes alone are over the bound; such a piece is claimed whole, and its drain can overshoot the pressure part by that much.
+
+### AdaptiveAggregationStagedChunkSplits {#adaptiveaggregationstagedchunksplits}
+
+How many staged chunks the adaptive aggregation cut along bucket boundaries at publication because one chunk's drain was estimated over the pressure part bound.
+
+### AdaptiveAggregationStagedClaimsClosedAtBound {#adaptiveaggregationstagedclaimsclosedatbound}
+
+How many claims of staged chunks by the adaptive aggregation's drains were closed before a chunk whose addition would have taken the batch to the pressure part bound, leaving that chunk to the next claim. The bound holds for the batch as drained, so two chunks each just under it - two pieces of a cut chunk that are single records over half a part - are drained into two tables rather than one; only a first chunk that is over the bound alone is claimed regardless.
 
 ### AdaptiveAggregationStagedRecords {#adaptiveaggregationstagedrecords}
 
@@ -2317,6 +2340,10 @@ Total number of accepted data files-position delete file pairs by minmax analysi
 
 Number of skipped files during Iceberg partition pruning
 
+### IcebergPartitionPrunedManifestFiles {#icebergpartitionprunedmanifestfiles}
+
+Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list
+
 ### IcebergTrivialCountOptimizationApplied {#icebergtrivialcountoptimizationapplied}
 
 Trivial count optimization applied while reading from Iceberg
@@ -3725,6 +3752,10 @@ Number of exceptions during insert in S3(Azure)Queue
 
 Number of exceptions during read in S3(Azure)Queue
 
+### ObjectStorageQueueExclusiveModeProcessingErrors {#objectstoragequeueexclusivemodeprocessingerrors}
+
+Count of times a file in S3(Azure)Queue didn't finalize state due to a processing error. Only for 'exclusive' mode.
+
 ### ObjectStorageQueueFailedFiles {#objectstoragequeuefailedfiles}
 
 Number of files which failed to be processed
@@ -3776,6 +3807,10 @@ Number of read rows (not equal to the number of actually inserted rows)
 ### ObjectStorageQueueRemovedObjects {#objectstoragequeueremovedobjects}
 
 Number of objects removed as part of after_processing = delete
+
+### ObjectStorageQueueRemoveObjectFailures {#objectstoragequeueremoveobjectfailures}
+
+Number of objects that failed to be removed as part of after_processing = delete
 
 ### ObjectStorageQueueSuccessfulCommits {#objectstoragequeuesuccessfulcommits}
 
@@ -4725,6 +4760,10 @@ Number of blocks processed by JOIN Runtime Filters
 
 Number of blocks skipped by JOIN Runtime Filters without processing due to filter being dynamically disabled because of poor filtering ratio
 
+### RuntimeFilterBloomFilterBuildsSkipped {#runtimefilterbloomfilterbuildsskipped}
+
+Number of JOIN Runtime Filter Bloom filter builds skipped because the build-side key count from the hash table statistics predicted that the filter would exceed the maximal ratio of set bits
+
 ### RuntimeFilterGranulesConsidered {#runtimefiltergranulesconsidered}
 
 Number of granules examined for read time pruning by JOIN Runtime Filters
@@ -5048,6 +5087,10 @@ Number of async inserts in the INSERTed block to a ReplicatedMergeTree table was
 ### ServerStartupMilliseconds {#serverstartupmilliseconds}
 
 Time elapsed from starting server to listening to sockets in milliseconds
+
+### SetsBuiltFromSubquery {#setsbuiltfromsubquery}
+
+Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.
 
 ### SettingsProfileCacheRecalculationMicroseconds {#settingsprofilecacherecalculationmicroseconds}
 
@@ -5975,7 +6018,7 @@ Total time spent rebuilding `unique_key_index.sst` at load time (sequential read
 
 ### UniqueKeySSTWriteMicroseconds {#uniquekeysstwritemicroseconds}
 
-Total wall-clock time spent inside an `SSTIndexWriter` lifetime — covers SST `Open`, every `addEncoded` Put, and `Finish` + `WriteBuffer` finalize in `finalizeToStorage` (the SST bytes are streamed straight into the part storage's `WriteBuffer`). Excludes work the static helpers do before constructing the writer (encode + non-prefix-path sort). Emitted once per writer.
+Total wall-clock time spent inside an `SSTIndexWriter` lifetime — covers SST `Open`, every `addEncoded` Put, and `Finish` + `WriteBuffer` finalize (+ fsync) in `finish` (the SST bytes are streamed straight into the part storage's `WriteBuffer`). Excludes work the static helpers do before constructing the writer (encode + non-prefix-path sort). Emitted once per writer.
 
 ### USearchAddComputedDistances {#usearchaddcomputeddistances}
 

@@ -18,7 +18,6 @@ Contains metrics which can be calculated instantly, or have a current value. For
 
 ## Metric descriptions {#metric-descriptions}
 
-
 ### ActiveTimersInQueryProfiler {#activetimersinqueryprofiler}
 
 Number of Active thread local timers in QueryProfiler
@@ -902,6 +901,18 @@ Number of threads in the IcebergCompaction thread pool running a task.
 ### IcebergCompactionThreadsScheduled {#icebergcompactionthreadsscheduled}
 
 Number of queued or active jobs in the IcebergCompaction thread pool.
+
+### IcebergManifestDecodeThreads {#icebergmanifestdecodethreads}
+
+Number of threads in the thread pool used for decoding Iceberg data manifest files.
+
+### IcebergManifestDecodeThreadsActive {#icebergmanifestdecodethreadsactive}
+
+Number of threads in the thread pool used for decoding Iceberg data manifest files running a task.
+
+### IcebergManifestDecodeThreadsScheduled {#icebergmanifestdecodethreadsscheduled}
+
+Number of queued or active jobs in the thread pool used for decoding Iceberg data manifest files.
 
 ### IcebergMetadataFilesCacheBytes {#icebergmetadatafilescachebytes}
 

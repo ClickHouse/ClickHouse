@@ -25,6 +25,8 @@ It is safe to truncate or drop this table at any time.
 ## Columns {#columns}
 
 - `hostname` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Hostname of the server executing the query.
+- `clickhouse_version` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Version of the ClickHouse server that produced the row.
+- `system_processor` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — CPU architecture of the ClickHouse server that produced the row.
 - `event_date` ([Date](/reference/data-types/date)) — Event date.
 - `event_time` ([DateTime](/reference/data-types/datetime)) — Event time.
 - `metric` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Metric name.

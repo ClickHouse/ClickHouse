@@ -21,6 +21,8 @@ It is safe to truncate or drop this table at any time.
 ## Columns {#columns}
 
 - `hostname` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Hostname of the server.
+- `clickhouse_version` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Version of the ClickHouse server that produced the row.
+- `system_processor` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — CPU architecture of the ClickHouse server that produced the row.
 - `event_date` ([Date](/reference/data-types/date)) — Date the group was flushed.
 - `event_time` ([DateTime](/reference/data-types/datetime)) — Time the group was flushed.
 - `session_id` ([Int64](/reference/data-types/int-uint)) — Session id.

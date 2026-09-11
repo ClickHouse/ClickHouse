@@ -13,7 +13,6 @@ doc_type: 'reference'
 Shows all available stemmers.
 These can be used in the function [stem](/reference/functions/regular-functions/nlp-functions).
 
-
 **Availability**
 
 `system.stemmers` is present only in ClickHouse builds compiled with the `libstemmer` dependency (`USE_LIBSTEMMER`). On builds without it, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`. You can check whether your build has it enabled with:

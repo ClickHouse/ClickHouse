@@ -25,7 +25,6 @@ Before version 26.8 every key was a separate scalar metric with the key mangled 
 
 The descriptions below are generated from the C++ source by `utils/generate-async-metrics-docs`. The single source of truth is the string literal next to each metric registration in `src/Common/AsynchronousMetrics.cpp`, `src/Interpreters/ServerAsynchronousMetrics.cpp`, and `src/Coordination/KeeperAsynchronousMetrics.cpp`. Metric names that include a variable part (currently only the HTTP connection pool group) are shown with a `*name*` placeholder; the running server reports them with the concrete name substituted in.
 
-
 ### AsynchronousHeavyMetricsCalculationTimeSpent {#asynchronousheavymetricscalculationtimespent}
 
 Time in seconds spent for calculation of asynchronous heavy (tables related) metrics (this is the overhead of asynchronous metrics).

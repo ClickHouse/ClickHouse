@@ -29,13 +29,13 @@ Unlike `system.zookeeper`, this table does not send requests to a Keeper cluster
 - `version` ([Int32](/reference/data-types/int-uint)) — Number of modifications of the node data.
 - `cversion` ([Int32](/reference/data-types/int-uint)) — Number of modifications of the node children.
 - `aversion` ([Int32](/reference/data-types/int-uint)) — Number of modifications of the node ACL.
-- `ephemeral_owner` ([Int64](/reference/data-types/int-uint)) — ID of the session that owns the node if it is ephemeral, `0` otherwise.
+- `ephemeral_owner` ([Int64](/reference/data-types/int-uint)) — ID of the session that owns the node if it is ephemeral, 0 otherwise.
 - `data_length` ([UInt32](/reference/data-types/int-uint)) — Size of the node data in bytes.
 - `num_children` ([Int32](/reference/data-types/int-uint)) — Number of children of the node.
 - `pzxid` ([Int64](/reference/data-types/int-uint)) — ID of the transaction that last added or removed children of the node.
 - `seq_num` ([Int64](/reference/data-types/int-uint)) — Counter used to generate names of sequential children of the node.
-- `ttl` ([Int64](/reference/data-types/int-uint)) — TTL of the node in milliseconds if it is a TTL node, `0` otherwise.
-- `acl_id` ([UInt32](/reference/data-types/int-uint)) — Internal ID of the node ACL, `0` if the node has no ACL.
+- `ttl` ([Int64](/reference/data-types/int-uint)) — TTL of the node in milliseconds if it is a TTL node, 0 otherwise.
+- `acl_id` ([UInt32](/reference/data-types/int-uint)) — Internal ID of the node ACL, 0 if the node has no ACL.
 
 ## Example {#example}
 

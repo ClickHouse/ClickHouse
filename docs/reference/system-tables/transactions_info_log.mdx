@@ -13,7 +13,6 @@ doc_type: 'reference'
 
 Contains information about all transactions executed on a current server.
 
-
 **Availability**
 
 `system.transactions_info_log` is created only when the server configuration contains a `transactions_info_log` section. Transactions must also be enabled with `allow_experimental_transactions` for the table to accumulate rows. Without the log section, queries against the table fail with `UNKNOWN_TABLE`; without experimental transactions, the configured table remains empty.
@@ -30,12 +29,13 @@ Contains information about all transactions executed on a current server.
 </clickhouse>
 ```
 
-
 It is safe to truncate or drop this table at any time.
 
 ## Columns {#columns}
 
 - `hostname` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — The hostname where transaction was executed.
+- `clickhouse_version` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Version of the ClickHouse server that produced the row.
+- `system_processor` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — CPU architecture of the ClickHouse server that produced the row.
 - `type` ([Enum8('Begin' = 1, 'Commit' = 2, 'Rollback' = 3, 'AddPart' = 10, 'LockPart' = 11, 'UnlockPart' = 12)](/reference/data-types/enum)) — The type of the transaction. Possible values: Begin, Commit, Rollback, AddPart, LockPart, UnlockPart.
 - `event_date` ([Date](/reference/data-types/date)) — Date of the entry.
 - `event_time` ([DateTime64(6)](/reference/data-types/datetime64)) — Time of the entry

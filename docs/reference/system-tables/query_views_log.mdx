@@ -32,6 +32,8 @@ It is safe to truncate or drop this table at any time.
 ## Columns {#columns}
 
 - `hostname` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Hostname of the server executing the query.
+- `clickhouse_version` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — Version of the ClickHouse server that produced the row.
+- `system_processor` ([LowCardinality(String)](/reference/data-types/lowcardinality)) — CPU architecture of the ClickHouse server that produced the row.
 - `event_date` ([Date](/reference/data-types/date)) — The date when the last event of the view happened.
 - `event_time` ([DateTime](/reference/data-types/datetime)) — The date and time when the view finished execution.
 - `event_time_microseconds` ([DateTime64(6)](/reference/data-types/datetime64)) — The date and time when the view finished execution with microseconds precision.

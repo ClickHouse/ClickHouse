@@ -226,6 +226,245 @@ SELECT * FROM system.one LIMIT 10;
 )DOCS_MD");
 }
 
+/// `system.zookeeper*` tables exist only on a server with ZooKeeper or ClickHouse Keeper configured, the
+/// `system.keeper_*` tables only on a node which runs an in-process Keeper, and `system.transactions` only when
+/// experimental transactions are enabled. Their documentation, however, is owned by the source and does not depend
+/// on that configuration, so these tables are attached by separate functions: `system.documentation` attaches them
+/// to a scratch database to render their pages wherever they are unavailable - in particular in `clickhouse-local`,
+/// which is how the documentation generator reads them.
+void attachSystemTablesGatedOnZooKeeper(ContextPtr context, IDatabase & system_database)
+{
+    attachNoDescription<StorageSystemZooKeeper>(context, system_database, "zookeeper", R"DOCS_MD(
+.description
+The table does not exist unless ClickHouse Keeper or ZooKeeper is configured. The `system.zookeeper` table exposes data from the Keeper clusters defined in the config.
+The query must either have a `path =`   condition or a `path IN`  condition set with the `WHERE` clause as shown below. This corresponds to the path of the children that you want to get data for.
+
+The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
+To output data for all root nodes, write path = '/'.
+If the path specified in 'path' does not exist, an exception will be thrown.
+
+The query `SELECT * FROM system.zookeeper WHERE path IN ('/', '/clickhouse')` outputs data for all children on the `/` and `/clickhouse` node.
+If in the specified 'path' collection has does not exist path, an exception will be thrown.
+It can be used to do a batch of Keeper path queries.
+
+The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse' AND zookeeperName = 'auxiliary_cluster'` outputs data in `auxiliary_cluster` ZooKeeper cluster.
+If the specified 'auxiliary_cluster' does not exists, an exception will be thrown.
+
+.examples
+```sql
+SELECT *
+FROM system.zookeeper
+WHERE path = '/clickhouse/tables/01-08/visits/replicas'
+FORMAT Vertical
+```
+
+```text
+Row 1:
+──────
+name:           example01-08-1
+value:
+czxid:          932998691229
+mzxid:          932998691229
+ctime:          2015-03-27 16:49:51
+mtime:          2015-03-27 16:49:51
+version:        0
+cversion:       47
+aversion:       0
+ephemeralOwner: 0
+dataLength:     0
+numChildren:    7
+pzxid:          987021031383
+path:           /clickhouse/tables/01-08/visits/replicas
+
+Row 2:
+──────
+name:           example01-08-2
+value:
+czxid:          933002738135
+mzxid:          933002738135
+ctime:          2015-03-27 16:57:01
+mtime:          2015-03-27 16:57:01
+version:        0
+cversion:       37
+aversion:       0
+ephemeralOwner: 0
+dataLength:     0
+numChildren:    7
+pzxid:          987021252247
+path:           /clickhouse/tables/01-08/visits/replicas
+```
+)DOCS_MD");
+    attach<StorageSystemZooKeeperInfo>(context, system_database, "zookeeper_info", R"DOCS_MD(
+.description
+This table outputs combined introspection about zookeeper and the nodes are taken from config.
+
+<Info>
+**Availability**
+
+`system.zookeeper_info` exists only when ClickHouse Keeper or ZooKeeper is configured. On servers without either configured, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`.
+</Info>
+)DOCS_MD");
+    attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection", R"DOCS_MD(
+.description
+This table does not exist if ZooKeeper is not configured. The 'system.zookeeper_connection' table shows current connections to ZooKeeper (including auxiliary ZooKeepers). Each row shows information about one connection.
+
+.examples
+```sql
+SELECT
+    name,
+    host,
+    port,
+    index,
+    connected_time,
+    session_uptime_elapsed_seconds,
+    is_expired,
+    keeper_api_version,
+    client_id,
+    xid,
+    enabled_feature_flags,
+    availability_zone
+FROM system.zookeeper_connection;
+```
+
+```text
+┌─name────┬─host──────┬─port─┬─index─┬──────connected_time─┬─session_uptime_elapsed_seconds─┬─is_expired─┬─keeper_api_version─┬─client_id─┬─xid─┬─enabled_feature_flags────────────────────────────────────────────────────┬─availability_zone─┐
+│ default │ 127.0.0.1 │ 2181 │     0 │ 2025-04-10 14:30:00 │                            943 │          0 │                  0 │       420 │  69 │ ['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS'] │ eu-west-1b        │
+└─────────┴───────────┴──────┴───────┴─────────────────────┴────────────────────────────────┴────────────┴────────────────────┴───────────┴─────┴──────────────────────────────────────────────────────────────────────────┴───────────────────┘
+```
+)DOCS_MD");
+    attach<StorageSystemZooKeeperWatches>(context, system_database, "zookeeper_watches", R"DOCS_MD(
+.description
+Shows currently active [watches](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) registered by this ClickHouse server on ZooKeeper nodes (including auxiliary ZooKeepers). Each row represents one watch.
+
+<Info>
+**Availability**
+
+`system.zookeeper_watches` exists only when ClickHouse Keeper or ZooKeeper is configured. On servers without either configured, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`.
+</Info>
+
+.examples
+```sql
+SELECT * FROM system.zookeeper_watches FORMAT Vertical;
+```
+
+```text
+Row 1:
+──────
+zookeeper_name:           default
+create_time:              2026-03-16 12:00:00
+create_time_microseconds: 2026-03-16 12:00:00.123456
+path:                     /clickhouse/task_queue/ddl
+session_id:               106662742089334927
+request_xid:              10858
+op_num:                   List
+watch_type:               Children
+```
+
+.see_also
+-   [ZooKeeper](/guides/oss/best-practices/tips#zookeeper)
+-   [ZooKeeper guide](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)
+)DOCS_MD");
+}
+
+#if USE_NURAFT
+void attachSystemTablesGatedOnKeeperServer(ContextPtr context, IDatabase & system_database)
+{
+    attach<StorageSystemKeeperSnapshots>(context, system_database, "keeper_snapshots", R"DOCS_MD(
+.description
+This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft snapshot file tracked by the in-process Keeper state machine, including snapshots currently being received from the leader.
+
+.examples
+```sql
+SELECT * FROM system.keeper_snapshots ORDER BY last_log_index;
+```
+
+```text
+┌─last_log_index─┬─path──────────────────────────┬─disk_name─┬─size_bytes─┬────last_modified_at─┬─is_received─┬─exists_on_disk─┐
+│           1000 │ snapshot_1000.bin.zstd        │ default   │      32468 │ 2026-05-22 14:00:00 │ false       │ true           │
+│           2000 │ snapshot_2000.bin.zstd        │ default   │      48217 │ 2026-05-22 14:15:00 │ false       │ true           │
+└────────────────┴───────────────────────────────┴───────────┴────────────┴─────────────────────┴─────────────┴────────────────┘
+```
+)DOCS_MD");
+    attach<StorageSystemKeeperCluster>(context, system_database, "keeper_cluster", R"DOCS_MD(
+.description
+This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft cluster member, fusing static cluster topology (from the Raft configuration) with the local node's own log position.
+
+Every node fills exactly one `last_log_index` value — the row matching its own `server_id`. Peer log positions are not surfaced here because they are tracked only on the leader and that view is not symmetric across the cluster.
+
+.examples
+```sql
+SELECT * FROM system.keeper_cluster ORDER BY server_id;
+```
+
+```text
+┌─server_id─┬─host──┬─endpoint───┬─is_observer─┬─priority─┬─is_leader─┬─is_self─┬─last_log_index─┐
+│         1 │ node1 │ node1:9234 │ false       │        3 │ true      │ true    │             42 │
+│         2 │ node2 │ node2:9234 │ false       │        2 │ false     │ false   │           ᴺᵁᴸᴸ │
+│         3 │ node3 │ node3:9234 │ true        │        1 │ false     │ false   │           ᴺᵁᴸᴸ │
+└───────────┴───────┴────────────┴─────────────┴──────────┴───────────┴─────────┴────────────────┘
+```
+)DOCS_MD");
+    attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", R"DOCS_MD(
+.description
+This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft changelog file (`changelog_<from>_<to>.bin[.zstd]`) tracked by the in-process Keeper log store, including the active file currently being appended to.
+
+.examples
+```sql
+SELECT from_log_index, to_log_index, entries, path, active FROM system.keeper_changelogs ORDER BY from_log_index;
+```
+
+```text
+┌─from_log_index─┬─to_log_index─┬─entries─┬─path───────────────────────────┬─active─┐
+│              1 │         1000 │    1000 │ changelog_1_1000.bin.zstd      │ false  │
+│           1001 │         2000 │     537 │ changelog_1001_2000.bin.zstd   │ true   │
+└────────────────┴──────────────┴─────────┴────────────────────────────────┴────────┘
+```
+)DOCS_MD");
+    attachNoDescription<StorageSystemKeeperStorage>(context, system_database, "keeper_storage", R"DOCS_MD(
+.description
+The table only exists for ClickHouse Keeper deployments that use the `clickhouse server` (and not `clickhouse keeper`) process. It contains one row per node of the data tree stored on the local Keeper node, including the `/keeper` system nodes.
+
+Unlike `system.zookeeper`, this table does not send requests to a Keeper cluster. It reads the committed state of the local Keeper directly from a consistent lock-free view, without affecting request processing. Reading the table does not require a path condition and returns the whole tree, so it is suitable for queries that scan all nodes, such as finding the nodes with the most children or the largest data.
+
+.examples
+```sql
+SELECT path, num_children, data_length
+FROM system.keeper_storage
+ORDER BY num_children DESC
+LIMIT 3;
+```
+
+```text
+┌─path──────────────┬─num_children─┬─data_length─┐
+│ /                 │            3 │           0 │
+│ /clickhouse/tasks │            2 │           0 │
+│ /keeper           │            1 │           0 │
+└───────────────────┴──────────────┴─────────────┘
+```
+)DOCS_MD");
+}
+#endif
+
+void attachSystemTablesGatedOnTransactions(ContextPtr context, IDatabase & system_database)
+{
+    attach<StorageSystemTransactions>(context, system_database, "transactions", R"DOCS_MD(
+.description
+Contains a list of transactions and their state.
+
+<Info>
+**Availability**
+
+`system.transactions` is created only when the `allow_experimental_transactions` server configuration option is enabled. By default, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`. Enable it in the server configuration with:
+
+```xml
+<clickhouse>
+    <allow_experimental_transactions>1</allow_experimental_transactions>
+</clickhouse>
+```
+</Info>
+)DOCS_MD");
+}
+
 void attachSystemTablesServer(ContextPtr context, IDatabase & system_database, bool has_zookeeper, bool has_keeper_server)
 {
     attachSystemTableOne(context, system_database);
@@ -3669,237 +3908,15 @@ SELECT code_point, code_point_value, notation FROM system.unicode WHERE code_poi
 #endif
 
     if (has_zookeeper)
-    {
-        attachNoDescription<StorageSystemZooKeeper>(context, system_database, "zookeeper", R"DOCS_MD(
-.description
-The table does not exist unless ClickHouse Keeper or ZooKeeper is configured. The `system.zookeeper` table exposes data from the Keeper clusters defined in the config.
-The query must either have a `path =`   condition or a `path IN`  condition set with the `WHERE` clause as shown below. This corresponds to the path of the children that you want to get data for.
-
-The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse'` outputs data for all children on the `/clickhouse` node.
-To output data for all root nodes, write path = '/'.
-If the path specified in 'path' does not exist, an exception will be thrown.
-
-The query `SELECT * FROM system.zookeeper WHERE path IN ('/', '/clickhouse')` outputs data for all children on the `/` and `/clickhouse` node.
-If in the specified 'path' collection has does not exist path, an exception will be thrown.
-It can be used to do a batch of Keeper path queries.
-
-The query `SELECT * FROM system.zookeeper WHERE path = '/clickhouse' AND zookeeperName = 'auxiliary_cluster'` outputs data in `auxiliary_cluster` ZooKeeper cluster.
-If the specified 'auxiliary_cluster' does not exists, an exception will be thrown.
-
-.examples
-```sql
-SELECT *
-FROM system.zookeeper
-WHERE path = '/clickhouse/tables/01-08/visits/replicas'
-FORMAT Vertical
-```
-
-```text
-Row 1:
-──────
-name:           example01-08-1
-value:
-czxid:          932998691229
-mzxid:          932998691229
-ctime:          2015-03-27 16:49:51
-mtime:          2015-03-27 16:49:51
-version:        0
-cversion:       47
-aversion:       0
-ephemeralOwner: 0
-dataLength:     0
-numChildren:    7
-pzxid:          987021031383
-path:           /clickhouse/tables/01-08/visits/replicas
-
-Row 2:
-──────
-name:           example01-08-2
-value:
-czxid:          933002738135
-mzxid:          933002738135
-ctime:          2015-03-27 16:57:01
-mtime:          2015-03-27 16:57:01
-version:        0
-cversion:       37
-aversion:       0
-ephemeralOwner: 0
-dataLength:     0
-numChildren:    7
-pzxid:          987021252247
-path:           /clickhouse/tables/01-08/visits/replicas
-```
-)DOCS_MD");
-        attach<StorageSystemZooKeeperInfo>(context, system_database, "zookeeper_info", R"DOCS_MD(
-.description
-This table outputs combined introspection about zookeeper and the nodes are taken from config.
-
-<Info>
-**Availability**
-
-`system.zookeeper_info` exists only when ClickHouse Keeper or ZooKeeper is configured. On servers without either configured, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`.
-</Info>
-)DOCS_MD");
-        attach<StorageSystemZooKeeperConnection>(context, system_database, "zookeeper_connection", R"DOCS_MD(
-.description
-This table does not exist if ZooKeeper is not configured. The 'system.zookeeper_connection' table shows current connections to ZooKeeper (including auxiliary ZooKeepers). Each row shows information about one connection.
-
-.examples
-```sql
-SELECT
-    name,
-    host,
-    port,
-    index,
-    connected_time,
-    session_uptime_elapsed_seconds,
-    is_expired,
-    keeper_api_version,
-    client_id,
-    xid,
-    enabled_feature_flags,
-    availability_zone
-FROM system.zookeeper_connection;
-```
-
-```text
-┌─name────┬─host──────┬─port─┬─index─┬──────connected_time─┬─session_uptime_elapsed_seconds─┬─is_expired─┬─keeper_api_version─┬─client_id─┬─xid─┬─enabled_feature_flags────────────────────────────────────────────────────┬─availability_zone─┐
-│ default │ 127.0.0.1 │ 2181 │     0 │ 2025-04-10 14:30:00 │                            943 │          0 │                  0 │       420 │  69 │ ['FILTERED_LIST','MULTI_READ','CHECK_NOT_EXISTS','CREATE_IF_NOT_EXISTS'] │ eu-west-1b        │
-└─────────┴───────────┴──────┴───────┴─────────────────────┴────────────────────────────────┴────────────┴────────────────────┴───────────┴─────┴──────────────────────────────────────────────────────────────────────────┴───────────────────┘
-```
-)DOCS_MD");
-        attach<StorageSystemZooKeeperWatches>(context, system_database, "zookeeper_watches", R"DOCS_MD(
-.description
-Shows currently active [watches](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html#ch_zkWatches) registered by this ClickHouse server on ZooKeeper nodes (including auxiliary ZooKeepers). Each row represents one watch.
-
-<Info>
-**Availability**
-
-`system.zookeeper_watches` exists only when ClickHouse Keeper or ZooKeeper is configured. On servers without either configured, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`.
-</Info>
-
-.examples
-```sql
-SELECT * FROM system.zookeeper_watches FORMAT Vertical;
-```
-
-```text
-Row 1:
-──────
-zookeeper_name:           default
-create_time:              2026-03-16 12:00:00
-create_time_microseconds: 2026-03-16 12:00:00.123456
-path:                     /clickhouse/task_queue/ddl
-session_id:               106662742089334927
-request_xid:              10858
-op_num:                   List
-watch_type:               Children
-```
-
-.see_also
--   [ZooKeeper](/guides/oss/best-practices/tips#zookeeper)
--   [ZooKeeper guide](https://zookeeper.apache.org/doc/r3.3.3/zookeeperProgrammers.html)
-)DOCS_MD");
-    }
+        attachSystemTablesGatedOnZooKeeper(context, system_database);
 
 #if USE_NURAFT
     if (has_keeper_server)
-    {
-        attach<StorageSystemKeeperSnapshots>(context, system_database, "keeper_snapshots", R"DOCS_MD(
-.description
-This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft snapshot file tracked by the in-process Keeper state machine, including snapshots currently being received from the leader.
-
-.examples
-```sql
-SELECT * FROM system.keeper_snapshots ORDER BY last_log_index;
-```
-
-```text
-┌─last_log_index─┬─path──────────────────────────┬─disk_name─┬─size_bytes─┬────last_modified_at─┬─is_received─┬─exists_on_disk─┐
-│           1000 │ snapshot_1000.bin.zstd        │ default   │      32468 │ 2026-05-22 14:00:00 │ false       │ true           │
-│           2000 │ snapshot_2000.bin.zstd        │ default   │      48217 │ 2026-05-22 14:15:00 │ false       │ true           │
-└────────────────┴───────────────────────────────┴───────────┴────────────┴─────────────────────┴─────────────┴────────────────┘
-```
-)DOCS_MD");
-        attach<StorageSystemKeeperCluster>(context, system_database, "keeper_cluster", R"DOCS_MD(
-.description
-This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft cluster member, fusing static cluster topology (from the Raft configuration) with the local node's own log position.
-
-Every node fills exactly one `last_log_index` value — the row matching its own `server_id`. Peer log positions are not surfaced here because they are tracked only on the leader and that view is not symmetric across the cluster.
-
-.examples
-```sql
-SELECT * FROM system.keeper_cluster ORDER BY server_id;
-```
-
-```text
-┌─server_id─┬─host──┬─endpoint───┬─is_observer─┬─priority─┬─is_leader─┬─is_self─┬─last_log_index─┐
-│         1 │ node1 │ node1:9234 │ false       │        3 │ true      │ true    │             42 │
-│         2 │ node2 │ node2:9234 │ false       │        2 │ false     │ false   │           ᴺᵁᴸᴸ │
-│         3 │ node3 │ node3:9234 │ true        │        1 │ false     │ false   │           ᴺᵁᴸᴸ │
-└───────────┴───────┴────────────┴─────────────┴──────────┴───────────┴─────────┴────────────────┘
-```
-)DOCS_MD");
-        attach<StorageSystemKeeperChangelogs>(context, system_database, "keeper_changelogs", R"DOCS_MD(
-.description
-This table does not exist if this node is not configured to run an in-process ClickHouse Keeper. It contains one row per Raft changelog file (`changelog_<from>_<to>.bin[.zstd]`) tracked by the in-process Keeper log store, including the active file currently being appended to.
-
-.examples
-```sql
-SELECT from_log_index, to_log_index, entries, path, active FROM system.keeper_changelogs ORDER BY from_log_index;
-```
-
-```text
-┌─from_log_index─┬─to_log_index─┬─entries─┬─path───────────────────────────┬─active─┐
-│              1 │         1000 │    1000 │ changelog_1_1000.bin.zstd      │ false  │
-│           1001 │         2000 │     537 │ changelog_1001_2000.bin.zstd   │ true   │
-└────────────────┴──────────────┴─────────┴────────────────────────────────┴────────┘
-```
-)DOCS_MD");
-        attachNoDescription<StorageSystemKeeperStorage>(context, system_database, "keeper_storage", R"DOCS_MD(
-.description
-The table only exists for ClickHouse Keeper deployments that use the `clickhouse server` (and not `clickhouse keeper`) process. It contains one row per node of the data tree stored on the local Keeper node, including the `/keeper` system nodes.
-
-Unlike `system.zookeeper`, this table does not send requests to a Keeper cluster. It reads the committed state of the local Keeper directly from a consistent lock-free view, without affecting request processing. Reading the table does not require a path condition and returns the whole tree, so it is suitable for queries that scan all nodes, such as finding the nodes with the most children or the largest data.
-
-.examples
-```sql
-SELECT path, num_children, data_length
-FROM system.keeper_storage
-ORDER BY num_children DESC
-LIMIT 3;
-```
-
-```text
-┌─path──────────────┬─num_children─┬─data_length─┐
-│ /                 │            3 │           0 │
-│ /clickhouse/tasks │            2 │           0 │
-│ /keeper           │            1 │           0 │
-└───────────────────┴──────────────┴─────────────┘
-```
-)DOCS_MD");
-    }
+        attachSystemTablesGatedOnKeeperServer(context, system_database);
 #endif
 
     if (context->getConfigRef().getInt("allow_experimental_transactions", 0))
-    {
-        attach<StorageSystemTransactions>(context, system_database, "transactions", R"DOCS_MD(
-.description
-Contains a list of transactions and their state.
-
-<Info>
-**Availability**
-
-`system.transactions` is created only when the `allow_experimental_transactions` server configuration option is enabled. By default, the table does not exist and queries against it will fail with `UNKNOWN_TABLE`. Enable it in the server configuration with:
-
-```xml
-<clickhouse>
-    <allow_experimental_transactions>1</allow_experimental_transactions>
-</clickhouse>
-```
-</Info>
-)DOCS_MD");
-    }
+        attachSystemTablesGatedOnTransactions(context, system_database);
 
     validateSystemUserQueryLog(context, system_database);
 

@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/DatabaseMemory.h>
 #include <Databases/IDatabase.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
@@ -37,6 +38,7 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/System/StorageSystemAsynchronousMetrics.h>
+#include <Storages/System/attachSystemTables.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
 #include <TableFunctions/TableFunctionFactory.h>
 
@@ -44,6 +46,7 @@
 #include <source_location>
 #include <string_view>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -1096,6 +1099,10 @@ String normalizeMdxForMarkdown(String document)
 
     for (const std::string_view component : {"Tip", "Note", "Info", "Warning", "Important", "Danger"})
     {
+        /// A callout tag usually occupies a line of its own; remove that line as a whole, so that stripping the tag
+        /// does not leave a blank line behind in the rendered Markdown.
+        replaceAll(document, "<" + String(component) + ">\n", "");
+        replaceAll(document, "</" + String(component) + ">\n", "");
         replaceAll(document, "<" + String(component) + ">", "");
         replaceAll(document, "</" + String(component) + ">", "");
     }
@@ -1341,7 +1348,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     /// System-table documentation is stored in each attached table's metadata comment. A structured comment uses
     /// section markers such as `.description` and `.examples`; an ordinary comment remains a concise fallback.
     const auto system_database = DatabaseCatalog::instance().tryGetDatabase(DatabaseCatalog::SYSTEM_DATABASE);
-    bool has_asynchronous_metrics = false;
+    std::unordered_set<String> documented_system_tables;
     if (system_database)
     {
         for (auto iterator = system_database->getTablesIterator(context); iterator->isValid(); iterator->next())
@@ -1352,7 +1359,7 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
                 const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
                 if (metadata_snapshot)
                 {
-                    has_asynchronous_metrics |= table_name == "asynchronous_metrics";
+                    documented_system_tables.insert(table_name);
                     /// Persisted comments identify schema-specific system logs even when their configuration has
                     /// since been removed. Prefer that owner over the canonical name's default registration.
                     const char * documentation_source = getSystemTableDocumentationSourceFromComment(metadata_snapshot->comment);
@@ -1373,7 +1380,8 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
     /// instance. Its documentation, however, is owned by the source and does not depend on that instance, so the page
     /// is rendered from the source-owned comment and the static column description wherever the table is missing -
     /// in particular in `clickhouse-local`, which is how the documentation generator reads this table.
-    if (!has_asynchronous_metrics)
+    if (!documented_system_tables.contains("asynchronous_metrics"))
+    {
         addRow(
             res_columns,
             EntityType::SystemTable,
@@ -1381,6 +1389,39 @@ void StorageSystemDocumentation::fillData(MutableColumns & res_columns, ContextP
             renderSystemTableDoc(
                 "asynchronous_metrics", ASYNCHRONOUS_METRICS_DOCUMENTATION, StorageSystemAsynchronousMetrics::getColumnsDescription()),
             makeRepoRelative(ASYNCHRONOUS_METRICS_DOCUMENTATION_SOURCE));
+        documented_system_tables.insert("asynchronous_metrics");
+    }
+
+    /// The `system.zookeeper*`, `system.keeper_*` and `system.transactions` tables are attached only where ZooKeeper,
+    /// an in-process Keeper or experimental transactions are configured, but their documentation is owned by the source
+    /// just like every other system table's. Attach them to a scratch in-memory database - which is never registered in
+    /// `DatabaseCatalog`, so the tables do not become queryable - and render their pages from its metadata comments.
+    /// This is what makes the documentation generator, which reads this table through `clickhouse-local`, see them.
+    auto documentation_only_database = std::make_shared<DatabaseMemory>(DatabaseCatalog::SYSTEM_DATABASE, context);
+    attachSystemTablesGatedOnZooKeeper(context, *documentation_only_database);
+#if USE_NURAFT
+    attachSystemTablesGatedOnKeeperServer(context, *documentation_only_database);
+#endif
+    attachSystemTablesGatedOnTransactions(context, *documentation_only_database);
+
+    for (auto iterator = documentation_only_database->getTablesIterator(context, {}, false); iterator->isValid(); iterator->next())
+    {
+        const String table_name = iterator->name();
+        if (documented_system_tables.contains(table_name))
+            continue;
+        const auto & table = iterator->table();
+        if (!table)
+            continue;
+        const auto metadata_snapshot = table->getInMemoryMetadataPtr(context, false);
+        if (!metadata_snapshot)
+            continue;
+        addRow(
+            res_columns,
+            EntityType::SystemTable,
+            table_name,
+            renderSystemTableDoc(table_name, metadata_snapshot->comment, metadata_snapshot->getColumns()),
+            makeRepoRelative(getSystemTableDocumentationSource(table_name)));
+    }
 }
 
 }
