@@ -90,8 +90,8 @@ ${CLICKHOUSE_CLIENT} --query "
         SETTINGS session_timezone = 'Asia/Kolkata', use_iceberg_partition_pruning = 0;"
 
 echo "--- partition spec transform names ---"
-grep -ho '"transform" : "[^"]*"' "${DAY_PATH}metadata/"*.json | sort -u
-grep -ho '"transform" : "[^"]*"' "${HOUR_PATH}metadata/"*.json | sort -u
+grep -hoE '"transform"[[:space:]]*:[[:space:]]*"[^"]*"' "${DAY_PATH}metadata/"*.json | tr -d ' ' | sort -u
+grep -hoE '"transform"[[:space:]]*:[[:space:]]*"[^"]*"' "${HOUR_PATH}metadata/"*.json | tr -d ' ' | sort -u
 
 # A predicate no partition can satisfy: the count is 0 and files are still skipped. Without this
 # arm every arm above would also pass if pruning simply stopped working.

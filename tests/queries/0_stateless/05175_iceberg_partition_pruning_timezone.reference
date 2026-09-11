@@ -15,8 +15,8 @@ UTC
 1
 1
 --- partition spec transform names ---
-"transform" : "day"
-"transform" : "hour"
+"transform":"day"
+"transform":"hour"
 --- non-matching predicate: no rows, and files are pruned ---
 0
 1
