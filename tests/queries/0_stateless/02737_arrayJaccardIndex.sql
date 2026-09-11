@@ -19,6 +19,7 @@ SELECT round(arrayJaccardIndex([1, 1], [1]), 2);
 SELECT round(arrayJaccardIndex([1, 1, 2], [1, 2]), 2);
 SELECT round(arrayJaccardIndex([1, 1], [1, 2]), 2);
 SELECT round(arrayJaccardIndex(materialize([1, 1]), [1, 1]), 2);
+SELECT round(arrayJaccardIndex([1, 1, 2]::Array(UInt256), [2, 3]::Array(Int128)), 2);
 
 SELECT 'non-const arguments';
 
@@ -28,6 +29,7 @@ CREATE TABLE array_jaccard_index (arr Array(UInt8)) engine = MergeTree ORDER BY 
 INSERT INTO array_jaccard_index values ([1,2,3]);
 INSERT INTO array_jaccard_index values ([1,2]);
 INSERT INTO array_jaccard_index values ([1]);
+INSERT INTO array_jaccard_index values ([1,1,2]);
 
 SELECT arr, [1,2] AS other, round(arrayJaccardIndex(arr, other), 2) FROM array_jaccard_index ORDER BY arr;
 SELECT arr, [] AS other, round(arrayJaccardIndex(arr, other), 2) FROM array_jaccard_index ORDER BY arr;

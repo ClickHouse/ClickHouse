@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/IColumn.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/IDataType.h>
@@ -47,12 +48,17 @@ private:
         return {left_size, right_size};
     }
 
-    static void vector(const ColumnArray::Offsets & intersect_offsets, const ColumnArray::Offsets & union_offsets, PaddedPODArray<ResultType> & res)
+    static void vector(
+        const ColumnArray::Offsets & intersect_offsets,
+        const ColumnUInt32::Container & left_unique_sizes,
+        const ColumnUInt32::Container & right_unique_sizes,
+        PaddedPODArray<ResultType> & res)
     {
         for (size_t i = 0; i < res.size(); ++i)
         {
             size_t intersect_size = intersect_offsets[i] - intersect_offsets[i - 1];
-            size_t union_size = union_offsets[i] - union_offsets[i - 1];
+            size_t union_size = static_cast<size_t>(left_unique_sizes[i])
+                + static_cast<size_t>(right_unique_sizes[i]) - intersect_size;
             res[i] = static_cast<ResultType>(intersect_size) / static_cast<ResultType>(union_size);
         }
     }
@@ -75,7 +81,7 @@ public:
     static FunctionPtr create(ContextPtr context_) { return std::make_shared<FunctionArrayJaccardIndex>(context_); }
     explicit FunctionArrayJaccardIndex(ContextPtr context_)
         : array_intersect(FunctionFactory::instance().get("arrayIntersect", context_))
-        , array_union(FunctionFactory::instance().get("arrayUnion", context_))
+        , array_uniq(FunctionFactory::instance().get("arrayUniq", context_))
     {
     }
     size_t getNumberOfArguments() const override { return 2; }
@@ -120,16 +126,27 @@ public:
         if (!intersect_column_type)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected return type for function arrayIntersect");
 
-        ColumnWithTypeAndName union_column;
+        ColumnPtr left_unique_column;
+        ColumnPtr right_unique_column;
+        const ColumnUInt32 * left_unique_sizes = nullptr;
+        const ColumnUInt32 * right_unique_sizes = nullptr;
         if (!typeid_cast<const DataTypeNothing *>(intersect_column_type->getNestedType().get()))
         {
-            auto union_array = array_union->build(arguments);
-            union_column.type = union_array->getResultType();
-            union_column.column = union_array->execute(arguments, union_column.type, input_rows_count, /* dry_run = */ false);
+            auto execute_array_uniq = [&](const ColumnWithTypeAndName & argument)
+            {
+                ColumnsWithTypeAndName single_argument{argument};
+                auto uniq_function = array_uniq->build(single_argument);
+                return uniq_function->execute(single_argument, uniq_function->getResultType(), input_rows_count, /* dry_run = */ false)
+                    ->convertToFullColumnIfConst();
+            };
 
-            const auto * union_column_type = checkAndGetDataType<DataTypeArray>(union_column.type.get());
-            if (!union_column_type)
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected return type for function arrayUnion");
+            left_unique_column = execute_array_uniq(arguments[0]);
+            right_unique_column = execute_array_uniq(arguments[1]);
+
+            left_unique_sizes = checkAndGetColumn<ColumnUInt32>(left_unique_column.get());
+            right_unique_sizes = checkAndGetColumn<ColumnUInt32>(right_unique_column.get());
+            if (!left_unique_sizes || !right_unique_sizes)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected return type for function arrayUniq");
         }
 
         auto col_res = ColumnVector<ResultType>::create();
@@ -142,8 +159,7 @@ public:
     else \
     { \
         const ColumnArray & intersect_column_array = checkAndGetColumn<ColumnArray>(*intersect_column.column); \
-        const ColumnArray & union_column_array = checkAndGetColumn<ColumnArray>(*union_column.column); \
-        vector(intersect_column_array.getOffsets(), union_column_array.getOffsets(), vec_res); \
+        vector(intersect_column_array.getOffsets(), left_unique_sizes->getData(), right_unique_sizes->getData(), vec_res); \
     }
 
         if (!left_is_const && !right_is_const)
@@ -162,7 +178,7 @@ public:
 
 private:
     FunctionOverloadResolverPtr array_intersect;
-    FunctionOverloadResolverPtr array_union;
+    FunctionOverloadResolverPtr array_uniq;
 };
 
 REGISTER_FUNCTION(ArrayJaccardIndex)
