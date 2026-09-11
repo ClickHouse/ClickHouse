@@ -390,6 +390,11 @@ SELECT 'a tuple element named by its index under one alias',
     CAST(tuple(0), 'Tuple(`1` DateTime(''UTC''))') AS a, CAST(tuple(0), 'Tuple(DateTime(''UTC''))') AS a
 SETTINGS session_timezone = 'UTC';
 
+-- The same pair with no zone in it: the relation refines `equals` by a zone, so the element name
+-- mode does not decide here either.
+SELECT 'a tuple element named by its index, no zone, under one alias',
+    CAST(tuple(0), 'Tuple(`1` UInt8)') AS a, CAST(tuple(0), 'Tuple(UInt8)') AS a;
+
 -- The hash still separates that pair, because it reads the element name mode. A hash finer than the
 -- comparison costs a de-duplication here and a repeated read in the query condition cache; the
 -- opposite order would answer from another expression's result, so this is the direction to hold.

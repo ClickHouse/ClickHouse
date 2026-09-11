@@ -45,4 +45,5 @@ reversed skip paths are one sort key	1
 a custom name is its own sort key	2
 a declared name is its own sort key	2
 a tuple element named by its index under one alias	('1970-01-01 00:00:00')	('1970-01-01 00:00:00')
+a tuple element named by its index, no zone, under one alias	(0)	(0)
 a tuple element named by its index keeps its own hash	2

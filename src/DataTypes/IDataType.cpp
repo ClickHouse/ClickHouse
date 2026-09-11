@@ -80,11 +80,7 @@ struct ExpressionIdentityComponent
 /// One component per type visited, the type itself and every type nested in it, in nesting order.
 /// A position is part of the type, so this is a sequence and never a set: the same two zones in the
 /// other order describe another type, and so does the same declared name at another position.
-struct ExpressionIdentity
-{
-    std::vector<ExpressionIdentityComponent> components;
-    bool has_time_zone = false;
-};
+using ExpressionIdentity = std::vector<ExpressionIdentityComponent>;
 
 /// These keep a nested type without handing it to `forEachChild`, so a zone inside one is not
 /// reachable here: the argument types of an aggregate function and of a lambda, a QBit element type.
@@ -127,13 +123,12 @@ ExpressionIdentity collectExpressionIdentity(const IDataType & type)
             component.time_zone = with_time_zone->hasExplicitTimeZone()
                 ? getDateLUTTimeZone(with_time_zone->getTimeZone())
                 : getDateLUTTimeZone(DateLUT::instance());
-            identity.has_time_zone = true;
         }
         /// The name carries what this walk cannot see: the interior of a declared name, and the
         /// nested types of a type that does not hand them to `forEachChild`, zone included.
         if (one.hasCustomName() || keepsANestedTypeOutOfReach(one))
             component.declared_name = one.getName();
-        identity.components.push_back(std::move(component));
+        identity.push_back(std::move(component));
     };
 
     visit(type);
@@ -149,21 +144,10 @@ bool haveSameExpressionIdentity(const IDataType & lhs, const IDataType & rhs)
     if (!lhs.equals(rhs))
         return false;
 
-    const auto lhs_identity = collectExpressionIdentity(lhs);
-    const auto rhs_identity = collectExpressionIdentity(rhs);
-
     /// A time zone left out of the type means the session time zone, so it is the same expression as
     /// that zone spelled out, while two different zones differ however they are spelled. A declared
     /// name is compared at its own position, since the interior of one is an opaque string.
-    if (lhs_identity.components != rhs_identity.components)
-        return false;
-
-    /// Where no zone reaches at all, the name of the whole type decides, so this relation is never
-    /// coarser than the name it refines.
-    if (!lhs_identity.has_time_zone)
-        return lhs.getName() == rhs.getName();
-
-    return true;
+    return collectExpressionIdentity(lhs) == collectExpressionIdentity(rhs);
 }
 
 void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
@@ -171,7 +155,7 @@ void updateExpressionIdentityHash(const IDataType & type, SipHash & hash)
     if (!carriesAReachableTimeZone(type))
         return;
 
-    for (const auto & component : collectExpressionIdentity(type).components)
+    for (const auto & component : collectExpressionIdentity(type))
     {
         hash.update(component.time_zone.size());
         hash.update(component.time_zone);
