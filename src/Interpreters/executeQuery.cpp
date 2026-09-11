@@ -2289,7 +2289,8 @@ static BlockIO executeQueryImpl(
 
     const bool parse_as_internal = internal || context->isDDLOrOnClusterInternal();
 
-    size_t max_query_size = settings[Setting::max_query_size];
+    const size_t fallback_query_size_limit = settings[Setting::max_query_size];
+    size_t max_query_size = fallback_query_size_limit;
     /// Don't limit the size of internal queries, distributed subqueries, or server-generated DDL queries.
     if (parse_as_internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         max_query_size = 0;
@@ -2632,7 +2633,12 @@ static BlockIO executeQueryImpl(
     {
         /// Anyway log the query.
         if (query.empty())
-            query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
+        {
+            size_t fallback_query_size = static_cast<size_t>(end - begin);
+            if (fallback_query_size_limit)
+                fallback_query_size = std::min(fallback_query_size, fallback_query_size_limit);
+            query.assign(begin, fallback_query_size);
+        }
 
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);
