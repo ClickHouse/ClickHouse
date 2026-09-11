@@ -676,6 +676,10 @@ SystemLog<LogElement>::SystemLog(
     , union_table_cluster(settings_.union_table_cluster)
     , flush_policy(std::make_unique<DefaultSystemLogFlushPolicy>(context_->getConfigRef()))
 {
+    for (const auto * column : {"clickhouse_version", "system_processor"})
+        if (!LogElement::getColumnsDescription().has(column))
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "System log {} does not declare the common column {}", table_id.getNameForLogs(), column);
+
     create_query = getCreateTableQuery()->formatWithSecretsOneLine();
     if (union_table_merge_rotated_tables || !union_table_cluster.empty())
         union_create_query = getCreateUnionTableQuery()->formatWithSecretsOneLine();
