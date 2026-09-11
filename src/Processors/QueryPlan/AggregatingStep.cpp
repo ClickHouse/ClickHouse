@@ -18,6 +18,7 @@
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/FinishAggregatingInOrderTransform.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/QueryPlanSerializationSettings.h>
@@ -631,6 +632,16 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
             pipeline.resize(new_merge_threads);
 
             const auto & required_sort_description = memoryBoundMergingWillBeUsed() ? group_by_sort_description : SortDescription{};
+            /// The replicas run this same merge over a `WithMergeableState`, which does produce results in
+            /// bucket order, so memory-bound merging applies there and sorts what they send even when it
+            /// does not apply here. The sample has to be priced in that order rather than the hash-table
+            /// order this pipeline leaves it in.
+            if (dataflow_cache_updater && required_sort_description.empty()
+                && DB::memoryBoundMergingWillBeUsed(
+                    /*should_produce_results_in_order_of_bucket_number=*/true,
+                    memory_bound_merging_of_aggregation_results_enabled,
+                    sort_description_for_merging))
+                dataflow_cache_updater->setReplicasSendOutputInKeyOrder();
             pipeline.addSimpleTransform(
                 [&](const SharedHeader &)
                 { return std::make_shared<MergingAggregatedBucketTransform>(transform_params, required_sort_description, dataflow_cache_updater); });

@@ -315,8 +315,8 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
                     chassert(place);
                     if (it++ % period == 0)
                     {
-                        is_simple_count ? writeVarUInt(getInlineCountState(place), wb)
-                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wb);
+                        is_simple_count ? writeVarUInt(getInlineCountState(place), wbuf)
+                                        : aggregate_functions[j]->serialize(place + offsets_of_aggregate_states[j], wbuf);
                     }
                     /// A hundred samples should be enough to get a good estimate.
                     return it < 100 * period;
@@ -342,8 +342,8 @@ size_t Aggregator::estimateSizeOfCompressedState(AggregatedDataVariants & result
         {
             NullWriteBuffer wb;
             CompressedWriteBuffer wbuf(wb);
-            is_simple_count ? writeVarUInt(getCountState(result.without_key), wb)
-                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wb);
+            is_simple_count ? writeVarUInt(getCountState(result.without_key), wbuf)
+                            : aggregate_functions[j]->serialize(result.without_key + offsets_of_aggregate_states[j], wbuf);
             wbuf.finalize();
             res += wb.count();
         }

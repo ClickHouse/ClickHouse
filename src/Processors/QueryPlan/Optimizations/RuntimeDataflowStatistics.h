@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/ColumnNumbers.h>
 #include <Core/ColumnWithTypeAndName.h>
@@ -14,6 +15,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -116,6 +118,17 @@ public:
 
     ~RuntimeDataflowStatisticsCacheUpdater();
 
+    /// A permutation putting the sample into the order the replicas send it in. Evaluated only for a
+    /// block that is actually sampled, since building it costs a sort of the block's key columns.
+    using KeyOrderProvider = std::function<IColumn::Permutation()>;
+
+    /// Whether the replicas sort this step's output by the group by keys before sending it, which they
+    /// do whenever memory-bound merging applies to the `WithMergeableState` they produce. The plan the
+    /// statistics are sampled from does not sort - it is not producing results in bucket order - so
+    /// without this the sample is priced in hash-table order and the estimate comes out several times
+    /// too large.
+    void setReplicasSendOutputInKeyOrder() { replicas_send_output_in_key_order = true; }
+
     void recordOutputChunk(const Chunk & chunk, const Block & header);
 
     void recordAggregationStateSizes(AggregatedDataVariants & variant, ssize_t bucket);
@@ -157,7 +170,12 @@ private:
     /// `full_bytes` overrides the byte count taken from the columns, for callers whose columns
     /// are only a sample of the dataflow being accounted.
     static void
-    recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes = {});
+    recordColumns(
+        Statistics & statistics,
+        size_t num_rows,
+        const ColumnsWithTypeAndName & cols,
+        std::optional<size_t> full_bytes = {},
+        const KeyOrderProvider & key_order = {});
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
@@ -179,6 +197,11 @@ private:
         OutputChunk = 2,
         MaxOutputType = 3,
     };
+    KeyOrderProvider keyOrderProviderFor(
+        const Columns & columns, const ColumnNumbers & keys_positions, const DataTypes & key_types) const;
+
+    bool replicas_send_output_in_key_order = false;
+
     std::array<Statistics, 3> output_bytes_statistics;
 };
 
