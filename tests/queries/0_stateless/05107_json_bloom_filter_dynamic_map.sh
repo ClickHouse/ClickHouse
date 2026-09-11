@@ -39,6 +39,9 @@ SQL
             done
             # Declared typed `Map` keys still use the index with either optimizer setting.
             $CLICKHOUSE_CLIENT --query "SELECT groupArray(id) FROM json_bf_dynamic_map WHERE j.typed['k'] = 1 SETTINGS optimize_functions_to_subcolumns = ${optimize}, force_data_skipping_indices = 'bf'"
+            # Runtime `Map` type hints do not support keyed pruning.
+            $CLICKHOUSE_CLIENT --query "SELECT groupArray(id) FROM json_bf_dynamic_map WHERE arrayElement(j.m.:\`Map(String, Tuple(a UInt64))\`, 'k').a = 1 SETTINGS optimize_functions_to_subcolumns = ${optimize}, force_data_skipping_indices = 'bf'" 2>&1 | grep -q 'INDEX_NOT_USED'
+            $CLICKHOUSE_CLIENT --query "SELECT groupArray(id) FROM json_bf_dynamic_map WHERE j.s.:\`Map(String, UInt64)\`['k'] = 1 SETTINGS optimize_functions_to_subcolumns = ${optimize}, force_data_skipping_indices = 'bf'" 2>&1 | grep -q 'INDEX_NOT_USED'
         done
         $CLICKHOUSE_CLIENT --query 'DROP TABLE json_bf_dynamic_map'
     done
