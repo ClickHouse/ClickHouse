@@ -1,5 +1,5 @@
--- Check NDV propagation and width reset through `concat(materialize(repeat('x', 1000)), s)`.
--- Check width preservation through `identity(s)`.
+-- `concat(materialize(repeat('x', 1000)), s)` changes string length: keep the NDV bound, discard the input width.
+-- `identity(s)` keeps strings unchanged: keep the input width.
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
@@ -49,7 +49,8 @@ CREATE TABLE dim (g UInt64, s String) ENGINE = MergeTree ORDER BY g
 INSERT INTO fact SELECT number, number % 10, number FROM numbers(1000) SETTINGS max_insert_threads = 1;
 INSERT INTO dim SELECT number, leftPad(toString(number), 10, 'x') FROM numbers(5) SETTINGS max_insert_threads = 1;
 
--- Check width propagation through `concat(materialize(repeat('x', 1000)), s)`: use the 64-byte default; shuffle below the join.
+-- `concat(materialize(repeat('x', 1000)), s)` grows strings from 10 to 1010 bytes.
+-- Discard the input width; the 64-byte default puts shuffle below the join.
 SELECT 'width: concat(materialize(repeat(\'x\', 1000)), s)',
        countIf(explain LIKE '%ShuffleExchange%') = 1
        AND countIf(explain LIKE '%Broadcast HashJoin%') = 1
@@ -68,7 +69,7 @@ FROM
     )
 );
 
--- Check width propagation through `identity(s)`: keep 10 bytes; shuffle above the join.
+-- `identity(s)` keeps strings unchanged: retain the 10-byte width; shuffle above the join.
 SELECT 'width: identity(s)',
        countIf(explain LIKE '%ShuffleExchange%') = 1
        AND countIf(explain LIKE '%Broadcast HashJoin%') = 1
