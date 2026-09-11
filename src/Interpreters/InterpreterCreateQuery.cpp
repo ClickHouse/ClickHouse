@@ -3080,9 +3080,9 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTable(ASTCreateQuery & create,
         /// The replacement view's refresher was created paused so it could not touch the target
         /// before the rename. Resume it now, unless stop_refreshable_materialized_views_on_startup
         /// keeps refreshable views stopped, in which case it stays stopped like a plain CREATE.
-        if (!current_context->getGlobalContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
-            for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
-                task->start();
+        bool stay_stopped = current_context->getGlobalContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup];
+        for (const auto & task : current_context->getRefreshSet().findTasks({create.getDatabase(), table_to_replace_name}))
+            task->finalizeCreateOrReplace(stay_stopped);
 
         scrub_temp_table_from_query_log();
 

@@ -109,6 +109,7 @@ namespace FailPoints
     /// hit the window where a scheduling pass that gives up coordination must not still cause the
     /// exchange to be lost / the view to be disabled mid-flight.
     extern const char refresh_mv_pause_after_interrupt_check[];
+    extern const char refresh_mv_pause_inside_coordination_write[];
     /// Forces the feature-flags-missing give-up path to use a stale coordination version, so the
     /// reconciling set() is rejected with ZBADVERSION. Simulates another replica advancing the
     /// coordination znode after this replica lost its Keeper session mid-refresh. Used to test that
@@ -257,7 +258,10 @@ RefreshTask::RefreshTask(
     else
     {
         if (is_restore_from_backup)
+        {
             scheduling.stop_requested = true;
+            scheduling.not_ready = true;
+        }
     }
 }
 
@@ -320,7 +324,12 @@ bool RefreshTask::canCreateOrDropOtherTables() const
 
 void RefreshTask::startup()
 {
-    if (start_paused || view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
+    if (start_paused)
+    {
+        scheduling.stop_requested = true;
+        scheduling.not_ready = true;
+    }
+    if (view->getContext()->getSettingsRef()[Setting::stop_refreshable_materialized_views_on_startup])
         scheduling.stop_requested = true;
     auto inner_table_id = refresh_append ? std::nullopt : std::make_optional(view->getTargetTableId());
     view->getContext()->getRefreshSet().emplace(view->getStorageID(), inner_table_id, initial_dependencies, shared_from_this());
@@ -341,6 +350,18 @@ void RefreshTask::finalizeRestoreFromBackup()
         start();
 }
 
+void RefreshTask::finalizeCreateOrReplace(bool stay_stopped)
+{
+    if (!stay_stopped)
+    {
+        start();
+        return;
+    }
+    std::lock_guard guard(mutex);
+    scheduling.not_ready = false;
+    scheduleRefresh(guard);
+}
+
 void RefreshTask::shutdown()
 {
     {
@@ -350,6 +371,7 @@ void RefreshTask::shutdown()
             return; // already shut down
 
         scheduling.stop_requested = true;
+        scheduling.shutdown_requested = true;
         interruptExecution();
     }
 
@@ -522,6 +544,7 @@ void RefreshTask::start()
         return;
     if (!std::exchange(scheduling.stop_requested, false))
         return;
+    scheduling.not_ready = false;
     scheduling.unexpected_error = std::nullopt;
     scheduleRefresh(guard);
 }
@@ -609,8 +632,9 @@ void RefreshTask::stopReplicated(const String & reason)
 void RefreshTask::run()
 {
     std::lock_guard guard(mutex);
-    if (std::exchange(scheduling.out_of_schedule_refresh_requested, true))
-        return;
+    if (coordination.unavailable || scheduling.shutdown_requested)
+        return; // the request could never run, don't keep it
+    ++scheduling.out_of_schedule_refreshes_requested;
     scheduleRefresh(guard);
 }
 
@@ -626,23 +650,23 @@ void RefreshTask::wait(const ContextPtr & context)
     std::unique_lock lock(mutex);
 
     /// Complicated wait logic to make sure SYSTEM WAIT VIEW behaves intuitively in various cases, e.g.:
-    ///  * After SYSTEM REFRESH VIEW - wait for the requested refresh (out_of_schedule_refresh_requested).
+    ///  * After SYSTEM REFRESH VIEW - wait for the requested refresh (out_of_schedule_refreshes_requested).
     ///     - If SYSTEM REFRESH VIEW happened when another refresh was in progress, wait for both
     ///       refreshes. (That's why there are two wait_cv.wait calls here.)
     ///  * After SYSTEM START VIEW - if it starts a refresh right away (e.g. the view was paused for
     ///    longer than refresh period), wait for that refresh.
     ///    (That's why we set state to Scheduling in start().)
     ///  * If a refresh finished (successfully or not) and another one started immediately, stop
-    ///    waiting (except in the out_of_schedule_refresh_requested case per above).
+    ///    waiting (except in the out_of_schedule_refreshes_requested case per above).
     ///    (That's why we check for last_success_end_time and attempt_number change.)
     /// Perhaps this could be simplified e.g. by adding a global refresh attempt counter; but note
     /// that we'd still need two wait_cv.wait calls.
 
-    /// If an out-of-schedule refresh was requested, wait for that requested refresh to *start*
-    /// (or for the view to be stopped / shut down).
+    /// If out-of-schedule refreshes were requested, wait for the last of them to *start*
+    /// (or for the view to be disabled / shut down).
     wait_cv.wait(lock, [&]
         {
-            return !scheduling.out_of_schedule_refresh_requested || !view || state == RefreshState::Disabled;
+            return scheduling.out_of_schedule_refreshes_requested == 0 || !view || state == RefreshState::Disabled;
         });
     /// Wait for currently running refresh to complete.
     auto seen_success_end_time = coordination.root_znode.last_success_end_time;
@@ -667,19 +691,31 @@ void RefreshTask::wait(const ContextPtr & context)
 
     if (!view)
         throw Exception(ErrorCodes::TABLE_IS_DROPPED, "The table was dropped or detached");
-    if (state == RefreshState::Disabled)
-        return;
-    if (!coordination.root_znode.refresh_running && !coordination.root_znode.last_attempt_succeeded && coordination.root_znode.last_attempt_time.time_since_epoch().count() != 0)
-        throw Exception(ErrorCodes::REFRESH_FAILED,
-            "Refresh failed{}: {}", coordination.coordinated ? " (on replica " + coordination.root_znode.last_attempt_replica + ")" : "",
-            coordination.root_znode.last_attempt_error.empty() ? "Replica went away" : coordination.root_znode.last_attempt_error);
-    if (coordination.root_znode.refresh_running && !coordination.root_znode.previous_attempt_error.empty())
-        throw Exception(ErrorCodes::REFRESH_FAILED,
-            "Refresh failed: {}", coordination.root_znode.previous_attempt_error);
+
+    const auto & znode = coordination.root_znode;
+    const bool disabled = state == RefreshState::Disabled;
+
+    if (znode.refresh_running)
+    {
+        if (!disabled && !znode.previous_attempt_error.empty())
+            throw Exception(ErrorCodes::REFRESH_FAILED, "Refresh failed: {}", znode.previous_attempt_error);
+    }
+    /// Report a genuinely failed refresh, but never an interrupted one (error "cancelled", from
+    /// SYSTEM STOP / CANCEL VIEW or shutdown). On a stopped view report only a failed SYSTEM REFRESH
+    /// VIEW, not a scheduled-refresh failure from before the view was stopped.
+    else if (!znode.last_attempt_succeeded
+        && znode.last_attempt_time.time_since_epoch().count() != 0
+        && znode.last_attempt_error != "cancelled"
+        && (!disabled || znode.last_attempt_out_of_schedule))
+    {
+        throw Exception(ErrorCodes::REFRESH_FAILED, "Refresh failed{}: {}",
+            coordination.coordinated ? " (on replica " + znode.last_attempt_replica + ")" : "",
+            znode.last_attempt_error.empty() ? "Replica went away" : znode.last_attempt_error);
+    }
 
     lock.unlock();
 
-    if (coordination.coordinated && !refresh_append)
+    if (!disabled && coordination.coordinated && !refresh_append)
         waitForLatestTargetTable(context);
 }
 
@@ -1112,7 +1148,10 @@ void RefreshTask::doScheduling(bool is_shutdown)
 
         /// Decide when to do the next refresh.
 
-        if (scheduling.stop_requested || coordination.paused_znode_exists || view->getContext()->getRefreshSet().refreshesStopped() || coordination.read_only)
+        bool out_of_schedule = scheduling.out_of_schedule_refreshes_requested > 0;
+        if ((scheduling.stop_requested && !out_of_schedule) || scheduling.not_ready || scheduling.unexpected_error
+            || scheduling.shutdown_requested || coordination.paused_znode_exists
+            || view->getContext()->getRefreshSet().refreshesStopped() || coordination.read_only)
         {
             setState(RefreshState::Disabled, lock);
             return;
@@ -1125,7 +1164,6 @@ void RefreshTask::doScheduling(bool is_shutdown)
         auto start_time = currentTime();
         auto [when, waiting_for_dependencies, start_znode] = determineNextRefreshTime(start_time, dependencies, lock);
         next_refresh_time = when;
-        bool out_of_schedule = scheduling.out_of_schedule_refresh_requested;
         if (out_of_schedule)
         {
             chassert(start_znode.attempt_number > 0);
@@ -1157,15 +1195,17 @@ void RefreshTask::doScheduling(bool is_shutdown)
 
         /// The time to start next refresh is now!
 
+        chassert(execution.state == ExecutionState::State::None);
+        execution.interrupt_execution.store(false);
+
         /// Write to keeper.
         if (!updateCoordinationState(start_znode, /*running=*/ true, zookeeper, lock))
             return;
         chassert(lock.owns_lock());
 
-        scheduling.out_of_schedule_refresh_requested = false;
+        if (out_of_schedule)
+            --scheduling.out_of_schedule_refreshes_requested;
 
-        chassert(execution.state == ExecutionState::State::None);
-        execution.interrupt_execution.store(false);
         execution.znode = coordination.root_znode;
         execution.start_time = start_time;
         execution.dependencies = std::move(dependencies);
@@ -1258,6 +1298,7 @@ void RefreshTask::executeRefresh()
     znode.last_attempt_time = end_time_seconds;
     znode.last_attempt_error = error_message;
     znode.refresh_running = false;
+    znode.last_attempt_out_of_schedule = execution.out_of_schedule;
     if (new_table_uuid.has_value())
     {
         znode.last_attempt_succeeded = true;
@@ -1761,6 +1802,8 @@ bool RefreshTask::updateCoordinationState(CoordinationZnode root, bool running, 
         Coordination::Responses responses;
 
         lock.unlock();
+        if (running)
+            FailPointInjection::pauseFailPoint(FailPoints::refresh_mv_pause_inside_coordination_write);
         auto code = zookeeper->tryMulti(ops, responses);
         lock.lock();
 
@@ -2098,6 +2141,8 @@ String RefreshTask::CoordinationZnode::toString() const
     last_success_dependencies.writeText(out);
     out << "\n";
 
+    out << "last_attempt_out_of_schedule: " << last_attempt_out_of_schedule << "\n";
+
     return out.str();
 }
 
@@ -2187,6 +2232,7 @@ void RefreshTask::CoordinationZnode::parse(const String & data, bool running_zno
 
     optional_field("last_success_end_time_ns", last_success_end_time);
     optional_field("last_success_dependencies", last_success_dependencies);
+    optional_field("last_attempt_out_of_schedule", last_attempt_out_of_schedule);
 
     if (!next_field_name.empty())
     {

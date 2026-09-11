@@ -601,6 +601,39 @@ def _wait_batch_log_max_t(at_least, timeout=120):
     )
 
 
+def test_wait_view_reports_failed_refresh_on_stopped_replica(fn3_setup_tables):
+    # `SYSTEM WAIT VIEW` must report a failed `SYSTEM REFRESH VIEW` on a stopped view from any
+    # replica, not just the one that executed the refresh.
+    if node.is_built_with_sanitizer():
+        pytest.skip("Disabled for sanitizers")
+
+    create_sql = CREATE_RMV.render(
+        table_name="test_rmv",
+        refresh_interval="EVERY 1 HOUR",
+        to_clause="tgt1",
+        select_query="SELECT throwIf(1, 'boom') a",
+        with_append=False,
+        on_cluster="default",
+        empty=True,
+        settings={"refresh_retries": "0"},
+    )
+    node.query(create_sql)
+
+    # Only `node` may run it, so the failing attempt is recorded by a known replica.
+    node2.query("SYSTEM STOP VIEW test_rmv")
+
+    with pytest.raises(helpers.client.QueryRuntimeException) as exc:
+        node.query("SYSTEM REFRESH VIEW test_rmv; SYSTEM WAIT VIEW test_rmv")
+    assert "boom" in str(exc.value)
+
+    # node2 never ran the refresh and is stopped, but Keeper tells it the last attempt was a
+    # failed out-of-schedule refresh, so its WAIT VIEW must report the same failure.
+    get_rmv_info(node2, "test_rmv", wait_status="Disabled")
+    with pytest.raises(helpers.client.QueryRuntimeException) as exc:
+        node2.query("SYSTEM WAIT VIEW test_rmv")
+    assert "boom" in str(exc.value)
+
+
 def test_circular_dependencies_survive_restart(module_setup_tables):
     """3-view circular refresh chain (current_batch → batch_log, stats → current_batch).
 
