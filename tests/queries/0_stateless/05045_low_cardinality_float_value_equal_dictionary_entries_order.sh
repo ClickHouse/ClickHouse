@@ -13,12 +13,18 @@ run() {
 
 # Arming check: two entries with distinct bit patterns, one distinct value. Without it every
 # assertion below would pass without reaching the code under test.
+# The sorts cover both directions of both keys. The one with a limit takes the separate limit branch
+# of IColumn::updatePermutationImpl, which runs a partial sort and then extends the last equal range
+# past the limit, so it reaches the equality predicate a second time.
 run "
     CREATE TABLE t (k LowCardinality(Float64), v UInt64) ENGINE = Memory;
     INSERT INTO t VALUES (-0.0, 10), (0.0, 20), (-0.0, 30), (0.0, 40);
     SELECT count() FROM (SELECT DISTINCT hex(reinterpretAsUInt64(k)) FROM t);
     SELECT count() FROM (SELECT DISTINCT toFloat64(k) FROM t);
     SELECT v FROM t ORDER BY k ASC, v ASC;
+    SELECT v FROM t ORDER BY k DESC, v ASC;
+    SELECT v FROM t ORDER BY k ASC, v DESC;
+    SELECT v FROM t ORDER BY k ASC, v ASC LIMIT 3;
 "
 
 # Entries that compare differently keep their own order, while the value-equal pair is grouped.

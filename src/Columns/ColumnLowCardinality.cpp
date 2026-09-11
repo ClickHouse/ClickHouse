@@ -531,12 +531,19 @@ struct LowCardinalityComparator
 template <typename IndexColumn>
 void ColumnLowCardinality::updatePermutationWithIndexType(
     IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & rank_by_index,
-    IColumn::Permutation & res, EqualRanges & equal_ranges) const
+    bool has_value_equal_entries, IColumn::Permutation & res, EqualRanges & equal_ranges) const
 {
     /// Cast indexes column to the real type so that compareAt and getUInt methods can be inlined.
     const IndexColumn * real_indexes = assert_cast<const IndexColumn *>(&getIndexes());
 
-    auto equal_comparator = [real_indexes, &rank_by_index](size_t lhs, size_t rhs)
+    /// Two rows share an equal range when their dictionary entries compare equal. Index identity decides
+    /// that on its own unless value-equal entries were merged onto a shared rank.
+    auto equal_by_index = [real_indexes](size_t lhs, size_t rhs)
+    {
+        return real_indexes->getUInt(lhs) == real_indexes->getUInt(rhs);
+    };
+
+    auto equal_by_rank = [real_indexes, &rank_by_index](size_t lhs, size_t rhs)
     {
         const UInt64 lhs_index = real_indexes->getUInt(lhs);
         const UInt64 rhs_index = real_indexes->getUInt(rhs);
@@ -544,10 +551,18 @@ void ColumnLowCardinality::updatePermutationWithIndexType(
     };
 
     const bool stable = (stability == IColumn::PermutationSortStability::Stable);
-    if (stable)
-        updatePermutationImpl(limit, res, equal_ranges, LowCardinalityComparator<IndexColumn, true>{*real_indexes, rank_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
+    auto update = [&](auto equal_comparator)
+    {
+        if (stable)
+            updatePermutationImpl(limit, res, equal_ranges, LowCardinalityComparator<IndexColumn, true>{*real_indexes, rank_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
+        else
+            updatePermutationImpl(limit, res, equal_ranges, LowCardinalityComparator<IndexColumn, false>{*real_indexes, rank_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
+    };
+
+    if (has_value_equal_entries)
+        update(equal_by_rank);
     else
-        updatePermutationImpl(limit, res, equal_ranges, LowCardinalityComparator<IndexColumn, false>{*real_indexes, rank_by_index}, equal_comparator, DefaultSort(), DefaultPartialSort());
+        update(equal_by_index);
 }
 
 void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection direction, IColumn::PermutationSortStability stability,
@@ -565,6 +580,7 @@ void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection d
     /// A floating-point dictionary is not canonicalized, so distinct entries can compare equal: -0.0 and
     /// +0.0, and the different NaN bit patterns. Value-equal entries must share a rank, otherwise equality
     /// by rank is stricter than compareAt and the remaining sort columns never reach such a pair.
+    bool has_value_equal_entries = false;
     if (WhichDataType(getDictionary().getNestedNotNullableColumn()->getDataType()).isFloat())
     {
         const IColumnUnique & dict = getDictionary();
@@ -575,6 +591,7 @@ void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection d
                 ++rank;
             rank_by_index[dict_perm[i]] = rank;
         }
+        has_value_equal_entries = rank + 1 < dict_perm.size();
     }
     else
     {
@@ -586,16 +603,16 @@ void ColumnLowCardinality::updatePermutation(IColumn::PermutationSortDirection d
     switch (idx.getSizeOfIndexType())
     {
         case sizeof(UInt8):
-            updatePermutationWithIndexType<ColumnUInt8>(stability, limit, rank_by_index, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt8>(stability, limit, rank_by_index, has_value_equal_entries, res, equal_ranges);
             return;
         case sizeof(UInt16):
-            updatePermutationWithIndexType<ColumnUInt16>(stability, limit, rank_by_index, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt16>(stability, limit, rank_by_index, has_value_equal_entries, res, equal_ranges);
             return;
         case sizeof(UInt32):
-            updatePermutationWithIndexType<ColumnUInt32>(stability, limit, rank_by_index, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt32>(stability, limit, rank_by_index, has_value_equal_entries, res, equal_ranges);
             return;
         case sizeof(UInt64):
-            updatePermutationWithIndexType<ColumnUInt64>(stability, limit, rank_by_index, res, equal_ranges);
+            updatePermutationWithIndexType<ColumnUInt64>(stability, limit, rank_by_index, has_value_equal_entries, res, equal_ranges);
             return;
         default: throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected size of index type for low cardinality column.");
     }
