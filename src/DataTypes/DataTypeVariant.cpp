@@ -34,6 +34,13 @@ static void checkAllowedInsideVariant(const DataTypePtr & type)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Dynamic type is not allowed inside Variant type");
 }
 
+bool isTypeAllowedInsideVariant(const DataTypePtr & type)
+{
+    return !isNullableOrLowCardinalityNullable(type)
+        && type->getTypeId() != TypeIndex::Variant
+        && type->getTypeId() != TypeIndex::Dynamic;
+}
+
 static void checkVariantsNotEmptyAndNotTooMany(const DataTypes & variants)
 {
     if (variants.empty())
@@ -78,6 +85,16 @@ DataTypeVariant::DataTypeVariant(const DataTypes & variants_, FixedDiscriminator
 
         variants.push_back(type);
     }
+
+    checkVariantsNotEmptyAndNotTooMany(variants);
+}
+
+DataTypeVariant::DataTypeVariant(const DataTypes & variants_, AllowNothingVariant)
+{
+    for (const auto & type : variants_)
+        checkAllowedInsideVariant(type);
+
+    variants = variants_;
 
     checkVariantsNotEmptyAndNotTooMany(variants);
 }

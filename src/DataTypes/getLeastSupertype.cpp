@@ -624,6 +624,7 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
             std::set<String> merged_regexps_to_skip(first.getPathRegexpsToSkip().begin(), first.getPathRegexpsToSkip().end());
             size_t merged_max_dynamic_paths = first.getMaxDynamicPaths();
             size_t merged_max_dynamic_types = first.getMaxDynamicTypes();
+            DataTypePtr merged_default_path_type = first.getDefaultPathType();
 
             for (size_t i = 1; i < types.size(); ++i)
             {
@@ -669,6 +670,11 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
 
                 merged_max_dynamic_paths = std::max(merged_max_dynamic_paths, current.getMaxDynamicPaths());
                 merged_max_dynamic_types = std::max(merged_max_dynamic_types, current.getMaxDynamicTypes());
+
+                /// Default path type must match exactly (it's a contract on shared data values), otherwise drop it.
+                const auto & current_default_path_type = current.getDefaultPathType();
+                if (merged_default_path_type && (!current_default_path_type || !merged_default_path_type->equals(*current_default_path_type)))
+                    merged_default_path_type = nullptr;
             }
 
             return std::make_shared<DataTypeObject>(
@@ -677,7 +683,8 @@ DataTypePtr getLeastSupertype(const DataTypes & types)
                 std::unordered_set<String>(merged_paths_to_skip.begin(), merged_paths_to_skip.end()),
                 std::vector<String>(merged_regexps_to_skip.begin(), merged_regexps_to_skip.end()),
                 merged_max_dynamic_paths,
-                merged_max_dynamic_types);
+                merged_max_dynamic_types,
+                std::move(merged_default_path_type));
         }
     }
 

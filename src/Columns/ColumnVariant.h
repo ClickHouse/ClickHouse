@@ -361,6 +361,9 @@ public:
     void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
 
     void validateState(bool allow_logical_error = true) const;
+    /// Validate a sparse Variant(T) used by JSON(DEFAULT PATH TYPE T): exactly one variant,
+    /// and its nested size equals the number of non-NULL discriminators.
+    void checkSparseVariantState(bool allow_logical_error = true) const;
 
 private:
     void insertFromImpl(const IColumn & src_, size_t n, const VectorWithMemoryTracking<ColumnVariant::Discriminator> * global_discriminators_mapping);

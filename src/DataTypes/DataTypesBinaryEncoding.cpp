@@ -66,7 +66,8 @@ constexpr size_t MAX_ARRAY_SIZE = 1000000;
 
 /// In future we can introduce more arguments in the JSON data type definition.
 /// To support such changes, use versioning in the serialization of JSON type.
-const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 0;
+/// Version 1 adds the DEFAULT PATH TYPE argument (presence flag + encoded type).
+const UInt8 TYPE_JSON_SERIALIZATION_VERSION = 1;
 
 BinaryTypeIndex getBinaryTypeIndex(const DataTypePtr & type)
 {
@@ -519,8 +520,13 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
                 break;
 
             const auto & object_type = assert_cast<const DataTypeObject &>(*type);
+            const auto & default_path_type = object_type.getDefaultPathType();
             /// Write version of the serialization because we can add new arguments in the JSON type.
-            writeBinary(TYPE_JSON_SERIALIZATION_VERSION, buf);
+            /// Version 1 adds the DEFAULT PATH TYPE argument. Write version 0 when DEFAULT PATH TYPE
+            /// is not used, so that the encoded type stays readable by older binaries that only
+            /// support version 0.
+            UInt8 serialization_version = default_path_type ? 1 : 0;
+            writeBinary(serialization_version, buf);
             writeVarUInt(object_type.getMaxDynamicPaths(), buf);
             writeBinary(UInt8(object_type.getMaxDynamicTypes()), buf);
             const auto & typed_paths = object_type.getTypedPaths();
@@ -538,6 +544,12 @@ void encodeDataTypeImpl(const DataTypePtr & type, WriteBuffer & buf)
             writeVarUInt(path_regexps_to_skip.size(), buf);
             for (const auto & regexp : path_regexps_to_skip)
                 writeStringBinary(regexp, buf);
+            if (serialization_version >= 1)
+            {
+                writeBinary(UInt8(default_path_type != nullptr), buf);
+                if (default_path_type)
+                    encodeDataTypeImpl<encode_for_hash_calculation>(default_path_type, buf);
+            }
             break;
         }
         default:
@@ -863,13 +875,27 @@ static DataTypePtr decodeDataTypeImpl(ReadBuffer & buf, size_t & complexity, siz
                 readStringBinary(regexp, buf);
                 path_regexps_to_skip.push_back(regexp);
             }
+
+            /// Version 1 adds the DEFAULT PATH TYPE argument.
+            DataTypePtr default_path_type;
+            if (serialization_version >= 1)
+            {
+                UInt8 has_default_path_type = 0;
+                readBinary(has_default_path_type, buf);
+                if (has_default_path_type)
+                    /// Recurse with the running complexity counter so the nested default path type
+                    /// participates in the same global complexity budget as the rest of the type tree.
+                    default_path_type = decodeDataTypeImpl(buf, complexity, max_complexity);
+            }
+
             return std::make_shared<DataTypeObject>(
                 DataTypeObject::SchemaFormat::JSON,
                 typed_paths,
                 paths_to_skip,
                 path_regexps_to_skip,
                 max_dynamic_paths,
-                max_dynamic_types);
+                max_dynamic_types,
+                std::move(default_path_type));
         }
     }
 

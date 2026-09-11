@@ -19,20 +19,23 @@ private:
         const SerializationPtr & literal_serialization_,
         const SerializationPtr & sub_object_serialization_,
         const DataTypePtr & dynamic_type_,
-        const DataTypePtr & sub_object_type_);
+        const DataTypePtr & sub_object_type_,
+        const DataTypePtr & default_path_type_ = nullptr);
 
 public:
     static UInt128 getHash(
         const SerializationPtr & literal_serialization_,
         const SerializationPtr & sub_object_serialization_,
         const DataTypePtr & dynamic_type_,
-        const DataTypePtr & sub_object_type_);
+        const DataTypePtr & sub_object_type_,
+        const DataTypePtr & default_path_type_ = nullptr);
 
     static SerializationPtr create(
         const SerializationPtr & literal_serialization_,
         const SerializationPtr & sub_object_serialization_,
         const DataTypePtr & dynamic_type_,
-        const DataTypePtr & sub_object_type_);
+        const DataTypePtr & sub_object_type_,
+        const DataTypePtr & default_path_type_ = nullptr);
 
     size_t allocatedBytes() const override;
     bool supportsPooling() const override;
@@ -85,6 +88,7 @@ private:
     SerializationPtr sub_object_serialization;
     DataTypePtr dynamic_type;
     DataTypePtr sub_object_type;
+    DataTypePtr default_path_type;
 };
 
 }

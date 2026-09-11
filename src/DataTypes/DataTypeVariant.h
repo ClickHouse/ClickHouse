@@ -37,6 +37,12 @@ public:
     /// Used to maintain backward compatibility for variant discriminators.
     DataTypeVariant(const DataTypes & variants_, FixedDiscriminatorOrder);
 
+    struct AllowNothingVariant {};
+    /// Like the default constructor but keeps a Nothing variant instead of discarding it.
+    /// Used for internal marker types like the sparse Variant(None) runtime path of
+    /// JSON(DEFAULT PATH TYPE Nullable(...)), where only the NULL discriminator is used.
+    DataTypeVariant(const DataTypes & variants_, AllowNothingVariant);
+
     TypeIndex getTypeId() const override { return TypeIndex::Variant; }
     const char * getFamilyName() const override { return "Variant"; }
 
@@ -77,6 +83,10 @@ private:
 /// Check if conversion from from_type to to_type is Variant extension
 /// (both types are Variants and to_type contains all variants from from_type).
 bool isVariantExtension(const DataTypePtr & from_type, const DataTypePtr & to_type);
+
+/// Nullable(...), LowCardinality(Nullable(...)), Variant(...) and Dynamic types are not allowed
+/// inside Variant type.
+bool isTypeAllowedInsideVariant(const DataTypePtr & type);
 
 }
 

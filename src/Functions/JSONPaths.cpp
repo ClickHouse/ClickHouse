@@ -6,6 +6,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Core/ColumnNumbers.h>
 #include <Columns/ColumnObject.h>
 #include <Columns/ColumnMap.h>
@@ -131,12 +132,15 @@ public:
         const auto & type_object = assert_cast<const DataTypeObject &>(*elem.type);
         if constexpr (Impl::with_types)
             return executeWithTypes(*column_object, type_object);
-        return executeWithoutTypes(*column_object);
+        return executeWithoutTypes(*column_object, type_object);
     }
 
 private:
-    ColumnPtr executeWithoutTypes(const ColumnObject & column_object) const
+    ColumnPtr executeWithoutTypes(const ColumnObject & column_object, const DataTypeObject & type_object) const
     {
+        /// Variant(None) marker runtime paths (DEFAULT PATH TYPE that cannot be inside Variant)
+        /// only mark path presence; the paths themselves are in shared data.
+        const bool runtime_paths_have_paths = !type_object.hasDefaultPathType() || isTypeAllowedInsideVariant(type_object.getDefaultPathType());
         if constexpr (Impl::paths_mode == PathsMode::SHARED_DATA_PATHS)
         {
             /// No need to do anything, we already have a column with all sorted paths in shared data.
@@ -164,12 +168,15 @@ private:
             size_t size = column_object.size();
             for (size_t i = 0; i != size; ++i)
             {
-                for (const auto path : dynamic_paths)
+                if (runtime_paths_have_paths)
                 {
-                    /// Don't include path if it contains NULL, because we consider
-                    /// it to be equivalent to the absence of this path in this row.
-                    if (!dynamic_path_columns.find(path)->second->isNullAt(i))
-                        data.insertData(path.data(), path.size());
+                    for (const auto path : dynamic_paths)
+                    {
+                        /// Don't include path if it contains NULL, because we consider
+                        /// it to be equivalent to the absence of this path in this row.
+                        if (!dynamic_path_columns.find(path)->second->isNullAt(i))
+                            data.insertData(path.data(), path.size());
+                    }
                 }
                 offsets.push_back(data.size());
             }
@@ -183,8 +190,9 @@ private:
         sorted_dynamic_and_typed_paths.reserve(typed_path_columns.size() + dynamic_path_columns.size());
         for (const auto & [path, _] : typed_path_columns)
             sorted_dynamic_and_typed_paths.push_back(path);
-        for (const auto & [path, _] : dynamic_path_columns)
-            sorted_dynamic_and_typed_paths.push_back(path);
+        if (runtime_paths_have_paths)
+            for (const auto & [path, _] : dynamic_path_columns)
+                sorted_dynamic_and_typed_paths.push_back(path);
 
         /// We want the resulting arrays of paths to be sorted for consistency.
         std::sort(sorted_dynamic_and_typed_paths.begin(), sorted_dynamic_and_typed_paths.end());
@@ -237,8 +245,12 @@ private:
             const auto & dynamic_path_columns = column_object.getDynamicPaths();
             VectorWithMemoryTracking<std::string_view> sorted_dynamic_paths;
             sorted_dynamic_paths.reserve(dynamic_path_columns.size());
-            for (const auto & [path, _] : dynamic_path_columns)
-                sorted_dynamic_paths.push_back(path);
+            /// Variant(None) marker runtime paths (DEFAULT PATH TYPE that cannot be inside Variant)
+            /// only mark path presence; the paths are in shared data.
+            const bool runtime_paths_have_paths = !type_object.hasDefaultPathType() || isTypeAllowedInsideVariant(type_object.getDefaultPathType());
+            if (runtime_paths_have_paths)
+                for (const auto & [path, _] : dynamic_path_columns)
+                    sorted_dynamic_paths.push_back(path);
             /// We want the resulting arrays of paths and values to be sorted for consistency.
             std::sort(sorted_dynamic_paths.begin(), sorted_dynamic_paths.end());
 
@@ -250,7 +262,7 @@ private:
                     const auto & column = dynamic_path_columns.find(path)->second;
                     if (!column->isNullAt(i))
                     {
-                        auto type = getDynamicValueType(column, i);
+                        auto type = (type_object.hasDefaultPathType() ? type_object.getDefaultPathType()->getName() : getDynamicValueType(column, i));
                         paths_column->insertData(path.data(), path.size());
                         types_column->insertData(type.data(), type.size());
                     }
@@ -273,7 +285,7 @@ private:
                 size_t end = shared_data_offsets[static_cast<ssize_t>(i)];
                 for (size_t j = start; j != end; ++j)
                 {
-                    if (auto type_name = getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j)))
+                    if (auto type_name = (type_object.hasDefaultPathType() ? std::optional<String>(type_object.getDefaultPathType()->getName()) : getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j))))
                     {
                         paths_column->insertFrom(*shared_data_paths, j);
                         types_column->insertData(type_name->data(), type_name->size());
@@ -294,8 +306,12 @@ private:
         sorted_typed_and_dynamic_paths_with_types.reserve(typed_path_types.size() + dynamic_path_columns.size());
         for (const auto & [path, type] : typed_path_types)
             sorted_typed_and_dynamic_paths_with_types.emplace_back(path, type->getName());
-        for (const auto & [path, _] : dynamic_path_columns)
-            sorted_typed_and_dynamic_paths_with_types.emplace_back(path, "");
+        /// Variant(None) marker runtime paths (DEFAULT PATH TYPE that cannot be inside Variant)
+        /// only mark path presence; the paths are in shared data.
+        const bool runtime_paths_have_paths = !type_object.hasDefaultPathType() || isTypeAllowedInsideVariant(type_object.getDefaultPathType());
+        if (runtime_paths_have_paths)
+            for (const auto & [path, _] : dynamic_path_columns)
+                sorted_typed_and_dynamic_paths_with_types.emplace_back(path, "");
 
         /// We want the resulting arrays of paths and values to be sorted for consistency.
         std::sort(sorted_typed_and_dynamic_paths_with_types.begin(), sorted_typed_and_dynamic_paths_with_types.end());
@@ -311,7 +327,7 @@ private:
             for (size_t j = start; j != end; ++j)
             {
                 auto shared_data_path = shared_data_paths->getDataAt(j);
-                auto type_name = getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j));
+                auto type_name = (type_object.hasDefaultPathType() ? std::optional<String>(type_object.getDefaultPathType()->getName()) : getDynamicValueTypeFromSharedData(shared_data_values->getDataAt(j)));
                 /// Skip NULL values.
                 if (!type_name)
                     continue;
@@ -327,7 +343,7 @@ private:
                             ++sorted_paths_index;
                             continue;
                         }
-                        type = getDynamicValueType(it->second, i);
+                        type = (type_object.hasDefaultPathType() ? type_object.getDefaultPathType()->getName() : getDynamicValueType(it->second, i));
                     }
                     /// When skip_null_typed_paths is enabled, also skip typed paths with NULL values.
                     else if (skip_null_typed_paths)
@@ -355,7 +371,7 @@ private:
                     /// Skip NULL values.
                     if (it->second->isNullAt(i))
                         continue;
-                    type = getDynamicValueType(it->second, i);
+                    type = (type_object.hasDefaultPathType() ? type_object.getDefaultPathType()->getName() : getDynamicValueType(it->second, i));
                 }
                 /// When skip_null_typed_paths is enabled, also skip typed paths with NULL values.
                 else if (skip_null_typed_paths)

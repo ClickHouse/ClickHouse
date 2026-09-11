@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
+#include <DataTypes/DataTypeVariant.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
@@ -30,6 +31,23 @@ namespace ErrorCodes
 }
 
 constexpr static size_t DISTINCT_JSON_PATHS_MAX_ARRAY_SIZE = 0xFFFFFF;
+
+static bool hasNonNullValues(const IColumn & column, bool has_default_path_type)
+{
+    if (!has_default_path_type)
+        return column.getNumberOfDefaultRows() != column.size();
+    for (size_t i = 0; i != column.size(); ++i)
+        if (!column.isNullAt(i))
+            return true;
+    return false;
+}
+
+/// Variant(None) marker runtime paths (DEFAULT PATH TYPE that cannot be inside Variant) only
+/// mark path presence; the paths and values are in shared data.
+static bool runtimePathsHaveValues(const ColumnObject & column)
+{
+    return !column.hasDefaultPathType() || isTypeAllowedInsideVariant(column.getDefaultPathType());
+}
 
 
 struct AggregateFunctionDistinctJSONPathsData
@@ -62,13 +80,14 @@ struct AggregateFunctionDistinctJSONPathsData
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data.insert(path);
-        for (const auto & [path, dynamic_column] : column.getDynamicPathsPtrs())
-        {
-            /// Add dynamic path only if it has at least one non-null value.
-            /// getNumberOfDefaultRows for Dynamic column is O(1).
-            if (dynamic_column->getNumberOfDefaultRows() != dynamic_column->size())
-                data.insert(path);
-        }
+        if (runtimePathsHaveValues(column))
+            for (const auto & [path, dynamic_column] : column.getDynamicPathsPtrs())
+            {
+                /// Add dynamic path only if it has at least one non-null value.
+                /// getNumberOfDefaultRows for Dynamic column is O(1).
+                if (hasNonNullValues(*dynamic_column, column.hasDefaultPathType()))
+                    data.insert(path);
+            }
 
         /// Iterate over all paths in shared data.
         const auto [shared_data_paths, _] = column.getSharedDataPathsAndValues();
@@ -131,11 +150,13 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data[path].insert(typed_paths_type_names.at(path));
-        for (const auto & [path, dynamic_column] : column.getDynamicPathsPtrs())
-        {
-            if (!dynamic_column->isNullAt(row_num))
-                data[path].insert(dynamic_column->getTypeNameAt(row_num));
-        }
+        if (runtimePathsHaveValues(column))
+            for (const auto & [path, dynamic_column] : column.getDynamicPathsPtrs())
+            {
+                if (!dynamic_column->isNullAt(row_num))
+                    data[path].insert(column.hasDefaultPathType() ? column.getDefaultPathType()->getName()
+                        : assert_cast<const ColumnDynamic &>(*dynamic_column).getTypeNameAt(row_num));
+            }
 
         /// Iterate over paths on shared data in this row and decode the data types.
         const auto [shared_data_paths, shared_data_values] = column.getSharedDataPathsAndValues();
@@ -145,6 +166,12 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
         for (size_t i = start; i != end; ++i)
         {
             std::string path{shared_data_paths->getDataAt(i)};
+            if (column.hasDefaultPathType())
+            {
+                if (!shared_data_values->isNullAt(i))
+                    data[path].insert(column.getDefaultPathType()->getName());
+                continue;
+            }
             auto value = shared_data_values->getDataAt(i);
             ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);
@@ -158,19 +185,31 @@ struct AggregateFunctionDistinctJSONPathsAndTypesData
     {
         for (const auto & [path, _] : column.getTypedPaths())
             data[path].insert(typed_paths_type_names.at(path));
-        for (const auto & [path, dynamic_column] : column.getDynamicPathsPtrs())
-        {
-            /// Add dynamic path only if it has at least one non-null value.
-            /// getNumberOfDefaultRows for Dynamic column is O(1).
-            if (dynamic_column->getNumberOfDefaultRows() != dynamic_column->size())
-                dynamic_column->getAllTypeNamesInto(data[path]);
-        }
+        if (runtimePathsHaveValues(column))
+            for (const auto & [path, dynamic_column] : column.getDynamicPathsPtrs())
+            {
+                /// Add dynamic path only if it has at least one non-null value.
+                /// getNumberOfDefaultRows for Dynamic column is O(1).
+                if (hasNonNullValues(*dynamic_column, column.hasDefaultPathType()))
+                {
+                    if (column.hasDefaultPathType())
+                        data[path].insert(column.getDefaultPathType()->getName());
+                    else
+                        assert_cast<const ColumnDynamic &>(*dynamic_column).getAllTypeNamesInto(data[path]);
+                }
+            }
 
         /// Iterate over all paths in shared data and decode the data types.
         const auto [shared_data_paths, shared_data_values] = column.getSharedDataPathsAndValues();
         for (size_t i = 0; i != shared_data_paths->size(); ++i)
         {
             std::string path{shared_data_paths->getDataAt(i)};
+            if (column.hasDefaultPathType())
+            {
+                if (!shared_data_values->isNullAt(i))
+                    data[path].insert(column.getDefaultPathType()->getName());
+                continue;
+            }
             auto value = shared_data_values->getDataAt(i);
             ReadBufferFromMemory buf(value);
             auto type = decodeDataType(buf);

@@ -1,8 +1,9 @@
 #include <DataTypes/Serializations/SerializationObjectHelpers.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnVariant.h>
 #include <Common/SipHash.h>
 #include <IO/ReadHelpers.h>
 
@@ -17,8 +18,19 @@ namespace ErrorCodes
 
 std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObject & object_column)
 {
-    SharedDataBucketsSplitter splitter(*object_column.getSharedDataPtr(), 0, object_column.size(), 1);
-    auto all_paths = splitter.flattenBucket(0, object_column.getDynamicType());
+    SharedDataBucketsSplitter splitter(*object_column.getSharedDataPtr(), 0, object_column.size(), 1, object_column.hasDefaultPathType());
+    /// The FLATTENED native serialization stores runtime paths in their runtime representation:
+    /// sparse Variant(T) for a DEFAULT PATH TYPE T (NULL discriminator = missing), Dynamic for
+    /// ordinary JSON. (For a DEFAULT PATH TYPE that cannot be inside Variant the FLATTENED
+    /// serialization is not used; see SerializationObject.)
+    auto all_paths = splitter.flattenBucket(0, object_column.getDynamicType(), object_column.getDefaultPathType());
+    /// With a DEFAULT PATH TYPE that cannot be inside Variant, dynamic paths are Variant(None)
+    /// presence markers whose values are already in shared data (flattened above), so skip them.
+    if (object_column.hasDefaultPathType() && !isTypeAllowedInsideVariant(object_column.getDefaultPathType()))
+    {
+        std::sort(all_paths.begin(), all_paths.end());
+        return all_paths;
+    }
     for (const auto & [path, column] : object_column.getDynamicPaths())
         all_paths.emplace_back(path, column);
     std::sort(all_paths.begin(), all_paths.end());
@@ -27,12 +39,16 @@ std::vector<std::pair<std::string_view, ColumnPtr>> flattenPaths(const ColumnObj
 
 void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, MutableColumns && flattened_columns, ColumnObject & object_column, size_t num_rows)
 {
+    /// With a DEFAULT PATH TYPE that cannot be inside Variant, runtime paths are Variant(None)
+    /// presence markers and the flattened values are bare T columns; they all belong to shared
+    /// data (a bare T column cannot become a Variant(None) dynamic path).
+    const bool values_in_shared_data = object_column.hasDefaultPathType() && !isTypeAllowedInsideVariant(object_column.getDefaultPathType());
     /// Iterate over paths and try to add them to dynamic paths until the limit is reached.
     /// All remaining paths will be inserted into shared data.
     std::map<std::string_view, ColumnPtr> paths_for_shared_data;
     for (size_t i = 0; i != flattened_paths.size(); ++i)
     {
-        if (object_column.canAddNewDynamicPath())
+        if (!values_in_shared_data && object_column.canAddNewDynamicPath())
             object_column.addNewDynamicPath(flattened_paths[i], std::move(flattened_columns[i]));
         else
             paths_for_shared_data.emplace(flattened_paths[i], std::move(flattened_columns[i]));
@@ -40,15 +56,21 @@ void unflattenAndInsertPaths(const std::vector<String> & flattened_paths, Mutabl
 
     auto [shared_data_paths, shared_data_values] = object_column.getSharedDataPathsAndValues();
     auto & shared_data_offsets = object_column.getSharedDataOffsets();
-    std::unordered_map<std::string_view, const ColumnDynamic *> dynamic_columns_ptrs;
-    dynamic_columns_ptrs.reserve(flattened_paths.size());
-    for (const auto & [path, column] : paths_for_shared_data)
-        dynamic_columns_ptrs[path] = assert_cast<const ColumnDynamic *>(column.get());
 
     for (size_t i = 0; i != num_rows; ++i)
     {
         for (const auto & [path, column] : paths_for_shared_data)
-            ColumnObject::serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, path, *dynamic_columns_ptrs[path], i);
+        {
+            /// Bare T columns (values_in_shared_data) insert their value directly; other columns
+            /// go through the Variant(T)-aware helper.
+            if (values_in_shared_data)
+            {
+                shared_data_paths->insertData(path.data(), path.size());
+                shared_data_values->insertFrom(*column, i);
+            }
+            else
+                ColumnObject::serializePathAndValueIntoSharedData(shared_data_paths, shared_data_values, path, *column, i, object_column.hasDefaultPathType());
+        }
         shared_data_offsets.push_back(shared_data_paths->size());
     }
 }
@@ -62,18 +84,35 @@ size_t getSharedDataPathBucket(std::string_view path, size_t num_buckets)
     return hash.get64() % num_buckets;
 }
 
-SharedDataBucketsSplitter::SharedDataBucketsSplitter(const IColumn & shared_data_column_, size_t start_, size_t end_, size_t num_buckets_)
+void deserializeValueIntoVariantPath(const SerializationPtr & serialization, IColumn & variant_column, ReadBuffer & buf)
+{
+    auto & variant = assert_cast<ColumnVariant &>(variant_column);
+    auto & nested = variant.getVariantByGlobalDiscriminator(0);
+    /// With a Variant(None) presence marker (T cannot be inside Variant) there is no nested value
+    /// to deserialize; the value stays in shared data. Keep the marker's offsets valid with a
+    /// Nothing default.
+    if (nested.getDataType() != TypeIndex::Nothing)
+        /// Deserialize directly into the nested column: deserializeBinary appends one value.
+        serialization->deserializeBinary(nested, buf, FormatSettings{});
+    else
+        nested.insertDefault();
+    variant.getOffsets().push_back(nested.size() - 1);
+    variant.getLocalDiscriminators().push_back(variant.localDiscriminatorByGlobal(0));
+}
+
+SharedDataBucketsSplitter::SharedDataBucketsSplitter(const IColumn & shared_data_column_, size_t start_, size_t end_, size_t num_buckets_, bool has_default_path_type_)
     : shared_data_column(shared_data_column_)
     , start(start_)
     , end(end_)
     , num_buckets(num_buckets_)
+    , has_default_path_type(has_default_path_type_)
     , bucket_num_paths(num_buckets_, 0)
     , bucket_paths_chars_size(num_buckets_, 0)
     , bucket_values_chars_size(num_buckets_, 0)
 {
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
     const auto & paths_offsets = shared_data_paths->getOffsets();
-    const auto & values_offsets = shared_data_values->getOffsets();
+    const auto * values_offsets = has_default_path_type ? nullptr : &assert_cast<const ColumnString &>(*shared_data_values).getOffsets();
 
     /// Compute the bucket for every path once and accumulate per-bucket sizes, so `extractBucket` can
     /// pre-allocate each bucket exactly and does not recompute the path hashes.
@@ -90,7 +129,8 @@ SharedDataBucketsSplitter::SharedDataBucketsSplitter(const IColumn & shared_data
             /// The number of chars occupied by value `j` (exactly what `insertFrom` appends) is the
             /// difference of consecutive string offsets.
             bucket_paths_chars_size[bucket] += paths_offsets[ssize_t(j)] - paths_offsets[ssize_t(j) - 1];
-            bucket_values_chars_size[bucket] += values_offsets[ssize_t(j)] - values_offsets[ssize_t(j) - 1];
+            if (values_offsets)
+                bucket_values_chars_size[bucket] += (*values_offsets)[ssize_t(j)] - (*values_offsets)[ssize_t(j) - 1];
         }
     }
 }
@@ -105,8 +145,14 @@ ColumnPtr SharedDataBucketsSplitter::extractBucket(size_t bucket) const
     /// Pre-allocate exactly to avoid power-of-two over-allocation.
     bucket_paths->getChars().reserve_exact(bucket_paths_chars_size[bucket]);
     bucket_paths->getOffsets().reserve_exact(bucket_num_paths[bucket]);
-    bucket_values->getChars().reserve_exact(bucket_values_chars_size[bucket]);
-    bucket_values->getOffsets().reserve_exact(bucket_num_paths[bucket]);
+    if (has_default_path_type)
+        bucket_values->reserve(bucket_num_paths[bucket]);
+    else
+    {
+        auto & values_string = assert_cast<ColumnString &>(*bucket_values);
+        values_string.getChars().reserve_exact(bucket_values_chars_size[bucket]);
+        values_string.getOffsets().reserve_exact(bucket_num_paths[bucket]);
+    }
     bucket_offsets->reserve_exact(end - start);
 
     size_t path_index = 0;
@@ -129,9 +175,26 @@ ColumnPtr SharedDataBucketsSplitter::extractBucket(size_t bucket) const
     return bucket_column;
 }
 
-std::vector<std::pair<std::string_view, ColumnPtr>> SharedDataBucketsSplitter::flattenBucket(size_t bucket, const DataTypePtr & dynamic_type) const
+std::vector<std::pair<std::string_view, ColumnPtr>> SharedDataBucketsSplitter::flattenBucket(size_t bucket, const DataTypePtr & dynamic_type, const DataTypePtr & default_path_type, bool for_shared_data_stream) const
 {
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
+
+    /// When the type has DEFAULT PATH TYPE T, flatten path values into sparse Variant(T) columns
+    /// where the NULL discriminator marks a missing path (a missing path is never densified to
+    /// default(T) here). The ADVANCED shared data serialization stores these columns directly with
+    /// the existing Variant(T) serialization. For types that cannot be inside Variant, a
+    /// Variant(None) column cannot carry the value, so the shared-data stream uses a bare T column
+    /// (for_shared_data_stream) while the runtime representation keeps a Variant(None) marker.
+    /// When the type has DEFAULT PATH TYPE T, the ADVANCED shared data serialization stores path
+    /// values as bare T columns (for_shared_data_stream), matching the layout of shared data itself
+    /// (Array(Tuple(String, T))). The runtime representation (not used for the shared-data stream)
+    /// is a sparse Variant(T) column, or a Variant(None) presence marker for types that cannot be
+    /// inside Variant.
+    DataTypePtr column_type;
+    if (default_path_type)
+        column_type = for_shared_data_stream ? default_path_type : DataTypeObject::getTypeOfRuntimePaths(default_path_type);
+    else
+        column_type = dynamic_type;
 
     /// Collect values of the paths belonging to this bucket into separate columns. Each column is
     /// densified to have a value for every row (a default where the path is absent). Gaps are backfilled
@@ -156,13 +219,36 @@ std::vector<std::pair<std::string_view, ColumnPtr>> SharedDataBucketsSplitter::f
             auto it = flattened_shared_data_paths.find(path);
             /// If we see this path for the first time, add it to the list and create a column for it.
             if (it == flattened_shared_data_paths.end())
-                it = flattened_shared_data_paths.emplace(path, dynamic_type->createColumn()).first;
+                it = flattened_shared_data_paths.emplace(path, column_type->createColumn()).first;
 
-            /// Backfill defaults for the rows where this path was absent, up to the current row.
+            /// Backfill missing rows (NULL discriminator) for this path, up to the current row.
             if (it->second->size() < row)
                 it->second->insertManyDefaults(row - it->second->size());
 
-            ColumnObject::deserializeValueFromSharedData(shared_data_values, j, *it->second);
+            if (default_path_type)
+            {
+                /// Shared data stores bare T values. For a bare T column (the shared-data stream)
+                /// insert the value directly; for a Variant(T) runtime column append the value to
+                /// the nested T variant; for a Variant(None) runtime presence marker the value
+                /// stays in the shared-data copy, so keep the marker's offsets valid with a
+                /// Nothing default.
+                auto & column = *it->second;
+                if (typeid_cast<const ColumnVariant *>(&column))
+                {
+                    auto & variant = assert_cast<ColumnVariant &>(column);
+                    auto & nested = variant.getVariantByGlobalDiscriminator(0);
+                    if (nested.getDataType() == TypeIndex::Nothing)
+                        nested.insertDefault();
+                    else
+                        nested.insertFrom(*shared_data_values, j);
+                    variant.getOffsets().push_back(nested.size() - 1);
+                    variant.getLocalDiscriminators().push_back(variant.localDiscriminatorByGlobal(0));
+                }
+                else
+                    column.insertFrom(*shared_data_values, j);
+            }
+            else
+                ColumnObject::deserializeValueFromSharedData(shared_data_values, j, *it->second);
         }
     }
 
@@ -187,7 +273,7 @@ void collectSharedDataFromBuckets(const Columns & shared_data_buckets, IColumn &
 {
     const auto [shared_data_paths, shared_data_values, shared_data_offsets] = ColumnObject::getSharedDataPathsValuesAndOffsets(shared_data_column);
     std::vector<const ColumnString *> shared_data_paths_buckets(shared_data_buckets.size());
-    std::vector<const ColumnString *> shared_data_values_buckets(shared_data_buckets.size());
+    std::vector<const IColumn *> shared_data_values_buckets(shared_data_buckets.size());
     std::vector<const ColumnArray::Offsets *> shared_data_offsets_buckets(shared_data_buckets.size());
     for (size_t i = 0; i != shared_data_buckets.size(); ++i)
         std::tie(shared_data_paths_buckets[i], shared_data_values_buckets[i], shared_data_offsets_buckets[i]) = ColumnObject::getSharedDataPathsValuesAndOffsets(*shared_data_buckets[i]);
