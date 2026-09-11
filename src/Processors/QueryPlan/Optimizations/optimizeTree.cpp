@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
+#include <Processors/QueryPlan/ReadFromTimeSeries.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
@@ -635,6 +636,18 @@ void optimizeTreeSecondPass(
 
             if (local_optimization_settings.merge_expressions)
                 tryMergeExpressions(local_plan_node, nodes, {});
+        }
+        else if (auto * read_from_time_series = typeid_cast<ReadFromTimeSeriesStep *>(frame.node->step.get()))
+        {
+            QueryPlanOptimizationSettings sub_settings(read_from_time_series->getReadContext());
+            auto sub_plan = read_from_time_series->extractQueryPlan();
+            sub_plan->optimize(sub_settings);
+
+            auto * sub_plan_node = frame.node;
+            query_plan.replaceNodeWithPlan(sub_plan_node, std::move(*sub_plan));
+
+            if (optimization_settings.merge_expressions)
+                tryMergeExpressions(sub_plan_node, nodes, {});
         }
 
         stack.pop_back();
