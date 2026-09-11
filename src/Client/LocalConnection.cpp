@@ -1,5 +1,7 @@
 #include <Core/ProtocolDefines.h>
 #include <Client/LocalConnection.h>
+
+#include "config.h"
 #include <memory>
 #include <Client/ClientBase.h>
 #include <Client/ClientApplicationBase.h>
@@ -30,6 +32,10 @@
 #include <Parsers/Trino/ParserTrinoQuery.h>
 #include <Parsers/Kusto/parseKQLQuery.h>
 #include <Parsers/PRQL/ParserPRQLQuery.h>
+#if USE_RAPIDJSON
+#include <Parsers/Mongo/parseMongoQuery.h>
+#include <Parsers/Mongo/ParserMongoQuery.h>
+#endif
 #include <Parsers/Prometheus/ParserPrometheusQuery.h>
 
 namespace ProfileEvents
@@ -376,6 +382,12 @@ void LocalConnection::sendQuery(
             std::unique_ptr<IParserBase> parser;
             if (dialect == Dialect::prql)
                 parser = std::make_unique<ParserPRQLQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks);
+            else if (dialect == Dialect::mongo)
+#if USE_RAPIDJSON
+                parser = std::make_unique<Mongo::ParserMongoQuery>(state->max_query_size, state->max_parser_depth, state->max_parser_backtracks);
+#else
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the MongoDB dialect is disabled: ClickHouse is built without rapidjson");
+#endif
             else if (dialect == Dialect::promql)
                 parser = std::make_unique<ParserPrometheusQuery>(state->promql_database, state->promql_table, state->promql_evaluation_time);
             else if (dialect == Dialect::trino)
@@ -383,6 +395,11 @@ void LocalConnection::sendQuery(
             else
                 parser = std::make_unique<ParserQuery>(end, state->allow_settings_after_format_in_insert, state->implicit_select);
 
+#if USE_RAPIDJSON
+            if (dialect == Dialect::mongo)
+                parsed_query = Mongo::parseMongoQueryAndMovePosition(*parser, begin, end, "", /*allow_multi_statements*/false, state->max_query_size, state->max_parser_depth, state->max_parser_backtracks);
+            else
+#endif
             parsed_query = parseQueryAndMovePosition(
                 *parser,
                 begin,

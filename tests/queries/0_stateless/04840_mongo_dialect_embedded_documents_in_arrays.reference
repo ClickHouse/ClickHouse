@@ -1,0 +1,2 @@
+{"id":1,"events":[{"n":1,"name":"start"},{"name":"stop"},{"name":"x"},{"name":"y"}],"profile.notes":[{"text":"hi"}]}
+{"id":2,"events":[{"name":"reset"},{"name":"added"}],"profile.notes":[]}

@@ -1,0 +1,163 @@
+#include <Parsers/Mongo/Metadata.h>
+
+#include <Parsers/Mongo/Utils.h>
+#include <Common/StringUtils.h>
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
+namespace Mongo
+{
+
+namespace
+{
+
+/** Rejects text between the argument list of the query and the end of the statement that is not
+  * part of any recognized syntax. Only a `find` carries suffixes - `.limit(...)`, `.skip(...)`
+  * and `.sort(...)` - and everything else must be whitespace: without this check
+  * `db.t.find({}) garbage` would silently run as `db.t.find({})`, and a misspelled suffix such
+  * as `.limt(1)` would silently drop the limit instead of reporting it.
+  */
+void validateStatementTail(const char * begin, const char * end, bool is_select)
+{
+    /// One past the parenthesis that closes the argument list of the query.
+    const char * pos = getSettingsSubstring(begin, end).second + 1;
+    /// The text handed here may reach beyond the statement in the wire path; the tail of this
+    /// statement ends at its terminator.
+    const char * statement_end = findStatementEnd(pos, end);
+
+    while (pos != statement_end)
+    {
+        if (isWhitespaceASCII(*pos))
+        {
+            ++pos;
+            continue;
+        }
+        if (is_select && *pos == '.')
+        {
+            const char * name_begin = pos + 1;
+            const char * name_end = name_begin;
+            while (name_end != statement_end && isWordCharASCII(*name_end))
+                ++name_end;
+            std::string_view suffix(name_begin, name_end - name_begin);
+            if ((suffix == "limit" || suffix == "skip" || suffix == "sort") && name_end != statement_end && *name_end == '(')
+            {
+                pos = findMatchingParenthesis(name_end, statement_end) + 1;
+                continue;
+            }
+        }
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS, "Unexpected text after the query: '{}'", std::string_view(pos, statement_end - pos));
+    }
+}
+
+}
+
+QueryMetadata::QueryMetadata(
+    std::string database_name_,
+    std::string collection_name_,
+    QueryType query_type_,
+    std::optional<Int64> limit_,
+    std::optional<Int64> offset_,
+    std::optional<std::string> order_by_)
+    : database_name(std::move(database_name_))
+    , collection_name(std::move(collection_name_))
+    , query_type(query_type_)
+    , limit(limit_ ? std::optional<size_t>(
+          *limit_ < 0 ? -static_cast<UInt64>(*limit_) : static_cast<UInt64>(*limit_)) : std::nullopt)
+    , offset(offset_ ? std::optional<size_t>(static_cast<size_t>(*offset_)) : std::nullopt)
+    , order_by(order_by_)
+{
+    if (offset_ && *offset_ < 0)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The '.skip' argument must not be negative");
+}
+
+std::shared_ptr<QueryMetadata> extractMetadataFromRequest(const char * begin, const char * end, const std::string & database)
+{
+    auto [token_begin, token_end] = getMetadataSubstring(begin, end);
+
+    /// A query addresses a collection as `<database>.<collection>.<operation>(...)`. The
+    /// literal `db` in place of the database name means the current database, which is what
+    /// the `mongosh` shell writes. A database may itself be named `db`, so the wire protocol
+    /// never relies on this and passes the database from `$db` explicitly instead.
+    const char * token_end_database_name = findKth<'.'>(token_begin, token_end, 1);
+    const char * token_begin_collection_name = token_end_database_name + 1;
+    const char * token_end_collection_name = findKth<'.'>(token_begin, token_end, 2);
+
+    const char * token_begin_query_type = token_end_collection_name + 1;
+    const char * token_end_query_type = token_end;
+
+    std::string database_name = database;
+    if (database_name.empty())
+    {
+        database_name.assign(token_begin, token_end_database_name);
+        if (database_name == "db")
+            database_name.clear();
+    }
+
+    std::string collection_name(token_begin_collection_name, token_end_collection_name);
+    if (collection_name.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: the collection name is empty");
+
+    std::string key(token_begin_query_type, token_end_query_type);
+    std::optional<QueryMetadata::QueryType> query_type;
+
+    for (const auto & [key_query, query] : QueryMetadata::queryTypeKeyWords)
+    {
+        if (key_query == key)
+        {
+            query_type = query;
+        }
+    }
+
+    if (!query_type)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid query: unknown operation '{}'", key);
+    }
+
+    /** `.limit(...)`, `.skip(...)` and `.sort(...)` are suffixes of a `find`, so only the text that follows the
+      * argument list of the `find` is searched for them, and the pattern is searched for as plain
+      * text. Searching the whole query would read the argument as well, and a document is free to
+      * hold the pattern in a value of its own: `db.users.find({"name": ".limit(1)"})` looks for a
+      * name and asks for no limit, but scanning from the start would find one there and turn the
+      * user's data into a `LIMIT`. Looking in any other kind of query would go wrong the same way -
+      * an aggregation pipeline may hold a field path such as `$a.limit`.
+      */
+    std::optional<Int64> limit;
+    std::optional<Int64> offset;
+    std::optional<std::string> order_by;
+    if (*query_type == QueryMetadata::QueryType::select)
+    {
+        const char * suffix_begin = getSettingsSubstring(begin, end).second + 1;
+
+        /** The text handed here may reach to the end of everything the client sent, so the suffix
+          * stops at the terminator of this query - otherwise a `find` without a limit would take
+          * the one of a later query of the same multi query. The statements are told apart the
+          * same way `tryParseMongoQuery` tells them apart: by a `;` outside a string literal, a
+          * `;` inside the argument of a `.sort(...)` is part of the argument.
+          */
+        const char * suffix_end = findStatementEnd(suffix_begin, end);
+
+        MongoQueryKeyNameExtractor limit_extractor(".limit");
+        limit = limit_extractor.extractInt(suffix_begin, suffix_end);
+
+        MongoQueryKeyNameExtractor offset_extractor(".skip");
+        offset = offset_extractor.extractInt(suffix_begin, suffix_end);
+
+        MongoQueryKeyNameExtractor order_by_extractor(".sort");
+        order_by = order_by_extractor.extractString(suffix_begin, suffix_end);
+    }
+
+    validateStatementTail(begin, end, *query_type == QueryMetadata::QueryType::select);
+
+    return std::make_shared<QueryMetadata>(std::move(database_name), std::move(collection_name), *query_type, limit, offset, order_by);
+}
+
+}
+
+}
