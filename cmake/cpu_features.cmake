@@ -14,9 +14,18 @@ if (ARCH_AARCH64)
     # [1] https://en.wikipedia.org/wiki/AArch64
     option (NO_ARMV81_OR_HIGHER "Disable ARMv8.1 or higher on Aarch64 for maximum compatibility with older/embedded hardware." 0)
 
+    # ENABLE_SVE_GLOBALLY compiles the entire binary with "+sve" added to -march=, enabling __ARM_FEATURE_SVE
+    # and SVE autovectorization throughout the binary. It is disabled by default because SVE remains
+    # optional on ARMv8.2+ architectures. It is available on processors such as Graviton 3, but
+    # not Graviton 2. Enable this option only when targeting hardware that supports SVE.
+    option (ENABLE_SVE_GLOBALLY "Compile the entire binary with ARM SVE enabled (requires ARMv8.2+, e.g. Graviton 3)" 0)
+
     if (NO_ARMV81_OR_HIGHER)
         # crc32 is optional in v8.0 and mandatory in v8.1. Enable it as __crc32()* is used in lot's of places and even very old ARM CPUs
         # support it.
+        if (ENABLE_SVE_GLOBALLY)
+            message (${RECONFIGURE_MESSAGE_LEVEL} "ENABLE_SVE_GLOBALLY requires ARMv8.2+ and cannot be combined with NO_ARMV81_OR_HIGHER")
+        endif()
         set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8+crc")
         list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+crc,-neon")
     else ()
@@ -49,9 +58,15 @@ if (ARCH_AARCH64)
         # [8]  https://developer.arm.com/documentation/102651/a/What-are-dot-product-intructions-
         # [9]  https://developer.arm.com/documentation/dui0801/g/A64-Data-Transfer-Instructions/LDAPR?lang=en
         # [10] https://github.com/aws/aws-graviton-getting-started/blob/main/README.md
-        set (COMPILER_FLAGS "${COMPILER_FLAGS} -march=armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16")
+        set(ARM_FEATURES "armv8.2-a+simd+crypto+dotprod+ssbs+rcpc+bf16")
         # Not adding `+v8.2a,+crypto` to rust because it complains about them being unstable
-        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=+dotprod,+ssbs,+rcpc,+bf16")
+        set(RUST_TARGET_FEATURES "+dotprod,+ssbs,+rcpc,+bf16")
+        if (ENABLE_SVE_GLOBALLY)
+            set(ARM_FEATURES "${ARM_FEATURES}+sve")
+            set(RUST_TARGET_FEATURES "${RUST_TARGET_FEATURES},+sve")
+        endif()
+        set(COMPILER_FLAGS "${COMPILER_FLAGS} -march=${ARM_FEATURES}")
+        list(APPEND RUSTFLAGS_CPU "-C" "target_feature=${RUST_TARGET_FEATURES}")
     endif ()
 
     # Best-effort check: The build generates and executes intermediate binaries, e.g. protoc and llvm-tablegen. If we build on ARM for ARM
@@ -68,6 +83,17 @@ if (ARCH_AARCH64)
             OUTPUT_VARIABLE FLAGS)
         if (NOT FLAGS)
             MESSAGE(FATAL_ERROR "The build machine does not satisfy the minimum CPU requirements, try to run cmake with -DNO_ARMV81_OR_HIGHER=1")
+        endif()
+
+        # If the native host doesn't actually support SVE (e.g. Graviton 2), intermediate build-time
+        # tools (protoc, llvm-tablegen, ...) will SIGILL as soon as they run, well after CMake configuration succeeded.
+        if (ENABLE_SVE_GLOBALLY)
+            execute_process(
+                COMMAND grep -P "^(?=.*\\bsve\\b)" /proc/cpuinfo
+                OUTPUT_VARIABLE SVE_FLAGS)
+            if (NOT SVE_FLAGS)
+                MESSAGE(FATAL_ERROR "The build machine does not support SVE, try to run cmake with -DENABLE_SVE_GLOBALLY=0")
+            endif()
         endif()
     endif()
 
