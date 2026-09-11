@@ -158,6 +158,7 @@ class BackupLog;
 class BlobStorageLog;
 class DeadLetterQueue;
 class HypotheticalObjectStore;
+class SessionQueryIdsHistory;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
@@ -434,6 +435,8 @@ protected:
     String http_combined_filter;
 
     TemporaryTablesMapping external_tables_mapping;
+    /// History of query ids for `system.session_query_ids`, lives on the session context.
+    mutable std::shared_ptr<SessionQueryIdsHistory> session_query_ids_history;
     mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
     /// Query scalars
     Scalars scalars;
@@ -852,17 +855,18 @@ public:
         MAX_PENDING_MUTATIONS_OVER_THRESHOLD,
         MAYBE_BROKEN_TABLES,
         MERGE_TREE_JEMALLOC_ARENA_POOL_DEGRADED,
+        JEMALLOC_PERCPU_ARENA_DISABLED,
         OBSOLETE_MONGO_TABLE_DEFINITION,
         OBSOLETE_SETTINGS,
         PROCESS_USER_MATCHES_DATA_OWNER,
         RABBITMQ_UNSUPPORTED_COLUMNS,
         REPLICATED_DB_WITH_ALL_GROUPS_CLUSTER_PREFIX,
         ROTATIONAL_DISK_WITH_DISABLED_READHEAD,
-        SERVER_BUILT_IN_DEBUG_MODE,
-        SERVER_BUILT_WITH_COVERAGE,
-        SERVER_BUILT_WITH_SANITIZERS,
+        CLICKHOUSE_BUILT_IN_DEBUG_MODE,
+        CLICKHOUSE_BUILT_WITH_COVERAGE,
+        CLICKHOUSE_BUILT_WITH_SANITIZERS,
+        CLICKHOUSE_LOGGING_LEVEL_TEST,
         SERVER_CPU_OVERLOAD,
-        SERVER_LOGGING_LEVEL_TEST,
         SERVER_MEMORY_OVERLOAD,
         SERVER_RUN_UNDER_DEBUGGER,
         SETTING_ZERO_COPY_REPLICATION_ENABLED,
@@ -1099,6 +1103,9 @@ public:
     void addOrUpdateExternalTable(const String & table_name, std::shared_ptr<TemporaryTableHolder> temporary_table);
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
+
+    /// Per-session history of query ids for `system.session_query_ids`.
+    SessionQueryIdsHistory & getSessionQueryIdsHistory() const;
 
     HypotheticalObjectStore & getHypotheticalObjectStore() const;
 
@@ -1552,7 +1559,8 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void signalKeeperDispatcherShutdown() const;
-    void shutdownKeeperDispatcher(bool closed_all_connections) const;
+    void shutdownKeeperDispatcherBeforeConnectionsFinish() const;
+    void shutdownKeeperDispatcherAfterConnectionsFinish(bool closed_all_connections) const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
