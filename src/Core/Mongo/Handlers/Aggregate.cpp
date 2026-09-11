@@ -93,7 +93,19 @@ void checkUnionCollectionShapes(
         {
             CollectionRef union_ref{database, union_collection};
             const auto union_shape = getCollectionShape(union_ref, executor);
-            if (union_shape.exists && union_shape.stores_documents != shape.stores_documents)
+            /** A missing collection is read as empty in Mongo, but the translated query still reads
+              * it - the union arm is a `SELECT` from that table - and there is no source of the
+              * right shape to put in its place, so it would fail with `UNKNOWN_TABLE` on execution.
+              * Reject it here instead, the same way a missing aggregated collection with a union
+              * is rejected, so that the reason is the one the client is told.
+              */
+            if (!union_shape.exists)
+                throw Exception(
+                    ErrorCodes::NOT_IMPLEMENTED,
+                    "The collection '{}' of a '$unionWith' stage does not exist: a missing collection is read as empty, but there is "
+                    "nothing to read the union arm from",
+                    union_ref.getQualifiedName());
+            if (union_shape.stores_documents != shape.stores_documents)
                 throw Exception(
                     ErrorCodes::NOT_IMPLEMENTED,
                     "An 'aggregate' with '$unionWith' collections of different storage shapes is not supported");

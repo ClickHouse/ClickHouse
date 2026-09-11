@@ -22,8 +22,12 @@ private:
       * `_id` column holding its object id, which is the primary key. A Mongo collection has no
       * schema, so there is nothing to infer from the first document - and nothing that a later one
       * can contradict.
+      *
+      * Answers whether this command created the table. A table another session created in the
+      * meantime keeps the shape it was created with, and the row has to be written in that shape
+      * rather than in the one this handler was going to create.
       */
-    void createCollection(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor);
+    bool createCollection(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor);
 };
 
 }

@@ -30,6 +30,7 @@ namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
 extern const int NOT_IMPLEMENTED;
+extern const int TABLE_ALREADY_EXISTS;
 }
 
 namespace DB::MongoProtocol
@@ -275,10 +276,17 @@ bool isOrderedInsert(const Document & command)
 
 void InsertHandler::createDatabase(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
 {
-    executor->execute(fmt::format("CREATE DATABASE IF NOT EXISTS {}", backQuoteIfNeed(collection.database)));
+    /** The database is created only when it is really missing: ClickHouse checks the
+      * `CREATE DATABASE` privilege on the statement itself, `IF NOT EXISTS` included, so running it
+      * unconditionally would make an insert into a database that already exists more privileged
+      * than a `CREATE TABLE` in it. `IF NOT EXISTS` still covers the race with another session
+      * creating the same database in between.
+      */
+    if (!objectExists(executor, "DATABASE", backQuoteIfNeed(collection.database)))
+        executor->execute(fmt::format("CREATE DATABASE IF NOT EXISTS {}", backQuoteIfNeed(collection.database)));
 }
 
-void InsertHandler::createCollection(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
+bool InsertHandler::createCollection(const CollectionRef & collection, std::shared_ptr<QueryExecutor> executor)
 {
     /** A Mongo collection has no schema, so a document goes into one `JSON` column: a later document
       * may hold a field that no document before it had, and whether a document holds a field at all
@@ -286,14 +294,29 @@ void InsertHandler::createCollection(const CollectionRef & collection, std::shar
       * its own and the primary key of the table, so that a read by `_id` - which is how a driver
       * addresses a document it inserted - reads by the key.
       */
-    executor->execute(
-        fmt::format(
-            "CREATE TABLE IF NOT EXISTS {} ({} String, {} JSON) ENGINE = MergeTree ORDER BY {} COMMENT {}",
-            collection.getQualifiedName(),
-            backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
-            backQuoteIfNeed(String(Mongo::DOCUMENT_COLUMN)),
-            backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
-            quoteString(String(Mongo::DOCUMENT_COLLECTION_COMMENT))));
+    /** No `IF NOT EXISTS`: it would silently do nothing for a table another session created in the
+      * meantime, and the caller would go on writing the shape it asked for into a table of a
+      * different shape. The name is taken by then either way, so the failure says which shape the
+      * row has to be written in rather than being a failure of the insert.
+      */
+    try
+    {
+        executor->execute(
+            fmt::format(
+                "CREATE TABLE {} ({} String, {} JSON) ENGINE = MergeTree ORDER BY {} COMMENT {}",
+                collection.getQualifiedName(),
+                backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
+                backQuoteIfNeed(String(Mongo::DOCUMENT_COLUMN)),
+                backQuoteIfNeed(String(Mongo::OBJECT_ID_COLUMN)),
+                quoteString(String(Mongo::DOCUMENT_COLLECTION_COMMENT))));
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::TABLE_ALREADY_EXISTS)
+            throw;
+        return false;
+    }
+    return true;
 }
 
 std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
@@ -355,46 +378,66 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
         {
             const auto & document = to_insert[document_index]->getRapidJSONRepresentation();
 
-            rapidjson::Value row(rapidjson::kObjectType);
             String object_id;
-            if (shape.stores_documents)
+            /// The row this document becomes in a collection of the given shape, as the
+            /// `JSONEachRow` text the insert writes.
+            auto serialize_row = [&](const CollectionShape & row_shape)
             {
-                /// The document as it arrived, next to the object id that addresses it.
-                object_id = extractObjectId(document);
-                if (object_ids.contains(object_id))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "The 'insert' command holds more than one document with the object id '{}', and an object id addresses one "
-                        "document",
-                        object_id);
-                rapidjson::Value id;
-                id.SetString(object_id.c_str(), static_cast<rapidjson::SizeType>(object_id.size()), allocator);
-                row.AddMember(
-                    rapidjson::Value(rapidjson::StringRef(Mongo::OBJECT_ID_COLUMN.data(), Mongo::OBJECT_ID_COLUMN.size())), id, allocator);
-                row.AddMember(
-                    rapidjson::Value(rapidjson::StringRef(Mongo::DOCUMENT_COLUMN.data(), Mongo::DOCUMENT_COLUMN.size())),
-                    documentToStore(document, allocator),
-                    allocator);
-            }
-            else
-            {
-                /// The columns of the table the document names. Unknown fields are rejected instead of
-                /// being silently dropped, and a column a document has no field for keeps its default.
-                /// The object id a client generates is one of them: it is written when the table has
-                /// an `_id` column of its own and dropped when it has none, because it names nothing
-                /// there - it is not a field the document was written with.
-                std::map<String, String> wrapper_types;
-                flattenDocument(document, "", row, allocator, wrapper_types, /* drop_object_id = */ !shape.has_object_id);
-            }
+                rapidjson::Value row(rapidjson::kObjectType);
+                object_id.clear();
+                if (row_shape.stores_documents)
+                {
+                    /// The document as it arrived, next to the object id that addresses it.
+                    object_id = extractObjectId(document);
+                    if (object_ids.contains(object_id))
+                        throw Exception(
+                            ErrorCodes::BAD_ARGUMENTS,
+                            "The 'insert' command holds more than one document with the object id '{}', and an object id addresses one "
+                            "document",
+                            object_id);
+                    rapidjson::Value id;
+                    id.SetString(object_id.c_str(), static_cast<rapidjson::SizeType>(object_id.size()), allocator);
+                    row.AddMember(
+                        rapidjson::Value(rapidjson::StringRef(Mongo::OBJECT_ID_COLUMN.data(), Mongo::OBJECT_ID_COLUMN.size())),
+                        id,
+                        allocator);
+                    row.AddMember(
+                        rapidjson::Value(rapidjson::StringRef(Mongo::DOCUMENT_COLUMN.data(), Mongo::DOCUMENT_COLUMN.size())),
+                        documentToStore(document, allocator),
+                        allocator);
+                }
+                else
+                {
+                    /// The columns of the table the document names. Unknown fields are rejected instead of
+                    /// being silently dropped, and a column a document has no field for keeps its default.
+                    /// The object id a client generates is one of them: it is written when the table has
+                    /// an `_id` column of its own and dropped when it has none, because it names nothing
+                    /// there - it is not a field the document was written with.
+                    std::map<String, String> wrapper_types;
+                    flattenDocument(document, "", row, allocator, wrapper_types, /* drop_object_id = */ !row_shape.has_object_id);
+                }
 
-            rapidjson::StringBuffer buffer;
-            rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
-            row.Accept(writer);
+                rapidjson::StringBuffer buffer;
+                rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+                row.Accept(writer);
+                return String(buffer.GetString(), buffer.GetSize());
+            };
+
+            String row_text = serialize_row(shape);
 
             if (!exists)
             {
                 createDatabase(collection, executor);
-                createCollection(collection, executor);
+                /** The shape above was chosen for a collection this command was going to create.
+                  * When another session created the table first, it keeps whatever shape that
+                  * session gave it, so the real shape is read and the document is written in it -
+                  * otherwise a row of `(_id, json)` would go into a table of columns of its own.
+                  */
+                if (!createCollection(collection, executor))
+                {
+                    shape = getCollectionShape(collection, executor);
+                    row_text = serialize_row(shape);
+                }
                 exists = true;
             }
 
@@ -405,7 +448,7 @@ std::vector<Document> InsertHandler::handle(const std::vector<OpMessageSection> 
                 fmt::format(
                     "INSERT INTO {} SETTINGS input_format_skip_unknown_fields = 0 FORMAT JSONEachRow\n{}\n",
                     collection.getQualifiedName(),
-                    buffer.GetString()));
+                    row_text));
             ++inserted;
 
             /// An object id is taken only by a document that was written: an unordered batch goes

@@ -239,6 +239,42 @@ const rapidjson::Value & requireMember(const rapidjson::Value & value, const cha
     return it->value;
 }
 
+/// Refuses a field of the document of an operator that this endpoint does not implement: a field
+/// such as the `onError` of `$dateFromString` changes the value the operator returns, so it must
+/// not be dropped silently and answered with a different expression.
+void rejectUnknownMembers(
+    const rapidjson::Value & value, std::string_view operator_name, const std::unordered_set<std::string_view> & supported)
+{
+    if (!value.IsObject())
+        return;
+    for (auto it = value.MemberBegin(); it != value.MemberEnd(); ++it)
+    {
+        auto name = stringView(it->name);
+        if (!supported.contains(name))
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The '{}' field of '{}' is not supported", name, operator_name);
+    }
+}
+
+/** The argument of `$literal`, which is a value rather than an expression: an array becomes an
+  * array of values and an embedded document a `JSON` value, the same shapes an inserted document
+  * writes. A `$`-named field of it is a field, not an operator - that is what `$literal` is for.
+  */
+ASTPtr parseLiteralValue(const rapidjson::Value & value)
+{
+    if (value.IsArray())
+    {
+        auto array = makeASTFunction("array");
+        for (const auto & element : value.GetArray())
+            array->arguments->children.push_back(parseLiteralValue(element));
+        return array;
+    }
+    if (auto constant = tryParseMongoConstant(value))
+        return constant;
+    if (value.IsObject())
+        return makeMongoJSONValue(value);
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Cannot translate the argument of '$literal' into a value");
+}
+
 /// `x -> <body>`, the shape a ClickHouse higher order function takes.
 ASTPtr makeLambda(const std::string & parameter, ASTPtr body)
 {
@@ -417,12 +453,7 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
     }
 
     if (name == "$literal")
-    {
-        auto constant = tryParseMongoConstant(argument);
-        if (!constant)
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only a scalar is supported as the argument of '$literal'");
-        return constant;
-    }
+        return parseLiteralValue(argument);
 
     if (name == "$size")
     {
@@ -637,7 +668,10 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
         requireArgumentCount(name, arguments, 2);
         auto element = make_intrusive<ASTIdentifier>("__mongo_element");
         auto body = makeASTFunction("not", makeASTFunction("has", arguments[1], element));
-        return makeASTFunction("arrayFilter", makeLambda("__mongo_element", std::move(body)), arguments[0]);
+        /// A set operator answers a set: the elements the second array does not hold, each of them
+        /// once, the way the neighbouring `$setUnion` and `$setEquals` answer.
+        return makeASTFunction(
+            "arrayDistinct", makeASTFunction("arrayFilter", makeLambda("__mongo_element", std::move(body)), arguments[0]));
     }
 
     if (name == "$setEquals")
@@ -681,14 +715,22 @@ ASTPtr parseOperator(std::string_view name, const rapidjson::Value & argument)
 
     if (name == "$dateFromString")
     {
+        /// `onError` and `onNull` answer a value of their own for a text that cannot be read, which
+        /// is a different expression rather than a different time zone, so they are refused rather
+        /// than dropped.
+        static const std::unordered_set<std::string_view> supported_members{"dateString", "format", "timezone"};
+        rejectUnknownMembers(argument, name, supported_members);
+
         auto text = parseMongoAggregateExpression(requireMember(argument, "dateString", name));
+        /// A text that names no offset of its own is read in the time zone the operator names, and
+        /// in UTC when it names none - the instant a Mongo date holds is the same either way.
+        ASTPtr timezone = makeLiteral(Field(String("UTC")));
+        if (auto timezone_it = argument.FindMember("timezone"); timezone_it != argument.MemberEnd())
+            timezone = parseMongoAggregateExpression(timezone_it->value);
         if (auto format_it = argument.FindMember("format"); format_it != argument.MemberEnd())
             return makeASTFunction(
-                "parseDateTime64",
-                text,
-                makeDateFormatLiteral(translateMongoDateFormat(format_it->value, name)),
-                makeLiteral(Field(String("UTC"))));
-        return makeASTFunction("parseDateTime64BestEffort", text, makeLiteral(Field(UInt64(3))), makeLiteral(Field(String("UTC"))));
+                "parseDateTime64", text, makeDateFormatLiteral(translateMongoDateFormat(format_it->value, name)), std::move(timezone));
+        return makeASTFunction("parseDateTime64BestEffort", text, makeLiteral(Field(UInt64(3))), std::move(timezone));
     }
 
     if (name == "$dateAdd" || name == "$dateSubtract")

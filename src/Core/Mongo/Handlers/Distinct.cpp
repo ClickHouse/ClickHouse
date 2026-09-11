@@ -7,6 +7,7 @@
 #include <Parsers/Mongo/ParserMongoQuery.h>
 #include <Parsers/Mongo/parseMongoQuery.h>
 
+#include <DataTypes/DataTypeFactory.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/Exception.h>
 
@@ -116,7 +117,7 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
     /// does not.
     sql_query = fmt::format(
         "SELECT DISTINCT arrayJoin(flatten([_id])) AS _id FROM ({}) ORDER BY _id ASC "
-        "SETTINGS allow_suspicious_types_in_order_by = 1 FORMAT JSON",
+        "SETTINGS allow_suspicious_types_in_order_by = 1",
         sql_query);
 
     /// Mongo reads a collection that does not exist as empty rather than raising an error, so
@@ -137,35 +138,46 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
         return result;
     }
 
-    auto output = executor->execute(sql_query);
-
-    rapidjson::Document result_json;
-    if (result_json.Parse(output.data()).HasParseError())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
-
-    auto columns = extractResultColumns(result_json);
-    if (columns.size() != 1 || columns[0].first != "_id")
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no '_id'");
-
-    auto data_it = result_json.FindMember("data");
-    if (data_it == result_json.MemberEnd() || !data_it->value.IsArray())
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no rows");
-
-    /// The reply is `{"values": [...], "ok": 1}`, and the values keep the types of the column
-    /// (see `appendTypedValue`).
+    /** The reply is `{"values": [...], "ok": 1}`, and the values keep the types of the column
+      * (see `appendTypedValue`). The rows are streamed into the reply one by one - as one array
+      * per line, preceded by a line of names and a line of types - and the bound is checked on
+      * each of them, so an oversized result cancels the query rather than being materialized as
+      * one string and parsed into a document of its own first.
+      */
     bson_t * reply = bson_new();
     try
     {
         static constexpr std::string_view key_identifier = "values";
         bson_t values;
         bson_append_array_begin(reply, key_identifier.data(), static_cast<int>(key_identifier.size()), &values);
+
+        bool has_names = false;
+        DataTypePtr type;
         size_t index = 0;
-        for (const auto & row : data_it->value.GetArray())
+
+        auto on_row = [&](std::string_view line)
         {
-            /// `meta` promises the column, so every row has it.
-            auto value_it = row.FindMember("_id");
-            if (value_it != row.MemberEnd())
-                appendTypedValue(&values, std::to_string(index++), value_it->value, columns[0].second);
+            rapidjson::Document row;
+            if (row.Parse(line.data(), line.size()).HasParseError() || !row.IsArray() || row.Size() != 1)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Can not parse the result of the query");
+
+            const auto & first = row[0];
+            if (!has_names)
+            {
+                if (!first.IsString() || std::string_view(first.GetString(), first.GetStringLength()) != "_id")
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The result of the query has no '_id'");
+                has_names = true;
+                return;
+            }
+            if (!type)
+            {
+                if (!first.IsString())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The column list of the result is malformed");
+                type = DataTypeFactory::instance().get(first.GetString());
+                return;
+            }
+
+            appendTypedValue(&values, std::to_string(index++), first, type);
 
             /// The `values` array grows in place inside `reply`, so its running size is exact;
             /// an oversized result is rejected before the whole reply is built.
@@ -175,7 +187,10 @@ std::vector<Document> DistinctHandler::handle(const std::vector<OpMessageSection
                     "The result is larger than the largest reply that can be sent ({} bytes). "
                     "Ask for less at a time, with a filter in 'query'",
                     MAX_BSON_OBJECT_SIZE);
-        }
+        };
+
+        executor->executeStreaming(sql_query + " FORMAT JSONCompactEachRowWithNamesAndTypes", on_row);
+
         bson_append_array_end(reply, &values);
         BSON_APPEND_DOUBLE(reply, "ok", 1.0);
 

@@ -2660,3 +2660,48 @@ def test_list_command_options_are_honoured_or_refused(started_cluster):
         )
 
     collection.drop()
+
+
+def test_a_whole_float_is_a_bson_double(started_cluster):
+    """The BSON type of a value follows the type of the column it comes from, not the JSON text of
+    it: a `Float64` that holds `1.0` is written as `1` in JSON, and it still has to read back as a
+    BSON double rather than as an integer."""
+    node = cluster.instances["node"]
+    node.query("CREATE DATABASE IF NOT EXISTS db", password="123")
+    node.query(
+        "CREATE TABLE db.whole_floats (id Int32, f32 Float32, f64 Float64, i64 Int64) "
+        "ENGINE = MergeTree ORDER BY id",
+        password="123",
+    )
+    node.query("INSERT INTO db.whole_floats VALUES (1, 1, 2, 3)", password="123")
+
+    client = make_client()
+    collection = client["db"]["whole_floats"]
+
+    found = collection.find_one({})
+    assert isinstance(found["f32"], float) and found["f32"] == 1.0
+    assert isinstance(found["f64"], float) and found["f64"] == 2.0
+    assert isinstance(found["i64"], int) and found["i64"] == 3
+
+    node.query("DROP TABLE db.whole_floats", password="123")
+
+
+def test_a_union_with_a_missing_collection_is_an_error(started_cluster):
+    """A `$unionWith` of a collection that does not exist has nothing to read its arm from: the
+    translated query still selects from that collection, so it is refused instead of failing later
+    with an unknown table - or answering as if the union contributed nothing when it does exist."""
+    client = make_client()
+    collection = client["db"]["union_missing_arm"]
+
+    collection.drop()
+    collection.insert_many([{"id": 1}, {"id": 2}])
+    client["db"]["union_missing_arm_other"].drop()
+
+    with pytest.raises(pymongo.errors.OperationFailure):
+        list(
+            collection.aggregate(
+                [{"$unionWith": {"coll": "union_missing_arm_other"}}]
+            )
+        )
+
+    collection.drop()

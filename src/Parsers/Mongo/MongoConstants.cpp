@@ -1,5 +1,7 @@
 #include <Parsers/Mongo/MongoConstants.h>
 
+#include <limits>
+
 #include <Core/Field.h>
 #include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
@@ -49,6 +51,17 @@ std::string describeMongoField(std::string_view field_name)
     return fmt::format(" of the field '{}'", field_name);
 }
 
+/// A whole number narrowed to the width the wrapper names. A value that does not fit is an error
+/// rather than a different number: `{"$numberInt": 2147483648}` names no `Int32`, and wrapping it
+/// around would make an insert, a filter or an update act on a value the client never sent.
+template <typename T>
+T narrowExtendedJSONNumber(Int64 number, std::string_view wrapper)
+{
+    if (number < static_cast<Int64>(std::numeric_limits<T>::min()) || number > static_cast<Int64>(std::numeric_limits<T>::max()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of '{}' is out of range", number, wrapper);
+    return static_cast<T>(number);
+}
+
 /// The value of an Extended JSON number wrapper is a string in the canonical form and a number
 /// in the relaxed one; both are accepted.
 template <typename T>
@@ -57,11 +70,23 @@ T extendedJSONNumber(const rapidjson::Value & value, std::string_view wrapper)
     if (value.IsString())
     {
         auto text = stringView(value);
-        T result{};
         ReadBufferFromMemory buffer(text.data(), text.size());
-        if (!tryReadText(result, buffer) || !buffer.eof())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '{}' is not a number: '{}'", wrapper, text);
-        return result;
+        if constexpr (std::is_floating_point_v<T>)
+        {
+            T result{};
+            if (!tryReadText(result, buffer) || !buffer.eof())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '{}' is not a number: '{}'", wrapper, text);
+            return result;
+        }
+        else
+        {
+            /// The text is read as the widest integer and narrowed afterwards, so that a value
+            /// outside the range of the wrapper is reported rather than truncated.
+            Int64 number = 0;
+            if (!tryReadText(number, buffer) || !buffer.eof())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '{}' is not a number: '{}'", wrapper, text);
+            return narrowExtendedJSONNumber<T>(number, wrapper);
+        }
     }
     if constexpr (std::is_floating_point_v<T>)
     {
@@ -71,7 +96,11 @@ T extendedJSONNumber(const rapidjson::Value & value, std::string_view wrapper)
     else
     {
         if (value.IsInt64())
-            return static_cast<T>(value.GetInt64());
+            return narrowExtendedJSONNumber<T>(value.GetInt64(), wrapper);
+        /// A number too large for a signed 64-bit integer is out of the range of every integer
+        /// wrapper there is.
+        if (value.IsUint64())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of '{}' is out of range", value.GetUint64(), wrapper);
     }
     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value of '{}' must be a number or a string", wrapper);
 }

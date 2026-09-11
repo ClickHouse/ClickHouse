@@ -20,6 +20,13 @@ CollectionShape getCollectionShape(const CollectionRef & collection, std::shared
       * The comment is read by a subquery of its own rather than by a join with `system.tables`:
       * `system.columns` has a `comment` column as well - the comment of the column - so a name
       * that is not qualified reads that one and never matches.
+      *
+      * `system.columns` and `system.tables` are filtered by `SHOW COLUMNS` and `SHOW TABLES`, which
+      * a grant of any privilege on the table implies (see `addImplicitAccessRights` in
+      * `ContextAccess.cpp`), so a user who can read the collection sees its shape. A grant of a
+      * single column - `GRANT SELECT(_id) ON db.coll` - hides the rest of them, and the collection
+      * is then read as a schemaful table; the columns it would have been rewritten to are
+      * unreadable for that user either way.
       */
     auto answer = executor->execute(fmt::format(
         "SELECT countIf(name = {} AND type = 'JSON'), countIf(name = {}), count(), "

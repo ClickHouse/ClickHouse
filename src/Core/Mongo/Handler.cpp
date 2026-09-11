@@ -561,6 +561,15 @@ void appendTypedValue(bson_t * document, const String & key, const rapidjson::Va
             return;
         }
     }
+    if (which.isFloat() && value.IsNumber())
+    {
+        /// A finite float arrives as a JSON number, and a value with no fractional part is written
+        /// without a decimal point - `1.0` arrives as `1` - so the type of the column, not the text,
+        /// says that it is a BSON double. Otherwise it would fall through and be sent as an integer,
+        /// which is a different BSON type than the column holds.
+        bson_append_double(document, key.data(), key_length, value.GetDouble());
+        return;
+    }
     if (which.isDecimal() && value.IsString())
     {
         /// `output_format_json_quote_decimals` is pinned to `true` (see `MongoProtocol.cpp`), so a
@@ -1039,7 +1048,14 @@ CollectionRef getCollectionRef(const Document & command, const String & command_
 
 bool objectExists(std::shared_ptr<QueryExecutor> executor, const String & object_kind, const String & name)
 {
-    /// `EXISTS TABLE` also answers `0` when the database itself is absent.
+    /** `EXISTS TABLE` also answers `0` when the database itself is absent.
+      *
+      * It is checked against `SHOW TABLES` on that one table, which every user who can do anything
+      * with the table already has: a grant of any table or column privilege on it - `SELECT`,
+      * `INSERT`, `ALTER UPDATE`, `CREATE TABLE` - implies `SHOW TABLES` on the same table, and
+      * implies `SHOW DATABASES` on its database (see `addImplicitAccessRights` in
+      * `ContextAccess.cpp`), so the probe needs no privilege beyond the command it precedes.
+      */
     auto output = executor->execute(fmt::format("EXISTS {} {}", object_kind, name));
     return !output.empty() && output[0] == '1';
 }

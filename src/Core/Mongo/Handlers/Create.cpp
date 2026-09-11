@@ -60,7 +60,14 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
     if (objectExists(executor, "TABLE", collection.getQualifiedName()))
         return namespaceExistsReply(collection);
 
-    executor->execute(fmt::format("CREATE DATABASE IF NOT EXISTS {}", backQuoteIfNeed(collection.database)));
+    /** The database is created only when it is really missing: ClickHouse checks the
+      * `CREATE DATABASE` privilege on the statement itself, `IF NOT EXISTS` included, so running it
+      * unconditionally would make a collection in a database that already exists more privileged
+      * than a `CREATE TABLE` in it. `IF NOT EXISTS` still covers the race with another session
+      * creating the same database in between.
+      */
+    if (!objectExists(executor, "DATABASE", backQuoteIfNeed(collection.database)))
+        executor->execute(fmt::format("CREATE DATABASE IF NOT EXISTS {}", backQuoteIfNeed(collection.database)));
 
     /** A collection keeps whole documents in one `JSON` column, with the object id of each of them
       * in an `_id` column, which is the primary key: a Mongo collection has no schema, so there is
