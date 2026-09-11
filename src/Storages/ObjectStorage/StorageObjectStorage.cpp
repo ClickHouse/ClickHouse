@@ -765,6 +765,18 @@ SinkToStoragePtr StorageObjectStorage::write(
         configuration->update(object_storage, local_context);
     }
 
+    return createSink(configuration, object_storage, storage_id, format_settings, catalog, metadata_snapshot, local_context);
+}
+
+SinkToStoragePtr StorageObjectStorage::createSink(
+    const StorageObjectStorageConfigurationPtr & configuration,
+    const ObjectStoragePtr & object_storage,
+    const StorageID & storage_id,
+    const std::optional<FormatSettings> & format_settings,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const StorageMetadataPtr & metadata_snapshot,
+    const ContextPtr & local_context)
+{
     const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
     const auto & settings = configuration->getQuerySettings(local_context);
 
