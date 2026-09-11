@@ -1,6 +1,6 @@
 from praktika import Job, Secret, Workflow
 
-from ci.defs.defs import SECRETS
+from ci.defs.defs import SECRETS, RunnerLabels
 
 robot_token_secret = Secret.Config(
     name="ROBOT_CLICKHOUSE_COMMIT_TOKEN",
@@ -9,7 +9,10 @@ robot_token_secret = Secret.Config(
 
 release_branch_job = Job.Config(
     name="CreateReleaseBranch",
-    runs_on=["self-hosted", "amd-release-maker"],
+    # A general-purpose runner: the new-branch flow only pushes the tag/branch and
+    # opens the version-bump PR (git + gh + the SSM robot token); it needs none of
+    # the release-maker's package/docker tooling.
+    runs_on=RunnerLabels.ARM_SMALL,
     command="PYTHONPATH=. python3 ./ci/jobs/release_branch_job.py",
     timeout=2 * 3600,
     # Push the release tag/branch/version-bump PR with the robot PAT (the App

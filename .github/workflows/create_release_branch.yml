@@ -42,7 +42,7 @@ permissions: write-all
 jobs:
 
   createreleasebranch:
-    runs-on: [self-hosted, amd-release-maker]
+    runs-on: [self-hosted, arm-small]
     needs: []
     name: "CreateReleaseBranch"
     outputs:
