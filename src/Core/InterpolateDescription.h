@@ -22,7 +22,11 @@ struct InterpolateDescription
 
     ActionsDAG actions;
 
-    UnorderedMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map; /// input column name -> {alias, type}
+    /// Input column name -> {alias, type}. With `enable_analyzer = 0` the block the filling transform
+    /// works on is the one before the final projection, so a single input column can back several of
+    /// the columns the INTERPOLATE expressions are written in terms of (e.g. `SELECT x AS a, x AS b`
+    /// with `INTERPOLATE (a AS a + b)`). Hence a multimap.
+    UnorderedMultiMapWithMemoryTracking<std::string, NameAndTypePair> required_columns_map;
     UnorderedSetWithMemoryTracking<std::string> result_columns_set; /// result block columns
     VectorWithMemoryTracking<std::string> result_columns_order; /// result block columns order
 };
