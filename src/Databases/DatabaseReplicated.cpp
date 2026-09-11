@@ -3050,7 +3050,7 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             replica_name,
             std::move(database_replicated_settings), args.context);
     };
-    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true}, Documentation{
+    factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true, .has_builtin_setting_fn = DatabaseReplicatedSettings::hasBuiltin}, Documentation{
         .description = R"DOCS_MD(
 The engine is based on the [Atomic](/reference/engines/database-engines/atomic) engine. It supports replication of metadata via DDL log being written to ZooKeeper and executed on all of the replicas for a given database.
 

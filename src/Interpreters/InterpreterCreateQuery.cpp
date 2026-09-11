@@ -330,8 +330,13 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     auto metadata_file_path = DatabaseCatalog::getMetadataFilePath(database_name);
     auto metadata_tmp_file_path = DatabaseCatalog::getMetadataTmpFilePath(database_name);
 
+    /// A storage node with nothing left in it is the same as no storage node at all: it is what remains
+    /// of a `SETTINGS` clause written without an `ENGINE` after `applySettingsFromQuery` hoisted every
+    /// one of its settings onto the query context.
+    const bool has_storage_definition = create.storage && !create.storage->isEmpty();
+
     fs::path metadata_path;
-    if (!create.storage && create.attach)
+    if (!has_storage_definition && create.attach)
     {
         if (!default_db_disk->existsFile(metadata_file_path))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
@@ -347,8 +352,11 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (!create.storage || !create.storage->engine)
     {
         /// For new-style databases engine is explicitly specified in .sql
-        /// When attaching old-style database during server startup, we must always use Ordinary engine
-        if (create.attach)
+        /// When attaching old-style database during server startup, we must always use Ordinary engine.
+        /// A `SETTINGS` clause without an `ENGINE` is the one exception: it can only describe a
+        /// new-style database (`Atomic`, the engine filled in below), so it is allowed to attach.
+        /// Note that `Atomic` then also requires an explicit `UUID` in the query.
+        if (create.attach && !(create.storage && create.storage->settings))
             throw Exception(ErrorCodes::UNKNOWN_DATABASE_ENGINE, "Database engine must be specified for ATTACH DATABASE query");
         if (!create.storage)
         {
@@ -359,6 +367,7 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
         engine->name = "Atomic";
         engine->setNoEmptyArgs(true);
         create.storage->set(create.storage->engine, engine);
+        create.storage->normalizeChildrenOrder();
     }
     else if ((create.columns_list
               && ((create.columns_list->indices && !create.columns_list->indices->children.empty())

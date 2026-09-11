@@ -270,6 +270,11 @@ void ASTStorage::normalizeChildrenOrder()
 }
 
 
+bool ASTStorage::isEmpty() const
+{
+    return !engine && !partition_by && !primary_key && !order_by && !sample_by && !ttl_table && !unique_key && !settings;
+}
+
 bool ASTStorage::isExtendedStorageDefinition() const
 {
     return partition_by || primary_key || order_by || unique_key || sample_by || settings;

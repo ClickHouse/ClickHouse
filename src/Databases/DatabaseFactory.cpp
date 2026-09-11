@@ -127,8 +127,20 @@ DatabasePtr DatabaseFactory::get(const ASTCreateQuery & create, const String & m
 
 void DatabaseFactory::registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features, Documentation documentation)
 {
+    if (features.supports_settings && !features.has_builtin_setting_fn)
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "DatabaseFactory: Database engine '{}' supports settings but has_builtin_setting_fn is not provided", name);
     if (!database_engines.emplace(name, Creator{std::move(creator_fn), features, std::move(documentation)}).second)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "DatabaseFactory: the database engine name '{}' is not unique", name);
+}
+
+const DatabaseFactory::EngineFeatures * DatabaseFactory::tryGetDatabaseEngineFeatures(const String & engine_name) const
+{
+    auto it = database_engines.find(engine_name);
+    if (it == database_engines.end())
+        return nullptr;
+    return &it->second.features;
 }
 
 DatabaseFactory & DatabaseFactory::instance()

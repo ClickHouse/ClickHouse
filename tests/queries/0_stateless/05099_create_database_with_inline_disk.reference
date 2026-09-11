@@ -1,0 +1,27 @@
+-- inline disk without an explicit ENGINE
+42
+CREATE DATABASE default_inline
+ENGINE = Atomic
+SETTINGS disk = disk(type = local, path = '[HIDDEN]')
+-- the inline disk was really created
+1
+-- ATTACH DATABASE with the same inline disk brings the tables back
+42
+-- a non-disk database setting works without an explicit ENGINE too
+CREATE DATABASE default_engine_settings
+ENGINE = Atomic
+SETTINGS lazy_load_tables = 1
+-- engine settings and query settings can be mixed in one clause
+CREATE DATABASE default_engine_settings
+ENGINE = Atomic
+SETTINGS lazy_load_tables = 1
+-- a clause holding only query settings leaves no SETTINGS behind
+CREATE DATABASE default_query_settings
+ENGINE = Atomic
+-- the short ATTACH syntax still reads the definition from the metadata file
+CREATE DATABASE default_query_settings
+ENGINE = Atomic
+-- an unknown setting is still reported as such
+UNKNOWN_SETTING
+-- a database engine without settings support rejects them
+UNKNOWN_ELEMENT_IN_AST

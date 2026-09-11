@@ -1,6 +1,7 @@
 #include <Backups/BackupSettings.h>
 #include <Backups/RestoreSettings.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/IDatabase.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -191,6 +192,59 @@ std::optional<String> getTableStorageName(const ASTCreateQuery & create, Context
         return {};
     return default_engine.toString();
 }
+
+/// `CREATE DATABASE` / `ATTACH DATABASE`: the query names a database and no table.
+bool isDatabaseCreateQuery(const ASTCreateQuery & create)
+{
+    return create.database && !create.table;
+}
+
+/// Resolve the engine a `CREATE DATABASE`/`ATTACH DATABASE` will get, so its SETTINGS clause can be
+/// split into engine settings and query settings. `Atomic` is the only default there is
+/// (`default_database_engine` is obsolete), matching what `InterpreterCreateQuery::createDatabase`
+/// fills in for a query without an `ENGINE` clause - keep the two in sync.
+String getDatabaseEngineName(const ASTCreateQuery & create)
+{
+    if (create.storage && create.storage->engine)
+        return create.storage->engine->name;
+    return "Atomic";
+}
+
+/// Whether the engine the created object will have accepts settings, and which ones.
+struct EngineSettingsSupport
+{
+    EngineSettingsSupport(bool supports_settings_, bool (*has_builtin_setting_fn_)(std::string_view))
+        : supports_settings(supports_settings_), has_builtin_setting_fn(has_builtin_setting_fn_)
+    {
+        /// Both factories reject an engine that supports settings without naming them.
+        chassert(!supports_settings || has_builtin_setting_fn);
+    }
+
+    bool isEngineSetting(std::string_view name) const { return supports_settings && has_builtin_setting_fn(name); }
+
+private:
+    bool supports_settings;
+    bool (*has_builtin_setting_fn)(std::string_view);
+};
+
+/// Returns nullopt when the engine cannot be resolved; the SETTINGS clause must then be left
+/// untouched, so that the interpreter can report the engine problem itself.
+std::optional<EngineSettingsSupport> getEngineSettingsSupport(const ASTCreateQuery & create, ContextMutablePtr context)
+{
+    if (isDatabaseCreateQuery(create))
+    {
+        const auto * features = DatabaseFactory::instance().tryGetDatabaseEngineFeatures(getDatabaseEngineName(create));
+        if (!features)
+            return {};
+        return EngineSettingsSupport{features->supports_settings, features->has_builtin_setting_fn};
+    }
+
+    auto storage_name = getTableStorageName(create, context);
+    if (!storage_name)
+        return {};
+    const auto & features = StorageFactory::instance().getStorageFeatures(*storage_name);
+    return EngineSettingsSupport{features.supports_settings, features.has_builtin_setting_fn};
+}
 }
 
 
@@ -207,13 +261,13 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
 
         if (const auto * create_query = ast->as<ASTCreateQuery>(); create_query)
         {
-            std::optional<String> storage_name;
+            std::optional<EngineSettingsSupport> engine_settings_support;
             if (create_query->select)
                 applySettingsFromSelectWithUnion(create_query->select->as<ASTSelectWithUnionQuery &>(), context_);
             else if (
                 !create_query->settings_ast && create_query->storage && create_query->storage->settings
                 && context_->getApplicationType() != Context::ApplicationType::CLIENT
-                && (storage_name = getTableStorageName(*create_query, context_)))
+                && (engine_settings_support = getEngineSettingsSupport(*create_query, context_)))
             {
                 /// If we parsed one set of settings we don't know if it was the engine settings or the query settings
                 /// We also want to allow users to mix them (so they don't need to declare SETTINGS engine_setting=0 SETTINGS query_setting=0
@@ -222,12 +276,10 @@ void InterpreterSetQuery::applySettingsFromQuery(const ASTPtr & ast, ContextMuta
 
                 const Settings & context_settings = context_->getSettingsRef();
                 ASTSetQuery * engine_settings = create_query->storage->settings;
-                auto const & features = StorageFactory::instance().getStorageFeatures(*storage_name);
-                chassert(!features.supports_settings || features.has_builtin_setting_fn != nullptr);
                 for (auto it = engine_settings->changes.begin(); it != engine_settings->changes.end();)
                 {
                     String & name = it->name;
-                    if ((!features.supports_settings || !features.has_builtin_setting_fn(name)) && context_settings.has(name))
+                    if (!engine_settings_support->isEngineSetting(name) && context_settings.has(name))
                     {
                         /// A value-less `SETTINGS name` in a `CREATE` reaches the context here
                         /// rather than through `executeForCurrentContext`, and the constraint check

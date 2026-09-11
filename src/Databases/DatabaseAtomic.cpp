@@ -920,7 +920,7 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
         return make_shared<DatabaseAtomic>(
             args.database_name, args.metadata_path, args.uuid, args.context, database_metadata_disk_settings);
     };
-    factory.registerDatabase("Atomic", create_fn, /*features=*/{.supports_settings = true}, Documentation{
+    factory.registerDatabase("Atomic", create_fn, /*features=*/{.supports_settings = true, .has_builtin_setting_fn = DatabaseMetadataDiskSettings::hasBuiltin}, Documentation{
         .description = R"DOCS_MD(
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse.
 
@@ -932,8 +932,12 @@ the above mentioned operations.
 ## Creating a database {#creating-a-database}
 
 ```sql
-CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
+CREATE DATABASE test [ENGINE = Atomic] [SETTINGS name = value, ...];
 ```
+
+`ENGINE = Atomic` may be omitted, because it is the default. A `SETTINGS` clause may hold both settings
+of the database engine (such as [`disk`](#metadata-disk) or [`max_tables`](#limiting-the-number-of-tables))
+and ordinary query settings; each name is dispatched to whichever of the two it belongs to.
 
 ## Specifics and recommendations {#specifics-and-recommendations}
 
@@ -987,12 +991,24 @@ For [`ReplicatedMergeTree`](/reference/engines/table-engines/mergetree-family/re
 
 ### Metadata disk {#metadata-disk}
 When `disk` is specified in `SETTINGS`, the disk is used to store table metadata files.
-For example:
+It can name a disk from the server configuration, or define one inline with the `disk` function,
+the same way a single table does:
 
 ```sql
-CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
+CREATE DATABASE db SETTINGS disk = 'db_disk';
+CREATE DATABASE db SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
 ```
+
 If unspecified, the disk defined in `database_disk.disk` is used by default.
+
+The same `SETTINGS` clause works for `ATTACH DATABASE`, which is how a database whose metadata files
+live on another disk is attached to a server. `Atomic` requires the `UUID` of the database to be given
+explicitly in that case:
+
+```sql
+ATTACH DATABASE db UUID '28f1c61c-2970-457a-bffe-454156ddcfef'
+SETTINGS disk = disk(type = 'local', path = '/var/lib/clickhouse-disks/db_disk');
+```
 
 ### Limiting the number of tables {#limiting-the-number-of-tables}
 

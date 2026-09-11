@@ -76,6 +76,8 @@ struct DatabaseDataLakeSettings
     /// so catalog code can match `SettingsChanges` entries without magic strings.
     static const String & getSettingName(DatabaseDataLakeSettingsString setting);
 
+    static bool hasBuiltin(std::string_view name);
+
 private:
     std::unique_ptr<DatabaseDataLakeSettingsImpl> impl;
 };
