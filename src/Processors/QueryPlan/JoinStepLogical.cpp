@@ -2204,9 +2204,9 @@ std::vector<JoinActionRef> JoinStepLogical::getOutputActions() const
 }
 
 
-void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 /*version*/) const
+void JoinStepLogical::serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
-    join_settings.updatePlanSettings(settings);
+    join_settings.updatePlanSettings(settings, version);
     sorting_settings.updatePlanSettings(settings);
 }
 
@@ -2286,7 +2286,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
     auto actions_after_join = deserializeNodeList(ctx.in, id_to_node);
 
     SortingStep::Settings sort_settings(ctx.settings);
-    JoinSettings join_settings(ctx.settings);
+    JoinSettings join_settings(ctx.settings, ctx.version);
 
     return std::make_unique<JoinStepLogical>(
         std::move(left_header),

@@ -1,5 +1,6 @@
 #include <vector>
 #include <Interpreters/JoinOperator.h>
+#include <Core/ProtocolDefines.h>
 
 #include <Columns/IColumn.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -199,7 +200,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     min_rows_ratio_for_hash_join_row_store = query_settings[Setting::min_rows_ratio_for_hash_join_row_store];
 }
 
-JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
+JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version)
 {
     join_algorithms = settings[QueryPlanSerializationSetting::join_algorithm];
     max_block_size = settings[QueryPlanSerializationSetting::max_block_size];
@@ -248,7 +249,9 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
     enable_software_prefetch_in_join = settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join];
-    legacy_join_size_limits_trigger_spilling = settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling];
+    /// A plan from before the name existed was built where the size limits still drove spilling.
+    legacy_join_size_limits_trigger_spilling = version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS
+        || settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling];
     use_hash_table_stats_for_join_reordering = settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering];
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
@@ -258,7 +261,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
 }
 
-void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -307,7 +310,10 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
     settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join] = enable_software_prefetch_in_join;
-    settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling] = legacy_join_size_limits_trigger_spilling;
+    /// `QueryPlanSerializationSettings` is a strict named schema, so this name may go on the wire only
+    /// towards a peer whose version knows it; an older peer already behaves as legacy mode.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS)
+        settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling] = legacy_join_size_limits_trigger_spilling;
     settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering] = use_hash_table_stats_for_join_reordering;
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;

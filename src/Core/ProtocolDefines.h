@@ -109,12 +109,17 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
 /// can be shipped under `make_distributed_plan`.
 /// Version 15 registers the `LimitRange` step (`LIMIT [n] AFTER ... [UNTIL ...]`).
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 15;
+/// Version 16 adds `legacy_join_size_limits_trigger_spilling` to the join step settings. A peer below
+/// it would reject the name, and its own joins treat `max_rows_in_join` / `max_bytes_in_join` as a
+/// spill trigger, so a plan arriving without the name is read back as legacy mode.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 16;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
 /// future bump can't silently leave this gate behind.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARALLEL_REPLICAS = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
+/// First query-plan serialization version that knows `legacy_join_size_limits_trigger_spilling`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS = 16;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
