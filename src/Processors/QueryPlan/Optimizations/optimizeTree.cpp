@@ -1,19 +1,19 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
-#include <Processors/QueryPlan/IQueryPlanStep.h>
-#include <Processors/QueryPlan/LogicalExchangeStep.h>
-#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
+#include <Processors/QueryPlan/IQueryPlanStep.h>
+#include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/considerEnablingParallelReplicas.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromLocalReplica.h>
-#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromTimeSeries.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
+#include <Processors/QueryPlan/LogicalExchangeStep.h>
 #include <Common/Exception.h>
 
 #include <memory>
@@ -202,8 +202,7 @@ void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_se
 
 void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
-void tryMakeDistributedSorting(
-    const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
@@ -231,12 +230,10 @@ void optimizeTreeSecondPass(
     bool predicates_were_propagated = false;
     if (optimization_settings.propagate_predicate_across_join && optimization_settings.query_plan_optimize_primary_key)
     {
-        traverseQueryPlan(
-            stack,
-            root,
-            NoOp{},
-            [&](auto & frame_node)
-            { predicates_were_propagated |= tryPropagatePredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0; });
+        traverseQueryPlan(stack, root, NoOp{}, [&](auto & frame_node)
+        {
+            predicates_were_propagated |= tryPropagatePredicateAcrossEquiJoin(&frame_node, nodes, extra_settings) > 0;
+        });
     }
 
     stack.push_back({.node = &root});
@@ -271,7 +268,10 @@ void optimizeTreeSecondPass(
         PreparedSets::Subqueries materialized_sets;
 
         /// Materialize subplan references before other optimizations.
-        traverseQueryPlan(stack, root, [&](auto & frame_node) { materializeQueryPlanReferences(frame_node, nodes, materialized_sets); });
+        traverseQueryPlan(stack, root, [&](auto & frame_node)
+        {
+            materializeQueryPlanReferences(frame_node, nodes, materialized_sets);
+        });
 
         /// Remove CommonSubplanSteps (they must be not used at that point).
         traverseQueryPlan(stack, root, [&](auto & frame_node)
@@ -354,8 +354,8 @@ void optimizeTreeSecondPass(
 
         /// After the __applyFilter filters been fixed, do work to indicate index analysis again
         if (join_runtime_filters_were_added && optimization_settings.enable_join_runtime_filters_index_analysis)
-            traverseQueryPlan(
-                stack, root, [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
+            traverseQueryPlan(stack, root,
+                [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
     }
 
     /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
@@ -389,18 +389,21 @@ void optimizeTreeSecondPass(
     /// Some plans are optimized more than once (e.g. StorageMerge child plans, set subplans). The
     /// tryMakeDistributed* transforms are not idempotent - a second pass would wrap the same steps
     /// into exchanges again - so run them only on a plan that has no exchanges yet.
-    const bool make_distributed_plan = optimization_settings.make_distributed_plan && !planContainsLogicalExchange(root);
+    const bool make_distributed_plan = optimization_settings.make_distributed_plan
+        && !planContainsLogicalExchange(root);
 
     /// WITH TOTALS / extremes produce extra streams the exchange protocol does not carry, and
     /// PASTE JOIN pairs rows by position, which exchanges do not preserve, so such plans cannot
     /// be distributed. make_distributed_plan is explicit, so fail rather than silently running
     /// single-node.
     if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "make_distributed_plan does not support WITH TOTALS, extremes or PASTE JOIN");
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support WITH TOTALS, extremes or PASTE JOIN");
     /// An in-order aggregation (from `force_aggregation_in_order`) relies on its input order,
     /// which the exchanges do not preserve.
     if (make_distributed_plan && planHasInOrderAggregation(root))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "make_distributed_plan does not support in-order aggregation");
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "make_distributed_plan does not support in-order aggregation");
     /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
     if (make_distributed_plan)
         checkDistributedReadSupported(root);
@@ -414,9 +417,7 @@ void optimizeTreeSecondPass(
 
     applyParallelReplicas(query_plan, nodes, optimization_settings);
 
-    traverseQueryPlan(
-        stack,
-        root,
+    traverseQueryPlan(stack, root,
         [&](auto & frame_node)
         {
             if (optimization_settings.read_in_order && !make_distributed_plan)
@@ -442,10 +443,8 @@ void optimizeTreeSecondPass(
     /// when nothing was distributed), which the traversal above skipped.
     if (optimization_settings.enable_parallel_replicas)
     {
-        traverseQueryPlan(
-            stack,
-            root,
-            [&](auto &) { },
+        traverseQueryPlan(stack, root,
+            [&](auto &) {},
             [&](auto & frame_node) { convertLogicalJoinToPhysical(frame_node, nodes, optimization_settings); });
 
         /// The joins are physical only now, so this is the first point where lazy column indexing can be
@@ -706,8 +705,7 @@ void optimizeTreeSecondPass(
 
             if (frame.next_child == 0)
             {
-                if (optimizeVectorSearchWithQuantizedCodes(
-                        root, stack, nodes, extra_settings, optimization_settings.max_limit_for_lazy_materialization))
+                if (optimizeVectorSearchWithQuantizedCodes(root, stack, nodes, extra_settings, optimization_settings.max_limit_for_lazy_materialization))
                     break;
             }
 
@@ -752,9 +750,7 @@ void optimizeTreeSecondPass(
                     /// Merge Expression/Filter steps (on enter) and apply lazy FINAL
                     /// (on leave) in the transformed subtree.
                     Stack sub_stack;
-                    traverseQueryPlan(
-                        sub_stack,
-                        *frame.node,
+                    traverseQueryPlan(sub_stack, *frame.node,
                         [&](QueryPlan::Node & node)
                         {
                             tryMergeExpressions(&node, nodes, extra_settings);

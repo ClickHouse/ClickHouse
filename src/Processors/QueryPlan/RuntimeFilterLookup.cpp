@@ -32,13 +32,13 @@
 
 namespace ProfileEvents
 {
-extern const Event RuntimeFiltersCreated;
-extern const Event RuntimeFilterBlocksProcessed;
-extern const Event RuntimeFilterBlocksSkipped;
-extern const Event RuntimeFilterRowsChecked;
-extern const Event RuntimeFilterRowsPassed;
-extern const Event RuntimeFilterRowsSkipped;
-extern const Event RuntimeFilterBloomFilterBuildsSkipped;
+    extern const Event RuntimeFiltersCreated;
+    extern const Event RuntimeFilterBlocksProcessed;
+    extern const Event RuntimeFilterBlocksSkipped;
+    extern const Event RuntimeFilterRowsChecked;
+    extern const Event RuntimeFilterRowsPassed;
+    extern const Event RuntimeFilterRowsSkipped;
+    extern const Event RuntimeFilterBloomFilterBuildsSkipped;
 }
 
 namespace DB
@@ -46,8 +46,8 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int INCORRECT_DATA;
-extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace detail
@@ -159,11 +159,9 @@ static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & sou
     const auto & source_words = source.getFilter();
     constexpr size_t word_size = sizeof(source_words.front());
     if (destination_words.size() != source_words.size())
-        throw Exception(
-            ErrorCodes::INCORRECT_DATA,
+        throw Exception(ErrorCodes::INCORRECT_DATA,
             "Cannot merge Bloom Filters of different sizes: {} and {}",
-            destination_words.size() * word_size,
-            source_words.size() * word_size);
+            destination_words.size() * word_size, source_words.size() * word_size);
 
     for (size_t i = 0; i < destination_words.size(); ++i)
         destination_words[i] |= source_words[i];
@@ -296,10 +294,8 @@ Overloaded(Ts...) -> Overloaded<Ts...>;
 UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 default_bloom_filter_bytes, Float64 max_ratio_of_set_bits)
 {
     const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
-    const double ideal_bloom_filter_bytes
-        = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
-    const double clamped_bloom_filter_bytes
-        = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
+    const double ideal_bloom_filter_bytes = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
+    const double clamped_bloom_filter_bytes = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
     return std::max(static_cast<UInt64>(clamped_bloom_filter_bytes), default_bloom_filter_bytes);
 }
 }
@@ -882,9 +878,11 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         /// that `finishInsert` discards. Predict that fill rate before constructing it.
         if (distinct_keys_hint_matches_filter_key)
         {
-            const double least_distinct_keys = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
+            const double least_distinct_keys
+                = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
             const double predicted_fill_rate = -std::expm1(
-                -static_cast<double>(bloom_filter_hash_functions) * least_distinct_keys / (static_cast<double>(bytes_limit) * 8.0));
+                -static_cast<double>(bloom_filter_hash_functions) * least_distinct_keys
+                / (static_cast<double>(bytes_limit) * 8.0));
             if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
             {
                 ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
@@ -1209,7 +1207,9 @@ static const ActionsDAG::Node * convertRuntimeFilterToKeyConditionDAG(
 
     const auto target_type = filter.getFilterColumnTargetType();
     const auto & key_node = dag.addInput(column_name, column_type);
-    const auto & key_casted = column_type->equals(*target_type) ? key_node : dag.addCast(key_node, target_type, {}, context);
+    const auto & key_casted = column_type->equals(*target_type)
+        ? key_node
+        : dag.addCast(key_node, target_type, {}, context);
 
     if (exact_values)
     {

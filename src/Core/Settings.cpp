@@ -8,7 +8,6 @@
 #if ENABLE_DISTRIBUTED_CACHE
 #include <Core/DistributedCacheDefines.h>
 #endif
-#include <Access/resolveSetting.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsChangesHistory.h>
@@ -21,12 +20,13 @@
 #include <IO/ReadBufferFromString.h>
 #include <IO/S3Defines.h>
 #include <IO/WriteBufferFromString.h>
+#include <Access/resolveSetting.h>
 #include <Storages/System/MutableColumnsAndConstraints.h>
-#include <base/sanitizer_defs.h>
 #include <base/types.h>
-#include <Common/FieldVisitorToString.h>
 #include <Common/NamePrompter.h>
+#include <Common/FieldVisitorToString.h>
 #include <Common/typeid_cast.h>
+#include <base/sanitizer_defs.h>
 
 #include <boost/program_options.hpp>
 #include <Poco/Util/AbstractConfiguration.h>
@@ -54,8 +54,7 @@ constexpr UInt64 default_max_size_to_drop = 0lu;
 constexpr UInt64 default_distributed_cache_connect_max_tries = DistributedCache::DEFAULT_CONNECT_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_read_request_max_tries = DistributedCache::DEFAULT_READ_REQUEST_MAX_TRIES;
 constexpr UInt64 default_distributed_cache_write_request_max_tries = DistributedCache::DEFAULT_WRITE_REQUEST_MAX_TRIES;
-constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds
-    = DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
+constexpr UInt64 default_distributed_cache_credentials_refresh_period_seconds = DistributedCache::DEFAULT_CREDENTIALS_REFRESH_PERIOD_SECONDS;
 constexpr UInt64 default_distributed_cache_connect_backoff_min_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MIN_MS;
 constexpr UInt64 default_distributed_cache_connect_backoff_max_ms = DistributedCache::DEFAULT_CONNECT_BACKOFF_MAX_MS;
 constexpr UInt64 default_distributed_cache_connect_timeout_ms = DistributedCache::DEFAULT_CONNECT_TIMEOUTS_MS;
@@ -87,11 +86,11 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int THERE_IS_NO_PROFILE;
-extern const int NO_ELEMENTS_IN_CONFIG;
-extern const int UNKNOWN_ELEMENT_IN_CONFIG;
-extern const int BAD_ARGUMENTS;
-extern const int NOT_IMPLEMENTED;
+    extern const int THERE_IS_NO_PROFILE;
+    extern const int NO_ELEMENTS_IN_CONFIG;
+    extern const int UNKNOWN_ELEMENT_IN_CONFIG;
+    extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 /** List of settings: type, name, default value, description, flags
@@ -9502,7 +9501,7 @@ Enable experimental table function `eval`.
     COMMON_SETTINGS(M, ALIAS)          \
     OBSOLETE_SETTINGS(M, ALIAS)        \
     FORMAT_FACTORY_SETTINGS(M, ALIAS)  \
-    OBSOLETE_FORMAT_SETTINGS(M, ALIAS)
+    OBSOLETE_FORMAT_SETTINGS(M, ALIAS) \
 
 // clang-format on
 
@@ -9558,7 +9557,8 @@ private:
     /// meant a lookup per setting and an allocated node per setting, on top of copying them all whenever
     /// the settings are copied. The number of settings is known at compile time, so the bitmap lives in
     /// the settings themselves and never allocates.
-    static constexpr size_t num_setting_bitmap_words = (static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS) + 63) / 64;
+    static constexpr size_t num_setting_bitmap_words
+        = (static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS) + 63) / 64;
     std::array<UInt64, num_setting_bitmap_words> settings_changed_by_compatibility_setting = {};
     size_t num_settings_changed_by_compatibility_setting = 0;
 
@@ -9607,7 +9607,7 @@ void SettingsImpl::setProfile(const String & profile_name, const Poco::Util::Abs
     {
         if (key == "constraints")
             continue;
-        if (key == "profile" || key.starts_with("profile[")) /// Inheritance of profiles from the current one.
+        if (key == "profile" || key.starts_with("profile["))   /// Inheritance of profiles from the current one.
             setProfile(config.getString(elem + "." + key), config);
         else
             set(key, config.getString(elem + "." + key));
@@ -9727,18 +9727,17 @@ void SettingsImpl::checkNoSettingNamesAtTopLevel(const Poco::Util::AbstractConfi
         /// Some setting names collide with long-standing top-level config sections.
         /// `compression` is a top-level config block describing default codec selection rules
         /// (see `CompressionCodecSelector`).
-        bool should_skip_check = name == "max_table_size_to_drop" || name == "max_partition_size_to_drop" || name == "compression";
+        bool should_skip_check = name == "max_table_size_to_drop"
+            || name == "max_partition_size_to_drop"
+            || name == "compression";
         if (config.has(name) && (setting.getTier() != SettingsTierType::OBSOLETE) && !should_skip_check)
         {
-            throw Exception(
-                ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
-                "A setting '{}' appeared at top level in config {}."
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "A setting '{}' appeared at top level in config {}."
                 " But it is user-level setting that should be located in users.xml inside <profiles> section for specific profile."
                 " You can add it to <profiles><default> if you want to change default value of this setting."
                 " You can also disable the check - specify <skip_check_for_incorrect_settings>1</skip_check_for_incorrect_settings>"
                 " in the main configuration file.",
-                name,
-                config_path);
+                name, config_path);
         }
     }
 }
@@ -9758,7 +9757,10 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     {
         if (BaseSettings::castValueUtil(name, value).safeGet<UInt64>() != 0)
         {
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The setting `{}` is not supported in a MemorySanitizer build", name);
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "The setting `{}` is not supported in a MemorySanitizer build",
+                name);
         }
     }
 #endif
@@ -9766,10 +9768,7 @@ void SettingsImpl::set(std::string_view name, const Field & value)
     if (name == "compatibility")
     {
         if (value.getType() != Field::Types::Which::String)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unexpected type of value for setting 'compatibility'. Expected String, got {}",
-                value.getTypeName());
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected type of value for setting 'compatibility'. Expected String, got {}", value.getTypeName());
         applyCompatibilitySetting(value.safeGet<String>());
     }
     /// If we change setting that was changed by compatibility setting before
@@ -9847,7 +9846,8 @@ const ResolvedCompatibilityHistory & getResolvedCompatibilityHistory()
 
                 /// `default_settings` holds every setting as it is with nothing changed, which is what
                 /// a setting the walk has not touched yet holds too.
-                const bool previous_value_is_default = accessor.getValue(default_settings, index) == change.previous_value;
+                const bool previous_value_is_default
+                    = accessor.getValue(default_settings, index) == change.previous_value;
 
                 resolved_changes.push_back({index, &change.previous_value, previous_value_is_default});
             }
@@ -9928,13 +9928,11 @@ IMPLEMENT_SETTINGS_TRAITS_CUSTOM_IMPL(SettingsTraits, LIST_OF_SETTINGS, Settings
 
 Settings::Settings()
     : impl(std::make_unique<SettingsImpl>())
-{
-}
+{}
 
 Settings::Settings(const Settings & settings)
     : impl(std::make_unique<SettingsImpl>(*settings.impl))
-{
-}
+{}
 
 Settings::Settings(Settings && settings) noexcept = default;
 
@@ -10043,7 +10041,8 @@ String Settings::toString(bool show_secrets) const
         if (!first)
             out << ", ";
         auto masked = CoreSettings::renderSecretSettingValue(String(setting.getName()), setting.getValue());
-        out << setting.getName() << " = " << (masked ? *masked : applyVisitor(FieldVisitorToString(), setting.getValue()));
+        out << setting.getName() << " = "
+            << (masked ? *masked : applyVisitor(FieldVisitorToString(), setting.getValue()));
         first = false;
     }
     return out.str();
@@ -10300,13 +10299,13 @@ void Settings::addToProgramOptions(std::string_view setting_name, boost::program
     const auto & accessor = SettingsImpl::Traits::Accessor::instance();
     size_t index = accessor.find(setting_name);
     chassert(index != static_cast<size_t>(-1));
-    auto on_program_option
-        = boost::function1<void, const std::string &>([this, setting_name](const std::string & value) { this->set(setting_name, value); });
-    options.add(
-        boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
-            setting_name.data(),
-            boost::program_options::value<std::string>()->composing()->notifier(on_program_option),
-            accessor.getDescription(index).data()))); // NOLINT
+    auto on_program_option = boost::function1<void, const std::string &>(
+            [this, setting_name](const std::string & value)
+            {
+                this->set(setting_name, value);
+            });
+    options.add(boost::shared_ptr<boost::program_options::option_description>(new boost::program_options::option_description(
+            setting_name.data(), boost::program_options::value<std::string>()->composing()->notifier(on_program_option), accessor.getDescription(index).data()))); // NOLINT
 }
 
 void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_description & options) const
@@ -10335,8 +10334,7 @@ void Settings::addToProgramOptionsAsMultitokens(boost::program_options::options_
     }
 }
 
-void Settings::addToClientOptions(
-    Poco::Util::LayeredConfiguration & config, const boost::program_options::variables_map & options, bool repeated_settings) const
+void Settings::addToClientOptions(Poco::Util::LayeredConfiguration &config, const boost::program_options::variables_map &options, bool repeated_settings) const
 {
     for (const auto & setting : impl->all())
     {

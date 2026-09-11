@@ -11,11 +11,13 @@ namespace DB
 
 namespace ErrorCodes
 {
-extern const int LOGICAL_ERROR;
+    extern const int LOGICAL_ERROR;
 }
 
 static void addSettingsChanges(
-    VersionToSettingsChangesMap & settings_changes_history, std::string_view version, SettingsChangesHistory::SettingsChanges && changes)
+    VersionToSettingsChangesMap & settings_changes_history,
+    std::string_view version,
+    SettingsChangesHistory::SettingsChanges && changes)
 {
     /// Forbid duplicate versions
     auto [_, inserted] = settings_changes_history.emplace(ClickHouseVersion(version), std::move(changes));
@@ -27,11 +29,9 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
 {
     static VersionToSettingsChangesMap settings_changes_history;
     static std::once_flag initialized_flag;
-    std::call_once(
-        initialized_flag,
-        [&]
-        {
-            // clang-format off
+    std::call_once(initialized_flag, [&]
+    {
+        // clang-format off
         /// History of settings changes that controls some backward incompatible changes
         /// across all ClickHouse versions. It maps ClickHouse version to settings changes that were done
         /// in this version. This history contains both changes to existing settings and newly added settings.
