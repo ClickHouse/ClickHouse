@@ -40,6 +40,11 @@ public:
         const void * address_end{};
         std::string name;
         std::shared_ptr<Elf> elf;
+#if defined(__ELF__)
+        /// Owns the storage referenced by `gnu_debugdata_elf` and the symbol names collected from it.
+        std::shared_ptr<std::vector<char>> gnu_debugdata;
+        std::shared_ptr<Elf> gnu_debugdata_elf;
+#endif
 #if defined(OS_DARWIN)
         /// ASLR slide for this image. Subtract from runtime address to get linked (DWARF) address.
         uintptr_t slide = 0;
