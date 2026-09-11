@@ -67,6 +67,42 @@ SETTINGS table_disk = true,
       path = '${disk_path}')
 "
 
+# The mirror of the pair above, on its own root: parts written descending, mounted by a table declaring
+# ascending. The two orders are compared by different branches, and the reader above reaches only one.
+disk_path_desc="disks/05175_desc/${CLICKHOUSE_DATABASE}/"
+
+${CLICKHOUSE_CLIENT} --query "
+CREATE TABLE writer_desc (key Int32, val UInt32) ENGINE = MergeTree ORDER BY key DESC
+SETTINGS table_disk = true, index_granularity_bytes = 10485760,
+  disk = disk(
+      name = 05175_writer_desc_${CLICKHOUSE_DATABASE},
+      type = object_storage,
+      object_storage_type = local,
+      metadata_type = plain_rewritable,
+      path = '${disk_path_desc}')
+"
+
+${CLICKHOUSE_CLIENT} --query "SYSTEM STOP MERGES writer_desc"
+for offset in 0 50 100 150; do
+    ${CLICKHOUSE_CLIENT} --query "INSERT INTO writer_desc SELECT number + ${offset}, number FROM numbers(50)"
+done
+
+${CLICKHOUSE_CLIENT} --query "
+SELECT count(), min(marks) > 1 FROM system.parts
+WHERE database = currentDatabase() AND table = 'writer_desc' AND active"
+
+${CLICKHOUSE_CLIENT} --query "
+CREATE TABLE reader_asc_mismatch (key Int32, val UInt32) ENGINE = MergeTree ORDER BY key
+SETTINGS table_disk = true,
+  disk = disk(
+      name = 05175_reader_asc_mismatch_${CLICKHOUSE_DATABASE},
+      read_only = true,
+      type = object_storage,
+      object_storage_type = local,
+      metadata_type = plain_rewritable,
+      path = '${disk_path_desc}')
+"
+
 # The injected split is not applied to a parallel-replicas read, so the read has to be a plain local
 # one for the ranges to reach the splitter at all.
 split_read()
@@ -82,9 +118,15 @@ error=$(split_read reader_desc 2>&1)
 echo "$error" | grep -oE "INCORRECT_DATA" | head -1
 echo "$error" | grep -oE "Part all_[0-9_]+ is not sorted by the sorting key declared by this table" | head -1
 
-# Control: without it the line above would pass for an empty root or a broken disk path too.
+error=$(split_read reader_asc_mismatch 2>&1)
+echo "$error" | grep -oE "INCORRECT_DATA" | head -1
+echo "$error" | grep -oE "Part all_[0-9_]+ is not sorted by the sorting key declared by this table" | head -1
+
+# Control: without it the lines above would pass for an empty root or a broken disk path too.
 split_read reader_asc
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE reader_desc"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE reader_asc"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE reader_asc_mismatch"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE writer"
+${CLICKHOUSE_CLIENT} --query "DROP TABLE writer_desc"
