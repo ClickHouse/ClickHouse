@@ -1647,6 +1647,48 @@ def test_create_table_as_rejects_column_modifiers(started_cluster):
         node.query(f"DROP TABLE default.{src_table}")
 
 
+def test_create_table_as_rejects_source_storage_clauses(started_cluster):
+    node = started_cluster.instances["node1"]
+
+    namespace = "test_ctas_srcclause_ns"
+
+    create_clickhouse_iceberg_database(
+        started_cluster,
+        node,
+        CATALOG_NAME,
+        additional_settings={"default_base_location": "s3://warehouse-rest/data"},
+    )
+
+    # The source's storage clauses are merged into the CREATE query before the storage is rebuilt to keep
+    # only PARTITION BY / ORDER BY, so a clause inherited from the source must be rejected just like an
+    # explicit one, instead of creating an Iceberg table with weaker semantics than the source.
+    cases = [
+        ("primary_key", "id UInt64, name String", "PRIMARY KEY id ORDER BY (id, name)", {}, "PRIMARY KEY"),
+        ("sample_by", "id UInt64", "ORDER BY id SAMPLE BY id", {}, "SAMPLE BY"),
+        ("ttl", "id UInt64, dt Date", "ORDER BY id TTL dt + INTERVAL 1 DAY", {}, "TTL"),
+        (
+            "unique_key",
+            "id UInt64",
+            "ORDER BY id UNIQUE KEY id",
+            {"allow_experimental_unique_key": 1},
+            "UNIQUE KEY",
+        ),
+    ]
+    for src_suffix, columns, clauses, src_settings, clause_name in cases:
+        src_table = f"src_storage_{src_suffix}"
+        node.query(f"DROP TABLE IF EXISTS default.{src_table}")
+        node.query(
+            f"CREATE TABLE default.{src_table} ({columns}) ENGINE = MergeTree {clauses}",
+            settings=src_settings,
+        )
+        err = node.query_and_get_error(
+            f"CREATE TABLE {CATALOG_NAME}.`{namespace}.dst_{src_suffix}` "
+            f"AS default.{src_table} SETTINGS allow_database_iceberg = 1"
+        )
+        assert f"has {clause_name}, which a DataLakeCatalog table cannot represent" in err
+        node.query(f"DROP TABLE default.{src_table}")
+
+
 def test_create_table_explicit_columns(started_cluster):
     node = started_cluster.instances["node1"]
 

@@ -1799,6 +1799,22 @@ bool isReplicated(const ASTStorage & storage)
     return storage_name.starts_with("Replicated") || storage_name.starts_with("Shared");
 }
 
+/// Names the first storage clause an Iceberg table cannot represent, or nullptr if there is none.
+/// Engine `SETTINGS` are left to the caller: they are real storage settings when the engine is explicit,
+/// and the source engine's defaults when they come from `CREATE TABLE ... AS`.
+const char * findUnsupportedDatalakeStorageClause(const ASTStorage & storage)
+{
+    if (storage.primary_key)
+        return "PRIMARY KEY";
+    if (storage.sample_by)
+        return "SAMPLE BY";
+    if (storage.ttl_table)
+        return "TTL";
+    if (storage.unique_key)
+        return "UNIQUE KEY";
+    return nullptr;
+}
+
 }
 
 BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
@@ -2045,15 +2061,8 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     const char * datalake_unsupported_storage_clause = nullptr;
     if (create.storage)
     {
-        if (create.storage->primary_key)
-            datalake_unsupported_storage_clause = "PRIMARY KEY";
-        else if (create.storage->sample_by)
-            datalake_unsupported_storage_clause = "SAMPLE BY";
-        else if (create.storage->ttl_table)
-            datalake_unsupported_storage_clause = "TTL";
-        else if (create.storage->unique_key)
-            datalake_unsupported_storage_clause = "UNIQUE KEY";
-        else if (create.storage->settings && !engine_user_specified)
+        datalake_unsupported_storage_clause = findUnsupportedDatalakeStorageClause(*create.storage);
+        if (!datalake_unsupported_storage_clause && create.storage->settings && !engine_user_specified)
             datalake_unsupported_storage_clause = "engine SETTINGS";
     }
 
@@ -2204,6 +2213,20 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
                 "DataLakeCatalog CREATE TABLE supports only PARTITION BY and ORDER BY; "
                 "PRIMARY KEY, SAMPLE BY, TTL, UNIQUE KEY, and engine SETTINGS are not supported "
                 "(got {})", datalake_unsupported_storage_clause);
+        }
+
+        /// `setEngine` merged the source's clauses into `create.storage`, and the rebuild in `doCreateTable`
+        /// keeps only PARTITION BY / ORDER BY, so an inherited clause would be dropped as silently as an
+        /// explicit one. The source's engine `SETTINGS` are not checked: every MergeTree source carries its
+        /// engine defaults (`index_granularity`), which describe the source's engine and nothing else.
+        if (!as_table_saved.empty() && create.storage)
+        {
+            if (const char * inherited_clause = findUnsupportedDatalakeStorageClause(*create.storage))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Source table {}.{} has {}, which a DataLakeCatalog table cannot represent; "
+                    "CREATE TABLE ... AS supports only columns, PARTITION BY, and ORDER BY",
+                    backQuoteIfNeed(getContext()->resolveDatabase(as_database_saved)),
+                    backQuoteIfNeed(as_table_saved), inherited_clause);
         }
 
         /// Only column names and types (plus `PARTITION BY` / `ORDER BY`) reach the initial Iceberg
