@@ -2232,7 +2232,7 @@ This engine provides an integration with existing [Delta Lake](https://github.co
 
 ## Create a DeltaLake table {#create-table}
 
-To create a DeltaLake table it must already exist in S3, GCP or Azure storage. The commands below do not take DDL parameters to create a new table.
+By default the Delta Lake table must already exist in S3, GCP or Azure storage, and the commands below attach to it without DDL column definitions. With `allow_delta_lake_create_table = 1`, a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` instead creates a new Delta Lake table by writing the initial commit through `delta-kernel-rs` (creating a partitioned table is not supported yet), and inside a Unity `DataLakeCatalog` database the table is also registered in the catalog.
 
 <Tabs>
 <TabItem value="S3" label="S3" default>
@@ -2476,7 +2476,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
         },
         Documentation{
-            .description = "Provides a read-only integration with existing Delta Lake tables stored on the local filesystem.",
+            .description = "Provides an integration with Delta Lake tables stored on the local filesystem. Reads work out of the box; with `allow_delta_lake_create_table = 1` a `CREATE TABLE` with explicit columns against a location that has no `_delta_log` creates a new table (writing the initial commit), and `INSERT` requires `allow_experimental_delta_lake_writes = 1`.",
             .syntax = "ENGINE = DeltaLakeLocal(path)",
             .related = {"DeltaLake"}});
 }

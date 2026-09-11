@@ -10,6 +10,8 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
+#include <filesystem>
+
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
@@ -425,6 +427,12 @@ public:
             "get_engine_builder");
 
         return builder;
+    }
+
+    /// The kernel's local `object_store` backend requires the table directory to exist before `get_engine_builder`; create it here.
+    void prepareForTableCreation() const override
+    {
+        std::filesystem::create_directories(path);
     }
 
 private:

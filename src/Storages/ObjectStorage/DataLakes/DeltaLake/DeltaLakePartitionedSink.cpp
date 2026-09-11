@@ -19,6 +19,8 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTLiteral.h>
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/WriteTransaction.h>
@@ -39,6 +41,7 @@ namespace Setting
 {
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_rows_in_data_file;
     extern const SettingsNonZeroUInt64 delta_lake_insert_max_bytes_in_data_file;
+    extern const SettingsBool delta_lake_accurate_write_cast;
 }
 
 namespace FailPoints
@@ -163,30 +166,40 @@ DeltaLakePartitionedSink::DeltaLakePartitionedSink(
     , format_settings(format_settings_)
     , data_file_max_rows(context_->getSettingsRef()[Setting::delta_lake_insert_max_rows_in_data_file])
     , data_file_max_bytes(context_->getSettingsRef()[Setting::delta_lake_insert_max_bytes_in_data_file])
+    , accurate_write_cast(context_->getSettingsRef()[Setting::delta_lake_accurate_write_cast])
     , partition_strategy(createPartitionStrategy(partition_columns, getHeader(), context_))
     , delta_transaction(delta_transaction_)
+    , format_header(partition_strategy->getFormatHeader())
+    , write_format_header(DeltaLake::makeDeltaWriteHeader(format_header, delta_transaction_->getWriteSchema()))
     , write_format(write_format_)
     , write_compression_method(write_compression_method_)
 {
     delta_transaction->validateSchema(getHeader());
 
-    /// One `toString(<column>)` expression per partition column (Nullable columns yield
-    /// `Nullable(String)`, keeping nulls distinguishable). Nullability is taken from the Delta
-    /// write schema, which is authoritative over the user-supplied header.
+    /// One `toString(<cast>(<column>))` expression per partition column: the value is first cast to the
+    /// Delta write-schema type (like the data columns) so an out-of-range key is rejected (accurate) or
+    /// truncated (plain) instead of being committed verbatim and read back as a different value (e.g. `1000`
+    /// into a Delta `byte` -> `-24`). `toString` keeps nulls distinguishable (`Nullable(String)`); the cast
+    /// target is the nullable write type so a NULL passes through to the null-equivalent check in `consume`.
+    /// Nullability for that check is taken from the Delta write schema, which is authoritative.
     const auto & write_schema = delta_transaction->getWriteSchema();
     partition_value_actions.reserve(partition_columns.size());
     partition_column_nullable.reserve(partition_columns.size());
     for (const auto & column : partition_columns)
     {
-        ASTs to_string_args{make_intrusive<ASTIdentifier>(column)};
-        ASTPtr to_string_ast = makeASTFunction("toString", std::move(to_string_args));
-        partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(to_string_ast));
-
         auto schema_column = write_schema.tryGetByName(column);
         if (!schema_column)
             throw Exception(
                 ErrorCodes::INCORRECT_DATA,
                 "Partition column '{}' is not present in the DeltaLake table schema", column);
+
+        ASTPtr value_ast = makeASTFunction(
+            accurate_write_cast ? "accurateCast" : "_CAST",
+            make_intrusive<ASTIdentifier>(column),
+            make_intrusive<ASTLiteral>(makeNullable(schema_column->type)->getName()));
+        ASTPtr to_string_ast = makeASTFunction("toString", std::move(value_ast));
+        partition_value_actions.push_back(partition_strategy->getPartitionExpressionActions(to_string_ast));
+
         partition_column_nullable.push_back(schema_column->type->isNullable());
     }
 }
@@ -352,9 +365,11 @@ void DeltaLakePartitionedSink::consume(Chunk & chunk)
             total_data_files_count += 1;
         }
         auto & data_file = data_files.back();
-        data_file.written_bytes += partition_chunk.bytes();
-        data_file.written_rows += partition_chunk.getNumRows();
-        data_file.sink->consume(partition_chunk);
+        /// Cast to the Delta write schema so the data files match the Delta log (e.g. `UInt8` -> `short`).
+        Chunk write_chunk = DeltaLake::castChunkToDeltaWriteSchema(partition_chunk, format_header, *write_format_header, accurate_write_cast);
+        data_file.written_bytes += write_chunk.bytes();
+        data_file.written_rows += write_chunk.getNumRows();
+        data_file.sink->consume(write_chunk);
     }
 }
 
@@ -381,7 +396,7 @@ DeltaLakePartitionedSink::createSinkForPartition(std::string_view partition_key)
         DeltaLake::generateWritePath(std::move(data_prefix), write_format),
         object_storage,
         format_settings,
-        std::make_shared<Block>(partition_strategy->getFormatHeader()),
+        write_format_header,
         getContext(),
         write_format,
         write_compression_method);
