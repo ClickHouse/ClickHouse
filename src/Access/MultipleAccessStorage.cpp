@@ -1,6 +1,7 @@
 #include <Access/MultipleAccessStorage.h>
 #include <Access/Credentials.h>
 #include <Common/Exception.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/quoteString.h>
 #include <base/range.h>
 #include <base/insertAtEnd.h>
@@ -257,7 +258,7 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
     auto destination_storage = getStorageByName(destination_storage_name);
 
     auto to_move = source_storage->read(ids);
-    std::vector<size_t> removal_order;
+    VectorWithMemoryTracking<size_t> removal_order;
     removal_order.reserve(ids.size());
     for (size_t i = 0; i != ids.size(); ++i)
     {
@@ -270,8 +271,8 @@ void MultipleAccessStorage::moveAccessEntities(const std::vector<UUID> & ids, co
             removal_order.push_back(i);
     }
 
-    std::vector<size_t> removed;
-    std::vector<size_t> inserted;
+    VectorWithMemoryTracking<size_t> removed;
+    VectorWithMemoryTracking<size_t> inserted;
     removed.reserve(ids.size());
     inserted.reserve(ids.size());
 

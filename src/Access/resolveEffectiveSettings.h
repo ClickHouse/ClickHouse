@@ -5,12 +5,13 @@
 #include <Access/Role.h>
 #include <Access/SettingsProfile.h>
 #include <Access/SettingsProfileElement.h>
+#include <Common/UnorderedMapWithMemoryTracking.h>
+#include <Common/UnorderedSetWithMemoryTracking.h>
 #include <boost/container/flat_set.hpp>
 
 #include <functional>
 #include <map>
 #include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
@@ -22,7 +23,7 @@ class AccessControl;
 /// so that each of them is looked up once.
 void collectRoles(
     EnabledRolesInfo & roles_info,
-    std::unordered_set<UUID> & skip_ids,
+    UnorderedSetWithMemoryTracking<UUID> & skip_ids,
     const std::function<RolePtr(const UUID &)> & get_role_function,
     const UUID & role_id,
     bool is_current_role,
@@ -60,7 +61,7 @@ ResolvedSettingsProfileElements resolveSettingsProfileElements(
     const SettingsProfileElements & settings_from_user);
 
 /// The access entities a statement is about to write, by id. A null entity means a removal.
-using PendingAccessEntities = std::unordered_map<UUID, AccessEntityPtr>;
+using PendingAccessEntities = UnorderedMapWithMemoryTracking<UUID, AccessEntityPtr>;
 using FeatureTierAccessEntityChecker = std::function<void(const PendingAccessEntities & pending, const PendingAccessEntities & current)>;
 
 /// Prepares an immutable graph snapshot for checks which must run from inside an access storage's

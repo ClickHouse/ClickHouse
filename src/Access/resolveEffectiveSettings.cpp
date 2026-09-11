@@ -5,12 +5,12 @@
 #include <Access/User.h>
 #include <Access/resolveSetting.h>
 #include <Common/Exception.h>
+#include <Common/MapWithMemoryTracking.h>
+#include <Common/SetWithMemoryTracking.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
 
-#include <map>
-#include <set>
 #include <unordered_map>
-#include <unordered_set>
 
 
 namespace DB
@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 void collectRoles(
     EnabledRolesInfo & roles_info,
-    std::unordered_set<UUID> & skip_ids,
+    UnorderedSetWithMemoryTracking<UUID> & skip_ids,
     const std::function<RolePtr(const UUID &)> & get_role_function,
     const UUID & role_id,
     bool is_current_role,
@@ -77,7 +77,7 @@ void substituteProfiles(
 {
     profiles = elements.toProfileIDs();
 
-    std::unordered_set<UUID> substituted_profiles_set;
+    UnorderedSetWithMemoryTracking<UUID> substituted_profiles_set;
     size_t i = elements.size();
     while (i != 0)
     {
@@ -145,8 +145,11 @@ namespace
     /// What a setting ends up being for a user: its value and its constraints, after every profile,
     /// role and override that reaches that user has been applied. `setting_name` stays empty: the name
     /// is the key this is stored under.
-    using ResolvedSettings = std::map<String, SettingsProfileElement>;
-    using AccessEntityIDs = std::unordered_set<UUID>;
+    using ResolvedSettings = MapWithMemoryTracking<String, SettingsProfileElement>;
+    using AccessEntityIDs = UnorderedSetWithMemoryTracking<UUID>;
+    using UsersByID = UnorderedMapWithMemoryTracking<UUID, UserPtr>;
+    using RolesByID = UnorderedMapWithMemoryTracking<UUID, RolePtr>;
+    using Replacements = UnorderedMapWithMemoryTracking<UUID, UUID>;
 
     /// Folds a list of profile elements into one element per setting, using the same constraint merge
     /// rules as `SettingsConstraints`, and treats the two names of a `MergeTree` setting as one setting.
@@ -227,7 +230,7 @@ namespace
             }
             else
             {
-                std::unordered_set<UUID> ids;
+                UnorderedSetWithMemoryTracking<UUID> ids;
                 for (const auto & item : pending)
                     ids.emplace(item.first);
                 for (const auto & item : current)
@@ -281,12 +284,12 @@ namespace
             return it == users.end() ? nullptr : it->second;
         }
 
-        const std::unordered_map<UUID, UserPtr> & allUsers() const { return users; }
+        const UsersByID & allUsers() const { return users; }
 
         ResolvedSettings resolveForUser(const UUID & user_id, const User & user) const
         {
             EnabledRolesInfo roles_info;
-            std::unordered_set<UUID> skip_ids;
+            UnorderedSetWithMemoryTracking<UUID> skip_ids;
             auto get_role = [this](const UUID & id) -> RolePtr
             {
                 auto it = roles.find(id);
@@ -319,7 +322,7 @@ namespace
         ResolvedSettings resolveForRole(const UUID & role_id) const
         {
             EnabledRolesInfo roles_info;
-            std::unordered_set<UUID> skip_ids;
+            UnorderedSetWithMemoryTracking<UUID> skip_ids;
             auto get_role = [this](const UUID & id) -> RolePtr
             {
                 auto it = roles.find(id);
@@ -355,7 +358,7 @@ namespace
             return foldElements(access_control, elements);
         }
 
-        const std::unordered_map<UUID, RolePtr> & allRoles() const { return roles; }
+        const RolesByID & allRoles() const { return roles; }
         const SettingsProfilesByID & allProfiles() const { return profiles; }
 
         /// Returns the entities whose effective settings can change after `pending`. Dependencies
@@ -363,7 +366,7 @@ namespace
         /// way, so both directions are recorded before walking the affected subgraph.
         AccessEntityIDs findAffectedEntities(const AccessGraph & after, const PendingAccessEntities & pending) const
         {
-            std::unordered_multimap<UUID, UUID> dependents;
+            UnorderedMultiMapWithMemoryTracking<UUID, UUID> dependents;
             AccessEntityIDs profiles_targeting_all;
             AccessEntityIDs default_profiles;
 
@@ -401,7 +404,7 @@ namespace
             add_graph(after);
 
             AccessEntityIDs affected;
-            std::vector<UUID> queue;
+            VectorWithMemoryTracking<UUID> queue;
             auto add_affected = [&](const UUID & id)
             {
                 if (affected.emplace(id).second)
@@ -443,15 +446,15 @@ namespace
 
     private:
         const AccessControl & access_control;
-        std::unordered_map<UUID, UserPtr> users;
-        std::unordered_map<UUID, RolePtr> roles;
+        UsersByID users;
+        RolesByID roles;
         SettingsProfilesByID profiles;
         std::optional<UUID> default_profile_id;
     };
 
-    std::unordered_map<UUID, UUID> findReplacements(const AccessGraph & before, const PendingAccessEntities & pending)
+    Replacements findReplacements(const AccessGraph & before, const PendingAccessEntities & pending)
     {
-        std::unordered_map<UUID, UUID> replacements;
+        Replacements replacements;
         for (const auto & [new_id, new_entity] : pending)
         {
             if (!new_entity || before.get(new_id))
@@ -474,7 +477,7 @@ namespace
 
     void checkResolvedSettings(const AccessControl & access_control, const ResolvedSettings & before, const ResolvedSettings & after)
     {
-        std::set<String> names;
+        SetWithMemoryTracking<String> names;
         for (const auto & item : before)
             names.emplace(item.first);
         for (const auto & item : after)
