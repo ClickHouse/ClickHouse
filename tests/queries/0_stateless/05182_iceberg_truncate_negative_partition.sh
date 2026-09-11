@@ -75,7 +75,9 @@ run_case() {
                 ;;
             *) echo "run_case: unknown stored-partition mode '$4'" >&2; exit 1 ;;
         esac
-    done | sort
+    # LC_ALL=C: a negative partition value carries a `-`, which glibc's non-C collations ignore at
+    # the primary level, so `(-10)` and `(0)` would order differently per locale.
+    done | LC_ALL=C sort
 
     ${CLICKHOUSE_CLIENT} --query "DROP TABLE ${TABLE}"
     rm -rf "${TABLE_PATH}"
