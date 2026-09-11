@@ -17,6 +17,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 namespace
 {
 
@@ -148,7 +153,9 @@ DistributedQueryTaskStatus getTaskStatus(const String & endpoint_uri, const Stri
 
     DistributedQueryTaskStatus result;
     result.read(*in, response_version);
-    in->eof();
+    if (!in->eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Unexpected trailing data in stateless worker task status response for task {} ", task_id);
 
     return result;
 }

@@ -1789,6 +1789,10 @@ protected:
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
 
+        /// Skip collecting worker logs the initiator has no queue to receive (e.g. HTTP without a framing format).
+        if (!CurrentThread::getInternalTextLogsQueue())
+            task_description.settings_changes.setSetting("send_logs_level", "none");
+
         const String unique_temp_file_path = toString(unique_query_id);
 
         for (const auto & task : stage.tasks)
