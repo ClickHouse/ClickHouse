@@ -4,6 +4,7 @@
 
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
@@ -85,6 +86,17 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCalc() const
 {
     return index.expression->getRequiredColumnsWithTypes();
+}
+
+NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
+{
+    NameSet result;
+    /// getAll() (ordinary + materialized + aliases + ephemeral) is the same set the producer of these
+    /// names checks, so a MATERIALIZED or ALIAS column of that name shadows the subcolumn too.
+    for (const auto & column : metadata_snapshot->getColumns().getAll())
+        if (looksLikeMapSubcolumnName(column.name))
+            result.insert(column.name);
+    return result;
 }
 
 namespace

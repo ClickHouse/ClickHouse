@@ -1,0 +1,6 @@
+ngrambf_v1 over mapKeys	1
+bloom_filter over mapKeys, equals	1
+bloom_filter over mapKeys, in	1
+text over mapKeys	1
+text over mapValues	1
+genuine key subcolumn still prunes	Granules: 0/1
