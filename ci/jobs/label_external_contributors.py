@@ -95,6 +95,7 @@ def label_external_contributors(days: int, backfill: bool) -> bool:
     print(f"Fetched {len(items)} item(s)")
 
     labeled = []
+    failed = []
     for item in items:
         number = item["number"]
         is_pr = "pull_request" in item
@@ -109,12 +110,16 @@ def label_external_contributors(days: int, backfill: bool) -> bool:
             continue
         kind = "PR" if is_pr else "issue"
         print(f"Labeling {kind} #{number} by external author '{author}'")
-        if not add_external_label(repo, number, is_pr):
+        if add_external_label(repo, number, is_pr):
+            labeled.append(number)
+        else:
             print(f"ERROR: failed to label #{number}", file=sys.stderr)
-            return False
-        labeled.append(number)
+            failed.append(number)
 
     print(f"Labeled {len(labeled)} item(s) as '{EXTERNAL_LABEL}': {labeled}")
+    if failed:
+        print(f"ERROR: failed to label {len(failed)} item(s): {failed}", file=sys.stderr)
+        return False
     return True
 
 
