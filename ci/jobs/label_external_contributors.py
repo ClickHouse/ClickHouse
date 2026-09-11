@@ -54,10 +54,17 @@ INTERNAL_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
 INTERNAL_BOTS = {"groeneai", "oranjeai", "clickgapai", "actueleai"}
 
 
-def _is_internal(author: str, association: str) -> bool:
-    """Whether the author is inside the project and must not be labeled
-    external: an org member/owner or repository collaborator, or a ClickHouse
-    automation account."""
+def _is_internal(author: str, association: str, user_type: str) -> bool:
+    """Whether the author must not be labeled external: an org member/owner or
+    repository collaborator, a GitHub App bot (`user.type == "Bot"`, e.g.
+    `clickhouse-gh[bot]`, `mintlify[bot]`), or a ClickHouse automation account.
+
+    Bots are never external contributors regardless of their association, and a
+    GitHub App reports `type: "Bot"`, so that one check covers every App bot
+    without an allowlist. The `*ai` PR bots are ordinary user accounts
+    (`type: "User"`), so they still need INTERNAL_BOTS."""
+    if user_type == "Bot":
+        return True
     if association in INTERNAL_ASSOCIATIONS:
         return True
     login = author.lower()
@@ -117,14 +124,15 @@ def label_external_contributors(days: int, backfill: bool) -> bool:
     for item in items:
         number = item["number"]
         is_pr = "pull_request" in item
-        author = (item.get("user") or {}).get("login", "")
+        user = item.get("user") or {}
+        author = user.get("login", "")
         association = item.get("author_association", "")
         created = _parse_iso8601(item["created_at"])
         if cutoff is not None and created < cutoff:
             continue
         if any(label["name"] == EXTERNAL_LABEL for label in item.get("labels", [])):
             continue
-        if _is_internal(author, association):
+        if _is_internal(author, association, user.get("type", "")):
             continue
         kind = "PR" if is_pr else "issue"
         print(f"Labeling {kind} #{number} by external author '{author}'")
