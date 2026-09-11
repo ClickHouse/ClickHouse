@@ -898,6 +898,14 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     finalized = true;
 
+    /// Take what was absorbed and clear it. It is folded into `selectivity` below, and from then on
+    /// this clause is a number: a later merge has to take that number and nothing else. Leaving the
+    /// factor behind would let the merge carry it over a second time, on top of the result it is
+    /// already part of. Every exit below clears it, which is why it is taken here rather than at each.
+    const Selectivity absorbed = absorbed_and_selectivity;
+    const bool had_absorbed = hasAbsorbed();
+    absorbed_and_selectivity = Selectivity{1.0, 0.0};
+
     if (function == FUNCTION_UNKNOWN)
     {
         selectivity = {default_unknown_cond_factor, 0};
@@ -999,8 +1007,8 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
             if (not_null_check_columns.contains(col))
             {
                 selectivity = Selectivity(1, 0);
-                if (hasAbsorbed())
-                    selectivity = selectivity.applyAnd(absorbed_and_selectivity);
+                if (had_absorbed)
+                    selectivity = selectivity.applyAnd(absorbed);
                 return;
             }
         }
@@ -1079,8 +1087,8 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
 
     /// Atoms absorbed by a conjunctive merge contribute no range, so they are applied here, after the
     /// ranges they were interleaved with have been merged and estimated together.
-    if (hasAbsorbed())
-        selectivity = selectivity.applyAnd(absorbed_and_selectivity);
+    if (had_absorbed)
+        selectivity = selectivity.applyAnd(absorbed);
 }
 
 }
