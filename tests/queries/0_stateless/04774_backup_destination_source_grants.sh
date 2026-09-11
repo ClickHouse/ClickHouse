@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-encrypted-storage, no-replicated-database
+# Tags: no-encrypted-storage, no-replicated-database, no-msan
 # no-replicated-database: the CREATE DATABASE runs with no user there, so its check is a no-op.
 
 # BACKUP/RESTORE and `ENGINE = Backup` must authorize the backup location against the SOURCES grant

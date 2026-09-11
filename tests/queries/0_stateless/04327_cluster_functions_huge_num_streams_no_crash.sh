@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-random-settings, long
+# Tags: no-fasttest, no-random-settings, long, no-msan
 # Tag no-fasttest: needs the urlCluster/fileCluster/s3Cluster table functions and Minio
 # Tag no-random-settings: pins max_streams_for_files_processing_in_cluster_functions
 # Tag long: the clamp ceiling is 256 * number-of-cores, so each query materializes that many

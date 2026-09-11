@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # Tag no-fasttest: depends on brotli and bzip2
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-parallel-replicas
+# Tags: no-fasttest, no-parallel-replicas, no-msan
 # `no-parallel-replicas`: see comment in `04071_iceberg_orc_prewhere_crash.sh`.
 # `StorageObjectStorageCluster` (used when `parallel_replicas_for_cluster_engines = 1`,
 # default) does not delegate `supportsPrewhere` to its underlying configuration.

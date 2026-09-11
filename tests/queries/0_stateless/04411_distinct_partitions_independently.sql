@@ -1,4 +1,4 @@
--- Tags: long, no-random-settings, no-random-merge-tree-settings
+-- Tags: long, no-random-settings, no-random-merge-tree-settings, no-msan
 -- no-random-settings, no-random-merge-tree-settings: Explain output may differ
 
 -- max_threads = 8: the cost heuristic requires partitions >= max_threads/2, and every positive case

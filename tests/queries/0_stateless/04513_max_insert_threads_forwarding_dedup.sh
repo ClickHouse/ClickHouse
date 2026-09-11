@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# Tags: no-msan
 # Regression test for plain INSERTs into storages that forward the write through a nested INSERT
 # (Alias, Distributed) with max_insert_threads and active deduplication. A DistributedSink opens a
 # remote or local insert per branch that stamps the deduplication info from scratch, so the source

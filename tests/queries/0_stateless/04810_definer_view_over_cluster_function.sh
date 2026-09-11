@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-msan
 # Tag no-fasttest: uses s3Cluster/urlCluster/fileCluster over Minio and the HTTP port
 
 # A SQL SECURITY DEFINER/NONE view runs its inner query in a context rebuilt from the global
