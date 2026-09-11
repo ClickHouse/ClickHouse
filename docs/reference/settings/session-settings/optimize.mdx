@@ -17,7 +17,7 @@ These settings are available in [system.settings](/reference/system-tables/setti
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT sectio
+Eliminates min/max/any/anyLast aggregators of GROUP BY keys in SELECT section
 
 ## optimize_append_index {#optimize_append_index}
 
@@ -135,7 +135,7 @@ only when col is of String or FixedString type.
 
 Allow extracting common expressions from disjunctions in WHERE, PREWHERE, ON, HAVING and QUALIFY expressions. A logical expression like `(A AND B) OR (A AND C)` can be rewritten to `A AND (B OR C)`, which might help to utilize:
 - indices in simple filtering expressions
-- cross to inner join optimizatio
+- cross to inner join optimization
 
 ## optimize_functions_to_subcolumns {#optimize_functions_to_subcolumns}
 
@@ -287,6 +287,19 @@ Possible values:
 **See Also**
 
 - [ORDER BY Clause](/reference/statements/select/order-by#optimization-of-data-reading)
+
+## optimize_read_in_reverse_order_final {#optimize_read_in_reverse_order_final}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "New setting to enable the read-in-order optimization when reading in reverse order of the sorting key with the `FINAL` modifier from `ReplacingMergeTree` tables."}]}]}/>
+
+Enables reading data in reverse order of the sorting key in `SELECT` queries with the `FINAL` modifier from [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) tables. Takes effect only when [optimize_read_in_order](/reference/settings/session-settings/optimize#optimize_read_in_order) is also enabled.
+
+Possible values:
+
+- 0 — Reading in reverse order with `FINAL` is disabled.
+- 1 — Reading in reverse order with `FINAL` is enabled.
 
 ## optimize_respect_aliases {#optimize_respect_aliases}
 
