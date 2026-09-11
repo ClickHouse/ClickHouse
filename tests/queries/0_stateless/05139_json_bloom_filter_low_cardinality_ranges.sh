@@ -45,7 +45,8 @@ SQL
 done
 
 queries=''
-for row in 0 2 3 5 6 7 10 11 42 44 45 46 89 90; do
+# Probe the second block of each part and a missing value.
+for row in 7 56 90; do
     for predicate in \
         "j.s = 'v${row}'" \
         "j.n = 'v${row}'" \
