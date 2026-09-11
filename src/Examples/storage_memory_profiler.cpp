@@ -86,9 +86,13 @@ extern const int SYSTEM_ERROR;
 
 namespace ServerSetting
 {
+extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
 extern const ServerSettingsUInt64 max_server_memory_usage;
 extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
 extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
+extern const ServerSettingsString mark_cache_policy;
+extern const ServerSettingsUInt64 mark_cache_size;
+extern const ServerSettingsDouble mark_cache_size_ratio;
 }
 
 namespace
@@ -327,6 +331,16 @@ void StorageMemoryProfiler::initializeContext()
     total_memory_tracker.setHardLimit(max_server_memory_usage);
     total_memory_tracker.setDescription("(total)");
     total_memory_tracker.setMetric(CurrentMetrics::MemoryTracking);
+
+    const double cache_size_to_ram_max_ratio = server_settings[ServerSetting::cache_size_to_ram_max_ratio];
+    const size_t max_cache_size = static_cast<size_t>(static_cast<double>(physical_server_memory) * cache_size_to_ram_max_ratio);
+
+    String mark_cache_policy = server_settings[ServerSetting::mark_cache_policy];
+    size_t mark_cache_size = server_settings[ServerSetting::mark_cache_size];
+    const double mark_cache_size_ratio = server_settings[ServerSetting::mark_cache_size_ratio];
+    if (mark_cache_size > max_cache_size)
+        mark_cache_size = max_cache_size;
+    global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
 
     /// Limit on total number of concurrently executing queries.
     global_context->getProcessList().setMaxSize(0);
