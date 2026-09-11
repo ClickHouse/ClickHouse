@@ -7,36 +7,36 @@
       "versionId": "50e477436157957a0f36d659e6183e88f6590a52d8c1258583757a502991034c",
       "translations": {
         "pt-BR": {
-          "updatedAt": "2026-09-11T19:07:24.761Z",
+          "updatedAt": "2026-09-11T19:38:39.464Z",
           "fileName": "docs.json"
         },
         "zh": {
-          "updatedAt": "2026-09-11T19:07:25.160Z",
+          "updatedAt": "2026-09-11T19:38:39.845Z",
           "fileName": "docs.json"
         },
         "fr": {
-          "updatedAt": "2026-09-11T19:07:25.526Z",
+          "updatedAt": "2026-09-11T19:38:40.227Z",
           "fileName": "docs.json",
           "postProcessHash": "24f2a926ce54e9a8a33ca70fcd1a3be69836e66ef22f9bca24d0b088fd8557aa"
         },
         "ja": {
-          "updatedAt": "2026-09-11T19:07:24.427Z",
+          "updatedAt": "2026-09-11T19:38:39.070Z",
           "fileName": "docs.json"
         },
         "ru": {
-          "updatedAt": "2026-09-11T19:07:24.973Z",
+          "updatedAt": "2026-09-11T19:38:39.658Z",
           "fileName": "docs.json"
         },
         "ar": {
-          "updatedAt": "2026-09-11T19:07:25.364Z",
+          "updatedAt": "2026-09-11T19:38:40.038Z",
           "fileName": "docs.json"
         },
         "ko": {
-          "updatedAt": "2026-09-11T19:07:24.595Z",
+          "updatedAt": "2026-09-11T19:38:39.263Z",
           "fileName": "docs.json"
         },
         "es": {
-          "updatedAt": "2026-09-11T19:07:24.257Z",
+          "updatedAt": "2026-09-11T19:38:38.875Z",
           "fileName": "docs.json"
         }
       },
@@ -48061,47 +48061,47 @@
     },
     {
       "fileId": "d3dcc2b7d5d1ed1980a5f378e7252008e8d257fb1b0cfcd532442a80b2912909",
-      "versionId": "1483ab61ad788f54cbef8582a91edbd8eb93148873e20441d922d2fb5ca4a54b",
+      "versionId": "52a51ee78e0426859df7ec80f461dfb76fe4ce26c69e67e7593b173763b0ae2a",
       "translations": {
-        "fr": {
-          "updatedAt": "2026-09-10T16:16:02.781Z",
-          "fileName": "fr/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "c4a0223545cf4e941fe954a965b6637d943cfc1803f623ff235ba9be72415c48"
-        },
-        "ar": {
-          "updatedAt": "2026-09-10T16:16:02.781Z",
-          "fileName": "ar/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "7e2b7e295db4453406ab513ee56713c53edb23559fba86e6bb126f4ea7d90f11"
-        },
-        "ru": {
-          "updatedAt": "2026-09-10T16:16:02.782Z",
-          "fileName": "ru/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "7ef66a80825541c698557c3028d70dce254ca6657122265f8bfd7c43ee8f8d88"
-        },
-        "zh": {
-          "updatedAt": "2026-09-10T16:16:02.783Z",
-          "fileName": "zh/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "09d0522272602ba5a0695e704450a33f4a9db63196133cd203e60dd057b1bfd6"
-        },
         "es": {
-          "updatedAt": "2026-09-10T16:16:02.783Z",
+          "updatedAt": "2026-09-11T19:38:45.238Z",
           "fileName": "es/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "1e5f4c0d99b8cbe8d831344b6e66ee4c6d5013de9ceac4169be0d753907fb402"
+          "postProcessHash": "985d35981c9c1323788cb9c19f836a98068000568be26361c5a10bebb164e59c"
         },
-        "ko": {
-          "updatedAt": "2026-09-10T16:16:02.785Z",
-          "fileName": "ko/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "f89bdd6f63c33be7e006c602ecf6288808cdb6e2a48ec2417cae47306190ab48"
-        },
-        "ja": {
-          "updatedAt": "2026-09-10T16:16:02.785Z",
-          "fileName": "ja/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "613eace770cd905904db287185def2e1103e9afdf83ffbb9e1be0d55bbdd2b96"
+        "fr": {
+          "updatedAt": "2026-09-11T19:38:45.238Z",
+          "fileName": "fr/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "4cdd4748cc65bb9e01ca19337475cdd4e9f96fbe937d09f1c44768349d5419d3"
         },
         "pt-BR": {
-          "updatedAt": "2026-09-10T16:16:02.788Z",
+          "updatedAt": "2026-09-11T19:38:45.239Z",
           "fileName": "pt-BR/products/cloud/reference/supported-regions.mdx",
-          "postProcessHash": "e7fee73195bcc4106f9d5c1e3216e676c9a5897f88ddd41e4fcce56ead2cc33a"
+          "postProcessHash": "eefd6b1dbe76e8cae8770f6891181802fe3a69e6dbc3af058c9e2bd147b75eb8"
+        },
+        "zh": {
+          "updatedAt": "2026-09-11T19:38:45.239Z",
+          "fileName": "zh/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "6ca7aa405474532d2f8791a9a79cd83e789a8f6e7b40f909c133f8dd4d31aa5d"
+        },
+        "ja": {
+          "updatedAt": "2026-09-11T19:38:45.240Z",
+          "fileName": "ja/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "ec9a85a555aa4303868d19877a318c53a809548c8540c01aa92fd30f1e8cf45d"
+        },
+        "ko": {
+          "updatedAt": "2026-09-11T19:38:45.240Z",
+          "fileName": "ko/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "bbfd769584389fc153fb5f0c94def2e809bf2d58be02bbd34aed5027012ccde6"
+        },
+        "ru": {
+          "updatedAt": "2026-09-11T19:38:45.241Z",
+          "fileName": "ru/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "73f177f04cf194f9afd3af4d79e8480066d7060aab66b59743ebb5fc974ad04a"
+        },
+        "ar": {
+          "updatedAt": "2026-09-11T19:38:45.241Z",
+          "fileName": "ar/products/cloud/reference/supported-regions.mdx",
+          "postProcessHash": "26edd35dab88d7a48b1d6a326deec8f5674648b18f5000f09ee4ab678964e0f0"
         }
       },
       "fileName": "products/cloud/reference/supported-regions.mdx"
