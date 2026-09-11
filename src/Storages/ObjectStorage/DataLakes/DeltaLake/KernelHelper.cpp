@@ -10,6 +10,8 @@
 #include <Common/isValidUTF8.h>
 #include <Common/logger_useful.h>
 
+#include <cstdlib>
+
 #if USE_AZURE_BLOB_STORAGE
 #include <Storages/ObjectStorage/Azure/Configuration.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureBlobStorageCommon.h>
@@ -323,8 +325,44 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
                 set_option("azure_storage_account_key", connection_params.endpoint.account_key);
             break;
         }
-        case 1: /// ClientSecretCredential
         case 3: /// WorkloadIdentityCredential
+        {
+            const auto & name = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
+            if (!name.empty())
+                set_option("azure_storage_account_name", name);
+
+            /// The object_store builder does not read the workload identity environment variables on its own.
+            auto env_value = [](const char * env_var) -> const char *
+            {
+                if (const char * value = std::getenv(env_var); value && *value) // NOLINT(concurrency-mt-unsafe)
+                    return value;
+                return nullptr;
+            };
+
+            /// Explicit IDs (extra_credentials / named collection) win over the environment.
+            const char * tenant = !connection_params.workload_identity_tenant_id.empty()
+                ? connection_params.workload_identity_tenant_id.c_str()
+                : env_value("AZURE_TENANT_ID");
+            const char * client = !connection_params.workload_identity_client_id.empty()
+                ? connection_params.workload_identity_client_id.c_str()
+                : env_value("AZURE_CLIENT_ID");
+            const char * token_file = env_value("AZURE_FEDERATED_TOKEN_FILE");
+
+            if (!tenant || !client || !token_file)
+                throw DB::Exception(
+                    DB::ErrorCodes::NOT_IMPLEMENTED,
+                    "Azure workload identity is not configured for the delta-kernel path: "
+                    "AZURE_TENANT_ID, AZURE_CLIENT_ID and AZURE_FEDERATED_TOKEN_FILE must be set "
+                    "(tenant/client id may instead be passed via extra_credentials)");
+
+            set_option("azure_tenant_id", tenant);
+            set_option("azure_client_id", client);
+            set_option("azure_federated_token_file", token_file);
+            if (const char * authority = env_value("AZURE_AUTHORITY_HOST"))
+                set_option("azure_authority_host", authority);
+            break;
+        }
+        case 1: /// ClientSecretCredential
         case 5: /// StaticCredential
         case 6: /// TokenProviderCredential
         default:
@@ -336,13 +374,26 @@ std::vector<std::pair<std::string, std::string>> getAzureBuilderOptions(
     if (!endpoint.sas_auth.empty())
         set_option("azure_storage_sas_key", endpoint.sas_auth);
 
-    /// For non-standard endpoints (e.g., Azurite emulator), set the endpoint explicitly.
-    /// Also allow plain HTTP connections when the endpoint uses http://, since the object-store
-    /// Azure builder defaults to https_only=true and would reject plain HTTP requests.
-    if (!endpoint.storage_account_url.empty() && endpoint.storage_account_url.starts_with("http://"))
+    /// The builder derives exactly this URL from the account name; anything else must be explicit.
+    /// Value, not a reference: get_account_name() returns a temporary.
+    const std::string account_for_endpoint = endpoint.account_name.empty() ? get_account_name() : endpoint.account_name;
+    const bool endpoint_is_derivable = !account_for_endpoint.empty()
+        && endpoint.storage_account_url == "https://" + account_for_endpoint + ".blob.core.windows.net";
+
+    /// Non-default endpoints must be set explicitly: plain HTTP (Azurite; the builder
+    /// defaults to https_only=true) and non-default HTTPS hosts (sovereign clouds,
+    /// private endpoints). The builder still requires the storage account name, so
+    /// hosts that do not encode it in the first label (custom domains) only work when
+    /// endpoint.account_name is set, which the credential-based SQL paths cannot do
+    /// yet.
+    if (endpoint.storage_account_url.starts_with("http://"))
     {
         set_option("azure_endpoint", connection_params.getConnectionURL());
         set_option("azure_allow_http", "true");
+    }
+    else if (endpoint.storage_account_url.starts_with("https://") && !endpoint_is_derivable)
+    {
+        set_option("azure_endpoint", connection_params.getConnectionURL());
     }
 
     return options;

@@ -1031,6 +1031,15 @@ azureBlobStorage(storage_account_url, container_name, blobpath, account_name, ac
 ```
 
 </Tab>
+<Tab title="Workload identity">
+
+Uses Azure workload identity via `extra_credentials`; mutually exclusive with `account_name` / `account_key` and requires `storage_account_url` (not `connection_string`):
+
+```sql
+azureBlobStorage(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [, format, compression, partition_strategy, structure])
+```
+
+</Tab>
 <Tab title="Named collection">
 
 See [Named Collections](#named-collections) below for the full list of supported keys:
@@ -1047,7 +1056,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | Argument                         | Description                                                                                                                                                                                                                                                                                                                                               |
 |----------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
 | `connection_string`              | A connection string that includes embedded credentials (account name + account key or SAS token). When using this form, `account_name` and `account_key` should **not** be passed separately. See [Configure a connection string](https://learn.microsoft.com/en-us/azure/storage/common/storage-configure-connection-string?toc=%2Fazure%2Fstorage%2Fblobs%2Ftoc.json&bc=%2Fazure%2Fstorage%2Fblobs%2Fbreadcrumb%2Ftoc.json#configure-a-connection-string-for-an-azure-storage-account). |
-| `storage_account_url`            | The storage account endpoint URL, e.g. `https://myaccount.blob.core.windows.net/`. When using this form, you **must** also pass `account_name` and `account_key`.                                                                                                                                                                                         |
+| `storage_account_url`            | The storage account endpoint URL, e.g. `https://myaccount.blob.core.windows.net/`. When using this form, pass either `account_name` and `account_key`, or `extra_credentials(client_id=, tenant_id=)` for workload identity.                                                                                                                              |
 | `container_name`                 | Container name.                                                                                                                                                                                                                                                                                                                                           |
 | `blobpath`                       | File path. Supports the following wildcards in read-only mode: `*`, `**`, `?`, `{abc,def}` and `{N..M}` where `N`, `M` — numbers, `'abc'`, `'def'` — strings.                                                                                                                                                                                            |
 | `account_name`                   | Storage account name. **Required** when using `storage_account_url` without SAS; must **not** be passed when using `connection_string`.                                                                                                                                                                                                                               |
@@ -1057,7 +1066,7 @@ azureBlobStorage(named_collection[, option=value [,..]])
 | `structure`                      | Structure of the table. Format `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                             |
 | `partition_strategy`             | Optional. Supported values: `WILDCARD` or `HIVE`. `WILDCARD` requires a `{_partition_id}` in the path, which is replaced with the partition key. `HIVE` does not allow wildcards, assumes the path is the table root, and generates Hive-style partitioned directories with Snowflake IDs as filenames and the file format as the extension. Without an explicit strategy, a path with `{_partition_id}` uses `WILDCARD`. A path with another glob uses no partition strategy and ignores `PARTITION BY`. A path without a glob uses `HIVE` when `file_like_engine_default_partition_strategy` is `HIVE`; otherwise it uses no partition strategy. |
 | `partition_columns_in_data_file` | Optional. Only used with `HIVE` partition strategy. Tells ClickHouse whether to expect partition columns to be written in the data file. Defaults `false`.                                                                                                                                                                                                 |
-| `extra_credentials`              | Use `client_id` and `tenant_id` for authentication. If extra_credentials are provided, they are given priority over `account_name` and `account_key`.                                                                                                                                                                                                     |
+| `extra_credentials`              | Use `client_id` and `tenant_id` for Azure workload identity authentication. Mutually exclusive with `account_name` / `account_key`, and requires `storage_account_url` (not `connection_string`).                                                                                                                                                          |
 
 ## Named Collections {#named-collections}
 
@@ -2385,6 +2394,7 @@ deltaLake(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure]
 deltaLakeS3(url [,aws_access_key_id, aws_secret_access_key] [,format] [,structure] [,compression] [,extra_credentials])
 
 deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [,account_name], [,account_key] [,format] [,compression_method])
+deltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression_method])
 
 deltaLakeLocal(path, [,format])
 ```
@@ -2395,6 +2405,8 @@ The arguments for this table function are the same as for the `s3`, `azureBlobSt
 The `format` argument stands for the format of data files in the Delta lake table.
 
 An optional `extra_credentials` parameter can be used to pass a `role_arn` for role-based access in ClickHouse Cloud. See [Secure S3](/products/cloud/guides/data-sources/accessing-s3-data-securely) for configuration steps.
+
+For Azure (`deltaLakeAzure`), `extra_credentials` takes `client_id` and `tenant_id` for workload identity and cannot be combined with `account_name` / `account_key`. The process must also have `AZURE_FEDERATED_TOKEN_FILE` set (`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` if not passed explicitly; `AZURE_AUTHORITY_HOST` is optional).
 
 ## Returned value {#returned-value}
 
@@ -2487,7 +2499,8 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 #if USE_AZURE_BLOB_STORAGE
     factory.registerFunction<TableFunctionDeltaLakeAzure>(
          {.description = R"(The table function can be used to read the DeltaLake table stored on Azure object store.)",
-            .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
+            .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])\n"
+                      "deltaLakeAzure(storage_account_url, container_name, blobpath, extra_credentials(client_id=, tenant_id=) [,format] [,compression] [,structure])",
             .category = FunctionDocumentation::Category::TableFunction},
          {.allow_readonly = false});
 #endif
