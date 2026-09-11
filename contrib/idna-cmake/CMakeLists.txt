@@ -12,8 +12,6 @@ set (LIBRARY_DIR "${ClickHouse_SOURCE_DIR}/contrib/idna")
 # so it is the only translation unit to compile. Listing the included files as
 # well defines every symbol twice in the archive.
 set (SRCS
-    "${LIBRARY_DIR}/src/id_tables.cpp"
-    "${LIBRARY_DIR}/src/identifier.cpp"
     "${LIBRARY_DIR}/src/idna.cpp"
 )
 
