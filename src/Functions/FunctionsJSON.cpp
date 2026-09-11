@@ -7,6 +7,8 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/StringUtils.h>
+#include <Common/SetWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <Core/Settings.h>
@@ -41,7 +43,9 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
+#include <IO/WriteHelpers.h>
 #include "config.h"
 
 
@@ -112,12 +116,32 @@ public:
                                 "The first argument of function {} should be a string containing JSON or a JSON object, illegal type: "
                                 "{}", String(Name::name), first_column.type->getName());
 
-            /// For JSON/Object type input: use subcolumn extraction (constant string keys only).
+            /// For JSON/Object type input, the value at a constant string path is read directly as a
+            /// subcolumn, which is what the value-extracting functions need and is much cheaper than
+            /// going through the document.
+            /// Every other call shape serializes each row back to JSON text and is handled by the string
+            /// implementation below, so that a `JSON` column always gives the same answer as the
+            /// equivalent JSON string. This covers the root form without any path key, which has no
+            /// subcolumn to read, the functions that navigate the document rather than read one value out
+            /// of it, and the paths that a subcolumn name cannot express - integer indices and
+            /// non-constant keys.
+            ColumnsWithTypeAndName arguments_holder;
             if (is_object_input)
-                return runForObjectColumn<Name, Impl>(arguments, result_type, input_rows_count, format_settings);
+            {
+                const size_t num_path_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
+                if (supportsObjectSubcolumnExtraction() && num_path_arguments != 0
+                    && arePathArgumentsConstantStrings(arguments, num_path_arguments, input_rows_count))
+                    return runForObjectColumn<Name, Impl, case_insensitive>(arguments, result_type, input_rows_count, format_settings);
+
+                auto string_type = std::make_shared<DataTypeString>();
+                arguments_holder = arguments;
+                arguments_holder[0].column = serializeObjectColumnToJSONText(first_column, input_rows_count, format_settings);
+                arguments_holder[0].type = string_type;
+            }
 
             /// String input: parse JSON and extract values.
-            const ColumnPtr & arg_json = first_column.column;
+            const ColumnsWithTypeAndName & json_arguments = is_object_input ? arguments_holder : arguments;
+            const ColumnPtr & arg_json = json_arguments[0].column;
             const auto * col_json_const = typeid_cast<const ColumnConst *>(arg_json.get());
             const auto * col_json_string
                 = typeid_cast<const ColumnString *>(col_json_const ? col_json_const->getDataColumnPtr().get() : arg_json.get());
@@ -128,8 +152,8 @@ public:
             const ColumnString::Chars & chars = col_json_string->getChars();
             const ColumnString::Offsets & offsets = col_json_string->getOffsets();
 
-            size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(arguments);
-            VectorWithMemoryTracking<Move> moves = prepareMoves(Name::name, arguments, 1, num_index_arguments);
+            size_t num_index_arguments = Impl<JSONParser>::getNumberOfIndexArguments(json_arguments);
+            VectorWithMemoryTracking<Move> moves = prepareMoves(Name::name, json_arguments, 1, num_index_arguments);
 
             /// Preallocate memory in parser if necessary.
             JSONParser parser;
@@ -144,7 +168,7 @@ public:
 
             /// prepare() does Impl-specific preparation before handling each row.
             if constexpr (Preparable<Impl<JSONParser>>)
-                impl.prepare(Name::name, arguments, result_type);
+                impl.prepare(Name::name, json_arguments, result_type);
 
             using Element = typename JSONParser::Element;
 
@@ -171,7 +195,7 @@ public:
                     /// Perform moves.
                     Element element;
                     std::string_view last_key;
-                    bool moves_ok = performMoves<JSONParser, case_insensitive>(arguments, i, document, moves, element, last_key);
+                    bool moves_ok = performMoves<JSONParser, case_insensitive>(json_arguments, i, document, moves, element, last_key);
 
                     if (moves_ok)
                         added_to_column = impl.insertResultToColumn(*to, element, last_key, format_settings, error);
@@ -185,13 +209,106 @@ public:
         }
 
     private:
+        /// The `JSON`-object fast path reads the value stored at the requested path as a subcolumn and
+        /// casts it to the function's result type. That is what the value-extracting functions need, and
+        /// only they: the remaining ones have to look at the document structure, and a cast of the stored
+        /// value to their result type is either silently wrong or impossible.
+        /// `JSONLength` and `JSONType` would return the type's default (`0` and `Null`) for a value that
+        /// is a real object or array, and the structural extractors return an `Array(...)`, which
+        /// `accurateCastOrNull` rejects outright with `ILLEGAL_TYPE_OF_ARGUMENT`.
+        /// Those functions go through the JSON text of the row instead.
+        static constexpr bool supportsObjectSubcolumnExtraction()
+        {
+            constexpr std::string_view name = Name::name;
+            return name == "JSONHas"
+                || name == "JSONExtract" || name == "JSONExtractCaseInsensitive"
+                || name == "JSONExtractInt" || name == "JSONExtractIntCaseInsensitive"
+                || name == "JSONExtractUInt" || name == "JSONExtractUIntCaseInsensitive"
+                || name == "JSONExtractFloat" || name == "JSONExtractFloatCaseInsensitive"
+                || name == "JSONExtractBool" || name == "JSONExtractBoolCaseInsensitive"
+                || name == "JSONExtractString" || name == "JSONExtractStringCaseInsensitive"
+                || name == "JSONExtractRaw" || name == "JSONExtractRawCaseInsensitive";
+        }
+
+        /// A subcolumn of a `JSON` column is named by a dotted path of literal keys, so it can only be
+        /// used when every path argument is a constant string. The accepted shapes mirror the ones
+        /// `runForObjectColumn` reads: a `ColumnConst`, or, during constant folding of a scalar query, a
+        /// single-row column that is effectively constant but not wrapped in `ColumnConst`.
+        static bool arePathArgumentsConstantStrings(
+            const ColumnsWithTypeAndName & arguments, size_t num_path_arguments, size_t input_rows_count)
+        {
+            for (size_t i = 1; i <= num_path_arguments; ++i)
+            {
+                const auto & argument = arguments[i];
+                if (!isString(argument.type) || !argument.column)
+                    return false;
+                if (typeid_cast<const ColumnConst *>(argument.column.get()))
+                    continue;
+                if (input_rows_count > 1 || argument.column->empty())
+                    return false;
+            }
+            return true;
+        }
+
+        /// Serialize a `JSON`/`Object` column back to its JSON text representation.
+        /// An internal `castColumn` to `String` cannot be used here: internal casts are created without a
+        /// context and therefore serialize with default `FormatSettings`, which would drop the caller's
+        /// JSON settings. For example, with `json_type_escape_dots_in_keys = 1` a row `{"a.b": 42}` is
+        /// stored with the dot escaped, and only a serialization that sees that setting unescapes it back,
+        /// so a default-settings cast would produce `{"a%2Eb": 42}` and the reparsed text would not match
+        /// the value the caller stored.
+        /// At the same time, the text produced here is not user-facing output but an internal
+        /// representation that is parsed straight back, so the settings that change how a value is
+        /// presented in JSON output must not apply: `output_format_json_quote_64bit_integers` would turn
+        /// `{"n": 18446744073709551615}` into `{"n": "18446744073709551615"}` and `JSONType` would report
+        /// `String` instead of `UInt64`. Those switches are reset to the values that reconstruct
+        /// parse-equivalent JSON, while the settings that describe how the value is stored are kept.
+        static ColumnPtr serializeObjectColumnToJSONText(
+            const ColumnWithTypeAndName & column, size_t input_rows_count, const FormatSettings & format_settings)
+        {
+            const auto * col_const = typeid_cast<const ColumnConst *>(column.column.get());
+            const IColumn & object_column = col_const ? col_const->getDataColumn() : *column.column;
+            const size_t num_rows = col_const ? 1 : input_rows_count;
+
+            FormatSettings round_trip_settings = format_settings;
+            round_trip_settings.json.quote_64bit_integers = false;
+            round_trip_settings.json.quote_64bit_floats = false;
+            round_trip_settings.json.quote_decimals = false;
+            /// A bare `inf` or `nan` is not valid JSON and would make the whole document unparseable.
+            round_trip_settings.json.quote_denormals = true;
+            round_trip_settings.json.write_named_tuples_as_objects = true;
+            round_trip_settings.json.skip_null_value_in_named_tuples = false;
+            round_trip_settings.json.write_map_as_array_of_tuples = false;
+
+            auto serialization = column.type->getDefaultSerialization();
+            auto col_str = ColumnString::create();
+            ColumnString::Chars & data_to = col_str->getChars();
+            ColumnString::Offsets & offsets_to = col_str->getOffsets();
+            offsets_to.resize(num_rows);
+
+            {
+                WriteBufferFromVector<ColumnString::Chars> write_buffer(data_to);
+                for (size_t i = 0; i < num_rows; ++i)
+                {
+                    serialization->serializeText(object_column, i, write_buffer, round_trip_settings);
+                    offsets_to[i] = write_buffer.count();
+                }
+                write_buffer.finalize();
+            }
+
+            if (col_const)
+                return ColumnConst::create(std::move(col_str), input_rows_count);
+            return col_str;
+        }
+
         /// Helper to process ColumnObject directly using subcolumns.
         /// Only supports constant string path keys (no indexes or non-const keys).
         /// - Extract literal subcolumn (json.path) for scalar values
         /// - Extract subobject subcolumn (json.^`path`) for nested objects
         /// - Merge them row-by-row, preferring literal over subobject
         /// - Cast the result to the function's return type
-        template <typename TName, template <typename> typename TImpl>
+        /// Named `is_case_insensitive` (not `case_insensitive`) to avoid shadowing the enclosing Executor's template parameter.
+        template <typename TName, template <typename> typename TImpl, bool is_case_insensitive = false>
         static ColumnPtr runForObjectColumn(
             const ColumnsWithTypeAndName & arguments,
             const DataTypePtr & result_type,
@@ -242,7 +359,17 @@ public:
                         String(TName::name));
                 }
 
-                if (!path.empty())
+                /// With `json_type_escape_dots_in_keys` a literal dot inside a key is stored escaped, so
+                /// `{"a.b": "x"}` lives under the path `a%2Eb` while `{"a": {"b": "y"}}` lives under
+                /// `a.b`. The requested key is escaped the same way so that it addresses the literal key,
+                /// exactly as it does for a JSON string, instead of the nested path with the same text.
+                if (format_settings.json.json_type_escape_dots_in_keys)
+                    key = escapeDotInJSONKey(key);
+
+                /// The separator is added for every key after the first one, not only when the path
+                /// built so far is non-empty: an empty key is a legal JSON key, and `{"": {"b": 1}}`
+                /// is stored under the path `.b`, not `b`.
+                if (i > 1)
                     path += '.';
                 path += key;
             }
@@ -250,33 +377,232 @@ public:
             /// Expand ColumnConst to full column if needed.
             ColumnPtr object_column = col_const ? col_const->convertToFullColumn() : first_column.column;
 
-            /// Root case (no path specified) return defaults for most functions.
-            if (path.empty())
-                return result_type->createColumnConstWithDefaultValue(input_rows_count)->convertToFullColumnIfConst();
+            /// Note: an empty `path` is not a special case here. The root form (no path arguments) is
+            /// handled by the caller, so getting here with an empty path means a single empty key
+            /// argument, which addresses the legal JSON key `""` and is looked up like any other path.
 
-            /// Use combined `@` subcolumn that merges literal value and sub-object.
-            /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
-            /// column: literal if present, sub-object as JSON if not, NULL otherwise.
-            String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + path + "`";
-            auto merged_type = data_type_object.getSubcolumnType(combined_name);
-
-            /// Typed paths are always present in a JSON column, even when the key was missing
-            /// from the inserted JSON (they get the type's default value). For non-typed paths
-            /// the combined subcolumn returns a Dynamic column where NULL means absent.
-            /// When type_json_skip_null_typed_paths is enabled, NULL typed paths are treated as absent.
-            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
-            bool treat_typed_as_always_present = is_typed_path && !format_settings.json.type_json_skip_null_typed_paths;
-
-            /// When skip_null_typed_paths is enabled for a non-typed parent path (e.g. 'a' when 'a.b' is typed),
-            /// use extractCombinedSubcolumn which propagates the setting into sub-object emptiness checks.
-            /// Otherwise the sub-object with all-NULL typed descendants would be considered non-empty.
-            auto merged = (format_settings.json.type_json_skip_null_typed_paths && !is_typed_path)
-                ? data_type_object.extractCombinedSubcolumn(path, object_column, true)
-                : data_type_object.getSubcolumn(combined_name, object_column);
+            /// For JSONExtractRaw: serialize each value as a JSON string
+            constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
+                        || std::string_view(TName::name) == std::string_view("JSONExtractRawCaseInsensitive");
 
             /// JSONHas must be UInt8 {0,1} from path presence. The generic `else` below would
             /// cast the extracted value to UInt8 and silently return the value itself.
             constexpr bool is_has = std::string_view(TName::name) == std::string_view("JSONHas");
+
+            /// JSONExtractBool must return UInt8 {0,1} with boolean semantics. Cast to `Bool` instead
+            /// of `UInt8` so that `convertToBool` normalizes any non-zero numeric value to 1.
+            constexpr bool is_extract_bool = std::string_view(TName::name) == std::string_view("JSONExtractBool")
+                        || std::string_view(TName::name) == std::string_view("JSONExtractBoolCaseInsensitive");
+
+            /// For case-insensitive functions, collect every stored path that matches the
+            /// user-provided one ignoring case. With one match we read its `@` subcolumn directly;
+            /// with several (e.g. rows storing `Name` and `name` for query key `name`) we resolve
+            /// the path per row so a row's local match is not shadowed by a column-wide choice.
+            VectorWithMemoryTracking<String> case_insensitive_matches;
+            if constexpr (is_case_insensitive)
+            {
+                auto match_case_insensitive = [](std::string_view a, std::string_view b) -> bool
+                {
+                    if (a.size() != b.size())
+                        return false;
+                    for (size_t i = 0; i < a.size(); ++i)
+                        if (!equalsCaseInsensitive(a[i], b[i]))
+                            return false;
+                    return true;
+                };
+
+                SetWithMemoryTracking<String> seen;
+                auto add_match = [&](std::string_view matched)
+                {
+                    String s(matched);
+                    if (seen.insert(s).second)
+                        case_insensitive_matches.emplace_back(std::move(s));
+                };
+                auto try_add = [&](std::string_view candidate)
+                {
+                    /// Full match: the stored path equals the requested key ignoring case.
+                    if (match_case_insensitive(candidate, path))
+                    {
+                        add_match(candidate);
+                        return;
+                    }
+                    /// Prefix match: the requested key names a sub-object whose leaves are stored as
+                    /// dotted paths, e.g. requested `nested` against stored leaf `Nested.InnerKey`. Add the
+                    /// original-cased prefix (`Nested`) so the combined `@` subcolumn can merge the whole
+                    /// sub-object, mirroring how case-sensitive extraction resolves a sub-object key.
+                    if (candidate.size() > path.size() && candidate[path.size()] == '.'
+                        && match_case_insensitive(candidate.substr(0, path.size()), path))
+                        add_match(candidate.substr(0, path.size()));
+                };
+
+                /// Prefer the exact-case match when present so a query key like `name` is resolved
+                /// to a stored `name` rather than a sibling `Name` in iteration order.
+                bool exact_present = data_type_object.getTypedPaths().contains(path)
+                    || col_object->getDynamicPaths().contains(path);
+                if (!exact_present)
+                {
+                    const auto [shared_paths, _] = col_object->getSharedDataPathsAndValues();
+                    for (size_t i = 0; i < shared_paths->size(); ++i)
+                    {
+                        if (shared_paths->getDataAt(i) == path)
+                        {
+                            exact_present = true;
+                            break;
+                        }
+                    }
+                }
+                if (exact_present)
+                {
+                    seen.insert(path);
+                    case_insensitive_matches.emplace_back(path);
+                }
+
+                for (const auto & [typed_path, _] : data_type_object.getTypedPaths())
+                    try_add(typed_path);
+                for (const auto & [dynamic_path, _] : col_object->getDynamicPaths())
+                    try_add(dynamic_path);
+                {
+                    const auto [shared_paths, _] = col_object->getSharedDataPathsAndValues();
+                    for (size_t i = 0; i < shared_paths->size(); ++i)
+                        try_add(shared_paths->getDataAt(i));
+                }
+
+                if (case_insensitive_matches.size() == 1)
+                    path = std::move(case_insensitive_matches.front());
+            }
+
+            /// Typed paths are always present in a JSON column, even when the key was missing
+            /// from the inserted JSON (they get the type's default value). For non-typed paths
+            /// the combined subcolumn returns a Dynamic column where NULL means absent.
+            /// When `type_json_skip_null_typed_paths` is enabled, a NULL typed path is treated as absent.
+            /// Computed after case-insensitive resolution so it reflects the resolved stored path.
+            const bool skip_null_typed_paths = format_settings.json.type_json_skip_null_typed_paths;
+            bool is_typed_path = data_type_object.getTypedPaths().contains(path);
+            bool treat_typed_as_always_present = is_typed_path && !skip_null_typed_paths;
+
+            auto read_merged_for_path = [&](const String & p)
+            {
+                String combined_name = String(1, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX) + "`" + p + "`";
+                auto merged_type = data_type_object.getSubcolumnType(combined_name);
+
+                /// When `skip_null_typed_paths` is enabled for a non-typed parent path (e.g. `a` when `a.b`
+                /// is typed), use `extractCombinedSubcolumn` which propagates the setting into sub-object
+                /// emptiness checks. Otherwise the sub-object with all-NULL typed descendants would be
+                /// considered non-empty.
+                auto merged = (skip_null_typed_paths && !data_type_object.getTypedPaths().contains(p))
+                    ? data_type_object.extractCombinedSubcolumn(p, object_column, true)
+                    : data_type_object.getSubcolumn(combined_name, object_column);
+                return std::make_pair(std::move(merged), std::move(merged_type));
+            };
+
+            auto serialize_raw = [&](const IColumn & merged, const ISerialization & serialization, size_t row, ColumnString & out)
+            {
+                WriteBufferFromOwnString buf;
+                serialization.serializeTextJSON(merged, row, buf, format_settings);
+                out.insert(buf.str());
+            };
+
+            /// Multiple paths match case-insensitively: resolve per row so each row picks the first
+            /// stored path that actually has a value at that row.
+            if constexpr (is_case_insensitive)
+            {
+                if (case_insensitive_matches.size() > 1)
+                {
+                    const size_t num_paths = case_insensitive_matches.size();
+                    VectorWithMemoryTracking<ColumnPtr> per_path_merged(num_paths);
+                    VectorWithMemoryTracking<DataTypePtr> per_path_merged_type(num_paths);
+                    for (size_t k = 0; k < num_paths; ++k)
+                        std::tie(per_path_merged[k], per_path_merged_type[k]) = read_merged_for_path(case_insensitive_matches[k]);
+
+                    /// Typed paths are always present even when the value equals the type's default,
+                    /// so presence must not be checked with `isDefaultAt` (see #101721). For non-typed
+                    /// paths the combined subcolumn is Dynamic where NULL means absent.
+                    VectorWithMemoryTracking<UInt8> path_always_present(num_paths);
+                    for (size_t k = 0; k < num_paths; ++k)
+                        path_always_present[k] = !skip_null_typed_paths
+                            && data_type_object.getTypedPaths().contains(case_insensitive_matches[k]);
+                    auto path_has_value_at = [&](size_t k, size_t i)
+                    {
+                        return path_always_present[k] || !per_path_merged[k]->isNullAt(i);
+                    };
+
+                    /// A value that is definitely present at this row rather than a placeholder default.
+                    /// A typed path always reports present via `path_always_present`, but its stored value is
+                    /// indistinguishable from an absent key when it equals the type default (#101721), so
+                    /// only a non-default typed value proves presence. For non-typed paths a non-null
+                    /// Dynamic value proves presence.
+                    auto path_has_real_value_at = [&](size_t k, size_t i)
+                    {
+                        return path_always_present[k] ? !per_path_merged[k]->isDefaultAt(i) : !per_path_merged[k]->isNullAt(i);
+                    };
+
+                    /// Pick the stored path to use for this row. Prefer a candidate carrying a real value so
+                    /// a differently-cased key with an actual value is not shadowed by an earlier typed path
+                    /// that only holds its default (e.g. query `NAME` with typed `Name` empty and shared
+                    /// `name` = 'alice'). Only when no candidate has a real value do we fall back to a
+                    /// present-but-default typed path, matching case-sensitive extraction of that key.
+                    auto pick_path_for_row = [&](size_t i) -> size_t
+                    {
+                        for (size_t k = 0; k < num_paths; ++k)
+                            if (path_has_real_value_at(k, i))
+                                return k;
+                        for (size_t k = 0; k < num_paths; ++k)
+                            if (path_has_value_at(k, i))
+                                return k;
+                        return num_paths;
+                    };
+
+                    if constexpr (is_extract_raw)
+                    {
+                        VectorWithMemoryTracking<SerializationPtr> serializations(num_paths);
+                        for (size_t k = 0; k < num_paths; ++k)
+                            serializations[k] = per_path_merged_type[k]->getDefaultSerialization();
+
+                        auto raw_col = ColumnString::create();
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                        {
+                            size_t pick = pick_path_for_row(i);
+                            if (pick == num_paths)
+                                raw_col->insertDefault();
+                            else
+                                serialize_raw(*per_path_merged[pick], *serializations[pick], i, *raw_col);
+                        }
+                        return raw_col;
+                    }
+                    else
+                    {
+                        /// JSONExtractBoolCaseInsensitive must cast to `Bool` so non-zero values normalize to 1.
+                        /// JSONHas has no case-insensitive variant, so it never reaches this branch.
+                        DataTypePtr cast_target = is_extract_bool
+                            ? DataTypeFactory::instance().get("Bool")
+                            : result_type;
+
+                        VectorWithMemoryTracking<ColumnPtr> per_path_casted(num_paths);
+                        for (size_t k = 0; k < num_paths; ++k)
+                        {
+                            auto casted = castColumnAccurateOrNull({per_path_merged[k], per_path_merged_type[k], ""}, cast_target);
+                            per_path_casted[k] = cast_target->isNullable() ? casted : removeNullable(casted);
+                        }
+
+                        auto result_column = result_type->createColumn();
+                        result_column->reserve(input_rows_count);
+                        for (size_t i = 0; i < input_rows_count; ++i)
+                        {
+                            size_t pick = pick_path_for_row(i);
+                            if (pick == num_paths)
+                                result_column->insertDefault();
+                            else
+                                result_column->insertFrom(*per_path_casted[pick], i);
+                        }
+                        return result_column;
+                    }
+                }
+            }
+
+            /// Use combined `@` subcolumn that merges literal value and sub-object.
+            /// For typed paths it returns only the literal value. For non-typed paths it returns a Dynamic
+            /// column: literal if present, sub-object as JSON if not, NULL otherwise.
+            auto [merged, merged_type] = read_merged_for_path(path);
 
             if constexpr (is_has)
             {
@@ -289,38 +615,21 @@ public:
                     data[i] = merged->isNullAt(i) ? 0 : 1;
                 return result;
             }
-
-            /// JSONExtractBool must return UInt8 {0,1} with boolean semantics. Cast to `Bool` instead
-            /// of `UInt8` so that `convertToBool` normalizes any non-zero numeric value to 1.
-            constexpr bool is_extract_bool = std::string_view(TName::name) == std::string_view("JSONExtractBool")
-                        || std::string_view(TName::name) == std::string_view("JSONExtractBoolCaseInsensitive");
-
-            if constexpr (is_extract_bool)
+            else if constexpr (is_extract_bool)
             {
                 auto casted = castColumnAccurateOrNull({merged, merged_type, ""}, DataTypeFactory::instance().get("Bool"));
                 return removeNullable(casted);
             }
-
-            /// For JSONExtractRaw: serialize each value as a JSON string
-            constexpr bool is_extract_raw = std::string_view(TName::name) == std::string_view("JSONExtractRaw")
-                        || std::string_view(TName::name) == std::string_view("JSONExtractRawCaseInsensitive");
-
-            if constexpr (is_extract_raw)
+            else if constexpr (is_extract_raw)
             {
                 auto raw_col = ColumnString::create();
                 auto serialization = merged_type->getDefaultSerialization();
                 for (size_t i = 0; i < input_rows_count; ++i)
                 {
                     if (!treat_typed_as_always_present && merged->isNullAt(i))
-                    {
                         raw_col->insertDefault();
-                    }
                     else
-                    {
-                        WriteBufferFromOwnString buf;
-                        serialization->serializeTextJSON(*merged, i, buf, format_settings);
-                        raw_col->insert(buf.str());
-                    }
+                        serialize_raw(*merged, *serialization, i, *raw_col);
                 }
                 return raw_col;
             }
@@ -1295,7 +1604,7 @@ Checks for the existence of the provided value(s) in the JSON document.
         )";
         FunctionDocumentation::Syntax syntax = "JSONHas(json[ ,indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"[ ,indices_or_keys, ...]", "A list of zero or more arguments.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the value exists in `json`, otherwise `0`", {"UInt8"}};
@@ -1325,7 +1634,7 @@ SELECT JSONHas('{"a": "hello", "b": [-100, 200.0, 300]}', 'b', 4) = 0;
 Checks that the string passed is valid JSON.
         )";
         FunctionDocumentation::Syntax syntax = "isValidJSON(json)";
-        FunctionDocumentation::Arguments argument = {{"json", "JSON string to validate", {"String"}}};
+        FunctionDocumentation::Arguments argument = {{"json", "JSON string to validate, or a `JSON` object.", {"String", "JSON"}}};
         FunctionDocumentation::ReturnedValue returned_value = {"Returns `1` if the string is valid JSON, otherwise `0`.", {"UInt8"}};
         FunctionDocumentation::Examples example = {
         {
@@ -1374,7 +1683,7 @@ If the value does not exist or has the wrong type, `0` will be returned.
         )";
         FunctionDocumentation::Syntax syntax = "JSONLength(json [, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"[, indices_or_keys, ...]", "Optional. A list of zero or more arguments.", {"String", "(U)Int8/16/32/64"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the length of the JSON array or JSON object, otherwise returns `0` if the value does not exist or has the wrong type.", {"UInt64"}};
@@ -1403,7 +1712,7 @@ Returns the key of a JSON object field by its index (1-based). If the JSON is pa
         )";
         FunctionDocumentation::Syntax syntax = "JSONKey(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "Optional list of indices or keys specifying a path to a nested element. Each argument can be either a string (access by key) or an integer (access by index starting from 1).", {"String", "Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the key name at the specified position in the JSON object.", {"String"}};
@@ -1428,7 +1737,7 @@ Return the type of a JSON value. If the value does not exist, `Null=0` will be r
         )";
         FunctionDocumentation::Syntax syntax = "JSONType(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"json[, indices_or_keys, ...]", "A list of zero or more arguments, each of which can be either string or integer.", {"String", "(U)Int8/16/32/64"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the type of a JSON value as a string, otherwise if the value doesn't exist it returns `Null=0`", {"Enum"}};
@@ -1460,7 +1769,7 @@ Parses JSON and extracts a value of Int type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractInt(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an Int value if it exists, otherwise returns `0`.", {"Int64"}};
@@ -1490,7 +1799,7 @@ Parses JSON and extracts a value of UInt type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractUInt(json [, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a UInt value if it exists, otherwise returns `0`.", {"UInt64"}};
@@ -1520,7 +1829,7 @@ Parses JSON and extracts a value of Float type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractFloat(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a Float value if it exists, otherwise returns `0`.", {"Float64"}};
@@ -1550,7 +1859,7 @@ Parses JSON and extracts a value of Bool type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractBool(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a Bool value if it exists, otherwise returns `0`.", {"Bool"}};
@@ -1580,7 +1889,7 @@ Parses JSON and extracts a value of String type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractString(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns a String value if it exists, otherwise returns an empty string.", {"String"}};
@@ -1609,7 +1918,7 @@ Parses JSON and extracts a value with given ClickHouse data type.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtract(json[, indices_or_keys, ...], return_type)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}},
             {"return_type", "ClickHouse data type to return.", {"String"}}
         };
@@ -1640,7 +1949,7 @@ Parses key-value pairs from a JSON where the values are of the given ClickHouse 
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValues(json[, indices_or_keys, ...], value_type)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}},
             {"value_type", "ClickHouse data type of the values.", {"String"}}
         };
@@ -1671,7 +1980,7 @@ Returns a part of JSON as unparsed string.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractRaw(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the part of JSON as an unparsed string. If the part does not exist or has a wrong type, an empty string will be returned.", {"String"}};
@@ -1701,7 +2010,7 @@ Returns an array with elements of JSON array, each represented as unparsed strin
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractArrayRaw(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of strings with JSON array elements. If the part is not an array or does not exist, an empty array will be returned.", {"Array(String)"}};
@@ -1731,7 +2040,7 @@ Returns an array of tuples with keys and values from a JSON object. All values a
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesRaw(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of tuples with parsed key-value pairs where values are unparsed strings.", {"Array(Tuple(String, String))"}};
@@ -1760,7 +2069,7 @@ Parses a JSON string and extracts the keys.
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeys(json[, indices_or_keys, ...])";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse.", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "A list of zero or more arguments each of which can be either string or integer.", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns an array with the keys of the JSON object.", {"Array(String)"}};
@@ -1793,7 +2102,7 @@ Parses JSON and extracts a value of Int type using case-insensitive key matching
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractIntCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {"Returns the extracted Int value, 0 if not found or cannot be converted.", {"Int64"}};
@@ -1815,7 +2124,7 @@ Parses JSON and extracts a value of UInt type using case-insensitive key matchin
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractUIntCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -1839,7 +2148,7 @@ Parses JSON and extracts a value of Float type using case-insensitive key matchi
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractFloatCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -1863,7 +2172,7 @@ Parses JSON and extracts a boolean value using case-insensitive key matching. Th
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractBoolCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -1887,7 +2196,7 @@ Parses JSON and extracts a string using case-insensitive key matching. This func
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractStringCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -1912,7 +2221,7 @@ Parses JSON and extracts a value of the given ClickHouse data type using case-in
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractCaseInsensitive(json [, indices_or_keys...], return_type)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}},
             {"return_type", "The ClickHouse data type to extract", {"String"}}
         };
@@ -1935,7 +2244,7 @@ Parses key-value pairs from JSON using case-insensitive key matching. This funct
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesCaseInsensitive(json [, indices_or_keys...], value_type)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}},
             {"value_type", "The ClickHouse data type of the values", {"String"}}
         };
@@ -1957,7 +2266,7 @@ Returns part of the JSON as an unparsed string using case-insensitive key matchi
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the field. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -1981,7 +2290,7 @@ Returns an array with elements of JSON array, each represented as unparsed strin
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractArrayRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the array. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -2005,7 +2314,7 @@ Extracts raw key-value pairs from JSON using case-insensitive key matching. This
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysAndValuesRawCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
@@ -2029,7 +2338,7 @@ Parses a JSON string and extracts the keys using case-insensitive key matching t
         )";
         FunctionDocumentation::Syntax syntax = "JSONExtractKeysCaseInsensitive(json [, indices_or_keys]...)";
         FunctionDocumentation::Arguments arguments = {
-            {"json", "JSON string to parse", {"String"}},
+            {"json", "JSON string to parse, or a `JSON` object. A `JSON` object does not keep the order of the keys of an object, so on a `JSON` column the keys are seen in the order in which the column stores them.", {"String", "JSON"}},
             {"indices_or_keys", "Optional. Indices or keys to navigate to the object. Keys use case-insensitive matching", {"String", "(U)Int*"}}
         };
         FunctionDocumentation::ReturnedValue returned_value = {
