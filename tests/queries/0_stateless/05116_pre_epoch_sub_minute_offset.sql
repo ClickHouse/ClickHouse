@@ -39,3 +39,12 @@ SELECT toSecond(toDateTime64('1930-06-15 12:00:34', 0, 'UTC')),
        toStartOfMinute(toDateTime64('1930-06-15 12:00:34', 0, 'UTC')),
        toStartOfHour(toDateTime64('1930-06-15 12:30:34', 0, 'UTC')),
        toStartOfInterval(toDateTime64('1930-06-15 12:30:34', 0, 'UTC'), INTERVAL 1 HOUR);
+
+SELECT 'a column mixing values on both sides of the epoch, where `toStartOfInterval` takes the fast path';
+SELECT toString(t), toString(toStartOfInterval(t, INTERVAL 1 MINUTE)), toString(toStartOfInterval(t, INTERVAL 1 HOUR))
+FROM
+(
+    SELECT toDateTime64('1930-06-15 12:00:34', 0, 'Europe/Amsterdam') + number * 2874009634 AS t
+    FROM numbers(3)
+)
+ORDER BY t;

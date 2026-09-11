@@ -1690,36 +1690,45 @@ public:
         return static_cast<Int64>(product);
     }
 
-    /// The divisor in seconds if the corresponding `toStartOf*Interval` method equals
-    /// `roundDownToMultiple(t, divisor)` for every `t` within the LUT range in this time zone, nothing if it
-    /// needs the LUT. Must mirror the dispatch of the corresponding methods. These use the
-    /// `offset_is_whole_number_of_*_in_lut_range` properties, not their epoch-scoped counterparts: the
-    /// caller applies the divisor to every value of a column, which may predate the epoch. Callers must
-    /// still keep `t` outside the LUT range on the generic path.
-    std::optional<Int64> minuteIntervalModularDivisor(UInt64 minutes) const
+    /// `divisor` in seconds if the corresponding `toStartOf*Interval` method equals
+    /// `roundDownToMultiple(t, divisor)` from the epoch onward in this time zone. `valid_before_epoch` says
+    /// whether it also holds below the epoch: the historical offset of a zone such as `Europe/Amsterdam`
+    /// (+00:19:32 until 1937) or `Asia/Kolkata` (+05:21:10 until 1906) has a sub-minute component, and the
+    /// modular result would land on a UTC-aligned boundary there. A zone whose whole lookup table has whole
+    /// minutes (or hours) - UTC and most zones - answers `true` and keeps the fast path for every row.
+    struct ModularDivisor
     {
-        if (!offset_is_whole_number_of_minutes_in_lut_range)
+        Int64 divisor;
+        bool valid_before_epoch;
+    };
+
+    /// The divisor if the fast path applies in this time zone at all, nothing if the method needs the LUT for
+    /// every value. Must mirror the dispatch of the corresponding methods. Callers must keep `t` outside the
+    /// LUT range, and a negative `t` unless `valid_before_epoch`, on the generic path.
+    std::optional<ModularDivisor> minuteIntervalModularDivisor(UInt64 minutes) const
+    {
+        if (!offset_is_whole_number_of_minutes_during_epoch)
             return std::nullopt;
-        return minuteIntervalDivisor(minutes);
+        return ModularDivisor{minuteIntervalDivisor(minutes), offset_is_whole_number_of_minutes_in_lut_range};
     }
 
-    std::optional<Int64> secondIntervalModularDivisor(UInt64 seconds) const
+    std::optional<ModularDivisor> secondIntervalModularDivisor(UInt64 seconds) const
     {
         if (seconds == 1)
-            return Int64(1);
+            return ModularDivisor{Int64(1), true};
         if (seconds % 60 == 0)
             return minuteIntervalModularDivisor(seconds / 60);
-        if (offset_is_whole_number_of_hours_in_lut_range)
-            return static_cast<Int64>(seconds);
+        if (offset_is_whole_number_of_hours_during_epoch)
+            return ModularDivisor{static_cast<Int64>(seconds), offset_is_whole_number_of_hours_in_lut_range};
         return std::nullopt;
     }
 
-    std::optional<Int64> hourIntervalModularDivisor(UInt64 hours) const
+    std::optional<ModularDivisor> hourIntervalModularDivisor(UInt64 hours) const
     {
         /// Multi-hour intervals are aligned to the start of the day, not to the epoch, so in general they
         /// cannot be computed by modular arithmetic (the alignment differs on days with an offset change).
-        if (hours == 1 && offset_is_whole_number_of_hours_in_lut_range)
-            return Int64(3600);
+        if (hours == 1 && offset_is_whole_number_of_hours_during_epoch)
+            return ModularDivisor{Int64(3600), offset_is_whole_number_of_hours_in_lut_range};
         return std::nullopt;
     }
 
