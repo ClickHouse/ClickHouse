@@ -63,8 +63,12 @@ public:
 
     /** A transaction was left partly reversed, so object storage holds a part of it while the filesystem in memory
       * does not. What is stored is unknown from here, so the disk takes no further transaction: another one would
-      * decide what to write from a filesystem that no longer describes object storage. Reads are still served, because
-      * the filesystem in memory is the state that was committed, and a file still resolves to the blob it did before.
+      * decide what to write from a filesystem that no longer describes object storage.
+      *
+      * Reads are still served, because the filesystem in memory is the state that was committed, and refusing them
+      * would take a whole disk down over one broken transaction. They are not all correct, though: when the abandoned
+      * reversal was putting a blob back, that blob is left only under the temporary key the operation copied it to,
+      * while the filesystem still names the original one, so that one file fails to read.
       *
       * Nothing in this process can make the two agree again - reloading would adopt a state no transaction ever
       * committed - so this lasts until the next start, which loads the filesystem from object storage.
