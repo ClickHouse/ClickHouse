@@ -2769,14 +2769,6 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
 
     const LimitInfo lim_info = getLimitLengthAndOffset(query, context);
 
-    /// `arrayJoin` (function or `ARRAY JOIN` clause) expands one input row into several output
-    /// rows after the source has produced them. Limiting the source to `limit + offset` rows
-    /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
-    /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
-    /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
-    if (astContainsArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
-        return 0;
-
     if (!query.distinct
        && !query.limit_with_ties
        && !query.limitAfter()
@@ -2887,16 +2879,21 @@ void InterpreterSelectQuery::executeFetchColumns(QueryProcessingStage::Enum proc
             max_threads_execute_query = max_streams = 1;
         }
 
-        if (local_limits.local_limits.size_limits.max_rows != 0)
+        /// `arrayJoin` expands rows after the source has run, and StorageLoop, system.zeros and generateRandom
+        /// stop producing at `trivial_limit`, so with `arrayJoin` only the block size shrinks (#82279).
+        if (!(astContainsArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first))
         {
-            if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
+            if (local_limits.local_limits.size_limits.max_rows != 0)
+            {
+                if (max_block_limited < local_limits.local_limits.size_limits.max_rows)
+                    query_info.trivial_limit = max_block_limited;
+                else if (local_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max()) /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
+                    query_info.trivial_limit = 1 + local_limits.local_limits.size_limits.max_rows;
+            }
+            else
+            {
                 query_info.trivial_limit = max_block_limited;
-            else if (local_limits.local_limits.size_limits.max_rows < std::numeric_limits<UInt64>::max()) /// Ask to read just enough rows to make the max_rows limit effective (so it has a chance to be triggered).
-                query_info.trivial_limit = 1 + local_limits.local_limits.size_limits.max_rows;
-        }
-        else
-        {
-            query_info.trivial_limit = max_block_limited;
+            }
         }
     }
 

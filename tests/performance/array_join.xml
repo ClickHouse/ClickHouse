@@ -1,4 +1,11 @@
 <test>
+    <create_query>CREATE TABLE array_join_limit (k String, a Array(String)) ENGINE = MergeTree ORDER BY k</create_query>
+    <fill_query>INSERT INTO array_join_limit SELECT toString(number), [repeat('x', 6000)] FROM numbers(50000)</fill_query>
+
+    <!-- LIMIT with arrayJoin must still read a few rows, not whole blocks of 6 KB strings on every thread -->
+    <query>SELECT length(arrayJoin(a)) FROM array_join_limit LIMIT 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS array_join_limit</drop_query>
 
 
 
