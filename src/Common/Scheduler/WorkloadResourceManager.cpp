@@ -488,6 +488,15 @@ void WorkloadResourceManager::Classifier::attach(const ResourcePtr & resource, c
     attachments[resource->getName()] = Attachment{.resource = resource, .version = version, .link = node.getLink(), .settings = node.getSettings()};
 }
 
+void WorkloadResourceManager::Classifier::finalizeResourceStates()
+{
+    std::unique_lock lock{mutex};
+    scheduling_context->initResourceStates(attachments.size());
+    size_t index = 0;
+    for (auto & item : attachments)
+        item.second.link.scheduling_state = scheduling_context->resourceState(index++);
+}
+
 void WorkloadResourceManager::Resource::updateResource(const ASTPtr & new_resource_entity)
 {
     chassert(getEntityName(new_resource_entity) == resource_name);
@@ -546,6 +555,12 @@ ClassifierPtr WorkloadResourceManager::acquire(const String & workload_name, con
     // Rethrow exceptions if any
     for (auto & future : futures)
         future.get();
+
+    // All resources are attached now; size the per-resource scheduling state (one slot per attached
+    // leaf) and stamp each link with a direct pointer to its slot. Done on the acquiring
+    // (query-setup) thread, before the classifier is handed out, so the scheduler and enqueue hot
+    // paths only ever read an already-resolved pointer and never allocate.
+    classifier->finalizeResourceStates();
 
     return classifier;
 }

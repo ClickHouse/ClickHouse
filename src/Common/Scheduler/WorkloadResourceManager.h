@@ -279,6 +279,12 @@ private:
         void attach(const ResourcePtr & resource, const VersionPtr & version, IWorkloadNode & node);
         void detach(const ResourcePtr & resource);
 
+        /// Size the per-resource scheduling state (one slot per attached leaf) and stamp each link
+        /// with a pointer to its slot. Called once by `acquire()` after all attaches complete, on
+        /// the query-setup thread, before the classifier is handed out — so the hot paths only ever
+        /// read an already-resolved `ResourceLink::scheduling_state`, never allocate.
+        void finalizeResourceStates();
+
     private:
         const ClassifierSettings settings;
         /// Per-query scheduling context, stamped by get() onto every link this classifier hands out.

@@ -51,6 +51,8 @@ struct Fixture
         if (start_ns == 0)
             start_ns = clock_gettime_ns();
         contexts.push_back(std::make_shared<ResourceSchedulingContext>(start_ns, weight, factor, age_s, cpu_s, io_b, priority));
+        // Single leaf in this fixture → one per-resource slot, pre-sized like the classifier does.
+        contexts.back()->initResourceStates(1);
         return contexts.back().get();
     }
 
@@ -59,6 +61,7 @@ struct Fixture
         pool.emplace_back(id, cost);
         TestRequest * r = &pool.back();
         r->scheduling.context = ctx;
+        r->scheduling.state = ctx ? ctx->resourceState(0) : nullptr;
         queue->enqueueRequest(r);
         return r;
     }
@@ -78,15 +81,15 @@ struct Fixture
     }
 
     /// Simulate `ResourceGuard::Request::finish()` feeding the real-vs-estimate error back for this
-    /// query on this leaf (the leaf key is the RequestQueue itself, as the algorithms use `this`).
+    /// query on this leaf (single leaf → slot 0, as the classifier pre-resolves).
     void addCorrection(ResourceSchedulingContext * ctx, ResourceCost real, ResourceCost estimate)
     {
-        ctx->getResourceState(&*queue).cost_correction.fetch_add(
+        ctx->resourceState(0)->cost_correction.fetch_add(
             static_cast<Int64>(real) - static_cast<Int64>(estimate), std::memory_order_relaxed);
     }
 
-    double vruntimeOf(ResourceSchedulingContext * ctx) { return ctx->getResourceState(&*queue).vruntime; }
-    Int64 attainedOf(ResourceSchedulingContext * ctx) { return ctx->getResourceState(&*queue).attained_cost; }
+    double vruntimeOf(ResourceSchedulingContext * ctx) { return ctx->resourceState(0)->vruntime; }
+    Int64 attainedOf(ResourceSchedulingContext * ctx) { return ctx->resourceState(0)->attained_cost; }
 };
 
 }
@@ -133,9 +136,7 @@ TEST(RequestQueue, FairSingleQueryFifo)
 /// backward) and carries any unspent refund forward so it converges to real cost long-term.
 TEST(RequestQueue, ConsumeCorrectedCostClampsAndCarries)
 {
-    ResourceSchedulingContext ctx(0, 1.0, 1.0, 0, 0, 0, 0);
-    int dummy_leaf = 0;
-    auto & s = ctx.getResourceState(&dummy_leaf);
+    ResourceQueryState s;
     EXPECT_EQ(s.consumeCorrectedCost(100), 100);          // no correction → identity
     s.cost_correction.fetch_add(50);
     EXPECT_EQ(s.consumeCorrectedCost(100), 150);          // under-estimate → charge extra
@@ -579,6 +580,7 @@ TEST(RequestQueue, FairUsesSchedulingCostNotBudgetAdjustedCost)
     f.pool.emplace_back(11, 1);
     TestRequest * a1 = &f.pool.back();
     a1->scheduling.context = a;
+    a1->scheduling.state = a->resourceState(0);
     a1->cost = 1000;
     f.queue->enqueueRequest(a1);
 

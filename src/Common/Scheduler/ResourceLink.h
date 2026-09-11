@@ -8,6 +8,7 @@ namespace DB
 class ISchedulerQueue;
 class IAllocationQueue;
 class ResourceSchedulingContext;
+struct ResourceQueryState;
 using ResourceCost = Int64;
 
 /*
@@ -19,11 +20,14 @@ struct ResourceLink
     ISchedulerQueue * queue = nullptr; // queue for time-shared resources (CPU, network, etc)
     IAllocationQueue * allocation_queue = nullptr; // queue for space-shared resources (memory, disk, etc)
 
-    /// Per-query scheduling context, stamped by the classifier that produced this link (non-owning;
-    /// the classifier owns it for the query's lifetime). Requests tagged with this link carry it, so
-    /// the query-aware schedulers can always assume a context. Null for links not produced by a
-    /// classifier (internal/test `getLink()`), which never tag query requests.
+    /// Per-query scheduling pointers, stamped by the classifier that produced this link (both
+    /// non-owning; the classifier owns them for the query's lifetime). `scheduling_context` is the
+    /// query-global config (weight/priority/…); `scheduling_state` points straight at this query's
+    /// per-resource slot for this leaf, so the query-aware schedulers reach it with one dereference.
+    /// Requests tagged with this link carry both. Null for links not produced by a classifier
+    /// (internal/test `getLink()`), which never tag query requests.
     ResourceSchedulingContext * scheduling_context = nullptr;
+    ResourceQueryState * scheduling_state = nullptr;
 
     /// Identity is the resource target only; the context is derived from the same classifier as the
     /// queue, so it does not participate in comparison.
@@ -42,6 +46,7 @@ struct ResourceLink
         queue = nullptr;
         allocation_queue = nullptr;
         scheduling_context = nullptr;
+        scheduling_state = nullptr;
     }
 };
 

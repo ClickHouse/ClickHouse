@@ -137,15 +137,14 @@ private:
 class FairAlgorithm final : public ISchedulingAlgorithm
 {
 public:
-    FairAlgorithm(CostUnit unit_, const void * leaf_)
+    explicit FairAlgorithm(CostUnit unit_)
         : unit(unit_)
-        , leaf(leaf_)
     {
     }
 
     void push(ResourceRequest * request) override
     {
-        auto & state = request->scheduling.context->getResourceState(leaf);
+        auto & state = *request->scheduling.state;
         double effective_weight = updateEffectiveWeight(*request->scheduling.context, state);
         // Corrected cost (see consumeCorrectedCost), stored on the request so pop() charges the same
         // amount; never negative, so vruntime only moves forward.
@@ -165,7 +164,7 @@ public:
         requests.erase(it);
         // System virtual time advances to the start tag of the served request (monotonic).
         system_vruntime = std::max(system_vruntime, request->scheduling.key.first);
-        auto & state = request->scheduling.context->getResourceState(leaf);
+        auto & state = *request->scheduling.state;
         // Same corrected charge that advanced vruntime at push(), so attained tracks real cost.
         state.attained_cost += request->scheduling.charge;
         state.last_activity_ns = clock_gettime_ns();
@@ -210,7 +209,7 @@ private:
     /// Called at push(), so lowering biases the query's subsequent requests — a request already keyed
     /// keeps its weight; the bounded lag is fine for a single-step bias (unlike `las`, which re-keys
     /// on pop()).
-    double updateEffectiveWeight(const ResourceSchedulingContext & ctx, ResourceSchedulingContext::ResourceState & state) const
+    double updateEffectiveWeight(const ResourceSchedulingContext & ctx, ResourceQueryState & state) const
     {
         if (!state.weight_lowered)
         {
@@ -233,7 +232,7 @@ private:
     /// peeked so the attained thresholds react on the first request after a finish without folding it
     /// into `attained_cost`. For CPU, `attained_cost` is granted service and leads spent CPU by at
     /// most one quantum.
-    bool weightLoweringThresholdCrossed(const ResourceSchedulingContext & ctx, const ResourceSchedulingContext::ResourceState & state) const
+    bool weightLoweringThresholdCrossed(const ResourceSchedulingContext & ctx, const ResourceQueryState & state) const
     {
         if (ctx.weight_lowering_age_seconds > 0)
         {
@@ -262,7 +261,6 @@ private:
     using Set = boost::intrusive::set<ResourceRequest, ResourceRequest::SchedulingHook, boost::intrusive::compare<ByKey>>;
 
     const CostUnit unit;
-    const void * leaf; /// Identifies this leaf in the per-query context's per-resource map
     double system_vruntime = 0.0;
     UInt64 next_seq = 0;
     Set requests;
@@ -278,15 +276,14 @@ private:
 class LasAlgorithm final : public ISchedulingAlgorithm
 {
 public:
-    LasAlgorithm(CostUnit unit_, const void * leaf_)
-        : leaf(leaf_)
-        , base(baseQuantum(unit_))
+    explicit LasAlgorithm(CostUnit unit_)
+        : base(baseQuantum(unit_))
     {
     }
 
     void push(ResourceRequest * request) override
     {
-        Int64 attained = request->scheduling.context->getResourceState(leaf).attained_cost;
+        Int64 attained = request->scheduling.state->attained_cost;
         request->scheduling.key = {levelOf(attained), next_seq++};
         requests.insert(*request);
     }
@@ -302,7 +299,7 @@ public:
         {
             auto it = requests.begin();
             ResourceRequest * request = &*it;
-            auto & state = request->scheduling.context->getResourceState(leaf);
+            auto & state = *request->scheduling.state;
             // Real service = attained_cost + pending correction (peeked, as `fair` does), so a badly
             // under-estimated finished request doesn't key the query too low and jump a lighter one.
             double real_level = levelOf(state.attained_cost + state.cost_correction.load(std::memory_order_relaxed));
@@ -383,7 +380,6 @@ private:
     };
     using Set = boost::intrusive::set<ResourceRequest, ResourceRequest::SchedulingHook, boost::intrusive::compare<ByKey>>;
 
-    const void * leaf; /// Identifies this leaf in the per-query context's per-resource map
     const ResourceCost base;
     UInt64 next_seq = 0;
     Set requests;
@@ -493,8 +489,7 @@ public:
         , max_queued(max_queued_)
         , algorithm(algorithm_)
     {
-        // `this` identifies this leaf in each query's per-resource scheduling state.
-        algo = makeAlgorithm(algorithm_, unit_, this);
+        algo = makeAlgorithm(algorithm_, unit_);
     }
 
     ~RequestQueue() override
@@ -632,7 +627,7 @@ public:
             return;
         std::vector<ResourceRequest *> pending;
         algo->pullAll(pending);
-        algo = makeAlgorithm(new_algorithm, unit, this);
+        algo = makeAlgorithm(new_algorithm, unit);
         algorithm = new_algorithm;
         // `fair` projects each query's virtual runtime in push() and stores it in the (per-query)
         // scheduling context, which outlives this leaf's algorithm instances. The new instance
@@ -656,7 +651,7 @@ public:
             returnConsumedCorrection(request);
         if (new_algorithm == SchedulerAlgorithm::Fair)
             for (ResourceRequest * request : pending)
-                request->scheduling.context->getResourceState(this).vruntime = 0.0;
+                request->scheduling.state->vruntime = 0.0;
         for (ResourceRequest * request : pending)
             algo->push(request);
     }
@@ -705,20 +700,20 @@ private:
         Int64 consumed = static_cast<Int64>(request->scheduling.charge) - static_cast<Int64>(request->scheduling.cost);
         if (consumed == 0)
             return;
-        request->scheduling.context->getResourceState(this).cost_correction.fetch_add(consumed, std::memory_order_relaxed);
+        request->scheduling.state->cost_correction.fetch_add(consumed, std::memory_order_relaxed);
         request->scheduling.charge = request->scheduling.cost;
     }
 
-    static std::unique_ptr<ISchedulingAlgorithm> makeAlgorithm(SchedulerAlgorithm algorithm_, CostUnit unit_, const void * leaf_)
+    static std::unique_ptr<ISchedulingAlgorithm> makeAlgorithm(SchedulerAlgorithm algorithm_, CostUnit unit_)
     {
         switch (algorithm_)
         {
             case SchedulerAlgorithm::Fifo:
                 return std::make_unique<FifoAlgorithm>();
             case SchedulerAlgorithm::Fair:
-                return std::make_unique<FairAlgorithm>(unit_, leaf_);
+                return std::make_unique<FairAlgorithm>(unit_);
             case SchedulerAlgorithm::Las:
-                return std::make_unique<LasAlgorithm>(unit_, leaf_);
+                return std::make_unique<LasAlgorithm>(unit_);
             case SchedulerAlgorithm::Priority:
                 return std::make_unique<PriorityAlgorithm>();
         }

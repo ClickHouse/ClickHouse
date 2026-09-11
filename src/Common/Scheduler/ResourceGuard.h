@@ -72,9 +72,10 @@ public:
             // spuriously throw even though this (new) request was granted via `execute()`.
             exception = {};
             ResourceRequest::reset(cost_);
-            // Tag this request with the query's scheduling context, which the classifier stamped onto
-            // the link (reset() cleared any stale one from a previous reuse).
+            // Tag this request with the query's scheduling context + per-resource state, which the
+            // classifier stamped onto the link (reset() cleared any stale ones from a previous reuse).
             scheduling.context = link_.scheduling_context;
+            scheduling.state = link_.scheduling_state;
             estimated_cost = link_.queue->enqueueRequestUsingBudget(this); // NOTE: it modifies `cost` and enqueues request
         }
 
@@ -114,7 +115,7 @@ public:
             // never drains and dump it on a later swap to `fair`/`las`. Folded into the query's NEXT
             // request charge at push/pop; never rewrites an assigned key.
             if (scheduling.tracks_cost)
-                scheduling.context->getResourceState(link_.queue).cost_correction.fetch_add(
+                scheduling.state->cost_correction.fetch_add(
                     static_cast<Int64>(real_cost_) - static_cast<Int64>(scheduling.cost),
                     std::memory_order_relaxed);
             ResourceRequest::finish();

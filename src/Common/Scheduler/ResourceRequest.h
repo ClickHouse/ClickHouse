@@ -23,6 +23,7 @@ class LasAlgorithm;
 class PriorityAlgorithm;
 class CPUSlotsAllocation;
 class ResourceSchedulingContext;
+struct ResourceQueryState;
 
 /// Max number of constraints for a request to pass though (depth of constraints chain)
 constexpr size_t ResourceMaxConstraints = 8;
@@ -81,10 +82,17 @@ public:
         /// `scheduling.cost` so it is never stale for schedulers that ignore it.
         ResourceCost charge{};
 
-        /// Non-owning pointer to the query's scheduling context, which the classifier stamped onto the
-        /// link and which is copied here just before `enqueueRequest()` (cleared by `reset()`). The
-        /// classifier owns it for the query's lifetime, so it never dangles while the request is queued.
+        /// Non-owning pointer to the query's scheduling context (query-global config: weight,
+        /// priority, …), stamped onto the link by the classifier and copied here just before
+        /// `enqueueRequest()` (cleared by `reset()`). The classifier owns it for the query's
+        /// lifetime, so it never dangles while the request is queued.
         ResourceSchedulingContext * context = nullptr;
+
+        /// Non-owning pointer to this query's per-resource state for the target leaf: the classifier
+        /// resolved it (one slot per attached leaf) and stamped it onto the link; copied here at
+        /// enqueue. Lets `fair`/`las` reach the per-resource state with a single dereference — no map
+        /// or lookup. Same lifetime as `context`.
+        ResourceQueryState * state = nullptr;
 
         /// Ordering key for `fair` / `las`, constant while the request is in the intrusive ordered
         /// set. `.first` is the virtual runtime (`fair`) or MLFQ level (`las`); `.second` a monotonic
@@ -126,6 +134,7 @@ public:
         // Clear per-request query identity and ordering key so a reused request (e.g. the
         // thread-local `ResourceGuard::Request`) never carries stale state from a previous query.
         scheduling.context = nullptr;
+        scheduling.state = nullptr;
         scheduling.key = {0.0, 0};
         scheduling.priority = {};
         scheduling.tracks_cost = false;
