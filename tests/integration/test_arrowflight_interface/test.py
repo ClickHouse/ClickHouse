@@ -390,7 +390,8 @@ def test_doput_invalid_query():
         writer.close()
         assert False, "Expected error but query succeeded"
     except flight.FlightServerError as e:
-        assert "Syntax error: failed at position 1 (BAD): BAD QUERY" in str(e)
+        assert "Syntax error" in str(e)
+        assert "failed at position 1 (BAD): BAD QUERY" in str(e)
 
 
 def test_doget():
@@ -586,14 +587,16 @@ def test_doget_invalid_query():
         client.get_flight_info(descriptor, options)
         assert False, "Expected error but query succeeded"
     except flight.FlightServerError as e:
-        assert "Syntax error: failed at position 1 (BAD): BAD QUERY" in str(e)
+        assert "Syntax error" in str(e)
+        assert "failed at position 1 (BAD): BAD QUERY" in str(e)
 
     ticket = flight.Ticket(b"BAD QUERY")
     try:
         client.do_get(ticket, options)
         assert False, "Expected error but query succeeded"
     except flight.FlightServerError as e:
-        assert "Syntax error: failed at position 1 (BAD): BAD QUERY" in str(e)
+        assert "Syntax error" in str(e)
+        assert "failed at position 1 (BAD): BAD QUERY" in str(e)
 
 
 # Method doget doesn't work with INSERT queries.

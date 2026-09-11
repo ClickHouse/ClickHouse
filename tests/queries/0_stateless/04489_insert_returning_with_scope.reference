@@ -1,0 +1,11 @@
+outer with visible in returning values
+42
+1
+outer with visible in returning select
+21
+2
+outer with visible in nested returning set-op
+42
+42
+42
+1

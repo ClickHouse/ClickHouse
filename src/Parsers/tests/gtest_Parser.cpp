@@ -145,6 +145,29 @@ TEST(ParserExecuteAsQuery, OutputOptionChildOrderIsCanonical)
     }
 }
 
+TEST(ParserInsertQuery, ReturningTrailingSettingsChildOrderIsCanonical)
+{
+    const std::vector<String> queries = {
+        "INSERT INTO t SELECT number FROM numbers(1) RETURNING (SELECT number FROM numbers(1)) SETTINGS max_result_rows = 1",
+        "INSERT INTO t SETTINGS max_threads = 1 SELECT number FROM numbers(1) RETURNING (SELECT number FROM numbers(1)) SETTINGS max_result_rows = 1",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        ASTPtr cloned = ast->clone();
+        EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false)) << "clone of: " << query;
+
+        String formatted = ast->formatWithSecretsOneLine();
+        ASTPtr reparsed = parseQuery(parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
+    }
+}
+
 /// `IAST`'s copy constructor copies `children` as-is, so a `clone()` built on `make_intrusive<T>(*this)`
 /// has to clear them before re-adding: otherwise the clone keeps pointing at the original's nodes and
 /// mutating one is visible through the other. The AST fuzzer reports that as
@@ -1042,6 +1065,7 @@ TEST(RemoveSettingsFromQuery, PrunesEmptySettingsAndKeepsQueryParseable)
         "SELECT sum(number) FROM numbers(100) SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw'",
         "SELECT 1 UNION ALL SELECT 2 SETTINGS max_rows_to_read = 0, max_execution_time = 0",
         "INSERT INTO t SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0, read_overflow_mode = 'throw'",
+        "INSERT INTO t SELECT number FROM numbers(100) RETURNING (SELECT 1) SETTINGS max_rows_to_read = 0",
         "EXPLAIN SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0",
         "SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0) SETTINGS max_execution_time = 0",
     };
@@ -1103,6 +1127,7 @@ TEST(RemoveSettingsFromQuery, StripsResetToDefaultOverrides)
         "SELECT sum(number) FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT, read_overflow_mode = DEFAULT",
         "SELECT 1 UNION ALL SELECT 2 SETTINGS max_rows_to_read = DEFAULT, max_execution_time = DEFAULT",
         "INSERT INTO t SELECT number FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT, read_overflow_mode = 'throw'",
+        "INSERT INTO t SELECT number FROM numbers(100) RETURNING (SELECT 1) SETTINGS max_rows_to_read = DEFAULT",
         "SELECT number FROM numbers(100) SETTINGS max_rows_to_read = DEFAULT, max_threads = 4",
     };
 
@@ -1165,14 +1190,11 @@ TEST(RemoveSettingsFromQuery, StripsRepeatedOverrides)
     /// Each clause repeats a safety setting (direct `= value`, `= DEFAULT`, or a mix). Covers SELECT,
     /// SELECT-UNION (ASTQueryWithOutput), INSERT and a subquery.
     const std::vector<String> queries = {
-        "SELECT sum(number) FROM numbers(100) "
-        "SETTINGS max_rows_to_read = 0, max_rows_to_read = 0, read_overflow_mode = 'throw'",
-        "SELECT 1 UNION ALL SELECT 2 "
-        "SETTINGS max_rows_to_read = 0, max_execution_time = 0, max_rows_to_read = DEFAULT",
-        "INSERT INTO t SELECT number FROM numbers(100) "
-        "SETTINGS read_overflow_mode = 'throw', max_rows_to_read = 0, read_overflow_mode = DEFAULT",
-        "SELECT * FROM (SELECT number FROM numbers(100) "
-        "SETTINGS max_rows_to_read = 0, max_rows_to_read = DEFAULT) SETTINGS max_execution_time = 0",
+        "SELECT sum(number) FROM numbers(100) SETTINGS max_rows_to_read = 0, max_rows_to_read = 0, read_overflow_mode = 'throw'",
+        "SELECT 1 UNION ALL SELECT 2 SETTINGS max_rows_to_read = 0, max_execution_time = 0, max_rows_to_read = DEFAULT",
+        "INSERT INTO t SELECT number FROM numbers(100) SETTINGS read_overflow_mode = 'throw', max_rows_to_read = 0, read_overflow_mode = DEFAULT",
+        "INSERT INTO t SELECT number FROM numbers(100) RETURNING (SELECT 1) SETTINGS max_rows_to_read = 0, max_rows_to_read = DEFAULT",
+        "SELECT * FROM (SELECT number FROM numbers(100) SETTINGS max_rows_to_read = 0, max_rows_to_read = DEFAULT) SETTINGS max_execution_time = 0",
     };
 
     for (const auto & query : queries)
@@ -1358,6 +1380,7 @@ TEST(RemoveSettingsFromQuery, StripsBlockFormingOverrides)
     const std::vector<String> queries = {
         "SELECT sum(number) FROM numbers(100) SETTINGS max_block_size = 1000000, min_insert_block_size_rows = 1000000",
         "INSERT INTO t SELECT number FROM numbers(100) SETTINGS min_insert_block_size_rows = 1000000",
+        "INSERT INTO t SELECT number FROM numbers(100) RETURNING (SELECT 1) SETTINGS min_insert_block_size_rows = 1000000",
         "SELECT 1 SETTINGS max_block_size = DEFAULT, min_insert_block_size_rows = DEFAULT",
         "SELECT 1 SETTINGS min_insert_block_size_rows = 1000000, min_insert_block_size_rows = 1000000",
     };
