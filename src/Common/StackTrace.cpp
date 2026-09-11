@@ -389,7 +389,7 @@ void StackTrace::forEachFrame(
             }
         }
 
-        if (const auto * symbol = symbol_index.findSymbol(current_frame.physical_addr))
+        if (const auto * symbol = symbol_index.findSymbol(current_frame.virtual_addr))
             current_frame.symbol = demangle(symbol->name);
 
         for (const auto & frame : inline_frames)
@@ -744,6 +744,9 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
     size_t frame_index = stack_trace.offset;
 #if (defined(__ELF__) && !defined(OS_FREEBSD)) || defined(OS_DARWIN)
     size_t inline_frame_index = 0;
+    const auto * main_object = DB::SymbolIndex::instance().thisObject();
+    const std::optional<std::string> main_object_name
+        = main_object ? std::optional<std::string>(main_object->name) : std::nullopt;
     auto callback_wrapper = [&](const StackTrace::Frame & frame)
     {
         DB::WriteBufferFromOwnString out;
@@ -772,10 +775,21 @@ toStringEveryLineImpl([[maybe_unused]] bool fatal, const StackTraceRefTriple & s
         else
             out << "?";
 
+        /// Print the object-relative address, not the absolute (runtime) one. This string form ends
+        /// up in client-visible exception messages and in the server log, so it must not disclose the
+        /// runtime load bases of the process; raw virtual addresses belong only on the explicitly
+        /// introspective surfaces (`system.stack_trace.trace`, `system.trace_log.trace`,
+        /// `addressToSymbol`, `addressToLine`), which require introspection to be usable.
+        ///
+        /// A file offset is only unambiguous together with the object it belongs to, because offsets
+        /// overlap between the main binary and shared libraries, so also print the object for frames
+        /// outside the main binary.
         if (shouldShowAddress(frame.physical_addr))
         {
             out << " @ ";
             DB::writePointerHex(frame.physical_addr, out);
+            if (frame.object.has_value() && frame.object != main_object_name)
+                out << " in " << *frame.object;
         }
 
         callback(out.str());

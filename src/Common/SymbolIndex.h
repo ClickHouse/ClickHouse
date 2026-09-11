@@ -27,7 +27,7 @@ public:
 
     struct Symbol
     {
-        /// Here addresses are relative to objects.
+        /// Here addresses are absolute virtual addresses.
         const void * offset_begin;
         const void * offset_end;
         const char * name;
