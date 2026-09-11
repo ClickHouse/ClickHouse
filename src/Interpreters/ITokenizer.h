@@ -2,6 +2,7 @@
 
 #include "config.h"
 
+#include <Common/ByteSet.h>
 #include <Common/assert_cast.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
@@ -15,13 +16,6 @@
 
 #if USE_JIEBA
 #  include <Interpreters/JiebaSegmenter.h>
-#endif
-
-#if defined(__SSE2__)
-#  include <emmintrin.h>
-#  if defined(__SSE4_2__)
-#    include <nmmintrin.h>
-#  endif
 #endif
 
 namespace DB
@@ -217,7 +211,11 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
 
     bool supportsStringLike() const override { return true; }
 
-    /// High-performance callback-based tokenizer with SSE optimization.
+    /// Non-alphanumeric ASCII bytes separate tokens; every other byte, including all bytes of
+    /// UTF-8 sequences, belongs to a token.
+    inline static const ByteSet separator_chars = ByteSet::fromPredicate([](char c) { return isASCII(c) && !isAlphaNumericASCII(c); });
+
+    /// High-performance callback-based tokenizer with SIMD optimization.
     /// Assumes data is padded from the right with at least 15 bytes (as our Columns provide).
     template <Fn<bool(const char *, size_t)> Callback>
     void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
@@ -228,36 +226,11 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
 
         while (pos < end)
         {
-#if defined(__SSE2__) && !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
+#if !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
             // NOTE: we assume that `data` string is padded from the right with 15 bytes.
-            const __m128i haystack = _mm_loadu_si128(reinterpret_cast<const __m128i *>(pos));
-            const size_t haystack_length = 16;
-
-#if defined(__SSE4_2__)
-            // With the help of https://www.strchr.com/strcmp_and_strlen_using_sse_4.2
-            const auto alnum_chars_ranges = _mm_set_epi8(0, 0, 0, 0, 0, 0, 0, 0,
-                    '\xFF', '\x80', 'z', 'a', 'Z', 'A', '9', '0');
-            // Every bit represents if `haystack` character is in the ranges (1) or not (0)
-            unsigned result_bitmask = _mm_cvtsi128_si32(_mm_cmpestrm(alnum_chars_ranges, 8, haystack, haystack_length, _SIDD_CMP_RANGES));
-#else
-            // NOTE: -1 and +1 required since SSE2 has no `>=` and `<=` instructions on packed 8-bit integers (epi8).
-            const auto number_begin =      _mm_set1_epi8('0' - 1);
-            const auto number_end =        _mm_set1_epi8('9' + 1);
-            const auto alpha_lower_begin = _mm_set1_epi8('a' - 1);
-            const auto alpha_lower_end =   _mm_set1_epi8('z' + 1);
-            const auto alpha_upper_begin = _mm_set1_epi8('A' - 1);
-            const auto alpha_upper_end =   _mm_set1_epi8('Z' + 1);
-            const auto zero =              _mm_set1_epi8(0);
-
-            // every bit represents if `haystack` character `c` satisfies condition:
-            // (c < 0) || (c > '0' - 1 && c < '9' + 1) || (c > 'a' - 1 && c < 'z' + 1) || (c > 'A' - 1 && c < 'Z' + 1)
-            // < 0 since _mm_cmplt_epi8 threats chars as SIGNED, and so all chars > 0x80 are negative.
-            unsigned result_bitmask = _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(_mm_or_si128(
-                    _mm_cmplt_epi8(haystack, zero),
-                    _mm_and_si128(_mm_cmpgt_epi8(haystack, number_begin),      _mm_cmplt_epi8(haystack, number_end))),
-                    _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_lower_begin), _mm_cmplt_epi8(haystack, alpha_lower_end))),
-                    _mm_and_si128(_mm_cmpgt_epi8(haystack, alpha_upper_begin), _mm_cmplt_epi8(haystack, alpha_upper_end))));
-#endif
+            const size_t haystack_length = ByteSet::BLOCK_SIZE;
+            // Every bit represents if the character of the haystack belongs to a token (1) or separates tokens (0)
+            unsigned result_bitmask = ~separator_chars.matchBlock(pos) & 0xFFFFu;
             const char * next_pos = std::min(end, pos + haystack_length);
             while (pos < next_pos)
             {
@@ -323,7 +296,7 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
 /// Allows to emulate e.g. BigQuery's LOG_ANALYZER.
 struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringTokenizer>
 {
-    explicit SplitByStringTokenizer(const std::vector<String> & separators_) : ITokenizerHelper(Type::SplitByString), separators(separators_) {}
+    explicit SplitByStringTokenizer(const std::vector<String> & separators_);
 
     static const char * getName() { return "splitByString"; }
     static const char * getExternalName() { return getName(); }
@@ -335,8 +308,14 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
     bool supportsStringLike() const override { return false; }
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
+
 private:
+    /// Returns the length of the separator that starts at `pos`, or 0 if there is none.
+    size_t matchSeparator(const char * data, size_t length, size_t pos) const;
+
     std::vector<String> separators;
+    /// The first bytes of all separators. Only positions holding one of them can start a separator.
+    ByteSet separator_first_bytes;
 };
 
 /// Parser extracting tokens separated by a regular expression, or - in `match_tokens` mode - tokens

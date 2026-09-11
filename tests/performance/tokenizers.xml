@@ -1,0 +1,32 @@
+<test>
+    <!-- Log lines: short words separated by spaces and punctuation, a few long identifiers. -->
+    <create_query>CREATE TABLE tok_log_lines (s String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO tok_log_lines SELECT concat('2024-01-01 12:00:00.', toString(number % 1000), ' [thread-', toString(number % 64), '] INFO Request processed user_id=', toString(number), ' method=GET path=/api/v1/items/', hex(cityHash64(number)), ' status=200 latency_ms=', toString(number % 500), ' ua="Mozilla/5.0 (X11; Linux x86_64)" ok') FROM numbers(500000)</fill_query>
+
+    <!-- Prose: words of 2-10 letters separated by single spaces. -->
+    <create_query>CREATE TABLE tok_prose (s String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO tok_prose SELECT concat('Many years later, as he faced the firing squad, Colonel Aureliano Buendia was to remember that distant afternoon when his father took him to discover ice. ', toString(number)) FROM numbers(500000)</fill_query>
+
+    <!-- Long tokens: hex digests and base64-like blobs of 64-200 bytes. -->
+    <create_query>CREATE TABLE tok_long_tokens (s String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO tok_long_tokens SELECT concat(hex(SHA256(toString(number))), ' ', base64Encode(repeat(toString(number), 20)), ' ', hex(cityHash64(number))) FROM numbers(300000)</fill_query>
+
+    <!-- UTF-8 text without ASCII separators inside words. -->
+    <create_query>CREATE TABLE tok_utf8 (s String) ENGINE = Memory</create_query>
+    <fill_query>INSERT INTO tok_utf8 SELECT concat('Много лет спустя, стоя у стены в ожидании расстрела, полковник Аурелиано Буэндиа вспомнил тот далекий вечер. ', toString(number)) FROM numbers(300000)</fill_query>
+
+    <query>SELECT count() FROM tok_log_lines WHERE NOT ignore(tokens(s)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM tok_prose WHERE NOT ignore(tokens(s)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM tok_long_tokens WHERE NOT ignore(tokens(s)) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM tok_utf8 WHERE NOT ignore(tokens(s)) SETTINGS max_threads = 1</query>
+
+    <query>SELECT count() FROM tok_log_lines WHERE NOT ignore(tokens(s, 'splitByString', [' ', '=', ',', '"'])) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM tok_prose WHERE NOT ignore(tokens(s, 'splitByString', [' '])) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM tok_prose WHERE NOT ignore(tokens(s, 'splitByString', [', ', '. ', ' '])) SETTINGS max_threads = 1</query>
+    <query>SELECT count() FROM tok_long_tokens WHERE NOT ignore(tokens(s, 'splitByString', [' '])) SETTINGS max_threads = 1</query>
+
+    <drop_query>DROP TABLE IF EXISTS tok_log_lines</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tok_prose</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tok_long_tokens</drop_query>
+    <drop_query>DROP TABLE IF EXISTS tok_utf8</drop_query>
+</test>

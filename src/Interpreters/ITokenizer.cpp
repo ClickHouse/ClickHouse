@@ -134,26 +134,13 @@ void NgramsTokenizer::substringToTokens(const char * data, size_t length, Vector
 
 bool SplitByNonAlphaTokenizer::nextInString(const char * data, size_t length, size_t & __restrict pos, size_t & __restrict token_start, size_t & __restrict token_length) const
 {
-    token_start = pos;
-    token_length = 0;
+    const char * end = data + length;
+    const char * start = separator_chars.find<false>(data + pos, end);
+    const char * token_end = separator_chars.find<true>(start, end);
 
-    while (pos < length)
-    {
-        if (isASCII(data[pos]) && !isAlphaNumericASCII(data[pos]))
-        {
-            /// Finish current token if any
-            if (token_length > 0)
-                return true;
-            token_start = ++pos;
-        }
-        else
-        {
-            /// Note that UTF-8 sequence is completely consisted of non-ASCII bytes.
-            ++pos;
-            ++token_length;
-        }
-    }
-
+    token_start = start - data;
+    token_length = token_end - start;
+    pos = token_end - data;
     return token_length > 0;
 }
 
@@ -247,20 +234,6 @@ void wordBoundarySubstringToTokens(
             tokens.push_back({data + token_start, token_len});
 }
 
-bool startsWithSeparator(const char * data, size_t length, size_t pos, const std::vector<String> & separators, std::string & matched_sep)
-{
-    for (const auto & separator : separators)
-    {
-        size_t separator_length = separator.size();
-        if (pos + separator_length <= length && std::memcmp(data + pos, separator.data(), separator_length) == 0)
-        {
-            matched_sep = separator;
-            return true;
-        }
-    }
-    return false;
-}
-
 }
 
 void SplitByNonAlphaTokenizer::substringToBloomFilter(
@@ -275,14 +248,42 @@ void SplitByNonAlphaTokenizer::substringToTokens(
     wordBoundarySubstringToTokens(*this, data, length, tokens, is_prefix, is_suffix);
 }
 
+SplitByStringTokenizer::SplitByStringTokenizer(const std::vector<String> & separators_)
+    : ITokenizerHelper(Type::SplitByString)
+    , separators(separators_)
+{
+    for (const auto & separator : separators)
+        if (!separator.empty())
+            separator_first_bytes.add(separator.front());
+}
+
+size_t SplitByStringTokenizer::matchSeparator(const char * data, size_t length, size_t pos) const
+{
+    if (!separator_first_bytes.contains(data[pos]))
+        return 0;
+
+    for (const auto & separator : separators)
+    {
+        size_t separator_length = separator.size();
+        if (pos + separator_length <= length && std::memcmp(data + pos, separator.data(), separator_length) == 0)
+            return separator_length;
+    }
+
+    return 0;
+}
+
 bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
 {
     size_t i = pos;
-    std::string matched_separators;
 
     /// Skip prefix of separators
-    while (i < length && startsWithSeparator(data, length, i, separators, matched_separators))
-        i += matched_separators.size();
+    while (i < length)
+    {
+        size_t separator_length = matchSeparator(data, length, i);
+        if (separator_length == 0)
+            break;
+        i += separator_length;
+    }
 
     if (i >= length)
     {
@@ -290,10 +291,15 @@ bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size
         return false;
     }
 
-    /// Read token until next separator
+    /// Read token until next separator, jumping over the bytes that cannot start one
     size_t start = i;
-    while (i < length && !startsWithSeparator(data, length, i, separators, matched_separators))
+    while (true)
+    {
+        i = separator_first_bytes.find<true>(data + i, data + length) - data;
+        if (i >= length || matchSeparator(data, length, i) != 0)
+            break;
         ++i;
+    }
 
     token_start = start;
     token_length = i - start;
