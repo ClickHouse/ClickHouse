@@ -540,7 +540,7 @@ if the failed set must not be trimmed by count.
 files; `failed_files_ttl_sec` is the only time-based control over the failed set.
 :::
 
-You can also manually clear all terminal failed files using the [`SYSTEM DROP S3QUEUE FAILED FILES`](/sql-reference/statements/system#drop-s3queue-failed-files) command.
+You can also manually clear all terminal failed files using the [`SYSTEM DROP S3QUEUE FAILED FILES`](/reference/statements/system#drop-s3queue-failed-files) command.
 
 Possible values:
 
