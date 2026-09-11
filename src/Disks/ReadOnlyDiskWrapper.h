@@ -73,6 +73,7 @@ public:
     bool supportZeroCopyReplication() const override { return delegate->supportZeroCopyReplication(); }
     bool supportParallelWrite() const override { return delegate->supportParallelWrite(); }
     SyncGuardPtr getDirectorySyncGuard(const String & path) const override { return delegate->getDirectorySyncGuard(path); }
+    void syncFile(const String & path) const override { delegate->syncFile(path); }
     void shutdown() override { delegate->shutdown(); }
     void startupImpl() override { delegate->startupImpl(); }
     void applyNewSettings(

@@ -214,6 +214,10 @@ SyncGuardPtr IDisk::getDirectorySyncGuard(const String & /* path */) const
     return nullptr;
 }
 
+void IDisk::syncFile(const String & /* path */) const
+{
+}
+
 void IDisk::startup(bool skip_access_check)
 {
     auto component_guard = Coordination::setCurrentComponent("IDisk::startup");

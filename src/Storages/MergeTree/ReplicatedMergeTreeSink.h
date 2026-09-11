@@ -94,6 +94,15 @@ protected:
     /// We can delay processing for previous chunk and start writing a new one.
     std::vector<DelayedPartInPartition> delayed_parts;
 
+    /// Parts committed by this sink, to be fsynced in one batch by onFinish(). Only collected
+    /// when the table asks for that (MergeTreeData::shouldFsyncPartsAfterInsert), so that a
+    /// long-running INSERT does not accumulate them for nothing.
+    bool fsync_parts_on_finish = false;
+    std::vector<MergeTreePartInfo> committed_parts;
+
+
+    /// fsync the parts committed so far and forget them. See MergeTreeData::fsyncPartsAfterInsert().
+    void fsyncCommittedParts();
 
     /// Rename temporary part and commit to ZooKeeper.
     /// Returns a map of conflicting blocks and its actual part names if block has to be deduplicated.
