@@ -64,11 +64,7 @@ For clickhouse-go (v2), set `Protocol: clickhouse.HTTP` and pass the header with
 
 ## Native-protocol routing {#native-protocol-routing}
 
-Over the [native protocol](/interfaces/tcp) there's no HTTP header to carry the routing value, so the proxy hashes the TLS SNI value instead. You connect to your regular service hostname and validate the regular certificate, but send an SNI of the form `<routing-value>.sticky.<host>`. The proxy extracts the routing value from the SNI and selects a replica with the same consistent hashing used for HTTP.
-
-Because only the SNI changes, no extra certificate or DNS entry is needed for each routing value.
-
-[ClickHouse Client](/interfaces/client) exposes this through `--tls-sni-override`:
+Over the [native protocol](/interfaces/tcp), pass the routing value as a TLS server name of the form `<routing-value>.sticky.<host>`. Connect to your regular service hostname as usual. [ClickHouse Client](/interfaces/client) takes the routing value through `--tls-sni-override`:
 
 ```bash
 clickhouse client \
@@ -78,48 +74,7 @@ clickhouse client \
   --query 'SELECT hostName()'
 ```
 
-`--host` is the hostname validated against the certificate, `--secure` turns on TLS, and `--tls-sni-override` supplies the value that's routed on. TLS is required, since without it there's no SNI for the proxy to read.
-
-### Overriding the SNI in your own client {#overriding-sni-in-your-own-client}
-
-A client that builds its own TLS configuration has to separate the two hostnames itself: set the SNI to the sticky hostname, but verify the server certificate against the service hostname. The regular certificate doesn't cover the sticky hostname, so the default hostname check has to be replaced rather than skipped. In Go:
-
-```go
-tlsConfig.ServerName = sniOverride
-
-// Disable the built-in hostname check, which would match the certificate
-// against the sticky hostname in ServerName. The custom callback below
-// still performs full verification.
-tlsConfig.InsecureSkipVerify = true
-
-tlsConfig.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
-	certs := make([]*x509.Certificate, 0, len(rawCerts))
-	for _, raw := range rawCerts {
-		cert, err := x509.ParseCertificate(raw)
-		if err != nil {
-			return err
-		}
-		certs = append(certs, cert)
-	}
-
-	if len(certs) == 0 {
-		return fmt.Errorf("no certificate presented by %s", dialHost)
-	}
-
-	// Verify the chain against the service hostname, not the SNI value.
-	opts := x509.VerifyOptions{DNSName: dialHost, Intermediates: x509.NewCertPool()}
-	for _, cert := range certs[1:] {
-		opts.Intermediates.AddCert(cert)
-	}
-
-	_, err := certs[0].Verify(opts)
-	return err
-}
-```
-
-<Warning>
-Set `InsecureSkipVerify` only alongside a `VerifyPeerCertificate` callback that performs the chain and hostname verification, as above. On its own it disables certificate verification entirely.
-</Warning>
+`--host` is your regular service hostname, `--secure` turns on TLS, and `--tls-sni-override` carries the routing value. TLS is required. No extra certificate or DNS entry is needed.
 
 ## Read-after-write consistency {#read-after-write-consistency}
 
@@ -185,7 +140,7 @@ Both HTTP-based and native-protocol routing work with [private networking](/prod
 
 ### Native-protocol routing requires TLS {#native-protocol-routing-requires-tls}
 
-The routing value travels in the TLS SNI, so a native connection has to use TLS. An unencrypted native connection sends no SNI and keeps normal load balancing.
+Native-protocol routing needs TLS, so pass `--secure`. An unencrypted native connection keeps normal load balancing.
 
 ## Troubleshooting {#troubleshooting}
 
@@ -193,11 +148,10 @@ The routing value travels in the TLS SNI, so a native connection has to use TLS.
 
 - Confirm the toggle for the interface you're using is enabled on the service settings page. The HTTP and native methods are enabled separately.
 - Over HTTP, confirm that every request includes the `X-ClickHouse-Replica-Tag` header, and that every request uses exactly the same value.
-- Over the native protocol, confirm that `--secure` is set and that the SNI value has the form `<routing-value>.sticky.<host>`.
+- Over the native protocol, confirm that `--secure` is set and that `--tls-sni-override` has the form `<routing-value>.sticky.<host>`.
 - Wait briefly after enablement. It can take under a minute to take effect.
 - Check whether the number of replicas recently changed; remapping is expected after scaling. Use `SELECT hostName()` to discover the new mapping.
 
 **Certificate errors over the native protocol**
 
-- Confirm `--host` is your regular service hostname rather than the sticky SNI value. The certificate covers the former.
-- In a client that sets the SNI itself, verify the certificate against the service hostname rather than the SNI value, as shown [above](#overriding-sni-in-your-own-client).
+- Confirm `--host` is your regular service hostname, and that the routing value is passed through `--tls-sni-override` rather than `--host`.
