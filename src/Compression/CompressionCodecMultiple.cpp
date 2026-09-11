@@ -4,11 +4,11 @@
 #include <Common/PODArray.h>
 #include <Common/typeid_cast.h>
 #include <Compression/CompressionFactory.h>
-#include <IO/WriteHelpers.h>
-#include <IO/WriteBufferFromString.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <base/arithmeticOverflow.h>
 
+#include <cstring>
 #include <limits>
 
 

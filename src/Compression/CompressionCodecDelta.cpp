@@ -6,7 +6,6 @@
 #include <base/unaligned.h>
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
-#include <Parsers/ASTFunction.h>
 
 #include <cstring>
 #include <utility>

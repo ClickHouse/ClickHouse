@@ -9,7 +9,6 @@
 #include <base/unaligned.h>
 #include <Parsers/IAST_fwd.h>
 #include <Parsers/ASTLiteral.h>
-#include <IO/WriteHelpers.h>
 #include <IO/BitHelpers.h>
 
 #include <cstring>

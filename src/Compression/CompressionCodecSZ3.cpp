@@ -11,10 +11,6 @@
 #    include <Compression/registerCompressionCodecs.h>
 #    include <Core/TypeId.h>
 #    include <DataTypes/IDataType.h>
-#    include <IO/BufferWithOwnMemory.h>
-#    include <IO/WriteBuffer.h>
-#    include <IO/WriteHelpers.h>
-#    include <Interpreters/Context.h>
 #    include <Parsers/ASTLiteral.h>
 #    include <Parsers/IAST.h>
 #    include "Common/Exception.h"

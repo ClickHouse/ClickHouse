@@ -6,12 +6,11 @@
 #include <Parsers/IAST.h>
 #include <Parsers/ASTLiteral.h>
 #include <Common/SipHash.h>
-#include <Common/typeid_cast.h>
-#include <IO/WriteHelpers.h>
 
 #include <span>
 #include <bit>
 #include <concepts>
+#include <cstring>
 
 
 namespace DB

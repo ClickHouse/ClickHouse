@@ -1,8 +1,6 @@
 #pragma once
 
-#include <IO/WriteBuffer.h>
 #include <Compression/ICompressionCodec.h>
-#include <IO/BufferWithOwnMemory.h>
 
 
 namespace DB

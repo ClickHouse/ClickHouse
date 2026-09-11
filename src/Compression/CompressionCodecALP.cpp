@@ -4,7 +4,6 @@
 #include <Compression/ICompressionCodec.h>
 #include <Compression/registerCompressionCodecs.h>
 #include <DataTypes/IDataType.h>
-#include <IO/WriteHelpers.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/IAST.h>
 #include <base/unaligned.h>
@@ -14,6 +13,8 @@
 #include <algorithm>
 #include <array>
 #include <bit>
+#include <cmath>
+#include <cstring>
 
 namespace DB
 {

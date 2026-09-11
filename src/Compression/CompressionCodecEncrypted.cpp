@@ -14,7 +14,6 @@
 #include "config.h"
 
 #if USE_SSL
-#    include <openssl/err.h>
 #    include <boost/algorithm/hex.hpp>
 #    include <openssl/evp.h>
 #endif

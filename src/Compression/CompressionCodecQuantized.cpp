@@ -9,7 +9,6 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Poco/String.h>
 
 #include <cstring>
 
