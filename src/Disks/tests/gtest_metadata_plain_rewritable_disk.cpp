@@ -13,20 +13,140 @@
 
 #include <Common/thread_local_rng.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
+
+#include <base/scope_guard.h>
+
+#include <Poco/AutoPtr.h>
+#include <Poco/Channel.h>
+#include <Poco/Logger.h>
+#include <Poco/Message.h>
 
 #include <gtest/gtest.h>
 #include <gmock/gmock.h>
 
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <ranges>
 #include <thread>
 
+namespace ProfileEvents
+{
+    extern const Event DiskPlainRewritableUndoStageRetries;
+}
+
+namespace DB::ErrorCodes
+{
+    extern const int FAULT_INJECTED;
+}
+
 using namespace DB;
+
+/// A local object storage that can be told to reject every request that changes something, the way object storage
+/// behaves during an outage. Reads keep working, so a test can still look at what is stored.
+class FailingLocalObjectStorage : public LocalObjectStorage
+{
+public:
+    using LocalObjectStorage::LocalObjectStorage;
+
+    void failRequests(bool fail) { failing = fail; }
+
+    std::unique_ptr<WriteBufferFromFileBase> writeObject(
+        const StoredObject & object,
+        WriteMode mode,
+        std::optional<ObjectAttributes> attributes,
+        size_t buf_size,
+        const WriteSettings & write_settings) override
+    {
+        throwIfFailing(object);
+        return LocalObjectStorage::writeObject(object, mode, attributes, buf_size, write_settings);
+    }
+
+    void copyObject(
+        const StoredObject & object_from,
+        const StoredObject & object_to,
+        const ReadSettings & read_settings,
+        const WriteSettings & write_settings,
+        std::optional<ObjectAttributes> object_to_attributes) override
+    {
+        throwIfFailing(object_to);
+        LocalObjectStorage::copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
+    }
+
+    void removeObjectIfExists(const StoredObject & object) override
+    {
+        throwIfFailing(object);
+        LocalObjectStorage::removeObjectIfExists(object);
+    }
+
+private:
+    std::atomic<bool> failing = false;
+
+    void throwIfFailing(const StoredObject & object) const
+    {
+        if (failing)
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Object storage is unavailable, cannot change '{}'", object.remote_path);
+    }
+};
+
+/// Collects log messages, so that a test can assert on what the code reported rather than only on its return values.
+class CapturingChannel : public Poco::Channel
+{
+public:
+    void log(const Poco::Message & message) override
+    {
+        std::lock_guard lock(mutex);
+        messages.push_back(message.getText());
+    }
+
+    size_t count(const std::string & substring) const
+    {
+        std::lock_guard lock(mutex);
+        return std::ranges::count_if(messages, [&](const auto & message) { return message.find(substring) != std::string::npos; });
+    }
+
+private:
+    mutable std::mutex mutex;
+    std::vector<std::string> messages;
+};
+
+/// Sends everything a logger reports to a `CapturingChannel` for as long as it is alive.
+class LogCapture
+{
+public:
+    explicit LogCapture(const std::string & logger_name)
+        : logger(Poco::Logger::get(logger_name))
+        , previous_channel(logger.getChannel())
+        , previous_level(logger.getLevel())
+        , channel(new CapturingChannel)
+    {
+        logger.setChannel(channel);
+        logger.setLevel("error");
+    }
+
+    ~LogCapture()
+    {
+        logger.setChannel(previous_channel);
+        logger.setLevel(previous_level);
+    }
+
+    size_t count(const std::string & substring) const { return channel->count(substring); }
+
+private:
+    Poco::Logger & logger;
+    Poco::AutoPtr<Poco::Channel> previous_channel;
+    int previous_level;
+    Poco::AutoPtr<CapturingChannel> channel;
+};
 
 class MetadataPlainRewritableDiskTest : public testing::Test
 {
 public:
+    /// Whether the object storage of the disk can be told to reject requests. Set it before the first
+    /// `getMetadataStorage` call of a test, and reach it with `getFailingObjectStorage`.
+    bool object_storage_can_fail = false;
+
     void SetUp() override
     {
         if (!initialized)
@@ -61,6 +181,12 @@ public:
         return active_object_storages.at(key_prefix);
     }
 
+    std::shared_ptr<FailingLocalObjectStorage> getFailingObjectStorage(const std::string & key_prefix)
+    {
+        std::unique_lock<std::mutex> lock(active_metadatas_mutex);
+        return std::dynamic_pointer_cast<FailingLocalObjectStorage>(active_object_storages.at(key_prefix));
+    }
+
     void TearDown() override
     {
         for (const auto & [_, metadata] : active_metadatas)
@@ -78,7 +204,9 @@ private:
     {
         fs::remove_all("./" + key_prefix);
         LocalObjectStorageSettings settings("test", "./" + key_prefix, /*read_only_=*/false);
-        auto object_storage = std::make_shared<LocalObjectStorage>(std::move(settings));
+        std::shared_ptr<LocalObjectStorage> object_storage = object_storage_can_fail
+            ? std::make_shared<FailingLocalObjectStorage>(std::move(settings))
+            : std::make_shared<LocalObjectStorage>(std::move(settings));
         auto metadata_storage = std::make_shared<MetadataStorageFromPlainRewritableObjectStorage>(object_storage, "");
 
         active_metadatas.emplace(key_prefix, metadata_storage);
@@ -2233,4 +2361,313 @@ TEST_F(MetadataPlainRewritableDiskTest, ConcurrentCreateDirectory)
     metadata = restartMetadataStorage("ConcurrentCreateDirectory");
     EXPECT_TRUE(metadata->existsDirectory("A"));
     EXPECT_EQ(generateObjectKeyPrefixForDirectoryPath(metadata, "A/"), remote_prefix);
+}
+
+/// Reversing a directory move rewrites one `prefix.path` marker per directory, and each of those is a separate object
+/// storage write. When one of them fails, object storage keeps describing the move while the in-memory filesystem
+/// still describes the state before it, because a failed transaction never publishes its snapshot. The state of
+/// object storage is unknown at that point, so the reversal repeats the write that failed instead of giving up.
+TEST_F(MetadataPlainRewritableDiskTest, MoveDirectoryUndoRetriesUntilItSucceeds)
+{
+    auto metadata = getMetadataStorage("MoveDirectoryUndoRetries");
+    auto object_storage = getObjectStorage("MoveDirectoryUndoRetries");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("A/B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto a_path = createMetadataObjectPath(metadata, "A");
+    const auto ab_path = createMetadataObjectPath(metadata, "A/B");
+
+    {
+        FailPointInjection::enableFailPoint("plain_object_storage_fail_on_directory_move_undo");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_fail_on_directory_move_undo"));
+
+        /// The move rewrites both markers; the failing file move is what makes the transaction roll back afterwards.
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A", "MOVED");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    /// The first attempt to restore a marker failed, and the retry put it back.
+    EXPECT_EQ(readObject(object_storage, a_path), "A/");
+    EXPECT_EQ(readObject(object_storage, ab_path), "A/B/");
+
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("MOVED"));
+
+    metadata = restartMetadataStorage("MoveDirectoryUndoRetries");
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("MOVED"));
+}
+
+/// Reversing a file move restores several objects, and it removes the temporary copy of an object once that object is
+/// back under its own key. A retry that started the reversal over would copy from a temporary object that an earlier
+/// stage has already removed, so every stage is retried where it failed.
+TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndoRetriesTheFailedStageOnly)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("MoveFileUndoRetries");
+    auto object_storage = getObjectStorage("MoveFileUndoRetries");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+
+        auto source_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", source_size)});
+
+        auto target_size = writeObject(object_storage, tx->generateObjectKeyForPath("/A/target").serialize(), "the target file");
+        tx->createMetadataFile("/A/target", {StoredObject("/A/target", "target", target_size)});
+
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto source_blob = metadata->getStorageObjects("/A/source").front().remote_path;
+    const auto target_blob = metadata->getStorageObjects("/A/target").front().remote_path;
+    const auto objects_before = listAllBlobs("MoveFileUndoRetries");
+
+    {
+        /// The move copies both blobs aside and removes the target, and then fails before it can put the source in
+        /// place. The reversal restores the source, drops its temporary copy, and only then restores the target.
+        FailPointInjection::enableFailPoint("plain_object_storage_copy_fail_on_file_move");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_copy_fail_on_file_move"));
+
+        FailPointInjection::enableFailPoint("plain_object_storage_fail_on_file_move_undo");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_fail_on_file_move_undo"));
+
+        auto tx = metadata->createTransaction();
+        tx->replaceFile("/A/source", "/A/target");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    EXPECT_EQ(readObject(object_storage, source_blob), "the source file");
+    EXPECT_EQ(readObject(object_storage, target_blob), "the target file");
+
+    /// Nothing else is left behind: the temporary copies the reversal used are gone.
+    EXPECT_EQ(listAllBlobs("MoveFileUndoRetries"), objects_before);
+
+    metadata = restartMetadataStorage("MoveFileUndoRetries");
+    EXPECT_TRUE(metadata->existsFile("/A/source"));
+    EXPECT_TRUE(metadata->existsFile("/A/target"));
+}
+
+/// An object storage call can write and then report a failure, so `execute` cannot know from its own return values
+/// what it has already changed. Here the copy that publishes the blob under its new key succeeds and the call fails
+/// afterwards; without the reversal converging on the state the transaction started from, the blob would stay, and a
+/// directory reports whatever blobs sit under its prefix - so a restart would show a file the transaction never
+/// committed.
+TEST_F(MetadataPlainRewritableDiskTest, MoveFileUndoRemovesABlobPublishedByAFailedCall)
+{
+    thread_local_rng.seed(42);
+
+    auto metadata = getMetadataStorage("MoveFilePublishedBlob");
+    auto object_storage = getObjectStorage("MoveFilePublishedBlob");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("/A");
+        auto size_bytes = writeObject(object_storage, tx->generateObjectKeyForPath("/A/source").serialize(), "the source file");
+        tx->createMetadataFile("/A/source", {StoredObject("/A/source", "source", size_bytes)});
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto source_blob = metadata->getStorageObjects("/A/source").front().remote_path;
+    const auto objects_before = listAllBlobs("MoveFilePublishedBlob");
+
+    {
+        FailPointInjection::enableFailPoint("plain_object_storage_fail_after_copy_on_file_move");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_fail_after_copy_on_file_move"));
+
+        auto tx = metadata->createTransaction();
+        tx->moveFile("/A/source", "/A/moved");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    EXPECT_EQ(readObject(object_storage, source_blob), "the source file");
+    EXPECT_EQ(listAllBlobs("MoveFilePublishedBlob"), objects_before);
+
+    metadata = restartMetadataStorage("MoveFilePublishedBlob");
+    EXPECT_TRUE(metadata->existsFile("/A/source"));
+    EXPECT_FALSE(metadata->existsFile("/A/moved"));
+}
+
+/// A shutdown is the only exit that does not require object storage to accept the reversal. Here it happens before
+/// the transaction, so the single attempt is not retried, and object storage is left holding a part of a transaction
+/// that is reported as failed - which is exactly what the next start loads.
+TEST_F(MetadataPlainRewritableDiskTest, MoveDirectoryUndoStopsRetryingOnShutdown)
+{
+    auto metadata = getMetadataStorage("MoveDirectoryUndoShutdown");
+    auto object_storage = getObjectStorage("MoveDirectoryUndoShutdown");
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    const auto a_path = createMetadataObjectPath(metadata, "A");
+
+    metadata->shutdown();
+
+    {
+        FailPointInjection::enableFailPoint("plain_object_storage_fail_on_directory_move_undo");
+        SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_fail_on_directory_move_undo"));
+
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A", "MOVED");
+        tx->moveFile("non-existing", "other-place");
+        EXPECT_ANY_THROW(tx->commit(DB::NoCommitOptions{}));
+    }
+
+    /// The single attempt failed and nothing retried it, so the marker still describes the move.
+    EXPECT_EQ(readObject(object_storage, a_path), "MOVED/");
+
+    metadata = restartMetadataStorage("MoveDirectoryUndoShutdown");
+    EXPECT_FALSE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("MOVED"));
+}
+
+/// A reversal that object storage keeps rejecting never finishes on its own, and a shutdown is the only thing that
+/// ends it. The move is held once one marker carries its new path, object storage is then told to reject every change,
+/// and what the reversal reports is read back from the log: it repeats the same step, and it stops on the shutdown
+/// rather than by succeeding or by giving up on its own.
+TEST_F(MetadataPlainRewritableDiskTest, UndoStopsRetryingWhenTheDiskShutsDownWhileRetrying)
+{
+    object_storage_can_fail = true;
+
+    auto metadata = getMetadataStorage("UndoShutdownWhileRetrying");
+    auto object_storage = getFailingObjectStorage("UndoShutdownWhileRetrying");
+    ASSERT_TRUE(object_storage);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("A/B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    LogCapture log_capture("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation");
+    const auto retries_before = ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries];
+
+    FailPointInjection::enableFailPoint("plain_object_storage_pause_on_directory_move");
+    SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_pause_on_directory_move"));
+
+    std::atomic<bool> commit_threw = false;
+    std::thread committing([&]
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A", "MOVED");
+
+        try
+        {
+            tx->commit(DB::NoCommitOptions{});
+        }
+        catch (...)
+        {
+            /// Ok, the failure is what this test asserts on.
+            commit_threw = true;
+        }
+    });
+
+    /// One marker now carries its new path, and the move is waiting.
+    FailPointInjection::waitForPause("plain_object_storage_pause_on_directory_move");
+
+    /// From here every change is rejected, so the rest of the move fails and the reversal of the marker above cannot
+    /// succeed either.
+    object_storage->failRequests(true);
+    FailPointInjection::notifyFailPoint("plain_object_storage_pause_on_directory_move");
+
+    /// Wait until the same step has been repeated, which is the state a shutdown has to be able to end.
+    while (log_capture.count("failed") < 2)
+        std::this_thread::yield();
+
+    metadata->shutdown();
+    committing.join();
+
+    EXPECT_TRUE(commit_threw);
+    EXPECT_EQ(log_capture.count("because the disk is shutting down"), 1u);
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries], retries_before);
+
+    object_storage->failRequests(false);
+
+    /// The reversal was abandoned, so object storage holds a part of a transaction that the filesystem in memory does
+    /// not have. The disk takes no further transaction, and what was committed is still readable.
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_THROW(metadata->createTransaction(), DB::Exception);
+
+    /// One marker was left naming the new path, so a reload would move a directory this transaction never committed.
+    /// It has to do nothing instead.
+    metadata->dropCache();
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_FALSE(metadata->existsDirectory("MOVED"));
+}
+
+/// A transaction that is already waiting for the metadata lock when a reversal is abandoned resumes as soon as the
+/// lock is released, so the disk has to refuse it where it takes the lock and not only where it is created.
+TEST_F(MetadataPlainRewritableDiskTest, CommitIsRefusedAfterAReversalWasAbandoned)
+{
+    object_storage_can_fail = true;
+
+    auto metadata = getMetadataStorage("RefuseAfterAbandonedReversal");
+    auto object_storage = getFailingObjectStorage("RefuseAfterAbandonedReversal");
+    ASSERT_TRUE(object_storage);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("A/B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// Created while the disk is still healthy, the way a transaction waiting for the lock has been.
+    auto waiting_tx = metadata->createTransaction();
+    waiting_tx->createDirectory("B");
+
+    LogCapture log_capture("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation");
+
+    FailPointInjection::enableFailPoint("plain_object_storage_pause_on_directory_move");
+    SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_pause_on_directory_move"));
+
+    std::atomic<bool> move_threw = false;
+    std::thread committing([&]
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A", "MOVED");
+
+        try
+        {
+            tx->commit(DB::NoCommitOptions{});
+        }
+        catch (...)
+        {
+            /// Ok, the reversal is abandoned on the shutdown below, which is what this test sets up.
+            move_threw = true;
+        }
+    });
+
+    FailPointInjection::waitForPause("plain_object_storage_pause_on_directory_move");
+    object_storage->failRequests(true);
+    FailPointInjection::notifyFailPoint("plain_object_storage_pause_on_directory_move");
+
+    while (log_capture.count("failed") < 2)
+        std::this_thread::yield();
+
+    metadata->shutdown();
+    committing.join();
+
+    object_storage->failRequests(false);
+
+    EXPECT_TRUE(move_threw);
+    EXPECT_THROW(waiting_tx->commit(DB::NoCommitOptions{}), DB::Exception);
+    EXPECT_FALSE(metadata->existsDirectory("B"));
 }

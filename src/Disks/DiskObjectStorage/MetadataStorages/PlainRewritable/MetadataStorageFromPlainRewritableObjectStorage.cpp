@@ -45,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
+    extern const int FS_METADATA_ERROR;
 }
 
 namespace FailPoints
@@ -64,6 +65,12 @@ fs::path normalizeDirectoryPath(const fs::path & path)
 
 void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load, bool do_not_load_unchanged_directories)
 {
+    /// Checked here rather than in the callers that reload, because a reload that passed the check before taking
+    /// `metadata_mutex` resumes on this side of it: loading would then adopt a state no transaction ever committed.
+    /// The initial load runs before anything can be reversed, so it is not affected.
+    if (isBroken())
+        return;
+
     ThreadPool & pool = getIOThreadPool().get();
 
     LoggerPtr log = getLogger("MetadataStorageFromPlainObjectStorage");
@@ -255,6 +262,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_)
     : object_storage(std::move(object_storage_))
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
+    , undo_retries(std::make_shared<UndoWithRetries>())
     , storage_path_prefix(std::move(storage_path_prefix_))
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
     , fs(metrics->directory_map_size, metrics->file_count)
@@ -265,7 +273,36 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
 
 MetadataTransactionPtr MetadataStorageFromPlainRewritableObjectStorage::createTransaction()
 {
+    throwIfBroken();
     return std::make_shared<MetadataStorageFromPlainRewritableObjectStorageTransaction>(*this);
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::shutdown()
+{
+    undo_retries->shutdown();
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::markBroken()
+{
+    if (broken.exchange(true))
+        return;
+
+    LOG_ERROR(
+        getLogger("MetadataStorageFromPlainRewritableObjectStorage"),
+        "A metadata transaction of the disk '{}' was left partly reversed, so object storage holds a part of it that "
+        "the filesystem in memory does not have. The disk takes no further transaction until it is started again, "
+        "which loads the filesystem from object storage",
+        storage_path_full);
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::throwIfBroken() const
+{
+    if (isBroken())
+        throw Exception(
+            ErrorCodes::FS_METADATA_ERROR,
+            "A metadata transaction of the disk '{}' was left partly reversed, so what object storage holds is not "
+            "known here. Start the server again to load the filesystem from object storage",
+            storage_path_full);
 }
 
 void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
@@ -407,11 +444,27 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
     {
         std::unique_lock lock(metadata_storage.metadata_mutex);
 
+        /// 0. A transaction that was already waiting for this lock reaches this point with a filesystem that no longer
+        /// describes object storage, so the check belongs here and not only where the transaction is created.
+        metadata_storage.throwIfBroken();
+
         /// 1. Setup up-to-date fs into snapshot being used during commit.
         commit_snapshot->setRoot(metadata_storage.fs.takeReadWriteSnapshot()->getRoot());
 
-        /// 2. Execute all operations on top of write set.
-        operations.commit();
+        try
+        {
+            /// 2. Execute all operations on top of write set.
+            operations.commit();
+        }
+        catch (...)
+        {
+            /// Marked while the lock is still held, so that the transactions waiting for it cannot decide what to
+            /// write from a filesystem that object storage no longer matches.
+            if (operations.isPartiallyRolledBack())
+                metadata_storage.markBroken();
+
+            throw;
+        }
 
         /// 3. Exchange metadata with updated fs.
         metadata_storage.fs.applySnapshot(commit_snapshot);
@@ -453,7 +506,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.undo_retries));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectoryRecursive(const std::string & path)
@@ -473,7 +527,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createDirectory
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.undo_retries));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(const std::string & path_from, const std::string & path_to)
@@ -486,7 +541,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.undo_retries));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool /*should_remove_objects*/)
@@ -500,6 +556,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(cons
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.undo_retries,
         removed_objects));
 }
 
@@ -513,7 +570,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeDirectory
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.undo_retries));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive(const std::string & path, const ShouldRemoveObjectsPredicate & /*should_remove_objects*/)
@@ -527,6 +585,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.undo_retries,
         removed_objects));
 }
 
@@ -541,7 +600,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
         commit_snapshot,
         metadata_storage.object_storage,
         metadata_storage.layout,
-        metadata_storage.metrics));
+        metadata_storage.metrics,
+        metadata_storage.undo_retries));
 }
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
@@ -557,6 +617,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.undo_retries,
         removed_objects));
 }
 
@@ -573,6 +634,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(con
         metadata_storage.object_storage,
         metadata_storage.layout,
         metadata_storage.metrics,
+        metadata_storage.undo_retries,
         removed_objects));
 }
 

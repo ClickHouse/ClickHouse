@@ -5,6 +5,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoWithRetries.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
@@ -57,6 +58,25 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
+    /// Stops the retries of the `undo` of a transaction that is failing right now. See `UndoWithRetries`.
+    void shutdown() override;
+
+    /** A transaction was left partly reversed, so object storage holds a part of it while the filesystem in memory
+      * does not. What is stored is unknown from here, so the disk takes no further transaction: another one would
+      * decide what to write from a filesystem that no longer describes object storage.
+      *
+      * Reads are still served, because the filesystem in memory is the state that was committed, and refusing them
+      * would take a whole disk down over one broken transaction. They are not all correct, though: when the abandoned
+      * reversal was putting a blob back, that blob is left only under the temporary key the operation copied it to,
+      * while the filesystem still names the original one, so that one file fails to read.
+      *
+      * Nothing in this process can make the two agree again - reloading would adopt a state no transaction ever
+      * committed - so this lasts until the next start, which loads the filesystem from object storage.
+      */
+    bool isBroken() const { return broken.load(); }
+    void markBroken();
+    void throwIfBroken() const;
+
     /// Will reload in-memory structure from scratch.
     void dropCache() override;
     void refresh(UInt64 not_sooner_than_milliseconds) override;
@@ -80,8 +100,11 @@ public:
 private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
+    const UndoWithRetriesPtr undo_retries;
     const std::string storage_path_prefix;
     const std::string storage_path_full;
+
+    std::atomic<bool> broken{false};
 
     std::mutex metadata_mutex;
     FsMetadata fs;
