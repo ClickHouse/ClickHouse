@@ -191,9 +191,6 @@ private:
     const bool support_transaction;
 
     void loadMutations();
-    /// Removes the state that this table keeps in the root of its disk, which `dropAllData` leaves alone
-    /// when the table occupies the whole disk (`table_disk`).
-    void removeOwnFilesInDiskRootOnDrop();
 
     /// Load and initialize deduplication logs. Even if deduplication setting
     /// equals zero creates object with deduplication window equals zero.

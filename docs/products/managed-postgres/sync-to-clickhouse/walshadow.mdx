@@ -1,0 +1,92 @@
+---
+slug: /cloud/managed-postgres/walshadow
+sidebarTitle: 'WalShadow'
+title: 'Sync to ClickHouse with WalShadow'
+description: 'Replicate your Postgres data to ClickHouse with WalShadow, a native replication engine that reads directly from the PostgreSQL WAL'
+keywords: ['postgres', 'clickhouse integration', 'cdc', 'replication', 'walshadow', 'wal', 'data sync']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/components/Image.jsx";
+
+<PrivatePreviewBadge/>
+
+`WalShadow` is a native replication engine for ClickHouse Managed Postgres that reads directly from the PostgreSQL Write-Ahead Log (WAL). It is optimized for lower latency and high-throughput workloads, delivering sub-second replication lag from Postgres to ClickHouse. It is developed in the open at [ClickHouse/walshadow](https://github.com/ClickHouse/walshadow).
+
+`WalShadow` is one of two replication methods available under **Sync to ClickHouse**. The other, [ClickPipes](/cloud/managed-postgres/clickpipes), is a fully managed data pipeline. Choose `WalShadow` when you need the lowest latency and the least replication overhead.
+
+When `WalShadow` is available for your service, a **Private Preview** banner appears on the **Overview** page. Click **Configure WalShadow** to get started.
+
+<Image img="/images/managed-postgres/walshadow/overview-banner.webp" alt="Postgres service overview page showing the WalShadow private preview banner with Learn more and Configure WalShadow links" size="md" border/>
+
+<Note>
+Before you proceed, ensure that your Postgres service is accessible to ClickHouse. `WalShadow` connects to your destination ClickHouse service directly, so you will need a ClickHouse user and password with permission to create databases and tables.
+</Note>
+
+To set up replication, click **Sync to ClickHouse** in the sidebar of your Postgres instance, then click **Replicate data in ClickHouse**.
+
+<Image img="/images/managed-postgres/walshadow/sync-landing.webp" alt="Sync to ClickHouse landing page showing the ClickPipes and WalShadow replication methods" size="md" border/>
+
+<Steps>
+<Step title="Select the replication engine" id="select-replication-engine">
+
+Choose **WalShadow** as the replication engine, then click **Next**.
+
+<Image img="/images/managed-postgres/walshadow/select-engine.webp" alt="Select replication engine step showing ClickPipes and WalShadow options with WalShadow selected" size="md" border/>
+
+</Step>
+<Step title="Configure the replication service" id="configure-replication-service">
+
+Fill in the replication settings:
+
+- **ClickHouse service**: Select an existing ClickHouse service or create a new one
+- **Postgres database**: Select the source database to replicate from, or create a new one
+- **Replication method**: Choose one of:
+  - **Initial load + CDC**: Import existing data and keep tables updated with new changes (recommended)
+  - **Initial load only**: One-time import of existing data with no ongoing updates
+  - **CDC only**: Skip the initial import and only capture new changes going forward
+
+<Image img="/images/managed-postgres/walshadow/configure-service.webp" alt="Configure replication service step showing ClickHouse service, Postgres database, and replication method options" size="md" border/>
+
+Click **Next** to proceed.
+</Step>
+<Step title="Select tables to replicate" id="select-tables">
+
+Choose a destination database and select which tables to replicate:
+
+- **Destination database**: Select an existing ClickHouse database or create a new one
+- **Tables**: Expand each schema and select individual tables, or toggle **Select all tables**. For each table you can customize the **Destination table name** and adjust **Column settings**.
+- **ClickHouse user** and **ClickHouse password**: `WalShadow` connects to the destination ClickHouse service directly, so it needs credentials with permission to create the target database and tables.
+
+<Image img="/images/managed-postgres/walshadow/select-tables.webp" alt="Select tables step showing schema and table selection, destination table names, and ClickHouse credentials" size="md" border/>
+
+Click **Replicate data to ClickHouse** to start the replication.
+</Step>
+<Step title="Monitor WalShadow" id="monitor-walshadow">
+
+After you start replication, `WalShadow` appears on the **Sync to ClickHouse** page. Its status is **Creating** while the pipeline is being provisioned and the initial load is prepared.
+
+<Image img="/images/managed-postgres/walshadow/walshadow-creating.webp" alt="Sync to ClickHouse page showing WalShadow in the Creating state" size="md" border/>
+
+Once provisioning completes, the status changes to **Running**. The page reports live metrics for the replication:
+
+- **Status**: The current state of the pipeline (for example, `Running`)
+- **Rows synced**: The total number of rows replicated to ClickHouse
+- **Backfills pending**: The number of tables still waiting for their initial load
+- **Lag**: The volume of WAL data still to be applied
+- **Lag time**: How far behind Postgres the destination currently is
+- **Uptime**: How long the pipeline has been running
+- **Last updated**: When the metrics were last reported
+
+<Image img="/images/managed-postgres/walshadow/walshadow-running.webp" alt="Sync to ClickHouse page showing WalShadow in the Running state with rows synced, lag, and uptime metrics" size="md" border/>
+
+</Step>
+</Steps>
+
+## Caveats {#caveats}
+
+A few things to note while `WalShadow` is in Private Preview:
+
+- Only one `WalShadow` per Postgres service for now.
+- Operations and more detailed metrics are on the roadmap.
