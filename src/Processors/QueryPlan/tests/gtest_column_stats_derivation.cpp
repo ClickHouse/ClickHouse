@@ -455,38 +455,6 @@ TEST(ColumnStatsDerivation, RemapColumnStatsTracksWidthAcrossEntireLineage)
     EXPECT_DOUBLE_EQ(stats["roundtrip"].avg_bytes, 0);
 }
 
-TEST(ColumnStatsDerivation, StringFunctionsDropWidthAndKeepDistinctValueBound)
-{
-    tryRegisterFunctions();
-
-    auto string_type = std::make_shared<DataTypeString>();
-    ActionsDAG dag;
-    const auto & input = dag.addInput("s", string_type);
-    const auto & prefix = dag.addColumn(string_type->createColumnConst(1, String(1000, 'x')), string_type, "prefix");
-    const auto & materialized_prefix = dag.addFunction(
-        FunctionFactory::instance().get("materialize", getContext().context), {&prefix}, "materialized_prefix");
-    addOutputFunction(dag, "concat", {&materialized_prefix, &input}, "prefixed");
-    auto int_type = std::make_shared<DataTypeUInt64>();
-    const auto & offset = dag.addColumn(int_type->createColumnConst(1, UInt64(2)), int_type, "offset");
-    addOutputFunction(dag, "substring", {&input, &offset}, "suffix");
-    addOutputFunction(dag, "materialize", {&input}, "materialized");
-    addOutputFunction(dag, "identity", {&input}, "identity");
-
-    auto stats = statsOf("s", 100);
-    stats.at("s").avg_bytes = 10;
-    remapColumnStats(stats, dag);
-
-    for (const auto * name : {"prefixed", "suffix", "materialized", "identity"})
-    {
-        ASSERT_TRUE(stats.contains(name));
-        EXPECT_EQ(stats.at(name).num_distinct_values, 100);
-    }
-    EXPECT_DOUBLE_EQ(stats.at("prefixed").avg_bytes, 0);
-    EXPECT_DOUBLE_EQ(stats.at("suffix").avg_bytes, 0);
-    EXPECT_DOUBLE_EQ(stats.at("materialized").avg_bytes, 10);
-    EXPECT_DOUBLE_EQ(stats.at("identity").avg_bytes, 10);
-}
-
 /// The bound propagates through a chain of deterministic single-argument functions: no link can
 /// increase the distinct count, so the final output is still bounded by the source column. A
 /// multi-argument link anywhere in the chain breaks the propagation.

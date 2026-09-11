@@ -1,0 +1,12 @@
+NDV: concat(materialize(repeat(\'x\', 1000)), s)
+Join: probe[100] ⋈ aggregated[100]
+NDV: substring(s, 2)
+Join: probe[100] ⋈ aggregated[100]
+NDV: materialize(s)
+Join: probe[100] ⋈ aggregated[100]
+NDV: identity(s)
+Join: probe[100] ⋈ aggregated[100]
+width: concat(materialize(repeat(\'x\', 1000)), s)	1
+width: substring(s, 2)	1
+width: materialize(s)	1
+width: identity(s)	1
