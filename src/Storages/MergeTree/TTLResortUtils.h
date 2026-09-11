@@ -136,6 +136,10 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedSortKeyColumns(
 /// skip index / projection that reads it, would be written stale (wrong data, not just a missed
 /// optimization). Both the merge and mutation paths recompute these from their default expression
 /// before the part is written. Empty when no MATERIALIZED column depends on a `SET` target.
+///
+/// A column the repair cannot recompute -- one whose default reads an EPHEMERAL column, or one with
+/// a non-deterministic default such as `now()` -- keeps its stored value and is therefore NOT
+/// listed, and the dependency walk stops there: see `getMaterializedColumnSourcesMap`.
 NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context);
 

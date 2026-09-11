@@ -231,10 +231,15 @@ ASTPtr cloneDefaultWithAliasesReplaced(
 
 /// The source columns a MATERIALIZED column's default expression reads from, mapped to their
 /// physical storage columns (the expression may reference a subcolumn). Analyzed the same way the
-/// UPDATE mutation path does in `MutationsInterpreter::prepare`. Returns nullopt when the default
-/// expression reads an EPHEMERAL column: such a column cannot be recomputed here (ephemeral columns
-/// are only available during INSERT, never read from disk during a merge/mutation), so it is
-/// skipped instead of analyzed as recomputable.
+/// UPDATE mutation path does in `MutationsInterpreter::prepare`. Returns nullopt when the column is
+/// NOT recomputed by the post-TTL repair, in which case its stored value is what the merge writes
+/// and it does not depend on the `SET` targets its default reads:
+///  - the default expression reads an EPHEMERAL column: it cannot be recomputed here (ephemeral
+///    columns are only available during INSERT, never read from disk during a merge/mutation);
+///  - the default expression is non-deterministic (such as `now()`): a `GROUP BY` TTL aggregates
+///    some rows and passes others through, and the whole-stream repair cannot recompute only the
+///    rewritten rows, so the stored value is preserved (see
+///    `getGroupByTTLSetAffectedMaterializedColumns`).
 std::optional<NameSet> getMaterializedColumnSourceColumns(
     const ColumnDescription & column_desc,
     const ColumnsDescription & columns_desc,
@@ -246,6 +251,9 @@ std::optional<NameSet> getMaterializedColumnSourceColumns(
     auto query = cloneDefaultWithAliasesReplaced(column_desc, columns_desc, context);
     replaceSubcolumnsToGetSubcolumnFunctionInQuery(query, all_columns);
     auto syntax_result = TreeRewriter(context).analyze(query, all_columns);
+
+    if (ExpressionAnalyzer{query, syntax_result, context}.getActions(true)->getActionsDAG().hasNonDeterministic())
+        return std::nullopt;
 
     NameSet sources;
     for (const auto & source : syntax_result->requiredSourceColumns())
@@ -260,14 +268,25 @@ std::optional<NameSet> getMaterializedColumnSourceColumns(
     return sources;
 }
 
-/// The physical storage columns of every MATERIALIZED column, mapped to the physical storage
-/// columns their default expression reads from. Used to walk materialized-dependency chains.
-/// MATERIALIZED columns whose default expression reads an EPHEMERAL column are omitted: they cannot
-/// be recomputed from on-disk data, because an ephemeral column is only available during INSERT.
-/// Such a column may still read regular columns a `SET` rewrites, in which case its stored value
-/// goes stale, matching the behaviour the ordinary mutation path already has for a mixed ephemeral
-/// dependency (`04044_mutation_ephemeral_materialized`). The part stays ordered by the stored value,
-/// so the primary index remains consistent with the data.
+/// The physical storage columns of every MATERIALIZED column that the post-TTL repair recomputes,
+/// mapped to the physical storage columns their default expression reads from. Used to walk
+/// materialized-dependency chains.
+///
+/// MATERIALIZED columns the repair does NOT recompute -- those reading an EPHEMERAL column and those
+/// with a non-deterministic default -- are omitted, so the closure stops at that hop. A column the
+/// merge writes from its stored value does not observably depend on a `SET` target its default
+/// reads, and neither does anything computed from it: a deterministic default recomputed from a
+/// preserved parent yields the parent's stored value. Every user of this map (the recompute list,
+/// the sort-key gates, the `GROUP BY`-key gates) therefore inherits the same boundary, instead of
+/// paying a whole-part re-sort or an unsorted aggregation for a dependency that cannot change a
+/// stored value.
+///
+/// An omitted ephemeral-reading column may still read regular columns a `SET` rewrites, in which
+/// case its stored value goes stale, matching the behaviour the ordinary mutation path already has
+/// for a mixed ephemeral dependency (`04044_mutation_ephemeral_materialized`);
+/// `getStaleEphemeralMaterializedColumnsAffectedBySet` builds its own full graph to warn about
+/// exactly those. The part stays ordered by the stored value, so the primary index remains
+/// consistent with the data.
 std::unordered_map<String, NameSet> getMaterializedColumnSourcesMap(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context)
 {
@@ -449,7 +468,6 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
 NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     const StorageMetadataPtr & metadata_snapshot, const ContextPtr & context, const NameSet & set_targets)
 {
-    const auto expressions_context = createContextForTTLDefaultExpressions(context);
     NamesAndTypesList affected;
 
     if (metadata_snapshot->getGroupByTTLs().empty() || set_targets.empty())
@@ -467,21 +485,7 @@ NamesAndTypesList getGroupByTTLSetAffectedMaterializedColumns(
     /// `evaluateMissingDefaults` resolves the dependency order between them).
     for (const auto & column : columns_desc.getAllPhysical())
         if (affected_materialized.contains(column.name))
-        {
-            auto default_ast = cloneDefaultWithAliasesReplaced(columns_desc.get(column.name), columns_desc, expressions_context);
-            const auto syntax_result = TreeRewriter(expressions_context).analyze(default_ast, columns_desc.getAll());
-            const auto default_actions = ExpressionAnalyzer{default_ast, syntax_result, expressions_context}.getActions(true);
-
-            /// A `GROUP BY` TTL can aggregate some rows while passing other rows through unchanged.
-            /// The post-TTL repair is a whole-stream expression, so it cannot safely recompute a
-            /// non-deterministic MATERIALIZED default (such as `now()`) only for the rows the SET
-            /// actually rewrote. Preserve its stored value instead, as we do for defaults that read
-            /// EPHEMERAL columns, rather than writing a fresh unrelated value for untouched rows.
-            if (default_actions->getActionsDAG().hasNonDeterministic())
-                continue;
-
             affected.emplace_back(column.name, column.type);
-        }
 
     return affected;
 }
