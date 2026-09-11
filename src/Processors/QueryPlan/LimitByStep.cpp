@@ -16,7 +16,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
-    extern const int SUPPORT_IS_DISABLED;
 }
 
 static ITransformingStep::Traits getTraits()
@@ -189,13 +188,6 @@ void LimitByStep::describeActions(JSONBuilder::JSONMap & map) const
 
 void LimitByStep::serialize(Serialization & ctx) const
 {
-    if (ctx.version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END && always_read_till_end)
-        throw Exception(
-            ErrorCodes::SUPPORT_IS_DISABLED,
-            "LimitByStep with always_read_till_end requires query plan serialization version >= {}, but the plan is serialized at version {}",
-            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END,
-            ctx.version);
-
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END)
     {
         UInt8 flags = always_read_till_end ? 1 : 0;
@@ -213,12 +205,15 @@ void LimitByStep::serialize(Serialization & ctx) const
 
 QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
 {
-    UInt8 flags = 0;
+    bool always_read_till_end = true;
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END)
     {
+        UInt8 flags = 0;
         readIntBinary(flags, ctx.in);
         if (flags & ~UInt8(1))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "LimitByStep: unsupported flags={} in this version", static_cast<size_t>(flags));
+
+        always_read_till_end = flags & 1;
     }
 
     UInt64 group_length = 0;
@@ -234,7 +229,7 @@ QueryPlanStepPtr LimitByStep::deserialize(Deserialization & ctx)
         readStringBinary(column, ctx.in);
 
     return std::make_unique<LimitByStep>(
-        ctx.input_headers.front(), group_length, group_offset, std::move(columns), bool(flags & 1));
+        ctx.input_headers.front(), group_length, group_offset, std::move(columns), always_read_till_end);
 }
 
 void LimitByStep::applyOrder(const SortDescription & sort_description)
