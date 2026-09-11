@@ -11,9 +11,6 @@ namespace DB
 struct LazyMaterializingRows;
 using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 
-class RuntimeDataflowStatisticsCacheUpdater;
-using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
-
 /// Unordered version of LazyReadFromMergeTreeSource.
 /// Creates a ReadFromMergeTree pipeline on expand and passes through chunks.
 /// Used when row order doesn't matter (e.g. lazy FINAL branch).
@@ -30,8 +27,7 @@ public:
         const MergeTreeData & data_,
         ContextPtr context_,
         const std::string & log_name_,
-        LazyMaterializingRowsPtr lazy_materializing_rows_,
-        RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+        LazyMaterializingRowsPtr lazy_materializing_rows_);
 
     String getName() const override { return "LazyUnorderedReadFromMergeTreeSource"; }
     Status prepare() override;
@@ -47,7 +43,6 @@ private:
     ContextPtr context;
     const std::string log_name;
     LazyMaterializingRowsPtr lazy_materializing_rows;
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     QueryPlanResourceHolder resources;
 

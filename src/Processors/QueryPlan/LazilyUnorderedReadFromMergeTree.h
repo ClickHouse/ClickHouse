@@ -13,6 +13,12 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 /// Unordered lazy column reader for lazy FINAL optimization.
 /// Unlike LazilyReadFromMergeTree, this does not preserve row order —
 /// it creates a ReadFromMergeTree internally and passes through chunks.
+///
+/// It deliberately does not support dataflow statistics collection, even though
+/// `LazilyReadFromMergeTree` does. Only the lazy FINAL optimization builds this step, and FINAL is
+/// not supported with parallel replicas, so a query containing it must never become a candidate for
+/// automatic parallel replicas. `ReadFromMergeTree` declines for the same reason, via
+/// `isQueryWithFinal`.
 class LazilyUnorderedReadFromMergeTree final : public ISourceStep
 {
 public:
@@ -32,8 +38,6 @@ public:
 
     void describeActions(JSONBuilder::JSONMap & map) const override;
     void describeActions(FormatSettings & settings) const override;
-
-    bool supportsDataflowStatisticsCollection() const override { return true; }
 
 private:
     size_t max_block_size;
