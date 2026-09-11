@@ -1611,6 +1611,29 @@ def test_moving_a_role_preserves_the_effective_setting(start_cluster):
         drop_entities(instance, roles=[role], storage="local_directory")
 
 
+def test_move_rolls_back_entities_removed_before_failure(start_cluster):
+    role = "tier_move_rollback_role"
+    drop_entities(instance, roles=[role], storage="memory")
+    drop_entities(instance, roles=[role], storage="local_directory")
+    instance.query(f"CREATE ROLE {role} IN memory")
+
+    try:
+        output, error = instance.query_and_get_answer_with_error(
+            f"MOVE ROLE {role}, {role} TO local_directory"
+        )
+        assert output == ""
+        assert "After successfully removing 1/2" in error, error
+        assert (
+            instance.query(
+                f"SELECT storage FROM system.roles WHERE name = '{role}'"
+            ).strip()
+            == "memory"
+        )
+    finally:
+        drop_entities(instance, roles=[role], storage="memory")
+        drop_entities(instance, roles=[role], storage="local_directory")
+
+
 def test_create_if_not_exists_notifies_when_shadowing_config_user(start_cluster):
     user = "tier_config_user"
     drop_entities(instance, users=[user], storage="local_directory")
