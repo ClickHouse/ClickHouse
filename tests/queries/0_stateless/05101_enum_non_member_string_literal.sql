@@ -64,3 +64,41 @@ DROP TABLE t_enum_key;
 DROP TABLE t_enum_nonkey;
 DROP TABLE t_enum_partition;
 DROP TABLE t_enum16_key;
+
+-- The same must hold when the column is covered by a `bloom_filter` skip index: its condition builder
+-- hashes the constant by converting it to the indexed type, which throws for a non-member literal.
+DROP TABLE IF EXISTS t_enum_bloom_filter;
+
+CREATE TABLE t_enum_bloom_filter
+(
+    e Enum8('a' = 1, 'b' = 2),
+    a Array(Enum8('a' = 1, 'b' = 2)),
+    m Map(String, Enum8('a' = 1, 'b' = 2)),
+    INDEX idx_e e TYPE bloom_filter GRANULARITY 1,
+    INDEX idx_a a TYPE bloom_filter GRANULARITY 1,
+    INDEX idx_m mapValues(m) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_enum_bloom_filter VALUES ('a', ['a'], map('k', 'a')), ('b', ['b'], map('k', 'b'));
+
+SELECT 'bloomFilter equals', count() FROM t_enum_bloom_filter WHERE e = '4';
+SELECT 'bloomFilter notEquals', count() FROM t_enum_bloom_filter WHERE e != '4';
+SELECT 'bloomFilter has', count() FROM t_enum_bloom_filter WHERE has(a, '4');
+SELECT 'bloomFilter indexOf', count() FROM t_enum_bloom_filter WHERE indexOf(a, '4') = 1;
+SELECT 'bloomFilter hasAny', count() FROM t_enum_bloom_filter WHERE hasAny(a, ['4']);
+SELECT 'bloomFilter hasAll', count() FROM t_enum_bloom_filter WHERE hasAll(a, ['4']);
+SELECT 'bloomFilter mapContainsValue', count() FROM t_enum_bloom_filter WHERE mapContainsValue(m, '4');
+SELECT 'bloomFilter arrayJoin', count() FROM t_enum_bloom_filter ARRAY JOIN a AS x WHERE x = '4';
+
+-- A member literal is still hashed and the index is still used to prune.
+SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter WHERE e = 'b';
+SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter WHERE has(a, 'b');
+SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter WHERE hasAny(a, ['b']);
+SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter WHERE mapContainsValue(m, 'b');
+SELECT 'bloomFilter member', count() FROM t_enum_bloom_filter ARRAY JOIN a AS x WHERE x = 'b';
+
+-- With the validation enabled it throws, as it does without the index.
+SELECT count() FROM t_enum_bloom_filter WHERE e = '4' SETTINGS validate_enum_literals_in_operators = 1; -- { serverError UNKNOWN_ELEMENT_OF_ENUM }
+
+DROP TABLE t_enum_bloom_filter;

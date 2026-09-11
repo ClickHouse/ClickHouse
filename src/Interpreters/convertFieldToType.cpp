@@ -1031,4 +1031,21 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
     return converted;
 }
 
+bool stringConstantIsNotAnEnumMember(const Field & const_value, const IDataType & type)
+{
+    if (const_value.getType() != Field::Types::String)
+        return false;
+
+    auto is_not_a_member = [&const_value]<typename T>(const DataTypeEnum<T> * enum_type)
+    {
+        if (!enum_type)
+            return false;
+        T value;
+        return !enum_type->tryGetValue(value, const_value.safeGet<String>());
+    };
+
+    return is_not_a_member(typeid_cast<const DataTypeEnum8 *>(&type))
+        || is_not_a_member(typeid_cast<const DataTypeEnum16 *>(&type));
+}
+
 }

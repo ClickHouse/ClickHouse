@@ -21,3 +21,16 @@ perRow	b	0	1	0	0
 member	1
 member	1
 member	1
+bloomFilter equals	0
+bloomFilter notEquals	2
+bloomFilter has	0
+bloomFilter indexOf	0
+bloomFilter hasAny	0
+bloomFilter hasAll	0
+bloomFilter mapContainsValue	0
+bloomFilter arrayJoin	0
+bloomFilter member	1
+bloomFilter member	1
+bloomFilter member	1
+bloomFilter member	1
+bloomFilter member	1

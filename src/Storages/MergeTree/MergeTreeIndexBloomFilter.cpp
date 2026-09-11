@@ -827,6 +827,12 @@ static bool searchFunctionCoercesConstant(const DataTypePtr & value_type, const 
 static Field convertConstantForArrayIndexFunction(
     const Field & value_field, const DataTypePtr & value_type, const DataTypePtr & nested_type, const DataTypePtr & actual_type)
 {
+    /// `bloom_filter` indexes accept `Enum` columns, and hashing a comparison constant converts it to the
+    /// enum, which throws for a literal that names no member. Decline the index instead, so that the query
+    /// does not depend on whether the column happens to be indexed. See `stringConstantIsNotAnEnumMember`.
+    if (stringConstantIsNotAnEnumMember(value_field, *actual_type))
+        return {};
+
     if (WhichDataType(removeNullable(nested_type)).isString() || !searchFunctionCoercesConstant(value_type, actual_type))
         return convertFieldToType(value_field, *actual_type, value_type.get());
 
@@ -867,6 +873,9 @@ static ColumnPtr createColumnFromConstantArray(
         {
             return nullptr;
         }
+
+        if (stringConstantIsNotAnEnumMember(f, *actual_type))
+            return nullptr;
 
         Field converted = coerce
             ? coerceStringFieldLikeSearchFunction(f, element_type, actual_type, /*cast_to_supertype=*/ true)
@@ -983,6 +992,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                 if (array_type && bloomFilterHashDomainMatches(value_type, array_type->getNestedType()))
                 {
                     const DataTypePtr actual_type = BloomFilter::getPrimitiveType(array_type->getNestedType());
+                    if (stringConstantIsNotAnEnumMember(value_field, *actual_type))
+                        return false;
+
                     auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
                     if (converted_field.isNull())
                         return false;
@@ -1078,6 +1090,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     return false;
             }
 
+            if (stringConstantIsNotAnEnumMember(value_field, *actual_type))
+                return false;
+
             auto converted_field = convertFieldToType(value_field, *actual_type, value_type.get());
             if (converted_field.isNull())
                 return false;
@@ -1147,6 +1162,9 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
 
         /// Without the `Map` type the padded and the coerced form cannot be told apart.
         if (!element_type && searchFunctionCoercesConstant(value_type, actual_type))
+            return false;
+
+        if (stringConstantIsNotAnEnumMember(value_field, *actual_type))
             return false;
 
         Field converted_field = element_type

@@ -33,7 +33,6 @@
 #include <Common/likePatternToRegexp.h>
 #include <Common/typeid_cast.h>
 #include <DataTypes/DataTypeArray.h>
-#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -4031,29 +4030,6 @@ static bool tryRewriteFloatLiteralForIntKeyComparison(
     UNREACHABLE();
 }
 
-/// A string literal that is not a member of the enum converts to no value of the enum, and comparing with it
-/// evaluates as if the constant were unconvertible: `false`, or `true` for `!=`, see
-/// `FunctionComparison::executeWithConstString`. Converting it here throws `UNKNOWN_ELEMENT_OF_ENUM`, which
-/// would fail a query only because the column happens to be in the key, so decline index analysis instead and
-/// let the predicate be evaluated. With `validate_enum_literals_in_operators = 1` the comparison itself throws,
-/// consistently for a key and a non-key column.
-static bool stringConstantIsNotAnEnumMember(const Field & const_value, const IDataType & key_type)
-{
-    if (const_value.getType() != Field::Types::String)
-        return false;
-
-    auto is_not_a_member = [&const_value]<typename T>(const DataTypeEnum<T> * enum_type)
-    {
-        if (!enum_type)
-            return false;
-        T value;
-        return !enum_type->tryGetValue(value, const_value.safeGet<String>());
-    };
-
-    return is_not_a_member(typeid_cast<const DataTypeEnum8 *>(&key_type))
-        || is_not_a_member(typeid_cast<const DataTypeEnum16 *>(&key_type));
-}
-
 bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const BuildInfo & info, RPNElement & out)
 {
     const auto * node_dag = node.getDAGNode();
@@ -4502,6 +4478,9 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 return false;
                         }
 
+                        /// Converting a string literal that is not a member of the enum throws, which would
+                        /// fail a query only because the column happens to be in the key. Decline the atom and
+                        /// let the predicate be evaluated, as it is for a column outside the key.
                         if (stringConstantIsNotAnEnumMember(const_value, *key_expr_type_not_null))
                             return false;
 
