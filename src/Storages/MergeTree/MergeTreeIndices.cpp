@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/escapeForFileName.h>
@@ -91,9 +92,11 @@ const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCa
 NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
 {
     NameSet result;
-    /// getAll() (ordinary + materialized + aliases + ephemeral) is the same set the producer of these
-    /// names checks, so a MATERIALIZED or ALIAS column of that name shadows the subcolumn too.
-    for (const auto & column : metadata_snapshot->getColumns().getAll())
+    /// Subcolumn names are flat, so a Tuple element or a typed JSON path can claim `<map>.key_<k>`
+    /// just as a top-level column can, and a predicate on that name reads the claimant. A genuine Map
+    /// key subcolumn is generated per key on demand, so it is absent here and stays parseable.
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    for (const auto & column : metadata_snapshot->getColumns().get(options))
         if (looksLikeMapSubcolumnName(column.name))
             result.insert(column.name);
     return result;
