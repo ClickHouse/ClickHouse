@@ -38,7 +38,7 @@ WebObjectStorageUsage getWebObjectStorageUsage(
     /// When archive syntax is disabled, `::` and everything after it deliberately remain part of
     /// the ordinary URL. In particular, glob characters there retain their normal URL semantics.
     if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
-        std::tie(url, archive_pattern) = getURIAndArchivePattern(filename);
+        std::tie(url, archive_pattern) = getURLAndArchivePattern(filename);
 
     if (archive_pattern && !configuration.http_method.empty())
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Archive path syntax is not supported with a custom HTTP method");

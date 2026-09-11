@@ -70,6 +70,7 @@ DATA_PARTS = {
     "/data/auth_failover/part1.tsv": "23\n",
     "/data/apache_sort/subdir/part1.tsv": "7\n",
     "/data/apache_sort/subdir/part2.tsv": "11\n",
+    "/data/api": "5\n",
 }
 
 SIMPLE_ENTRIES = [

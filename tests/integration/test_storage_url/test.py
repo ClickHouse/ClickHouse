@@ -640,6 +640,31 @@ def test_url_wildcard_failover_resets_credentials():
     assert result.strip() == "23"
 
 
+def test_url_query_with_literal_double_colon():
+    literal_query_url = "http://resolver:8087/data/api?x=::1"
+    archive_query_url = "http://resolver:8087/data/simple_archive.zip?token=x::eod.csv"
+
+    literal_table_functions = [
+        f"url('{literal_query_url}', 'TSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{literal_query_url}', 'TSV', 'x UInt64')",
+    ]
+    for table_function in literal_table_functions:
+        assert node1.query(
+            f"SELECT sum(x) FROM {table_function}",
+            settings={"allow_archive_path_syntax": 1},
+        ).strip() == "5"
+
+    archive_table_functions = [
+        f"url('{archive_query_url}', 'CSV', 'x UInt64')",
+        f"urlCluster('test_cluster_two_shards', '{archive_query_url}', 'CSV', 'x UInt64')",
+    ]
+    for table_function in archive_table_functions:
+        assert node1.query(
+            f"SELECT sum(x) FROM {table_function}",
+            settings={"allow_archive_path_syntax": 1},
+        ).strip() == "3"
+
+
 def test_url_writes_to_archive_paths():
     archive_url = "http://resolver:8087/data/simple_archive.zip :: eod.csv"
     for archive_path_syntax, expected_error in [

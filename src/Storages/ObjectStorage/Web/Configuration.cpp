@@ -267,7 +267,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
     String url = raw_url;
     archive_pattern.reset();
     if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
-        std::tie(url, archive_pattern) = getURIAndArchivePattern(raw_url);
+        std::tie(url, archive_pattern) = getURLAndArchivePattern(raw_url);
 
     const auto scheme_pos = url.find("://");
     const auto authority_start = scheme_pos == String::npos ? 0 : scheme_pos + 3;

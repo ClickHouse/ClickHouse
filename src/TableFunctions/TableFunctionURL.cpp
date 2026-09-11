@@ -349,7 +349,7 @@ StoragePtr TableFunctionURL::getStorage(
     /// take over such queries via the parallel-replicas path — that would silently fall back to the
     /// old literal/template expansion and read different (or no) files than the non-cluster path.
     const auto [url, archive_pattern] = settings[Setting::allow_archive_path_syntax]
-        ? getURIAndArchivePattern(source)
+        ? getURLAndArchivePattern(source)
         : std::pair<String, std::optional<String>>{source, std::nullopt};
     const bool use_web_wildcard = !is_insert_query && configuration.http_method.empty() && urlPathHasListableGlobs(url);
     const bool use_web_object_storage = use_web_wildcard
@@ -438,7 +438,7 @@ ColumnsDescription TableFunctionURL::getActualTableStructure(ContextPtr context,
         String sample_path = filename;
 
         const auto [url, archive_pattern] = context->getSettingsRef()[Setting::allow_archive_path_syntax]
-            ? getURIAndArchivePattern(filename)
+            ? getURLAndArchivePattern(filename)
             : std::pair<String, std::optional<String>>{filename, std::nullopt};
         const bool use_web_wildcard = configuration.http_method.empty() && urlPathHasListableGlobs(url);
 
