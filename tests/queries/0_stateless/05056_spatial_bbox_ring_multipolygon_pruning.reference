@@ -1,0 +1,18 @@
+ring rows near	1
+ring rows near	2
+ring near	Parts: 1 | Granules: 1
+ring near	Granules: 2/2
+ring near	Granules: 1/2
+ring far	Parts: 0 | Granules: 0
+ring far	Granules: 2/2
+ring far	Granules: 0/2
+ring rows far	0
+multipolygon rows near	1
+multipolygon rows near	2
+multipolygon near	Parts: 1 | Granules: 1
+multipolygon near	Granules: 2/2
+multipolygon near	Granules: 1/2
+multipolygon far	Parts: 0 | Granules: 0
+multipolygon far	Granules: 2/2
+multipolygon far	Granules: 0/2
+multipolygon rows far	0
