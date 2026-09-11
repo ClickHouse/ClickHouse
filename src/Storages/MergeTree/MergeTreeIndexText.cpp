@@ -1229,6 +1229,12 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
         if (!(info.header & SingleBlock))
             readVarUInt(num_postings_blocks, istr);
 
+        if (num_postings_blocks == 0 && info.cardinality != 0)
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in text index: posting list with {} row ids has no blocks", info.cardinality);
+        }
+
         for (size_t j = 0; j < num_postings_blocks; ++j)
         {
             UInt64 offset_in_file = 0;

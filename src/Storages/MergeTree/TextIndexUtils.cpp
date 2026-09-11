@@ -514,20 +514,24 @@ void MergeTextIndexesTask::adjustPartOffsets(std::span<UInt32> row_ids, size_t p
 
 void MergeTextIndexesTask::initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source)
 {
+    /// The cursor is reused across tokens: drop the state of the previous one before anything can fail.
     cursor.source = &source;
     cursor.next_segment = 0;
+    cursor.pos = 0;
+    cursor.row_ids.clear();
 
     const auto & info = source.info;
     bool has_positions = params.positions && (info.header & PostingsSerialization::Flags::HasPositions);
 
     if (info.embedded_postings.empty() && !has_positions)
     {
-        bool advanced = advancePostingsCursor(cursor);
-        chassert(advanced);
+        if (!advancePostingsCursor(cursor))
+        {
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Corrupted data in text index: token with {} row ids has no posting list segments", info.cardinality);
+        }
         return;
     }
-
-    cursor.row_ids.clear();
 
     /// Embedded postings are already in memory. Positions are addressed by posting rank and need
     /// all row ids of the source in pre-remap order, so such a source is decoded at once as well
