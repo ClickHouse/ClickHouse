@@ -4,6 +4,9 @@
 -- threw over a local table and ran over a `Distributed` one - answering with the fill column replaced
 -- by the interpolated expression.
 
+-- The check is done by the analyzer, and the old analyzer does not have it.
+SET enable_analyzer = 1;
+
 DROP TABLE IF EXISTS t_interpolate_local;
 DROP TABLE IF EXISTS t_interpolate_dist;
 CREATE TABLE t_interpolate_local (k UInt32, v Int64) ENGINE = MergeTree ORDER BY k;
@@ -15,12 +18,19 @@ SELECT 'the fill column as an INTERPOLATE output';
 SELECT k AS af FROM t_interpolate_local ORDER BY af WITH FILL STEP 2 INTERPOLATE (af AS 42); -- { serverError INVALID_WITH_FILL_EXPRESSION }
 SELECT k AS af FROM t_interpolate_dist ORDER BY af WITH FILL STEP 2 INTERPOLATE (af AS 42); -- { serverError INVALID_WITH_FILL_EXPRESSION }
 
+SELECT 'the same, with the fill column written as a positional argument';
+SELECT k AS af FROM t_interpolate_local ORDER BY 1 WITH FILL STEP 2 INTERPOLATE (af AS 42); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT k AS af FROM t_interpolate_dist ORDER BY 1 WITH FILL STEP 2 INTERPOLATE (af AS 42); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+SELECT k FROM t_interpolate_local ORDER BY 1 WITH FILL STEP 2 INTERPOLATE (k AS 42); -- { serverError INVALID_WITH_FILL_EXPRESSION }
+
 SELECT 'another column, which is what INTERPOLATE is for';
 SELECT k AS af, v FROM t_interpolate_local ORDER BY af WITH FILL STEP 2 INTERPOLATE (v AS 7) LIMIT 5;
 SELECT k AS af, v FROM t_interpolate_dist ORDER BY af WITH FILL STEP 2 INTERPOLATE (v AS 7) LIMIT 5;
+SELECT k AS af, v FROM t_interpolate_dist ORDER BY 1 WITH FILL STEP 2 INTERPOLATE (v AS 7) LIMIT 5;
 
 SELECT 'a column of the same value under a different name is still allowed';
 SELECT 1 AS a, 1 AS x ORDER BY a WITH FILL FROM 1 TO 5 INTERPOLATE (x AS x);
+SELECT 1 AS a, 1 AS x ORDER BY 1 WITH FILL FROM 1 TO 5 INTERPOLATE (x AS x);
 
 DROP TABLE t_interpolate_dist;
 DROP TABLE t_interpolate_local;
