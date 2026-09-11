@@ -41,7 +41,7 @@ struct MergeTreeReaderSettings
     bool read_in_order = false;
     /// Use one buffer for each column or for all columns while reading from compact.
     CompactPartsReadMethod compact_parts_read_method = CompactPartsReadMethod::SingleBuffer;
-    /// A compact part with at least that many granules (or at least as many granules as columns to read) is read with a buffer per column.
+    /// A read of at least that many granules (or of at least as many granules as columns to read) of a compact part uses a buffer per column.
     size_t compact_parts_min_granules_to_multibuffer_read = 16;
     /// True if we read stream for dictionary of LowCardinality type.
     bool is_low_cardinality_dictionary = false;

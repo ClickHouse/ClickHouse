@@ -37,11 +37,20 @@ byte limit
 1	2	4	5	6
 2	2	7	8	9
 3	1	10	11	12
+incomplete granule stays in the buffer
+0	7
+1	7
+2	5
+3	5
+24	276	2760
 multiple buffers
 780	7800	115	780	3	{"k":9,"n":{"m":"0"}}
 780	115
 single buffer
 6	60	6	6
+multi-substream first column
+60	780	115
 05113 multiple buffers, four columns	5
 05113 multiple buffers, two columns	3
 05113 single buffer, four columns	2
+05113 multiple buffers, multi-substream first column	4

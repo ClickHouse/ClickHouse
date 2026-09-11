@@ -166,15 +166,18 @@ try
             marks_loader, profile_callback, clock_type);
     };
 
-    /// A part is written in stripes if the second granule of the first column (or substream) precedes the
-    /// first granule of the second one. Otherwise all columns of a granule are adjacent, and separate buffers
-    /// for the columns would read the whole file each, so one buffer is used for all columns.
-    size_t num_positions = has_substream_marks ? columns_substreams.getTotalSubstreams() : data_part_info_for_read->getColumns().size();
+    /// A part is written in stripes if the second granule of the first column precedes the first granule of the
+    /// second column. Otherwise all columns of a granule are adjacent, and separate buffers for the columns would
+    /// read the whole file each, so one buffer is used for all columns.
+    /// The granules of a column are compared by the mark of its first substream: with substream marks, the marks
+    /// of all substreams of one column of one granule are adjacent in both layouts.
+    size_t num_columns = data_part_info_for_read->getColumns().size();
     bool is_striped = false;
-    if (marks_count >= 2 && num_positions >= 2)
+    if (marks_count >= 2 && num_columns >= 2)
     {
+        size_t second_column_position = has_substream_marks ? columns_substreams.getFirstSubstreamPosition(1) : 1;
         marks_getter = marks_loader->loadMarks();
-        is_striped = marks_getter->getMark(1, 0) < marks_getter->getMark(0, 1);
+        is_striped = marks_getter->getMark(1, 0) < marks_getter->getMark(0, second_column_position);
     }
 
     streams.assign(columns_to_read.size(), nullptr);
