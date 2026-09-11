@@ -213,6 +213,7 @@ public:
     Model::AbortMultipartUploadOutcome AbortMultipartUpload(AbortMultipartUploadRequest & request) const;
     Model::CreateMultipartUploadOutcome CreateMultipartUpload(CreateMultipartUploadRequest & request) const;
     Model::CompleteMultipartUploadOutcome CompleteMultipartUpload(CompleteMultipartUploadRequest & request) const;
+
     Model::UploadPartOutcome UploadPart(UploadPartRequest & request) const;
     Model::UploadPartCopyOutcome UploadPartCopy(UploadPartCopyRequest & request) const;
 

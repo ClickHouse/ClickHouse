@@ -678,7 +678,8 @@ struct PutObjectLostResponseThenPreconditionFailed : InjectionModel
 
     std::optional<Aws::S3::Model::PutObjectOutcome> call(const Aws::S3::Model::PutObjectRequest & request) override
     {
-        EXPECT_FALSE(request.GetIfNoneMatch().empty());
+        /// Serves both conditional single-part modes: `If-None-Match: *` and `If-Match: <etag>`.
+        EXPECT_FALSE(request.GetIfNoneMatch().empty() && request.GetIfMatch().empty());
 
         BucketMemStore::Metadata metadata;
         for (const auto & [name, value] : request.GetMetadata())
@@ -1669,17 +1670,17 @@ TEST_P(SyncAsync, SinglepartConditionalPutRetryAfterLostResponse) {
 
     /// Both attempts carried the same token, and it is the one stored with the object.
     ASSERT_EQ(injection->seen_metadata.size(), 2u);
-    const auto token = injection->seen_metadata[0].at("clickhouse-write-token");
+    const auto token = injection->seen_metadata[0].at("clickhouse-idempotency-id");
     EXPECT_FALSE(token.empty());
-    EXPECT_EQ(injection->seen_metadata[1].at("clickhouse-write-token"), token);
-    EXPECT_EQ(bStore.object_metadata["conditional_put_lost_response"].at("clickhouse-write-token"), token);
+    EXPECT_EQ(injection->seen_metadata[1].at("clickhouse-idempotency-id"), token);
+    EXPECT_EQ(bStore.object_metadata["conditional_put_lost_response"].at("clickhouse-idempotency-id"), token);
 }
 
 /// A 412 caused by an object this request did NOT write must still fail. The pre-existing object is
 /// byte-identical to the payload on purpose, so a byte or size comparison would wrongly accept it.
 TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
     auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_put_foreign", "1", {{"clickhouse-write-token", "written-by-somebody-else"}});
+    bStore.PutObject("conditional_put_foreign", "1", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
 
     auto injection = std::make_shared<MockS3::PutObjectPreconditionFailedInjection>();
     setInjectionModel(injection);
@@ -1703,13 +1704,14 @@ TEST_P(SyncAsync, SinglepartConditionalPutDoesNotMaskForeignObject) {
 
     /// The foreign object is untouched, and the PUT really was conditional.
     EXPECT_EQ(bStore.objects["conditional_put_foreign"], "1");
-    EXPECT_EQ(bStore.object_metadata["conditional_put_foreign"].at("clickhouse-write-token"), "written-by-somebody-else");
+    EXPECT_EQ(bStore.object_metadata["conditional_put_foreign"].at("clickhouse-idempotency-id"), "written-by-somebody-else");
     ASSERT_FALSE(injection->seen_if_none_match.empty());
     EXPECT_EQ(injection->seen_if_none_match[0], "*");
 }
 
-/// An ordinary (unconditional) S3 write is untouched: no token is stamped on the request, and a 412 is
-/// still thrown. Proves the `object_storage_write_if_none_match` guard is load-bearing.
+/// An ordinary (unconditional) S3 write sends no `If-None-Match`, and a 412 over an object this buffer
+/// did not write is still thrown. Every write carries an id, so what refuses the 412 is the id at the
+/// key not matching -- not the absence of one.
 TEST_P(SyncAsync, SinglepartPutWithoutIfNoneMatchStillThrows) {
     auto injection = std::make_shared<MockS3::PutObjectPreconditionFailedInjection>();
     setInjectionModel(injection);
@@ -1731,13 +1733,62 @@ TEST_P(SyncAsync, SinglepartPutWithoutIfNoneMatchStillThrows) {
         }
       }, DB::S3Exception);
 
-    /// The request was not conditional, no token was stamped, and no HEAD looked one up.
+    /// The request was not conditional. The id was stamped, and the HEAD that looked it up found
+    /// nothing at the key, which is why the 412 was reported rather than absorbed.
     ASSERT_FALSE(injection->seen_metadata.empty());
     for (const auto & metadata : injection->seen_metadata)
-        EXPECT_FALSE(metadata.contains("clickhouse-write-token"));
+        EXPECT_FALSE(metadata.at("clickhouse-idempotency-id").empty());
     for (const auto & if_none_match : injection->seen_if_none_match)
         EXPECT_TRUE(if_none_match.empty());
-    EXPECT_EQ(client->counters.headObject, 0u);
+    EXPECT_GE(client->counters.headObject, 1u);
+}
+
+/// `If-Match` is the other conditional single-part write: Iceberg advances `version-hint.text` with
+/// it once the file exists. A lost response leaves the object carrying a new ETag, so the replayed
+/// PUT sees its own `If-Match` fail. On our own object that is success, not a CAS conflict.
+TEST_P(SyncAsync, SinglepartIfMatchPutRecoversLostResponse) {
+    auto injection = std::make_shared<MockS3::PutObjectLostResponseThenPreconditionFailed>(
+        client->store, /* store_first_attempt= */ true);
+    setInjectionModel(injection);
+
+    auto buffer = getWriteBuffer("conditional_put_if_match", conditionalReplaceWriteSettings());
+    buffer->write('A');
+
+    getAsyncPolicy().setAutoExecute(true);
+    buffer->finalize();
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["conditional_put_if_match"], "A");
+    EXPECT_FALSE(bStore.object_metadata["conditional_put_if_match"].at("clickhouse-idempotency-id").empty());
+}
+
+/// The protective half: the same 412 over an object somebody else wrote is a real conflict.
+TEST_P(SyncAsync, SinglepartIfMatchPutDoesNotMaskForeignObject) {
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("conditional_put_if_match_foreign", "1", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
+
+    setInjectionModel(std::make_shared<MockS3::PutObjectPreconditionFailedInjection>());
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("conditional_put_if_match_foreign", conditionalReplaceWriteSettings());
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("pre-conditions you specified did not hold"));
+            throw;
+        }
+      }, DB::S3Exception);
+
+    EXPECT_EQ(bStore.objects["conditional_put_if_match_foreign"], "1");
+    EXPECT_EQ(
+        bStore.object_metadata["conditional_put_if_match_foreign"].at("clickhouse-idempotency-id"),
+        "written-by-somebody-else");
 }
 
 /// A caller-supplied `object_metadata` must survive next to the write token -- the token is merged in,
@@ -1756,7 +1807,7 @@ TEST_P(SyncAsync, SinglepartConditionalPutKeepsCallerMetadata) {
 
     ASSERT_FALSE(injection->seen_metadata.empty());
     EXPECT_EQ(injection->seen_metadata[0].at("caller-key"), "caller-value");
-    EXPECT_FALSE(injection->seen_metadata[0].at("clickhouse-write-token").empty());
+    EXPECT_FALSE(injection->seen_metadata[0].at("clickhouse-idempotency-id").empty());
 }
 
 /// A 412 must not be accepted on an object carrying no token at all -- a pre-Fix or non-ClickHouse
@@ -1864,14 +1915,14 @@ TEST_P(SyncAsync, MultipartConditionalCompleteRetryAfterLostResponse) {
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["conditional_mpu_lost_response"], "A");
-    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_lost_response"].at("clickhouse-write-token").empty());
+    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_lost_response"].at("clickhouse-idempotency-id").empty());
 }
 
 /// The multipart twin of the foreign-object arm: a 412 on a completion whose object somebody else
 /// wrote must still fail. The pre-existing object is byte-identical on purpose.
 TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObject) {
     auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_mpu_foreign", "A", {{"clickhouse-write-token", "written-by-somebody-else"}});
+    bStore.PutObject("conditional_mpu_foreign", "A", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
 
     auto injection = std::make_shared<MockS3::CompleteMPUPreconditionFailedInjection>();
     setInjectionModel(injection);
@@ -1896,11 +1947,11 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObject) {
       }, DB::S3Exception);
 
     EXPECT_EQ(bStore.objects["conditional_mpu_foreign"], "A");
-    EXPECT_EQ(bStore.object_metadata["conditional_mpu_foreign"].at("clickhouse-write-token"), "written-by-somebody-else");
+    EXPECT_EQ(bStore.object_metadata["conditional_mpu_foreign"].at("clickhouse-idempotency-id"), "written-by-somebody-else");
 
     /// CreateMultipartUpload carried a token, so the guard had something to compare and rejected it.
     ASSERT_FALSE(injection->seen_create_metadata.empty());
-    EXPECT_FALSE(injection->seen_create_metadata[0].at("clickhouse-write-token").empty());
+    EXPECT_FALSE(injection->seen_create_metadata[0].at("clickhouse-idempotency-id").empty());
 }
 
 /// The other door into the same replay: a completion that already landed can come back as
@@ -1924,14 +1975,14 @@ TEST_P(SyncAsync, MultipartConditionalCompleteRecoversNoSuchUploadOnOwnObject) {
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["conditional_mpu_no_such_upload"], "A");
-    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_no_such_upload"].at("clickhouse-write-token").empty());
+    EXPECT_FALSE(bStore.object_metadata["conditional_mpu_no_such_upload"].at("clickhouse-idempotency-id").empty());
 }
 
 /// The same `NO_SUCH_UPLOAD` over an object somebody else wrote must still fail: existence at the key
 /// is not authorship, and reporting success would let a conditional create silently lose its payload.
 TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObjectOnNoSuchUpload) {
     auto & bStore = client->store->GetBucketStore(bucket);
-    bStore.PutObject("conditional_mpu_no_such_upload_foreign", "A", {{"clickhouse-write-token", "written-by-somebody-else"}});
+    bStore.PutObject("conditional_mpu_no_such_upload_foreign", "A", {{"clickhouse-idempotency-id", "written-by-somebody-else"}});
 
     auto injection = std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ false);
@@ -1958,41 +2009,15 @@ TEST_P(SyncAsync, MultipartConditionalCompleteDoesNotMaskForeignObjectOnNoSuchUp
 
     EXPECT_EQ(bStore.objects["conditional_mpu_no_such_upload_foreign"], "A");
     EXPECT_EQ(
-        bStore.object_metadata["conditional_mpu_no_such_upload_foreign"].at("clickhouse-write-token"),
+        bStore.object_metadata["conditional_mpu_no_such_upload_foreign"].at("clickhouse-idempotency-id"),
         "written-by-somebody-else");
     ASSERT_FALSE(injection->seen_if_none_match.empty());
     EXPECT_EQ(injection->seen_if_none_match[0], "*");
 }
 
-/// `If-Match` is conditional too, and it mints no write token, so nothing can prove authorship: the
-/// existence-only recovery must not fire there either.
-TEST_P(SyncAsync, MultipartIfMatchCompleteDoesNotRecoverNoSuchUpload) {
-    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
-        client->store, /* complete_first_attempt= */ true));
-
-    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
-    getSettings()[Setting::s3_min_upload_part_size] = 1;
-
-    EXPECT_THROW({
-        try {
-            auto buffer = getWriteBuffer("conditional_mpu_if_match", conditionalReplaceWriteSettings());
-            buffer->write('A');
-
-            getAsyncPolicy().setAutoExecute(true);
-            buffer->finalize();
-        }
-        catch (const DB::Exception & e)
-        {
-            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
-            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist"));
-            throw;
-        }
-      }, DB::S3Exception);
-}
-
-/// An unconditional completion keeps the existing recover-if-the-object-exists behaviour, which backs
-/// copyS3File and the disk write paths: the conditional gate must not change them.
-TEST_P(SyncAsync, MultipartUnconditionalCompleteStillRecoversNoSuchUpload) {
+/// An unconditional completion recovers too, and for the same reason as a conditional one: the token
+/// is minted for every write, so `copyS3File` and the disk write paths keep the recovery they had.
+TEST_P(SyncAsync, MultipartUnconditionalCompleteRecoversNoSuchUploadOnOwnObject) {
     setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
         client->store, /* complete_first_attempt= */ true));
 
@@ -2005,13 +2030,48 @@ TEST_P(SyncAsync, MultipartUnconditionalCompleteStillRecoversNoSuchUpload) {
     getAsyncPolicy().setAutoExecute(true);
     buffer->finalize();
 
-    /// Recovered by the wrapper's own HEAD, with no token to look up.
+    /// The token was consulted rather than existence assumed, and the completed upload is not aborted.
     EXPECT_GE(client->counters.headObject, 1u);
     EXPECT_EQ(client->counters.multiUploadAbort, 0u);
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["unconditional_mpu_no_such_upload"], "A");
-    EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload"].contains("clickhouse-write-token"));
+    EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload"].at("clickhouse-idempotency-id").empty());
+}
+
+/// The reported data loss, at the layer where it happens. An unconditional write to a key that already
+/// holds an object, whose upload is aborted between create and complete: the completion must fail and
+/// the prior object must survive. Reporting success here acknowledges rows that were never stored and
+/// keeps serving the old ones, which is silent and unrecoverable. See issue #114348.
+TEST_P(SyncAsync, MultipartUnconditionalCompleteDoesNotMaskForeignObjectOnNoSuchUpload) {
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("unconditional_mpu_no_such_upload_foreign", "OLD");
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
+        client->store, /* complete_first_attempt= */ false));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force the multipart path
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+
+    EXPECT_THROW({
+        try {
+            auto buffer = getWriteBuffer("unconditional_mpu_no_such_upload_foreign");
+            buffer->write('A');
+
+            getAsyncPolicy().setAutoExecute(true);
+            buffer->finalize();
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist"));
+            throw;
+        }
+      }, DB::S3Exception);
+
+    /// The object at the key is untouched: it is the prior one, and it carries no token of ours.
+    EXPECT_EQ(bStore.objects["unconditional_mpu_no_such_upload_foreign"], "OLD");
+    EXPECT_FALSE(bStore.object_metadata["unconditional_mpu_no_such_upload_foreign"].contains("clickhouse-idempotency-id"));
 }
 
 /// A transient MinIO `InvalidPart` on CompleteMultipartUpload must be retried, not surfaced as a
@@ -2083,6 +2143,100 @@ TEST_F(WBS3Test, CopyDataToS3FileRetriesInvalidPart) {
 
     auto & bStore = client->store->GetBucketStore(bucket);
     EXPECT_EQ(bStore.objects["copy_data_invalid_part_retry"].size(), payload.size());
+}
+
+/// The completion recovery in UploadHelper::completeMultipartUpload is separate code from the write
+/// buffer's: its own id, its own NO_SUCH_UPLOAD branch, its own authorship check. It backs backups and
+/// server-side copies, so it gets the same two arms. Here the earlier attempt did complete the upload
+/// server-side and only its response was lost, which is success.
+TEST_F(WBS3Test, CopyDataToS3FileAbsorbsNoSuchUploadForOwnObject) {
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
+        client->store, /* complete_first_attempt= */ true));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings()[Setting::s3_check_objects_after_upload] = false;
+
+    S3::S3RequestSettings request_settings;
+    request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
+
+    client->resetCounters();
+
+    const String payload = "copy_no_such_upload_payload";
+    auto create_read_buffer = [&]() -> std::unique_ptr<SeekableReadBuffer>
+    {
+        return std::make_unique<ReadBufferFromOwnString>(payload);
+    };
+
+    copyDataToS3File(
+        create_read_buffer,
+        /* offset= */ 0,
+        /* size= */ payload.size(),
+        client,
+        bucket,
+        "copy_data_no_such_upload_own",
+        request_settings,
+        /* blob_storage_log= */ nullptr,
+        /* schedule= */ {},
+        /* object_metadata= */ std::nullopt);
+
+    /// The id was consulted rather than existence assumed, and the completed upload is not aborted.
+    EXPECT_GE(client->counters.headObject, 1u);
+    EXPECT_EQ(client->counters.multiUploadAbort, 0u);
+
+    auto & bStore = client->store->GetBucketStore(bucket);
+    EXPECT_EQ(bStore.objects["copy_data_no_such_upload_own"].size(), payload.size());
+    EXPECT_FALSE(bStore.object_metadata["copy_data_no_such_upload_own"].at("clickhouse-idempotency-id").empty());
+}
+
+/// The data-loss arm on the copy path: the upload was really aborted and somebody else's object sits at
+/// the key. Reporting success would acknowledge a copy that never happened and leave the old object
+/// being served, which is the bug this pull request exists to fix. See issue #114348.
+TEST_F(WBS3Test, CopyDataToS3FileDoesNotMaskForeignObjectOnNoSuchUpload) {
+    auto & bStore = client->store->GetBucketStore(bucket);
+    bStore.PutObject("copy_data_no_such_upload_foreign", "OLD");
+
+    setInjectionModel(std::make_shared<MockS3::CompleteMPUNoSuchUploadInjection>(
+        client->store, /* complete_first_attempt= */ false));
+
+    getSettings()[Setting::s3_max_single_part_upload_size] = 0; // force multipart
+    getSettings()[Setting::s3_min_upload_part_size] = 1;
+    getSettings()[Setting::s3_check_objects_after_upload] = false;
+
+    S3::S3RequestSettings request_settings;
+    request_settings.updateFromSettings(settings, /* if_changed */ true, /* validate_settings */ false);
+
+    const String payload = "copy_no_such_upload_payload";
+    auto create_read_buffer = [&]() -> std::unique_ptr<SeekableReadBuffer>
+    {
+        return std::make_unique<ReadBufferFromOwnString>(payload);
+    };
+
+    EXPECT_THROW({
+        try {
+            copyDataToS3File(
+                create_read_buffer,
+                /* offset= */ 0,
+                /* size= */ payload.size(),
+                client,
+                bucket,
+                "copy_data_no_such_upload_foreign",
+                request_settings,
+                /* blob_storage_log= */ nullptr,
+                /* schedule= */ {},
+                /* object_metadata= */ std::nullopt);
+        }
+        catch (const DB::Exception & e)
+        {
+            ASSERT_EQ(ErrorCodes::S3_ERROR, e.code());
+            EXPECT_THAT(e.what(), testing::HasSubstr("The specified upload does not exist"));
+            throw;
+        }
+      }, DB::S3Exception);
+
+    /// The prior object is untouched and carries no id of ours.
+    EXPECT_EQ(bStore.objects["copy_data_no_such_upload_foreign"], "OLD");
+    EXPECT_FALSE(bStore.object_metadata["copy_data_no_such_upload_foreign"].contains("clickhouse-idempotency-id"));
 }
 
 /// copyS3File routing between whole-object CopyObject and ranged UploadPartCopy. A small copy would take

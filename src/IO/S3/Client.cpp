@@ -208,6 +208,12 @@ void addAdditionalAMZHeadersToCanonicalHeadersList(
     }
 }
 
+bool objectCarriesIdempotencyId(const Aws::Map<Aws::String, Aws::String> & metadata, const Aws::String & idempotency_id)
+{
+    auto it = metadata.find(IDEMPOTENCY_ID_METADATA_KEY);
+    return it != metadata.end() && it->second == idempotency_id;
+}
+
 template <bool IsReadMethod>
 void incrementProfileEvents(ProfileEvents::Event read_event, ProfileEvents::Event write_event)
 {
@@ -556,12 +562,10 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
     const auto & key = request.GetKey();
     const auto & bucket = request.GetBucket();
 
-    /// For a conditional completion mere existence proves nothing: the object may be the one the
-    /// condition was meant to reject. Leave the error for the caller, which can verify authorship.
-    const bool is_conditional = request.IfNoneMatchHasBeenSet() || request.IfMatchHasBeenSet();
-
+    /// A conditional completion needs no separate guard: the id proves the object is this upload's,
+    /// which is what the condition was asking in the first place.
     if (!outcome.IsSuccess()
-        && !is_conditional
+        && !request.getIdempotencyId().empty()
         && outcome.GetError().GetErrorType() == Aws::S3::S3Errors::NO_SUCH_UPLOAD)
     {
         auto check_request = HeadObjectRequest()
@@ -569,10 +573,27 @@ Model::CompleteMultipartUploadOutcome Client::CompleteMultipartUpload(CompleteMu
                                  .WithKey(key);
         auto check_outcome = HeadObject(check_request);
 
-        /// if the key exists, than MultipartUpload has been completed at some of the retries
-        /// rewrite outcome with success status
-        if (check_outcome.IsSuccess())
+        /// The upload id is gone either because an earlier attempt completed and lost its response,
+        /// or because the upload was aborted. An object at the key does not tell those apart -- it
+        /// may be somebody else's, and accepting it would report rows as stored that never were.
+        /// The id this upload stamped does, and it comes back in this same HEAD.
+        if (check_outcome.IsSuccess()
+            && objectCarriesIdempotencyId(check_outcome.GetResult().GetMetadata(), request.getIdempotencyId()))
+        {
+            LOG_INFO(
+                log,
+                "Multipart upload was completed by an earlier attempt of this upload. Key: {}, Bucket: {}",
+                key, bucket);
             outcome = Aws::S3::Model::CompleteMultipartUploadOutcome(Aws::S3::Model::CompleteMultipartUploadResult());
+        }
+        else
+        {
+            LOG_INFO(
+                log,
+                "Multipart upload was not completed and the key does not hold its result, reporting the error. "
+                "Key: {}, Bucket: {}, Object at key: {}",
+                key, bucket, check_outcome.IsSuccess() ? "another write's" : "absent");
+        }
     }
 
     if (outcome.IsSuccess() && provider_type == ProviderType::GCS && client_settings.gcs_issue_compose_request)

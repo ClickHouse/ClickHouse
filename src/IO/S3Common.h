@@ -4,6 +4,7 @@
 #include <IO/S3/Client.h>
 #include <base/types.h>
 #include <Common/Exception.h>
+#include <Common/Logger.h>
 #include <Core/Field.h>
 #include <Poco/Util/AbstractConfiguration.h>
 
@@ -31,9 +32,18 @@ struct Settings;
 /// eventual-consistency quirks of the same class and are safe to retry (callers list parts in
 /// ascending order, so a genuine InvalidPartOrder cannot originate here). InvalidPart /
 /// InvalidPartOrder are not in the typed S3Errors enum, so the SDK leaves GetErrorType() == UNKNOWN
-/// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD is a genuine
-/// error handled by DB::S3::Client, not retried here.
+/// and keeps the raw code only in GetExceptionName() -- match by name. NO_SUCH_UPLOAD means the
+/// upload id is gone and retrying cannot bring it back, so it is not retried here;
+/// `Client::CompleteMultipartUpload` resolves it from the request's idempotency id.
 bool isTransientCompleteMultipartUploadError(const Aws::S3::S3Error & error);
+
+/// True only if the object at `key` carries `idempotency_id`, i.e. the caller wrote it. An absent
+/// object, a foreign id, a failed HEAD, and an empty `idempotency_id` all give false.
+///
+/// For the single-part 412 path, which has no HEAD to reuse. A multipart completion asks the same
+/// question inline, off the `HeadObjectResult` it already holds.
+bool isObjectWrittenWithIdempotencyId(
+    const S3::Client & client, const String & bucket, const String & key, const String & idempotency_id, LoggerPtr log);
 
 class S3Exception : public Exception
 {
