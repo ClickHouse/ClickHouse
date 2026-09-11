@@ -37,6 +37,7 @@ import pytest
 
 from helpers.cluster import ClickHouseCluster
 from helpers.blobs import list_blobs, wait_blobs_synchronization
+from helpers.test_tools import assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -192,7 +193,21 @@ def _check_drop_replica_releases_locks(
         # actually get freed, which only happens if unlockSharedDataByID() no longer
         # sees node3's phantom lock. Without the fix the leaf survives and the blobs
         # leak forever, so this wait fails.
+        #
+        # The replicas release their locks one after another: when two replicas unlock
+        # the same part concurrently in the compatible mode, the one that loses the race
+        # on the first root refuses to remove blobs without releasing its lock on the
+        # legacy root, which leaks the blobs regardless of SYSTEM DROP REPLICA.
+        node2.query(f"SYSTEM STOP REPLICATION QUEUES {table}")
         node1.query(f"TRUNCATE TABLE {table}")
+        assert_eq_with_retry(
+            node1,
+            f"SELECT count() FROM system.parts WHERE table = '{table}' AND name = '{part_name}'",
+            "0",
+            retry_count=60,
+            sleep_time=1,
+        )
+        node2.query(f"SYSTEM START REPLICATION QUEUES {table}")
         node2.query(f"SYSTEM SYNC REPLICA {table}", timeout=30)
         wait_blobs_synchronization(cluster.minio_client, objects_baseline)
     finally:

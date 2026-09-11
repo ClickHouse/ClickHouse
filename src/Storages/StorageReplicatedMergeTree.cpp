@@ -11013,9 +11013,25 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         return std::make_pair(true, NameSet{});
     }
 
+    /// We remove parts during table shutdown. If exception happen, restarting thread will be already turned
+    /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
+    /// context.
+    auto set_keeper = [&]
+    {
+        if (shutdown_called.load())
+            zookeeper->setKeeper(getZooKeeperIfTableShutDown());
+        else
+            zookeeper->setKeeper(getZooKeeper());
+    };
+
     auto shared_id = getTableSharedID();
     if (shared_id == toString(UUIDHelpers::Nil))
     {
+        /// The overload without Keeper passes a null one, e.g. when a table whose replica was dropped from ZooKeeper
+        /// is dropped: without a Keeper, `exists` throws, and the drop is retried forever.
+        if (zookeeper->isNull())
+            set_keeper();
+
         if (zookeeper->exists(zookeeper_path))
         {
             LOG_WARNING(log, "Not removing shared data for part {} because replica does not have metadata in ZooKeeper, "
@@ -11082,6 +11098,9 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
 
     if (has_metadata_in_zookeeper.has_value() && !has_metadata_in_zookeeper)
     {
+        if (zookeeper->isNull())
+            set_keeper();
+
         if (zookeeper->exists(zookeeper_path))
         {
             LOG_WARNING(log, "Not removing shared data for part {} because replica does not have metadata in ZooKeeper, "
@@ -11093,13 +11112,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         return std::make_pair(true, NameSet{});
     }
 
-    /// We remove parts during table shutdown. If exception happen, restarting thread will be already turned
-    /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
-    /// context.
-    if (shutdown_called.load())
-        zookeeper->setKeeper(getZooKeeperIfTableShutDown());
-    else
-        zookeeper->setKeeper(getZooKeeper());
+    set_keeper();
 
     /// It can happen that we didn't had the connection to zookeeper during table creation, but actually
     /// table is completely dropped, so we can drop it without any additional checks.
