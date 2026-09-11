@@ -16,10 +16,15 @@ namespace PODArrayDetails
 {
 
 #ifndef NDEBUG
-void protectMemoryRegion(void * addr, size_t len, int prot)
+void protectMemoryRegion([[maybe_unused]] void * addr, [[maybe_unused]] size_t len, [[maybe_unused]] int prot)
 {
+#if defined(__FILC__)
+    /// FilC allocates through its own heap and terminates the process on `mprotect` of memory it did
+    /// not `mmap`; the debug-only read-only protection of loaded indexes is not available there.
+#else
     if (0 != mprotect(addr, len, prot))
         throw ErrnoException(ErrorCodes::CANNOT_MPROTECT, "Cannot mprotect memory region");
+#endif
 }
 #endif
 

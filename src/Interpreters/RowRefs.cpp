@@ -1,5 +1,9 @@
 #include <Interpreters/RowRefs.h>
 
+#if defined(__FILC__)
+#include <stdfil.h>
+#endif
+
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Columns/ColumnDecimal.h>
 #include <Common/Exception.h>
@@ -21,6 +25,27 @@
 namespace DB
 {
 
+#if defined(__FILC__)
+namespace
+{
+zptrtable * rowRefBatchPointerTable()
+{
+    static zptrtable * const table = zptrtable_new();
+    return table;
+}
+}
+
+UInt64 encodeRowRefBatchPointer(void * pointer)
+{
+    return zptrtable_encode(rowRefBatchPointerTable(), pointer);
+}
+
+void * decodeRowRefBatchPointer(UInt64 encoded_pointer)
+{
+    return zptrtable_decode(rowRefBatchPointerTable(), encoded_pointer);
+}
+#endif
+
 namespace ErrorCodes
 {
     extern const int BAD_TYPE_OF_FIELD;
@@ -31,6 +56,99 @@ namespace ErrorCodes
 namespace FailPoints
 {
 extern const char stored_columns_index_throw_on_add[];
+}
+
+void RowRefList::setRange(UInt64 start_word, size_t rows_, Arena & pool)
+{
+    chassert(refWordIsInline(start_word));
+
+    /// A single-row range is just the inline ref itself: no node needed, and the emit paths
+    /// already treat an inline word as a 1-length range.
+    if (rows_ == 1)
+    {
+        word = start_word;
+        return;
+    }
+
+    auto * b = pool.alloc<Batch>();
+    b->is_range = 1;
+    b->size = 0;
+    b->total_rows = rows_;
+    b->refs[0] = start_word;
+    setListWord(b, rows_);
+}
+
+void RowRefList::insert(UInt64 ref_word, Arena & pool)
+{
+    chassert(refWordIsInline(ref_word));
+
+    /// First row: store it inline (no allocation).
+    if (word == 0)
+    {
+        word = ref_word;
+        return;
+    }
+
+    /// Second row: allocate the cell node and move the inline ref into its head.
+    if (isInline())
+    {
+        auto * b = pool.alloc<Batch>();
+        b->is_range = 0;
+        b->size = 2;
+        b->total_rows = 2;
+        b->refs[0] = word;
+        b->refs[1] = ref_word;
+        setListWord(b, 2);
+        return;
+    }
+
+    Batch * b = asBatch();
+    chassert(!b->is_range);
+    const UInt64 new_total = b->total_rows + 1;
+
+    if (b->size == b->total_rows) /// unchained cell node
+    {
+        if (b->size < MAX_LOCAL) /// room left in slots
+        {
+            b->refs[b->size] = ref_word;
+            b->size = b->size + 1;
+        }
+        else /// full: evict the last local ref into a new overflow node, chaining the key
+        {
+            auto * n = pool.alloc<Batch>();
+            n->is_range = 0;
+            n->size = 2;
+            n->total_rows = 0;
+            n->refs[0] = 0; /// no older node yet
+            n->refs[1] = b->refs[Batch::SLOTS]; /// the evicted last local ref
+            n->refs[2] = ref_word;
+            b->refs[Batch::SLOTS] = batchPointerToWord(n);
+            b->size = MAX_LOCAL - 1; /// refs[0] + (SLOTS-1) local refs remain
+        }
+    }
+    else /// chained cell node: append into the newest overflow node
+    {
+        const UInt64 newest_word = b->refs[Batch::SLOTS];
+        auto * newest = batchPointerFromWord(newest_word);
+        if (newest->size < Batch::SLOTS)
+        {
+            newest->refs[newest->size + 1] = ref_word;
+            newest->size = newest->size + 1;
+        }
+        else
+        {
+            auto * n = pool.alloc<Batch>();
+            n->is_range = 0;
+            n->size = 1;
+            n->total_rows = 0;
+            n->refs[0] = newest_word; /// next-older node
+            n->refs[1] = ref_word;
+            b->refs[Batch::SLOTS] = batchPointerToWord(n);
+        }
+    }
+
+    b->total_rows = new_total;
+    setListCount(new_total);
 }
 
 namespace

@@ -773,7 +773,15 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
 
     /// See `enable_packed_string_keys_in_aggregation` for why the legacy method may be preferred.
-    if (!params.enable_packed_string_keys && method_chosen == AggregatedDataVariants::Type::key_packed_string)
+#if defined(__FILC__)
+    /// `PackedStringRef` keeps the key pointer in 6 bytes, which cannot carry a FilC allocation
+    /// capability, so the packed method is never usable under FilC.
+    constexpr bool packed_string_keys_supported = false;
+#else
+    constexpr bool packed_string_keys_supported = true;
+#endif
+    if ((!params.enable_packed_string_keys || !packed_string_keys_supported)
+        && method_chosen == AggregatedDataVariants::Type::key_packed_string)
         method_chosen = AggregatedDataVariants::Type::key_string;
 
     /// Special case of `GROUP BY` with no aggregate functions (effectively `DISTINCT`): use a void-mapped hash
@@ -1066,137 +1074,6 @@ void Aggregator::mergeOnBlockSmall(
     CurrentMemoryTracker::check();
 }
 
-void Aggregator::executeImpl(
-    AggregatedDataVariants & result,
-    size_t row_begin,
-    size_t row_end,
-    ColumnRawPtrs & key_columns,
-    AggregateFunctionInstruction * aggregate_instructions,
-    bool no_more_keys,
-    bool all_keys_are_const,
-    AggregateDataPtr overflow_row) const
-{
-    #define M(NAME, IS_TWO_LEVEL) \
-        else if (result.type == AggregatedDataVariants::Type::NAME) \
-            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
-                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
-
-    if (false) {} // NOLINT
-    APPLY_FOR_AGGREGATED_VARIANTS(M)
-    #undef M
-}
-
-template <typename Method>
-void NO_INLINE Aggregator::executeImpl(
-    Method & method,
-    Arena * aggregates_pool,
-    size_t row_begin,
-    size_t row_end,
-    ColumnRawPtrs & key_columns,
-    AggregateFunctionInstruction * aggregate_instructions,
-    LastElementCacheStats & consecutive_keys_cache_stats,
-    bool no_more_keys,
-    bool all_keys_are_const,
-    AggregateDataPtr overflow_row) const
-{
-    UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
-    double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
-    bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
-
-    if (use_cache)
-    {
-        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
-        consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
-    }
-    else
-    {
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
-    }
-}
-
-template <typename Method, typename State>
-void Aggregator::executeImpl(
-    Method & method,
-    State & state,
-    const ColumnRawPtrs & key_columns,
-    Arena * aggregates_pool,
-    size_t row_begin,
-    size_t row_end,
-    AggregateFunctionInstruction * aggregate_instructions,
-    bool no_more_keys,
-    bool all_keys_are_const,
-    AggregateDataPtr overflow_row) const
-{
-    if (params.top_k && method.top_k_heap.shouldFreeze())
-    {
-        method.top_k_heap.freeze();
-        ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
-    }
-
-    const bool top_k = params.top_k && !method.top_k_heap.frozen;
-
-    if (top_k)
-        method.top_k_heap.initIfNeeded(
-            key_columns, params.top_k->key_columns,
-            params.keys.size(),
-            params.top_k->k, params.top_k->directions,
-            params.top_k->nulls_directions,
-            params.top_k->observation_rows);
-
-    auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)
-    {
-        executeImplBatch<prefetch_v, top_k_v>(
-            method, state, key_columns, aggregates_pool, row_begin, row_end,
-            aggregate_instructions, no_more_keys_arg, all_keys_are_const,
-            use_compiled_functions, overflow_row);
-    };
-
-    auto dispatch = [&]<bool top_k_v>()
-    {
-        if (!no_more_keys)
-        {
-            /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
-            /// It also doesn't make sense when building the key holder is expensive: the look-ahead
-            /// below calls `getKeyHolder` a second time for every row, so a method that materializes
-            /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
-            /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
-            /// See `minBytesForPrefetch` for why a method whose cells carry no mapped value gets a
-            /// smaller threshold.
-            const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
-            const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
-                && (method.data.getBufferSizeInBytes() > min_bytes);
-
-#if USE_EMBEDDED_COMPILER
-            if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
-            {
-                if (prefetch)
-                    execute.template operator()<true, top_k_v>(false, true);
-                else
-                    execute.template operator()<false, top_k_v>(false, true);
-            }
-            else
-#endif
-            {
-                if (prefetch)
-                    execute.template operator()<true, top_k_v>(false, false);
-                else
-                    execute.template operator()<false, top_k_v>(false, false);
-            }
-        }
-        else
-        {
-            execute.template operator()<false, top_k_v>(true, false);
-        }
-    };
-
-    if (top_k)
-        dispatch.template operator()<true>();
-    else
-        dispatch.template operator()<false>();
-}
-
 template <typename Method>
 void NO_INLINE
 Aggregator::trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedState> * destroyed_states, size_t current_row) const
@@ -1264,79 +1141,6 @@ Aggregator::trimHeapAndPruneHashTable(Method & method, std::vector<DestroyedStat
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysEvicted, evicted_count);
         ProfileEvents::increment(ProfileEvents::AggregationTopKKeysPruned, evicted_count);
     }
-}
-
-size_t Aggregator::executeImplUntilAdaptiveFreeze(
-    AggregatedDataVariants & result,
-    size_t row_begin,
-    size_t row_end,
-    ColumnRawPtrs & key_columns,
-    AggregateFunctionInstruction * aggregate_instructions) const
-{
-    const size_t threshold = params.adaptive_aggregator_freeze_threshold;
-
-    const auto dispatch = [&](auto & method, LastElementCacheStats & cache_stats) -> size_t
-    {
-        using Method = std::decay_t<decltype(method)>;
-
-        /// One slice at a time until the table stands at the threshold: the shortest slice
-        /// that can get it there, floored so a table hovering just below cannot degrade the
-        /// block into row-sized dispatches (the floor is also the overshoot bound). The
-        /// per-slice `after_slice` keeps the consecutive-keys cache statistics exact:
-        /// `executeImplBatch` resets the cache on entry, so the misses must be collected
-        /// slice by slice, not once at the end.
-        const auto run_slices = [&](auto & state, auto && after_slice) -> size_t
-        {
-            size_t pos = row_begin;
-            while (pos < row_end)
-            {
-                const size_t table_size = method.data.size();
-                if (table_size >= threshold)
-                    return pos;
-
-                const size_t slice = std::min(row_end - pos, std::max(threshold - table_size, adaptive_learning_slice_rows));
-                executeImpl(
-                    method,
-                    state,
-                    key_columns,
-                    result.aggregates_pool,
-                    pos,
-                    pos + slice,
-                    aggregate_instructions,
-                    /*no_more_keys=*/false,
-                    /*all_keys_are_const=*/false,
-                    /*overflow_row=*/nullptr);
-                after_slice(slice);
-                pos += slice;
-            }
-            return row_end;
-        };
-
-        UInt64 total_records = cache_stats.hits + cache_stats.misses;
-        double cache_hit_rate = total_records ? static_cast<double>(cache_stats.hits) / static_cast<double>(total_records) : 1.0;
-        bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
-
-        /// The hashing state is constructed once and shared by all slices: for the serialized
-        /// and fixed-key methods its constructor does whole-block work (batch key serialization
-        /// or packing), which must not be repeated per slice.
-        if (use_cache)
-        {
-            typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
-            return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
-        }
-        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
-        return run_slices(state, [](size_t) {});
-    };
-
-    #define M(NAME) \
-        else if (result.type == AggregatedDataVariants::Type::NAME) \
-            return dispatch(*result.NAME, result.consecutive_keys_cache_stats);
-
-    if (false) {} // NOLINT
-    APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
-    #undef M
-
-    throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
 void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
@@ -1900,6 +1704,210 @@ void NO_INLINE Aggregator::executeImplBatch(
             has_only_one_value,
             all_keys_are_const,
             use_jit);
+}
+
+template <typename Method, typename State>
+void Aggregator::executeImpl(
+    Method & method,
+    State & state,
+    const ColumnRawPtrs & key_columns,
+    Arena * aggregates_pool,
+    size_t row_begin,
+    size_t row_end,
+    AggregateFunctionInstruction * aggregate_instructions,
+    bool no_more_keys,
+    bool all_keys_are_const,
+    AggregateDataPtr overflow_row) const
+{
+    if (params.top_k && method.top_k_heap.shouldFreeze())
+    {
+        method.top_k_heap.freeze();
+        ProfileEvents::increment(ProfileEvents::AggregationTopKHeapsFrozen);
+    }
+
+    const bool top_k = params.top_k && !method.top_k_heap.frozen;
+
+    if (top_k)
+        method.top_k_heap.initIfNeeded(
+            key_columns, params.top_k->key_columns,
+            params.keys.size(),
+            params.top_k->k, params.top_k->directions,
+            params.top_k->nulls_directions,
+            params.top_k->observation_rows);
+
+    auto execute = [&]<bool prefetch_v, bool top_k_v>(bool no_more_keys_arg, bool use_compiled_functions)
+    {
+        executeImplBatch<prefetch_v, top_k_v>(
+            method, state, key_columns, aggregates_pool, row_begin, row_end,
+            aggregate_instructions, no_more_keys_arg, all_keys_are_const,
+            use_compiled_functions, overflow_row);
+    };
+
+    auto dispatch = [&]<bool top_k_v>()
+    {
+        if (!no_more_keys)
+        {
+            /// Prefetching doesn't make sense for small hash tables, because they fit in caches entirely.
+            /// It also doesn't make sense when building the key holder is expensive: the look-ahead
+            /// below calls `getKeyHolder` a second time for every row, so a method that materializes
+            /// its key there (e.g. serializing all key columns) would pay its dominant per-row cost
+            /// twice - far more than the cache miss the prefetch hides. See `has_cheap_key_holder`.
+            /// See `minBytesForPrefetch` for why a method whose cells carry no mapped value gets a
+            /// smaller threshold.
+            const size_t min_bytes = minBytesForPrefetch<typename Method::Data, State::has_mapped>(min_bytes_for_prefetch);
+            const bool prefetch = State::has_cheap_key_holder && params.enable_prefetch
+                && (method.data.getBufferSizeInBytes() > min_bytes);
+
+#if USE_EMBEDDED_COMPILER
+            if (compiled_aggregate_functions_holder && !hasSparseArguments(aggregate_instructions))
+            {
+                if (prefetch)
+                    execute.template operator()<true, top_k_v>(false, true);
+                else
+                    execute.template operator()<false, top_k_v>(false, true);
+            }
+            else
+#endif
+            {
+                if (prefetch)
+                    execute.template operator()<true, top_k_v>(false, false);
+                else
+                    execute.template operator()<false, top_k_v>(false, false);
+            }
+        }
+        else
+        {
+            execute.template operator()<false, top_k_v>(true, false);
+        }
+    };
+
+    if (top_k)
+        dispatch.template operator()<true>();
+    else
+        dispatch.template operator()<false>();
+}
+
+template <typename Method>
+void NO_INLINE Aggregator::executeImpl(
+    Method & method,
+    Arena * aggregates_pool,
+    size_t row_begin,
+    size_t row_end,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions,
+    LastElementCacheStats & consecutive_keys_cache_stats,
+    bool no_more_keys,
+    bool all_keys_are_const,
+    AggregateDataPtr overflow_row) const
+{
+    UInt64 total_records = consecutive_keys_cache_stats.hits + consecutive_keys_cache_stats.misses;
+    double cache_hit_rate = total_records ? static_cast<double>(consecutive_keys_cache_stats.hits) / static_cast<double>(total_records) : 1.0;
+    bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+
+    if (use_cache)
+    {
+        typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+        consecutive_keys_cache_stats.update(row_end - row_begin, state.getCacheMissesSinceLastReset());
+    }
+    else
+    {
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        executeImpl(method, state, key_columns, aggregates_pool, row_begin, row_end, aggregate_instructions, no_more_keys, all_keys_are_const, overflow_row);
+    }
+}
+
+void Aggregator::executeImpl(
+    AggregatedDataVariants & result,
+    size_t row_begin,
+    size_t row_end,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions,
+    bool no_more_keys,
+    bool all_keys_are_const,
+    AggregateDataPtr overflow_row) const
+{
+    #define M(NAME, IS_TWO_LEVEL) \
+        else if (result.type == AggregatedDataVariants::Type::NAME) \
+            executeImpl(*result.NAME, result.aggregates_pool, row_begin, row_end, key_columns, aggregate_instructions, \
+                        result.consecutive_keys_cache_stats, no_more_keys, all_keys_are_const, overflow_row);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_AGGREGATED_VARIANTS(M)
+    #undef M
+}
+
+size_t Aggregator::executeImplUntilAdaptiveFreeze(
+    AggregatedDataVariants & result,
+    size_t row_begin,
+    size_t row_end,
+    ColumnRawPtrs & key_columns,
+    AggregateFunctionInstruction * aggregate_instructions) const
+{
+    const size_t threshold = params.adaptive_aggregator_freeze_threshold;
+
+    const auto dispatch = [&](auto & method, LastElementCacheStats & cache_stats) -> size_t
+    {
+        using Method = std::decay_t<decltype(method)>;
+
+        /// One slice at a time until the table stands at the threshold: the shortest slice
+        /// that can get it there, floored so a table hovering just below cannot degrade the
+        /// block into row-sized dispatches (the floor is also the overshoot bound). The
+        /// per-slice `after_slice` keeps the consecutive-keys cache statistics exact:
+        /// `executeImplBatch` resets the cache on entry, so the misses must be collected
+        /// slice by slice, not once at the end.
+        const auto run_slices = [&](auto & state, auto && after_slice) -> size_t
+        {
+            size_t pos = row_begin;
+            while (pos < row_end)
+            {
+                const size_t table_size = method.data.size();
+                if (table_size >= threshold)
+                    return pos;
+
+                const size_t slice = std::min(row_end - pos, std::max(threshold - table_size, adaptive_learning_slice_rows));
+                executeImpl(
+                    method,
+                    state,
+                    key_columns,
+                    result.aggregates_pool,
+                    pos,
+                    pos + slice,
+                    aggregate_instructions,
+                    /*no_more_keys=*/false,
+                    /*all_keys_are_const=*/false,
+                    /*overflow_row=*/nullptr);
+                after_slice(slice);
+                pos += slice;
+            }
+            return row_end;
+        };
+
+        UInt64 total_records = cache_stats.hits + cache_stats.misses;
+        double cache_hit_rate = total_records ? static_cast<double>(cache_stats.hits) / static_cast<double>(total_records) : 1.0;
+        bool use_cache = !is_simple_count && cache_hit_rate >= static_cast<double>(params.min_hit_rate_to_use_consecutive_keys_optimization);
+
+        /// The hashing state is constructed once and shared by all slices: for the serialized
+        /// and fixed-key methods its constructor does whole-block work (batch key serialization
+        /// or packing), which must not be repeated per slice.
+        if (use_cache)
+        {
+            typename Method::State state(key_columns, key_sizes, aggregation_state_cache);
+            return run_slices(state, [&](size_t rows) { cache_stats.update(rows, state.getCacheMissesSinceLastReset()); });
+        }
+        typename Method::StateNoCache state(key_columns, key_sizes, aggregation_state_cache);
+        return run_slices(state, [](size_t) {});
+    };
+
+    #define M(NAME) \
+        else if (result.type == AggregatedDataVariants::Type::NAME) \
+            return dispatch(*result.NAME, result.consecutive_keys_cache_stats);
+
+    if (false) {} // NOLINT
+    APPLY_FOR_VARIANTS_CONVERTIBLE_TO_TWO_LEVEL(M)
+    #undef M
+
+    throw Exception(ErrorCodes::UNKNOWN_AGGREGATED_DATA_VARIANT, "Unknown aggregated data variant.");
 }
 
 void Aggregator::executeAggregateInstructions(

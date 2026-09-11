@@ -216,10 +216,19 @@ struct HashedDictionarySparseMapType<dictionary_key_type, Key, Value, /* use_spa
 template <DictionaryKeyType dictionary_key_type, typename Key, typename Value>
 struct HashedDictionarySparseMapType<dictionary_key_type, Key, Value, /* use_sparse_hash= */ false>
 {
+#if defined(__FILC__)
+    /// FilC checks aggregate copies against pointer-word alignment, which the `packed` cells of
+    /// `PackedHashMap` cannot satisfy, so the FilC build uses the ordinary (padded) cells.
+    using Type = std::conditional_t<
+        dictionary_key_type == DictionaryKeyType::Simple,
+        HashMap<UInt64, Value, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>,
+        HashMap<std::string_view, Value, DefaultHash<std::string_view>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
+#else
     using Type = std::conditional_t<
         dictionary_key_type == DictionaryKeyType::Simple,
         PackedHashMap<UInt64, Value, DefaultHash<UInt64>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>,
         PackedHashMap<std::string_view, Value, DefaultHash<std::string_view>, HashTableGrowerWithPrecalculationAndMaxLoadFactor<>>>;
+#endif
 };
 template <DictionaryKeyType dictionary_key_type, typename Key, typename Value>
 struct HashedDictionaryMapType<dictionary_key_type, /* sparse= */ true, Key, Value>

@@ -48,7 +48,7 @@ namespace DB
 ssize_t preadNoWait(
     [[maybe_unused]] int fd, [[maybe_unused]] char * buf, [[maybe_unused]] size_t size, [[maybe_unused]] size_t offset)
 {
-#if defined(OS_LINUX)
+#if defined(OS_LINUX) && !defined(__FILC__)
     struct iovec io_vec{ .iov_base = buf, .iov_len = size };
 
     ssize_t res = syscall(
@@ -68,6 +68,10 @@ ssize_t preadNoWait(
 
     return res;
 #else
+    /// Also under FilC: its runtime terminates the process on a system call it does not implement
+    /// (`filc user error: unsupported syscall`) instead of answering `ENOSYS`, so the raw
+    /// `preadv2` probe must not be issued at all. Reporting `ENOSYS` makes the callers fall back
+    /// to the ordinary `pread` path.
     errno = ENOSYS;
     return -1;
 #endif

@@ -161,7 +161,10 @@ private:
     const char * mapped{};
     const ElfHeader * header{};
     const ElfSectionHeader * section_headers{};
+    size_t section_header_num_entries{};
+    size_t section_names_index{};
     const ElfProgramHeader * program_headers{};
+    size_t program_header_num_entries{};
     const char * section_names = nullptr;
     size_t section_names_size = 0; // bytes available starting at `section_names`, for bounds checking
 

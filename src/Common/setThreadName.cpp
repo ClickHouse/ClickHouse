@@ -76,7 +76,7 @@ static ThreadName parseThreadName(const std::string_view & name)
 /// Cache thread_name to avoid prctl(PR_GET_NAME) for query_log/text_log
 static thread_local ThreadName thread_name = ThreadName::UNKNOWN;
 
-#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM)
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM) && !defined(__FILC__)
 /// `PR_SET_VMA_ANON_NAME` was introduced in Linux 5.17. On older kernels
 /// `prctl` returns EINVAL and the `MemoryThreadStacks*` async metrics will
 /// not populate. We only record the unsupported state silently here;
@@ -132,10 +132,12 @@ static void nameCurrentThreadStackVMA() noexcept
 
 void setThreadName(ThreadName name)
 {
-#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM)
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM) && !defined(__FILC__)
     /// First-call hook per thread: tag the stack VMA so `AsynchronousMetrics`
     /// can recognize it in `/proc/self/smaps`. Subsequent calls are skipped
     /// via TLS flag to avoid repeating a no-op syscall.
+    /// Disabled under FilC: its libc implements `pthread_getattr_np` through the runtime thread
+    /// handle, which is not yet visible to a freshly started thread and trips a null-object check.
     thread_local bool stack_vma_named = false;
     if (!stack_vma_named)
     {
@@ -213,7 +215,7 @@ ThreadName getThreadName()
 
 bool isThreadStackVMANamingUnsupported() noexcept
 {
-#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM)
+#if !defined(OS_DARWIN) && !defined(OS_SUNOS) && !defined(OS_FREEBSD) && !defined(OS_WASM) && !defined(__FILC__)
     return g_stack_vma_naming_unsupported.load(std::memory_order_relaxed);
 #else
     /// This warning is specific to the Linux `PR_SET_VMA_ANON_NAME` path.

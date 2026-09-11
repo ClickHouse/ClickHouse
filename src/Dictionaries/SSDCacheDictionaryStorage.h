@@ -821,6 +821,10 @@ private:
             return ::ftruncate(fd, static_cast<off_t>(offset + len));
         #elif defined(OS_FREEBSD)
             return posix_fallocate(fd, offset, len);
+        #elif defined(__FILC__)
+            /// The FilC runtime terminates the process on the `fallocate` system call (and
+            /// `posix_fallocate` is implemented through it), so grow the file with `ftruncate`.
+            return ::ftruncate(fd, static_cast<off_t>(offset + len));
         #else
             return fallocate(fd, 0, offset, len);
         #endif

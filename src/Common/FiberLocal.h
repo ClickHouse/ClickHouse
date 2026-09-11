@@ -110,28 +110,39 @@ public:
     template <typename T, size_t slot>
     static T load() noexcept
     {
-        uintptr_t word = load<slot>();
         T value;
+#if defined(__FILC__)
+        /// Preserve pointer metadata instead of passing only bits through `uintptr_t`.
+        std::memcpy(&value, &currentSlots()[slot], sizeof(T));
+#else
+        uintptr_t word = load<slot>();
         std::memcpy(&value, &word, sizeof(T));
+#endif
         return value;
     }
 
     template <typename T, size_t slot>
     static void store(T value) noexcept
     {
+#if defined(__FILC__)
+        auto & word = currentSlots()[slot];
+        word = 0;
+        std::memcpy(&word, &value, sizeof(T));
+#else
         uintptr_t word = 0;
         std::memcpy(&word, &value, sizeof(T));
         store<slot>(word);
+#endif
     }
 
     template <typename T, size_t slot>
     static T & heapObject()
     {
-        auto * object = reinterpret_cast<T *>(load<slot>());
+        auto * object = load<T *, slot>();
         if (!object)
         {
             object = new T();
-            store<slot>(reinterpret_cast<uintptr_t>(object));
+            store<T *, slot>(object);
             registerDestructor(slot, [](void * raw) { delete static_cast<T *>(raw); });
             armThreadStorageCleaner();
         }
@@ -140,15 +151,30 @@ public:
 
     static void swap(FiberLocalStorage & saved) noexcept
     {
+#if defined(__FILC__)
+        decltype(slots) temporary;
+        std::memcpy(temporary.data(), thread_storage.slots.data(), sizeof(slots));
+        std::memcpy(thread_storage.slots.data(), saved.slots.data(), sizeof(slots));
+        std::memcpy(saved.slots.data(), temporary.data(), sizeof(slots));
+#else
         thread_storage.slots.swap(saved.slots);
+#endif
     }
 
     static void swapCoroutineLocal(FiberLocalStorage & saved) noexcept
     {
+#if defined(__FILC__)
+        constexpr size_t size = FiberLocalSlot::COROUTINE_LOCAL_COUNT * sizeof(uintptr_t);
+        std::array<std::byte, size> temporary;
+        std::memcpy(temporary.data(), thread_storage.slots.data(), size);
+        std::memcpy(thread_storage.slots.data(), saved.slots.data(), size);
+        std::memcpy(saved.slots.data(), temporary.data(), size);
+#else
         std::swap_ranges(
             thread_storage.slots.begin(),
             thread_storage.slots.begin() + FiberLocalSlot::COROUTINE_LOCAL_COUNT,
             saved.slots.begin());
+#endif
     }
 
     void destroySlots() noexcept;
@@ -170,13 +196,13 @@ private:
     {
         static_assert(slot < slot_count);
         uintptr_t value = 0;
-#if defined(__x86_64__) && defined(__ELF__)
+#if defined(__x86_64__) && defined(__ELF__) && !defined(__FILC__)
         __asm__ __volatile__(
             "movq %%fs:FiberLocalStorageThreadStorage@tpoff+%c1, %0"
             : "=r"(value)
             : "i"(slot * sizeof(void *))
             : "memory");
-#elif defined(__aarch64__) && defined(__ELF__)
+#elif defined(__aarch64__) && defined(__ELF__) && !defined(__FILC__)
         __asm__ __volatile__(
             "mrs %0, tpidr_el0\n\t"
             "add %0, %0, :tprel_hi12:FiberLocalStorageThreadStorage+%c1\n\t"
@@ -193,13 +219,13 @@ private:
     template <size_t slot>
     static void store(uintptr_t value) noexcept
     {
-#if defined(__x86_64__) && defined(__ELF__)
+#if defined(__x86_64__) && defined(__ELF__) && !defined(__FILC__)
         __asm__ __volatile__(
             "movq %1, %%fs:FiberLocalStorageThreadStorage@tpoff+%c0"
             :
             : "i"(slot * sizeof(void *)), "r"(value)
             : "memory");
-#elif defined(__aarch64__) && defined(__ELF__)
+#elif defined(__aarch64__) && defined(__ELF__) && !defined(__FILC__)
         void * address = nullptr;
         __asm__ __volatile__(
             "mrs %0, tpidr_el0\n\t"

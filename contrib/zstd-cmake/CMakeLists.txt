@@ -59,7 +59,6 @@ SET(Sources
         "${LIBRARY_DIR}/compress/zstdmt_compress.c"
         "${LIBRARY_DIR}/compress/zstd_opt.c"
         "${LIBRARY_DIR}/compress/zstd_preSplit.c"
-        "${LIBRARY_DIR}/decompress/huf_decompress_amd64.S"
         "${LIBRARY_DIR}/decompress/huf_decompress.c"
         "${LIBRARY_DIR}/decompress/zstd_ddict.c"
         "${LIBRARY_DIR}/decompress/zstd_decompress_block.c"
@@ -69,6 +68,12 @@ SET(Sources
         "${LIBRARY_DIR}/dictBuilder/fastcover.c"
         "${LIBRARY_DIR}/dictBuilder/zdict.c"
 )
+
+if (ENABLE_FILC)
+    add_compile_definitions(ZSTD_DISABLE_ASM ZSTD_NO_INTRINSICS)
+else ()
+    list(APPEND Sources "${LIBRARY_DIR}/decompress/huf_decompress_amd64.S")
+endif ()
 
 # cd contrib/zstd/lib
 # find . -name '*.h' | grep -vP 'deprecated|legacy' | sort | sed -e 's/^\./        \"\${LIBRARY_DIR\}/;s/$/"/'

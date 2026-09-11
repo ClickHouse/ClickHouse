@@ -10,7 +10,13 @@ void FiberLocalStorage::destroySlots() noexcept
         void (* destroy)(void *) = slot_destructors[i].load(std::memory_order_relaxed);
         if (!destroy)
             continue;
-        if (void * object = reinterpret_cast<void *>(slots[i]))
+#if defined(__FILC__)
+        void * object = nullptr;
+        std::memcpy(&object, &slots[i], sizeof(object));
+#else
+        void * object = reinterpret_cast<void *>(slots[i]);
+#endif
+        if (object)
         {
             slots[i] = 0;
             destroy(object);

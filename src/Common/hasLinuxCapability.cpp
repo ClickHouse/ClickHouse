@@ -28,6 +28,10 @@ struct Capabilities
 
 static Capabilities getCapabilities()
 {
+#if defined(__FILC__)
+    /// FilC does not implement `capget`; disable optional features requiring Linux capabilities.
+    return {};
+#else
     /// See man getcap.
     __user_cap_header_struct request{};
     request.version = _LINUX_CAPABILITY_VERSION_3;
@@ -56,6 +60,7 @@ static Capabilities getCapabilities()
     }
 
     throw ErrnoException(ErrorCodes::NETLINK_ERROR, "Cannot do 'capget' syscall");
+#endif
 }
 
 bool hasLinuxCapability(int cap)

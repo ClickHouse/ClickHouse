@@ -23,6 +23,12 @@ message (STATUS "Using compiler:\n${COMPILER_SELF_IDENTIFICATION}")
 
 # Require minimum compiler versions
 set (CLANG_MINIMUM_VERSION 21)
+if (ENABLE_FILC)
+    if (NOT COMPILER_SELF_IDENTIFICATION MATCHES "Fil-C")
+        message (FATAL_ERROR "ENABLE_FILC requires the FilC compiler")
+    endif ()
+    set (CLANG_MINIMUM_VERSION 20)
+endif ()
 if (CMAKE_CXX_COMPILER_VERSION VERSION_LESS ${CLANG_MINIMUM_VERSION})
     message (FATAL_ERROR "Compilation with Clang version ${CMAKE_CXX_COMPILER_VERSION} is unsupported, the minimum required version is ${CLANG_MINIMUM_VERSION}.")
 endif ()

@@ -48,20 +48,33 @@ void Elf::init(const char * data, size_t size, const std::string & path_)
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The file '{}' is not ELF according to magic", path);
 
     /// Get section header.
-    uint64_t section_header_offset = header->shoff;
-    uint16_t section_header_num_entries = header->shnum;
-
+    const uint64_t section_header_offset = header->shoff;
     if (!section_header_offset
-        || !section_header_num_entries
-        || !rangeWithin(section_header_offset, section_header_num_entries * sizeof(ElfSectionHeader), elf_size))
+        || header->shentsize != sizeof(ElfSectionHeader)
+        || !rangeWithin(section_header_offset, sizeof(ElfSectionHeader), elf_size))
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' is truncated (section header points after end of file)", path);
 
     section_headers = reinterpret_cast<const ElfSectionHeader *>(mapped + section_header_offset);
 
+    /// ELF uses section header zero for extended numbering when the 16-bit header fields overflow.
+    /// See `SHN_LORESERVE`, `SHN_XINDEX`, and `PN_XNUM` in the ELF specification.
+    const uint64_t section_header_num_entries_u64 = header->shnum ? header->shnum : section_headers[0].size;
+    if (!section_header_num_entries_u64
+        || section_header_num_entries_u64 > (elf_size - section_header_offset) / sizeof(ElfSectionHeader))
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' is truncated (section header points after end of file)", path);
+    section_header_num_entries = section_header_num_entries_u64;
+
+    constexpr uint16_t extended_section_index = 0xffff;
+    const uint64_t section_names_index_u64
+        = header->shstrndx == extended_section_index ? section_headers[0].link : header->shstrndx;
+    if (section_names_index_u64 >= section_header_num_entries)
+        throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' has an invalid section names string table index", path);
+    section_names_index = section_names_index_u64;
+
     /// The string table with section names.
     auto section_names_strtab = findSection([&](const Section & section, size_t idx)
     {
-        return section.header.type == SectionHeaderType::STRTAB && header->shstrndx == idx;
+        return section.header.type == SectionHeaderType::STRTAB && section_names_index == idx;
     });
 
     if (!section_names_strtab)
@@ -81,14 +94,19 @@ void Elf::init(const char * data, size_t size, const std::string & path_)
 
     /// Get program headers
 
-    uint64_t program_header_offset = header->phoff;
-    uint16_t program_header_num_entries = header->phnum;
+    const uint64_t program_header_offset = header->phoff;
+    constexpr uint16_t extended_program_header_count = 0xffff;
+    const uint64_t program_header_num_entries_u64
+        = header->phnum == extended_program_header_count ? section_headers[0].info : header->phnum;
 
     if (!program_header_offset
-        || !program_header_num_entries
-        || !rangeWithin(program_header_offset, program_header_num_entries * sizeof(ElfProgramHeader), elf_size))
+        || header->phentsize != sizeof(ElfProgramHeader)
+        || !program_header_num_entries_u64
+        || program_header_offset > elf_size
+        || program_header_num_entries_u64 > (elf_size - program_header_offset) / sizeof(ElfProgramHeader))
         throw Exception(ErrorCodes::CANNOT_PARSE_ELF, "The ELF '{}' is truncated (program header points after end of file)", path);
 
+    program_header_num_entries = program_header_num_entries_u64;
     program_headers = reinterpret_cast<const ElfProgramHeader *>(mapped + program_header_offset);
 }
 
@@ -101,7 +119,7 @@ Elf::Section::Section(const ElfSectionHeader & header_, const Elf & elf_)
 
 bool Elf::iterateSections(std::function<bool(const Section & section, size_t idx)> && pred) const
 {
-    for (size_t idx = 0; idx < header->shnum; ++idx)
+    for (size_t idx = 0; idx < section_header_num_entries; ++idx)
     {
         Section section(section_headers[idx], *this);
 
@@ -160,7 +178,7 @@ String Elf::getBuildID() const
     }
 
     /// fallback to PHDR
-    for (size_t idx = 0; idx < header->phnum; ++idx)
+    for (size_t idx = 0; idx < program_header_num_entries; ++idx)
     {
         const ElfProgramHeader & phdr = program_headers[idx];
 

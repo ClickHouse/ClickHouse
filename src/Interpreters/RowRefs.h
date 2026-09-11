@@ -76,7 +76,7 @@ inline bool refWordIsInline(UInt64 word) { return word & RowRef::ENCODED_INLINE_
 inline UInt32 refWordBlockNo(UInt64 word) { return static_cast<UInt32>(word >> 32) & RowRef::BLOCK_NO_MASK; }
 inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 
-/// Thrown when an arena pointer does not fit in the low 48 bits of a RowRefList word, which would
+/// Thrown when an arena pointer encoding does not fit in the low 48 bits of a RowRefList word, which would
 /// make the pointer+count packing ambiguous. Cannot happen on Linux x86-64/aarch64 today: even with
 /// 5-level paging (`CONFIG_X86_5LEVEL`, 57-bit VA) or arm64 52-bit LVA, the kernel hands out
 /// mappings above the 47-bit boundary only when the mmap address hint explicitly requests them,
@@ -87,16 +87,22 @@ inline UInt32 refWordRowNo(UInt64 word) { return static_cast<UInt32>(word); }
 /// up to 32766 rows to keys with up to 126 rows - still covering most practical duplication.
 [[noreturn]] void throwRowRefPointerTooLarge();
 
+#if defined(__FILC__)
+/// Preserve FilC allocation metadata for pointers that must use the integer `RowRefList` layout.
+UInt64 encodeRowRefBatchPointer(void * pointer);
+void * decodeRowRefBatchPointer(UInt64 encoded_pointer);
+#endif
+
 /// Mapped value of MapsAll join hash maps (ALL JOINs / non-unique keys): a tagged 8-byte word.
 ///   - bit 63 is 1: the key has exactly one row so far; the word IS the encoded RowRef (inline).
-///   - bit 63 is 0 and the word is not 0: a pointer (bits 47..0) to an arena-allocated `Batch` node,
+///   - bit 63 is 0 and the word is not 0: a pointer encoding (bits 47..0) for an arena-allocated `Batch` node,
 ///     with the duplicate count packed into bits 62..48 (saturating; see COUNT_SAT). The count lets
 ///     the probe loop read `rows` straight from the cell word without dereferencing the node.
 /// The node is allocated only when the first duplicate of a key arrives, so ALL-join cells are as
 /// small as ANY-join cells for every key type, and unique keys never touch the arena.
 struct RowRefList
 {
-    /// Low 48 bits of a list word hold the node pointer; bits 62..48 hold the saturating count.
+    /// Low 48 bits of a list word hold the node pointer encoding; bits 62..48 hold the saturating count.
     /// See the comment of `throwRowRefPointerTooLarge` for why 48 bits are enough and for the
     /// contingency if user-space mappings ever cross the 47-bit boundary.
     static constexpr UInt64 PTR_MASK = (1ull << 48) - 1;
@@ -111,10 +117,10 @@ struct RowRefList
     /// Cell node, unchained (2..7 rows): `refs[0]` holds the first row, `refs[1 .. size-1]` the rest;
     ///   `size == total_rows`; no pointers.
     /// Cell node, chained (>= 8 rows): `refs[0 .. 5]` hold the 6 oldest rows; `refs[SLOTS]` (= refs[6])
-    ///   is a raw pointer to the NEWEST overflow node; `size == 6 != total_rows`.
+    ///   is an encoded pointer to the NEWEST overflow node; `size == 6 != total_rows`.
     /// Range node (rerange "sorted" path): `is_range == 1`, `refs[0]` is the range start ref,
     ///   `total_rows` is the run length, no slots/chain.
-    /// Overflow node: `refs[0]` is repurposed as the raw pointer to the next-older overflow node (0 at
+    /// Overflow node: `refs[0]` is repurposed as the encoded pointer to the next-older overflow node (0 at
     ///   the end of the chain); `refs[1 .. size]` hold refs; `is_range`/`total_rows` are unused.
     ///
     /// Iteration order is refs[0], then the cell node's local refs, then the overflow nodes newest-first.
@@ -135,6 +141,24 @@ struct RowRefList
         /// iterator form `&refs[0] + n` as in-array pointer arithmetic instead of undefined behavior.
         UInt64 refs[SLOTS + 1] {};
     };
+
+    static Batch * batchPointerFromWord(UInt64 pointer_word)
+    {
+#if defined(__FILC__)
+        return static_cast<Batch *>(decodeRowRefBatchPointer(pointer_word));
+#else
+        return reinterpret_cast<Batch *>(pointer_word); /// NOLINT(performance-no-int-to-ptr)
+#endif
+    }
+
+    static UInt64 batchPointerToWord(Batch * pointer)
+    {
+#if defined(__FILC__)
+        return encodeRowRefBatchPointer(pointer);
+#else
+        return reinterpret_cast<UInt64>(pointer);
+#endif
+    }
 
     /// refs[0] + the SLOTS local slots: rows a cell node holds before it has to chain (= 7).
     static constexpr size_t MAX_LOCAL = 1 + Batch::SLOTS;
@@ -158,7 +182,7 @@ struct RowRefList
     const Batch * asBatch() const
     {
         chassert(word != 0 && !isInline());
-        return reinterpret_cast<const Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
+        return batchPointerFromWord(word & PTR_MASK);
     }
 
     /// Not const on purpose: a const-qualified version returning a mutable `Batch *` would leak
@@ -167,7 +191,7 @@ struct RowRefList
     Batch * asBatch() /// NOLINT(readability-make-member-function-const)
     {
         chassert(word != 0 && !isInline());
-        return reinterpret_cast<Batch *>(word & PTR_MASK); /// NOLINT(performance-no-int-to-ptr)
+        return batchPointerFromWord(word & PTR_MASK);
     }
 
     /// Total number of rows for this key. Load-free unless the count saturated.
@@ -184,98 +208,10 @@ struct RowRefList
     /// Encoded ref word of the first row (any-row semantics, e.g. RightAny on MapsAll).
     UInt64 firstWord() const { return isInline() ? word : asBatch()->refs[0]; }
 
-    void setRange(UInt64 start_word, size_t rows_, Arena & pool)
-    {
-        chassert(refWordIsInline(start_word));
-
-        /// A single-row range is just the inline ref itself: no node needed, and the emit paths
-        /// already treat an inline word as a 1-length range.
-        if (rows_ == 1)
-        {
-            word = start_word;
-            return;
-        }
-
-        auto * b = pool.alloc<Batch>();
-        b->is_range = 1;
-        b->size = 0;
-        b->total_rows = rows_;
-        b->refs[0] = start_word;
-        setListWord(b, rows_);
-    }
+    void setRange(UInt64 start_word, size_t rows_, Arena & pool);
 
     /// Insert one more row for this key. O(1). See the Batch comment for the representation.
-    void insert(UInt64 ref_word, Arena & pool)
-    {
-        chassert(refWordIsInline(ref_word));
-
-        /// First row: store it inline (no allocation).
-        if (word == 0)
-        {
-            word = ref_word;
-            return;
-        }
-
-        /// Second row: allocate the cell node and move the inline ref into its head.
-        if (isInline())
-        {
-            auto * b = pool.alloc<Batch>();
-            b->is_range = 0;
-            b->size = 2;
-            b->total_rows = 2;
-            b->refs[0] = word;
-            b->refs[1] = ref_word;
-            setListWord(b, 2);
-            return;
-        }
-
-        Batch * b = asBatch();
-        chassert(!b->is_range);
-        const UInt64 new_total = b->total_rows + 1;
-
-        if (b->size == b->total_rows) /// unchained cell node
-        {
-            if (b->size < MAX_LOCAL) /// room left in slots
-            {
-                b->refs[b->size] = ref_word;
-                b->size = b->size + 1;
-            }
-            else /// full: evict the last local ref into a new overflow node, chaining the key
-            {
-                auto * n = pool.alloc<Batch>();
-                n->is_range = 0;
-                n->size = 2;
-                n->total_rows = 0;
-                n->refs[0] = 0; /// no older node yet
-                n->refs[1] = b->refs[Batch::SLOTS]; /// the evicted last local ref
-                n->refs[2] = ref_word;
-                b->refs[Batch::SLOTS] = reinterpret_cast<UInt64>(n);
-                b->size = MAX_LOCAL - 1; /// refs[0] + (SLOTS-1) local refs remain
-            }
-        }
-        else /// chained cell node: append into the newest overflow node
-        {
-            auto * newest = reinterpret_cast<Batch *>(b->refs[Batch::SLOTS]); /// NOLINT(performance-no-int-to-ptr)
-            if (newest->size < Batch::SLOTS)
-            {
-                newest->refs[newest->size + 1] = ref_word;
-                newest->size = newest->size + 1;
-            }
-            else
-            {
-                auto * n = pool.alloc<Batch>();
-                n->is_range = 0;
-                n->size = 1;
-                n->total_rows = 0;
-                n->refs[0] = reinterpret_cast<UInt64>(newest); /// next-older node
-                n->refs[1] = ref_word;
-                b->refs[Batch::SLOTS] = reinterpret_cast<UInt64>(n);
-            }
-        }
-
-        b->total_rows = new_total;
-        setListWord(b, new_total);
-    }
+    void insert(UInt64 ref_word, Arena & pool);
 
     /// Iterates encoded ref words: refs[0] first, then the cell node's local refs, then the overflow
     /// nodes newest-first (each in ref order). Handles inline, list, and range representations.
@@ -315,7 +251,7 @@ struct RowRefList
             const bool chained = b->size != b->total_rows;
             cur = &b->refs[0];
             run_end = &b->refs[0] + (chained ? Batch::SLOTS : static_cast<size_t>(b->size));
-            next_node = chained ? reinterpret_cast<const Batch *>(b->refs[Batch::SLOTS]) : nullptr; /// NOLINT(performance-no-int-to-ptr)
+            next_node = chained ? batchPointerFromWord(b->refs[Batch::SLOTS]) : nullptr;
         }
 
         UInt64 operator * () const { return cur ? *cur : range_word; }
@@ -331,7 +267,7 @@ struct RowRefList
                     {
                         cur = &next_node->refs[1];
                         run_end = &next_node->refs[1] + next_node->size;
-                        next_node = reinterpret_cast<const Batch *>(next_node->refs[0]); /// NOLINT(performance-no-int-to-ptr)
+                        next_node = batchPointerFromWord(next_node->refs[0]);
                     }
                     else
                         cur = nullptr; /// exhausted
@@ -368,11 +304,18 @@ private:
     /// stable across inserts, so this only rewrites the count bits of an already-resident cache line.
     void setListWord(Batch * b, UInt64 total_rows_)
     {
-        const UInt64 ptr = reinterpret_cast<UInt64>(b);
+        const UInt64 ptr = batchPointerToWord(b);
         if (ptr & ~PTR_MASK) [[unlikely]]
             throwRowRefPointerTooLarge();
         const UInt64 count = total_rows_ < COUNT_SAT ? total_rows_ : COUNT_SAT;
         word = ptr | (count << COUNT_SHIFT);
+    }
+
+    void setListCount(UInt64 total_rows_)
+    {
+        chassert(word != 0 && !isInline());
+        const UInt64 count = total_rows_ < COUNT_SAT ? total_rows_ : COUNT_SAT;
+        word = (word & PTR_MASK) | (count << COUNT_SHIFT);
     }
 };
 

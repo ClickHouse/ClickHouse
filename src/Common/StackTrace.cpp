@@ -22,8 +22,8 @@
 #include <mutex>
 #include <shared_mutex>
 #include <unordered_map>
-/// WebAssembly cannot walk its own call stack from user code, and there is no libunwind for it.
-#if !defined(OS_WASM)
+/// WebAssembly cannot walk its call stack from user code; FilC also cannot use native libunwind.
+#if !defined(OS_WASM) && !defined(__FILC__)
 #include <libunwind.h>
 #endif
 #include <fmt/format.h>
@@ -541,7 +541,7 @@ StackTrace::StackTrace(const ucontext_t & signal_context)
     asynchronous_stack_unwinding = true;
     if (0 == sigsetjmp(asynchronous_stack_unwinding_signal_jump_buffer, 1))
     {
-#if defined(OS_WASM)
+#if defined(OS_WASM) || defined(__FILC__)
         size = 0;
 #elif defined(OS_DARWIN)
         size = backtrace(frame_pointers.data(), FRAMEPOINTER_CAPACITY);
@@ -589,7 +589,7 @@ StackTrace::StackTrace(FramePointers frame_pointers_, size_t size_, size_t offse
 
 void StackTrace::tryCapture()
 {
-#if defined(OS_WASM)
+#if defined(OS_WASM) || defined(__FILC__)
     /// No way to walk the stack; every trace is empty.
     size = 0;
 #elif defined(OS_DARWIN)

@@ -4,7 +4,7 @@ add_library(_zlib)
 add_library(ch_contrib::zlib ALIAS _zlib)
 
 target_compile_definitions(_zlib PUBLIC -DZLIB_COMPAT)
-if(NOT ARCH_S390X)
+if(NOT ARCH_S390X AND NOT ENABLE_FILC)
     target_compile_definitions(_zlib PRIVATE -DUNALIGNED_OK)
     target_compile_definitions(_zlib PRIVATE -DUNALIGNED64_OK)
 endif()
@@ -24,7 +24,7 @@ set(ZLIB_ARCH_HDRS)
 
 set(ARCHDIR "arch/generic")
 
-if(ARCH_AARCH64)
+if(ARCH_AARCH64 AND NOT ENABLE_FILC)
     set(ARCHDIR "${SOURCE_DIR}/arch/arm")
 
     target_compile_definitions(_zlib PUBLIC -DARM_FEATURES)
@@ -64,7 +64,7 @@ elseif(ARCH_PPC64LE)
     list(APPEND POWER8_SRCS ${ARCHDIR}/crc32_power8.c)
     list(APPEND ZLIB_ARCH_SRCS ${POWER8_SRCS})
 
-elseif(ARCH_AMD64)
+elseif(ARCH_AMD64 AND NOT ENABLE_FILC)
     set(ARCHDIR "${SOURCE_DIR}/arch/x86")
 
     target_compile_definitions(_zlib PUBLIC -DX86_FEATURES)
@@ -167,7 +167,7 @@ configure_file(${SOURCE_DIR}/gzread.c.in ${CMAKE_CURRENT_BINARY_DIR}/gzread.c @O
 
 # We should use same defines when including zlib.h as used when zlib compiled
 target_compile_definitions (_zlib PUBLIC ZLIB_COMPAT WITH_GZFILEOP)
-if (ARCH_AMD64 OR ARCH_AARCH64)
+if ((ARCH_AMD64 OR ARCH_AARCH64) AND NOT ENABLE_FILC)
     target_compile_definitions (_zlib PUBLIC X86_64 UNALIGNED_OK)
 endif ()
 

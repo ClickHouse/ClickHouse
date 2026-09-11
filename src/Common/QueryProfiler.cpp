@@ -160,7 +160,7 @@ void Timer::createIfNecessary(UInt64 thread_id, int clock_type, int pause_signal
 
 #if defined(OS_FREEBSD)
         sev._sigev_un._threadid = static_cast<pid_t>(thread_id);
-#elif defined(USE_MUSL)
+#elif defined(USE_MUSL) || defined(__FILC__)
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         sev.sigev_notify_thread_id = static_cast<pid_t>(thread_id);

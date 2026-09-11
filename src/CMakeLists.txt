@@ -1060,3 +1060,23 @@ endif ()
 if (TARGET ch_contrib::jwt-cpp)
     add_object_library(clickhouse_client_jwt Client/jwt)
 endif()
+
+if (ENABLE_FILC)
+    # Avoid the measured optimizer bottlenecks in these large translation units.
+    add_glob(filc_hash_join_sources Interpreters/HashJoin/*.cpp)
+    set_source_files_properties(
+        Core/Settings.cpp
+        DataTypes/Serializations/SerializationMap.cpp
+        Interpreters/Aggregator.cpp
+        ${filc_hash_join_sources}
+        PROPERTIES COMPILE_OPTIONS "-O0")
+    set_source_files_properties(
+        Functions/FunctionsConversion.cpp
+        Functions/if.cpp
+        PROPERTIES COMPILE_OPTIONS "-O0")
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/Functions/FunctionsConversion_reg.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Functions/FunctionsNumericIndexedVector.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/Functions/FunctionsRound.cpp
+        DIRECTORY Functions PROPERTIES COMPILE_OPTIONS "-O0")
+endif ()

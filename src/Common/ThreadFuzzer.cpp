@@ -25,7 +25,7 @@
 
 
 /// We will also wrap some thread synchronization functions to inject sleep/migration before or after.
-#if defined(OS_LINUX) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+#if defined(OS_LINUX) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER) && !defined(__FILC__)
     #define THREAD_FUZZER_WRAP_PTHREAD 1
 #else
     #define THREAD_FUZZER_WRAP_PTHREAD 0

@@ -9,7 +9,7 @@
 	url = https://github.com/ClickHouse/zstd
 [submodule "contrib/lz4"]
 	path = contrib/lz4
-	url = https://github.com/lz4/lz4
+	url = https://github.com/qoega/lz4
 [submodule "contrib/librdkafka"]
 	path = contrib/librdkafka
 	url = https://github.com/ClickHouse/librdkafka
@@ -142,7 +142,7 @@
 	url = https://github.com/tukaani-project/xz
 [submodule "contrib/abseil-cpp"]
 	path = contrib/abseil-cpp
-	url = https://github.com/abseil/abseil-cpp.git
+	url = https://github.com/ClickHouse/abseil-cpp
 [submodule "contrib/fast_float"]
 	path = contrib/fast_float
 	url = https://github.com/fastfloat/fast_float
@@ -223,7 +223,7 @@
 	url = https://github.com/morton-nd/morton-nd
 [submodule "contrib/xxHash"]
 	path = contrib/xxHash
-	url = https://github.com/Cyan4973/xxHash
+	url = https://github.com/ClickHouse/xxHash
 [submodule "contrib/crc32-s390x"]
 	path = contrib/crc32-s390x
 	url = https://github.com/linux-on-ibm-z/crc32-s390x
@@ -232,7 +232,7 @@
 	url = https://github.com/google/benchmark
 [submodule "contrib/libdivide"]
 	path = contrib/libdivide
-	url = https://github.com/ridiculousfish/libdivide
+	url = https://github.com/ClickHouse/libdivide
 [submodule "contrib/libbcrypt"]
 	path = contrib/libbcrypt
 	url = https://github.com/rg3/libbcrypt.git
@@ -286,7 +286,7 @@
 	url = https://github.com/axboe/liburing
 [submodule "contrib/libarchive"]
 	path = contrib/libarchive
-	url = https://github.com/libarchive/libarchive.git
+	url = https://github.com/ClickHouse/libarchive
 	ignore = dirty
 [submodule "contrib/libfiu"]
 	path = contrib/libfiu

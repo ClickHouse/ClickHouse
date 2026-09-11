@@ -372,7 +372,7 @@ inline bool haveAMXINT8() noexcept
 
 inline bool haveGenuineIntel() noexcept
 {
-#if defined(__x86_64__)
+#if defined(__x86_64__) && !defined(__FILC__)
     unsigned eax = 0;
     unsigned ebx = 0;
     unsigned ecx = 0;

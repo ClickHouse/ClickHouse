@@ -17,6 +17,13 @@ set (CMAKE_POLICY_DEFAULT_CMP0126 NEW)
 
 project(ClickHouse LANGUAGES C CXX ASM)
 
+option(ENABLE_FILC "Use the experimental FilC compiler and runtime" OFF)
+option(ENABLE_FILC_LARGE_CODE_MODEL "Use FilC with the x86-64 large code model" OFF)
+
+if (ENABLE_FILC_LARGE_CODE_MODEL AND NOT ENABLE_FILC)
+    message(FATAL_ERROR "ENABLE_FILC_LARGE_CODE_MODEL requires ENABLE_FILC")
+endif ()
+
 # If turned off: e.g. when ENABLE_FOO is ON, but FOO tool was not found, the CMake will continue.
 option(FAIL_ON_UNSUPPORTED_OPTIONS_COMBINATION
    "Stop/Fail CMake configuration if some ENABLE_XXX option is defined (either ON or OFF)
@@ -188,7 +195,7 @@ if (OS_LINUX)
     #   and whatever is poisoning it by LD_PRELOAD should not link to our symbols.
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--no-export-dynamic -Wl,--gc-sections")
 
-    if (LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE)
+    if (LINKER_NAME MATCHES "lld" AND NOT SANITIZE AND NOT SANITIZE_COVERAGE AND NOT WITH_COVERAGE AND NOT ENABLE_FILC)
         # Fold identical code and data sections to reduce binary size.
         set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,--icf=all")
     endif ()
@@ -353,6 +360,13 @@ set (CMAKE_C_STANDARD_REQUIRED ON)
 # providing more stable benchmarks.
 set(COMPILER_FLAGS "${COMPILER_FLAGS} -falign-functions=64 -falign-loops=32")
 
+if (ENABLE_FILC_LARGE_CODE_MODEL)
+    # FilC expands ClickHouse beyond the signed 32-bit relocation range on x86-64.
+    # Use 64-bit code/data references and the matching large-model FilC CRT objects.
+    set(COMPILER_FLAGS "${COMPILER_FLAGS} -mcmodel=large -fno-align-functions -fno-align-loops")
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -no-pie -Wl,-no-pie")
+endif ()
+
 # Put each function and data item into its own section so that the linker can
 # remove unused ones (--gc-sections / -dead_strip) and fold identical ones (--icf).
 # Sanitizer and coverage builds do not benefit from these size optimizations
@@ -408,6 +422,8 @@ endif ()
 set (DEBUG_INFO_FLAGS "-g")
 if (DISABLE_ALL_DEBUG_SYMBOLS)
     set (DEBUG_INFO_FLAGS "-g0")
+elseif (ENABLE_FILC)
+    set (DEBUG_INFO_FLAGS "-gline-tables-only")
 endif()
 
 if (OS_DARWIN)
