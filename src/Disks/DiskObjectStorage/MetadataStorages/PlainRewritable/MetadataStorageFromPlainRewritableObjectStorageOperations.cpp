@@ -70,7 +70,7 @@ MetadataStorageFromPlainObjectStorageCreateDirectoryOperation::MetadataStorageFr
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    UndoRetriesPtr undo_retries_)
+    UndoWithRetriesPtr undo_retries_)
     : recursive(recursive_)
     , path(std::move(path_))
     , directory_remote_path(std::move(directory_remote_path_))
@@ -154,7 +154,7 @@ MetadataStorageFromPlainObjectStorageMoveDirectoryOperation::MetadataStorageFrom
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    UndoRetriesPtr undo_retries_)
+    UndoWithRetriesPtr undo_retries_)
     : path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
     , fs_tree(std::move(fs_tree_))
@@ -300,7 +300,7 @@ MetadataStorageFromPlainObjectStorageRemoveDirectoryOperation::MetadataStorageFr
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    UndoRetriesPtr undo_retries_)
+    UndoWithRetriesPtr undo_retries_)
     : path(std::move(path_))
     , fs_tree(std::move(fs_tree_))
     , object_storage(std::move(object_storage_))
@@ -392,7 +392,7 @@ MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::MetadataStorag
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    UndoRetriesPtr undo_retries_,
+    UndoWithRetriesPtr undo_retries_,
     StoredObjects & removed_objects_)
     : path(std::move(path_))
     , if_exists(if_exists_)
@@ -484,7 +484,7 @@ MetadataStorageFromPlainObjectStorageCopyFileOperation::MetadataStorageFromPlain
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    UndoRetriesPtr undo_retries_)
+    UndoWithRetriesPtr undo_retries_)
     : path_from(std::move(path_from_))
     , path_to(std::move(path_to_))
     , fs_tree(std::move(fs_tree_))
@@ -546,7 +546,7 @@ MetadataStorageFromPlainObjectStorageMoveFileOperation::MetadataStorageFromPlain
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    UndoRetriesPtr undo_retries_,
+    UndoWithRetriesPtr undo_retries_,
     StoredObjects & removed_objects_)
     : replaceable(replaceable_)
     , path_from(std::move(path_from_))
@@ -704,25 +704,14 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::undo()
         }
 
         if (object_storage->exists(StoredObject(tmp_remote_path_to)))
-        {
             object_storage->copyObject(
                 /*object_from=*/StoredObject(tmp_remote_path_to),
                 /*object_to=*/StoredObject(remote_path_to),
                 read_settings,
                 write_settings);
-            return;
-        }
 
-        /// The copy that puts the target aside runs before anything overwrites or removes the target, so without that
-        /// copy the target is still the blob this transaction found.
-        if (!object_storage->exists(StoredObject(remote_path_to)))
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Cannot restore the blob of the file '{}': it is absent both under its own key '{}' and under the "
-                "temporary key '{}' the move copied it to",
-                path_to,
-                remote_path_to,
-                tmp_remote_path_to);
+        /// Otherwise there is nothing to restore: the copy that puts the target aside runs before anything overwrites
+        /// or removes the target, so without that copy the target is still the blob this transaction found.
     });
 
     /// The temporary copies go last, so a stage that fails never leaves the reversal without a copy it still needs.
@@ -754,7 +743,7 @@ MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation::MetadataStorageFr
     std::shared_ptr<IObjectStorage> object_storage_,
     std::shared_ptr<PlainRewritableLayout> layout_,
     std::shared_ptr<PlainRewritableMetrics> metrics_,
-    UndoRetriesPtr undo_retries_,
+    UndoWithRetriesPtr undo_retries_,
     StoredObjects & removed_objects_)
     : path(std::move(path_))
     , fs_tree(std::move(fs_tree_))

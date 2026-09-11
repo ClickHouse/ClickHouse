@@ -35,7 +35,7 @@ namespace DB
   * A stage that throws `LOGICAL_ERROR` is not repeated, because no invariant is repaired by asking again. A stage uses
   * it to report the one state a reversal cannot leave: the blob it has to restore exists nowhere.
   */
-class UndoRetries
+class UndoWithRetries
 {
 public:
     /// Runs `stage` until it succeeds. Rethrows the last exception when a shutdown stops the retries.
@@ -50,6 +50,6 @@ private:
     bool shutdown_called = false;
 };
 
-using UndoRetriesPtr = std::shared_ptr<UndoRetries>;
+using UndoWithRetriesPtr = std::shared_ptr<UndoWithRetries>;
 
 }

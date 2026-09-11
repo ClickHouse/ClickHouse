@@ -1,12 +1,14 @@
-#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoRetries.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoWithRetries.h>
 
 #include <Common/Exception.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+#include <Common/thread_local_rng.h>
 
 #include <base/types.h>
 
 #include <chrono>
+#include <random>
 
 namespace ProfileEvents
 {
@@ -24,14 +26,17 @@ namespace ErrorCodes
 namespace
 {
 
-/// A stage fails because object storage is unavailable, so the pause grows to the point where the retries cost nothing,
-/// and stays short enough for a shutdown to be noticed at once.
+/// A stage fails because object storage is unavailable, so the pause grows until the retries cost nothing. A shutdown
+/// does not wait for the pause to end, it wakes the wait, so the cap costs nothing there either.
 constexpr UInt64 FIRST_PAUSE_MS = 100;
-constexpr UInt64 MAX_PAUSE_MS = 1000;
+constexpr UInt64 MAX_PAUSE_MS = 5000;
+/// Every transaction that object storage is failing right now retries on the same schedule, so each pause is spread to
+/// keep them from coming back at the same moment.
+constexpr UInt64 MAX_JITTER_MS = 100;
 
 }
 
-void UndoRetries::runStage(const LoggerPtr & log, std::string_view description, const std::function<void()> & stage)
+void UndoWithRetries::runStage(const LoggerPtr & log, std::string_view description, const std::function<void()> & stage)
 {
     UInt64 pause_ms = FIRST_PAUSE_MS;
 
@@ -52,8 +57,10 @@ void UndoRetries::runStage(const LoggerPtr & log, std::string_view description, 
             ProfileEvents::increment(ProfileEvents::DiskPlainRewritableUndoStageRetries);
             tryLogCurrentException(log, fmt::format("Attempt {} to {} failed", attempt, description));
 
+            const UInt64 jitter_ms = std::uniform_int_distribution<UInt64>(0, MAX_JITTER_MS)(thread_local_rng);
+
             std::unique_lock lock(mutex);
-            if (shutdown_condition.wait_for(lock, std::chrono::milliseconds(pause_ms), [this] { return shutdown_called; }))
+            if (shutdown_condition.wait_for(lock, std::chrono::milliseconds(pause_ms + jitter_ms), [this] { return shutdown_called; }))
             {
                 LOG_ERROR(
                     log,
@@ -69,7 +76,7 @@ void UndoRetries::runStage(const LoggerPtr & log, std::string_view description, 
     }
 }
 
-void UndoRetries::shutdown()
+void UndoWithRetries::shutdown()
 {
     {
         std::lock_guard lock(mutex);

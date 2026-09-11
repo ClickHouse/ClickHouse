@@ -5,7 +5,7 @@
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Transactions/UncommittedState.h>
-#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoRetries.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/UndoWithRetries.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/MetadataOperationsHolder.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataStorage.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
@@ -58,7 +58,7 @@ public:
 
     MetadataTransactionPtr createTransaction() override;
 
-    /// Stops the retries of the `undo` of a transaction that is failing right now. See `UndoRetries`.
+    /// Stops the retries of the `undo` of a transaction that is failing right now. See `UndoWithRetries`.
     void shutdown() override;
 
     /// Will reload in-memory structure from scratch.
@@ -84,7 +84,7 @@ public:
 private:
     const std::shared_ptr<IObjectStorage> object_storage;
     const std::shared_ptr<PlainRewritableMetrics> metrics;
-    const UndoRetriesPtr undo_retries;
+    const UndoWithRetriesPtr undo_retries;
     const std::string storage_path_prefix;
     const std::string storage_path_full;
 

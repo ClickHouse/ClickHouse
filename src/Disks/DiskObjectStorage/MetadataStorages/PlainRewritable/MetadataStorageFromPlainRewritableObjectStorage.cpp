@@ -255,7 +255,7 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
 MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewritableObjectStorage(ObjectStoragePtr object_storage_, String storage_path_prefix_)
     : object_storage(std::move(object_storage_))
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
-    , undo_retries(std::make_shared<UndoRetries>())
+    , undo_retries(std::make_shared<UndoWithRetries>())
     , storage_path_prefix(std::move(storage_path_prefix_))
     , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
     , fs(metrics->directory_map_size, metrics->file_count)
