@@ -87,6 +87,9 @@ extern const int SYSTEM_ERROR;
 namespace ServerSetting
 {
 extern const ServerSettingsDouble cache_size_to_ram_max_ratio;
+extern const ServerSettingsString index_mark_cache_policy;
+extern const ServerSettingsUInt64 index_mark_cache_size;
+extern const ServerSettingsDouble index_mark_cache_size_ratio;
 extern const ServerSettingsUInt64 max_server_memory_usage;
 extern const ServerSettingsDouble max_server_memory_usage_to_ram_ratio;
 extern const ServerSettingsUInt64 jemalloc_merge_tree_arenas;
@@ -341,6 +344,13 @@ void StorageMemoryProfiler::initializeContext()
     if (mark_cache_size > max_cache_size)
         mark_cache_size = max_cache_size;
     global_context->setMarkCache(mark_cache_policy, mark_cache_size, mark_cache_size_ratio);
+
+    String index_mark_cache_policy = server_settings[ServerSetting::index_mark_cache_policy];
+    size_t index_mark_cache_size = server_settings[ServerSetting::index_mark_cache_size];
+    const double index_mark_cache_size_ratio = server_settings[ServerSetting::index_mark_cache_size_ratio];
+    if (index_mark_cache_size > max_cache_size)
+        index_mark_cache_size = max_cache_size;
+    global_context->setIndexMarkCache(index_mark_cache_policy, index_mark_cache_size, index_mark_cache_size_ratio);
 
     /// Limit on total number of concurrently executing queries.
     global_context->getProcessList().setMaxSize(0);
