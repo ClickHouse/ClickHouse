@@ -1,0 +1,208 @@
+---
+import manifest from '@generated/data/manifest.json';
+import docsConfig from '@generated/mintlify/docs.json';
+import { containsPath, isNavGroup, type NavEntry, type NavPage } from '@mintlify/astro/helpers';
+import { ClientRouter } from 'astro:transitions';
+
+import Header from '../components/Header.astro';
+import PageContext from '../components/PageContext.astro';
+import Sidebar from '../components/Sidebar.astro';
+import { entityKindLabels } from '../lib/entity-kinds';
+import '@fontsource-variable/inter/wght.css';
+import '@fontsource-variable/inter/wght-italic.css';
+import 'katex/dist/katex.min.css';
+import '../styles/global.css';
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface DocumentData {
+  title: string;
+  description: string;
+  route: string;
+  entityKind: string;
+  sourcePath: string;
+  stableId?: string;
+}
+
+interface Props {
+  document: DocumentData;
+  sidebarEntries: NavEntry[];
+  featureStateByRoute?: Record<string, 'beta' | 'experimental'>;
+  headings?: Heading[];
+  previous?: NavPage | null;
+  next?: NavPage | null;
+  showGeneratedBanner?: boolean;
+  wideContent?: boolean;
+}
+
+const {
+  document,
+  sidebarEntries,
+  featureStateByRoute = {},
+  headings = [],
+  previous,
+  next,
+  showGeneratedBanner = true,
+  wideContent = false,
+} = Astro.props;
+const canonical = new URL(document.route, Astro.site);
+const sourceRepositoryPath = document.sourcePath.startsWith('src/')
+  ? document.sourcePath
+  : `docs/reference/${document.sourcePath}`;
+const sourceUrl = `https://github.com/ClickHouse/ClickHouse/blob/${manifest.sourceRevision}/${sourceRepositoryPath}`;
+const referenceBaseRoute = manifest.channel === 'latest'
+  ? '/docs/reference'
+  : `/docs/reference/versions/${manifest.channel}`;
+const publicAssetBaseRoute = `${referenceBaseRoute}/_site`;
+const routeSegments = document.route
+  .replace(referenceBaseRoute, '')
+  .split('/')
+  .filter(Boolean);
+const breadcrumbs = routeSegments
+  .map((segment, index) => ({
+    label: index === routeSegments.length - 1
+      ? document.title
+      : segment.replace(/[-_]+/g, ' '),
+    href: `${referenceBaseRoute}/${routeSegments.slice(0, index + 1).join('/')}`,
+  }))
+  .slice(-2);
+function activeGroupNames(entries: NavEntry[], currentRoute: string): string[] {
+  for (const entry of entries) {
+    if (!isNavGroup(entry) || !containsPath(entry.pages, currentRoute)) continue;
+    return [entry.group, ...activeGroupNames(entry.pages, currentRoute)];
+  }
+  return [];
+}
+const groupNames = activeGroupNames(sidebarEntries, document.route);
+const mobileSection = groupNames.at(-1) ?? breadcrumbs[0]?.label ?? 'Reference';
+const defaultTheme = docsConfig.appearance?.default ?? 'system';
+const entityKindLabel = entityKindLabels[document.entityKind];
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="description" content={document.description} />
+    {manifest.channel !== 'latest' && <meta name="robots" content="noindex,follow" />}
+    <link rel="icon" href={`${publicAssetBaseRoute}/favicon.svg`} />
+    <link rel="canonical" href={canonical} />
+    <title>{document.title} | ClickHouse Docs</title>
+    <style is:inline>
+      html,
+      body {
+        background: #ffffff;
+        color: #3f3f3f;
+      }
+
+      html[data-theme='dark'],
+      html[data-theme='dark'] body {
+        background: #151515;
+        color: #d8d8d8;
+      }
+    </style>
+    <script is:inline define:vars={{ defaultTheme }}>
+      const preference = localStorage.getItem('reference-theme') || defaultTheme;
+      const theme = preference === 'system'
+        ? (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
+        : preference;
+      document.documentElement.dataset.themePreference = preference;
+      document.documentElement.dataset.theme = theme;
+      document.documentElement.classList.toggle('dark', theme === 'dark');
+    </script>
+    <ClientRouter fallback="swap" />
+  </head>
+  <body>
+    <Header section={mobileSection} title={document.title} />
+    <div class="docs-shell">
+      <Sidebar
+        entries={sidebarEntries}
+        currentRoute={document.route}
+        stableId={document.stableId}
+        featureStateByRoute={featureStateByRoute}
+      />
+      <main class="document-main">
+        <div class:list={['document-grid', { 'document-grid-wide': wideContent }]}>
+          <article class="document">
+            <nav class="breadcrumbs" aria-label="Breadcrumb">
+              {breadcrumbs.map((breadcrumb, index) => (
+                <>
+                  {index > 0 && <span aria-hidden="true">›</span>}
+                  {index === breadcrumbs.length - 1
+                    ? <span>{breadcrumb.label}</span>
+                    : <a href={breadcrumb.href}>{breadcrumb.label}</a>}
+                </>
+              ))}
+            </nav>
+
+            <div class="document-title">
+              {entityKindLabel && (
+                <span class="document-kind-badge" data-entity-kind={document.entityKind}>
+                  {entityKindLabel}
+                </span>
+              )}
+              <h1>{document.title}</h1>
+            </div>
+
+            <div class="prose">
+              <slot />
+            </div>
+
+            <footer class="document-footer">
+              <p class="page-version">Generated from {manifest.sourceVersion}</p>
+              {showGeneratedBanner && (
+                <div class="contribute-links">
+                  <a href={sourceUrl}>Suggest edits</a>
+                  <a href="https://github.com/ClickHouse/ClickHouse/issues/new/choose">Raise issue</a>
+                </div>
+              )}
+            </footer>
+
+            <nav class="page-pagination" aria-label="Reference pagination">
+              {previous ? (
+                <a class="page-previous" href={previous.href}>
+                  <small>Previous</small><span>← {previous.title}</span>
+                </a>
+              ) : <span></span>}
+              {next && (
+                <a class="page-next" href={next.href}>
+                  <small>Next</small><span>{next.title} →</span>
+                </a>
+              )}
+            </nav>
+          </article>
+          {showGeneratedBanner && <PageContext headings={headings} sourceUrl={sourceUrl} />}
+        </div>
+      </main>
+    </div>
+    <div class="sidebar-scrim" aria-hidden="true"></div>
+    <script>
+      document.addEventListener('click', async (event) => {
+        const button = (event.target as HTMLElement).closest('[data-code-copy]');
+        if (!(button instanceof HTMLButtonElement)) return;
+        const block = button.closest('[data-code-block]');
+        const code = block?.querySelector('pre code')?.textContent?.trim();
+        if (!code) return;
+
+        await navigator.clipboard.writeText(code);
+        button.dataset.copied = 'true';
+        button.setAttribute('aria-label', 'Copied');
+        const tooltip = button.querySelector('.code-copy-tooltip');
+        if (tooltip) tooltip.textContent = 'Copied!';
+        window.setTimeout(() => {
+          delete button.dataset.copied;
+          button.setAttribute('aria-label', 'Copy the contents from the code block');
+          if (tooltip) tooltip.textContent = 'Copy';
+        }, 2000);
+      });
+    </script>
+    <script is:inline src={`${publicAssetBaseRoute}/customizations/kapa-init.js`}></script>
+    <script is:inline src={`${publicAssetBaseRoute}/customizations/ask-ai-button.js`}></script>
+    <script is:inline src={`${publicAssetBaseRoute}/customizations/inkeep-init.js`}></script>
+  </body>
+</html>

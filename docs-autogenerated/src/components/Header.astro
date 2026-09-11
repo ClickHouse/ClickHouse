@@ -1,0 +1,221 @@
+---
+import manifest from '@generated/data/manifest.json';
+import headerNavigation from '@generated/data/header-navigation.json';
+
+interface Props {
+  section?: string;
+  title: string;
+}
+
+interface HeaderNavigationItem {
+  kind: 'heading' | 'link';
+  label: string;
+  href?: string;
+  icon?: string;
+  external?: boolean;
+}
+
+interface HeaderNavigationTab {
+  label: string;
+  href?: string;
+  active: boolean;
+  items?: HeaderNavigationItem[];
+}
+
+const { section = 'Reference', title } = Astro.props;
+const navigationTabs = headerNavigation.tabs as HeaderNavigationTab[];
+const referenceBaseRoute = manifest.channel === 'latest'
+  ? '/docs/reference'
+  : `/docs/reference/versions/${manifest.channel}`;
+const publicAssetBaseRoute = `${referenceBaseRoute}/_site`;
+const isActiveDropdownItem = (tab: HeaderNavigationTab, item: HeaderNavigationItem) => (
+  tab.active && item.kind === 'link' && item.label === 'Reference'
+);
+---
+
+<header id="navbar-transition-maple" class="site-header">
+  <div class="mobile-header-primary">
+    <a href={referenceBaseRoute} aria-label="ClickHouse Documentation home page">
+      <img class="logo-light" src={`${publicAssetBaseRoute}/logo/light.svg`} alt="ClickHouse Docs" />
+      <img class="logo-dark" src={`${publicAssetBaseRoute}/logo/dark.svg`} alt="ClickHouse Docs" />
+    </a>
+    <div class="mobile-actions">
+      <button
+        id="search-bar-entry-mobile"
+        class="mobile-search"
+        type="button"
+        aria-label="Open search"
+      >
+        <span class="search-icon" aria-hidden="true"></span>
+      </button>
+    </div>
+  </div>
+
+  <nav class="header-nav" aria-label="Primary navigation">
+    {navigationTabs.map((tab, index) => tab.items ? (
+      <div class="nav-dropdown" data-nav-dropdown>
+        <button
+          class:list={['nav-dropdown-trigger', { active: tab.active }]}
+          type="button"
+          aria-haspopup="menu"
+          aria-expanded="false"
+          aria-controls={`nav-dropdown-${index}`}
+        >
+          <span>{tab.label}</span>
+          <svg class="nav-dropdown-chevron" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M6.5 2.75L12.75 9L6.5 15.25"></path>
+          </svg>
+        </button>
+        <div
+          class:list={['nav-dropdown-content', `nav-dropdown-content-${tab.label.toLocaleLowerCase()}`]}
+          id={`nav-dropdown-${index}`}
+          role="menu"
+          aria-label={tab.label}
+          hidden
+        >
+          {tab.items.map((item) => item.kind === 'heading' ? (
+            <a class="nav-dropdown-heading" href={item.href} role="menuitem">
+              {item.icon && <img src={item.icon} alt="" aria-hidden="true" />}
+              <span>{item.label}</span>
+            </a>
+          ) : (
+            <a
+              class:list={['nav-dropdown-item', { active: isActiveDropdownItem(tab, item) }]}
+              href={item.href}
+              role="menuitem"
+              aria-current={isActiveDropdownItem(tab, item) ? 'location' : undefined}
+            >
+              {item.icon && <img src={item.icon} alt="" aria-hidden="true" />}
+              <span>{item.label}</span>
+            </a>
+          ))}
+        </div>
+      </div>
+    ) : (
+      <a class:list={{ active: tab.active }} href={tab.href}>{tab.label}</a>
+    ))}
+  </nav>
+
+  <div class="mobile-section-bar">
+    <button class="mobile-menu" type="button" aria-label="Open reference navigation" aria-controls="sidebar">
+      <span></span><span></span><span></span>
+    </button>
+    <span>{section}</span>
+    <span aria-hidden="true">›</span>
+    <strong>{title}</strong>
+  </div>
+</header>
+
+<script is:inline src={`${publicAssetBaseRoute}/customizations/navbar-cta.js`}></script>
+
+<script>
+  let headerController: AbortController | undefined;
+
+  function initializeHeader() {
+    headerController?.abort();
+    headerController = new AbortController();
+    const signal = headerController.signal;
+    const menuButton = document.querySelector<HTMLButtonElement>('.mobile-menu');
+    const sidebar = document.querySelector<HTMLElement>('#sidebar');
+    const sidebarScrim = document.querySelector<HTMLElement>('.sidebar-scrim');
+    const navDropdowns = [...document.querySelectorAll<HTMLElement>('[data-nav-dropdown]')];
+
+    function setNavDropdownOpen(dropdown: HTMLElement, open: boolean, focusFirst = false) {
+      const trigger = dropdown.querySelector<HTMLButtonElement>('.nav-dropdown-trigger');
+      const menu = dropdown.querySelector<HTMLElement>('.nav-dropdown-content');
+      if (!trigger || !menu) return;
+      trigger.setAttribute('aria-expanded', String(open));
+      menu.hidden = !open;
+      if (open && focusFirst) menu.querySelector<HTMLAnchorElement>('[role="menuitem"]')?.focus();
+    }
+
+    function closeNavDropdowns(except?: HTMLElement) {
+      navDropdowns.forEach((dropdown) => {
+        if (dropdown !== except) setNavDropdownOpen(dropdown, false);
+      });
+    }
+
+    navDropdowns.forEach((dropdown) => {
+      const trigger = dropdown.querySelector<HTMLButtonElement>('.nav-dropdown-trigger');
+      const menu = dropdown.querySelector<HTMLElement>('.nav-dropdown-content');
+      const items = [...(menu?.querySelectorAll<HTMLAnchorElement>('[role="menuitem"]') ?? [])];
+      let hoverCloseTimer: number | undefined;
+
+      trigger?.addEventListener('pointerenter', (event) => {
+        if (event.pointerType === 'touch') return;
+        window.clearTimeout(hoverCloseTimer);
+        closeNavDropdowns(dropdown);
+        setNavDropdownOpen(dropdown, true);
+      }, { signal });
+
+      dropdown.addEventListener('pointerleave', (event) => {
+        if (event.pointerType === 'touch') return;
+        hoverCloseTimer = window.setTimeout(() => setNavDropdownOpen(dropdown, false), 140);
+      }, { signal });
+
+      trigger?.addEventListener('click', () => {
+        window.clearTimeout(hoverCloseTimer);
+        const willOpen = trigger.getAttribute('aria-expanded') !== 'true';
+        closeNavDropdowns(dropdown);
+        setNavDropdownOpen(dropdown, willOpen);
+      }, { signal });
+
+      trigger?.addEventListener('keydown', (event) => {
+        if (event.key === 'ArrowDown') {
+          event.preventDefault();
+          closeNavDropdowns(dropdown);
+          setNavDropdownOpen(dropdown, true, true);
+        }
+      }, { signal });
+
+      menu?.addEventListener('keydown', (event) => {
+        const currentIndex = items.indexOf(document.activeElement as HTMLAnchorElement);
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          event.preventDefault();
+          const delta = event.key === 'ArrowDown' ? 1 : -1;
+          items[(currentIndex + delta + items.length) % items.length]?.focus();
+        } else if (event.key === 'Home') {
+          event.preventDefault();
+          items[0]?.focus();
+        } else if (event.key === 'End') {
+          event.preventDefault();
+          items.at(-1)?.focus();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          setNavDropdownOpen(dropdown, false);
+          trigger?.focus();
+        }
+      }, { signal });
+    });
+
+    document.addEventListener('click', (event) => {
+      if (!(event.target as HTMLElement).closest('[data-nav-dropdown]')) closeNavDropdowns();
+    }, { signal });
+
+    menuButton?.addEventListener('click', () => {
+      const open = document.body.classList.toggle('sidebar-open');
+      menuButton.setAttribute('aria-expanded', String(open));
+    }, { signal });
+
+    sidebarScrim?.addEventListener('click', () => {
+      document.body.classList.remove('sidebar-open');
+      menuButton?.setAttribute('aria-expanded', 'false');
+    }, { signal });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape') closeNavDropdowns();
+      if (event.key === 'Escape' && document.body.classList.contains('sidebar-open')) {
+        document.body.classList.remove('sidebar-open');
+        menuButton?.setAttribute('aria-expanded', 'false');
+      }
+    }, { signal });
+
+    sidebar?.addEventListener('click', (event) => {
+      if ((event.target as HTMLElement).closest('a')) {
+        document.body.classList.remove('sidebar-open');
+      }
+    }, { signal });
+  }
+
+  document.addEventListener('astro:page-load', initializeHeader);
+</script>
