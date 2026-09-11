@@ -719,6 +719,26 @@ static std::vector<ColumnDescription> columnsAddedByAlter(
 }
 
 
+std::optional<AlterCommand> AlterCommand::extractSettingsResets()
+{
+    if (type != MODIFY_SETTING || settings_resets.empty())
+        return {};
+
+    if (settings_changes.empty())
+    {
+        type = RESET_SETTING;
+        return {};
+    }
+
+    AlterCommand reset_command;
+    reset_command.ast = ast;
+    reset_command.type = RESET_SETTING;
+    reset_command.settings_resets = std::move(settings_resets);
+    settings_resets.clear();
+    return reset_command;
+}
+
+
 void AlterCommand::apply(
     StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const ColumnsDescription * columns_before_alter) const
 {

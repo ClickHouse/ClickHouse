@@ -1,0 +1,8 @@
+-- MergeTree: resetting a setting which does not exist
+10
+-- Memory: the engine supports no reset at all
+100
+-- TimeSeries: the `version` setting is pinned at CREATE and cannot be dropped
+1
+-- an altered setting a reset does not touch still takes effect
+false
