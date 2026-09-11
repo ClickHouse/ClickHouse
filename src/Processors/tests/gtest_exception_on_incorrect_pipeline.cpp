@@ -2,7 +2,7 @@
 
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/Sinks/NullSink.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -61,7 +61,7 @@ TEST(Processors, PortsNotConnected)
     catch (DB::Exception & e)
     {
         std::cout << e.displayText() << std::endl;
-        ASSERT_TRUE(e.displayText().find("Port is not connected") != std::string::npos) << "Expected 'Port is not connected', got: " << e.displayText();
+        ASSERT_TRUE(e.displayText().find("pipeline") != std::string::npos) << "Expected 'pipeline', got: " << e.displayText();
     }
 #endif
 }

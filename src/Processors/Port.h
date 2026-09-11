@@ -26,7 +26,6 @@ extern const int LOGICAL_ERROR;
 class Port
 {
     friend void connect(OutputPort &, InputPort &, bool);
-    friend void disconnect(OutputPort &, InputPort &);
     friend class IProcessor;
 
 public:
@@ -224,17 +223,10 @@ public:
     Port(Block header_, IProcessor * processor_) : header(std::make_shared<const Block>(std::move(header_))), processor(processor_) { }
 
     void setUpdateInfo(UpdateInfo * info) { update_info = info; }
-    bool hasUpdateInfo() const { return update_info != nullptr; }
 
     const Block & getHeader() const { return *header; }
     const SharedHeader & getSharedHeader() const { return header; }
     bool ALWAYS_INLINE isConnected() const { return state != nullptr; }
-
-    /// Identity of the shared state of two connected ports (both sides return the same value).
-    /// Lets diagnostics match an output port to its peer input port without dereferencing the
-    /// peer processor, whose lifetime is not guaranteed during pipeline teardown. Opaque on
-    /// purpose: only pointer identity is meaningful.
-    const void * getConnectionId() const { return state.get(); }
 
     void ALWAYS_INLINE assumeConnected() const
     {
@@ -282,7 +274,6 @@ protected:
 class InputPort : public Port
 {
     friend void connect(OutputPort &, InputPort &, bool);
-    friend void disconnect(OutputPort &, InputPort &);
 
 private:
     OutputPort * output_port = nullptr;
@@ -406,7 +397,6 @@ public:
 class OutputPort : public Port
 {
     friend void connect(OutputPort &, InputPort &, bool);
-    friend void disconnect(OutputPort &, InputPort &);
 
 private:
     InputPort * input_port = nullptr;
@@ -500,6 +490,5 @@ using OutputPorts = std::list<OutputPort>;
 
 
 void connect(OutputPort & output, InputPort & input, bool reconnect = false);
-void disconnect(OutputPort & output, InputPort & input);
 
 }

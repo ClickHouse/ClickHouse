@@ -7,6 +7,7 @@
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
 #include <Core/Block_fwd.h>
+#include <Common/PODArray.h>
 #include <Common/Throttler.h>
 #include <Common/ThreadPool.h>
 #include <atomic>
@@ -36,7 +37,7 @@ class PushingPipelineExecutor;
  *  and the resulting blocks are written in a compressed Native format in separate directories for sending.
  *  For each destination address (each directory with data to send), a separate thread is created in StorageDistributed,
  *  which monitors the directory and sends data. */
-class DistributedSink final : public SinkToStorage
+class DistributedSink : public SinkToStorage
 {
 public:
     DistributedSink(
@@ -48,22 +49,12 @@ public:
         UInt64 insert_timeout_,
         const Names & columns_to_send_);
 
-    ~DistributedSink() override;
-
     String getName() const override { return "DistributedSink"; }
     void consume(Chunk & chunk) override;
     void onFinish() override;
 
 private:
     void onCancel() noexcept override;
-
-    /// Cancels the executor of every writing job. Requires `execution_mutex` to be held: holding it is
-    /// what proves no writing job is running, hence that the executors may be touched from this thread.
-    void cancelExecutors() noexcept;
-
-    /// An executor may only be touched by the thread that owns it, so a writing job acts on the
-    /// cancellation flag itself rather than having another thread cancel it.
-    void throwIfCancelled();
 
     IColumn::Selector createSelector(const Block & source_block) const;
 
@@ -81,9 +72,6 @@ private:
 
     /// Increments finished_writings_count after each repeat.
     void writeToLocal(const Cluster::ShardInfo & shard_info, const Block & block, size_t repeats);
-
-    /// Async inserts are spooled into a directory named after each element of `dir_names`.
-    void checkDirectoryNameLengths(const Cluster::ShardInfo & shard_info, const std::vector<std::string> & dir_names) const;
 
     void writeToShard(const Cluster::ShardInfo & shard_info, const Block & block, const std::vector<std::string> & dir_names);
 
@@ -136,9 +124,6 @@ private:
         size_t shard_index = 0;
         size_t replica_index = 0;
         bool is_local_job = false;
-
-        /// The shard reported an ignorable error (see `skip_unavailable_shards_mode`); discard its data.
-        bool skip = false;
 
         Block current_shard_block;
 

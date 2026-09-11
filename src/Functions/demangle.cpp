@@ -21,7 +21,7 @@ namespace ErrorCodes
 namespace
 {
 
-class FunctionDemangle final : public IFunction
+class FunctionDemangle : public IFunction
 {
 public:
     static constexpr auto name = "demangle";
@@ -107,7 +107,7 @@ The symbol is usually returned by function `addressToSymbol`.
     {
         "Selecting the first string from the `trace_log` system table",
         R"(
-SELECT * FROM system.trace_log LIMIT 1 FORMAT Vertical;
+SELECT * FROM system.trace_log LIMIT 1 \G;
         )",
         R"(
 -- The `trace` field contains the stack trace at the moment of sampling.
@@ -126,7 +126,7 @@ trace:         [94138803686098,94138815010911,94138815096522,94138815101224,9413
         "Getting a function name for a single address",
         R"(
 SET allow_introspection_functions=1;
-SELECT demangle(addressToSymbol(94138803686098)) FORMAT Vertical;
+SELECT demangle(addressToSymbol(94138803686098)) \G;
         )",
         R"(
 Row 1:
@@ -146,15 +146,15 @@ SELECT
     arrayStringConcat(arrayMap(x -> demangle(addressToSymbol(x)), trace), '\n') AS trace_functions
 FROM system.trace_log
 LIMIT 1
-FORMAT Vertical;
+\G
         )",
         R"(
 Row 1:
 ──────
 trace_functions: DB::IAggregateFunctionHelper<DB::AggregateFunctionSum<unsigned long, unsigned long, DB::AggregateFunctionSumData<unsigned long> > >::addBatchSinglePlace(unsigned long, char*, DB::IColumn const**, DB::Arena*) const
 DB::Aggregator::executeWithoutKeyImpl(char*&, unsigned long, DB::Aggregator::AggregateFunctionInstruction*, DB::Arena*) const
-DB::Aggregator::executeOnBlock(...)
-DB::Aggregator::executeOnBlock(DB::Block const&, ...)
+DB::Aggregator::executeOnBlock(std::vector<COW<DB::IColumn>::immutable_ptr<DB::IColumn>, std::allocator<COW<DB::IColumn>::immutable_ptr<DB::IColumn> > >, unsigned long, DB::AggregatedDataVariants&, std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >&, std::vector<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >, std::allocator<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> > > >&, bool&)
+DB::Aggregator::executeOnBlock(DB::Block const&, DB::AggregatedDataVariants&, std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >&, std::vector<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> >, std::allocator<std::vector<DB::IColumn const*, std::allocator<DB::IColumn const*> > > >&, bool&)
 DB::Aggregator::execute(std::shared_ptr<DB::IBlockInputStream> const&, DB::AggregatedDataVariants&)
 DB::AggregatingBlockInputStream::readImpl()
 DB::IBlockInputStream::read()

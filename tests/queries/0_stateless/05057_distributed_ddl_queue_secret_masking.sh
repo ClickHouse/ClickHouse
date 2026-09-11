@@ -14,15 +14,15 @@ QUERY_CANARY="c05057ddlqueuequery"
 SETTINGS_CANARY="c05057ddlqueuesettings"
 PROFILE="p05057_$CLICKHOUSE_DATABASE"
 
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&distributed_ddl_output_mode=none&url_base=https%3A%2F%2Fu%3A$SETTINGS_CANARY%40example.com%2Fd%2F" \
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&distributed_ddl_output_mode=none&format_avro_schema_registry_url=http%3A%2F%2Fu%3A$SETTINGS_CANARY%40reg%3A8080%2F" \
     --data-binary "CREATE SETTINGS PROFILE $PROFILE ON CLUSTER test_shard_localhost
         SETTINGS format_avro_schema_registry_url = 'http://u:$QUERY_CANARY@reg:8080/'"
 
 $CLICKHOUSE_CLIENT -q "SELECT
         countIf(position(query, '[HIDDEN]') > 0) > 0,
         countIf(position(query, '$QUERY_CANARY') > 0),
-        countIf(position(settings['url_base'], '[HIDDEN]') > 0) > 0,
-        countIf(position(settings['url_base'], '$SETTINGS_CANARY') > 0)
+        countIf(position(settings['format_avro_schema_registry_url'], '[HIDDEN]') > 0) > 0,
+        countIf(position(settings['format_avro_schema_registry_url'], '$SETTINGS_CANARY') > 0)
     FROM system.distributed_ddl_queue
     WHERE position(query, '$PROFILE') > 0 AND position(query, 'CREATE') > 0"
 
