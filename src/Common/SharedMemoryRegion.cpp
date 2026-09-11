@@ -1,11 +1,13 @@
 #include <Common/SharedMemoryRegion.h>
 
+#include <algorithm>
 #include <cerrno>
 #include <limits>
 
 #include <fcntl.h>
 #include <sys/mman.h>
 #include <sys/stat.h>
+#include <sys/syscall.h>
 #include <unistd.h>
 
 #include <Common/Exception.h>
@@ -46,6 +48,15 @@ namespace
 /// `F_SEAL_SEAL` keeps it from adding seals of its own - `F_SEAL_GROW` would break the server's
 /// growth, `F_SEAL_WRITE` its writes.
 constexpr int REGION_SEALS = F_SEAL_SHRINK | F_SEAL_SEAL;
+
+/// The raw system call rather than the glibc wrapper: the wrapper is `memfd_create@GLIBC_2.27`,
+/// and the binary must not depend on glibc symbols newer than 2.4 (the compatibility check runs
+/// it on very old distributions). The kernel has had the call since 3.17; on an older one it
+/// fails with `ENOSYS`, which `checkSupported` reports like any other absence.
+int memfdCreate(const char * name, unsigned int flags)
+{
+    return static_cast<int>(::syscall(SYS_memfd_create, name, flags));
+}
 
 void closeNoThrow(int fd, const char * operation) noexcept
 {
@@ -110,7 +121,7 @@ void SharedMemoryRegion::checkSupported()
     /// Rather than trusting that the kernel offers sealing, ask it: an old kernel or a restricted
     /// container may have `memfd_create` without `MFD_ALLOW_SEALING`, and a region that cannot be
     /// sealed is a region the command can shrink under the server.
-    int fd = ::memfd_create("clickhouse_udf_shm_probe", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+    int fd = memfdCreate("clickhouse_udf_shm_probe", MFD_CLOEXEC | MFD_ALLOW_SEALING);
     if (fd == -1)
     {
         const int saved_errno = errno;
@@ -179,7 +190,7 @@ SharedMemoryRegion::SharedMemoryRegion(size_t size)
     /// Close-on-exec, so that a concurrent `fork` + `exec` on another thread cannot carry this
     /// descriptor into an unrelated child. The one child that should have it gets it explicitly,
     /// through `dup2` - which clears the flag on the copy - before its `exec`.
-    int fd = ::memfd_create("clickhouse_udf_shm", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+    int fd = memfdCreate("clickhouse_udf_shm", MFD_CLOEXEC | MFD_ALLOW_SEALING);
     if (fd == -1)
     {
         const int saved_errno = errno;
@@ -234,13 +245,13 @@ void SharedMemoryRegion::grow(size_t new_size)
 
     /// Extends the file and commits the new pages in one call, and leaves the file untouched if it
     /// cannot. Growing is allowed by the seals - only shrinking is refused - so this is the one
-    /// thing about the file that changes after creation. A file that had already been grown past
-    /// the mapping by an earlier failed remap is left as it is by a request it already satisfies.
-    if (new_size > backing_size)
-    {
-        reserveBackingStorage(region_fd, new_size, "grow");
-        backing_size = new_size;
-    }
+    /// thing about the file that changes after creation. Always, even when the file is already
+    /// long enough: it may have been made so by an earlier growth that then failed to map (whose
+    /// pages are committed, and this is a no-op) or by the command with a plain `ftruncate`, which
+    /// leaves a sparse tail whose pages are not - and the server is about to map and write them.
+    /// `posix_fallocate` over committed pages costs a walk, not a copy.
+    reserveBackingStorage(region_fd, new_size, "grow");
+    backing_size = std::max(backing_size, new_size);
 
     /// Map the enlarged file into a fresh mapping first; only on success is the old one dropped, so
     /// a failed remap leaves the region fully usable at its previous size. The file is then longer
@@ -259,6 +270,21 @@ void SharedMemoryRegion::grow(size_t new_size)
 
     region_data = static_cast<char *>(buf);
     region_size = new_size;
+}
+
+size_t SharedMemoryRegion::refreshBackingSize()
+{
+    struct stat st{};
+    if (0 != ::fstat(region_fd, &st))
+    {
+        const int saved_errno = errno;
+        ErrnoException::throwWithErrno(ErrorCodes::CANNOT_FCNTL, saved_errno, "SharedMemoryRegion: Cannot fstat the region");
+    }
+
+    /// Never below what is known: the seals make a shorter file impossible, so a smaller figure
+    /// here would be a bug, not a fact.
+    backing_size = std::max(backing_size, static_cast<size_t>(st.st_size));
+    return backing_size;
 }
 
 SharedMemoryRegion::~SharedMemoryRegion()
@@ -293,6 +319,12 @@ SharedMemoryRegion::SharedMemoryRegion(size_t)
 void SharedMemoryRegion::grow(size_t)
 {
     checkSupported();
+}
+
+size_t SharedMemoryRegion::refreshBackingSize()
+{
+    checkSupported();
+    return 0;
 }
 
 SharedMemoryRegion::~SharedMemoryRegion() = default;

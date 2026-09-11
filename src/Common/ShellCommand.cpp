@@ -49,6 +49,7 @@ namespace
         CANNOT_DUP_READ_DESCRIPTOR  = 0x55555559,
         CANNOT_DUP_WRITE_DESCRIPTOR = 0x55555560,
         CANNOT_DUP_INHERITED_DESCRIPTOR = 0x55555561,
+        CANNOT_CLOSE_INHERITED_DESCRIPTOR = 0x55555562,
     };
 }
 
@@ -336,10 +337,26 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             /// `dup2` from the staged copy (see above) onto the number the child expects. The
             /// staged copy is above every target, so this is never a no-op and never destroys a
             /// source. The result has no close-on-exec flag, so it survives the `exec` below; the
-            /// staged copy and the original do not.
+            /// staged copy does not.
             const int child_fd = config.inherited_fds[i].first;
             if (child_fd != dup2(staged_inherited_fds[i], child_fd))
                 _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_INHERITED_DESCRIPTOR));
+        }
+
+        /// The originals must not reach the child either, under their own numbers: the contract
+        /// is "this descriptor, under the number it is told", and an original that is not
+        /// close-on-exec would otherwise survive the `exec` as a second copy - for a pipe, an
+        /// extra reader or writer that keeps the parent from ever seeing EOF. Closed here rather
+        /// than required to be close-on-exec, so that the contract does not depend on how the
+        /// caller opened the descriptor. An original that is itself one of the targets has just
+        /// been overwritten with the right thing and is left alone.
+        for (const auto & [child_fd, parent_fd] : config.inherited_fds)
+        {
+            bool is_a_target = false;
+            for (const auto & [other_child_fd, other_parent_fd] : config.inherited_fds)
+                is_a_target |= parent_fd == other_child_fd;
+            if (!is_a_target && 0 != ::close(parent_fd))
+                _exit(static_cast<int>(ReturnCodes::CANNOT_CLOSE_INHERITED_DESCRIPTOR));
         }
 
         // Reset the signal mask: it may be non-empty and will be inherited
@@ -566,6 +583,8 @@ void ShellCommand::handleProcessRetcode(int retcode) const
                 throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 write descriptor of child process");
             case static_cast<int>(ReturnCodes::CANNOT_DUP_INHERITED_DESCRIPTOR):
                 throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 an inherited descriptor of child process");
+            case static_cast<int>(ReturnCodes::CANNOT_CLOSE_INHERITED_DESCRIPTOR):
+                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot close the original of an inherited descriptor in child process");
             default:
                 throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was exited with return code {}", toString(retcode));
         }

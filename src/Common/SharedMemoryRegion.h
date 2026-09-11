@@ -83,10 +83,24 @@ public:
     /// The mapped size: what `data` covers and what the transport may use.
     size_t size() const { return region_size; }
 
-    /// The committed size: the length of the file, whose pages are all reserved. Never less than
-    /// `size`, and greater only after a growth that committed its pages but could not map them.
-    /// This is what the region costs, so memory accounting goes by this figure, not by `size`.
+    /// The length of the file as last seen: never less than `size`, and greater after a growth
+    /// that committed its pages but could not map them - or after the command extended the file
+    /// (see `refreshBackingSize`). This is what the region costs, so memory accounting goes by this
+    /// figure, not by `size`.
     size_t backingSize() const { return backing_size; }
+
+    /** Re-reads the length of the file and returns it, updating `backingSize`.
+      *
+      * The seals stop the command from shrinking the file; nothing stops it from extending it,
+      * since only the server's own growth can be allowed and seals do not tell the two apart. A
+      * command has no reason to (a result that does not fit is asked for through the protocol),
+      * but one that does holds pages the server knows nothing about. So the size is read back
+      * from the file wherever the region's charge changes hands - when a borrow starts and when
+      * the worker goes back into the pool - and the larger figure is charged from then on. Between
+      * those points the cached figure is used; a command extending the file mid-borrow is charged
+      * at the next hand-over, not never.
+      */
+    size_t refreshBackingSize();
 
     /// The descriptor, for handing to the command's process at `exec`. Close-on-exec in this
     /// process; the hand-over `dup2`s it into the child, which clears the flag on the copy.

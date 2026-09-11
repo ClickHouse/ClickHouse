@@ -15,9 +15,9 @@ ITERS="${ITERS:-7}"
 source "$HERE/lib.sh"
 bench_start_server
 
-# median seconds for one (fn, rows, rowbytes, block, threads)
-median_time() {
-    local fn=$1 rows=$2 rb=$3 blk=$4 th=$5
+# Runs one (fn, rows, rowbytes, block, threads) point and writes its samples to the given file.
+sample_point() {
+    local fn=$1 rows=$2 rb=$3 blk=$4 th=$5 out=$6
     # `numbers_mt`, not `numbers`: the latter is a single stream whatever `max_threads` says, so the
     # thread sweep below would run one UDF call at a time in every row of its table. With
     # `max_threads=1` the two are equivalent.
@@ -27,43 +27,50 @@ median_time() {
     # `set -e` nor this function's own status reaches the caller through the command substitution
     # it is called from, so every run is checked here.
     bench_query "$q" || { echo "warm-up of $fn failed" >&2; return 1; }
-    local ts=() sample
+    : > "$out"
+    local sample
     for _ in $(seq 1 "$ITERS"); do
         sample="$(bench_time "$q")" || { echo "run of $fn failed" >&2; return 1; }
-        ts+=("$sample")
+        printf '%s\n' "$sample" >> "$out"
     done
-    printf '%s\n' "${ts[@]}" | bench_median
 }
 
-ratio() { awk -v a="$1" -v b="$2" 'BEGIN{ if(b>0) printf "%.2f", a/b; else print "-" }'; }
+# Prints one table row: pipe median [q1-q3], shm median [q1-q3], speedup [95% CI].
+compare_point() {
+    local label=$1; shift
+    sample_point bench_pipe_chunk "$@" "$BENCH_WORK/pipe.samples" || return 1
+    sample_point bench_shm        "$@" "$BENCH_WORK/shm.samples"  || return 1
+    local pm pq1 pq3 sm sq1 sq3 ratio lo hi
+    read -r pm pq1 pq3 <<< "$("$HERE/stats.py" summary "$BENCH_WORK/pipe.samples")"
+    read -r sm sq1 sq3 ratio lo hi <<< "$("$HERE/stats.py" ratio "$BENCH_WORK/pipe.samples" "$BENCH_WORK/shm.samples")"
+    printf "%-18s %8s %-15s %8s %-15s %6sx %-13s\n" "$label" "$pm" "[$pq1-$pq3]" "$sm" "[$sq1-$sq3]" "$ratio" "[$lo-$hi]"
+}
+
+header() {
+    printf "%-18s %8s %-15s %8s %-15s %7s %-13s\n" "$1" "pipe,s" "[q1-q3]" "shm,s" "[q1-q3]" "speedup" "[95% CI]"
+}
 
 
-echo "clickhouse: $CLICKHOUSE  (iters=$ITERS, median)"
+echo "clickhouse: $CLICKHOUSE  (iters=$ITERS; median, interquartile range, speedup = ratio of medians with 95% bootstrap CI)"
 echo
 
 echo "### 1. Block-size sweep (rows=2M, row=100B, threads=1)"
-printf "%-12s %12s %12s %10s\n" "max_block" "pipe_chunk,s" "shm,s" "speedup"
+header "max_block"
 for blk in 8192 16384 32768 65536 131072; do
-    p=$(median_time bench_pipe_chunk 2000000 100 "$blk" 1) || exit 1
-    s=$(median_time bench_shm        2000000 100 "$blk" 1) || exit 1
-    printf "%-12s %12s %12s %9sx\n" "$blk" "$p" "$s" "$(ratio "$p" "$s")"
+    compare_point "$blk" 2000000 100 "$blk" 1 || exit 1
 done
 echo
 
 echo "### 2. Thread sweep (rows=4M, row=100B, block=65536)"
-printf "%-12s %12s %12s %10s\n" "threads" "pipe_chunk,s" "shm,s" "speedup"
+header "threads"
 for th in 1 2 4 8 16; do
-    p=$(median_time bench_pipe_chunk 4000000 100 65536 "$th") || exit 1
-    s=$(median_time bench_shm        4000000 100 65536 "$th") || exit 1
-    printf "%-12s %12s %12s %9sx\n" "$th" "$p" "$s" "$(ratio "$p" "$s")"
+    compare_point "$th" 4000000 100 65536 "$th" || exit 1
 done
 echo
 
 echo "### 3. Row-size sweep (~200MB total, threads=1, block=65536)"
-printf "%-18s %12s %12s %10s\n" "rows x bytes" "pipe_chunk,s" "shm,s" "speedup"
+header "rows x bytes"
 for pair in "20000000 10" "2000000 100" "200000 1000"; do
     set -- $pair; rows=$1; rb=$2
-    p=$(median_time bench_pipe_chunk "$rows" "$rb" 65536 1) || exit 1
-    s=$(median_time bench_shm        "$rows" "$rb" 65536 1) || exit 1
-    printf "%-18s %12s %12s %9sx\n" "${rows}x${rb}" "$p" "$s" "$(ratio "$p" "$s")"
+    compare_point "${rows}x${rb}" "$rows" "$rb" 65536 1 || exit 1
 done

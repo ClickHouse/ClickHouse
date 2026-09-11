@@ -499,7 +499,7 @@
         <command_read_timeout>5000</command_read_timeout>
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>4096</shared_memory_size>
-        <command>shm_udf_stderr_flood_after_gap.py</command>
+        <command>shm_udf_stderr_flood_after_gap.py --gap 2</command>
     </function>
     <function>
         <type>executable_pool</type>
@@ -785,6 +785,73 @@
         <return_type>String</return_type><argument><type>UInt64</type></argument>
         <format>TabSeparated</format>
         <shared_memory_max_size>1048576</shared_memory_max_size>
+        <command>shm_udf.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_extend_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>4194304</shared_memory_size>
+        <command>shm_udf_extend.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_peek_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>65536</shared_memory_size>
+        <command>shm_udf_peek.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_peek_extended_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>65536</shared_memory_size>
+        <command>shm_udf_peek_extended.py --extend-to 131072 --peek-at 65536</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_stderr_then_late_exit_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>65536</shared_memory_size>
+        <command>shm_udf_stderr_then_late_exit.py</command>
+    </function>
+    <function>
+        <type>executable</type><name>test_function_shm_bad_no_size</name>
+        <return_type>String</return_type><argument><type>UInt64</type></argument>
+        <format>TabSeparated</format>
+        <use_shared_memory>1</use_shared_memory>
+        <command>shm_udf.py</command>
+    </function>
+    <function>
+        <type>executable</type><name>test_function_shm_bad_zero_size</name>
+        <return_type>String</return_type><argument><type>UInt64</type></argument>
+        <format>TabSeparated</format>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>0</shared_memory_size>
         <command>shm_udf.py</command>
     </function>
     <function>

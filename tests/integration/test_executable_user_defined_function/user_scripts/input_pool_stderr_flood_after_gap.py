@@ -17,7 +17,10 @@ import sys
 import time
 
 CHATTER = "e" * (128 * 1024)
-QUIET_GAP_SECONDS = 0.3
+# Overridable from the command line (`--gap SECONDS`): a test that needs the flood to start only
+# after the previous query is provably over, whatever the machine's speed, asks for a longer gap
+# and waits for the flood itself instead of sleeping.
+QUIET_GAP_SECONDS = float(sys.argv[sys.argv.index("--gap") + 1]) if "--gap" in sys.argv else 0.3
 
 if __name__ == "__main__":
     for line in sys.stdin:

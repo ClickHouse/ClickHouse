@@ -62,6 +62,32 @@ def started_cluster():
         cluster.shutdown()
 
 
+
+def wait_until_blocked_writing(pid, timeout=30):
+    # Waits until the process is blocked in `write` - here, on a full stderr pipe nobody is reading.
+    # The point is to make the next borrow start only once the flood is provably under way, on any
+    # machine, instead of sleeping for "long enough" and hoping.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        wchan = node.exec_in_container(["bash", "-c", f"cat /proc/{pid}/wchan 2>/dev/null || true"]).strip()
+        # `pipe_write` up to Linux 6.x, `anon_pipe_write` from 7.0 on.
+        if wchan.endswith("pipe_write"):
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"process {pid} did not block writing to its stderr within {timeout}s (wchan={wchan!r})")
+
+
+def wait_until_exited(pid, timeout=30):
+    # Waits until the process has exited - left as a zombie for the server to reap, or gone. What
+    # the tests need is "provably dead before the next borrow", on any machine, rather than a sleep.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        stat = node.exec_in_container(["bash", "-c", f"cat /proc/{pid}/stat 2>/dev/null || true"]).strip()
+        if not stat or stat[stat.rfind(")") + 2] == "Z":
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"process {pid} did not exit within {timeout}s")
+
 def test_executable_function_bash(started_cluster):
     skip_test_msan(node)
     assert node.query("SELECT test_function_bash(toUInt64(1))") == "Key 1\n"
@@ -400,7 +426,10 @@ def test_executable_function_previous_borrow_stderr_is_not_thrown_at_the_next_qu
 
     pids = {first}
     for i in range(1, 3):
-        time.sleep(0.5)
+        # The command's gap is long (2 s) so that the query it answered is over - probe and all -
+        # before the flood starts, on any machine; and the next borrow waits for the flood to be
+        # under way, rather than for a fixed time.
+        wait_until_blocked_writing(first)
         pids.add(node.query(f"SELECT test_function_pool_stderr_flood_after_gap_throw_python({i})").strip())
 
     assert len(pids) == 1, f"the worker was not reused: {pids}"
@@ -439,6 +468,41 @@ def test_executable_function_pooled_worker_that_exited_while_idle_is_replaced(st
 
     assert first != second, f"the dead worker was reused: {first}"
     assert node.contains_in_log("exited while it was idle in the pool")
+
+
+def test_executable_function_idle_dead_worker_late_stderr_is_reported(started_cluster):
+    """What a worker wrote to stderr before dying in the pool is logged, not dropped with it."""
+    skip_test_msan(node)
+
+    # The worker answers, waits out the hand-back probe, writes a diagnostic and exits. Nobody is
+    # reading its pipes at that point. The next borrow finds it dead and starts a replacement; the
+    # diagnostic has to be reported against the process before its pipes are closed with it, or
+    # the one line that explains why the worker died is lost.
+    first = node.query("SELECT test_function_pool_stderr_then_late_exit_python(0)").strip()
+    wait_until_exited(first)
+    second = node.query("SELECT test_function_pool_stderr_then_late_exit_python(1)").strip()
+
+    assert first != second, f"the dead worker was reused: {first}"
+    assert node.contains_in_log("exited while it was idle in the pool, after writing to its stderr")
+    assert node.contains_in_log("last words of the worker")
+
+
+def test_executable_function_pooled_overproduction_in_one_block_invalidates_the_worker(started_cluster):
+    """Extra rows inside the same chunk fail the query and cost the worker, not the next query."""
+    skip_test_msan(node)
+
+    # A row format never hands over more than `max_block_size` rows at once, so overproduction over
+    # the pipes usually shows up as bytes left in the pipe, which the hand-back probe catches. A
+    # block format (`Native`) hands over the command's block whole: the extra row is inside the
+    # chunk, the pipe is clean, and the row count is the only thing that can catch it. It has to be
+    # caught in the source, or the worker goes back to the pool as if it had answered correctly and
+    # only the outer function layer complains about the count.
+    for _ in range(3):
+        with pytest.raises(Exception) as exc:
+            node.query("SELECT test_function_pool_native_overproduce_python(number) FROM numbers(3) FORMAT Null")
+        assert "produced more" in str(exc.value), str(exc.value)
+
+    assert node.contains_in_log("wrong result, expected 3 row(s), but the command produced more")
 
 
 def test_executable_function_late_stdout_cannot_be_parsed_as_the_next_query_result(started_cluster):

@@ -127,6 +127,27 @@ TEST(ShellCommand, InheritsCrossingDescriptors)
     ::close(second);
 }
 
+/// A descriptor that is not close-on-exec reaches the child only under the number it was told,
+/// never under its own as well: for a pipe, a second copy would be an extra reader or writer
+/// that keeps the other side from ever seeing EOF.
+TEST(ShellCommand, DoesNotLeakTheOriginalOfAnInheritedDescriptor)
+{
+    const int source = makeInheritableSource("only once");
+    ASSERT_NE(source, -1);
+    /// Deliberately inheritable, unlike the region descriptors: the helper must not rely on it.
+    ASSERT_EQ(::fcntl(source, F_SETFD, 0), 0);
+
+    int probe = ::dup(source);
+    ASSERT_NE(probe, -1);
+    const int target = probe + 1;
+    ::close(probe);
+
+    const std::string script = "cat /dev/fd/" + std::to_string(target)
+        + "; echo; if [ -e /proc/self/fd/" + std::to_string(source) + " ]; then echo leaked; else echo closed; fi";
+    EXPECT_EQ(readInheritedInChild({{target, source}}, script), "only once\nclosed\n");
+    ::close(source);
+}
+
 /// The ordinary case, and the one where a target number happens to be free in the parent.
 TEST(ShellCommand, InheritsADescriptorUnderAnotherNumber)
 {

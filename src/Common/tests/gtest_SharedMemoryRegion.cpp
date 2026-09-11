@@ -360,6 +360,39 @@ TEST(SharedMemoryRegion, GrowThatCommitsButCannotMapKeepsMappingAndReportsBackin
 }
 #endif
 
+/// The seals stop the command from shrinking the file, not from extending it. Pages it adds that
+/// way are not the server's doing, but they are the server's cost, so the region reports them once
+/// asked to look (`refreshBackingSize`) - and a later growth of the server's own must commit the
+/// tail the command left sparse before mapping it, or writing into it could fail under memory
+/// pressure with the one signal the whole design exists to avoid.
+TEST(SharedMemoryRegion, CommandExtendingTheFileIsSeenAndItsTailIsCommittedOnGrowth)
+{
+    SharedMemoryRegion region(4096);
+
+    /// What a command could do through its inherited descriptor: `ftruncate` up is not sealed.
+    ASSERT_EQ(::ftruncate(region.fd(), 65536), 0);
+
+    /// The cached figure does not know; the re-read does. The mapping is untouched either way.
+    EXPECT_EQ(region.backingSize(), 4096u);
+    EXPECT_EQ(region.refreshBackingSize(), 65536u);
+    EXPECT_EQ(region.backingSize(), 65536u);
+    EXPECT_EQ(region.size(), 4096u);
+
+    /// The tail the command added is sparse ...
+    struct stat st{};
+    ASSERT_EQ(::fstat(region.fd(), &st), 0);
+    EXPECT_LT(static_cast<size_t>(st.st_blocks) * 512, 65536u);
+
+    /// ... and a growth into it commits it before mapping it, even though the file is already
+    /// long enough.
+    region.grow(65536);
+    EXPECT_EQ(region.size(), 65536u);
+    ASSERT_EQ(::fstat(region.fd(), &st), 0);
+    EXPECT_GE(static_cast<size_t>(st.st_blocks) * 512, 65536u);
+    memset(region.data() + 60000, 'x', 100);
+    EXPECT_EQ(std::string(region.data() + 60000, 3), "xxx");
+}
+
 TEST(SharedMemoryRegion, SynchronizedHandoff)
 {
     SharedMemoryRegion region(4096);

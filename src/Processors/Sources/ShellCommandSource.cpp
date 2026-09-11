@@ -62,6 +62,7 @@ namespace ProfileEvents
     extern const Event ExecutableUDFSharedMemoryRegionGrowths;
     extern const Event ExecutableUDFSharedMemoryAllocatedBytes;
     extern const Event ExecutableUDFSharedMemoryDirtyChannelDiscards;
+    extern const Event ExecutableUDFSharedMemoryScrubbedBytes;
 }
 
 namespace DB
@@ -538,13 +539,29 @@ public:
     {
         const UInt64 deadline_ns = clock_gettime_ns() + static_cast<UInt64>(budget_milliseconds) * 1000000ULL;
 
-        while (!stderr_is_done && remainingMs(deadline_ns) != 0)
+        /// An empty pipe is answered at once: nothing pending, nothing to wait for. But a pipe
+        /// that had something in it may belong to a command in the middle of a burst - blocked in
+        /// `write` on a full pipe, and only now, with room made, being woken to write the rest.
+        /// That wake-up takes a moment, longer on a loaded machine, and a poll with no timeout
+        /// would find the pipe momentarily empty and declare the burst over, leaving its tail to
+        /// land in the middle of the next request. So once something has been read, each further
+        /// poll waits a little for the writer, up to the budget.
+        static constexpr size_t wait_for_writer_ms = 20;
+        bool read_anything = false;
+
+        while (!stderr_is_done)
         {
+            const size_t remaining_ms = remainingMs(deadline_ns);
+            if (remaining_ms == 0)
+                return;
+
             pfds[1].revents = 0;
-            if (pollWithTimeout(&pfds[1], 1, 0) <= 0 || pfds[1].revents == 0)
+            const size_t wait_ms = read_anything ? std::min(remaining_ms, wait_for_writer_ms) : 0;
+            if (pollWithTimeout(&pfds[1], 1, wait_ms) <= 0 || pfds[1].revents == 0)
                 return;
 
             readStderrOnce(with_reaction);
+            read_anything = true;
         }
     }
 
@@ -794,6 +811,49 @@ private:
 /// Whether a pooled process is gone and left nothing behind on its stdout. `POLLHUP` without
 /// `POLLIN` is a write end that is closed and a pipe that is empty; a live worker waiting for its
 /// next request reports neither.
+/// What a pooled process that exited in the pool left on its stderr. It wrote that after the
+/// hand-back probe of the query it last served and before it died, so nobody has read it: the
+/// query is over and the process is about to be replaced. It is reported against the process
+/// (logged by the caller) rather than dropped - a diagnostic written on the way out is the one a
+/// person debugging the command most wants to see. Capped for the log line; the pipe is read to
+/// its end regardless, and only when there is something to read, so a grandchild that inherited
+/// the descriptor cannot block the borrow.
+static String readLeftoverStderrOfExitedProcess(const ShellCommand & process)
+{
+    static constexpr size_t max_reported = 4_KiB;
+    String result;
+    char buffer[4_KiB];
+
+    while (true)
+    {
+        pollfd pfd{};
+        pfd.fd = process.err.getFD();
+        pfd.events = POLLIN;
+
+        int res = 0;
+        do
+        {
+            pfd.revents = 0;
+            res = ::poll(&pfd, 1, 0);
+        }
+        while (res < 0 && errno == EINTR);
+
+        if (res <= 0 || (pfd.revents & POLLIN) == 0)
+            return result;
+
+        const ssize_t bytes = ::read(pfd.fd, buffer, sizeof(buffer));
+        if (bytes <= 0)
+        {
+            if (bytes < 0 && errno == EINTR)
+                continue;
+            return result;
+        }
+
+        if (result.size() < max_reported)
+            result.append(buffer, std::min(static_cast<size_t>(bytes), max_reported - result.size()));
+    }
+}
+
 static bool pooledProcessHasExitedCleanly(const ShellCommand & process)
 {
     pollfd pfd{};
@@ -867,6 +927,16 @@ public:
         returned_command = std::move(command);
     }
 
+    /// Who borrowed this worker last.
+    ///
+    /// A pooled region is not cleared between borrows, and a pool serves the queries of every
+    /// user: what one query left in the region, the command can read while serving the next.
+    /// Over the pipes a command only ever saw what it was sent. The user is what tells "the next
+    /// query" from "a query of somebody else": a borrow by a different user scrubs the regions
+    /// (`scrubRegionsForBorrower`), a borrow by the same user does not pay for it.
+    const String & lastBorrowerUser() const { return last_borrower_user; }
+    void recordBorrower(const String & user) { last_borrower_user = user; }
+
     /// The id for the next request to this process. It lives on the holder rather than on the
     /// borrower because what it is for is telling this request's response apart from anything the
     /// process wrote for an earlier one - and an earlier one can belong to an earlier borrow.
@@ -891,14 +961,16 @@ public:
         return shared_memory[index];
     }
 
-    /// What the region at `index` costs - its committed size - or zero if it has not been created
-    /// yet. Lets the borrower charge its query memory tracker for the right number of bytes BEFORE
-    /// the region is created or reused, because creating one commits its pages. The committed size
-    /// rather than the mapped one: a growth that reserved its pages but could not map them leaves
-    /// the file larger than the mapping, and those pages cost what any others do.
+    /// What the region at `index` costs - the length of its file, re-read now - or zero if it has
+    /// not been created yet. Lets the borrower charge its query memory tracker for the right number
+    /// of bytes BEFORE the region is created or reused, because creating one commits its pages. The
+    /// file's length rather than the mapped size: a growth that reserved its pages but could not
+    /// map them, or a command that extended the file behind the server's back, leaves the file
+    /// larger than the mapping, and those pages cost what any others do. Re-read at every borrow,
+    /// so that a command's extension is charged from the next borrow on.
     size_t getSharedMemorySize(size_t index) const
     {
-        return shared_memory[index] ? shared_memory[index]->backingSize() : 0;
+        return shared_memory[index] ? shared_memory[index]->refreshBackingSize() : 0;
     }
 
     void growSharedMemory(size_t index, size_t new_size)
@@ -933,20 +1005,33 @@ public:
     /// regions the holder actually still owns, which may be fewer than at the start of the borrow
     /// (a discarded worker drops them) or larger (they may have grown).
     ///
-    /// A region is sealed against shrinking and only the server grows it, so its `backingSize` is
-    /// the truth about what the region holds - the command cannot change it. A pooled region keeps
-    /// whatever size its largest chunk grew it to (or its largest growth committed, even one that
-    /// then failed to map), for the life of the worker, and that is what the server is charged
-    /// for while the worker sits idle.
+    /// A region is sealed against shrinking, so its file can only be longer than the server last
+    /// saw it - after a growth of the server's own, or after the command extended it, which the
+    /// seals do not prevent. The length is re-read here, so that what the server is charged for
+    /// while the worker sits idle is what the file holds at that moment, and a region a command
+    /// extended is charged for from this hand-over on. A pooled region keeps that size for the
+    /// life of the worker.
     ///
     /// Never throws: this runs on a cleanup path, and it is an accounting hand-back rather than an
-    /// allocation — the memory is already mapped, refusing the charge would not free anything.
+    /// allocation — the memory is already mapped, refusing the charge would not free anything. A
+    /// failed re-read falls back to the size last seen, which is a lower bound.
     void acquireChargeFromBorrower() noexcept
     {
         size_t bytes = 0;
         for (const auto & region : shared_memory)
-            if (region)
+        {
+            if (!region)
+                continue;
+            try
+            {
+                bytes += region->refreshBackingSize();
+            }
+            catch (...)
+            {
+                tryLogCurrentException("ShellCommandHolder", "Cannot re-read the size of a pooled shared-memory region; charging the size last seen");
                 bytes += region->backingSize();
+            }
+        }
 
         if (!bytes)
             return;
@@ -986,6 +1071,7 @@ private:
     std::unique_ptr<ShellCommand> returned_command;
     ShellCommandBuilderFunc func;
     std::array<SharedMemoryRegionPtr, 2> shared_memory;
+    String last_borrower_user;
     size_t persistent_memory_charge = 0;
 };
 
@@ -1246,6 +1332,20 @@ namespace
 
                 if (!executor->pull(chunk))
                     return {};
+
+                /// A command that produces more rows than requested violates the UDF protocol. A
+                /// row format cannot hand over more than `max_block_size` rows at once, but a
+                /// block format (`Native`, `Arrow`) returns the command's block whole, so the
+                /// excess can arrive inside this very chunk. Detect it here, before the chunk
+                /// leaves the source, so that the exception marks the command invalid and a
+                /// pooled worker is discarded instead of being returned as if it had answered
+                /// correctly - which is what counting the rows further up the pipeline would do.
+                if (configuration.read_fixed_number_of_rows
+                    && current_read_rows + chunk.getNumRows() > configuration.number_of_rows_to_read)
+                    throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+                        "Executable UDF wrong result, expected {} row(s), but the command produced more (at least {})",
+                        configuration.number_of_rows_to_read,
+                        current_read_rows + chunk.getNumRows());
 
                 current_read_rows += chunk.getNumRows();
             }
@@ -1876,6 +1976,9 @@ namespace
                         ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryAllocatedBytes, shared_memory_size_);
                 }
 
+                if (command_holder)
+                    scrubRegionsForBorrower();
+
                 /// Only now the process. A `memfd` has no name a process could open later, so the
                 /// command reaches its regions by having inherited their descriptors at `exec` -
                 /// which is why the regions above had to come first. A pooled worker that served an
@@ -1892,11 +1995,22 @@ namespace
                     /// regions are unaffected and the replacement inherits the very same ones.
                     if (worker_is_reused && pooledProcessHasExitedCleanly(*command))
                     {
-                        LOG_DEBUG(
-                            getLogger("ShellCommandSharedMemorySource"),
-                            "The process of an executable UDF (pid {}) exited while it was idle in the pool; "
-                            "starting a replacement for this borrow.",
-                            command->getPid());
+                        /// Whatever it said on its way out is read and reported now, before the
+                        /// process is dropped with its pipes: nobody else will ever read it.
+                        const String leftover_stderr = readLeftoverStderrOfExitedProcess(*command);
+                        if (leftover_stderr.empty())
+                            LOG_DEBUG(
+                                getLogger("ShellCommandSharedMemorySource"),
+                                "The process of an executable UDF (pid {}) exited while it was idle in the pool; "
+                                "starting a replacement for this borrow.",
+                                command->getPid());
+                        else
+                            LOG_WARNING(
+                                getLogger("ShellCommandSharedMemorySource"),
+                                "The process of an executable UDF (pid {}) exited while it was idle in the pool, "
+                                "after writing to its stderr; starting a replacement for this borrow. Stderr: {}",
+                                command->getPid(),
+                                leftover_stderr);
 
                         command.reset();
                         command = command_holder->buildCommand();
@@ -2578,6 +2692,43 @@ namespace
         /// something it did not do, which under `stderr_reaction` `throw` is the difference between
         /// a confusing failure and a wrong accusation. They are logged instead, so they are not
         /// lost, and the query that borrows the worker is left alone.
+        /// Clears the regions when this borrow belongs to a different user than the previous
+        /// one. What a query wrote into a pooled region stays there until overwritten, and the
+        /// command serving the next query can read it - over the pipes it only ever saw what it
+        /// was sent. The user boundary is where that matters, and the cost is paid only there: a
+        /// `memset` of the region, nothing when the user is the same. The whole region and not just
+        /// what the server knows it used: the command may have written anywhere in it, and only
+        /// zeroing everything says anything about all of it. Freeing the pages instead of zeroing
+        /// them is not an option - `FALLOC_FL_PUNCH_HOLE` is refused by the very seal that makes
+        /// the region safe to map.
+        void scrubRegionsForBorrower()
+        {
+            const String & user = context->getUserName();
+            if (!command_holder->lastBorrowerUser().empty() && command_holder->lastBorrowerUser() != user)
+            {
+                for (const auto & region : regions)
+                {
+                    if (!region)
+                        continue;
+
+                    /// The whole file, not just the mapping. The file can be longer than what the
+                    /// server has mapped - a command that extended it, or a growth that committed
+                    /// its pages and could not map them - and the command maps the whole file, so
+                    /// a stale tail beyond the mapping is exactly as readable as the rest. Grow the
+                    /// mapping to the file first: the query is already charged for the file's
+                    /// length (see `getSharedMemorySize`), and a region only ever grows, so this
+                    /// is where the transport would end up anyway.
+                    const size_t backing = region->refreshBackingSize();
+                    if (backing > region->size())
+                        region->grow(backing);
+
+                    memset(region->data(), 0, region->size());
+                    ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryScrubbedBytes, region->size());
+                }
+            }
+            command_holder->recordBorrower(user);
+        }
+
         void discardStderrLeftByAPreviousBorrow()
         {
             if (!is_pooled)
@@ -3247,11 +3398,22 @@ Pipe ShellCommandSourceCoordinator::createPipe(
         /// bytes are what matters (see `ShellCommandSource::quarantineReusedWorker`).
         if (worker_is_reused && pooledProcessHasExitedCleanly(*process))
         {
-            LOG_DEBUG(
-                getLogger("ShellCommandSource"),
-                "The process of a pooled command (pid {}) exited while it was idle in the pool; starting a "
-                "replacement for this borrow.",
-                process->getPid());
+            /// Whatever it said on its way out is read and reported now, before the process is
+            /// dropped with its pipes: nobody else will ever read it.
+            const String leftover_stderr = readLeftoverStderrOfExitedProcess(*process);
+            if (leftover_stderr.empty())
+                LOG_DEBUG(
+                    getLogger("ShellCommandSource"),
+                    "The process of a pooled command (pid {}) exited while it was idle in the pool; starting a "
+                    "replacement for this borrow.",
+                    process->getPid());
+            else
+                LOG_WARNING(
+                    getLogger("ShellCommandSource"),
+                    "The process of a pooled command (pid {}) exited while it was idle in the pool, after writing "
+                    "to its stderr; starting a replacement for this borrow. Stderr: {}",
+                    process->getPid(),
+                    leftover_stderr);
 
             process.reset();
             process = process_holder->buildCommand();

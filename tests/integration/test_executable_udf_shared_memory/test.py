@@ -154,6 +154,32 @@ def started_cluster():
         cluster.shutdown()
 
 
+
+def wait_until_blocked_writing(pid, timeout=30):
+    # Waits until the process is blocked in `write` - here, on a full stderr pipe nobody is reading.
+    # The point is to make the next borrow start only once the flood is provably under way, on any
+    # machine, instead of sleeping for "long enough" and hoping.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        wchan = node.exec_in_container(["bash", "-c", f"cat /proc/{pid}/wchan 2>/dev/null || true"]).strip()
+        # `pipe_write` up to Linux 6.x, `anon_pipe_write` from 7.0 on.
+        if wchan.endswith("pipe_write"):
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"process {pid} did not block writing to its stderr within {timeout}s (wchan={wchan!r})")
+
+
+def wait_until_exited(pid, timeout=30):
+    # Waits until the process has exited - left as a zombie for the server to reap, or gone. What
+    # the tests need is "provably dead before the next borrow", on any machine, rather than a sleep.
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        stat = node.exec_in_container(["bash", "-c", f"cat /proc/{pid}/stat 2>/dev/null || true"]).strip()
+        if not stat or stat[stat.rfind(")") + 2] == "Z":
+            return
+        time.sleep(0.05)
+    raise AssertionError(f"process {pid} did not exit within {timeout}s")
+
 def test_shared_memory_udf_single(started_cluster):
     skip_test_msan(node)
 
@@ -616,6 +642,10 @@ def test_shared_memory_udf_invalid_config_is_rejected(started_cluster):
         ("test_function_shm_bad_size_no_shm", "`shared_memory_size` requires `use_shared_memory`"),
         ("test_function_shm_bad_max_size_no_shm", "`shared_memory_max_size` requires `use_shared_memory`"),
         ("test_function_shm_bad_max_lt_size", "`shared_memory_max_size` (524288) must not be smaller"),
+        # The size is the one thing the transport cannot default: a missing one and an explicit
+        # zero are both a region of nothing, and both are refused the same way.
+        ("test_function_shm_bad_no_size", "`shared_memory_size` must be greater than zero"),
+        ("test_function_shm_bad_zero_size", "`shared_memory_size` must be greater than zero"),
     ]:
         # The function must not exist at all: a config the loader rejected leaves no function
         # behind, so this is UNKNOWN_FUNCTION rather than some runtime failure that happens to
@@ -910,6 +940,127 @@ def test_shared_memory_udf_idle_pooled_region_counts_against_the_server_limit(st
         node.query(f"SYSTEM RELOAD FUNCTION {second}")
 
 
+def test_shared_memory_udf_command_extending_the_region_is_charged_at_the_next_hand_over(started_cluster):
+    skip_test_msan(node)
+
+    # The seals stop a command from shrinking its region, not from extending it, and a command that
+    # does holds pages the server did not ask for. They are still the server's cost, so the region's
+    # file is measured again wherever its charge changes hands: when the worker goes back to the
+    # pool - the idle charge is then the extended size - and when it is borrowed again - the query
+    # is then charged the extended size, and a query that cannot afford it is refused before it
+    # touches the worker. The command doubles the file on every request, so each borrow sees a
+    # larger file than the one before.
+    region_size = 4 * 1048576
+
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_extend_pool_python")
+    pooled_before = pooled_shared_memory_baseline(region_size)
+
+    assert node.query("SELECT test_function_shm_extend_pool_python(1)") == "Key 1\n"
+    wait_for_pooled_shared_memory_bytes(
+        pooled_before + 2 * region_size,
+        "the idle charge does not cover the pages the command added to its region",
+    )
+    assert 2 * region_size in shm_region_sizes()
+
+    # The next borrow is charged the extended size - so under a limit that would have fitted the
+    # configured region it is refused, before anything reaches the worker.
+    with pytest.raises(Exception) as exc:
+        node.query(
+            "SELECT test_function_shm_extend_pool_python(2) FORMAT Null "
+            f"SETTINGS max_memory_usage = {region_size + region_size // 2}, max_untracked_memory = 0"
+        )
+    assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value), str(exc.value)
+    wait_for_pooled_shared_memory_bytes(
+        pooled_before + 2 * region_size, "a refused borrow changed the idle charge"
+    )
+
+    # A borrow that can afford it goes through, the command doubles the file again, and the idle
+    # charge follows.
+    assert node.query("SELECT test_function_shm_extend_pool_python(3)") == "Key 3\n"
+    wait_for_pooled_shared_memory_bytes(
+        pooled_before + 4 * region_size, "the idle charge did not follow the second extension"
+    )
+
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_extend_pool_python")
+    wait_for_pooled_shared_memory_bytes(pooled_before, "the extended region's charge was not released with the pool")
+
+
+def test_shared_memory_udf_pooled_region_is_scrubbed_between_users(started_cluster):
+    skip_test_msan(node)
+
+    # A pooled region keeps what the last request left in it, and the pool serves everybody: over
+    # the pipes a command only ever saw what it was sent, here it could read the tail of another
+    # user's query for free. The server therefore zeroes the region - but only when the user
+    # changes: the same user borrowing again sees its own leftovers, which keeps the cost off the
+    # common path.
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_peek_pool_python")
+    node.query("CREATE USER IF NOT EXISTS shm_peek_other IDENTIFIED WITH no_password")
+    node.query("GRANT SELECT ON *.* TO shm_peek_other")
+    scrubbed_before = profile_event_value("ExecutableUDFSharedMemoryScrubbedBytes")
+
+    # The first request finds a fresh region and dirties 4 KiB past its input.
+    assert node.query("SELECT test_function_shm_peek_pool_python(1)") == "clean\n"
+    # The same user again: the leftovers are still there, nothing was scrubbed.
+    assert node.query("SELECT test_function_shm_peek_pool_python(1)") == "dirty\n"
+    assert profile_event_value("ExecutableUDFSharedMemoryScrubbedBytes") == scrubbed_before
+
+    # Another user: the region is clean again. The whole region was scrubbed, not just what the
+    # server knew it had used: the command wrote its 4 KiB where the server never looked.
+    assert node.query("SELECT test_function_shm_peek_pool_python(1)", user="shm_peek_other") == "clean\n"
+    assert profile_event_value("ExecutableUDFSharedMemoryScrubbedBytes") - scrubbed_before == 65536
+
+    # And back: the first user does not get the other user's leftovers either.
+    assert node.query("SELECT test_function_shm_peek_pool_python(1)") == "clean\n"
+
+    # Same worker throughout - the pool holds one - so this is the scrub, not a fresh process.
+    node.query("DROP USER shm_peek_other")
+
+
+def test_shared_memory_udf_scrub_between_users_covers_a_tail_the_server_never_mapped(started_cluster):
+    skip_test_msan(node)
+
+    # The file behind a pooled region can be longer than what the server has mapped - a command
+    # extended it (only shrinking is sealed), or a growth committed its pages and could not map
+    # them. The command maps the whole file, so a stale tail beyond the server's mapping is as
+    # readable as the rest, and a scrub that only covered the mapping would leave exactly the
+    # bytes another user's command could still read. Here the command extends a 64 KiB region to
+    # 128 KiB and probes the tail at 64 KiB - past everything the server mapped when it created
+    # the region.
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_peek_extended_pool_python")
+    node.query("CREATE USER IF NOT EXISTS shm_peek_other IDENTIFIED WITH no_password")
+    node.query("GRANT SELECT ON *.* TO shm_peek_other")
+    scrubbed_before = profile_event_value("ExecutableUDFSharedMemoryScrubbedBytes")
+
+    assert node.query("SELECT test_function_shm_peek_extended_pool_python(1)") == "clean\n"
+    assert node.query("SELECT test_function_shm_peek_extended_pool_python(1)") == "dirty\n"
+    assert profile_event_value("ExecutableUDFSharedMemoryScrubbedBytes") == scrubbed_before
+
+    # Another user: the tail is clean, and the scrub covered the whole 128 KiB file - the server
+    # grew its mapping to the file before zeroing it.
+    assert node.query("SELECT test_function_shm_peek_extended_pool_python(1)", user="shm_peek_other") == "clean\n"
+    assert profile_event_value("ExecutableUDFSharedMemoryScrubbedBytes") - scrubbed_before == 131072
+    assert node.query("SELECT test_function_shm_peek_extended_pool_python(1)") == "clean\n"
+
+    node.query("DROP USER shm_peek_other")
+
+
+def test_shared_memory_udf_idle_dead_worker_late_stderr_is_reported(started_cluster):
+    skip_test_msan(node)
+
+    # The worker answers, waits out the hand-back probe, writes a diagnostic and exits in the pool.
+    # Nobody is reading its pipes at that point. The next borrow finds it dead and starts a
+    # replacement; the diagnostic has to be reported against the process before its pipes are
+    # closed with it, or the one line that explains why the worker died is lost.
+    first = node.query("SELECT test_function_shm_stderr_then_late_exit_pool_python(0)").strip()
+    assert first.isdigit()
+    wait_until_exited(first)
+    second = node.query("SELECT test_function_shm_stderr_then_late_exit_pool_python(1)").strip()
+
+    assert first != second, f"the dead worker was reused: {first}"
+    assert node.contains_in_log("exited while it was idle in the pool, after writing to its stderr")
+    assert node.contains_in_log("last words of the worker")
+
+
 def test_shared_memory_udf_pool_command_leaves_stdout_dirty(started_cluster):
     skip_test_msan(node)
 
@@ -950,7 +1101,10 @@ def test_shared_memory_udf_previous_borrow_stderr_is_not_thrown_at_the_next_quer
 
     pids = {first}
     for i in range(1, 3):
-        time.sleep(0.5)
+        # The command's gap is long (2 s) so that the query it answered is over - probe and all -
+        # before the flood starts, on any machine; and the next borrow waits for the flood to be
+        # under way, rather than for a fixed time.
+        wait_until_blocked_writing(first)
         pids.add(node.query(f"SELECT test_function_shm_stderr_flood_after_gap_throw_pool_python({i})").strip())
 
     assert len(pids) == 1, f"the worker was not reused: {pids}"

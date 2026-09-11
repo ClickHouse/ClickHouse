@@ -23,7 +23,10 @@ STATUS_OK = 0
 CHATTER = b"e" * (128 * 1024)
 
 # Comfortably longer than the drain the server performs when it takes the worker back.
-QUIET_GAP_SECONDS = 0.3
+# Overridable from the command line (`--gap SECONDS`): a test that needs the flood to start only
+# after the previous query is provably over, whatever the machine's speed, asks for a longer gap
+# and waits for the flood itself instead of sleeping.
+QUIET_GAP_SECONDS = float(sys.argv[sys.argv.index("--gap") + 1]) if "--gap" in sys.argv else 0.3
 
 
 def read_varint(stream):

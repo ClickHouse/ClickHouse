@@ -9,7 +9,8 @@
 #
 # Expects CLICKHOUSE and HERE to be set. Provides: bench_start_server, bench_query (runs a query,
 # stdout discarded, returns non-zero on failure), bench_time (prints elapsed seconds),
-# bench_syscall_io (prints "readMB writeMB"). The server is stopped on exit.
+# bench_syscall_io (prints "readMB writeMB"). Statistics over samples are stats.py's job. The
+# server is stopped on exit.
 
 BENCH_WORK="$(mktemp -d)"
 BENCH_PORT=""
@@ -125,8 +126,4 @@ bench_syscall_io() {
     echo "no OSReadChars/OSWriteChars in the profile events - cannot report syscall I/O" >&2
     cat "$BENCH_WORK/p.err" >&2
     return 1
-}
-
-bench_median() { # median of stdin numbers
-    sort -g | awk '{a[NR]=$1} END{ if(NR%2) print a[(NR+1)/2]; else printf "%.4f\n",(a[NR/2]+a[NR/2+1])/2 }'
 }

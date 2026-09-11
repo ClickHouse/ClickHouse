@@ -24,7 +24,7 @@ ROW_BYTES=100
 ITERS=7
 THREADS=1
 # Pinned rather than left to the server default: the block-size sweep in README.md moves the
-# pipe-vs-shared-memory ratio from 1.98x to 1.31x, so an unstated block size changes the headline
+# pipe-vs-shared-memory ratio from 2.06x to 1.19x, so an unstated block size changes the headline
 # result without anything about the transport changing.
 BLOCK_SIZE=65536
 
@@ -60,22 +60,40 @@ query_for() {
 }
 
 echo "clickhouse : $CLICKHOUSE"
-echo "workload   : $ROWS rows x $ROW_BYTES bytes, max_threads=$THREADS, max_block_size=$BLOCK_SIZE, iters=$ITERS (median) after one warm-up query per function"
+echo "workload   : $ROWS rows x $ROW_BYTES bytes, max_threads=$THREADS, max_block_size=$BLOCK_SIZE, iters=$ITERS (median, interquartile range, speedup with 95% bootstrap CI) after one warm-up query per function"
 echo
-printf "%-26s %12s %14s %14s\n" "transport" "median, s" "read via sc" "write via sc"
-printf "%-26s %12s %14s %14s\n" "--------------------------" "---------" "-----------" "------------"
+printf "%-26s %10s %14s %20s %12s %12s\n" "transport" "median, s" "IQR, s" "vs pipe baseline" "read via sc" "write via sc"
+printf "%-26s %10s %14s %20s %12s %12s\n" "--------------------------" "---------" "-------------" "--------------------" "-----------" "------------"
 
-for fn in bench_pipe_stream bench_pipe_chunk bench_shm bench_shm_busy; do
+# The samples of every transport are kept, so that the shared-memory result can be compared with
+# the fair pipe baseline as a ratio of medians with a bootstrap confidence interval (stats.py),
+# rather than as two numbers the reader has to compare by eye.
+for fn in bench_pipe_chunk bench_pipe_stream bench_pipe_chunk_1m bench_shm bench_pipe_busy bench_shm_busy; do
     # The first query starts the function's pool - the worker processes and, for shared memory,
     # their regions. It is not a sample: that is the cost a server pays once per worker.
     bench_query "$(query_for "$fn")" || exit 1
-    times=""
+    : > "$BENCH_WORK/$fn.samples"
     for _ in $(seq 1 "$ITERS"); do
         sample="$(bench_time "$(query_for "$fn")")" || exit 1
-        times+="$sample"$'\n'
+        printf '%s\n' "$sample" >> "$BENCH_WORK/$fn.samples"
     done
-    med="$(printf '%s' "$times" | bench_median)"
+    # Each variant is compared with the pipe function that does the same work: the echoes with
+    # bench_pipe_chunk, the busy command with bench_pipe_busy. Comparing a command that does
+    # artificial work with one that does none would measure the work, not the transport.
+    case "$fn" in
+        bench_pipe_chunk) baseline="" ;;
+        bench_shm_busy)   baseline="bench_pipe_busy" ;;
+        bench_pipe_busy)  baseline="" ;;
+        *)                baseline="bench_pipe_chunk" ;;
+    esac
+    if [[ -z "$baseline" ]]; then
+        read -r med q1 q3 <<< "$("$HERE/stats.py" summary "$BENCH_WORK/$fn.samples")"
+        speedup="1 (baseline)"
+    else
+        read -r med q1 q3 ratio lo hi <<< "$("$HERE/stats.py" ratio "$BENCH_WORK/$baseline.samples" "$BENCH_WORK/$fn.samples")"
+        speedup="${ratio}x [$lo-$hi]"
+    fi
     io="$(bench_syscall_io "$(query_for "$fn")")" || exit 1
     read -r rmb wmb <<< "$io"
-    printf "%-26s %12s %11s MB %11s MB\n" "$fn" "$med" "$rmb" "$wmb"
+    printf "%-26s %10s %14s %20s %9s MB %9s MB\n" "$fn" "$med" "$q1-$q3" "$speedup" "$rmb" "$wmb"
 done
