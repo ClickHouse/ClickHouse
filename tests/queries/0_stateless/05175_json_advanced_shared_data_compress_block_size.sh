@@ -49,3 +49,7 @@ w_nested=$(block_mean nested_wide "$COL" 0 65536 "$NESTED" "sum(length(toString(
 ovr=$(block_mean compact_ovr "json JSON(max_dynamic_paths = 0) SETTINGS (min_compress_block_size = 1)" 1000000000 65536 "$FLAT" "sum(length(json.key_5::String))")
 ref=$(block_mean compact_ref "$COL" 1000000000 65536 "$FLAT" "sum(length(json.key_5::String))")
 [ "$ref" -ge $((ovr * 4)) ] && echo "compact_override OK" || echo "compact_override FAIL (ovr=$ovr ref=$ref)"
+
+# An explicit per-column min_compress_block_size = 0 must be honored (not treated as inherit): it fragments.
+z=$(block_mean explicit_zero "json JSON(max_dynamic_paths = 0) SETTINGS (min_compress_block_size = 0)" 0 65536 "$FLAT" "sum(length(json.key_5::String))")
+[ "$z" -lt 4096 ] && echo "explicit_zero OK" || echo "explicit_zero FAIL (mean=$z)"

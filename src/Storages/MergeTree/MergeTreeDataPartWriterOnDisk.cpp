@@ -90,14 +90,11 @@ MergeTreeDataPartWriterOnDisk::MergeTreeDataPartWriterOnDisk(
 UInt64 MergeTreeDataPartWriterOnDisk::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const
 {
     const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
+    /// Honor an explicit column override even when it is 0 ("start a new block at every boundary");
+    /// inheritance is expressed by not setting it (or RESET SETTING), i.e. tryGet returning null.
     if (column_desc)
-    {
         if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-        {
-            if (UInt64 overridden = value->safeGet<UInt64>())
-               return overridden;
-        }
-    }
+            return value->safeGet<UInt64>();
     return settings.min_compress_block_size;
 }
 
