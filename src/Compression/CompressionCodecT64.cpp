@@ -305,8 +305,9 @@ void transposeBytes(T value, UInt64 * matrix, UInt32 col)
 }
 
 template <typename T>
-void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
+T reverseTransposeBytes(const UInt64 * matrix, UInt32 col)
 {
+    T value = 0;
     const auto * matrix8 = reinterpret_cast<const UInt8 *>(matrix);
 
     if constexpr (sizeof(T) > 4)
@@ -327,6 +328,7 @@ void reverseTransposeBytes(const UInt64 * matrix, UInt32 col, T & value)
         value |= static_cast<UInt32>(matrix8[64 * 1 + col]) << (8 * 1);
 
     value |= static_cast<UInt32>(matrix8[col]);
+    return value;
 }
 
 
@@ -347,20 +349,6 @@ void load(const char * src, T * buf, UInt32 tail = 64)
         }
     }
 }
-
-template <typename T>
-void store(const T * buf, char * dst, UInt32 tail = 64)
-{
-    memcpy(dst, buf, tail * sizeof(T));
-}
-
-template <typename T>
-void clear(T * buf)
-{
-    for (UInt32 i = 0; i < 64; ++i)
-        buf[i] = 0;
-}
-
 
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
@@ -411,10 +399,23 @@ ALWAYS_INLINE void transpose(const T * src, char * dst, UInt32 num_bits, UInt32 
     }
 }
 
+template <typename T>
+T restoreUpperBits(T value, T upper_min, T upper_max [[maybe_unused]], T sign_bit [[maybe_unused]])
+{
+    if constexpr (is_signed_v<T>)
+    {
+        if (sign_bit && !(value & sign_bit))
+            return static_cast<T>(value | upper_max);
+    }
+
+    return static_cast<T>(value | upper_min);
+}
+
 MULTITARGET_FUNCTION_X86_V4(
 MULTITARGET_FUNCTION_HEADER(
 template <typename T, bool full>
-void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * buf, UInt32 num_bits, UInt32 tail) /// NOLINT
+void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((
+    const char * src, char * dst, UInt32 num_bits, T upper_min, T upper_max, T sign_bit, UInt32 tail) /// NOLINT
 {
     UInt64 matrix[64] = {};
     memcpy(matrix, src, num_bits * sizeof(UInt64));
@@ -435,52 +436,29 @@ void), reverseTransposeImpl, MULTITARGET_FUNCTION_BODY((const char * src, T * bu
         reverseTranspose64x8(matrix_line);
     }
 
-    clear(buf);
     for (UInt32 col = 0; col < tail; ++col)
-        reverseTransposeBytes(matrix, col, buf[col]);
+    {
+        T value = reverseTransposeBytes<T>(matrix, col);
+        value = restoreUpperBits(value, upper_min, upper_max, sign_bit);
+        memcpy(dst + col * sizeof(T), &value, sizeof(value));
+    }
 })
 )
 
 /// UInt64[N] transposed matrix -> UIntX[64]
 template <typename T, bool full = false>
-ALWAYS_INLINE void reverseTranspose(const char * src, T * buf, UInt32 num_bits, UInt32 tail = 64)
+ALWAYS_INLINE void reverseTranspose(const char * src, char * dst, UInt32 num_bits, T upper_min, T upper_max, T sign_bit, UInt32 tail = 64)
 {
 #if USE_MULTITARGET_CODE
     if (isArchSupported(TargetArch::x86_64_v4))
     {
-        reverseTransposeImpl_x86_64_v4<T, full>(src, buf, num_bits, tail);
+        reverseTransposeImpl_x86_64_v4<T, full>(src, dst, num_bits, upper_min, upper_max, sign_bit, tail);
         return;
     }
 #endif
     {
-        reverseTransposeImpl<T, full>(src, buf, num_bits, tail);
+        reverseTransposeImpl<T, full>(src, dst, num_bits, upper_min, upper_max, sign_bit, tail);
     }
-}
-
-template <typename T>
-void restoreUpperBits(T * buf, T upper_min, T upper_max [[maybe_unused]], T sign_bit [[maybe_unused]], UInt32 tail = 64)
-{
-    if constexpr (is_signed_v<T>)
-    {
-        /// Restore some data as negatives and others as positives
-        if (sign_bit)
-        {
-            for (UInt32 col = 0; col < tail; ++col)
-            {
-                T & value = buf[col];
-
-                if (value & sign_bit)
-                    value |= upper_min;
-                else
-                    value |= upper_max;
-            }
-
-            return;
-        }
-    }
-
-    for (UInt32 col = 0; col < tail; ++col)
-        buf[col] |= upper_min;
 }
 
 
@@ -691,21 +669,16 @@ UInt32 decompressData(const char * src, UInt32 bytes_size, char * dst, UInt32 un
         }
     }
 
-    T buf[CompressionCodecT64::MATRIX_SIZE];
     for (UInt32 i = 0; i < num_full; ++i)
     {
-        reverseTranspose<T, full>(src, buf, num_bits);
-        restoreUpperBits(buf, upper_min, upper_max, sign_bit);
-        store<T>(buf, dst, CompressionCodecT64::MATRIX_SIZE);
+        reverseTranspose<T, full>(src, dst, num_bits, upper_min, upper_max, sign_bit);
         src += src_shift;
         dst += dst_shift;
     }
 
     if (tail)
     {
-        reverseTranspose<T, full>(src, buf, num_bits, tail);
-        restoreUpperBits(buf, upper_min, upper_max, sign_bit, tail);
-        store<T>(buf, dst, tail);
+        reverseTranspose<T, full>(src, dst, num_bits, upper_min, upper_max, sign_bit, tail);
         dst += tail * sizeof(T);
     }
 
