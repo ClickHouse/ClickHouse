@@ -128,6 +128,13 @@ private:
     void processCloseQuery();
     void processSyncQuery();
 
+    /// Reports a failed statement to the client with `ErrorResponse`. Must be called from within a
+    /// `catch` block: a failed write to the client (for example, it went away in the middle of the
+    /// result) cancels `out`, and nothing can be written into a canceled buffer any more. There is
+    /// nobody to deliver `ErrorResponse` to in that case, so the exception being handled is
+    /// rethrown to tear the connection down instead.
+    void sendErrorResponseOrRethrow(const Exception & e);
+
     std::function<void(const Progress&)> createProgressCallback(
         ContextMutablePtr query_context,
         std::atomic<UInt64>& result_rows,

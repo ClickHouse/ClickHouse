@@ -46,8 +46,13 @@ count_running
 
 # Kill the client without letting it send `Terminate` or `CancelRequest`: the server only learns
 # about it when a write to the socket fails.
+# Temporarily redirect the shell's own stderr: bash reports the death of the background job as
+# `Killed`, and that notification goes to the stderr of the shell itself, not to the stderr of
+# `wait`, so it cannot be silenced with a redirection on a single command.
+exec {saved_stderr}>&2 2>/dev/null
 kill -KILL "${PSQL_PID}"
-wait "${PSQL_PID}" 2>/dev/null
+wait "${PSQL_PID}"
+exec 2>&"${saved_stderr}" {saved_stderr}>&-
 
 for _ in {1..300}
 do

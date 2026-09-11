@@ -1051,17 +1051,8 @@ void PostgreSQLHandler::processQuery()
     }
     catch (const Exception & e)
     {
-        /// A failed write to the client (for example, it went away in the middle of the result)
-        /// cancels `out`, and nothing can be written into a canceled buffer any more. There is
-        /// nobody to deliver `ErrorResponse` to, so tear the connection down instead.
-        if (out->isCanceled())
-            throw;
-
         bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// A failed query does not terminate the session in PostgreSQL: the server
         /// sends `ErrorResponse` and returns to the `ReadyForQuery` state. This is
         /// only safe while nothing has been sent for the failed statement -
@@ -1194,10 +1185,7 @@ void PostgreSQLHandler::processParseQuery()
     }
     catch (const Exception & e)
     {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// Keep the connection alive and discard messages through `Sync`.
         ignore_until_sync = true;
     }
@@ -1215,10 +1203,7 @@ void PostgreSQLHandler::processBindQuery()
     }
     catch (const Exception & e)
     {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// Keep the connection alive and discard messages through `Sync`.
         ignore_until_sync = true;
     }
@@ -1235,10 +1220,7 @@ void PostgreSQLHandler::processDescribeQuery()
     }
     catch (const Exception & e)
     {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// Keep the connection alive and discard messages through `Sync`.
         ignore_until_sync = true;
     }
@@ -1283,17 +1265,8 @@ void PostgreSQLHandler::processExecuteQuery()
     }
     catch (const Exception & e)
     {
-        /// A failed write to the client (for example, it went away in the middle of the result)
-        /// cancels `out`, and nothing can be written into a canceled buffer any more. There is
-        /// nobody to deliver `ErrorResponse` to, so tear the connection down instead.
-        if (out->isCanceled())
-            throw;
-
         bool nothing_sent_for_failed_statement = out->count() == out_bytes_before_statement;
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// Recovering to `Sync` is only safe while nothing has been sent for the
         /// failed statement - otherwise the output stream may be cut in the
         /// middle of a message and continuing would desynchronize the protocol
@@ -1357,10 +1330,7 @@ void PostgreSQLHandler::processCloseQuery()
     }
     catch (const Exception & e)
     {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         /// Keep the connection alive and discard messages through `Sync`.
         ignore_until_sync = true;
     }
@@ -1382,12 +1352,25 @@ void PostgreSQLHandler::processSyncQuery()
     }
     catch (const Exception & e)
     {
-        message_transport->send(
-            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
-                PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
-            true);
+        sendErrorResponseOrRethrow(e);
         throw;
     }
+}
+
+void PostgreSQLHandler::sendErrorResponseOrRethrow(const Exception & e)
+{
+    /// A failed write to the client (for example, it went away in the middle of the result) cancels
+    /// `out`, and nothing can be written into a canceled buffer any more. There is nobody to
+    /// deliver `ErrorResponse` to, so rethrow the exception being handled and tear the connection
+    /// down instead. Once `out` is canceled, no handler can recover by sending another message,
+    /// which is why this is checked in every place that reports an error to the client.
+    if (out->isCanceled())
+        throw;
+
+    message_transport->send(
+        PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse(
+            PostgreSQLProtocol::Messaging::ErrorOrNoticeResponse::ERROR, "2F000", "Query execution failed.\n" + e.displayText()),
+        true);
 }
 
 bool PostgreSQLHandler::isEmptyQuery(const String & query)
