@@ -5,7 +5,8 @@
 DROP DICTIONARY IF EXISTS cache_hits;
 DROP TABLE IF EXISTS hits_1m;
 
-CREATE TABLE hits_1m AS test.hits
+CREATE TABLE hits_1m
+(WatchID UInt64, UserID UInt64, SearchPhrase String, EventDate Date, CounterID UInt32)
 ENGINE = MergeTree
 PARTITION BY toYYYYMM(EventDate)
 ORDER BY (CounterID, EventDate, intHash32(UserID))
@@ -15,8 +16,10 @@ SETTINGS storage_policy = 'default',
 index_granularity = 8192,
 index_granularity_bytes = 10485760;
 
-INSERT INTO hits_1m SELECT * FROM test.hits LIMIT 1000000
+INSERT INTO hits_1m SELECT WatchID, UserID, SearchPhrase, EventDate, CounterID FROM test.hits LIMIT 1000000
 SETTINGS min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_block_size = 8192, max_insert_threads = 1, max_threads = 1, max_parallel_replicas=1;
+
+SELECT count() FROM hits_1m;
 
 CREATE DICTIONARY cache_hits
 (WatchID UInt64, UserID UInt64, SearchPhrase String)
