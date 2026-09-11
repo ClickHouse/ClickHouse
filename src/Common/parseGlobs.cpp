@@ -269,6 +269,9 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
     std::vector<SelectorGlob> globs;
     std::string_view tail(path);
 
+    /// The number of paths the globs seen so far expand to, a running Cartesian product.
+    size_t num_paths = 1;
+
     while (!noSelectorGlobsToExpand(tail))
     {
         if (globs.size() >= MAX_SELECTOR_GLOBS)
@@ -309,6 +312,16 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                                     "Unexpected ',' found in path '{}' at position {}.", path, tail_offset + i);
                 anchor_positions.push_back(i);
+
+                /// Refuse an oversized group while it is being scanned, and not after it has been
+                /// materialized: otherwise a single selector with an enormous number of
+                /// alternatives - a whole file passed as a path by `file(file(...))` - still costs
+                /// memory proportional to its number of commas before the limit below is reached.
+                /// After `k` commas the group has at least `k + 1` alternatives, and
+                /// `anchor_positions` holds the '{' and those `k` commas.
+                if (num_paths > MAX_EXPANDED_PATHS / anchor_positions.size())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "The '{{}}' globs in the path expand to more than {} paths.", MAX_EXPANDED_PATHS);
             }
         }
         if (!opened || !closed)
@@ -320,18 +333,14 @@ std::vector<std::string> expandSelectionGlob(const std::string & path)
             glob.alternatives.push_back(
                 tail.substr(anchor_positions[i - 1] + 1, anchor_positions[i] - anchor_positions[i - 1] - 1));
 
-        globs.push_back(std::move(glob));
-        tail = tail.substr(anchor_positions.back() + 1);
-    }
-
-    /// Refuse a combinatorial explosion before generating anything.
-    size_t num_paths = 1;
-    for (const auto & glob : globs)
-    {
+        /// Refuse a combinatorial explosion before generating anything.
         if (num_paths > MAX_EXPANDED_PATHS / glob.alternatives.size())
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                             "The '{{}}' globs in the path expand to more than {} paths.", MAX_EXPANDED_PATHS);
         num_paths *= glob.alternatives.size();
+
+        globs.push_back(std::move(glob));
+        tail = tail.substr(anchor_positions.back() + 1);
     }
 
     /// generate result: prefix/{a,b,c}/suffix -> [prefix/a/suffix, prefix/b/suffix, prefix/c/suffix]

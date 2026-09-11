@@ -122,4 +122,22 @@ TEST(Common, expandSelectionGlob)
     /// Too many globs: every group is a single element, so this expands to one path, but only after
     /// looking at every one of the 2000 groups.
     EXPECT_THROW(expandSelectionGlob(repeat("{ab}", 2000)), DB::Exception);
+
+    /// A single group with an enormous number of alternatives - what a whole file passed as a path
+    /// by `file(file(...))` looks like. The limit has to fire while the group is being scanned: if
+    /// it were checked only after the group has been parsed, the parser would keep one offset and
+    /// one `string_view` per alternative, so the memory it takes would grow with the size of the
+    /// input even though nothing is ever expanded. The scan stops at the comma that makes the group
+    /// exceed the limit, which is why the pattern below - a hundred times more alternatives than
+    /// the limit allows - is rejected with the same message as a small one.
+    std::string one_huge_group = "{" + repeat("a,", 10'000'000) + "a}";
+    try
+    {
+        expandSelectionGlob(one_huge_group);
+        FAIL() << "An oversized group was not rejected.";
+    }
+    catch (const DB::Exception & e)
+    {
+        EXPECT_NE(std::string(e.message()).find("expand to more than"), std::string::npos) << e.message();
+    }
 }
