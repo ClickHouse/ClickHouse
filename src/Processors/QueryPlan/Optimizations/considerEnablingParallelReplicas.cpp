@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/JoinLazyColumnsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/LazilyReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromParallelReplicas.h>
 #include <Processors/QueryPlan/ReadFromRemote.h>
@@ -354,6 +355,18 @@ void considerEnablingParallelReplicas(
                 /// analysis, so stop measuring as soon as one is found.
                 if (found_read_worth_parallelizing)
                     return;
+
+                /// A lazy read takes the rows the sort above it picked, so which rows it reads is
+                /// decided at execution and cannot be estimated here. Nor is it small: those rows are
+                /// spread over the whole table, so it typically touches almost every granule of the
+                /// columns it was left to read - the very columns lazy materialization took out of
+                /// the read this loop does measure. Count it as qualifying, like any read whose size
+                /// is unknown.
+                if (typeid_cast<const LazilyReadFromMergeTree *>(frame_node.step.get()))
+                {
+                    found_read_worth_parallelizing = true;
+                    return;
+                }
 
                 const auto * reading = typeid_cast<const ReadFromMergeTree *>(frame_node.step.get());
                 if (!reading)
