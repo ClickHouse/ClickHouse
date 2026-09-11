@@ -208,20 +208,40 @@ TEST(KeyConditionIsTrivialCast, PublicCastWithMatchingTypeIsStillStripped)
     EXPECT_TRUE(dagContainsFunction(*filter_dag.dag, "equals"));
 }
 
-/// Negative case: when the inner type does not match the target type, the
-/// cast is not a no-op and `isTrivialCast` must leave it in place. This
-/// guards against the patch over-widening and dropping casts that actually
-/// change the value's type.
-TEST(KeyConditionIsTrivialCast, InternalCastWithMismatchedTypeIsNotStripped)
+/// `_CAST(Int32, 'Nullable(Int32)')` only widens a non-nullable type into
+/// `Nullable` of that very same underlying type, so it can never turn a
+/// non-`NULL` value into `NULL`. `isTrivialCast` recognizes this as
+/// value-preserving (this is the shape `optimize_extract_common_expressions`
+/// produces) and the cast must be stripped, exactly like a same-type cast.
+TEST(KeyConditionIsTrivialCast, InternalCastWideningToNullableOfSameTypeIsStripped)
 {
     auto context = getRegisteredContext();
     auto int32 = std::make_shared<DataTypeInt32>();
     auto nullable_int32 = makeNullable(std::make_shared<DataTypeInt32>());
 
-    /// `_CAST(Int32, 'Nullable(Int32)')` is a real type change (it wraps in
-    /// `Nullable`), so `isTrivialCast` must return false and the cast must
-    /// survive cloning.
     auto shape = buildEqualsWithCast(context, nullable_int32, int32, nullable_int32, CastType::nonAccurate);
+
+    ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context, /* boolean_context */ false);
+    ASSERT_TRUE(filter_dag.dag.has_value());
+
+    EXPECT_FALSE(dagContainsFunction(*filter_dag.dag, "_CAST"));
+    EXPECT_TRUE(dagContainsFunction(*filter_dag.dag, "equals"));
+}
+
+/// Negative case: when the cast changes the value's underlying type (not
+/// merely wrapping it in `Nullable`), it is not a no-op and `isTrivialCast`
+/// must leave it in place. This guards against the patch over-widening and
+/// dropping casts that actually change the value.
+TEST(KeyConditionIsTrivialCast, InternalCastWithMismatchedUnderlyingTypeIsNotStripped)
+{
+    auto context = getRegisteredContext();
+    auto int32 = std::make_shared<DataTypeInt32>();
+    auto nullable_int64 = makeNullable(std::make_shared<DataTypeInt64>());
+
+    /// `_CAST(Int32, 'Nullable(Int64)')` changes the underlying type
+    /// (`Int32` -> `Int64`), so `isTrivialCast` must return false and the
+    /// cast must survive cloning.
+    auto shape = buildEqualsWithCast(context, nullable_int64, int32, nullable_int64, CastType::nonAccurate);
 
     ActionsDAGWithInversionPushDown filter_dag(shape.predicate, context, /* boolean_context */ false);
     ASSERT_TRUE(filter_dag.dag.has_value());
