@@ -3,3 +3,4 @@
 \N
 2
 1
+AggregateFunction(groupArrayMovingSum(2), UInt64)
