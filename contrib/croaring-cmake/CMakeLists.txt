@@ -36,7 +36,7 @@ if (OS_WINDOWS)
     # Only the ones that actually collide: croaring's other `extern inline` copies are what its own
     # C sources call when they do not inline, so removing those breaks the build instead. Add a name
     # here if the linker reports it as a duplicate.
-    set (DUPLICATED_INLINE_FUNCTIONS roaring_bitmap_contains)
+    set (DUPLICATED_INLINE_FUNCTIONS array_container_contains binarySearch roaring_bitmap_contains)
 
     set (PATCHED_SRCS)
     foreach (src ${SRCS})

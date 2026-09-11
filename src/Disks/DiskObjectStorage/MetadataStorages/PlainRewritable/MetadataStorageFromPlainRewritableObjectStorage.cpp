@@ -258,7 +258,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
     : object_storage(std::move(object_storage_))
     , metrics(createPlainRewritableMetrics(object_storage->getType()))
     , storage_path_prefix(std::move(storage_path_prefix_))
-    , storage_path_full(fs::path(object_storage->getRootPrefix()) / storage_path_prefix)
+    , storage_path_full(appendObjectStorageKeySegment(object_storage->getRootPrefix(), storage_path_prefix))
     , fs(metrics->directory_map_size, metrics->file_count)
     , layout(std::make_shared<PlainRewritableLayout>(object_storage->getCommonKeyPrefix()))
 {
@@ -357,7 +357,7 @@ std::optional<StoredObjects> MetadataStorageFromPlainRewritableObjectStorage::ge
     if (!directory_remote_info)
         return std::nullopt;
 
-    auto object_key = layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename());
+    auto object_key = layout->constructFileObjectKey(directory_remote_info->remote_path, pathToGenericString(normalized_path.filename()));
     return StoredObjects{StoredObject(object_key, path, file_remote_info->bytes_size)};
 }
 
@@ -492,7 +492,7 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveDirectory(c
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::unlinkFile(const std::string & path, bool if_exists, bool /*should_remove_objects*/)
 {
-    uncommitted_state.useDirectory(normalizePath(path).parent_path());
+    uncommitted_state.useDirectory(pathToGenericString(normalizePath(path).parent_path()));
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation>(
         path,
@@ -533,8 +533,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::removeRecursive
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(const std::string & path_from, const std::string & path_to)
 {
-    uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
-    uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
+    uncommitted_state.useDirectory(pathToGenericString(normalizePath(path_from).parent_path()));
+    uncommitted_state.useDirectory(pathToGenericString(normalizePath(path_to).parent_path()));
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageCopyFileOperation>(
         path_from,
@@ -547,8 +547,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::createHardLink(
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const std::string & path_from, const std::string & path_to)
 {
-    uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
-    uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
+    uncommitted_state.useDirectory(pathToGenericString(normalizePath(path_from).parent_path()));
+    uncommitted_state.useDirectory(pathToGenericString(normalizePath(path_to).parent_path()));
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/false,
@@ -563,8 +563,8 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::moveFile(const 
 
 void MetadataStorageFromPlainRewritableObjectStorageTransaction::replaceFile(const std::string & path_from, const std::string & path_to)
 {
-    uncommitted_state.useDirectory(normalizePath(path_from).parent_path());
-    uncommitted_state.useDirectory(normalizePath(path_to).parent_path());
+    uncommitted_state.useDirectory(pathToGenericString(normalizePath(path_from).parent_path()));
+    uncommitted_state.useDirectory(pathToGenericString(normalizePath(path_to).parent_path()));
 
     operations.addOperation(std::make_unique<MetadataStorageFromPlainObjectStorageMoveFileOperation>(
         /*replaceable=*/true,
@@ -600,8 +600,8 @@ ObjectStorageKey MetadataStorageFromPlainRewritableObjectStorageTransaction::gen
         uncommitted_state.useDirectory(pathToGenericString(parent_path));
     }
 
-    if (const auto directory_remote_info = uncommitted_state.getDirectoryRemoteInfo(parent_path))
-        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, normalized_path.filename()));
+    if (const auto directory_remote_info = uncommitted_state.getDirectoryRemoteInfo(pathToGenericString(parent_path)))
+        return ObjectStorageKey::createAsAbsolute(metadata_storage.layout->constructFileObjectKey(directory_remote_info->remote_path, pathToGenericString(normalized_path.filename())));
 
     throw Exception(ErrorCodes::LOGICAL_ERROR, "Directory '{}' does not exist", parent_path.string());
 }

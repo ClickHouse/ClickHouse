@@ -671,7 +671,8 @@ endif ()
 # Resolving everything at startup costs nothing here because we link dynamically only against libc
 # and we forbid dlopen (see programs/main.cpp).
 # Not on Darwin: ld64 does not accept '-z' options.
-if (NOT OS_DARWIN)
+# Not on Windows either: '-z' is an ELF concept, and the PE/COFF driver of lld rejects it outright.
+if (NOT OS_DARWIN AND NOT OS_WINDOWS)
     set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-z,relro,-z,now")
 endif ()
 
