@@ -3,6 +3,7 @@
 #include <Functions/UserDefined/UserDefinedWebAssemblyTypeHelpers.h>
 
 #include <ranges>
+#include <algorithm>
 #include <base/hex.h>
 
 #include <Columns/ColumnVector.h>
@@ -507,13 +508,6 @@ public:
         serialization_format = user_defined_function->getSettings().getValue("serialization_format").safeGet<String>();
     }
 
-    /// Bytes a serialized block carries besides its rows: `BuffersWriter` prefixes the payloads
-    /// with a `UInt64` column count, a `UInt64` row count and one `UInt64` size per column.
-    size_t blockFramingBytes(size_t num_columns) const
-    {
-        return serialization_format == "Buffers" ? sizeof(UInt64) * (2 + num_columns) : 0;
-    }
-
     String getName() const override { return function_name; }
     bool isVariadic() const override { return false; }
     bool isDeterministic() const override { return user_defined_function->getIsDeterministic(); }
@@ -674,60 +668,158 @@ private:
         return static_cast<size_t>(static_cast<Float64>(*budget_basis) * memory_ratio);
     }
 
-    /// Measure the wire instead of predicting it: write each row through the real output format
-    /// into a `NullWriteBuffer` and read the byte count off it. Delimiters, keys, enum labels and
-    /// the configured tokens are all counted, because the serializer writes them.
+    /// The exact number of bytes one call carrying `[start_idx, start_idx + length)` puts on
+    /// the wire.
     ///
-    /// Reports the payload of a row alone: a block-framing format writes its framing on every
-    /// `write`, and the measurement writes one row at a time, so the framing would otherwise be
-    /// charged to each row instead of once to the call that carries them.
-    template <typename OnRow>
-    void measureRows(const ColumnsWithTypeAndName & arguments, size_t input_rows_count, OnRow && on_row) const
+    /// The batch is measured whole rather than assembled out of per-row measurements. A row has
+    /// no cost of its own under a block-scoped wire: `BuffersWriter` runs `NativeWriter::writeData`
+    /// once per block, which emits a fresh `LowCardinality` dictionary and the `Dynamic` /
+    /// `Variant` structure prefixes for whatever rows the block holds. Summing one-row probes
+    /// charges every row a whole dictionary and a whole set of prefixes, which over-prices such a
+    /// batch by more than an order of magnitude, and no fixed per-write subtraction can remove
+    /// state whose size depends on which rows the batch carries.
+    ///
+    /// What comes back here is the stream the guest is really handed - framing, wrapping and
+    /// shared state included - so the budget below is compared against the actual size rather
+    /// than against a bound on it.
+    size_t measureBatchBytes(const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t length) const
     {
-        /// A function without arguments is handed no input buffer at all, so there is nothing to
-        /// measure and nothing for the size of an input to decide.
-        if (arguments.empty())
-            return;
-
-        /// Cut each row out of the original arguments instead of materializing the whole block
-        /// first: a wide `ColumnConst` argument would otherwise be expanded to one copy per row
-        /// on the host, which is the very input the splitting below exists to rescue.
-        auto header = getArgumentsBlock(arguments, 0, 0);
+        auto block = getArgumentsBlock(arguments, start_idx, length);
         NullWriteBuffer measure_buf;
-        auto measure_out = context->getOutputFormat(serialization_format, measure_buf, header.cloneEmpty());
-        const size_t framing_per_write = blockFramingBytes(header.columns());
-
-        size_t written_before = 0;
-        for (size_t row = 0; row < input_rows_count; ++row)
-        {
-            measure_out->write(getArgumentsBlock(arguments, row, 1));
-
-            const size_t written_after = measure_buf.count();
-            on_row(row, written_after - written_before - framing_per_write);
-            written_before = written_after;
-        }
+        auto measure_out = context->getOutputFormat(serialization_format, measure_buf, block.cloneEmpty());
+        measure_out->write(block);
+        measure_out->finalize();
+        return measure_buf.count();
     }
 
-    /// What one call's stream costs beyond its rows: the framing a block format writes on every
-    /// `write`, plus whatever the format wraps the rows in once - `JSONEachRow` under
-    /// `output_format_json_array_of_rows` brackets them, for instance. The wrapping is measured
-    /// rather than modelled, by finalizing an empty stream through the real format.
+    /// How many rows the call starting at `start_idx` should carry, out of `remaining`.
     ///
-    /// The per-row measurement runs one long-lived stream, so it charges the opening bracket to
-    /// its first row and every later row a separator instead of that bracket. Counting the whole
-    /// wrapping again here therefore overstates a call by the few bytes of an opening bracket,
-    /// which only ever moves a batch boundary one row earlier. An input is never understated,
-    /// which is what the batching budget relies on.
-    size_t perCallOverheadBytes(const ColumnsWithTypeAndName & arguments) const
+    /// The cost of a batch is monotone in its row count - adding a row can only grow the payload,
+    /// and can only grow a per-batch dictionary - so "the rows that fit the budget" is a prefix and
+    /// can be bracketed. Each probe measures a candidate exactly, keeps the largest candidate known
+    /// to fit and the smallest known to overflow, and picks the next candidate inside that bracket,
+    /// so the bracket shrinks on every step and the walk ends on the real boundary rather than on
+    /// the first prefix that looked full enough.
+    ///
+    /// The next candidate follows the marginal cost of a row, taken as the slope between the last
+    /// two measurements, not the average bytes per row of the candidate. The average carries the
+    /// batch-wide part of the payload - framing, a `LowCardinality` dictionary, `Dynamic` and
+    /// `Variant` structure prefixes, and any single wide row already in the prefix - which is paid
+    /// once and does not grow with the rows added next. Dividing by it prices every further row at
+    /// the cost of the whole prefix, so a block whose first row is far wider than the rest would be
+    /// handed to the guest one row per call while hundreds of its rows still fit.
+    ///
+    /// Every candidate is bounded by rows already measured: the walk starts at one row and grows by
+    /// a bounded factor per probe. Nothing is carried over from a previous batch or block, because a
+    /// row count only means something for rows of a known width - a count fitted by narrow rows
+    /// would have the next batch materialize that many wide rows before any measurement justified
+    /// it, recreating the oversized call the split exists to avoid.
+    size_t chooseBatchRows(
+        const ColumnsWithTypeAndName & arguments, size_t start_idx, size_t remaining, size_t budget) const
     {
-        const size_t framing = blockFramingBytes(arguments.size());
+        /// A function without arguments is handed no input buffer, so no size bounds its calls.
         if (arguments.empty())
-            return framing;
+            return remaining;
 
-        NullWriteBuffer overhead_buf;
-        auto overhead_out = context->getOutputFormat(serialization_format, overhead_buf, getArgumentsBlock(arguments, 0, 0));
-        overhead_out->finalize();
-        return framing + overhead_buf.count();
+        static constexpr size_t max_probes = 24;
+        /// A probe may only ask for this many times the rows the previous probe measured. The
+        /// extrapolated count is read off a prefix, and a prefix of narrow rows says nothing about
+        /// wider rows later in the block, so growth is paid for by rows already materialized.
+        /// Reaching any batch size still costs a logarithmic number of probes.
+        static constexpr size_t max_growth_per_probe = 4;
+
+        /// Probe upwards from a single row, rather than downwards from the whole block. A probe
+        /// serializes the candidate, and a `ColumnConst` argument is materialized to do it, so a
+        /// first probe of the whole block would expand exactly the input the splitting exists to
+        /// rescue.
+        size_t candidate = 1;
+        size_t largest_fitting = 0;
+        size_t smallest_overflowing = remaining + 1;
+
+        /// The previous measurement, so the next candidate can be read off a slope. There is no
+        /// previous measurement while `previous_rows` is zero.
+        size_t previous_rows = 0;
+        size_t previous_bytes = 0;
+
+        for (size_t probe = 0; probe < max_probes; ++probe)
+        {
+            const size_t measured = measureBatchBytes(arguments, start_idx, candidate);
+            if (measured <= budget)
+            {
+                largest_fitting = candidate;
+                if (candidate == remaining)
+                    break;
+            }
+            else
+            {
+                smallest_overflowing = candidate;
+                /// A single row past the budget is still passed on its own: the split stops at one
+                /// row per call, and whether the guest can hold that row is for its allocator to say.
+                if (candidate == 1)
+                    break;
+            }
+
+            /// The boundary is known exactly once the bracket has nothing left between its ends.
+            if (largest_fitting + 1 >= smallest_overflowing)
+                break;
+
+            /// An empty payload gives no slope to follow, so nothing bounds the batch but the block.
+            if (measured == 0)
+            {
+                candidate = remaining;
+                continue;
+            }
+
+            /// The marginal bytes a row adds. With one measurement in hand the average is all there
+            /// is; it over-states the marginal cost, so the step it proposes is an undershoot, and
+            /// the clamp below still moves the walk on by a row, which buys the second measurement
+            /// the slope needs.
+            Float64 bytes_per_row = static_cast<Float64>(measured) / static_cast<Float64>(candidate);
+            if (previous_rows != 0 && candidate != previous_rows)
+            {
+                const Float64 slope = (static_cast<Float64>(measured) - static_cast<Float64>(previous_bytes))
+                    / (static_cast<Float64>(candidate) - static_cast<Float64>(previous_rows));
+                if (slope > 0.0)
+                    bytes_per_row = slope;
+            }
+            previous_rows = candidate;
+            previous_bytes = measured;
+
+            const Float64 target = static_cast<Float64>(candidate)
+                + (static_cast<Float64>(budget) - static_cast<Float64>(measured)) / bytes_per_row;
+
+            size_t next = 1;
+            if (target >= static_cast<Float64>(remaining))
+                next = remaining;
+            else if (target > 1.0)
+                next = static_cast<size_t>(target);
+
+            if (next > candidate)
+                next = std::min(next, candidate * max_growth_per_probe);
+            /// The bracket both keeps the candidate meaningful and guarantees progress: a candidate
+            /// that fits raises the lower end past itself, one that overflows lowers the upper end
+            /// below itself, and the check above leaves at least one row between the ends.
+            next = std::clamp(next, largest_fitting + 1, smallest_overflowing - 1);
+
+            /// A slope is only as good as the rows it was measured across. Two measurements that
+            /// straddle one very wide row describe that row rather than the rows around it, and the
+            /// step they propose lands next to the end of the bracket the walk came from, so the
+            /// bracket shrinks by a row per probe and the batch stops far short of what the budget
+            /// allows. Once both ends of the bracket are known, a proposal that falls in an outer
+            /// quarter is replaced by the midpoint, which halves the bracket however wrong the
+            /// slope was. A wire whose cost is close to affine is unaffected: its proposals land on
+            /// the boundary itself, which is in the middle of the bracket by the time it is known.
+            if (largest_fitting > 0 && smallest_overflowing <= remaining)
+            {
+                const size_t width = smallest_overflowing - largest_fitting;
+                if (width > 3 && (next < largest_fitting + width / 4 || next > smallest_overflowing - width / 4))
+                    next = largest_fitting + width / 2;
+            }
+
+            candidate = next;
+        }
+
+        return std::max<size_t>(largest_fitting, 1);
     }
 
     void appendBatchResult(MutableColumnPtr & result_column, MutableColumnPtr batch_column) const
@@ -775,26 +867,11 @@ private:
 
         if (budget)
         {
-            /// What a call costs beyond its rows, which no per-row measurement sees.
-            const size_t block_framing_bytes = perCallOverheadBytes(arguments);
-
-            /// Flush before the next row would cross the budget. A stride derived from the
-            /// average row size cannot bound a skewed block: one huge row among many tiny ones
-            /// would still share a call with its neighbours.
-            ///
-            /// A row that is itself past the budget is still passed on its own: the split stops
-            /// at one row per call, and whether the guest can hold that row is for its allocator
-            /// to say.
-            size_t running_bytes = 0;
-            measureRows(arguments, input_rows_count, [&](size_t row, size_t row_bytes)
-            {
-                if (row > batch_start && running_bytes + row_bytes + block_framing_bytes > *budget)
-                {
-                    flush_batch(row);
-                    running_bytes = 0;
-                }
-                running_bytes += row_bytes;
-            });
+            /// Take the rows a call can hold, measure the call, and start the next one where
+            /// it ended. A stride derived from an average row size cannot bound a skewed block:
+            /// one huge row among many tiny ones would still share a call with its neighbours.
+            while (batch_start < input_rows_count)
+                flush_batch(batch_start + chooseBatchRows(arguments, batch_start, input_rows_count - batch_start, *budget));
         }
         else if (fixed_block_size > 0)
         {
@@ -814,7 +891,12 @@ private:
         {
             /// Cut first, materialize second: `ColumnConst::cut` is O(1), while materializing
             /// the whole block first would make the per-row measurement O(rows^2).
-            ColumnPtr column = arguments[i].column->cut(start_idx, length)->convertToFullColumnIfConst();
+            /// Skip the copy when the requested range already covers the whole column -
+            /// the whole-block flush does exactly that for every argument.
+            ColumnPtr column = arguments[i].column;
+            if (start_idx != 0 || length != column->size())
+                column = column->cut(start_idx, length);
+            column = column->convertToFullColumnIfConst();
             String column_name = i < argument_names.size() && !argument_names[i].empty() ? argument_names[i] : arguments[i].name;
             /// Cast to the declared type so serialization uses the correct width.
             /// Without this, e.g. Int8 passed to an Int32 parameter would be serialized
