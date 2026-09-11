@@ -1,7 +1,7 @@
 -- The quantized-codes vector search rewrite and `arrayJoin` below the sort.
 --
 -- On the vector-similarity-index path an `arrayJoin` below the sort is rejected (see
--- `04813_vector_search_array_join`): the index prunes rows inside the reader, so a base row whose `arrayJoin`
+-- `02354_vector_search_array_join`): the index prunes rows inside the reader, so a base row whose `arrayJoin`
 -- would have produced the surviving rows is never read and the query returns fewer rows than the `LIMIT`.
 --
 -- The quantized-codes path does not have that problem, and this test pins the invariant that makes it safe: its
@@ -10,7 +10,8 @@
 -- always reaches the `LIMIT`, even with `vector_search_index_fetch_multiplier = 1`. (An `arrayJoin` in the
 -- rescore expression above the shortlist is a different matter and is rejected by `hasArrayJoin` there.)
 
-SET allow_experimental_codecs = 1;
+-- The `Quantized` codec is experimental and gated behind `enable_quantized_codec`.
+SET enable_quantized_codec = 1;
 SET vector_search_use_quantized_codes = 1;
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
