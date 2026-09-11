@@ -58,6 +58,7 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
@@ -780,7 +781,12 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     Stopwatch execute_task_watch;
     const auto & task = task_description.task;
 
-    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>(task.task_id);
+    /// The task's span, the analogue of the `query` span of a regular query: `logQueryFinish` /
+    /// `logQueryException` below decorate it with the outcome and finish it. Its parent is the
+    /// initiator's trace, carried to a worker by the `traceparent` header of the start request and
+    /// to a local task thread by `DistributedQueryPlanExecutorLocal`; without one it is a no-op.
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span
+        = std::make_shared<OpenTelemetry::SpanHolder>("DistributedPlanTask::execute", OpenTelemetry::SpanKind::SERVER);
 
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
 
@@ -795,6 +801,19 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     Strings output_exchange_streams;
     for (const auto & stream_id : task.output_exchange_streams)
         output_exchange_streams.push_back(stream_id.toString());
+
+    if (query_span->isTraceEnabled())
+    {
+        query_span->addAttribute("clickhouse.distributed.task_id", task.task_id);
+        /// From the task's context rather than the description: a worker copies the description's
+        /// initial query id into its `ClientInfo`, while an in-process task inherits the initiator's.
+        query_span->addAttribute("clickhouse.initial_query_id", context->getClientInfo().initial_query_id);
+        query_span->addAttribute("clickhouse.distributed.plan_hash", sipHash64(task_description.serialized_query_plan));
+        query_span->addAttribute("clickhouse.distributed.serialization_version", task_description.serialization_version);
+        query_span->addAttribute("clickhouse.distributed.execute_locally", execute_locally ? "1" : "0");
+        query_span->addAttribute("clickhouse.exchange.inputs", fmt::format("[{}]", fmt::join(input_exchange_streams, ", ")));
+        query_span->addAttribute("clickhouse.exchange.outputs", fmt::format("[{}]", fmt::join(output_exchange_streams, ", ")));
+    }
 
     LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
         task.task_id, fmt::join(input_exchange_streams, ", "), fmt::join(output_exchange_streams, ", "));
@@ -994,9 +1013,14 @@ protected:
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation, stage_wakeup = this->stage_wakeup]() mutable
+        /// A raw thread inherits no tracing context (unlike a `ThreadPool` job), so hand the
+        /// initiator's context over explicitly: the task's `DistributedPlanTask::execute` span then
+        /// attaches to the initiator's trace like a remotely dispatched task does.
+        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation, stage_wakeup = this->stage_wakeup,
+            parent_trace_context = OpenTelemetry::CurrentContext()]() mutable
         {
             ThreadStatus thread_status;
+            OpenTelemetry::TracingContextHolder thread_trace_context("DistributedQueryPlanExecutorLocal::executeTask", parent_trace_context);
             /// The task attaches its own query context and thread group inside executeTask (matching
             /// the worker path), so this thread is intentionally not attached to the initiator group.
 
