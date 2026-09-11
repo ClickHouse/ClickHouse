@@ -126,7 +126,7 @@ static NameSet getAllPossibleStreamNames(
     /// The result must be a superset of the streams of every part, and parts can use different
     /// naming schemes, so enumerate once per scheme present. The table setting covers a table
     /// without parts.
-    std::vector<ISerialization::StreamFileNameSettings> all_stream_file_name_settings{ISerialization::StreamFileNameSettings(*storage_settings)};
+    VectorWithMemoryTracking<ISerialization::StreamFileNameSettings> all_stream_file_name_settings{ISerialization::StreamFileNameSettings(*storage_settings)};
     for (const auto & part : data_parts)
     {
         auto part_settings = part->getStreamFileNameSettings();
