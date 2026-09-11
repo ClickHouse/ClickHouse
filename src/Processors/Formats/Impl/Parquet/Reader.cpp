@@ -3262,9 +3262,8 @@ void Reader::readRowsInPage(size_t end_row_idx, ColumnSubchunk & subchunk, Colum
 #undef X
 
         /// Null map of each enclosing Nullable(Tuple(...)) group this leaf derives. `page.def` is
-        /// empty only when max_def is 0, and a tracked group always sits at a level above 0, so the
-        /// maps are either populated for the whole column chunk or (when the statistics ruled them
-        /// out) never allocated at all.
+        /// empty only when max_def is 0 and a tracked group sits above 0, so the maps are either
+        /// populated for the whole column chunk or (statistics ruled them out) never allocated.
         for (size_t i = 0; i < subchunk.group_null_maps.size(); ++i)
         {
             const UInt8 group_def = column_info.derive_group_defs[i];

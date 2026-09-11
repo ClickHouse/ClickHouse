@@ -127,9 +127,8 @@ void updateRepDefLevelsAndFilterColumnForNullable(ColumnChunkWriteState & s, con
         if (null_map[row_idx])
         {
             /// A null occupies exactly one entry at the enclosing level: everything below this
-            /// Nullable is absent, so the entries the subtree contributed for the row collapse into
-            /// that one. Levels are built bottom-up, so the enclosing level is 0 here and every
-            /// ancestor increments it afterwards.
+            /// Nullable is absent, so the row's entries collapse into that one. Levels are built
+            /// bottom-up, so the enclosing level is 0 here and every ancestor increments it later.
             if (!row_start)
                 continue;
             s.def[out] = 0;

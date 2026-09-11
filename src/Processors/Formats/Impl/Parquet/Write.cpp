@@ -1656,13 +1656,9 @@ void writeFileFooter(FileWriteState & file,
 
     /// Says that a null Nullable(Tuple(...)) group in this file is encoded at the group's own
     /// definition level, so its null map can be read from any leaf below it. Our reader refuses a
-    /// ClickHouse-written file without this key unless it can read the group through a leaf whose
-    /// path under the group is entirely REQUIRED and non-repeated, because before this key existed
-    /// the other leaves recorded a null group as a present group with a null element. A marker rather
-    /// than a version comparison, so a backported writer needs no version arithmetic to be trusted.
-    /// Emitted unconditionally: column preparation, which is where an ambiguous group would be
-    /// noticed, runs on worker threads with no access to the file write state, and a zero-row file
-    /// skips it entirely.
+    /// ClickHouse file without this key unless it reads the group through a leaf whose path under it
+    /// is entirely REQUIRED and non-repeated. Unconditional: column preparation, the only place an
+    /// ambiguous group could be seen, has no access to this state and is skipped for zero rows.
     {
         parquet::format::KeyValue key_value;
         key_value.__set_key("clickhouse.nullable_group_def_levels");

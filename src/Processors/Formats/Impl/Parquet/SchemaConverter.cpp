@@ -918,8 +918,6 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
         /// null, so a level below the group on it can only mean the group. Any other leaf is only as
         /// trustworthy as the writer's encoding of the group's own level, so prefer a clean one; the
         /// requested element order is the user's, so the first leaf is an arbitrary choice.
-        /// Decided from the leaves the recursion above actually produced, never from a second walk of
-        /// the schema, which could disagree with the materialized leaf set.
         output.nullable_group_source = primitive_start;
         bool source_is_clean = false;
         for (size_t i = primitive_start; i < primitive_columns.size(); ++i)
