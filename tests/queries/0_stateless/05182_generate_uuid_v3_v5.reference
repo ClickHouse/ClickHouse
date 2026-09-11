@@ -1,0 +1,31 @@
+Negative tests
+Return type
+UUID
+UUID
+Known values (RFC 4122, DNS namespace)
+6fa459ea-ee8a-3ca4-894e-db77e160355e
+886313e1-3b8a-5372-9b90-0c9aee199e5d
+7af94e2b-4dd9-50f0-9c9a-8a48519bdef0
+c87ee674-4ddc-3efe-a74e-dfe25da5d7b3
+4ebd0208-8328-5d69-8c44-ec50939c0967
+Version and variant bits
+3
+5
+2
+2
+Determinism
+1
+1
+0
+0
+0
+Non-constant columns
+4384b27d-2698-3cad-8ecd-2b804a6dc803
+4b5e4949-1838-35cd-97f8-1cea76b9c9e0
+ff202ab9-4510-3381-b982-8e3f20311b59
+de18a23f-2758-588e-9340-716a1168efef
+a7572229-fd51-5ca5-bf17-ad3c83283149
+ff0b006c-843e-55ba-8778-1283d25a2ceb
+FixedString name
+6fa459ea-ee8a-3ca4-894e-db77e160355e
+886313e1-3b8a-5372-9b90-0c9aee199e5d
