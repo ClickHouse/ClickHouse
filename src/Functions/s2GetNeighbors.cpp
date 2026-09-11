@@ -29,7 +29,7 @@ namespace
  * Each cell in s2 library is a quadrilateral bounded by four geodesics.
  * So, each cell has 4 neighbors
  */
-class FunctionS2GetNeighbors : public IFunction
+class FunctionS2GetNeighbors final : public IFunction
 {
 public:
     static constexpr auto name = "s2GetNeighbors";
@@ -81,11 +81,14 @@ public:
                 getName());
         const auto & data_id = col_id->getData();
 
-        auto dst = ColumnArray::create(ColumnUInt64::create());
-        auto & dst_data = dst->getData();
-        auto & dst_offsets = dst->getOffsets();
-        dst_offsets.resize(input_rows_count);
+        auto dst_data_column = ColumnUInt64::create();
+        auto dst_offsets_column = ColumnArray::ColumnOffsets::create(input_rows_count);
+        auto & dst_data = *dst_data_column;
+        auto & dst_offsets = dst_offsets_column->getData();
         size_t current_offset = 0;
+
+        /// Every row appends exactly four neighbors, so the whole block's size is known here.
+        dst_data.reserve(input_rows_count * 4);
 
         for (size_t row = 0; row < input_rows_count; ++row)
         {
@@ -99,7 +102,6 @@ public:
             S2CellId neighbors[4];
             cell_id.GetEdgeNeighbors(neighbors);
 
-            dst_data.reserve(dst_data.size() + 4);
             for (auto & neighbor : neighbors)
             {
                 ++current_offset;
@@ -108,7 +110,7 @@ public:
             dst_offsets[row] = current_offset;
         }
 
-        return dst;
+        return ColumnArray::create(std::move(dst_data_column), std::move(dst_offsets_column));
     }
 
 };
@@ -117,7 +119,20 @@ public:
 
 REGISTER_FUNCTION(S2GetNeighbors)
 {
-    factory.registerFunction<FunctionS2GetNeighbors>();
+    FunctionDocumentation::Description description = R"(
+Returns the S2 neighbor indices corresponding to the provided S2 cell index. Each cell in the S2 system is a quadrilateral bounded by four geodesics. Each cell has exactly 4 neighbors.
+    )";
+    FunctionDocumentation::Syntax syntax = "s2GetNeighbors(s2index)";
+    FunctionDocumentation::Arguments arguments = {
+        {"s2index", "The S2 cell identifier.", {"UInt64"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value = {"Returns an array of 4 neighbor S2 cell identifiers.", {"Array(UInt64)"}};
+    FunctionDocumentation::Examples examples = {{"Basic usage", "SELECT s2GetNeighbors(5765131099823669248)", "[5765131099830484992,5765131099821047808,5765131099823144960,5765131099824193536]"}};
+    FunctionDocumentation::IntroducedIn introduced_in = {21, 9};
+    FunctionDocumentation::Category category = FunctionDocumentation::Category::Geo;
+    FunctionDocumentation documentation = {description, syntax, arguments, {}, returned_value, examples, introduced_in, category};
+
+    factory.registerFunction<FunctionS2GetNeighbors>(documentation);
 }
 
 

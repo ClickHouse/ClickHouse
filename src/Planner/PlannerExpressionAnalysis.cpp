@@ -1,20 +1,24 @@
 #include <memory>
 #include <optional>
+#include <stack>
 #include <Planner/PlannerExpressionAnalysis.h>
 
 #include <Columns/ColumnNullable.h>
 #include <Columns/FilterDescription.h>
 
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
 
 #include <Interpreters/Context.h>
 
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/HashUtils.h>
+#include <Analyzer/Utils.h>
 #include <Analyzer/WindowNode.h>
 #include <Analyzer/SortNode.h>
 #include <Analyzer/InterpolateNode.h>
@@ -40,6 +44,7 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+    extern const int UNEXPECTED_EXPRESSION;
 }
 
 namespace
@@ -100,6 +105,15 @@ bool canRemoveConstantFromGroupByKey(const ConstantNode & root)
         }
         else if (function_node)
         {
+            if (!function_node->isOrdinaryFunction())
+            {
+                /// Non-ordinary functions (window, aggregate, lambda) cannot be server constants,
+                /// so it is safe to remove them from GROUP BY. We cannot call getFunctionOrThrow()
+                /// on them (it would throw), but we also don't need to — they won't produce
+                /// server-specific values. Skip examining their children.
+                continue;
+            }
+
             /// Do not allow removing constants like `hostName()`
             if (function_node->getFunctionOrThrow()->isServerConstant())
                 return false;
@@ -185,8 +199,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                         if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                             continue;
 
-                        auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                        auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                        auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+                        ColumnPtr column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : ColumnPtr(expression_dag_node->column);
                         available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                         aggregation_keys.push_back(expression_dag_node->result_name);
                         before_aggregation_actions->dag.getOutputs().push_back(expression_dag_node);
@@ -220,12 +234,18 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
         }
         else
         {
+            /// ROLLUP and CUBE derive their grouping sets from the number of aggregation keys, and
+            /// `GROUPING` is resolved against the full key list, so dropping a constant key here would
+            /// lose grouping levels: `GROUP BY CUBE(1, number)` would produce the sets of a single key.
+            bool keep_constant_keys = query_node.isGroupByWithRollup() || query_node.isGroupByWithCube();
+
             for (auto & group_by_key_node : query_node.getGroupBy().getNodes())
             {
                 const auto * constant_key = group_by_key_node->as<ConstantNode>();
                 group_by_with_constant_keys |= (constant_key != nullptr);
 
-                if (constant_key && !aggregates_descriptions.empty() && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
+                if (constant_key && !keep_constant_keys && !aggregates_descriptions.empty()
+                    && (!check_constants_for_group_by_key || canRemoveConstantFromGroupByKey(*constant_key)))
                     continue;
 
                 auto [expression_dag_nodes, correlated_subtrees] = actions_visitor.visit(before_aggregation_actions->dag, group_by_key_node);
@@ -237,8 +257,8 @@ std::optional<AggregationAnalysisResult> analyzeAggregation(
                     if (before_aggregation_actions_output_node_names.contains(expression_dag_node->result_name))
                         continue;
 
-                    auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
-                    auto column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableSafe(expression_dag_node->column) : expression_dag_node->column;
+                    auto expression_type_after_aggregation = group_by_use_nulls ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->result_type) : expression_dag_node->result_type;
+                    ColumnPtr column_after_aggregation = group_by_use_nulls && expression_dag_node->column != nullptr ? makeNullableOrLowCardinalityNullableSafe(expression_dag_node->column) : ColumnPtr(expression_dag_node->column);
 
                     available_columns_after_aggregation.emplace_back(std::move(column_after_aggregation), expression_type_after_aggregation, expression_dag_node->result_name);
                     aggregation_keys.push_back(expression_dag_node->result_name);
@@ -364,6 +384,47 @@ std::optional<WindowAnalysisResult> analyzeWindow(
 
                 before_window_actions->dag.getOutputs().push_back(expression_dag_node);
                 before_window_actions_output_node_names.insert(expression_dag_node->result_name);
+            }
+        }
+    }
+
+    /// When `group_by_use_nulls = 1` with CUBE/ROLLUP/GROUPING SETS, GROUP BY keys become Nullable
+    /// in the data flowing into window functions. But the aggregate function was created during analysis
+    /// with the original (non-nullable) argument types. We need to re-create the aggregate function
+    /// with the actual (nullable) argument types so that the Null combinator is properly applied.
+    for (auto & window_description : window_descriptions)
+    {
+        for (auto & window_function : window_description.window_functions)
+        {
+            bool types_changed = false;
+            DataTypes actual_argument_types;
+            actual_argument_types.reserve(window_function.argument_names.size());
+
+            for (size_t i = 0; i < window_function.argument_names.size(); ++i)
+            {
+                const auto * dag_node = before_window_actions->dag.tryFindInOutputs(window_function.argument_names[i]);
+                if (dag_node && !window_function.argument_types[i]->equals(*dag_node->result_type))
+                {
+                    actual_argument_types.push_back(dag_node->result_type);
+                    types_changed = true;
+                }
+                else
+                {
+                    actual_argument_types.push_back(window_function.argument_types[i]);
+                }
+            }
+
+            if (types_changed)
+            {
+                AggregateFunctionProperties properties;
+                auto new_function = AggregateFunctionFactory::instance().get(
+                    window_function.aggregate_function->getName(),
+                    NullsAction::EMPTY,
+                    actual_argument_types,
+                    window_function.function_parameters,
+                    properties);
+                window_function.aggregate_function = std::move(new_function);
+                window_function.argument_types = std::move(actual_argument_types);
             }
         }
     }
@@ -508,8 +569,24 @@ SortAnalysisResult analyzeSort(
         /// so here we add materialized ORDER BY columns manually, and append everything else after.
         ActionsDAG before_interpolate_actions_dag(before_sort_actions->dag.getResultColumns());
         for (const auto & out : actions_chain.getLastStepAvailableOutputColumns())
-            if (!before_sort_actions_dag_output_node_names.contains(out.name))
-                before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
+        {
+            if (before_sort_actions_dag_output_node_names.contains(out.name))
+                continue;
+
+            /** The `Set` placeholder of an `IN` and the `Function` column of a lambda are not values: no
+              * `INTERPOLATE` expression can name them (their names are internal), and they cannot be
+              * materialized. Keeping one as an output carries it past the filter that consumes it into every
+              * step above, including ones that build rows out of the whole header: the `FINAL` merge of a
+              * `WITH FILL INTERPOLATE` query then failed with `CORRUPTED_DATA` ("Cannot get value from Set"),
+              * and the virtual row of an in-order read with `NOT_IMPLEMENTED` ("Cannot insert element into
+              * Set", #111831).
+              */
+            const WhichDataType which_type(out.type);
+            if (which_type.isSet() || which_type.isFunction())
+                continue;
+
+            before_interpolate_actions_dag.getOutputs().push_back(&before_interpolate_actions_dag.addInput(out));
+        }
 
         for (auto & interpolate_node : interpolate_list_node.getNodes())
         {
@@ -529,12 +606,8 @@ SortAnalysisResult analyzeSort(
         before_interpolate_actions->dag = std::move(before_interpolate_actions_dag);
     }
 
-    if (before_interpolate_actions)
-    {
-        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
-        actions_chain.addStep(std::move(actions_step_before_interpolate));
-    }
-
+    /// before_interpolate_actions is intentionally not added to the chain here;
+    /// buildExpressionAnalysisResult appends it after analyzeLimitBy so the chain order matches plan execution order.
     return SortAnalysisResult{std::move(before_sort_actions), has_with_fill, std::move(before_interpolate_actions)};
 }
 
@@ -580,12 +653,37 @@ LimitByAnalysisResult analyzeLimitBy(const QueryNode & query_node,
     return LimitByAnalysisResult{std::move(before_limit_by_actions), std::move(limit_by_column_names)};
 }
 
+/** Construct LIMIT AFTER/UNTIL analysis result.
+  * The boundary expressions may reference columns that are not in the SELECT list. `LimitRangeStep` runs
+  * before "Project names" in the plan but is not part of the actions chain, so no chain step requires those
+  * columns and chain finalization would prune them. This adds an identity step over every current column:
+  * all of its inputs are its outputs, so the whole stream, boundary columns included, stays alive up to the
+  * range step, which builds its conditions from the resulting header.
+  */
+LimitRangeAnalysisResult analyzeLimitRange(const QueryNode & query_node,
+    const ColumnsWithTypeAndName & input_columns,
+    ActionsChain & actions_chain)
+{
+    for (const auto & boundary_node : {query_node.getLimitAfter(), query_node.getLimitUntil()})
+    {
+        if (boundary_node && hasFunctionNode(boundary_node, "arrayJoin"))
+            throw Exception(ErrorCodes::UNEXPECTED_EXPRESSION, "`arrayJoin` is not allowed in LIMIT AFTER/UNTIL expressions");
+    }
+
+    auto before_limit_range_actions = std::make_shared<ActionsAndProjectInputsFlag>();
+    before_limit_range_actions->dag = ActionsDAG(input_columns);
+    actions_chain.addStep(std::make_unique<ActionsChainStep>(before_limit_range_actions));
+
+    return LimitRangeAnalysisResult{std::move(before_limit_range_actions)};
+}
+
 }
 
 PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNodePtr & query_tree,
     const ColumnsWithTypeAndName & join_tree_input_columns,
     const PlannerContextPtr & planner_context,
-    const PlannerQueryProcessingInfo & planner_query_processing_info)
+    const PlannerQueryProcessingInfo & planner_query_processing_info,
+    const NameSet & source_constants)
 {
     auto & query_node = query_tree->as<QueryNode &>();
 
@@ -697,9 +795,17 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
           * Example: SELECT 1 FROM remote('127.0.0.{2,3}', system.one) ORDER BY dummy LIMIT 1 BY 1;
           * In this example, LIMIT BY actions does not need `dummy` column, but we must preserve it, because
           * otherwise coordinator does not find it in block.
+          *
+          * Similarly, when ORDER BY has WITH FILL, we must preserve the ORDER BY columns because
+          * the filling step added later requires them in the block header.
+          *
+          * Example: SELECT 1 ORDER BY toDateTime(0) WITH FILL LIMIT 1 BY 1;
           */
         NameSet required_output_nodes_names;
-        if (sort_analysis_result_optional.has_value() && planner_query_processing_info.isFirstStage() && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)
+        if (sort_analysis_result_optional.has_value()
+            && (sort_analysis_result_optional->has_with_fill
+                || (planner_query_processing_info.isFirstStage()
+                    && planner_query_processing_info.getToStage() != QueryProcessingStage::Complete)))
         {
             const auto & before_order_by_actions = sort_analysis_result_optional->before_order_by_actions;
             for (const auto & output_node : before_order_by_actions->dag.getOutputs())
@@ -713,6 +819,34 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             required_output_nodes_names,
             correlated_columns_set,
             actions_chain);
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
+
+    /** Add before_interpolate_actions to the chain AFTER the limit by step.
+      * This matches the query plan execution order where Before INTERPOLATE runs after LIMIT BY.
+      * Previously it was added before LIMIT BY in the chain (inside analyzeSort), which caused
+      * the LIMIT BY DAG to expect interpolated column names (e.g. 's') that don't exist yet
+      * in the block at that point in the plan.
+      */
+    if (sort_analysis_result_optional.has_value() && sort_analysis_result_optional->before_interpolate_actions)
+    {
+        auto & before_interpolate_actions = sort_analysis_result_optional->before_interpolate_actions;
+        auto actions_step_before_interpolate = std::make_unique<ActionsChainStep>(before_interpolate_actions);
+        actions_chain.addStep(std::move(actions_step_before_interpolate));
+        current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
+    }
+
+    /** LIMIT AFTER/UNTIL boundary columns may not be in the SELECT list. The LimitRangeStep runs before
+      * "Project names" in the plan, so keep its referenced columns alive past the projection by adding a
+      * dedicated step here. This must also run when producing a mergeable aggregation state on a shard:
+      * the range step itself is applied later on the initiator, but the shard must still carry the boundary
+      * columns in its output (the Projection would otherwise prune them, leaving the initiator unable to
+      * evaluate the range over a non-selected column in a distributed query).
+      */
+    std::optional<LimitRangeAnalysisResult> limit_range_analysis_result_optional;
+    if (query_node.hasLimitAfter() || query_node.hasLimitUntil())
+    {
+        limit_range_analysis_result_optional = analyzeLimitRange(query_node, current_output_columns, actions_chain);
         current_output_columns = actions_chain.getLastStepAvailableOutputColumns();
     }
 
@@ -763,6 +897,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
     auto project_names_actions = std::make_shared<ActionsAndProjectInputsFlag>();
     project_names_actions->dag = ActionsDAG(project_names_input);
 
+    /// Keep source-constant INPUTs (`source_constants`) so `project`/`removeUnusedActions` does not
+    /// fold-and-drop them; they must keep flowing as required inputs to stay in the stream at
+    /// distributed stage boundaries. Literals and re-creatable alias constants stay foldable.
+    std::unordered_set<const ActionsDAG::Node *> keep_inputs;
+    if (!source_constants.empty())
+        for (const auto * input : project_names_actions->dag.getInputs())
+            if (input->column && source_constants.contains(input->result_name))
+                keep_inputs.insert(input);
+
     if (query_node.hasInterpolate())
     {
         auto project_names = projection_analysis_result.projection_column_names_with_display_aliases;
@@ -775,15 +918,15 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
             if (interpolate_names.contains(alias))
                 name = alias;
 
-        project_names_actions->dag.project(project_names);
+        project_names_actions->dag.project(project_names, keep_inputs);
     }
     else
-        project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases);
+        project_names_actions->dag.project(projection_analysis_result.projection_column_names_with_display_aliases, keep_inputs);
 
     project_names_actions->project_input = true;
     actions_chain.addStep(std::make_unique<ActionsChainStep>(project_names_actions));
 
-    actions_chain.finalize();
+    actions_chain.finalize(source_constants);
 
     projection_analysis_result.project_names_actions = std::move(project_names_actions);
 
@@ -824,6 +967,9 @@ PlannerExpressionsAnalysisResult buildExpressionAnalysisResult(const QueryTreeNo
 
     if (limit_by_analysis_result_optional)
         expressions_analysis_result.addLimitBy(std::move(*limit_by_analysis_result_optional));
+
+    if (limit_range_analysis_result_optional)
+        expressions_analysis_result.addLimitRange(std::move(*limit_range_analysis_result_optional));
 
     return expressions_analysis_result;
 }

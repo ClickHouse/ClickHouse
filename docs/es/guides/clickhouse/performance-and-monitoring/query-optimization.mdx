@@ -1,0 +1,38 @@
+---
+slug: /optimize/query-optimization
+sidebarTitle: 'Resumen'
+title: 'Optimización de consultas'
+description: 'Aprenda a diagnosticar consultas lentas de ClickHouse, aislar cuellos de botella y aplicar optimizaciones específicas'
+doc_type: 'guide'
+keywords: ['optimización de consultas', 'rendimiento', 'buenas prácticas', 'ajuste de consultas', 'eficiencia', 'registro de consultas', 'EXPLAIN']
+---
+
+Estas guías presentan un flujo de trabajo para investigar y mejorar consultas lentas en ClickHouse. Identifique una consulta lenta recurrente, aísle el cuello de botella, aplique una optimización específica y compare el resultado con una línea base reproducible.
+
+<div id="choose-where-to-start">
+  ## Elija por dónde empezar
+</div>
+
+Las tres primeras guías conforman un flujo de trabajo de principio a fin, pero también puede comenzar en la etapa que se ajuste a lo que ya sabe.
+
+<CardGroup cols={1}>
+  <Card title="Diagnosticar consultas lentas" icon="magnifying-glass" href="/es/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries">
+    Comience aquí si necesita identificar un patrón recurrente de consultas lentas. Use el historial de consultas local o de todo el clúster para elegir una ejecución representativa, inspeccionar su uso de recursos y formular una hipótesis inicial.
+  </Card>
+
+  <Card title="Aislar cuellos de botella en las consultas" icon="layer-group" href="/es/guides/clickhouse/performance-and-monitoring/isolate-query-bottlenecks">
+    Comience aquí si tiene una consulta lenta, pero aún no sabe qué operaciones dominan su rendimiento. Compare versiones progresivamente más simples de la consulta en condiciones controladas.
+  </Card>
+
+  <Card title="Elegir un enfoque de optimización" icon="sliders" href="/es/guides/clickhouse/performance-and-monitoring/optimization-approaches">
+    Comience aquí si cuenta con indicios sobre el cuello de botella y necesita elegir un cambio específico. Compare enfoques para reducir los datos leídos, alinear la organización de los datos con sus consultas o precalcular tareas repetitivas.
+  </Card>
+</CardGroup>
+
+<div id="example">
+  ## Ejemplo
+</div>
+
+<Card title="Ejemplo práctico de optimización" icon="flask" href="/es/guides/clickhouse/performance-and-monitoring/query-optimization-example">
+  Comience con consultas de carga de trabajo sobre el conjunto de datos NYC Taxi y, a continuación, aplique cambios en el esquema y la clave de ordenación, midiendo cada etapa con respecto a la misma línea base.
+</Card>

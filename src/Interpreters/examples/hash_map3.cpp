@@ -1,3 +1,5 @@
+#include <Examples/clickhouse_examples.h>
+
 #define DBMS_HASH_MAP_DEBUG_RESIZES
 #define DBMS_HASH_MAP_COUNT_COLLISIONS
 
@@ -12,6 +14,9 @@
 
 #include <Common/HashTable/HashMap.h>
 
+
+namespace
+{
 
 template
 <
@@ -40,7 +45,6 @@ public:
 
 struct SimpleHash
 {
-    size_t operator() (UInt64 x) const { return x; }
     size_t operator() (std::string_view x) const { return DB::parse<UInt64>(x.data()); } /// NOLINT(bugprone-suspicious-stringview-data-usage)
 };
 
@@ -52,7 +56,9 @@ struct Grower : public HashTableGrower<2>
     }
 };
 
-int main(int, char **)
+}
+
+int mainEntryExampleHashMap3(int, char **)
 {
     using Map = HashMapWithDump<
         std::string_view,

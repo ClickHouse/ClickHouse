@@ -14,6 +14,6 @@ SELECT
     ProfileEvents['MutatedRows'],
     ProfileEvents['MutationAffectedRowsUpperBound']
 FROM system.part_log
-WHERE database = currentDatabase() AND table = 't_mutation_rows_counter' AND event_type = 'MutatePart';
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_mutation_rows_counter' AND event_type = 'MutatePart';
 
 DROP TABLE IF EXISTS t_mutation_rows_counter;

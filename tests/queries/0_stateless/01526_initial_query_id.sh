@@ -15,11 +15,19 @@ ${CLICKHOUSE_CURL} \
     --get \
     --data-urlencode "query=select 1 format Null"
 
+# Wait for both TCP and HTTP queries to appear in query_log.
+# There is a race between HTTP response being sent and the query_log entry being written.
+for _ in $(seq 1 60); do
+    ${CLICKHOUSE_CLIENT} -q "system flush logs query_log"
+    count=$(${CLICKHOUSE_CLIENT} -q "select count() from system.query_log where current_database = currentDatabase() AND query_id = '$query_id' and type = 'QueryFinish'")
+    [ "$count" -ge 2 ] && break
+    sleep 0.5
+done
+
 ${CLICKHOUSE_CLIENT} -q "
-system flush logs query_log;
 select interface, initial_query_id = query_id
     from system.query_log
-    where current_database = currentDatabase() AND query_id = '$query_id' and type = 'QueryFinish'
+    where event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND query_id = '$query_id' and type = 'QueryFinish'
     order by interface
     ;
 "

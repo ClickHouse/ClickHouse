@@ -8,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
 #include <base/sleep.h>
+#include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
 #include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/ProfileEvents.h>
@@ -32,7 +33,6 @@ extern const SettingsUInt64 function_sleep_max_microseconds_per_block;
 
 namespace ErrorCodes
 {
-extern const int ILLEGAL_TYPE_OF_ARGUMENT;
 extern const int TOO_SLOW;
 extern const int ILLEGAL_COLUMN;
 extern const int BAD_ARGUMENTS;
@@ -55,42 +55,44 @@ enum class FunctionSleepVariant : uint8_t
     PerRow
 };
 
-template <FunctionSleepVariant variant>
-class FunctionSleep : public IFunction
+class FunctionSleep final : public IFunction
 {
 private:
+    const char * function_name;
+    FunctionSleepVariant variant;
     UInt64 max_microseconds;
-    QueryStatusPtr query_status;
 
 public:
-    static constexpr auto name = variant == FunctionSleepVariant::PerBlock ? "sleep" : "sleepEachRow";
-    static FunctionPtr create(ContextPtr context)
-    {
-        return std::make_shared<FunctionSleep<variant>>(
-            context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block], context->getProcessListElementSafe());
-    }
-
-    FunctionSleep(UInt64 max_microseconds_, QueryStatusPtr query_status_)
-        : max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
-        , query_status(query_status_)
+    FunctionSleep(const char * name_, FunctionSleepVariant variant_, UInt64 max_microseconds_)
+        : function_name(name_)
+        , variant(variant_)
+        , max_microseconds(std::min(max_microseconds_, static_cast<UInt64>(std::numeric_limits<UInt32>::max())))
     {
     }
 
-    String getName() const override { return name; }
+    static FunctionPtr create(const char * name, FunctionSleepVariant variant, ContextPtr context)
+    {
+        return std::make_shared<FunctionSleep>(
+            name, variant, context->getSettingsRef()[Setting::function_sleep_max_microseconds_per_block]);
+    }
+
+    String getName() const override { return function_name; }
     bool isSuitableForConstantFolding() const override { return false; } /// Do not sleep during query analysis.
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        WhichDataType which(arguments[0]);
+        auto is_float_or_native_uint = [](const IDataType & type)
+        {
+            WhichDataType which(type);
+            return which.isFloat() || which.isNativeUInt();
+        };
 
-        if (!which.isFloat() && !which.isNativeUInt())
-            throw Exception(
-                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "Illegal type {} of argument of function {}, expected UInt* or Float*",
-                arguments[0]->getName(),
-                getName());
+        FunctionArgumentDescriptors mandatory_args{
+            {"seconds", is_float_or_native_uint, nullptr, "UInt* or Float*"}
+        };
+        validateFunctionArguments(getName(), arguments, mandatory_args);
 
         return std::make_shared<DataTypeUInt8>();
     }
@@ -108,6 +110,12 @@ public:
 
     ColumnPtr execute(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, bool dry_run) const
     {
+        /// Resolved from the executing thread rather than captured: this instance can be stored in table
+        /// metadata and then run by any later query.
+        QueryStatusPtr query_status;
+        if (auto query_context = CurrentThread::tryGetQueryContext())
+            query_status = query_context->getProcessListElementSafe();
+
         const IColumn * col = arguments[0].column.get();
 
         if (!isColumnConst(*col))
@@ -187,9 +195,9 @@ However, it can be useful in the following scenarios:
 2. **Debugging**: If you need to examine the state of the system or the execution of a query at a specific point in time, you can use `sleep()` to introduce a pause, allowing you to inspect or collect relevant information.
 3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur, such as network latency or external system dependencies.
 
-:::warning
+<Warning>
 It's important to use the `sleep()` function judiciously and only when necessary, as it can potentially impact the overall performance and responsiveness of your ClickHouse system.
-:::
+</Warning>
 
 For security reasons, the function can only be executed in the default user profile (with `allow_sleep` enabled).
 )";
@@ -210,7 +218,6 @@ SELECT sleep(2);
 ┌─sleep(2)─┐
 │        0 │
 └──────────┘
-1 row in set. Elapsed: 2.012 sec.
             )"
         },
     };
@@ -218,7 +225,9 @@ SELECT sleep(2);
     FunctionDocumentation::Category category_sleep = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_sleep = {description_sleep, syntax_sleep, arguments_sleep, {}, returned_value_sleep, examples_sleep, introduced_in_sleep, category_sleep};
 
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerBlock>>(documentation_sleep);
+    factory.registerFunction("sleep",
+        [](ContextPtr ctx){ return FunctionSleep::create("sleep", FunctionSleepVariant::PerBlock, std::move(ctx)); },
+        documentation_sleep);
 
     FunctionDocumentation::Description description_sleepEachRow = R"(
 Pauses the execution of a query for a specified number of seconds for each row in the result set.
@@ -230,9 +239,9 @@ It allows you to simulate delays or introduce pauses in the processing of each r
 2. **Debugging**: If you need to examine the state of the system or the execution of a query for each row processed, you can use `sleepEachRow()` to introduce pauses, allowing you to inspect or collect relevant information.
 3. **Simulation**: In some cases, you may want to simulate real-world scenarios where delays or pauses occur for each row processed, such as when dealing with external systems or network latencies.
 
-:::warning
+<Warning>
 Like the `sleep()` function, it's important to use `sleepEachRow()` judiciously and only when necessary, as it can significantly impact the overall performance and responsiveness of your ClickHouse system, especially when dealing with large result sets.
-:::
+</Warning>
 )";
     FunctionDocumentation::Syntax syntax_sleepEachRow = "sleepEachRow(seconds)";
     FunctionDocumentation::Arguments arguments_sleepEachRow = {
@@ -261,7 +270,9 @@ SELECT number, sleepEachRow(0.5) FROM system.numbers LIMIT 5;
     FunctionDocumentation::Category category_sleepEachRow = FunctionDocumentation::Category::Other;
     FunctionDocumentation documentation_sleepEachRow = {description_sleepEachRow, syntax_sleepEachRow, arguments_sleepEachRow, {}, returned_value_sleepEachRow, examples_sleepEachRow, introduced_in_sleepEachRow, category_sleepEachRow};
 
-    factory.registerFunction<FunctionSleep<FunctionSleepVariant::PerRow>>(documentation_sleepEachRow);
+    factory.registerFunction("sleepEachRow",
+        [](ContextPtr ctx){ return FunctionSleep::create("sleepEachRow", FunctionSleepVariant::PerRow, std::move(ctx)); },
+        documentation_sleepEachRow);
 }
 
 }

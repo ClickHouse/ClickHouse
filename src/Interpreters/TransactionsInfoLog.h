@@ -27,7 +27,7 @@ struct TransactionsInfoLogElement
 
     Type type = UNKNOWN;
     Decimal64 event_time = 0;
-    UInt64 thread_id;
+    UInt64 thread_id{};
 
     String query_id;
     TransactionID tid = Tx::EmptyTID;

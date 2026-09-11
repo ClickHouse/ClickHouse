@@ -76,7 +76,7 @@ public:
     {
         bool has_nullable_types = false;
         bool has_null_types = false;
-        std::unordered_set<size_t> arguments_that_can_be_only_null;
+        UnorderedSetWithMemoryTracking<size_t> arguments_that_can_be_only_null;
         if (nested_function)
             arguments_that_can_be_only_null = nested_function->getArgumentsThatCanBeOnlyNull();
 
@@ -114,7 +114,7 @@ public:
             return std::make_shared<AggregateFunctionNothingNull>(arguments, params);
         }
 
-        assert(nested_function);
+        chassert(nested_function);
 
         if (auto adapter = nested_function->getOwnNullAdapter(nested_function, arguments, params, properties))
             return adapter;
@@ -162,9 +162,13 @@ public:
 
 }
 
+void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory);
 void registerAggregateFunctionCombinatorNull(AggregateFunctionCombinatorFactory & factory)
 {
-    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorNull>());
+    factory.registerCombinator(std::make_shared<AggregateFunctionCombinatorNull>(), Documentation{
+        .description = "An internal combinator that adapts an aggregate function to handle `Nullable` arguments and results.",
+        .syntax = "<aggregate_function>",
+        .related = {"OrNull", "OrDefault"}});
 }
 
 }

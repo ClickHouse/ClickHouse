@@ -13,7 +13,7 @@ import signal
 import sys
 
 logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    level=logging.DEBUG, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 from integration.helpers.cluster import ZOOKEEPER_CONTAINERS
 from sparkserver import (
@@ -250,10 +250,22 @@ parser.add_argument(
     help="Add log tables server settings",
 )
 parser.add_argument(
+    "--without-encryption-codecs",
+    action="store_false",
+    dest="add_encryption_codecs",
+    help="Add 'encryption_codecs' keys, enabling the AES codecs",
+)
+parser.add_argument(
     "--without-distributed-ddl",
     action="store_false",
     dest="add_distributed_ddl",
     help="Add 'distributed_ddl' settings",
+)
+parser.add_argument(
+    "--without-distributed-query",
+    action="store_false",
+    dest="add_distributed_query",
+    help="Add 'distributed_query' settings",
 )
 parser.add_argument(
     "--without-shared-catalog",
@@ -345,6 +357,12 @@ parser.add_argument(
     default=UNSET,
     help="Total time to run the test in minutes (the test will stop after this time)",
 )
+parser.add_argument(
+    "--tmp-files-dir",
+    type=pathlib.Path,
+    default=pathlib.Path("/tmp"),
+    help="Path to temporary files dir",
+)
 
 args = parser.parse_args()
 
@@ -412,7 +430,7 @@ keeper_configs: list[str] = modify_keeper_settings(args, is_private_binary)
 
 if args.with_minio:
     # Set environment variables before cluster starts
-    credentials_file = tempfile.NamedTemporaryFile()
+    credentials_file = tempfile.NamedTemporaryFile(dir=args.tmp_files_dir)
     os.environ["AWS_ACCESS_KEY_ID"] = "testing"
     os.environ["AWS_SECRET_ACCESS_KEY"] = "testing"
     os.environ["AWS_SESSION_TOKEN"] = "testing"
@@ -422,7 +440,7 @@ if args.with_minio:
     os.environ["MINIO_SECRET_KEY"] = minio_secret_key
     with open(credentials_file.name, "w+") as file:
         file.write(
-            f"[default]\naws_access_key_id = testing\naws_secret_access_key = testing\naws_session_token = testing\naws_region = us-east-1\naws_endpoint_url = http://localhost:3000\n"
+            "[default]\naws_access_key_id = testing\naws_secret_access_key = testing\naws_session_token = testing\naws_region = us-east-1\naws_endpoint_url = http://localhost:3000\n"
         )
     os.environ["AWS_CONFIG_FILE"] = credentials_file.name
     os.environ["AWS_SHARED_CREDENTIALS_FILE"] = credentials_file.name
@@ -435,6 +453,7 @@ cluster = ClickHouseCluster(
     server_bin_path=first_server,
     client_bin_path=args.client_binary,
     server_binaries=sorted_binaries,
+    with_dolor=True,
 )
 
 # Set environment variables such as locales and timezones
@@ -451,7 +470,7 @@ if server_settings is not None:
     )
     if generated_clusters > 0:
         modified_user_settings, user_settings = modify_user_settings(
-            user_settings, generated_clusters
+            args, user_settings, generated_clusters
         )
 
 dolor_main_configs = [
@@ -471,7 +490,6 @@ for i in range(0, len(args.replica_values)):
     servers.append(
         cluster.add_instance(
             f"node{i}",
-            with_dolor=True,
             stay_alive=True,
             copy_common_configs=False,
             with_zookeeper=args.with_zookeeper,
@@ -498,7 +516,7 @@ for i in range(0, len(args.replica_values)):
 server_versions = {}
 for server in servers:
     server_versions[server.name] = first_server
-cluster.start()
+cluster.start(300)
 logger.info(
     f"Starting cluster with {len(servers)} server(s) and server binary {first_server}"
 )
@@ -529,7 +547,7 @@ if args.with_postgresql:
         ip=cluster.postgres_ip, port=cluster.postgres_port
     )
     cursor = postgres_conn.cursor()
-    cursor.execute(f"CREATE DATABASE test")
+    cursor.execute("CREATE DATABASE test")
     cursor.close()
     postgres_conn.close()
 
@@ -537,7 +555,7 @@ if args.with_postgresql:
 catalog_server = create_spark_http_server(cluster, args.with_unity, test_env_variables)
 
 # Start the load generator, at the moment only BuzzHouse is available
-generator: Generator = Generator(pathlib.Path(), pathlib.Path(), None)
+generator: Generator = Generator(pathlib.Path(), pathlib.Path(), pathlib.Path(), None)
 if args.generator == "buzzhouse":
     generator = BuzzHouseGenerator(args, cluster, catalog_server, server_settings)
 logger.info("Starting load generator")
@@ -614,9 +632,12 @@ if args.with_redis:
     integrations.append("redis")
 if args.with_kafka:
     integrations.append("kafka")
+if args.with_arrowflight:
+    integrations.append("arrowflight")
 
 # This is the main loop, run while client and server are running
 all_running = True
+good_exit = True
 tables_oracle: ElOraculoDeTablas = ElOraculoDeTablas()
 # Shutdown info
 lower_bound, upper_bound = args.time_between_shutdowns
@@ -666,11 +687,14 @@ while all_running and (not reached_limit):
                 f"Load generator finished {explain_returncode(client.process.returncode)}"
             )
             all_running = False
+            good_exit = good_exit and generator.validate_exit_code(
+                client.process.returncode
+            )
         for server in servers:
             pid = server.get_process_pid("clickhouse")
             if pid is None:
                 logger.info(f"The server {server.name} is not running")
-                all_running = False
+                all_running = good_exit = False
         reached_limit = test_limit is not None and time.time() >= test_limit
         if reached_limit:
             logger.info("Test timeout reached, stopping the load generator and exiting")
@@ -706,11 +730,17 @@ while all_running and (not reached_limit):
             f"Restarting the server {next_pick.name} with {'kill' if kill_server else 'manual shutdown'}"
         )
 
-        next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
+        try:
+            next_pick.stop_clickhouse(stop_wait_sec=10, kill=kill_server)
+        except Exception as ex:
+            logger.error(f"Failed to stop ClickHouse: {ex}")
+            logger.info(f"The server {next_pick.name} is not running")
+            all_running = good_exit = False
         time.sleep(1)
         # Replace server binary, using a new temporary symlink
         if (
-            len(sorted_binaries) > 1
+            all_running
+            and len(sorted_binaries) > 1
             and random.randint(1, 100) <= args.change_server_version_prob
         ):
             if len(servers) == 1 and len(sorted_binaries) == 2:
@@ -732,11 +762,17 @@ while all_running and (not reached_limit):
                 user="root",
             )
             server_versions[next_pick.name] = next_server
-        time.sleep(3)  # Let the keeper session expire
-        next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
-        if args.with_leak_detection and next_pick.name == "node0":
-            # Has to reset leak detector
-            leak_detector.reset_and_capture_baseline(cluster)
+        if all_running:
+            time.sleep(3)  # Let the keeper session expire
+            try:
+                next_pick.start_clickhouse(start_wait_sec=10, retry_start=False)
+            except Exception as ex:
+                logger.error(f"Failed to start ClickHouse: {ex}")
+                logger.info(f"The server {next_pick.name} is not running")
+                all_running = good_exit = False
+            if all_running and args.with_leak_detection and next_pick.name == "node0":
+                # Has to reset leak detector
+                leak_detector.reset_and_capture_baseline(cluster)
     elif len(integrations) > 0:
         # Restart any other integration
         next_pick = random.choice(integrations)
@@ -751,6 +787,7 @@ while all_running and (not reached_limit):
             "mongo": ["mongo1", "mongo_no_cred", "mongo_secure"],
             "redis": ["redis1"],
             "kafka": ["kafka1"],
+            "arrowflight": ["flight_server"],
         }
 
         restart_choices = list(available_options[next_pick])
@@ -766,5 +803,7 @@ while all_running and (not reached_limit):
         )
         time.sleep(random.randint(integration_lower_bound, integration_upper_bound))
         cluster.process_integration_nodes(next_pick, choosen_instances, "start")
+    if all_running:
+        tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
 
-    tables_oracle.collect_table_hash_after_shutdown(cluster, logger, dump_table)
+sys.exit(0 if good_exit else 1)

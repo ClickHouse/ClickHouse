@@ -8,6 +8,7 @@ INSERT INTO users VALUES (88888, 'AMS', 50);
 SELECT '-- count() ------------------------------';
 SELECT count() FROM users PREWHERE uid > 2000;
 
+SET automatic_parallel_replicas_mode = 0;
 -- enable parallel replicas but with high rows threshold
 SET
 skip_unavailable_shards=1,

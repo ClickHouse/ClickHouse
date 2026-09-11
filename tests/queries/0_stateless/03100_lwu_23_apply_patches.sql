@@ -34,8 +34,8 @@ SYSTEM FLUSH LOGS part_log;
 
 SELECT
     ProfileEvents['MutationSomePartColumns'],
-    ProfileEvents['MutatedUncompressedBytes'] -- 2 * 8 * 10000 = 160000, because only 2 columns must be affected.
-FROM system.part_log WHERE database = currentDatabase() AND table = 't_apply_patches' AND event_type = 'MutatePart'
+    ProfileEvents['MutatedUncompressedBytes'] -- 4 * 8 * 10000 = 320000: 2 updated columns plus materialized _block_number and _block_offset.
+FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_apply_patches' AND event_type = 'MutatePart'
 ORDER BY ALL;
 
 CREATE TABLE t_apply_patches_smt (a UInt64, b UInt64, c UInt64, d UInt64)
@@ -66,8 +66,8 @@ SYSTEM FLUSH LOGS part_log;
 
 SELECT
     ProfileEvents['MutationSomePartColumns'],
-    ProfileEvents['MutatedUncompressedBytes'] -- 2 * 8 * 10000 = 160000, because only 2 columns must be affected.
-FROM system.part_log WHERE database = currentDatabase() AND table = 't_apply_patches_smt' AND event_type = 'MutatePart'
+    ProfileEvents['MutatedUncompressedBytes'] -- 4 * 8 * 10000 = 320000: 2 updated columns plus materialized _block_number and _block_offset.
+FROM system.part_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 't_apply_patches_smt' AND event_type = 'MutatePart'
 ORDER BY ALL;
 
 DROP TABLE IF EXISTS t_apply_patches SYNC;

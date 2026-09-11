@@ -1,0 +1,45 @@
+---
+title: '部署选项'
+slug: /infrastructure/deployment-options
+description: 'ClickHouse 客户可用的部署选项'
+keywords: ['自备 Cloud', 'byoc', '私有', 'Government', '自行部署']
+doc_type: 'reference'
+---
+
+ClickHouse 提供多种部署选项，以满足不同客户的需求，在控制力、合规要求和运维开销之间提供不同程度的权衡。
+本文档概述了可用的各类部署方式，帮助您选择最符合自身架构偏好、监管要求和资源管理策略的解决方案。
+
+<div id="clickhouse-cloud">
+  ## ClickHouse Cloud
+</div>
+
+ClickHouse Cloud 是一项 fully managed 的云原生服务，无需自行管理，即可享受 ClickHouse 的强大能力与高性能，同时免去自运维的复杂性。
+如果你优先考虑快速部署、良好的扩展性以及尽可能低的管理开销，这一选项非常适合。
+ClickHouse Cloud 负责预配、扩缩容、维护和更新，使用户能够完全专注于数据分析和应用开发。
+它提供按量计费和自动扩缩容，确保分析工作负载获得可靠且具成本效益的性能。该服务可在 AWS、GCP 和 Azure 上使用，并支持通过市场直接计费。
+
+了解更多 [ClickHouse Cloud](/zh/get-started/setup/cloud) 信息。
+
+<div id="byoc">
+  ## 自备 Cloud
+</div>
+
+ClickHouse 自备 Cloud (BYOC) 允许组织在自身云环境中部署和管理 ClickHouse，同时借助托管服务层。该选项兼顾了 ClickHouse Cloud 的全托管体验与自管理部署的完全控制。借助 ClickHouse BYOC，用户既能保留对数据、基础设施和安全策略的控制，以满足特定的合规与监管要求，又可将打补丁、监控和扩缩容等运维工作交由 ClickHouse 处理。该模式兼具私有云部署的灵活性和托管服务的优势，因此特别适合对安全性、治理和数据驻留有严格要求的大规模企业部署。
+
+了解更多关于 [自备 Cloud](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 的信息。
+
+<div id="clickhouse-private">
+  ## ClickHouse Private
+</div>
+
+ClickHouse Private 是 ClickHouse 的自部署版本，采用与 ClickHouse Cloud 相同的专有技术。该选项提供最高程度的控制，因此特别适合对合规、网络和安全有严格要求的组织，以及具备自行管理基础设施运维能力的团队。它可受益于在 ClickHouse Cloud 环境中经过充分验证的定期更新和升级、功能丰富的产品路线图，以及我们专家支持团队的保障。
+
+进一步了解 [ClickHouse Private](/zh/products/cloud/guides/infrastructure/deployment-options/clickhouse-private)。
+
+<div id="clickhouse-government">
+  ## ClickHouse Government
+</div>
+
+ClickHouse Government 是 ClickHouse 的自部署版本，专为需要隔离且经过认证环境的政府机构和公共部门组织而设计，以满足其独特且严格的要求。该部署选项提供高度安全、合规且隔离的环境，重点支持借助 OpenSSL 实现 FIPS 140-3 合规，并提供额外的系统加固和漏洞管理。它充分利用 ClickHouse Cloud 的强大能力，同时集成专门的功能和配置，以满足政府机构在运营和安全方面的特定需求。借助 ClickHouse Government，各机构可在受控且经过认证的基础设施中，对敏感数据进行高性能分析，并获得专为公共部门需求量身打造的专家支持。
+
+进一步了解 [ClickHouse Government](/zh/products/cloud/guides/infrastructure/deployment-options/clickhouse-government)。

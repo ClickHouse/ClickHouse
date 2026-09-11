@@ -5,12 +5,16 @@
 #if USE_AWS_S3
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <atomic>
 #include <memory>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
+#include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
-
+#include <IO/ReadBufferFromS3.h>
+#include <Parsers/IParser.h>
+#include <IO/S3/Client.h>
 
 namespace DB
 {
@@ -23,9 +27,10 @@ namespace S3RequestSetting
 
 class S3ObjectStorage : public IObjectStorage
 {
-private:
-    friend class S3PlainObjectStorage;
+public:
+    using S3CredentialsRefreshCallback = ReadBufferFromS3::S3CredentialsRefreshCallback;
 
+private:
     S3ObjectStorage(
         const char * logger_name,
         std::unique_ptr<S3::Client> && client_,
@@ -34,15 +39,19 @@ private:
         const S3Capabilities & s3_capabilities_,
         ObjectStorageKeyGeneratorPtr key_generator_,
         const String & disk_name_,
-        bool for_disk_s3_ = true)
+        bool for_disk_s3_ = true,
+        const S3CredentialsRefreshCallback & credentials_refresh_callback_ = [] -> std::unique_ptr<const S3::Client>{ return nullptr; },
+        bool client_restricts_server_credentials_ = true)
         : uri(uri_)
         , disk_name(disk_name_)
         , client(std::move(client_))
+        , client_restricts_server_credentials(client_restricts_server_credentials_)
         , s3_settings(std::move(s3_settings_))
         , s3_capabilities(s3_capabilities_)
         , key_generator(std::move(key_generator_))
         , log(getLogger(logger_name))
         , for_disk_s3(for_disk_s3_)
+        , credentials_refresh_callback(credentials_refresh_callback_)
     {
     }
 
@@ -68,7 +77,9 @@ public:
     std::unique_ptr<ReadBufferFromFileBase> readObject( /// NOLINT
         const StoredObject & object,
         const ReadSettings & read_settings,
-        std::optional<size_t> read_hint = {}) const override;
+        std::optional<size_t> read_hint = {},
+        bool use_external_buffer = false,
+        bool restrict_seek = false) const override;
 
     SmallObjectDataWithMetadata readSmallObjectAndGetObjectMetadata( /// NOLINT
         const StoredObject & object,
@@ -86,16 +97,26 @@ public:
 
     void listObjects(const std::string & path, RelativePathsWithMetadata & children, size_t max_keys) const override;
 
-    ObjectStorageIteratorPtr iterate(const std::string & path_prefix, size_t max_keys, bool with_tags) const override;
+    ObjectStorageIteratorPtr iterate(
+        const std::string & path_prefix,
+        size_t max_keys,
+        bool with_tags,
+        const std::optional<std::string> & start_after) const override;
 
     /// Uses `DeleteObjectRequest`.
     void removeObjectIfExists(const StoredObject & object) override;
 
     /// Uses `DeleteObjectsRequest` if it is allowed by `s3_capabilities`, otherwise `DeleteObjectRequest`.
     /// `DeleteObjectsRequest` does not exist on GCS, see https://issuetracker.google.com/issues/162653700 .
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
-    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
+    void tagObjects( /// NOLINT
+        const StoredObjects & objects,
+        const std::string & tag_key,
+        const std::string & tag_value,
+        StoredObjects * successful_objects = nullptr) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -139,17 +160,29 @@ public:
     std::shared_ptr<const S3::Client> getS3StorageClient() override;
     std::shared_ptr<const S3::Client> tryGetS3StorageClient() override;
 
+    bool tryRefreshCredentialsViaCallback() override;
+
     S3::URI getURI() const { return uri; }
     S3Settings getS3Settings() const { return *s3_settings.get(); }
 private:
     void removeObjectImpl(const StoredObject & object, bool if_exists);
-    void removeObjectsImpl(const StoredObjects & objects, bool if_exists);
+    void removeObjectsImpl(const StoredObjects & objects, bool if_exists, StoredObjects * successful_objects = nullptr);
+
+    std::pair<std::string, std::string> splitBucketAndKey(const std::string & remote_path) const;
+    std::map<std::string, StoredObjects> groupByBucket(const StoredObjects & objects) const;
 
     const S3::URI uri;
 
     std::string disk_name;
 
-    MultiVersion<S3::Client> client;
+    mutable MultiVersion<S3::Client> client;
+    /// The user-query credential restriction mode the current `client` was built under (initialized by the
+    /// caller from the policy used to build the initial client -- e.g. a table created with the opt-in starts
+    /// `false`). `applyNewSettings` rebuilds the client when a session with a different restriction mode accesses
+    /// the storage, so a restricted session never reuses a credentialed client built for an opt-in session (and
+    /// vice versa). Defaults to restricted (the server default) for callers that do not pass an explicit value.
+    /// Atomic: `applyNewSettings` can run concurrently on a shared storage.
+    mutable std::atomic<bool> client_restricts_server_credentials = true;
     MultiVersion<S3Settings> s3_settings;
     S3Capabilities s3_capabilities;
 
@@ -158,6 +191,7 @@ private:
     LoggerPtr log;
 
     const bool for_disk_s3;
+    S3CredentialsRefreshCallback credentials_refresh_callback;
 };
 
 }

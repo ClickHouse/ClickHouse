@@ -1,0 +1,96 @@
+-- baseline: m[key1] rewrites to m.key_key1
+1
+1
+-- 1-level alias: a1[key1] rewrites to m.key_key1 (in WHERE)
+1
+1
+-- 1-level alias: a1[key1] rewrites to m.key_key1 (in SELECT)
+1
+1
+-- 2-level chain: a2[key1] rewrites to m.key_key1
+1
+1
+-- 4-level chain: a4[key1] rewrites to m.key_key1
+1
+1
+-- forward-defined chain: a_fwd[key1] rewrites to m.key_key1
+1
+1
+-- non-trivial alias: a_bad[key1] is NOT rewritten
+1
+1
+-- chain through non-trivial alias: a_after_bad[key1] is NOT rewritten
+1
+1
+-- non-constant key on alias: a1[k] keeps arrayElement
+1
+-- setting off: a1[key1] is NOT rewritten
+1
+-- filter_only: a1 in SELECT + a1[key1] in WHERE, WHERE side rewrites
+1
+-- length(a4) rewrites to m.size0
+1
+-- empty(a2) rewrites using m.size0
+1
+-- mapKeys(a1) rewrites to m.keys
+1
+-- mapContainsKey(a3, key1) rewrites to has(m.keys, key1)
+1
+-- LowCardinality key: some_alias[key1810] rewrites to attributes.key_key1810
+1
+1
+-- LowCardinality key: chained_alias also rewrites
+1
+-- LowCardinality key: same results through every reference
+value-a	value-a	value-a
+value-c	value-c	value-c
+-- alias on PK Map column: a[key1] still rewrites
+1
+-- tupleElement(t_alias, a) rewrites to t.a
+1
+-- tupleElement(t_chain, b) rewrites to t.b through chain
+1
+-- isNull(n_alias) rewrites to n.null
+1
+-- isNotNull(n_chain) rewrites to not(n.null) through chain
+1
+-- count(n_alias) rewrites to sum(not(n.null))
+1
+-- length(a_alias) rewrites to a.size0
+1
+-- empty(a_chain) uses a.size0 through chain
+1
+-- correctness: m, a1, a2, a3 produce identical key1 lookups (with optimization)
+0	0	0	0	0	1
+1	1	1	1	1	2
+2	2	2	2	2	3
+3	3	3	3	3	4
+4	4	4	4	4	5
+-- correctness: identical results without the optimization
+0	0	0	0	0	1
+1	1	1	1	1	2
+2	2	2	2	2	3
+3	3	3	3	3	4
+4	4	4	4	4	5
+-- correctness: missing key returns default 0 through every alias
+0	0	0	0	0
+1	0	0	0	0
+2	0	0	0	0
+3	0	0	0	0
+4	0	0	0	0
+-- ARRAY JOIN: m[key1] on the unrolled element returns the per-row value
+1	10
+1	11
+2	30
+-- ARRAY JOIN: no spurious arr.key_key1 subcolumn appears in the plan
+1
+-- JOIN USING: m[key1] on the USING column returns the per-row value
+1	10
+2	20
+-- JOIN USING: FUNCTION arrayElement is computed (rewrite did not silently fire)
+1
+-- Subquery: outer m[key1] reads through the subquery and returns the right value
+1	100
+2	300
+-- Subquery: no spurious m.key_key1 ColumnNode is built for the outer reference
+1

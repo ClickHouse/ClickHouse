@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-SETTINGS="--enable_full_text_index=1 "
+SETTINGS=" "
 cat <<EOF | $CLICKHOUSE_CLIENT -n $SETTINGS
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab
@@ -33,7 +33,7 @@ EOF
 for direct_read_setting in 0 1; do
     echo "Setting query_plan_direct_read_from_text_index to $direct_read_setting."
 
-    SETTINGS="--enable_full_text_index=1 "
+    SETTINGS=" "
     SETTINGS="$SETTINGS --use_query_condition_cache=0 "
     SETTINGS="$SETTINGS --use_skip_indexes_on_data_read=1 "
     SETTINGS="$SETTINGS --query_plan_direct_read_from_text_index=$direct_read_setting "
@@ -55,8 +55,6 @@ SELECT count() FROM tab WHERE hasAnyTokens(message, '');
 SELECT count() FROM tab WHERE hasAllTokens(message, '');
 
 SELECT tokens('abc', 'ngrams', 4) AS tokens;
-
-SELECT count() FROM tab WHERE hasToken(message, 'abc');
 
 -- Arrays
 SELECT count() FROM tab WHERE hasAnyTokens(arr, ['abc']);

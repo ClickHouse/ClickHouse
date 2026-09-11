@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ${CLICKHOUSE_CLIENT} -q 'DROP TABLE IF EXISTS ttl_empty_parts'
 
 ${CLICKHOUSE_CLIENT} -q '
-    CREATE TABLE ttl_empty_parts (id UInt32, d Date) ENGINE = MergeTree ORDER BY tuple() PARTITION BY id SETTINGS old_parts_lifetime=5
+    CREATE TABLE ttl_empty_parts (id UInt32, d Date) ENGINE = MergeTree ORDER BY tuple() PARTITION BY id SETTINGS old_parts_lifetime = 5, merge_tree_clear_old_parts_interval_seconds = 1, cleanup_delay_period = 1, cleanup_delay_period_random_add = 0, cleanup_thread_preferred_points_per_iteration = 0
 '
 
 ${CLICKHOUSE_CLIENT} -q "INSERT INTO ttl_empty_parts SELECT 0, toDate('2005-01-01') + number from numbers(500);"

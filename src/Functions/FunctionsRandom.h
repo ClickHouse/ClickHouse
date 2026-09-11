@@ -4,8 +4,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
-#include <Functions/PerformanceAdaptors.h>
-#include <IO/WriteHelpers.h>
 
 
 namespace DB
@@ -26,8 +24,8 @@ namespace ErrorCodes
   *
   * Non-cryptographic generators:
   *
-  * rand   - linear congruential generator 0 .. 2^32 - 1.
-  * rand64 - combines several rand values to get values from the range 0 .. 2^64 - 1.
+  * rand   - values from the range 0 .. 2^32 - 1.
+  * rand64 - values from the range 0 .. 2^64 - 1.
   *
   * randConstant - service function, produces a constant column with a random value.
   *
@@ -38,21 +36,21 @@ namespace ErrorCodes
 
 struct RandImpl
 {
-    /// Fill memory with random data. The memory region must be 15-bytes padded.
+    /// Fill memory with random data. Up to PADDING_FOR_SIMD - 1 bytes past size may be overwritten,
+    /// so the memory region must be padded by at least that much.
     static void execute(char * output, size_t size);
-
-#if USE_MULTITARGET_CODE
-    /// Assumes isArchSupported has been verified before calling
-    static void executeAVX2(char * output, size_t size);
-    static void executeAVX512BW(char * output, size_t size);
-#endif
 };
 
-template <typename ToType, typename Name>
-class FunctionRandom : public IFunction
+template <typename RandImplType, typename ToType, typename Name>
+class FunctionRandomImpl : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
+
+    static FunctionPtr create(ContextPtr)
+    {
+        return std::make_shared<FunctionRandomImpl<RandImplType, ToType, Name>>();
+    }
 
     String getName() const override
     {
@@ -83,12 +81,13 @@ public:
         typename ColumnVector<ToType>::Container & vec_to = col_to->getData();
 
         vec_to.resize(input_rows_count);
-        RandImpl::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
+        RandImplType::execute(reinterpret_cast<char *>(vec_to.data()), vec_to.size() * sizeof(ToType));
 
         return col_to;
     }
-
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionRandom<ToType, Name>>(); }
 };
+
+template <typename ToType, typename Name>
+using FunctionRandom = FunctionRandomImpl<RandImpl, ToType, Name>;
 
 }

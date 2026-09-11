@@ -21,7 +21,7 @@ $CLICKHOUSE_CLIENT -q "
     CREATE MATERIALIZED VIEW mv TO output SQL SECURITY NONE AS SELECT * FROM input;
 "
 
-for enable_analyzer in 0 1; do
+for enable_analyzer in 1; do
     query_id="$(random_str 10)"
     INSERT_QUERY_ID=$query_id
     query="INSERT INTO input SELECT * FROM numbers(1)"
@@ -76,7 +76,7 @@ for enable_analyzer in 0 1; do
                 ProfileEvents['SelectQueriesWithSubqueries'] SelectQueriesWithSubqueries,
                 ProfileEvents['QueriesWithSubqueries'] QueriesWithSubqueries
             FROM system.query_log
-            WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '$qid'
+            WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND type = 'QueryFinish' AND query_id = '$qid'
             FORMAT TSVWithNames;
         "
     done

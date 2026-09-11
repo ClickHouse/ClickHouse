@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/FillingStep.h>
+#include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/FillingTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <IO/Operators.h>
@@ -28,45 +29,62 @@ static ITransformingStep::Traits getTraits()
     };
 }
 
+namespace
+{
+
+/// The columns to fill are exactly the `WITH FILL` elements of the `ORDER BY`, in the same order.
+SortDescription extractWithFillColumns(const SortDescription & sort_description)
+{
+    SortDescription fill_description;
+    for (const auto & description : sort_description)
+        if (description.with_fill)
+            fill_description.push_back(description);
+    return fill_description;
+}
+
+}
+
 FillingStep::FillingStep(
     SharedHeader input_header_,
     SortDescription sort_description_,
-    SortDescription fill_description_,
     InterpolateDescriptionPtr interpolate_description_,
     bool use_with_fill_by_sorting_prefix_)
     : ITransformingStep(input_header_, std::make_shared<const Block>(FillingTransform::transformHeader(*input_header_, sort_description_)), getTraits())
     , sort_description(std::move(sort_description_))
-    , fill_description(std::move(fill_description_))
     , interpolate_description(interpolate_description_)
     , use_with_fill_by_sorting_prefix(use_with_fill_by_sorting_prefix_)
 {
 }
 
-void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void FillingStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     if (pipeline.getNumStreams() != 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "FillingStep expects single input");
 
-    pipeline.addSimpleTransform([&](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
+    const auto fill_description = extractWithFillColumns(sort_description);
+
+    pipeline.addSimpleTransform([&, fill_description](const SharedHeader & header, QueryPipelineBuilder::StreamType stream_type) -> ProcessorPtr
     {
         if (stream_type == QueryPipelineBuilder::StreamType::Totals)
             return std::make_shared<FillingNoopTransform>(header, fill_description);
 
         return std::make_shared<FillingTransform>(
-            header, sort_description, fill_description, std::move(interpolate_description), use_with_fill_by_sorting_prefix);
+            header, sort_description, fill_description, std::move(interpolate_description),
+            use_with_fill_by_sorting_prefix, settings.process_list_element);
     });
 }
 
 void FillingStep::describeActions(FormatSettings & settings) const
 {
-    String prefix(settings.offset, settings.indent_char);
+    const String & prefix = settings.detail_prefix;
     settings.out << prefix;
-    dumpSortDescription(sort_description, settings.out);
+    dumpSortDescription(sort_description, settings);
     settings.out << '\n';
     if (interpolate_description)
     {
         auto expression = std::make_shared<ExpressionActions>(interpolate_description->actions.clone());
-        expression->describeActions(settings.out, prefix);
+        if (!settings.compact)
+            expression->describeActions(settings.out, prefix);
     }
 }
 

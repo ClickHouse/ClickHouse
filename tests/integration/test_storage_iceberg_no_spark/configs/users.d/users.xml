@@ -1,4 +1,9 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <allow_insert_into_iceberg>1</allow_insert_into_iceberg>
+        </default>
+    </profiles>
     <users>
         <default>
             <password></password>

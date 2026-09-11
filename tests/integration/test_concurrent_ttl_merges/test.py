@@ -12,12 +12,14 @@ node1 = cluster.add_instance(
     main_configs=["configs/fast_background_pool.xml"],
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
+    stay_alive=True,
 )
 node2 = cluster.add_instance(
     "node2",
     main_configs=["configs/fast_background_pool.xml"],
     user_configs=["configs/users.xml"],
     with_zookeeper=True,
+    stay_alive=True,
 )
 
 
@@ -29,6 +31,15 @@ def started_cluster():
 
     finally:
         cluster.shutdown()
+
+
+def ensure_node_alive(node):
+    """Restart ClickHouse if the process died (e.g. OOM-killed in a previous run)."""
+    try:
+        node.query("SELECT 1")
+    except Exception:
+        logging.warning(f"Node {node.name} is not responding, restarting")
+        node.start_clickhouse(start_wait_sec=60)
 
 
 def count_ttl_merges_in_queue(node, table):
@@ -76,6 +87,9 @@ def count_running_mutations(node, table):
 # but it revealed a bug when we assign different merges to the same part
 # on the borders of partitions.
 def test_no_ttl_merges_in_busy_pool(started_cluster):
+    ensure_node_alive(node1)
+    node1.query("DROP TABLE IF EXISTS test_ttl SYNC")
+    node1.query("SYSTEM START TTL MERGES")
     node1.query(
         "CREATE TABLE test_ttl (d DateTime, key UInt64, data UInt64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0, number_of_free_entries_in_pool_to_execute_mutation = 0"
     )
@@ -109,6 +123,9 @@ def test_no_ttl_merges_in_busy_pool(started_cluster):
 
 
 def test_limited_ttl_merges_in_empty_pool(started_cluster):
+    ensure_node_alive(node1)
+    node1.query("DROP TABLE IF EXISTS test_ttl_v2 SYNC")
+    node1.query("SYSTEM START TTL MERGES")
     node1.query(
         "CREATE TABLE test_ttl_v2 (d DateTime, key UInt64, data UInt64) ENGINE = MergeTree() ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0"
     )
@@ -138,6 +155,10 @@ def test_limited_ttl_merges_in_empty_pool(started_cluster):
 
 
 def test_limited_ttl_merges_in_empty_pool_replicated(started_cluster):
+    ensure_node_alive(node1)
+    node1.query("DROP TABLE IF EXISTS replicated_ttl SYNC")
+    node1.query("SYSTEM DROP REPLICA '1' FROM ZKPATH '/test/t'", ignore_error=True)
+    node1.query("SYSTEM START TTL MERGES")
     node1.query(
         "CREATE TABLE replicated_ttl (d DateTime, key UInt64, data UInt64) ENGINE = ReplicatedMergeTree('/test/t', '1') ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0"
     )
@@ -172,6 +193,14 @@ def test_limited_ttl_merges_in_empty_pool_replicated(started_cluster):
 
 def test_limited_ttl_merges_two_replicas(started_cluster):
     # Actually this test quite fast and often we cannot catch any merges.
+    ensure_node_alive(node1)
+    ensure_node_alive(node2)
+    node1.query("DROP TABLE IF EXISTS replicated_ttl_2 SYNC")
+    node2.query("DROP TABLE IF EXISTS replicated_ttl_2 SYNC")
+    node1.query("SYSTEM DROP REPLICA '1' FROM ZKPATH '/test/t2'", ignore_error=True)
+    node1.query("SYSTEM DROP REPLICA '2' FROM ZKPATH '/test/t2'", ignore_error=True)
+    node1.query("SYSTEM START TTL MERGES")
+    node2.query("SYSTEM START TTL MERGES")
     node1.query(
         "CREATE TABLE replicated_ttl_2 (d DateTime, key UInt64, data UInt64) ENGINE = ReplicatedMergeTree('/test/t2', '1') ORDER BY tuple() PARTITION BY key TTL d + INTERVAL 1 MONTH SETTINGS merge_with_ttl_timeout = 0"
     )

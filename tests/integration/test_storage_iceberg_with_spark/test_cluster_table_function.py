@@ -12,8 +12,6 @@ from helpers.iceberg_utils import (
 )
 
 import logging
-import time
-import uuid
 import pyarrow.parquet as pq
 from helpers.config_cluster import minio_secret_key
 
@@ -73,7 +71,7 @@ def test_cluster_table_function(started_cluster_iceberg_with_spark, format_versi
     logging.info(f"Setup complete. files: {files}")
     assert len(files) == 5 + 4 * (len(started_cluster_iceberg_with_spark.instances) - 1)
 
-    clusters = instance.query(f"SELECT * FROM system.clusters")
+    clusters = instance.query("SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
@@ -176,7 +174,7 @@ def test_writes_cluster_table_function(started_cluster_iceberg_with_spark, forma
     logging.info(f"Setup complete. files: {files}")
     assert len(files) == 5 + 4 * (len(started_cluster_iceberg_with_spark.instances) - 1)
 
-    clusters = instance.query(f"SELECT * FROM system.clusters")
+    clusters = instance.query("SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
@@ -204,15 +202,14 @@ def test_writes_cluster_table_function(started_cluster_iceberg_with_spark, forma
     assert len(select_cluster) == 600
 
     create_iceberg_table(storage_type, instance, TABLE_NAME_2, started_cluster_iceberg_with_spark, "(a Int32, b String)", format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME_2} SELECT * FROM {table_function_expr_cluster};", settings={"allow_experimental_insert_into_iceberg": 1})
+    instance.query(f"INSERT INTO {TABLE_NAME_2} SELECT * FROM {table_function_expr_cluster};", settings={"allow_insert_into_iceberg": 1})
 
     assert instance.query(f"SELECT * FROM {table_function_expr_cluster}") == instance.query(f"SELECT * FROM {TABLE_NAME_2}")
 
 @pytest.mark.parametrize("format_version", ["1", "2"])
 @pytest.mark.parametrize("storage_type", ["s3", "azure"])
 @pytest.mark.parametrize("cluster_table_function_buckets_batch_size", [0, 100, 1000])
-@pytest.mark.parametrize("input_format_parquet_use_native_reader_v3", [0, 1])
-def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with_spark, format_version, storage_type, cluster_table_function_buckets_batch_size,input_format_parquet_use_native_reader_v3):
+def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with_spark, format_version, storage_type, cluster_table_function_buckets_batch_size):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     spark = started_cluster_iceberg_with_spark.spark_session
 
@@ -253,7 +250,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
             if file[-7:] == 'parquet':
                 pq_file = file
 
-    clusters = instance.query(f"SELECT * FROM system.clusters")
+    clusters = instance.query("SELECT * FROM system.clusters")
     logging.info(f"Clusters setup: {clusters}")
 
     # Regular Query only node1
@@ -277,7 +274,7 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     def get_buffers_count(func):
         buffers_count_before = int(
             instance.query(
-                f"SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
+                "SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
             )
         )
 
@@ -285,13 +282,13 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
         instance.query("SYSTEM FLUSH LOGS")
         buffers_count = int(
             instance.query(
-                f"SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
+                "SELECT sum(ProfileEvents['EngineFileLikeReadFiles']) FROM system.query_log WHERE type = 'QueryFinish'"
             )
         )
         return buffers_count - buffers_count_before
 
     select_cluster = (
-        instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split()
+        instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split()
     )
 
     # Simple size check
@@ -299,27 +296,26 @@ def test_cluster_table_function_split_by_row_groups(started_cluster_iceberg_with
     # Actual check
     assert select_cluster == select_regular
 
-    buffers_count_with_splitted_tasks = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
-    buffers_count_default = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3}, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
+    buffers_count_with_splitted_tasks = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
+    buffers_count_default = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_cluster} ORDER BY ALL SETTINGS cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
     assert buffers_count_with_splitted_tasks > buffers_count_default
 
     if storage_type != "s3":
         return
     table_function_expr_s3_cluster = f"s3Cluster('cluster_simple', 'http://minio1:9001/root/{pq_file}', 'minio', '{minio_secret_key}', 'Parquet')"
-    buffers_count_with_splitted_tasks = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_s3_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3},cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
-    buffers_count_default = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_s3_cluster} ORDER BY ALL SETTINGS input_format_parquet_use_native_reader_v3={input_format_parquet_use_native_reader_v3}, cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
+    buffers_count_with_splitted_tasks = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_s3_cluster} ORDER BY ALL SETTINGS cluster_table_function_split_granularity='bucket', cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
+    buffers_count_default = get_buffers_count(lambda: instance.query(f"SELECT * FROM {table_function_expr_s3_cluster} ORDER BY ALL SETTINGS cluster_table_function_buckets_batch_size={cluster_table_function_buckets_batch_size}").strip().split())
     if buffers_count_with_splitted_tasks != 0:
         assert buffers_count_with_splitted_tasks >= buffers_count_default
 
 @pytest.mark.parametrize("storage_type", ["s3"])
 def test_empty_parquet_file(started_cluster_iceberg_with_spark, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
-    spark = started_cluster_iceberg_with_spark.spark_session
     format_version = '2'
     TABLE_NAME = "test_empty_parquet_file_" + get_uuid_str()
 
     create_iceberg_table(storage_type, instance, TABLE_NAME, started_cluster_iceberg_with_spark, "(x String)", format_version)
-    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1);", settings={"allow_experimental_insert_into_iceberg":1})
+    instance.query(f"INSERT INTO {TABLE_NAME} VALUES (1);", settings={"allow_insert_into_iceberg":1})
 
     table_function_expr_cluster = get_creation_expression(
         storage_type,
@@ -347,8 +343,8 @@ def test_empty_parquet_file(started_cluster_iceberg_with_spark, storage_type):
     assert len(pq_file) > 0, files
     pq_file = '/' + pq_file
     schema = pq.read_schema(pq_file)
-    empty_table = schema.empty_table()
-    with pq.ParquetWriter(pq_file, schema) as writer:
+    schema.empty_table()
+    with pq.ParquetWriter(pq_file, schema):
         pass
     default_upload_directory(
         started_cluster_iceberg_with_spark,

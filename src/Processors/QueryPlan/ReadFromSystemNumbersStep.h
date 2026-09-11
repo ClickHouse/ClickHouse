@@ -31,9 +31,6 @@ public:
     QueryPlanStepPtr clone() const override;
 
 private:
-    /// Fail fast if estimated number of rows to read exceeds the limit
-    void checkLimits(size_t rows);
-
     Pipe makePipe();
 
     const Names column_names;
@@ -41,7 +38,6 @@ private:
     ExpressionActionsPtr key_expression;
     size_t max_block_size;
     size_t num_streams;
-    UInt64 query_info_limit;
     std::shared_ptr<const StorageLimitsList> storage_limits;
 };
 

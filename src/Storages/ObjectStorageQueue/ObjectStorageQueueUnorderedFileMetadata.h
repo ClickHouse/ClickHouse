@@ -18,6 +18,7 @@ public:
         size_t max_loading_retries_,
         std::atomic<size_t> & metadata_ref_count_,
         bool use_persistent_processing_nodes_,
+        const std::string & zookeeper_name_,
         LoggerPtr log_);
 
     static std::vector<std::string> getMetadataPaths() { return {"processed", "failed", "processing", "persistent_processing"}; }
@@ -26,7 +27,10 @@ public:
     static void filterOutProcessedAndFailed(
         std::vector<std::string> & paths,
         const std::filesystem::path & zk_path_,
+        const std::string & zookeeper_name_,
         LoggerPtr log_);
+
+    PathState getPathState(std::string & failure_message) const override;
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;

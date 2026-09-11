@@ -40,7 +40,7 @@ $CLICKHOUSE_CLIENT -q "
     SELECT '-- Each function handler should be called exactly once:';
     SELECT 'startQuery count:', count()
     FROM system.trace_log
-    WHERE event_date >= yesterday()
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
       AND query_id = '$query_id'
       AND trace_type = 'Instrumentation'
       AND handler = 'log'
@@ -48,7 +48,7 @@ $CLICKHOUSE_CLIENT -q "
 
     SELECT 'finishQuery count:', count()
     FROM system.trace_log
-    WHERE event_date >= yesterday()
+    WHERE event_date >= yesterday() AND event_time >= now() - 600
       AND query_id = '$query_id'
       AND trace_type = 'Instrumentation'
       AND handler = 'log'

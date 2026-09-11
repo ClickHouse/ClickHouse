@@ -52,12 +52,10 @@ public:
         {
             /// Atoms of a Boolean expression.
             FUNCTION_EQUALS,
-            FUNCTION_NOT_EQUALS,
             FUNCTION_HAS,
             FUNCTION_HAS_ANY,
             FUNCTION_HAS_ALL,
             FUNCTION_IN,
-            FUNCTION_NOT_IN,
             FUNCTION_UNKNOWN, /// Can take any value.
             /// Operators of the logical expression.
             FUNCTION_NOT,
@@ -141,6 +139,7 @@ class MergeTreeIndexBloomFilter final : public IMergeTreeIndex
 {
 public:
     MergeTreeIndexBloomFilter(
+        StorageMetadataPtr metadata_snapshot_,
         const IndexDescription & index_,
         size_t bits_per_row_,
         size_t hash_functions_);

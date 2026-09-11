@@ -16,17 +16,17 @@ Produces a 64-bit [SipHash](https://en.wikipedia.org/wiki/SipHash) hash value.
 
 This is a cryptographic hash function. It works at least three times faster than the [`MD5`](#MD5) hash function.
 
-The function [interprets](/sql-reference/functions/type-conversion-functions#reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them.
+The function [interprets](/reference/functions/regular-functions/type-conversion-functions#reinterpretAsString) all the input parameters as strings and calculates the hash value for each of them.
 It then combines the hashes using the following algorithm:
 
 1. The first and the second hash value are concatenated to an array which is hashed.
 2. The previously calculated hash value and the hash of the third input parameter are hashed in a similar way.
 3. This calculation is repeated for all remaining hash values of the original input.
 
-:::note
+<Note>
 the calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax sipHash64_syntax = "sipHash64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments sipHash64_arguments = {
@@ -39,7 +39,7 @@ This affects for example integer types of different size, named and unnamed `Tup
             "SELECT sipHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;",
             R"(
 ┌──────────────SipHash─┬─type───┐
-│ 11400366955626497465 │ UInt64 │
+│ 11348918044846389429 │ UInt64 │
 └──────────────────────┴────────┘
             )"
         }
@@ -64,7 +64,7 @@ Like [`sipHash64`](#sipHash64) but additionally takes an explicit key argument i
             "SELECT sipHash64Keyed((506097522914230528, 1084818905618843912), array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS SipHash, toTypeName(SipHash) AS type;",
             R"(
 ┌─────────────SipHash─┬─type───┐
-│ 8017656310194184311 │ UInt64 │
+│ 8194087499447867747 │ UInt64 │
 └─────────────────────┴────────┘
             )"
         }
@@ -77,11 +77,11 @@ Like [`sipHash64`](#sipHash64) but additionally takes an explicit key argument i
     FunctionDocumentation::Description sipHash128_description = R"(
 Like [`sipHash64`](#sipHash64) but produces a 128-bit hash value, i.e. the final xor-folding state is done up to 128 bits.
 
-:::tip use sipHash128Reference for new projects
+<Tip title="use sipHash128Reference for new projects">
 This 128-bit variant differs from the reference implementation and is weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
 New projects are advised to use [`sipHash128Reference`](#sipHash128Reference).
-:::
+</Tip>
 )";
     FunctionDocumentation::Syntax sipHash128_syntax = "sipHash128(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments sipHash128_arguments = {
@@ -91,9 +91,11 @@ New projects are advised to use [`sipHash128Reference`](#sipHash128Reference).
     FunctionDocumentation::Examples sipHash128_examples = {
     {
         "Usage example",
-        "SELECT hex(sipHash128('foo', '\\x01', 3));",
+        // The hash is binary, so it is shown with `hex`, and the result is aliased to keep the
+        // non-printable byte of the argument out of the column name.
+        "SELECT hex(sipHash128('foo', '\\x01', 3)) AS res;",
         R"(
-┌─hex(sipHash128('foo', '', 3))────┐
+┌─res──────────────────────────────┐
 │ 9DE516A64A414D4B1B609415E4523F24 │
 └──────────────────────────────────┘
         )"
@@ -107,26 +109,26 @@ New projects are advised to use [`sipHash128Reference`](#sipHash128Reference).
     FunctionDocumentation::Description sipHash128Keyed_description = R"(
 Same as [`sipHash128`](#sipHash128) but additionally takes an explicit key argument instead of using a fixed key.
 
-:::tip use sipHash128ReferenceKeyed for new projects
+<Tip title="use sipHash128ReferenceKeyed for new projects">
 This 128-bit variant differs from the reference implementation and it's weaker.
 This version exists because, when it was written, there was no official 128-bit extension for SipHash.
 New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128ReferenceKeyed).
-:::
+</Tip>
 )";
     FunctionDocumentation::Syntax sipHash128Keyed_syntax = "sipHash128Keyed((k0, k1), [arg1, arg2, ...])";
     FunctionDocumentation::Arguments sipHash128Keyed_arguments = {
         {"(k0, k1)", "A tuple of two UInt64 values representing the key.", {"Tuple(UInt64, UInt64)"}},
         {"arg1[, arg2, ...]", "A variable number of input arguments for which to compute the hash.", {"Any"}}
     };
-    FunctionDocumentation::ReturnedValue sipHash128Keyed_returned_value = {"A 128-bit `SipHash` hash value of type [FixedString(16)](../data-types/fixedstring.md).", {"FixedString(16)"}};
+    FunctionDocumentation::ReturnedValue sipHash128Keyed_returned_value = {"A 128-bit `SipHash` hash value of type [FixedString(16)](/reference/data-types/fixedstring).", {"FixedString(16)"}};
     FunctionDocumentation::Examples sipHash128Keyed_examples = {
         {
             "Usage example",
-            "SELECT hex(sipHash128Keyed((506097522914230528, 1084818905618843912),'foo', '\\x01', 3));",
+            "SELECT hex(sipHash128Keyed((506097522914230528, 1084818905618843912), 'foo', '\\x01', 3)) AS res;",
             R"(
-┌─hex(sipHash128Keyed((506097522914230528, 1084818905618843912), 'foo', '', 3))─┐
-│ B8467F65C8B4CFD9A5F8BD733917D9BF                                              │
-└───────────────────────────────────────────────────────────────────────────────┘
+┌─res──────────────────────────────┐
+│ B8467F65C8B4CFD9A5F8BD733917D9BF │
+└──────────────────────────────────┘
             )"
         }
     };
@@ -136,7 +138,7 @@ New projects should probably use [`sipHash128ReferenceKeyed`](#sipHash128Referen
     factory.registerFunction<FunctionSipHash128Keyed>(sipHash128Keyed_documentation);
 
     FunctionDocumentation::Description sipHash128Ref_description = R"(
-Like [`sipHash128`](/sql-reference/functions/hash-functions#sipHash128) but implements the 128-bit algorithm from the original authors of SipHash.
+Like [`sipHash128`](/reference/functions/regular-functions/hash-functions#sipHash128) but implements the 128-bit algorithm from the original authors of SipHash.
     )";
     FunctionDocumentation::Syntax sipHash128Ref_syntax = "sipHash128Reference(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments sipHash128Ref_arguments = {
@@ -146,11 +148,11 @@ Like [`sipHash128`](/sql-reference/functions/hash-functions#sipHash128) but impl
     FunctionDocumentation::Examples sipHash128Ref_examples = {
     {
         "Usage example",
-        "SELECT hex(sipHash128Reference('foo', '\x01', 3));",
+        "SELECT hex(sipHash128Reference('foo', '\\x01', 3)) AS res;",
         R"(
-┌─hex(sipHash128Reference('foo', '', 3))─┐
-│ 4D1BE1A22D7F5933C0873E1698426260       │
-└────────────────────────────────────────┘
+┌─res──────────────────────────────┐
+│ C3AA2F3C06A14DBE3742E9107AA9765D │
+└──────────────────────────────────┘
         )"
     }
     };
@@ -171,11 +173,11 @@ Same as [`sipHash128Reference`](#sipHash128Reference) but additionally takes an 
     FunctionDocumentation::Examples sipHash128RefKeyed_examples = {
     {
         "Usage example",
-        "SELECT hex(sipHash128Reference('foo', '\x01', 3));",
+        "SELECT hex(sipHash128ReferenceKeyed((506097522914230528, 1084818905618843912), 'foo', '\\x01', 3)) AS res;",
          R"(
-┌─hex(sipHash128Reference('foo', '', 3))─┐
-│ 4D1BE1A22D7F5933C0873E1698426260       │
-└────────────────────────────────────────┘
+┌─res──────────────────────────────┐
+│ 1D010CC83FB5460C25B556CE40992E61 │
+└──────────────────────────────────┘
         )"
     }
     };
@@ -191,16 +193,16 @@ This is a fast non-cryptographic hash function.
 It uses the CityHash algorithm for string parameters and implementation-specific fast non-cryptographic hash function for parameters with other data types.
 The function uses the CityHash combinator to get the final results.
 
-:::info
+<Info>
 Google changed the algorithm of CityHash after it was added to ClickHouse.
 In other words, ClickHouse's cityHash64 and Google's upstream CityHash now produce different results.
 ClickHouse cityHash64 corresponds to CityHash v1.0.2.
-:::
+</Info>
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax cityHash64_syntax = "cityHash64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments cityHash64_arguments = {
@@ -213,7 +215,7 @@ This affects for example integer types of different size, named and unnamed `Tup
             "SELECT cityHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS CityHash, toTypeName(CityHash) AS type;",
             R"(
 ┌─────────────CityHash─┬─type───┐
-│ 12072650598913549138 │ UInt64 │
+│ 17177535963988450974 │ UInt64 │
 └──────────────────────┴────────┘
             )"
         },
@@ -237,9 +239,9 @@ INSERT INTO users VALUES
 SELECT groupBitXor(cityHash64(*)) FROM users;
             )",
             R"(
-┌─groupBitXor(⋯age, city))─┐
-│     11639977218258521182 │
-└──────────────────────────┘
+┌─groupBitXor(cityHash64(id, name, age, city))─┐
+│                         11639977218258521182 │
+└──────────────────────────────────────────────┘
             )"
         }
     };
@@ -251,14 +253,14 @@ SELECT groupBitXor(cityHash64(*)) FROM users;
     FunctionDocumentation::Description farmFingerprint64_description = R"(
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) value using the `Fingerprint64` method.
 
-:::tip
+<Tip>
 `farmFingerprint64` is preferred for a stable and portable value over [`farmHash64`](#farmHash64).
-:::
+</Tip>
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax farmFingerprint64_syntax = "farmFingerprint64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments farmFingerprint64_arguments = {
@@ -270,9 +272,9 @@ This affects for example integer types of different size, named and unnamed `Tup
             "Usage example",
             "SELECT farmFingerprint64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmFingerprint, toTypeName(FarmFingerprint) AS type;",
             R"(
-┌─────FarmFingerprint─┬─type───┐
-│ 5752020380710916328 │ UInt64 │
-└─────────────────────┴────────┘
+┌──────FarmFingerprint─┬─type───┐
+│ 16673609057812504858 │ UInt64 │
+└──────────────────────┴────────┘
             )"
         }
     };
@@ -284,14 +286,14 @@ This affects for example integer types of different size, named and unnamed `Tup
     FunctionDocumentation::Description farmHash64_description = R"(
 Produces a 64-bit [FarmHash](https://github.com/google/farmhash) using the `Hash64` method.
 
-:::tip
+<Tip>
 [`farmFingerprint64`](#farmFingerprint64) is preferred for a stable and portable value.
-:::
+</Tip>
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax farmHash64_syntax = "farmHash64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments farmHash64_arguments = {
@@ -303,9 +305,9 @@ This affects for example integer types of different size, named and unnamed `Tup
             "Usage example",
             "SELECT farmHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:00')) AS FarmHash, toTypeName(FarmHash) AS type;",
             R"(
-┌─────────────FarmHash─┬─type───┐
-│ 18125596431186471178 │ UInt64 │
-└──────────────────────┴────────┘
+┌────────────FarmHash─┬─type───┐
+│ 2663412879246289891 │ UInt64 │
+└─────────────────────┴────────┘
             )"
         }
     };
@@ -316,10 +318,10 @@ This affects for example integer types of different size, named and unnamed `Tup
     FunctionDocumentation::Description metroHash64_description = R"(
 Produces a 64-bit [MetroHash](http://www.jandrewrogers.com/2015/05/27/metrohash/) hash value.
 
-:::note
+<Note>
 The calculated hash values may be equal for the same input values of different argument types.
 This affects for example integer types of different size, named and unnamed `Tuple` with the same data, `Map` and the corresponding `Array(Tuple(key, value))` type with the same data.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax metroHash64_syntax = "metroHash64(arg1[, arg2, ...])";
     FunctionDocumentation::Arguments metroHash64_arguments = {
@@ -334,7 +336,7 @@ SELECT metroHash64(array('e','x','a'), 'mple', 10, toDateTime('2019-06-15 23:00:
         )",
         R"(
 ┌────────────MetroHash─┬─type───┐
-│ 14235658766382344533 │ UInt64 │
+│ 16292826582821303855 │ UInt64 │
 └──────────────────────┴────────┘
         )"
     }
@@ -364,9 +366,9 @@ This hash function has two modes:
         "Usage example",
         "SELECT URLHash('https://www.clickhouse.com')",
         R"(
-┌─URLHash('htt⋯house.com')─┐
-│     13614512636072854701 │
-└──────────────────────────┘
+┌─URLHash('https://www.clickhouse.com')─┐
+│                  13614512636072854701 │
+└───────────────────────────────────────┘
         )"
     },
     {
@@ -376,14 +378,8 @@ SELECT URLHash('https://www.clickhouse.com/docs', 0);
 SELECT URLHash('https://www.clickhouse.com/docs', 1);
         )",
         R"(
--- hash of https://www.clickhouse.com
-┌─URLHash('htt⋯m/docs', 0)─┐
-│     13614512636072854701 │
-└──────────────────────────┘
--- hash of https://www.clickhouse.com/docs
-┌─URLHash('htt⋯m/docs', 1)─┐
-│     13167253331440520598 │
-└──────────────────────────┘
+13614512636072854701
+13167253331440520598
         )"
     }
     };
@@ -399,15 +395,15 @@ Calculates JavaHash from:
 - [Integer](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Integer.java#l959),
 - [Long](https://hg.openjdk.java.net/jdk8u/jdk8u/jdk/file/478a4add975b/src/share/classes/java/lang/Long.java#l1060).
 
-:::caution
+<Warning>
 This hash function is unperformant.
 Use it only when this algorithm is already in use in another system and you need to calculate the same result.
-:::
+</Warning>
 
-:::note
+<Note>
 Java only supports calculating the hash of signed integers,
 so if you want to calculate a hash of unsigned integers you must cast them to the proper signed ClickHouse types.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax javaHash_syntax = "javaHash(arg)";
     FunctionDocumentation::Arguments javaHash_arguments = {
@@ -422,7 +418,7 @@ SELECT javaHash(toInt32(123));
         )",
         R"(
 ┌─javaHash(toInt32(123))─┐
-│               123      │
+│                    123 │
 └────────────────────────┘
         )"
      },
@@ -470,10 +466,10 @@ Calculates a "HiveHash" from a string.
 This is just [`JavaHash`](#javaHash) with zeroed out sign bits.
 This function is used in [Apache Hive](https://en.wikipedia.org/wiki/Apache_Hive) for versions before 3.0.
 
-:::caution
+<Warning>
 This hash function is unperformant.
 Use it only when this algorithm is already used in another system and you need to calculate the same result.
-:::
+</Warning>
 )";
     FunctionDocumentation::Syntax hiveHash_syntax = "hiveHash(arg)";
     FunctionDocumentation::Arguments hiveHash_arguments = {
@@ -548,6 +544,38 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation xxHash64_documentation = {xxHash64_description, xxHash64_syntax, xxHash64_arguments, {}, xxHash64_returned_value, xxHash64_examples, xxHash64_introduced_in, xxHash64_category};
     factory.registerFunction<FunctionXxHash64>(xxHash64_documentation);
 
+    FunctionDocumentation::Description xxHash64Spark_description = R"(
+Calculates a [xxHash](http://cyan4973.github.io/xxHash/) from a string using the same seed as Spark.
+
+This function is the same as [`xxHash64`](#xxHash64), but it uses seed `42` and returns the result as `Int64`.
+Only `String` and `NULL` inputs are supported.
+For `NULL`, the function returns `42`, matching Spark's seed behavior.
+)";
+    FunctionDocumentation::Syntax xxHash64Spark_syntax = "xxHash64Spark(arg)";
+    FunctionDocumentation::Arguments xxHash64Spark_arguments = {{"arg", "Input string to hash.", {"String"}}};
+    FunctionDocumentation::ReturnedValue xxHash64Spark_returned_value
+        = {"Returns the computed 64-bit hash of the input string.", {"Int64"}};
+    FunctionDocumentation::Examples xxHash64Spark_examples
+        = {{"Usage example",
+            "SELECT xxHash64Spark('ABC');",
+            R"(
+┌─xxHash64Spark('ABC')─┐
+│  4105715581806190027 │
+└──────────────────────┘
+        )"}};
+    FunctionDocumentation::IntroducedIn xxHash64Spark_introduced_in = {26, 7};
+    FunctionDocumentation::Category xxHash64Spark_category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation xxHash64Spark_documentation
+        = {xxHash64Spark_description,
+           xxHash64Spark_syntax,
+           xxHash64Spark_arguments,
+           {},
+           xxHash64Spark_returned_value,
+           xxHash64Spark_examples,
+           xxHash64Spark_introduced_in,
+           xxHash64Spark_category};
+    factory.registerFunction<FunctionXxHash64Spark>(xxHash64Spark_documentation);
+
     FunctionDocumentation::Description xxh3_description = "Computes a [XXH3](https://github.com/Cyan4973/xxHash) 64-bit hash value.";
     FunctionDocumentation::Syntax xxh3_syntax = "xxh3(expr)";
     FunctionDocumentation::Arguments xxh3_argument = {{"expr", "A list of expressions of any data type.", {"Any"}}};
@@ -557,6 +585,17 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
     FunctionDocumentation::Category xxh3_category = FunctionDocumentation::Category::Hash;
     FunctionDocumentation xxh3_documentation = {xxh3_description, xxh3_syntax, xxh3_argument, {}, xxh3_returned_value, xxh3_example, xxh3_introduced_in, xxh3_category};
     factory.registerFunction<FunctionXXH3>(xxh3_documentation);
+
+    FunctionDocumentation::Description xxh3_128_description = "Computes a [XXH3](https://github.com/Cyan4973/xxHash) 128-bit hash value.";
+    FunctionDocumentation::Syntax xxh3_128_syntax = "xxh3_128(expr)";
+    FunctionDocumentation::Arguments xxh3_128_argument = {{"expr", "A list of expressions of any data type.", {"Any"}}};
+    FunctionDocumentation::ReturnedValue xxh3_128_returned_value = {"Returns the computed 128-bit `xxh3` hash value", {"UInt128"}};
+    FunctionDocumentation::Examples xxh3_128_example
+        = {{"Usage example", "SELECT hex(xxh3_128('ClickHouse'))", "14C27B7BEF95D36FECF5520CA2DAF030"}};
+    FunctionDocumentation::Category xxh3_128_category = FunctionDocumentation::Category::Hash;
+    FunctionDocumentation::IntroducedIn xxh3_128_introduced_in = {26, 2};
+    FunctionDocumentation xxh3_128_documentation = {xxh3_128_description, xxh3_128_syntax, xxh3_128_argument, {}, xxh3_128_returned_value, xxh3_128_example, xxh3_128_introduced_in, xxh3_128_category};
+    factory.registerFunction<FunctionXXH3_128>(xxh3_128_documentation);
 
     FunctionDocumentation::Description wyHash64_description = "Computes a 64-bit [wyHash64](https://github.com/wangyi-fudan/wyhash) hash value.";
     FunctionDocumentation::Syntax wyHash64_syntax = "wyHash64(arg)";
@@ -570,9 +609,9 @@ For the 32-bit version see [`xxHash32`](#xxHash32)
 
 #if USE_SSL
     FunctionDocumentation::Description halfMD5_description = R"(
-[Interprets](/sql-reference/functions/type-conversion-functions#reinterpretAsString) all the input
+[Interprets](/reference/functions/regular-functions/type-conversion-functions#reinterpretAsString) all the input
 parameters as strings and calculates the MD5 hash value for each of them. Then combines hashes, takes the first 8 bytes of the hash of the
-resulting string, and interprets them as [UInt64](/sql-reference/data-types/int-uint) in big-endian byte order. The function is
+resulting string, and interprets them as [UInt64](/reference/data-types/int-uint) in big-endian byte order. The function is
 relatively slow (5 million short strings per second per processor core).
 
 Consider using the [`sipHash64`](#sipHash64) function instead.
@@ -591,7 +630,7 @@ For some data types calculated value of hash function may be the same for the sa
 SELECT HEX(halfMD5('abc', 'cde', 'fgh'));
         )",
         R"(
-┌─hex(halfMD5('abc', 'cde', 'fgh'))─┐
+┌─HEX(halfMD5('abc', 'cde', 'fgh'))─┐
 │ 2C9506B7374CFAF4                  │
 └───────────────────────────────────┘
         )"

@@ -29,7 +29,7 @@ namespace ErrorCodes
     }
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
-class FunctionIcebergHash : public IFunction
+class FunctionIcebergHash final : public IFunction
 {
 
 public:
@@ -75,7 +75,16 @@ public:
 
         WhichDataType which(type);
 
-        if (isBool(type) || which.isInteger() || which.isDate())
+        if ((which.isInteger() && !which.isNativeInteger()) || which.isDecimal256())
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Type `{}` is not supported by icebergHash: the Iceberg specification only defines hashing "
+                "for `int` (32-bit), `long` (64-bit), and `decimal(P,S)` with P <= 38 "
+                "(see https://iceberg.apache.org/spec/#appendix-b-32-bit-hash-requirements). "
+                "Cast the value to a supported type (e.g. Int64 or Decimal128) if it fits.",
+                type->getName());
+
+        if (isBool(type) || which.isNativeInteger() || which.isDate32() || which.isDate())
         {
             for (size_t i = 0; i < input_rows_count; ++i)
             {
@@ -134,7 +143,7 @@ public:
             }
             const auto & source_col = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*wrapper_column);
             const ColumnDateTime64 * decimal_column = &source_col;
-            assert(decimal_column != nullptr);
+            chassert(decimal_column != nullptr);
             UInt32 scale = decimal_column->getScale();
             if ((scale != 6) && (scale != 9))
             {
@@ -180,11 +189,6 @@ public:
                     const ColumnDecimal<Decimal128> * decimal_column = typeid_cast<const ColumnDecimal<Decimal128> *>(wrapper_column);
                     value = decimal_column->getElement(i & idx_mask).value;
                 }
-                else if (which.isDecimal256())
-                {
-                    const ColumnDecimal<Decimal256> * decimal_column = typeid_cast<const ColumnDecimal<Decimal256> *>(wrapper_column);
-                    value = decimal_column->getElement(i & idx_mask).value;
-                }
                 else
                 {
                     throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported data type `{}` for icebergHash", type->getName());
@@ -208,7 +212,7 @@ public:
 private:
     static Int32 hashLong(Int64 value)
     {
-        std::array<char, 8> little_endian_representation;
+        std::array<char, 8> little_endian_representation{};
         for (char & i : little_endian_representation)
         {
             i = static_cast<unsigned char>(value & 0xFF);
@@ -219,7 +223,7 @@ private:
 
     static Int32 hashUnderlyingIntBigEndian(UInt128 value, bool reduce_two_complement)
     {
-        std::array<char, 16> big_endian_representation;
+        std::array<char, 16> big_endian_representation{};
         size_t taken = 1;
         signed char prev = 0;
         for (size_t i = 0; i < 16; ++i)
@@ -256,7 +260,7 @@ private:
         {
             Float64 d;
             UInt64 bits;
-        } converter;
+        } converter{};
 
         converter.d = value;
         if (converter.bits == 0x8000000000000000ULL)
@@ -285,7 +289,7 @@ REGISTER_FUNCTION(IcebergHash)
     factory.registerFunction<FunctionIcebergHash>(documentation);
 }
 
-class FunctionIcebergBucket : public IFunction
+class FunctionIcebergBucket final : public IFunction
 {
 
 public:

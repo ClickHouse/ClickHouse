@@ -1,4 +1,4 @@
--- Force new analyzer because the old one doesn't support multiple USING clauses in a query
+-- Force the analyzer because the old one doesn't support multiple USING clauses in a query
 SET allow_suspicious_low_cardinality_types = 1, enable_analyzer = 1;
 
 DROP TABLE IF EXISTS t0;

@@ -16,7 +16,7 @@ seq 1 1000 | pv --quiet --rate-limit 400 | ${CLICKHOUSE_CLIENT} --query "INSERT 
 result=$(${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log;
     WITH ProfileEvents['NetworkReceiveElapsedMicroseconds'] AS elapsed_us
     SELECT elapsed_us FROM system.query_log
-    WHERE current_database = currentDatabase() AND query_kind = 'Insert' AND event_date >= yesterday() AND type = 'QueryFinish'
+    WHERE current_database = currentDatabase() AND query_kind = 'Insert' AND event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
     ORDER BY event_time DESC LIMIT 1;")
 
 elapsed_us=$(echo $result | sed 's/ .*//')
@@ -29,7 +29,7 @@ else
     ${CLICKHOUSE_CLIENT} --query "
     WITH ProfileEvents['NetworkReceiveElapsedMicroseconds'] AS elapsed_us
     SELECT query_start_time_microseconds, event_time_microseconds, query_duration_ms, elapsed_us, query FROM system.query_log
-    WHERE current_database = currentDatabase() and event_date >= yesterday() AND type = 'QueryFinish' ORDER BY query_start_time;"
+    WHERE current_database = currentDatabase() and event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' ORDER BY query_start_time;"
 fi
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t"

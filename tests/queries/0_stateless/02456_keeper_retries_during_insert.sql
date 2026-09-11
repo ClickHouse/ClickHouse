@@ -1,5 +1,4 @@
--- Tags: replica, no-async-insert
---- Tag no-async-insert: async inserts are not supported with quorum inserts
+-- Tags: replica
 
 DROP TABLE IF EXISTS keeper_retries_r1 SYNC;
 DROP TABLE IF EXISTS keeper_retries_r2 SYNC;

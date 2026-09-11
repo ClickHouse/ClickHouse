@@ -1,10 +1,8 @@
 #pragma once
 
 #include <cstring>
-#include <cassert>
 
-#include <Columns/IColumn.h>
-#include <Common/PODArray.h>
+#include <Common/Exception.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnFixedString.h>
 #include <IO/WriteBufferFromVector.h>

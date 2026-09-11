@@ -1,7 +1,5 @@
 #pragma once
 
-#include "config.h"
-
 #include <base/getPageSize.h>
 #include <boost/noncopyable.hpp>
 #include <Common/Allocator.h>
@@ -10,7 +8,6 @@
 #include <Common/memcpySmall.h>
 
 #include <algorithm>
-#include <cassert>
 #include <cstddef>
 #include <cstdlib>
 #include <cstring>
@@ -79,7 +76,7 @@ void protectMemoryRegion(void * addr, size_t len, int prot);
 /// The amount of memory occupied by the num_elements of the elements.
 inline size_t byte_size(size_t num_elements, size_t element_size)
 {
-    size_t amount;
+    size_t amount = 0;
     if (__builtin_mul_overflow(num_elements, element_size, &amount))
         throw_alloc_error();
     return amount;
@@ -88,7 +85,7 @@ inline size_t byte_size(size_t num_elements, size_t element_size)
 /// Minimum amount of memory to allocate for num_elements, including padding.
 inline size_t minimum_memory_for_elements(size_t num_elements, size_t element_size, size_t pad_left, size_t pad_right)
 {
-    size_t amount;
+    size_t amount = 0;
     if (__builtin_add_overflow(byte_size(num_elements, element_size), pad_left + pad_right, &amount))
         throw_alloc_error();
     return amount;
@@ -102,7 +99,7 @@ inline size_t minimum_memory_for_elements(size_t num_elements, size_t element_si
 template <size_t ELEMENT_SIZE, size_t initial_bytes, typename TAllocator, size_t pad_right_, size_t pad_left_>
 class PODArrayBase : private boost::noncopyable, private TAllocator    /// empty base optimization
 {
-protected:
+public:
     /// Round padding up to an whole number of elements to simplify arithmetic.
     static constexpr size_t pad_right = integerRoundUp(pad_right_, ELEMENT_SIZE);
     /// pad_left is also rounded up to 16 bytes to maintain alignment of allocated memory.
@@ -110,6 +107,7 @@ protected:
     /// Empty array will point to this static memory as padding and begin/end.
     static constexpr char * null = const_cast<char *>(empty_pod_array) + pad_left;
 
+protected:
     static_assert(pad_left <= empty_pod_array_size && "Left Padding exceeds empty_pod_array_size. Is the element size too large?");
     static_assert(pad_left % ELEMENT_SIZE == 0, "pad_left must be multiple of element alignment");
 
@@ -316,7 +314,7 @@ public:
         const char * ptr_end = reinterpret_cast<const char *>(&*from_end);
 
         /// Also it's safe if the range is empty.
-        assert(!((ptr_begin >= c_start && ptr_begin < c_end) || (ptr_end > c_start && ptr_end <= c_end)) || (ptr_begin == ptr_end));
+        chassert(!((ptr_begin >= c_start && ptr_begin < c_end) || (ptr_end > c_start && ptr_end <= c_end)) || (ptr_begin == ptr_end));
 #endif
     }
 
@@ -396,13 +394,13 @@ public:
     T & operator[] (ssize_t n)
     {
         /// <= size, because taking address of one element past memory range is Ok in C++ (expression like &arr[arr.size()] is perfectly valid).
-        assert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
+        chassert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
         return t_start()[n];
     }
 
     const T & operator[] (ssize_t n) const
     {
-        assert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
+        chassert((n >= (static_cast<ssize_t>(pad_left_) ? -1 : 0)) && (n <= static_cast<ssize_t>(this->size())));
         return t_start()[n];
     }
 
@@ -493,8 +491,8 @@ public:
     {
         static_assert(memcpy_can_be_used_for_assignment<std::decay_t<T>, std::decay_t<decltype(rhs.front())>>);
 
-        assert(from_end >= from_begin);
-        assert(from_end <= rhs.size());
+        chassert(from_end >= from_begin);
+        chassert(from_end <= rhs.size());
 
         size_t required_capacity = this->size() + (from_end - from_begin);
         if (required_capacity > this->capacity())
@@ -552,7 +550,7 @@ public:
         size_t end_index = from_end - begin();
         size_t copy_size = end_index - start_index;
 
-        assert(start_index <= end_index);
+        chassert(start_index <= end_index);
 
         size_t required_capacity = this->size() + copy_size;
         if (required_capacity > this->capacity())

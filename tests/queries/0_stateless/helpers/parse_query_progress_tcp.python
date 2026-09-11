@@ -265,10 +265,12 @@ def main():
                 non_empty_progress_packets += 1
 
         print(summary_progress)
-        # Print only non empty progress packets, eventually we should have at least 3 of them
-        # - 2 for each INSERT block (one of them can be merged with read block, heance 3 or for)
+        # Print only non empty progress packets, we should have at least 3 of them:
+        # - 2 for each INSERT block (one of them can be merged with read block)
         # - 1 or 2 for each SELECT block
-        assert non_empty_progress_packets in (3, 4), f"{non_empty_progress_packets=:}"
+        # The upper bound is not enforced because under slow environments (e.g. TSan)
+        # the events may arrive in separate packets instead of being batched together.
+        assert non_empty_progress_packets >= 3, f"{non_empty_progress_packets=:}"
 
         s.close()
 

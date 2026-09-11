@@ -7,11 +7,11 @@ SET mutations_sync = 1;
 
 DROP TABLE IF EXISTS tab;
 
-SET allow_experimental_statistics = 0;
--- Error case: Can't create statistics when allow_experimental_statistics = 0
+SET allow_statistics = 0;
+-- Error case: Can't create statistics when allow_statistics = 0
 CREATE TABLE tab (col Float64 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 
-SET allow_experimental_statistics = 1;
+SET allow_statistics = 1;
 
 -- Error case: Unknown statistics types are rejected
 CREATE TABLE tab (col Float64 STATISTICS(no_statistics_type)) Engine = MergeTree() ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
@@ -95,29 +95,59 @@ CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(countmin)) Engine = MergeTr
 CREATE TABLE tab (col UUID STATISTICS(countmin)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 CREATE TABLE tab (col IPv6 STATISTICS(countmin)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 
---   minmax requires data_type.isValueRepresentedByInteger
+
+--   basic supports all column types: numeric types get min/max; String/FixedString get the
+--   average byte length; Nullable columns get a NULL count; all types get a default-value count.
 --     These types work:
-CREATE TABLE tab (col UInt8 STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col UInt256 STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col Float32 STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col Decimal32(3) STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col Date STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col Date32 STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col DateTime STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col DateTime64 STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col Enum('hello', 'world') STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col IPv4 STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col Nullable(UInt8) STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col LowCardinality(UInt8) STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
-CREATE TABLE tab (col LowCardinality(Nullable(UInt8)) STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col UInt8 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col UInt256 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Float32 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Decimal32(3) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Date STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Date32 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col DateTime STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col DateTime64 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Enum('hello', 'world') STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col IPv4 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col String STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col FixedString(8) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Nullable(UInt8) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Nullable(String) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Nullable(UUID) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Nullable(IPv6) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(UInt8) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(String) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(Nullable(UInt8)) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(Nullable(String)) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Array(Float64) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Tuple(Float64, Float64) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col UUID STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col IPv6 STATISTICS(basic)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+
+--   uniq_v2 requires data_type.isValueRepresentedByNumber or data_type = (Fixed)String (same validator as uniq)
+--     These types work:
+CREATE TABLE tab (col UInt8 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col UInt256 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Float32 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Decimal32(3) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Date STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Date32 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col DateTime STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col DateTime64 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Enum('hello', 'world') STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col IPv4 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col Nullable(UInt8) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(UInt8) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col LowCardinality(Nullable(UInt8)) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col String STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
+CREATE TABLE tab (col FixedString(1) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); DROP TABLE tab;
 --     These types don't work:
-CREATE TABLE tab (col String STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col FixedString(1) STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col Array(Float64) STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col Tuple(Float64, Float64) STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col UUID STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
-CREATE TABLE tab (col IPv6 STATISTICS(minmax)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col Array(Float64) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col Tuple(Float64, Float64) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col Map(UInt64, UInt64) STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col UUID STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (col IPv6 STATISTICS(uniq_v2)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
 
 -- CREATE TABLE was easy, ALTER is more fun
 
@@ -172,7 +202,7 @@ ALTER TABLE tab DROP STATISTICS IF EXISTS s; -- no-op
 ALTER TABLE tab CLEAR STATISTICS s; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab CLEAR STATISTICS IF EXISTS s; -- no-op
 
--- We don't check systematically that that statistics can only be created via ALTER ADD STATISTICS on columns of specific data types (the
+-- We don't check systematically that statistics can only be created via ALTER ADD STATISTICS on columns of specific data types (the
 -- internal type validation code is tested already above, (*)). Only do a rudimentary check for each statistics type with a data type that
 -- works and one that doesn't work.
 --   tdigest
@@ -196,13 +226,25 @@ ALTER TABLE tab MODIFY STATISTICS f64 TYPE countmin; ALTER TABLE tab DROP STATIS
 --     Doesn't work:
 ALTER TABLE tab ADD STATISTICS a TYPE countmin; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab MODIFY STATISTICS a TYPE countmin; -- { serverError ILLEGAL_STATISTICS }
---   minmax
+
+--   basic
+ALTER TABLE tab ADD STATISTICS f64 TYPE basic; ALTER TABLE tab DROP STATISTICS f64;
+ALTER TABLE tab MODIFY STATISTICS f64 TYPE basic; ALTER TABLE tab DROP STATISTICS f64;
+ALTER TABLE tab ADD STATISTICS s TYPE basic; ALTER TABLE tab DROP STATISTICS s;
+ALTER TABLE tab MODIFY STATISTICS s TYPE basic; ALTER TABLE tab DROP STATISTICS s;
+
+ALTER TABLE tab ADD STATISTICS a TYPE basic; ALTER TABLE tab DROP STATISTICS a;
+ALTER TABLE tab MODIFY STATISTICS a TYPE basic; ALTER TABLE tab DROP STATISTICS a;
+
+--   uniq_v2
 --     Works:
-ALTER TABLE tab ADD STATISTICS f64 TYPE minmax; ALTER TABLE tab DROP STATISTICS f64;
-ALTER TABLE tab MODIFY STATISTICS f64 TYPE minmax; ALTER TABLE tab DROP STATISTICS f64;
+ALTER TABLE tab ADD STATISTICS f64 TYPE uniq_v2; ALTER TABLE tab DROP STATISTICS f64;
+ALTER TABLE tab MODIFY STATISTICS f64 TYPE uniq_v2; ALTER TABLE tab DROP STATISTICS f64;
+ALTER TABLE tab ADD STATISTICS s TYPE uniq_v2; ALTER TABLE tab DROP STATISTICS s;
+ALTER TABLE tab MODIFY STATISTICS s TYPE uniq_v2; ALTER TABLE tab DROP STATISTICS s;
 --     Doesn't work:
-ALTER TABLE tab ADD STATISTICS a TYPE minmax; -- { serverError ILLEGAL_STATISTICS }
-ALTER TABLE tab MODIFY STATISTICS a TYPE minmax; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab ADD STATISTICS a TYPE uniq_v2; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab MODIFY STATISTICS a TYPE uniq_v2; -- { serverError ILLEGAL_STATISTICS }
 ALTER TABLE tab MODIFY COLUMN f64_tdigest UInt64;
 
 -- Finally, do a full-circle test of a good case. Print table definition after each step.
@@ -219,4 +261,68 @@ SHOW CREATE TABLE tab;
 ALTER TABLE tab DROP STATISTICS f64, f32;
 SHOW CREATE TABLE tab;
 
+DROP TABLE tab;
+
+-- Statistics of a column that is not physically stored can never be built: the column is absent from
+-- every written block. Such a definition is refused at DDL time.
+
+CREATE TABLE tab (a UInt64, b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+CREATE TABLE tab (a UInt64, b UInt64 EPHEMERAL 1 STATISTICS(tdigest)) Engine = MergeTree() ORDER BY tuple(); -- { serverError ILLEGAL_STATISTICS }
+SET allow_deprecated_syntax_for_merge_tree = 1;
+CREATE TABLE tab (d Date, a UInt64, b UInt64 ALIAS a + 1 STATISTICS(tdigest)) Engine = MergeTree(d, a, 8192); -- { serverError ILLEGAL_STATISTICS }
+SET allow_deprecated_syntax_for_merge_tree = 0;
+
+CREATE TABLE tab (a UInt64) Engine = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '';
+ALTER TABLE tab ADD COLUMN b UInt64 ALIAS a + 1 STATISTICS(tdigest); -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab ADD COLUMN b UInt64 EPHEMERAL 1 STATISTICS(tdigest); -- { serverError ILLEGAL_STATISTICS }
+-- The column is turned non-physical by one command and given statistics by another, so only the
+-- state after all commands can decide.
+ALTER TABLE tab ADD COLUMN b UInt64 ALIAS a + 1, MODIFY COLUMN b STATISTICS(tdigest); -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab ADD COLUMN b UInt64;
+ALTER TABLE tab MODIFY COLUMN b UInt64 EPHEMERAL 1 STATISTICS(tdigest); -- { serverError ILLEGAL_STATISTICS }
+-- A column that stays physically stored keeps its statistics.
+ALTER TABLE tab MODIFY COLUMN b UInt64 MATERIALIZED a + 1 STATISTICS(tdigest);
+-- Pinned: the arm below observes statistics built at INSERT time, which this setting controls.
+INSERT INTO tab (a) SETTINGS materialize_statistics_on_insert = 1 VALUES (1);
+SELECT a, b FROM tab;
+SELECT column, has(statistics, 'TDigest') FROM system.parts_columns WHERE database = currentDatabase() AND table = 'tab' AND active ORDER BY column;
+-- Turning that column non-physical is refused even without a statistics clause: the explicit
+-- statistics it already carries would survive the conversion. `DROP STATISTICS b` first.
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1; -- { serverError ILLEGAL_STATISTICS }
+ALTER TABLE tab DROP STATISTICS b;
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1;
+DROP TABLE tab;
+
+-- Statistics that `auto_statistics_types` supplied are dropped on conversion, not refused.
+CREATE TABLE tab (a UInt64, b UInt64) Engine = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = 'tdigest';
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1;
+INSERT INTO tab VALUES (1);
+SELECT a, b FROM tab;
+DROP TABLE tab;
+
+-- A mutation that named the column while it was still physical must drain, not retry forever.
+CREATE TABLE tab (a UInt64 STATISTICS(tdigest), b UInt64) Engine = MergeTree() ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO tab VALUES (1, 1);
+SYSTEM STOP MERGES tab;
+ALTER TABLE tab MATERIALIZE STATISTICS b SETTINGS mutations_sync = 0;
+ALTER TABLE tab MODIFY COLUMN b UInt64 ALIAS a + 1 SETTINGS mutations_sync = 0;
+SYSTEM START MERGES tab;
+ALTER TABLE tab MATERIALIZE STATISTICS a SETTINGS mutations_sync = 2;
+SELECT count() FROM system.mutations WHERE database = currentDatabase() AND table = 'tab' AND NOT is_done;
+DROP TABLE tab;
+
+-- Naming a non-physical column with no statistics description is rejected, not silently skipped.
+CREATE TABLE tab (a UInt64, b UInt64 ALIAS a + 1) Engine = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '';
+ALTER TABLE tab MATERIALIZE STATISTICS b; -- { serverError ILLEGAL_STATISTICS }
+DROP TABLE tab;
+
+-- Redeclaring a column that already exists is a no-op and must stay one.
+CREATE TABLE tab (a UInt64, b UInt64 ALIAS a + 1) Engine = MergeTree() ORDER BY tuple() SETTINGS auto_statistics_types = '';
+ALTER TABLE tab ADD COLUMN IF NOT EXISTS b UInt64 ALIAS a + 1 STATISTICS(tdigest);
+INSERT INTO tab VALUES (1);
+SELECT a, b FROM tab;
+DETACH TABLE tab;
+ATTACH TABLE tab;
+SELECT a, b FROM tab;
 DROP TABLE tab;

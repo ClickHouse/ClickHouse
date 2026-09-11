@@ -101,6 +101,9 @@ public:
     /// Is node constant
     bool isConstant() const;
 
+    /// Whether the node's result type is Nullable
+    bool isNullable() const;
+
     bool isSubqueryOrSet() const;
 
     /** Get constant as constant column.
@@ -126,6 +129,11 @@ public:
 
     /// Convert node to function node or null optional
     std::optional<RPNBuilderFunctionTreeNode> toFunctionNodeOrNull() const;
+
+    /** If this node is `arrayJoin(x)`, return its argument node `x`; otherwise std::nullopt.
+      * Handles both the DAG `ARRAY_JOIN` action node and the AST `ASTFunction` named `arrayJoin`.
+      */
+    std::optional<RPNBuilderTreeNode> getArrayJoinArgument() const;
 
     /// Get tree context
     const RPNBuilderTreeContext & getTreeContext() const

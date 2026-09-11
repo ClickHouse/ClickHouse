@@ -15,7 +15,7 @@ CREATE TABLE test
 )
 ENGINE = ReplacingMergeTree
 ORDER BY a
-SETTINGS index_granularity_bytes = 10485760, index_granularity = 8192, deduplicate_merge_projection_mode = 'rebuild';
+SETTINGS index_granularity_bytes = 10485760, index_granularity = 8192, merge_max_block_size = 8192, deduplicate_merge_projection_mode = 'rebuild';
 
 INSERT INTO test SELECT number * 3, rand() FROM numbers(100000);
 INSERT INTO test SELECT number * 3 + 1, rand() FROM numbers(100000);

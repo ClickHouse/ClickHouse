@@ -11,7 +11,7 @@ namespace DB
  *     ...
  * ]
  */
-class JSONCompactColumnsBlockOutputFormat : public JSONColumnsBlockOutputFormatBase
+class JSONCompactColumnsBlockOutputFormat final : public JSONColumnsBlockOutputFormatBase
 {
 public:
     JSONCompactColumnsBlockOutputFormat(WriteBuffer & out_, SharedHeader header_, const FormatSettings & format_settings_);

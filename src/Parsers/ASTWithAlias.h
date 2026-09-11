@@ -12,6 +12,16 @@ class ASTQueryParameter;
   */
 class ASTWithAlias : public IAST
 {
+protected:
+    struct ASTWithAliasFlags
+    {
+        using ParentFlags = void;
+        static constexpr UInt32 RESERVED_BITS = 1;
+
+        UInt32 prefer_alias_to_column_name : 1;
+        UInt32 unused : 31;
+    };
+
 public:
     ASTWithAlias();
     ASTWithAlias(const ASTWithAlias &);
@@ -20,9 +30,11 @@ public:
 
     /// The alias, if any, or an empty string.
     String alias;
+
     /// If is true, getColumnName returns alias. Uses for aliases in former WITH section of SELECT query.
     /// Example: 'WITH pow(2, 2) as a SELECT pow(a, 2)' returns 'pow(a, 2)' instead of 'pow(pow(2, 2), 2)'
-    bool prefer_alias_to_column_name = false;
+    bool preferAliasToColumnName() const { return flags<ASTWithAliasFlags>().prefer_alias_to_column_name; }
+    void setPreferAliasToColumnName(bool value) { flags<ASTWithAliasFlags>().prefer_alias_to_column_name = value; }
     // An alias can be defined as a query parameter,
     // in which case we can only resolve it during query execution.
     boost::intrusive_ptr<ASTQueryParameter> parametrised_alias;

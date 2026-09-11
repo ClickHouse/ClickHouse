@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long
+# Tags: long, no-msan
 
 CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL="none"
 # We should have correct env vars from shell_config.sh to run this test

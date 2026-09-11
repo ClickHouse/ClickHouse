@@ -1,10 +1,8 @@
 #pragma once
 
 #include <Interpreters/StorageID.h>
-#include <Parsers/Prometheus/PrometheusQueryTree.h>
-#include <Storages/TimeSeries/PrometheusQueryEvaluationRange.h>
+#include <Storages/StoragePrometheusQuery.h>
 #include <TableFunctions/ITableFunction.h>
-#include <boost/blank.hpp>
 
 
 namespace DB
@@ -16,11 +14,11 @@ namespace DB
 /// Time series table can be specified either as two arguments 'mydb', 'my_ts_table', or one argument mydb.my_ts_table, or just 'my_ts_table'.
 /// Table functions prometheusQueryRange('mydb', 'my_ts_table', 'promql_query', start_time, end_time, step) evaluates a prometheus query
 /// over a range of evaluation times.
-template <bool range>
+template <bool over_range>
 class TableFunctionPrometheusQuery : public ITableFunction
 {
 public:
-    static constexpr auto name = range ? "prometheusQueryRange" : "prometheusQuery";
+    static constexpr auto name = over_range ? "prometheusQueryRange" : "prometheusQuery";
 
     String getName() const override { return name; }
 
@@ -42,10 +40,7 @@ private:
         return "";
     }
 
-    StorageID time_series_storage_id = StorageID::createEmpty();
-    PrometheusQueryTree promql_query;
-    std::conditional_t<!range, Field, boost::blank> evaluation_time;
-    std::conditional_t<range, PrometheusQueryEvaluationRange, boost::blank> evaluation_range;
+    StoragePrometheusQuery::Configuration config;
 };
 
 }

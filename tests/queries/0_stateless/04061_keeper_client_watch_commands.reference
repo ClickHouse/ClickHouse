@@ -1,0 +1,50 @@
+-- get with watch_id
+initial
+-- exists with watch_id
+1
+0
+-- ls with watch_id
+child1
+-- watch data change
+initial
+path: /test-keeper-watch-default
+type: CHANGED
+-- watch child event
+child1
+path: /test-keeper-watch-default
+type: CHILD
+-- watch exists created
+0
+path: /test-keeper-watch-default/will_appear
+type: CREATED
+-- watch timeout
+updated
+Watch 'wtimeout' timed out
+-- watch unknown id
+No watch with id 'no_such_watch'
+-- data change does not trigger children watch
+updated
+child1 child2 will_appear
+path: /test-keeper-watch-default
+type: CHANGED
+Watch 'w_ls' timed out
+child1 child2 child3 will_appear
+path: /test-keeper-watch-default
+type: CHILD
+-- child change does not trigger data watch
+child1 child2 child3 will_appear
+v2
+path: /test-keeper-watch-default
+type: CHANGED
+path: /test-keeper-watch-default
+type: CHILD
+-- child change does not trigger exists watch
+child1 child2 child3 child4 will_appear
+1
+path: /test-keeper-watch-default
+type: CHANGED
+path: /test-keeper-watch-default
+type: CHILD
+-- duplicate watches
+child1 child2 child3 child4 child5 will_appear
+Watch 'wexists_ls' already exists

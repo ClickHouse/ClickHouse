@@ -2,13 +2,12 @@
 #include "config.h"
 
 
-#include <Core/NamesAndTypes.h>
 #include <Parsers/IAST_fwd.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/KeyDescription.h>
 #include <Storages/MergeTree/KeyCondition.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 
 
 namespace DB::Iceberg
@@ -28,10 +27,33 @@ enum class PruningReturnStatus
 namespace DB::Iceberg
 {
 
-struct ManifestFileEntry;
-class ManifestFileContent;
+struct ProcessedManifestFileEntry;
+class ManifestFileIterator;
 
 DB::ASTPtr getASTFromTransform(const String & transform_name_src, const String & column_name);
+
+struct PartitionKeyFromSpec
+{
+    PartitionSpecification partition_specification;
+    std::optional<DB::KeyDescription> key_description;
+};
+
+PartitionKeyFromSpec buildPartitionKeyFromSpec(
+    const Poco::JSON::Array::Ptr & partition_specification_json,
+    Int32 schema_id,
+    const IcebergSchemaProcessor & schema_processor,
+    DB::ContextPtr context);
+
+/// NOTE: tricky part to support RENAME column.
+/// Takes ActionDAG representation of user's WHERE expression and
+/// renames columns to their original numeric ID's in iceberg.
+std::unique_ptr<DB::ActionsDAG> renameFilterDagColumnsToFieldIds(
+    const IcebergSchemaProcessor & schema_processor,
+    Int32 current_schema_id,
+    Int32 target_schema_id,
+    const DB::ActionsDAG * source_dag,
+    std::vector<Int32> & used_columns_in_filter,
+    std::unordered_map<Int32, DB::NameAndTypePair> & row_lineage_columns_in_filter);
 
 /// Prune specific data files based on manifest content
 class ManifestFilesPruner
@@ -44,10 +66,7 @@ private:
     std::optional<DB::KeyCondition> partition_key_condition;
 
     std::unordered_map<Int32, DB::KeyCondition> min_max_key_conditions;
-    /// NOTE: tricky part to support RENAME column.
-    /// Takes ActionDAG representation of user's WHERE expression and
-    /// rename columns to the their origina numeric ID's in iceberg
-    std::unique_ptr<DB::ActionsDAG> transformFilterDagForManifest(const DB::ActionsDAG * source_dag, std::vector<Int32> & used_columns_in_filter) const;
+    std::unordered_map<Int32, DB::NameAndTypePair> row_lineage_columns;
 
 public:
     ManifestFilesPruner(
@@ -55,10 +74,10 @@ public:
         Int32 current_schema_id_,
         Int32 initial_schema_id_,
         const DB::ActionsDAG * filter_dag,
-        const ManifestFileContent & manifest_file,
+        const ManifestFileIterator & manifest_file,
         DB::ContextPtr context);
 
-    PruningReturnStatus canBePruned(const ManifestFileEntryPtr & entry) const;
+    PruningReturnStatus canBePruned(const ProcessedManifestFileEntryPtr & entry, const std::unordered_map<Int32, DB::Range> & entry_hyperrectangles) const;
 };
 
 }

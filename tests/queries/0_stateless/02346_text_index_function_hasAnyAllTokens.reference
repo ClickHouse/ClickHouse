@@ -1,4 +1,9 @@
 Negative tests
+Test unlimited tokens
+1
+2
+1
+2
 Test singular aliases
 Test what happens when hasAnyTokens/All is called on a column without index
 -- We expected that the default tokenizer is used

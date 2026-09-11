@@ -32,7 +32,7 @@ public:
     void visit(ASTFunction & ast_function, ASTPtr &)
     {
         auto aggregate_function_properties
-            = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name, ast_function.nulls_action);
+            = AggregateFunctionFactory::instance().tryGetProperties(ast_function.name, ast_function.getNullsAction());
 
         if (aggregate_function_properties && aggregate_function_properties->is_order_dependent)
         {
@@ -69,7 +69,9 @@ void DuplicateOrderByFromSubqueriesData::visit(ASTSelectQuery & select_query, AS
             || select_query.limitByOffset()
             || select_query.limitByLength()
             || select_query.limitLength()
-            || select_query.limitOffset())
+            || select_query.limitOffset()
+            || select_query.limitAfter()
+            || select_query.limitUntil())
         {
             return;
         }

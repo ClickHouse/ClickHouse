@@ -18,10 +18,12 @@ query_id=$(
 )
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" \
-    -d "system flush logs text_log"
+    -d "SYSTEM FLUSH LOGS text_log"
 
-${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" \
-    -d "SELECT message FROM system.text_log WHERE level='Error' AND query_id='${query_id}' AND message LIKE '%Request stream is shared by multiple threads. HTTP keep alive is not possible.%'"
+# Use max_threads=0 to avoid randomized max_threads limiting parallelism,
+# which can make scanning system.text_log too slow under TSan.
+${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}&max_threads=0" \
+    -d "SELECT message_format_string FROM system.text_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND level='Error' AND query_id='${query_id}' AND message_format_string = 'Request stream is shared by multiple threads. HTTP keep alive is not possible. Use count {}'"
 
 ${CLICKHOUSE_CURL} -sS "${CLICKHOUSE_URL}" -H 'Accept-Encoding: gzip' \
     -d 'DROP TABLE insert_number_table'

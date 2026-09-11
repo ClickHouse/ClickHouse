@@ -32,8 +32,8 @@ do
     do
         type=${DATA_TYPES[$type_index]}
         value=${DATA_VALUES[$type_index]}
-        echo -e "\t ${value} \t" | $CLICKHOUSE_LOCAL -S "c1 ${type}" --input-format="CSV" --input_format_csv_trim_whitespaces=${trim} -q "select * from table FORMAT CSV"
-        echo -e "\t ${value} \t" | $CLICKHOUSE_LOCAL -S "c1 Nullable(${type})" --input-format="CSV" --input_format_csv_trim_whitespaces=${trim} -q "select * from table FORMAT CSV"
+        echo -e "\t ${value} \t" | $CLICKHOUSE_LOCAL -S "c1 ${type}" --input-format="CSV" --input_format_csv_trim_whitespaces=${trim} --date_time_input_format=basic -q "select * from table FORMAT CSV"
+        echo -e "\t ${value} \t" | $CLICKHOUSE_LOCAL -S "c1 Nullable(${type})" --input-format="CSV" --input_format_csv_trim_whitespaces=${trim} --date_time_input_format=basic -q "select * from table FORMAT CSV"
     done
 done
 

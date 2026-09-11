@@ -50,7 +50,7 @@ public:
     void add(const Value & x, Weight w)
     {
         if (!isNaN(x))
-            data.add(x, w);
+            data.add(static_cast<Float64>(x), static_cast<Float64>(w));
     }
 
     void merge(const QuantileDD &other)

@@ -15,7 +15,10 @@ public:
 
     UInt32 getMaxCompressedDataSize(UInt32 uncompressed_size) const override;
 
-    static std::vector<uint8_t> getCodecsBytesFromData(const char * source);
+    static VectorWithMemoryTracking<uint8_t> getCodecsBytesFromData(const char * source);
+
+    /// The pipeline stages, in application order (the generic-compression stage, if any, is among them).
+    const Codecs & getCodecs() const { return codecs; }
 
     void updateHash(SipHash & hash) const override;
 
@@ -27,6 +30,8 @@ protected:
 
     bool isCompression() const override;
     bool isGenericCompression() const override { return false; }
+    bool isEncryption() const override;
+    bool isLossyCompression() const override;
 
     String getDescription() const override { return "Apply multiple codecs consecutively defined by user."; }
 

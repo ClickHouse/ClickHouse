@@ -20,6 +20,7 @@ INSERT INTO parallel_replicas (x, u, s) VALUES (51, 52, 'Z');
 
 /* Two replicas */
 
+SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=1, parallel_replicas_mode='sampling_key', max_parallel_replicas=3, parallel_replicas_for_non_replicated_merge_tree = 1;
 
 CREATE TABLE parallel_replicas_backup(d Date DEFAULT today(), x UInt32, u UInt64, s String) ENGINE = Memory;

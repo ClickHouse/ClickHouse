@@ -2,7 +2,6 @@
 
 import argparse
 import base64
-import json
 
 import pyarrow as pa
 import pyarrow.flight as fl

@@ -47,11 +47,14 @@ bool ParserCreateIndexDeclaration::parseImpl(Pos & pos, ASTPtr & node, Expected 
         {
             auto order_by_elem = order_list->children[0];
             expr = order_by_elem->children[0];
+            /// The index's own `(...)` already groups the expression; a top-level parenthesization
+            /// flag (from input like `((expr))`) is redundant and does not survive a format-parse
+            /// round trip, so drop it.
+            expr->setParenthesized(false);
         }
         else
         {
             auto tuple_func = makeASTOperator("tuple");
-            tuple_func->arguments = make_intrusive<ASTExpressionList>();
 
             for (const auto & order_by_elem : order_list->children)
             {

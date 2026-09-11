@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# Tags: no-parallel-replicas
-# no-parallel-replicas: the ProfileEvents with the expected values are reported on the replicas the query runs in,
-# and the coordinator does not collect all ProfileEvents values.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,8 +6,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 readonly query_prefix=$CLICKHOUSE_DATABASE
 
-# Does additional index analysis round and affects profile events
-CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --automatic_parallel_replicas_mode 0"
+# The query runs on the replicas, so keep the local plan: the ProfileEvents this test asserts on
+# are only collected for the part of the query the coordinator runs itself.
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --parallel_replicas_local_plan 1 --use_statistics_for_part_pruning=0"
 
 $CLICKHOUSE_CLIENT -n -q "
 DROP TABLE IF EXISTS t;
@@ -71,6 +69,6 @@ $CLICKHOUSE_CLIENT -n -q "SELECT count() FROM t3 WHERE CAST(a, 'Int256') = '4' F
 $CLICKHOUSE_CLIENT -n -q "SYSTEM FLUSH LOGS query_log;"
 
 $CLICKHOUSE_CLIENT -n -q "SELECT sum(ProfileEvents['IndexBinarySearchAlgorithm']), sum(ProfileEvents['IndexGenericExclusionSearchAlgorithm']) FROM system.query_log
-    WHERE type > 1 AND event_date >= yesterday() AND query_id ILIKE '${query_prefix}_binary%' AND current_database = currentDatabase()"
+    WHERE type > 1 AND event_date >= yesterday() AND event_time >= now() - 600 AND query_id ILIKE '${query_prefix}_binary%' AND current_database = currentDatabase()"
 $CLICKHOUSE_CLIENT -n -q "SELECT sum(ProfileEvents['IndexBinarySearchAlgorithm']), sum(ProfileEvents['IndexGenericExclusionSearchAlgorithm']) FROM system.query_log
     WHERE type > 1 AND event_date >= yesterday() AND query_id ILIKE '${query_prefix}_generic%' AND current_database = currentDatabase()"

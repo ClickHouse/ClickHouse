@@ -2,12 +2,13 @@
 -- - no-random-merge-tree-settings -- may change number of parts
 
 drop table if exists test_10m;
-create table test_10m (key Int, value Int) engine=MergeTree() order by key;
+create table test_10m (key Int, value Int) engine=MergeTree() order by key settings distributed_index_analysis_min_parts_to_activate=0, distributed_index_analysis_min_indexes_bytes_to_activate=0;
 system stop merges test_10m;
 insert into test_10m select number, number*100 from numbers(10e6);
 
 set allow_experimental_parallel_reading_from_replicas=0;
 set cluster_for_parallel_replicas='';
+set max_parallel_replicas=100;
 
 select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings distributed_index_analysis=1; -- { serverError CLUSTER_DOESNT_EXIST }
 
@@ -21,20 +22,23 @@ select groupArraySortedDistinct(10)(_part), sum(key) from test_10m settings clus
 -- { echoOff }
 system flush logs query_log;
 select format(
-  'distributed_index_analysis={}, DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisMissingParts={}, DistributedIndexAnalysisScheduledReplicas={}, DistributedIndexAnalysisFailedReplicas>0={}',
+  'distributed_index_analysis={}, DistributedIndexAnalysisMicroseconds>0={}, DistributedIndexAnalysisMissingParts={}, DistributedIndexAnalysisScheduledReplicas={}, DistributedIndexAnalysisReplicaUnavailable={}, DistributedIndexAnalysisReplicaFallback={}',
   Settings['distributed_index_analysis'],
   ProfileEvents['DistributedIndexAnalysisMicroseconds'] > 0,
   ProfileEvents['DistributedIndexAnalysisMissingParts'],
   ProfileEvents['DistributedIndexAnalysisScheduledReplicas'],
-  ProfileEvents['DistributedIndexAnalysisFailedReplicas'] > 0
+  ProfileEvents['DistributedIndexAnalysisReplicaUnavailable'],
+  ProfileEvents['DistributedIndexAnalysisReplicaFallback']
 )
 from system.query_log
 where
   current_database = currentDatabase()
-  and event_date >= yesterday()
+  and event_date >= yesterday() AND event_time >= now() - 600
   and type = 'QueryFinish'
   and query_kind = 'Select'
   and is_initial_query
   and has(Settings, 'allow_experimental_parallel_reading_from_replicas')
   and endsWith(log_comment, '-' || currentDatabase())
 order by event_time_microseconds;
+
+drop table test_10m;

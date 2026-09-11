@@ -2,6 +2,8 @@
 
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ParserTablePropertiesQuery.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 
 #include <Common/typeid_cast.h>
 
@@ -109,13 +111,13 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
         if (!(exists_view || parse_show_create_view))
         {
             if (temporary || s_temporary.ignore(pos, expected))
-                query->temporary = true;
+                query->setIsTemporary(true);
 
             if (!s_table.ignore(pos, expected))
                 s_dictionary.ignore(pos, expected);
         }
 
-        query->temporary = temporary;
+        query->setIsTemporary(temporary);
 
         if (!name_p.parse(pos, table, expected))
             return false;
@@ -141,5 +143,28 @@ bool ParserTablePropertiesQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & 
     return true;
 }
 
+
+}
+
+namespace DB
+{
+
+void registerStatementExists(StatementFactory & factory)
+{
+    factory.registerStatement("EXISTS",
+    {
+        .description = R"DOCS_MD(
+```sql
+EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
+```
+
+Returns a single `UInt8`-type column, which contains the single value `0` if the table or database does not exist, or `1` if the table exists in the specified database.
+)DOCS_MD",
+        .syntax = R"(
+EXISTS [TEMPORARY] [TABLE|DICTIONARY|DATABASE] [db.]name [INTO OUTFILE filename] [FORMAT format]
+)",
+        .related = {"SHOW", "DESCRIBE TABLE", "CREATE"},
+    });
+}
 
 }

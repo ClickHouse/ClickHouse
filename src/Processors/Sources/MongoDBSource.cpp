@@ -16,6 +16,7 @@
 #include <Common/assert_cast.h>
 #include <Common/Exception.h>
 #include <Common/BSONCXXHelper.h>
+#include <Common/logger_useful.h>
 #include <base/range.h>
 
 namespace DB
@@ -159,7 +160,7 @@ MongoDBSource::MongoDBSource(
     const mongocxx::options::find & options,
     SharedHeader sample_block_,
     const UInt64 & max_block_size_)
-    : ISource{sample_block_}
+    : ISource{std::make_shared<const Block>(sample_block_->cloneEmpty())}
     , client{uri}
     , database{client.database(uri.database())}
     , collection{database.collection(collection_name)}
@@ -202,6 +203,8 @@ MongoDBSource::~MongoDBSource() = default;
 
 Chunk MongoDBSource::generate()
 {
+    LOG_TEST(getLogger("MongoDBSource"), "Generate a chunk");
+
     if (all_read)
         return {};
 
@@ -211,6 +214,9 @@ Chunk MongoDBSource::generate()
     size_t num_rows = 0;
     for (const auto & doc : cursor)
     {
+        if (isCancelled())
+            break;
+
         for (auto idx : collections::range(0, size))
         {
             auto & sample_column = sample_block.getByPosition(idx);

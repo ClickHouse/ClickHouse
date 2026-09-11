@@ -9,7 +9,7 @@ OPENTELEMETRY_ENABLED_VERSION=4
 query_id="$(random_str 10)"
 $CLICKHOUSE_CLIENT --distributed_ddl_entry_format_version=$OPENTELEMETRY_ENABLED_VERSION --query_id "$query_id" --distributed_ddl_output_mode=none -q "DROP TABLE IF EXISTS foo ON CLUSTER test_shard_localhost"
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
-$CLICKHOUSE_CLIENT -q "SELECT query FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart'"
+$CLICKHOUSE_CLIENT -q "SELECT query FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '$query_id' AND type != 'QueryStart'"
 
 echo "distributed_ddl_entry_format_version=PRESERVE_INITIAL_QUERY_ID_VERSION"
 PRESERVE_INITIAL_QUERY_ID_VERSION=5
@@ -24,4 +24,4 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 #   then two numbers.
 #
 # NOTE: no current_database = '$CLICKHOUSE_DATABASE' filter on purpose (since ON CLUSTER queries does not have current_database passed)
-$CLICKHOUSE_CLIENT -q "SELECT normalizeQuery(replace(query, currentDatabase(), 'default')) FROM system.query_log WHERE initial_query_id = '$query_id' AND type != 'QueryStart' ORDER BY event_time_microseconds"
+$CLICKHOUSE_CLIENT -q "SELECT normalizeQuery(replace(query, currentDatabase(), 'default')) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND initial_query_id = '$query_id' AND type != 'QueryStart' ORDER BY event_time_microseconds"

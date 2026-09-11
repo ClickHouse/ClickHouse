@@ -28,7 +28,7 @@ struct StringBytesEntropyImpl
             UInt32 count = counters[byte];
             if (count > 0)
             {
-                Float64 p = static_cast<Float64>(count) / size;
+                Float64 p = static_cast<Float64>(count) / static_cast<Float64>(size);
                 entropy -= p * std::log2(p);
             }
         }
@@ -60,7 +60,7 @@ Calculates Shannon's entropy of byte distribution in a string.
         "SELECT stringBytesEntropy('Hello, world!')",
         R"(
 ┌─stringBytesEntropy('Hello, world!')─┐
-│                         3.07049960  │
+│                   3.180832987205441 │
 └─────────────────────────────────────┘
         )"
     }

@@ -25,7 +25,7 @@ void writeReadableNumberTip(WriteBuffer & out, const IColumn & column, size_t ro
     auto abs_value = abs(value);
     auto threshold = settings.pretty.single_large_number_tip_threshold;
 
-    if (threshold && isFinite(value) && abs_value > threshold
+    if (threshold && isFinite(value) && abs_value > static_cast<double>(threshold)
         /// Most (~99.5%) of 64-bit hash values are in this range, and it is not necessarily to highlight them:
         && !(abs_value > 1e17 && abs_value < 1.844675e19))
     {

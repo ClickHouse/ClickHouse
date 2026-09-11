@@ -16,7 +16,7 @@ TEST(ThreadFuzzer, mutex)
     auto func = [&]()
     {
         Stopwatch watch;
-        for (size_t i = 0; i < 1e6; ++i)
+        for (size_t i = 0; i < 1'000'000; ++i)
         {
             mutex.lock();
             mutex.unlock();
@@ -32,5 +32,5 @@ TEST(ThreadFuzzer, mutex)
     for (auto & thread : threads)
         thread->join();
 
-    std::cout << "elapsed: " << elapsed_ns/1e9 << "\n";
+    std::cout << "elapsed: " << static_cast<double>(elapsed_ns) / 1e9 << "\n";
 }

@@ -1,19 +1,16 @@
-#include <optional>
 #include <Storages/TimeSeries/PrometheusRemoteReadProtocol.h>
 
 #if USE_PROMETHEUS_PROTOBUFS
 
 #include <Columns/ColumnArray.h>
-#include <Columns/ColumnDecimal.h>
-#include <Columns/ColumnMap.h>
-#include <Columns/ColumnVector.h>
 #include <Columns/ColumnTuple.h>
-#include <Columns/ColumnsNumber.h>
 #include <Common/logger_useful.h>
 #include <Core/Block.h>
-#include <Core/Field.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
-#include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesDecimal.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/StorageID.h>
@@ -23,27 +20,19 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
-#include <Parsers/makeASTForLogicalFunction.h>
+#include <Parsers/Prometheus/PrometheusQueryTree.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Storages/StorageTimeSeries.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
-#include <Storages/TimeSeries/TimeSeriesColumnsValidator.h>
-#include <Storages/TimeSeries/TimeSeriesTagNames.h>
-#include <Storages/TimeSeries/TimeSeriesSettings.h>
+#include <optional>
 
 
 namespace DB
 {
 
-namespace TimeSeriesSetting
-{
-    extern const TimeSeriesSettingsBool filter_by_min_time_and_max_time;
-    extern const TimeSeriesSettingsMap tags_to_columns;
-}
-
 namespace ErrorCodes
 {
-    extern const int BAD_REQUEST_PARAMETER;
+    extern const int LOGICAL_ERROR;
 }
 
 namespace Setting
@@ -53,397 +42,167 @@ namespace Setting
 
 namespace
 {
-    /// Makes an ASTIdentifier for a column of the specified table.
-    ASTPtr makeASTColumn(const StorageID & table_id, const String & column_name)
+    /// Converts label matchers to an instant selector format in PromQL,
+    /// i.e. for example the function can return "{__name__='up'}"
+    PrometheusQueryTree labelMatchersToPromQL(const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matchers)
     {
-        return make_intrusive<ASTIdentifier>(Strings{table_id.database_name, table_id.table_name, column_name});
-    }
+        auto instant_selector = std::make_unique<PrometheusQueryTree::InstantSelector>();
+        auto & res_matchers = instant_selector->matchers;
 
-    /// Makes an AST for condition `data_table.timestamp >= min_timestamp_ms`
-    ASTPtr makeASTTimestampGreaterOrEquals(Int64 min_timestamp_ms, const StorageID & data_table_id)
-    {
-        return makeASTOperator("greaterOrEquals",
-                               makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
-                               make_intrusive<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
-    }
-
-    /// Makes an AST for condition `data_table.timestamp <= max_timestamp_ms`
-    ASTPtr makeASTTimestampLessOrEquals(Int64 max_timestamp_ms, const StorageID & data_table_id)
-    {
-        return makeASTOperator("lessOrEquals",
-                               makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp),
-                               make_intrusive<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
-    }
-
-    /// Makes an AST for condition `tags_table.max_time >= min_timestamp_ms`
-    ASTPtr makeASTMaxTimeGreaterOrEquals(Int64 min_timestamp_ms, const StorageID & tags_table_id)
-    {
-        return makeASTOperator("greaterOrEquals",
-                               makeASTColumn(tags_table_id, TimeSeriesColumnNames::MaxTime),
-                               make_intrusive<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{min_timestamp_ms}, 3}}));
-    }
-
-    /// Makes an AST for condition `tags_table.min_time <= max_timestamp_ms`
-    ASTPtr makeASTMinTimeLessOrEquals(Int64 max_timestamp_ms, const StorageID & tags_table_id)
-    {
-        return makeASTOperator("lessOrEquals",
-                               makeASTColumn(tags_table_id, TimeSeriesColumnNames::MinTime),
-                               make_intrusive<ASTLiteral>(Field{DecimalField<DateTime64>{DateTime64{max_timestamp_ms}, 3}}));
-    }
-
-    /// Makes an AST for the expression referencing a tag value.
-    ASTPtr makeASTLabelName(const String & label_name, const StorageID & tags_table_id, const std::unordered_map<String, String> & column_name_by_tag_name)
-    {
-        if (label_name == TimeSeriesTagNames::MetricName)
-            return makeASTColumn(tags_table_id, TimeSeriesColumnNames::MetricName);
-
-        auto it = column_name_by_tag_name.find(label_name);
-        if (it != column_name_by_tag_name.end())
-            return makeASTColumn(tags_table_id, it->second);
-
-        /// arrayElement() can be used to extract a value from a Map too.
-        return makeASTOperator("arrayElement", makeASTColumn(tags_table_id, TimeSeriesColumnNames::Tags), make_intrusive<ASTLiteral>(label_name));
-    }
-
-    /// Makes an AST for a label matcher, for example `metric_name == 'value'` or `NOT match(labels['label_name'], 'regexp')`.
-    ASTPtr makeASTLabelMatcher(
-        const prometheus::LabelMatcher & label_matcher,
-        const StorageID & tags_table_id,
-        const std::unordered_map<String, String> & column_name_by_tag_name)
-    {
-        const auto & label_name = label_matcher.name();
-        const auto & label_value = label_matcher.value();
-        auto type = label_matcher.type();
-
-        if (type == prometheus::LabelMatcher::EQ)
-            return makeASTOperator("equals", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), make_intrusive<ASTLiteral>(label_value));
-        if (type == prometheus::LabelMatcher::NEQ)
-            return makeASTOperator(
-                "notEquals",
-                makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name),
-                make_intrusive<ASTLiteral>(label_value));
-        if (type == prometheus::LabelMatcher::RE)
-            return makeASTFunction(
-                "match", makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name), make_intrusive<ASTLiteral>(label_value));
-        if (type == prometheus::LabelMatcher::NRE)
-            return makeASTOperator(
-                "not",
-                makeASTFunction(
-                    "match",
-                    makeASTLabelName(label_name, tags_table_id, column_name_by_tag_name),
-                    make_intrusive<ASTLiteral>(label_value)));
-        throw Exception(ErrorCodes::BAD_REQUEST_PARAMETER, "Unexpected type of label matcher: {}", type);
-    }
-
-    /// Makes an AST checking that tags match a specified label matcher and that timestamp is in range [min_timestamp_ms, max_timestamp_ms].
-    ASTPtr makeASTFilterForReadingTimeSeries(
-        const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matcher,
-        Int64 min_timestamp_ms,
-        Int64 max_timestamp_ms,
-        const StorageID & data_table_id,
-        const StorageID & tags_table_id,
-        const std::unordered_map<String, String> & column_name_by_tag_name,
-        bool filter_by_min_time_and_max_time)
-    {
-        ASTs filters;
-
-        if (min_timestamp_ms)
+        for (const auto & label_matcher : label_matchers)
         {
-            filters.push_back(makeASTTimestampGreaterOrEquals(min_timestamp_ms, data_table_id));
-            if (filter_by_min_time_and_max_time)
-                filters.push_back(makeASTMaxTimeGreaterOrEquals(min_timestamp_ms, tags_table_id));
+            const auto & label_name = label_matcher.name();
+            const auto & label_value = label_matcher.value();
+            auto type = label_matcher.type();
+
+            PrometheusQueryTree::Matcher res_matcher;
+            res_matcher.label_name = label_name;
+            res_matcher.label_value = label_value;
+
+            if (type == prometheus::LabelMatcher::EQ)
+                res_matcher.matcher_type = PrometheusQueryTree::MatcherType::EQ;
+            else if (type == prometheus::LabelMatcher::NEQ)
+                res_matcher.matcher_type = PrometheusQueryTree::MatcherType::NE;
+            else if (type == prometheus::LabelMatcher::RE)
+                res_matcher.matcher_type = PrometheusQueryTree::MatcherType::RE;
+            else if (type == prometheus::LabelMatcher::NRE)
+                res_matcher.matcher_type = PrometheusQueryTree::MatcherType::NRE;
+            else
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown label matcher type: {}", type);
+
+            res_matchers.emplace_back(std::move(res_matcher));
         }
 
-        if (max_timestamp_ms)
-        {
-            filters.push_back(makeASTTimestampLessOrEquals(max_timestamp_ms, data_table_id));
-            if (filter_by_min_time_and_max_time)
-                filters.push_back(makeASTMinTimeLessOrEquals(max_timestamp_ms, tags_table_id));
-        }
-
-        for (const auto & label_matcher_element : label_matcher)
-            filters.push_back(makeASTLabelMatcher(label_matcher_element, tags_table_id, column_name_by_tag_name));
-
-        if (filters.empty())
-            return nullptr;
-
-        return makeASTForLogicalAnd(std::move(filters));
-    }
-
-    /// Makes a mapping from a tag name to a column name.
-    std::unordered_map<String, String> makeColumnNameByTagNameMap(const TimeSeriesSettings & storage_settings)
-    {
-        std::unordered_map<String, String> res;
-        const Map & tags_to_columns = storage_settings[TimeSeriesSetting::tags_to_columns];
-        for (const auto & tag_name_and_column_name : tags_to_columns)
-        {
-            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-            const auto & tag_name = tuple.at(0).safeGet<String>();
-            const auto & column_name = tuple.at(1).safeGet<String>();
-            res[tag_name] = column_name;
-        }
-        return res;
+        return PrometheusQueryTree{std::move(instant_selector)};
     }
 
     /// The function builds a SELECT query for reading time series:
-    /// SELECT tags_table.metric_name, tags_table.tag_column1, ... tags_table.tag_columnN, tags_table.tags,
-    ///        groupArray(CAST(data_table.timestamp, 'DateTime64(3)'), CAST(data_table.value, 'Float64'))
-    /// FROM data_table
-    /// SEMI LEFT JOIN tag_table ON data_table.id = tags_table.id
-    /// WHERE filter
-    /// GROUP BY tags_table.tag_column1, ..., tags_table.tag_columnN, tags_table.tags
+    /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS time_series
+    /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
+    /// GROUP BY timeSeriesIdToGroup(id) AS group
     ASTPtr buildSelectQueryForReadingTimeSeries(
-        Int64 min_timestamp_ms,
-        Int64 max_timestamp_ms,
-        const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matcher,
-        const TimeSeriesSettings & time_series_settings,
-        const StorageID & data_table_id,
-        const StorageID & tags_table_id)
+        const StorageID & time_series_storage_id,
+        const google::protobuf::RepeatedPtrField<prometheus::LabelMatcher> & label_matchers,
+        Int64 min_time_ms,
+        Int64 max_time_ms)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
 
-            /// SELECT tags_table.metric_name, any(tags_table.tag_column1), ... any(tags_table.tag_columnN), any(tags_table.tags),
-            ///        groupArray(data_table.timestamp, data_table.value)
-            {
-            auto exp_list = make_intrusive<ASTExpressionList>();
+        {
+            /// SELECT timeSeriesGroupToTags(group) AS tags, timeSeriesGroupArray(timestamp, value) AS time_series
+            auto select_list_exp = make_intrusive<ASTExpressionList>();
 
-            exp_list->children.push_back(
-                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MetricName));
+            select_list_exp->children.push_back(
+                makeASTFunction("timeSeriesGroupToTags", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Group)));
 
-            const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
-            for (const auto & tag_name_and_column_name : tags_to_columns)
-            {
-                const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-                const auto & column_name = tuple.at(1).safeGet<String>();
-                exp_list->children.push_back(
-                    makeASTColumn(tags_table_id, column_name));
-            }
+            select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::Tags);
 
-            exp_list->children.push_back(
-                makeASTColumn(tags_table_id, TimeSeriesColumnNames::Tags));
+            select_list_exp->children.push_back(makeASTFunction(
+                "timeSeriesGroupArray",
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Timestamp),
+                make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Value)));
 
-            exp_list->children.push_back(
-                makeASTFunction("groupArray",
-                                makeASTOperator("tuple",
-                                                makeASTFunction("CAST", makeASTColumn(data_table_id, TimeSeriesColumnNames::Timestamp), make_intrusive<ASTLiteral>("DateTime64(3)")),
-                                                makeASTFunction("CAST", makeASTColumn(data_table_id, TimeSeriesColumnNames::Value), make_intrusive<ASTLiteral>("Float64")))));
+            select_list_exp->children.back()->setAlias(TimeSeriesColumnNames::TimeSeries);
 
-            select_query->setExpression(ASTSelectQuery::Expression::SELECT, exp_list);
+            select_query->setExpression(ASTSelectQuery::Expression::SELECT, std::move(select_list_exp));
         }
 
-        /// FROM data_table
-        auto tables = make_intrusive<ASTTablesInSelectQuery>();
-
         {
-            auto table = make_intrusive<ASTTablesInSelectQueryElement>();
+            /// FROM timeSeriesSelector(time_series_storage_id, "label_matchers", min_time, max_time)
             auto table_exp = make_intrusive<ASTTableExpression>();
-            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(data_table_id);
-            table_exp->children.emplace_back(table_exp->database_and_table_name);
+            table_exp->table_function = makeASTFunction(
+                "timeSeriesSelector",
+                make_intrusive<ASTLiteral>(time_series_storage_id.getDatabaseName()),
+                make_intrusive<ASTLiteral>(time_series_storage_id.getTableName()),
+                make_intrusive<ASTLiteral>(labelMatchersToPromQL(label_matchers).toString()),
+                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{min_time_ms, 3}),
+                make_intrusive<ASTLiteral>(DecimalField<Decimal64>{max_time_ms, 3}));
 
-            table->table_expression = table_exp;
-            tables->children.push_back(table);
-        }
+            table_exp->children.emplace_back(table_exp->table_function);
 
-        /// SEMI LEFT JOIN tags_table ON data_table.id = tags_table.id
-        {
             auto table = make_intrusive<ASTTablesInSelectQueryElement>();
-
-            auto table_join = make_intrusive<ASTTableJoin>();
-            table_join->kind = JoinKind::Left;
-            table_join->strictness = JoinStrictness::Semi;
-
-            table_join->on_expression = makeASTOperator("equals", makeASTColumn(data_table_id, TimeSeriesColumnNames::ID), makeASTColumn(tags_table_id, TimeSeriesColumnNames::ID));
-            table_join->children.push_back(table_join->on_expression);
-            table->table_join = table_join;
-
-            auto table_exp = make_intrusive<ASTTableExpression>();
-            table_exp->database_and_table_name = make_intrusive<ASTTableIdentifier>(tags_table_id);
-            table_exp->children.emplace_back(table_exp->database_and_table_name);
-
             table->table_expression = table_exp;
-            tables->children.push_back(table);
+            table->children.push_back(std::move(table_exp));
 
-            select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
+            auto tables = make_intrusive<ASTTablesInSelectQuery>();
+            tables->children.push_back(std::move(table));
+
+            select_query->setExpression(ASTSelectQuery::Expression::TABLES, std::move(tables));
         }
 
-        auto column_name_by_tag_name = makeColumnNameByTagNameMap(time_series_settings);
-
-        /// WHERE <filter>
-        if (auto where = makeASTFilterForReadingTimeSeries(label_matcher, min_timestamp_ms, max_timestamp_ms, data_table_id, tags_table_id,
-                                                           column_name_by_tag_name, time_series_settings[TimeSeriesSetting::filter_by_min_time_and_max_time]))
         {
-            select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where));
-        }
+            /// GROUP BY timeSeriesIdToGroup(id) AS group
+            auto group_by_list = make_intrusive<ASTExpressionList>();
 
-        /// GROUP BY tags_table.metric_name, tags_table.tag_column1, ..., tags_table.tag_columnN, tags_table.tags
-        {
-            auto exp_list = make_intrusive<ASTExpressionList>();
+            group_by_list->children.push_back(
+                makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID)));
 
-            exp_list->children.push_back(
-                makeASTColumn(tags_table_id, TimeSeriesColumnNames::MetricName));
+            group_by_list->children.back()->setAlias(TimeSeriesColumnNames::Group);
 
-            const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
-            for (const auto & tag_name_and_column_name : tags_to_columns)
-            {
-                const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-                const auto & column_name = tuple.at(1).safeGet<String>();
-                exp_list->children.push_back(
-                    makeASTColumn(tags_table_id, column_name));
-            }
-
-            exp_list->children.push_back(makeASTColumn(tags_table_id, TimeSeriesColumnNames::Tags));
-
-            select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, exp_list);
+            select_query->setExpression(ASTSelectQuery::Expression::GROUP_BY, std::move(group_by_list));
         }
 
         return select_query;
     }
 
-    /// Sorts a list of pairs {tag_name, tag_value} by tag name.
-    void sortLabelsByName(std::vector<std::pair<std::string_view /* label_name */, std::string_view /* label_value */>> & labels)
-    {
-        auto less_by_label_name = [](const std::pair<std::string_view, std::string_view> & left, const std::pair<std::string_view, std::string_view> & right)
-        {
-            return left.first < right.first;
-        };
-        std::sort(labels.begin(), labels.end(), less_by_label_name);
-    }
-
-    /// Sorts a list of pairs {timestamp, value} by timestamp and removes duplicates.
-    /// This is similar to what function timeSeriesGroupArray() does.
-    void sortTimeSeriesAndRemoveDuplicates(std::vector<std::pair<Int64 /* timestamp_ms */, Float64 /* value */>> & time_series)
-    {
-        /// Sort time-value pairs by timestamp and for pairs with equal timestamp we keep only a pair with a greater value.
-        auto is_before = [](const std::pair<Int64, Float64> & left, const std::pair<Int64, Float64> & right)
-        {
-            return (left.first < right.first) || ((left.first == right.first) && (left.second > right.second));
-        };
-        std::sort(time_series.begin(), time_series.end(), is_before);
-        auto equals_by_timestamp = [](const std::pair<Int64, Float64> & left, const std::pair<Int64, Float64> & right)
-        {
-            return (left.first == right.first);
-        };
-        time_series.erase(std::unique(time_series.begin(), time_series.end(), equals_by_timestamp), time_series.end());
-    }
-
     /// Converts a block generated by the SELECT query for converting time series to the protobuf format.
     void convertBlockToProtobuf(
         Block && block,
-        google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & out_time_series,
-        const StorageID & time_series_storage_id,
-        const TimeSeriesSettings & time_series_settings)
+        google::protobuf::RepeatedPtrField<prometheus::TimeSeries> & out_time_series)
     {
         size_t num_rows = block.rows();
         if (!num_rows)
             return;
 
-        size_t column_index = 0;
+        /// The first column contains tags.
+        /// These tags are already sorted lexicographically.
+        /// The type of the first column is Array(Tuple(String, String)).
+        const auto & tags_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::Tags).column);
+        const auto & tags_offsets = tags_column.getOffsets();
+        const auto & tag_name_value_tuples = checkAndGetColumn<ColumnTuple>(tags_column.getData());
+        const auto & tags_names = tag_name_value_tuples.getColumn(0);
+        const auto & tags_values = tag_name_value_tuples.getColumn(1);
 
-        /// We analyze columns sequentially.
-        auto get_next_column_with_type = [&] -> const ColumnWithTypeAndName & { return block.getByPosition(column_index++); };
-        auto get_next_column = [&] -> const IColumn & { return *(get_next_column_with_type().column); };
-
-        /// Column "metric_name".
-        const auto & metric_name_column_with_type = get_next_column_with_type();
-        TimeSeriesColumnsValidator validator{time_series_storage_id, time_series_settings};
-        validator.validateColumnForMetricName(metric_name_column_with_type);
-        const auto & metric_name_column = *metric_name_column_with_type.column;
-
-        /// Columns corresponding to specific tags specified in the "tags_to_columns" setting.
-        std::unordered_map<String, const IColumn *> column_by_tag_name;
-        const Map & tags_to_columns = time_series_settings[TimeSeriesSetting::tags_to_columns];
-        for (const auto & tag_name_and_column_name : tags_to_columns)
-        {
-            const auto & tuple = tag_name_and_column_name.safeGet<Tuple>();
-            const auto & tag_name = tuple.at(0).safeGet<String>();
-            const auto & column_with_type = get_next_column_with_type();
-            validator.validateColumnForTagValue(column_with_type);
-            const auto & column = *column_with_type.column;
-            column_by_tag_name[tag_name] = &column;
-        }
-
-        /// Column "tags".
-        const auto & tags_column_with_type = get_next_column_with_type();
-        validator.validateColumnForTagsMap(tags_column_with_type);
-        const auto & tags_column = checkAndGetColumn<ColumnMap>(*tags_column_with_type.column);
-        const auto & tags_names = tags_column.getNestedData().getColumn(0);
-        const auto & tags_values = tags_column.getNestedData().getColumn(1);
-        const auto & tags_offsets = tags_column.getNestedColumn().getOffsets();
-
-        /// Column containing time series: groupArray(CAST(data_table.timestamp, 'DateTime64(3)'), CAST(data_table.value, 'Float64'))
-        const auto & time_series_column = checkAndGetColumn<ColumnArray>(get_next_column());
-        const auto & time_series_timestamps = checkAndGetColumn<ColumnDecimal<DateTime64>>(checkAndGetColumn<ColumnTuple>(time_series_column.getData()).getColumn(0));
-        const auto & time_series_values = checkAndGetColumn<ColumnFloat64>(checkAndGetColumn<ColumnTuple>(time_series_column.getData()).getColumn(1));
+        /// The second column contains tuples (timestamp, value).
+        /// These tuples are already sorted by timestamp.
+        /// The type of the second column is Array(Tuple(timestamp_data_type, scalar_data_type)).
+        const auto & time_series_column = checkAndGetColumn<ColumnArray>(*block.getByName(TimeSeriesColumnNames::TimeSeries).column);
         const auto & time_series_offsets = time_series_column.getOffsets();
+        const auto & timestamp_value_tuples = checkAndGetColumn<ColumnTuple>(time_series_column.getData());
+        const auto & timestamps = timestamp_value_tuples.getColumn(0);
+        const auto & values = timestamp_value_tuples.getColumn(1);
 
-        /// We will sort labels lexicographically and time series by timestamp before sending them to a client.
-        std::vector<std::pair<std::string_view, std::string_view>> labels;
-        std::vector<std::pair<Int64, Float64>> time_series;
+        auto timestamp_data_type
+            = typeid_cast<const DataTypeTuple &>(
+                  *typeid_cast<const DataTypeArray &>(*block.getByName(TimeSeriesColumnNames::TimeSeries).type).getNestedType())
+                  .getElement(0);
+
+        UInt32 timestamp_scale = tryGetDecimalScale(*timestamp_data_type).value_or(0);
 
         for (size_t i = 0; i != num_rows; ++i)
         {
-            /// Collect labels.
-            size_t num_labels = 1; /* 1 for a metric name */
-
-            for (const auto & [_, column] : column_by_tag_name)
-            {
-                if (!column->isNullAt(i) && !column->getDataAt(i).empty())
-                    ++num_labels;
-            }
+            auto & new_time_series = *out_time_series.Add();
 
             size_t tags_start_offset = tags_offsets[i - 1];
             size_t tags_end_offset = tags_offsets[i];
-            num_labels += tags_end_offset - tags_start_offset;
-
-            labels.clear();
-            labels.reserve(num_labels);
-
-            labels.emplace_back(TimeSeriesTagNames::MetricName, metric_name_column.getDataAt(i));
-
-            for (const auto & [tag_name, column] : column_by_tag_name)
-            {
-                if (!column->isNullAt(i) && !column->getDataAt(i).empty())
-                    labels.emplace_back(tag_name, column->getDataAt(i));
-            }
 
             for (size_t j = tags_start_offset; j != tags_end_offset; ++j)
             {
-                std::string_view tag_name{tags_names.getDataAt(j)};
-                std::string_view tag_value{tags_values.getDataAt(j)};
-                labels.emplace_back(tag_name, tag_value);
+                auto & new_label = *new_time_series.add_labels();
+                new_label.set_name(tags_names.getDataAt(j));
+                new_label.set_value(tags_values.getDataAt(j));
             }
 
-            /// Sort labels.
-            sortLabelsByName(labels);
-
-            /// Collect time series.
             size_t time_series_start_offset = time_series_offsets[i - 1];
             size_t time_series_end_offset = time_series_offsets[i];
-            size_t num_time_series = time_series_end_offset - time_series_start_offset;
-
-            time_series.clear();
-            time_series.reserve(num_time_series);
 
             for (size_t j = time_series_start_offset; j != time_series_end_offset; ++j)
-                time_series.emplace_back(time_series_timestamps.getElement(j), time_series_values.getElement(j));
-
-            /// Sort time series.
-            sortTimeSeriesAndRemoveDuplicates(time_series);
-
-            /// Prepare a result.
-            auto & new_time_series = *out_time_series.Add();
-
-            for (const auto & [label_name, label_value] : labels)
             {
-                auto & new_label = *new_time_series.add_labels();
-                new_label.set_name(label_name);
-                new_label.set_value(label_value);
-            }
-
-            for (const auto & [timestamp, value] : time_series)
-            {
+                Int64 timestamp = timestamps.getInt(j);
+                Float64 value = values.getFloat64(j);
+                Int64 timestamp_ms = DecimalUtils::convertTo<Decimal64>(3, Decimal64{timestamp}, timestamp_scale).value;
                 auto & new_sample = *new_time_series.add_samples();
-                new_sample.set_timestamp(timestamp);
+                new_sample.set_timestamp(timestamp_ms);
                 new_sample.set_value(value);
             }
         }
@@ -469,12 +228,9 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
     out_time_series.Clear();
 
     auto time_series_storage_id = time_series_storage->getStorageID();
-    const auto & time_series_settings = time_series_storage->getStorageSettings();
-    auto data_table_id = time_series_storage->getTargetTableId(ViewTarget::Data);
-    auto tags_table_id = time_series_storage->getTargetTableId(ViewTarget::Tags);
 
     ASTPtr select_query = buildSelectQueryForReadingTimeSeries(
-        start_timestamp_ms, end_timestamp_ms, label_matcher, time_series_settings, data_table_id, tags_table_id);
+        time_series_storage_id, label_matcher, start_timestamp_ms, end_timestamp_ms);
 
     LOG_TRACE(log, "{}: Executing query {}",
               time_series_storage_id.getNameForLogs(), select_query->formatForLogging());
@@ -501,7 +257,7 @@ void PrometheusRemoteReadProtocol::readTimeSeries(google::protobuf::RepeatedPtrF
                   time_series_storage_id.getNameForLogs(), block.columns(), block.rows());
 
         if (!block.empty())
-            convertBlockToProtobuf(std::move(block), out_time_series, time_series_storage_id, time_series_settings);
+            convertBlockToProtobuf(std::move(block), out_time_series);
     }
 
     LOG_TRACE(log, "{}: {} time series read",

@@ -1,8 +1,6 @@
 -- Test that DROP INDEX removes all index related files.
 -- This can't be tested directly but we can at least check that no bad things happen.
 
-SET enable_full_text_index = 1;
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

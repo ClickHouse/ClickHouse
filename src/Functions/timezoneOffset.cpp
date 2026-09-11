@@ -15,7 +15,7 @@ REGISTER_FUNCTION(timezoneOffset)
 Returns the timezone offset in seconds from [UTC](https://en.wikipedia.org/wiki/Coordinated_Universal_Time).
 The function takes daylight saving time and historical timezone changes at the specified date and time into account.
     )";
-    FunctionDocumentation::Syntax syntax = "timeZoneOffset(datetime)";
+    FunctionDocumentation::Syntax syntax = "timezoneOffset(datetime)";
     FunctionDocumentation::Arguments arguments = {
         {"datetime", "`DateTime` value to get the timezone offset for.", {"DateTime", "DateTime64"}},
     };
@@ -24,7 +24,7 @@ The function takes daylight saving time and historical timezone changes at the s
         {"Usage example", R"(
 SELECT toDateTime('2021-04-21 10:20:30', 'America/New_York') AS Time,
 toTypeName(Time) AS Type,
-timeZoneOffset(Time) AS Offset_in_seconds,
+timezoneOffset(Time) AS Offset_in_seconds,
 (Offset_in_seconds / 3600) AS Offset_in_hours;
         )",
         R"(

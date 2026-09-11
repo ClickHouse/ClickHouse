@@ -1,6 +1,5 @@
 #include <Dictionaries/RedisSource.h>
 
-#include <vector>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
@@ -27,7 +26,7 @@ namespace DB
         const RedisStorageType & storage_type_,
         SharedHeader sample_block,
         size_t max_block_size_)
-        : ISource(sample_block)
+        : ISource(std::make_shared<const Block>(sample_block->cloneEmpty()))
         , connection(std::move(connection_))
         , keys(keys_)
         , storage_type(storage_type_)

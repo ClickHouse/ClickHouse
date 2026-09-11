@@ -1,6 +1,8 @@
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET correlated_subqueries_substitute_equivalent_expressions = 0;
+SET query_plan_optimize_prewhere = 1;
+SET optimize_trivial_insert_select = 0;
 
 CREATE TABLE lineitem (
     l_orderkey       Int32,

@@ -35,7 +35,7 @@ void applyTableOverrideToCreateQuery(const ASTTableOverride & override, ASTCreat
                 ///       executed from InterpreterCreateQuery / InterpreterAlterQuery.
                 if (exists == dest_children.end())
                 {
-                    if (override_column->default_specifier == "ALIAS")
+                    if (override_column->default_specifier == ColumnDefaultSpecifier::Alias)
                         dest_children.emplace_back(override_column_ast);
                 }
                 else

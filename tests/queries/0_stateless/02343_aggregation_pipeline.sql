@@ -11,6 +11,11 @@ set max_block_size = 65505;
 set allow_prefetched_read_pool_for_remote_filesystem = 0;
 set allow_prefetched_read_pool_for_local_filesystem = 0;
 
+-- The pipeline shape depends on the exact thread count;
+-- disable the free-memory limiter to keep `max_threads` as set in the queries.
+set max_threads_min_free_memory_per_thread = 0;
+set max_insert_threads_min_free_memory_per_thread = 0;
+
 -- { echoOn }
 
 explain pipeline select * from (select * from numbers(1e8) group by number) group by number settings max_rows_to_read = 0;

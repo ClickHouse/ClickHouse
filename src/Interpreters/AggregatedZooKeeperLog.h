@@ -5,6 +5,7 @@
 #include <Interpreters/PeriodicLog.h>
 #include <Common/ZooKeeper/ErrorCounter.h>
 #include <Common/ZooKeeper/ZooKeeperConstants.h>
+#include <Common/StaticString.h>
 #include <Storages/ColumnsDescription.h>
 
 namespace DB
@@ -17,10 +18,12 @@ struct AggregatedZooKeeperLogElement
     Int64 session_id;
     String parent_path;
     Int32 operation;
+    StaticString component;
+    bool is_subrequest = false;
 
     /// Group statistics.
     UInt32 count;
-    std::unique_ptr<Coordination::ErrorCounter> errors;
+    Coordination::ErrorCounter errors;
     UInt64 total_latency_microseconds;
 
     static std::string name() { return "AggregatedZooKeeperLog"; }
@@ -37,7 +40,14 @@ protected:
     void stepFunction(TimePoint current_time) override;
 
 public:
-    void observe(Int64 session_id, Int32 operation, const std::filesystem::path & path, UInt64 latency_microseconds, Coordination::Error error);
+    void observe(
+        Int64 session_id,
+        Int32 operation,
+        const std::filesystem::path & path,
+        UInt64 latency_microseconds,
+        Coordination::Error error,
+        StaticString component,
+        bool is_subrequest = false);
 
 private:
     struct EntryKey
@@ -45,8 +55,10 @@ private:
         Int64 session_id;
         Int32 operation;
         String parent_path;
+        StaticString component;
+        bool is_subrequest = false;
 
-        bool operator==(const EntryKey & other) const;
+        bool operator==(const EntryKey & other) const = default;
     };
     struct EntryKeyHash
     {
@@ -56,7 +68,7 @@ private:
     {
         UInt32 count = 0;
         UInt64 total_latency_microseconds = 0;
-        std::unique_ptr<Coordination::ErrorCounter> errors = std::make_unique<Coordination::ErrorCounter>();
+        Coordination::ErrorCounter errors;
 
         void observe(UInt64 latency_microseconds, Coordination::Error error);
     };
