@@ -1688,25 +1688,32 @@ void TCPHandler::processTablesStatusRequest()
     /// authenticates the connection with the cluster secret. In interserver mode the request
     /// is authenticated with a cluster-secret hash that also covers the request body (mirroring
     /// the per-query secret hash `processQuery` computes over the query text), so a relayed hash
-    /// cannot be reused for a different set of tables. On that path the hash precedes the body on
-    /// the wire, so the body is deserialized to recompute the digest — but the tables are only
-    /// *resolved* (existence / readonly / replication-delay) after the hash has been validated.
-    /// An unauthenticated request that will be rejected is refused *before* its body is read, so an
-    /// unauthenticated peer cannot make the server deserialize an arbitrary request.
+    /// cannot be reused for a different set of tables. The hash precedes the body on the wire, so
+    /// the body is deserialized to recompute the digest - as `receiveQuery` deserializes the whole
+    /// Query packet of a not-yet-authenticated interserver peer before validating its hash - but the
+    /// tables are only *resolved* (existence / readonly / replication delay) once the peer has proven
+    /// knowledge of the secret. A peer that has not proven it is answered with a placeholder response
+    /// that does not depend on the state of the tables, so nothing is disclosed.
     TablesStatusRequest request;
     ContextPtr context_to_resolve_table_names;
+    /// Set for an interserver peer that has not proven knowledge of the cluster secret: it gets the
+    /// placeholder response instead of the resolved one.
+    bool respond_with_placeholder = false;
     if (is_interserver_mode)
     {
-#if USE_SSL
+        /// A peer that speaks the interserver protocol always has a cluster secret configured
+        /// (`Connection::sendHello` sends the interserver user marker only then), so from this
+        /// revision on the hash is always on the wire.
         if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
         {
+#if USE_SSL
             std::string received_hash;
             readStringBinary(received_hash, *in, 32);
 
             /// Deserialize the body so its digest can bind the hash (same as `processQuery` reading
             /// the query before validating the per-query secret hash). Tables are resolved only after
             /// the hash validates below.
-            request.read(*in, client_tcp_protocol_version);
+            request.read(*in, client_tcp_protocol_version, INTERSERVER_TABLES_STATUS_REQUEST_LIMITS);
 
             String cluster_secret;
             try
@@ -1736,64 +1743,89 @@ void TCPHandler::processTablesStatusRequest()
             if (encodeSHA256(data) != received_hash)
                 throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
                     "Interserver authentication failed for TablesStatusRequest");
-        }
-        else if (server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth]
-                 && !is_interserver_authenticated)
-        {
-            /// Older client that sends no hash: rejected by default
-            /// (`interserver_tables_status_require_auth` defaults to true), *before* reading the
-            /// body so an unauthenticated peer cannot make us deserialize its request. Operators can
-            /// turn the setting off as a temporary opt-out for a mixed-version rolling upgrade.
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                "TablesStatusRequest requires interserver authentication");
+#else
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
+#endif
         }
         else
         {
-            /// Old client authenticated by an earlier query on this connection, or auth not required:
-            /// no hash to bind the body to, so just read it.
-            request.read(*in, client_tcp_protocol_version);
-        }
-#else
-        if (!is_interserver_authenticated)
-            throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
-                "TablesStatusRequest requires interserver authentication");
-        request.read(*in, client_tcp_protocol_version);
-#endif
+            /// An older peer sends no hash, so its request cannot be authenticated. A request that
+            /// will be rejected anyway is refused *before* its body is read, so strict mode does not
+            /// let an unauthenticated peer make the server deserialize anything.
+            if (!is_interserver_authenticated
+                && server.context()->getServerSettings()[ServerSetting::interserver_tables_status_require_auth])
+                throw Exception(ErrorCodes::AUTHENTICATION_FAILED,
+                    "TablesStatusRequest requires interserver authentication");
 
-        /// In the interserver mode session context does not exist, because authentication is done for each query.
-        /// We also cannot create query context earlier, because it cannot be created before authentication,
-        /// but query is not received yet. So we have to do this trick.
-        ContextMutablePtr fake_interserver_context = Context::createCopy(server.context());
-        if (!default_database.empty())
-            fake_interserver_context->setCurrentDatabase(default_database);
-        context_to_resolve_table_names = fake_interserver_context;
+            /// Otherwise read it - the Query packet of a not-yet-authenticated interserver peer is
+            /// deserialized the same way, under the same kind of bounds - but do not resolve the
+            /// tables unless an earlier Query on this connection has already authenticated with the
+            /// cluster secret.
+            request.read(*in, client_tcp_protocol_version, INTERSERVER_TABLES_STATUS_REQUEST_LIMITS);
+
+            if (!is_interserver_authenticated)
+            {
+                LOG_WARNING(LogFrequencyLimiter(log, 10),
+                    "Answering an unauthenticated interserver TablesStatusRequest with a placeholder response, "
+                    "because the client is too old to sign it with the cluster secret. Replica staleness, "
+                    "readonly state and table existence are not taken into account for distributed queries "
+                    "initiated on such a client. Consider upgrading all nodes in cluster.");
+                respond_with_placeholder = true;
+            }
+        }
+
+        if (!respond_with_placeholder)
+        {
+            /// In the interserver mode session context does not exist, because authentication is done for each query.
+            /// We also cannot create query context earlier, because it cannot be created before authentication,
+            /// but query is not received yet. So we have to do this trick.
+            ContextMutablePtr fake_interserver_context = Context::createCopy(server.context());
+            if (!default_database.empty())
+                fake_interserver_context->setCurrentDatabase(default_database);
+            context_to_resolve_table_names = fake_interserver_context;
+        }
     }
     else
     {
         chassert(session);
         context_to_resolve_table_names = session->sessionContext();
-        request.read(*in, client_tcp_protocol_version);
+        request.read(*in, client_tcp_protocol_version, {DEFAULT_MAX_STRING_SIZE, DEFAULT_MAX_STRING_SIZE});
     }
 
     TablesStatusResponse response;
-    for (const QualifiedTableName & table_name: request.tables)
+    if (respond_with_placeholder)
     {
-        auto resolved_id = context_to_resolve_table_names->tryResolveStorageID({table_name.database, table_name.table});
-        StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context_to_resolve_table_names);
-        if (!table)
-            continue;
-
-        TableStatus status;
-        if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+        /// Every requested table is reported as present, not replicated (hence never stale) and
+        /// writable, whether or not it exists. `ConnectionEstablisher` therefore considers the
+        /// replica usable and up to date and proceeds to the Query, which does authenticate with the
+        /// cluster secret - so a distributed query initiated on a not-yet-upgraded node keeps working
+        /// during a rolling upgrade. The response does not depend on the state of the tables, so it
+        /// discloses nothing to a peer that has not proven knowledge of the secret.
+        for (const QualifiedTableName & table_name : request.tables)
+            response.table_states_by_id.emplace(table_name, TableStatus{});
+    }
+    else
+    {
+        for (const QualifiedTableName & table_name : request.tables)
         {
-            status.is_replicated = true;
-            status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
-            status.is_readonly = replicated_table->isTableReadOnly();
-        }
-        else
-            status.is_replicated = false;
+            auto resolved_id = context_to_resolve_table_names->tryResolveStorageID({table_name.database, table_name.table});
+            StoragePtr table = DatabaseCatalog::instance().tryGetTable(resolved_id, context_to_resolve_table_names);
+            if (!table)
+                continue;
 
-        response.table_states_by_id.emplace(table_name, std::move(status));
+            TableStatus status;
+            if (auto * replicated_table = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+            {
+                status.is_replicated = true;
+                status.absolute_delay = static_cast<UInt32>(replicated_table->getAbsoluteDelay());
+                status.is_readonly = replicated_table->isTableReadOnly();
+            }
+            else
+                status.is_replicated = false;
+
+            response.table_states_by_id.emplace(table_name, std::move(status));
+        }
     }
 
     writeVarUInt(Protocol::Server::TablesStatusResponse, *out);
@@ -1816,17 +1848,19 @@ void TCPHandler::processTablesStatusRequest()
 void TCPHandler::processUnexpectedTablesStatusRequest()
 {
     /// Consume the same wire prefix as processTablesStatusRequest: on a new-protocol
-    /// interserver connection the request body is preceded by the authentication hash.
-#if USE_SSL
+    /// interserver connection the request body is preceded by the authentication hash. Whether the
+    /// hash is on the wire depends on the peer, not on whether this build has SSL.
     if (is_interserver_mode && client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_TABLES_STATUS)
     {
         std::string skipped_hash;
         readStringBinary(skipped_hash, *in, 32);
     }
-#endif
 
     TablesStatusRequest skip_request;
-    skip_request.read(*in, client_tcp_protocol_version);
+    skip_request.read(*in, client_tcp_protocol_version,
+        is_interserver_mode
+            ? INTERSERVER_TABLES_STATUS_REQUEST_LIMITS
+            : TablesStatusRequestLimits{DEFAULT_MAX_STRING_SIZE, DEFAULT_MAX_STRING_SIZE});
 
     throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT, "Unexpected packet TablesStatusRequest received from client");
 }
