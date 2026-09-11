@@ -9,6 +9,7 @@
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/JoinEstimation.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -141,6 +142,8 @@ public:
 
     bool isOptimized() const { return optimized; }
     std::optional<UInt64> getResultRowsEstimation() const { return result_rows_estimation; }
+    std::optional<double> getEstimatedCost() const { return estimated_cost; }
+    std::optional<double> getEstimatedSelectivity() const { return estimated_selectivity; }
     bool hasImpreciseEstimate() const { return imprecise_estimate; }
     const std::unordered_map<String, ColumnStats> & getResultColumnStats() const { return result_column_stats; }
     std::optional<UInt64> getInputRowsEstimation(JoinTableSide side) const;
@@ -148,13 +151,21 @@ public:
     void setOptimized(
         std::optional<UInt64> estimated_rows_ = {},
         std::unordered_map<String, ColumnStats> column_stats_ = {},
-        bool imprecise_estimate_ = false)
+        bool imprecise_estimate_ = false,
+        std::optional<double> estimated_cost_ = {},
+        std::optional<double> estimated_selectivity_ = {},
+        UInt64 cluster_id_ = 0)
     {
         optimized = true;
         result_rows_estimation = estimated_rows_;
         result_column_stats = std::move(column_stats_);
         imprecise_estimate = imprecise_estimate_;
+        estimated_cost = estimated_cost_;
+        estimated_selectivity = estimated_selectivity_;
+        cluster_id = cluster_id_;
     }
+
+    UInt64 getClusterId() const { return cluster_id; }
 
     void setInputLabels(String left_table_label_, String right_table_label_)
     {
@@ -203,6 +214,7 @@ protected:
     bool isDummyColumnOfThisStep(const ActionsDAG::Node * node) const;
 
     std::vector<std::pair<String, String>> describeJoinProperties() const;
+    JoinEstimation getEstimation() const;
 
     JoinExpressionActions expression_actions;
     JoinOperator join_operator;
@@ -219,6 +231,9 @@ protected:
 
     bool optimized = false;
     std::optional<UInt64> result_rows_estimation = {};
+    std::optional<double> estimated_cost = {};
+    std::optional<double> estimated_selectivity = {};
+    UInt64 cluster_id = 0;
     std::unordered_map<String, ColumnStats> result_column_stats = {};
 
     /// True when the row count estimation used by join reordering was derived from the primary index

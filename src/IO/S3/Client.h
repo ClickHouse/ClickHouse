@@ -234,12 +234,16 @@ public:
 
     bool isS3ExpressBucket() const { return client_settings.is_s3express_bucket; }
 
+    bool isChecksumDisabled() const { return client_settings.disable_checksum; }
+
     bool isClientForDisk() const
     {
         return client_configuration.for_disk_s3;
     }
 
     ProviderType getProviderType() const { return provider_type; }
+
+    bool isClientForGCS() const { return provider_type == ProviderType::GCS; }
 
     std::string getGCSOAuthToken() const;
 
