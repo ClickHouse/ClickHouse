@@ -823,6 +823,21 @@ static bool tryParseFrameDefinition(ASTWindowDefinition * node, IParser::Pos & p
         }
     }
 
+    // The frame exclusion is optional and comes last.
+    ParserKeyword keyword_exclude_current_row(Keyword::EXCLUDE_CURRENT_ROW);
+    ParserKeyword keyword_exclude_group(Keyword::EXCLUDE_GROUP);
+    ParserKeyword keyword_exclude_no_others(Keyword::EXCLUDE_NO_OTHERS);
+    ParserKeyword keyword_exclude_ties(Keyword::EXCLUDE_TIES);
+
+    if (keyword_exclude_current_row.ignore(pos, expected))
+        node->frame_exclusion = WindowFrame::Exclusion::CurrentRow;
+    else if (keyword_exclude_group.ignore(pos, expected))
+        node->frame_exclusion = WindowFrame::Exclusion::Group;
+    else if (keyword_exclude_ties.ignore(pos, expected))
+        node->frame_exclusion = WindowFrame::Exclusion::Ties;
+    else if (keyword_exclude_no_others.ignore(pos, expected))
+        node->frame_exclusion = WindowFrame::Exclusion::NoOthers;
+
     return true;
 }
 

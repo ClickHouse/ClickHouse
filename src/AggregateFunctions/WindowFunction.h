@@ -33,6 +33,12 @@ public:
 
     /// Is the frame type supported by this function.
     virtual bool checkWindowFrameType(const WindowTransform * /*transform*/) const { return true; }
+
+    /// Whether the function walks the rows of the frame itself instead of being fed them. Such a
+    /// function has to be taught about a frame exclusion before one can be used with it, so the
+    /// exclusion is rejected rather than silently ignored. Functions that do not look at the frame
+    /// at all - rank and friends - are unaffected by an exclusion and leave this false.
+    virtual bool readsFrameRows() const { return false; }
 };
 
 // Runtime data for computing one window function.

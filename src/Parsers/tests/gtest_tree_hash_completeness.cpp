@@ -490,6 +490,15 @@ TEST(TreeHashCompleteness, JSONRejectsInternalAndHiddenExecutionState)
         json.replace(pos, key.size(), R"("frame_end_preceding":true)");
         expectJSONRejected(json);
     }
+
+    {
+        String json = serializeASTToJSON(*parse(query));
+        const String key = R"("frame_exclusion":"NoOthers")";
+        const auto pos = json.find(key);
+        ASSERT_NE(pos, String::npos);
+        json.replace(pos, key.size(), R"("frame_exclusion":"Ties")");
+        expectJSONRejected(json);
+    }
 }
 
 TEST(TreeHashCompleteness, ViewsRejectAPrimaryKeyTheyCannotFormat)

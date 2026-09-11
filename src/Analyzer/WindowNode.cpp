@@ -54,6 +54,9 @@ void WindowNode::dumpTreeImpl(WriteBuffer & buffer, FormatState & format_state, 
     buffer << ", frame_begin_type: " << window_frame_bound_type_to_string(window_frame.begin_type, window_frame.begin_preceding);
     buffer << ", frame_end_type: " << window_frame_bound_type_to_string(window_frame.end_type, window_frame.end_preceding);
 
+    if (window_frame.exclusion != WindowFrame::Exclusion::NoOthers)
+        buffer << ", frame_exclusion: " << static_cast<UInt32>(window_frame.exclusion);
+
     if (hasPartitionBy())
     {
         buffer << '\n' << std::string(indent + 2, ' ') << "PARTITION BY\n";
@@ -96,6 +99,7 @@ void WindowNode::updateTreeHashImpl(HashState & hash_state, CompareOptions) cons
     hash_state.update(window_frame.end_type);
     applyVisitor(FieldVisitorHash(hash_state), window_frame.end_offset);
     hash_state.update(window_frame.end_preceding);
+    hash_state.update(window_frame.exclusion);
 
     hash_state.update(parent_window_name);
 }
@@ -139,6 +143,7 @@ ASTPtr WindowNode::toASTImpl(const ConvertToASTOptions & options) const
 
     window_definition->frame_end_type = window_frame.end_type;
     window_definition->frame_end_preceding = window_frame.end_preceding;
+    window_definition->frame_exclusion = window_frame.exclusion;
     if (hasFrameEndOffset())
     {
         window_definition->children.push_back(getFrameEndOffsetNode()->toAST(options));

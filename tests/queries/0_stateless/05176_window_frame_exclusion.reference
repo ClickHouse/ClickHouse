@@ -1,0 +1,46 @@
+the four exclusions over a whole partition
+1	10	150	140	120	130
+1	20	150	130	120	140
+2	30	150	120	120	150
+3	40	150	110	60	100
+3	50	150	100	60	110
+the peers are the ones of the ORDER BY, whatever the frame type
+1	10	120	120	120
+1	20	120	120	120
+2	30	120	120	120
+3	40	60	60	60
+3	50	60	60	60
+a moving frame
+1	10	20
+1	20	40
+2	30	60
+3	40	80
+3	50	40
+the frame can be emptied by the exclusion
+1	10	0	0
+1	20	0	0
+2	30	0	0
+3	40	0	0
+3	50	0	0
+with PARTITION BY
+0	0	6
+0	2	4
+0	4	2
+1	1	8
+1	3	6
+1	5	4
+first_value and last_value follow the exclusion
+0	10	20
+10	0	20
+20	0	10
+the ranking functions do not look at the frame, so an exclusion leaves them alone
+0	1	1	1
+0	1	1	2
+1	3	2	3
+it holds across block boundaries
+1
+the clause survives formatting
+SELECT sum(v) OVER (ORDER BY v ASC ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE GROUP)\nFROM t
+SELECT sum(v) OVER w\nFROM t\nWINDOW w AS (ORDER BY v ASC RANGE BETWEEN 1 PRECEDING AND CURRENT ROW EXCLUDE TIES)
+SELECT sum(v) OVER (ORDER BY v ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW)\nFROM t
+a function that walks the frame itself rejects the exclusion instead of ignoring it
