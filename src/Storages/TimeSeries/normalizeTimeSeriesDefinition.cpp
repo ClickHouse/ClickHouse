@@ -53,6 +53,7 @@ namespace TimeSeriesSetting
 {
     extern const TimeSeriesSettingsBool aggregate_min_time_and_max_time;
     extern const TimeSeriesSettingsASTFunction id_generator;
+    extern const TimeSeriesSettingsDataType id_type;
     extern const TimeSeriesSettingsUInt64 recent_samples_index_granularity;
     extern const TimeSeriesSettingsASTFunction recent_samples_partition_by;
     extern const TimeSeriesSettingsUInt64 recent_samples_ttl_seconds;
@@ -73,6 +74,7 @@ namespace ErrorCodes
     extern const int BAD_TYPE_OF_FIELD;
     extern const int INCORRECT_QUERY;
     extern const int INVALID_SETTING_VALUE;
+    extern const int LOGICAL_ERROR;
     extern const int THERE_IS_NO_COLUMN;
     extern const int UNKNOWN_TABLE;
 }
@@ -278,45 +280,68 @@ namespace
         }
     }
 
-    /// Reads types from columns of the external target tables referenced in a CREATE query.
+    /// Reads types from the columns of the external target tables referenced in a CREATE query.
+    /// `external_target_columns` contains the columns of the external target tables which were read,
+    /// the targets missing there are skipped.
     void readTypesFromExternalTargets(
-        const ASTCreateQuery & query, const ContextPtr & context,
+        const ASTCreateQuery & query, const std::map<ViewTarget::Kind, ColumnsDescription> & external_target_columns,
         DataTypePtr & timestamp_type, String & timestamp_src,
         DataTypePtr & scalar_type, String & scalar_src,
         DataTypePtr & id_type, String & id_src,
         const StorageID & table_id)
     {
-        auto resolve_external = [&](ViewTarget::Kind kind) -> std::pair<StorageID, ColumnsDescription>
+        auto find_external = [&](ViewTarget::Kind kind) -> const ColumnsDescription *
         {
-            auto external_table_id = query.getTargetTableID(kind);
-            if (!external_table_id)
-                return {StorageID::createEmpty(), {}};
-            auto resolved_external_table_id = context->tryResolveStorageID(external_table_id);
-            context->checkAccess(AccessType::SHOW_COLUMNS, resolved_external_table_id.database_name, resolved_external_table_id.table_name);
-            auto external_table = DatabaseCatalog::instance().tryGetTable(resolved_external_table_id, context);
-            if (!external_table)
-                throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", external_table_id.getNameForLogs());
-            auto external_metadata = external_table->getInMemoryMetadataPtr(context, false);
-            return {external_table_id, external_metadata->columns};
+            auto it = external_target_columns.find(kind);
+            if ((it == external_target_columns.end()) || !query.hasTargetTableID(kind))
+                return nullptr;
+            return &it->second;
         };
 
-        auto [samples_id, samples_columns] = resolve_external(ViewTarget::Samples);
-        if (!samples_id.empty())
-            readTypesFromExternalSamples("samples", samples_id, samples_columns,
+        if (const auto * samples_columns = find_external(ViewTarget::Samples))
+            readTypesFromExternalSamples("samples", query.getTargetTableID(ViewTarget::Samples), *samples_columns,
                                          timestamp_type, timestamp_src, scalar_type, scalar_src, id_type, id_src,
                                          table_id);
 
         /// An external recent-samples table has the same layout as an external samples table,
         /// and it can be the only declared source of the column types.
-        auto [recent_samples_id, recent_samples_columns] = resolve_external(ViewTarget::RecentSamples);
-        if (!recent_samples_id.empty())
-            readTypesFromExternalSamples("recent samples", recent_samples_id, recent_samples_columns,
+        if (const auto * recent_samples_columns = find_external(ViewTarget::RecentSamples))
+            readTypesFromExternalSamples("recent samples", query.getTargetTableID(ViewTarget::RecentSamples), *recent_samples_columns,
                                          timestamp_type, timestamp_src, scalar_type, scalar_src, id_type, id_src,
                                          table_id);
 
-        auto [tags_id, tags_columns] = resolve_external(ViewTarget::Tags);
-        if (!tags_id.empty())
-            readTypesFromExternalTags(tags_id, tags_columns, id_type, id_src, table_id);
+        if (const auto * tags_columns = find_external(ViewTarget::Tags))
+            readTypesFromExternalTags(query.getTargetTableID(ViewTarget::Tags), *tags_columns, id_type, id_src, table_id);
+    }
+
+    /// Reads the `id_type` setting from the SETTINGS clause of a CREATE query and extracts type `id_type`.
+    void readIdTypeFromSettings(
+        const ASTCreateQuery & query,
+        DataTypePtr & id_type, String & id_src,
+        const StorageID & table_id)
+    {
+        if (!query.storage)
+            return;
+        TimeSeriesSettings settings;
+        settings.loadFromQuery(*query.storage);
+        setOrCheckDataType(id_type, id_src, settings[TimeSeriesSetting::id_type].value, "setting `id_type`", "id", table_id);
+    }
+
+    /// Whether a CREATE query declares the type of the `id` column itself: in the inner columns or in the `id_type` setting.
+    /// If not, the type can be read only from an external target table.
+    bool hasDeclaredIdType(const ASTCreateQuery & query)
+    {
+        StorageID table_id{query.getDatabase(), query.getTable()};
+        DataTypePtr timestamp_type;
+        DataTypePtr scalar_type;
+        DataTypePtr id_type;
+        String timestamp_src;
+        String scalar_src;
+        String id_src;
+        readTypesFromInnerSamples(query, timestamp_type, timestamp_src, scalar_type, scalar_src, id_type, id_src, table_id);
+        readTypesFromInnerTags(query, id_type, id_src, table_id);
+        readIdTypeFromSettings(query, id_type, id_src, table_id);
+        return id_type != nullptr;
     }
 
     /// Reads the declared inner engines and extracts the family of the inner engines.
@@ -390,17 +415,13 @@ namespace
         std::optional<DefaultTableEngine> inner_engine_family;
     };
 
-    /// Resolves the types of the `timestamp`, `value` and `id` columns from the declarations in the query,
+    /// Resolves the types of the `timestamp`, `value` and `id` columns from the declarations in the query
+    /// (the columns, the `id_type` setting, and the external target tables whose columns are in `external_target_columns`),
     /// then from `fallback_types` (the resolved types of the table from the clause `AS <other_table>`), then from the defaults.
-    /// The external target tables are read always (if `check_external_targets` is true),
-    /// or only if some type isn't declared in the query (if `check_external_targets_for_missing_types` is true),
-    /// or never - on ATTACH they may not exist yet.
     /// `need_inner_engine_family` is set if the family of the inner engines is needed to generate inner engines.
     ResolvedTimeSeriesTypes resolveTimeSeriesTypes(
         const ASTCreateQuery & create_query,
-        const ContextPtr & context,
-        bool check_external_targets,
-        bool check_external_targets_for_missing_types,
+        const std::map<ViewTarget::Kind, ColumnsDescription> & external_target_columns,
         bool need_inner_engine_family,
         const ResolvedTimeSeriesTypes * fallback_types)
     {
@@ -421,15 +442,14 @@ namespace
         readTypesFromInnerTags(create_query,
             types.id_type, id_src, table_id);
 
-        bool all_types_resolved = types.timestamp_type && types.scalar_type && types.id_type;
-        if (check_external_targets || (check_external_targets_for_missing_types && !all_types_resolved))
-        {
-            readTypesFromExternalTargets(create_query, context,
-                types.timestamp_type, timestamp_src,
-                types.scalar_type, scalar_src,
-                types.id_type, id_src,
-                table_id);
-        }
+        readIdTypeFromSettings(create_query,
+            types.id_type, id_src, table_id);
+
+        readTypesFromExternalTargets(create_query, external_target_columns,
+            types.timestamp_type, timestamp_src,
+            types.scalar_type, scalar_src,
+            types.id_type, id_src,
+            table_id);
 
         if (need_inner_engine_family)
         {
@@ -524,7 +544,7 @@ namespace
     void removeOldSettingsDisabledByIdTypeChange(SettingsChanges & old_settings, const DataTypePtr & old_id_type, const DataTypePtr & new_id_type)
     {
         if (!old_id_type->equals(*new_id_type))
-            old_settings.removeSetting("id_generator");
+            old_settings.removeSettings({"id_type", "id_generator"});
     }
 
     /// Removes the columns copied from the old table which the settings of this table disable.
@@ -1288,9 +1308,9 @@ namespace
 
     /// The family of the inner engines when none is declared: it follows the `default_table_engine` setting.
     /// The value `None` is kept: then the inner engines must be declared explicitly.
-    DefaultTableEngine getDefaultInnerEngineFamily(const ContextPtr & context, const StorageID & table_id)
+    DefaultTableEngine getDefaultInnerEngineFamily(const Settings & query_settings, const StorageID & table_id)
     {
-        auto default_table_engine = context->getSettingsRef()[Setting::default_table_engine].value;
+        auto default_table_engine = query_settings[Setting::default_table_engine].value;
         switch (default_table_engine)
         {
             case DefaultTableEngine::MergeTree:
@@ -1337,7 +1357,7 @@ namespace
         const TimeSeriesSettings & settings,
         const ResolvedTimeSeriesTypes & resolved_types,
         const StorageID & table_id,
-        const ContextPtr & context)
+        const Settings & query_settings)
     {
         bool changed = false;
 
@@ -1345,7 +1365,7 @@ namespace
         {
             DefaultTableEngine inner_engine_family = resolved_types.inner_engine_family
                 ? *resolved_types.inner_engine_family
-                : getDefaultInnerEngineFamily(context, table_id);
+                : getDefaultInnerEngineFamily(query_settings, table_id);
             auto engine = makeASTFunction(fmt::format("{}{}", getInnerEngineFamilyPrefix(inner_engine_family, inner_table_kind), engine_kind));
             engine->setNoEmptyArgs(false);
             inner_engine.set(inner_engine.engine, engine);
@@ -1673,30 +1693,95 @@ namespace
         }
     }
 
-    /// Reads the CREATE query of the table from the clause `AS <other_table>` of `create_query`.
-    /// The stored metadata of the old table can be written by an older version, so its normalized form is returned.
-    boost::intrusive_ptr<const ASTCreateQuery> getASCreateQuery(const ASTCreateQuery & create_query, const ContextPtr & context)
+    /// Whether the query creates a new table. It's false on ATTACH and when restoring from a backup.
+    bool isNewTable(LoadingStrictnessLevel mode, bool is_restore_from_backup)
     {
-        chassert(!create_query.as_table.empty());
+        return (mode <= LoadingStrictnessLevel::SECONDARY_CREATE) && !is_restore_from_backup;
+    }
 
-        /// The definition of the old table is read below.
-        auto old_database = context->resolveDatabase(create_query.as_database);
-        context->checkAccess(AccessType::SHOW_COLUMNS, old_database, create_query.as_table);
-
-        auto old_create_query = boost::static_pointer_cast<const ASTCreateQuery>(
-            DatabaseCatalog::instance().getDatabase(old_database)->getCreateTableQuery(create_query.as_table, context));
-
+    /// Normalizes the definition of the table from the clause `AS <other_table>`:
+    /// the stored metadata of the old table can be written by an older version.
+    boost::intrusive_ptr<const ASTCreateQuery> normalizeASCreateQuery(const ASTCreateQuery & as_create_query)
+    {
         /// The columns of a TimeSeries table are always generated, so the old table's columns can't be copied.
-        if (!old_create_query->is_time_series_table)
+        if (!as_create_query.is_time_series_table)
         {
-            StorageID old_table_id{old_create_query->getDatabase(), old_create_query->getTable()};
+            StorageID old_table_id{as_create_query.getDatabase(), as_create_query.getTable()};
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Cannot CREATE a TimeSeries table AS {} because it is not a TimeSeries table", old_table_id.getNameForLogs());
         }
 
-        auto normalized = boost::static_pointer_cast<ASTCreateQuery>(old_create_query->clone());
-        normalizeTimeSeriesDefinition(*normalized, context, LoadingStrictnessLevel::ATTACH, /* is_restore_from_backup = */ false);
+        auto normalized = boost::static_pointer_cast<ASTCreateQuery>(as_create_query.clone());
+        normalizeTimeSeriesDefinitionImpl(*normalized, LoadingStrictnessLevel::ATTACH, /* is_restore_from_backup = */ false, /* inputs = */ {});
         return normalized;
+    }
+
+    /// Makes the description of the columns of an inner table from their declarations. Only the names and the types
+    /// are needed to check the columns here, the whole declarations are checked when the inner table is created.
+    ColumnsDescription getInnerColumnsDescription(const ASTColumns & inner_table_columns, ViewTarget::Kind inner_table_kind, const StorageID & table_id)
+    {
+        ColumnsDescription result;
+        if (!inner_table_columns.columns)
+            return result;
+
+        for (const auto & child : inner_table_columns.columns->children)
+        {
+            const auto & column_declaration = child->as<ASTColumnDeclaration &>();
+            if (!column_declaration.getType())
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "{}: Column {} of the inner {} table must have an explicit type",
+                    table_id.getNameForLogs(), column_declaration.name, inner_table_kind);
+            result.add(ColumnDescription{column_declaration.name, DataTypeFactory::instance().get(column_declaration.getType())});
+        }
+        return result;
+    }
+
+    /// Records the type of the `id` column in the `id_type` setting, and the expression generating identifiers
+    /// in the `id_generator` setting, if the definition doesn't keep them otherwise.
+    /// An external tags table keeps both outside the definition, so they're recorded to make the definition self-contained
+    /// (e.g. the clause `AS <this_table>` reads the `id` type from the definition without reading the external tables)
+    /// and to keep them the same if the external table changes.
+    /// An inner tags table declares the `id` type in its columns, and the DEFAULT expression of its `id` column generates
+    /// identifiers unless the `id_generator` setting is set: then the `id` type the expression was written for is recorded too.
+    void recordIdTypeAndIdGenerator(
+        ASTStorage & storage,
+        TimeSeriesSettings & settings,
+        const ResolvedTimeSeriesTypes & resolved_types,
+        const StorageID & external_tags_table_id,
+        const ColumnsDescription * external_tags_columns,
+        const StorageID & table_id)
+    {
+        bool tags_are_external = (external_tags_columns != nullptr);
+        if (!tags_are_external && !settings[TimeSeriesSetting::id_generator].value)
+            return;
+
+        if (!settings[TimeSeriesSetting::id_type].value)
+        {
+            settings[TimeSeriesSetting::id_type] = resolved_types.id_type;
+            setEngineSettings(storage, "id_type", Field(resolved_types.id_type->getName()));
+        }
+
+        if (tags_are_external && !settings[TimeSeriesSetting::id_generator].value)
+        {
+            /// The expression is resolved the same way as TimeSeriesSink does it: the DEFAULT expression
+            /// of the `id` column of the external tags table, then the expression chosen for the `id` type.
+            ASTPtr id_generator;
+            if (const auto * id_column = external_tags_columns->tryGet(TimeSeriesColumnNames::ID))
+                id_generator = id_column->default_desc.expression;
+            if (!id_generator)
+                id_generator = TimeSeriesIDGenerator::getDefault(resolved_types.id_type, table_id);
+
+            auto * id_generator_function = id_generator->as<ASTFunction>();
+            if (!id_generator_function)
+                throw Exception(ErrorCodes::INCORRECT_QUERY,
+                    "{}: The DEFAULT expression {} of column {} of the external tags table {} cannot be used to generate identifiers "
+                    "because it is not a function call; specify the expression in the `id_generator` setting instead",
+                    table_id.getNameForLogs(), id_generator->formatWithSecretsOneLine(), TimeSeriesColumnNames::ID,
+                    external_tags_table_id.getNameForLogs());
+
+            settings[TimeSeriesSetting::id_generator] = boost::intrusive_ptr<ASTFunction>(id_generator_function);
+            setEngineSettings(storage, "id_generator", Field(id_generator_function->formatWithSecretsOneLine()));
+        }
     }
 
     /// Applies the definition of the table from the clause `AS <other_table>` to `create_query`: its inner columns,
@@ -1718,7 +1803,7 @@ namespace
             /// Some settings of the old table are not copied because the settings written in this query disable them.
             removeOldSettingsDisabledByNewSettings(merged_settings->changes, create_query.storage->settings);
 
-            /// The `id_generator` of the old table is not copied if this table has another `id` type.
+            /// The `id_type` and `id_generator` of the old table are not copied if this table has another `id` type.
             removeOldSettingsDisabledByIdTypeChange(merged_settings->changes, old_types.id_type, new_types.id_type);
 
             if (create_query.storage->settings)
@@ -1812,13 +1897,13 @@ namespace
 }
 
 
-void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+void normalizeTimeSeriesDefinitionImpl(
+    ASTCreateQuery & create_query, LoadingStrictnessLevel mode, bool is_restore_from_backup, const NormalizeTimeSeriesDefinitionInputs & inputs)
 {
     chassert(create_query.is_time_series_table);
 
     /// Whether we're creating a new table.
-    /// `is_new_table` is false if we're restoring from a backup.
-    bool is_new_table = (mode <= LoadingStrictnessLevel::SECONDARY_CREATE) && !is_restore_from_backup;
+    bool is_new_table = isNewTable(mode, is_restore_from_backup);
 
     /// Whether the create query may come from an older version, so it can be converted to the current form.
     /// The initial CREATE query is excluded: it must be written in the current form already.
@@ -1860,29 +1945,32 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         || hasTargetTableID(create_query, ViewTarget::RecentSamples);
 
     /// The definition of the table from the clause `AS <other_table>` if any, and its resolved types.
+    /// The clause is used only for a new table: the stored definition of an existing table has no such clause.
     boost::intrusive_ptr<const ASTCreateQuery> old_create_query;
     std::optional<ResolvedTimeSeriesTypes> old_types;
-    if (!create_query.as_table.empty())
+    if (is_new_table && !create_query.as_table.empty())
     {
-        old_create_query = getASCreateQuery(create_query, context);
-        /// The types of the old table are normally in its outer and inner columns, so its external target tables are rarely read.
+        if (!inputs.as_create_query)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "The definition of table {} from the clause AS is required to normalize the definition of a new TimeSeries table",
+                StorageID{create_query.as_database, create_query.as_table}.getNameForLogs());
+
+        old_create_query = normalizeASCreateQuery(*inputs.as_create_query);
+
+        /// The types of the old table are in its outer columns, inner columns and the `id_type` setting,
+        /// so its external target tables are read only if their columns were passed (see `NormalizeTimeSeriesDefinitionInputs`).
         old_types = resolveTimeSeriesTypes(
             *old_create_query,
-            context,
-            /* check_external_targets = */ false,
-            /* check_external_targets_for_missing_types = */ is_new_table,
-            /* need_inner_engine_family = */ is_new_table,
+            inputs.as_external_target_columns,
+            /* need_inner_engine_family = */ true,
             /* fallback_types = */ nullptr);
     }
 
     /// Resolve types timestamp_type, scalar_type, id_type.
-    /// External targets are checked only at CREATE time; on ATTACH they may not be loaded yet.
-    /// The external target tables of a new table must exist.
+    /// The columns of the external target tables are passed for a new table only: on ATTACH they may not be loaded yet.
     ResolvedTimeSeriesTypes resolved_types = resolveTimeSeriesTypes(
         create_query,
-        context,
-        /* check_external_targets = */ is_new_table,
-        /* check_external_targets_for_missing_types = */ is_new_table,
+        inputs.external_target_columns,
         /* need_inner_engine_family = */ is_new_table,
         old_types ? &*old_types : nullptr);
 
@@ -1895,6 +1983,22 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
     /// For new tables: per-kind, check external tables or normalize the inner table's columns and assign its engine.
     if (is_new_table)
     {
+        if (!inputs.query_settings)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "The query settings are required to normalize the definition of a new TimeSeries table");
+
+        StorageID table_id{create_query.getDatabase(), create_query.getTable()};
+
+        /// The columns of every external target table must be passed for a new table.
+        auto get_external_target_columns = [&](ViewTarget::Kind kind) -> const ColumnsDescription &
+        {
+            auto it = inputs.external_target_columns.find(kind);
+            if (it == inputs.external_target_columns.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "{}: The columns of the external {} table {} are required to normalize the definition of a new TimeSeries table",
+                    table_id.getNameForLogs(), kind, create_query.getTargetTableID(kind).getNameForLogs());
+            return it->second;
+        };
+
         TimeSeriesSettings settings;
         if (create_query.storage)
             settings.loadFromQuery(*create_query.storage);
@@ -1939,17 +2043,12 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
 
             if (hasTargetTableID(create_query, kind))
             {
-                /// An external target table is specified — check it has all the required columns.
-                auto target_table_id = create_query.getTargetTableID(kind);
-                auto target_table = DatabaseCatalog::instance().getTable(target_table_id, context);
-                auto target_metadata = target_table->getInMemoryMetadataPtr(context, false);
-                checkTargetTable(target_metadata->columns, kind, settings, resolved_types, target_table_id);
+                /// An external target table is specified - check it has all the required columns.
+                checkTargetTable(get_external_target_columns(kind), kind, settings, resolved_types, create_query.getTargetTableID(kind));
             }
             else
             {
                 /// An inner target table should be used. Normalize its column definitions and assign a table engine if not specified.
-                StorageID table_id{create_query.getDatabase(), create_query.getTable()};
-
                 auto inner_columns = create_query.getTargetInnerColumns(kind)
                     ? boost::static_pointer_cast<ASTColumns>(create_query.getTargetInnerColumns(kind)->clone())
                     : make_intrusive<ASTColumns>();
@@ -1957,21 +2056,30 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
                     create_query.setTargetInnerColumns(kind, inner_columns);
 
                 /// Validate the user-provided types of the inner columns the same way external targets are validated.
-                auto inner_columns_description = InterpreterCreateQuery::getColumnsDescription(
-                    *inner_columns->columns, context, mode);
-                checkTargetTable(inner_columns_description, kind, settings, resolved_types, table_id);
+                checkTargetTable(getInnerColumnsDescription(*inner_columns, kind, table_id), kind, settings, resolved_types, table_id);
 
                 auto inner_engine = create_query.getTargetInnerEngine(kind)
                     ? boost::static_pointer_cast<ASTStorage>(create_query.getTargetInnerEngine(kind)->clone())
                     : make_intrusive<ASTStorage>();
-                if (normalizeInnerEngine(*inner_engine, kind, settings, resolved_types, table_id, context))
+                if (normalizeInnerEngine(*inner_engine, kind, settings, resolved_types, table_id, *inputs.query_settings))
                     create_query.setTargetInnerEngine(kind, inner_engine);
             }
         }
 
         /// Inner tables with different replication types would diverge between replicas.
         /// The generated inner engines follow the declared ones, but an inner engine copied from the old table can differ.
-        checkInnerEnginesReplicationTypesMatch(create_query, StorageID{create_query.getDatabase(), create_query.getTable()});
+        checkInnerEnginesReplicationTypesMatch(create_query, table_id);
+
+        /// Record `id_type` and `id_generator` in the SETTINGS clause if they aren't kept in the definition otherwise.
+        if (create_query.storage)
+        {
+            bool tags_are_external = hasTargetTableID(create_query, ViewTarget::Tags);
+            recordIdTypeAndIdGenerator(
+                *create_query.storage, settings, resolved_types,
+                tags_are_external ? create_query.getTargetTableID(ViewTarget::Tags) : StorageID::createEmpty(),
+                tags_are_external ? &get_external_target_columns(ViewTarget::Tags) : nullptr,
+                table_id);
+        }
     }
 
     /// Regenerate the columns of TimeSeries table from the resolved types.
@@ -1989,6 +2097,75 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
             create_query.set(create_query.columns_list, new_columns_ast);
         }
     }
+}
+
+
+namespace
+{
+    /// Reads the columns of a table, which must exist.
+    ColumnsDescription readTableColumns(const StorageID & table_id, const ContextPtr & context)
+    {
+        auto resolved_table_id = context->tryResolveStorageID(table_id);
+        context->checkAccess(AccessType::SHOW_COLUMNS, resolved_table_id.database_name, resolved_table_id.table_name);
+        auto table = DatabaseCatalog::instance().tryGetTable(resolved_table_id, context);
+        if (!table)
+            throw Exception(ErrorCodes::UNKNOWN_TABLE, "TimeSeries: Target table {} doesn't exist", table_id.getNameForLogs());
+        return table->getInMemoryMetadataPtr(context, false)->columns;
+    }
+
+    /// Reads the columns of the external target tables of a CREATE query.
+    std::map<ViewTarget::Kind, ColumnsDescription> readExternalTargetColumns(const ASTCreateQuery & create_query, const ContextPtr & context)
+    {
+        std::map<ViewTarget::Kind, ColumnsDescription> result;
+        for (auto kind : getTargetKinds())
+        {
+            if (create_query.hasTargetTableID(kind))
+                result[kind] = readTableColumns(create_query.getTargetTableID(kind), context);
+        }
+        return result;
+    }
+
+    /// Reads the stored CREATE query of the table from the clause `AS <other_table>` of `create_query`.
+    boost::intrusive_ptr<const ASTCreateQuery> readASCreateQuery(const ASTCreateQuery & create_query, const ContextPtr & context)
+    {
+        chassert(!create_query.as_table.empty());
+        auto as_database = context->resolveDatabase(create_query.as_database);
+        context->checkAccess(AccessType::SHOW_COLUMNS, as_database, create_query.as_table);
+        return boost::static_pointer_cast<const ASTCreateQuery>(
+            DatabaseCatalog::instance().getDatabase(as_database)->getCreateTableQuery(create_query.as_table, context));
+    }
+}
+
+
+void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextPtr & context, LoadingStrictnessLevel mode, bool is_restore_from_backup)
+{
+    chassert(create_query.is_time_series_table);
+
+    /// Only a new table needs the information from outside its definition; the other tables must exist then
+    /// (on ATTACH they may not be loaded yet).
+    NormalizeTimeSeriesDefinitionInputs inputs;
+    if (isNewTable(mode, is_restore_from_backup))
+    {
+        inputs.query_settings = &context->getSettingsRef();
+        inputs.external_target_columns = readExternalTargetColumns(create_query, context);
+
+        if (!create_query.as_table.empty())
+        {
+            inputs.as_create_query = readASCreateQuery(create_query, context);
+
+            /// The `id` type of a table with an external tags table is recorded in its `id_type` setting, but the tables
+            /// created by older versions don't have the setting: then the type is read from the external tags table itself
+            /// unless the inner columns of the other targets declare it.
+            const auto & as_create_query = *inputs.as_create_query;
+            if (as_create_query.is_time_series_table && as_create_query.hasTargetTableID(ViewTarget::Tags) && !hasDeclaredIdType(as_create_query))
+            {
+                inputs.as_external_target_columns[ViewTarget::Tags]
+                    = readTableColumns(as_create_query.getTargetTableID(ViewTarget::Tags), context);
+            }
+        }
+    }
+
+    normalizeTimeSeriesDefinitionImpl(create_query, mode, is_restore_from_backup, inputs);
 }
 
 }

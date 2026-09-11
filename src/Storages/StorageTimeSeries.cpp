@@ -1165,6 +1165,16 @@ SETTINGS id_generator = 'sipHash64(tags)'
 
 If the setting is set, it's used to generate `id` even if the column's `DEFAULT` contains a different expression.
 
+The type of the `id` column can also be specified in the `id_type` setting instead of the `INNER COLUMNS` clause:
+
+```sql
+CREATE TABLE my_table ENGINE=TimeSeries
+SETTINGS id_type = 'UInt64', id_generator = 'sipHash64(tags)'
+```
+
+When the `id_generator` setting is set, the `id_type` setting is recorded automatically at `CREATE` time,
+so the definition keeps the type the expression was written for.
+
 ## The `tags` column {#tags-column}
 
 The `tags` column contains all the tags of a time series, including the `__name__` tag with the name of a metric.
@@ -1252,7 +1262,7 @@ Such a table must have the same columns as an external samples table, and it mus
 
 The external tables' column types (`id`, `timestamp`, `value`, and the `<tag_value_column>`s listed in [`tags_to_columns`](#settings)) must match what the `TimeSeries` table would otherwise generate internally (see [Samples table](#samples-table), [Tags table](#tags-table), and [Metrics table](#metrics-table) for the type constraints). Type mismatches are reported at `CREATE` time.
 
-The id-generator expression for an external tags target is resolved at INSERT time in the following order: the [`id_generator`](#settings) setting (if set), then the `DEFAULT` declared on the external table's `id` column (if any), then the canonical generator derived from the `id` type. The setting therefore overrides whatever `DEFAULT` is declared on the external table — see [The `id` column](#id-column) for details.
+The type of the `id` column of an external tags table and the expression generating identifiers are recorded in the [`id_type`](#settings) and [`id_generator`](#settings) settings at `CREATE` time, so the definition of the `TimeSeries` table keeps them: for example, `CREATE TABLE ... AS my_table` reads the `id` type from the definition of `my_table` without reading its external target tables. If the `id_generator` setting isn't specified, it's set to the `DEFAULT` declared on the external table's `id` column (if any), otherwise to the canonical generator derived from the `id` type. The recorded expression is used to generate `id` even if the `DEFAULT` of the external table changes later — see [The `id` column](#id-column) for details.
 
 ## Altering settings {#altering-settings}
 
@@ -1278,7 +1288,8 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 
 | Name | Type | Default | Description |
 |---|---|---|---|
-| `id_generator` | Expression | depends on `id` type | Expression that computes the identifier (fingerprint) of a time series from its tags. If unset, the default expression for the `id` column is used. If the default expression for the `id` column is also unset then the expression is chosen automatically |
+| `id_type` | Data type | depends on the `id` column | The type of the `id` column of the target tables. Normally the type is declared in the `INNER COLUMNS` clauses of the inner tables or in an [external](#external-target-tables) tags table; the setting is recorded automatically at `CREATE` time if the type isn't kept in the definition otherwise: if the tags target is an external table, or if the `id_generator` setting is set. The setting can also be specified explicitly instead of `TAGS INNER COLUMNS (id <type>)` |
+| `id_generator` | Expression | depends on `id` type | Expression that computes the identifier (fingerprint) of a time series from its tags. If unset, the default expression for the `id` column is used. If the default expression for the `id` column is also unset then the expression is chosen automatically. For an external tags table the setting is recorded automatically at `CREATE` time (see [External target tables](#external-target-tables)) |
 | `tags_to_columns` | Map | {} | Map specifying which tags should be put to separate columns in the [tags](#tags-table) table. Syntax: `{'tag1': 'column1', 'tag2' : column2, ...}` |
 | `use_all_tags_column_to_generate_id` | Bool | false | Obsolete setting, does nothing |
 | `store_min_time_and_max_time` | Bool | true | If set to true then the table will store `min_time` and `max_time` for each time series |

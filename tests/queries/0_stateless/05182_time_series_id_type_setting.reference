@@ -1,0 +1,21 @@
+-- the `id` type of an inner tags table is declared in its columns, so the setting is not recorded
+0
+-- the setting declares the `id` type of the inner tables
+UInt64
+`id` UInt64, `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ZSTD(3))
+`id` UInt64 DEFAULT sipHash64(tags), `metric_name` LowCardinality(String), `tags` Map(LowCardinality(String), String), `min_time` SimpleAggregateFunction(min, Nullable(DateTime64(3))), `max_time` SimpleAggregateFunction(max, Nullable(DateTime64(3)))
+1	m1
+-- the setting cannot be altered
+-- the setting must match the type declared in the inner columns
+-- the setting is recorded next to `id_generator`: it keeps the type the expression was written for
+UInt64
+-- the `id` type and the expression generating identifiers of an external tags table are recorded in the settings
+UInt64	sipHash64(tags)
+`id` UInt64, `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ZSTD(3))
+1	m1
+-- the DEFAULT expression of the `id` column of the external tags table is recorded as the expression
+cityHash64(tags)
+1	m1
+-- an explicit `id_generator` wins over the DEFAULT expression
+sipHash64(tags)
+-- the setting must match the type of the `id` column of the external tags table
