@@ -22,6 +22,17 @@ SELECT match('ac', '^ab\Q\E*c');
 SELECT count() FROM t_prefix_flag_group WHERE match(s, '^ab\Q\E*c');
 SELECT countIf(match(s, '^ab\Q\E*c')) FROM t_prefix_flag_group;
 
+SELECT 'a chain of zero-width constructs before the quantifier';
+SELECT match('ac', '^ab(?i)(?m)*c'), match('ac', '^ab\Q\E(?i)*c'), match('ac', '^ab(?i)\Q\E?c');
+SELECT count() FROM t_prefix_flag_group WHERE match(s, '^ab(?i)(?m)*c');
+SELECT countIf(match(s, '^ab(?i)(?m)*c')) FROM t_prefix_flag_group;
+SELECT count() FROM t_prefix_flag_group WHERE match(s, '^ab\Q\E(?i)*c');
+SELECT countIf(match(s, '^ab\Q\E(?i)*c')) FROM t_prefix_flag_group;
+SELECT count() FROM t_prefix_flag_group WHERE match(s, '^ab(?i)\Q\E?c');
+SELECT countIf(match(s, '^ab(?i)\Q\E?c')) FROM t_prefix_flag_group;
+SELECT count() FROM t_prefix_flag_group WHERE match(s, '^ab(?i)(?m){0,2}c');
+SELECT countIf(match(s, '^ab(?i)(?m){0,2}c')) FROM t_prefix_flag_group;
+
 SELECT 'a flag group without a quantifier still gives the whole prefix';
 SELECT count() FROM t_prefix_flag_group WHERE match(s, '^ab(?i)c');
 SELECT countIf(match(s, '^ab(?i)c')) FROM t_prefix_flag_group;

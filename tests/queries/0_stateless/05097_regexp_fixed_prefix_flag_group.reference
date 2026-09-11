@@ -10,6 +10,16 @@ an empty \\Q\\E quote in the same place
 1
 2
 2
+a chain of zero-width constructs before the quantifier
+1	1	1
+2
+2
+2
+2
+2
+2
+2
+2
 a flag group without a quantifier still gives the whole prefix
 1
 1
