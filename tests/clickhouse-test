@@ -2032,12 +2032,9 @@ class SettingsRandomizer:
         "materialized_views_populate_atomically": lambda: random.random() > 0.05,
         "allow_metadata_only_named_tuple_alter": lambda: random.random() < 0.3,
         "optimize_mutations_with_partition_pruning": lambda: random.random() > 0.05,
-        "query_plan_derive_not_null_filters_from_joins": lambda: random.random() > 0.05,
-        "query_plan_allow_derived_not_null_filters_execution": lambda: random.random() > 0.05,
-        # 0 never promotes a derived IS NOT NULL filter to an executable one, 1 always does
-        "query_plan_max_selectivity_for_not_null_filters_execution": threshold_generator(
-            0.2, 0.2, 0.0, 1.0
-        ),
+        # Don't randomize the query_plan_*not_null_filters* trio: c2a4711cd16 reverted
+        # "Convert OUTER join to INNER join by null-rejecting join conditions", so the settings no
+        # longer exist and every draw makes the client reject the option (UNRECOGNIZED_ARGUMENTS).
     }
 
     dependent_settings = {
@@ -2065,8 +2062,6 @@ class SettingsRandomizer:
         "force_distinct_partitions_independently": "allow_distinct_partitions_independently",
         "force_window_partitions_independently": "allow_window_partitions_independently",
         "force_creating_set_partitions_independently": "allow_creating_set_partitions_independently",
-        # executing derived IS NOT NULL filters is moot when none are derived
-        "query_plan_allow_derived_not_null_filters_execution": "query_plan_derive_not_null_filters_from_joins",
     }
 
     stress_test_only_settings = {
