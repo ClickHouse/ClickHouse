@@ -8,6 +8,11 @@
 -- See https://github.com/ClickHouse/ClickHouse/issues/118130
 
 SET allow_experimental_time_series_table = 1;
+-- Pinned because the body asserts analyzer-side behaviour: the `FINAL` refusal below is raised by the
+-- planner, which the old analyzer does not reach, and the coordinated read it checks for is the one the
+-- planner anchors. The legacy path has its own subcase further down, which sets `enable_analyzer = 0`
+-- explicitly so it is covered whichever analyzer the job defaults to.
+SET enable_analyzer = 1;
 SET enable_parallel_replicas = 2, max_parallel_replicas = 3, cluster_for_parallel_replicas = 'parallel_replicas', parallel_replicas_for_non_replicated_merge_tree = 1;
 SET parallel_replicas_local_plan = 0;
 SET automatic_parallel_replicas_mode = 0;
