@@ -390,7 +390,7 @@ MergeTreeIndexConditionSet::MergeTreeIndexConditionSet(
         return;
 
     std::vector<FutureSetPtr> sets_to_prepare;
-    if (checkDAGUseless(*filter_dag.predicate, context, sets_to_prepare))
+    if (checkDAGUseless(*filter_dag.predicate, context, sets_to_prepare) && condition.alwaysUnknownOrTrue())
         return;
     /// Try to run subqueries, don't use index if failed (e.g. if use_index_for_in_with_subqueries is disabled).
     for (auto & set : sets_to_prepare)
