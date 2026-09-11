@@ -77,13 +77,18 @@ ${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
 # its profile events - happens on a replica. Sum over `initial_query_id` so every node that ran the
 # query is counted, in both topologies. The default `file` split granularity gives the whole object
 # to one node, so the totals match the single-node ones. `count() > 0` guards the `= 0` assertion
-# against passing on an empty set, where `sum` would also be 0. A secondary query runs with the same
-# default database as its initiator, so it passes the `current_database` filter too.
+# against passing on an empty set, where `sum` would also be 0.
+#
+# A secondary query runs with `current_database = 'default'`, not the initiator's database, so
+# requiring `currentDatabase()` of every row drops exactly the replica rows that carry the prefetch
+# counters. `initial_query_id` already isolates this test - the id is prefixed with the unique
+# `$CLICKHOUSE_DATABASE` - so the database condition only has to hold for the initiator's own row.
 prefetches() {
     ${CLICKHOUSE_CLIENT} --query "
     SELECT $2
     FROM system.query_log
-    WHERE current_database = currentDatabase() AND initial_query_id = '$1' AND type = 'QueryFinish'
+    WHERE initial_query_id = '$1' AND type = 'QueryFinish'
+      AND (current_database = currentDatabase() OR NOT is_initial_query)
     "
 }
 
