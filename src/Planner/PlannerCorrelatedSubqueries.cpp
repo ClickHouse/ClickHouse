@@ -1148,7 +1148,7 @@ QueryPlan buildLogicalJoinForLateral(
     QueryPlan input_stream_plan,
     QueryPlan decorrelated_plan,
     const CorrelatedSubquery & correlated_subquery,
-    bool referenced_input_subplan,
+    bool uses_in_memory_buffer,
     JoinKind lateral_join_kind
 )
 {
@@ -1173,7 +1173,10 @@ QueryPlan buildLogicalJoinForLateral(
 
     const auto & settings = planner_context->getQueryContext()->getSettingsRef();
 
-    if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT)
+    /// A buffered referenced input (SaveSubqueryResultToBuffer / ReadFromCommonBuffer) requires the
+    /// reader to run after the writer finished, which is only guaranteed when the input stream stays
+    /// on the right side of the join, so keep that layout when a buffer is created.
+    if (settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::LEFT && !uses_in_memory_buffer)
     {
         std::swap(lhs_plan, rhs_plan);
         std::swap(lhs_plan_header, rhs_plan_header);
@@ -1201,7 +1204,7 @@ QueryPlan buildLogicalJoinForLateral(
     if (lateral_join_kind == JoinKind::Inner || lateral_join_kind == JoinKind::Cross)
         join_kind_to_use = JoinKind::Inner;
     else
-        join_kind_to_use = settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT
+        join_kind_to_use = (uses_in_memory_buffer || settings[Setting::correlated_subqueries_default_join_kind] == DecorrelationJoinKind::RIGHT)
             ? JoinKind::Right : JoinKind::Left;
 
     /// Respect the join_use_nulls setting: when enabled (default), unmatched columns
@@ -1215,14 +1218,21 @@ QueryPlan buildLogicalJoinForLateral(
         output_columns,
         std::unordered_map<String, const ActionsDAG::Node *>{},
         use_nulls,
-        JoinSettings(settings),
+        JoinSettings(settings, planner_context->getQueryContext()->getJoinAnalyzeMode()),
         SortingStep::Settings(settings));
     result_join->setStepDescription("LATERAL JOIN");
 
-    if (referenced_input_subplan && settings[Setting::correlated_subqueries_use_in_memory_buffer] && join_kind_to_use == JoinKind::Right)
+    /// Reordering protection for the buffered case whose layout was pinned above.
+    if (uses_in_memory_buffer)
     {
         auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
+        /// Remove algorithms that are not compatible with in-memory buffering
+        /// of correlated subquery input: the input stream must be fully evaluated
+        /// before the lateral subquery side is executed.
         std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
+        if (join_algorithms.empty())
+            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
+        /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
 
@@ -1539,7 +1549,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 .query_plan = std::move(query_plan),
                 .correlated_query_plan = std::move(correlated_plan),
                 .correlated_plan_steps = std::move(correlated_step_map),
-                .equivalence_class_stack = { EquivalenceClasses{} }
+                .scope_stack = { DecorrelationScope{} }
             };
 
             auto decorrelated_plan = decorrelateQueryPlan(context, context.correlated_query_plan.getRootNode());
@@ -1553,7 +1563,7 @@ void buildQueryPlanForCorrelatedSubquery(
                 std::move(context.query_plan),
                 std::move(decorrelated_plan),
                 correlated_subquery,
-                context.referenced_input_subplan,
+                context.uses_in_memory_buffer,
                 correlated_subquery.lateral_join_kind);
             break;
         }
