@@ -1281,11 +1281,6 @@ try
             return it->second;
         };
 
-        /// Both data kinds go through `serializeQuery`, which hides the secret parts of the AST and
-        /// applies `query_masking_rules`: `key.query_str_with_secrets` is the unmasked batching key and
-        /// must never be logged. The format override is a no-op for `Parsed` (the key already carries
-        /// the entry's format) and restores the client's format for `Preprocessed`, where the key holds
-        /// `Native`.
         elem.query_for_logging = get_query_by_format(entry->format);
 
         if (is_flush_error)

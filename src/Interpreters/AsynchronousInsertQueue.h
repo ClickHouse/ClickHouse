@@ -87,10 +87,7 @@ public:
     {
     public:
         ASTPtr query;
-        /// The query text formatted with `show_secrets = true`, used as part of the batching key
-        /// (`toTupleCmp`). It stays unmasked on purpose: masking would render two inserts that differ
-        /// only in their credentials equal and coalesce them into one flush. Never put it in a log, an
-        /// exception message or a `system.*` table - format `query` with `serializeQuery` instead.
+        /// Never log it, use `serializeQuery` on `query` instead.
         String query_str_with_secrets;
         std::optional<UUID> user_id;
         std::vector<UUID> current_roles;

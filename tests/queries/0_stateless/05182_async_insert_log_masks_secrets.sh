@@ -4,14 +4,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# The async insert queue keeps the unmasked query text as its batching key. `system.asynchronous_insert_log`
-# must still report the masked text, the same way `system.query_log` does.
-#
-# The insert goes over HTTP, so the `VALUES` data is parsed on the server (data kind `Parsed`). Port 1
-# refuses the connection at once, so the flush fails without any DNS lookup. The log element is written
-# while parsing, before the flush fails, so the failure does not hide a leak.
-# The structure carries the database name as a column name. Masking never touches it, so it identifies
-# the rows of this test.
+# The insert goes over HTTP, so the `VALUES` data is parsed on the server (data kind `Parsed`).
+# Port 1 refuses the connection at once, so the flush fails without any DNS lookup. The log element
+# is written while parsing, so the failed flush does not hide a leak.
+# The column name carries the database name: masking never touches it, so it identifies these rows.
 
 url="http://etl_user:SUPER_SECRET_PASSWORD@127.0.0.1:1/ingest"
 
