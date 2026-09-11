@@ -75,11 +75,12 @@ FROM (SELECT arrayJoin([(toDateTime64('2020-01-01 00:00:00', 9), 1), (toDateTime
 
 SELECT 'timestamps at the boundary of the type do not overflow';
 -- The distance between the two timestamps does not fit into `Int64`, so adding the duration to the base
--- timestamp would overflow; the distance itself is compared instead.
+-- timestamp would overflow; the distance itself is compared instead. `reinterpret` rather than a cast,
+-- because a cast clamps the value to the range the type can print.
 SELECT
     sequenceMatch('(?1)(?t<=5)(?2)')(ts, e = 1, e = 2) AS within_5s,
     sequenceMatch('(?1)(?t>5)(?2)')(ts, e = 1, e = 2) AS after_5s
-FROM (SELECT arrayJoin([(CAST(-9223372036854775807, 'DateTime64(0, \'UTC\')'), 1), (CAST(9223372036854775807, 'DateTime64(0, \'UTC\')'), 2)]) AS x, x.1 AS ts, x.2 AS e);
+FROM (SELECT arrayJoin([(reinterpret(toInt64(-9223372036854775807), 'DateTime64(0, \'UTC\')'), 1), (reinterpret(toInt64(9223372036854775807), 'DateTime64(0, \'UTC\')'), 2)]) AS x, x.1 AS ts, x.2 AS e);
 
 SELECT 'other types are still rejected';
 SELECT sequenceMatch('(?1)(?2)')('a', 1, 1); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
