@@ -60,7 +60,7 @@ DataTypePtr PartitionValueColumn::type(const KeyDescription & declared_key, cons
     /// Both blocks come from analysing the same PARTITION BY, so they are element-wise counterparts.
     chassert(partition_types.size() == produced_types.size());
 
-    for (size_t i = 0; i < partition_types.size(); ++i)
+    for (size_t i = 0, size = std::min(partition_types.size(), produced_types.size()); i < size; ++i)
         if (!canBeSafelyCast(produced_types[i], partition_types[i]))
             partition_types[i] = produced_types[i];
 

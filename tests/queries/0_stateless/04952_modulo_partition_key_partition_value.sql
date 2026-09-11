@@ -37,3 +37,10 @@ CREATE TABLE mod_narrow (c0 Int32) ENGINE = MergeTree ORDER BY tuple()
 PARTITION BY (CAST(37528, 'UInt32') % c0);
 INSERT INTO mod_narrow VALUES (1000);
 SELECT 'narrow', toTypeName(_partition_value), _partition_value FROM mod_narrow;
+
+-- The choice is per element: here the first element diverges and the second merely widens, so only
+-- the first takes the produced type.
+CREATE TABLE mod_mixed (c0 Int128, c1 Int32) ENGINE = MergeTree ORDER BY tuple()
+PARTITION BY (CAST(37528, 'UInt64') % c0, c1 % 100);
+INSERT INTO mod_mixed VALUES (167682982, 12345);
+SELECT 'mixed', toTypeName(_partition_value), _partition_value FROM mod_mixed;
