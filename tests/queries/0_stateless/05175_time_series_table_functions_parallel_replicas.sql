@@ -69,12 +69,14 @@ LIMIT 1;
 -- The custom-key modes fan out through a different path: it addresses the read by its own table id and
 -- builds the remote context with a different helper, so neither the table identity nor the database
 -- travelled with the read until both were fixed. The key has to be numeric, and `id` is a tuple.
+-- `serialize_query_plan` is pinned off because a custom key is refused outright when it is on, and the
+-- job that ships plans turns it on for every query.
 SELECT '-- custom key';
 SELECT count() FROM (SELECT * FROM timeSeriesSamples(ts))
-    SETTINGS optimize_trivial_count_query = 0, enable_parallel_replicas = 1,
+    SETTINGS optimize_trivial_count_query = 0, enable_parallel_replicas = 1, serialize_query_plan = 0,
              parallel_replicas_mode = 'custom_key_sampling', parallel_replicas_custom_key = 'cityHash64(id)';
 SELECT count() FROM (SELECT * FROM timeSeriesTags(ts))
-    SETTINGS optimize_trivial_count_query = 0, enable_parallel_replicas = 1,
+    SETTINGS optimize_trivial_count_query = 0, enable_parallel_replicas = 1, serialize_query_plan = 0,
              parallel_replicas_mode = 'custom_key_range', parallel_replicas_custom_key = 'cityHash64(id)';
 
 -- FINAL is not supported with parallel replicas: the query is rejected when they are forced and runs
