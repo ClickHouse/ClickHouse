@@ -77,7 +77,7 @@ namespace
 }
 
 
-ASTPtr TimeSeriesIDGenerator::getDefault(const DataTypePtr & id_type, const StorageID & table_id)
+ASTPtr TimeSeriesIDGenerator::tryGetDefault(const DataTypePtr & id_type)
 {
     /// The `tags` column contains all the tags, including the `__name__` tag with the metric name
     /// and the tags stored in the columns specified in the `tags_to_columns` setting,
@@ -101,6 +101,15 @@ ASTPtr TimeSeriesIDGenerator::getDefault(const DataTypePtr & id_type, const Stor
                 return makeASTFunction("tuple", std::move(first), std::move(second));
         }
     }
+
+    return nullptr;
+}
+
+
+ASTPtr TimeSeriesIDGenerator::getDefault(const DataTypePtr & id_type, const StorageID & table_id)
+{
+    if (auto expression = tryGetDefault(id_type))
+        return expression;
 
     throw Exception(ErrorCodes::INCORRECT_QUERY,
         "{}: An expression generating identifiers must be specified explicitly for the {} column of type {} - "
