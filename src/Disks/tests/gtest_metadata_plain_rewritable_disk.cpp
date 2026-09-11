@@ -55,9 +55,9 @@ public:
     std::unique_ptr<WriteBufferFromFileBase> writeObject(
         const StoredObject & object,
         WriteMode mode,
-        std::optional<ObjectAttributes> attributes = {},
-        size_t buf_size = DBMS_DEFAULT_BUFFER_SIZE,
-        const WriteSettings & write_settings = {}) override
+        std::optional<ObjectAttributes> attributes,
+        size_t buf_size,
+        const WriteSettings & write_settings) override
     {
         throwIfFailing(object);
         return LocalObjectStorage::writeObject(object, mode, attributes, buf_size, write_settings);
@@ -68,7 +68,7 @@ public:
         const StoredObject & object_to,
         const ReadSettings & read_settings,
         const WriteSettings & write_settings,
-        std::optional<ObjectAttributes> object_to_attributes = {}) override
+        std::optional<ObjectAttributes> object_to_attributes) override
     {
         throwIfFailing(object_to);
         LocalObjectStorage::copyObject(object_from, object_to, read_settings, write_settings, object_to_attributes);
@@ -2572,6 +2572,7 @@ TEST_F(MetadataPlainRewritableDiskTest, UndoStopsRetryingWhenTheDiskShutsDownWhi
         }
         catch (...)
         {
+            /// Ok, the failure is what this test asserts on.
             commit_threw = true;
         }
     });
@@ -2596,4 +2597,67 @@ TEST_F(MetadataPlainRewritableDiskTest, UndoStopsRetryingWhenTheDiskShutsDownWhi
     EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::DiskPlainRewritableUndoStageRetries], retries_before);
 
     object_storage->failRequests(false);
+
+    /// The reversal was abandoned, so object storage holds a part of a transaction that the filesystem in memory does
+    /// not have. The disk takes no further transaction, and what was committed is still readable.
+    EXPECT_TRUE(metadata->existsDirectory("A"));
+    EXPECT_TRUE(metadata->existsDirectory("A/B"));
+    EXPECT_THROW(metadata->createTransaction(), DB::Exception);
+}
+
+/// A transaction that is already waiting for the metadata lock when a reversal is abandoned resumes as soon as the
+/// lock is released, so the disk has to refuse it where it takes the lock and not only where it is created.
+TEST_F(MetadataPlainRewritableDiskTest, CommitIsRefusedAfterAReversalWasAbandoned)
+{
+    object_storage_can_fail = true;
+
+    auto metadata = getMetadataStorage("RefuseAfterAbandonedReversal");
+    auto object_storage = getFailingObjectStorage("RefuseAfterAbandonedReversal");
+    ASSERT_TRUE(object_storage);
+
+    {
+        auto tx = metadata->createTransaction();
+        tx->createDirectory("A");
+        tx->createDirectory("A/B");
+        tx->commit(DB::NoCommitOptions{});
+    }
+
+    /// Created while the disk is still healthy, the way a transaction waiting for the lock has been.
+    auto waiting_tx = metadata->createTransaction();
+    waiting_tx->createDirectory("B");
+
+    LogCapture log_capture("MetadataStorageFromPlainObjectStorageMoveDirectoryOperation");
+
+    FailPointInjection::enableFailPoint("plain_object_storage_pause_on_directory_move");
+    SCOPE_EXIT(FailPointInjection::disableFailPoint("plain_object_storage_pause_on_directory_move"));
+
+    std::thread committing([&]
+    {
+        auto tx = metadata->createTransaction();
+        tx->moveDirectory("A", "MOVED");
+
+        try
+        {
+            tx->commit(DB::NoCommitOptions{});
+        }
+        catch (...)
+        {
+            /// Ok, the reversal is abandoned on the shutdown below, which is what this test sets up.
+        }
+    });
+
+    FailPointInjection::waitForPause("plain_object_storage_pause_on_directory_move");
+    object_storage->failRequests(true);
+    FailPointInjection::notifyFailPoint("plain_object_storage_pause_on_directory_move");
+
+    while (log_capture.count("failed") < 2)
+        std::this_thread::yield();
+
+    metadata->shutdown();
+    committing.join();
+
+    object_storage->failRequests(false);
+
+    EXPECT_THROW(waiting_tx->commit(DB::NoCommitOptions{}), DB::Exception);
+    EXPECT_FALSE(metadata->existsDirectory("B"));
 }

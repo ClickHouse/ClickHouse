@@ -24,6 +24,10 @@ public:
     void commit();
     void finalize() noexcept;
 
+    /// True when reversing a failed commit did not run to completion, so the operations it never reached keep the
+    /// writes they have already made and object storage holds a part of a transaction that is reported as failed.
+    bool isPartiallyRolledBack() const { return state == MetadataStorageTransactionState::PARTIALLY_ROLLED_BACK; }
+
 private:
     std::deque<MetadataOperationPtr> operations;
     MetadataStorageTransactionState state{MetadataStorageTransactionState::PREPARING};

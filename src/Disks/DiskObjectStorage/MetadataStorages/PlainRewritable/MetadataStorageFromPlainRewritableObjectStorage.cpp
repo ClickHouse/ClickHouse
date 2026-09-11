@@ -45,6 +45,7 @@ namespace ErrorCodes
 {
     extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
+    extern const int FS_METADATA_ERROR;
 }
 
 namespace FailPoints
@@ -266,6 +267,7 @@ MetadataStorageFromPlainRewritableObjectStorage::MetadataStorageFromPlainRewrita
 
 MetadataTransactionPtr MetadataStorageFromPlainRewritableObjectStorage::createTransaction()
 {
+    throwIfBroken();
     return std::make_shared<MetadataStorageFromPlainRewritableObjectStorageTransaction>(*this);
 }
 
@@ -274,8 +276,35 @@ void MetadataStorageFromPlainRewritableObjectStorage::shutdown()
     undo_retries->shutdown();
 }
 
+void MetadataStorageFromPlainRewritableObjectStorage::markBroken()
+{
+    if (broken.exchange(true))
+        return;
+
+    LOG_ERROR(
+        getLogger("MetadataStorageFromPlainRewritableObjectStorage"),
+        "A metadata transaction of the disk '{}' was left partly reversed, so object storage holds a part of it that "
+        "the filesystem in memory does not have. The disk takes no further transaction until it is started again, "
+        "which loads the filesystem from object storage",
+        storage_path_full);
+}
+
+void MetadataStorageFromPlainRewritableObjectStorage::throwIfBroken() const
+{
+    if (isBroken())
+        throw Exception(
+            ErrorCodes::FS_METADATA_ERROR,
+            "A metadata transaction of the disk '{}' was left partly reversed, so what object storage holds is not "
+            "known here. Start the server again to load the filesystem from object storage",
+            storage_path_full);
+}
+
 void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 {
+    /// Reloading would adopt whatever object storage was left holding, which is a state no transaction ever committed.
+    if (isBroken())
+        return;
+
     std::unique_lock reload_lock(load_mutex);
     std::unique_lock tx_lock(metadata_mutex);
     load(/*is_initial_load=*/false, /*do_not_load_unchanged_directories=*/false);
@@ -283,6 +312,9 @@ void MetadataStorageFromPlainRewritableObjectStorage::dropCache()
 
 void MetadataStorageFromPlainRewritableObjectStorage::refresh(UInt64 not_sooner_than_milliseconds)
 {
+    if (isBroken())
+        return;
+
     if (!previous_refresh.compareAndRestart(0.001 * static_cast<double>(not_sooner_than_milliseconds)))
         return;
 
@@ -413,11 +445,27 @@ void MetadataStorageFromPlainRewritableObjectStorageTransaction::commit(const Tr
     {
         std::unique_lock lock(metadata_storage.metadata_mutex);
 
+        /// 0. A transaction that was already waiting for this lock reaches this point with a filesystem that no longer
+        /// describes object storage, so the check belongs here and not only where the transaction is created.
+        metadata_storage.throwIfBroken();
+
         /// 1. Setup up-to-date fs into snapshot being used during commit.
         commit_snapshot->setRoot(metadata_storage.fs.takeReadWriteSnapshot()->getRoot());
 
-        /// 2. Execute all operations on top of write set.
-        operations.commit();
+        try
+        {
+            /// 2. Execute all operations on top of write set.
+            operations.commit();
+        }
+        catch (...)
+        {
+            /// Marked while the lock is still held, so that the transactions waiting for it cannot decide what to
+            /// write from a filesystem that object storage no longer matches.
+            if (operations.isPartiallyRolledBack())
+                metadata_storage.markBroken();
+
+            throw;
+        }
 
         /// 3. Exchange metadata with updated fs.
         metadata_storage.fs.applySnapshot(commit_snapshot);

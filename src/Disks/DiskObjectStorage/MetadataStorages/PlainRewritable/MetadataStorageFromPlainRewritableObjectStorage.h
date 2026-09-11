@@ -61,6 +61,18 @@ public:
     /// Stops the retries of the `undo` of a transaction that is failing right now. See `UndoWithRetries`.
     void shutdown() override;
 
+    /** A transaction was left partly reversed, so object storage holds a part of it while the filesystem in memory
+      * does not. What is stored is unknown from here, so the disk takes no further transaction: another one would
+      * decide what to write from a filesystem that no longer describes object storage. Reads are still served, because
+      * the filesystem in memory is the state that was committed, and a file still resolves to the blob it did before.
+      *
+      * Nothing in this process can make the two agree again - reloading would adopt a state no transaction ever
+      * committed - so this lasts until the next start, which loads the filesystem from object storage.
+      */
+    bool isBroken() const { return broken.load(); }
+    void markBroken();
+    void throwIfBroken() const;
+
     /// Will reload in-memory structure from scratch.
     void dropCache() override;
     void refresh(UInt64 not_sooner_than_milliseconds) override;
@@ -87,6 +99,8 @@ private:
     const UndoWithRetriesPtr undo_retries;
     const std::string storage_path_prefix;
     const std::string storage_path_full;
+
+    std::atomic<bool> broken{false};
 
     std::mutex metadata_mutex;
     FsMetadata fs;
