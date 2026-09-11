@@ -1224,10 +1224,15 @@ MergeTreeRangeReader::ReadResult MergeTreeRangeReader::startReadingChain(size_t 
         result.adjustLastGranule();
 
     fillVirtualColumns(result.columns, result);
-    /// When no columns were physically read (e.g., constant PREWHERE expression),
+    /// When no columns were physically read (e.g., a PREWHERE step whose columns are
+    /// all virtual, which happens when patch parts supply the column values),
     /// numReadRows() is 0 but total_rows_per_granule has the correct row count
-    /// from the index granularity. Use it so the reading chain can continue
-    /// to subsequent readers that read actual data columns.
+    /// from the index granularity. Account the scanned rows as read so that read
+    /// progress and filtered-rows statistics stay correct, and use the row count
+    /// so the reading chain can continue to subsequent readers that read actual
+    /// data columns.
+    if (result.numReadRows() == 0)
+        result.addRows(result.total_rows_per_granule);
     result.num_rows = result.numReadRows() > 0 ? result.numReadRows() : result.total_rows_per_granule;
 
     updatePerformanceCounters(result.numReadRows());

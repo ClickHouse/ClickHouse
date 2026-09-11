@@ -244,9 +244,10 @@ void MergeTreeDataPartWriterWide::addStreams(
         /// streams (a Map with many buckets, a deeply nested Array or Tuple), so the threshold is
         /// compared against streams rather than columns.
         chassert(streams_to_open_in_part.has_value());
+        const size_t stream_count_for_adaptive = settings.adaptive_buffer_stream_count.value_or(*streams_to_open_in_part);
         WriteSettings query_write_settings = settings.query_write_settings;
         query_write_settings.use_adaptive_write_buffer =
-            (settings.min_columns_to_activate_adaptive_write_buffer && *streams_to_open_in_part >= settings.min_columns_to_activate_adaptive_write_buffer)
+            (settings.min_columns_to_activate_adaptive_write_buffer && stream_count_for_adaptive >= settings.min_columns_to_activate_adaptive_write_buffer)
             || (settings.use_adaptive_write_buffer_for_dynamic_subcolumns && ISerialization::isDynamicSubcolumn(substream_path, substream_path.size()));
         query_write_settings.adaptive_write_buffer_initial_size = settings.adaptive_write_buffer_initial_size;
 

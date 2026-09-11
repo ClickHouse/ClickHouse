@@ -1799,6 +1799,23 @@ If true, lightweight delete is optimized on vertical merge.
 If true, rows TTL delete is optimized on vertical merge. Instead of forcing horizontal merge,
 the TTL filter is evaluated and passed to the merging algorithm which sets skip flags in row sources.
 )", 0) \
+    DECLARE(Bool, allow_experimental_vertical_merge_tuple_subcolumns, false, R"(
+When enabled, flattenable `Tuple` leaves may participate in Vertical gather as
+stream-scheduling tasks of their parent storage column. The output part schema
+does not change: `columns.txt` still lists one column. Default is disabled.
+)", 0) \
+    DECLARE(UInt64, vertical_merge_tuple_subcolumns_fat_threshold_bytes, 10 * 1024 * 1024, R"(
+Per-granule working-set cutoff that splits flattened `Tuple` leaves into
+`FatLeaf` and `TinyLeaf` units during Vertical merge. Zero disables flatten
+entirely. This setting is not a fallback for `merge_max_block_size_bytes`
+or `index_granularity_bytes`.
+)", 0) \
+    DECLARE(UInt64, vertical_merge_tuple_subcolumns_prefetch_units, 1, R"(
+How many upcoming flattened `Tuple` gather units of the same parent to prefetch
+on remote disks during Vertical merge. `1` is today's next-unit prefetch.
+`0` prefetches every remaining sibling of the current parent, capped by
+`filesystem_prefetches_limit` when that limit is non-zero.
+)", 0) \
     DECLARE(UInt64, max_postpone_time_for_failed_mutations_ms, 5ULL * 60 * 1000, R"(
 The maximum postpone time for failed mutations.
 )", 0) \

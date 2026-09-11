@@ -1,0 +1,50 @@
+=== Nullable(Tuple), Point, empty Tuple are not flattened ===
+1	('a','b')
+2	\N
+3	('c','d')
+4	\N
+1
+1	(1.5,2.5)
+2	(3.5,4.5)
+1
+1	()
+2	()
+3	()
+1
+
+=== leaf name collision with physical column t.x is rejected at CREATE ===
+1
+
+=== skip index on whole t pins the parent ===
+1	('a','b')
+2	('c','d')
+3	('e','f')
+4	('g','h')
+1
+1
+
+=== Tuple(UInt8 x 20) is not flattened ===
+32	240	848
+1
+
+=== near-Fat tinies whose granule sum >= Fat threshold ===
+2000	200000	0	38000
+1
+
+=== merge_max_block_size_bytes=0 does not refuse or force flatten ===
+select_match
+1
+check
+1
+serialization_keys
+k t
+t_exact False
+merge_algorithm
+Vertical
+
+=== one fat Tuple does not activate Vertical ===
+1	('a',1)
+2	('b',2)
+1
+merge_algorithm
+Horizontal

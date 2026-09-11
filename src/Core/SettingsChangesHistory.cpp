@@ -1496,6 +1496,9 @@ const VersionToSettingsChangesMap & getMergeTreeSettingsChangesHistory()
             {"max_table_size_rows", 0, 0, "New setting to limit the total number of rows in active data parts of the table."},
             {"max_table_size_bytes_compressed", 0, 0, "New setting to limit the total number of compressed bytes across all active and inactive data parts of the table."},
             {"max_table_size_bytes_uncompressed", 0, 0, "New setting to limit the total number of uncompressed bytes across all active and inactive data parts of the table."},
+            {"allow_experimental_vertical_merge_tuple_subcolumns", false, false, "New setting. When enabled, flattenable Tuple leaves may participate in Vertical gather as stream-scheduling tasks of their parent storage column."},
+            {"vertical_merge_tuple_subcolumns_fat_threshold_bytes", 10 * 1024 * 1024, 10 * 1024 * 1024, "New setting. Per-granule working-set cutoff for FatLeaf vs TinyLeaf during Vertical merge of Tuple subcolumns. Zero disables flatten."},
+            {"vertical_merge_tuple_subcolumns_prefetch_units", 1, 1, "New setting. How many upcoming flattened Tuple gather units of the same parent to prefetch on remote disks. Zero prefetches every remaining sibling, capped by filesystem_prefetches_limit."},
         });
 
         addSettingsChanges(merge_tree_settings_changes_history, "26.8",

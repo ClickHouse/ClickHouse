@@ -1,5 +1,6 @@
 #pragma once
 
+#include <deque>
 #include <list>
 #include <memory>
 
@@ -18,6 +19,7 @@
 
 #include <QueryPipeline/QueryPipeline.h>
 
+#include <Storages/MergeTree/MergeTreeVerticalMergeTupleSubcolumns.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/ColumnSizeEstimator.h>
 #include <Storages/MergeTree/FutureMergedMutatedPart.h>
@@ -241,6 +243,8 @@ private:
         bool is_explicit_recompression{false};
 
         NamesAndTypesList gathering_columns{};
+        std::vector<GatherUnit> gathering_units;
+        std::vector<TupleSubcolumnsClassifyResult> tuple_subcolumns_classify_results;
         NameSet merge_required_columns{};
         NamesAndTypesList merging_columns{};
         NamesAndTypesList merging_columns_expired_by_ttl{};
@@ -414,7 +418,7 @@ private:
         /// Begin dependencies from previous stage
         std::shared_ptr<RowsSourcesTemporaryFile> rows_sources_temporary_file;
         std::optional<ColumnSizeEstimator> column_sizes;
-        std::list<DB::NameAndTypePair>::const_iterator it_name_and_type;
+        std::vector<GatherUnit>::const_iterator it_gather_unit;
         bool read_with_direct_io{false};
         bool need_sync{false};
         /// End dependencies from previous stages
@@ -430,8 +434,8 @@ private:
         Float64 progress_before = 0;
         std::unique_ptr<MergedColumnOnlyOutputStream> column_to{nullptr};
 
-        /// Used for prefetching. Right before starting merge of a column we create a pipeline for the next column
-        /// and it initiates prefetching of the first range of that column.
+        /// Used for prefetching. Pipelines for the current unit and a window of upcoming
+        /// sibling units; creating a pipeline initiates prefetch of its first range.
         struct PreparedColumnPipeline
         {
             QueryPipeline pipeline;
@@ -439,7 +443,7 @@ private:
             BuildStatisticsTransformMap build_statistics_transforms;
         };
 
-        std::optional<PreparedColumnPipeline> prepared_pipeline;
+        std::deque<PreparedColumnPipeline> prepared_pipelines;
         size_t max_delayed_streams = 0;
         bool use_prefetch = false;
         std::list<std::unique_ptr<MergedColumnOnlyOutputStream>> delayed_streams;
@@ -448,6 +452,12 @@ private:
         std::unique_ptr<PullingPipelineExecutor> executor;
         BuildStatisticsTransformMap build_statistics_transforms;
         UInt64 elapsed_execute_ns{0};
+
+        /// Accumulated leaf SerializationInfo for the current flattened Tuple group.
+        /// Committed once, at group end, so a failed unit cannot publish parent metadata.
+        SerializationInfoByName pending_tuple_leaf_infos{{}};
+        String pending_tuple_parent;
+        std::unordered_map<String, size_t> parent_stream_counts;
     };
 
     using VerticalMergeRuntimeContextPtr = std::shared_ptr<VerticalMergeRuntimeContext>;
@@ -486,6 +496,10 @@ private:
         void finalizeVerticalMergeForOneColumn() const;
 
         VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForReadingOneColumn(const String & column_name) const;
+        VerticalMergeRuntimeContext::PreparedColumnPipeline createPipelineForUnit(const Names & column_names) const;
+        size_t prefetchWindowSize() const;
+        void refillPreparedPipelines(bool include_current) const;
+        void commitPendingTupleGroupIfComplete(bool force) const;
 
         VerticalMergeRuntimeContextPtr ctx;
         GlobalRuntimeContextPtr global_ctx;
