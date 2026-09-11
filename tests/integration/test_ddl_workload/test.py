@@ -60,8 +60,8 @@ def setup_workloads(node) -> None:
         """
         create resource query (query);
         create workload all settings max_concurrent_queries=20;
-        create workload regular in all;
-        create workload ddlwl in all;
+        create workload regular in all settings max_concurrent_queries=10;
+        create workload ddlwl in all settings max_concurrent_queries=10;
         """
     )
 
