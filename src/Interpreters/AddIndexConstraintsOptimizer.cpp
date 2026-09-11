@@ -111,8 +111,15 @@ namespace
         for (const auto & atom : group)
         {
             const auto * func = atom.ast->as<ASTFunction>();
-            if (func && func->arguments->children.size() == 2 && getRelationMap().contains(func->name))
+            if (func && func->arguments && func->arguments->children.size() == 2 && getRelationMap().contains(func->name))
             {
+                /// A negated ordering atom, e.g. NOT (x < c) kept by the CNF converter, is not
+                /// representable in the sequence reasoning below: `expected` is derived from the
+                /// function name alone, so the emitted hint would inherit the negation and prune
+                /// the opposite primary key range. Give up on the whole group instead.
+                if (atom.negative)
+                    return {};
+
                 auto check_and_insert = [&](const size_t index, const ComparisonGraphCompareResult need_result)
                 {
                     if (!onlyConstants(func->arguments->children[1 - index]))
