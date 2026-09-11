@@ -534,13 +534,22 @@ struct DeltaLakeMetadataImpl
         read_settings.remote_fs_settings.random_access
             = FormatFactory::instance().checkIfFormatIsRandomAccessInput("Parquet", context);
         RelativePathWithMetadata object_info(checkpoint_path);
-        auto buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
         auto format_settings = getFormatSettings(context);
 
         /// Force nullable, because this parquet file for some reason does not have nullable
         /// in parquet file metadata while the type are in fact nullable.
         format_settings.schema_inference_make_columns_nullable = true;
-        auto columns = NativeParquetSchemaReader(*buf, format_settings).readSchema();
+
+        /// The schema pass gets its own buffer: with `input_format_allow_seeks = 0` the reader
+        /// cannot seek to the footer, so it streams the whole file and leaves the buffer at EOF,
+        /// and the data pass below would then find no `PAR1` magic left to read.
+        NamesAndTypesList columns;
+        {
+            auto schema_buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
+            columns = NativeParquetSchemaReader(*schema_buf, format_settings).readSchema();
+        }
+
+        auto buf = createReadBuffer(object_info, object_storage, context, log, read_settings);
 
         /// Read only columns that we need.
         auto filter_column_names = NameSet{"add", "metaData"};

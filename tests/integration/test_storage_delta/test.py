@@ -677,6 +677,18 @@ def test_checkpoint(started_cluster, use_delta_kernel, storage_type):
         ).strip()
     )
 
+    # The legacy metadata reader reads the checkpoint twice, once for the schema and once for the
+    # data. With `input_format_allow_seeks = 0` the schema pass cannot seek to the footer, so it
+    # streams the whole file and leaves its buffer at EOF; the data pass has to open its own.
+    assert (
+        int(
+            instance.query(
+                f"SELECT count() FROM {TABLE_NAME} SETTINGS input_format_allow_seeks = 0"
+            )
+        )
+        == 20
+    )
+
 
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_multiple_log_files(started_cluster, use_delta_kernel):
