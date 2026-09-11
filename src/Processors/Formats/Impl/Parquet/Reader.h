@@ -10,7 +10,6 @@
 #include <Processors/Formats/Impl/Parquet/ThriftUtil.h>
 #include <Storages/MergeTree/KeyCondition.h>
 
-#include <algorithm>
 #include <deque>
 #include <optional>
 #include <unordered_set>
@@ -168,21 +167,14 @@ struct Reader
         /// from this leaf's own null map at max_def, so one leaf's levels answer both questions.
         /// See OutputColumnInfo::nullable_group_def.
         std::vector<UInt8> nullable_group_defs;
-        /// The subset of `nullable_group_defs`, same order, whose null maps this leaf derives. Only
-        /// two are ever read: the map of the group this leaf supplies (see
-        /// OutputColumnInfo::nullable_group_source) and the map of this leaf's innermost enclosing
-        /// group, which the CANNOT_INSERT_NULL check consults. A map per (leaf, enclosing group) pair
-        /// would instead cost rows * leaves * depth. ColumnSubchunk::group_null_maps is parallel to
-        /// this.
+        /// Levels of the groups whose null maps this leaf derives, one per consumer (an output's
+        /// nullable_group_map_idx or element_null_check_group_map_idx below), so entries may repeat.
+        /// ColumnSubchunk::group_null_maps is parallel to this.
         std::vector<UInt8> derive_group_defs;
-
-        /// Index in `derive_group_defs`, hence in ColumnSubchunk::group_null_maps, of the null map of
-        /// the group at `group_def`; npos if this leaf does not derive that group's map.
-        size_t groupNullMapIdx(UInt8 group_def) const
-        {
-            auto it = std::find(derive_group_defs.begin(), derive_group_defs.end(), group_def);
-            return it == derive_group_defs.end() ? size_t(-1) : size_t(it - derive_group_defs.begin());
-        }
+        /// Index in `derive_group_defs` of the innermost enclosing group's map, which tells a null
+        /// this leaf sees because that group is NULL from one the element itself carries; npos if
+        /// there is none.
+        size_t element_null_check_group_map_idx = size_t(-1);
         /// TODO [parquet]: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
@@ -264,6 +256,9 @@ struct Reader
         /// to have encoded the group's own level correctly. Element order in the requested type is
         /// the user's, so the first leaf is not a sound choice.
         size_t nullable_group_source = 0;
+        /// Index in that leaf's derive_group_defs, hence in ColumnSubchunk::group_null_maps, of this
+        /// group's map. One entry per consumer: forming the output moves the map out.
+        size_t nullable_group_map_idx = 0;
 
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.

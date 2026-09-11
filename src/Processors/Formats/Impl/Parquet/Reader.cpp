@@ -801,9 +801,12 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
             /// values, i.e. while no array level sits below the outermost of them. With an array
             /// below, a NULL group is an absent list element, which the writer need not count as a
             /// null, so the statistics say nothing about the group and the levels must be walked.
+            /// The outermost of them is the one at the lowest level; the entries are one per consumer,
+            /// in no particular order.
             const auto & group_defs = primitive_columns[column_idx].derive_group_defs;
             column.need_group_null_map = !group_defs.empty()
-                && (primitive_columns[column_idx].max_array_def > group_defs.front() || !null_count_is_known_to_be_zero);
+                && (primitive_columns[column_idx].max_array_def > *std::min_element(group_defs.begin(), group_defs.end())
+                    || !null_count_is_known_to_be_zero);
         }
     }
 
@@ -2591,16 +2594,22 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
         const ColumnUInt8::Container * group_null_map = nullptr;
         if (!column_info.nullable_group_defs.empty() && column_info.max_array_def <= column_info.nullable_group_defs.back())
         {
-            const size_t idx = column_info.groupNullMapIdx(column_info.nullable_group_defs.back());
+            const size_t idx = column_info.element_null_check_group_map_idx;
             if (idx < subchunk.group_null_maps.size() && subchunk.group_null_maps[idx])
-                group_null_map = &assert_cast<const ColumnUInt8 &>(*subchunk.group_null_maps[idx]).getData();
+            {
+                const auto & map = assert_cast<const ColumnUInt8 &>(*subchunk.group_null_maps[idx]).getData();
+                /// Aligned by the guard above; without assertions, reject the null rather than read
+                /// out of bounds.
+                chassert(map.size() == null_map.size());
+                if (map.size() == null_map.size())
+                    group_null_map = &map;
+            }
         }
 
         /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
         bool has_element_null;
         if (group_null_map)
         {
-            chassert(group_null_map->size() == null_map.size());
             has_element_null = false;
             for (size_t i = 0; i < null_map.size() && !has_element_null; ++i)
                 has_element_null = null_map[i] && !(*group_null_map)[i];
@@ -3373,13 +3382,13 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
     if (output_info.nullable_group_def != 0)
     {
         ColumnSubchunk & source = row_subgroup.columns.at(output_info.nullable_group_source);
-        const size_t idx = primitive_columns.at(output_info.nullable_group_source)
-            .groupNullMapIdx(output_info.nullable_group_def);
-        chassert(idx != size_t(-1));
-        if (idx < source.group_null_maps.size() && source.group_null_maps[idx])
-            nullable_group_null_map = std::move(source.group_null_maps[idx]);
+        if (!source.group_null_maps.empty())
+        {
+            chassert(output_info.nullable_group_map_idx < source.group_null_maps.size());
+            nullable_group_null_map = std::move(source.group_null_maps[output_info.nullable_group_map_idx]);
+        }
         else
-            /// Statistics ruled out struct-level nulls (all instances defined): all-non-null map.
+            /// need_group_null_map was false: the statistics proved no instance of this group is null.
             nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
     }
 

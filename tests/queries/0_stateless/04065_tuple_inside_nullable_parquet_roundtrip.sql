@@ -262,6 +262,13 @@ INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_opt_ancestor.parque
 
 SELECT `c0.inner` FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', '`c0.inner` Nullable(Tuple(a UInt32))');
 
+-- Both groups requested as Nullable(Tuple) at once: they share the definition level and the leaf
+-- their null maps come from, so each needs its own map. The outer NULL hides the inner group in c0
+-- and in c0.inner, so read the inner group out of the struct, where it must still be NULL.
+SELECT c0 FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', 'c0 Nullable(Tuple(inner Nullable(Tuple(a UInt32))))');
+SELECT c0.inner, c0.inner IS NULL FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', 'c0 Nullable(Tuple(inner Nullable(Tuple(a UInt32))))');
+SELECT assumeNotNull(c0).inner AS inner_group, inner_group IS NULL FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', 'c0 Nullable(Tuple(inner Nullable(Tuple(a UInt32))))');
+
 DROP TABLE test_nullable_tuple_opt_ancestor;
 
 -- Physically nullable struct read as Nullable(Tuple) where every requested element is missing and
