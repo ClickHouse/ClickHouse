@@ -529,6 +529,34 @@
 * backfill_distroless: run on amd-medium, amd64 cannot be emulated. [#119358](https://github.com/ClickHouse/ClickHouse/pull/119358) ([Rahul Nair](https://github.com/motsc)).
 <!-- CHANGELOG-RAW-END -->
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->
+### ClickHouse release 9f0ed75f33e018b46da9e379a168d70fe32d3a85 (9f0ed75f33e) FIXME as compared to c108e273b60877867ba342c792071cc7e5c512b8 (c108e273b60)
+
+#### New Feature
+* Support `BACKUP`/`RESTORE` for `WORKLOAD` and `RESOURCE` entities. SQL-defined `CREATE WORKLOAD` / `CREATE RESOURCE` definitions are now included when backing up `system.workloads` / `system.resources` and are recreated on restore, including `ON CLUSTER`. [#108431](https://github.com/ClickHouse/ClickHouse/pull/108431) ([Sergei Trifonov](https://github.com/serxa)).
+* Add slow member backpressure 4LW in clickhouse-keeper. [#117728](https://github.com/ClickHouse/ClickHouse/pull/117728) ([Kseniia Sumarokova](https://github.com/kssenii)).
+
+#### Improvement
+* ClickHouse Keeper now counts the per-entry allocation overhead in `latest_logs_cache_size_threshold`, `KeeperLatestLogsCacheSize`, and `lgif`'s `latest_logs_cache_size`, so the configured limit tracks cache memory rather than only serialized payload bytes. [#119045](https://github.com/ClickHouse/ClickHouse/pull/119045) ([Nikita Taranov](https://github.com/nickitat)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Fixed `match` and `countMatches` returning wrong results for a pattern whose character class starts with a literal `]` (`[]a]b`) or contains a literal `[` next to an alternation (`abc[[]|b`): the required-substring prefilter demanded a substring the pattern does not require. The same defect made `optimize_rewrite_regexp_functions` turn such a `replaceRegexpAll` into `replaceRegexpOne`. [#118342](https://github.com/ClickHouse/ClickHouse/pull/118342) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Join runtime filters now reach the local probe-side plan under parallel replicas when `parallel_replicas_filter_pushdown` is enabled, so grouped probe-side queries can filter rows before local aggregation instead of after it. [#118650](https://github.com/ClickHouse/ClickHouse/pull/118650) ([Nikita Taranov](https://github.com/nickitat)).
+* Don't use backoffs on concurrent inserts conflicts (when we use Iceberg + catalog, for example). [#119238](https://github.com/ClickHouse/ClickHouse/pull/119238) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* Fix statistics computation on top of azure storage. [#119369](https://github.com/ClickHouse/ClickHouse/pull/119369) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+
+#### NO CL ENTRY
+
+* NO CL ENTRY:  'Revert "Fix NO_SUCH_COLUMN_IN_TABLE naming a column absent from the table when a part's columns were all renamed or all dropped"'. [#119429](https://github.com/ClickHouse/ClickHouse/pull/119429) ([Raúl Marín](https://github.com/Algunenano)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* Fix automatic parallel replicas being skipped for a query-level `SETTINGS` clause. [#117950](https://github.com/ClickHouse/ClickHouse/pull/117950) ([Nikita Taranov](https://github.com/nickitat)).
+* Clear only the Protobuf cache in `03326_protobuf_schemas_race`. [#118391](https://github.com/ClickHouse/ClickHouse/pull/118391) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* <!-- CI automatic block start :ci_links: -->. [#119162](https://github.com/ClickHouse/ClickHouse/pull/119162) ([clickhouse-gh[bot]](https://github.com/apps/clickhouse-gh)).
+* The stress option generator no longer sends `serialize_query_plan=1` to the upgrade check's pre-upgrade load, whose server is a frozen previous release that aborts on that path. [#119406](https://github.com/ClickHouse/ClickHouse/pull/119406) ([Groene AI](https://github.com/groeneai)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="269"></a> ClickHouse release 26.9, FIXME (in progress)
 
 #### Backward Incompatible Change
