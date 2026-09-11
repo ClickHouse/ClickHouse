@@ -477,16 +477,6 @@ void MergeTreeDataPartWriterWide::flushMarkToFile(const StreamNameAndMark & stre
         it->second->push_back(stream_with_mark.mark);
 }
 
-UInt64 MergeTreeDataPartWriterWide::getEffectiveMinCompressBlockSize(const NameAndTypePair & name_and_type) const
-{
-    const auto column_desc = metadata_snapshot->columns.tryGetColumnDescription(GetColumnsOptions(GetColumnsOptions::AllPhysical), name_and_type.getNameInStorage());
-    if (column_desc)
-        if (const auto * value = column_desc->settings.tryGet("min_compress_block_size"))
-            if (UInt64 overridden = value->safeGet<UInt64>())
-                return overridden;
-    return settings.min_compress_block_size;
-}
-
 StreamsWithMarks MergeTreeDataPartWriterWide::getCurrentMarksForColumn(const NameAndTypePair & name_and_type,
     const WrittenOffsetSubstreams & offset_substreams)
 {
