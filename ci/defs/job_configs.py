@@ -2025,6 +2025,21 @@ class JobConfigs:
             ],
         ),
     )
+    storage_memory_check_job = Job.Config(
+        name=JobNames.STORAGE_MEMORY_CHECK,
+        runs_on=RunnerLabels.ARM_SMALL,
+        run_in_docker="clickhouse/test-base",
+        command="python3 ./ci/jobs/storage_memory_check.py",
+        requires=[ArtifactNames.CLICKHOUSE_EXAMPLES],
+        result_name_for_cidb="Tests",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/jobs/parser_memory_check.py",
+                "./ci/jobs/storage_memory_check.py",
+                "./utils/storage-memory-profiler/",
+            ],
+        ),
+    )
     toolchain_build_jobs = Job.Config(
         name=JobNames.BUILD_TOOLCHAIN,
         runs_on=[],  # from parametrize()
