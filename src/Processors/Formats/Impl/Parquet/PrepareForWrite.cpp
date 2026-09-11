@@ -111,18 +111,42 @@ void updateRepDefLevelsAndFilterColumnForNullable(ColumnChunkWriteState & s, con
         return;
     }
 
-    /// Weird general case: Nullable(Array), Nullable(Nullable), or any arbitrary nesting like that.
-    /// This is currently not allowed in ClickHouse, but let's support it anyway just in case.
+    /// General case: something below this Nullable already added a definition level, which is what
+    /// Nullable(Tuple(...)) with a nullable, array or map element looks like.
 
     IColumn::Filter filter;
     size_t row_idx = static_cast<size_t>(-1);
+    size_t out = 0;
     for (size_t i = 0; i < s.def.size(); ++i)
     {
-        row_idx += s.max_rep == 0 || s.rep[i] == 0;
+        const bool row_start = s.max_rep == 0 || s.rep[i] == 0;
+        row_idx += row_start;
         if (s.def[i] == s.max_def - 1)
             filter.push_back(!null_map[row_idx]);
-        s.def[i] += !null_map[row_idx];
+
+        if (null_map[row_idx])
+        {
+            /// A null occupies exactly one entry at the enclosing level: everything below this
+            /// Nullable is absent, so the entries the subtree contributed for the row collapse into
+            /// that one. Levels are built bottom-up, so the enclosing level is 0 here and every
+            /// ancestor increments it afterwards.
+            if (!row_start)
+                continue;
+            s.def[out] = 0;
+            if (s.max_rep)
+                s.rep[out] = 0;
+        }
+        else
+        {
+            s.def[out] = s.def[i] + 1;
+            if (s.max_rep)
+                s.rep[out] = s.rep[i];
+        }
+        ++out;
     }
+    s.def.resize(out);
+    if (s.max_rep)
+        s.rep.resize(out);
     s.primitive_column = s.primitive_column->filter(filter, /*result_size_hint*/ -1);
 }
 
