@@ -8,6 +8,9 @@
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
 #include <Common/escapeForFileName.h>
+#include <Common/isLocalAddress.h>
+#include <Common/parseAddress.h>
+#include <Common/parseRemoteDescription.h>
 #include <Common/quoteString.h>
 #include <Common/typeid_cast.h>
 #include <Core/Block.h>
@@ -20,6 +23,7 @@
 #include <Databases/TablesDependencyGraph.h>
 #include <Functions/FunctionFactory.h>
 #include <IO/ConnectionTimeouts.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
@@ -41,6 +45,7 @@
 #include <Storages/TimeSeries/createTimeSeriesInnerTable.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <base/EnumReflection.h>
+#include <Poco/Net/IPAddress.h>
 
 #include <algorithm>
 #include <cctype>
@@ -59,8 +64,14 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsUInt64 table_function_remote_max_addresses;
+}
+
 namespace ErrorCodes
 {
+    extern const int CLUSTER_DOESNT_EXIST;
     extern const int UNKNOWN_DATABASE;
     extern const int UNKNOWN_PACKET_FROM_SERVER;
     extern const int LOGICAL_ERROR;
@@ -410,10 +421,17 @@ CreateTargets parseCreateTargets(const RawTableRow & row)
 
 /// Which clusters the connected server defines and which of those have local replicas: the gate
 /// `DDLDependencyVisitor::visitRemoteFunction` applies to `cluster`/`clusterAllReplicas` needs both.
+/// `remote`/`remoteSecure` address patterns are classified against the server's ports instead.
 struct ClusterLocality
 {
     std::set<String> known;
     std::set<String> local;
+    /// What `parseRemoteFunctionArguments` compares a spelled-out port against; the secure port is
+    /// fetched on first use because asking a server without one raises an error.
+    UInt16 tcp_port = 0;
+    std::function<UInt16()> tcp_port_secure;
+    /// clickhouse-local listens on no port, so it treats any address with an explicit port as remote.
+    bool treat_local_port_as_remote = false;
     /// `Context::tryGetCluster` expands macros before looking a cluster up, but a stored definition
     /// keeps the placeholder text, so the same expansion has to happen before the lookups here.
     std::map<String, String> macros;
@@ -526,20 +544,82 @@ String resolveClusterOfFunction(const ASTFunction & function, const ClusterLocal
     return *cluster_name;
 }
 
-/// Returns the argument subtree that cannot contain local dependencies for `remote` or non-local `cluster`.
+bool isRemoteTableFunctionName(const String & name)
+{
+    return name == "remote" || name == "remoteSecure";
+}
+
+/// Mirrors `Cluster::Address::isLocal` for one replica of a `remote*` pattern, as far as a client can:
+/// a loopback host on the server's port is local. Whether any other host is one of the server's own
+/// interfaces is not knowable here, so it stays remote, as `DDLDependencyVisitor` assumes for all.
+bool remoteAddressIsLocal(const String & address, bool secure, const ClusterLocality & clusters)
+{
+    bool has_explicit_port = address.starts_with('[') ? address.contains("]:") : address.contains(':');
+    if (has_explicit_port && clusters.treat_local_port_as_remote)
+        return false;
+    String host = address;
+    if (has_explicit_port)
+    {
+        auto [parsed_host, port] = parseAddress(address, 0);
+        if (port != (secure ? clusters.tcp_port_secure() : clusters.tcp_port))
+            return false;
+        host = parsed_host;
+    }
+    if (host.starts_with('[') && host.ends_with(']'))
+        host = host.substr(1, host.size() - 2);
+    Poco::Net::IPAddress ip;
+    /// The server resolves names through DNS; this is the one name known to be loopback without it.
+    if (!Poco::Net::IPAddress::tryParse(host, ip))
+        return host == "localhost";
+    /// `isLocalAddress` decides loopback addresses by value alone (127.0.0.2 is not local); the
+    /// interface scan it does for the rest would inspect this machine, not the server's.
+    return ip.isLoopback() && isLocalAddress(ip);
+}
+
+/// Whether a `remote*` call has a replica the server reads without a connection, the way
+/// `parseRemoteFunctionArguments` builds its ad-hoc cluster from the first argument.
+bool remoteFunctionHasLocalReplica(const ASTFunction & function, const ClusterLocality & clusters)
+{
+    const auto & first = function.arguments->children.at(0);
+    /// An identifier is a named collection when one exists, else a configured cluster; only the
+    /// latter can be local, and a collection's addresses are not readable here anyway.
+    String cluster_name;
+    if (tryGetIdentifierNameInto(first, cluster_name))
+        return clusters.local.contains(cluster_name);
+    const auto * literal = first->as<ASTLiteral>();
+    if (!literal || literal->value.getType() != Field::Types::String)
+        return false;
+    const String & pattern = literal->value.safeGet<String>();
+    size_t max_addresses = clusters.context->getSettingsRef()[Setting::table_function_remote_max_addresses];
+    bool secure = function.name == "remoteSecure";
+    for (const auto & shard : parseRemoteDescription(pattern, 0, pattern.size(), ',', max_addresses))
+        for (const auto & replica : parseRemoteDescription(shard, 0, shard.size(), '|', max_addresses))
+            if (remoteAddressIsLocal(replica, secure, clusters))
+                return true;
+    return false;
+}
+
+/// Whether a `cluster*`/`remote*` call reads its table argument on this instance.
+bool distributedFunctionReadsLocally(const ASTFunction & function, const ClusterLocality & clusters)
+{
+    if (!function.arguments || function.arguments->children.size() < 2)
+        return false;
+    if (isClusterTableFunctionName(function.name))
+        return clusters.local.contains(resolveClusterOfFunction(function, clusters));
+    return remoteFunctionHasLocalReplica(function, clusters);
+}
+
+/// Returns the argument subtree that cannot contain local dependencies for non-local `remote`/`cluster`.
 const IAST * remoteFunctionArgumentsToSkip(const IAST & node, const ClusterLocality & clusters)
 {
     const auto * function = node.as<ASTFunction>();
     if (!function || !function->arguments)
         return nullptr;
-    if (function->name == "remote" || function->name == "remoteSecure")
-        return function->arguments.get();
-    if (isClusterTableFunctionName(function->name))
+    if (isRemoteTableFunctionName(function->name) || isClusterTableFunctionName(function->name))
     {
-        /// Nothing a non-local cluster names is read on this instance, so the whole argument list goes,
-        /// like `remote`: callers compare against direct children, and an argument node is not one.
-        if (function->arguments->children.size() >= 2
-            && !clusters.local.contains(resolveClusterOfFunction(*function, clusters)))
+        /// Nothing a non-local call names is read on this instance, so the whole argument list goes:
+        /// callers compare against direct children, and an argument node is not one.
+        if (function->arguments->children.size() >= 2 && !distributedFunctionReadsLocally(*function, clusters))
             return function->arguments.get();
     }
     return nullptr;
@@ -806,7 +886,7 @@ void collectMergeAndLoopReferences(
     }
 }
 
-/// Collects table references from dictionary, join, `IN`, and local `cluster` function arguments.
+/// Collects table references from dictionary, join, `IN`, and local `cluster`/`remote` function arguments.
 void collectFunctionArgumentReferences(
     const IAST & node, const ClusterLocality & clusters,
     std::vector<TableReference> & out)
@@ -815,14 +895,13 @@ void collectFunctionArgumentReferences(
     {
         std::optional<std::pair<String, String>> candidate;
         ReferenceKind candidate_kind = ReferenceKind::Any;
-        if (isClusterTableFunctionName(function->name) && function->arguments)
+        if (isClusterTableFunctionName(function->name) || isRemoteTableFunctionName(function->name))
         {
-            const auto & args = function->arguments->children;
-            /// A cluster with local replicas reads the named table locally; no current-database
+            /// A call with local replicas reads the named table locally; no current-database
             /// fallback here, a database-less first argument names the database for argument 2.
-            if (args.size() >= 2
-                && clusters.local.contains(resolveClusterOfFunction(*function, clusters)))
+            if (distributedFunctionReadsLocally(*function, clusters))
             {
+                const auto & args = function->arguments->children;
                 /// The server folded these at CREATE time against its own session and machine, neither
                 /// of which the dump shares; rebinding them here would invent or miss a local edge.
                 for (size_t i = 1; i < std::min<size_t>(args.size(), 3); ++i)
@@ -1210,6 +1289,28 @@ std::vector<TableInfo> fetchTables(
         clusters.known.insert(std::move(name));
     for (auto & name : fetchStringColumn(connection, timeouts, client_info, "SELECT DISTINCT cluster FROM system.clusters WHERE is_local", context->getSettingsRef()))
         clusters.local.insert(std::move(name));
+    clusters.tcp_port = parse<UInt16>(
+        fetchStringColumn(connection, timeouts, client_info, "SELECT toString(tcpPort())", context->getSettingsRef()).at(0));
+    clusters.tcp_port_secure = [&, cached = std::optional<UInt16>{}]() mutable
+    {
+        if (!cached)
+        {
+            try
+            {
+                cached = parse<UInt16>(fetchStringColumn(connection, timeouts, client_info,
+                    "SELECT toString(getServerPort('tcp_port_secure'))", context->getSettingsRef()).at(0));
+            }
+            catch (const Exception & e)
+            {
+                /// No secure port configured: `remoteSecure` then defaults to the well-known one.
+                if (e.code() != ErrorCodes::CLUSTER_DOESNT_EXIST)
+                    throw;
+                cached = DBMS_DEFAULT_SECURE_PORT;
+            }
+        }
+        return *cached;
+    };
+    clusters.treat_local_port_as_remote = context->getApplicationType() == Context::ApplicationType::LOCAL;
     /// Both ordered by `macro`, so the two columns line up.
     auto macro_names = fetchStringColumn(connection, timeouts, client_info, "SELECT macro FROM system.macros ORDER BY macro", context->getSettingsRef());
     auto macro_values = fetchStringColumn(connection, timeouts, client_info, "SELECT substitution FROM system.macros ORDER BY macro", context->getSettingsRef());

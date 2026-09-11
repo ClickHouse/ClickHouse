@@ -194,6 +194,11 @@ OK: merge() wrapped in a local cluster() names the local source
 OK: session context inside the wrapped merge() is folded into the stored view
 OK: folded wrapped merge() source dumped before its reader
 OK: empty-database merge() resolves against the owning database
+--- a remote() address the server reads locally names a real local dependency ---
+OK: local remote() source dumped before aaa_remote_reader
+OK: local remote() source dumped before aab_remote_reader_port
+OK: local remote() source dumped before aac_remote_reader_merge
+OK: local remote() source dumped before aad_remote_mv
 --- a cluster() argument reading the session database is refused, not rebound ---
 session-database cluster() argument refused: 1
 --- a cluster() argument reading the session user is refused too ---

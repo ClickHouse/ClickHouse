@@ -1040,6 +1040,43 @@ DROP TABLE ${DB}.zzz_merge_emptydb_src;
 "
 rm -f "$EMPTYDB_DUMP_FILE"
 
+echo '--- a remote() address the server reads locally names a real local dependency ---'
+# The server marks loopback replicas on its own port local (`Cluster::Address::isLocal`) and reads
+# their tables from its catalog, so a reader over such a `remote()` must come after its source,
+# whether the address spells the port or not, and whether it names the table or wraps `merge()`.
+$CLICKHOUSE_CLIENT -mq "
+CREATE TABLE ${DB}.zzz_remote_src (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE TABLE ${DB}.zzy_remote_trigger (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE VIEW ${DB}.aaa_remote_reader AS SELECT * FROM remote('127.0.0.1', '${DB}', 'zzz_remote_src');
+CREATE VIEW ${DB}.aab_remote_reader_port AS SELECT * FROM remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', ${DB}.zzz_remote_src);
+CREATE VIEW ${DB}.aac_remote_reader_merge AS SELECT * FROM remote('localhost', merge('${DB}', '^zzz_remote_src\$'));
+CREATE MATERIALIZED VIEW ${DB}.aad_remote_mv ENGINE = Memory AS
+    SELECT id FROM ${DB}.zzy_remote_trigger WHERE id IN (SELECT id FROM remote('127.0.0.1', ${DB}.zzz_remote_src));
+"
+LOCAL_REMOTE_DUMP_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}_local_remote_dump.sql"
+if $CLICKHOUSE_CLIENT --dump-schema="${DB}" > "$LOCAL_REMOTE_DUMP_FILE" 2>"$ERR_FILE"; then
+    SRC_LINE=$(grep -n "CREATE TABLE ${DB}\.zzz_remote_src" "$LOCAL_REMOTE_DUMP_FILE" | head -1 | cut -d: -f1)
+    for reader in aaa_remote_reader aab_remote_reader_port aac_remote_reader_merge aad_remote_mv; do
+        READER_LINE=$(grep -n "CREATE \(MATERIALIZED \)\?VIEW ${DB}\.${reader} " "$LOCAL_REMOTE_DUMP_FILE" | head -1 | cut -d: -f1)
+        if [ -n "$SRC_LINE" ] && [ -n "$READER_LINE" ] && [ "$SRC_LINE" -lt "$READER_LINE" ]; then
+            echo "OK: local remote() source dumped before ${reader}"
+        else
+            echo "FAIL: local remote() dependency of ${reader} missing or misordered (src=$SRC_LINE reader=$READER_LINE)"
+        fi
+    done
+else
+    echo "FAIL: dump rejected: $(cat "$ERR_FILE")"
+fi
+$CLICKHOUSE_CLIENT -mq "
+DROP TABLE ${DB}.aaa_remote_reader;
+DROP TABLE ${DB}.aab_remote_reader_port;
+DROP TABLE ${DB}.aac_remote_reader_merge;
+DROP TABLE ${DB}.aad_remote_mv;
+DROP TABLE ${DB}.zzy_remote_trigger;
+DROP TABLE ${DB}.zzz_remote_src;
+"
+rm -f "$LOCAL_REMOTE_DUMP_FILE"
+
 echo '--- a cluster() argument reading the session database is refused, not rebound ---'
 # The server folded `currentDatabase()` against the session that ran the CREATE; the dump session's
 # own database is a different one, so folding it here would silently rebind or drop the edge.
