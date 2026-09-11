@@ -402,3 +402,52 @@ SELECT toUInt32(min_time) AS min_epoch, toUInt32(max_time) AS max_epoch
 FROM system.parts WHERE database = currentDatabase() AND table = 'test_lc_nullable_datetime_all_nulls' AND active;
 
 DROP TABLE IF EXISTS test_lc_nullable_datetime_all_nulls;
+
+-- =====================================================
+-- Case 18: Mixed non-`LowCardinality` `Date` + `LowCardinality(Date)` in the
+-- partition key (the `LowCardinality` analogue of case 11). The selection is
+-- tiered, so the plain `Date` column `d` is chosen before `LowCardinality(Date)`
+-- is even considered. Matching both in one pass would reset
+-- `minmax_idx_date_column_pos` to -1 and regress `min_date` / `max_date` to
+-- epoch. They must come from `d` (2024-06-15), not from `ld` (2020-01-01) and
+-- not from epoch.
+-- =====================================================
+DROP TABLE IF EXISTS test_mixed_date_and_lc_date;
+
+CREATE TABLE test_mixed_date_and_lc_date (id UInt64, d Date, ld LowCardinality(Date))
+ENGINE = MergeTree()
+PARTITION BY (d, ld)
+ORDER BY id
+SETTINGS allow_suspicious_low_cardinality_types = 1;
+
+INSERT INTO test_mixed_date_and_lc_date VALUES (1, toDate('2024-06-15'), toDate('2020-01-01'));
+
+SELECT
+    min_date = toDate('2024-06-15') AS min_matches,
+    max_date = toDate('2024-06-15') AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_mixed_date_and_lc_date' AND active;
+
+DROP TABLE IF EXISTS test_mixed_date_and_lc_date;
+
+-- =====================================================
+-- Case 19: Mixed non-`LowCardinality` `DateTime` + `LowCardinality(DateTime)` in
+-- the partition key (the `DateTime` analogue of case 18). `min_time` /
+-- `max_time` must come from the plain column `t` (2024-06-15 12:00:00), not
+-- epoch.
+-- =====================================================
+DROP TABLE IF EXISTS test_mixed_datetime_and_lc_datetime;
+
+CREATE TABLE test_mixed_datetime_and_lc_datetime (id UInt64, t DateTime('UTC'), lt LowCardinality(DateTime('UTC')))
+ENGINE = MergeTree()
+PARTITION BY (t, lt)
+ORDER BY id
+SETTINGS allow_suspicious_low_cardinality_types = 1;
+
+INSERT INTO test_mixed_datetime_and_lc_datetime VALUES (1, toDateTime('2024-06-15 12:00:00', 'UTC'), toDateTime('2020-01-01 00:00:00', 'UTC'));
+
+SELECT
+    toUInt32(min_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS min_matches,
+    toUInt32(max_time) = toUInt32(toDateTime('2024-06-15 12:00:00', 'UTC')) AS max_matches
+FROM system.parts WHERE database = currentDatabase() AND table = 'test_mixed_datetime_and_lc_datetime' AND active;
+
+DROP TABLE IF EXISTS test_mixed_datetime_and_lc_datetime;
