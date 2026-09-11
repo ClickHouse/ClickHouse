@@ -18,13 +18,15 @@ class StorageTimeSeries;
 ///   0 - Tables created before the `version` setting was introduced (including "prealpha" tables
 ///       and tables without the recent samples table).
 ///   1 - The `version` setting was introduced.
+///   2 - The column `metric_family_name` of the "metrics" target table was renamed to `metric_family`
+///       (the name of the corresponding outer column).
 namespace TimeSeriesVersion
 {
     /// The latest version, new tables get it unless the CREATE query specifies another supported version.
     /// Bump it each time the schema of the target tables or the semantics of the stored data changes;
     /// every version in [MIN_SUPPORTED, LATEST] must stay supported, so either make the schema generation
     /// version-aware or bump MIN_SUPPORTED too.
-    constexpr UInt64 LATEST = 1;
+    constexpr UInt64 LATEST = 2;
 
     /// The minimum version which can be read with SELECT and whose creation can be replayed on another node.
     /// A table with an older version can still be attached, inspected with SHOW CREATE TABLE and dropped.
@@ -47,6 +49,10 @@ namespace TimeSeriesVersion
 
 /// Whether a version is in the range [MIN_SUPPORTED, LATEST].
 bool isTimeSeriesVersionSupported(UInt64 version);
+
+/// Returns the name of the column of the "metrics" target table which contains the name of a metric family:
+/// `metric_family` since version 2, `metric_family_name` in older versions.
+const char * getMetricFamilyColumnNameInMetricsTable(UInt64 version);
 
 /// Checks that the version of a TimeSeries table is in the range [MIN_SUPPORTED, LATEST], throws otherwise.
 /// A table with a newer version can appear after a downgrade of ClickHouse; it can still be attached,

@@ -3,6 +3,7 @@
 #include <Common/Exception.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/StorageTimeSeries.h>
+#include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 
 
 namespace DB
@@ -30,6 +31,11 @@ namespace
 bool isTimeSeriesVersionSupported(UInt64 version)
 {
     return !isBefore(version, TimeSeriesVersion::MIN_SUPPORTED) && !isAfter(version, TimeSeriesVersion::LATEST);
+}
+
+const char * getMetricFamilyColumnNameInMetricsTable(UInt64 version)
+{
+    return isBefore(version, 2) ? TimeSeriesColumnNames::MetricFamilyName : TimeSeriesColumnNames::MetricFamily;
 }
 
 void checkTimeSeriesVersionIsSupported(const StorageTimeSeries & time_series_storage)

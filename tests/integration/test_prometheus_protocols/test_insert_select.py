@@ -70,7 +70,7 @@ def test_insert_with_metrics_metadata():
 
     # Check inner tables.
     assert node.query(
-        "SELECT metric_family_name, type, unit, help"
+        "SELECT metric_family, type, unit, help"
         " FROM timeSeriesMetrics(prometheus)"
     ) == TSV([["http_requests", "counter", "requests", "Total HTTP requests"]])
 

@@ -50,7 +50,8 @@ struct TimeSeriesColumnNames
 
     /// Old names kept for compatibility:
 
-    /// The old name of the "metric_family" column, still used in the "metrics" target table.
+    /// The name of the "metric_family" column in the "metrics" target table of the tables created by versions before 2
+    /// (see `getMetricFamilyColumnNameInMetricsTable` in TimeSeriesVersion.h).
     static constexpr const char * MetricFamilyName = "metric_family_name";
 
     /// Tables created by older versions declare it as an ephemeral column and used to fill it

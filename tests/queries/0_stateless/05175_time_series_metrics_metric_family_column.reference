@@ -1,0 +1,24 @@
+-- a new table names the column `metric_family`
+2	`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String	ORDER BY metric_family
+http_requests	counter	requests	Total HTTP requests
+http_requests_total	http_requests	counter
+http_requests	counter
+-- a table of version 1 names the column `metric_family_name`
+1	`metric_family_name` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String	ORDER BY metric_family_name
+http_requests	counter	requests	Total HTTP requests
+http_requests_total	http_requests	counter
+http_requests	counter
+-- an external metrics table must name the column according to the version
+http_requests	counter
+http_requests	counter
+http_requests	counter
+http_requests	counter
+-- CREATE AS a table of version 1: the generated column and sorting key get the new name
+2	`metric_family` String, `type` LowCardinality(String), `unit` LowCardinality(String), `help` String	ORDER BY metric_family
+-- CREATE AS a table of version 1 with a customized column and sorting key: they are copied with the new name
+`metric_family_name` LowCardinality(String), `type` LowCardinality(String), `unit` LowCardinality(String), `help` String, `extra` UInt64 DEFAULT length(metric_family_name)	ORDER BY (metric_family_name, type)
+2	`metric_family` LowCardinality(String), `type` LowCardinality(String), `unit` LowCardinality(String), `help` String, `extra` UInt64 DEFAULT length(metric_family)	ORDER BY (metric_family, type)
+http_requests	counter
+http_requests	13
+-- CREATE AS a table of the latest version with an explicit version 1: the customized parts get the old name
+1	`metric_family_name` LowCardinality(String), `type` LowCardinality(String), `unit` LowCardinality(String), `help` String	ORDER BY (metric_family_name, type)

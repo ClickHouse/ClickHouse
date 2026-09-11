@@ -25,6 +25,7 @@
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 #include <Storages/TimeSeries/TimeSeriesTagNames.h>
+#include <Storages/TimeSeries/TimeSeriesVersion.h>
 
 #include <optional>
 #include <string_view>
@@ -46,7 +47,7 @@ namespace
     constexpr const char * metrics_families_subquery_alias = "__metrics_families";
     constexpr const char * metric_families_with_all_suffixes_subquery_alias = "__metric_families_with_all_suffixes";
 
-    /// Alias of `concat(metric_family_name, arrayJoin(timeSeriesMetricTypeToSuffixes(type)))`
+    /// Alias of `concat(metric_family, arrayJoin(timeSeriesMetricTypeToSuffixes(type)))`
     /// (see `makeMetricsFullJoinElement`).
     constexpr const char * metric_family_with_suffix_alias = "__metric_family_with_suffix";
 
@@ -388,30 +389,38 @@ namespace
 
     /// Builds a subquery to read from the "metrics" table:
     /// (
-    ///     SELECT *
+    ///     SELECT metric_family, type, unit, help
     ///     FROM <metrics>
-    ///     WHERE notEmpty(metric_family_name)
-    ///     LIMIT 1 BY metric_family_name
+    ///     WHERE notEmpty(metric_family)
+    ///     LIMIT 1 BY metric_family
     /// ) AS __metrics_families
     /// Here `LIMIT 1 BY` keeps one whole metadata row per family: metadata is re-inserted with every write and the
     /// "metrics" engine isn't guaranteed to be ReplacingMergeTree, so duplicates are expected at read time.
     /// Rows without a family name are skipped.
-    ASTPtr makeMetricsTableElement(const StorageID & metrics_table_id)
+    /// `metric_family_column_name` is the name of the column with the name of a metric family in the "metrics" table,
+    /// it depends on the version of the TimeSeries table; the subquery always returns that column as `metric_family`.
+    ASTPtr makeMetricsTableElement(const StorageID & metrics_table_id, const char * metric_family_column_name)
     {
         auto inner = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
-        select_list->children.push_back(make_intrusive<ASTAsterisk>());
+        auto metric_family = make_intrusive<ASTIdentifier>(metric_family_column_name);
+        if (std::string_view{metric_family_column_name} != TimeSeriesColumnNames::MetricFamily)
+            metric_family->setAlias(TimeSeriesColumnNames::MetricFamily);
+        select_list->children.push_back(std::move(metric_family));
+        select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Type));
+        select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Unit));
+        select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Help));
         inner->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
         inner->setExpression(ASTSelectQuery::Expression::TABLES, makeSingleTableList(metrics_table_id));
 
         /// Rows without a family name are skipped (in the JOIN they could only expand to
         /// bare-suffix members, e.g. `_total`, that could match a valid metric `_total`).
         inner->setExpression(ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName)));
+            makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(metric_family_column_name)));
 
         inner->setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, make_intrusive<ASTLiteral>(static_cast<UInt8>(1)));
         auto limit_by = make_intrusive<ASTExpressionList>();
-        limit_by->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName));
+        limit_by->children.push_back(make_intrusive<ASTIdentifier>(metric_family_column_name));
         inner->setExpression(ASTSelectQuery::Expression::LIMIT_BY, limit_by);
 
         return makeTableElementFromSubquery(std::move(inner), metrics_families_subquery_alias);
@@ -429,11 +438,7 @@ namespace
         if (requested_columns.contains(TimeSeriesColumnNames::TimeSeries))
             select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries));
         if (requested_columns.contains(TimeSeriesColumnNames::MetricFamily))
-        {
-            auto metric_family = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName);
-            metric_family->setAlias(TimeSeriesColumnNames::MetricFamily);
-            select_list->children.push_back(std::move(metric_family));
-        }
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamily));
         if (requested_columns.contains(TimeSeriesColumnNames::Type))
             select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Type));
         if (requested_columns.contains(TimeSeriesColumnNames::Unit))
@@ -468,26 +473,26 @@ namespace
     /// Builds a JOIN clause for the "metrics" table to join it to the "tags" table:
     /// FULL JOIN
     /// (
-    ///     SELECT *, concat(metric_family_name, arrayJoin(timeSeriesMetricTypeToSuffixes(type))) AS __metric_family_with_suffix
+    ///     SELECT *, concat(metric_family, arrayJoin(timeSeriesMetricTypeToSuffixes(type))) AS __metric_family_with_suffix
     ///     FROM
     ///     (
-    ///         SELECT *
+    ///         SELECT metric_family, type, unit, help
     ///         FROM <metrics>
-    ///         WHERE notEmpty(metric_family_name)
-    ///         LIMIT 1 BY metric_family_name
+    ///         WHERE notEmpty(metric_family)
+    ///         LIMIT 1 BY metric_family
     ///     ) AS __metrics_families
     /// ) AS __metric_families_with_all_suffixes
     /// ON toString(ifNull(metric_name, '')) = __metric_family_with_suffix
     ///
     /// The FULL JOIN keeps every "tags" row (its metadata columns are empty when no member matches) and also
     /// every "metrics" member row that no time series belongs to (its "tags"/"samples" columns are then empty).
-    ASTPtr makeMetricsFullJoinElement(const StorageID & metrics_table_id)
+    ASTPtr makeMetricsFullJoinElement(const StorageID & metrics_table_id, const char * metric_family_column_name)
     {
         auto expanded_list = make_intrusive<ASTExpressionList>();
         expanded_list->children.push_back(make_intrusive<ASTAsterisk>());
 
         auto metric_family_with_suffix = makeASTFunction("concat",
-            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName),
+            make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamily),
             makeASTFunction("arrayJoin",
                 makeASTFunction("timeSeriesMetricTypeToSuffixes", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Type))));
         metric_family_with_suffix->setAlias(metric_family_with_suffix_alias);
@@ -496,7 +501,7 @@ namespace
         auto expanded = make_intrusive<ASTSelectQuery>();
         expanded->setExpression(ASTSelectQuery::Expression::SELECT, expanded_list);
         auto expanded_tables = make_intrusive<ASTTablesInSelectQuery>();
-        expanded_tables->children.push_back(makeMetricsTableElement(metrics_table_id));
+        expanded_tables->children.push_back(makeMetricsTableElement(metrics_table_id, metric_family_column_name));
         expanded->setExpression(ASTSelectQuery::Expression::TABLES, expanded_tables);
 
         auto join = make_intrusive<ASTTableJoin>();
@@ -586,27 +591,24 @@ namespace
     }
 
     /// Builds a query reading only from the "metrics" table:
-    /// SELECT metric_family_name AS metric_family, type, unit, help
+    /// SELECT metric_family, type, unit, help
     /// FROM
     /// (
-    ///     SELECT *
+    ///     SELECT metric_family, type, unit, help
     ///     FROM <metrics>
-    ///     WHERE notEmpty(metric_family_name)
-    ///     LIMIT 1 BY metric_family_name
+    ///     WHERE notEmpty(metric_family)
+    ///     LIMIT 1 BY metric_family
     /// ) AS __metrics_families
     ///
     /// Only the requested columns are selected.
-    ASTPtr buildSelectQueryFromMetricsOnly(const StorageID & metrics_table_id, const NameSet & requested_columns)
+    ASTPtr buildSelectQueryFromMetricsOnly(
+        const StorageID & metrics_table_id, const char * metric_family_column_name, const NameSet & requested_columns)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
         auto select_list = make_intrusive<ASTExpressionList>();
 
         if (requested_columns.contains(TimeSeriesColumnNames::MetricFamily))
-        {
-            auto metric_family = make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamilyName);
-            metric_family->setAlias(TimeSeriesColumnNames::MetricFamily);
-            select_list->children.push_back(std::move(metric_family));
-        }
+            select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::MetricFamily));
         if (requested_columns.contains(TimeSeriesColumnNames::Type))
             select_list->children.push_back(make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::Type));
         if (requested_columns.contains(TimeSeriesColumnNames::Unit))
@@ -620,7 +622,7 @@ namespace
         select_query->setExpression(ASTSelectQuery::Expression::SELECT, select_list);
 
         auto tables = make_intrusive<ASTTablesInSelectQuery>();
-        tables->children.push_back(makeMetricsTableElement(metrics_table_id));
+        tables->children.push_back(makeMetricsTableElement(metrics_table_id, metric_family_column_name));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
         return makeSelectWithUnionQuery(std::move(select_query));
@@ -630,8 +632,7 @@ namespace
     /// SELECT toString(ifNull(metric_name, '')) AS metric_name,
     ///        timeSeriesTagsToMap(tags, '__name__', metric_name) AS tags,
     ///        time_series,
-    ///        metric_family_name AS metric_family,
-    ///        type, unit, help
+    ///        metric_family, type, unit, help
     /// FROM
     /// (
     ///     SELECT id, arrayZip(groupArray(timestamp), groupArray(value)) AS time_series
@@ -641,13 +642,13 @@ namespace
     /// INNER ANY JOIN <tags> USING (id)
     /// FULL JOIN
     /// (
-    ///     SELECT *, concat(metric_family_name, arrayJoin(timeSeriesMetricTypeToSuffixes(type))) AS __metric_family_with_suffix
+    ///     SELECT *, concat(metric_family, arrayJoin(timeSeriesMetricTypeToSuffixes(type))) AS __metric_family_with_suffix
     ///     FROM
     ///     (
-    ///         SELECT *
+    ///         SELECT metric_family, type, unit, help
     ///         FROM <metrics>
-    ///         WHERE notEmpty(metric_family_name)
-    ///         LIMIT 1 BY metric_family_name
+    ///         WHERE notEmpty(metric_family)
+    ///         LIMIT 1 BY metric_family
     ///     ) AS __metrics_families
     /// ) AS __metric_families_with_all_suffixes
     /// ON toString(ifNull(metric_name, '')) = __metric_family_with_suffix
@@ -660,6 +661,7 @@ namespace
         const StorageID & tags_table_id,
         const std::optional<StorageID> & samples_table_id,
         const std::optional<StorageID> & metrics_table_id,
+        const char * metric_family_column_name,
         const NameSet & requested_columns,
         const NameSet & requested_tags,
         const std::unordered_map<String, String> & columns_by_tags,
@@ -681,7 +683,7 @@ namespace
             tables->children.push_back(makeTagsTableElement(tags_table_id, deduplicate_tags_by_id));
         }
         if (metrics_table_id)
-            tables->children.push_back(makeMetricsFullJoinElement(*metrics_table_id));
+            tables->children.push_back(makeMetricsFullJoinElement(*metrics_table_id, metric_family_column_name));
         select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
 
         return makeSelectWithUnionQuery(std::move(select_query));
@@ -743,6 +745,9 @@ ASTPtr makeASTSelectFromTimeSeries(
     if (need_metrics)
         metrics_table_id = storage.getTargetTableID(ViewTarget::Metrics, context);
 
+    /// The name of the column with the name of a metric family in the "metrics" table depends on the table version.
+    const char * metric_family_column_name = getMetricFamilyColumnNameInMetricsTable(storage.getVersion());
+
     /// Single-table reads (no join).
     if (need_samples && !need_tags && !need_metrics)
         return buildSelectQueryFromSamplesOnly(*samples_table_id, requested_columns);
@@ -752,12 +757,12 @@ ASTPtr makeASTSelectFromTimeSeries(
                                             deduplicate_tags_by_id);
 
     if (need_metrics && !need_tags && !need_samples)
-        return buildSelectQueryFromMetricsOnly(*metrics_table_id, requested_columns);
+        return buildSelectQueryFromMetricsOnly(*metrics_table_id, metric_family_column_name, requested_columns);
 
     /// Multi-table reads: anchored on "samples" when it is read, otherwise on "tags".
     chassert(need_tags);
-    return buildSelectQueryFromMultipleTables(*tags_table_id, samples_table_id, metrics_table_id, requested_columns,
-                                           requested_tags, columns_by_tags, deduplicate_tags_by_id);
+    return buildSelectQueryFromMultipleTables(*tags_table_id, samples_table_id, metrics_table_id, metric_family_column_name,
+                                              requested_columns, requested_tags, columns_by_tags, deduplicate_tags_by_id);
 }
 
 SettingsChanges getSettingsForSelectFromTimeSeries()
