@@ -1,0 +1,8 @@
+-- build side larger than the probe site: transport refused
+100
+-- small build side against a large probe site: transport admitted
+100
+-- refused: admission trace and no states sent
+1	1
+-- admitted: admission trace and states sent
+1	1

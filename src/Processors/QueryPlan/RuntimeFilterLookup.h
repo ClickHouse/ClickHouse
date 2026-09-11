@@ -7,6 +7,7 @@
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
+#include <Processors/QueryPlan/RuntimeFilterGeometry.h>
 #include <Common/SharedLockGuard.h>
 #include <Common/SharedMutex.h>
 
@@ -24,6 +25,9 @@
 
 namespace DB
 {
+
+class ReadBuffer;
+class WriteBuffer;
 
 class RuntimeFilter;
 using UniqueRuntimeFilterPtr = std::unique_ptr<RuntimeFilter>;
@@ -116,8 +120,6 @@ public:
 
     ExactSetRuntimeFilter(const DataTypePtr & filter_column_target_type_, UInt64 bytes_limit_, UInt64 exact_values_limit_);
 
-    UInt64 getBytesLimit() const noexcept { return bytes_limit; }
-
     bool isFull() const noexcept { return is_full; }
 
     void insert(ColumnPtr values);
@@ -184,6 +186,13 @@ public:
     void mergeFrom(const ApproximateSetRuntimeFilter & source);
     bool isWorthUsing(Float64 max_ratio_of_set_bits_in_bloom_filter) const;
 
+    /// Writes the bloom filter parameters followed by its raw bits.
+    void serialize(WriteBuffer & out) const;
+
+    /// Reads the state written by `serialize`. The parameters found in the data are validated
+    /// against the plan's geometry: every node of one filter exchange must allocate the same bits.
+    static ApproximateSetRuntimeFilter deserialize(ReadBuffer & in, const RuntimeFilterGeometry & geometry);
+
 private:
     void insertIntoBloomFilter(const ColumnPtr & values);
 
@@ -200,10 +209,7 @@ public:
 
     AdaptiveSetRuntimeFilter(
         const DataTypePtr & filter_column_target_type_,
-        UInt64 bytes_limit_,
-        UInt64 exact_values_limit_,
-        UInt64 bloom_filter_hash_functions_,
-        Float64 max_ratio_of_set_bits_in_bloom_filter_,
+        const RuntimeFilterGeometry & geometry_,
         std::optional<UInt64> distinct_keys_hint_,
         bool distinct_keys_hint_matches_filter_key_);
 
@@ -214,6 +220,17 @@ public:
     void mergeFrom(const AdaptiveSetRuntimeFilter & source);
     ColumnPtr getRecordedKeyValues() const;
     DataTypePtr getTargetType() const { return filter_column_target_type; }
+
+    /// Writes the raw filter state (exact values or bloom filter bits) so that a partial filter can be
+    /// sent to another server and merged there. Captures the state: further inserts and merges throw.
+    void serialize(WriteBuffer & out);
+
+    /// Reads the state written by `serialize`. The geometry must match the serializing side; it is
+    /// taken from the plan, and the bloom filter parameters found in the data are validated against it.
+    /// The result is meant to be moved into a `RuntimeFilter`, which owns the build state and the
+    /// evaluation state a transported partial has none of.
+    static AdaptiveSetRuntimeFilter
+    deserialize(ReadBuffer & in, const DataTypePtr & filter_column_target_type_, const RuntimeFilterGeometry & geometry_);
 
 private:
     using ExactFilter = ExactSetRuntimeFilter<false>;
@@ -231,6 +248,12 @@ private:
         RuntimeFilterEvaluationState & evaluation_state, const ApproximateSetRuntimeFilter & approximate_filter) const;
 
     const DataTypePtr filter_column_target_type;
+    /// Allocation size of the bloom filter the exact phase degrades to. Distinct from the inner
+    /// `ExactSetRuntimeFilter`'s byte limit (the exact-phase byte bound,
+    /// `RuntimeFilterGeometry::exact_bytes_limit`): a transported filter may keep an
+    /// estimate-raised exact set while degrading to the settings-sized bloom, which has to be
+    /// byte-identical on every node that merges a partial of the same exchange.
+    const UInt64 bloom_filter_bytes;
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
     /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
@@ -239,6 +262,9 @@ private:
     const bool distinct_keys_hint_matches_filter_key;
 
     Filter filter;
+    /// Guards against inserts after `serialize` already captured the state: they would be silently
+    /// missing from the transported partial.
+    bool state_serialized = false;
 };
 
 /// Runtime filter that delegates probe to a function captured at publication time.

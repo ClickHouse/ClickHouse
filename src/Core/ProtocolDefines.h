@@ -109,7 +109,12 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
 /// can be shipped under `make_distributed_plan`.
 /// Version 15 registers the `LimitRange` step (`LIMIT [n] AFTER ... [UNTIL ...]`).
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 15;
+/// Version 16 adds filter exchange topology to `BuildRuntimeFilterStep` (runtime filter transport).
+/// An older worker would run the step as a local build and the filter would silently never arrive,
+/// so the serializer throws `SUPPORT_IS_DISABLED` when topology fields are set below version 16.
+/// Version 16 also introduces the `join_runtime_filter_exact_bytes_limit` plan setting and the
+/// `MergeRuntimeFilters` step name, both rejected by older peers.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 16;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -141,7 +146,12 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
+/// Version 4 added runtime filter receive descriptors to the task.
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 4;
+/// First distributed-task serialization version that carries the runtime filter receive
+/// descriptors. Gates writing them, and refusing to write them to an older peer that would skip
+/// the field and misread everything after it.
+static constexpr auto DBMS_MIN_DISTRIBUTED_TASK_SERIALIZATION_VERSION_WITH_RUNTIME_FILTERS = 4;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 

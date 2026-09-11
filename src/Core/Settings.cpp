@@ -9211,6 +9211,9 @@ order. Only shapes where no exchange survives between the read and the sort are 
     DECLARE(Bool, distributed_plan_prefer_replicas_over_workers, false, R"(
 Serialize the distributed query plan for execution at replicas.
 )", PRIVATE_PREVIEW) \
+    DECLARE(Bool, distributed_plan_join_runtime_filters, false, R"(
+Send join runtime filters between stages of a distributed query plan. Probe-side tasks prune before the exchange.
+)", EXPERIMENTAL) \
     DECLARE(Bool, allow_experimental_ytsaurus_table_engine, false, R"(
 Experimental table engine for integration with YTsaurus.
 )", EXPERIMENTAL) \

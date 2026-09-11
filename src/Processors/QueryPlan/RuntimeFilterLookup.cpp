@@ -11,14 +11,20 @@
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
+#include <Core/ProtocolDefines.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/hasNullable.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
 #include <Functions/IFunctionAdaptors.h>
+#include <IO/LimitReadBuffer.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/PreparedSets.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
@@ -325,7 +331,11 @@ void ExactSetRuntimeFilter<negate>::insert(ColumnPtr values)
 
     auto & set = getExactValues();
     set.insertFromColumns({values});
-    is_full = set.getTotalRowCount() > exact_values_limit || set.getTotalByteCount() > bytes_limit;
+    /// Cap actual key bytes, not the hash-table buffer. After growth the table can sit at
+    /// 1/8 fill; short keys would trip the byte check far below the row bound (at most
+    /// eight 24-byte cells per key). Receiver uses this cap to refuse payload before
+    /// materializing (`AdaptiveSetRuntimeFilter::deserialize`).
+    is_full = set.getTotalRowCount() > exact_values_limit || set.getSetElementsBytes() > bytes_limit;
 }
 
 template <bool negate>
@@ -510,6 +520,44 @@ bool ApproximateSetRuntimeFilter::isWorthUsing(Float64 max_ratio_of_set_bits_in_
     return static_cast<double>(set_bits) <= max_ratio_of_set_bits_in_bloom_filter * static_cast<double>(total_bits);
 }
 
+void ApproximateSetRuntimeFilter::serialize(WriteBuffer & out) const
+{
+    writeVarUInt(bloom_filter.getFilterSizeBytes(), out);
+    writeVarUInt(bloom_filter.getHashes(), out);
+    writeVarUInt(bloom_filter.getSeed(), out);
+    const auto & words = bloom_filter.getFilter();
+    out.write(reinterpret_cast<const char *>(words.data()), words.size() * sizeof(words[0]));
+}
+
+ApproximateSetRuntimeFilter ApproximateSetRuntimeFilter::deserialize(ReadBuffer & in, const RuntimeFilterGeometry & geometry)
+{
+    UInt64 size_bytes{};
+    UInt64 hash_functions{};
+    UInt64 seed{};
+    readVarUInt(size_bytes, in);
+    readVarUInt(hash_functions, in);
+    readVarUInt(seed, in);
+    /// The bloom size comes from `bloom_filter_bytes`, never from the exact-phase byte bound: the
+    /// sender may have been allowed a bigger exact set than the plain settings geometry, but every
+    /// receiver of the same exchange has to allocate the same bits or the merged bits are garbage.
+    if (size_bytes != geometry.bloom_filter_bytes || hash_functions != geometry.bloom_filter_hash_functions
+        || seed != BLOOM_FILTER_SEED)
+        throw Exception(
+            ErrorCodes::INCORRECT_DATA,
+            "Runtime filter bloom parameters ({}, {}, {}) do not match the expected ({}, {}, {})",
+            size_bytes,
+            hash_functions,
+            seed,
+            geometry.bloom_filter_bytes,
+            geometry.bloom_filter_hash_functions,
+            BLOOM_FILTER_SEED);
+
+    ApproximateSetRuntimeFilter filter(size_bytes, hash_functions);
+    auto & words = filter.bloom_filter.getFilter();
+    in.readStrict(reinterpret_cast<char *>(words.data()), words.size() * sizeof(words[0]));
+    return filter;
+}
+
 bool AdaptiveSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
     return ApproximateSetRuntimeFilter::isDataTypeSupported(data_type);
@@ -517,23 +565,24 @@ bool AdaptiveSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type
 
 AdaptiveSetRuntimeFilter::AdaptiveSetRuntimeFilter(
     const DataTypePtr & filter_column_target_type_,
-    UInt64 bytes_limit_,
-    UInt64 exact_values_limit_,
-    UInt64 bloom_filter_hash_functions_,
-    Float64 max_ratio_of_set_bits_in_bloom_filter_,
+    const RuntimeFilterGeometry & geometry_,
     std::optional<UInt64> distinct_keys_hint_,
     bool distinct_keys_hint_matches_filter_key_)
     : filter_column_target_type(filter_column_target_type_)
-    , bloom_filter_hash_functions(bloom_filter_hash_functions_)
-    , max_ratio_of_set_bits_in_bloom_filter(max_ratio_of_set_bits_in_bloom_filter_)
+    , bloom_filter_bytes(geometry_.bloom_filter_bytes)
+    , bloom_filter_hash_functions(geometry_.bloom_filter_hash_functions)
+    , max_ratio_of_set_bits_in_bloom_filter(geometry_.max_ratio_of_set_bits_in_bloom_filter)
     , distinct_keys_hint(distinct_keys_hint_)
     , distinct_keys_hint_matches_filter_key(distinct_keys_hint_matches_filter_key_)
-    , filter(std::in_place_type<ExactFilter>, filter_column_target_type_, bytes_limit_, exact_values_limit_)
+    , filter(std::in_place_type<ExactFilter>, filter_column_target_type_, geometry_.exact_bytes_limit, geometry_.exact_values_limit)
 {
 }
 
 void AdaptiveSetRuntimeFilter::insert(ColumnPtr values)
 {
+    if (state_serialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after its state was serialized");
+
     insert(std::move(values), filter);
 }
 
@@ -610,6 +659,9 @@ ColumnPtr AdaptiveSetRuntimeFilter::getRecordedKeyValues() const
 
 void AdaptiveSetRuntimeFilter::mergeFrom(const AdaptiveSetRuntimeFilter & source)
 {
+    if (state_serialized)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to merge into runtime filter after its state was serialized");
+
     std::visit(
         Overloaded{
             [&](const ExactFilter & source_exact_filter) { insert(source_exact_filter.getValuesColumn(), filter); },
@@ -639,12 +691,22 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
     if (!exact_filter)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected state of AdaptiveSetRuntimeFilter");
     auto values = exact_filter->getValuesColumn();
-    UInt64 bytes_limit = exact_filter->getBytesLimit();
+
+    /// The bloom filter is allocated at the geometry's `bloom_filter_bytes`, not at the exact
+    /// phase's byte bound: a transported plan may raise the exact budget above the settings
+    /// geometry, and a partial that degrades has to fit the bloom every receiver allocates.
+    ///
+    /// The stats-sized growth applies only to a filter that lives and dies in one pipeline. A
+    /// transported partial never carries the hint: its serialized state must match the plan's
+    /// geometry on the receiving side and must never cost more on the wire than the
+    /// settings-sized bloom. So the growth stays in a local and never reaches the member the
+    /// wire contract is validated against.
+    UInt64 grown_bloom_filter_bytes = bloom_filter_bytes;
 
     if (distinct_keys_hint)
     {
-        bytes_limit
-            = growBloomFilterBytes(*distinct_keys_hint, bloom_filter_hash_functions, bytes_limit, max_ratio_of_set_bits_in_bloom_filter);
+        grown_bloom_filter_bytes = growBloomFilterBytes(
+            *distinct_keys_hint, bloom_filter_hash_functions, bloom_filter_bytes, max_ratio_of_set_bits_in_bloom_filter);
 
         /// The filter size is capped, so a build side with more distinct keys would produce a Bloom filter
         /// that `checkApproximateFilterWorthiness` discards. Predict that fill rate before constructing it.
@@ -654,7 +716,7 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
                 = static_cast<double>(*distinct_keys_hint) / HashJoinEntry::MAX_OVERESTIMATION_FACTOR;
             const double predicted_fill_rate = -std::expm1(
                 -static_cast<double>(bloom_filter_hash_functions) * least_distinct_keys
-                / (static_cast<double>(bytes_limit) * 8.0));
+                / (static_cast<double>(grown_bloom_filter_bytes) * 8.0));
             if (predicted_fill_rate > max_ratio_of_set_bits_in_bloom_filter)
             {
                 ProfileEvents::increment(ProfileEvents::RuntimeFilterBloomFilterBuildsSkipped);
@@ -664,7 +726,8 @@ ApproximateSetRuntimeFilter * AdaptiveSetRuntimeFilter::switchToApproximateFilte
         }
     }
 
-    auto & approximate_filter = filter_.emplace<ApproximateSetRuntimeFilter>(bytes_limit, bloom_filter_hash_functions);
+    auto & approximate_filter
+        = filter_.emplace<ApproximateSetRuntimeFilter>(grown_bloom_filter_bytes, bloom_filter_hash_functions);
     approximate_filter.insert(values);
     return &approximate_filter;
 }
@@ -674,6 +737,105 @@ void AdaptiveSetRuntimeFilter::checkApproximateFilterWorthiness(
 {
     if (!approximate_filter.isWorthUsing(max_ratio_of_set_bits_in_bloom_filter))
         evaluation_state.markKeySetDropped();
+}
+
+static constexpr UInt64 RUNTIME_FILTER_STATE_VERSION = 1;
+
+void AdaptiveSetRuntimeFilter::serialize(WriteBuffer & out)
+{
+    state_serialized = true;
+
+    writeVarUInt(RUNTIME_FILTER_STATE_VERSION, out);
+
+    if (const auto * approximate_filter = std::get_if<ApproximateSetRuntimeFilter>(&filter))
+    {
+        writeBinary(UInt8(1), out);
+        approximate_filter->serialize(out);
+        return;
+    }
+
+    /// A filter that gave up its key set passes all rows; there is no partial state to transport
+    /// and the wire format has no way to say so. It is unreachable: the key set is only dropped
+    /// from the statistics hint, which a transported partial never carries.
+    const auto * exact_filter = std::get_if<ExactFilter>(&filter);
+    if (!exact_filter)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to serialize a runtime filter that gave up its key set");
+
+    writeBinary(UInt8(0), out);
+
+    /// The Set stores its elements with LowCardinality stripped (see `Set::getElementTypes`),
+    /// so the block must be typed the same way; `insert` on the receiving side accepts full
+    /// columns. The row count goes first so the reader can reject an oversized declaration
+    /// before the column gets allocated.
+    auto values = exact_filter->getValuesColumn();
+    writeVarUInt(values->size(), out);
+    Block block({ColumnWithTypeAndName(values, recursiveRemoveLowCardinality(filter_column_target_type), "values")});
+    NativeWriter writer(out, DBMS_TCP_PROTOCOL_VERSION, std::make_shared<const Block>(block.cloneEmpty()));
+    writer.write(block);
+}
+
+AdaptiveSetRuntimeFilter AdaptiveSetRuntimeFilter::deserialize(
+    ReadBuffer & in, const DataTypePtr & filter_column_target_type_, const RuntimeFilterGeometry & geometry_)
+{
+    UInt64 version{};
+    readVarUInt(version, in);
+    if (version != RUNTIME_FILTER_STATE_VERSION)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown runtime filter state version {}", version);
+
+    UInt8 has_bloom_filter{};
+    readBinary(has_bloom_filter, in);
+    if (has_bloom_filter > 1)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Malformed runtime filter state");
+
+    AdaptiveSetRuntimeFilter filter(
+        filter_column_target_type_,
+        geometry_,
+        /*distinct_keys_hint_=*/std::nullopt,
+        /*distinct_keys_hint_matches_filter_key_=*/false);
+
+    if (has_bloom_filter)
+    {
+        filter.filter.emplace<ApproximateSetRuntimeFilter>(ApproximateSetRuntimeFilter::deserialize(in, geometry_));
+    }
+    else
+    {
+        UInt64 rows{};
+        readVarUInt(rows, in);
+        if (rows > geometry_.exact_values_limit)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Runtime filter declares {} exact values, more than the limit {}",
+                rows,
+                geometry_.exact_values_limit);
+
+        /// Declared row count does not bound variable-width keys. Reject before consuming payload if
+        /// remaining bytes exceed `exact_bytes_limit` plus Native framing (block info, column name,
+        /// serialization kind) plus the actual type-name length (`Enum` names are unbounded).
+        /// Hostile row counts still die on the memory limit, loudly.
+        const auto element_type = recursiveRemoveLowCardinality(filter_column_target_type_);
+        constexpr size_t native_framing_slack_bytes = 64 * 1024;
+        const size_t max_state_bytes = geometry_.exact_bytes_limit + element_type->getName().size() + native_framing_slack_bytes;
+        if (in.available() > max_state_bytes)
+            throw Exception(
+                ErrorCodes::INCORRECT_DATA,
+                "Runtime filter exact state of {} bytes exceeds the limit of {} bytes",
+                in.available(),
+                max_state_bytes);
+
+        Block block;
+        {
+            LimitReadBuffer limited(in, {.read_no_more = max_state_bytes});
+            block = NativeReader(limited, DBMS_TCP_PROTOCOL_VERSION).read();
+        }
+        if (block.columns() != 1 || block.rows() != rows || !block.getByPosition(0).type->equals(*element_type))
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Runtime filter values have unexpected structure: {}", block.dumpStructure());
+        filter.insert(block.getByPosition(0).column);
+    }
+
+    if (!in.eof())
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Unexpected data after the runtime filter state");
+
+    return filter;
 }
 
 SharedFixedHashTableRuntimeFilter::SharedFixedHashTableRuntimeFilter(
@@ -840,10 +1002,12 @@ public:
             filter.reset(runtime_filter.release()); /// Save new filter.
             /// Record the readable structural name once because the map is keyed by the opaque rendezvous key.
             display_names.emplace(key, display_name);
+            LOG_TRACE(getLogger("RuntimeFilter"), "Registered runtime filter '{}' under key '{}'", display_name, key);
         }
         else
         {
             filter->merge(*runtime_filter); /// Add all new keys to an existing filter.
+            LOG_TRACE(getLogger("RuntimeFilter"), "Merged a partial into runtime filter '{}' under key '{}'", display_name, key);
         }
         filter->finishInsert();
     }
@@ -872,13 +1036,17 @@ public:
         for (const auto & [filter_key, filter] : filters_by_name)
         {
             const auto & stats = filter->getStats();
-            /// `filter_key` is the opaque random rendezvous key; prefer the readable structural name.
+            /// `filter_key` is the opaque random rendezvous key; the readable structural name comes
+            /// first, but the key stays in the line: several filter instances (e.g. a transported
+            /// union and a worker-re-added local pair) share one structural name and only the key
+            /// tells them apart.
             auto name_it = display_names.find(filter_key);
             const String & name = (name_it != display_names.end() && !name_it->second.empty()) ? name_it->second : filter_key;
             LOG_TRACE(
                 getLogger("RuntimeFilter"),
-                "Stats for '{}': rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
+                "Stats for '{}' (key '{}'): rows skipped {}, rows checked {}, rows passed {}, blocks skipped {}, blocks processed {}",
                 name,
+                filter_key,
                 stats.rows_skipped.load(),
                 stats.rows_checked.load(),
                 stats.rows_passed.load(),

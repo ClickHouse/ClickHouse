@@ -1,4 +1,5 @@
 #include <cstddef>
+#include <vector>
 #include <memory>
 #include <mutex>
 #include <boost/core/noncopyable.hpp>
@@ -28,6 +29,7 @@
 #include <Formats/NativeWriter.h>
 #include <IO/ReadBufferFromFile.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromFile.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/JoinOperator.h>
@@ -55,7 +57,11 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <Processors/QueryPlan/ShuffleExchangeStep.h>
 #include <Processors/QueryPlan/GatherExchangeStep.h>
+#include <DataTypes/DataTypeString.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Server/StatelessWorker/StatelessWorkerTaskSerialization.h>
+#include <Common/Exception.h>
 #include <Processors/QueryPlan/IQueryPlanStep.h>
 #include <Processors/QueryPlan/IParameterLookup.h>
 
@@ -606,7 +612,7 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
         builder.init(Pipe(std::make_shared<SourceFromChunks>(header, std::move(chunks))));
         builder.setSinks([&](const SharedHeader & sink_header, Pipe::StreamType) -> ProcessorPtr
         {
-            return exchange_lookup->createSink(sink_header, stream_id);
+            return exchange_lookup->createSink(sink_header, stream_id, /*advisory*/ false);
         });
         auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
         CompletedPipelineExecutor executor(pipeline);
@@ -623,4 +629,180 @@ TEST_F(DistributedQueryTest, InMemoryExchangeStreamWithoutColumns)
     }
 
     EXPECT_EQ(total_rows, 7u);
+}
+
+namespace DB::ErrorCodes
+{
+extern const int INCORRECT_DATA;
+extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+RuntimeFilterGeometry makeEnvelopeGeometry()
+{
+    return RuntimeFilterGeometry{
+        .exact_values_limit = 100,
+        .exact_bytes_limit = 4096,
+        .bloom_filter_bytes = 2048,
+        .bloom_filter_hash_functions = 4,
+        .pass_ratio_threshold_for_disabling = 0.55,
+        .blocks_to_skip_before_reenabling = 7,
+        .max_ratio_of_set_bits_in_bloom_filter = 0.4,
+    };
+}
+
+void expectDescriptorMatches(const RuntimeFilterReceiveDescriptor & actual, const RuntimeFilterReceiveDescriptor & expected)
+{
+    EXPECT_EQ(actual.filter_key, expected.filter_key);
+    EXPECT_EQ(actual.filter_name, expected.filter_name);
+    ASSERT_TRUE(actual.key_column_type);
+    ASSERT_TRUE(expected.key_column_type);
+    EXPECT_TRUE(actual.key_column_type->equals(*expected.key_column_type));
+    EXPECT_EQ(actual.geometry.exact_values_limit, expected.geometry.exact_values_limit);
+    EXPECT_EQ(actual.geometry.exact_bytes_limit, expected.geometry.exact_bytes_limit);
+    EXPECT_EQ(actual.geometry.bloom_filter_bytes, expected.geometry.bloom_filter_bytes);
+    EXPECT_EQ(actual.geometry.bloom_filter_hash_functions, expected.geometry.bloom_filter_hash_functions);
+    EXPECT_DOUBLE_EQ(actual.geometry.pass_ratio_threshold_for_disabling, expected.geometry.pass_ratio_threshold_for_disabling);
+    EXPECT_EQ(actual.geometry.blocks_to_skip_before_reenabling, expected.geometry.blocks_to_skip_before_reenabling);
+    EXPECT_DOUBLE_EQ(actual.geometry.max_ratio_of_set_bits_in_bloom_filter, expected.geometry.max_ratio_of_set_bits_in_bloom_filter);
+    ASSERT_EQ(actual.streams.size(), expected.streams.size());
+    for (size_t i = 0; i < actual.streams.size(); ++i)
+    {
+        EXPECT_EQ(actual.streams[i].exchange_id, expected.streams[i].exchange_id);
+        EXPECT_EQ(actual.streams[i].source_bucket, expected.streams[i].source_bucket);
+        EXPECT_EQ(actual.streams[i].destination_bucket, expected.streams[i].destination_bucket);
+    }
+}
+
+RuntimeFilterReceiveDescriptor makeDescriptor(const String & key, const DataTypePtr & type, std::vector<ExchangeStreamId> streams)
+{
+    RuntimeFilterReceiveDescriptor descriptor;
+    descriptor.filter_key = key;
+    descriptor.filter_name = "filter_" + key;
+    descriptor.key_column_type = type;
+    descriptor.geometry = makeEnvelopeGeometry();
+    descriptor.streams = std::move(streams);
+    return descriptor;
+}
+
+}
+
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsRoundTripAtVersion4)
+{
+    DistributedQueryTaskDescription description;
+    description.serialization_version = 4;
+    description.initial_query_id = "q1";
+    description.task.task_id = "t0";
+
+    auto first = makeDescriptor(
+        "key_a",
+        std::make_shared<DataTypeUInt64>(),
+        {ExchangeStreamId("ex1", "0", "0"), ExchangeStreamId("ex1", "1", "0")});
+    auto second = makeDescriptor("key_b", std::make_shared<DataTypeString>(), {ExchangeStreamId("ex2", "0", "1")});
+    second.geometry.pass_ratio_threshold_for_disabling = 0.25;
+    second.geometry.max_ratio_of_set_bits_in_bloom_filter = 0.15;
+    description.task.runtime_filter_descriptors = {first, second};
+
+    WriteBufferFromOwnString out;
+    serializeTask(description, out);
+    ReadBufferFromString in(out.str());
+    DistributedQueryTaskDescription restored;
+    deserializeTask(restored, in);
+
+    ASSERT_EQ(restored.task.runtime_filter_descriptors.size(), 2u);
+    expectDescriptorMatches(restored.task.runtime_filter_descriptors[0], first);
+    expectDescriptorMatches(restored.task.runtime_filter_descriptors[1], second);
+}
+
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorEmptyFilterKeyIsRejected)
+{
+    DistributedQueryTaskDescription description;
+    description.serialization_version = 4;
+    description.task.runtime_filter_descriptors.push_back(
+        makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")}));
+    description.task.runtime_filter_descriptors.front().filter_key.clear();
+
+    WriteBufferFromOwnString out;
+    serializeTask(description, out);
+    ReadBufferFromString in(out.str());
+    DistributedQueryTaskDescription restored;
+    try
+    {
+        deserializeTask(restored, in);
+        FAIL() << "empty filter_key should be rejected";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+    }
+}
+
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorEmptyStreamsAreRejected)
+{
+    DistributedQueryTaskDescription description;
+    description.serialization_version = 4;
+    description.task.runtime_filter_descriptors.push_back(
+        makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")}));
+    description.task.runtime_filter_descriptors.front().streams.clear();
+
+    WriteBufferFromOwnString out;
+    serializeTask(description, out);
+    ReadBufferFromString in(out.str());
+    DistributedQueryTaskDescription restored;
+    try
+    {
+        deserializeTask(restored, in);
+        FAIL() << "empty streams should be rejected";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+    }
+}
+
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorDuplicateFilterKeyIsRejected)
+{
+    DistributedQueryTaskDescription description;
+    description.serialization_version = 4;
+    auto descriptor = makeDescriptor("dup", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")});
+    description.task.runtime_filter_descriptors = {descriptor, descriptor};
+
+    WriteBufferFromOwnString out;
+    serializeTask(description, out);
+    ReadBufferFromString in(out.str());
+    DistributedQueryTaskDescription restored;
+    try
+    {
+        deserializeTask(restored, in);
+        FAIL() << "duplicate filter_key should be rejected";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::INCORRECT_DATA);
+    }
+}
+
+TEST(DistributedTaskSerialization, RuntimeFilterDescriptorsAtVersion3ThrowOnSerialize)
+{
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    GTEST_SKIP() << "this test triggers LOGICAL_ERROR, runs only if DEBUG_OR_SANITIZER_BUILD is not defined";
+#else
+    DistributedQueryTaskDescription description;
+    description.serialization_version = 3;
+    description.task.runtime_filter_descriptors.push_back(
+        makeDescriptor("key_a", std::make_shared<DataTypeUInt64>(), {ExchangeStreamId("ex", "0", "0")}));
+
+    WriteBufferFromOwnString out;
+    try
+    {
+        serializeTask(description, out);
+        FAIL() << "descriptors at version 3 should throw";
+    }
+    catch (const Exception & e)
+    {
+        EXPECT_EQ(e.code(), ErrorCodes::LOGICAL_ERROR);
+    }
+#endif
 }
