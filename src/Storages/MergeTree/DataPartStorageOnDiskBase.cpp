@@ -85,9 +85,42 @@ std::unique_ptr<ReadBufferFromFileBase> IDataPartStorage::readFile(
     return pipeline.build();
 }
 
+std::string IDataPartProjectionStorage::getProjectionDirectoryName(const std::string & projection_name, bool is_temp)
+{
+    return projection_name + (is_temp ? TEMP_PROJECTION_DIRECTORY_SUFFIX : PROJECTION_DIRECTORY_SUFFIX);
+}
+
+bool IDataPartProjectionStorage::isProjectionDirectoryName(const std::string & directory_name)
+{
+    return directory_name.ends_with(PROJECTION_DIRECTORY_SUFFIX) || directory_name.ends_with(TEMP_PROJECTION_DIRECTORY_SUFFIX);
+}
+
+bool IDataPartStatisticsStorage::isStatisticsFile(const std::string & file_name)
+{
+    return file_name.starts_with(STATS_FILE_PREFIX) && file_name.ends_with(STATS_FILE_SUFFIX);
+}
+
+bool IDataPartProjectionStorage::isProjection() const
+{
+    return isProjectionDirectoryName(getPartDirectory());
+}
+
+std::string IDataPartProjectionStorage::getProjectionName() const
+{
+    /// Strip the ".proj" / ".tmp_proj" suffix from the part directory.
+    const std::string dir = getPartDirectory();
+    for (std::string_view suffix : {std::string_view(TEMP_PROJECTION_DIRECTORY_SUFFIX), std::string_view(PROJECTION_DIRECTORY_SUFFIX)})
+        if (dir.ends_with(suffix))
+            return dir.substr(0, dir.size() - suffix.size());
+    return dir;
+}
+
 DataPartStorageOnDiskBase::DataPartStorageOnDiskBase(VolumePtr volume_, std::string root_path_, std::string part_dir_)
     : volume(std::move(volume_)), root_path(std::move(root_path_)), part_dir(std::move(part_dir_))
 {
+    manifest_storage = std::make_unique<DataPartManifestStorageOnDisk>(*this);
+    index_storage = std::make_unique<DataPartIndexStorageOnDisk>(*this);
+    statistics_storage = std::make_unique<DataPartStatisticsStorageOnDisk>(*this);
 }
 
 DataPartStorageOnDiskBase::DataPartStorageOnDiskBase(
@@ -98,6 +131,9 @@ DataPartStorageOnDiskBase::DataPartStorageOnDiskBase(
     , transaction(std::move(transaction_))
     , has_shared_transaction(transaction != nullptr)
 {
+    manifest_storage = std::make_unique<DataPartManifestStorageOnDisk>(*this);
+    index_storage = std::make_unique<DataPartIndexStorageOnDisk>(*this);
+    statistics_storage = std::make_unique<DataPartStatisticsStorageOnDisk>(*this);
 }
 
 DiskPtr DataPartStorageOnDiskBase::getDisk() const
@@ -245,14 +281,8 @@ void DataPartStorageOnDiskBase::setRelativePath(const std::string & path)
 {
     part_dir = path;
     /// Unlike rename/changeRootPath, this can repoint the storage at an unrelated directory whose
-    /// archive has a different index, so the cached reader must be dropped. The reset is safe for
-    /// concurrent readers because the reader is shared-owned: a reader still using it keeps it
-    /// alive until done.
-    {
-        std::lock_guard lock(skip_indices_packed_mutex);
-        skip_indices_packed_probed = false;
-        skip_indices_packed_reader.reset();
-    }
+    /// archive has a different index, so the index component's cached reader must be dropped.
+    index_storage->resetSkipIndicesPackedReader();
 }
 
 std::string DataPartStorageOnDiskBase::getPartDirectory() const
@@ -785,17 +815,9 @@ void DataPartStorageOnDiskBase::rename(
     part_dir = new_part_dir;
     root_path = new_root_path;
 
-    /// A successfully-loaded reader stays valid: its archive index is path-independent and reads
-    /// resolve the archive's current location through readFile, so keep it (dropping it could also
-    /// race a concurrent query holding it). But a cached *miss* may be stale: a probe that ran while
-    /// this rename was in progress could have built packed_path from the old location and found no
-    /// file. Clear that stale miss (only when there is no reader) so the next access re-probes the
-    /// new path.
-    {
-        std::lock_guard lock(skip_indices_packed_mutex);
-        if (!skip_indices_packed_reader)
-            skip_indices_packed_probed = false;
-    }
+    /// A successfully-loaded reader stays valid, but a probe that raced this rename may have cached
+    /// a stale miss against the old location; clear it so the next access re-probes the new path.
+    index_storage->clearStaleSkipIndicesPackedMiss();
 }
 
 void DataPartStorageOnDiskBase::remove(
@@ -918,7 +940,7 @@ void DataPartStorageOnDiskBase::remove(
 
     // Record existing projection directories so we don't remove them twice
     std::unordered_set<String> projection_directories;
-    std::string proj_suffix = ".proj";
+    std::string proj_suffix = IDataPartProjectionStorage::PROJECTION_DIRECTORY_SUFFIX;
     for (const auto & projection : projections)
     {
         std::string proj_dir_name = projection.name + proj_suffix;
@@ -1090,11 +1112,7 @@ void DataPartStorageOnDiskBase::changeRootPath(const std::string & from_root, co
 
     /// See rename: keep a successfully-loaded (path-independent) reader, but clear a stale cached
     /// miss so the next access re-probes the new path.
-    {
-        std::lock_guard lock(skip_indices_packed_mutex);
-        if (!skip_indices_packed_reader)
-            skip_indices_packed_probed = false;
-    }
+    index_storage->clearStaleSkipIndicesPackedMiss();
 }
 
 SyncGuardPtr DataPartStorageOnDiskBase::getDirectorySyncGuard() const
@@ -1132,7 +1150,7 @@ bool DataPartStorageOnDiskBase::isCaseInsensitive() const
     return getDisk()->isCaseInsensitive();
 }
 
-std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getArchiveReaderForFile(const std::string & name) const
+std::shared_ptr<const PackedFilesReader> DataPartIndexStorageOnDisk::getArchiveReaderForFile(const std::string & name) const
 {
     /// Prefix gate: only "skp_idx_..." names can be archive members, so unrelated files never load
     /// or probe skp_idx.packed.
@@ -1144,14 +1162,14 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getArchiveRe
 
 bool DataPartStorageOnDiskBase::existsFile(const std::string & name) const
 {
-    if (getArchiveReaderForFile(name))
+    if (index_storage->getArchiveReaderForFile(name))
         return true;
     return existsFileImpl(name);
 }
 
 size_t DataPartStorageOnDiskBase::getFileSize(const std::string & file_name) const
 {
-    if (auto reader = getArchiveReaderForFile(file_name))
+    if (auto reader = index_storage->getArchiveReaderForFile(file_name))
         return reader->getFileSize(file_name);
     return getFileSizeImpl(file_name);
 }
@@ -1162,7 +1180,7 @@ void DataPartStorageOnDiskBase::prepareRead(
     std::optional<size_t> read_hint,
     ReadPipeline & pipeline) const
 {
-    if (auto reader = getArchiveReaderForFile(name))
+    if (auto reader = index_storage->getArchiveReaderForFile(name))
     {
         /// Members of skp_idx.packed skip the disk's normal pipeline (filesystem cache, async
         /// prefetch) and read through PackedFilesReader::readFile, which opens the archive via the
@@ -1186,7 +1204,7 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExi
     const ReadSettings & settings,
     std::optional<size_t> read_hint) const
 {
-    if (auto reader = getArchiveReaderForFile(name))
+    if (auto reader = index_storage->getArchiveReaderForFile(name))
         return reader->readFile(
             volume->getDisk(),
             fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME),
@@ -1194,16 +1212,16 @@ std::unique_ptr<ReadBufferFromFileBase> DataPartStorageOnDiskBase::readFileIfExi
     return readFileIfExistsImpl(name, settings, read_hint);
 }
 
-std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndicesPackedReader() const
+std::shared_ptr<const PackedFilesReader> DataPartIndexStorageOnDisk::getSkipIndicesPackedReader() const
 {
     std::lock_guard lock(skip_indices_packed_mutex);
     if (skip_indices_packed_probed)
         return skip_indices_packed_reader;
 
-    auto component_guard = Coordination::setCurrentComponent("DataPartStorageOnDiskBase::getSkipIndicesPackedReader");
+    auto component_guard = Coordination::setCurrentComponent("DataPartIndexStorageOnDisk::getSkipIndicesPackedReader");
 
-    const String packed_path = fs::path(root_path) / part_dir / String(SKIP_INDICES_PACKED_FILENAME);
-    auto disk = volume->getDisk();
+    const String packed_path = fs::path(part_storage.getRelativePath()) / String(SKIP_INDICES_PACKED_FILENAME);
+    auto disk = part_storage.getDisk();
     if (disk->existsFile(packed_path))
     {
         /// On shared storage another replica may delete or relocate skp_idx.packed between the
@@ -1232,50 +1250,63 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
     return skip_indices_packed_reader;
 }
 
-void DataPartStorageOnDiskBase::seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const
+void DataPartIndexStorageOnDisk::seedSkipIndicesPackedReader(const PackedFilesIO::Index & index) const
 {
     std::lock_guard lock(skip_indices_packed_mutex);
     skip_indices_packed_reader = std::make_shared<PackedFilesReader>(index);
     skip_indices_packed_probed = true;
 }
 
-void DataPartStorageOnDiskBase::seedSkipIndicesPackedReaderFrom(const IDataPartStorage & source) const
+void DataPartIndexStorageOnDisk::resetSkipIndicesPackedReader() const
 {
-    const auto * source_disk = dynamic_cast<const DataPartStorageOnDiskBase *>(&source);
-    if (!source_disk)
+    std::lock_guard lock(skip_indices_packed_mutex);
+    skip_indices_packed_probed = false;
+    skip_indices_packed_reader.reset();
+}
+
+void DataPartIndexStorageOnDisk::clearStaleSkipIndicesPackedMiss() const
+{
+    std::lock_guard lock(skip_indices_packed_mutex);
+    if (!skip_indices_packed_reader)
+        skip_indices_packed_probed = false;
+}
+
+void DataPartIndexStorageOnDisk::seedSkipIndicesPackedReaderFrom(const IDataPartStorage & source) const
+{
+    const auto * source_index_storage = dynamic_cast<const DataPartIndexStorageOnDisk *>(source.getIndexStorage());
+    if (!source_index_storage)
         return;
 
-    /// Same-class access to the protected probe is allowed; this also triggers the source's lazy
-    /// load if it hasn't been read yet.
-    auto source_archive = source_disk->getSkipIndicesPackedReader();
+    /// This also triggers the source's lazy load if it hasn't been read yet.
+    auto source_archive = source_index_storage->getSkipIndicesPackedReader();
     if (!source_archive)
         return;
 
     seedSkipIndicesPackedReader(source_archive->getIndex());
 }
 
-bool DataPartStorageOnDiskBase::isFileInPackedSkipIndicesArchive(const std::string & name) const
+bool DataPartIndexStorageOnDisk::isFileInPackedSkipIndicesArchive(const std::string & name) const
 {
     auto reader = getSkipIndicesPackedReader();
     return reader != nullptr && reader->exists(name);
 }
 
-bool DataPartStorageOnDiskBase::hasSkipIndicesPackedArchive() const
+bool DataPartIndexStorageOnDisk::hasSkipIndicesPackedArchive() const
 {
     return getSkipIndicesPackedReader() != nullptr;
 }
 
-void DataPartStorageOnDiskBase::copyArchiveEntryTo(
+void DataPartIndexStorageOnDisk::copyArchiveEntryTo(
     const PackedFilesReader & source_archive,
     const String & file_name,
     PackedFilesWriter & target,
     const ReadSettings & read_settings,
     const WriteSettings & write_settings) const
 {
-    /// Route the read through this storage's readFile (the overlay), not source_archive.readFile,
+    /// Route the read through the part storage's readFile (the overlay), not source_archive.readFile,
     /// so a storage where skp_idx.packed isn't a flat disk file still composes the read correctly.
     const auto file_size = source_archive.getFileSize(file_name);
-    auto src = readFile(file_name, read_settings, file_size);
+    auto src = part_storage.readFile(file_name, read_settings, file_size);
     auto dst = target.writeFile(file_name, write_settings);
     copyData(*src, *dst);
     dst->finalize();
@@ -1284,7 +1315,7 @@ void DataPartStorageOnDiskBase::copyArchiveEntryTo(
         target.setUncompressedSize(file_name, *uncompressed);
 }
 
-void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
+void DataPartIndexStorageOnDisk::copyPackedSkipIndicesFilesInto(
     const NameSet & file_names,
     PackedFilesWriter & target,
     const ReadSettings & read_settings,
@@ -1304,7 +1335,7 @@ void DataPartStorageOnDiskBase::copyPackedSkipIndicesFilesInto(
     }
 }
 
-void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
+void DataPartIndexStorageOnDisk::filterPackedSkipIndicesArchiveTo(
     const NameSet & dropped_skip_index_archive_file_names,
     IDataPartStorage & new_storage,
     const WriteSettings & write_settings,
@@ -1364,8 +1395,29 @@ void DataPartStorageOnDiskBase::filterPackedSkipIndicesArchiveTo(
     /// size accounting runs inside finalizeMutatedPart, before that commit; without this seed
     /// getSkipIndicesPackedReader probes the disk, misses the not-yet-committed archive, caches
     /// nullptr, and the surviving packed index's size is latched at zero.
-    if (auto * disk_storage = dynamic_cast<DataPartStorageOnDiskBase *>(&new_storage))
-        disk_storage->seedSkipIndicesPackedReader(packed_index);
+    if (auto * new_index_storage = dynamic_cast<DataPartIndexStorageOnDisk *>(new_storage.getIndexStorage()))
+        new_index_storage->seedSkipIndicesPackedReader(packed_index);
+}
+
+const PackedFilesReader * DataPartStatisticsStorageOnDisk::getPackedStatisticsReader(const ReadSettings & read_settings) const
+{
+    std::lock_guard lock(packed_statistics_mutex);
+    if (!packed_statistics_reader)
+    {
+        const String packed_file = fs::path(part_storage.getRelativePath()) / String(ColumnsStatistics::FILENAME);
+        packed_statistics_reader = std::make_unique<PackedFilesReader>(part_storage.getDisk(), packed_file, read_settings);
+    }
+    return packed_statistics_reader.get();
+}
+
+std::unique_ptr<ReadBufferFromFileBase> DataPartStatisticsStorageOnDisk::readPackedStatisticsFile(
+    const String & file_name, const ReadSettings & read_settings, size_t file_size) const
+{
+    const auto * reader = getPackedStatisticsReader(read_settings);
+    /// Resolve the archive's current location for every read: the part may have been renamed or
+    /// moved since the reader was opened, and the reader holds only the archive index.
+    const String packed_file = fs::path(part_storage.getRelativePath()) / String(ColumnsStatistics::FILENAME);
+    return reader->readFile(part_storage.getDisk(), packed_file, file_name, read_settings, file_size);
 }
 
 }
