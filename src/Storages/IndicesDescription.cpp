@@ -109,7 +109,8 @@ IndexDescription IndexDescription::getIndexFromAST(
     const ColumnsDescription & columns,
     bool is_implicitly_created,
     bool escape_filenames,
-    ContextPtr context)
+    ContextPtr context,
+    bool validate_expressions)
 {
     ASTPtr expanded_definition_ast = definition_ast->clone();
     UserDefinedSQLFunctionVisitor::visit(expanded_definition_ast, context);
@@ -145,7 +146,7 @@ IndexDescription IndexDescription::getIndexFromAST(
     result.escape_filenames = escape_filenames;
 
     checkExpressionDoesntContainSubqueries(*index_definition->getExpression());
-    result.initExpressionInfo(index_definition->getExpression(), columns, context);
+    result.initExpressionInfo(index_definition->getExpression(), columns, context, validate_expressions);
 
     for (auto & elem : result.sample_block)
     {
@@ -172,10 +173,12 @@ IndexDescription IndexDescription::getIndexFromAST(
 
 void IndexDescription::recalculateWithNewColumns(const ColumnsDescription & new_columns, ContextPtr context)
 {
-    *this = getIndexFromAST(definition_ast, new_columns, is_implicitly_created, escape_filenames, context);
+    /// Rebuilding stored metadata, not fresh user input: the definition was already validated when it
+    /// was accepted, and a definition grandfathered in before a check existed must keep working.
+    *this = getIndexFromAST(definition_ast, new_columns, is_implicitly_created, escape_filenames, context, /* validate_expressions = */ false);
 }
 
-void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context)
+void IndexDescription::initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context, bool validate_expressions)
 {
     chassert(index_expression != nullptr);
 
@@ -193,8 +196,14 @@ void IndexDescription::initExpressionInfo(ASTPtr index_expression, const Columns
     /// matcher would silently resolve to a different column set on `ALTER TABLE ... ADD COLUMN`
     /// while existing parts keep index files built with the previous schema. Checked after
     /// alias replacement, so a matcher hidden in an `ALIAS` column is rejected too.
-    checkExpressionDoesntContainMatchers(*expr_list);
-    checkExpressionDoesntContainSubqueries(*expr_list);
+    /// Only for fresh definitions: an index over an `ALIAS` column whose expression hides a matcher
+    /// or a subquery could be persisted by older servers (they only checked the raw index expression),
+    /// and such a table has to keep loading and keep surviving unrelated `ALTER`s.
+    if (validate_expressions)
+    {
+        checkExpressionDoesntContainMatchers(*expr_list);
+        checkExpressionDoesntContainSubqueries(*expr_list);
+    }
 
     expression_list_ast = expr_list->clone();
 
@@ -298,9 +307,11 @@ IndicesDescription::parse(const String & str, const ColumnsDescription & columns
     ParserIndexDeclarationList parser;
     ASTPtr list = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
 
+    /// Parsing the index definitions stored in the table metadata: they were validated when they were
+    /// accepted, so the fresh-definition-only checks must not be applied again here.
     for (const auto & index : list->children)
-        result.emplace_back(
-            IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, escape_index_filenames, context));
+        result.emplace_back(IndexDescription::getIndexFromAST(
+            index, columns, /* is_implicitly_created */ false, escape_index_filenames, context, /* validate_expressions = */ false));
 
     return result;
 }
@@ -341,7 +352,9 @@ IndexDescription createImplicitMinMaxIndexDescription(
     const String & column_name, const ColumnsDescription & columns, bool escape_index_filenames, ContextPtr context)
 {
     auto index_ast = createImplicitMinMaxIndexAST(column_name);
-    return IndexDescription::getIndexFromAST(index_ast, columns, /* is_implicitly_created */ true, escape_index_filenames, context);
+    /// Built by the server itself over a single plain column, so there is nothing to validate.
+    return IndexDescription::getIndexFromAST(
+        index_ast, columns, /* is_implicitly_created */ true, escape_index_filenames, context, /* validate_expressions = */ false);
 }
 
 }

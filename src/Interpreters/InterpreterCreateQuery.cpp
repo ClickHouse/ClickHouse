@@ -946,7 +946,8 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
                 constexpr bool is_implicitly_created = false;
                 constexpr bool escape_index_filenames = true; /// We don't care about this value because it won't be used
                 IndexDescription index_desc = IndexDescription::getIndexFromAST(
-                    index->clone(), properties.columns, is_implicitly_created, escape_index_filenames, getContext());
+                    index->clone(), properties.columns, is_implicitly_created, escape_index_filenames, getContext(),
+                    /* validate_expressions = */ is_fresh_definition);
                 if (properties.indices.has(index_desc.name))
                     throw Exception(ErrorCodes::ILLEGAL_INDEX, "Duplicated index name {} is not allowed. Please use a different index name", backQuoteIfNeed(index_desc.name));
 
@@ -975,7 +976,10 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
 
         properties.constraints = getConstraintsDescription(
             create.columns_list->constraints, properties.columns, getContext(), /* validate_expressions = */ is_fresh_definition);
-        if (mode < LoadingStrictnessLevel::ATTACH)
+        /// Keyed off the same freshness contract as the subquery check above: a full-definition
+        /// `ATTACH TABLE t (...)` is user input and must not be able to introduce a row-multiplying
+        /// constraint that only fails later, on the first `INSERT`, in `CheckConstraintsTransform`.
+        if (is_fresh_definition)
             properties.constraints.assertPreserveRowCount();
     }
     else if (!create.as_table.empty())
@@ -1035,10 +1039,14 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         properties.constraints = as_storage_metadata->getConstraints();
 
         /// The copied constraints become fresh metadata of the new table, so they are validated
-        /// like on a plain `CREATE`: a grandfathered `CHECK` constraint with a subquery in the
-        /// source table (created before the validation existed) must not be copied into it.
+        /// like on a plain `CREATE`: a grandfathered `CHECK` constraint with a subquery or with
+        /// `arrayJoin` in the source table (created before the validation existed) must not be
+        /// copied into it.
         if (is_fresh_definition)
+        {
             ConstraintsDescription::validateNoSubqueries(properties.constraints.getConstraints(), getContext());
+            properties.constraints.assertPreserveRowCount();
+        }
 
         if (create.is_clone_as)
         {

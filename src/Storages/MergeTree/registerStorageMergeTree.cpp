@@ -1032,7 +1032,9 @@ static StoragePtr create(const StorageFactory::Arguments & args)
         {
             for (const auto & index : args.query.columns_list->indices->children)
             {
-                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+                metadata.secondary_indices.push_back(IndexDescription::getIndexFromAST(
+                    index, columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context,
+                    /* validate_expressions = */ is_fresh_definition));
                 auto index_name = index->as<ASTIndexDeclaration>()->name;
 
                 auto using_auto_minmax_index =

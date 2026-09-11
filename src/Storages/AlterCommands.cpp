@@ -977,7 +977,8 @@ void AlterCommand::apply(
         metadata.secondary_indices.emplace(
             insert_it,
             IndexDescription::getIndexFromAST(
-                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context,
+                /* validate_expressions = */ true));
     }
     else if (type == DROP_INDEX)
     {
@@ -1826,8 +1827,11 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
+            /// Existing indices are rebuilt because the column layout changed, not because the user
+            /// redefined them, so an unrelated `ALTER` must not start failing on grandfathered metadata.
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
+                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context,
+                /* validate_expressions = */ false);
         }
         catch (const Exception & exception)
         {
