@@ -52,6 +52,11 @@ struct MergedPlanDAG
     /// A position in this vector is the stuffing index reported by `getNearestStuffing`.
     std::vector<Stuffing> stuffings;
 
+    /// The values with a join above their own computation point, whatever its kind. Letting one of these
+    /// cross the `LIMIT` means a column every join above it replicates, and a hash join copies into its
+    /// build side, over every row that reaches there.
+    NodeSet nodes_with_join_above;
+
     /// The nearest stuffing above a node's own computation point, for the nodes that have one. Kept
     /// because it cannot be recovered from the DAG afterwards, and it is the only one such a node needs:
     /// a mask column emitted at a join's unmatched side is carried through the joins above it and
@@ -77,6 +82,10 @@ struct MergedPlanDAG
     /// outer join only: at a row where the outer join matched but the inner one did not, `y` is a proper
     /// value computed from a stuffed `d`, and gating it on D's mask as well would throw it away.
     std::optional<size_t> getNearestStuffing(const ActionsDAG::Node * node) const;
+
+    /// Whether a join sits above this value's own computation point. Not derivable from the stuffings: an
+    /// `INNER JOIN` stuffs neither side and replicates all the same.
+    bool hasJoinAbove(const ActionsDAG::Node * node) const { return nodes_with_join_above.contains(node); }
 };
 
 /// Returns nullopt when the subtree cannot be represented: it computes an `arrayJoin`, which changes the

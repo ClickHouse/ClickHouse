@@ -49,14 +49,6 @@ struct TestPlan
     }
 };
 
-const ActionsDAG::Node * findOutput(const MergedPlanDAG & merged, const String & name)
-{
-    for (const auto * output : merged.getOutputs())
-        if (output->result_name == name)
-            return output;
-    return nullptr;
-}
-
 /// The DAG the steps were built from was moved into them and cloned on the way in, so a node of the
 /// merged DAG has to be looked up rather than remembered.
 const ActionsDAG::Node * findNodeContaining(const MergedPlanDAG & merged, const String & name_part)
@@ -85,9 +77,9 @@ size_t outputPosition(const MergedPlanDAG & merged, const String & name)
 }
 
 /// `select a, sum, heavy from t where sum > 0 order by a limit 10`, where `sum` is `a + b`: the filter
-/// needs `a + b` below the LIMIT and the result needs it above, which is the case that used to leak an
-/// intermediate column across the plan.
-TEST(LazyFrontier, RecomputesAValueTheFilterAlreadyUsed)
+/// needs `a + b` below the LIMIT and the result needs it above. With no join in the way, the value the
+/// main branch computed is reused rather than computed again from a column read for that alone.
+TEST(LazyFrontier, ReusesAValueTheFilterAlreadyUsedWithoutAJoin)
 {
     tryRegisterFunctions();
     const Block header{column("a"), column("b"), column("heavy")};
@@ -115,31 +107,72 @@ TEST(LazyFrontier, RecomputesAValueTheFilterAlreadyUsed)
 
     EXPECT_TRUE(frontier.defersAnything());
 
-    /// `a + b` is computed below the LIMIT for the filter, and does not cross it: it is recomputed above
-    /// instead. There is no join here, so nothing gates the recomputation.
-    const auto * sum_output = findOutput(*merged, "sum");
+    /// `a + b` crosses the LIMIT: recomputing it would mean reading `b` for the surviving rows, and with
+    /// no join above it there is nothing to gain by that.
     const auto * sum_in_merged = findNodeContaining(*merged, "plus(");
-    ASSERT_TRUE(sum_output != nullptr);
     ASSERT_TRUE(sum_in_merged != nullptr);
-    EXPECT_EQ(frontier.at(sum_output).above, Placement::Above::Recomputed);
-    EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Recomputed);
+    EXPECT_FALSE(merged->hasJoinAbove(sum_in_merged));
+    EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Crossing);
     EXPECT_TRUE(frontier.at(sum_in_merged).computed_below);
-    EXPECT_EQ(merged->getNearestStuffing(sum_in_merged), std::nullopt);
 
-    /// Only the sort key crosses the LIMIT; `b` and the heavy column are read for the surviving rows.
+    /// The heavy column is still read for the surviving rows only, and `b` is not read a second time.
     const auto * a_input = merged->sources.front().inputs[0];
-    EXPECT_EQ(frontier.at(a_input).above, Placement::Above::Crossing);
-    EXPECT_TRUE(frontier.at(a_input).computed_below);
-    EXPECT_EQ(countCrossing(frontier), 1u);
-
+    const auto * b_input = merged->sources.front().inputs[1];
     const auto reads = collectLazyReads(*merged, frontier);
     ASSERT_EQ(reads.size(), 1u);
-    EXPECT_EQ(reads[0].size(), 2u);
+    EXPECT_EQ(reads[0].size(), 1u);
     EXPECT_FALSE(reads[0].contains(a_input));
+    EXPECT_FALSE(reads[0].contains(b_input));
 }
 
-/// A value that does not answer the same twice has to be carried instead of recomputed.
-TEST(LazyFrontier, CarriesANonDeterministicValue)
+/// The same query with a join above it: now the value is computed again above the LIMIT, because letting
+/// it cross would mean a column the join replicates and a hash join copies into its build side.
+TEST(LazyFrontier, RecomputesTheSameValueBelowAJoin)
+{
+    tryRegisterFunctions();
+    const Block header{column("a"), column("b"), column("heavy")};
+
+    TestPlan plan;
+    auto & source = plan.addSource(header);
+
+    ActionsDAG dag(header.getColumnsWithTypeAndName());
+    const auto * a = dag.getOutputs()[0];
+    const auto * b = dag.getOutputs()[1];
+    const auto * heavy = dag.getOutputs()[2];
+    const auto & sum = addFunction(dag, "plus", {a, b});
+    const auto & condition = addFunction(dag, "greater", {&sum, a});
+    dag.getOutputs() = {&condition, a, &dag.addAlias(sum, "sum"), heavy};
+
+    auto & filter = plan.addStep(
+        std::make_unique<FilterStep>(source.step->getOutputHeader(), std::move(dag), condition.result_name, true), source);
+
+    auto merged = buildMergedPlanDAG(filter);
+    ASSERT_TRUE(merged.has_value());
+
+    /// What the builder records for a subtree that a join sits above.
+    for (const auto & node : merged->getDAG().getNodes())
+        merged->nodes_with_join_above.insert(&node);
+
+    const auto frontier = chooseLazyFrontier(*merged, {outputPosition(*merged, "a")}, {true});
+
+    const auto * sum_in_merged = findNodeContaining(*merged, "plus(");
+    ASSERT_TRUE(sum_in_merged != nullptr);
+    EXPECT_EQ(frontier.at(sum_in_merged).above, Placement::Above::Recomputed);
+    EXPECT_TRUE(frontier.at(sum_in_merged).computed_below);
+
+    /// Which means reading `b` again for the surviving rows, rather than carrying the sum past the join.
+    const auto * b_input = merged->sources.front().inputs[1];
+    EXPECT_EQ(frontier.at(b_input).above, Placement::Above::LazyRead);
+    EXPECT_EQ(collectLazyReads(*merged, frontier)[0].size(), 2u);
+
+    /// Only the sort key crosses.
+    EXPECT_EQ(countCrossing(frontier), 1u);
+    EXPECT_EQ(frontier.at(merged->sources.front().inputs[0]).above, Placement::Above::Crossing);
+}
+
+/// A value that does not answer the same twice crosses instead, even where the rule would rather
+/// recompute it.
+TEST(LazyFrontier, CarriesANonDeterministicValueBelowAJoin)
 {
     tryRegisterFunctions();
     const Block header{column("a"), column("b"), column("heavy")};
@@ -158,18 +191,24 @@ TEST(LazyFrontier, CarriesANonDeterministicValue)
     auto & filter = plan.addStep(
         std::make_unique<FilterStep>(source.step->getOutputHeader(), std::move(dag), condition.result_name, true), source);
 
-    const auto merged = buildMergedPlanDAG(filter);
+    auto merged = buildMergedPlanDAG(filter);
     ASSERT_TRUE(merged.has_value());
+
+    for (const auto & node : merged->getDAG().getNodes())
+        merged->nodes_with_join_above.insert(&node);
 
     const auto frontier = chooseLazyFrontier(*merged, {outputPosition(*merged, "a")}, {true});
 
     /// The filter already drew a number from `rand64` and the result has to agree with it, so that number
-    /// crosses the LIMIT as a column and is never drawn again. What is computed from it may then be
-    /// recomputed above the LIMIT, since that gives the same answer.
+    /// crosses the LIMIT as a column and is never drawn again. What is computed from it is recomputed
+    /// above the LIMIT, since that gives the same answer.
     const auto * random_in_merged = findNodeContaining(*merged, "rand64");
+    const auto * mixed_in_merged = findNodeContaining(*merged, "plus(");
     ASSERT_TRUE(random_in_merged != nullptr);
+    ASSERT_TRUE(mixed_in_merged != nullptr);
     EXPECT_EQ(frontier.at(random_in_merged).above, Placement::Above::Crossing);
     EXPECT_TRUE(frontier.at(random_in_merged).computed_below);
+    EXPECT_EQ(frontier.at(mixed_in_merged).above, Placement::Above::Recomputed);
 
     /// The heavy column has nothing to do with it and is still read for the surviving rows only.
     const auto * heavy_input = merged->sources.front().inputs[2];
