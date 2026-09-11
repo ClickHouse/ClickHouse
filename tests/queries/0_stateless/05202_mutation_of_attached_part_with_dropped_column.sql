@@ -6,7 +6,10 @@
 -- dropping the partition recovered.
 
 DROP TABLE IF EXISTS t_05202;
-CREATE TABLE t_05202 (id UInt64, val UInt64, p UInt8) ENGINE = MergeTree PARTITION BY p ORDER BY id;
+-- The part type is what decides which branch of the mutation command split runs, so pin it here
+-- rather than leave it to the randomized `min_bytes_for_wide_part` of the test run.
+CREATE TABLE t_05202 (id UInt64, val UInt64, p UInt8) ENGINE = MergeTree PARTITION BY p ORDER BY id
+SETTINGS min_bytes_for_wide_part = 1000000000, min_rows_for_wide_part = 1000000000;
 ALTER TABLE t_05202 ADD COLUMN c UInt32;
 INSERT INTO t_05202 SELECT number, number, 1, 42 FROM numbers(100);
 
@@ -39,7 +42,7 @@ DROP TABLE t_05202;
 -- The same with a Wide part, which was never affected.
 DROP TABLE IF EXISTS t_05202_wide;
 CREATE TABLE t_05202_wide (id UInt64, val UInt64, p UInt8) ENGINE = MergeTree PARTITION BY p ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 ALTER TABLE t_05202_wide ADD COLUMN c UInt32;
 INSERT INTO t_05202_wide SELECT number, number, 1, 42 FROM numbers(100);
 
