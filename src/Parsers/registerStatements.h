@@ -12,6 +12,7 @@ void registerStatementColumnsTransformers(StatementFactory & factory);
 void registerStatementCreate(StatementFactory & factory);
 void registerStatementCreateFunction(StatementFactory & factory);
 void registerStatementCreateHandler(StatementFactory & factory);
+void registerStatementCreateToken(StatementFactory & factory);
 void registerStatementDelete(StatementFactory & factory);
 void registerStatementDescribeTable(StatementFactory & factory);
 void registerStatementDrop(StatementFactory & factory);
