@@ -319,6 +319,12 @@ def test_writes_manifest_list_partition_summary_bucket_transform(
     # bound's width and the declared type agree.
     assert _declared_partition_types(table_path) == [[("s", "int")], [("s", "int")]]
 
+    # These bounds are also what ClickHouse's own manifest-list pruner reads. Without a bound it
+    # substitutes infinities and never skips a bucket manifest, so this path only becomes live here.
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} WHERE s = 'eu'") == "1\n"
+    assert instance.query(f"SELECT id FROM {TABLE_NAME} WHERE s = 'us'") == "2\n"
+    assert instance.query(f"SELECT count() FROM {TABLE_NAME} WHERE s = 'nowhere'") == "0\n"
+
 
 @pytest.mark.parametrize("storage_type", ["s3", "local"])
 def test_writes_manifest_list_no_summary_when_value_has_no_bound(

@@ -541,8 +541,6 @@ def test_ch_write_pyiceberg_read_bucket_partition(started_cluster_iceberg):
     assert len(table.scan(row_filter="s == 'eu'").to_arrow()) == 1
     assert len(table.scan(row_filter="s == 'us'").to_arrow()) == 1
 
-    # The bounds are usable and not merely present: 'nowhere' is in bucket 14 while the
-    # table holds buckets 6 ('eu') and 8 ('us'), so both manifests are pruned. This
-    # also returned 0 before the fix, for the opposite reason (everything was pruned),
-    # so it is a control on pruning being active, not a regression check.
+    # A key absent from the table returns nothing. ('nowhere' is bucket 14, while the table
+    # holds buckets 6 and 8, so a correct evaluator also prunes both manifests.)
     assert len(table.scan(row_filter="s == 'nowhere'").to_arrow()) == 0
