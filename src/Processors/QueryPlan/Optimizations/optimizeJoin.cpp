@@ -12,6 +12,7 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/MergeJoin.h>
@@ -1263,20 +1264,43 @@ static Float64 probeCostPerCandidateNs(const DataTypes & demoted_types, JoinKind
 /// power-of-two growth match the map that will actually be built, including the case where dropping
 /// a key moves the whole key set into a narrower method. Returns a signed value because a narrower
 /// key set can land on a *larger* array once rounding is taken into account.
+/// Average width of one key of `nodes`, preferring what the build side measured over what the type
+/// implies. Only consulted for a map variant that stores its keys out of line; 0 means unknown.
+static Float64 averageKeyBytes(
+    const std::vector<const ActionsDAG::Node *> & nodes,
+    const std::unordered_map<String, ColumnStats> & build_column_stats)
+{
+    Float64 total = 0.0;
+    for (const auto * node : nodes)
+    {
+        auto it = build_column_stats.find(node->result_name);
+        if (it != build_column_stats.end() && it->second.avg_bytes > 0.0)
+            total += it->second.avg_bytes;
+        else
+            total += estimateColumnWidthFromType(*node->result_type);
+    }
+    return total;
+}
+
 static Int64 estimatedTableBytesSaved(
     const auto & candidate,
     Float64 full_ndv,
     const std::vector<const ActionsDAG::Node *> & right_key_nodes,
     size_t equality_count,
-    JoinStrictness strictness)
+    JoinStrictness strictness,
+    const std::unordered_map<String, ColumnStats> & build_column_stats)
 {
     DataTypes full_types;
     for (const auto * node : right_key_nodes)
         full_types.push_back(node->result_type);
 
     DataTypes kept_types;
+    std::vector<const ActionsDAG::Node *> kept_nodes;
     for (size_t i : candidate.indices)
+    {
         kept_types.push_back(right_key_nodes[i]->result_type);
+        kept_nodes.push_back(right_key_nodes[i]);
+    }
 
     if (full_types.size() != equality_count || kept_types.empty())
         return 0;
@@ -1287,9 +1311,11 @@ static Int64 estimatedTableBytesSaved(
     const auto kept_method = HashJoin::chooseMethodForTypes(kept_types, /*use_two_level_maps=*/ false);
 
     const size_t full_bytes = HashJoin::estimateTableBytes(
-        static_cast<size_t>(full_ndv), full_method, strictness);
+        static_cast<size_t>(full_ndv), full_method, strictness,
+        averageKeyBytes(right_key_nodes, build_column_stats));
     const size_t kept_bytes = HashJoin::estimateTableBytes(
-        candidate.ndv, kept_method, strictness);
+        candidate.ndv, kept_method, strictness,
+        averageKeyBytes(kept_nodes, build_column_stats));
 
     /// A variant whose cell size is unknown reports 0; do not turn that into a fictional saving.
     if (!full_bytes || !kept_bytes)
@@ -1463,10 +1489,13 @@ static bool demoteHighNdvKeysToProbe(
     /// probe-time equalities run over a bounded bucket rather than a large fraction of the table.
     const Float64 target_ndv = rows * join_settings.query_plan_hash_join_subset_keys_min_kept_selectivity;
 
-    /// The NDV of the whole key set, which is what the hash table is keyed on today. Prefer a
-    /// measured joint value for it; otherwise assume the keys are independent, bounded by the row
-    /// count. It is only ever used to size the table the demotion would avoid building.
-    Float64 full_ndv = 1.0;
+    /// The NDV of the whole key set, which is what the hash table is keyed on today. It sizes the
+    /// table the demotion would avoid building, so an over-estimate here inflates every candidate's
+    /// apparent saving. Prefer a measured joint value; failing that take the largest single-key NDV
+    /// rather than the product of them. The joint NDV lies between those two, and the lower end is
+    /// the conservative choice: assuming the keys are independent would credit a demotion with
+    /// removing a table far larger than the one that gets built.
+    Float64 full_ndv = 0.0;
     for (const auto & candidate : candidates)
     {
         if (candidate.indices.size() == equality_positions.size())
@@ -1475,7 +1504,7 @@ static bool demoteHighNdvKeysToProbe(
             break;
         }
         if (candidate.indices.size() == 1)
-            full_ndv *= static_cast<Float64>(candidate.ndv);
+            full_ndv = std::max(full_ndv, static_cast<Float64>(candidate.ndv));
     }
     full_ndv = std::min(full_ndv, rows);
 
@@ -1517,7 +1546,8 @@ static bool demoteHighNdvKeysToProbe(
             continue;
 
         const Int64 saving = estimatedTableBytesSaved(
-            candidate, full_ndv, right_key_nodes, equality_positions.size(), join_operator.strictness);
+            candidate, full_ndv, right_key_nodes, equality_positions.size(),
+            join_operator.strictness, build_column_stats);
         if (saving < static_cast<Int64>(join_settings.query_plan_hash_join_subset_keys_min_saving_bytes))
             continue;
 

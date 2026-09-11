@@ -750,12 +750,24 @@ public:
     /// variant whose cell size is unknown, which callers must treat as "cannot estimate".
     static size_t cellBytes(Type type, JoinStrictness strictness);
 
-    /// Bytes the cell array alone would occupy for `key_count` distinct keys. The grower allocates
-    /// a power-of-two number of cells and keeps it at most half full, so this is a step function of
-    /// `key_count`, not proportional to it. Payload outside the cells - the arena holding the rows
-    /// that chain past the first per key - is deliberately NOT counted: it grows as keys are
-    /// removed, so a cell-only figure is an upper bound on what demoting a key saves.
-    static size_t estimateTableBytes(size_t key_count, Type type, JoinStrictness strictness);
+    /// Whether the variant keeps its key outside the cell. The string variants copy the key bytes
+    /// into the join's own pool; the fixed-width ones store the key in the cell, and `hashed`
+    /// stores a digest of it there instead. Without this distinction a string-keyed table looks
+    /// cheaper than a `hashed` one purely because its cell is narrower, when in fact it also has to
+    /// keep every key byte.
+    static bool storesKeyOutOfLine(Type type);
+
+    /// Bytes the table would occupy for `key_count` distinct keys: the cell array, plus the keys
+    /// themselves for a variant that stores them out of line. The grower allocates a power-of-two
+    /// number of cells and keeps it at most half full, so the cell term is a step function of
+    /// `key_count` rather than proportional to it.
+    ///
+    /// `avg_key_bytes` is the average width of one key, and is required when the variant stores
+    /// keys out of line: passing 0 there reports 0 (cannot estimate) rather than silently
+    /// undercounting. The rows chaining past the first per key are still not counted - that arena
+    /// grows as keys are removed, so what remains is an upper bound on a demotion's saving.
+    static size_t estimateTableBytes(
+        size_t key_count, Type type, JoinStrictness strictness, Float64 avg_key_bytes = 0.0);
 
     bool mustKeepRightBlocks() const;
 

@@ -2176,7 +2176,23 @@ size_t HashJoin::cellBytes(Type type, JoinStrictness strictness)
     return cellBytesForMapped<RowRef>(type);
 }
 
-size_t HashJoin::estimateTableBytes(size_t key_count, Type type, JoinStrictness strictness)
+bool HashJoin::storesKeyOutOfLine(Type type)
+{
+    switch (type)
+    {
+        case Type::key_string:
+        case Type::key_fixed_string:
+        case Type::low_cardinality_key_string:
+        case Type::low_cardinality_key_fixed_string:
+        case Type::two_level_key_string:
+        case Type::two_level_key_fixed_string:
+            return true;
+        default:
+            return false;
+    }
+}
+
+size_t HashJoin::estimateTableBytes(size_t key_count, Type type, JoinStrictness strictness, Float64 avg_key_bytes)
 {
     const size_t bytes_per_cell = cellBytes(type, strictness);
     if (!key_count || !bytes_per_cell)
@@ -2189,7 +2205,17 @@ size_t HashJoin::estimateTableBytes(size_t key_count, Type type, JoinStrictness 
         cells *= 2;
     cells *= 2;
 
-    return cells * bytes_per_cell;
+    size_t bytes = cells * bytes_per_cell;
+
+    if (storesKeyOutOfLine(type))
+    {
+        /// Refuse to answer rather than undercount by exactly the term that decides the comparison.
+        if (!(avg_key_bytes > 0.0))
+            return 0;
+        bytes += static_cast<size_t>(static_cast<Float64>(key_count) * avg_key_bytes);
+    }
+
+    return bytes;
 }
 
 bool HashJoin::isAdditionalFilterSupported(JoinKind kind, JoinStrictness strictness)
