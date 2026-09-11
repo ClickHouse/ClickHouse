@@ -194,20 +194,11 @@ private:
 
 /// Numeric range filter used independently from exact and approximate set membership filters.
 /// It can remain active when the membership filter is dropped and can reject values before a Bloom lookup.
-class NumericMinMaxRuntimeFilter
+template <typename T>
+struct NumericMinMaxRuntimeFilter
 {
-public:
-    static bool isDataTypeSupported(const DataTypePtr & data_type);
+    NumericMinMaxRuntimeFilter();
 
-    NumericMinMaxRuntimeFilter() = default;
-    explicit NumericMinMaxRuntimeFilter(const DataTypePtr & data_type);
-
-    NumericMinMaxRuntimeFilter(NumericMinMaxRuntimeFilter &&) noexcept = default;
-    NumericMinMaxRuntimeFilter & operator=(NumericMinMaxRuntimeFilter &&) noexcept = default;
-    NumericMinMaxRuntimeFilter(const NumericMinMaxRuntimeFilter &) = delete;
-    NumericMinMaxRuntimeFilter & operator=(const NumericMinMaxRuntimeFilter &) = delete;
-
-    bool isEnabled() const noexcept { return !std::holds_alternative<std::monostate>(state); }
     void insert(const IColumn & values);
     void mergeFrom(const NumericMinMaxRuntimeFilter & source);
     ColumnPtr find(
@@ -217,33 +208,21 @@ public:
     String describe() const;
 
 private:
-    template <typename T>
-    struct NumericMinMaxState
-    {
-        NumericMinMaxState();
+    bool mayContain(T value) const;
+    bool bypassBloom(T value) const;
 
-        void insert(const IColumn & values);
-        void mergeFrom(const NumericMinMaxState & source);
-        bool mayContain(T value) const;
-        bool bypassBloom(T value) const;
-        String describe() const;
-
-        T min_value;
-        T max_value;
-        bool has_value = false;
-        bool has_nan = false;
-    };
-
-    /// The empty alternative represents a disabled filter without a separate optional discriminator.
-    using State = std::variant<
-        std::monostate,
-        NumericMinMaxState<UInt64>,
-        NumericMinMaxState<Int64>,
-        NumericMinMaxState<Float32>,
-        NumericMinMaxState<Float64>>;
-
-    State state;
+    T min_value;
+    T max_value;
+    bool has_value = false;
+    bool has_nan = false;
 };
+
+extern template struct NumericMinMaxRuntimeFilter<UInt64>;
+extern template struct NumericMinMaxRuntimeFilter<Int64>;
+extern template struct NumericMinMaxRuntimeFilter<Float32>;
+extern template struct NumericMinMaxRuntimeFilter<Float64>;
+
+bool supportsNumericMinMaxRuntimeFilter(const DataTypePtr & data_type);
 
 /// Starts with an exact set and switches to an approximate set once the exact set becomes too large.
 class AdaptiveSetRuntimeFilter
@@ -271,16 +250,14 @@ public:
         bool start_with_dropped_key_set_ = false);
 
     void insert(ColumnPtr values);
-    void finishInsert(RuntimeFilterEvaluationState & evaluation_state, bool keep_numeric_minmax_filter);
+    void finishInsert();
     /// Forwards `rows_passed` to the underlying exact/approximate filter (see their docs).
-    ColumnPtr find(
-        const ColumnWithTypeAndName & values,
-        const NumericMinMaxRuntimeFilter * numeric_minmax_filter,
-        std::optional<size_t> & rows_passed) const;
+    ColumnPtr find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const;
     void mergeFrom(const AdaptiveSetRuntimeFilter & source);
     ColumnPtr getRecordedKeyValues() const;
     DataTypePtr getTargetType() const { return filter_column_target_type; }
     Mode getMode() const;
+    const ApproximateSetRuntimeFilter * getApproximateFilter() const;
 
 private:
     using ExactFilter = ExactSetRuntimeFilter<false>;
@@ -348,12 +325,25 @@ public:
 
 private:
     using Filter = std::variant<ExactContains, ExactNotContains, Adaptive, SharedFixedHashTable>;
+    /// The empty alternative represents a disabled filter without a separate optional discriminator.
+    using NumericMinMaxFilter = std::variant<
+        std::monostate,
+        NumericMinMaxRuntimeFilter<UInt64>,
+        NumericMinMaxRuntimeFilter<Int64>,
+        NumericMinMaxRuntimeFilter<Float32>,
+        NumericMinMaxRuntimeFilter<Float64>>;
+
+    static NumericMinMaxFilter makeNumericMinMaxFilter(const DataTypePtr & data_type);
+    static bool hasNumericMinMaxFilter(const NumericMinMaxFilter & filter) noexcept
+    {
+        return !std::holds_alternative<std::monostate>(filter);
+    }
 
     struct Data
     {
         detail::RuntimeFilterBuildState build_state;
         Filter filter;
-        NumericMinMaxRuntimeFilter numeric_minmax_filter{};
+        NumericMinMaxFilter numeric_minmax_filter{};
         bool index_analysis_enabled = false;
         bool has_range = false;
         Field range_min{};
@@ -371,7 +361,7 @@ private:
         if constexpr (std::is_same_v<FilterType, Adaptive>)
         {
             if (use_numeric_minmax_filter)
-                result.numeric_minmax_filter = NumericMinMaxRuntimeFilter(std::get<Adaptive>(result.filter).getTargetType());
+                result.numeric_minmax_filter = makeNumericMinMaxFilter(std::get<Adaptive>(result.filter).getTargetType());
         }
         if constexpr (std::is_same_v<FilterType, SharedFixedHashTable>)
         {

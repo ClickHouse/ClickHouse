@@ -168,7 +168,7 @@ static const ActionsDAG::Node & addJoinKeyRuntimeFilter(
     const auto & filter_condition = createRuntimeFilterCondition(filter_dag, id, join_key_probe_side, common_type);
 
     const bool can_use_minmax_filter = !check_left_does_not_contain && optimization_settings.join_runtime_filter_use_minmax
-        && NumericMinMaxRuntimeFilter::isDataTypeSupported(common_type);
+        && supportsNumericMinMaxRuntimeFilter(common_type);
 
     /// Add building filter to the build subtree of join.
     QueryPlan::Node * new_build_filter_node = &nodes.emplace_back();
@@ -643,7 +643,7 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
                 && has_key_ndv_stats && !build_side_has_filter_steps
                 && estimated_set_bits_ratio > optimization_settings.join_runtime_bloom_filter_max_estimated_ratio_of_set_bits;
             const bool can_use_minmax_filter = !check_left_does_not_contain && optimization_settings.join_runtime_filter_use_minmax
-                && NumericMinMaxRuntimeFilter::isDataTypeSupported(common_type);
+                && supportsNumericMinMaxRuntimeFilter(common_type);
 
             if (planner_should_skip_membership)
             {

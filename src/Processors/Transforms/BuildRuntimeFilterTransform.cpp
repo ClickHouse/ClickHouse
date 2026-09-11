@@ -4,8 +4,6 @@
 #include <Interpreters/Context.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/IFunction.h>
-#include <algorithm>
-
 
 namespace DB
 {
@@ -68,7 +66,7 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
                     distinct_keys_hint_,
                     distinct_keys_hint_matches_filter_key_,
                     use_only_minmax_filter_),
-                can_use_minmax_filter_ && NumericMinMaxRuntimeFilter::isDataTypeSupported(filter_column_target_type));
+                can_use_minmax_filter_ && supportsNumericMinMaxRuntimeFilter(filter_column_target_type));
         }
         else
         {
