@@ -5,7 +5,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Parsers/ASTSelectQuery.h>
-#include <Functions/astContainsArrayJoin.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/SizeLimits.h>
 #include <QueryPipeline/Pipe.h>
@@ -88,7 +88,7 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
     /// already an array-join operation, regardless of what its expressions contain).
     /// Both forms must reject pushdown.
     /// The function may sit in any clause, e.g. only in WHERE through a WITH alias, and still multiply the rows.
-    if (astContainsArrayJoin(*query_info.query))
+    if (expressionContainsArrayJoin(query_info.query))
         return false;
     if (query.arrayJoinExpressionList().first)
         return false;
@@ -102,7 +102,9 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
         /// For the analyzer, window will be deleted from AST, so we should not use query.window()
         && !query_info.has_window
         && !query_info.additional_filter_ast
-        && !query.limit_with_ties;
+        && !query.limit_with_ties
+        && !query.limitAfter()
+        && !query.limitUntil();
 }
 
 }

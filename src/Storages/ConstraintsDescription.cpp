@@ -15,7 +15,7 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSubquery.h>
-#include <Functions/astContainsArrayJoin.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 
 #include <Core/Defines.h>
 
@@ -87,10 +87,23 @@ ASTs ConstraintsDescription::filterConstraints(ConstraintType selection) const
     return res;
 }
 
+ASTs ConstraintsDescription::filterConstraintsForOptimization() const
+{
+    ASTs res;
+    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    {
+        const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
+        if (declaration.expr && expressionContainsArrayJoin(*declaration.expr))
+            continue;
+        res.push_back(constraint);
+    }
+    return res;
+}
+
 std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildConstraintData() const
 {
     std::vector<std::vector<CNFQueryAtomicFormula>> constraint_data;
-    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    for (const auto & constraint : filterConstraintsForOptimization())
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
             .pullNotOutFunctions(); /// TODO: move prepare stage to ConstraintsDescription
@@ -104,7 +117,7 @@ std::vector<std::vector<CNFQueryAtomicFormula>> ConstraintsDescription::buildCon
 std::vector<CNFQueryAtomicFormula> ConstraintsDescription::getAtomicConstraintData() const
 {
     std::vector<CNFQueryAtomicFormula> constraint_data;
-    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    for (const auto & constraint : filterConstraintsForOptimization())
     {
         const auto cnf = TreeCNFConverter::toCNF(constraint->as<ASTConstraintDeclaration>()->expr)
              .pullNotOutFunctions();
@@ -177,7 +190,7 @@ void ConstraintsDescription::checkExpressionsPreserveRowCount() const
     for (const auto & constraint : constraints)
     {
         const auto & declaration = constraint->as<const ASTConstraintDeclaration &>();
-        if (declaration.expr && astContainsArrayJoin(*declaration.expr))
+        if (declaration.expr && expressionContainsArrayJoin(*declaration.expr))
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Constraint {} cannot contain arrayJoin, because it changes the number of rows",
                 backQuote(declaration.name));
@@ -223,7 +236,7 @@ ConstraintsDescription::QueryTreeData ConstraintsDescription::getQueryTreeData(c
 
     QueryAnalysisPass pass(table_node);
 
-    for (const auto & constraint : filterConstraints(ConstraintsDescription::ConstraintType::ALWAYS_TRUE))
+    for (const auto & constraint : filterConstraintsForOptimization())
     {
         auto expr = constraint->as<ASTConstraintDeclaration>()->expr->ptr();
         // Wrap the scalar expression with a function call "equals(SELECT..., 1)".

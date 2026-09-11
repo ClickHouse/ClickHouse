@@ -35,7 +35,7 @@
 #include <Interpreters/replaceForPositionalArguments.h>
 #include <Interpreters/replaceMissedSubcolumnsInQuery.h>
 
-#include <Functions/astContainsArrayJoin.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
 
@@ -468,7 +468,7 @@ void removeUnneededColumnsFromSelectClause(ASTSelectQuery * select_query, const 
             /// Columns required by interpolate expression are not always in the required_result_columns
             new_elements.push_back(elem);
         }
-        else if (select_query->distinct || astContainsArrayJoin(*elem))
+        else if (select_query->distinct || expressionContainsArrayJoin(elem))
         {
             /// ARRAY JOIN cannot be optimized out since it may change number of rows,
             /// so as DISTINCT.

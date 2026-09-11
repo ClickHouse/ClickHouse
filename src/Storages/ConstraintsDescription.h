@@ -99,6 +99,17 @@ public:
     QueryTreeData getQueryTreeData(const ContextPtr & context, const TableExpressionNodePtr & table_node) const;
 
 private:
+    /// The always-true constraints that the query-time constraint optimizer may rely on: a constraint
+    /// whose expression changes the number of rows (contains `arrayJoin`) is left out.
+    ///
+    /// Such a constraint is rejected at DDL time by `checkExpressionsPreserveRowCount`, but metadata
+    /// stored before that check still loads, so it has to be distrusted here as well. Otherwise
+    /// `WhereConstraintsOptimizer` and `ConvertQueryToCNFPass::optimizeWithConstraints` would match a
+    /// stored `CHECK` or `ASSUME arrayJoin(arr) > 0` against `WHERE arrayJoin(arr) > 0` and remove the
+    /// filter, turning a query over the exploded rows into a query over the base rows. The optimization
+    /// is skipped rather than the query being refused, so that reading such a table keeps working.
+    ASTs filterConstraintsForOptimization() const;
+
     std::vector<std::vector<CNFQueryAtomicFormula>> buildConstraintData() const;
     std::unique_ptr<ComparisonGraph<ASTPtr>> buildGraph() const;
     void update();

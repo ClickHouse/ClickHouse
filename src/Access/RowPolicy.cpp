@@ -1,10 +1,8 @@
 #include <Access/RowPolicy.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
-#include <Functions/astContainsArrayJoin.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <boost/range/algorithm/equal.hpp>
-
-#include <unordered_set>
 
 
 namespace DB
@@ -17,9 +15,8 @@ namespace ErrorCodes
 
 void checkRowPolicyFilterExpression(const ASTPtr & expression)
 {
-    /// A filter is stored as written and has its SQL UDFs inlined into it at read time, so the body of
-    /// one it calls is walked as well.
-    if (expression && astContainsArrayJoin(*expression, /*descend_into_sql_udfs=*/ true))
+    /// `arrayJoin` changes the number of rows, while a row policy filter must yield one verdict per row.
+    if (expressionContainsArrayJoin(expression))
         throw Exception(ErrorCodes::ILLEGAL_PREWHERE, "arrayJoin is not allowed in a row policy filter expression");
 }
 
