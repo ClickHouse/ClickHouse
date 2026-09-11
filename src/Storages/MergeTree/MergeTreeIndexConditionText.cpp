@@ -141,9 +141,11 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
-    bool has_positions_)
+    bool has_positions_,
+    StorageMetadataPtr metadata_snapshot_)
     : WithContext(context_)
     , header(index_sample_block)
+    , metadata_snapshot(std::move(metadata_snapshot_))
     , normalized_index_column_name(normalized_index_column_name_)
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
@@ -1122,7 +1124,9 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (auto parsed = tryParseMapSubcolumnName(index_column_name))
         {
             auto & [map_column_name, _] = *parsed;
-            if (header.has(fmt::format("mapValues({})", map_column_name))
+            if (metadata_snapshot
+                && isKeySubcolumnOfMap(metadata_snapshot->getColumns(), index_column_name, map_column_name)
+                && header.has(fmt::format("mapValues({})", map_column_name))
                 && value_field.getType() == Field::Types::String
                 && !value_field.safeGet<String>().empty())
             {
@@ -1821,6 +1825,10 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
         if (!header.has(fmt::format("mapKeys({})", map_column_name)))
             return false;
 
+        if (!metadata_snapshot
+            || !isKeySubcolumnOfMap(metadata_snapshot->getColumns(), required_column.name, map_column_name))
+            return false;
+
         key_const_value = std::move(serialized_key);
     }
 
@@ -1861,10 +1869,13 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName());
+    auto column_name = node.getColumnName();
+    auto parsed = tryParseMapSubcolumnName(column_name);
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
+    if (!metadata_snapshot || !isKeySubcolumnOfMap(metadata_snapshot->getColumns(), column_name, map_column_name))
+        return false;
     return header.has(fmt::format("mapValues({})", map_column_name));
 }
 

@@ -57,3 +57,22 @@ Granules: 1/1
 -- Correctness without optimization
 3	3
 6	6
+-- Section 8
+-- dynamic JSON path shadowing a Map column: indexed count, oracle
+1	1
+-- same, with optimize_functions_to_subcolumns = 0
+1	1
+-- bloom_filter condition: indexed count, oracle
+1	1
+-- text index on mapValues: indexed count, oracle
+1	1
+-- physical column named m.key_nokey: indexed count, oracle
+1	1
+-- key of a different map under the same name space: indexed count, oracle
+1	1
+-- parents rendering to the same name: indexed count, oracle
+1	1
+-- JSON typed path key subcolumn: index still prunes the missing key
+Granules: 0/1
+-- JSON typed path key subcolumn: missing key, present key
+0	1

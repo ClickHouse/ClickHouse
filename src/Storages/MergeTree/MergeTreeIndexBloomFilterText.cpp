@@ -157,12 +157,14 @@ MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     ContextPtr context,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
-    TokenizerPtr token_extactor_)
+    TokenizerPtr token_extactor_,
+    StorageMetadataPtr metadata_snapshot_)
     : index_columns(index_sample_block.getNames())
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : token_extactor_)
+    , metadata_snapshot(std::move(metadata_snapshot_))
 {
     if (!predicate)
     {
@@ -634,6 +636,9 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         {
             auto & [map_column_name, serialized_key] = *parsed;
 
+            if (!metadata_snapshot || !isKeySubcolumnOfMap(metadata_snapshot->getColumns(), column_name, map_column_name))
+                return false;
+
             /// Same as arrayElement: skip when comparing with default value because
             /// the subcolumn returns default for keys that don't exist in the map.
             /// Unwrapped default: LC(Nullable(String)) default is NULL, but the subcolumn returns '' for a missing key.
@@ -977,7 +982,8 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, tokenizer.get());
+    return std::make_shared<MergeTreeConditionBloomFilterText>(
+        predicate, context, index.sample_block, params, tokenizer.get(), metadata_snapshot);
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

@@ -445,4 +445,12 @@ bool indexFileExistsInChecksums(
     const std::string & path_prefix,
     const std::string & extension,
     const IDataPartStorage * storage = nullptr);
+
+/// Whether @column_name really is the key subcolumn of the Map named @map_column_name, which the
+/// `<map>.key_<key>` spelling alone cannot tell: subcolumn names are flat, and identifier
+/// resolution takes the shortest matching column prefix, so a physical column, a Tuple element or a
+/// JSON path can claim the name. Only the resolved subcolumn's substream path tells a map's key
+/// from such a claimant, and only its parent tells one map's key from another map's.
+bool isKeySubcolumnOfMap(
+    const ColumnsDescription & columns, const String & column_name, const String & map_column_name);
 }
