@@ -479,7 +479,7 @@ void checkAccessRightsForFilter(const ContextPtr & context, const StorageID & ta
 {
     ASTPtr query_ast = makeSelectFromTable(table_id, {filter_ast->clone()});
     auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot), {}, tables_with_columns);
-    checkAccessRightsForSelect(context, table_id, storage, metadata_snapshot, *syntax_result);
+    checkAccessRightsForSelect(context, table_id, metadata_snapshot, *syntax_result);
 }
 
 ASTPtr parseAdditionalFilterConditionForTable(
