@@ -76,6 +76,7 @@ namespace ProfileEvents
     extern const Event PatchesAcquireLockTries;
     extern const Event PatchesAcquireLockMicroseconds;
     extern const Event MergesRejectedByMemoryLimit;
+    extern const Event BrokenPartsDetached;
 }
 
 namespace DB
@@ -123,6 +124,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool always_use_copy_instead_of_hardlinks;
     extern const MergeTreeSettingsBool assign_part_uuids;
     extern const MergeTreeSettingsDeduplicateMergeProjectionMode deduplicate_merge_projection_mode;
+    extern const MergeTreeSettingsBool detach_broken_parts_after_failed_merge;
     extern const MergeTreeSettingsBool enable_replacing_merge_with_cleanup_for_min_age_to_force_merge;
     extern const MergeTreeSettingsUInt64 finished_mutations_to_keep;
     extern const MergeTreeSettingsSeconds lock_acquire_timeout_for_background_operations;
@@ -130,6 +132,8 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 min_age_to_force_merge_seconds;
     extern const MergeTreeSettingsUInt64 max_number_of_merges_with_ttl_in_pool;
     extern const MergeTreeSettingsUInt64 max_postpone_time_for_failed_mutations_ms;
+    extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts;
+    extern const MergeTreeSettingsUInt64 max_suspicious_broken_parts_bytes;
     extern const MergeTreeSettingsMergeSelectorAlgorithm merge_selector_algorithm;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
@@ -215,12 +219,16 @@ StorageMergeTree::StorageMergeTree(
           merging_params_,
           std::move(storage_settings_),
           false, /// require_part_metadata
-          mode)
+          mode,
+          [this] (const std::string & name) { enqueueBrokenPartForCheck(name); })
     , writer(*this)
     , merger_mutator(*this)
     , cleanup_thread(*this)
     , support_transaction(supportTransaction(getDisks(), log.load()))
 {
+    broken_part_check_task = getContext()->getSchedulePool().createTask(
+        getStorageID(), "StorageMergeTree::checkAndDetachBrokenParts", [this] { checkAndDetachBrokenParts(); });
+
     initializeDirectoriesAndFormatVersion(relative_data_path_, LoadingStrictnessLevel::ATTACH <= mode, date_column_name);
 
     loadDataParts(LoadingStrictnessLevel::FORCE_RESTORE <= mode, std::nullopt);
@@ -258,6 +266,9 @@ void StorageMergeTree::startup()
     try
     {
         cleanup_thread.start();
+        /// activateAndSchedule (not just activate) to process parts that could have been
+        /// enqueued before startup; if the queue is empty, the scheduled run is a cheap no-op.
+        broken_part_check_task->activateAndSchedule();
         background_operations_assignee.start();
         background_streaming_assignee.start();
         startBackgroundMovesIfNeeded();
@@ -298,6 +309,7 @@ void StorageMergeTree::flushAndPrepareForShutdown()
     background_streaming_assignee.finish();
 
     cleanup_thread.stop();
+    broken_part_check_task->deactivate();
 
     LOG_TRACE(log, "Finished preparing for shutdown");
 }
@@ -338,6 +350,149 @@ StorageMergeTree::~StorageMergeTree()
     background_operations_assignee.finish();
     background_streaming_assignee.finish();
     background_moves_assignee.finish();
+}
+
+void StorageMergeTree::enqueueBrokenPartForCheck(const String & part_name)
+{
+    if (!(*getSettings())[MergeTreeSetting::detach_broken_parts_after_failed_merge])
+    {
+        LOG_WARNING(log, "Part {} is suspected to be broken, but it will not be checked and detached automatically. "
+            "Check it with CHECK TABLE and detach manually with ALTER TABLE ... DETACH PART if it is broken, "
+            "or enable the detach_broken_parts_after_failed_merge setting to do this automatically",
+            part_name);
+        return;
+    }
+
+    {
+        std::lock_guard lock(broken_parts_mutex);
+        if (!broken_parts_to_check.insert(part_name).second)
+            return;
+    }
+
+    LOG_TRACE(log, "Enqueueing part {} for check", part_name);
+    broken_part_check_task->schedule();
+}
+
+void StorageMergeTree::checkAndDetachBrokenParts()
+{
+    static constexpr auto RETRY_AFTER_MS = 60 * 1000;
+
+    Strings part_names;
+    {
+        std::lock_guard lock(broken_parts_mutex);
+        part_names.assign(broken_parts_to_check.begin(), broken_parts_to_check.end());
+    }
+
+    bool has_retryable_error = false;
+    for (const auto & part_name : part_names)
+    {
+        if (shutdown_called || flush_called)
+            return;
+
+        try
+        {
+            checkAndDetachBrokenPart(part_name);
+        }
+        catch (...)
+        {
+            if (isRetryableException(std::current_exception()))
+            {
+                /// A transient error (e.g. not enough memory): keep the part in the queue and retry later.
+                tryLogCurrentException(log, fmt::format("Transient error while checking part {}, will retry", part_name));
+                has_retryable_error = true;
+                continue;
+            }
+
+            /// An unexpected error. Do not keep the part in the queue to avoid retrying it in a busy loop:
+            /// if the part is still broken, the next failed merge or read will enqueue it again.
+            tryLogCurrentException(log, fmt::format("Failed to check part {}", part_name));
+        }
+
+        std::lock_guard lock(broken_parts_mutex);
+        broken_parts_to_check.erase(part_name);
+    }
+
+    if (has_retryable_error)
+        broken_part_check_task->scheduleAfter(RETRY_AFTER_MS);
+}
+
+void StorageMergeTree::checkAndDetachBrokenPart(const String & part_name)
+{
+    auto part = getActiveContainingPart(part_name);
+    if (!part)
+    {
+        LOG_DEBUG(log, "Part {} is not active anymore, will not check it", part_name);
+        return;
+    }
+    if (part->name != part_name)
+    {
+        LOG_DEBUG(log, "Part {} is covered by {}, will not check it", part_name, part->name);
+        return;
+    }
+
+    auto table_lock = lockForShare(RWLockImpl::NO_QUERY, (*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+
+    LOG_INFO(log, "Checking data of suspicious part {}", part_name);
+
+    try
+    {
+        bool is_broken_projection = false;
+        checkDataPart(
+            part,
+            /* require_checksums */ true,
+            is_broken_projection,
+            [this] { return shutdown_called.load() || flush_called.load(); },
+            /* throw_on_broken_projection */ false);
+    }
+    catch (...)
+    {
+        if (isRetryableException(std::current_exception()))
+            throw;
+
+        tryLogCurrentException(log, __PRETTY_FUNCTION__);
+
+        const auto settings = getSettings();
+        size_t max_broken_parts = (*settings)[MergeTreeSetting::max_suspicious_broken_parts];
+        size_t max_broken_parts_bytes = (*settings)[MergeTreeSetting::max_suspicious_broken_parts_bytes];
+        size_t part_size = part->getBytesOnDisk();
+
+        if (detached_broken_parts_count + 1 > max_broken_parts || detached_broken_parts_bytes + part_size > max_broken_parts_bytes)
+        {
+            LOG_ERROR(log, "Part {} is broken, but it will not be detached automatically: the limit on automatically detached "
+                "broken parts is reached ({} parts, {} bytes were already detached, the limits are set by the "
+                "max_suspicious_broken_parts and max_suspicious_broken_parts_bytes settings). "
+                "Consider detaching it manually with ALTER TABLE ... DETACH PART",
+                part_name, detached_broken_parts_count, detached_broken_parts_bytes);
+            return;
+        }
+
+        LOG_ERROR(log, "Part {} is confirmed to be broken (see the error above). Detaching it with the 'broken_' prefix: "
+            "it will not be read or merged anymore, but its files are preserved and visible in system.detached_parts",
+            part_name);
+
+        /// Detach the broken part the same way ReplicatedMergeTree does (see removePartAndEnqueueFetch):
+        /// clone it to detached/broken_<part_name> and make it Outdated instead of renaming it in place,
+        /// because other threads may be reading the part concurrently.
+        const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+        part->was_removed_as_broken = true;
+        part->makeCloneInDetached("broken", metadata_snapshot, /*disk_transaction*/ {});
+
+        {
+            auto parts_lock = lockParts();
+            if (part->getState() == MergeTreeDataPartState::Active)
+                removePartsFromWorkingSet(NO_TRANSACTION_RAW, {part}, /* clear_without_timeout */ true, parts_lock);
+        }
+
+        ++detached_broken_parts_count;
+        detached_broken_parts_bytes += part_size;
+        ProfileEvents::increment(ProfileEvents::BrokenPartsDetached);
+        return;
+    }
+
+    if (shutdown_called || flush_called)
+        return;
+
+    LOG_INFO(log, "Part {} looks good, the error that triggered the check was likely transient", part_name);
 }
 
 void StorageMergeTree::read(
