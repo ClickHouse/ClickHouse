@@ -38,7 +38,8 @@ ORDER BY id;
 
 INSERT INTO float_test VALUES
     (0, [1, 2, nan, nan, nan], 2),
-    (1, [1, 2, nan, nan, nan], 1);
+    (1, [1, 2, nan, nan, nan], 1),
+    (2, [1, 2, nan, nan, nan], nan);
 
 SELECT indexOfAssumeSorted(numbers, needle) FROM float_test ORDER BY id;
 
