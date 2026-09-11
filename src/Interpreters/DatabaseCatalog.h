@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Access/Common/AccessType.h>
 #include <Core/UUID.h>
 #include <Databases/TablesDependencyGraph.h>
 #include <Interpreters/Context_fwd.h>
@@ -389,9 +390,9 @@ private:
 };
 
 
-/// Materializes a table that a database with `lazy_load_tables` has not loaded yet, if the user is
-/// allowed to see it. Commands that read the passive system tables need this to observe keys and indices.
-void loadTableIfLazy(const StorageID & table_id, ContextPtr context);
+/// Materializes a table that a database with `lazy_load_tables` has not loaded yet, if the user holds
+/// the given right on it. Commands that read the passive system tables need this to observe keys and indices.
+void loadTableIfLazy(const StorageID & table_id, ContextPtr context, AccessType access);
 
 
 /// This class is useful when creating a table or database.

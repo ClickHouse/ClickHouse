@@ -585,6 +585,10 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
         return;
 
     checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
+    {
+        std::lock_guard lock(converting_to_replicated_mutex);
+        converting_to_replicated.erase(name.table);
+    }
     LOG_INFO
     (
         log,

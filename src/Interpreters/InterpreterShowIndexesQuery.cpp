@@ -127,7 +127,7 @@ BlockIO InterpreterShowIndexesQuery::execute()
     String database = getContext()->resolveDatabase(query.database);
     /// `system.tables` and `system.data_skipping_indices` do not report the keys and indices of a
     /// table that is not loaded yet.
-    loadTableIfLazy(StorageID{database, query.table}, getContext());
+    loadTableIfLazy(StorageID{database, query.table}, getContext(), AccessType::SHOW_TABLES);
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");

@@ -69,7 +69,11 @@ void ReplicasStatusHandler::handleRequest(HTTPServerRequest & request, HTTPServe
             // If they have some lag it will be reflected as soon as they are load.
             for (auto iterator = db.second->getTablesIterator(getContext(), {}, true); iterator->isValid(); iterator->next())
             {
-                auto table_replicated = castStorage<StorageReplicatedMergeTree>(iterator->table(), StorageResolution::Peek);
+                /// A deferred replica knows its delay only once it is loaded, and only a replicated engine has one.
+                auto table = iterator->table();
+                if (!table || !table->supportsReplication())
+                    continue;
+                auto table_replicated = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Load);
                 if (!table_replicated)
                     continue;
 

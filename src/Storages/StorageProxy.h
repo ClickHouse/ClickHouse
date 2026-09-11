@@ -25,6 +25,15 @@ public:
     /// iterating every table cannot trigger a load.
     virtual StoragePtr tryGetNested() const { return nullptr; }
 
+    /// The answer of the nested storage once it exists, and the `IStorage` default until then.
+    template <typename Ask>
+    auto askIfNested(Ask && ask) const
+    {
+        auto nested = tryGetNested();
+        return nested ? ask(*nested) : decltype(ask(*nested)){};
+    }
+
+
     String getName() const override { return "Proxy"; }
 
     bool isRemote() const override { return getNested()->isRemote(); }
@@ -222,17 +231,23 @@ public:
     }
 
     /// `INSERT` picks its block size and its parallel path from these.
-    bool isDataLake() const override { return getNested()->isDataLake(); }
-    bool isMessageQueue() const override { return getNested()->isMessageQueue(); }
+    /// `system.tables` reads these engine facts on every table, so they must not create the nested
+    /// storage. A command that needs the real answer resolves the table first.
+    bool isDataLake() const override { return askIfNested([](const IStorage & nested) { return nested.isDataLake(); }); }
+    bool isMessageQueue() const override { return askIfNested([](const IStorage & nested) { return nested.isMessageQueue(); }); }
+    bool isStreamingStorage() const override { return askIfNested([](const IStorage & nested) { return nested.isStreamingStorage(); }); }
+    bool isObjectStorage() const override { return askIfNested([](const IStorage & nested) { return nested.isObjectStorage(); }); }
+    bool isExternalDatabase() const override { return askIfNested([](const IStorage & nested) { return nested.isExternalDatabase(); }); }
+    bool supportsPartitionBy() const override { return askIfNested([](const IStorage & nested) { return nested.supportsPartitionBy(); }); }
+    bool prefersLargeBlocks() const override
+    {
+        auto nested = tryGetNested();
+        return nested ? nested->prefersLargeBlocks() : true; /// The `IStorage` default.
+    }
 
-    /// `SYSTEM STOP`, `CANCEL` and `REFRESH` on a named table decide the streaming path from this, then act on the storage.
-    bool isStreamingStorage() const override { return getNested()->isStreamingStorage(); }
+    /// `SYSTEM STOP`, `CANCEL` and `REFRESH` on a named table act on the storage.
     void cancelBackgroundActivity() override { getNested()->cancelBackgroundActivity(); }
     void refreshBackgroundActivity() override { getNested()->refreshBackgroundActivity(); }
-    bool isObjectStorage() const override { return getNested()->isObjectStorage(); }
-    bool isExternalDatabase() const override { return getNested()->isExternalDatabase(); }
-    bool prefersLargeBlocks() const override { return getNested()->prefersLargeBlocks(); }
-    bool supportsPartitionBy() const override { return getNested()->supportsPartitionBy(); }
 
     Pipe executeCommand(const String & command_name, const ASTPtr & args, ContextPtr context) override
     {

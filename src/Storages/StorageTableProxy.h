@@ -103,6 +103,13 @@ public:
             nested->cancelBackgroundActivity();
     }
 
+    /// Nothing runs in a table that was never started, like in a table created after a global `SYSTEM STOP`.
+    ActionLock getActionLock(StorageActionBlockType action_type) override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested ? nested->getActionLock(action_type) : ActionLock{};
+    }
+
     /// The answers that exist only once the storage does. An observer that walks every table gets
     /// the empty answer rather than loading one.
     template <typename Ask>
@@ -111,21 +118,6 @@ public:
         std::lock_guard lock{nested_mutex};
         using Answer = decltype(ask(*nested));
         return nested ? ask(*nested) : Answer{};
-    }
-
-    /// `system.tables` reads these on every table, so an unloaded one answers the `IStorage` default.
-    /// A command that needs the real answer resolves the table first.
-    bool isDataLake() const override { return answerIfLoaded([](const IStorage & storage) { return storage.isDataLake(); }); }
-    bool isObjectStorage() const override { return answerIfLoaded([](const IStorage & storage) { return storage.isObjectStorage(); }); }
-    bool isExternalDatabase() const override { return answerIfLoaded([](const IStorage & storage) { return storage.isExternalDatabase(); }); }
-    bool isMessageQueue() const override { return answerIfLoaded([](const IStorage & storage) { return storage.isMessageQueue(); }); }
-    bool isStreamingStorage() const override { return answerIfLoaded([](const IStorage & storage) { return storage.isStreamingStorage(); }); }
-    bool supportsPartitionBy() const override { return answerIfLoaded([](const IStorage & storage) { return storage.supportsPartitionBy(); }); }
-
-    bool prefersLargeBlocks() const override
-    {
-        std::lock_guard lock{nested_mutex};
-        return nested ? nested->prefersLargeBlocks() : true; /// The `IStorage` default.
     }
 
     /// `system.tables` reads these, so answering must not load the table. While the storage does not
