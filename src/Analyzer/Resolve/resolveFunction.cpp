@@ -42,6 +42,7 @@
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
+#include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/misc.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/FunctionFactory.h>
@@ -86,7 +87,6 @@ namespace Setting
     extern const SettingsBool enable_function_early_short_circuit;
     extern const SettingsShortCircuitFunctionEvaluation short_circuit_function_evaluation;
     extern const SettingsBool execute_exists_as_scalar_subquery;
-    extern const SettingsBool format_display_secrets_in_show_and_select;
     extern const SettingsBool transform_null_in;
     extern const SettingsBool force_grouping_standard_compatibility;
     extern const SettingsBool validate_enum_literals_in_operators;
@@ -472,6 +472,8 @@ bool isSafeCountScalarSubqueryForEarlyShortCircuit(
         || query.hasOrderBy()
         || query.hasLimitBy()
         || query.hasLimit()
+        || query.hasLimitAfter()
+        || query.hasLimitUntil()
         || query.hasOffset())
         return false;
 
@@ -1866,7 +1868,15 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
                 /// query "SELECT * FROM numbers(3)" returns column `number` which will collide with outer column `number`
                 auto subquery_node = std::move(in_second_argument);
 
-                String unique_column_name = "__subquery_column_" + toString(UUIDHelpers::generateV4());
+                /// Name the column after the subquery it projects rather than at random: two
+                /// identical `IN` expressions have to stay identical through the rewrite, or the
+                /// analyzer rejects a query that repeats one of them under a single alias with
+                /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS` - a query it accepts without the rewrite. The
+                /// name only has to differ from the names of the outer scope, which the prefix
+                /// already takes care of.
+                const auto subquery_hash = subquery_node->getTreeHash(/*compare_options=*/ {.compare_aliases = false});
+                String unique_column_name
+                    = fmt::format("__subquery_column_{}_{}", subquery_hash.low64, subquery_hash.high64);
 
                 /// Re-resolve subquery columns setting the unique alias
                 auto subquery_projection_columns = subquery_node->as<QueryNode>()->getProjectionColumns();
@@ -2248,7 +2258,7 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         allow_niladic_functions);
 
     /// Mask arguments if needed
-    if (!scope.context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select])
+    if (!canDisplaySecrets(scope.context))
     {
         if (FunctionSecretArgumentsFinder::Result secret_arguments = FunctionSecretArgumentsFinderTreeNode(*function_node_ptr).getResult(); secret_arguments.hasSecrets())
         {
