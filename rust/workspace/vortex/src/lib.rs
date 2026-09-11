@@ -639,8 +639,9 @@ pub struct FFI_VortexScanOptions {
     /// The top-level columns to read, in this order. Null means all of them.
     pub columns: *const *const c_char,
     pub num_columns: u64,
-    /// Only the rows matching it are returned, and the scan skips the statistics zones it rules
-    /// out. Null means no filter.
+    /// Only the rows matching it are returned. A split that the filter rules out produces no rows
+    /// at all, while inside a split the filter drives row selection and lazy materialization, so a
+    /// row that does not match it can still be decoded. Null means no filter.
     pub filter: *const FFI_VortexExpression,
     /// The row range `[row_range_begin, row_range_end)`. Both zero means the whole file.
     pub row_range_begin: u64,
@@ -819,11 +820,11 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                 let mut projection: Option<Expression> = None;
 
                 if !options.columns.is_null() {
-                    let mut names = Vec::with_capacity(options.num_columns as usize);
-                    for i in 0..options.num_columns {
-                        let name = CStr::from_ptr(*options.columns.add(i as usize))
-                            .to_str()
-                            .map_err(|e| e.to_string())?;
+                    let columns =
+                        std::slice::from_raw_parts(options.columns, options.num_columns as usize);
+                    let mut names = Vec::with_capacity(columns.len());
+                    for &column in columns {
+                        let name = CStr::from_ptr(column).to_str().map_err(|e| e.to_string())?;
                         names.push(name.to_string());
                     }
                     let mut fields = Vec::with_capacity(names.len());
@@ -936,6 +937,18 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                 Ok(FFI_ArrowArray::new(&arrow.as_struct().to_data()))
             });
 
+            // Why the splits are driven as futures over a channel rather than one thread per split:
+            // Vortex does not separate the IO of a split from the CPU work of decoding it. The two
+            // go to different queues (`spawn_io` and `spawn_cpu`), but a thread that is waiting for
+            // a long read - an object storage one, say - is not free to do anything else meanwhile,
+            // neither to start the IO of the next split nor to decode a chunk that is already here.
+            // A thread per split would therefore have no IO prefetch at all, while prefetching is
+            // exactly what saturates the network: many more splits can be in flight for reading
+            // than can be decoded at once. Driving the splits as futures instead means every thread
+            // that polls the executor polls all the split tasks in flight, which amounts to a poor
+            // man's prefetch queue. This is expected to change once Vortex separates IO from CPU
+            // work explicitly.
+            //
             // `into_stream` and `into_iter` are on offer and are not what we want: they give back
             // a `Stream` that somebody would have to keep polling, pick their own concurrency, and
             // quietly swallow the splits that kept no rows. We need the chunks pushed instead,

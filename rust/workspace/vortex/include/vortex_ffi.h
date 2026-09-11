@@ -154,8 +154,9 @@ struct FFI_VortexScanOptions
     /// The top-level columns to read, in this order. Null means all of them.
     const char *const *columns;
     uint64_t num_columns;
-    /// Only the rows matching it are returned, and the scan skips the statistics zones it rules
-    /// out. Null means no filter.
+    /// Only the rows matching it are returned. A split that the filter rules out produces no rows
+    /// at all, while inside a split the filter drives row selection and lazy materialization, so a
+    /// row that does not match it can still be decoded. Null means no filter.
     const FFI_VortexExpression *filter;
     /// The row range `[row_range_begin, row_range_end)`. Both zero means the whole file.
     uint64_t row_range_begin;

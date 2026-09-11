@@ -865,6 +865,8 @@ schema inference reads it back as [String](/reference/data-types/string).
 (Vortex chooses dictionary and other encodings adaptively by itself).
 [DateTime](/reference/data-types/datetime) columns are written as `vortex.timestamp` with second precision,
 so they are read back as [DateTime64](/reference/data-types/datetime64) with scale 0.
+`vortex.time` is a time of day, while [Time/Time64](/reference/data-types/time64) in ClickHouse also holds
+negative values and values of 24 hours and more; writing such a value throws instead of writing a wrong one.
 [IPv4](/reference/data-types/ipv4) columns are written as `U32` because Vortex has no type for IP addresses,
 so schema inference reads them back as [UInt32](/reference/data-types/int-uint). Specify the type explicitly
 to read such a column back as `IPv4`: `SELECT * FROM file('data.vortex', Vortex, 'ip IPv4')`.
