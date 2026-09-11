@@ -2,6 +2,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/ProcessList.h>
 #include <base/getPageSize.h>
 #include <Common/CurrentThread.h>
 #include <Common/ErrnoException.h>
@@ -295,8 +296,8 @@ void ThreadStatus::throwIfQueryCanceled() const
     if (!thread_group)
         return;
 
-    if (local_data.throw_if_query_canceled_predicate)
-        local_data.throw_if_query_canceled_predicate();
+    if (query_status)
+        query_status->throwIfKilled();
 }
 
 size_t ThreadStatus::getNextPlanStepIndex() const
