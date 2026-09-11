@@ -62,8 +62,8 @@ PARTITION BY (CAST(37528, 'UInt32') % c0) SETTINGS allow_nullable_key = 1;
 INSERT INTO mod_nullable VALUES (1000);
 SELECT 'nullable', toTypeName(_partition_value), _partition_value FROM mod_nullable;
 
--- An inner `tuple()` stays one element whose own type is a tuple, so the divergent member is re-typed
--- inside it while its sibling is left alone.
+-- An inner `tuple()` stays one element whose own type is a tuple, and the choice is made for that
+-- element as a whole: a divergent member re-types the tuple it sits in, not just itself.
 CREATE TABLE mod_nested (c0 Int32, c1 Int32) ENGINE = MergeTree ORDER BY tuple()
 PARTITION BY tuple(tuple(CAST(37528, 'UInt32') % c0, c1));
 INSERT INTO mod_nested VALUES (1000, 7);
