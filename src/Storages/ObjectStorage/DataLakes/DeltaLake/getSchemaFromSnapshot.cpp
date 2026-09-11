@@ -1005,21 +1005,7 @@ uintptr_t visitClickHouseSchema(void * schema_void, ffi::KernelSchemaVisitorStat
 /// Recursively check that a ClickHouse type maps to a round-tripping Delta type, throwing otherwise.
 static void validateClickHouseTypeForDeltaCreate(const DB::DataTypePtr & full_type)
 {
-    const bool outer_nullable = full_type->isNullable();
-    DB::DataTypePtr type = outer_nullable ? DB::removeNullable(full_type) : full_type;
-
-    /// A `Nullable` wrapper directly around a complex type is dropped on read-back (both schema readers
-    /// reconstruct Array/Map/Tuple without re-applying the field's nullable bit), so reject it to keep the
-    /// declared type round-tripping. Element-level `Nullable` (e.g. `Array(Nullable(Int32))`) is preserved.
-    if (outer_nullable
-        && (type->getTypeId() == DB::TypeIndex::Array
-            || type->getTypeId() == DB::TypeIndex::Map
-            || type->getTypeId() == DB::TypeIndex::Tuple))
-        throw DB::Exception(
-            DB::ErrorCodes::NOT_IMPLEMENTED,
-            "DeltaLake does not support a Nullable Array, Map or Tuple column for CREATE TABLE "
-            "(element-level Nullable is supported)");
-
+    DB::DataTypePtr type = full_type->isNullable() ? DB::removeNullable(full_type) : full_type;
     switch (type->getTypeId())
     {
         case DB::TypeIndex::Array:
