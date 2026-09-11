@@ -28,18 +28,13 @@ using namespace DB;
 namespace
 {
 
-/// This executable is optional low-level diagnostics tooling for isolated runtime-filter paths such as `insert`, `find`,
-/// `merge`, casts, and null-map handling. Most cases instantiate the exact, approximate, or adaptive implementation directly
-/// so the measured work is explicit. A few `RuntimeFilter` and `BuildRuntimeFilterTransform` cases remain as integration
-/// anchors. These benchmarks should not be used as evidence for production-default performance; end-to-end production
-/// scenarios and CI comparison against `master` belong in XML performance tests.
+/// Low-level runtime-filter microbenchmarks. Use XML performance tests for end-to-end production comparisons.
 constexpr Float64 DISABLE_ADAPTIVE_SKIP_THRESHOLD = 2.0;
 constexpr Float64 DEFAULT_ADAPTIVE_SKIP_THRESHOLD = 0.7;
 constexpr UInt64 BLOCKS_TO_SKIP_BEFORE_REENABLING = 30;
 constexpr UInt64 EXACT_VALUES_BYTES_LIMIT = 64 * 1024 * 1024;
 constexpr UInt64 EXACT_VALUES_LIMIT_FOR_EXACT_FILTER = 1'000'000;
-/// The adaptive implementation checks the limit after inserting a whole column. This forces its first non-trivial batch to
-/// transition to Bloom; it does not construct an initially Bloom-backed filter or switch after the first individual value.
+/// The limit is checked after each column insertion, not after each row.
 constexpr UInt64 ADAPTIVE_EXACT_VALUES_LIMIT = 1;
 constexpr UInt64 BLOOM_FILTER_BYTES = 512 * 1024;
 constexpr UInt64 BLOOM_FILTER_HASH_FUNCTIONS = 3;
@@ -68,20 +63,11 @@ enum class ValuePattern
     Mixed = 1,
 };
 
-/// `mix` spreads sequential row numbers across key buckets for non-contiguous benchmark access patterns.
-/// It is a SplitMix64-style permutation of the full `UInt64` domain. The odd 64-bit golden-ratio
-/// increment has full period modulo `2^64`, so repeated addition would visit every `UInt64` value once.
-/// The following xor-shifts and odd multiplications are also bijective on `UInt64`, which makes
-/// `mix(row)` a valid source of unique high-entropy keys for a non-dense build-side distribution.
-/// Do not add `% key_count` when cardinality matters: that maps many unique `UInt64` values into the
-/// same bucket. For dense-key benchmarks, keep the key set `0..rows - 1` and randomize only its order.
+/// SplitMix64 permutation used to spread sequential row numbers in benchmark data.
 UInt64 mix(UInt64 value)
 {
-    /// Odd 64-bit golden-ratio increment; repeated addition visits every `UInt64` value before repeating.
     value += 0x9e3779b97f4a7c15ULL;
-    /// SplitMix64 avalanche multiplier; the preceding xor-shift folds high bits into lower positions before spreading them.
     value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
-    /// Second SplitMix64 avalanche multiplier; it further breaks correlations between nearby row numbers.
     value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
     return value ^ (value >> 31);
 }
@@ -127,7 +113,7 @@ std::vector<UInt64> makeShuffledKeyPermutation(size_t rows, UInt64 offset = 0)
     for (size_t row = 0; row < rows; ++row)
         keys[row] = row;
 
-    /// Sort by `mix` to get randomized order without reducing cardinality with `mix(row) % rows`.
+    /// Randomize dense-key order without changing cardinality.
     std::sort(keys.begin(), keys.end(), [](UInt64 lhs, UInt64 rhs) { return mix(lhs) < mix(rhs); });
 
     for (auto & key : keys)
@@ -369,10 +355,7 @@ static void BM_ApproximateSetRuntimeFilterFindUInt64(benchmark::State & state)
     benchmarkFind(state, filter, type, probe_column);
 }
 
-/// Not a production path: `BuildRuntimeFilterTransform` only builds an `AdaptiveSetRuntimeFilter` when
-/// `AdaptiveSetRuntimeFilter::isDataTypeSupported` holds, and it rejects `Nullable(UInt64)`, so a nullable join key goes
-/// through `ExactSetRuntimeFilter`. This directly measures `ApproximateSetRuntimeFilter` on a non-null `ColumnNullable` as
-/// a reference point for the exact nullable benchmark above.
+/// Reference only: production uses `ExactSetRuntimeFilter` for nullable join keys.
 static void BM_ApproximateSetRuntimeFilterFindNullableUInt64(benchmark::State & state)
 {
     const auto key_count = static_cast<size_t>(state.range(0));
@@ -455,8 +438,6 @@ static void BM_ApproximateSetRuntimeFilterBuildString(benchmark::State & state)
     recordRows(state, rows);
 }
 
-/// Representative `RuntimeFilter` integration anchors. The first bulk insert is intentionally timed: it first builds an
-/// exact set for the complete column and then migrates that set into Bloom before `finishInsert` checks its worthiness.
 static void BM_RuntimeFilterAdaptiveBuildUInt64(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
@@ -561,8 +542,7 @@ static void BM_ExactSetRuntimeFilterMergeUInt64(benchmark::State & state)
     recordRows(state, filters_to_merge * keys_per_filter);
 }
 
-/// Directly measures the popcount scan used by adaptive finalization to decide whether a Bloom filter is worth using.
-/// Construction and insertion are outside the timed loop; the scanned byte count is independent of the inserted row count.
+/// Measures the Bloom-filter popcount scan in `isWorthUsing`.
 static void BM_ApproximateSetRuntimeFilterWorthinessUInt64(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
@@ -579,8 +559,7 @@ static void BM_ApproximateSetRuntimeFilterWorthinessUInt64(benchmark::State & st
     state.SetBytesProcessed(static_cast<int64_t>(state.iterations()) * static_cast<int64_t>(BLOOM_FILTER_BYTES));
 }
 
-/// Build of the concrete exact filter including `finishInsert`, which selects the `ZERO` / `ONE` / `MANY` lookup fast path.
-/// The row counts cover all three outcomes; destruction is excluded from the timing.
+/// Includes `finishInsert`, which selects the empty, single-value, or set-backed lookup state.
 static void BM_ExactSetRuntimeFilterContainsBuildUInt64(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
@@ -603,8 +582,6 @@ static void BM_ExactSetRuntimeFilterContainsBuildUInt64(benchmark::State & state
     recordRows(state, rows);
 }
 
-/// Isolates exact-to-approximate conversion. Setup fills but does not overflow the exact set; the timed one-row insert crosses
-/// the cardinality limit, finalizes the exact set, allocates the Bloom filter, and rehashes all recorded values into it.
 static void BM_AdaptiveSetRuntimeFilterExactToApproximateTransitionUInt64(benchmark::State & state)
 {
     const auto exact_rows = static_cast<size_t>(state.range(0));
@@ -658,12 +635,6 @@ static void BM_RuntimeFilterAdaptiveSkipApproximateUInt64(benchmark::State & sta
     recordRows(state, rows);
 }
 
-/// The `InsertOnly` transform benchmarks measure the per-chunk `transform` path (optional cast plus
-/// `RuntimeFilter::insert`). They intentionally include the adaptive transition: the first complete chunk is inserted into
-/// the exact set and then migrated to Bloom. The end-of-build work of `BuildRuntimeFilterTransform` — `finish` publishing
-/// the filter into `RuntimeFilterLookup::add`, which also runs `finishInsert` — requires a query context with a registered
-/// lookup, so it is exercised only by the XML performance tests. The underlying Bloom worthiness scan and a complete
-/// adaptive `RuntimeFilter` build are measured separately above.
 static void BM_RuntimeFilterAdaptiveBuildTransformInsertOnlyUInt64(benchmark::State & state)
 {
     const auto rows = static_cast<size_t>(state.range(0));
