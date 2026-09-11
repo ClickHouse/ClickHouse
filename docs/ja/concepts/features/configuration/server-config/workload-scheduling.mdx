@@ -462,45 +462,6 @@ graph TD
 * `precedence_allocation` - 静的な優先順位に基づいてエビクションを実施します (値が小さいほど優先順位が高くなります) 。優先順位の高い保留中の割り当ては、優先順位の低い割り当てをエビクションします。子ノードでは `precedence` を指定する必要があります (デフォルトは 0) 。
 * `queue` - 実行中および保留中の割り当てを保持できる階層のリーフです。
 
-<div id="deprecated-configuration">
-  ## 非推奨の XML 設定
-</div>
-
-リソースでどのディスクを使用するかを指定する別の方法として、server の `storage_configuration` があります。
-
-特定のディスクで I/O スケジューリングを有効にするには、ストレージ構成で `read_resource` および/または `write_resource` を指定する必要があります。これにより ClickHouse に、そのディスクに対する各読み取りリクエストおよび書き込みリクエストでどのリソースを使うかを指定できます。読み取りリソースと書き込みリソースは同じリソース名を参照でき、これはローカルSSD や HDD で有用です。複数の異なるディスクが同じリソースを参照することもでき、これはリモートディスクで有用です。たとえば、`"production"` ワークロードと `"development"` ワークロードの間でネットワーク帯域幅を公平に分配できるようにしたい場合に役立ちます。
-
-例:
-
-```xml
-<clickhouse>
-    <storage_configuration>
-        ...
-        <disks>
-            <s3>
-                <type>s3</type>
-                <endpoint>https://clickhouse-public-datasets.s3.amazonaws.com/my-bucket/root-path/</endpoint>
-                <access_key_id>your_access_key_id</access_key_id>
-                <secret_access_key>your_secret_access_key</secret_access_key>
-                <read_resource>network_read</read_resource>
-                <write_resource>network_write</write_resource>
-            </s3>
-        </disks>
-        <policies>
-            <s3_main>
-                <volumes>
-                    <main>
-                        <disk>s3</disk>
-                    </main>
-                </volumes>
-            </s3_main>
-        </policies>
-    </storage_configuration>
-</clickhouse>
-```
-
-サーバー構成オプションは、SQLでリソースを定義する方法よりも優先される点に注意してください。
-
 <div id="see-also">
   ## 関連項目
 </div>

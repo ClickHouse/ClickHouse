@@ -26,6 +26,16 @@ import { CloudOnlyBadge } from "/snippets/ar/components/CloudOnlyBadge/CloudOnly
 
 عدد المفاتيح الذي عنده يجمّد المُجمِّع التكيفي جدول التجزئة المحلي الخاص بالخيط (راجع `enable_adaptive_aggregator`). تُبقي القيم الأصغر الجداول المجمّدة ضمن الذاكرة المخبئية، بينما تتيح القيم الأكبر لها استيعاب قدر أكبر من المفاتيح المتكررة. تؤدي القيمة 0 إلى تجميد الجداول عند أول فرصة، مما يجعل الخوارزمية تعمل بصورة مشابهة للمُجمِّع المُجزّأ (`enable_sharding_aggregator`): يُوجَّه كل مفتاح وفقًا لتجزئته ويُجمَّع لدى مالك واحد، لكن يُؤجَّل ذلك إلى مرحلة الدمج بدلًا من تبادله بين الخيوط أثناء الفحص.
 
+<div id="adaptive_aggregator_freeze_threshold_bytes">
+  ## adaptive_aggregator_freeze_threshold_bytes
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="4194304" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4194304"},{"label": "إعداد جديد يقيّد حجم الجداول المحلية المجمّدة للمُجمِّع التكيفي بالبايتات؛ يُطبَّق الحد الذي يُبلَغ أولًا بين هذا الحد وعتبة عدد المفاتيح؛ وتؤدي القيمة 0 إلى تعطيل حد البايتات."}]}]} />
+
+حجم الذاكرة الذي عنده يُجمِّد المُجمِّع التكيفي جدول التجزئة المحلي لخيط (انظر `enable_adaptive_aggregator`). يُجمَّد الجدول عند بلوغ أيٍّ من هذه القيمة و`adaptive_aggregator_freeze_threshold` أولًا. الحجم هو عدد البايتات التي خصصها الجدول المحلي نفسه (مخزن جدول التجزئة وساحاته)، ويُتحقق منه بين الكتل. يصبح حد البايتات مهمًا عندما تكون المفاتيح أو حالات التجميع عريضة، إذ إن عتبة عدد المفاتيح وحدها قد تسمح لهذه الجداول بتجاوز سعة ذاكرات التخزين المؤقت في CPU. عند القيمة الافتراضية، تستمر الجداول ذات عروض المفاتيح والحالات العادية في التجميد وفقًا لعدد المفاتيح. تعطل القيمة 0 حد البايتات، لذا تحدد عتبة عدد المفاتيح وحدها وقت التجميد.
+
 <div id="add_http_cors_header">
   ## add_http_cors_header
 </div>
@@ -535,6 +545,20 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 يحتفظ `EXPLAIN PLAN` مع `json = 1` أو `distributed = 1` بالقيم الافتراضية القديمة (قبل 26.7) بغض النظر عن هذا الإعداد، ما لم يتم ضبط `actions` أو `compact` أو `pretty` صراحةً. ولا يمكن لمخرجات `pretty` تمثيل نتائج JSON أو المخططات الموزعة لكل shard، لذا لا تُعرض هذه الأوضاع بشكل صحيح إلا بصيغة `legacy`.
 
+<div id="explain_syntax_single_record">
+  ## explain_syntax_single_record
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "اعتبارًا من الإصدار 26.8، يعيد `EXPLAIN SYNTAX` الاستعلام المُعاد تنسيقه كسجل واحد (يتضمن أسطرًا جديدة مضمنة) بدلًا من سجل لكل سطر. اضبط هذا الإعداد على `false` لاستعادة المخرجات السابقة للإصدار 26.8، بسجل لكل سطر."}]}]} />
+
+أعد مخرجات `EXPLAIN SYNTAX` كسجل واحد (يتضمن أسطرًا جديدة مضمنة) بدلًا من سجل لكل سطر، لتكون النتيجة صفًا واحدًا يمكن استرجاعه (على سبيل المثال، يعيد `SELECT count() FROM (EXPLAIN SYNTAX ...)` القيمة `1`).
+
+يؤدي تحديد الخيار `single_record` صراحةً في عبارة `EXPLAIN SYNTAX` (على سبيل المثال، `EXPLAIN SYNTAX single_record = 0 SELECT ...`) إلى تجاوز هذا الإعداد دائمًا.
+
+اضبطه على `false` لاستعادة المخرجات السابقة للإصدار 26.8، بسجل لكل سطر، أو اضبط `compatibility` على أي إصدار أقدم من `26.8`.
+
 <div id="extract_key_value_pairs_max_pairs_per_row">
   ## extract_key_value_pairs_max_pairs_per_row
 </div>
@@ -578,7 +602,7 @@ SET exclude_materialize_skip_indexes_on_insert = DEFAULT; -- reset setting to de
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "hive"},{"label": "تغيير استراتيجية التقسيم الافتراضية لمحركات الجداول المشابهة للملفات (S3 وAzureBlobStorage وما إلى ذلك) من `wildcard` إلى `hive` عند عدم توفير `partition_strategy`."}]}]} />
 
-استراتيجية التقسيم الافتراضية للمحركات المشابهة للملفات. تُطبّق فقط عندما لا يحتوي المسار على عنصر نائب `{_partition_id}`: إذ لا يتوافق هذا المسار إلا مع استراتيجية `wildcard`، لذا فهو يشير دائمًا إلى `wildcard`.
+استراتيجية التقسيم الافتراضية للمحركات المشابهة للملفات. تُطبّق فقط على استعلامات `CREATE` التي يكون مسارها خاليًا من نمط glob وعنصر النائب `{_partition_id}`. يستخدم المسار الذي يحتوي على `{_partition_id}` استراتيجية `wildcard` دائمًا. أما المسار الذي يحتوي على نمط glob آخر، فلا يستخدم أي استراتيجية تقسيم ويتجاهل `PARTITION BY`. إذا كان هذا الإعداد هو `wildcard` ولم يحتوِ المسار على `{_partition_id}`، فلن تُستخدم أي استراتيجية تقسيم؛ وترفض محركات الجداول التي لا تستطيع حفظ هذا القرار في وسيطات محركها (مثل `HDFS`) استعلام `CREATE` هذا.
 
 <div id="filesystem_prefetches_limit">
   ## filesystem_prefetches_limit
@@ -1495,6 +1519,21 @@ FORMAT Null;
 6666 rows in set. ...
 ```
 
+<div id="resumable_backup_from_snapshot">
+  ## resumable_backup_from_snapshot
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد تجريبي جديد لتمكين `BACKUP FROM SNAPSHOT` القابل للاستئناف."}]}]} />
+
+يتيح `BACKUP FROM SNAPSHOT` القابل للاستئناف: إذ يمكن إعادة تشغيل محاولة فاشلة دون إعادة نسخ
+إدخالات الدفعات التي اكتملت بالفعل. يتوفر فقط في ClickHouse Cloud، لوجهات
+`S3` و`AzureBlobStorage` بنمط الدليل. يؤدي تمكينه في إصدارات ClickHouse مفتوحة المصدر، حيث لا يتوفر
+`BACKUP FROM SNAPSHOT` نفسه، إلى فشل `BACKUP` مع `WRONG_BACKUP_SETTINGS`.
+
 <div id="rows_before_aggregation">
   ## rows_before_aggregation
 </div>
@@ -1504,6 +1543,24 @@ FORMAT Null;
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "0"},{"label": "يوفّر قيمة دقيقة لإحصائية rows_before_aggregation، التي تمثل عدد الصفوف المقروءة قبل التجميع"}]}]} />
 
 عند التمكين، يوفّر ClickHouse قيمة دقيقة لإحصائية rows&#95;before&#95;aggregation، التي تمثل عدد الصفوف المقروءة قبل التجمي
+
+<div id="run_query_in_background">
+  ## run_query_in_background
+</div>
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "0"},{"label": "إعداد جديد لتشغيل استعلام في الخلفية، منفصلًا عن الاتصال الذي أرسله، مع تجاهل النتيجة."}]}]} />
+
+عند تفعيله، يجدول الخادم الاستعلام في الخلفية، ويُرجع فورًا نتيجة نجاح فارغة، ثم يشغّل الاستعلام حتى اكتماله بغض النظر عما يحدث للاتصال.
+
+لا يستمر الاستعلام الذي يعمل في الخلفية بعد إعادة تشغيل الخادم. وعند إيقاف التشغيل، تنطبق عليه إعدادات الخادم نفسها المطبقة على الاستعلامات التي تعمل في المقدمة: يحدد `shutdown_wait_unfinished_queries` ما إذا كان سيُلغى أو سيُنتظر حتى اكتماله (وتُهمل الإدخالات الموجودة في قائمة الانتظار في كلتا الحالتين، من دون إدخال في `system.query_log`)، بينما يحد `shutdown_wait_unfinished` المدة التي ينتظرها الخادم.
+
+تتبّع الاستعلام باستخدام `query_id` الخاص به: في `system.processes` أثناء تشغيله، وفي `system.query_log` بعد انتهائه وتفريغ إدخال سجل الاستعلام.
+
+ينطبق على الاستعلامات المستلمة عبر بروتوكولي TCP الأصلي وHTTP. وعبر HTTP، مرّر الإعداد كمعلمة URL. لا يمكن تغييره باستخدام `SET`؛ فعّله لكل استعلام، أو على مستوى المستخدم أو ملف التعريف.
+
+حالة الاستخدام الرئيسية هي عملية `INSERT ... SELECT` طويلة يجب ألا تضيع عند انقطاع اتصال العميل.
 
 <div id="secondary_indices_enable_bulk_filtering">
   ## secondary_indices_enable_bulk_filtering
@@ -1755,6 +1812,16 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 * `0` - لن تُضمَّن السلسلة المتبقية في العنصر الأخير من مصفوفة النتيجة.
 * `1` - ستُضمَّن السلسلة المتبقية في العنصر الأخير من مصفوفة النتيجة. هذا هو سلوك الدالة [`split()`](https://spark.apache.org/docs/latest/api/python/reference/pyspark.sql/api/pyspark.sql.functions.split.html) في Spark والطريقة [&#39;string.split()&#39;](https://docs.python.org/3/library/stdtypes.html#str.split) في بايثون.
 
+<div id="statistics_max_set_size_for_exact_selectivity_estimation">
+  ## statistics_max_set_size_for_exact_selectivity_estimation
+</div>
+
+<SettingsInfoBlock type="UInt64" default_value="10000" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "10000"},{"label": "إعداد جديد للحد من تكلفة تقدير انتقائية `IN` عند استخدام مجموعة كبيرة: فوق هذا الحد، يستخدم المقدِّر حجم المجموعة ونطاقها الحدي بدلًا من النطاقات الدقيقة. قبل الإصدار 26.8، لم يكن التقدير مقيّدًا، لذا كانت القيمة السابقة 0 (بلا حد)، ويؤدي استخدام `compatibility` مع إصدار أقدم إلى استعادة النطاقات الدقيقة للمجموعات مهما كان حجمها."}]}]} />
+
+الحد الأقصى لحجم المجموعة في الطرف الأيمن من عامل التشغيل `IN` الذي يمكن لمقدِّر الانتقائية عنده اشتقاق النطاقات الدقيقة التي تغطيها المجموعة. يتطلب اشتقاق هذه النطاقات `Field` لكل عنصر، وفرزًا، ومسبار إحصاءات واحدًا لكل عنصر، وهي تكلفة تهيمن على تخطيط الاستعلام عند استخدام مجموعة كبيرة. فوق هذا الحد، يستمد المقدِّر الانتقائية من حجم المجموعة ونطاقها الحدي بدلًا من ذلك، وذلك بتمرير خطي واحد على المجموعة دون فرز أو مسابير إحصاءات لكل عنصر. يشير الصفر إلى عدم وجود حد.
+
 <div id="stop_refreshable_materialized_views_on_startup">
   ## stop_refreshable_materialized_views_on_startup
 </div>
@@ -1790,6 +1857,18 @@ SELECT ((4 + 2) + 1, ((4 + 2) + 1) + 2)
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 يسمح بعمليات INSERT الفارغة أو يمنعها، وهو مفعّل افتراضيًا (ويؤدي إلى ظهور خطأ عند تنفيذ عملية insert فارغة). لا ينطبق هذا إلا على عمليات INSERT التي تستخدم [`clickhouse-client`](/ar/concepts/features/interfaces/cli) أو [واجهة gRPC](/ar/concepts/features/interfaces/grpc).
+
+<div id="time_series_prefer_recent_samples_table">
+  ## time_series_prefer_recent_samples_table
+</div>
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1"},{"label": "إعداد جديد للقراءة من جدول العينات الحديثة لجدول TimeSeries عندما يقع النطاق الزمني المطلوب ضمن نافذة TTL الخاصة به."}]}]} />
+
+اقرأ من جدول العينات الحديثة لجدول [TimeSeries](/ar/reference/engines/table-engines/integrations/time-series) بدلاً من جدول العينات الرئيسي عندما يقع النطاق الزمني المطلوب بالكامل ضمن نافذة TTL لجدول العينات الحديثة (راجع إعداد `recent_samples_ttl_seconds` لمحرك الجدول TimeSeries).
 
 <div id="timeout_before_checking_execution_speed">
   ## timeout_before_checking_execution_speed

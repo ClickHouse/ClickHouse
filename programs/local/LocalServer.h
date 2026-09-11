@@ -116,11 +116,14 @@ private:
     /// entries from a loaded config file visible to `getMultipleValuesFromConfig` in `startServers`.
     std::optional<String> cli_listen_host;
 
-    /// Path of the config file actually loaded in `initialize`. Empty if no config file was loaded.
-    /// Tracks loads from all sources: `--config-file` flag, `./config.xml`, and `getLocalConfigPath`
+    /// Path of the main config file processed in `initialize`, from any of its sources: the
+    /// `--config-file` flag, `./config.xml`, or `getLocalConfigPath`
     /// (`./clickhouse-local.{xml,yaml,yml}`, `~/.clickhouse-local/config.{xml,yaml,yml}`,
-    /// `/etc/clickhouse-local/config.{xml,yaml,yml}`). Needed by `setupUsers` to resolve relative
-    /// paths in `user_directories.users_xml.path` against the config's own directory.
+    /// `/etc/clickhouse-local/config.{xml,yaml,yml}`). When none of them exists, it is `config.xml`
+    /// in the current directory, which does not exist either: a config embedded in the binary is
+    /// processed in its place, so that the merge directories of the current directory still apply.
+    /// Needed by `setupUsers` to resolve relative paths in `user_directories.users_xml.path`
+    /// against the config's own directory.
     String loaded_config_path;
 
     std::optional<StatusFile> status;

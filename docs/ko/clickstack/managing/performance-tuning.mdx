@@ -72,7 +72,7 @@ ClickHouse에서 테이블은 [데이터베이스](/ko/reference/statements/crea
 * [ClickHouse가 데이터를 저장하는 방식: 파트와 그래뉼](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes) - 그래뉼과 프라이머리 키를 자세히 다루며, ClickHouse에서 데이터가 어떻게 구조화되고 쿼리되는지 설명하는 고급 가이드입니다.
 * [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree)- 명령과 내부 세부 사항을 이해하는 데 유용한 고급 MergeTree 참고 가이드입니다.
 
-아래에 설명된 모든 최적화는 표준 ClickHouse SQL을 사용해 기본 테이블에 직접 적용할 수 있으며, [ClickHouse Cloud SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) 또는 [ClickHouse client](/ko/concepts/features/interfaces/cli)를 통해 적용할 수 있습니다.
+아래에 설명된 모든 최적화는 표준 ClickHouse SQL을 사용해 기본 테이블에 직접 적용할 수 있으며, [ClickHouse Cloud SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) 또는 [ClickHouse client](/ko/concepts/features/interfaces/client)를 통해 적용할 수 있습니다.
 
 <div id="materialize-frequently-queried-attributes">
   ## 최적화 1. 자주 쿼리되는 속성 구체화하기
@@ -589,15 +589,34 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
 
 쿼리 재작성에는 텍스트 인덱스가 적용된 배열 컬럼에서 토큰 수준 프루닝을 직접 지원하는 ClickHouse 버전이 필요합니다. ClickStack은
 연결된 서버 버전(`SELECT version()`, 연결별로 캐시됨)을 감지하고,
-서버가 기준 버전 이상일 때만 재작성된 형식을 사용합니다. 이전
-서버 버전은 자동으로 원래의 맵 서브스크립트 형식으로 대체됩니다.
+서버가 아래의 해당 기준 버전을 충족할 때만 재작성된 형식을 사용합니다.
+이전 버전은 자동으로 원래의 맵 서브스크립트 형식으로 대체됩니다.
 
-| ClickHouse 브랜치 | 최소 버전      |
-| -------------- | ---------- |
-| 26.2           | 26.2.19.43 |
-| 26.3           | 26.3.12.3  |
-| 26.4           | 26.4.3.37  |
-| 26.5+          | 모든 버전      |
+<Tabs>
+  <Tab title="ClickHouse Cloud">
+    ClickHouse Cloud 빌드와 오픈 소스 릴리스는 독립적인 버전 라인을 사용합니다.
+    아래의 Cloud 최소 버전을 사용하십시오.
+
+    | ClickHouse 브랜치 | 최소 Cloud 버전   |
+    | -------------- | ------------- |
+    | 26.2           | `26.2.1.307`  |
+    | 26.3           | `26.3.0.0`    |
+    | 26.4           | `26.4.1.1740` |
+    | 26.5+          | 모든 버전         |
+
+    최소 버전 `26.3.0.0`은 해당 브랜치의 최저 버전이므로 모든 `26.3` 빌드가
+    지원됩니다.
+  </Tab>
+
+  <Tab title="오픈 소스">
+    | ClickHouse 브랜치 | 최소 오픈 소스 버전  |
+    | -------------- | ------------ |
+    | 26.2           | `26.2.19.43` |
+    | 26.3           | `26.3.12.3`  |
+    | 26.4           | `26.4.3.37`  |
+    | 26.5+          | 모든 버전        |
+  </Tab>
+</Tabs>
 
 <Info>
   **왜 MATERIALIZED가 아니라 ALIAS인가**

@@ -118,6 +118,12 @@ Pass your cluster name as the first argument (`'default'` on ClickHouse Cloud). 
 
 You can combine cluster reads with other performance settings.
 
+### Cluster functions and On-Demand Compute {#cluster-functions-and-on-demand-compute}
+
+Cluster variants such as [`icebergS3Cluster`](/reference/functions/table-functions/icebergCluster) and [`deltaLakeCluster`](/reference/functions/table-functions/deltalakeCluster) distribute file reads across nodes in your existing cluster. The cluster function itself does not add compute. On-Demand Compute is a ClickHouse Cloud capability that temporarily assigns additional workers from a managed pool to eligible queries through your existing service and endpoint.
+
+During the private preview, On-Demand Compute supports eligible `SELECT` queries over supported Apache Iceberg and Delta Lake data only. See the [On-Demand Compute documentation](/products/cloud/features/infrastructure/on-demand-compute) for eligibility and limitations.
+
 ### Bound batch reads to snapshots {#snapshot-bounds}
 
 For repeated batch loads from lake tables, scope each run to a snapshot range instead of re-reading the full table. Without bounds, ClickHouse may scan all versions and files on every run, which increases object storage reads and query time.
@@ -288,7 +294,7 @@ ORDER BY rows DESC;
 
 ### Check scan volume {#debug-query-log}
 
-Compare `read_rows` and `read_bytes` in [system.query_log](/reference/system-tables/query_log) before and after adding filters or tuning settings. ProfileEvents like `ReadBufferFromS3Bytes` and `CachedReadBufferReadFromCacheBytes` show how much data came from object storage versus the local cache. See [Query optimization](/guides/clickhouse/performance-and-monitoring/query-optimization) for a full walkthrough of query_log and EXPLAIN.
+Compare `read_rows` and `read_bytes` in [`system.query_log`](/reference/system-tables/query_log) before and after adding filters or tuning settings. `ProfileEvents` like `ReadBufferFromS3Bytes` and `CachedReadBufferReadFromCacheBytes` show how much data came from object storage versus the local cache. See [Diagnose slow queries](/guides/clickhouse/performance-and-monitoring/diagnose-slow-queries) for a full walkthrough of `query_log` and `EXPLAIN`.
 
 Disable [enable_filesystem_cache](/reference/settings/session-settings/enable-filesystem#enable_filesystem_cache) when benchmarking so cache hits don't mask changes between runs.
 
