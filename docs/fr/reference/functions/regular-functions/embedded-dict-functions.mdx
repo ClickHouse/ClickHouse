@@ -15,10 +15,10 @@ doc_type: 'reference'
 Pour plus d’informations sur la création de listes de référence, consultez la section [« Dictionaries »](/fr/reference/statements/create/dictionary/embedded).
 
 <div id="multiple-geobases">
-  ## Geobases multiples
+  ## Géobases multiples
 </div>
 
-ClickHouse permet d’utiliser simultanément plusieurs geobases alternatives (hiérarchies régionales), afin de prendre en charge différentes interprétations de l’appartenance de certaines régions à certains pays.
+ClickHouse permet d’utiliser simultanément plusieurs géobases alternatives (hiérarchies régionales), afin de prendre en charge différentes interprétations de l’appartenance de certaines régions à certains pays.
 
 La config de &#39;clickhouse-server&#39; spécifie le fichier contenant la hiérarchie régionale :
 
@@ -27,9 +27,9 @@ La config de &#39;clickhouse-server&#39; spécifie le fichier contenant la hiér
 En plus de ce fichier, il recherche également les fichiers voisins dont le nom comporte le symbole `_` suivi d’un suffixe quelconque (avant l’extension du fichier).
 Par exemple, il trouvera aussi le fichier `/opt/geo/regions_hierarchy_ua.txt`, s’il est présent. Ici, `ua` est appelé la clé du dictionnaire. Pour un dictionnaire sans suffixe, la clé est une chaîne vide.
 
-Tous les dictionnaires sont rechargés en cours d’exécution (à intervalles réguliers, selon le nombre de secondes défini dans le paramètre de config [`builtin_dictionaries_reload_interval`](/fr/reference/settings/server-settings/settings/other#builtin_dictionaries_reload_interval), ou une fois par heure par défaut). Cependant, la liste des dictionnaires disponibles n’est définie qu’une seule fois, au démarrage du serveur.
+Tous les dictionnaires sont rechargés en cours d’exécution (à intervalles réguliers, selon le nombre de secondes défini dans le paramètre de config [`builtin_dictionaries_reload_interval`](/fr/reference/settings/server-settings/settings#builtin_dictionaries_reload_interval), ou une fois par heure par défaut). Cependant, la liste des dictionnaires disponibles n’est définie qu’une seule fois, au démarrage du serveur.
 
-Toutes les fonctions permettant de manipuler les régions ont un argument facultatif à la fin : la clé du dictionnaire. C’est ce qu’on appelle la geobase.
+Toutes les fonctions permettant de manipuler les régions ont un argument facultatif à la fin : la clé du dictionnaire. C’est ce qu’on appelle la géobase.
 
 Exemple :
 

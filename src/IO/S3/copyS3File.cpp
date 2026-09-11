@@ -72,10 +72,6 @@ namespace S3RequestSetting
 
 namespace
 {
-    /// S3 accepts `x-amz-copy-source-range` only if the source object is greater than 5 MB, and answers
-    /// InvalidRequest otherwise -- so a range of a smaller source cannot be server-side copied at all.
-    constexpr size_t MIN_SOURCE_SIZE_FOR_RANGE_COPY = 5 * 1024 * 1024;
-
     class UploadHelper
     {
     public:
@@ -87,8 +83,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            const LoggerPtr log_,
-            bool use_upload_checksum_algorithm_)
+            const LoggerPtr log_)
             : client_ptr(client_ptr_)
             , dest_bucket(dest_bucket_)
             , dest_key(dest_key_)
@@ -97,14 +92,6 @@ namespace
             , schedule(schedule_)
             , blob_storage_log(blob_storage_log_)
             , log(log_)
-            /// `GCS` does not accept the AWS flexible checksum headers (`x-amz-checksum-*`, `x-amz-sdk-checksum-algorithm`)
-            /// and rejects `SigV4`-signed requests that carry them with `SignatureDoesNotMatch`, so never enable them for
-            /// `GCS`. `GCS` is never an `S3Express` bucket, so this is independent of the `S3Express` handling.
-            , upload_checksum_algorithm(
-                use_upload_checksum_algorithm_ && !client_ptr->isClientForGCS()
-                        && (!client_ptr->isChecksumDisabled() || client_ptr->isS3ExpressBucket())
-                    ? std::make_optional(S3::RequestChecksum::getUploadChecksumAlgorithm(request_settings, client_ptr->isS3ExpressBucket()))
-                    : std::nullopt)
             , num_parts(0)
             , normal_part_size(0)
         {
@@ -121,7 +108,6 @@ namespace
         ThreadPoolCallbackRunnerUnsafe<void> schedule;
         BlobStorageLogWriterPtr blob_storage_log;
         const LoggerPtr log;
-        const std::optional<S3::RequestChecksum::Algorithm> upload_checksum_algorithm;
 
         /// Represents a task uploading a single part.
         /// Keep this struct small because there can be thousands of parts.
@@ -138,7 +124,6 @@ namespace
         size_t normal_part_size;
         String multipart_upload_id;
         DequeWithMemoryTracking<String> multipart_tags;
-        DequeWithMemoryTracking<String> multipart_checksums;
         std::atomic<size_t> num_finished_parts = 0;
         std::atomic<bool> has_failed = false;
 
@@ -156,9 +141,6 @@ namespace
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
-
-            if (usesFlexibleUploadChecksumHeader())
-                request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
 
             client_ptr->setKMSHeaders(request);
         }
@@ -212,10 +194,7 @@ namespace
             for (size_t i = 0; i < multipart_tags.size(); ++i)
             {
                 Aws::S3::Model::CompletedPart part;
-                part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1));
-                if (usesFlexibleUploadChecksumHeader())
-                    S3::RequestChecksum::setChecksum(part, *upload_checksum_algorithm, multipart_checksums.at(i));
-                multipart_upload.AddParts(part);
+                multipart_upload.AddParts(part.WithETag(multipart_tags[i]).WithPartNumber(static_cast<int>(i + 1)));
             }
 
             request.SetMultipartUpload(multipart_upload);
@@ -298,7 +277,6 @@ namespace
             try
             {
                 multipart_tags.resize(num_parts);
-                multipart_checksums.resize(num_parts);
                 for (size_t part_number = 1; position < end_position; ++part_number)
                 {
                     if (has_failed)
@@ -312,12 +290,11 @@ namespace
                     chassert(part_size);
 
                     auto & part_tag = multipart_tags[part_number - 1];
-                    auto & part_checksum = multipart_checksums[part_number - 1];
 
-                    task_tracker.add([this, part_number, position, part_size, &part_tag, &part_checksum]()
+                    task_tracker.add([this, part_number, position, part_size, &part_tag]()
                     {
                         UploadPartTask task = {part_number, position, part_size};
-                        this->processUploadTask(task, part_tag, part_checksum);
+                        this->processUploadTask(task, part_tag);
                     });
 
                     position = next_position;
@@ -399,26 +376,7 @@ namespace
             normal_part_size = part_size;
         }
 
-        String prepareChecksums(Aws::AmazonWebServiceRequest & request) const
-        {
-            if (!usesFlexibleUploadChecksumHeader())
-                return {};
-
-            auto & upload_part_request = typeid_cast<S3::UploadPartRequest &>(request);
-
-            upload_part_request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
-
-            auto checksum = S3::RequestChecksum::calculateFlexibleChecksum(upload_part_request, *upload_checksum_algorithm);
-            S3::RequestChecksum::setChecksum(upload_part_request, *upload_checksum_algorithm, checksum);
-            return checksum;
-        }
-
-        bool usesFlexibleUploadChecksumHeader() const
-        {
-            return upload_checksum_algorithm && S3::RequestChecksum::usesFlexibleChecksumHeader(*upload_checksum_algorithm);
-        }
-
-        void processUploadTask(UploadPartTask & task, String & part_tag, String & part_checksum)
+        void processUploadTask(UploadPartTask & task, String & part_tag)
         {
             if (has_failed)
                 return;
@@ -428,21 +386,17 @@ namespace
                 Stopwatch watch;
 
                 auto request = makeUploadPartRequest(task.part_number, task.part_offset, task.part_size);
-                auto checksum = prepareChecksums(*request);
                 auto tag = processUploadPartRequest(*request);
 
                 watch.stop();
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Bytes, task.part_size);
                 ProfileEvents::increment(ProfileEvents::WriteBufferFromS3Microseconds, watch.elapsedMicroseconds());
 
-                part_tag = std::move(tag);
-                /// Empty unless a flexible checksum was requested; `prepareChecksums` guarantees a
-                /// non-empty value in that case (it throws otherwise), so there is nothing to re-check here.
-                part_checksum = std::move(checksum);
+                part_tag = tag;
                 auto finished_count = ++num_finished_parts;
 
                 LOG_TRACE(log, "Finished writing part #{}. Bucket: {}, Key: {}, Upload_id: {}, Etag: {}, Finished parts: {} of {}",
-                        task.part_number, dest_bucket, dest_key, multipart_upload_id, part_tag, finished_count, num_parts);
+                        task.part_number, dest_bucket, dest_key, multipart_upload_id, tag, finished_count, num_parts);
             }
             catch (Exception & e)
             {
@@ -474,16 +428,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_)
-            : UploadHelper(
-                client_ptr_,
-                dest_bucket_,
-                dest_key_,
-                request_settings_,
-                object_metadata_,
-                schedule_,
-                blob_storage_log_,
-                getLogger("copyDataToS3File"),
-                /* use_upload_checksum_algorithm =*/ true)
+            : UploadHelper(client_ptr_, dest_bucket_, dest_key_, request_settings_, object_metadata_, schedule_, blob_storage_log_, getLogger("copyDataToS3File"))
             , create_read_buffer(create_read_buffer_)
             , offset(offset_)
             , size(size_)
@@ -533,9 +478,6 @@ namespace
             const auto & storage_class_name = request_settings[S3RequestSetting::storage_class_name];
             if (!storage_class_name.value.empty())
                 request.SetStorageClass(Aws::S3::Model::StorageClassMapper::GetStorageClassForName(storage_class_name));
-
-            if (usesFlexibleUploadChecksumHeader())
-                request.setUploadChecksumAlgorithm(*upload_checksum_algorithm);
 
             /// If we don't do it, AWS SDK can mistakenly set it to application/xml, see https://github.com/aws/aws-sdk-cpp/issues/1840
             request.SetContentType("binary/octet-stream");
@@ -671,7 +613,6 @@ namespace
             const String & src_key_,
             size_t src_offset_,
             size_t src_size_,
-            size_t src_object_size_,
             const String & dest_bucket_,
             const String & dest_key_,
             const S3::S3RequestSettings & request_settings_,
@@ -679,8 +620,7 @@ namespace
             const std::optional<ObjectAttributes> & object_metadata_,
             ThreadPoolCallbackRunnerUnsafe<void> schedule_,
             BlobStorageLogWriterPtr blob_storage_log_,
-            std::function<void()> fallback_method_,
-            bool is_ranged_copy_)
+            std::function<void()> fallback_method_)
             : UploadHelper(
                 client_ptr_,
                 dest_bucket_,
@@ -689,19 +629,12 @@ namespace
                 object_metadata_,
                 schedule_,
                 blob_storage_log_,
-                getLogger("copyS3File"),
-                /* use_upload_checksum_algorithm =*/ false)
+                getLogger("copyS3File"))
             , src_bucket(src_bucket_)
             , src_key(src_key_)
             , offset(src_offset_)
             , size(src_size_)
-            , src_object_size(src_object_size_)
-            /// Native multipart copy is disabled for `S3Express` buckets: there `Client::doRequest` forces
-            /// `CreateMultipartUpload` to use a flexible checksum, but the copy path does not propagate the per-part
-            /// checksums returned by `UploadPartCopy` into `CompleteMultipartUpload`, which then fails. Large objects
-            /// fall back to read-and-reupload via `fallback_method`, which checksums each part correctly.
-            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy() && !client_ptr_->isS3ExpressBucket())
-            , is_ranged_copy(is_ranged_copy_)
+            , supports_multipart_copy(client_ptr_->supportsMultiPartCopy())
             , read_settings(read_settings_)
             , fallback_method(std::move(fallback_method_))
         {
@@ -710,25 +643,8 @@ namespace
         void performCopy()
         {
             LOG_TEST(log, "Copy object {} to {} using native copy", src_key, dest_key);
-
-            /// A ranged copy carries a byte range that whole-object CopyObject ignores, so it must not take
-            /// the single-operation path -- doing so would copy the entire source object. It can only use
-            /// UploadPartCopy (which sets a CopySourceRange per part), and only when both multipart copy is
-            /// available and the source is large enough for S3 to accept a byte-range copy source; otherwise
-            /// it falls back to the buffered ranged read, which reads exactly [offset, offset + size).
-            bool multipart_copy_available = supports_multipart_copy && request_settings[S3RequestSetting::allow_multipart_copy];
-            bool source_allows_range_copy = src_object_size > MIN_SOURCE_SIZE_FOR_RANGE_COPY;
-            if (is_ranged_copy && (!multipart_copy_available || !source_allows_range_copy))
-            {
-                fallback_method();
-                return;
-            }
-
-            bool use_single_operation_copy = !is_ranged_copy
-                && (!multipart_copy_available || (size <= request_settings[S3RequestSetting::max_single_operation_copy_size]));
-
-            /// A ranged copy must never reach whole-object CopyObject (it would copy the entire source).
-            chassert(!(is_ranged_copy && use_single_operation_copy));
+            bool use_single_operation_copy = !supports_multipart_copy || !request_settings[S3RequestSetting::allow_multipart_copy]
+                || (size <= request_settings[S3RequestSetting::max_single_operation_copy_size]);
 
             if (use_single_operation_copy)
                 performSingleOperationCopy();
@@ -744,9 +660,7 @@ namespace
         const String & src_key;
         size_t offset;
         size_t size;
-        size_t src_object_size;
         bool supports_multipart_copy;
-        bool is_ranged_copy;
         const ReadSettings read_settings;
         std::function<void()> fallback_method;
 
@@ -952,114 +866,12 @@ void copyDataToS3File(
 }
 
 
-namespace
-{
-    /// Shared by both public entry points. `is_ranged_copy` says whether only [src_offset, src_offset +
-    /// src_size) of a larger source is wanted; it is internal, so no caller can leave it at a wrong default.
-    void copyS3FileImpl(
-        std::shared_ptr<const S3::Client> src_s3_client,
-        const String & src_bucket,
-        const String & src_key,
-        size_t src_offset,
-        size_t src_size,
-        size_t src_object_size,
-        std::shared_ptr<const S3::Client> dest_s3_client,
-        const String & dest_bucket,
-        const String & dest_key,
-        const S3::S3RequestSettings & settings,
-        const ReadSettings & read_settings,
-        BlobStorageLogWriterPtr blob_storage_log,
-        ThreadPoolCallbackRunnerUnsafe<void> schedule,
-        const CreateReadBuffer & fallback_file_reader,
-        const std::optional<ObjectAttributes> & object_metadata,
-        bool is_ranged_copy)
-    {
-        if (!dest_s3_client)
-            dest_s3_client = src_s3_client;
-
-        std::function<void()> fallback_method = [&] mutable
-        {
-            copyDataToS3File(
-                fallback_file_reader,
-                src_offset,
-                src_size,
-                dest_s3_client,
-                dest_bucket,
-                dest_key,
-                settings,
-                blob_storage_log,
-                schedule,
-                object_metadata);
-        };
-
-        if (!settings[S3RequestSetting::allow_native_copy])
-        {
-            LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
-            fallback_method();
-            return;
-        }
-
-        CopyFileHelper helper{
-            src_s3_client,
-            src_bucket,
-            src_key,
-            src_offset,
-            src_size,
-            src_object_size,
-            dest_bucket,
-            dest_key,
-            settings,
-            read_settings,
-            object_metadata,
-            schedule,
-            blob_storage_log,
-            std::move(fallback_method),
-            is_ranged_copy};
-        helper.performCopy();
-    }
-}
-
 void copyS3File(
-    std::shared_ptr<const S3::Client> src_s3_client,
-    const String & src_bucket,
-    const String & src_key,
-    size_t src_size,
-    std::shared_ptr<const S3::Client> dest_s3_client,
-    const String & dest_bucket,
-    const String & dest_key,
-    const S3::S3RequestSettings & settings,
-    const ReadSettings & read_settings,
-    BlobStorageLogWriterPtr blob_storage_log,
-    ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const CreateReadBuffer & fallback_file_reader,
-    const std::optional<ObjectAttributes> & object_metadata)
-{
-    copyS3FileImpl(
-        std::move(src_s3_client),
-        src_bucket,
-        src_key,
-        /* src_offset= */ 0,
-        src_size,
-        /* src_object_size= */ src_size,
-        std::move(dest_s3_client),
-        dest_bucket,
-        dest_key,
-        settings,
-        read_settings,
-        std::move(blob_storage_log),
-        std::move(schedule),
-        fallback_file_reader,
-        object_metadata,
-        /* is_ranged_copy= */ false);
-}
-
-void copyS3FileRange(
     std::shared_ptr<const S3::Client> src_s3_client,
     const String & src_bucket,
     const String & src_key,
     size_t src_offset,
     size_t src_size,
-    size_t src_object_size,
     std::shared_ptr<const S3::Client> dest_s3_client,
     const String & dest_bucket,
     const String & dest_key,
@@ -1067,26 +879,49 @@ void copyS3FileRange(
     const ReadSettings & read_settings,
     BlobStorageLogWriterPtr blob_storage_log,
     ThreadPoolCallbackRunnerUnsafe<void> schedule,
-    const CreateReadBuffer & fallback_file_reader,
+    const CreateReadBuffer& fallback_file_reader,
     const std::optional<ObjectAttributes> & object_metadata)
 {
-    copyS3FileImpl(
-        std::move(src_s3_client),
+    if (!dest_s3_client)
+        dest_s3_client = src_s3_client;
+
+    std::function<void()> fallback_method = [&] mutable
+    {
+        copyDataToS3File(
+            fallback_file_reader,
+            src_offset,
+            src_size,
+            dest_s3_client,
+            dest_bucket,
+            dest_key,
+            settings,
+            blob_storage_log,
+            schedule,
+            object_metadata);
+    };
+
+    if (!settings[S3RequestSetting::allow_native_copy])
+    {
+        LOG_TRACE(getLogger("copyS3File"), "Native copy is disable for {}", src_key);
+        fallback_method();
+        return;
+    }
+
+    CopyFileHelper helper{
+        src_s3_client,
         src_bucket,
         src_key,
         src_offset,
         src_size,
-        src_object_size,
-        std::move(dest_s3_client),
         dest_bucket,
         dest_key,
         settings,
         read_settings,
-        std::move(blob_storage_log),
-        std::move(schedule),
-        fallback_file_reader,
         object_metadata,
-        /* is_ranged_copy= */ true);
+        schedule,
+        blob_storage_log,
+        std::move(fallback_method)};
+    helper.performCopy();
 }
 
 }

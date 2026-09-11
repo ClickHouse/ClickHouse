@@ -123,17 +123,6 @@ add_library(global-libs INTERFACE)
 include (cmake/sanitize.cmake)
 include (cmake/profile_optimization.cmake)
 
-option (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER "With Silk fibers, we may access the same TLS variable from the same fiber, and if executed on different OS threads, the same variable access will hit different memory locations, leading to very hard to catch bugs. This sanitizer helps catch that. Debug only." OFF)
-if (ENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER)
-    set (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN "${CMAKE_BINARY_DIR}/SilkThreadLocalStorageSanitizerPass.so")
-    execute_process (COMMAND ${CMAKE_COMMAND} -E env "CXX=${CMAKE_CXX_COMPILER}" bash "${CMAKE_SOURCE_DIR}/utils/silk-thread-local-storage-sanitizer/build.sh" "${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}" COMMAND_ERROR_IS_FATAL ANY)
-endif ()
-if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN)
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fpass-plugin=${SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN}")
-    add_compile_definitions (SILK_THREAD_LOCAL_STORAGE_SANITIZER=1)
-endif ()
-
 option(ENABLE_COLORED_BUILD "Enable colors in compiler output" ON)
 
 set (CMAKE_COLOR_MAKEFILE ${ENABLE_COLORED_BUILD}) # works only for the makefile generator
@@ -159,12 +148,6 @@ set (COMPILER_SUPPORTS_GZ_ZLIB OFF)
 if (C_COMPILER_SUPPORTS_GZ_ZLIB AND CXX_COMPILER_SUPPORTS_GZ_ZLIB)
     set (COMPILER_SUPPORTS_GZ_ZLIB ON)
 endif ()
-
-# Has to precede block_build_time_checks.cmake. `enable_language(CUDA)` runs CMake's own
-# compiler test through `try_compile`, and `FindCUDAToolkit` reaches `find_package(Threads)`,
-# which probes with `check_c_source_compiles`. Both are blocked below, so CUDA gets enabled
-# here for the same reason `project()` enables C/CXX/ASM before the guard is installed.
-include (cmake/cuda.cmake)
 
 # Block build-time CMake probes (check_*, try_compile, try_run) project-wide. Compiler and
 # toolchain are fixed (see cmake/tools.cmake), so feature detection is unnecessary - any
@@ -516,19 +499,11 @@ if (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE)
         # cfi-vcall and cfi-derived-cast are C++-only checks; do not apply to C compilation.
         #
         # Use `-fvisibility=default` rather than the CFI-documented `hidden`: with hidden
-        # visibility the resulting binary crashes with SIGSEGV before main runs. Validated
-        # empirically by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with
-        # signal 11.
-        #
-        # That crash was originally attributed to inline-static singletons like
-        # `Context::global_context_instance` being duplicated per shared object. That is not the
-        # cause. Every `-Wunique-object-duplication` site has since been fixed (the warning now
-        # reports nothing under `-fvisibility=hidden`) and the crash is unchanged: it is
-        # `numa_init()`, a pre-main libc constructor, calling `free()` — which this binary
-        # interposes in `Common/malloc.cpp` — and reaching jemalloc before jemalloc has
-        # initialised. Whether it fires at all depends on static-initialisation order, so it can
-        # appear to come and go with unrelated changes. Fixing that is what would let CFI use
-        # `hidden`; the duplication fixes on their own do not.
+        # visibility the build succeeds (with `-Wunique-object-duplication` suppressed) but the
+        # resulting binary crashes with SIGSEGV before main runs, because inline-static singletons
+        # like `Context::global_context_instance` and `BaseSettings::unknown_settings` get
+        # duplicated per translation unit and singleton identity is broken. Validated empirically
+        # by WeeklyCFI run 25790910376 — `clickhouse-server --version` exited with signal 11.
         # CFI vtable visibility is still satisfied for in-binary types because
         # `-fwhole-program-vtables` and `-Wl,--lto-whole-program-visibility` (set above) cause
         # the linker to treat all vtables as internal to the binary.
@@ -585,8 +560,6 @@ elseif (OS_FREEBSD)
     include(cmake/freebsd/default_libs.cmake)
 elseif (OS_SUNOS)
     include(cmake/sunos/default_libs.cmake)
-elseif (OS_WASM)
-    include(cmake/wasm/default_libs.cmake)
 endif ()
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
@@ -613,26 +586,22 @@ endif ()
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
 
-# Position independent code is enabled on every amd64 and aarch64 build:
+# We enable position independent encoding for all build types except build with -flto=thin:
 # 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
 # multiple sophisticated problems like linking with sanitizers or linking of rust.
-# 2. -flto=thin leads to some other way of linkage. For example for rust libraries build
+# 2. Position independent binaries and libraries are a little bit slower, than position dependent. We consider
+# build with -flto=thin as trully "production" build where each % of performance is important.
+# 3. For some unknow reason -flto=thin lead to some other way of linkage. For example for rust libraries build
 # we don't see any relocation-related errors without -fPIC, but with enabled -flto=thin. While without
 # -flto=thin we have relocation errors like:
 # rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
 #
+# NOTE: -fno-pie disables -fPIC, so that is why we check ENABLE_THINLTO in the branch bellow
+#
 # For some sophisticated platforms we have different issues with fPIC:
 # For example riscv toolchain itself compiled without fPIC
-if (ARCH_AMD64 OR ARCH_AARCH64)
+if (NOT ENABLE_THINLTO AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
-
-    # -fPIC only makes the code relocatable; whether the executable itself is position independent is
-    # the compiler driver's default unless the linker is asked explicitly, so ask it.
-    # musl links statically, and -static-pie needs an rcrt1.o that contrib/musl-cmake does not build.
-    # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
-    if (OS_LINUX AND NOT USE_MUSL)
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
-    endif()
 endif()
 
 if (ENABLE_POSITION_INDEPENDENT_BINARY)
@@ -683,11 +652,6 @@ function (add_native_target TARGET)
 endfunction (add_native_target)
 
 add_subdirectory (contrib EXCLUDE_FROM_ALL)
-
-# We can only check that SILK_THREAD_LOCAL_STORAGE_SANITIZER implies USE_SILK once we know whether silk is built
-if (SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN AND NOT TARGET ch_contrib::silk_fibers)
-    message (FATAL_ERROR "SILK_THREAD_LOCAL_STORAGE_SANITIZER_PASS_PLUGIN is set, but silk is not built in this configuration (disable with -DENABLE_SILK_THREAD_LOCAL_STORAGE_SANITIZER=OFF)")
-endif ()
 
 # We can only include XRay flags and defines once we know that we're building LLVM
 if (ENABLE_XRAY)
@@ -788,16 +752,7 @@ if (FUZZER)
         if (NOT(target STREQUAL "_fuzzer" OR target STREQUAL "_fuzzer_no_main" OR target MATCHES ".*isal.*"))
             get_target_property(target_type ${target} TYPE)
             if (NOT(target_type STREQUAL "INTERFACE_LIBRARY" OR target_type STREQUAL "UTILITY"))
-                # Targets compiled with -fno-sanitize=all must never be instrumented:
-                # a later -fsanitize=fuzzer-no-link overrides it and re-enables
-                # SanitizerCoverage. That is fatal for the in-tree libc and sanitizer
-                # runtimes (musl, clang_rt_*): their startup code (CRT, __init_libc)
-                # runs before any coverage runtime exists, so every executable would
-                # crash at startup.
-                get_target_property(target_compile_options ${target} COMPILE_OPTIONS)
-                if (NOT target_compile_options MATCHES "-fno-sanitize=all")
-                    target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
-                endif()
+                target_compile_options(${target} PRIVATE "-fsanitize=fuzzer-no-link")
             endif()
             if (target_type STREQUAL "EXECUTABLE" AND target MATCHES ".+_fuzzer")
                 message(STATUS "${target} instrumented with fuzzer")

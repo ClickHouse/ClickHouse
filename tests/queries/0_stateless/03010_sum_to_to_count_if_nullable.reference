@@ -1,4 +1,7 @@
 (5,NULL)
+(5,NULL)
+((6150),3)
+(5,NULL)
 QUERY id: 0
   PROJECTION COLUMNS
     (sumIf(toNullable(1), equals(modulo(number, 2), 0)), NULL) Tuple(Nullable(UInt64), Nullable(Nothing))

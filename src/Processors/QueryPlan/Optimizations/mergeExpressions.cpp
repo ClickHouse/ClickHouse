@@ -1,5 +1,4 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
-#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Interpreters/ActionsDAG.h>
@@ -44,12 +43,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         /// We cannot combine actions with arrayJoin and stateful function because we not always can reorder them.
         /// Example: select rowNumberInBlock() from (select arrayJoin([1, 2]))
         /// Such a query will return two zeroes if we combine actions together.
-        /// A function that is merely non-deterministic within the query (`rand64`, `generateUUIDv4`,
-        /// ...) has the same problem for the same reason: merged into the child DAG it is computed
-        /// once per source row and the value is then replicated across the rows the `arrayJoin`
-        /// expands, instead of being drawn once per output row.
-        if (child_actions.hasArrayJoin()
-            && (parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions)))
+        if (child_actions.hasArrayJoin() && parent_actions.hasStatefulFunctions())
             return 0;
 
         /// Propagate the flag from either side: if the child is a discarding step (or any
@@ -74,10 +68,7 @@ size_t tryMergeExpressions(QueryPlan::Node * parent_node, QueryPlan::Nodes &, co
         auto & child_actions = child_expr->getExpression();
         auto & parent_actions = parent_filter->getExpression();
 
-        /// Same as for the expression step above: a stateful or non-deterministic filter must not be
-        /// computed before the `arrayJoin` replicates the rows it applies to.
-        if (child_actions.hasArrayJoin()
-            && (parent_actions.hasStatefulFunctions() || dagContainsNonDeterministicFunction(parent_actions)))
+        if (child_actions.hasArrayJoin() && parent_actions.hasStatefulFunctions())
             return 0;
 
         const bool prevent_input_removal = child_expr->isInputRemovalPrevented() || parent_filter->isInputRemovalPrevented();
