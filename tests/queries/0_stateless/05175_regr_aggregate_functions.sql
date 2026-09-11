@@ -120,6 +120,20 @@ FROM t;
 WITH t AS (SELECT 1e12 + number AS x, 3 * (1e12 + number) + 7 AS y FROM numbers(100000))
 SELECT abs(regr_slope(y, x) - 3) < 1e-12, abs(regr_intercept(y, x) - 7) < 0.01 FROM t;
 
+-- Integer columns are centered in their own type. Past 2^53 a Float64 no longer has consecutive
+-- integers, so narrowing first would round the spread away: the thousand rows below span 406 and
+-- land on four distinct Float64 values.
+SELECT 'a UInt64 column past 2^53 keeps its spread';
+WITH t AS (SELECT toUInt64(1000000000000000000) + number % 406 AS x, 3 * x + 7 AS y FROM numbers(1000))
+SELECT abs(regr_slope(y, x) - 3) < 1e-12, abs(regr_r2(y, x) - 1) < 1e-12, uniqExact(toFloat64(x)) < uniqExact(x) FROM t;
+
+WITH t AS (SELECT toInt64(-1000000000000000000) + number AS x, 3 * x + 7 AS y FROM numbers(1000))
+SELECT abs(regr_slope(y, x) - 3) < 1e-12, abs(regr_r2(y, x) - 1) < 1e-12 FROM t;
+
+-- nanosecond timestamps, the shape this matters for in practice
+WITH t AS (SELECT toUInt64(1757600000000000000) + number * 1000 AS x, 5 * x + 11 AS y FROM numbers(1000))
+SELECT regr_slope(y, x), regr_r2(y, x) FROM t;
+
 SELECT 'states shifted by different values merge into the single-pass answer';
 SELECT regr_slopeMerge(a), regr_interceptMerge(b), regr_sxxMerge(c) FROM (
     SELECT regr_slopeState(y, x) AS a, regr_interceptState(y, x) AS b, regr_sxxState(y, x) AS c

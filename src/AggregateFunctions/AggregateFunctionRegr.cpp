@@ -70,31 +70,50 @@ constexpr std::string_view regrKindName(RegrKind kind)
 /// still vectorizes, which a Welford-style incremental mean does not.
 ///
 /// Every quantity the aggregates need is invariant under the shift, so it cancels in the results.
+/// The difference of two values of the argument type, exactly.
+///
+/// An integer column is not narrowed to Float64 first: a UInt64 timestamp in nanoseconds is past
+/// 2^53, where Float64 no longer has consecutive integers, and the low bits that carry the spread
+/// would be rounded away before the subtraction ever happens - a thousand rows spread over 406
+/// nanoseconds collapse onto four distinct Float64 values. The subtraction is done in the unsigned
+/// domain and reinterpreted, which is exact whenever the true difference fits in Int64, and the
+/// spread of a column that is being fitted always does.
+template <typename T>
+Float64 exactDelta(T value, T shift)
+{
+    if constexpr (is_integer<T>)
+        return static_cast<Float64>(static_cast<Int64>(static_cast<UInt64>(value) - static_cast<UInt64>(shift)));
+    else
+        return static_cast<Float64>(value) - static_cast<Float64>(shift);
+}
+
+template <typename TX, typename TY>
 struct RegrMoments
 {
     static constexpr size_t unroll_count = 128 / sizeof(Float64);
 
     UInt64 count = 0;
-    /// The shift, set from the first pair added to an empty state.
-    Float64 x0 = 0;
-    Float64 y0 = 0;
+    /// The shift, set from the first pair added to an empty state, and kept in the type of the
+    /// argument so that the centering below loses nothing.
+    TX x0 = 0;
+    TY y0 = 0;
     Float64 sx = 0;
     Float64 sy = 0;
     Float64 sxx = 0;
     Float64 syy = 0;
     Float64 sxy = 0;
 
-    void setShift(Float64 x, Float64 y)
+    void setShift(TX x, TY y)
     {
         x0 = x;
         y0 = y;
     }
 
-    void add(Float64 x, Float64 y)
+    void add(TX x, TY y)
     {
         if (count == 0)
             setShift(x, y);
-        addShifted(x - x0, y - y0);
+        addShifted(exactDelta(x, x0), exactDelta(y, y0));
     }
 
     void addShifted(Float64 dx, Float64 dy)
@@ -107,13 +126,12 @@ struct RegrMoments
         sxy += dx * dy;
     }
 
-    template <typename ValueX, typename ValueY>
-    void addMany(const ValueX * __restrict x_ptr, const ValueY * __restrict y_ptr, size_t row_begin, size_t row_end)
+    void addMany(const TX * __restrict x_ptr, const TY * __restrict y_ptr, size_t row_begin, size_t row_end)
     {
         if (row_begin >= row_end)
             return;
         if (count == 0)
-            setShift(static_cast<Float64>(x_ptr[row_begin]), static_cast<Float64>(y_ptr[row_begin]));
+            setShift(x_ptr[row_begin], y_ptr[row_begin]);
 
         /// Summing into a single accumulator would let the rounding error grow with the row count:
         /// over a million rows it cost the slope five digits. Partial sums keep it near the error
@@ -129,8 +147,8 @@ struct RegrMoments
         {
             for (size_t j = 0; j < unroll_count; ++j)
             {
-                const Float64 dx = static_cast<Float64>(x_ptr[i + j]) - x0;
-                const Float64 dy = static_cast<Float64>(y_ptr[i + j]) - y0;
+                const Float64 dx = exactDelta(x_ptr[i + j], x0);
+                const Float64 dy = exactDelta(y_ptr[i + j], y0);
                 acc_sx[j] += dx;
                 acc_sy[j] += dy;
                 acc_sxx[j] += dx * dx;
@@ -149,13 +167,13 @@ struct RegrMoments
         count += i - row_begin;
 
         for (; i < row_end; ++i)
-            addShifted(static_cast<Float64>(x_ptr[i]) - x0, static_cast<Float64>(y_ptr[i]) - y0);
+            addShifted(exactDelta(x_ptr[i], x0), exactDelta(y_ptr[i], y0));
     }
 
-    template <typename ValueX, typename ValueY, bool add_if_zero>
+    template <bool add_if_zero>
     void addManyConditional(
-        const ValueX * __restrict x_ptr,
-        const ValueY * __restrict y_ptr,
+        const TX * __restrict x_ptr,
+        const TY * __restrict y_ptr,
         const UInt8 * __restrict condition_map,
         size_t row_begin,
         size_t row_end)
@@ -167,7 +185,7 @@ struct RegrMoments
             {
                 if (!!condition_map[i] ^ add_if_zero)
                 {
-                    setShift(static_cast<Float64>(x_ptr[i]), static_cast<Float64>(y_ptr[i]));
+                    setShift(x_ptr[i], y_ptr[i]);
                     break;
                 }
             }
@@ -188,8 +206,8 @@ struct RegrMoments
                 const bool add = !!condition_map[i + j] ^ add_if_zero;
                 /// Zeroing the bit pattern rather than multiplying by the flag: a discarded row may
                 /// hold a NaN or an Inf, and 0 * NaN is NaN, which would poison every sum.
-                const Float64 dx = maskFloatingPoint(static_cast<Float64>(x_ptr[i + j]) - x0, add);
-                const Float64 dy = maskFloatingPoint(static_cast<Float64>(y_ptr[i + j]) - y0, add);
+                const Float64 dx = maskFloatingPoint(exactDelta(x_ptr[i + j], x0), add);
+                const Float64 dy = maskFloatingPoint(exactDelta(y_ptr[i + j], y0), add);
                 acc_count += add;
                 acc_sx[j] += dx;
                 acc_sy[j] += dy;
@@ -211,7 +229,7 @@ struct RegrMoments
         for (; i < row_end; ++i)
         {
             if (!!condition_map[i] ^ add_if_zero)
-                addShifted(static_cast<Float64>(x_ptr[i]) - x0, static_cast<Float64>(y_ptr[i]) - y0);
+                addShifted(exactDelta(x_ptr[i], x0), exactDelta(y_ptr[i], y0));
         }
     }
 
@@ -227,8 +245,8 @@ struct RegrMoments
             return;
         }
 
-        const Float64 dx = rhs.x0 - x0;
-        const Float64 dy = rhs.y0 - y0;
+        const Float64 dx = exactDelta(rhs.x0, x0);
+        const Float64 dy = exactDelta(rhs.y0, y0);
         const auto rhs_count = static_cast<Float64>(rhs.count);
 
         sxx += rhs.sxx + 2 * dx * rhs.sx + rhs_count * dx * dx;
@@ -262,14 +280,15 @@ struct RegrResult
     Float64 syy;
     Float64 sxy;
 
-    explicit RegrResult(const RegrMoments & data)
+    template <typename Data>
+    explicit RegrResult(const Data & data)
         : n(static_cast<Float64>(data.count))
-        , x0(data.x0)
-        , y0(data.y0)
+        , x0(static_cast<Float64>(data.x0))
+        , y0(static_cast<Float64>(data.y0))
         , mean_dx(data.sx / n)
         , mean_dy(data.sy / n)
-        , avg_x(data.x0 + mean_dx)
-        , avg_y(data.y0 + mean_dy)
+        , avg_x(x0 + mean_dx)
+        , avg_y(y0 + mean_dy)
         , sxx(std::max(0.0, data.sxx - data.sx * data.sx / n))
         , syy(std::max(0.0, data.syy - data.sy * data.sy / n))
         , sxy(data.sxy - data.sx * data.sy / n)
@@ -321,11 +340,11 @@ struct RegrResult
 /// regr_avgx and regr_avgy equal to avg(x) and avg(y), which finalize to Float64 as well.
 template <typename TY, typename TX>
 class AggregateFunctionRegr final
-    : public IAggregateFunctionDataHelper<RegrMoments, AggregateFunctionRegr<TY, TX>>
+    : public IAggregateFunctionDataHelper<RegrMoments<TX, TY>, AggregateFunctionRegr<TY, TX>>
 {
 public:
     using ResultType = Float64;
-    using Data = RegrMoments;
+    using Data = RegrMoments<TX, TY>;
     using ColVecTY = ColumnVector<TY>;
     using ColVecTX = ColumnVector<TX>;
     using ColVecResult = ColumnVector<ResultType>;
@@ -345,8 +364,8 @@ public:
     {
         /// The state holds the independent variable as x, so the arguments are swapped here.
         this->data(place).add(
-            static_cast<ResultType>(static_cast<const ColVecTX &>(*columns[1]).getData()[row_num]),
-            static_cast<ResultType>(static_cast<const ColVecTY &>(*columns[0]).getData()[row_num]));
+            static_cast<const ColVecTX &>(*columns[1]).getData()[row_num],
+            static_cast<const ColVecTY &>(*columns[0]).getData()[row_num]);
     }
 
     void addBatchSinglePlace(
@@ -364,7 +383,7 @@ public:
         if (if_argument_pos >= 0)
         {
             const auto * flags = assert_cast<const ColumnUInt8 &>(*columns[if_argument_pos]).getData().data();
-            data.template addManyConditional<TX, TY, false>(x_ptr, y_ptr, flags, row_begin, row_end);
+            data.template addManyConditional<false>(x_ptr, y_ptr, flags, row_begin, row_end);
         }
         else
         {
@@ -395,11 +414,11 @@ public:
             for (size_t i = row_begin; i < row_end; ++i)
                 final_flags[i] = (!null_map[i]) & !!if_flags[i];
 
-            data.template addManyConditional<TX, TY, false>(x_ptr, y_ptr, final_flags.get(), row_begin, row_end);
+            data.template addManyConditional<false>(x_ptr, y_ptr, final_flags.get(), row_begin, row_end);
         }
         else
         {
-            data.template addManyConditional<TX, TY, true>(x_ptr, y_ptr, null_map, row_begin, row_end);
+            data.template addManyConditional<true>(x_ptr, y_ptr, null_map, row_begin, row_end);
         }
     }
 

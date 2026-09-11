@@ -39,6 +39,10 @@ an offset that dwarfs the spread does not cancel the sums away
 3	7	1
 1	1	1	1
 1	1
+a UInt64 column past 2^53 keeps its spread
+1	1	1
+1	1
+5	1
 states shifted by different values merge into the single-pass answer
 3	7	83333250
 every group is fitted on its own
