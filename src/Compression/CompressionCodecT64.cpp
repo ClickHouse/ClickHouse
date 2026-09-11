@@ -231,31 +231,8 @@ TypeIndex typeIdx(const IDataType * data_type)
         return TypeIndex::Nothing;
 
     WhichDataType which(*data_type);
-    switch (which.idx)
-    {
-        case TypeIndex::Int8:
-        case TypeIndex::UInt8:
-        case TypeIndex::Enum8:
-        case TypeIndex::Int16:
-        case TypeIndex::UInt16:
-        case TypeIndex::Enum16:
-        case TypeIndex::Date:
-        case TypeIndex::Date32:
-        case TypeIndex::Int32:
-        case TypeIndex::UInt32:
-        case TypeIndex::IPv4:
-        case TypeIndex::Time:
-        case TypeIndex::Time64:
-        case TypeIndex::DateTime:
-        case TypeIndex::DateTime64:
-        case TypeIndex::Decimal32:
-        case TypeIndex::Int64:
-        case TypeIndex::UInt64:
-        case TypeIndex::Decimal64:
-            return which.idx;
-        default:
-            break;
-    }
+    if (baseType(which.idx) != TypeIndex::Nothing)
+        return which.idx;
 
     return TypeIndex::Nothing;
 }
