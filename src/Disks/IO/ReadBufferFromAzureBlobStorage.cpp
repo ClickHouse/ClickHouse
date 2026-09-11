@@ -95,11 +95,20 @@ void checkReturnedETag(const Azure::Storage::Blobs::Models::DownloadBlobResult &
         path, expected_etag, response_etag);
 }
 
-/// A range that starts at or past the end of a blob is refused with `416 Range Not Satisfiable`,
-/// which is the endpoint stating that the object has no byte at the requested offset.
+/// The endpoint states that the object has no byte at the requested offset.
 bool isRangeRefused(const Azure::Core::RequestFailedException & e)
 {
-    return e.StatusCode == Azure::Core::Http::HttpStatusCode::RangeNotSatisfiable;
+    /// A range that starts past the end of a blob is refused with `416 Range Not Satisfiable`.
+    if (e.StatusCode == Azure::Core::Http::HttpStatusCode::RangeNotSatisfiable)
+        return true;
+
+    /// A range on a blob that has no bytes at all is refused with `400 Bad Request` and the error
+    /// code `InvalidRange` instead ("The range specified is invalid for the current size of the
+    /// resource"), by Azure as well as by Azurite: an empty blob has no satisfiable range for the
+    /// endpoint to report one against. A zero-length object is read exactly like any other one
+    /// whose length is not known before the read - a directory marker of a `plain_rewritable`
+    /// metadata storage is one - so this is the answer that ends such a read.
+    return e.StatusCode == Azure::Core::Http::HttpStatusCode::BadRequest && e.ErrorCode == "InvalidRange";
 }
 
 /// The `If-Match` precondition was evaluated by the endpoint and failed: the object is no longer

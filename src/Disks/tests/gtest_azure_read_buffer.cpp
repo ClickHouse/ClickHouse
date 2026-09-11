@@ -303,9 +303,12 @@ public:
 
         /// A real endpoint refuses a range that begins where it has nothing to serve, rather than
         /// answering with an empty body. That refusal is the only positive statement about the end
-        /// of an object whose size the reader does not know locally.
+        /// of an object whose size the reader does not know locally. A blob that has no bytes at
+        /// all is a case of its own: there is no satisfiable range of it to report a requested one
+        /// against, so Azure and Azurite answer `400 Bad Request` with `InvalidRange` there and
+        /// `416 Range Not Satisfiable` everywhere else.
         if (refuse_range_past_the_data && !ignore_range && range_start >= served_size)
-            return rangeNotSatisfiable();
+            return served_size == 0 ? invalidRange() : rangeNotSatisfiable();
 
         const size_t range_end = range_start + (response_size == 0 ? 0 : response_size - 1);
 
@@ -369,6 +372,18 @@ private:
         auto failure = std::make_unique<Azure::Core::Http::RawResponse>(
             1, 1, Azure::Core::Http::HttpStatusCode::RangeNotSatisfiable, "The range specified is invalid for the current size of the resource.");
         failure->SetHeader("Content-Length", "0");
+        failure->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
+        return failure;
+    }
+
+    /// How Azure answers a ranged `GET` of a blob that has no bytes: the status is `400`, and the
+    /// reason is in the `x-ms-error-code` header the SDK reads into `RequestFailedException::ErrorCode`.
+    static std::unique_ptr<Azure::Core::Http::RawResponse> invalidRange()
+    {
+        auto failure = std::make_unique<Azure::Core::Http::RawResponse>(
+            1, 1, Azure::Core::Http::HttpStatusCode::BadRequest, "The range specified is invalid for the current size of the resource.");
+        failure->SetHeader("Content-Length", "0");
+        failure->SetHeader("x-ms-error-code", "InvalidRange");
         failure->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
         return failure;
     }
@@ -1253,8 +1268,10 @@ TEST(AzureReadWithoutRightBound, RangePastTheObjectRefused)
     assertCountsUpFromZero(data);
 }
 
-/// An empty blob whose size is not known locally: the first request is already a range past the end
-/// of the object and is refused, which is the end of the file rather than an error.
+/// An empty blob whose size is not known locally: the first request is already a range that the
+/// endpoint has nothing to answer, and a blob with no bytes is refused with `400 Bad Request` /
+/// `InvalidRange` rather than `416 Range Not Satisfiable`. That is the end of the file, not an
+/// error - a directory marker of a `plain_rewritable` metadata storage is read exactly like this.
 TEST(AzureReadWithoutRightBound, EmptyObjectOfUnknownSize)
 {
     std::string data;
