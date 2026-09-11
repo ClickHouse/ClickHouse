@@ -185,6 +185,15 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json_max_string_column_growth_step = settings[Setting::input_format_json_max_string_column_growth_step];
     format_settings.json.max_depth = settings[Setting::input_format_json_max_depth];
     format_settings.json.array_of_rows = settings[Setting::output_format_json_array_of_rows];
+    {
+        const auto & array_of_rows_input = settings[Setting::input_format_json_array_of_rows];
+        if (array_of_rows_input.is_auto)
+            format_settings.json.array_of_rows_input = FormatSettings::JSON::ArrayOfRowsInput::Auto;
+        else
+            format_settings.json.array_of_rows_input = array_of_rows_input.base
+                ? FormatSettings::JSON::ArrayOfRowsInput::Yes
+                : FormatSettings::JSON::ArrayOfRowsInput::No;
+    }
     format_settings.json.escape_forward_slashes = settings[Setting::output_format_json_escape_forward_slashes];
     format_settings.json.write_named_tuples_as_objects = settings[Setting::output_format_json_named_tuples_as_objects];
     format_settings.json.skip_null_value_in_named_tuples = settings[Setting::output_format_json_skip_null_value_in_named_tuples];

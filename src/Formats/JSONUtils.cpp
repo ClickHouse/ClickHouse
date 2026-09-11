@@ -8,6 +8,8 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/assert_cast.h>
@@ -777,6 +779,96 @@ namespace JSONUtils
             return false;
         skipWhitespaceIfAny(in);
         return true;
+    }
+
+    static size_t leadingJSONArrayDepth(const DataTypePtr & type)
+    {
+        if (!type)
+            return 0;
+
+        size_t depth = 0;
+        DataTypePtr current = type;
+        while (current)
+        {
+            current = removeLowCardinalityAndNullable(current);
+            WhichDataType which(current);
+            if (which.isArray())
+            {
+                ++depth;
+                current = assert_cast<const DataTypeArray &>(*current).getNestedType();
+                continue;
+            }
+            if (which.isTuple())
+            {
+                const auto & tuple = assert_cast<const DataTypeTuple &>(*current);
+                if (tuple.hasExplicitNames())
+                    break;
+                ++depth;
+                const auto & elements = tuple.getElements();
+                if (elements.empty())
+                    break;
+                current = elements.front();
+                continue;
+            }
+            break;
+        }
+        return depth;
+    }
+
+    /// Count extra '[' after the first '[' without consuming input. Only the current buffer
+    /// is inspected; wrapping the stream in PeekableReadBuffer can drop bytes across a boundary.
+    /// If the prefix is split, extra is undercounted and Auto leaves the data wrapped.
+    static size_t peekLeadingArrayDepthAfterFirstBracket(ReadBuffer & in)
+    {
+        const char * pos = in.position();
+        const char * const end = in.buffer().end();
+
+        auto skip_ws = [&]()
+        {
+            while (pos < end && isWhitespaceASCII(*pos))
+                ++pos;
+        };
+
+        skip_ws();
+        if (pos >= end || *pos != '[')
+            return 0;
+
+        ++pos;
+        skip_ws();
+
+        size_t extra = 0;
+        while (pos < end && *pos == '[')
+        {
+            ++extra;
+            ++pos;
+            skip_ws();
+        }
+        return extra;
+    }
+
+    bool consumeJSONCompactEachRowWrappingArrayIfNeeded(
+        ReadBuffer & in, const FormatSettings & settings, const DataTypePtr & first_column_type, bool allow_auto_without_type)
+    {
+        using Mode = FormatSettings::JSON::ArrayOfRowsInput;
+        if (settings.json.array_of_rows_input == Mode::No)
+            return false;
+
+        skipWhitespaceIfAny(in);
+        if (in.eof() || *in.position() != '[')
+            return false;
+
+        if (settings.json.array_of_rows_input == Mode::Yes)
+            return checkAndSkipArrayStart(in);
+
+        if (!first_column_type && !allow_auto_without_type)
+            return false;
+
+        const size_t expected = leadingJSONArrayDepth(first_column_type);
+        const size_t extra = peekLeadingArrayDepthAfterFirstBracket(in);
+        if (extra != expected + 1)
+            return false;
+
+        return checkAndSkipArrayStart(in);
     }
 
     void skipObjectStart(ReadBuffer & in)
