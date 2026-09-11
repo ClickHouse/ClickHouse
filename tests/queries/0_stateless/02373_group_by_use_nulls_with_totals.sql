@@ -132,3 +132,20 @@ GROUP BY ALL
 QUALIFY t = 'Nullable(UInt64)'
 ORDER BY k
 SETTINGS group_by_use_nulls = 1;
+
+-- The keys must also be nullified when the aggregation header comes from remote shards: there
+-- the initiator converts them after merging the shards' aggregation states, not after a local
+-- aggregation. The group_by_use_nulls = 0 twin pins that the keys stay non-Nullable there.
+SELECT number AS k, toTypeName(k), k IS NULL, sum(number) AS val
+FROM remote('127.0.0.{2,3}', numbers(3))
+GROUP BY k
+    WITH TOTALS
+ORDER BY k
+SETTINGS group_by_use_nulls = 1;
+
+SELECT number AS k, toTypeName(k), k IS NULL, sum(number) AS val
+FROM remote('127.0.0.{2,3}', numbers(3))
+GROUP BY k
+    WITH TOTALS
+ORDER BY k
+SETTINGS group_by_use_nulls = 0;
