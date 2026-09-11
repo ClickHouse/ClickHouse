@@ -1,0 +1,9 @@
+Nullable(Bool)	Bool	Nullable(Int8)
+=== toString
+false	false
+\N	true
+=== filtering by a boolean literal
+5	5	5
+5	5	5
+5
+5
