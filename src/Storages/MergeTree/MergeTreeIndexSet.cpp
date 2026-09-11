@@ -550,14 +550,14 @@ MergeTreeIndexConditionSet::FilteredGranules MergeTreeIndexConditionSet::getPoss
                     Field min_val;
                     Field max_val;
                     const auto & block_column = block.getByPosition(column_num).column;
-                    const auto column = block_column->lowCardinality()
+                    const auto extremes_column = block_column->lowCardinality()
                         ? block_column->convertToFullColumnIfLowCardinality()
                         : block_column;
 
-                    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(column.get()))
+                    if (const auto * column_nullable = typeid_cast<const ColumnNullable *>(extremes_column.get()))
                         column_nullable->getExtremesNullLast(min_val, max_val, block_pos, granule_end - block_pos);
                     else
-                        column->getExtremes(min_val, max_val, block_pos, granule_end - block_pos);
+                        extremes_column->getExtremes(min_val, max_val, block_pos, granule_end - block_pos);
 
                     set_hyperrectangle.emplace_back(min_val, true, max_val, true);
                 }
