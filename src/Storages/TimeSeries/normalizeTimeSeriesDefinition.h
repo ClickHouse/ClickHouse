@@ -35,11 +35,6 @@ struct NormalizeTimeSeriesDefinitionInputs
     /// Required for a new table.
     std::map<ViewTarget::Kind, ColumnsDescription> external_target_columns;
 
-    /// The columns of the external target tables of the table from the clause `AS <other_table>`.
-    /// Only the external `tags` table can be needed here, and only if the definition of that table doesn't declare
-    /// the `id` type itself: in its inner columns or in its `id_type` setting (tables created by older versions).
-    std::map<ViewTarget::Kind, ColumnsDescription> as_external_target_columns;
-
     /// The query-level settings (the `default_table_engine` setting chooses the engines of the inner tables).
     /// Required for a new table.
     const Settings * query_settings = nullptr;

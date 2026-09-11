@@ -327,23 +327,6 @@ namespace
         setOrCheckDataType(id_type, id_src, settings[TimeSeriesSetting::id_type].value, "setting `id_type`", "id", table_id);
     }
 
-    /// Whether a CREATE query declares the type of the `id` column itself: in the inner columns or in the `id_type` setting.
-    /// If not, the type can be read only from an external target table.
-    bool hasDeclaredIdType(const ASTCreateQuery & query)
-    {
-        StorageID table_id{query.getDatabase(), query.getTable()};
-        DataTypePtr timestamp_type;
-        DataTypePtr scalar_type;
-        DataTypePtr id_type;
-        String timestamp_src;
-        String scalar_src;
-        String id_src;
-        readTypesFromInnerSamples(query, timestamp_type, timestamp_src, scalar_type, scalar_src, id_type, id_src, table_id);
-        readTypesFromInnerTags(query, id_type, id_src, table_id);
-        readIdTypeFromSettings(query, id_type, id_src, table_id);
-        return id_type != nullptr;
-    }
-
     /// Reads the declared inner engines and extracts the family of the inner engines.
     /// All the inner tables must have the same family, otherwise their contents would diverge between replicas.
     void readInnerEngineFamilyFromInnerEngines(
@@ -1958,10 +1941,11 @@ void normalizeTimeSeriesDefinitionImpl(
         old_create_query = normalizeASCreateQuery(*inputs.as_create_query);
 
         /// The types of the old table are in its outer columns, inner columns and the `id_type` setting,
-        /// so its external target tables are read only if their columns were passed (see `NormalizeTimeSeriesDefinitionInputs`).
+        /// so its external target tables are not read. (A table with an external tags table created before the `id_type`
+        /// setting existed doesn't declare its `id` type anywhere in its definition, then the default type is used.)
         old_types = resolveTimeSeriesTypes(
             *old_create_query,
-            inputs.as_external_target_columns,
+            /* external_target_columns = */ {},
             /* need_inner_engine_family = */ true,
             /* fallback_types = */ nullptr);
     }
@@ -2150,19 +2134,7 @@ void normalizeTimeSeriesDefinition(ASTCreateQuery & create_query, const ContextP
         inputs.external_target_columns = readExternalTargetColumns(create_query, context);
 
         if (!create_query.as_table.empty())
-        {
             inputs.as_create_query = readASCreateQuery(create_query, context);
-
-            /// The `id` type of a table with an external tags table is recorded in its `id_type` setting, but the tables
-            /// created by older versions don't have the setting: then the type is read from the external tags table itself
-            /// unless the inner columns of the other targets declare it.
-            const auto & as_create_query = *inputs.as_create_query;
-            if (as_create_query.is_time_series_table && as_create_query.hasTargetTableID(ViewTarget::Tags) && !hasDeclaredIdType(as_create_query))
-            {
-                inputs.as_external_target_columns[ViewTarget::Tags]
-                    = readTableColumns(as_create_query.getTargetTableID(ViewTarget::Tags), context);
-            }
-        }
     }
 
     normalizeTimeSeriesDefinitionImpl(create_query, mode, is_restore_from_backup, inputs);

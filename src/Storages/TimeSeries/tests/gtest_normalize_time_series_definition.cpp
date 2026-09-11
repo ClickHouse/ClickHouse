@@ -387,29 +387,6 @@ TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithExternalTargetTables)
 }
 
 
-TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsOldTableWithExternalTagsTable)
-{
-    /// A table created by an older version doesn't record the `id` type in its settings,
-    /// then the type is read from the columns of its external tags table.
-    NormalizeTimeSeriesDefinitionInputs inputs;
-    inputs.as_create_query = parseCreateQuery(
-        "CREATE TABLE db.src (`time_series` Array(Tuple(DateTime64(3), Float64))) ENGINE = TimeSeries "
-        "SETTINGS version = 1, recent_samples_ttl_seconds = 0 SAMPLES db.ext_samples TAGS db.ext_tags METRICS db.ext_metrics");
-    inputs.as_external_target_columns[ViewTarget::Tags] = externalTagsColumns("UInt64");
-
-    auto definition = normalizeNewTable(
-        "CREATE TABLE db.copy AS db.src ENGINE = TimeSeries "
-        "SAMPLES INNER COLUMNS (extra UInt8) TAGS INNER COLUMNS (extra UInt8) METRICS INNER COLUMNS (extra UInt8)",
-        inputs);
-
-    EXPECT_EQ(extractInnerColumns(definition, "SAMPLES"),
-        "`id` UInt64, `timestamp` DateTime64(3) CODEC(DoubleDelta, ZSTD(1)), `value` Float64 CODEC(ZSTD(3)), `extra` UInt8");
-    EXPECT_TRUE(extractInnerColumns(definition, "TAGS").starts_with("`id` UInt64 DEFAULT sipHash64(tags), ")) << definition;
-    EXPECT_FALSE(definition.contains("id_type")) << definition;
-    EXPECT_FALSE(definition.contains("RECENT SAMPLES")) << definition;
-}
-
-
 TEST_F(NormalizeTimeSeriesDefinitionTest, CreateAsTableWithAnotherIdType)
 {
     NormalizeTimeSeriesDefinitionInputs inputs;
