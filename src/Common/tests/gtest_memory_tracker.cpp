@@ -3,6 +3,7 @@
 #include <cstdlib>
 #include <functional>
 #include <future>
+#include <memory>
 #include <thread>
 
 #include <Common/CurrentMemoryTracker.h>
@@ -11,9 +12,14 @@
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/MemoryTracker.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
+#include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/OvercommitTracker.h>
+#include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
+#include <Common/TraceSender.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/TraceCollector.h>
 #include <base/scope_guard.h>
 
 namespace DB::ErrorCodes
@@ -24,6 +30,11 @@ namespace DB::ErrorCodes
 namespace CurrentMetrics
 {
     extern const Metric MergesMutationsMemoryTracking;
+}
+
+namespace ProfileEvents
+{
+    extern const Event MemoryLargeAllocationTraced;
 }
 
 namespace
@@ -326,6 +337,171 @@ TEST(MemoryTracker, LimitEnforcementCanBeDisabled)
         std::ignore = CurrentMemoryTracker::free(OVER_LIMIT);
         expectUsage(hierarchy, 0);
     });
+}
+
+
+/// min_allocation_size_to_log_stack_trace: a stack trace for one large allocation charged to the
+/// global tracker. These cases charge the tracker directly, so no real memory is ever allocated and
+/// the sizes can be large enough that one unmatched add dwarfs the accounting noise.
+
+constexpr Int64 TRACE_THRESHOLD = 64 * MB;
+constexpr Int64 QUALIFYING_ALLOCATION = 128 * MB;
+/// Mirrors max_large_allocations_traced in MemoryTracker.cpp.
+constexpr ProfileEvents::Count TRACE_BUDGET = 10;
+
+ProfileEvents::Count tracedLargeAllocations()
+{
+    return ProfileEvents::global_counters[ProfileEvents::MemoryLargeAllocationTraced];
+}
+
+/// Charges the *global* tracker with exactly `size`: this thread has no ThreadStatus, so
+/// CurrentMemoryTracker skips untracked-memory batching and calls total_memory_tracker directly.
+void chargeAndRelease(Int64 size, size_t times = 1)
+{
+    for (size_t i = 0; i < times; ++i)
+    {
+        std::ignore = CurrentMemoryTracker::alloc(size);
+        std::ignore = CurrentMemoryTracker::free(size);
+    }
+}
+
+/// A live collector is required twice over: the setter refuses a threshold without one, and its
+/// thread is what runs the symbolize-and-log path, which the destructor drains before returning.
+/// Switching the threshold off in TearDown and on again in SetUp also refills the trace budget, so
+/// every case below starts from a full one and can assert exact counts.
+class MemoryTrackerLargeAllocationTrace : public ::testing::Test
+{
+protected:
+    void SetUp() override
+    {
+        collector = std::make_unique<DB::TraceCollector>();
+        MemoryTracker::setMinAllocationSizeToLogStackTrace(TRACE_THRESHOLD);
+        ASSERT_EQ(MemoryTracker::getMinAllocationSizeToLogStackTrace(), static_cast<UInt64>(TRACE_THRESHOLD));
+    }
+
+    void TearDown() override
+    {
+        MemoryTracker::setMinAllocationSizeToLogStackTrace(0);
+        collector.reset();
+    }
+
+private:
+    std::unique_ptr<DB::TraceCollector> collector;
+};
+
+TEST_F(MemoryTrackerLargeAllocationTrace, FiresOnTheUnblockedPath)
+{
+    const auto before = tracedLargeAllocations();
+    chargeAndRelease(QUALIFYING_ALLOCATION);
+
+    EXPECT_EQ(tracedLargeAllocations(), before + 1);
+}
+
+TEST_F(MemoryTrackerLargeAllocationTrace, FiresOnTheBlockedGlobalPath)
+{
+    const auto before = tracedLargeAllocations();
+    {
+        /// This path updates the global amount and returns before commitAllocation, so it needs its
+        /// own detection: unmodified master reports nothing at all for an allocation charged here.
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        chargeAndRelease(QUALIFYING_ALLOCATION);
+    }
+
+    EXPECT_EQ(tracedLargeAllocations(), before + 1);
+}
+
+TEST_F(MemoryTrackerLargeAllocationTrace, SilentBelowTheThreshold)
+{
+    const auto before = tracedLargeAllocations();
+    chargeAndRelease(TRACE_THRESHOLD - 1);
+
+    EXPECT_EQ(tracedLargeAllocations(), before);
+}
+
+TEST_F(MemoryTrackerLargeAllocationTrace, TracedUnderTheUntrackedAllocationsBlocker)
+{
+    const auto before = tracedLargeAllocations();
+    {
+        /// Pins that this diagnostic is deliberately not gated on this blocker, unlike the sibling
+        /// MemoryAllocatedWithoutCheck telemetry: it is held across system-log enqueues and whole
+        /// ZooKeeper thread loops, which are candidate origins for the allocation being hunted.
+        MemoryTrackerUntrackedAllocationsBlockerInThread blocker;
+        chargeAndRelease(QUALIFYING_ALLOCATION);
+    }
+
+    EXPECT_EQ(tracedLargeAllocations(), before + 1);
+}
+
+TEST_F(MemoryTrackerLargeAllocationTrace, StopsFiringOnceTheBudgetIsSpent)
+{
+    const size_t batch = TRACE_BUDGET + 10;
+
+    const auto before = tracedLargeAllocations();
+    chargeAndRelease(QUALIFYING_ALLOCATION, batch);
+    const auto first = tracedLargeAllocations() - before;
+
+    chargeAndRelease(QUALIFYING_ALLOCATION, batch);
+    const auto second = tracedLargeAllocations() - before - first;
+
+    /// A batch larger than the budget spends exactly the budget, and the next one is silent: without
+    /// the bound each batch would trace `batch` times.
+    EXPECT_EQ(first, TRACE_BUDGET);
+    EXPECT_EQ(second, 0u);
+}
+
+TEST_F(MemoryTrackerLargeAllocationTrace, BudgetRefillsOnlyWhenSwitchedOn)
+{
+    chargeAndRelease(QUALIFYING_ALLOCATION, TRACE_BUDGET + 1);
+    const auto spent = tracedLargeAllocations();
+
+    /// Re-applying the same value is what a configuration reload does, and it must not refill the
+    /// budget: a server that reloads periodically would otherwise have no bound at all.
+    MemoryTracker::setMinAllocationSizeToLogStackTrace(TRACE_THRESHOLD);
+    chargeAndRelease(QUALIFYING_ALLOCATION);
+    EXPECT_EQ(tracedLargeAllocations(), spent);
+
+    MemoryTracker::setMinAllocationSizeToLogStackTrace(0);
+    MemoryTracker::setMinAllocationSizeToLogStackTrace(TRACE_THRESHOLD);
+    chargeAndRelease(QUALIFYING_ALLOCATION);
+    EXPECT_EQ(tracedLargeAllocations(), spent + 1);
+}
+
+TEST_F(MemoryTrackerLargeAllocationTrace, DoesNotDisturbAccounting)
+{
+    const Int64 before = total_memory_tracker.get();
+    chargeAndRelease(QUALIFYING_ALLOCATION, TRACE_BUDGET + 10);
+
+    /// The collector thread symbolizes under a Global blocker, and those allocations are charged
+    /// here too, so this is a tolerance rather than an equality. A single leaked or double-counted
+    /// add would be QUALIFYING_ALLOCATION, well above it.
+    EXPECT_LT(std::abs(total_memory_tracker.get() - before), QUALIFYING_ALLOCATION / 2);
+}
+
+TEST(MemoryTrackerLargeAllocationTraceDefaults, IsInertByDefault)
+{
+    ASSERT_EQ(MemoryTracker::getMinAllocationSizeToLogStackTrace(), 0u);
+
+    const auto before = tracedLargeAllocations();
+    chargeAndRelease(QUALIFYING_ALLOCATION);
+
+    EXPECT_EQ(tracedLargeAllocations(), before);
+}
+
+TEST(MemoryTrackerLargeAllocationTraceDefaults, RefusedWithoutTraceCollector)
+{
+    ASSERT_FALSE(DB::TraceSender::isCollecting());
+
+    MemoryTracker::setMinAllocationSizeToLogStackTrace(TRACE_THRESHOLD);
+    SCOPE_EXIT(MemoryTracker::setMinAllocationSizeToLogStackTrace(0));
+
+    /// Without a collector the trace could only be captured and discarded, so the setter stores 0
+    /// and system.server_settings reports that rather than the configured value.
+    EXPECT_EQ(MemoryTracker::getMinAllocationSizeToLogStackTrace(), 0u);
+
+    const auto before = tracedLargeAllocations();
+    chargeAndRelease(QUALIFYING_ALLOCATION);
+
+    EXPECT_EQ(tracedLargeAllocations(), before);
 }
 
 }

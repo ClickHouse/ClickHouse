@@ -7,13 +7,17 @@
 #include <IO/WriteBufferFromFileDescriptor.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/TraceLog.h>
+#include <Common/MemoryTracker.h>
 #include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTrackerUntrackedAllocationsBlockerInThread.h>
 #include <Common/TraceSender.h>
 #include <Common/ProfileEvents.h>
 #include <Common/VariableContext.h>
+#include <Common/formatReadable.h>
 #include <Common/setThreadName.h>
+#include <base/EnumReflection.h>
+#include <base/demangle.h>
 #include <base/errnoToString.h>
 #include <Common/logger_useful.h>
 #include <Common/SymbolIndex.h>
@@ -25,6 +29,40 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace
+{
+
+/// `trace` holds addresses already normalized to physical file offsets, which is what
+/// SymbolIndex::findSymbol expects; StackTrace::toString would need raw runtime frame pointers.
+std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
+{
+    std::string result;
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+    const SymbolIndex & symbol_index = SymbolIndex::instance();
+#endif
+
+    for (size_t frame = 0; frame < trace.size(); ++frame)
+    {
+        std::string_view name = "?";
+
+#if defined(__ELF__) && !defined(OS_FREEBSD)
+        DemangleResult demangled;
+        if (const auto * symbol = symbol_index.findSymbol(reinterpret_cast<const void *>(trace[frame])))
+        {
+            demangled = tryDemangle(symbol->name);
+            name = demangled ? std::string_view(demangled.get()) : std::string_view(symbol->name);
+        }
+#endif
+
+        result += fmt::format("{}{}. 0x{:x} {}", frame ? "\n" : "", frame, trace[frame], name);
+    }
+
+    return result;
+}
+
 }
 
 TraceCollector::TraceCollector()
@@ -204,6 +242,24 @@ void TraceCollector::run()
 
             ProfileEvents::Count increment = 0;
             readPODBinary(increment, in);
+
+            /// Mirrored to the log before the trace_log insert below, because a server whose global
+            /// tracker has run away fails every system-log flush while still writing its log file,
+            /// and that is exactly the state this trace type exists to diagnose.
+            if (trace_type == TraceType::MemoryLargeAllocation)
+            {
+                LOG_ERROR(
+                    getLogger("MemoryTracker"),
+                    "Single allocation of {} charged to the global memory tracker on thread {} "
+                    "(blocked context: {}). Global tracked total when logged: {}. Stack trace:\n{}",
+                    ReadableSize(size),
+                    thread_id,
+                    memory_blocked_context == TraceSender::MEMORY_CONTEXT_UNKNOWN
+                        ? std::string_view("Unknown")
+                        : magic_enum::enum_name(static_cast<VariableContext>(memory_blocked_context)),
+                    ReadableSize(total_memory_tracker.get()),
+                    symbolizeNormalizedTrace(trace));
+            }
 
             if (auto trace_log = getTraceLog())
             {

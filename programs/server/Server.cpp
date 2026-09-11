@@ -377,6 +377,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 merges_mutations_memory_usage_soft_limit;
     extern const ServerSettingsDouble merges_mutations_memory_usage_to_ram_ratio;
     extern const ServerSettingsString merge_workload;
+    extern const ServerSettingsUInt64 min_allocation_size_to_log_stack_trace;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsString mutation_workload;
@@ -2576,6 +2577,9 @@ try
 
             CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
                 new_server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
+
+            MemoryTracker::setMinAllocationSizeToLogStackTrace(
+                new_server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
 
             per_cpu_memory.setBudgetCapacity(new_server_settings[ServerSetting::max_per_cpu_untracked_memory]);
             per_cpu_memory.setThreadBuffer(new_server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);

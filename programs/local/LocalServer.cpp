@@ -202,6 +202,7 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_unexpected_parts_loading_thread_pool_size;
     extern const ServerSettingsUInt64 max_per_cpu_untracked_memory;
     extern const ServerSettingsUInt64 per_cpu_untracked_memory_thread_buffer;
+    extern const ServerSettingsUInt64 min_allocation_size_to_log_stack_trace;
     extern const ServerSettingsUInt64 min_allocation_size_to_throw_on_memory_limit;
     extern const ServerSettingsUInt64 mmap_cache_size;
     extern const ServerSettingsBool show_addresses_in_stack_traces;
@@ -1488,6 +1489,10 @@ void LocalServer::processConfig()
 
     CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(
         server_settings[ServerSetting::min_allocation_size_to_throw_on_memory_limit]);
+
+    /// clickhouse-local never creates a trace collector, so the setter reports the refusal here.
+    MemoryTracker::setMinAllocationSizeToLogStackTrace(
+        server_settings[ServerSetting::min_allocation_size_to_log_stack_trace]);
 
     per_cpu_memory.setBudgetCapacity(server_settings[ServerSetting::max_per_cpu_untracked_memory]);
     per_cpu_memory.setThreadBuffer(server_settings[ServerSetting::per_cpu_untracked_memory_thread_buffer]);
