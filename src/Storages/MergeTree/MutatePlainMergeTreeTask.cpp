@@ -2,7 +2,7 @@
 #include <Storages/MergeTree/MutatePlainMergeTreeTask.h>
 
 #include <Storages/StorageMergeTree.h>
-#include <Interpreters/TransactionLog.h>
+#include <Interpreters/TransactionManager.h>
 #include <Interpreters/Context.h>
 #include <Common/ErrorCodes.h>
 #include <Common/ProfileEventsScope.h>

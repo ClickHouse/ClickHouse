@@ -363,7 +363,7 @@ void StorageSystemParts::processNextStorage(
 
         auto get_tid_as_field = [](const TransactionID & tid) -> Field
         {
-            return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
+            return Tuple{tid.start_csn, tid.local_tid, tid.host_id, tid.session_node_version};
         };
 
         auto current_version_info = part->version->getInfo();
