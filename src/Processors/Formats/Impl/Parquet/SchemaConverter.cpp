@@ -933,9 +933,9 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
 
         /// Nothing can recover the group's null map from a file that recorded a null group as a
         /// present group with a null element, and reading it as a present group would silently
-        /// replace the user's NULL with a tuple of element defaults. Refuse instead, as the narrower
-        /// gate this replaces did. Throwing here is safe: the converter publishes nothing until the
-        /// whole traversal finishes, so the leaf state built above is discarded with it.
+        /// replace the user's NULL with a tuple of element defaults, so refuse it. Throwing here is
+        /// safe: the converter publishes nothing until the whole traversal finishes, so the leaf
+        /// state built above is discarded with it.
         if (!source_is_clean && !nullable_group_levels_trusted)
             throw Exception(ErrorCodes::TYPE_MISMATCH,
                 "Requested type of column {} doesn't match parquet schema: parquet type is Tuple, requested type is {}. "

@@ -3,7 +3,34 @@
 [(3)]	Array(Nullable(Tuple(x UInt32)))
 -- optional MAP wrapper, REQUIRED value group: Map(String, Nullable(Tuple)) accepted
 {'k1':(1),'k2':(2)}	Map(String, Nullable(Tuple(x UInt32)))
--- optional element group with all-REQUIRED subtree under a list: struct nulls reconstructed losslessly, accepted
+-- optional element group with all-REQUIRED subtree under a list: struct nulls read at the group's own level
 [((1)),NULL,((3))]	Array(Nullable(Tuple(inner Tuple(x UInt32))))
--- optional element group with a NULLABLE leaf under a list: leaf null map != struct null map, still rejected
+-- optional element group with a NULLABLE leaf under a list: accepted, the group's level is read apart from the leaf's
+[((1)),NULL,((0))]
+[((1)),NULL,((NULL))]
+-- array between two nullable groups, leaf null_count = 0: the outer group's NULL survives
+([(1),(2)])	0
+\N	1
+([])	0
+-- ... and it is accepted although it carries no marker, because its producer is not ClickHouse
+3
+-- affected file, a clean element is among those read: struct NULL recovered through it
+(1,2)
+\N
+(2,3)
+-- affected file, only the non-clean element read: refused, not answered with a present struct
 TYPE_MISMATCH
+-- affected file with no clean element at all: refused
+TYPE_MISMATCH
+-- affected file: DESC still names Nullable(Tuple(...))
+p	Nullable(Tuple(a Nullable(Int32), b Nullable(Int32)))					
+-- affected file: SELECT * of it is refused at read time
+TYPE_MISMATCH
+-- affected file: with nullable-tuple inference off it is a plain Tuple and reads as one
+(1,2)	Tuple(\n    a Nullable(Int32),\n    b Nullable(Int32))
+(NULL,NULL)	Tuple(\n    a Nullable(Int32),\n    b Nullable(Int32))
+(2,3)	Tuple(\n    a Nullable(Int32),\n    b Nullable(Int32))
+-- the same shape written by this build carries the marker and round-trips
+(1)
+\N
+(3)

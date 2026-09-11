@@ -26,9 +26,10 @@ INSERT INTO test_nullable_tuple_both VALUES ((1, 'a')), (NULL), ((NULL, 'c')), (
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_both.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_both;
 
--- Parquet V3 native reader: nullable element makes the subtree not all-REQUIRED, so the group
--- null map cannot be separated from the element null map. Reject rather than lose data.
-SELECT c0 FROM file(currentDatabase() || '_04065_both.parquet', 'Parquet', 'c0 Nullable(Tuple(Nullable(UInt32), String))'); -- { serverError TYPE_MISMATCH }
+-- The group's nulls live at the group's own definition level, so a nullable element does not hide
+-- them: a NULL struct and a struct holding a NULL element stay distinguishable.
+SELECT c0 FROM file(currentDatabase() || '_04065_both.parquet', 'Parquet', 'c0 Nullable(Tuple(Nullable(UInt32), String))');
+SELECT c0 IS NULL FROM file(currentDatabase() || '_04065_both.parquet', 'Parquet', 'c0 Nullable(Tuple(Nullable(UInt32), String))');
 
 DROP TABLE test_nullable_tuple_both;
 
@@ -126,9 +127,9 @@ INSERT INTO test_nullable_tuple_deep VALUES (((1, 'a'), 10)), (NULL), ((NULL, 20
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_deep.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_deep;
 
--- Parquet V3 native reader deep nested: inner Nullable(Tuple) is an OPTIONAL inner group, so the
--- subtree is not all-REQUIRED. Reject rather than lose the inner struct nulls.
-SELECT c0 FROM file(currentDatabase() || '_04065_deep.parquet', 'Parquet', 'c0 Nullable(Tuple(Nullable(Tuple(UInt32, String)), UInt64))'); -- { serverError TYPE_MISMATCH }
+-- Each nullable group gets a null map at its own definition level, so an outer NULL and an inner
+-- NULL are distinct at any nesting depth.
+SELECT c0 FROM file(currentDatabase() || '_04065_deep.parquet', 'Parquet', 'c0 Nullable(Tuple(Nullable(Tuple(UInt32, String)), UInt64))');
 
 DROP TABLE test_nullable_tuple_deep;
 
@@ -139,9 +140,9 @@ INSERT INTO test_nullable_tuple_arr VALUES (([1, 2], 'a')), (NULL), (([3], 'c'))
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_arr.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_arr;
 
--- Parquet V3 native reader array elem: the Array element adds a repetition level, so the subtree
--- is not all-REQUIRED and the leaf null maps no longer equal the group null map. Reject.
-SELECT c0 FROM file(currentDatabase() || '_04065_arr.parquet', 'Parquet', 'c0 Nullable(Tuple(Array(UInt32), String))'); -- { serverError TYPE_MISMATCH }
+-- An Array element adds a repetition level below the group; the group null map is read at the
+-- group's own level and skips values that continue an array below it, so it stays one entry per row.
+SELECT c0 FROM file(currentDatabase() || '_04065_arr.parquet', 'Parquet', 'c0 Nullable(Tuple(Array(UInt32), String))');
 
 DROP TABLE test_nullable_tuple_arr;
 
@@ -251,15 +252,15 @@ SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04065_lc_str.parquet'
 DROP TABLE test_nullable_tuple_lc_string;
 
 -- REQUIRED inner group under an OPTIONAL outer group, inner subcolumn requested as Nullable(Tuple).
--- The outer group's definition-level nulls are not propagated to the inner Nullable, so accepting
--- the hint would silently drop those nulls. Must reject rather than lose data.
+-- The inner group is defined exactly where the outer one is, so reporting the inner tuple as NULL
+-- where the outer struct is NULL is the faithful answer rather than a dropped null.
 DROP TABLE IF EXISTS test_nullable_tuple_opt_ancestor;
 CREATE TABLE test_nullable_tuple_opt_ancestor (c0 Nullable(Tuple(inner Tuple(a UInt32)))) ENGINE = Memory;
 INSERT INTO test_nullable_tuple_opt_ancestor VALUES (((1,),)), (NULL), (((3,),));
 
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_opt_ancestor;
 
-SELECT `c0.inner` FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', '`c0.inner` Nullable(Tuple(a UInt32))'); -- { serverError TYPE_MISMATCH }
+SELECT `c0.inner` FROM file(currentDatabase() || '_04065_opt_ancestor.parquet', 'Parquet', '`c0.inner` Nullable(Tuple(a UInt32))');
 
 DROP TABLE test_nullable_tuple_opt_ancestor;
 
@@ -276,3 +277,74 @@ INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_all_missing.parquet
 SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet', 'c0 Nullable(Tuple(z String))') SETTINGS input_format_parquet_allow_missing_columns = 1; -- { serverError TYPE_MISMATCH }
 
 DROP TABLE test_nullable_tuple_all_missing;
+
+-- Array as the only element. A struct-NULL row must occupy exactly one level entry, not one per
+-- value the nested array holds there; nullIf keeps that array non-empty, which VALUES and CAST of a
+-- literal do not (they leave it empty, which hides the difference).
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_arr_only.parquet', 'Parquet', 'c0 Nullable(Tuple(b Array(UInt32)))')
+    SELECT nullIf(tuple([toUInt32(number), toUInt32(number + 1)]), tuple([toUInt32(1), toUInt32(2)])) FROM numbers(3);
+
+SELECT c0 FROM file(currentDatabase() || '_04065_arr_only.parquet', 'Parquet', 'c0 Nullable(Tuple(b Array(UInt32)))');
+
+-- Map element: the key_value group is repeated, so the group null map skips its continuations.
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_map.parquet', 'Parquet', 'c0 Nullable(Tuple(a UInt32, m Map(String, UInt32)))')
+    SELECT if(number = 1, NULL, tuple(toUInt32(number), map('k', toUInt32(number)))) FROM numbers(3);
+
+SELECT c0 FROM file(currentDatabase() || '_04065_map.parquet', 'Parquet', 'c0 Nullable(Tuple(a UInt32, m Map(String, UInt32)))');
+
+-- Requested subset of a group with one REQUIRED and one OPTIONAL element. The null map has to come
+-- from a leaf that is actually materialized, so both halves of the subset must read the struct NULL.
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_subset.parquet', 'Parquet', 'c0 Nullable(Tuple(a Nullable(UInt32), b UInt32))')
+    SELECT if(number = 1, NULL, tuple(toUInt32(number), toUInt32(number + 10))) FROM numbers(3);
+
+SELECT c0 FROM file(currentDatabase() || '_04065_subset.parquet', 'Parquet', 'c0 Nullable(Tuple(b UInt32))');
+SELECT c0 FROM file(currentDatabase() || '_04065_subset.parquet', 'Parquet', 'c0 Nullable(Tuple(a Nullable(UInt32)))');
+
+-- LowCardinality(Nullable(...)) element.
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_lc_elem.parquet', 'Parquet', 'c0 Nullable(Tuple(a LowCardinality(Nullable(String)), b UInt32))')
+    SELECT if(number = 1, NULL, tuple(toString(number), toUInt32(number))) FROM numbers(3);
+
+SELECT c0 FROM file(currentDatabase() || '_04065_lc_elem.parquet', 'Parquet', 'c0 Nullable(Tuple(a LowCardinality(Nullable(String)), b UInt32))');
+
+-- A null a nullable group explains is default-filled, but a null the element itself carries is still
+-- refused for a non-Nullable element hint under input_format_null_as_default = 0. Row 1 is a NULL
+-- struct, row 2 is a struct whose element a is NULL.
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_i2.parquet', 'Parquet', 'c0 Nullable(Tuple(a Nullable(Int32), b Int32))')
+    SELECT if(number = 1, NULL, tuple(if(number = 2, NULL, toInt32(number)), toInt32(number))) FROM numbers(3);
+
+SELECT c0 FROM file(currentDatabase() || '_04065_i2.parquet', 'Parquet', 'c0 Nullable(Tuple(a Int32, b Int32))') SETTINGS input_format_null_as_default = 0; -- { serverError CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN }
+SELECT c0 FROM file(currentDatabase() || '_04065_i2.parquet', 'Parquet', 'c0 Nullable(Tuple(a Int32, b Int32))');
+
+-- Same hint over a file whose only nulls are the group's: accepted even at null_as_default = 0.
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_i2b.parquet', 'Parquet', 'c0 Nullable(Tuple(a Nullable(Int32), b Int32))')
+    SELECT if(number = 1, NULL, tuple(toInt32(number), toInt32(number))) FROM numbers(3);
+
+SELECT c0 FROM file(currentDatabase() || '_04065_i2b.parquet', 'Parquet', 'c0 Nullable(Tuple(a Int32, b Int32))') SETTINGS input_format_null_as_default = 0;
+
+-- An array between two nullable groups: the outer group's map is keyed on its own level, so a NULL
+-- struct stays distinct from a struct holding an empty array.
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_between.parquet', 'Parquet', 'c0 Nullable(Tuple(b Array(Nullable(Tuple(c UInt32)))))')
+    SELECT arrayJoin(CAST([tuple([tuple(1), NULL]), NULL, tuple([])], 'Array(Nullable(Tuple(b Array(Nullable(Tuple(c UInt32))))))'));
+
+SELECT c0, c0 IS NULL FROM file(currentDatabase() || '_04065_between.parquet', 'Parquet', 'c0 Nullable(Tuple(b Array(Nullable(Tuple(c UInt32)))))');
+
+-- Multiple row groups and pages, with the nested element PRESENT at most struct-NULL rows, which is
+-- exactly what a group null and an element null are confused for when either side gets it wrong.
+-- 334 = multiples of 3 in [0, 1000); 133 = multiples of 5 that are not multiples of 15.
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_mrg.parquet', 'Parquet', 'c0 Nullable(Tuple(a Nullable(Int32), b Int32))')
+    SELECT if(number % 3 = 0, NULL, tuple(if(number % 5 = 0, NULL, toInt32(number)), toInt32(number))) FROM numbers(1000)
+    SETTINGS output_format_parquet_row_group_size = 100;
+
+SELECT count(), countIf(c0 IS NULL), countIf(c0 IS NOT NULL AND c0.a IS NULL) FROM file(currentDatabase() || '_04065_mrg.parquet', 'Parquet', 'c0 Nullable(Tuple(a Nullable(Int32), b Int32))');
+
+-- ORC round-trips this shape already, so Parquet must agree with it value for value.
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_orc.orc', 'ORC', 'c0 Nullable(Tuple(a Nullable(Int32), b Int32))')
+    SELECT if(number = 1, NULL, tuple(toInt32(number), toInt32(number))) FROM numbers(3);
+
+SELECT (SELECT arraySort(groupArray(ifNull(toString(c0), 'NULL'))) FROM file(currentDatabase() || '_04065_orc.orc', 'ORC', 'c0 Nullable(Tuple(a Nullable(Int32), b Int32))'))
+     = (SELECT arraySort(groupArray(ifNull(toString(c0), 'NULL'))) FROM file(currentDatabase() || '_04065_i2b.parquet', 'Parquet', 'c0 Nullable(Tuple(a Nullable(Int32), b Int32))'));
+
+-- Inference names Nullable(Tuple(...)) for the shapes above too, so a struct NULL survives a read
+-- with no type hint.
+SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04065_arr.parquet', 'Parquet');
+SELECT c0, toTypeName(c0) FROM file(currentDatabase() || '_04065_deep.parquet', 'Parquet');
