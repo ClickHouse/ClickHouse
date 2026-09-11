@@ -14,7 +14,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-PG_USER="postgresql_user_05100_${CLICKHOUSE_DATABASE}"
+PG_USER="postgresql_user_05182_${CLICKHOUSE_DATABASE}"
 
 ${CLICKHOUSE_CLIENT} -q "
 DROP USER IF EXISTS ${PG_USER};
@@ -23,7 +23,7 @@ CREATE USER ${PG_USER} HOST IP '127.0.0.1' IDENTIFIED WITH no_password;
 
 # Every row is sent to the client as soon as it is produced, so the server keeps writing to the
 # socket long after the client is gone.
-MARKER="client_disconnect_05100_${CLICKHOUSE_DATABASE}"
+MARKER="client_disconnect_05182_${CLICKHOUSE_DATABASE}"
 LONG_QUERY="SELECT '${MARKER}', sleepEachRow(0.1) FROM numbers(3000)
     SETTINGS max_block_size = 1, max_threads = 1, max_execution_time = 0"
 
