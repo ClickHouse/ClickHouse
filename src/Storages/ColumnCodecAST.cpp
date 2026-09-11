@@ -189,10 +189,14 @@ void installTupleCodecs(
 
 }
 
-CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath & input)
+namespace
+{
+
+/// Follow a logical Tuple path through the transparent wrappers of the owning type.
+/// Appends the canonical element names to `canonical_path` and returns the type the path reaches.
+DataTypePtr walkCodecPath(const DataTypePtr & root_type, const CodecPath & input, CodecPath & canonical_path)
 {
     DataTypePtr current = root_type;
-    CodecPath result;
     for (const auto & segment : input)
     {
         while (auto nested = unwrapTransparentCodecWrapper(current))
@@ -204,10 +208,25 @@ CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath &
         auto position = tuple->tryGetPositionByName(segment);
         if (!position)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Tuple type {} has no element '{}'", current->getName(), segment);
-        result.push_back(tuple->getNameByPosition(*position + 1));
+        canonical_path.push_back(tuple->getNameByPosition(*position + 1));
         current = tuple->getElements()[*position];
     }
+    return current;
+}
+
+}
+
+CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath & input)
+{
+    CodecPath result;
+    walkCodecPath(root_type, input, result);
     return result;
+}
+
+DataTypePtr getCodecPathType(const DataTypePtr & root_type, const CodecPath & path)
+{
+    CodecPath canonical_path;
+    return walkCodecPath(root_type, path, canonical_path);
 }
 
 ColumnCodecPatch tupleElementCodecPatchFromAST(

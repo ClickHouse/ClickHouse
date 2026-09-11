@@ -799,31 +799,14 @@ static void applyCodecPatch(
     }
 }
 
-/// Return CODEC operations whose normalized value differs from the stored value.
-/// Only these operations need checks based on the current session settings.
-static std::map<CodecPath, ASTPtr> getChangedCodecDeclarations(
-    const ColumnCodecDescription & current_policy,
-    const ColumnCodecPatch & patch,
-    const ColumnCodecDescription & normalized_resulting_policy)
+/// Return the CODEC set operations of a patch, keyed by path.
+static ColumnCodecDescription::CodecsByPath getDeclaredCodecs(const ColumnCodecPatch & patch)
 {
-    std::map<CodecPath, ASTPtr> changed;
+    ColumnCodecDescription::CodecsByPath declared;
     for (const auto & [path, operation] : patch)
-    {
-        if (operation.kind != ColumnCodecPatchKind::Set)
-            continue;
-        const auto normalized = normalized_resulting_policy.getCodecs().find(path);
-        if (normalized == normalized_resulting_policy.getCodecs().end())
-            throw Exception(
-                ErrorCodes::LOGICAL_ERROR,
-                "Normalized codec policy has no explicitly declared path {}",
-                formatCodecPath(path));
-
-        auto current = current_policy.getCodecs().find(path);
-        if (current == current_policy.getCodecs().end()
-            || current->second->formatWithSecretsOneLine() != normalized->second->formatWithSecretsOneLine())
-            changed.emplace(path, normalized->second);
-    }
-    return changed;
+        if (operation.kind == ColumnCodecPatchKind::Set)
+            declared.emplace(path, operation.codec);
+    return declared;
 }
 
 void AlterCommand::apply(
@@ -2301,23 +2284,19 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 
             if (!resulting_codec.empty())
             {
-                /// Normalize before comparing with stored codecs. Raw forms such as Delta and Delta(8)
-                /// may describe the same codec and should not be treated as a change.
-                resulting_codec = validateColumnCodecDescription(
-                    resulting_codec, resulting_type, CodecValidationSettings::trusted());
-                const auto changed_codec_declarations = getChangedCodecDeclarations(
-                    current_owner.codec, command.codec_patch, resulting_codec);
-                const bool changes_tuple_element_codec = std::any_of(
-                    changed_codec_declarations.begin(), changed_codec_declarations.end(), [](const auto & entry) { return !entry.first.empty(); });
-                if (changes_tuple_element_codec
+                /// Codecs written in this command are checked with the session settings, like a
+                /// whole-column CODEC clause. Retained declarations are trusted metadata.
+                const auto declared_codecs = getDeclaredCodecs(command.codec_patch);
+                const bool declares_tuple_element_codec = std::any_of(
+                    declared_codecs.begin(), declared_codecs.end(), [](const auto & entry) { return !entry.first.empty(); });
+                if (declares_tuple_element_codec
                     && !context->getSettingsRef()[Setting::enable_tuple_element_codecs])
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
                         "Tuple-element CODEC declarations are experimental. Set enable_tuple_element_codecs = 1 to enable them");
 
-                if (!changed_codec_declarations.empty())
-                    resulting_codec = validateColumnCodecDescriptionForAlter(
-                        resulting_codec, resulting_type, changed_codec_declarations, codec_validation_settings);
+                resulting_codec = validateColumnCodecDescriptionForAlter(
+                    resulting_codec, resulting_type, declared_codecs, codec_validation_settings);
             }
 
             if (!command.codec_patch.empty() && resulting_codec.hasSubcolumns() && !table->supportsPerSubcolumnCodecs())

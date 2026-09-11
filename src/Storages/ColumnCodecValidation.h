@@ -29,7 +29,7 @@ ColumnCodecDescription validateColumnCodecDescription(
     const DataTypePtr & logical_type,
     const CodecValidationSettings & settings);
 
-/// Validate the complete policy. Apply session settings only to codecs changed by this ALTER.
+/// Validate the complete policy. Apply session settings only to codecs declared by this ALTER.
 /// Validate retained codecs as trusted metadata, including their paths and data types.
 ColumnCodecDescription validateColumnCodecDescriptionForAlter(
     const ColumnCodecDescription & policy,

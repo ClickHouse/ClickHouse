@@ -349,8 +349,9 @@ void InterpreterDescribeQuery::addSubcolumns(const ColumnDescription & column, b
             res_columns[i++]->insertDefault();
             res_columns[i++]->insert(column.comment);
 
+            /// Structural streams (array sizes, null maps) use only generic stages, so no codec is shown for them.
             const auto resolved_codec = codec_resolver.resolve(path);
-            if (resolved_codec.codec)
+            if (resolved_codec.codec && !resolved_codec.stream.structural)
                 res_columns[i++]->insert(resolved_codec.codec->template as<ASTFunction>()->arguments->formatForLogging());
             else
                 res_columns[i++]->insertDefault();

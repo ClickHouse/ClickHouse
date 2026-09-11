@@ -54,4 +54,7 @@ void applyCodecDescriptionToAST(
 /// Normalize a logical Tuple path against the names used by the owning type.
 CodecPath canonicalizeCodecPath(const DataTypePtr & root_type, const CodecPath & input);
 
+/// Return the type reached by a logical Tuple path through the same transparent wrappers.
+DataTypePtr getCodecPathType(const DataTypePtr & root_type, const CodecPath & path);
+
 }

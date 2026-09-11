@@ -147,8 +147,10 @@ CompressionCodecPtr ColumnCodecResolver::getCodec(
         part_default_codec,
         resolved.stream.structural);
 
-    if (apply_adaptive_default && resolved.codec_is_part_default && resolved.stream.leaf_type && !codec->isEncryption())
-        return std::make_shared<CompressionCodecAdaptive>(resolved.stream.leaf_type, codec);
+    /// Every stream of a part-default declaration is adaptive, including structural streams.
+    /// Adaptive could drop encryption for some blocks, so an encrypting codec is kept as is.
+    if (apply_adaptive_default && resolved.codec_is_part_default && !codec->isEncryption())
+        return std::make_shared<CompressionCodecAdaptive>(stream_path.back().data.type, codec);
     return codec;
 }
 
