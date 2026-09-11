@@ -72,6 +72,8 @@ constexpr std::string_view regrKindName(RegrKind kind)
 /// Every quantity the aggregates need is invariant under the shift, so it cancels in the results.
 struct RegrMoments
 {
+    static constexpr size_t unroll_count = 128 / sizeof(Float64);
+
     UInt64 count = 0;
     /// The shift, set from the first pair added to an empty state.
     Float64 x0 = 0;
@@ -113,28 +115,41 @@ struct RegrMoments
         if (count == 0)
             setShift(static_cast<Float64>(x_ptr[row_begin]), static_cast<Float64>(y_ptr[row_begin]));
 
-        Float64 acc_sx = 0;
-        Float64 acc_sy = 0;
-        Float64 acc_sxx = 0;
-        Float64 acc_syy = 0;
-        Float64 acc_sxy = 0;
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            const Float64 dx = static_cast<Float64>(x_ptr[i]) - x0;
-            const Float64 dy = static_cast<Float64>(y_ptr[i]) - y0;
-            acc_sx += dx;
-            acc_sy += dy;
-            acc_sxx += dx * dx;
-            acc_syy += dy * dy;
-            acc_sxy += dx * dy;
-        }
+        /// Summing into a single accumulator would let the rounding error grow with the row count:
+        /// over a million rows it cost the slope five digits. Partial sums keep it near the error
+        /// of a single addition, and let the loop vectorize.
+        Float64 acc_sx[unroll_count]{};
+        Float64 acc_sy[unroll_count]{};
+        Float64 acc_sxx[unroll_count]{};
+        Float64 acc_syy[unroll_count]{};
+        Float64 acc_sxy[unroll_count]{};
 
-        count += row_end - row_begin;
-        sx += acc_sx;
-        sy += acc_sy;
-        sxx += acc_sxx;
-        syy += acc_syy;
-        sxy += acc_sxy;
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                const Float64 dx = static_cast<Float64>(x_ptr[i + j]) - x0;
+                const Float64 dy = static_cast<Float64>(y_ptr[i + j]) - y0;
+                acc_sx[j] += dx;
+                acc_sy[j] += dy;
+                acc_sxx[j] += dx * dx;
+                acc_syy[j] += dy * dy;
+                acc_sxy[j] += dx * dy;
+            }
+        }
+        for (size_t j = 0; j < unroll_count; ++j)
+        {
+            sx += acc_sx[j];
+            sy += acc_sy[j];
+            sxx += acc_sxx[j];
+            syy += acc_syy[j];
+            sxy += acc_sxy[j];
+        }
+        count += i - row_begin;
+
+        for (; i < row_end; ++i)
+            addShifted(static_cast<Float64>(x_ptr[i]) - x0, static_cast<Float64>(y_ptr[i]) - y0);
     }
 
     template <typename ValueX, typename ValueY, bool add_if_zero>
@@ -159,32 +174,45 @@ struct RegrMoments
         }
 
         UInt64 acc_count = 0;
-        Float64 acc_sx = 0;
-        Float64 acc_sy = 0;
-        Float64 acc_sxx = 0;
-        Float64 acc_syy = 0;
-        Float64 acc_sxy = 0;
-        for (size_t i = row_begin; i < row_end; ++i)
-        {
-            const bool add = !!condition_map[i] ^ add_if_zero;
-            /// Zeroing the bit pattern rather than multiplying by the flag: a discarded row may
-            /// hold a NaN or an Inf, and 0 * NaN is NaN, which would poison every sum.
-            const Float64 dx = maskFloatingPoint(static_cast<Float64>(x_ptr[i]) - x0, add);
-            const Float64 dy = maskFloatingPoint(static_cast<Float64>(y_ptr[i]) - y0, add);
-            acc_count += add;
-            acc_sx += dx;
-            acc_sy += dy;
-            acc_sxx += dx * dx;
-            acc_syy += dy * dy;
-            acc_sxy += dx * dy;
-        }
+        Float64 acc_sx[unroll_count]{};
+        Float64 acc_sy[unroll_count]{};
+        Float64 acc_sxx[unroll_count]{};
+        Float64 acc_syy[unroll_count]{};
+        Float64 acc_sxy[unroll_count]{};
 
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t j = 0; j < unroll_count; ++j)
+            {
+                const bool add = !!condition_map[i + j] ^ add_if_zero;
+                /// Zeroing the bit pattern rather than multiplying by the flag: a discarded row may
+                /// hold a NaN or an Inf, and 0 * NaN is NaN, which would poison every sum.
+                const Float64 dx = maskFloatingPoint(static_cast<Float64>(x_ptr[i + j]) - x0, add);
+                const Float64 dy = maskFloatingPoint(static_cast<Float64>(y_ptr[i + j]) - y0, add);
+                acc_count += add;
+                acc_sx[j] += dx;
+                acc_sy[j] += dy;
+                acc_sxx[j] += dx * dx;
+                acc_syy[j] += dy * dy;
+                acc_sxy[j] += dx * dy;
+            }
+        }
+        for (size_t j = 0; j < unroll_count; ++j)
+        {
+            sx += acc_sx[j];
+            sy += acc_sy[j];
+            sxx += acc_sxx[j];
+            syy += acc_syy[j];
+            sxy += acc_sxy[j];
+        }
         count += acc_count;
-        sx += acc_sx;
-        sy += acc_sy;
-        sxx += acc_sxx;
-        syy += acc_syy;
-        sxy += acc_sxy;
+
+        for (; i < row_end; ++i)
+        {
+            if (!!condition_map[i] ^ add_if_zero)
+                addShifted(static_cast<Float64>(x_ptr[i]) - x0, static_cast<Float64>(y_ptr[i]) - y0);
+        }
     }
 
     /// Rebases the sums of `rhs` onto this shift before adding them. The two states were filled by
@@ -224,6 +252,10 @@ struct RegrMoments
 struct RegrResult
 {
     Float64 n;
+    Float64 x0;
+    Float64 y0;
+    Float64 mean_dx;
+    Float64 mean_dy;
     Float64 avg_x;
     Float64 avg_y;
     Float64 sxx;
@@ -232,8 +264,12 @@ struct RegrResult
 
     explicit RegrResult(const RegrMoments & data)
         : n(static_cast<Float64>(data.count))
-        , avg_x(data.x0 + data.sx / n)
-        , avg_y(data.y0 + data.sy / n)
+        , x0(data.x0)
+        , y0(data.y0)
+        , mean_dx(data.sx / n)
+        , mean_dy(data.sy / n)
+        , avg_x(data.x0 + mean_dx)
+        , avg_y(data.y0 + mean_dy)
         , sxx(std::max(0.0, data.sxx - data.sx * data.sx / n))
         , syy(std::max(0.0, data.syy - data.sy * data.sy / n))
         , sxy(data.sxy - data.sx * data.sy / n)
@@ -260,7 +296,11 @@ struct RegrResult
                 /// A constant x makes the fitted line vertical, so it has no slope.
                 return sxx == 0 ? nan : sxy / sxx;
             case RegrKind::regr_intercept:
-                return sxx == 0 ? nan : avg_y - (sxy / sxx) * avg_x;
+                /// Not avg_y - slope * avg_x: at a timestamp scale those are two huge and nearly
+                /// equal numbers, and their difference keeps only the noise. Around the shift the
+                /// large part is y0 - slope * x0, where the two cancel exactly for a line through
+                /// the data, and what is left is at the scale of the spread.
+                return sxx == 0 ? nan : (y0 - (sxy / sxx) * x0) + (mean_dy - (sxy / sxx) * mean_dx);
             case RegrKind::regr_r2:
                 /// A vertical line explains none of the variance, a horizontal one explains all of it.
                 if (sxx == 0)

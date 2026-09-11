@@ -106,6 +106,20 @@ SELECT regr_slope(y, x), regr_intercept(y, x), regr_r2(y, x), regr_sxx(y, x) FRO
 WITH t AS (SELECT 1e15 + number AS x, 3 * (1e15 + number) + 7 AS y FROM numbers(1000))
 SELECT regr_slope(y, x), regr_intercept(y, x), regr_r2(y, x) FROM t;
 
+-- The fit itself stays exact as the row count grows. The intercept is the value of that fit at
+-- x = 0, which is an extrapolation 1e15 away from the data: one ulp of the slope moves it by about
+-- 1.5 there, so it is checked against the conditioning of the scale rather than for equality.
+WITH t AS (SELECT 1e15 + number AS x, 3 * (1e15 + number) + 7 AS y FROM numbers(100000))
+SELECT
+    abs(regr_slope(y, x) - 3) < 1e-12,
+    abs(regr_r2(y, x) - 1) < 1e-12,
+    regr_intercept(y, x) + regr_slope(y, x) * 1e15 = 3 * 1e15 + 7,
+    abs(regr_intercept(y, x) - 7) < 100
+FROM t;
+
+WITH t AS (SELECT 1e12 + number AS x, 3 * (1e12 + number) + 7 AS y FROM numbers(100000))
+SELECT abs(regr_slope(y, x) - 3) < 1e-12, abs(regr_intercept(y, x) - 7) < 0.01 FROM t;
+
 SELECT 'states shifted by different values merge into the single-pass answer';
 SELECT regr_slopeMerge(a), regr_interceptMerge(b), regr_sxxMerge(c) FROM (
     SELECT regr_slopeState(y, x) AS a, regr_interceptState(y, x) AS b, regr_sxxState(y, x) AS c

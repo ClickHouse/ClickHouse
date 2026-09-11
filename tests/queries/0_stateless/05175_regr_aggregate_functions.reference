@@ -3,7 +3,7 @@ a line through the origin
 a line that does not pass through the origin
 2	3	1
 the slope agrees with simpleLinearRegression
-1	1
+1	0
 no rows
 0	nan	nan	nan
 a single row leaves the line undetermined
@@ -37,6 +37,8 @@ UInt64	Float64	Float64	Float64
 an offset that dwarfs the spread does not cancel the sums away
 3	7	1	83333250
 3	7	1
+1	1	1	1
+1	1
 states shifted by different values merge into the single-pass answer
 3	7	83333250
 every group is fitted on its own
