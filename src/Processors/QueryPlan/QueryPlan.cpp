@@ -891,6 +891,17 @@ void QueryPlan::optimize(const QueryPlanOptimizationSettings & optimization_sett
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::QueryPlanOptimizeMicroseconds);
 
+    /// A plan is optimized for distributed execution only after `applyDistributedPlanFallbackToLocal`
+    /// accepted it: the distributed passes size exchanges and read buckets from raw setting values and
+    /// keep steps the local pipeline cannot execute. A plan that already contains logical exchanges
+    /// carries a decision made on another plan (a deserialized fragment, a spliced sub-plan).
+    if (optimization_settings.make_distributed_plan && distributed_plan_decision != DistributedPlanDecision::Distributed
+        && !QueryPlanOptimizations::planContainsLogicalExchange(*root))
+        throw Exception(
+            ErrorCodes::LOGICAL_ERROR,
+            "QueryPlan::optimize was called with make_distributed_plan before the distributed-plan decision was taken on this plan "
+            "(QueryPlan::applyDistributedPlanFallbackToLocal)");
+
     QueryPlanOptimizationSettings effective_settings = optimization_settings;
 
     if (effective_settings.make_distributed_plan)

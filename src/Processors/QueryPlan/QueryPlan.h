@@ -141,8 +141,9 @@ public:
 
     void resolveStorages(const ContextPtr & context);
 
-    /// Optimizes the query. Make sure you have called applyDistributedPlanFallbackToLocal
-    /// or call buildQueryPipeline which does it inherently.
+    /// Optimizes the query. With `make_distributed_plan` set, the plan must have been accepted by
+    /// `applyDistributedPlanFallbackToLocal` first (`buildQueryPipeline` does it); otherwise this
+    /// throws a logical error, unless the plan already contains logical exchanges.
     void optimize(const QueryPlanOptimizationSettings & optimization_settings);
 
     /// Converts the original plan to distributed plan and replaces the original plan with a plan that
