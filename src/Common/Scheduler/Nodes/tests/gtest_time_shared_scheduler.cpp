@@ -54,16 +54,15 @@ struct ResourceHolder
         unregisterResource();
     }
 
-    template <class TClass, class... Args>
-    TClass * add(const String & path, Args... args)
+    template <class TClass>
+    TClass * add(const String & path, const String & xml = {})
     {
-        return ResourceTest::add<TClass>(t.scheduler.event_queue, root_node, path, std::forward<Args>(args)...);
+        return ResourceTest::add<TClass>(t.scheduler.event_queue, root_node, path, xml);
     }
 
-    template <class... Args>
-    ResourceLink addQueue(const String & path, Args... args)
+    ResourceLink addQueue(const String & path, const String & xml = {})
     {
-        return {.queue = static_cast<ISchedulerQueue *>(ResourceTest::add<FifoQueue>(t.scheduler.event_queue, root_node, path, std::forward<Args>(args)...))};
+        return {.queue = static_cast<ISchedulerQueue *>(ResourceTest::add<FifoQueue>(t.scheduler.event_queue, root_node, path, xml))};
     }
 
     void registerResource()
@@ -118,17 +117,17 @@ TEST(SchedulerTimeShared, Smoke)
     ResourceTest t;
 
     ResourceHolder r1(t);
-    auto * fc1 = r1.add<SemaphoreConstraint>("/", SchedulerNodeInfo{}, /*max_requests=*/ 1);
+    auto * fc1 = r1.add<SemaphoreConstraint>("/", "<max_requests>1</max_requests>");
     r1.add<PriorityPolicy>("/prio");
-    auto a = r1.addQueue("/prio/A", SchedulerNodeInfo(1.0, Priority{1}));
-    auto b = r1.addQueue("/prio/B", SchedulerNodeInfo(1.0, Priority{2}));
+    auto a = r1.addQueue("/prio/A", "<priority>1</priority>");
+    auto b = r1.addQueue("/prio/B", "<priority>2</priority>");
     r1.registerResource();
 
     ResourceHolder r2(t);
-    auto * fc2 = r2.add<SemaphoreConstraint>("/", SchedulerNodeInfo{}, /*max_requests=*/ 1);
+    auto * fc2 = r2.add<SemaphoreConstraint>("/", "<max_requests>1</max_requests>");
     r2.add<PriorityPolicy>("/prio");
-    auto c = r2.addQueue("/prio/C", SchedulerNodeInfo(1.0, Priority{-1}));
-    auto d = r2.addQueue("/prio/D", SchedulerNodeInfo(1.0, Priority{-2}));
+    auto c = r2.addQueue("/prio/C", "<priority>-1</priority>");
+    auto d = r2.addQueue("/prio/D", "<priority>-2</priority>");
     r2.registerResource();
 
     {
@@ -161,9 +160,9 @@ TEST(SchedulerTimeShared, Budget)
     ResourceTest t;
 
     ResourceHolder r1(t);
-    r1.add<SemaphoreConstraint>("/", SchedulerNodeInfo{}, /*max_requests=*/ 1);
+    r1.add<SemaphoreConstraint>("/", "<max_requests>1</max_requests>");
     r1.add<PriorityPolicy>("/prio");
-    auto a = r1.addQueue("/prio/A");
+    auto a = r1.addQueue("/prio/A", "");
     r1.registerResource();
 
     ResourceCost total_real_cost = 0;
@@ -186,9 +185,9 @@ TEST(SchedulerTimeShared, BudgetAfterFailedEnqueue)
     ResourceTest t;
 
     ResourceHolder r1(t);
-    r1.add<SemaphoreConstraint>("/", SchedulerNodeInfo{}, /*max_requests=*/ 1);
+    r1.add<SemaphoreConstraint>("/", "<max_requests>1</max_requests>");
     r1.add<PriorityPolicy>("/prio");
-    auto a = r1.addQueue("/prio/A");
+    auto a = r1.addQueue("/prio/A", "");
     r1.registerResource();
 
     // Create a negative budget (overconsumption debt) so that `ResourceBudget::ask` raises the next
@@ -216,10 +215,10 @@ TEST(SchedulerTimeShared, Cancel)
     ResourceTest t;
 
     ResourceHolder r1(t);
-    auto * fc1 = r1.add<SemaphoreConstraint>("/", SchedulerNodeInfo{}, /*max_requests=*/ 1);
+    auto * fc1 = r1.add<SemaphoreConstraint>("/", "<max_requests>1</max_requests>");
     r1.add<PriorityPolicy>("/prio");
-    auto a = r1.addQueue("/prio/A", SchedulerNodeInfo(1.0, Priority{1}));
-    auto b = r1.addQueue("/prio/B", SchedulerNodeInfo(1.0, Priority{2}));
+    auto a = r1.addQueue("/prio/A", "<priority>1</priority>");
+    auto b = r1.addQueue("/prio/B", "<priority>2</priority>");
     r1.registerResource();
 
     std::barrier<std::__empty_completion> sync(2);

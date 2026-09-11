@@ -1,7 +1,6 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
-
+#ifdef OS_LINUX
 #include <Client/Connection.h>
 #include <base/defines.h>
 #include <Poco/Net/StreamSocket.h>
@@ -27,9 +26,11 @@ public:
     virtual ~ExchangeConnections() = default;
 
     /// TODO: move to Context instead of this singleton
-    /// Defined out of line: a static local in a header-defined function gives every shared
-    /// object its own copy.
-    static std::shared_ptr<ExchangeConnections> instance();
+    static std::shared_ptr<ExchangeConnections> instance()
+    {
+        static std::shared_ptr<ExchangeConnections> self = std::make_shared<ExchangeConnections>();
+        return self;
+    }
 
     void addConnection(const String & query_id, const String & exchange_stream_id, Poco::Net::StreamSocket socket);
 

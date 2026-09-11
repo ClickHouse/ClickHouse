@@ -52,5 +52,7 @@ concept is_over_big_decimal = is_decimal<T> && is_over_big_int<typename T::Nativ
 
 }
 
-/// Constrained, not a list: `DateTime64`/`Time64` derive from `Decimal64`, so a specialisation of it would not cover them.
-template <DB::is_decimal T> struct is_signed<T> { static constexpr bool value = true; };
+template <> struct is_signed<DB::Decimal32> { static constexpr bool value = true; };
+template <> struct is_signed<DB::Decimal64> { static constexpr bool value = true; };
+template <> struct is_signed<DB::Decimal128> { static constexpr bool value = true; };
+template <> struct is_signed<DB::Decimal256> { static constexpr bool value = true; };

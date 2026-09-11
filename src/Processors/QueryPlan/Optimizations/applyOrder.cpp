@@ -6,7 +6,6 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
-#include <Processors/QueryPlan/LimitRangeStep.h>
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
@@ -131,7 +130,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
         auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, limit_by_step->getColumns());
         if (prefix.size() == limit_by_step->getColumns().size())
-            limit_by_step->applyOrder(prefix);
+            limit_by_step->applyOrder();
 
         return std::move(*properties);
     }
@@ -143,17 +142,7 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
         auto prefix = getCollationAwareSortPrefixInColumns(properties->sort_description, negative_limit_by_step->getColumns());
         if (prefix.size() == negative_limit_by_step->getColumns().size())
-            negative_limit_by_step->applyOrder(prefix);
-
-        return std::move(*properties);
-    }
-
-    if (typeid_cast<LimitRangeStep *>(parent->step.get()))
-    {
-        /// The range is evaluated over a single stream, so several per-stream-sorted inputs are
-        /// concatenated without a merge and only a global order survives the step.
-        if (properties->sort_scope != SortingProperty::SortScope::Global)
-            return {};
+            negative_limit_by_step->applyOrder();
 
         return std::move(*properties);
     }
