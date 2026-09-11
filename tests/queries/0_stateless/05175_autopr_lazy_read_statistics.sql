@@ -39,6 +39,34 @@ WHERE explain LIKE '%LazilyReadFromMergeTree%';
 SELECT key, pad FROM t_autopr_lazy_read ORDER BY ord LIMIT 10000 FORMAT Null
 SETTINGS query_plan_optimize_lazy_materialization = 1, log_comment = '05175_autopr_lazy_read_ordered';
 
+-- A lazy read reached only through the join branch that is not parallelized is a different table:
+-- every replica reads that side in full instead of splitting it, while the cost model divides
+-- `input_bytes` by the number of replicas. It must therefore stay out of these statistics, even
+-- though it is by far the largest read in the query.
+DROP TABLE IF EXISTS t_autopr_lazy_read_other;
+
+CREATE TABLE t_autopr_lazy_read_other (key UInt64, ord UInt64 CODEC(NONE), pad String CODEC(NONE))
+    ENGINE = MergeTree ORDER BY key SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+INSERT INTO t_autopr_lazy_read_other SELECT number, cityHash64(number), repeat('x', 500) FROM numbers(100000);
+
+-- The assertion below is about which side of the join is instrumented, so pin the two settings that
+-- decide it. `clickhouse-test` randomizes both: a randomized join order makes the probe plan and this
+-- plan pick different orders, and their hashes then no longer match, which takes the query out of
+-- consideration entirely; a swap would move the parallelized read to the other table.
+SET query_plan_optimize_join_order_randomize = 0, query_plan_join_swap_table = 'false';
+
+-- The lazily materialized subquery is the smaller side, so the join keeps it on the right and the
+-- parallelized read is `t_autopr_lazy_read`, whose only column here is `key`.
+SELECT count() FROM (EXPLAIN SELECT a.key, b.pad FROM t_autopr_lazy_read AS a
+    INNER JOIN (SELECT key, pad FROM t_autopr_lazy_read_other ORDER BY ord LIMIT 10) AS b ON a.key = b.key
+    SETTINGS query_plan_optimize_lazy_materialization = 1)
+WHERE explain LIKE '%LazilyReadFromMergeTree%';
+
+SELECT a.key, b.pad FROM t_autopr_lazy_read AS a
+    INNER JOIN (SELECT key, pad FROM t_autopr_lazy_read_other ORDER BY ord LIMIT 10) AS b ON a.key = b.key
+FORMAT Null
+SETTINGS query_plan_optimize_lazy_materialization = 1, log_comment = '05175_autopr_lazy_read_join';
+
 SET enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0;
 
 SYSTEM FLUSH LOGS query_log;
@@ -52,6 +80,21 @@ FROM system.query_log
 WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15)))
     AND (current_database = currentDatabase())
     AND (log_comment = '05175_autopr_lazy_read_ordered')
-    AND (type = 'QueryFinish') AND is_initial_query;
+    AND (type = 'QueryFinish') AND is_initial_query
+-- One row per run of this test. Re-running it inside the same database - as the flaky check does -
+-- would otherwise leave the earlier run's row inside the time window and emit it too.
+ORDER BY event_time_microseconds DESC LIMIT 1;
+
+-- The parallelized read keeps only `key`, under a megabyte, while the lazy read of the other table is
+-- tens of megabytes, so the same bound as above separates the two, this time the other way round.
+SELECT ProfileEvents['RuntimeDataflowStatisticsInputBytes'] + ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0 AS stats_collected,
+       ProfileEvents['RuntimeDataflowStatisticsInputBytes'] < 10000000 AS other_table_lazy_read_not_counted
+FROM system.query_log
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15)))
+    AND (current_database = currentDatabase())
+    AND (log_comment = '05175_autopr_lazy_read_join')
+    AND (type = 'QueryFinish') AND is_initial_query
+ORDER BY event_time_microseconds DESC LIMIT 1;
 
 DROP TABLE t_autopr_lazy_read;
+DROP TABLE t_autopr_lazy_read_other;
