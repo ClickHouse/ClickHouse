@@ -6,6 +6,7 @@
 #include <Common/HashTable/StringHashSet.h>
 #include <Common/SipHash.h>
 #include <Common/assert_cast.h>
+#include <Columns/ColumnArray.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/IColumnImpl.h>
 #include <Columns/ColumnConst.h>
@@ -42,7 +43,14 @@ ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumn
     nested_column = getNestedColumn().convertToFullColumnIfConst();
 
     if (!getNestedColumn().canBeInsideNullable())
-        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
+    {
+        /// `ColumnArray` is admitted deliberately: `Array` keeps reporting `canBeInsideNullable() == false`
+        /// so that no existing code path starts producing `Nullable(Array(...))` on its own, and the
+        /// type-level decision is made by `makeNullableAllowingArray` plus the user-facing
+        /// `allow_experimental_nullable_array_type` gate rather than by this column-level invariant.
+        if (!checkAndGetColumn<ColumnArray>(&getNestedColumn()))
+            throw Exception(ErrorCodes::ILLEGAL_COLUMN, "{} cannot be inside Nullable column", getNestedColumn().getName());
+    }
 
     if (isColumnConst(*null_map))
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "ColumnNullable cannot have constant null map");

@@ -56,13 +56,23 @@ public:
     void forEachChild(const ChildCallback & callback) const override;
 
 private:
+    /// `Array` reports `canBeInsideNullable() == false` and keeps doing so, so that no existing code path
+    /// can start producing `Nullable(Array(...))` on its own. This constructor is the only way to build one,
+    /// and it is reachable exclusively through `makeNullableAllowingArray`.
+    DataTypeNullable(const DataTypePtr & nested_data_type_, bool allow_array);
+
     SerializationPtr doGetSerialization(const SerializationInfoSettings & settings) const override;
 
     DataTypePtr nested_data_type;
+
+    friend DataTypePtr makeNullableAllowingArray(const DataTypePtr & type);
 };
 
 
 DataTypePtr makeNullable(const DataTypePtr & type);
+/// Same as `makeNullable`, but additionally permits wrapping `Array(T)`, which `makeNullable` rejects.
+/// Callers must be user-facing-gated by `allow_experimental_nullable_array_type` where applicable.
+DataTypePtr makeNullableAllowingArray(const DataTypePtr & type);
 DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
