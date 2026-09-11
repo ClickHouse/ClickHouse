@@ -125,7 +125,7 @@ public:
     bool prefersLargeBlocks() const override
     {
         std::lock_guard lock{nested_mutex};
-        return nested ? nested->prefersLargeBlocks() : IStorage::prefersLargeBlocks();
+        return nested ? nested->prefersLargeBlocks() : true; /// The `IStorage` default.
     }
 
     /// `system.tables` reads these, so answering must not load the table. While the storage does not
