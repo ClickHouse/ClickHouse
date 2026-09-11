@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, no-replicated-database, no-shared-catalog, no-llvm-coverage
+# Tags: no-fasttest, no-replicated-database, no-llvm-coverage
 # Tag no-fasttest: Kafka is not available in fast tests
-# Tags no-replicated-database, no-shared-catalog: the test uses a single-partition topic, and multiple replicas compete for partition assignment
+# Tag no-replicated-database: the test uses a single-partition topic, and multiple replicas compete for partition assignment
 # Tag no-llvm-coverage: Kafka consumer is too slow under coverage instrumentation, consumer group rebalancing times out
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -116,7 +116,7 @@ $CLICKHOUSE_CLIENT --allow_experimental_kafka_offsets_storage_in_keeper 1 -q "
              kafka_format = 'JSONEachRow',
              kafka_max_block_size = 100,
              kafka_keeper_path = '$KEEPER_PATH',
-             kafka_replica_name = 'r1';
+             kafka_replica_name = '{replica}';
 "
 
 # Create destination table
