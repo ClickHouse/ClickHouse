@@ -2,6 +2,7 @@
 
 #if USE_AVRO
 
+#include <limits>
 #include <type_traits>
 #include <unordered_map>
 #include <IO/ReadHelpers.h>
@@ -17,6 +18,32 @@ namespace DB::ErrorCodes
 
 namespace DB::Iceberg
 {
+
+namespace
+{
+
+void checkedAdd(UInt64 & total, UInt64 value, std::string_view field)
+{
+    if (value > std::numeric_limits<UInt64>::max() - total)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Iceberg snapshot summary field '{}' overflows", field);
+
+    total += value;
+}
+
+void checkedSubtract(UInt64 & total, UInt64 value, std::string_view field)
+{
+    if (value > total)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Iceberg snapshot summary field '{}' cannot subtract {} from {}",
+            field,
+            value,
+            total);
+
+    total -= value;
+}
+
+}
 
 SnapshotSummaryOperation SnapshotSummary::getOperation() const
 {
@@ -60,42 +87,53 @@ SnapshotSummary::SnapshotSummary(
         case SnapshotSummaryOperation::APPEND:
         {
             const auto & u = std::get<SnapshotSummaryUpdateAppend>(update);
-            totals.records += u.added_records;
-            totals.files_size += u.added_files_size;
-            totals.data_files += u.added_files;
+            checkedAdd(totals.records, u.added_records, Iceberg::f_total_records);
+            checkedAdd(totals.files_size, u.added_files_size, Iceberg::f_total_files_size);
+            checkedAdd(totals.data_files, u.added_files, Iceberg::f_total_data_files);
             break;
         }
         case SnapshotSummaryOperation::OVERWRITE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateOverwrite>(update);
-            totals.records += u.added_records - u.removed_records;
-            totals.files_size += u.added_files_size - u.removed_files_size;
-            totals.data_files += u.added_files - u.deleted_data_files;
-            totals.delete_files += u.added_delete_files;
-            totals.position_deletes += u.added_position_deletes;
-            totals.equality_deletes += u.added_equality_deletes;
+            checkedSubtract(totals.records, u.removed_records, Iceberg::f_total_records);
+            checkedAdd(totals.records, u.added_records, Iceberg::f_total_records);
+            checkedSubtract(totals.files_size, u.removed_files_size, Iceberg::f_total_files_size);
+            checkedAdd(totals.files_size, u.added_files_size, Iceberg::f_total_files_size);
+            checkedSubtract(totals.data_files, u.deleted_data_files, Iceberg::f_total_data_files);
+            checkedAdd(totals.data_files, u.added_files, Iceberg::f_total_data_files);
+            checkedAdd(totals.delete_files, u.added_delete_files, Iceberg::f_total_delete_files);
+            checkedAdd(totals.position_deletes, u.added_position_deletes, Iceberg::f_total_position_deletes);
+            checkedAdd(totals.equality_deletes, u.added_equality_deletes, Iceberg::f_total_equality_deletes);
             break;
         }
         case SnapshotSummaryOperation::DELETE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateDelete>(update);
-            totals.records -= u.removed_records;
-            totals.files_size -= u.removed_files_size;
-            totals.data_files -= u.deleted_data_files;
-            totals.delete_files -= u.removed_position_delete_files + u.removed_equality_delete_files;
-            totals.position_deletes -= u.removed_position_deletes;
-            totals.equality_deletes -= u.removed_equality_deletes;
+            checkedSubtract(totals.records, u.removed_records, Iceberg::f_total_records);
+            checkedSubtract(totals.files_size, u.removed_files_size, Iceberg::f_total_files_size);
+            checkedSubtract(totals.data_files, u.deleted_data_files, Iceberg::f_total_data_files);
+            UInt64 removed_delete_files = u.removed_position_delete_files;
+            checkedAdd(removed_delete_files, u.removed_equality_delete_files, Iceberg::f_removed_delete_files);
+            checkedSubtract(totals.delete_files, removed_delete_files, Iceberg::f_total_delete_files);
+            checkedSubtract(totals.position_deletes, u.removed_position_deletes, Iceberg::f_total_position_deletes);
+            checkedSubtract(totals.equality_deletes, u.removed_equality_deletes, Iceberg::f_total_equality_deletes);
             break;
         }
         case SnapshotSummaryOperation::REPLACE:
         {
             const auto & u = std::get<SnapshotSummaryUpdateReplace>(update);
-            totals.records += u.added_records - u.removed_records;
-            totals.files_size += u.added_files_size - u.removed_files_size;
-            totals.data_files += u.added_files - u.deleted_data_files;
-            totals.delete_files += u.added_delete_files - u.removed_delete_files;
-            totals.position_deletes += u.added_position_deletes - u.removed_position_deletes;
-            totals.equality_deletes += u.added_equality_deletes - u.removed_equality_deletes;
+            checkedSubtract(totals.records, u.removed_records, Iceberg::f_total_records);
+            checkedAdd(totals.records, u.added_records, Iceberg::f_total_records);
+            checkedSubtract(totals.files_size, u.removed_files_size, Iceberg::f_total_files_size);
+            checkedAdd(totals.files_size, u.added_files_size, Iceberg::f_total_files_size);
+            checkedSubtract(totals.data_files, u.deleted_data_files, Iceberg::f_total_data_files);
+            checkedAdd(totals.data_files, u.added_files, Iceberg::f_total_data_files);
+            checkedSubtract(totals.delete_files, u.removed_delete_files, Iceberg::f_total_delete_files);
+            checkedAdd(totals.delete_files, u.added_delete_files, Iceberg::f_total_delete_files);
+            checkedSubtract(totals.position_deletes, u.removed_position_deletes, Iceberg::f_total_position_deletes);
+            checkedAdd(totals.position_deletes, u.added_position_deletes, Iceberg::f_total_position_deletes);
+            checkedSubtract(totals.equality_deletes, u.removed_equality_deletes, Iceberg::f_total_equality_deletes);
+            checkedAdd(totals.equality_deletes, u.added_equality_deletes, Iceberg::f_total_equality_deletes);
             break;
         }
     }
@@ -127,7 +165,8 @@ Map SnapshotSummary::toMap() const
     return result;
 }
 
-SnapshotSummary::Expected SnapshotSummary::fromJSON(const Poco::JSON::Object & obj, bool with_extra_fields)
+SnapshotSummary::Expected SnapshotSummary::fromJSON(
+    const Poco::JSON::Object & obj, bool with_extra_fields, bool require_totals)
 {
     std::unordered_set<std::string_view> parsed;
 
@@ -160,6 +199,21 @@ SnapshotSummary::Expected SnapshotSummary::fromJSON(const Poco::JSON::Object & o
     };
 
     SnapshotSummary result;
+
+    if (require_totals)
+    {
+        for (const auto * field : {
+                 Iceberg::f_total_records,
+                 Iceberg::f_total_files_size,
+                 Iceberg::f_total_data_files,
+                 Iceberg::f_total_delete_files,
+                 Iceberg::f_total_position_deletes,
+                 Iceberg::f_total_equality_deletes})
+        {
+            if (!obj.has(field))
+                return std::unexpected(fmt::format("Missing required snapshot summary field '{}'", field));
+        }
+    }
 
     const auto operation_str = get_string(Iceberg::f_operation);
     if (operation_str == Iceberg::f_append)
