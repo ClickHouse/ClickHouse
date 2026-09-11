@@ -6,6 +6,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 
 namespace DB::Iceberg
@@ -25,7 +26,7 @@ void compactIcebergTable(
     IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
     DB::ObjectStoragePtr object_storage_,
-    std::shared_ptr<SecondaryStorages> secondary_storages_,
+    std::shared_ptr<ExternalStorageCache> external_storages_,
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<DB::FormatSettings> & format_settings_,
     DB::SharedHeader sample_block_,
@@ -41,7 +42,7 @@ void compactIcebergManifests(
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
     const StorageID & table_id,
-    SecondaryStorages & secondary_storages);
+    ExternalStorageCache & external_storages);
 
 #endif
 }

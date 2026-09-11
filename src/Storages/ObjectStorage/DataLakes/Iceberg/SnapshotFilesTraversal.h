@@ -19,6 +19,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 namespace DB::Iceberg
 {
@@ -40,7 +41,7 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     ContextPtr context,
     LoggerPtr log,
     Int32 current_schema_id,
-    SecondaryStorages & secondary_storages);
+    ExternalStorageCache & external_storages);
 
 struct ReachableFilesResult
 {
@@ -75,7 +76,7 @@ ReachableFilesResult collectReachableFiles(
     const DataLakeStorageSettings & data_lake_settings,
     ContextPtr context,
     LoggerPtr log,
-    SecondaryStorages & secondary_storages,
+    ExternalStorageCache & external_storages,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const String & table_identifier,
     bool scan_metadata_log_history);

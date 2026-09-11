@@ -10,7 +10,6 @@
 #include <Core/Settings.h>
 #include <Core/Defines.h>
 #include <Storages/ObjectStorage/Utils.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
@@ -84,7 +83,7 @@ ObjectInfoPtr ObjectIteratorWithPathAndFileFilter::next(size_t id)
             /// Iceberg exposes the raw metadata path (an absolute URI possibly pointing outside
             /// the table location) as `_path`, so the pushdown filter must evaluate the same
             /// value, otherwise a `_path` predicate would wrongly discard external files.
-            if (auto metadata_path = getMetadataPathFromObjectInfo(object))
+            if (auto metadata_path = object->getPathInDataLakeMetadata())
                 path = *metadata_path;
 
             VirtualColumnUtils::filterByPathOrFile(
@@ -158,7 +157,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
                 /// For Iceberg external files the storage key is not unique across storages;
                 /// mirror `makeQueryConditionCacheKey` and key by the metadata path when present.
                 auto query_condition_cache_key = last_object_info->getIdentifier(/*include_file_bucket_info=*/ false);
-                if (auto metadata_path = getMetadataPathFromObjectInfo(last_object_info))
+                if (auto metadata_path = last_object_info->getPathInDataLakeMetadata())
                     query_condition_cache_key = last_object_info->getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/ false);
                 auto matching_marks = query_condition_cache->read(
                     storage_id.uuid,
@@ -177,7 +176,7 @@ ObjectInfoPtr ObjectIteratorSplitByBuckets::next(size_t id)
             }
 
             /// An Iceberg external file may live in a different storage than the base one.
-            auto storage_to_use = getResolvedStorageFromObjectInfo(last_object_info, object_storage);
+            auto storage_to_use = last_object_info->getResolvedStorage(object_storage);
             auto buffer = createReadBuffer(last_object_info->relative_path_with_metadata, storage_to_use, getContext(), log);
             size_t bucket_size = getContext()->getSettingsRef()[Setting::cluster_table_function_buckets_batch_size];
             auto file_bucket_infos = splitter->splitToBuckets(bucket_size, *buffer, format_settings);

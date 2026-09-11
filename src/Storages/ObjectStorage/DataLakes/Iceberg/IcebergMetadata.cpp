@@ -36,6 +36,7 @@
 
 #include <Interpreters/PreparedSets.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/ServerSettings.h>
@@ -248,7 +249,7 @@ IcebergMetadata::IcebergMetadata(
     ContextPtr context_)
     : log(getLogger("IcebergMetadata"))
     , object_storage(std::move(object_storage_))
-    , secondary_storages(std::make_shared<SecondaryStorages>())
+    , external_storages(std::make_shared<ExternalStorageCache>())
     , persistent_components(std::move(persistent_components_))
     , data_lake_settings(configuration_->getDataLakeSettings())
     , write_format(configuration_->format)
@@ -307,7 +308,7 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
             {
                 /// second, we fetch, parse and cache each manifest file
                 auto manifest_file_ptr = getManifestFileEntriesHandle(
-                    object_storage, persistent_components, ctx, log, entry, actual_table_state_snapshot.schema_id, *secondary_storages);
+                    object_storage, persistent_components, ctx, log, entry, actual_table_state_snapshot.schema_id, *external_storages);
             }
         }
 
@@ -442,7 +443,7 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
 
 
     return std::make_shared<IcebergDataSnapshot>(
-        getManifestList(object_storage, persistent_components, local_context, manifest_list_file_path, log, *secondary_storages),
+        getManifestList(object_storage, persistent_components, local_context, manifest_list_file_path, log, *external_storages),
         snapshot_id,
         schema_id,
         total_rows,
@@ -488,7 +489,7 @@ bool IcebergMetadata::optimize(
             snapshots_info,
             persistent_components,
             object_storage,
-            secondary_storages,
+            external_storages,
             data_lake_settings,
             format_settings,
             sample_block,
@@ -533,7 +534,7 @@ bool IcebergMetadata::optimizeManifestFiles(
             write_format,
             catalog,
             storage_id,
-            *secondary_storages);
+            *external_storages);
 
         return true;
     }
@@ -690,7 +691,7 @@ void IcebergMetadata::mutate(
         metadata_snapshot,
         storage_id,
         object_storage,
-        *secondary_storages,
+        *external_storages,
         data_lake_settings,
         persistent_components,
         write_format,
@@ -796,7 +797,7 @@ Pipe IcebergMetadata::executeCommand(
         checkTableRootIsQueriedPath("expire_snapshots");
         return Iceberg::executeExpireSnapshots(
             args, context, object_storage_, data_lake_settings, persistent_components,
-            write_format, catalog_, storage_id.getTableName(), *secondary_storages);
+            write_format, catalog_, storage_id.getTableName(), *external_storages);
     }
     else if (command_name == "remove_orphan_files")
     {
@@ -811,7 +812,7 @@ Pipe IcebergMetadata::executeCommand(
         checkTableRootIsQueriedPath("remove_orphan_files");
         return Iceberg::executeRemoveOrphanFiles(
             args, context, object_storage_, data_lake_settings, persistent_components,
-            catalog_, storage_id.getTableName(), *secondary_storages);
+            catalog_, storage_id.getTableName(), *external_storages);
     }
     else
     {
@@ -1154,7 +1155,7 @@ IcebergMetadata::IcebergFiles IcebergMetadata::getFilesForManifest(
 
     const auto & manifest_list_entry = data_snapshot->manifest_list_entries[manifest_index];
     auto handle = getManifestFileEntriesHandle(
-        object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id, *secondary_storages);
+        object_storage, persistent_components, local_context, log, manifest_list_entry, table_state.schema_id, *external_storages);
 
     IcebergFiles result;
     for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
@@ -1191,7 +1192,7 @@ bool IcebergMetadata::isDataSortedBySortingKey(StorageMetadataPtr storage_metada
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id, *secondary_storages);
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id, *external_storages);
 
         if (!files_handle.areAllDataFilesSortedBySortOrderID(sorting_key.sort_order_id.value()))
             return false;
@@ -1222,7 +1223,7 @@ bool IcebergMetadata::supportsLazyMaterialization(StorageMetadataPtr storage_met
     for (const auto & manifest_list_entry : data_snapshot->manifest_list_entries)
     {
         auto files_handle = getManifestFileEntriesHandle(
-            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id, *secondary_storages);
+            object_storage, persistent_components, context, log, manifest_list_entry, table_state_snapshot->schema_id, *external_storages);
 
         if (!files_handle.areAllDataFilesEligibleForLazyMaterialization(table_state_snapshot->schema_id))
             return false;
@@ -1260,7 +1261,7 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id, *secondary_storages);
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id, *external_storages);
 
         /// Live delete files make an exact metadata-only count impossible:
         /// - the record count of an equality delete file is the number of delete predicates,
@@ -1314,7 +1315,7 @@ std::optional<size_t> IcebergMetadata::totalBytes(ContextPtr local_context) cons
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
-            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id, *secondary_storages);
+            object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id, *external_storages);
         auto count = manifest_file_ptr.getBytesCountInAllDataFilesExcludingDeleted();
         if (!count.has_value())
             return {};
@@ -1355,7 +1356,7 @@ ObjectIterator IcebergMetadata::iterate(
         iceberg_table_state,
         getRelevantDataSnapshotFromTableStateSnapshot(*iceberg_table_state, local_context),
         persistent_components,
-        secondary_storages);
+        external_storages);
 }
 
 NamesAndTypesList IcebergMetadata::getTableSchema(ContextPtr local_context) const
@@ -1412,7 +1413,7 @@ void IcebergMetadata::addDeleteTransformers(
     {
         builder.addSimpleTransform(
             [&](const SharedHeader & header)
-            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, parser_shared_resources, local_context, persistent_components.path_resolver, secondary_storages); });
+            { return iceberg_object_info->getPositionDeleteTransformer(object_storage, header, format_settings, parser_shared_resources, local_context, persistent_components.path_resolver, external_storages); });
     }
     const auto & delete_files = iceberg_object_info->info.equality_deletes_objects;
     LOG_DEBUG(log, "Constructing filter transform for equality delete, there are {} delete files", delete_files.size());
@@ -1424,7 +1425,7 @@ void IcebergMetadata::addDeleteTransformers(
             Block delete_file_header;
 
             auto [delete_storage_to_use, resolved_delete_key] = resolveObjectStorageForPath(
-                persistent_components.table_location, delete_file.file_path, object_storage, *secondary_storages, local_context,
+                persistent_components.table_location, delete_file.file_path, object_storage, *external_storages, local_context,
                 persistent_components.path_resolver);
 
             RelativePathWithMetadata delete_file_object(resolved_delete_key);
@@ -1543,7 +1544,7 @@ SinkToStoragePtr IcebergMetadata::write(
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
         checkTableRootIsQueriedPath("INSERT");
-        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id, secondary_storages);
+        return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id, external_storages);
     }
     else
     {
@@ -1581,7 +1582,7 @@ void IcebergMetadata::drop(ContextPtr context)
     try
     {
         external_files = Iceberg::collectReachableFiles(
-            object_storage, persistent_components, data_lake_settings, context, log, *secondary_storages,
+            object_storage, persistent_components, data_lake_settings, context, log, *external_storages,
             /* catalog */ nullptr, /* table_identifier */ "", /* scan_metadata_log_history */ false).external_files;
     }
     catch (const Exception & e)

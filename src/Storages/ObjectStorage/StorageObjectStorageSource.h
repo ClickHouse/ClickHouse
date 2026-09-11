@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Formats/FormatFilterInfo.h>
 
@@ -200,9 +201,9 @@ private:
         const std::string & path_in_archive,
         std::optional<size_t> read_source_index);
 
-    /// For Iceberg objects: resolve which storage the file lives in (possibly a secondary storage)
-    /// from the raw metadata path and record it on the object. No-op for non-Iceberg objects.
-    void resolveIcebergObjectStorageIfNeeded(const ObjectInfoPtr & object);
+    /// Record on the object which storage it is read from, resolving it from the path the table's
+    /// metadata spells. A no-op unless the object is a data lake object placed on another storage.
+    void resolveObjectStorageIfNeeded(const ObjectInfoPtr & object);
 
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
@@ -211,7 +212,8 @@ private:
     ObjectStoragePtr object_storage;
     std::string table_location;
 #if USE_AVRO
-    SecondaryStorages secondary_storages; /// For Iceberg: cache of storages for external file locations
+    /// Storages built here for files the table's metadata places outside its own storage.
+    ExternalStorageCache external_storages;
 #endif
     /// path_to_archive -> archive reader.
     std::unordered_map<std::string, std::shared_ptr<IArchiveReader>> archive_readers;

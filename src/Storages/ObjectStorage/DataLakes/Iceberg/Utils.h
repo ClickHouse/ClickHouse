@@ -16,20 +16,6 @@
 
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 
-namespace DB
-{
-struct ObjectInfo;
-using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
-
-/// These functions are always available; they return fallback values when USE_AVRO is not defined
-ObjectStoragePtr getResolvedStorageFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info, const ObjectStoragePtr & default_storage);
-std::optional<String> getMetadataPathFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info);
-/// The metadata path of a file this object needs -- its own, or one of its delete files -- that lives
-/// on the local filesystem outside the table location, if there is one. Only the node that resolved
-/// such a file can read it.
-std::optional<String> getExternalLocalPathFromObjectInfo([[maybe_unused]] const ObjectInfoPtr & object_info);
-}
-
 #if USE_AVRO
 
 #include <IO/CompressedReadBufferWrapper.h>

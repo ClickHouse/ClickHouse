@@ -49,6 +49,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Snapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 
@@ -344,7 +345,7 @@ IcebergIterator::IcebergIterator(
     Iceberg::TableStateSnapshotPtr table_snapshot_,
     Iceberg::IcebergDataSnapshotPtr data_snapshot_,
     PersistentTableComponents persistent_components_,
-    std::shared_ptr<SecondaryStorages> secondary_storages_)
+    std::shared_ptr<ExternalStorageCache> external_storages_)
     : logger(getLogger("IcebergIterator"))
     , object_storage(std::move(object_storage_))
     , local_context(local_context_)
@@ -353,7 +354,7 @@ IcebergIterator::IcebergIterator(
     , persistent_components(persistent_components_)
     , manifest_filter_dag(makeManifestFilterDag(filter_dag_, local_context_))
     , callback(std::move(callback_))
-    , secondary_storages(secondary_storages_)
+    , external_storages(external_storages_)
 {
     chassert(local_context);
 
@@ -430,7 +431,7 @@ Iceberg::ManifestIteratorPtr IcebergIterator::createManifestIterator(const Manif
         local_context,
         logger,
         manifest_list_entry.manifest_file_path,
-        *secondary_storages);
+        *external_storages);
 
     return Iceberg::ManifestFileIterator::create(
         manifest_file_cacheable_part.deserializer,
@@ -529,7 +530,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         const auto & raw_metadata_path = manifest_file_entry->parsed_entry->file_path_key.serialize();
         auto [storage_to_use, resolved_key] = resolveObjectStorageForPath(
             persistent_components.table_location, raw_metadata_path,
-            object_storage, *secondary_storages, local_context,
+            object_storage, *external_storages, local_context,
             persistent_components.path_resolver);
 
         IcebergDataObjectInfoPtr object_info = std::make_shared<IcebergDataObjectInfo>(
@@ -637,7 +638,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                     return false;
 
                 auto [del_storage, del_key] = resolveObjectStorageForPath(
-                    persistent_components.table_location, file_path, object_storage, *secondary_storages, local_context,
+                    persistent_components.table_location, file_path, object_storage, *external_storages, local_context,
                     persistent_components.path_resolver);
                 if (del_storage != object_storage)
                     return true;
@@ -645,7 +646,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
                 {
                     auto [stripped_storage, stripped_key] = resolveObjectStorageForPath(
                         persistent_components.table_location, SchemeAuthorityKey(file_path).key, object_storage,
-                        *secondary_storages, local_context, persistent_components.path_resolver);
+                        *external_storages, local_context, persistent_components.path_resolver);
                     return stripped_storage != object_storage || stripped_key != del_key;
                 }
                 catch (const Exception &)

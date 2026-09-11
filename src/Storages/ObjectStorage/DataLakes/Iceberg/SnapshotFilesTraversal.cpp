@@ -23,6 +23,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 namespace DB::Iceberg
 {
@@ -34,7 +35,7 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     ContextPtr context,
     LoggerPtr log,
     Int32 current_schema_id,
-    SecondaryStorages & secondary_storages)
+    ExternalStorageCache & external_storages)
 {
     SnapshotReferencedFiles files;
 
@@ -48,14 +49,14 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
         files.manifest_list_paths.insert(manifest_list_path);
 
         auto manifest_keys = getManifestList(
-            object_storage, persistent_table_components, context, manifest_list_path, log, secondary_storages);
+            object_storage, persistent_table_components, context, manifest_list_path, log, external_storages);
 
         for (const auto & manifest_entry : manifest_keys)
         {
             files.manifest_paths.insert(manifest_entry.manifest_file_path);
 
             auto entries_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id, secondary_storages);
+                object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id, external_storages);
 
             for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
                 files.data_file_paths.insert(entry->parsed_entry->file_path_key);
@@ -154,7 +155,7 @@ void collectHistoricalReferences(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    SecondaryStorages & secondary_storages,
+    ExternalStorageCache & external_storages,
     Int32 current_schema_id,
     const VisitPathFn & visit_history)
 {
@@ -193,7 +194,7 @@ void collectHistoricalReferences(
     {
         auto resolved = resolveObjectStorageForPath(
             persistent_table_components.table_location, path.serialize(),
-            object_storage, secondary_storages, context, resolver);
+            object_storage, external_storages, context, resolver);
         if (!resolved.first->exists(StoredObject(resolved.second)))
             return std::nullopt;
         return resolved;
@@ -261,7 +262,7 @@ void collectHistoricalReferences(
             }
 
             auto manifest_keys = getManifestList(
-                object_storage, persistent_table_components, context, manifest_list_path, log, secondary_storages);
+                object_storage, persistent_table_components, context, manifest_list_path, log, external_storages);
             for (const auto & manifest_entry : manifest_keys)
             {
                 visit_history(manifest_entry.manifest_file_path);
@@ -277,7 +278,7 @@ void collectHistoricalReferences(
                 }
 
                 auto entries_handle = getManifestFileEntriesHandle(
-                    object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id, secondary_storages);
+                    object_storage, persistent_table_components, context, log, manifest_entry, current_schema_id, external_storages);
                 for (auto content_type : {FileContentType::DATA, FileContentType::POSITION_DELETE, FileContentType::EQUALITY_DELETE})
                     for (const auto & entry : entries_handle.getFilesWithoutDeleted(content_type))
                         visit_history(entry->parsed_entry->file_path_key);
@@ -295,7 +296,7 @@ ReachableFilesResult collectReachableFiles(
     const DataLakeStorageSettings & data_lake_settings,
     ContextPtr context,
     LoggerPtr log,
-    SecondaryStorages & secondary_storages,
+    ExternalStorageCache & external_storages,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const String & table_identifier,
     bool scan_metadata_log_history)
@@ -347,7 +348,7 @@ ReachableFilesResult collectReachableFiles(
     auto visit = [&](const IcebergPathFromMetadata & path)
     {
         auto [storage, key] = resolveObjectStorageForPath(
-            persistent_table_components.table_location, path.serialize(), object_storage, secondary_storages, context, resolver);
+            persistent_table_components.table_location, path.serialize(), object_storage, external_storages, context, resolver);
         if (storage.get() == object_storage.get() && key.starts_with(base_subtree_prefix))
             reachable.insert(std::move(key));
         else if (seen_external.emplace(storage.get(), key).second)
@@ -367,7 +368,7 @@ ReachableFilesResult collectReachableFiles(
         auto visit_history = [&](const IcebergPathFromMetadata & path)
         {
             auto [storage, key] = resolveObjectStorageForPath(
-                persistent_table_components.table_location, path.serialize(), object_storage, secondary_storages, context, resolver);
+                persistent_table_components.table_location, path.serialize(), object_storage, external_storages, context, resolver);
             if (storage.get() == object_storage.get() && key.starts_with(base_subtree_prefix))
                 return;
             if (seen_external.emplace(storage.get(), key).second)
@@ -376,7 +377,7 @@ ReachableFilesResult collectReachableFiles(
         /// Historical manifests are parsed with the table's current schema id, as
         /// `collectSnapshotReferencedFiles` already does for pre-schema-change snapshots.
         collectHistoricalReferences(
-            metadata, object_storage, persistent_table_components, context, log, secondary_storages,
+            metadata, object_storage, persistent_table_components, context, log, external_storages,
             metadata->getValue<Int32>(f_current_schema_id), visit_history);
     }
 
@@ -396,7 +397,7 @@ ReachableFilesResult collectReachableFiles(
     Int32 current_schema_id = metadata->getValue<Int32>(f_current_schema_id);
 
     auto snapshot_files = collectSnapshotReferencedFiles(
-        snapshots, object_storage, persistent_table_components, context, log, current_schema_id, secondary_storages);
+        snapshots, object_storage, persistent_table_components, context, log, current_schema_id, external_storages);
 
     for (const auto & path : snapshot_files.manifest_list_paths)
         visit(path);

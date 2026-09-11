@@ -13,6 +13,7 @@
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergDataObjectInfo.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <Common/Exception.h>
 
 #include <IO/ReadHelpers.h>
@@ -103,13 +104,13 @@ std::shared_ptr<ISimpleTransform> IcebergDataObjectInfo::getPositionDeleteTransf
     FormatParserSharedResourcesPtr parser_shared_resources,
     ContextPtr context_,
     const Iceberg::IcebergPathResolver & path_resolver,
-    std::shared_ptr<SecondaryStorages> secondary_storages)
+    std::shared_ptr<ExternalStorageCache> external_storages)
 {
     IcebergDataObjectInfoPtr self = shared_from_this();
     if (!context_->getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
-        return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_, path_resolver, secondary_storages);
+        return std::make_shared<IcebergStreamingPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_, path_resolver, external_storages);
     else
-        return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_, path_resolver, secondary_storages);
+        return std::make_shared<IcebergBitmapPositionDeleteTransform>(header, self, object_storage, format_settings, parser_shared_resources, context_, path_resolver, external_storages);
 }
 
 void IcebergDataObjectInfo::addPositionDeleteObject(Iceberg::ProcessedManifestFileEntryPtr position_delete_object, const String & resolved_storage_path)
@@ -133,6 +134,39 @@ void IcebergDataObjectInfo::addEqualityDeleteObject(const Iceberg::ProcessedMani
         equality_delete_object->parsed_entry->file_format,
         equality_delete_object->parsed_entry->equality_ids,
         equality_delete_object->resolved_schema_id);
+}
+
+std::optional<String> IcebergDataObjectInfo::getExternalLocalPath() const
+{
+    /// Without `requires_external_storage` every path of this object resolves against the table's own
+    /// storage, which is reached the same way from every node.
+    if (!info.requires_external_storage)
+        return std::nullopt;
+
+    /// A scheme-less absolute path is a local filesystem path only when the table's storage is local;
+    /// elsewhere it is a key relative to the table's bucket.
+    const bool absolute_is_local = resolved_storage && resolved_storage->getType() == ObjectStorageType::Local;
+
+    auto is_local = [&](const String & path)
+    {
+        SchemeAuthorityKey decomposed{path};
+        return decomposed.scheme == "file"
+            || (absolute_is_local && decomposed.scheme.empty() && decomposed.key.starts_with('/'));
+    };
+
+    if (auto metadata_path = getPathInDataLakeMetadata(); metadata_path && is_local(*metadata_path))
+        return metadata_path;
+
+    /// The delete files are resolved by whoever reads the object, not by the coordinator, so they are
+    /// part of the task just as much as the data file itself.
+    for (const auto & delete_object : info.position_deletes_objects)
+        if (is_local(delete_object.file_path))
+            return delete_object.file_path;
+    for (const auto & delete_object : info.equality_deletes_objects)
+        if (is_local(delete_object.file_path))
+            return delete_object.file_path;
+
+    return std::nullopt;
 }
 
 #endif

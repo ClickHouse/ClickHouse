@@ -50,6 +50,7 @@
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/operators.hpp>
 #include <Common/FailPoint.h>
@@ -59,7 +60,6 @@
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
 #include <DistributedCache/DistributedCacheCommon.h>
@@ -387,7 +387,7 @@ std::string StorageObjectStorageSource::getUniqueStoragePathIdentifier(
 {
     /// Files outside the table location are read from a resolved (secondary) storage; the same
     /// path may exist in different storages, so identify such files by the resolved storage.
-    auto resolved_storage = getResolvedStorageFromObjectInfo(object_info, object_storage);
+    auto resolved_storage = object_info->getResolvedStorage(object_storage);
     if (resolved_storage != object_storage)
     {
         auto path = object_info->getPath();
@@ -418,15 +418,12 @@ std::optional<String> StorageObjectStorageSource::makeQueryConditionCacheKey(con
     String identifier = object_info.getIdentifier(/*include_file_bucket_info=*/false);
     if (is_data_lake)
     {
-#if USE_AVRO
-        /// An Iceberg data file may live outside the table location, so the key inside the
-        /// resolved storage is not unique: `s3://bucket_a/data/p.parquet` and
-        /// `s3://bucket_b/data/p.parquet` both resolve to the key `data/p.parquet`. Use the
-        /// metadata path (an absolute URI, unique across storages) as the cache identity.
-        if (const auto * iceberg_info = dynamic_cast<const IcebergDataObjectInfo *>(&object_info))
-            if (auto metadata_path = iceberg_info->getMetadataPath())
-                return object_info.getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/false);
-#endif
+        /// A data lake file may live outside the table location, so the key inside the storage it
+        /// resolved to is not unique: `s3://bucket_a/data/p.parquet` and `s3://bucket_b/data/p.parquet`
+        /// both resolve to the key `data/p.parquet`. Use the path the metadata spells (an absolute URI,
+        /// unique across storages) as the cache identity.
+        if (auto metadata_path = object_info.getPathInDataLakeMetadata())
+            return object_info.getIdentifierForPath(*metadata_path, /*include_file_bucket_info=*/false);
         return identifier;
     }
     const auto & metadata = object_info.getObjectMetadata();
@@ -853,7 +850,7 @@ Chunk StorageObjectStorageSource::generate()
                     read_context);
             }
 
-            std::string path_for_virtual_column = getMetadataPathFromObjectInfo(object_info).value_or(path);
+            std::string path_for_virtual_column = object_info->getPathInDataLakeMetadata().value_or(path);
 
             const String * iceberg_metadata_file_path = nullptr;
             std::optional<UInt64> last_updated_sequence_number;
@@ -1183,7 +1180,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             auto metadata_object = object_info->relative_path_with_metadata;
             metadata_object.relative_path = path;
 
-            ObjectStoragePtr storage_to_use = getResolvedStorageFromObjectInfo(object_info, object_storage);
+            ObjectStoragePtr storage_to_use = object_info->getResolvedStorage(object_storage);
 
             if (query_settings.ignore_non_existent_file)
             {
@@ -1337,7 +1334,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             compression_method = chooseCompressionMethod(object_info->getFileName(), configuration->compression_method);
             read_buf = createReadBuffer(
                 object_info->relative_path_with_metadata,
-                getResolvedStorageFromObjectInfo(object_info, object_storage),
+                object_info->getResolvedStorage(object_storage),
                 context_,
                 log,
                 std::nullopt,
@@ -2358,33 +2355,16 @@ StorageObjectStorageSource::ReadTaskIterator::ReadTaskIterator(
         auto object = object_future.get();
         if (object)
         {
-            resolveIcebergObjectStorageIfNeeded(object);
+            resolveObjectStorageIfNeeded(object);
             buffer.push_back(object);
         }
     }
 }
 
-void StorageObjectStorageSource::ReadTaskIterator::resolveIcebergObjectStorageIfNeeded([[maybe_unused]] const ObjectInfoPtr & object)
+void StorageObjectStorageSource::ReadTaskIterator::resolveObjectStorageIfNeeded([[maybe_unused]] const ObjectInfoPtr & object)
 {
 #if USE_AVRO
-    /// For Iceberg objects, resolve the storage from the raw metadata path
-    auto iceberg_info = std::dynamic_pointer_cast<IcebergDataObjectInfo>(object);
-    if (!iceberg_info || iceberg_info->getResolvedStorage())
-        return;
-
-    auto metadata_path = iceberg_info->getMetadataPath();
-    if (!metadata_path)
-        return;
-
-    /// Only secondary-storage files need resolving here (an ObjectStorage can't be shipped over the
-    /// wire); base-storage files keep the coordinator's key.
-    if (auto resolved = tryResolveObjectStorageForPath(
-            table_location, *metadata_path, object_storage, secondary_storages, getContext());
-        resolved && resolved->first != object_storage)
-    {
-        iceberg_info->setResolvedStorage(resolved->first);
-        iceberg_info->relative_path_with_metadata.relative_path = resolved->second;
-    }
+    resolveObjectStorageFromDataLakeMetadata(object, table_location, object_storage, external_storages, getContext());
 #endif
 }
 
@@ -2416,7 +2396,7 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
             return nullptr;
 
         object_info = task->getObjectInfo();
-        resolveIcebergObjectStorageIfNeeded(object_info);
+        resolveObjectStorageIfNeeded(object_info);
     }
     else
     {
@@ -2517,7 +2497,7 @@ StorageObjectStorageSource::ArchiveIterator::createArchiveReader(ObjectInfoPtr o
         object_info->getPath(),
         /* archive_read_function */ [=, this]()
         {
-            auto storage = getResolvedStorageFromObjectInfo(object_info, object_storage);
+            auto storage = object_info->getResolvedStorage(object_storage);
             return createReadBuffer(object_info->relative_path_with_metadata, storage, getContext(), log);
         },
         /* archive_size */ size);
@@ -2542,7 +2522,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
 
                 if (!archive_object->getObjectMetadata())
                 {
-                    ObjectStoragePtr storage_to_use = getResolvedStorageFromObjectInfo(archive_object, object_storage);
+                    ObjectStoragePtr storage_to_use = archive_object->getResolvedStorage(object_storage);
                     archive_object->setObjectMetadata(storage_to_use->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
                 }
 
@@ -2571,7 +2551,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
 
             if (!archive_object->getObjectMetadata())
             {
-                ObjectStoragePtr storage_to_use = getResolvedStorageFromObjectInfo(archive_object, object_storage);
+                ObjectStoragePtr storage_to_use = archive_object->getResolvedStorage(object_storage);
                 archive_object->setObjectMetadata(storage_to_use->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
             }
 

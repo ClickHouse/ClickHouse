@@ -28,6 +28,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MetadataGenerator.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <fmt/format.h>
 #include <Poco/JSON/Array.h>
 #include <Poco/JSON/Object.h>
@@ -155,7 +156,7 @@ static bool isCurrentManifestListAboveThreshold(
     Poco::JSON::Object::Ptr metadata_object,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
-    SecondaryStorages & secondary_storages,
+    ExternalStorageCache & external_storages,
     ContextPtr context,
     size_t threshold)
 {
@@ -184,7 +185,7 @@ static bool isCurrentManifestListAboveThreshold(
     auto filename = IcebergPathFromMetadata::deserialize(current_manifest_list_path);
     auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
         persistent_table_components.table_location, current_manifest_list_path, object_storage,
-        secondary_storages, context, persistent_table_components.path_resolver);
+        external_storages, context, persistent_table_components.path_resolver);
     RelativePathWithMetadata object_info(key_in_storage);
     auto manifest_list_buf = createReadBuffer(object_info, storage_to_use, context, log);
     AvroForIcebergDeserializer manifest_list_deserializer(
@@ -197,7 +198,7 @@ static Plan getPlan(
     const DataLakeStorageSettings & data_lake_settings,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage,
-    SecondaryStorages & secondary_storages,
+    ExternalStorageCache & external_storages,
     const String & write_format,
     ContextPtr context,
     CompressionMethod compression_method)
@@ -249,7 +250,7 @@ static Plan getPlan(
     for (const auto & snapshot : snapshots_info)
     {
         referenced_file_paths.insert(snapshot.manifest_list_path);
-        auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log, secondary_storages);
+        auto manifest_list = getManifestList(object_storage, persistent_table_components, context, snapshot.manifest_list_path, log, external_storages);
         for (const auto & manifest_file : manifest_list)
         {
             plan.manifest_list_to_manifest_files[snapshot.manifest_list_path].push_back(manifest_file.manifest_file_path);
@@ -259,7 +260,7 @@ static Plan getPlan(
             if (!plan.manifest_file_lineage.contains(manifest_file.manifest_file_path))
                 plan.manifest_file_lineage[manifest_file.manifest_file_path] = {manifest_file.added_snapshot_id};
             auto files_handle = getManifestFileEntriesHandle(
-                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id), secondary_storages);
+                object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id), external_storages);
 
             if (!manifest_files.contains(manifest_file.manifest_file_path))
             {
@@ -283,7 +284,7 @@ static Plan getPlan(
                 const auto & raw_metadata_path = data_file->parsed_entry->file_path_key.serialize();
                 auto [resolved_storage, resolved_key] = resolveObjectStorageForPath(
                     persistent_table_components.table_location,
-                    raw_metadata_path, object_storage, secondary_storages, context,
+                    raw_metadata_path, object_storage, external_storages, context,
                     persistent_table_components.path_resolver);
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
@@ -346,7 +347,7 @@ static Plan getPlan(
             persistent_table_components.table_location,
             raw_path.serialize(),
             object_storage,
-            secondary_storages,
+            external_storages,
             context,
             persistent_table_components.path_resolver);
 
@@ -368,7 +369,7 @@ static void writeDataFiles(
     ContextPtr context,
     const String & write_format,
     CompressionMethod write_compression_method,
-    std::shared_ptr<SecondaryStorages> secondary_storages)
+    std::shared_ptr<ExternalStorageCache> external_storages)
 {
     ColumnMapperPtr column_mapper;
     {
@@ -403,11 +404,9 @@ static void writeDataFiles(
                 std::make_shared<FormatParserSharedResources>(context->getSettingsRef(), 1),
                 context,
                 path_resolver,
-                secondary_storages);
+                external_storages);
 
-        ObjectStoragePtr storage_to_use = data_file->data_object_info->getResolvedStorage();
-        if (!storage_to_use)
-            storage_to_use = object_storage;
+        ObjectStoragePtr storage_to_use = data_file->data_object_info->getResolvedStorage(object_storage);
         RelativePathWithMetadata object_info(data_file->data_object_info->getPath());
         auto read_buffer = createReadBuffer(object_info, storage_to_use, context, getLogger("IcebergCompaction"));
 
@@ -485,7 +484,7 @@ static bool writeConsolidatedManifestFile(
     const DataLakeStorageSettings & data_lake_settings,
     std::shared_ptr<DataLake::ICatalog> catalog,
     const StorageID & table_id,
-    SecondaryStorages & secondary_storages)
+    ExternalStorageCache & external_storages)
 {
     auto log = getLogger("IcebergManifestConsolidation");
 
@@ -684,7 +683,7 @@ static bool writeConsolidatedManifestFile(
 
     auto current_manifest_list = getManifestList(
         object_storage, persistent_table_components, context, IcebergPathFromMetadata::deserialize(current_manifest_list_path), log,
-        secondary_storages);
+        external_storages);
 
     for (const auto & manifest_file : current_manifest_list)
     {
@@ -700,7 +699,7 @@ static bool writeConsolidatedManifestFile(
         {
             auto [key_metadata_storage, key_metadata_key] = resolveObjectStorageForPath(
                 persistent_table_components.table_location, manifest_file.manifest_file_path.serialize(), object_storage,
-                secondary_storages, context, persistent_table_components.path_resolver);
+                external_storages, context, persistent_table_components.path_resolver);
             RelativePathWithMetadata key_metadata_object_info(key_metadata_key);
             auto key_metadata_buf = createReadBuffer(key_metadata_object_info, key_metadata_storage, context, log);
             AvroForIcebergDeserializer key_metadata_deserializer(std::move(key_metadata_buf), manifest_file.manifest_file_path, getFormatSettings(context));
@@ -717,7 +716,7 @@ static bool writeConsolidatedManifestFile(
 
         auto files_handle = getManifestFileEntriesHandle(
             object_storage, persistent_table_components, context, log, manifest_file, static_cast<Int32>(current_schema_id),
-            secondary_storages);
+            external_storages);
 
         for (const auto & data_file : files_handle.getFilesWithoutDeleted(FileContentType::DATA))
         {
@@ -953,7 +952,7 @@ static bool writeConsolidatedManifestFile(
             path_resolver,
             metadata_object,
             object_storage,
-            secondary_storages,
+            external_storages,
             context,
             consolidated_manifest_paths,
             new_snapshot.snapshot,
@@ -1075,7 +1074,7 @@ void checkIfIcebergHistorySupported(const IcebergHistory & history)
 }
 
 static void writeMetadataFiles(
-    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, SecondaryStorages & secondary_storages, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
+    Plan & plan, const IcebergPathResolver & path_resolver, ObjectStoragePtr object_storage, ExternalStorageCache & external_storages, ContextPtr context, SharedHeader sample_block_, String write_format, String table_path)
 {
     auto log = getLogger("IcebergCompaction");
 
@@ -1361,7 +1360,7 @@ static void writeMetadataFiles(
             path_resolver,
             metadata_object,
             object_storage,
-            secondary_storages,
+            external_storages,
             context,
             renamed_manifest_entries,
             new_snapshots[i].snapshot,
@@ -1449,7 +1448,7 @@ void compactIcebergManifests(
     const String & write_format,
     std::shared_ptr<DataLake::ICatalog> catalog,
     const StorageID & table_id,
-    SecondaryStorages & secondary_storages)
+    ExternalStorageCache & external_storages)
 {
     auto log = getLogger("IcebergManifestCompaction");
     LOG_INFO(log, "Starting manifest-only compaction for Iceberg table");
@@ -1496,7 +1495,7 @@ void compactIcebergManifests(
 
         /// Cheap pre-check: read just the current manifest list to decide whether the table is above the configured threshold.
         if (!isCurrentManifestListAboveThreshold(
-                metadata_object, persistent_table_components, object_storage_, secondary_storages, context_, min_count_to_compact))
+                metadata_object, persistent_table_components, object_storage_, external_storages, context_, min_count_to_compact))
         {
             LOG_INFO(log, "Manifest compaction is not needed (manifest list is within threshold {})",
                      min_count_to_compact);
@@ -1515,7 +1514,7 @@ void compactIcebergManifests(
                 data_lake_settings,
                 catalog,
                 table_id,
-                secondary_storages))
+                external_storages))
         {
             // Invalidate metadata cache so the next reader picks up the new state
             if (persistent_table_components.metadata_cache)
@@ -1537,7 +1536,7 @@ void compactIcebergTable(
     IcebergHistory snapshots_info,
     const PersistentTableComponents & persistent_table_components,
     ObjectStoragePtr object_storage_,
-    std::shared_ptr<SecondaryStorages> secondary_storages_,
+    std::shared_ptr<ExternalStorageCache> external_storages_,
     const DataLakeStorageSettings & data_lake_settings,
     const std::optional<FormatSettings> & format_settings_,
     SharedHeader sample_block_,
@@ -1551,7 +1550,7 @@ void compactIcebergTable(
         data_lake_settings,
         persistent_table_components,
         object_storage_,
-        *secondary_storages_,
+        *external_storages_,
         write_format,
         context_,
         persistent_table_components.metadata_compression_method);
@@ -1590,8 +1589,8 @@ void compactIcebergTable(
             context_,
             write_format,
             persistent_table_components.metadata_compression_method,
-            secondary_storages_);
-        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, *secondary_storages_, context_, sample_block_, write_format, persistent_table_components.table_path);
+            external_storages_);
+        writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, *external_storages_, context_, sample_block_, write_format, persistent_table_components.table_path);
         clearOldFiles(object_storage_, old_files);
     }
 }

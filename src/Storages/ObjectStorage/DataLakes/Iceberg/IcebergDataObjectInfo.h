@@ -54,6 +54,7 @@ private:
 
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <base/defines.h>
 
 
@@ -92,7 +93,7 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         FormatParserSharedResourcesPtr parser_shared_resources,
         ContextPtr context_,
         const Iceberg::IcebergPathResolver & path_resolver,
-        std::shared_ptr<SecondaryStorages> secondary_storages);
+        std::shared_ptr<ExternalStorageCache> external_storages);
 
     std::optional<String> getFileFormat() const override { return info.file_format; }
 
@@ -108,16 +109,24 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
     /// The manifest path of this data file, if known. Empty only for an object info that was not built
     /// from a manifest entry; the cluster function protocol carries it at every version, so a worker
     /// never has to fall back to the resolved storage key here.
-    std::optional<String> getMetadataPath() const
+    std::optional<String> getPathInDataLakeMetadata() const override
     {
         if (info.data_object_file_path_key.empty())
             return std::nullopt;
         return info.data_object_file_path_key.serialize();
     }
 
+    std::optional<String> getExternalLocalPath() const override;
+
     std::shared_ptr<ObjectInfo> clone() const override { return std::make_shared<IcebergDataObjectInfo>(*this); }
 
-    ObjectStoragePtr getResolvedStorage() const { return resolved_storage; }
+    ObjectStoragePtr getResolvedStorage(const ObjectStoragePtr & default_storage) const override
+    {
+        return resolved_storage ? resolved_storage : default_storage;
+    }
+
+    /// The storage resolved for this file, or null while it has not been resolved yet.
+    ObjectStoragePtr tryGetResolvedStorage() const { return resolved_storage; }
 
     void setResolvedStorage(ObjectStoragePtr storage) { resolved_storage = std::move(storage); }
 

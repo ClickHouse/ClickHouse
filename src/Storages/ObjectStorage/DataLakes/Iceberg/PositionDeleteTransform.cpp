@@ -1,4 +1,5 @@
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <Common/logger_useful.h>
 #include "config.h"
@@ -76,7 +77,7 @@ void IcebergPositionDeleteTransform::initializeDeleteSources()
         }
 
         auto [delete_storage_to_use, resolved_key] = resolveObjectStorageForPath(
-            path_resolver.getTableLocation(), position_deletes_object.file_path, object_storage, *secondary_storages, context,
+            path_resolver.getTableLocation(), position_deletes_object.file_path, object_storage, *external_storages, context,
             path_resolver);
 
         auto object_metadata = delete_storage_to_use->getObjectMetadata(resolved_key, /*with_tags=*/ false);

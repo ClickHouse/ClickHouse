@@ -17,6 +17,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFileIterator.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 namespace DB::Iceberg
 {
@@ -27,7 +28,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     ContextPtr local_context,
     LoggerPtr log,
     const IcebergPathFromMetadata & filename,
-    SecondaryStorages & secondary_storages);
+    ExternalStorageCache & external_storages);
 
 /// Creates a fully initialized ManifestFileIterator from a cache key.
 /// All entries are drained so that aggregate methods (e.g. getRowsCountInAllFilesExcludingDeleted)
@@ -39,7 +40,7 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     LoggerPtr log,
     const ManifestFileCacheKey & cache_key,
     Int32 table_snapshot_schema_id,
-    SecondaryStorages & secondary_storages);
+    ExternalStorageCache & external_storages);
 
 
 ManifestFileCacheKeys getManifestList(
@@ -48,7 +49,7 @@ ManifestFileCacheKeys getManifestList(
     ContextPtr local_context,
     const IcebergPathFromMetadata & filename,
     LoggerPtr log,
-    SecondaryStorages & secondary_storages);
+    ExternalStorageCache & external_storages);
 
 }
 

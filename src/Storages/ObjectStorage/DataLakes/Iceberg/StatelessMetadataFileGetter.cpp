@@ -44,6 +44,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 
 #include <Common/ProfileEvents.h>
@@ -130,7 +131,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     ContextPtr local_context,
     LoggerPtr log,
     const IcebergPathFromMetadata & filename,
-    SecondaryStorages & secondary_storages)
+    ExternalStorageCache & external_storages)
 {
     auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
@@ -140,7 +141,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
         auto [storage_to_use, resolved_key_in_storage] = resolveObjectStorageForPath(
-            persistent_table_components.table_location, filename.serialize(), object_storage, secondary_storages, local_context,
+            persistent_table_components.table_location, filename.serialize(), object_storage, external_storages, local_context,
             persistent_table_components.path_resolver);
 
         RelativePathWithMetadata manifest_object_info(resolved_key_in_storage);
@@ -180,7 +181,7 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
     LoggerPtr log,
     const ManifestFileCacheKey & cache_key,
     Int32 table_snapshot_schema_id,
-    SecondaryStorages & secondary_storages)
+    ExternalStorageCache & external_storages)
 {
     auto cacheable_info = getManifestFile(
         object_storage,
@@ -188,7 +189,7 @@ Iceberg::ManifestFileIterator::ManifestFileEntriesHandle getManifestFileEntriesH
         local_context,
         log,
         cache_key.manifest_file_path,
-        secondary_storages);
+        external_storages);
 
     auto iterator = Iceberg::ManifestFileIterator::create(
         cacheable_info.deserializer,
@@ -215,7 +216,7 @@ ManifestFileCacheKeys getManifestList(
     ContextPtr local_context,
     const IcebergPathFromMetadata & filename,
     LoggerPtr log,
-    SecondaryStorages & secondary_storages)
+    ExternalStorageCache & external_storages)
 {
     IcebergMetadataLogLevel log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
@@ -225,7 +226,7 @@ ManifestFileCacheKeys getManifestList(
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
         auto [storage_to_use, key_in_storage] = resolveObjectStorageForPath(
-            persistent_table_components.table_location, filename.serialize(), object_storage, secondary_storages, local_context,
+            persistent_table_components.table_location, filename.serialize(), object_storage, external_storages, local_context,
             persistent_table_components.path_resolver);
 
         RelativePathWithMetadata object_info(key_in_storage);

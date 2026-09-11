@@ -1,4 +1,5 @@
 #include "config.h"
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #if USE_AVRO
 
 #include <chrono>
@@ -260,7 +261,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     const PersistentTableComponents & persistent_table_components,
     const std::shared_ptr<DataLake::ICatalog> & catalog,
     const String & table_name,
-    SecondaryStorages & secondary_storages)
+    ExternalStorageCache & external_storages)
 {
     auto log = getLogger("IcebergRemoveOrphanFiles");
 
@@ -271,7 +272,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
     /// history is scanned too: a table whose current snapshot moved back under `table_path` may still own
     /// orphaned objects in another bucket/prefix that this operation cannot see.
     auto [reachable, metadata_version, external_files] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log, secondary_storages,
+        object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
         catalog, table_name, /* scan_metadata_log_history */ true);
 
     if (!external_files.empty())
@@ -301,7 +302,7 @@ RemoveOrphanFilesResult removeOrphanFiles(
 
     /// Only the metadata version matters here (TOCTOU detection), so skip the history walk.
     auto [_recheck_files, recheck_version, _recheck_external_files] = collectReachableFiles(
-        object_storage, persistent_table_components, data_lake_settings, context, log, secondary_storages,
+        object_storage, persistent_table_components, data_lake_settings, context, log, external_storages,
         catalog, table_name, /* scan_metadata_log_history */ false);
     if (recheck_version != metadata_version)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -333,7 +334,7 @@ Pipe executeRemoveOrphanFiles(
     const PersistentTableComponents & persistent_components,
     std::shared_ptr<DataLake::ICatalog> catalog,
     const String & table_name,
-    SecondaryStorages & secondary_storages)
+    ExternalStorageCache & external_storages)
 {
     /// A transactional catalog can hold files that are written but not yet committed: they are
     /// unreachable from the committed head, so the scan below would report them as orphans and delete
@@ -407,7 +408,7 @@ Pipe executeRemoveOrphanFiles(
 
     auto result = removeOrphanFiles(
         params, context, object_storage, data_lake_settings, persistent_components,
-        catalog, table_name, secondary_storages);
+        catalog, table_name, external_storages);
 
     return resultToPipe(result);
 }

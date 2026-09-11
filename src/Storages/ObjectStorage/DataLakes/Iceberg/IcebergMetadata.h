@@ -30,6 +30,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 
 namespace DB
@@ -228,7 +229,7 @@ private:
 
     LoggerPtr log;
     const ObjectStoragePtr object_storage;
-    mutable std::shared_ptr<SecondaryStorages> secondary_storages;
+    mutable std::shared_ptr<ExternalStorageCache> external_storages;
     DB::Iceberg::PersistentTableComponents persistent_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;

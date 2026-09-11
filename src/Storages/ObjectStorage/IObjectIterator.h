@@ -50,6 +50,20 @@ struct ObjectInfo
 
     virtual std::optional<size_t> getFileSizeHint() const { return std::nullopt; }
 
+    /// The storage this object is read from. Ordinarily the one the reader was handed, but a data
+    /// lake may place a file on a storage of its own, and then only that one can serve it.
+    virtual ObjectStoragePtr getResolvedStorage(const ObjectStoragePtr & default_storage) const { return default_storage; }
+
+    /// The path a data lake's metadata spells for this object, when that differs from the key it is
+    /// read by. It is what `_path` reports and what identifies the object across storages, where the
+    /// key alone is ambiguous: the same key in two buckets names two different files.
+    virtual std::optional<String> getPathInDataLakeMetadata() const { return std::nullopt; }
+
+    /// The path of a file this object needs -- its own, or one of the delete files attached to it --
+    /// that lives on the local filesystem outside the table location, if there is one. Only the node
+    /// that resolved such a file can read it, so a task carrying one cannot be handed to a replica.
+    virtual std::optional<String> getExternalLocalPath() const { return std::nullopt; }
+
     std::optional<ObjectMetadata> getObjectMetadata() const { return relative_path_with_metadata.metadata; }
     void setObjectMetadata(const ObjectMetadata & metadata) { relative_path_with_metadata.metadata = metadata; }
 

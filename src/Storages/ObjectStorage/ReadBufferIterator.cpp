@@ -2,7 +2,6 @@
 #include <Formats/FormatFactory.h>
 #include <IO/ReadBufferFromFileBase.h>
 #include <Interpreters/Context.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/ReadBufferIterator.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
@@ -84,7 +83,7 @@ std::optional<ColumnsDescription> ReadBufferIterator::tryGetColumnsFromCache(
                 /// plain string overload would drop it and could validate one shard using another's metadata.
                 auto metadata_object = object_info->relative_path_with_metadata;
                 metadata_object.relative_path = path;
-                auto storage_to_use = getResolvedStorageFromObjectInfo(object_info, object_storage);
+                auto storage_to_use = object_info->getResolvedStorage(object_storage);
                 auto meta = storage_to_use->tryGetObjectMetadata(metadata_object, /*with_tags=*/ false);
                 if (meta)
                     object_info->setObjectMetadata(*meta);
@@ -157,7 +156,7 @@ std::unique_ptr<ReadBuffer> ReadBufferIterator::recreateLastReadBuffer()
     const auto & path = current_object_info->isArchive() ? current_object_info->getPathToArchive() : current_object_info->getPath();
     auto impl = createReadBuffer(
         current_object_info->relative_path_with_metadata,
-        getResolvedStorageFromObjectInfo(current_object_info, object_storage),
+        current_object_info->getResolvedStorage(object_storage),
         context,
         getLogger("ReadBufferIterator"));
 
@@ -288,7 +287,7 @@ ReadBufferIterator::Data ReadBufferIterator::next()
             compression_method = chooseCompressionMethod(filename, configuration->compression_method);
             read_buf = createReadBuffer(
                 current_object_info->relative_path_with_metadata,
-                getResolvedStorageFromObjectInfo(current_object_info, object_storage),
+                current_object_info->getResolvedStorage(object_storage),
                 getContext(),
                 getLogger("ReadBufferIterator"));
         }
