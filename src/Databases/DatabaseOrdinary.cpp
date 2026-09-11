@@ -878,7 +878,33 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };
     factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true}, Documentation{
-        .description = "The legacy, deprecated default database engine. It stores each table in its own metadata file and has been superseded by the `Atomic` engine.",
+        .description = R"DOCS_MD(
+The `Ordinary` database engine is the legacy database engine. It stores each table's metadata in a separate file and has been superseded by [`Atomic`](/reference/engines/database-engines/atomic).
+
+:::warning
+`Ordinary` is deprecated. Do not use it for new databases.
+:::
+
+## Creating a database {#creating-a-database}
+
+Creating an `Ordinary` database requires enabling [`allow_deprecated_database_ordinary`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary):
+
+```sql
+SET allow_deprecated_database_ordinary = 1;
+
+CREATE DATABASE legacy
+ENGINE = Ordinary;
+```
+
+## Migration {#migration}
+
+Use `Atomic` for new databases. It is the default database engine in open-source ClickHouse and supports atomic metadata operations, including non-blocking `DROP TABLE` and `RENAME TABLE`.
+
+## See also {#see-also}
+
+- [Atomic database engine](/reference/engines/database-engines/atomic)
+- [`allow_deprecated_database_ordinary`](/reference/settings/session-settings/allow-deprecated#allow_deprecated_database_ordinary)
+)DOCS_MD",
         .syntax = "ENGINE = Ordinary",
         .related = {"Atomic"}});
 }
