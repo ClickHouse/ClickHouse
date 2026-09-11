@@ -431,7 +431,9 @@ int SocketImpl::receiveBytes(void* buffer, int length, int flags)
 
 int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& address, int flags)
 {
-	throttleSend(length, _blocking);
+	bool blocking = _blocking && (flags & MSG_DONTWAIT) == 0;
+
+	throttleSend(length, blocking);
 
 	Poco::Timespan remainingTime(_sndTimeout);
 	bool needPoll = false;
@@ -460,7 +462,7 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 			if (rc < 0)
 				err = lastError();
 		}
-		if (_blocking && rc < 0 && err == POCO_EINTR)
+		if (blocking && rc < 0 && err == POCO_EINTR)
 		{
 			remainingTime -= Poco::Timestamp() - start;
 			if (remainingTime.totalMicroseconds() <= 0)
@@ -468,8 +470,16 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 			needPoll = true;
 		}
 	}
-	while (_blocking && rc < 0 && err == POCO_EINTR);
-	if (rc < 0) error(err);
+	while (blocking && rc < 0 && err == POCO_EINTR);
+	if (rc < 0)
+	{
+		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
+			;
+		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
+			throw TimeoutException();
+		else
+			error(err);
+	}
 
 	useSendThrottlerBudget(rc);
 
@@ -479,10 +489,11 @@ int SocketImpl::sendTo(const void* buffer, int length, const SocketAddress& addr
 
 int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, int flags)
 {
+	bool blocking = _blocking && (flags & MSG_DONTWAIT) == 0;
 	Poco::Timespan remainingTime(_recvTimeout);
-	bool needPoll = true;
+	bool needPoll = blocking;
 
-	throttleRecv(length, _blocking);
+	throttleRecv(length, blocking);
 
 	sockaddr_storage abuffer;
 	struct sockaddr* pSA = reinterpret_cast<struct sockaddr*>(&abuffer);
@@ -512,7 +523,7 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 			if (rc < 0)
 				err = lastError();
 		}
-		if (_blocking && rc < 0 && err == POCO_EINTR)
+		if (blocking && rc < 0 && err == POCO_EINTR)
 		{
 			remainingTime -= Poco::Timestamp() - start;
 			if (remainingTime.totalMicroseconds() <= 0)
@@ -520,14 +531,14 @@ int SocketImpl::receiveFrom(void* buffer, int length, SocketAddress& address, in
 			needPoll = true;
 		}
 	}
-	while (_blocking && rc < 0 && err == POCO_EINTR);
+	while (blocking && rc < 0 && err == POCO_EINTR);
 	if (rc >= 0)
 	{
 		address = SocketAddress(pSA, saLen);
 	}
 	else
 	{
-		if (err == POCO_EAGAIN && !_blocking)
+		if ((err == POCO_EAGAIN || err == POCO_EWOULDBLOCK) && !blocking)
 			;
 		else if (err == POCO_EAGAIN || err == POCO_ETIMEDOUT)
 			throw TimeoutException(err);
