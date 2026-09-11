@@ -1,6 +1,9 @@
 #include <Storages/ReadInOrderOptimizer.h>
 
 #include <Core/Settings.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/IDataType.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/TreeRewriter.h>
@@ -208,6 +211,8 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
     UInt64 limit) const
 {
     const Names & sorting_key_columns = metadata_snapshot->getSortingKeyColumns();
+    const DataTypes & sorting_key_types = metadata_snapshot->getSortingKey().data_types;
+    const std::vector<bool> & sorting_key_reverse_flags = metadata_snapshot->getSortingKeyReverseFlags();
     /// read_direction will be set from the first non-constant ORDER BY column
     int read_direction = 0;
 
@@ -237,6 +242,35 @@ InputOrderInfoPtr ReadInOrderOptimizer::getInputOrderImpl(
             ++desc_pos;
             ++key_pos;
             continue;
+        }
+
+        /** A part stores a `Nullable` or `Float` key with its NULLs and NaNs at one physical end, and
+          * reading the part cannot move them: a forward read of an ordinary key column produces them
+          * last, a backward read produces them first. `nulls_direction` asks for them last exactly when
+          * it agrees with `direction`, so a request the read direction does not produce cannot be served
+          * in order - the sort this optimization elides is what used to repair it. `match.direction`
+          * already has the monotonicity of the match applied, so `ORDER BY negate(x)` over an ascending
+          * `Float` key is a backward read here, and `ASC NULLS LAST` is rejected.
+          *
+          * This optimizer does not model a key column declared `DESC` (a reverse flag), which holds the
+          * NULLs and NaNs at the opposite end, so such a key is rejected outright rather than guessed at.
+          */
+        if (match.direction)
+        {
+            const auto & key_type = sorting_key_types[key_pos];
+            const bool key_can_have_nulls_or_nans
+                = isNullableOrLowCardinalityNullable(key_type) || isFloat(*removeLowCardinalityAndNullable(key_type));
+
+            if (key_can_have_nulls_or_nans)
+            {
+                if (!sorting_key_reverse_flags.empty() && sorting_key_reverse_flags[key_pos])
+                    break;
+
+                const bool produces_nulls_last = match.direction == 1;
+                const bool requests_nulls_last = description[desc_pos].direction == description[desc_pos].nulls_direction;
+                if (produces_nulls_last != requests_nulls_last)
+                    break;
+            }
         }
 
         bool is_matched = match.direction && (read_direction == 0 || match.direction == read_direction);
