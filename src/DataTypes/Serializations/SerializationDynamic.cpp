@@ -450,8 +450,9 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
             /// Add shared variant, Dynamic column should always have it.
             variants.push_back(ColumnDynamic::getSharedVariantDataType());
             auto variant_type = std::make_shared<DataTypeVariant>(variants);
-            /// `DataTypeVariant`'s constructor canonicalizes by calling `getName` per decoded type,
-            /// itself a stream-sized pass that polls nothing. This bounds it from the outside.
+            /// `DataTypeVariant`'s constructor canonicalizes by calling `getName` on every variant and
+            /// polls nothing, so that pass is uninterruptible: only its length is bounded, by the
+            /// `num_dynamic_types` check above, and not the size of the names it rebuilds.
             cancellation_checker.check();
 
             /// Read statistics.
