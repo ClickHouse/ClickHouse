@@ -88,6 +88,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
     bool isRemote() const override;
+    bool readsFromOtherTables() const override { return static_cast<bool>(destination_id); }
 
     bool supportsParallelInsert() const override { return true; }
 
@@ -99,6 +100,8 @@ public:
 
     void startup() override;
     /// Flush all buffers into the subordinate table and stop background thread.
+    size_t flushBufferedRowsBeforeShutdown() override;
+
     void flushAndPrepareForShutdown() override;
     bool optimize(
         const ASTPtr & query,

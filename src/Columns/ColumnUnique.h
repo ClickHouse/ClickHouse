@@ -94,7 +94,6 @@ public:
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
-    void skipSerializedInArena(ReadBuffer & in) const override;
     void updateHashWithValue(size_t n, SipHash & hash_func) const override;
 
     /// A nullable dictionary serializes a null flag byte in front of the value but does not hash
@@ -171,6 +170,11 @@ public:
     UInt64 getNumberOfDefaultRows() const override
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'getNumberOfDefaultRows' not implemented for ColumnUnique");
+    }
+
+    bool hasOnlyTypeDefaults() const override
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'hasOnlyTypeDefaults' not implemented for ColumnUnique");
     }
 
     void getIndicesOfNonDefaultRows(IColumn::Offsets &, size_t, size_t) const override
@@ -606,12 +610,6 @@ size_t ColumnUnique<ColumnType>::uniqueDeserializeAndInsertAggregationStateValue
     in.ignore(string_size_with_zero_byte);
 
     return ret;
-}
-
-template <typename ColumnType>
-void ColumnUnique<ColumnType>::skipSerializedInArena(ReadBuffer &) const
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method skipSerializedInArena is not supported for {}", this->getName());
 }
 
 template <typename ColumnType>

@@ -127,6 +127,8 @@ public:
         return sizeAt(n) == 0;
     }
 
+    bool hasOnlyTypeDefaults() const override;
+
     void insert(const Field & x) override
     {
         const String & s = x.safeGet<String>();
@@ -219,12 +221,9 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
-
     /// Both write the string size (including the trailing zero byte), the characters, and the
     /// trailing zero byte itself.
     bool serializedValueMatchesHashStream() const override { return true; }
-
     void updateHashWithValue(size_t n, SipHash & hash) const override;
     void updateHashWithValueRange(size_t begin, size_t end, SipHash & hash) const override;
 
@@ -259,9 +258,9 @@ public:
 
     void insertManyDefaults(size_t length) override
     {
-        auto last = offsets.back();
-        for (size_t i = 0; i < length; ++i)
-            offsets.push_back(last);
+        /// Only the offsets grow: a default string appends no characters.
+        const auto last = offsets.back(); /// By value: `resize_fill` may reallocate.
+        offsets.resize_fill(offsets.size() + length, last);
     }
 
 #if !defined(DEBUG_OR_SANITIZER_BUILD)

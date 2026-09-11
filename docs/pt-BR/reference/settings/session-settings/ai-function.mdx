@@ -58,7 +58,7 @@ Número máximo de textos a serem incluídos em uma única requisição HTTP fei
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "1000"},{"label": "Por padrão, limita as chamadas HTTP de saída da função de IA por consulta (anteriormente 0 — ilimitadas)."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nova configuração"}]}]} />
 
-Número máximo de requisições HTTP que as funções de IA podem encaminhar em uma consulta. Defina como 0 para desabilitar.
+Número máximo de requisições HTTP que as funções de IA podem encaminhar em uma consulta. Aplicado independentemente por cada servidor e fragmento de consulta: em um contexto de execução, é um limite exato compartilhado por todas as funções de IA, blocos e threads nele, mas uma consulta distribuída (entre shards ou fragmentos de réplicas paralelas) pode encaminhar até esse número de requisições por shard/fragmento. Deve ser definido na consulta de nível superior — uma substituição de `SETTINGS` em uma subconsulta é ignorada. Defina como 0 para desabilitar.
 
 <div id="ai_function_max_input_tokens_per_query">
   ## ai_function_max_input_tokens_per_query
@@ -70,7 +70,7 @@ Número máximo de requisições HTTP que as funções de IA podem encaminhar em
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000000"},{"label": "Nova configuração"}]}]} />
 
-Número máximo total de tokens de entrada (`prompt`) em todas as chamadas de API da função de IA em uma única consulta. O total é contabilizado de forma cumulativa com base nas respostas dos provedores. Observe que esse limite pode ser excedido pelo volume de tokens de entrada de uma chamada, já que o número de tokens de entrada de uma chamada não é conhecido antecipadamente. Defina como 0 para desativar.
+Número máximo total de tokens de entrada (`prompt`) em todas as chamadas de API da função de IA em uma única consulta. O total é contabilizado de forma cumulativa com base nas respostas dos provedores. Observe que esse limite pode ser excedido pelo volume de tokens de entrada de até uma chamada por solicitação em andamento, já que os tokens de entrada de uma chamada não são conhecidos até que sua resposta chegue. Assim como as outras cotas de IA, ele é aplicado por servidor / fragmento de consulta, não sendo somado em uma consulta distribuída, e deve ser definido na consulta de nível superior — uma substituição de `SETTINGS` em uma subconsulta é ignorada. Defina como 0 para desativar.
 
 Esse limite só é aplicado a provedores que informam um objeto `usage` na resposta (OpenAI, Anthropic, vLLM). Provedores que omitem o uso de tokens (principalmente o HuggingFace TEI) fazem com que o contador permaneça em 0 — use `ai_function_max_api_calls_per_query` para limitar essas chamadas.
 
@@ -84,7 +84,7 @@ Esse limite só é aplicado a provedores que informam um objeto `usage` na respo
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "500000"},{"label": "Nova configuração"}]}]} />
 
-Máximo total de tokens de saída (completion) em todas as chamadas de API da função de IA em uma única consulta. O rastreamento é cumulativo com base nas respostas do provedor. Observe que esse limite pode ser excedido pelo volume de tokens de saída de uma chamada, já que o número de tokens de saída de uma chamada não é conhecido antecipadamente. Defina como 0 para desativar.
+Máximo total de tokens de saída (completion) em todas as chamadas de API da função de IA em uma única consulta. O rastreamento é cumulativo com base nas respostas do provedor. Observe que esse limite pode ser excedido em até o volume de tokens de saída de uma chamada por solicitação em andamento, já que os tokens de saída de uma chamada não são conhecidos até a chegada da resposta. Assim como as outras cotas de IA, ele é aplicado por servidor / fragmento de consulta, não sendo somado em uma consulta distribuída, e deve ser definido na consulta de nível superior — uma substituição de `SETTINGS` em uma subconsulta é ignorada. Defina como 0 para desativar.
 
 Esse limite só é aplicado a provedores que informam um objeto `usage` na resposta (OpenAI, Anthropic, vLLM). Ele não se aplica às funções de embedding (`aiEmbed`, `aiSimilarity`), que nunca produzem tokens de saída.
 
@@ -156,6 +156,6 @@ Se true (padrão), uma chamada de função de IA que falhar permanentemente apó
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "Nova configuração"}]}]} />
 
-Se true (padrão), exceder um limite de cota de uma função de IA (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query` ou `ai_function_max_api_calls_per_query`) interrompe a consulta com uma exceção. Se false, as linhas restantes recebem o valor padrão do tipo de coluna (string vazia para String).
+Se true (padrão), exceder um limite de cota de uma função de IA (`ai_function_max_input_tokens_per_query`, `ai_function_max_output_tokens_per_query` ou `ai_function_max_api_calls_per_query`) interrompe a consulta com uma exceção. Se false, as linhas restantes recebem o valor padrão do tipo de coluna (string vazia para String). Assim como os limites de cota, isso deve ser definido na consulta de nível superior — uma substituição de `SETTINGS` em uma subconsulta é ignorada.
 
 {/*AUTOGENERATED_END*/}
