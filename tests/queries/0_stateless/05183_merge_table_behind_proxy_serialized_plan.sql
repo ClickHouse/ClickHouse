@@ -1,6 +1,8 @@
 -- A read of a deserialized query plan carries no analyzed query, so it may only be routed straight to
 -- a storage that does not need one. Reading a Merge table through a proxy that forwards its read used
 -- to take that route and crash the server.
+-- The lazily loaded `StorageTableProxy` carrier needs a second database, so it lives in
+-- 05183_merge_table_behind_proxy_serialized_plan_2, which is tagged `no-replicated-database`.
 
 DROP TABLE IF EXISTS t_merge_proxy_alias;
 DROP TABLE IF EXISTS t_merge_proxy_buffer;
