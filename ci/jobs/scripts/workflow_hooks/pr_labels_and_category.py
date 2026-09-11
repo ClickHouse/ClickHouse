@@ -92,11 +92,8 @@ class Labels:
     CI_FUNCTIONAL = "ci-functional-test"
     CI_TOOLCHAIN = "ci-toolchain"
     CI_NO_COVERAGE = "ci-no-coverage"
-    # Forces the LLVM coverage family to run on a PR where it would be
-    # auto-skipped as having no build-affecting changes (e.g. a tests-only PR).
-    CI_COVERAGE = "ci-coverage"
 
-    # Gates the PromQL compliance dedicated job + PR comment (see promql_compliance_job.py).
+    # Gates the PromQL compliance PR comment from integration-test post-hooks (see promql_compliance_hook.py).
     COMP_PROMQL = "comp-promql"
 
     # automatic backport for critical bug fixes

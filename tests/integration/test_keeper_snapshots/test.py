@@ -3,7 +3,6 @@
 import os
 import random
 import string
-import time
 
 import pytest
 
@@ -17,14 +16,6 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/enable_keeper.xml"],
-    stay_alive=True,
-)
-
-# Same configuration, but with compress_snapshots_with_zstd_format turned off, so that
-# snapshots are written in ClickHouse's own compressed block format instead of zstd.
-node_uncompressed = cluster.add_instance(
-    "node_uncompressed",
-    main_configs=["configs/enable_keeper.xml", "configs/uncompressed_snapshots.xml"],
     stay_alive=True,
 )
 
@@ -266,71 +257,5 @@ def test_snapshot_size(started_cluster, request):
                 node_zk.stop()
                 node_zk.close()
 
-        except:
-            pass
-
-
-@pytest.mark.parametrize("node_name", ["node", "node_uncompressed"])
-def test_snapshot_survives_restart(started_cluster, request, node_name):
-    keeper_node = started_cluster.instances[node_name]
-    keeper_utils.wait_until_connected(started_cluster, keeper_node)
-    node_zk = None
-    try:
-        node_zk = get_connection_zk(keeper_node.name)
-
-        chroot = f"/test_snapshot_survives_restart_{get_retry_number(request)}"
-        node_zk.create(chroot, b"somevalue")
-        node_zk.chroot = chroot
-        for i in range(100):
-            node_zk.create("/node" + str(i), random_string(123).encode())
-
-        # 'csnp' refuses while an automatic snapshot is still in flight, and also whenever the
-        # committed index is already covered by the latest snapshot. Advance the log with a write
-        # before each retry, otherwise the second refusal repeats forever.
-        for _ in range(20):
-            snapshot_idx = keeper_utils.send_4lw_cmd(
-                started_cluster, keeper_node, "csnp"
-            ).strip()
-            if snapshot_idx.isdigit():
-                break
-            node_zk.set("/node0", random_string(123).encode())
-            time.sleep(1)
-        else:
-            assert False, f"csnp kept refusing to schedule: {snapshot_idx!r}"
-
-        node_zk.stop()
-        node_zk.close()
-        node_zk = None
-
-        # 'csnp' only schedules the snapshot, so wait for the index it returned: the log already
-        # holds lines from the snapshots taken every snapshot_distance records.
-        keeper_node.wait_for_log_line(
-            f"Created persistent snapshot {snapshot_idx} with path"
-        )
-
-        snapshot_sizes = keeper_node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                "stat -c %s "
-                f"/var/lib/clickhouse/coordination/snapshots/snapshot_{snapshot_idx}_* || true",
-            ]
-        ).split()
-        assert snapshot_sizes, "no snapshot file was written"
-        assert all(int(size) > 0 for size in snapshot_sizes), (
-            f"snapshot written as an empty file: sizes {snapshot_sizes}"
-        )
-
-        keeper_node.restart_clickhouse(kill=True)
-        keeper_utils.wait_until_connected(started_cluster, keeper_node)
-
-        node_zk = get_connection_zk(keeper_node.name)
-        node_zk.chroot = chroot
-        assert len(node_zk.get_children("/")) == 100
-    finally:
-        try:
-            if node_zk is not None:
-                node_zk.stop()
-                node_zk.close()
         except:
             pass

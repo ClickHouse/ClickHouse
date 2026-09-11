@@ -10,7 +10,7 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+import CommunityMaintainedBadge from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
@@ -21,7 +21,9 @@ Querio は、AI を活用した分析およびビジネスインテリジェン�
 </div>
 
 <Steps>
-  <Step title="専用ユーザーを作成する" id="create-dedicated-user">
+  <Step>
+    ### 専用ユーザーを作成する
+
     セキュリティのベストプラクティスとして、Querio 専用のユーザーアカウントを作成し、必要最小限の権限だけを付与してください。
 
     ```sql
@@ -33,7 +35,9 @@ Querio は、AI を活用した分析およびビジネスインテリジェン�
     </Tip>
   </Step>
 
-  <Step title="読み取り専用のデータベースアクセスを付与する" id="grant-read-only-access">
+  <Step>
+    ### 読み取り専用のデータベースアクセスを付与する
+
     Querio の権限は、クエリに必要なデータベースとテーブルだけに制限してください。
 
     ```sql
@@ -49,16 +53,18 @@ Querio は、AI を活用した分析およびビジネスインテリジェン�
     Querio がアクセスを必要とするデータベースごとに、この手順を繰り返してください。
   </Step>
 
-  <Step title="接続情報を確認する" id="gather-connection-details">
+  <Step>
+    ### 接続情報を確認する
+
     Querio を ClickHouse に接続するには、次の接続情報が必要です。
 
     | パラメーター     | 説明                                           |
     | ---------- | -------------------------------------------- |
     | `HOST`     | ClickHouse サーバーまたはクラスターのアドレス                 |
     | `PORT`     | ポート 9440 (セキュアなネイティブプロトコルのデフォルト) または設定済みのポート |
-    | `DATABASE` | Querio でクエリするデータベース                          |
+    | `DATABASE` | Querio でクエリする database                       |
     | `USERNAME` | `querio_user` (または選択したユーザー名)                 |
-    | `PASSWORD` | ユーザーアカウントのパスワード                              |
+    | `PASSWORD` | user account のパスワード                          |
 
     <Note>
       * ClickHouse Cloud の場合、接続情報は Cloud Console で確認できます
@@ -92,5 +98,5 @@ Querio を ClickHouse に接続すると、プラットフォーム内のどこ�
   ## 参考資料
 </div>
 
-* [Querio のドキュメント](https://docs.querio.ai/)
+* [Querio のドキュメント](https://docs.querio.ai/integrations/clickhouse)
 * [Querio のスタートガイドとチュートリアル](https://www.querio.ai)

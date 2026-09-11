@@ -101,7 +101,7 @@ ClickStack UI (HyperDX) の左側のサイドバーから **Client Sessions** �
 
 <Image img="/images/clickstack/session-replay/session-replay.webp" alt="セッションリプレイの再生" size="lg" />
 
-タイムラインに表示する詳細度は、**Highlighted** モードと **All Events** モードを切り替えて調整できます。エラーは赤色で示され、任意のイベントをクリックすると、リプレイはそのセッション内の該当時点に移動します。
+タイムラインに表示する詳細度は、**Highlighted** モードと **All Events** モードを切り替えて調整できます。エラーは赤色で表示され、任意のイベントをクリックすると、リプレイはそのセッション内の該当時点に移動します。
 
 <div id="session-to-trace">
   ### セッションからトレースへ
@@ -109,7 +109,7 @@ ClickStack UI (HyperDX) の左側のサイドバーから **Client Sessions** �
 
 セッションタイムラインでネットワークリクエストやエラーを選択すると、**Trace** タブをクリックして、そのリクエストがバックエンドサービス内をどのように流れたかを追跡できます。そこでは、そのユーザー操作によってトリガーされた関連ログ、スパン、データベースクエリを確認できます。
 
-これは、`tracePropagationTargets` 設定が `traceparent` ヘッダーを介してブラウザのスパンとサーバーのスパンを関連付け、ユーザーのクリックからデータベースに至るまで一貫した分散トレースを構築するためです。フロントエンドとバックエンドの両方をインストルメントする方法を含め、実際の手順を詳しく知りたい場合は、[Instrumenting your NextJS application with OpenTelemetry and ClickStack](https://clickhouse.com/blog/instrumenting-your-app-with-otel-clickstack)を参照してください。
+これは、`tracePropagationTargets` 設定が `traceparent` ヘッダーを介してブラウザのスパンとサーバーのスパンを関連付け、ユーザーのクリックからデータベースに至るまで一貫した分散トレースを構築するためです。フロントエンドとバックエンドの両方をインストルメントする方法を含め、実際の手順を詳しく知りたい場合は、[OpenTelemetry と ClickStack による NextJS アプリケーションのインストルメント](https://clickhouse.com/blog/instrumenting-nextjs-opentelemetry-clickstack)を参照してください。
 
 <Frame>
   <img src="/images/clickstack/session-replay/clickpy-trace.webp" alt="ClickStack でセッションリプレイからバックエンドトレースへドリルダウンする" />
@@ -141,12 +141,12 @@ ClickStack UI (HyperDX) の左側のサイドバーから **Client Sessions** �
 * **ローカルデモ** — [Session replay demo](/ja/clickstack/example-datasets/session-replay) では、ClickStack をローカルで実行し、リプレイを表示するところまで含めて、デモアプリケーションを段階的にインストルメントする手順を説明しています。
 
 <div id="learn-more">
-  ## さらに詳しく
+  ## 詳細情報
 </div>
 
-* [Session replay demo](/ja/clickstack/example-datasets/session-replay) — ステップごとの手順を備えた、対話型のローカルデモアプリケーション
-* [Browser SDK Reference](/ja/clickstack/ingesting-data/sdks/browser) — SDK の全オプション、source maps、custom actions、高度な設定
-* [Search](/ja/clickstack/features/search) — セッションやイベントを絞り込むための検索構文
-* [Dashboards](/ja/clickstack/features/dashboards/overview) — セッションデータやトレースデータから可視化やダッシュボードを作成
+* [Session replay demo](/ja/clickstack/example-datasets/session-replay) — ステップごとの手順を備えた、ローカルで試せる対話型デモアプリケーション
+* [Browser SDK Reference](/ja/clickstack/ingesting-data/sdks/browser) — SDK の全オプション、ソースマップ、custom actions、高度な設定
+* [Search](/ja/clickstack/features/search) — セッションとイベントを絞り込むための検索構文
+* [Dashboards](/ja/clickstack/features/dashboards/overview) — セッションとトレースのデータから可視化やダッシュボードを作成
 * [Alerts](/ja/clickstack/features/alerts) — エラー、レイテンシ、その他のシグナルに対するアラートを設定
 * [ClickStack Architecture](/ja/clickstack/architecture) — ClickHouse、HyperDX、OTel collector がどのように連携するか

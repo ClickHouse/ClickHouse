@@ -4,14 +4,14 @@
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
-#include <Storages/MergeTree/WhatIfResult.h>
+#include <Storages/MergeTree/WhatIfIndexEstimator.h>
 
 namespace DB
 {
 
 /// Build the candidate index in memory over the baseline marks and check each granule
 bool tryEstimateEmpirical(
-    WhatIfCandidateResult & result,
+    WhatIfIndexEstimator::IndexResult & result,
     const MergeTreeIndexPtr & index_helper,
     const MergeTreeIndexConditionPtr & condition,
     ReadFromMergeTree * read_step,

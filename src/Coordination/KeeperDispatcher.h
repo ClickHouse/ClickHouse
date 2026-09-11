@@ -23,8 +23,6 @@
 #include <Coordination/KeeperRequestDispatcherOld.h>
 #include <Coordination/KeeperRequestDispatcher.h>
 
-#include <future>
-
 namespace DB
 {
 
@@ -33,8 +31,6 @@ namespace DB
 class KeeperDispatcher
 {
 private:
-    friend class KeeperDispatcherTestAccessor;
-
     using ClusterUpdateQueue = ConcurrentBoundedQueue<ClusterUpdateAction>;
 
     SnapshotsQueue snapshots_queue{1};
@@ -88,32 +84,14 @@ private:
     /// stop all activity and join threads.
     std::atomic<bool> shutting_down{false};
 
-    /// Flag to stop Keeper TCP connection handlers before the full dispatcher shutdown.
-    /// It lets non-TCP protocol handlers finish while the Keeper state and RAFT remain live.
-    std::atomic<bool> tcp_connections_draining{false};
-
-    /// Set after all request and response producers have stopped. Queue accounting can be
-    /// finalized after the TCP handlers have released their pending responses.
-    std::atomic<bool> ready_to_finish_shutdown{false};
-    std::atomic<bool> shutdown_finished{false};
-
     /// Notified when shutting_down (not to be confused with keeper_context->isShutdownCalled())
     /// becomes true. Wakes up interruptibleSleep().
     std::mutex early_shutdown_wait_mutex;
     std::condition_variable early_shutdown_wait_cv;
 
-    /// Protects admission and completion of four-letter commands. `signalShutdown` closes
-    /// admission under this mutex before any Keeper state can be destroyed.
-    std::mutex four_letter_command_mutex;
-    std::condition_variable four_letter_command_cv;
-    size_t running_four_letter_commands{0};
-
     /// Sleep for `period`, returning early if `shutting_down` becomes true.
-    /// Useful for background work that must exit promptly during shutdown.
+    /// Useful for containerGarbageCollectorThread that sleeps for a minute by default.
     void interruptibleSleep(std::chrono::milliseconds period);
-
-    /// Wait for commands admitted before shutdown to stop accessing Keeper state.
-    void waitForFourLetterCommands();
 
     /// Thread clean disconnected sessions from memory
     void sessionCleanerTask();
@@ -135,13 +113,6 @@ private:
     void containerGarbageCollectorThread(size_t batch_size, UInt64 max_never_used_interval_ms);
 
     void onSessionIDResponse(const Coordination::ZooKeeperResponsePtr & response) noexcept;
-
-    /// The only place that knows which responses do not go to a per-session response callback.
-    bool tryRouteSpecialResponse(const KeeperResponseForSession & response) noexcept;
-
-    /// Completes every waiter that can no longer receive a response. Call once no dispatcher can
-    /// produce one.
-    void failPendingSessionIDRequests() noexcept;
 
 public:
     KeeperDispatcher();
@@ -177,28 +148,9 @@ public:
     /// Returns true if signalShutdown() was called.
     bool isShuttingDown() const { return shutting_down.load(std::memory_order_relaxed); }
 
-    /// Stop accepting and processing Keeper TCP connections before the full dispatcher shutdown.
-    void beginTCPConnectionDrain();
-
-    /// Returns true after beginTCPConnectionDrain was called.
-    bool isTCPConnectionDrainStarted() const { return tcp_connections_draining.load(std::memory_order_acquire); }
-
-    /// Begin executing a four-letter command unless shutdown has started. Each successful call
-    /// must be matched by finishFourLetterCommand.
-    bool tryBeginFourLetterCommand();
-    void finishFourLetterCommand();
-
     /// Shutdown internal keeper parts (server, state machine, log storage, etc)
     /// `closed_all_connections` should be false if there may be any remaining KeeperTCPHandler instances.
     void shutdown(bool closed_all_connections);
-
-    /// Stop all request and response producers and complete pending session-ID requests.
-    /// TCP handlers can then finish without waiting for the Keeper session timeout.
-    void shutdownBeforeConnectionsFinish();
-
-    /// Drain the queues after TCP handlers finish and check their byte accounting when all
-    /// connections closed. Must be called after `shutdownBeforeConnectionsFinish`.
-    void shutdownAfterConnectionsFinish(bool closed_all_connections);
 
     void forceRecovery();
 
@@ -292,10 +244,9 @@ public:
         keeper_stats.incrementPacketsReceived();
     }
 
-    void resetServerStats()
+    void resetConnectionStats()
     {
         keeper_stats.reset();
-        server->resetLeaderMetrics();
     }
 
     /// Create snapshot manually, return the last committed log index in the snapshot
