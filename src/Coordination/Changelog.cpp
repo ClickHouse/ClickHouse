@@ -27,6 +27,7 @@
 #include <Common/FailPoint.h>
 #include <Common/LockMemoryExceptionInThread.h>
 #include <Common/SipHash.h>
+#include <Common/memory.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/logger_useful.h>
@@ -721,6 +722,37 @@ size_t logEntrySize(const LogEntryPtr & log_entry)
     return log_entry->get_buf().size();
 }
 
+/// Bytes charged for one entry in `latest_logs_cache` on top of the entry's own buffer. Besides the
+/// payload buffer, each cached entry keeps three heap blocks alive.
+/// Every block is then rounded up to the allocator's size class, which is what
+/// `getActualAllocationSize` computes, so the total follows the allocator instead of being
+/// hardcoded. It comes to 184 bytes with libc++ and jemalloc.
+size_t cachedLogEntryFixedOverhead()
+{
+    /// A `shared_ptr` control block begins with a vtable pointer and the strong and weak counters,
+    /// which libc++ declares as `long` - spelled `int64_t` here because `google-runtime-int` rejects
+    /// the former, and the two agree on every platform ClickHouse supports.
+    constexpr size_t control_block_header = sizeof(void *) + 2 * sizeof(int64_t);
+    using BufferDeleter = void (*)(nuraft::buffer *);
+
+    /// We don't account for the `unordered_map`'s buckets here because the overhead is small per-entry
+    /// and the total number of entries is limited by the `latest_logs_cache_entry_count_threshold`.
+    static const size_t overhead
+        = ::Memory::getActualAllocationSize(control_block_header + sizeof(nuraft::log_entry))
+        + ::Memory::getActualAllocationSize(control_block_header + sizeof(nuraft::buffer *) + sizeof(BufferDeleter))
+        + ::Memory::getActualAllocationSize(sizeof(void *) + sizeof(size_t) + sizeof(IndexToLogEntry::value_type));
+
+    return overhead;
+}
+
+}
+
+size_t cachedLogEntryBytes(const LogEntryPtr & log_entry)
+{
+    /// `buffer::alloc` prepends two `ulong` of its own bookkeeping to the payload, and the allocator
+    /// rounds the result up to a size class - for small entries that rounding alone is significant.
+    return ::Memory::getActualAllocationSize(logEntrySize(log_entry) + 2 * sizeof(nuraft::ulong))
+        + cachedLogEntryFixedOverhead();
 }
 
 class ChangelogReader
@@ -1186,9 +1218,9 @@ LogEntryStorage::InMemoryCache::InMemoryCache(size_t size_threshold_, size_t cou
     , count_threshold(count_threshold_)
 {}
 
-void LogEntryStorage::InMemoryCache::updateStatsWithNewEntry(uint64_t index, size_t size)
+void LogEntryStorage::InMemoryCache::updateStatsWithNewEntry(uint64_t index, size_t entry_bytes)
 {
-    cache_size += size;
+    cache_size += entry_bytes;
 
     if (cache.size() == 1)
     {
@@ -1202,13 +1234,16 @@ void LogEntryStorage::InMemoryCache::updateStatsWithNewEntry(uint64_t index, siz
     }
 }
 
-void LogEntryStorage::InMemoryCache::addEntry(uint64_t index, size_t size, LogEntryPtr log_entry)
+void LogEntryStorage::InMemoryCache::addEntry(uint64_t index, LogEntryPtr log_entry)
 {
+    /// Charged and refunded through `cachedLogEntryBytes` alone, so `cache_size` cannot drift.
+    const size_t entry_bytes = cachedLogEntryBytes(log_entry);
+
     auto [_, inserted] = cache.emplace(index, std::move(log_entry));
     if (!inserted)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert log with index {} which is already present in cache", index);
 
-    updateStatsWithNewEntry(index, size);
+    updateStatsWithNewEntry(index, entry_bytes);
 }
 
 void LogEntryStorage::InMemoryCache::popOldestEntry()
@@ -1216,7 +1251,7 @@ void LogEntryStorage::InMemoryCache::popOldestEntry()
     auto it = cache.find(min_index_in_cache);
     if (it == cache.end())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Couldn't find the oldest entry of index {} in logs cache", min_index_in_cache);
-    cache_size -= logEntrySize(it->second);
+    cache_size -= cachedLogEntryBytes(it->second);
     cache.erase(it);
     ++min_index_in_cache;
 }
@@ -1256,7 +1291,7 @@ void LogEntryStorage::InMemoryCache::cleanUpTo(uint64_t index)
         if (it == cache.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with index {} unexpectedly missing from cache", i);
 
-        cache_size -= logEntrySize(it->second);
+        cache_size -= cachedLogEntryBytes(it->second);
         cache.erase(it);
     }
     min_index_in_cache = index;
@@ -1280,7 +1315,7 @@ void LogEntryStorage::InMemoryCache::cleanAfter(uint64_t index)
         if (it == cache.end())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Log entry with index {} unexpectedly missing from cache", i);
 
-        cache_size -= logEntrySize(it->second);
+        cache_size -= cachedLogEntryBytes(it->second);
         cache.erase(it);
     }
 
@@ -1310,12 +1345,12 @@ size_t LogEntryStorage::InMemoryCache::numberOfEntries() const
     return cache.size();
 }
 
-bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t log_entry_size) const
+bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t entry_bytes) const
 {
     if (hasUnlimitedSpace() || empty())
         return true;
 
-    if (size_threshold != 0 && cache_size + log_entry_size > size_threshold)
+    if (size_threshold != 0 && cache_size + entry_bytes > size_threshold)
         return false;
 
     if (count_threshold != 0 && numberOfEntries() + 1 > count_threshold)
@@ -1327,7 +1362,7 @@ bool LogEntryStorage::InMemoryCache::hasSpaceAvailable(size_t log_entry_size) co
 void LogEntryStorage::addEntry(uint64_t index, const LogEntryPtr & log_entry)
 {
     /// we update the cache for added entries on refreshCache call
-    latest_logs_cache.addEntry(index, logEntrySize(log_entry), log_entry);
+    latest_logs_cache.addEntry(index, log_entry);
 
     if (log_entry->get_val_type() == nuraft::conf)
     {
@@ -1379,10 +1414,11 @@ void LogEntryStorage::addLocation(uint64_t index, uint64_t term, int32_t value_t
 
 void LogEntryStorage::addEntryToLatestCache(uint64_t index, const LogEntryPtr & log_entry)
 {
-    const auto entry_size = logEntrySize(log_entry);
-    while (!latest_logs_cache.hasSpaceAvailable(entry_size))
+    /// Invariant across the loop, and every evaluation costs a size-class lookup.
+    const size_t entry_bytes = cachedLogEntryBytes(log_entry);
+    while (!latest_logs_cache.hasSpaceAvailable(entry_bytes))
         latest_logs_cache.popOldestEntry();
-    latest_logs_cache.addEntry(index, entry_size, log_entry);
+    latest_logs_cache.addEntry(index, log_entry);
 }
 
 void LogEntryStorage::reserveLocations(size_t count)
