@@ -40,15 +40,16 @@ const String & deviceProbeError();
 /// is a lock taken before this one - and a thread that held this one while asking for the cache
 /// would be the other order of the same two locks, which is a deadlock rather than a slow query.
 ///
-/// The grouped sum and the hash join do not take it. Not because interleaving them is safe, but
-/// because neither is reached by the path this lock was added for, and putting the other two
-/// operators under it is a change to them rather than to this one.
+/// The grouped sum does not take it. Not because interleaving the two is safe, but because it is
+/// not reached by the path this lock was added for, and putting it under the lock is a change to
+/// that operator rather than to this one.
 std::unique_lock<std::mutex> lockDevice();
 
 
-/// The host side's half of the boundary's type mapping. Shared by the aggregation below and by
-/// `GPUHashJoin`, because both hand the device the same ten fixed-width numeric types and read the
-/// same ten back; a second copy of these switches would be the thing that drifts.
+/// The host side's half of the boundary's type mapping. Shared by the aggregation below and by the
+/// plan pass and source step that read a column out of device memory, because all of them hand the
+/// device the same ten fixed-width numeric types; a second copy of these switches would be the
+/// thing that drifts.
 ///
 /// The types are `ClickHouseGPUElementType` values, kept as `int` so that this header does not have
 /// to carry the boundary's enumerators.

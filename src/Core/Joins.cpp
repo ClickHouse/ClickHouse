@@ -75,7 +75,6 @@ const char * toString(JoinAlgorithm join_algorithm)
         case JoinAlgorithm::PARALLEL_FULL_SORTING_MERGE: return "PARALLEL_FULL_SORTING_MERGE";
         case JoinAlgorithm::GRACE_HASH: return "GRACE_HASH";
         case JoinAlgorithm::IE_JOIN: return "IE_JOIN";
-        case JoinAlgorithm::GPU_HASH: return "GPU_HASH";
     }
 }
 

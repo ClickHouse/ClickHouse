@@ -8,10 +8,6 @@
 # options do not survive nvcc - cmake/cuda.cmake explains that at length. The split also keeps
 # cuDF's headers, and the standard library they are compiled against, out of the translation units
 # of a server that merely wants to sum a column.
-#
-# The join's ClickHouse half is not here: it implements `IJoin` and lives with the other join
-# algorithms, in src/Interpreters/GPUHashJoin.cpp, from where it reaches the boundary header
-# directly and the host-side type mapping through GPUAggregation.h.
 
 add_library (clickhouse_gpu_cudf STATIC GPUAggregationCudf.cpp)
 
