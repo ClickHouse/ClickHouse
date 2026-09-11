@@ -51,12 +51,19 @@ void ExecutorCancellation::check(PipelineExecutor & executor) const
             return;
         case Policy::CancelQuery:
         {
-            auto exception = std::make_exception_ptr(
-                Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query."));
             if (auto process_list_element = context->getProcessListElementSafe())
-                process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
+            {
+                process_list_element->throwIfKilled();
 
-            std::rethrow_exception(exception);
+                auto exception = std::make_exception_ptr(
+                    Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query."));
+                process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
+                process_list_element->throwIfKilled();
+
+                std::rethrow_exception(exception);
+            }
+
+            throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
         }
     }
 }
