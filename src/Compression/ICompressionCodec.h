@@ -101,10 +101,6 @@ public:
 
     virtual bool isLossyCompression() const { return false; }
 
-    /// It is a codec available only for evaluation purposes and not meant to be used in production.
-    /// It will not be allowed to use unless the user will turn off the safety switch.
-    virtual bool isExperimental() const { return false; }
-
     /// If it does nothing.
     virtual bool isNone() const { return false; }
 

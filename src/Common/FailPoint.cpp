@@ -40,10 +40,12 @@ static struct InitFiu
     REGULAR(rmt_dedup_conflict_part_name_missing) \
     REGULAR(smt_dedup_conflict_part_name_missing) \
     REGULAR(merge_tree_sink_on_start_random_sleep) \
+    REGULAR(merge_tree_sequential_source_sleep_before_read) \
+    REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
-    PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
-    PAUSEABLE_ONCE(remote_query_executor_finish_drain_pause) \
+    ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
+    PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
     REGULAR(stripe_log_sink_write_fallpoint) \
@@ -138,6 +140,7 @@ static struct InitFiu
     REGULAR(database_catalog_throw_on_table_shutdown) \
     REGULAR(database_catalog_throw_on_table_prepare_shutdown) \
     REGULAR(database_replicated_throw_on_stop_replication) \
+    REGULAR(database_catalog_shutdown_sleep_per_table) \
     REGULAR(dummy_failpoint) \
     ONCE(system_log_pipeline_fail_after_smt_restore) \
     REGULAR(prefetched_reader_pool_failpoint) \
@@ -154,13 +157,17 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_select_sequential_consistency_before_keeper_fence) \
     PAUSEABLE_ONCE(smt_select_sequential_consistency_after_keeper_get) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
-    PAUSEABLE_ONCE(delta_lake_write_commit_pause) \
+    ONCE(delta_lake_write_cancel_in_commit_window) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
+    PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_analysis) \
+    PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_block_allocation) \
+    PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_zk_partition_list) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
+    PAUSEABLE_ONCE(paimon_incremental_read_pause_before_is_active_remove) \
     PAUSEABLE(dummy_pausable_failpoint) \
     PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
@@ -189,6 +196,7 @@ static struct InitFiu
     REGULAR(refresh_mv_force_scheduling_feature_flags_missing) \
     REGULAR(refresh_mv_force_coordination_version_conflict) \
     REGULAR(refresh_mv_force_coordination_running_znode_lost) \
+    PAUSEABLE_ONCE(refresh_mv_pause_after_executor_published) \
     PAUSEABLE(refresh_mv_pause_before_exchange) \
     PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
     REGULAR(refresh_mv_skip_execution) \
@@ -256,6 +264,9 @@ static struct InitFiu
     PAUSEABLE(backup_from_snapshot_pause_before_mount_parent_removal) \
     PAUSEABLE_ONCE(backup_pause_on_start) \
     PAUSEABLE_ONCE(restore_pause_on_start) \
+    PAUSEABLE_ONCE(restore_pause_before_data_restore_tasks) \
+    PAUSEABLE_ONCE(backups_pause_before_publishing_progress) \
+    PAUSEABLE_ONCE(restore_pause_before_publishing_final_progress) \
     PAUSEABLE(sc_state_application_pause) \
     PAUSEABLE(sc_state_application_pause_after_fetch) \
     PAUSEABLE(sc_state_fetch_pause_before_version_check) \
@@ -265,6 +276,7 @@ static struct InitFiu
     ONCE(database_replicated_drop_before_removing_keeper_failed) \
     ONCE(database_replicated_drop_after_removing_keeper_failed) \
     PAUSEABLE_ONCE(mt_mutate_task_pause_in_prepare) \
+    PAUSEABLE_ONCE(merge_task_pause_after_reserving_tmp_dir) \
     REGULAR(mutate_task_random_sleep_in_prepare) \
     PAUSEABLE(merge_task_projection_stage_pause) \
     PAUSEABLE(rmt_mutate_task_pause_in_prepare) \
@@ -345,7 +357,8 @@ static struct InitFiu
     PAUSEABLE(keeper_changelog_readahead_park_armed) \
     PAUSEABLE(keeper_changelog_readahead_pre_drain) \
     REGULAR(keeper_changelog_readahead_fill_exception) \
-    REGULAR(distributed_plan_record_failure_while_starting_tasks) \
+    ONCE(distributed_plan_record_failure_while_starting_tasks) \
+    ONCE(distributed_plan_delay_root_cause_report) \
     ONCE(zk_send_thread_request_window_throw) \
     ONCE(zk_send_thread_operations_insert_throw) \
     REGULAR(replicated_database_status_finished_node_missing) \
@@ -356,9 +369,14 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
-    PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
+    ONCE(aggregating_in_order_transform_cancel_mid_loop) \
+    ONCE(mysql_output_format_cancel_mid_loop) \
+    ONCE(postgresql_output_format_cancel_mid_loop) \
+    ONCE(hash_join_throw_after_data_release) \
+    ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
-    REGULAR(smt_takeover_fake_hardware_error_after_set)
+    REGULAR(smt_takeover_fake_hardware_error_after_set) \
+    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas)
 
 namespace FailPoints
 {

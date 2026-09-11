@@ -147,6 +147,28 @@ KeeperMemNodesStorage::NodeHolder KeeperMemNodesStorage::getCommittedNode(std::s
     return {&node_it->value};
 }
 
+std::pair<KeeperMemNodesStorage::UncommittedNodesIterator, bool> KeeperMemNodesStorage::addUncommittedNode(std::string path, UncommittedNode node)
+{
+    auto [it, added] = uncommitted_nodes.emplace(std::move(path), std::move(node));
+    /// The root has no parent, and a node already present is already indexed.
+    if (added && it->first != "/")
+        uncommitted_children_by_parent[std::string{Coordination::parentNodePath(it->first)}].insert(it);
+    return {it, added};
+}
+
+void KeeperMemNodesStorage::eraseUncommittedNode(UncommittedNodesIterator it)
+{
+    if (it->first != "/")
+    {
+        auto parent_it = uncommitted_children_by_parent.find(Coordination::parentNodePath(it->first));
+        chassert(parent_it != uncommitted_children_by_parent.end());
+        parent_it->second.erase(it);
+        if (parent_it->second.empty())
+            uncommitted_children_by_parent.erase(parent_it);
+    }
+    uncommitted_nodes.erase(it);
+}
+
 KeeperMemNodesStorage::UncommittedNodeRef KeeperMemNodesStorage::getUncommittedNode(std::string_view path)
 {
     if (auto node_it = uncommitted_nodes.find(path); node_it != uncommitted_nodes.end())
@@ -166,7 +188,7 @@ KeeperMemNodesStorage::UncommittedNodeRef KeeperMemNodesStorage::getUncommittedN
     if (!node)
         return {};
 
-    auto [node_it, _] = uncommitted_nodes.emplace(std::string{path}, UncommittedNode{.node = node});
+    auto [node_it, _] = addUncommittedNode(std::string{path}, UncommittedNode{.node = node});
     uncommitted_zxid_to_nodes[0].insert(node_it);
     return {node_it};
 }
@@ -511,7 +533,7 @@ void KeeperMemNodesStorage::cleanupUncommittedState(int64_t commit_zxid)
         {
             std::erase(node_it->second.applied_zxids, transaction_zxid);
             if (node_it->second.applied_zxids.empty())
-                uncommitted_nodes.erase(node_it);
+                eraseUncommittedNode(node_it);
         }
     }
 }
@@ -572,7 +594,7 @@ void KeeperMemNodesStorage::cleanupAfterRollback(std::vector<uint64_t> rollbacke
         {
             std::erase(node_it->second.applied_zxids, transaction_zxid);
             if (node_it->second.applied_zxids.empty())
-                uncommitted_nodes.erase(node_it);
+                eraseUncommittedNode(node_it);
         }
 
         uncommitted_zxid_to_nodes.erase(it);
@@ -605,19 +627,6 @@ void KeeperMemNodesStorage::updateNodesDigest(uint64_t & current_digest, uint64_
 
 bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path, size_t limit, std::function<bool(std::string_view /*path*/, UncommittedNodeRef &&)> check_node)
 {
-    struct PathCmp
-    {
-        auto operator()(const std::string_view a,
-                        const std::string_view b) const
-        {
-            size_t level_a = std::count(a.begin(), a.end(), '/');
-            size_t level_b = std::count(b.begin(), b.end(), '/');
-            return level_a < level_b || (level_a == level_b && a < b);
-        }
-
-        using is_transparent = void; // required to make find() work with different type than key_type
-    };
-
     struct QueueEntry
     {
         std::string path;
@@ -631,15 +640,6 @@ bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path
             return true;
 
         queue.push_back(QueueEntry{std::string{root_path}, std::move(root_node)});
-    }
-
-    /// Collect uncommitted children of root node in a specialized structure so we avoid iterating
-    /// all uncommitted nodes for each child node.
-    std::map<std::string_view, UncommittedNodesIterator, PathCmp> uncommitted_children;
-    for (auto it = uncommitted_nodes.begin(); it != uncommitted_nodes.end(); ++it)
-    {
-        if (Coordination::matchPath(it->first, root_path) == Coordination::PathMatchResult::IS_CHILD)
-            uncommitted_children[it->first] = it;
     }
 
     size_t nodes_visited = 0;
@@ -662,24 +662,24 @@ bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path
 
         std::unordered_set<std::string_view, StringHashForHeterogeneousLookup, StringHashForHeterogeneousLookup::transparent_key_equal> processed_uncommitted_children;
 
-        /// Add uncommitted children to queue.
-        for (auto nodes_it = uncommitted_children.upper_bound(path + "/");
-             nodes_it != uncommitted_children.end() && Coordination::parentNodePath(nodes_it->first) == path;
-             ++nodes_it)
+        /// Add uncommitted children to queue. Nothing in this loop changes uncommitted_children_by_parent.
+        if (auto children_it = uncommitted_children_by_parent.find(path); children_it != uncommitted_children_by_parent.end())
         {
-            const auto & [node_path, uncommitted_node_it] = *nodes_it;
+            for (auto uncommitted_node_it : children_it->second)
+            {
+                std::string_view node_path = uncommitted_node_it->first;
+                processed_uncommitted_children.insert(node_path);
 
-            processed_uncommitted_children.insert(node_path);
+                if (uncommitted_node_it->second.node == nullptr)
+                    /// Node was deleted in uncommitted state. Don't visit it, but it's important that
+                    /// we added it to processed_uncommitted_children; otherwise it could be incorrectly
+                    /// visited by the committed children iteration below.
+                    continue;
 
-            if (uncommitted_node_it->second.node == nullptr)
-                /// Node was deleted in uncommitted state. Don't visit it, but it's important that
-                /// we added it to processed_uncommitted_children; otherwise it could be incorrectly
-                /// visited by the committed children iteration below.
-                continue;
-
-            queue.push_back(QueueEntry{std::string{node_path}, UncommittedNodeRef{uncommitted_node_it}});
-            if (limit_reached())
-                return false;
+                queue.push_back(QueueEntry{std::string{node_path}, UncommittedNodeRef{uncommitted_node_it}});
+                if (limit_reached())
+                    return false;
+            }
         }
 
         /// Add committed children to queue, except the ones already processed as uncommitted above.
@@ -698,7 +698,7 @@ bool KeeperMemNodesStorage::visitUncommittedRecursive(std::string_view root_path
                 {
                     auto node = std::make_shared<Node>();
                     node->shallowCopy(committed_node);
-                    auto [uncommitted_node_it, added] = uncommitted_nodes.emplace(path, UncommittedNode{.node = node});
+                    auto [uncommitted_node_it, added] = addUncommittedNode(path, UncommittedNode{.node = node});
                     chassert(added);
                     uncommitted_zxid_to_nodes[0].insert(uncommitted_node_it);
                     uncommitted_ref = {uncommitted_node_it};
@@ -786,7 +786,7 @@ void KeeperMemNodesStorage::prepareCreateNodeWithoutUpdatingParent(
     std::string_view data, KeeperStagingTransaction & staging)
 {
     if (!node.it.has_value())
-        node.it = uncommitted_nodes.emplace(std::string{path}, UncommittedNode{}).first;
+        node.it = addUncommittedNode(std::string{path}, UncommittedNode{}).first;
     prepareWriteCommon(path, node, staging);
 
     staging.deltas.emplace_back(
