@@ -1,4 +1,4 @@
--- Check NDV propagation (upper bound 10) through:
+-- Check NDV propagation through deterministic multi-argument functions with exactly one non-constant argument:
 --   `toUInt64(dateTrunc('month', d))`
 --   `plus(materialize(1), n)`
 --   `toUInt64(dateTrunc((SELECT 'month'), d))`
@@ -19,6 +19,7 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_limit = 10;
 SET query_plan_optimize_join_order_randomize = 0;
 
+-- Check NDV propagation with a literal constant: `toUInt64(dateTrunc('month', d))`.
 -- `NDV(d) = NDV(n) = 10` -> estimated groups: `aggregated[10]` in `EXPLAIN`.
 SELECT 'toUInt64(dateTrunc(\'month\', d))';
 SELECT extract(explain, 'Join:.*') FROM
@@ -36,6 +37,7 @@ SELECT extract(explain, 'Join:.*') FROM
 )
 WHERE explain LIKE '% Join:%';
 
+-- Check NDV propagation with a constant wrapped in the `materialize` function: `plus(materialize(1), n)`.
 -- The function call `materialize(1)` produces a regular column `[1, 1, ...]`.
 SELECT 'plus(materialize(1), n)';
 SELECT extract(explain, 'Join:.*') FROM
@@ -53,6 +55,7 @@ SELECT extract(explain, 'Join:.*') FROM
 )
 WHERE explain LIKE '% Join:%';
 
+-- Check NDV propagation with a constant from a scalar subquery: `toUInt64(dateTrunc((SELECT 'month'), d))`.
 SELECT 'toUInt64(dateTrunc((SELECT \'month\'), d))';
 SELECT extract(explain, 'Join:.*') FROM
 (
