@@ -11,7 +11,7 @@ CREATE TABLE t_lightweight_mut_5 (id UInt64, v UInt64) ENGINE = MergeTree ORDER 
 SYSTEM STOP MERGES t_lightweight_mut_5;
 INSERT INTO t_lightweight_mut_5 VALUES (10, 20);
 
-ALTER TABLE t_lightweight_mut_5 UPDATE v = (SELECT sum(number) FROM numbers(100)) WHERE 1;
+ALTER TABLE t_lightweight_mut_5 UPDATE v = assumeNotNull( (SELECT sum(number) FROM numbers(100)) ) WHERE 1;
 
 SELECT id, v FROM t_lightweight_mut_5 ORDER BY id;
 
@@ -28,11 +28,11 @@ CREATE TABLE t_lightweight_mut_5 (id UInt64, v Array(UInt64)) ENGINE = MergeTree
 SYSTEM STOP MERGES t_lightweight_mut_5;
 INSERT INTO t_lightweight_mut_5 VALUES (10, [20]);
 
-ALTER TABLE t_lightweight_mut_5 UPDATE v = (SELECT groupArray(number) FROM numbers(10)) WHERE 1;
+ALTER TABLE t_lightweight_mut_5 UPDATE v = assumeNotNull( (SELECT groupArray(number) FROM numbers(10)) ) WHERE 1;
 
 SELECT id, v FROM t_lightweight_mut_5 ORDER BY id;
 
-ALTER TABLE t_lightweight_mut_5 UPDATE v = (SELECT groupArray(number) FROM numbers(10000)) WHERE 1;
+ALTER TABLE t_lightweight_mut_5 UPDATE v = assumeNotNull( (SELECT groupArray(number) FROM numbers(10000)) ) WHERE 1;
 
 SELECT id, length(v) FROM t_lightweight_mut_5 ORDER BY id; -- { serverError BAD_ARGUMENTS }
 
@@ -56,7 +56,7 @@ CREATE TABLE t_lightweight_mut_5 (id UInt64, v AggregateFunction(uniqExact, UInt
 SYSTEM STOP MERGES t_lightweight_mut_5;
 INSERT INTO t_lightweight_mut_5 VALUES (10, initializeAggregation('uniqExactState', 1::UInt64));
 
-ALTER TABLE t_lightweight_mut_5 UPDATE v = (SELECT uniqExactState(number) FROM numbers(5)) WHERE 1;
+ALTER TABLE t_lightweight_mut_5 UPDATE v = assumeNotNull( (SELECT uniqExactState(number) FROM numbers(5)) ) WHERE 1;
 
 SELECT id, finalizeAggregation(v) FROM t_lightweight_mut_5 ORDER BY id;
 
@@ -112,10 +112,10 @@ INSERT INTO t_lightweight_mut_5 VALUES (10, 10);
 
 -- Check that function in subquery is not rewritten.
 ALTER TABLE t_lightweight_mut_5
-UPDATE v =
+UPDATE v = assumeNotNull(
 (
     SELECT sum(number) FROM numbers(1000) WHERE number > randConstant()
-) WHERE 1 SETTINGS mutations_execute_subqueries_on_initiator = 0;
+) ) WHERE 1 SETTINGS mutations_execute_subqueries_on_initiator = 0;
 
 SELECT command FROM system.mutations
 WHERE database = currentDatabase() AND table = 't_lightweight_mut_5' AND NOT is_done
