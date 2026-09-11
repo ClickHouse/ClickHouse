@@ -1,5 +1,3 @@
-SET enable_analyzer = 1;
-
 SELECT -1::Int32;
 EXPLAIN SYNTAX SELECT -1::Int32;
 

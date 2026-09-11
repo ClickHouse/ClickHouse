@@ -7,7 +7,6 @@ import snappy
 import sys
 import urllib
 import zipfile
-import zstandard
 
 
 PRESETS_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "presets")
@@ -35,25 +34,6 @@ def convert_time_series_to_protobuf(time_series):
                 types_pb2.Sample(timestamp=timestamp_ms, value=value)
             )
         write_request.timeseries.append(dest_timeseries)
-    return write_request
-
-
-# Converts metrics metadata
-# [ (metric_family_name, metric_type, help, unit), ... ]
-# to a protobuf message of type remote_pb2.WriteRequest.
-# `metric_type` is the name of a value of the types_pb2.MetricMetadata.MetricType enum,
-# e.g. "COUNTER" or "GAUGE".
-def convert_metrics_metadata_to_protobuf(metrics_metadata):
-    write_request = remote_pb2.WriteRequest()
-    for metric_family_name, metric_type, help, unit in metrics_metadata:
-        write_request.metadata.append(
-            types_pb2.MetricMetadata(
-                metric_family_name=metric_family_name,
-                type=types_pb2.MetricMetadata.MetricType.Value(metric_type),
-                help=help,
-                unit=unit,
-            )
-        )
     return write_request
 
 
@@ -101,51 +81,23 @@ def load_preset_from_file(preset_file):
 
 
 # Sends a protobuf message of type remote_pb2.WriteRequest to specified host and port via the RemoteWrite protocol.
-def send_protobuf_to_remote_write(
-    host, port, path, write_request_proto, content_encoding="snappy", headers=None
-):
-    response = get_response_to_remote_write(
-        host, port, path, write_request_proto, content_encoding, headers=headers
-    )
+def send_protobuf_to_remote_write(host, port, path, write_request_proto):
+    response = get_response_to_remote_write(host, port, path, write_request_proto)
     check_remote_write_response(response)
 
 
-def compress_remote_write_request(serialized_proto, content_encoding):
-    if content_encoding == "snappy":
-        return snappy.compress(data=serialized_proto)
-    if content_encoding == "zstd":
-        return zstandard.compress(serialized_proto)
-    # Deliberately send uncompressed data with an unsupported Content-Encoding
-    # so that tests can check how the server rejects it.
-    return serialized_proto
-
-
-def get_response_to_remote_write(
-    host,
-    port,
-    path,
-    write_request_proto,
-    content_encoding="snappy",
-    content_type="application/x-protobuf",
-    headers=None,
-):
+def get_response_to_remote_write(host, port, path, write_request_proto):
     url = f"http://{host}:{port}/{path.strip('/')}"
-    print(
-        f"Posting {url} with Content-Encoding: {content_encoding}, Content-Type: {content_type}"
-    )
-    request_headers = {
-        "Content-Encoding": content_encoding,
-        "Content-Type": content_type,
-        "User-Agent": requests.utils.default_user_agent(),
-        "X-Prometheus-Remote-Write-Version": "0.1.0",
-    }
-    request_headers.update(headers or {})
+    print(f"Posting {url}")
     response = requests.post(
         url,
-        data=compress_remote_write_request(
-            write_request_proto.SerializeToString(), content_encoding
-        ),
-        headers=request_headers,
+        data=snappy.compress(data=write_request_proto.SerializeToString()),
+        headers={
+            "Content-Encoding": "snappy",
+            "Content-Type": "application/x-protobuf",
+            "User-Agent": requests.utils.default_user_agent(),
+            "X-Prometheus-Remote-Write-Version": "0.1.0",
+        },
     )
     print(
         f"Status code: {response.status_code} {http.HTTPStatus(response.status_code).phrase}"
@@ -256,9 +208,9 @@ def get_response_to_http_api_range_query(
     return get_response_to_http_api(url)
 
 
-def get_response_to_http_api(url, headers=None):
+def get_response_to_http_api(url):
     print(f"Requesting {url}")
-    response = requests.get(url, headers=headers or {})
+    response = requests.get(url)
     print(
         f"Status code: {response.status_code} {http.HTTPStatus(response.status_code).phrase}"
     )

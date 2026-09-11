@@ -11,8 +11,6 @@
 -- extracted from each pattern are decomposed into ngrams, so the index can prune on substrings that
 -- need not align with whole-word boundaries.
 
-SET explain_query_plan_default = 'legacy';
-
 DROP TABLE IF EXISTS tab;
 
 CREATE TABLE tab

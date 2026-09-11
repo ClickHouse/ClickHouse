@@ -70,8 +70,7 @@ public:
         Value value;
     };
 
-    using VariantSerializations = VectorWithMemoryTracking<SerializationPtr>;
-    using VariantTypes = VectorWithMemoryTracking<DataTypePtr>;
+    using VariantSerializations = std::vector<SerializationPtr>;
 
 private:
     explicit SerializationVariant(const DataTypes & variant_types_, const VariantSerializations & variant_serializations_, const Names & variant_names_, const String & variant_name_);
@@ -118,7 +117,8 @@ public:
         size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,
@@ -200,8 +200,9 @@ private:
         DeserializeBinaryBulkSettings & settings,
         SubstreamsDeserializeStatesCache * cache);
 
-    std::vector<size_t> deserializeCompactDiscriminators(
-        IColumn & discriminators_column,
+    std::pair<std::vector<size_t>, std::vector<size_t>> deserializeCompactDiscriminators(
+        ColumnPtr & discriminators_column,
+        size_t rows_offset,
         size_t limit,
         ReadBuffer * stream,
         bool continuous_reading,
@@ -247,7 +248,7 @@ private:
         std::function<bool(IColumn & variant_column, const SerializationPtr & variant_serialization, ReadBuffer &, const FormatSettings &)> try_deserialize_nested,
         const FormatSettings & settings) const;
 
-    VariantTypes variant_types;
+    DataTypes variant_types;
     VariantSerializations variant_serializations;
     std::vector<String> variant_names;
     std::vector<size_t> deserialize_text_order;

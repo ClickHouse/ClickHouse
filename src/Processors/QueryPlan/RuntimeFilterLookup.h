@@ -1,11 +1,8 @@
 #pragma once
 
-#include <Core/Range.h>
 #include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
-#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/BloomFilter.h>
-#include <Interpreters/Context_fwd.h>
 #include <Interpreters/Set.h>
 
 #include <base/types.h>
@@ -13,7 +10,6 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
-#include <optional>
 
 namespace DB
 {
@@ -55,19 +51,10 @@ public:
     /// Add all keys from one filter to the other so that destination filter contains the union of both filters.
     virtual void merge(const IRuntimeFilter * source) = 0;
 
-    /// The exact distinct key values collected from the build side, as a single column.
-    virtual ColumnPtr getRecordedKeyValues() const { return nullptr; }
-
-    /// A closed [min, max] envelope of the values inserted into the filter, if one can be computed
-    virtual std::optional<Range> getRecordedKeyRanges() const;
-
-    /// Opt in to tracking the [min, max] key-range envelope during build.
-    void enableIndexAnalysis() { index_analysis_enabled = true; }
-
     /// Usage statistics
     void updateStats(UInt64 rows_checked, UInt64 rows_passed) const;
     const RuntimeFilterStats & getStats() const { return stats; }
-    void markKeySetDropped() { key_set_dropped = true; }
+    void setFullyDisabled() { is_fully_disabled = true; }
 
     Float64 getPassRatioThresholdForDisabling() const { return pass_ratio_threshold_for_disabling; }
     UInt64 getBlocksToSkipBeforeReenabling() const { return blocks_to_skip_before_reenabling; }
@@ -79,7 +66,12 @@ protected:
         size_t filters_to_merge_,
         const DataTypePtr & filter_column_target_type_,
         Float64 pass_ratio_threshold_for_disabling_,
-        UInt64 blocks_to_skip_before_reenabling_);
+        UInt64 blocks_to_skip_before_reenabling_)
+        : filters_to_merge(filters_to_merge_)
+        , filter_column_target_type(filter_column_target_type_)
+        , pass_ratio_threshold_for_disabling(pass_ratio_threshold_for_disabling_)
+        , blocks_to_skip_before_reenabling(blocks_to_skip_before_reenabling_)
+    {}
 
     /// Checks if a block of rows should be skipped because this filter was disabled.
     bool shouldSkip(size_t next_block_rows) const;
@@ -87,10 +79,6 @@ protected:
     virtual void finishInsertImpl() = 0;
 
     virtual ColumnPtr findImpl(const ColumnWithTypeAndName & values) const = 0;
-
-    void updateRange(const IColumn & column);
-    /// Merges another filter's envelope in, for parallel build streams.
-    void mergeRange(const IRuntimeFilter & source);
 
     size_t filters_to_merge;
     const DataTypePtr filter_column_target_type;
@@ -105,17 +93,7 @@ protected:
     /// How many rows should be skipped before trying to re-enable the filter after it was disabled due to
     /// low percentage of filtered rows
     mutable std::atomic<Int64> rows_to_skip = 0;
-    /// The filter gave up on its key set (too many keys or a saturated bloom filter): it passes all rows and
-    /// only keeps tracking the key-range envelope.
-    std::atomic<bool> key_set_dropped = false;
-
-    /// Key-range envelope tracking (see updateRange/getRecordedKeyRanges).
-    bool index_analysis_enabled = false;
-    bool range_supported = false;
-    bool range_positive = true;
-    bool has_range = false;
-    Field range_min;
-    Field range_max;
+    std::atomic<bool> is_fully_disabled = false;
 };
 
 template <bool negate>
@@ -146,9 +124,6 @@ public:
     {
         if (inserts_are_finished)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Trying to insert into runtime filter after it was marked as finished");
-
-        /// Track the envelope of every value even when the set is full.
-        updateRange(*values);
 
         if (is_full)
             return;
@@ -181,20 +156,6 @@ public:
     }
 
     ColumnPtr findImpl(const ColumnWithTypeAndName & values) const override;
-
-    ColumnPtr getRecordedKeyValues() const override
-    {
-        /// ANTI (NOT IN) can't be used as a positive IN predicate on the left side.
-        if constexpr (negate)
-            return nullptr;
-        /// exact_values is released once the set overflows to a bloom filter.
-        if (!index_analysis_enabled || !exact_values)
-            return nullptr;
-        const auto elements = exact_values->getSetElements();
-        if (elements.empty())
-            return nullptr;
-        return elements.front();
-    }
 
 protected:
 
@@ -264,10 +225,7 @@ public:
         UInt64 exact_values_limit_
     )
         : RuntimeFilterBase(filters_to_merge_, filter_column_target_type_, pass_ratio_threshold_for_disabling_, blocks_to_skip_before_reenabling_, bytes_limit_, exact_values_limit_)
-    {
-        /// ANTI join: a positive range on the left is unsound, so expose none.
-        range_positive = false;
-    }
+    {}
 
     void merge(const IRuntimeFilter * source) override;
 };
@@ -288,9 +246,7 @@ public:
         UInt64 bytes_limit_,
         UInt64 exact_values_limit_,
         UInt64 bloom_filter_hash_functions_,
-        Float64 max_ratio_of_set_bits_in_bloom_filter_,
-        std::optional<UInt64> distinct_keys_hint_,
-        bool distinct_keys_hint_matches_filter_key_);
+        Float64 max_ratio_of_set_bits_in_bloom_filter_);
 
     void insert(ColumnPtr values) override;
 
@@ -307,19 +263,11 @@ private:
     void insertIntoBloomFilter(ColumnPtr values);
     void switchToBloomFilter();
 
-    /// Marks the filter as passing all rows. Also releases the exact values collected so far: they are
-    /// only a part of the build-side keys, and `getRecordedKeyValues` must not present them as all of them.
-    void dropKeySet();
-
     /// Disables bloom filter if it is likely to have bad selectivity
     void checkBloomFilterWorthiness();
 
     const UInt64 bloom_filter_hash_functions;
     const Float64 max_ratio_of_set_bits_in_bloom_filter = 0.7;
-    /// Measured distinct build-side keys from prior statistics, used to choose the bloom filter size.
-    const std::optional<UInt64> distinct_keys_hint;
-    /// Is the filter key the whole join key? If yes, then `distinct_keys_hint` represents this entire's filter's distinct keys.
-    const bool distinct_keys_hint_matches_filter_key;
 
     BloomFilterPtr bloom_filter;
 };
@@ -338,17 +286,11 @@ public:
         const DataTypePtr & filter_column_target_type_,
         Float64 pass_ratio_threshold_for_disabling_,
         UInt64 blocks_to_skip_before_reenabling_,
-        ProbeFn probe_fn_,
-        std::optional<Range> key_range_ = {},
-        ColumnPtr recorded_key_values_ = {});
+        ProbeFn probe_fn_);
 
     /// All "build" entry points are no-ops: the data was built inside HashJoin already.
     void insert(ColumnPtr) override {}
     void merge(const IRuntimeFilter *) override {}
-
-    /// Carried over from the replaced filter (non-null only when it kept an exact set), so the
-    /// left-side index-analysis path can still build IN(...) instead of only a [min,max] range.
-    ColumnPtr getRecordedKeyValues() const override { return recorded_key_values; }
 
 protected:
     void finishInsertImpl() override {}
@@ -356,7 +298,6 @@ protected:
 
 private:
     ProbeFn probe_fn;
-    ColumnPtr recorded_key_values;
 };
 
 /// Store and find per-query runtime filters that are used for optimizing some kinds of JOINs
@@ -384,20 +325,5 @@ struct IRuntimeFilterLookup : boost::noncopyable
 using RuntimeFilterLookupPtr = std::shared_ptr<IRuntimeFilterLookup>;
 
 RuntimeFilterLookupPtr createRuntimeFilterLookup();
-
-/// A runtime filter (by rendezvous key) bound to a left-side column to prune.
-struct RuntimeFilterIndexAnalysisDescriptor
-{
-    String filter_id;          /// rendezvous key for IRuntimeFilterLookup::find
-    String key_column_name;
-    DataTypePtr key_column_type;
-};
-
-/// AND the descriptors into one pruning predicate; nullptr if none (fail-open).
-const ActionsDAG::Node * buildRuntimeRangePredicate(
-    const IRuntimeFilterLookup & lookup,
-    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & descriptors,
-    ActionsDAG & dag,
-    const ContextPtr & context);
 
 }
