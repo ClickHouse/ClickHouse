@@ -75,6 +75,7 @@
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
 #include <Storages/System/StorageSystemContributors.h>
 #include <Storages/System/StorageSystemErrors.h>
+#include <Storages/System/StorageSystemSessionQueryIds.h>
 #include <Storages/System/StorageSystemWarnings.h>
 #include <Storages/System/StorageSystemDDLWorkerQueue.h>
 #include <Storages/System/StorageSystemLicenses.h>
@@ -1606,6 +1607,68 @@ Row 2:
 message:               The number of attached databases is more than 2.
 message_format_string: The number of attached databases is more than {}.
 ```
+)DOCS_MD");
+    attach<StorageSystemSessionQueryIds>(context, system_database, "session_query_ids", R"DOCS_MD(
+.description
+Contains the query ids of the queries executed in the current session, in execution order. Use it to find "the queries I just ran" in [`system.query_log`](/reference/system-tables/query_log) without assigning `query_id` client-side or tagging queries with `log_comment`.
+
+The contents are session-scoped: each session sees only its own history, and other sessions' queries never appear.
+
+A query id is recorded when the query *starts*, so:
+
+- The currently running query is already visible when it selects from the table.
+- Failed queries are recorded too - retrieving the id of a query that just failed is a primary use case.
+
+Internal queries (system log flushes and similar) are not recorded. Sub-queries that distributed queries run on remote shards are not recorded either - only the initiating query appears, in the initiator's session.
+
+### Session scoping per interface {#session-scoping-per-interface}
+
+- **Native/TCP connections** (`clickhouse-client`, drivers) and **`clickhouse-local`**: the session is the connection, so the history accumulates across all queries of the connection, including multi-query client invocations.
+- **HTTP with the `session_id` parameter**: the history persists across requests that pass the same `session_id`, until the session expires.
+- **HTTP without `session_id`**: every request is its own session, so the table only ever shows the current query.
+
+### History size {#history-size}
+
+The history is a ring buffer bounded by the session setting `session_query_ids_history_size` (default `1000`); when the history exceeds this size, the oldest entries are evicted first. Setting it to `0` disables recording; entries recorded earlier stay in the table until truncated or evicted.
+
+The setting is read at query start, before the query is parsed, so a `SETTINGS` clause of the query itself does not affect whether that query is recorded; use `SET`, an HTTP URL parameter, or a settings profile instead.
+
+### TRUNCATE {#truncate}
+
+`TRUNCATE TABLE system.session_query_ids` clears the history of the current session. The sequence counter is not reset, so `sequence_number` values are never reused within a session.
+
+.examples
+Run a few queries, then fetch their details from [`system.query_log`](/reference/system-tables/query_log):
+
+```sql
+SELECT 1 FORMAT Null;
+SELECT 2 FORMAT Null;
+
+SELECT * FROM system.session_query_ids;
+```
+
+```text
+┌─sequence_number─┬─query_id─────────────────────────────┐
+│               1 │ 4c9e97a3-b806-4a5c-9a94-5a614c3d0b3f │
+│               2 │ 8f9a2f59-30d3-4f8e-b3a1-6a0c1a4d3e2b │
+│               3 │ f2b1c4d8-7e6a-4b5c-8d9e-0a1b2c3d4e5f │
+└─────────────────┴──────────────────────────────────────┘
+```
+
+The current query is recorded at its start, so it appears as the last entry. Timestamps, status, and all other details are available by joining `system.query_log`:
+
+```sql
+SYSTEM FLUSH LOGS query_log;
+
+SELECT query_id, type, query, query_duration_ms
+FROM system.query_log
+WHERE query_id IN (SELECT query_id FROM system.session_query_ids)
+ORDER BY event_time_microseconds;
+```
+
+.see_also
+- [system.query_log](/reference/system-tables/query_log) - Details of executed queries.
+- `session_query_ids_history_size` setting.
 )DOCS_MD");
     attachNoDescription<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices", R"DOCS_MD(
 .description

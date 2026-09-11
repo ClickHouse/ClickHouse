@@ -212,6 +212,7 @@ SETTINGS skip_unavailable_shards = 1;
 
 .see_also
 - [system.query_thread_log](/reference/system-tables/query_thread_log) — This table contains information about each query execution thread.
+- [system.session_query_ids](/reference/system-tables/session_query_ids) — This table contains the query ids of the queries executed in the current session, for finding your own queries in the log.
 )DOCS_MD";
 
 inline constexpr char SYSTEM_LOG_DOCUMENTATION_QUERY_THREAD_LOG[] = R"DOCS_MD(
