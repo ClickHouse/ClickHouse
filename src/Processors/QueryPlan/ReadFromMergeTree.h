@@ -26,6 +26,7 @@ using PartitionIdToMaxBlock = std::unordered_map<String, Int64>;
 using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 
 class LazilyReadFromMergeTree;
+class RuntimeFilterReadRangesRefiner;
 struct QueryIdHolder;
 
 struct MergeTreeDataSelectSamplingData
@@ -313,6 +314,10 @@ public:
     };
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
+    const std::vector<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const
+    {
+        return join_runtime_filters_for_index_analysis;
+    }
 
     static AnalysisResultPtr selectRangesToRead(
         const RangesInDataParts & parts,
@@ -454,6 +459,17 @@ public:
 
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
+
+    /// Gate this read on the seal of a join marked with enableSealGatedProbeReading: nothing
+    /// is read until the seal arrives, and the given filters (covering a primary key prefix)
+    /// then prune mark ranges at task-cut time (see RuntimeFilterReadRangesRefiner).
+    /// Ungatable shapes (FINAL, parallel replicas, sharded joins) ignore the mark and fall
+    /// back to ungated reading; see the gating decision in initializePipeline.
+    void enableSealGatedReading(std::vector<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters)
+    {
+        seal_gated_reading = SealGatedReading{std::move(pk_prefix_filters)};
+    }
+
     const ProjectionIndexReadDescription & getProjectionIndexReadDescription() const { return projection_index_read_desc; }
     ProjectionIndexReadDescription & getProjectionIndexReadDescription() { return projection_index_read_desc; }
     /// In distributed query plan, this step will be executed in a distributed manner - shards will be read in parallel.
@@ -708,6 +724,21 @@ private:
     std::optional<size_t> number_of_current_replica;
 
     std::optional<TopKFilterInfo> top_k_filter_info;
+
+    /// See enableSealGatedReading.
+    struct SealGatedReading
+    {
+        /// Runtime filters covering a prefix of the primary key, in the key order.
+        std::vector<RuntimeFilterIndexAnalysisDescriptor> pk_prefix_filters;
+    };
+    std::optional<SealGatedReading> seal_gated_reading;
+
+    /// The refiner turning the runtime filter delivered by the seal into primary key pruning
+    /// of every task cut. Created by initializePipeline once it is known that the chosen
+    /// reading paths support gating, installed on their read pools, and fed by the
+    /// SealGatedReadTransforms they build. Null means the read is not gated.
+    std::shared_ptr<RuntimeFilterReadRangesRefiner> seal_gate_refiner;
+
     ProjectionIndexReadDescription projection_index_read_desc;
     /// Number of tasks when this leaf read is distributed; each worker reads the lanes described by its
     /// per-read bucket parameter.

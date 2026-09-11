@@ -363,10 +363,12 @@ void optimizeTreeSecondPass(
                 }
             });
 
-        /// After the __applyFilter filters been fixed, do work to indicate index analysis again
-        if (join_runtime_filters_were_added && optimization_settings.enable_join_runtime_filters_index_analysis)
-            traverseQueryPlan(stack, root,
-                [&](auto & frame_node) { registerLeftSideIndexAnalysisSecondPass(frame_node, optimization_settings); });
+        /// After the __applyFilter conjuncts settled, register them on the reading steps
+        /// (both the read-time index analysis and seal-gated reading consume them).
+        if (join_runtime_filters_were_added
+            && (optimization_settings.enable_join_runtime_filters_index_analysis
+                || optimization_settings.join_seal_gated_reading))
+            traverseQueryPlan(stack, root, [&](auto &) { collectAppliedJoinRuntimeFilters(stack); });
     }
 
     /// Run after runtime filter push-down so that chains of joins are detected correctly. The pass only
@@ -840,6 +842,11 @@ void optimizeTreeSecondPass(
 
     if (optimization_settings.query_plan_join_shard_by_pk_ranges)
         optimizeJoinByShards(root);
+
+    /// Runs after the filters were pushed down into the reading steps: the mark is detected
+    /// from the `__applyFilter` conjunct of the reading step's own filter.
+    if (optimization_settings.join_seal_gated_reading)
+        markSealGatedReading(root);
 
     /// Shard `parallel_full_sorting_merge` joins by the hash of the join keys. The `join_algorithm`
     /// choice is the gate (this is a no-op unless a join uses that algorithm).

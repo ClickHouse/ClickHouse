@@ -172,9 +172,7 @@ static constexpr UInt64 MAX_STATS_SIZED_BLOOM_FILTER_BYTES = 4 * 1024 * 1024;
 /// At 3 hash functions achieves a 12.5% false positive rate
 static constexpr Float64 RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE = 0.5;
 
-namespace
-{
-bool typeSupportsMinMaxRange(const DataTypePtr & type)
+bool runtimeFilterKeySupportsMinMaxRange(const DataTypePtr & type)
 {
     if (!type)
         return false;
@@ -183,6 +181,9 @@ bool typeSupportsMinMaxRange(const DataTypePtr & type)
     WhichDataType which(inner);
     return which.isInteger() || which.isDateOrDate32OrDateTimeOrDateTime64();
 }
+
+namespace
+{
 
 void extendRange(bool & has_range, Field & range_min, Field & range_max, const Field & new_min, const Field & new_max)
 {
@@ -692,7 +693,7 @@ ColumnPtr SharedFixedHashTableRuntimeFilter::find(const ColumnWithTypeAndName & 
 
 RuntimeFilter::RuntimeFilter(RuntimeFilterConfig config_, Data data_)
     : filter_column_target_type(std::visit([](const auto & filter) { return filter.getTargetType(); }, data_.filter))
-    , range_supported(typeSupportsMinMaxRange(filter_column_target_type))
+    , range_supported(runtimeFilterKeySupportsMinMaxRange(filter_column_target_type))
     , range_positive(!std::holds_alternative<ExactNotContains>(data_.filter))
     , evaluation_state(std::move(config_))
     , data(std::move(data_))
