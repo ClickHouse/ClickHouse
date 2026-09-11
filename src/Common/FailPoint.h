@@ -2,6 +2,7 @@
 
 #include <Core/Types.h>
 
+#include <chrono>
 #include <mutex>
 
 #include "config.h"
@@ -161,6 +162,12 @@ public:
       * - Thread-safe: multiple test threads can wait simultaneously
       */
     static void waitForPause(const String & fail_point_name);
+
+    /** Bounded variant for tests: waits until at least `paused_threads` threads are parked at the
+      * failpoint and returns true; returns false after `timeout` instead of hanging the suite, at once
+      * if the failpoint is not enabled, and if it is disabled before that many threads parked.
+      */
+    static bool waitForPause(const String & fail_point_name, std::chrono::milliseconds timeout, size_t paused_threads = 1);
 
     /** Wait for the failpoint to be notified and threads to resume.
       *

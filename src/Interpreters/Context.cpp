@@ -2,10 +2,12 @@
 #include <map>
 #include <set>
 #include <optional>
+#include <future>
 #include <memory>
 #include <Poco/UUID.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Poco/Util/Application.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/quoteString.h>
 #include <Common/setThreadName.h>
@@ -174,6 +176,7 @@ namespace fs = std::filesystem;
 
 namespace ProfileEvents
 {
+    extern const Event ZooKeeperSessionEstablishAttempts;
     extern const Event ContextLock;
     extern const Event ContextLockWaitMicroseconds;
     extern const Event LocalReadThrottlerBytes;
@@ -460,6 +463,21 @@ namespace ServerSetting
     extern const ServerSettingsBool allow_experimental_executable_udf_drivers;
 }
 
+namespace FailPoints
+{
+    extern const char context_establish_zookeeper_session[];
+    extern const char context_join_zookeeper_establishment[];
+    extern const char context_shutdown_zookeeper_drain[];
+    extern const char context_shutdown_auxiliary_zookeeper_drain[];
+    extern const char context_zookeeper_applied_server_started[];
+    extern const char context_auxiliary_zookeeper_applied_server_started[];
+    extern const char context_zookeeper_before_publish[];
+    extern const char context_auxiliary_zookeeper_before_publish[];
+    extern const char context_auxiliary_zookeeper_after_args[];
+    extern const char context_zookeeper_used_initialized_log[];
+    extern const char context_auxiliary_zookeeper_used_initialized_log[];
+}
+
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
@@ -471,6 +489,7 @@ namespace ErrorCodes
     extern const int NO_ELEMENTS_IN_CONFIG;
     extern const int TABLE_SIZE_EXCEEDS_MAX_DROP_SIZE_LIMIT;
     extern const int LOGICAL_ERROR;
+    extern const int UNFINISHED;
     extern const int INVALID_SETTING_VALUE;
     extern const int NOT_IMPLEMENTED;
     extern const int UNKNOWN_FUNCTION;
@@ -522,6 +541,34 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::mutex zookeeper_mutex;
 
     mutable zkutil::ZooKeeperPtr zookeeper TSA_GUARDED_BY(zookeeper_mutex);                 /// Client for ZooKeeper.
+    /// Valid while an establishment is in flight. A caller that finds it joins it instead of
+    /// issuing its own connect, so N concurrent callers cost one handshake rather than N.
+    mutable std::shared_future<zkutil::ZooKeeperPtr> zookeeper_establish TSA_GUARDED_BY(zookeeper_mutex);
+    /// Identifies the attempt `zookeeper_establish` belongs to, so that a leader retires only its own.
+    mutable UInt64 zookeeper_establish_id TSA_GUARDED_BY(zookeeper_mutex) = 0;
+    /// Bumped whenever a configuration reload actually replaces the session (real settings change).
+    /// A leader captures it at election and, if it advanced during the leader's I/O, discards its own
+    /// result and returns the reload's session - see `getZooKeeper`. This is the transition signal,
+    /// not the config pointer, because an unchanged-settings reload swaps the pointer without
+    /// rebuilding and must not supersede an in-flight establishment.
+    mutable UInt64 zookeeper_generation TSA_GUARDED_BY(zookeeper_mutex) = 0;
+    /// Set by `shutdown` before it drains the attempts in flight, so that no new attempt or reload
+    /// can start while it waits, and nothing published past the close is handed out.
+    mutable bool zookeeper_closed TSA_GUARDED_BY(zookeeper_mutex) = false;
+    /// Startup transitions that used to be serialized by holding `zookeeper_mutex` across the whole
+    /// establishment. Publication is now the only critical section that sees both an in-flight attempt
+    /// and these transitions, so they are recorded here rather than read from a pre-election snapshot:
+    /// either the transition is recorded before a session is published, and the publisher applies it,
+    /// or the session is already in place when the transition runs, and the transition applies it.
+    /// Both sides run under this mutex, so exactly one of them does.
+    mutable bool zookeeper_server_started TSA_GUARDED_BY(zookeeper_mutex) = false;
+    /// Recorded by `handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded` in the same critical
+    /// section as its visit of the map. It carries the log itself, not just the fact that it ran, so a
+    /// publisher whose own fetch predates system-log initialization can still report from *inside* its
+    /// critical section - as it did when establishment held the mutex throughout - rather than after
+    /// it, where a reload could record the replacement's events first. A `weak_ptr` so this does not
+    /// keep the log alive past `SystemLogs`.
+    mutable std::weak_ptr<ZooKeeperConnectionLog> zookeeper_connection_log_after_init TSA_GUARDED_BY(zookeeper_mutex);
     ConfigurationPtr zookeeper_config TSA_GUARDED_BY(zookeeper_mutex);                      /// Stores zookeeper configs
 
     ConfigurationPtr sensitive_data_masker_config;
@@ -529,6 +576,25 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::mutex auxiliary_zookeepers_mutex;
     mutable std::map<String, zkutil::ZooKeeperPtr> auxiliary_zookeepers TSA_GUARDED_BY(auxiliary_zookeepers_mutex);    /// Map for auxiliary ZooKeeper clients.
     ConfigurationPtr auxiliary_zookeepers_config TSA_GUARDED_BY(auxiliary_zookeepers_mutex);           /// Stores auxiliary zookeepers configs
+    /// Establishments in flight, keyed by name. Per-name so that a stuck establishment of one
+    /// auxiliary keeper does not make callers of another wait for it.
+    struct AuxiliaryEstablish
+    {
+        std::shared_future<zkutil::ZooKeeperPtr> future;
+        UInt64 id = 0;
+    };
+    mutable std::map<String, AuxiliaryEstablish> auxiliary_zookeepers_establish TSA_GUARDED_BY(auxiliary_zookeepers_mutex);
+    mutable UInt64 auxiliary_zookeepers_establish_id TSA_GUARDED_BY(auxiliary_zookeepers_mutex) = 0;
+    /// Per-name reload generation, same role as `zookeeper_generation`. Keyed by name so one keeper's
+    /// reload (or removal) does not spuriously supersede another's in-flight establishment.
+    mutable std::map<String, UInt64> auxiliary_zookeepers_generation TSA_GUARDED_BY(auxiliary_zookeepers_mutex);
+    /// The auxiliary counterpart of `zookeeper_closed`, set by `shutdown` on the same terms.
+    mutable bool auxiliary_zookeepers_closed TSA_GUARDED_BY(auxiliary_zookeepers_mutex) = false;
+    /// The auxiliary counterparts of `zookeeper_server_started` and
+    /// `zookeeper_connection_log_after_init`, on the same terms.
+    mutable bool auxiliary_zookeepers_server_started TSA_GUARDED_BY(auxiliary_zookeepers_mutex) = false;
+    mutable std::weak_ptr<ZooKeeperConnectionLog> auxiliary_zookeepers_connection_log_after_init
+        TSA_GUARDED_BY(auxiliary_zookeepers_mutex);
 
     /// No lock required for interserver_io_host, interserver_io_port, interserver_scheme modified only during initialization
     String interserver_io_host;                             /// The host name by which this server is available for other servers.
@@ -1242,6 +1308,47 @@ struct ContextSharedPart : boost::noncopyable
             trace_collector.reset();
         }
 
+        zkutil::ZooKeeperPtr delete_zookeeper;
+        {
+            /// Stop zookeeper connection. Close first, so no new attempt or reload can start, then wait
+            /// for the attempt in flight (it runs without the mutex, which used to enforce this wait):
+            /// its leader still publishes, and what it published is finalized below. Closing after the
+            /// drain instead would let retries start a new attempt each time one retires and starve
+            /// shutdown. This runs before the schedule pools are detached because a connecting session
+            /// may still need them. The leader fulfils the future and retires its record in one
+            /// critical section, so a ready future is never still registered here.
+            std::unique_lock lock(zookeeper_mutex);
+            zookeeper_closed = true;
+            while (zookeeper_establish.valid())
+            {
+                auto in_flight = zookeeper_establish;
+                lock.unlock();
+                FailPointInjection::pauseFailPoint(FailPoints::context_shutdown_zookeeper_drain);
+                in_flight.wait();
+                lock.lock();
+            }
+            delete_zookeeper = std::move(zookeeper);
+        }
+        if (delete_zookeeper)
+            delete_zookeeper->finalize("shutdown");
+
+        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
+        {
+            std::unique_lock lock(auxiliary_zookeepers_mutex);
+            auxiliary_zookeepers_closed = true;
+            while (!auxiliary_zookeepers_establish.empty())
+            {
+                auto in_flight = auxiliary_zookeepers_establish.begin()->second.future;
+                lock.unlock();
+                FailPointInjection::pauseFailPoint(FailPoints::context_shutdown_auxiliary_zookeeper_drain);
+                in_flight.wait();
+                lock.lock();
+            }
+            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
+        }
+        for (auto & [name, zk] : delete_auxiliary_zookeepers)
+            zk->finalize("shutdown");
+
         {
             std::lock_guard lock(schedule_pools_mutex);
             delete_buffer_flush_schedule_pool = std::move(buffer_flush_schedule_pool);
@@ -1252,22 +1359,6 @@ struct ContextSharedPart : boost::noncopyable
             delete_streaming_schedule_pool = std::move(streaming_schedule_pool);
         }
 
-        zkutil::ZooKeeperPtr delete_zookeeper;
-        {
-            /// Stop zookeeper connection
-            std::lock_guard lock(zookeeper_mutex);
-            delete_zookeeper = std::move(zookeeper);
-        }
-        if (delete_zookeeper)
-            delete_zookeeper->finalize("shutdown");
-
-        std::map<String, zkutil::ZooKeeperPtr> delete_auxiliary_zookeepers;
-        {
-            std::lock_guard lock(auxiliary_zookeepers_mutex);
-            delete_auxiliary_zookeepers = std::move(auxiliary_zookeepers);
-        }
-        for (auto & [name, zk] : delete_auxiliary_zookeepers)
-            zk->finalize("shutdown");
 
         /// Dictionaries may be required:
         /// - for storage shutdown (during final flush of the Buffer engine)
@@ -6050,75 +6141,234 @@ void recordZooKeeperConnectionLoss()
 
 }
 
+/// Performs the blocking work of bringing up a session: connect, handshake and `initSession`'s write.
+/// Must be called WITHOUT `shared->zookeeper_mutex` held and must not call anything that re-enters
+/// `getZooKeeper`. Works only from `from`, the state at leader election, so it never touches a
+/// session a concurrent configuration reload installed meanwhile.
+zkutil::ZooKeeperPtr Context::establishZooKeeperSession(const ZooKeeperSnapshot & from) const
+{
+    /// Counted before the failpoint below, so that "an attempt has started" is observable while the
+    /// attempt is still in flight - which is the whole point of the counter.
+    ProfileEvents::increment(ProfileEvents::ZooKeeperSessionEstablishAttempts);
+    FailPointInjection::pauseFailPoint(FailPoints::context_establish_zookeeper_session);
+
+    const auto & config = from.config ? *from.config : getConfigRef();
+
+    try
+    {
+        zkutil::ZooKeeperPtr new_zookeeper;
+        if (!from.session)
+        {
+            /// No session yet: build one from the configuration.
+            zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
+            args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+            args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
+            new_zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+        }
+        else
+        {
+            /// The published session expired: start a new one from it.
+            CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+            LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
+            new_zookeeper = from.session->startNewSession();
+        }
+        CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
+        return new_zookeeper;
+    }
+    catch (const Coordination::Exception & e)
+    {
+        if (e.code == Coordination::Error::ZCONNECTIONLOSS)
+            recordZooKeeperConnectionLoss();
+        throw;
+    }
+}
+
 zkutil::ZooKeeperPtr Context::getZooKeeper() const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getZooKeeper");
-    std::lock_guard lock(shared->zookeeper_mutex);
 
-    const auto & config = shared->zookeeper_config ? *shared->zookeeper_config : getConfigRef();
+    /// Constructed only once this caller is elected leader: `std::promise` allocates its shared
+    /// state, and the fast path below must stay a pointer read.
+    std::optional<std::promise<zkutil::ZooKeeperPtr>> promise;
+    std::shared_future<zkutil::ZooKeeperPtr> established;
+    bool is_leader = false;
+    UInt64 attempt_id = 0;
+    UInt64 generation_at_election = 0;
+    ZooKeeperSnapshot from;
 
-    if (!shared->zookeeper)
     {
-        zkutil::ZooKeeperArgs args(config, zkutil::getZooKeeperConfigName(config));
-        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
-        args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
+        std::lock_guard lock(shared->zookeeper_mutex);
 
-        try
-        {
-            shared->zookeeper = zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
-            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
-            {
-                recordZooKeeperConnectionLoss();
-            }
-            throw;
-        }
+        /// `shutdown` has closed the session (it closes before draining, so no new attempt can start
+        /// while it waits). Checked before the fast path so nothing published past the close is ever
+        /// handed out.
+        if (shared->zookeeper_closed)
+            throw Exception(ErrorCodes::UNFINISHED, "Cannot establish a ZooKeeper session: the server is shutting down");
 
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-            zookeeper_connection_log->addConnected(
-                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
+        /// The overwhelmingly common case, and now a pointer read instead of queueing behind
+        /// somebody else's handshake.
+        if (shared->zookeeper && !shared->zookeeper->expired())
+            return shared->zookeeper;
+
+        if (shared->zookeeper_establish.valid())
+        {
+            established = shared->zookeeper_establish;
+        }
+        else
+        {
+            is_leader = true;
+            attempt_id = ++shared->zookeeper_establish_id;
+            generation_at_election = shared->zookeeper_generation;
+            from.session = shared->zookeeper;
+            from.config = shared->zookeeper_config;
+            promise.emplace();
+            established = promise->get_future().share();
+            shared->zookeeper_establish = established;
+        }
     }
 
-    if (shared->zookeeper->expired())
+    /// Followers wait without the mutex and rethrow whatever the leader got. No timeout downgrade:
+    /// connecting on our own instead would restore the very convoy this avoids.
+    if (!is_leader)
     {
-        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+        FailPointInjection::pauseFailPoint(FailPoints::context_join_zookeeper_establishment);
+        return established.get();
+    }
 
+    /// Only the owner of this attempt may retire it: another caller may already have taken leadership
+    /// for a later one, and erasing that would let a third attempt start.
+    auto retire_attempt = [&]() TSA_REQUIRES(shared->zookeeper_mutex)
+    {
+        if (shared->zookeeper_establish_id == attempt_id)
+            shared->zookeeper_establish = {};
+    };
+
+    try
+    {
         Stopwatch watch;
-        LOG_DEBUG(shared->log, "Trying to establish a new connection with ZooKeeper");
+        auto new_zookeeper = establishZooKeeperSession(from);
 
-        auto old_zookeeper = shared->zookeeper;
+        /// Fetched before the critical section because it takes `shared->mutex`, which must not nest
+        /// inside `zookeeper_mutex`. That is also why the startup transitions are not snapshotted here:
+        /// a snapshot taken before the critical section can be stale by the time it publishes, so they
+        /// are read from `zookeeper_mutex`-guarded state instead (see `zookeeper_server_started`).
+        auto zookeeper_connection_log = getZooKeeperConnectionLog();
 
-        try
+        /// Called from inside the critical section, or once after it when the log only became available
+        /// while this attempt was in flight.
+        const auto report_connection = [&](const std::shared_ptr<ZooKeeperConnectionLog> & log)
         {
-            shared->zookeeper = shared->zookeeper->startNewSession();
-            CurrentMetrics::set(CurrentMetrics::ZooKeeperConnectionLossStartedTimestampSeconds, 0);
-        }
-        catch (const Coordination::Exception & e)
-        {
-            if (e.code == Coordination::Error::ZCONNECTIONLOSS)
+            if (from.session)
             {
-                recordZooKeeperConnectionLoss();
+                log->addDisconnected(
+                    ZooKeeperConnectionLog::default_zookeeper_name, *from.session, ZooKeeperConnectionLog::keeper_expired_reason);
+                log->addConnected(
+                    ZooKeeperConnectionLog::default_zookeeper_name, *new_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
             }
-            throw;
-        }
+            else
+                log->addConnected(
+                    ZooKeeperConnectionLog::default_zookeeper_name, *new_zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
+        };
+        /// `setServerCompletelyStarted` is a no-op on a `testkeeper` session, and the connection log is
+        /// absent from the unit-test context, so these record which branches the publisher took.
+        /// Reported outside the critical section, where a test can observe them without holding
+        /// `zookeeper_mutex`.
+        bool applied_server_started = false;
+        bool used_initialized_log = false;
 
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+        /// The window a startup transition used to be lost in: past everything this attempt reads
+        /// outside the mutex, not yet published. Parking here lets a test run the transition where it
+        /// can neither be seen by its visit of the maps nor picked up by a pre-publication snapshot.
+        FailPointInjection::pauseFailPoint(FailPoints::context_zookeeper_before_publish);
+
+        /// Decision, publication and fulfilment happen in ONE critical section, so the value handed to
+        /// followers is the published one at the moment they get it, and `shutdown`'s drain (which
+        /// waits on the future, then re-checks under the mutex) never sees a ready-but-registered
+        /// attempt, nor an absent one before followers hold the session.
+        zkutil::ZooKeeperPtr result;
+        bool superseded = false;
         {
-            zookeeper_connection_log->addDisconnected(
-                ZooKeeperConnectionLog::default_zookeeper_name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-            zookeeper_connection_log->addConnected(
-                ZooKeeperConnectionLog::default_zookeeper_name, *shared->zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+            std::lock_guard lock(shared->zookeeper_mutex);
+
+            /// A configuration reload with a real settings change ran while the mutex was released
+            /// and published its own session. Ours was built against configuration that is no longer
+            /// in effect; it is discarded below.
+            superseded = shared->zookeeper_generation != generation_at_election;
+            if (!superseded)
+            {
+                shared->zookeeper = new_zookeeper;
+                result = new_zookeeper;
+
+                /// Reported only for the session that was actually published, and from inside this
+                /// critical section so a later reload cannot record its events first. When the system
+                /// logs came up while this attempt was in flight, the log left here by the
+                /// initialization handler is used: its visit ran under this mutex and did not find this
+                /// session, so reporting it falls to us.
+                auto log = zookeeper_connection_log;
+                if (!log)
+                {
+                    log = shared->zookeeper_connection_log_after_init.lock();
+                    used_initialized_log = log != nullptr;
+                }
+                if (log)
+                    report_connection(log);
+
+                if (shared->zookeeper_server_started)
+                {
+                    new_zookeeper->setServerCompletelyStarted();
+                    applied_server_started = true;
+                }
+
+                promise->set_value(result);
+                retire_attempt();
+            }
         }
 
-        if (isServerCompletelyStarted())
-            shared->zookeeper->setServerCompletelyStarted();
-        LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
-    }
+        if (!superseded)
+        {
+            if (applied_server_started)
+                FailPointInjection::pauseFailPoint(FailPoints::context_zookeeper_applied_server_started);
+            if (used_initialized_log)
+                FailPointInjection::pauseFailPoint(FailPoints::context_zookeeper_used_initialized_log);
 
-    return shared->zookeeper;
+            if (from.session)
+                LOG_DEBUG(shared->log, "Establishing a new connection with ZooKeeper took {} ms", watch.elapsedMilliseconds());
+            return result;
+        }
+
+        /// Finalize the discarded candidate before fulfilling anything, so nothing of this attempt
+        /// outlives the future that `shutdown` waits on.
+        new_zookeeper->finalize("superseded by a configuration reload");
+
+        {
+            std::lock_guard lock(shared->zookeeper_mutex);
+
+            /// Hand back the reload's session - the current one, not a fallback - read here, at
+            /// fulfilment time. Never fulfil the future with a dead session: a reload can replace the
+            /// configuration without leaving a usable one behind. Report it; the next caller starts a
+            /// fresh attempt against the new configuration.
+            result = shared->zookeeper;
+            if (!result || result->expired())
+                throw Exception(ErrorCodes::UNFINISHED,
+                    "Cannot establish a ZooKeeper session: the configuration was reloaded while connecting");
+
+            promise->set_value(result);
+            retire_attempt();
+        }
+        return result;
+    }
+    catch (...)
+    {
+        /// Retire first, fulfil after: a waiter woken by the failure must not find this attempt still
+        /// registered and rejoin it. Failures are not cached - the next caller starts a fresh attempt,
+        /// but still only one.
+        {
+            std::lock_guard lock(shared->zookeeper_mutex);
+            retire_attempt();
+        }
+        promise->set_exception(std::current_exception());
+        throw;
+    }
 }
 
 int64_t Context::getZooKeeperLastZXIDSeen() const
@@ -6222,6 +6472,9 @@ void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
 
     {
         std::lock_guard lock(shared->zookeeper_mutex);
+        /// Recorded in the same critical section as the visit, so a session published after this point
+        /// reports itself and one published before is reported here - exactly one of the two.
+        shared->zookeeper_connection_log_after_init = zookeeper_connection_log;
         if (shared->zookeeper)
         {
             if (zookeeper_connection_log)
@@ -6232,6 +6485,7 @@ void Context::handleSystemZooKeeperConnectionLogAfterInitializationIfNeeded()
 
     {
         std::lock_guard lock_auxiliary_zookeepers(shared->auxiliary_zookeepers_mutex);
+        shared->auxiliary_zookeepers_connection_log_after_init = zookeeper_connection_log;
         for (auto & zk : shared->auxiliary_zookeepers)
         {
             if (zookeeper_connection_log)
@@ -6331,51 +6585,201 @@ void Context::updateKeeperConfiguration([[maybe_unused]] const Poco::Util::Abstr
 }
 
 
+/// Blocking network I/O; must be called without `shared->auxiliary_zookeepers_mutex` held. Works only
+/// from `from`, the state at leader election.
+zkutil::ZooKeeperPtr Context::establishAuxiliaryZooKeeperSession(const String & name, const ZooKeeperSnapshot & from) const
+{
+    /// Counted before the failpoint below, so that "an attempt has started" is observable while the
+    /// attempt is still in flight - which is the whole point of the counter.
+    ProfileEvents::increment(ProfileEvents::ZooKeeperSessionEstablishAttempts);
+    FailPointInjection::pauseFailPoint(FailPoints::context_establish_zookeeper_session);
+
+    if (from.session)
+    {
+        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
+        return from.session->startNewSession();
+    }
+
+    const auto config_name = "auxiliary_zookeepers." + name;
+    const auto & config = from.config ? *from.config : getConfigRef();
+    if (!config.has(config_name))
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
+            "config.xml",
+            name);
+
+    zkutil::ZooKeeperArgs args(config, config_name);
+    args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
+    args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
+
+    /// The settings this attempt will use are now fixed, and it has not connected yet: the state a
+    /// reload has to be able to supersede. Parking here is how a test reaches it.
+    FailPointInjection::pauseFailPoint(FailPoints::context_auxiliary_zookeeper_after_args);
+
+    return zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog());
+}
+
 zkutil::ZooKeeperPtr Context::getAuxiliaryZooKeeper(const String & name) const
 {
     auto component_guard = Coordination::setCurrentComponent("Context::getAuxiliaryZooKeeper");
-    std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
-    const auto config_name = "auxiliary_zookeepers." + name;
 
-    auto zookeeper = shared->auxiliary_zookeepers.find(name);
-    if (zookeeper == shared->auxiliary_zookeepers.end())
+    /// Pure string check, so do it before anybody becomes a leader for this name.
+    if (name.contains(':') || name.contains('/'))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
+
+    /// Constructed only once this caller is elected leader: `std::promise` allocates its shared
+    /// state, and the fast path below must stay a pointer read.
+    std::optional<std::promise<zkutil::ZooKeeperPtr>> promise;
+    std::shared_future<zkutil::ZooKeeperPtr> established;
+    bool is_leader = false;
+    UInt64 attempt_id = 0;
+    UInt64 generation_at_election = 0;
+    ZooKeeperSnapshot from;
+
     {
-        if (name.contains(':') || name.contains('/'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid auxiliary ZooKeeper name {}: ':' and '/' are not allowed", name);
+        std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
 
-        const auto & config = shared->auxiliary_zookeepers_config ? *shared->auxiliary_zookeepers_config : getConfigRef();
-        if (!config.has(config_name))
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "Unknown auxiliary ZooKeeper name '{}'. If it's required it can be added to the section <auxiliary_zookeepers> in "
-                "config.xml",
-                name);
+        if (shared->auxiliary_zookeepers_closed)
+            throw Exception(ErrorCodes::UNFINISHED, "Cannot establish an auxiliary ZooKeeper session: the server is shutting down");
 
-        zkutil::ZooKeeperArgs args(config, config_name);
-        args.send_receive_os_threads_nice_value = getServerSettings()[ServerSetting::os_threads_nice_value_zookeeper_client_send_receive];
-        args.enforce_component_tracking = getServerSettings()[ServerSetting::enforce_keeper_component_tracking];
+        auto it = shared->auxiliary_zookeepers.find(name);
+        if (it != shared->auxiliary_zookeepers.end() && !it->second->expired())
+            return it->second;
 
-        zookeeper = shared->auxiliary_zookeepers.emplace(name,
-                        zkutil::ZooKeeper::create(std::move(args), getZooKeeperLog(), getAggregatedZooKeeperLog())).first;
-
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
-            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_init_reason);
-    }
-    else if (zookeeper->second->expired())
-    {
-        CurrentMetrics::add(CurrentMetrics::ZooKeeperSessionExpired);
-
-        auto old_zookeeper = zookeeper->second;
-        zookeeper->second = zookeeper->second->startNewSession();
-
-        if (auto zookeeper_connection_log = getZooKeeperConnectionLog(); zookeeper_connection_log)
+        auto establish_it = shared->auxiliary_zookeepers_establish.find(name);
+        if (establish_it != shared->auxiliary_zookeepers_establish.end())
         {
-            zookeeper_connection_log->addDisconnected(name, *old_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
-            zookeeper_connection_log->addConnected(name, *zookeeper->second, ZooKeeperConnectionLog::keeper_expired_reason);
+            established = establish_it->second.future;
+        }
+        else
+        {
+            is_leader = true;
+            attempt_id = ++shared->auxiliary_zookeepers_establish_id;
+            auto gen_it = shared->auxiliary_zookeepers_generation.find(name);
+            generation_at_election = gen_it == shared->auxiliary_zookeepers_generation.end() ? 0 : gen_it->second;
+            if (it != shared->auxiliary_zookeepers.end())
+                from.session = it->second;
+            from.config = shared->auxiliary_zookeepers_config;
+            promise.emplace();
+            established = promise->get_future().share();
+            shared->auxiliary_zookeepers_establish.emplace(name, ContextSharedPart::AuxiliaryEstablish{established, attempt_id});
         }
     }
 
-    return zookeeper->second;
+    if (!is_leader)
+    {
+        FailPointInjection::pauseFailPoint(FailPoints::context_join_zookeeper_establishment);
+        return established.get();
+    }
+
+    /// Retires this attempt, and only this one: another caller may already hold leadership for a
+    /// later attempt on the same name, and erasing that would let a third attempt start.
+    auto retire_attempt = [&]() TSA_REQUIRES(shared->auxiliary_zookeepers_mutex)
+    {
+        auto it = shared->auxiliary_zookeepers_establish.find(name);
+        if (it != shared->auxiliary_zookeepers_establish.end() && it->second.id == attempt_id)
+            shared->auxiliary_zookeepers_establish.erase(it);
+    };
+
+    try
+    {
+        auto new_zookeeper = establishAuxiliaryZooKeeperSession(name, from);
+        auto zookeeper_connection_log = getZooKeeperConnectionLog();
+
+        bool applied_server_started = false;
+        bool used_initialized_log = false;
+
+        /// The auxiliary counterpart of the reporting in `getZooKeeper`, on the same terms.
+        const auto report_connection = [&](const std::shared_ptr<ZooKeeperConnectionLog> & log)
+        {
+            if (from.session)
+            {
+                log->addDisconnected(name, *from.session, ZooKeeperConnectionLog::keeper_expired_reason);
+                log->addConnected(name, *new_zookeeper, ZooKeeperConnectionLog::keeper_expired_reason);
+            }
+            else
+                log->addConnected(name, *new_zookeeper, ZooKeeperConnectionLog::keeper_init_reason);
+        };
+
+        FailPointInjection::pauseFailPoint(FailPoints::context_auxiliary_zookeeper_before_publish);
+
+        /// Same protocol as `getZooKeeper`: decision, publication and fulfilment in one critical section.
+        zkutil::ZooKeeperPtr result;
+        bool superseded = false;
+        {
+            std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+
+            auto gen_it = shared->auxiliary_zookeepers_generation.find(name);
+            UInt64 current_generation = gen_it == shared->auxiliary_zookeepers_generation.end() ? 0 : gen_it->second;
+
+            /// A configuration reload replaced or removed this auxiliary keeper while the mutex was
+            /// released. Publishing would resurrect a session built against configuration that is no
+            /// longer in effect; it is discarded below.
+            superseded = current_generation != generation_at_election;
+            if (!superseded)
+            {
+                shared->auxiliary_zookeepers[name] = new_zookeeper;
+                result = new_zookeeper;
+
+                auto log = zookeeper_connection_log;
+                if (!log)
+                {
+                    log = shared->auxiliary_zookeepers_connection_log_after_init.lock();
+                    used_initialized_log = log != nullptr;
+                }
+                if (log)
+                    report_connection(log);
+
+                if (shared->auxiliary_zookeepers_server_started)
+                {
+                    new_zookeeper->setServerCompletelyStarted();
+                    applied_server_started = true;
+                }
+
+                promise->set_value(result);
+                retire_attempt();
+            }
+        }
+
+        if (!superseded)
+        {
+            if (applied_server_started)
+                FailPointInjection::pauseFailPoint(FailPoints::context_auxiliary_zookeeper_applied_server_started);
+            if (used_initialized_log)
+                FailPointInjection::pauseFailPoint(FailPoints::context_auxiliary_zookeeper_used_initialized_log);
+
+            return result;
+        }
+
+        new_zookeeper->finalize("superseded by a configuration reload");
+
+        {
+            std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+
+            /// Whatever the reload left for this name - a fresh session, or nothing if it removed the
+            /// name - read at fulfilment time. Never fulfil the future with a dead session.
+            auto current_it = shared->auxiliary_zookeepers.find(name);
+            if (current_it != shared->auxiliary_zookeepers.end())
+                result = current_it->second;
+            if (!result || result->expired())
+                throw Exception(ErrorCodes::UNFINISHED,
+                    "Cannot establish an auxiliary ZooKeeper session for '{}': the configuration was reloaded while connecting", name);
+
+            promise->set_value(result);
+            retire_attempt();
+        }
+        return result;
+    }
+    catch (...)
+    {
+        {
+            std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+            retire_attempt();
+        }
+        promise->set_exception(std::current_exception());
+        throw;
+    }
 }
 
 std::shared_ptr<zkutil::ZooKeeper> Context::getDefaultOrAuxiliaryZooKeeper(const String & name) const
@@ -6395,6 +6799,7 @@ static void reloadZooKeeperIfChangedImpl(
     const std::string_view keeper_name,
     const std::string & config_name,
     zkutil::ZooKeeperPtr & zk,
+    UInt64 & generation,
     std::shared_ptr<ZooKeeperLog> zk_log,
     std::shared_ptr<ZooKeeperConnectionLog> zk_concection_log,
     std::shared_ptr<AggregatedZooKeeperLog> aggregated_zookeeper_log,
@@ -6406,15 +6811,24 @@ static void reloadZooKeeperIfChangedImpl(
     static constexpr auto reason = "Config changed";
     if (!zk || zk->configChanged(*config, config_name))
     {
-        if (zk)
-            zk->finalize(reason);
-
         auto old_zk = zk;
 
         zkutil::ZooKeeperArgs args(*config, config_name);
         args.send_receive_os_threads_nice_value = send_receive_os_threads_nice_value;
         args.enforce_component_tracking = enforce_component_tracking;
-        zk = zkutil::ZooKeeper::create(std::move(args), std::move(zk_log), std::move(aggregated_zookeeper_log));
+
+        /// Create the new session before finalizing the old one. If `create` throws, the old session
+        /// stays published and live and the error propagates - we never leave a finalized session in
+        /// place for a getter to hand back as if it were usable.
+        auto new_zk = zkutil::ZooKeeper::create(std::move(args), std::move(zk_log), std::move(aggregated_zookeeper_log));
+
+        if (old_zk)
+            old_zk->finalize(reason);
+        zk = new_zk;
+
+        /// Signal the transition to any in-flight establishment so it discards its own result and
+        /// returns this session instead of one built against the previous configuration.
+        ++generation;
 
         if (zk_concection_log)
         {
@@ -6430,10 +6844,18 @@ static void reloadZooKeeperIfChangedImpl(
 
 void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 {
-    bool server_started = isServerCompletelyStarted();
-
     auto component_guard = Coordination::setCurrentComponent("Context::reloadZooKeeperIfChanged");
     std::lock_guard lock(shared->zookeeper_mutex);
+
+    /// Read here rather than snapshotted before the lock: this whole body is serialized against
+    /// `setServerCompletelyStarted`'s visit, so the flag it records under this mutex is current, while
+    /// a snapshot taken outside could already be stale by the time the replacement is built.
+    const bool server_started = shared->zookeeper_server_started;
+
+    /// After `shutdown` closed the session, a reload would rebuild and publish one past the close.
+    if (shared->zookeeper_closed)
+        throw Exception(ErrorCodes::UNFINISHED, "Cannot reload the ZooKeeper configuration: the server is shutting down");
+
     shared->zookeeper_config = config;
 
     reloadZooKeeperIfChangedImpl(
@@ -6441,6 +6863,7 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
         ZooKeeperConnectionLog::default_zookeeper_name,
         zkutil::getZooKeeperConfigName(*config),
         shared->zookeeper,
+        shared->zookeeper_generation,
         getZooKeeperLog(),
         getZooKeeperConnectionLog(),
         getAggregatedZooKeeperLog(),
@@ -6451,11 +6874,19 @@ void Context::reloadZooKeeperIfChanged(const ConfigurationPtr & config) const
 
 void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & config)
 {
-    bool server_started = isServerCompletelyStarted();
+    /// Fetched before the lock because it takes `shared->mutex`, which must not nest inside
+    /// `auxiliary_zookeepers_mutex`.
     auto zookeeper_connection_log = getZooKeeperConnectionLog();
 
     std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
 
+    /// The auxiliary counterpart of the read in `reloadZooKeeperIfChanged`, on the same terms.
+    const bool server_started = shared->auxiliary_zookeepers_server_started;
+
+    if (shared->auxiliary_zookeepers_closed)
+        throw Exception(ErrorCodes::UNFINISHED, "Cannot reload the auxiliary ZooKeeper configuration: the server is shutting down");
+
+    ConfigurationPtr old_config = shared->auxiliary_zookeepers_config;
     shared->auxiliary_zookeepers_config = config;
 
     for (auto it = shared->auxiliary_zookeepers.begin(); it != shared->auxiliary_zookeepers.end();)
@@ -6468,6 +6899,9 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
             if (zookeeper_connection_log)
                 zookeeper_connection_log->addDisconnected(it->first, *it->second, ZooKeeperConnectionLog::keeper_removed_from_config);
 
+            /// Signal any in-flight establishment for this name to discard its result rather than
+            /// resurrect a keeper the reload just removed.
+            ++shared->auxiliary_zookeepers_generation[it->first];
             it = shared->auxiliary_zookeepers.erase(it);
         }
         else
@@ -6478,6 +6912,7 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
                 it->first,
                 config_name,
                 it->second,
+                shared->auxiliary_zookeepers_generation[it->first],
                 getZooKeeperLog(),
                 zookeeper_connection_log,
                 getAggregatedZooKeeperLog(),
@@ -6486,6 +6921,35 @@ void Context::reloadAuxiliaryZooKeepersConfigIfChanged(const ConfigurationPtr & 
                 getServerSettings()[ServerSetting::enforce_keeper_component_tracking]);
             ++it;
         }
+    }
+
+    /// A name with only an establishment in flight has nothing in the map above, yet its leader is
+    /// building from the previous configuration. Advance its generation if the name was removed or its
+    /// settings changed, so that session is discarded instead of published.
+    for (const auto & [name, establish] : shared->auxiliary_zookeepers_establish)
+    {
+        if (shared->auxiliary_zookeepers.contains(name))
+            continue;
+
+        const auto config_name = "auxiliary_zookeepers." + name;
+        bool superseded = !config->has(config_name);
+        if (!superseded)
+        {
+            if (old_config)
+                superseded = zkutil::ZooKeeperArgs(*old_config, config_name) != zkutil::ZooKeeperArgs(*config, config_name);
+            else
+                /// This is the first auxiliary reload, so there is no recorded configuration to compare
+                /// against, and the leader built from the global one - which cannot be read back,
+                /// because `getConfigRef` returns the live `Poco::Util::Application` configuration and
+                /// the reloader replaced its contents before calling us. With no way to tell whether
+                /// those settings still apply, supersede: one discarded session and a retry against the
+                /// new configuration, rather than publishing a session built from settings that may no
+                /// longer be in effect. `auxiliary_zookeepers_config` is assigned above, so this arm is
+                /// taken at most once per process.
+                superseded = true;
+        }
+        if (superseded)
+            ++shared->auxiliary_zookeepers_generation[name];
     }
 }
 
@@ -8422,12 +8886,16 @@ void Context::setServerCompletelyStarted()
     {
         {
             std::lock_guard lock(shared->zookeeper_mutex);
+            /// Recorded in the same critical section as the visit, so an establishment in flight cannot
+            /// slip between the two: it either sees the flag when it publishes, or is visited here.
+            shared->zookeeper_server_started = true;
             if (shared->zookeeper)
                 shared->zookeeper->setServerCompletelyStarted();
         }
 
         {
             std::lock_guard lock(shared->auxiliary_zookeepers_mutex);
+            shared->auxiliary_zookeepers_server_started = true;
             for (auto & zk : shared->auxiliary_zookeepers)
                 zk.second->setServerCompletelyStarted();
         }

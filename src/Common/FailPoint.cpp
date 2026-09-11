@@ -168,6 +168,17 @@ static struct InitFiu
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_is_active_remove) \
+    PAUSEABLE(context_establish_zookeeper_session) \
+    PAUSEABLE(context_join_zookeeper_establishment) \
+    PAUSEABLE(context_shutdown_zookeeper_drain) \
+    PAUSEABLE(context_shutdown_auxiliary_zookeeper_drain) \
+    PAUSEABLE(context_zookeeper_applied_server_started) \
+    PAUSEABLE(context_auxiliary_zookeeper_applied_server_started) \
+    PAUSEABLE(context_zookeeper_before_publish) \
+    PAUSEABLE(context_auxiliary_zookeeper_before_publish) \
+    PAUSEABLE(context_auxiliary_zookeeper_after_args) \
+    PAUSEABLE(context_zookeeper_used_initialized_log) \
+    PAUSEABLE(context_auxiliary_zookeeper_used_initialized_log) \
     PAUSEABLE(dummy_pausable_failpoint) \
     PAUSEABLE(paimon_incremental_read_pause_after_watermark_commit) \
     ONCE(execute_query_calling_empty_set_result_func_on_exception) \
@@ -412,6 +423,10 @@ struct FailPointChannel
     /// Set to true by disableFailPoint so that waitForPause can return
     /// even when no thread has paused (pause_epoch <= resume_epoch).
     bool disabled = false;
+
+    /// Threads currently parked at this failpoint. Not derivable from the epochs: one notify wakes
+    /// every waiter but bumps `resume_epoch` once.
+    size_t paused = 0;
 };
 
 void FailPointInjection::pauseFailPoint(const String & fail_point_name)
@@ -515,12 +530,14 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String & fail_point_n
 
     /// Signal that a thread has reached and paused at this failpoint
     ++channel->pause_epoch;
+    ++channel->paused;
     channel->pause_cv.notify_all();
 
     /// Wait for resume_epoch to be incremented by notify or disable
     channel->resume_cv.wait(lock, [&] {
         return channel->resume_epoch > my_resume_epoch;
     });
+    --channel->paused;
 }
 
 void FailPointInjection::waitForPause(const String & fail_point_name)
@@ -542,6 +559,26 @@ void FailPointInjection::waitForPause(const String & fail_point_name)
     channel->pause_cv.wait(lock, [&] {
         return channel->pause_epoch > channel->resume_epoch || channel->disabled;
     });
+}
+
+bool FailPointInjection::waitForPause(const String & fail_point_name, std::chrono::milliseconds timeout, size_t paused_threads)
+{
+    if (!isRegisteredFailPoint(fail_point_name))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot find fail point {}", fail_point_name);
+
+    std::unique_lock lock(mu);
+    auto iter = fail_point_wait_channels.find(fail_point_name);
+    if (iter == fail_point_wait_channels.end())
+        return false;
+
+    auto channel = iter->second;
+
+    /// `disabled` only ends the wait; it is not a park. Disabling releases the parked threads, so the
+    /// count read afterwards is what the caller asked about, not the wake-up reason.
+    channel->pause_cv.wait_for(lock, timeout, [&] {
+        return channel->disabled || channel->paused >= paused_threads;
+    });
+    return channel->paused >= paused_threads;
 }
 
 void FailPointInjection::waitForResume(const String & fail_point_name)
@@ -632,6 +669,11 @@ void FailPointInjection::notifyFailPoint(const String &)
 }
 
 void FailPointInjection::waitForPause(const String &)
+{
+    throwDisabled();
+}
+
+bool FailPointInjection::waitForPause(const String &, std::chrono::milliseconds, size_t)
 {
     throwDisabled();
 }

@@ -2082,6 +2082,22 @@ public:
     ServerSettings getServerSettingsCopy() const;
 
 private:
+    /// The state a session establishment works from, captured at leader election: the session to
+    /// renew (null on the cold path) and the configuration to build against. Whether the result may
+    /// be published is decided separately, by the generation captured at the same time - see
+    /// `getZooKeeper`.
+    struct ZooKeeperSnapshot
+    {
+        std::shared_ptr<zkutil::ZooKeeper> session;
+        ConfigurationPtr config;
+    };
+
+    /// Brings up a ZooKeeper session from `from`. Blocking network I/O; must be called without
+    /// `shared->zookeeper_mutex` held.
+    std::shared_ptr<zkutil::ZooKeeper> establishZooKeeperSession(const ZooKeeperSnapshot & from) const;
+    /// Same for an auxiliary keeper; must be called without `shared->auxiliary_zookeepers_mutex` held.
+    std::shared_ptr<zkutil::ZooKeeper> establishAuxiliaryZooKeeperSession(const String & name, const ZooKeeperSnapshot & from) const;
+
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
     void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
