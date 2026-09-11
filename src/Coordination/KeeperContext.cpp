@@ -701,8 +701,10 @@ bool KeeperContext::localLogsPreprocessed() const
 bool KeeperContext::waitLocalLogsPreprocessedOrShutdown(uint64_t wait_timeout_ms)
 {
     std::unique_lock lock(local_logs_preprocessed_cv_mutex);
-    return local_logs_preprocessed_cv.wait_for(
-        lock, std::chrono::milliseconds(wait_timeout_ms), [this] { return shutdown_called || local_logs_preprocessed; });
+    local_logs_preprocessed_cv.wait_for(
+        lock, saturatedWaitMilliseconds(wait_timeout_ms), [this] { return shutdown_called || local_logs_preprocessed; });
+    /// The wait also ends on shutdown, which is not the same thing as the logs being preprocessed.
+    return local_logs_preprocessed;
 }
 
 const CoordinationSettings & KeeperContext::getFixedCoordinationSettings() const
