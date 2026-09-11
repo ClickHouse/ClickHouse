@@ -6,13 +6,22 @@ easy to filter and triage. By default it scans items created in the last
 `--days` days (3, matching the nightly cadence with margin); pass `--all` to
 backfill the entire history in one run.
 
-Everything the feature needs lives in this one script: the organization
-membership lookup, the bot allowlist, and the labeling of both issues and pull
+Everything the feature needs lives in this one script: the internal/external
+classification, the bot allowlist, and the labeling of both issues and pull
 requests. The repository issues endpoint returns pull requests too (each one
 carries a `pull_request` field), so a single scan covers both.
 
-Automation accounts operated by ClickHouse are organization non-members but must
-not be treated as external contributors, so they are excluded via INTERNAL_BOTS.
+Membership is read from the `author_association` GitHub attaches to every item,
+not from the `orgs/.../members` list. The list only returns members visible to
+the token (private memberships are omitted, and `gh`'s `--cache`/`--paginate`
+combination can return just the first page), which mislabeled real members such
+as `leshikus` and the member-robots. `author_association` is computed
+server-side, sees private membership, and is already in the payload - no extra
+API calls.
+
+Automation accounts operated by ClickHouse that are not organization members
+(e.g. the `*ai` PR bots) still show up as external contributors, so they are
+excluded via INTERNAL_BOTS / the `robot-` prefix.
 """
 
 import argparse
@@ -31,20 +40,28 @@ DEFAULT_DAYS = 3
 # GitHub organization.
 EXTERNAL_LABEL = "external"
 
-# Automation accounts operated by ClickHouse that are not members of the GitHub
-# organization but must not be labeled `external`.
-INTERNAL_BOTS = {"groeneai", "oranjeai", "clickgapai"}
+# `author_association` values that mean the author is inside the project: an
+# organization owner or member, or a repository collaborator (invited, with
+# repository access - trusted, not an outside contributor). Everything else
+# (CONTRIBUTOR, FIRST_TIME_CONTRIBUTOR, FIRST_TIMER, NONE) is external.
+INTERNAL_ASSOCIATIONS = {"OWNER", "MEMBER", "COLLABORATOR"}
+
+# Automation accounts operated by ClickHouse that are not organization members
+# but must not be labeled `external`. The member-robots (robot-clickhouse-ci-2,
+# robot-ch-test-poll4, ...) already classify as MEMBER; this covers the ones
+# that do not, and the `robot-` prefix guards any future robot account that has
+# not been added to the organization yet.
+INTERNAL_BOTS = {"groeneai", "oranjeai", "clickgapai", "actueleai"}
 
 
-def fetch_org_members() -> set:
-    """The logins (lowercased) of the ClickHouse organization members. Cached by
-    `gh` for an hour, so the single call here is cheap even on reruns."""
-    lines = Shell.get_output(
-        "gh api orgs/ClickHouse/members --paginate --cache=1h --jq='.[].login'",
-        verbose=True,
-        strict=True,
-    )
-    return {line.strip().lower() for line in lines.splitlines() if line.strip()}
+def _is_internal(author: str, association: str) -> bool:
+    """Whether the author is inside the project and must not be labeled
+    external: an org member/owner or repository collaborator, or a ClickHouse
+    automation account."""
+    if association in INTERNAL_ASSOCIATIONS:
+        return True
+    login = author.lower()
+    return login in INTERNAL_BOTS or login.startswith("robot-")
 
 
 def _parse_iso8601(value: str) -> datetime.datetime:
@@ -81,8 +98,6 @@ def add_external_label(repo: str, number: int, is_pr: bool) -> bool:
 
 def label_external_contributors(days: int, backfill: bool) -> bool:
     repo = Info().repo_name
-    members = fetch_org_members()
-    print(f"ClickHouse organization has {len(members)} members")
 
     if backfill:
         since = None
@@ -103,12 +118,13 @@ def label_external_contributors(days: int, backfill: bool) -> bool:
         number = item["number"]
         is_pr = "pull_request" in item
         author = (item.get("user") or {}).get("login", "")
+        association = item.get("author_association", "")
         created = _parse_iso8601(item["created_at"])
         if cutoff is not None and created < cutoff:
             continue
         if any(label["name"] == EXTERNAL_LABEL for label in item.get("labels", [])):
             continue
-        if author.lower() in members or author.lower() in INTERNAL_BOTS:
+        if _is_internal(author, association):
             continue
         kind = "PR" if is_pr else "issue"
         print(f"Labeling {kind} #{number} by external author '{author}'")
