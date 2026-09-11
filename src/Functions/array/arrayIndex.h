@@ -1277,11 +1277,24 @@ private:
 
         auto & data = col_res->getData();
 
+        [[maybe_unused]] const bool array_is_nullable =
+            isColumnNullableOrLowCardinalityNullable(
+                assert_cast<const ColumnArray &>(col_array->getDataColumn()).getData());
+
         for (size_t row = 0; row < size; ++row)
         {
             const auto & value = (*item_arg)[row];
 
             data[row] = 0;
+
+            if constexpr (std::is_same_v<ConcreteAction, IndexOfAssumeSorted>)
+            {
+                if (!array_is_nullable && (!null_map || !(*null_map)[row]))
+                {
+                    data[row] = Impl::Main<ConcreteAction, false>::lowerBound(arr, value, arr.size(), 0);
+                    continue;
+                }
+            }
 
             for (size_t i = 0, arr_size = arr.size(); i < arr_size; ++i)
             {

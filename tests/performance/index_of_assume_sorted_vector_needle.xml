@@ -30,5 +30,13 @@
         FORMAT Null
     </query>
 
+    <query>
+        SELECT sum(indexOfAssumeSorted(
+            arrayMap(x -> toUInt32(x * 17), range(8192)),
+            toUInt32((8191 - (document_id % 1024)) * 17)))
+        FROM perf_documents
+        FORMAT Null
+    </query>
+
     <drop_query>DROP TABLE IF EXISTS perf_documents</drop_query>
 </test>

@@ -26,6 +26,8 @@ SELECT indexOfAssumeSorted([1, 1, 1], 10);
 
 SELECT indexOfAssumeSorted(numbers, toUInt64(if(id = 1, 3, id))) FROM test ORDER BY id;
 
+SELECT indexOfAssumeSorted([1, 3, 5, 7, 9], number) FROM numbers(11);
+
 DROP TABLE IF EXISTS float_test;
 
 CREATE TABLE float_test(
