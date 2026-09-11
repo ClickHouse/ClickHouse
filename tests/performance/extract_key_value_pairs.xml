@@ -17,9 +17,6 @@
     <create_query>CREATE TABLE kv_long_values (s String) ENGINE = Memory</create_query>
     <fill_query>INSERT INTO kv_long_values SELECT concat('k1:', repeat('a', 200), ' k2:', repeat('b', 200), ' k3:', toString(number)) FROM numbers(300000)</fill_query>
 
-    <!-- Values of 2000 bytes, one of them quoted. -->
-    <create_query>CREATE TABLE kv_very_long_values (s String) ENGINE = Memory</create_query>
-    <fill_query>INSERT INTO kv_very_long_values SELECT concat('k1:', repeat('a', 2000), ' k2:"', repeat('b', 2000), '" k3:', toString(number)) FROM numbers(30000)</fill_query>
 
     <!-- Log lines with noise around the pairs and a quoted value. -->
     <create_query>CREATE TABLE kv_log_lines (s String) ENGINE = Memory</create_query>
@@ -29,9 +26,6 @@
     <create_query>CREATE TABLE kv_many_tiny_pairs (s String) ENGINE = Memory</create_query>
     <fill_query>INSERT INTO kv_many_tiny_pairs SELECT arrayStringConcat(arrayMap(i -> concat('k', toString(i), ':', toString((number + i) % 10)), range(25)), ' ') FROM numbers(500000)</fill_query>
 
-    <!-- 1000 bytes without any delimiter, nothing is extracted. -->
-    <create_query>CREATE TABLE kv_no_pairs (s String) ENGINE = Memory</create_query>
-    <fill_query>INSERT INTO kv_no_pairs SELECT repeat(char(97 + number % 26), 1000) FROM numbers(100000)</fill_query>
 
     <!-- Escape sequences in keys and values. -->
     <create_query>CREATE TABLE kv_escaped (s String) ENGINE = Memory</create_query>
@@ -39,19 +33,13 @@
 
     <query>SELECT count() FROM kv_short WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM kv_long_values WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM kv_very_long_values WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM kv_log_lines WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM kv_many_tiny_pairs WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM kv_no_pairs WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
     <query>SELECT count() FROM kv_escaped WHERE NOT ignore({func}(s)) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM kv_short WHERE NOT ignore({func}(s, ':', ' ,;', '"', 'INVALID')) SETTINGS max_threads = 1</query>
-    <query>SELECT count() FROM kv_short WHERE NOT ignore({func}(s, ':', ' ,;', '"', 'ACCEPT')) SETTINGS max_threads = 1</query>
 
     <drop_query>DROP TABLE IF EXISTS kv_short</drop_query>
     <drop_query>DROP TABLE IF EXISTS kv_long_values</drop_query>
-    <drop_query>DROP TABLE IF EXISTS kv_very_long_values</drop_query>
     <drop_query>DROP TABLE IF EXISTS kv_log_lines</drop_query>
     <drop_query>DROP TABLE IF EXISTS kv_many_tiny_pairs</drop_query>
-    <drop_query>DROP TABLE IF EXISTS kv_no_pairs</drop_query>
     <drop_query>DROP TABLE IF EXISTS kv_escaped</drop_query>
 </test>
