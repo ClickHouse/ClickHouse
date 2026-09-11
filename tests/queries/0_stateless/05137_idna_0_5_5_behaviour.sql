@@ -10,10 +10,14 @@ SELECT idnaDecode('xn--hdhxn--');
 SELECT idnaDecode('a.b.c.xn--pokxncvks');
 SELECT idnaDecode('xn--a.xn--zca');
 
-SELECT '-- punycodeDecode rejects invalid input instead of returning garbage';
+SELECT '-- ToASCII and ToUnicode reject double-encoded ACE labels, the raw Punycode codec does not';
+SELECT tryIdnaEncode('xn--xn---epa.com');
+SELECT idnaDecode('xn--xn---epa.com');
+SELECT idnaEncode('xn--xn---epa.com'); -- { serverError BAD_ARGUMENTS }
+SELECT punycodeEncode('xn--zca');
+SELECT punycodeDecode(punycodeEncode('xn--zca'));
 SELECT tryPunycodeDecode('xn--zca.xn--zca');
 SELECT tryPunycodeDecode('xn----xhn');
-SELECT punycodeDecode('xn--zca.xn--zca'); -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- The bidi rule rejects labels which mix Arabic-Indic digits with strong LTR characters';
 SELECT tryIdnaEncode('1ا');
