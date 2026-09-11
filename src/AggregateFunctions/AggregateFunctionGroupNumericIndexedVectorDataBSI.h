@@ -1778,6 +1778,7 @@ public:
         }
 
         UInt8 cin = 0;
+        bool any_bit_set = false;
         for (size_t j = 0; j < total_bit_num; ++j)
         {
             UInt8 augend = getDataArrayAt(j)->rb_contains(lookup) ? 1 : 0;
@@ -1788,14 +1789,34 @@ public:
 
             UInt8 sum = augend ^ addend ^ cin;
 
+            /// The bit of the sum replaces the bit of the augend, so it has to be cleared as well as
+            /// set: leaving a bit that the addition turned off stores `old | (old + new)` instead of
+            /// the sum, and a repeated index then reads back too large a value (5 plus 3 gives 13).
+            /// This is what `pointwiseAddInplace` does with whole bit slices, so the two paths -
+            /// adding rows into one state and merging states - agree, including on the wrap-around of
+            /// a sum that does not fit into `total_bit_num` bits.
             if ((sum & 1) == 1)
             {
                 getDataArrayAt(j)->add(index);
+                any_bit_set = true;
+            }
+            else if (augend)
+            {
+                getDataArrayAt(j)->remove(index);
             }
 
             cin = cin & x_xor_y;
             cin = cin | x_and_y;
         }
+
+        /// The accumulated value can reach zero (`5` and then `-5`), and no bit slice holds the index
+        /// then. `pointwiseAddInplace` records such an index in `zero_indexes` so that the merged state
+        /// still reports it with a value of zero; do the same here, so that the result does not depend
+        /// on how the rows were split between the states.
+        if (any_bit_set)
+            zero_indexes->remove(index);
+        else
+            zero_indexes->add(index);
     }
 
     /// return origin_vector(this)[index]

@@ -88,6 +88,31 @@ public:
         }
     }
 
+    void remove(T value)
+    {
+        if (isSmall())
+        {
+            if (small.find(value) == small.end())
+                return;
+
+            /// `SmallSet` has no erase, so rebuild it without the value. It holds at most
+            /// `small_set_size` values, so this is a bounded amount of work.
+            std::array<T, small_set_size> kept;
+            size_t kept_size = 0;
+            for (const auto & x : small)
+                if (x.getValue() != value)
+                    kept[kept_size++] = x.getValue();
+
+            small.clear();
+            for (size_t i = 0; i < kept_size; ++i)
+                small.insert(kept[i]);
+        }
+        else
+        {
+            roaring_bitmap->remove(static_cast<Value>(value));
+        }
+    }
+
     UInt64 size() const
     {
         if (isSmall())

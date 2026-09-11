@@ -1,0 +1,19 @@
+five and three	{1:8}
+three values	{1:108}
+get value	8
+all value sum	8
+five rows of 2^62	{1:4611686018427387904}
+merged 3 and 2	{1:4611686018427387904}
+merged 4 and 1	{1:4611686018427387904}
+int8 wrap	{1:-56}
+uint8 wrap	{1:44}
+negative and positive	{1:-2}
+fractions	{1:3.75}
+added to zero	{1:0}
+merged to zero	{1:0}
+single thread	499500
+many threads	499500
+the true sum	499500
+per index, single thread	4570
+per index, many threads	4570
+the true per index sum	4570
