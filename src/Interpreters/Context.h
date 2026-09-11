@@ -2168,6 +2168,13 @@ public:
     ThrottlerPtr getLocalReadThrottler() const;
     ThrottlerPtr getLocalWriteThrottler() const;
 
+    /// The server-wide throttlers, without the per-user and per-query limits that the getters above
+    /// compose on top of them. Use these to report a server-wide limit, not to throttle a request.
+    ThrottlerPtr getServerWideRemoteReadThrottler() const;
+    ThrottlerPtr getServerWideRemoteWriteThrottler() const;
+    ThrottlerPtr getServerWideLocalReadThrottler() const;
+    ThrottlerPtr getServerWideLocalWriteThrottler() const;
+
     ThrottlerPtr getBackupsThrottler() const;
 
     ThrottlerPtr getMutationsThrottler() const;

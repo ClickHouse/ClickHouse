@@ -3663,14 +3663,16 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"enable_read_through_distributed_cache", {std::to_string(context->getReadThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
             {"enable_write_through_distributed_cache", {std::to_string(context->getWriteThroughDistributedCache()), ChangeableWithoutRestart::Yes}},
 
+            /// The server-wide throttlers, not `getRemoteReadThrottler()` and friends: those compose the
+            /// reading request's own per-user and per-query limits on top of the server-wide one.
             {"max_remote_read_network_bandwidth_for_server",
-             {context->getRemoteReadThrottler() ? std::to_string(context->getRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideRemoteReadThrottler() ? std::to_string(context->getServerWideRemoteReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_remote_write_network_bandwidth_for_server",
-             {context->getRemoteWriteThrottler() ? std::to_string(context->getRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideRemoteWriteThrottler() ? std::to_string(context->getServerWideRemoteWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_local_read_bandwidth_for_server",
-             {context->getLocalReadThrottler() ? std::to_string(context->getLocalReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideLocalReadThrottler() ? std::to_string(context->getServerWideLocalReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_local_write_bandwidth_for_server",
-             {context->getLocalWriteThrottler() ? std::to_string(context->getLocalWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
+             {context->getServerWideLocalWriteThrottler() ? std::to_string(context->getServerWideLocalWriteThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_read_bandwidth_for_server",
              {context->getDistributedCacheReadThrottler() ? std::to_string(context->getDistributedCacheReadThrottler()->getMaxSpeed()) : "0", ChangeableWithoutRestart::Yes}},
             {"max_distributed_cache_write_bandwidth_for_server",
