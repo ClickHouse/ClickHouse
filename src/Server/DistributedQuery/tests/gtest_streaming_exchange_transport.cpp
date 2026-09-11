@@ -517,4 +517,49 @@ TEST(StreamingExchangeTransport, SourceRejectsMalformedPackets)
     }
 }
 
+/// A source that hands packets on drops the end-of-stream marker after reading only its fields, so
+/// the fields must prove that the marker is the empty one: rows or columns in it would be lost, and
+/// a truncated or overlong marker is a protocol violation.
+TEST(StreamingExchangeTransport, OnlyTheEmptyEndOfStreamMarkerIsAccepted)
+{
+    auto body_of = [](std::initializer_list<UInt64> fields, const String & trailing = {})
+    {
+        WriteBufferFromOwnString body;
+        for (UInt64 field : fields)
+            writeVarUInt(field, body);
+        body.write(trailing.data(), trailing.size());
+        body.finalize();
+        return body.str();
+    };
+    auto prefix_of = [](const String & body)
+    {
+        return StreamingExchangeProtocol::readDataPacketPrefix(body.data(), body.size(), "test stream");
+    };
+    auto expect_rejected = [&](const String & body, const char * what)
+    {
+        try
+        {
+            prefix_of(body);
+            FAIL() << what << " was accepted as the end-of-stream marker";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_TRUE(e.code() == ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT || e.code() == ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF)
+                << what << ": " << e.message();
+        }
+    };
+
+    /// flags, rows, columns; flag 1 = end of stream, flag 2 = an aggregation chunk number follows.
+    EXPECT_TRUE(prefix_of(body_of({1, 0, 0})).end_of_stream);
+    EXPECT_TRUE(prefix_of(body_of({1 | 2, 0, 0, /*chunk_num*/ 7})).end_of_stream);
+    const auto data_prefix = prefix_of(body_of({0, 5, 1}, "block bytes"));
+    EXPECT_FALSE(data_prefix.end_of_stream);
+    EXPECT_EQ(data_prefix.num_rows, 5u);
+
+    expect_rejected(body_of({1, 5, 0}), "a marker with rows");
+    expect_rejected(body_of({1, 0, 1}), "a marker with columns");
+    expect_rejected(body_of({1, 0}), "a marker without the column count");
+    expect_rejected(body_of({1, 0, 0}, "x"), "a marker with bytes after its fields");
+}
+
 #endif
