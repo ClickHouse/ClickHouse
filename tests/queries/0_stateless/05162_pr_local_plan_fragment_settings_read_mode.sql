@@ -1,11 +1,16 @@
--- `parallel_replicas_filter_pushdown` decides whether the condition pushed into the initiator's local
--- fragment is also spliced into the query the replicas run. The fragment travels with its own
--- `SETTINGS`, and the rewrite answers to those - so a subquery that turns the setting off keeps the
--- condition local however the outer query is set.
+-- Whether the condition pushed into the initiator's local fragment is also spliced into the query the
+-- replicas run is decided by three settings the fragment carries, and the initiator may read in order
+-- off that condition only when all three say the replicas have it as well:
 --
--- Read that answer off the outer query instead and the initiator fixes `tenant` while the replicas
--- never see the condition: it reads in order against their `Default` and the query fails with
--- "Got read request from replica N for unknown stream".
+--   * `parallel_replicas_filter_pushdown` - asks for the splice at all;
+--   * `allow_push_predicate_ast_for_distributed_subqueries` - `addFilters` returns without it;
+--   * `serialize_query_plan` - the splice is written into an AST, which is not what the replicas
+--     execute when the plan is shipped instead.
+--
+-- Take any of them for granted and the initiator fixes `tenant` while the replicas never see the
+-- condition: it reads in order against their `Default` and the query fails with "Got read request
+-- from replica N for unknown stream". The fragment travels with its own `SETTINGS`, so the answer has
+-- to come from there rather than from the outer query.
 
 DROP TABLE IF EXISTS t_pr_fragment_settings;
 
@@ -64,5 +69,35 @@ FROM (
     ) WHERE tenant = 5 LIMIT 5
 )
 WHERE explain LIKE '%Read type%' OR explain LIKE '%Prewhere filter column%';
+
+SELECT 'the splice is written into an AST, so it needs the setting that allows that';
+SET allow_push_predicate_ast_for_distributed_subqueries = 0;
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts FROM (SELECT tenant, ts FROM t_pr_fragment_settings ORDER BY ts)
+    WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT count() FROM (
+    SELECT tenant, ts FROM (SELECT tenant, ts FROM t_pr_fragment_settings ORDER BY ts)
+    WHERE tenant = 5 ORDER BY ts LIMIT 95, 5
+);
+SET allow_push_predicate_ast_for_distributed_subqueries = 1;
+
+SELECT 'and the replicas must be running that AST rather than a shipped plan';
+SET serialize_query_plan = 1;
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts FROM (SELECT tenant, ts FROM t_pr_fragment_settings ORDER BY ts)
+    WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT count() FROM (
+    SELECT tenant, ts FROM (SELECT tenant, ts FROM t_pr_fragment_settings ORDER BY ts)
+    WHERE tenant = 5 ORDER BY ts LIMIT 95, 5
+);
+SET serialize_query_plan = 0;
 
 DROP TABLE t_pr_fragment_settings;

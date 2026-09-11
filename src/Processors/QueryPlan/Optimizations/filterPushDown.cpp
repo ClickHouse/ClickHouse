@@ -47,6 +47,8 @@ namespace DB::ErrorCodes
 namespace DB::Setting
 {
     extern const SettingsBool parallel_replicas_filter_pushdown;
+    extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -1456,13 +1458,21 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// not in question - it changes which rows this replica reads, not the order it reads them in -
         /// so push the condition either way and take only that one consequence away from it.
         ///
-        /// Read the setting off the fragment's own context rather than the query being optimized. The
-        /// fragment is what travels, `SETTINGS` and all, and the rewrite that splices the condition
-        /// into the replicas' query answers to those. An outer `1` over a fragment carrying `0` leaves
-        /// the condition here alone, and taking the outer answer would leave this read ordered by it.
+        /// Ask the settings the fragment carries, not the query being optimized: the fragment is what
+        /// travels, `SETTINGS` and all, and the rewrite that splices the condition into the replicas'
+        /// query answers to those. And `parallel_replicas_filter_pushdown` alone does not mean the
+        /// condition arrives - `ReadFromRemote::addFilters` splices it into an AST, so it never runs
+        /// without `allow_push_predicate_ast_for_distributed_subqueries`, and what it writes is not
+        /// what the replicas execute when the plan is shipped instead under `serialize_query_plan`.
+        /// Each of the three leaves the replicas on the fragment as it was, so each has to leave this
+        /// read unordered too.
         const auto & fragment_settings = parallel_replicas_local_plan->getContext()->getSettingsRef();
+        const bool replicas_get_the_condition = fragment_settings[Setting::parallel_replicas_filter_pushdown]
+            && fragment_settings[Setting::allow_push_predicate_ast_for_distributed_subqueries]
+            && !fragment_settings[Setting::serialize_query_plan];
+
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
-        if (!fragment_settings[Setting::parallel_replicas_filter_pushdown] && condition && mayFixColumn(condition))
+        if (!replicas_get_the_condition && condition && mayFixColumn(condition))
             parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
 
         // actual push down will be done when plan for local parallel replica will be optimized
