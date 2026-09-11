@@ -1206,10 +1206,13 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     /// setting may introduce a limit or otherwise change which rows the view exposes. Both must
     /// fail closed just like their explicit counterparts - but a clause of pure execution tuning
     /// (`SETTINGS max_threads = 1`) must not turn a projection-only view into a barrier.
+    /// `LIMIT n AFTER expr UNTIL expr` selects a range of the sorted result, so it hides every row
+    /// outside that range exactly like `LIMIT` / `OFFSET` do.
     if (select->distinct
         || select->where() || select->prewhere() || select->having() || select->qualify()
         || select->groupBy() || select->group_by_all
         || select->limitLength() || select->limitOffset() || select->limitByLength() || select->limitByOffset()
+        || select->limitAfter() || select->limitUntil()
         || settingsClauseCanHideRows(select->settings()))
         return true;
 
