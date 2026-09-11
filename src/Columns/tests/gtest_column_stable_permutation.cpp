@@ -485,3 +485,43 @@ TEST(StablePermutation, ColumnSparse)
         assertColumnPermutations(create_column, IndexInRangeFloat64Transform());
     }
 }
+
+TEST(StablePermutation, UpdatePermutationPreservesEqualKeys)
+{
+    for (size_t size : {128, 80000})
+    {
+        auto type = ColumnInt64::create();
+        auto id = ColumnInt64::create();
+        for (size_t i = 0; i < size; ++i)
+        {
+            type->insertValue((i / 2) % 64);
+            id->insertValue(i / 2);
+        }
+
+        for (auto direction : {IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortDirection::Descending})
+        {
+            IColumn::Permutation actual;
+            actual.resize(size);
+            iota(actual.data(), size, IColumn::Permutation::value_type(0));
+            IColumn::Permutation expected = actual;
+            EqualRanges ranges{{0, size}};
+
+            /// Check every sorting stage against an independent stable reference.
+            /// Equal keys must retain the original cancellation/replacement order.
+            for (const auto * column : {type.get(), id.get()})
+            {
+                for (const auto & range : ranges)
+                {
+                    std::stable_sort(expected.begin() + range.from, expected.begin() + range.to,
+                        [&](size_t lhs, size_t rhs)
+                        {
+                            int result = column->compareAt(lhs, rhs, *column, 1);
+                            return direction == IColumn::PermutationSortDirection::Ascending ? result < 0 : result > 0;
+                        });
+                }
+                column->updatePermutation(direction, IColumn::PermutationSortStability::Stable, 0, 1, actual, ranges);
+                assertPermutationsWithLimit(actual, expected, 0);
+            }
+        }
+    }
+}
