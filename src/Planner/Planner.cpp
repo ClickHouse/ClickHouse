@@ -1208,6 +1208,7 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
     const PlannerContextPtr & planner_context,
+    const SelectQueryOptions & select_query_options,
     const QueryNode & query_node,
     UsefulSets & useful_sets)
 {
@@ -1217,6 +1218,11 @@ void addTotalsHavingStep(QueryPlan & query_plan,
     auto & aggregation_analysis_result = expression_analysis_result.getAggregation();
     auto & having_analysis_result = expression_analysis_result.getHaving();
     bool need_finalize = !query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube();
+
+    /// `TotalsHavingStep` evaluates `HAVING` itself, so a correlated subquery in `HAVING` has to be
+    /// decorrelated into the plan before the step, the same way `addFilterStep` does it.
+    for (const auto & correlated_subquery : having_analysis_result.correlated_subtrees.subqueries)
+        buildQueryPlanForCorrelatedSubquery(planner_context, query_plan, correlated_subquery, select_query_options);
 
     std::optional<ActionsDAG> actions;
     if (having_analysis_result.filter_actions)
@@ -3008,7 +3014,7 @@ void Planner::buildPlanForQueryNode()
 
             if (query_node.isGroupByWithTotals())
             {
-                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, query_node, useful_sets);
+                addTotalsHavingStep(query_plan, expression_analysis_result, query_analysis_result, planner_context, select_query_options, query_node, useful_sets);
                 having_executed = true;
             }
 
