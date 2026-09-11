@@ -14,6 +14,7 @@
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <dlfcn.h>
+#include <fcntl.h>
 #include <poll.h>
 #include <unistd.h>
 
@@ -21,6 +22,7 @@
 #include <csignal>
 #include <limits>
 
+#include <base/scope_guard.h>
 #include <base/sleep.h>
 #include <Common/logger_useful.h>
 #include <base/errnoToString.h>
@@ -46,6 +48,7 @@ namespace
         CANNOT_EXEC                 = 0x55555558,
         CANNOT_DUP_READ_DESCRIPTOR  = 0x55555559,
         CANNOT_DUP_WRITE_DESCRIPTOR = 0x55555560,
+        CANNOT_DUP_INHERITED_DESCRIPTOR = 0x55555561,
     };
 }
 
@@ -65,6 +68,7 @@ namespace ErrorCodes
     extern const int CHILD_WAS_NOT_EXITED_NORMALLY;
     extern const int CANNOT_CREATE_CHILD_PROCESS;
     extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_FCNTL;
 }
 
 ShellCommand::ShellCommand(pid_t pid_, int & in_fd_, int & out_fd_, int & err_fd_, const ShellCommand::Config & config_)
@@ -241,6 +245,49 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
             fds->tryIncreaseSize(pipe_capacity);
     }
 
+    /// The inherited descriptors are handed over in two steps, and the first one happens here,
+    /// before `vfork`, where it is allowed to fail with an exception. A plain `dup2(parent_fd,
+    /// child_fd)` in the child is wrong in two ways that a caller cannot rule out: when
+    /// `parent_fd == child_fd` (the region's `memfd` happened to be created as 3) `dup2` is a
+    /// no-op and the descriptor keeps its close-on-exec flag, so `exec` closes it; and when one
+    /// pair's target is another pair's source (`{3 <- 4}, {4 <- 3}`) the first `dup2` overwrites
+    /// what the second was going to copy. So every source is first duplicated to a number above
+    /// every target - any target, including the ones `read_fds`/`write_fds` claim - and the child
+    /// `dup2`s from those copies, which can neither be a target nor be clobbered by one. The copies
+    /// are close-on-exec: they must not outlive this `exec` in any child, and they are closed in
+    /// the parent once the child has run.
+    std::vector<int> staged_inherited_fds;
+    staged_inherited_fds.reserve(config.inherited_fds.size());
+    SCOPE_EXIT({
+        for (int fd : staged_inherited_fds)
+            if (0 != ::close(fd))
+                LOG_WARNING(getLogger(), "Cannot close a staged inherited descriptor: {}", errnoToString());
+    });
+
+    if (!config.inherited_fds.empty())
+    {
+        int first_free_fd = STDERR_FILENO + 1;
+        for (const auto & [child_fd, parent_fd] : config.inherited_fds)
+        {
+            if (child_fd <= STDERR_FILENO)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Cannot hand descriptor {} to a child as {}: 0, 1 and 2 are the child's standard streams", parent_fd, child_fd);
+            first_free_fd = std::max(first_free_fd, child_fd + 1);
+        }
+        for (int fd : config.read_fds)
+            first_free_fd = std::max(first_free_fd, fd + 1);
+        for (int fd : config.write_fds)
+            first_free_fd = std::max(first_free_fd, fd + 1);
+
+        for (const auto & [child_fd, parent_fd] : config.inherited_fds)
+        {
+            int staged = ::fcntl(parent_fd, F_DUPFD_CLOEXEC, first_free_fd);
+            if (staged == -1)
+                throw ErrnoException(ErrorCodes::CANNOT_FCNTL, "Cannot duplicate descriptor {} to hand it to a child as {}", parent_fd, child_fd);
+            staged_inherited_fds.push_back(staged);
+        }
+    }
+
     pid_t pid = reinterpret_cast<pid_t(*)()>(real_vfork)();
 
     if (pid == -1)
@@ -282,6 +329,17 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
 
             if (fd != dup2(fds.fds_rw[0], fd))
                 _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR));
+        }
+
+        for (size_t i = 0; i < config.inherited_fds.size(); ++i)
+        {
+            /// `dup2` from the staged copy (see above) onto the number the child expects. The
+            /// staged copy is above every target, so this is never a no-op and never destroys a
+            /// source. The result has no close-on-exec flag, so it survives the `exec` below; the
+            /// staged copy and the original do not.
+            const int child_fd = config.inherited_fds[i].first;
+            if (child_fd != dup2(staged_inherited_fds[i], child_fd))
+                _exit(static_cast<int>(ReturnCodes::CANNOT_DUP_INHERITED_DESCRIPTOR));
         }
 
         // Reset the signal mask: it may be non-empty and will be inherited
@@ -506,6 +564,8 @@ void ShellCommand::handleProcessRetcode(int retcode) const
                 throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 read descriptor of child process");
             case static_cast<int>(ReturnCodes::CANNOT_DUP_WRITE_DESCRIPTOR):
                 throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 write descriptor of child process");
+            case static_cast<int>(ReturnCodes::CANNOT_DUP_INHERITED_DESCRIPTOR):
+                throw Exception(ErrorCodes::CANNOT_CREATE_CHILD_PROCESS, "Cannot dup2 an inherited descriptor of child process");
             default:
                 throw Exception(ErrorCodes::CHILD_WAS_NOT_EXITED_NORMALLY, "Child process was exited with return code {}", toString(retcode));
         }

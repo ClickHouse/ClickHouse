@@ -20,15 +20,17 @@ Options: `--clickhouse PATH`, `--rows N`, `--row-bytes B`, `--iters K` (median o
 
 ### Shared memory the benchmark needs
 
-Each shared-memory worker reserves its whole region (`shared_memory_size` in [`functions.xml`](functions.xml), `128 MiB`) with `posix_fallocate`, and one worker is borrowed per parallel UDF call. So `--threads T` needs `T x 128 MiB` in `/dev/shm`, and the 16-thread step of `matrix.sh` needs about `2 GiB` there (plus the same amount charged to the server's memory tracker). A container `/dev/shm` is often `64 MiB`, which does not fit even one worker - both scripts check this before running and stop with the required and available sizes. Mount a bigger `/dev/shm` (`docker run --shm-size=4g`), lower `shared_memory_size`, or use fewer threads.
+Each shared-memory worker reserves its whole region (`shared_memory_size` in [`functions.xml`](functions.xml), `16 MiB`, growable to `128 MiB` for the row-size sweep) up front, in a sealed `memfd`, and one worker is borrowed per parallel UDF call. So `--threads T` needs `T x 16 MiB` of RAM for the regions (charged to the server's memory tracker as well). There is no `/dev/shm` to size: a `memfd` lives in no filesystem.
 
-The runner uses `clickhouse-local` with a generated config that points at `functions.xml` and `user_scripts/`, runs `SELECT sum(length(fn(val))) FROM (… numbers_mt(N))` for each variant, and reports:
+Size the region for the block, not generously: it is reserved in full - pages committed - when a worker starts, so an oversized region costs memory for every worker and time for every pool warm-up. (An earlier version of these scripts ran every sample in its own `clickhouse-local`, which starts the pool inside the timed query; with `128 MiB` regions and 16 workers that put `2 GiB` of page zeroing into a `0.2 s` query and looked like a transport loss at high parallelism. It was not one, and the runners now measure a warm pool - see below.)
+
+The runner starts a throw-away `clickhouse server` on a free local port with a generated config that points at `functions.xml` and `user_scripts/` (`lib.sh`), runs one warm-up query per function - which starts its pool of workers and, for shared memory, reserves their regions - and then `SELECT sum(length(fn(val))) FROM (… numbers_mt(N))` for the samples. A server rather than `clickhouse-local` because the transport under test is a *pooled* one: `clickhouse-local` lives for one query, so every sample would restart the workers and pay the pool start-up that a real server pays once. The runner reports:
 
 * **median query time** (from `--time`), at a pinned `max_block_size` (`--block-size`, default
-  `65536`) — the block-size sweep below moves the ratio from `1.37x` faster to `0.88x` slower, so
+  `65536`) — the block-size sweep below moves the ratio from `1.98x` to `1.31x`, so
   leaving it to the server default would make the headline number depend on something the run does
   not state;
-* **bytes that crossed the kernel via `read()`/`write()` syscalls** (`OSReadChars` / `OSWriteChars` profile events) — a build-independent structural measure of transport cost. For the pipe transports this equals the payload volume; for the shared-memory transports it is the payload once per direction plus the tiny control messages, because the server's side of the region goes through `pread`/`pwrite` (see below), which `taskstats` counts like any other read or write.
+* **bytes that crossed the kernel via `read()`/`write()` syscalls** (`OSReadChars` / `OSWriteChars` profile events) — a build-independent structural measure of transport cost. For the pipe transports this equals the payload volume; for the shared-memory transports it is only the tiny control messages, because both sides work through their mappings and no payload byte goes through `read`/`write` at all.
 
 ## Sweeps
 
@@ -48,91 +50,89 @@ cc -O2 -o ipc_microbench ipc_microbench.c
 ./ipc_microbench 65536 20000   # 64 KiB chunks
 ```
 
-Typical finding: `tmpfs`+`mmap` and `memfd`+`mmap` are essentially identical (the choice between them is about the child contract, not speed), both clearly beat `pipe`, and `vmsplice` is fast but only streams bytes into a pipe rather than exposing addressable shared memory — which is why it does not fit the UDF model.
+Typical finding: `tmpfs`+`mmap` and `memfd`+`mmap` are essentially identical (the transport uses `memfd`, because it can be sealed against shrinking; the speed is the same), both clearly beat `pipe`, and `vmsplice` is fast but only streams bytes into a pipe rather than exposing addressable shared memory — which is why it does not fit the UDF model.
 
 ## What to expect
 
-The shared-memory transport moves the bulk data through a `tmpfs` file that the command `mmap`s.
-The command's side is therefore copy-free, but the server's is not: it writes the input with
-`pwrite` and reads the output with `pread` rather than through a mapping of its own, because the
-command holds the same file open for writing and can shorten it at any moment - through a mapping
-that is a `SIGBUS` that takes the whole server down, and no check can close the window (see
-`SharedMemoryRegion`). So the payload crosses the kernel once per direction instead of the two
-crossings a pipe costs, and `OSReadChars`/`OSWriteChars` show roughly the payload volume rather than
-zero. What is saved against a pipe is one copy per direction plus the per-pipeful syscalls; how much
-of that shows up as wall-clock time depends on how large a share of the query the transport is at
-all - measure it with the runner instead of assuming.
+The shared-memory transport moves the bulk data through a sealed `memfd` that both the server and
+the command `mmap`. The server serializes the input straight into its mapping and parses the output
+where the command left it; the command reads and writes in a mapping of its own. No payload byte is
+copied and no payload byte goes through `read`/`write`, so `OSReadChars`/`OSWriteChars` show only
+the control messages. Writing through a mapping of a file the command holds open for writing is
+safe only because the file is sealed with `F_SEAL_SHRINK` - the command cannot take pages out from
+under the server (see `SharedMemoryRegion`). What is saved against a pipe is two copies per
+direction plus the per-pipeful syscalls; how much of that shows up as wall-clock time depends on how
+large a share of the query the transport is at all - measure it with the runner instead of assuming.
 
 > The `build/` in this repository is a **Debug** build, so absolute times are much slower than a release build; the meaningful figures are the *relative* transport comparison and the (build-independent) syscall-I/O volume.
 
 ## Measured result
 
-Environment: AMD Ryzen 9 7940HS (16 threads), 59 GiB RAM, `/dev/shm` 29.8 GiB, Linux 7.0.0-31,
-Release build of this branch (the state where the server reaches the region through `pread`/`pwrite`
-rather than a mapping of its own), machine otherwise idle. Both pipe and shared-memory commands move
-a chunk with one bulk read and one bulk write, so what is compared is the transport.
+Environment: AMD Ryzen 9 7940HS (8 cores / 16 threads), 59 GiB RAM, Linux 7.0.0-31, Release build
+of this branch (sealed `memfd`, server works through its mapping), warm pools, machine otherwise
+idle. Both pipe and shared-memory commands move a chunk with one bulk read and one bulk write, so
+what is compared is the transport.
 
 ```bash
 ./run.sh --clickhouse ../../build_release/programs/clickhouse \
          --rows 1000000 --row-bytes 100 --iters 9 --threads 1 --block-size 65536
-CLICKHOUSE=../../build_release/programs/clickhouse ./matrix.sh   # ITERS=7
+CLICKHOUSE=../../build_release/programs/clickhouse ITERS=7 ./matrix.sh
 ```
 
 | transport | median, s | read via syscalls | write via syscalls |
 |---|---:|---:|---:|
-| `bench_pipe_stream` | 0.745 | 96.37 MB | 96.32 MB |
-| `bench_pipe_chunk` | 0.167 | 96.37 MB | 96.32 MB |
-| `bench_shm` | 0.182 | 96.36 MB | 96.32 MB |
-| `bench_shm_busy` | 0.540 | 96.36 MB | 96.32 MB |
+| `bench_pipe_stream` | 0.791 | 96.37 MB | 96.32 MB |
+| `bench_pipe_chunk` | 0.130 | 96.37 MB | 96.32 MB |
+| `bench_shm` | 0.096 | 0.04 MB | 0.00 MB |
+| `bench_shm_busy` | 0.459 | 0.04 MB | 0.00 MB |
 
 The fair baseline is `bench_pipe_chunk`, which also exchanges data once per block. Against it the
-shared-memory transport is a **wash at this block size** — `0.92x` here, `0.99x` on a repeat run,
-i.e. within the run-to-run spread. Against the streaming pattern the documentation shows for pipes
-(a flush per row) it is `4.5x`, but that difference is mostly the per-row flushing, not the
-transport.
+shared-memory transport is `1.35x` at the default block size. Against the streaming pattern the
+documentation shows for pipes (a flush per row) it is `8.2x`, but that difference is mostly the
+per-row flushing, not the transport.
 
-The syscall columns are now equal for both transports, and that is the implementation, not a
-measurement error: `OSReadChars`/`OSWriteChars` are collected from the *server's* threads, and the
-server reaches the region with `pread`/`pwrite`. The saving is real but sits on the command's side —
-it works in its own mapping and issues no transfer syscalls at all — so the payload crosses the
-kernel once in total instead of twice. No server-side counter can see that; `/proc/<pid>/io` of the
-child would, and ClickHouse does not collect it.
+The syscall columns are the structural result: the pipe moves the whole payload through
+`read`/`write` in both directions, the shared-memory transport moves `40 KB` of control messages
+(one request and one response per block) and nothing else. The payload is written once, by the
+server into its mapping, and read in place by both sides.
 
 Sweeps (`matrix.sh`, medians of 7):
 
 | block size (2M rows, 100 B, 1 thread) | `bench_pipe_chunk`, s | `bench_shm`, s | speedup |
 |---|---:|---:|---:|
-| 8192 | 0.379 | 0.288 | 1.32x |
-| 16384 | 0.411 | 0.300 | 1.37x |
-| 32768 | 0.359 | 0.311 | 1.15x |
-| 65536 | 0.311 | 0.355 | 0.88x |
-| 131072 | 0.329 | 0.372 | 0.88x |
+| 8192 | 0.395 | 0.200 | 1.98x |
+| 16384 | 0.379 | 0.195 | 1.94x |
+| 32768 | 0.318 | 0.173 | 1.84x |
+| 65536 | 0.254 | 0.181 | 1.40x |
+| 131072 | 0.241 | 0.184 | 1.31x |
 
 | threads (4M rows, 100 B, block 65536) | `bench_pipe_chunk`, s | `bench_shm`, s | speedup |
 |---|---:|---:|---:|
-| 1 | 0.561 | 0.602 | 0.93x |
-| 2 | 0.317 | 0.380 | 0.83x |
-| 4 | 0.222 | 0.309 | 0.72x |
-| 8 | 0.232 | 0.292 | 0.79x |
-| 16 | 0.205 | 0.346 | 0.59x |
+| 1 | 0.484 | 0.348 | 1.39x |
+| 2 | 0.270 | 0.205 | 1.32x |
+| 4 | 0.176 | 0.144 | 1.22x |
+| 8 | 0.158 | 0.139 | 1.14x |
+| 16 | 0.150 | 0.142 | 1.06x |
 
 | rows x row bytes (~200 MB, 1 thread, block 65536) | `bench_pipe_chunk`, s | `bench_shm`, s | speedup |
 |---|---:|---:|---:|
-| 20000000 x 10 | 1.349 | 1.156 | 1.17x |
-| 2000000 x 100 | 0.289 | 0.316 | 0.91x |
-| 200000 x 1000 | 0.481 | 0.468 | 1.03x |
+| 20000000 x 10 | 1.081 | 0.961 | 1.12x |
+| 2000000 x 100 | 0.245 | 0.187 | 1.31x |
+| 200000 x 1000 | 0.296 | 0.211 | 1.40x |
 
-How to read this: the transport wins where the per-block overheads dominate — `1.15x` to `1.37x` at
-block sizes of 8192 to 32768 — and loses once the copy the server now pays for (`S + S'` bytes
-through `pread`/`pwrite`) starts to dominate. The break-even is around 32-64k rows. It is **not** a
-win at parallelism either: every parallel call borrows its own worker with its own `128 MiB` region,
-and the loss grows monotonically to `0.59x` at 16 threads.
+How to read this: the transport wins everywhere, and the win shrinks as the block grows (`1.98x`
+at 8192 rows, `1.31x` at 131072) and as parallelism grows (`1.39x` on one thread, `1.06x` on
+sixteen), because in both directions the command's own work and the machine's saturation grow
+while the saving per block does not. On this 8-core machine 16 threads means 32 processes
+competing for 8 cores, and there the transport is no longer where the time goes.
 
-The block-size sweep is also the clearest measurement of what the `SIGBUS` fix cost. Before the
-server gave up its own mapping, the same sweep on the same machine was a win across the whole range
-(`1.09x`-`1.64x`); that difference is the price of not letting a command's `ftruncate` take the
-server down. Getting it back needs a backing store the command cannot resize — see the design notes
-on `SharedMemoryRegion`.
+`perf stat` attached to the warm server and its workers for one 16-thread query (4M rows) shows
+where the saving sits: context switches `1.0k` for shared memory against `22.8k` for the pipe,
+kernel cycles `1.6G` against `4.8G`, cache misses `15M` against `33M`. The pipe's cost is the
+kernel copy and the wake-ups around a 64 KiB buffer; the shared-memory transport has neither. User
+cycles go the other way (`8.8G` against `6.0G`): the Python echo copies its slice in user space,
+where the pipe client had the kernel copy it - that is the benchmark command's own work, not the
+transport's.
 
 Numbers move by a few per cent between runs on the same machine, so re-run both scripts after any
 change to the transport rather than quoting these — the headline row in particular is inside that
@@ -142,5 +142,7 @@ several milliseconds per block that the shared-memory client never paid.
 
 Standalone `ipc_microbench.c` results for the underlying IPC primitive showed `tmpfs`+`mmap` and
 `memfd`+`mmap` with equivalent throughput, and both above `pipe` for the lock-step bulk-transfer
-pattern used by executable UDFs. This supports choosing a named `tmpfs` file for compatibility with
-arbitrary UDF scripts rather than for a microbenchmark-only advantage.
+pattern used by executable UDFs. The choice of `memfd` over a named `tmpfs` file is therefore not
+about speed: it is what can be sealed against shrinking, which is what lets the server work through
+its mapping at all, and `/proc/self/fd/N` keeps the "open a path and `mmap` it" contract for
+arbitrary UDF scripts.

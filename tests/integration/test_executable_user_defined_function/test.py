@@ -384,6 +384,31 @@ def test_executable_function_none_reaction_worker_flooding_after_a_quiet_gap(sta
     assert len(pids) == 1, f"the worker was not reused: {pids}"
 
 
+def test_executable_function_previous_borrow_stderr_is_not_thrown_at_the_next_query(started_cluster):
+    """A previous borrow's late stderr, however much of it, must not fail the query that borrows next."""
+    skip_test_msan(node)
+
+    # The same command shape as the quiet-gap test above, under `throw`: it answers, waits out the
+    # hand-back probe, then writes two pipefuls to stderr and sits blocked in `write`. The next
+    # borrow finds those bytes on the pipe. They are the earlier query's, and the earlier query has
+    # already succeeded - the probe finished before they arrived, which is the documented boundary -
+    # so the borrow has to take them off the pipe without putting them through its own reaction:
+    # under `throw`, feeding them through would fail this query for a diagnostic it did not cause.
+    # Two pipefuls, because the borrow-start report is capped at a few KiB and the rest goes through
+    # a separate drain: only a flood proves that drain is reaction-free as well.
+    first = node.query("SELECT test_function_pool_stderr_flood_after_gap_throw_python(0)").strip()
+
+    pids = {first}
+    for i in range(1, 3):
+        time.sleep(0.5)
+        pids.add(node.query(f"SELECT test_function_pool_stderr_flood_after_gap_throw_python({i})").strip())
+
+    assert len(pids) == 1, f"the worker was not reused: {pids}"
+    assert node.contains_in_log(
+        "A pooled command had unread output on its stderr when it was borrowed"
+    )
+
+
 def test_executable_function_pooled_late_stderr_fails_the_query_that_caused_it(started_cluster):
     """`stderr_reaction = throw` must fail the pooled query whose command wrote the diagnostic."""
     skip_test_msan(node)

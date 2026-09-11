@@ -133,8 +133,7 @@ StorageExecutable::StorageExecutable(
         .send_chunk_header = (*settings)[ExecutableSetting::send_chunk_header],
         .execute_direct = true,
         .use_shared_memory = false,
-        .shared_memory_size = 0,
-        .shared_memory_path = {}
+        .shared_memory_size = 0
     };
 
     coordinator = std::make_unique<ShellCommandSourceCoordinator>(std::move(configuration));

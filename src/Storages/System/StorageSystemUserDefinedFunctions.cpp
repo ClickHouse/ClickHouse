@@ -94,10 +94,7 @@ ColumnsDescription StorageSystemUserDefinedFunctions::getColumnsDescription()
             "when the region may not grow; 0 when `use_shared_memory` is disabled."},
         {"shared_memory_pipeline", std::make_shared<DataTypeUInt8>(),
             "Whether the next input block is serialized into a second shared-memory region on a "
-            "background thread while the command is still processing the current one (boolean)."},
-        {"shared_memory_path", std::make_shared<DataTypeString>(),
-            "Directory in which the shared-memory files are created. Empty when `use_shared_memory` "
-            "is disabled."}
+            "background thread while the command is still processing the current one (boolean)."}
     };
 }
 
@@ -199,7 +196,6 @@ void StorageSystemUserDefinedFunctions::fillData(
             res_columns[i++]->insert(exec_config.shared_memory_size);
             res_columns[i++]->insert(exec_config.shared_memory_max_size);
             res_columns[i++]->insert(exec_config.shared_memory_pipeline ? 1 : 0);
-            res_columns[i++]->insert(exec_config.shared_memory_path);
         }
         else
         {
@@ -207,8 +203,8 @@ void StorageSystemUserDefinedFunctions::fillData(
             // Config fields: type, command, format, return_type, return_name, argument_types, argument_names,
             // max_command_execution_time, command_termination_timeout, command_read_timeout, command_write_timeout,
             // pool_size, send_chunk_header, execute_direct, lifetime, deterministic, use_shared_memory,
-            // shared_memory_size, shared_memory_max_size, shared_memory_pipeline, shared_memory_path
-            constexpr size_t config_fields_count = 21;
+            // shared_memory_size, shared_memory_max_size, shared_memory_pipeline
+            constexpr size_t config_fields_count = 20;
             for (size_t j = 0; j < config_fields_count; ++j)
                 res_columns[i++]->insertDefault();
         }

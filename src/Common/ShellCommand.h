@@ -2,6 +2,7 @@
 
 #include <functional>
 #include <memory>
+#include <utility>
 #include <string_view>
 #include <unordered_map>
 #include <IO/ReadBufferFromFile.h>
@@ -65,6 +66,14 @@ public:
         std::vector<int> read_fds;
 
         std::vector<int> write_fds;
+
+        /// Descriptors of this process that the child inherits, as `{child_fd, parent_fd}`: in the
+        /// child, `parent_fd` is `dup2`-ed onto `child_fd` before `exec`. The copy is not
+        /// close-on-exec whatever the original is, which is the point: the original can - and for
+        /// a shared-memory region does - stay close-on-exec, so that no other child started from
+        /// another thread in the meantime gets it by accident. Only this child does, and only under
+        /// the number it is told.
+        std::vector<std::pair<int, int>> inherited_fds;
 
         bool pipe_stdin_only = false;
 

@@ -1,21 +1,19 @@
 #include <Common/SharedMemoryRegion.h>
 #include <Common/Exception.h>
-#include <Common/getRandomASCIIString.h>
 #include <base/defines.h>
-#include <base/scope_guard.h>
 
 #include <condition_variable>
 #include <cstring>
-#include <filesystem>
 #include <limits>
 #include <mutex>
 #include <string>
-#include <string_view>
 #include <thread>
 
+#include <csignal>
+#include <fstream>
 #include <fcntl.h>
-#include <sys/file.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
@@ -23,488 +21,348 @@
 
 using namespace DB;
 
-/// SharedMemoryRegion relies on `O_TMPFILE`/`posix_fallocate` and is Linux-only: its constructor
-/// throws on other platforms (see `SharedMemoryRegion::checkSupported`). Gate the whole suite so
-/// it neither fails nor pins resources on non-Linux builds of unit_tests_dbms.
+/// SharedMemoryRegion relies on a sealed `memfd` and is Linux-only: its constructor throws on
+/// other platforms (see `SharedMemoryRegion::checkSupported`). Gate the whole suite so it neither
+/// fails nor pins resources on non-Linux builds of unit_tests_dbms.
 #if defined(OS_LINUX)
 
 namespace
 {
-/// Mirrors the name the implementation builds: the effective uid is part of it, so that a shared
-/// parent like `/dev/shm` can hold one of these per OS user.
-std::string regionDirectoryName()
-{
-    return ".clickhouse-udf-shared-memory-" + std::to_string(::geteuid());
-}
 
-/// A directory the regions can actually live in. They need `O_TMPFILE` and `posix_fallocate`, which
-/// not every filesystem provides: `/dev/shm` is tmpfs, always provides both, and is where the feature
-/// puts its regions by default, so prefer it and fall back to the system temporary directory only
-/// where there is no `/dev/shm` at all.
-std::string regionDir()
+/// A second mapping of the region, made the way the command makes it: from the descriptor, of the
+/// whole file. Reading `st_size` first is also how the command learns how large the file is.
+struct OtherMapping
 {
-    static const std::string dir = std::filesystem::is_directory("/dev/shm")
-        ? std::string("/dev/shm")
-        : std::filesystem::temp_directory_path().string();
-    return dir;
-}
+    char * data = nullptr;
+    size_t size = 0;
+
+    explicit OtherMapping(int fd)
+    {
+        struct stat st{};
+        if (0 != ::fstat(fd, &st))
+            throw std::runtime_error("fstat failed");
+        size = static_cast<size_t>(st.st_size);
+        void * buf = ::mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+        if (buf == MAP_FAILED)
+            throw std::runtime_error("mmap failed");
+        data = static_cast<char *>(buf);
+    }
+
+    ~OtherMapping()
+    {
+        ::munmap(data, size);
+    }
+};
+
 }
 
 TEST(SharedMemoryRegion, CreateReadWrite)
 {
-    SharedMemoryRegion region(regionDir(), 4096);
+    SharedMemoryRegion region(4096);
 
     EXPECT_EQ(region.size(), 4096u);
     EXPECT_NE(region.data(), nullptr);
-    EXPECT_FALSE(region.path().empty());
-    EXPECT_TRUE(std::filesystem::exists(region.path()));
+    EXPECT_NE(region.fd(), -1);
 
     const std::string payload = "hello shared memory";
     memcpy(region.data(), payload.data(), payload.size());
     EXPECT_EQ(std::string(region.data(), payload.size()), payload);
 }
 
-/// The backing descriptor must be close-on-exec: otherwise a concurrent fork+exec on another
-/// thread could leak this fd (holding the mapped UDF data and pinning tmpfs storage after unlink)
-/// into an unrelated child process. The internal fd is not exposed, so we walk /proc/self/fd and
-/// match descriptors by the inode of the region's file - the fd was opened as an unnamed
-/// `O_TMPFILE`, so its /proc symlink still points at the anonymous name, not at path(). This
-/// guards the atomic open(O_TMPFILE | O_CLOEXEC) creation against regression.
-TEST(SharedMemoryRegion, BackingDescriptorIsCloseOnExec)
+TEST(SharedMemoryRegion, SupportProbePasses)
 {
-    SharedMemoryRegion region(regionDir(), 4096);
-
-    struct stat region_stat{};
-    ASSERT_EQ(::stat(region.path().c_str(), &region_stat), 0);
-
-    bool found = false;
-    for (const auto & entry : std::filesystem::directory_iterator("/proc/self/fd"))
-    {
-        const int fd = std::stoi(entry.path().filename().string());
-
-        struct stat fd_stat{};
-        if (::fstat(fd, &fd_stat) != 0 || fd_stat.st_dev != region_stat.st_dev || fd_stat.st_ino != region_stat.st_ino)
-            continue;
-
-        const int flags = ::fcntl(fd, F_GETFD);
-        ASSERT_NE(flags, -1);
-        EXPECT_TRUE(flags & FD_CLOEXEC) << "backing fd for " << region.path() << " is not close-on-exec";
-        found = true;
-    }
-    EXPECT_TRUE(found) << "did not find the region's backing descriptor under /proc/self/fd";
+    EXPECT_NO_THROW(SharedMemoryRegion::checkSupported());
 }
 
-/// A server that dies without running destructors (SIGKILL, an OOM kill) leaves its region files
-/// behind, and their pages stay committed until the file is unlinked. Creating a region in the same
-/// directory must reclaim them - and must leave live regions, which hold an flock, alone.
-TEST(SharedMemoryRegion, ReclaimsLeftoverRegionFiles)
+/// The descriptor must be close-on-exec: otherwise a concurrent fork+exec on another thread would
+/// carry it - and the mapped UDF data behind it - into an unrelated child. The one child that is
+/// meant to have it gets an explicit `dup2` copy, which is what clears the flag.
+TEST(SharedMemoryRegion, DescriptorIsCloseOnExec)
 {
-    /// A fresh directory keeps the test isolated from other region creation in this process.
-    const std::string directory
-        = regionDir() + "/clickhouse_shm_leftovers_" + std::to_string(::getpid()) + "_" + getRandomASCIIString(16);
-    std::filesystem::create_directories(directory);
-    SCOPE_EXIT({ std::filesystem::remove_all(directory); });
-    ASSERT_EQ(::chmod(directory.c_str(), 0700), 0);
+    SharedMemoryRegion region(4096);
 
-    const std::string private_directory = directory + "/" + regionDirectoryName();
-    std::filesystem::create_directories(private_directory);
-    ASSERT_EQ(::chmod(private_directory.c_str(), 0700), 0);
+    const int flags = ::fcntl(region.fd(), F_GETFD);
+    ASSERT_NE(flags, -1);
+    EXPECT_TRUE(flags & FD_CLOEXEC);
+}
 
-    /// Nobody holds a lock on this one, exactly like a file left by a process that is gone.
-    const std::string leftover = private_directory + "/clickhouse_udf_shm_leftover";
-    {
-        int fd = ::open(leftover.c_str(), O_CREAT | O_RDWR, 0600);
-        ASSERT_NE(fd, -1);
-        ASSERT_EQ(::ftruncate(fd, 4096), 0);
-        ::close(fd);
-    }
+/// The seals are the whole safety argument of the class: the command holds a writable descriptor,
+/// and the only thing standing between it and a `SIGBUS` in the server is that the kernel refuses
+/// to let it shrink the file. Check that shrinking is refused, that the seal set cannot be
+/// changed, and that growing - which the server needs - is still allowed.
+TEST(SharedMemoryRegion, IsSealedAgainstShrinkingButNotGrowth)
+{
+    SharedMemoryRegion region(8192);
 
-    /// This one is locked, exactly like a region whose owner is still running: it must survive.
-    const std::string locked = private_directory + "/clickhouse_udf_shm_locked";
-    int locked_fd = ::open(locked.c_str(), O_CREAT | O_RDWR, 0600);
-    ASSERT_NE(locked_fd, -1);
-    SCOPE_EXIT({ ::close(locked_fd); });
-    ASSERT_EQ(::flock(locked_fd, LOCK_EX | LOCK_NB), 0);
+    const int seals = ::fcntl(region.fd(), F_GET_SEALS);
+    ASSERT_NE(seals, -1);
+    EXPECT_TRUE(seals & F_SEAL_SHRINK);
+    EXPECT_TRUE(seals & F_SEAL_SEAL);
+    EXPECT_FALSE(seals & F_SEAL_GROW);
+    EXPECT_FALSE(seals & F_SEAL_WRITE);
 
-    /// A file that is not a region must not be touched, locked or not.
-    const std::string unrelated = private_directory + "/not_a_region";
-    {
-        int fd = ::open(unrelated.c_str(), O_CREAT | O_RDWR, 0600);
-        ASSERT_NE(fd, -1);
-        ::close(fd);
-    }
+    /// What a hostile or buggy command could try through its inherited descriptor.
+    EXPECT_EQ(::ftruncate(region.fd(), 4096), -1);
+    EXPECT_EQ(errno, EPERM);
+    EXPECT_EQ(::fcntl(region.fd(), F_ADD_SEALS, F_SEAL_GROW), -1);
+    EXPECT_EQ(errno, EPERM);
+    EXPECT_EQ(::fcntl(region.fd(), F_ADD_SEALS, F_SEAL_WRITE), -1);
+    EXPECT_EQ(errno, EPERM);
 
-    /// A matching prefix is not sufficient evidence that an entry belongs to this mechanism.
-    const std::string unrelated_matching_file = private_directory + "/clickhouse_udf_shm_unrelated";
-    {
-        int fd = ::open(unrelated_matching_file.c_str(), O_CREAT | O_RDWR, 0644);
-        ASSERT_NE(fd, -1);
-        ::close(fd);
-    }
+    struct stat st{};
+    ASSERT_EQ(::fstat(region.fd(), &st), 0);
+    EXPECT_EQ(static_cast<size_t>(st.st_size), 8192u);
 
-    const std::string matching_fifo = private_directory + "/clickhouse_udf_shm_fifo";
-    ASSERT_EQ(::mkfifo(matching_fifo.c_str(), 0600), 0);
+    /// Still readable and writable through the mapping after the refused attempts.
+    memcpy(region.data() + 8000, "tail", 4);
+    EXPECT_EQ(std::string(region.data() + 8000, 4), "tail");
 
-    /// Even a same-user 0600 file with the region prefix is unrelated when it lives directly in
-    /// the configured parent directory. The stale sweep must be confined to its private namespace.
-    const std::string matching_file_outside_namespace = directory + "/clickhouse_udf_shm_unrelated_0600";
-    {
-        int fd = ::open(matching_file_outside_namespace.c_str(), O_CREAT | O_RDWR, 0600);
-        ASSERT_NE(fd, -1);
-        ::close(fd);
-    }
+    region.grow(16384);
+    EXPECT_EQ(region.size(), 16384u);
+    ASSERT_EQ(::fstat(region.fd(), &st), 0);
+    EXPECT_EQ(static_cast<size_t>(st.st_size), 16384u);
+}
 
-    SharedMemoryRegion region(directory, 4096);
+/// The pages are committed up front, so the region is a fully backed file from the start: the
+/// server writes into it without page faults that could fail later, and the command sees the
+/// same size as the server.
+TEST(SharedMemoryRegion, PagesAreCommittedAtCreation)
+{
+    SharedMemoryRegion region(1 << 20);
 
-    EXPECT_FALSE(std::filesystem::exists(leftover));
-    EXPECT_TRUE(std::filesystem::exists(locked));
-    EXPECT_TRUE(std::filesystem::exists(unrelated));
-    EXPECT_TRUE(std::filesystem::exists(unrelated_matching_file));
-    EXPECT_TRUE(std::filesystem::exists(matching_fifo));
-    EXPECT_TRUE(std::filesystem::exists(matching_file_outside_namespace));
-    EXPECT_TRUE(std::filesystem::exists(region.path()));
-    EXPECT_EQ(std::filesystem::path(region.path()).parent_path(), std::filesystem::path(private_directory));
-
-    /// A burst of region creations scans this directory only once. Without throttling, N
-    /// non-pooled UDF calls would each scan the N live region files and perform O(N^2) work.
-    const std::string later_leftover = private_directory + "/clickhouse_udf_shm_later_leftover";
-    {
-        int fd = ::open(later_leftover.c_str(), O_CREAT | O_RDWR, 0600);
-        ASSERT_NE(fd, -1);
-        ::close(fd);
-    }
-
-    SharedMemoryRegion another_region(directory, 4096);
-    EXPECT_TRUE(std::filesystem::exists(later_leftover));
+    struct stat st{};
+    ASSERT_EQ(::fstat(region.fd(), &st), 0);
+    EXPECT_EQ(static_cast<size_t>(st.st_size), static_cast<size_t>(1 << 20));
+    EXPECT_GE(static_cast<size_t>(st.st_blocks) * 512, static_cast<size_t>(1 << 20));
 }
 
 TEST(SharedMemoryRegion, SizeZeroThrows)
 {
-    EXPECT_THROW(SharedMemoryRegion(regionDir(), 0), DB::Exception);
+    EXPECT_THROW(SharedMemoryRegion region(0), DB::Exception);
 }
 
-TEST(SharedMemoryRegion, UnsupportedDirectoryRejectedDuringConfigurationValidation)
-{
-    /// `procfs` cannot host an `O_TMPFILE`; the same probe is used while loading UDF configuration.
-    EXPECT_THROW(SharedMemoryRegion::checkSupported("/proc"), DB::Exception);
-}
-
-TEST(SharedMemoryRegion, SharedDirectoryWithoutStickyBitRejected)
-{
-    const std::string directory
-        = regionDir() + "/clickhouse_shm_unsafe_permissions_" + std::to_string(::getpid()) + "_" + getRandomASCIIString(16);
-    std::filesystem::create_directories(directory);
-    SCOPE_EXIT({ std::filesystem::remove_all(directory); });
-    ASSERT_EQ(::chmod(directory.c_str(), 0777), 0);
-
-    const std::string candidate = directory + "/clickhouse_udf_shm_must_survive";
-    {
-        int fd = ::open(candidate.c_str(), O_CREAT | O_RDWR, 0600);
-        ASSERT_NE(fd, -1);
-        ::close(fd);
-    }
-
-    EXPECT_THROW(SharedMemoryRegion::checkSupported(directory), DB::Exception);
-    EXPECT_THROW(SharedMemoryRegion(directory, 4096), DB::Exception);
-    EXPECT_TRUE(std::filesystem::exists(candidate));
-}
-
-/// A size that does not fit into a signed off_t must be rejected instead of overflowing ftruncate
-/// (and, at the consumer level, the Int64 memory-tracker charge).
 TEST(SharedMemoryRegion, OversizedThrows)
 {
-    const size_t too_large = static_cast<size_t>(std::numeric_limits<off_t>::max()) + 1;
-    EXPECT_THROW(SharedMemoryRegion(regionDir(), too_large), DB::Exception);
+    const size_t oversized = std::numeric_limits<size_t>::max();
+    EXPECT_THROW(SharedMemoryRegion region(oversized), DB::Exception);
 }
 
-TEST(SharedMemoryRegion, UnlinkOnDestroy)
+/// The descriptor is the only handle: once the region is destroyed there is nothing left of it.
+TEST(SharedMemoryRegion, ClosesDescriptorOnDestroy)
 {
-    std::string path;
+    int fd = -1;
     {
-        SharedMemoryRegion region(regionDir(), 1024);
-        path = region.path();
-        EXPECT_TRUE(std::filesystem::exists(path));
+        SharedMemoryRegion region(4096);
+        fd = region.fd();
+        EXPECT_NE(::fcntl(fd, F_GETFD), -1);
     }
-    EXPECT_FALSE(std::filesystem::exists(path));
+    EXPECT_EQ(::fcntl(fd, F_GETFD), -1);
+    EXPECT_EQ(errno, EBADF);
 }
 
-/// The transport puts the input into the region through the descriptor rather than through the
-/// mapping, and takes the output out the same way. Both directions have to be visible to a second,
-/// independently opened mapping of the same file - which is what the command has.
-TEST(SharedMemoryRegion, WriteAndReadBackingFileAreVisibleToAnotherMapping)
+TEST(SharedMemoryRegion, PathForChildFd)
 {
-    SharedMemoryRegion region(regionDir(), 4096);
+    EXPECT_EQ(SharedMemoryRegion::pathForChildFd(3), "/proc/self/fd/3");
+    EXPECT_EQ(SharedMemoryRegion::pathForChildFd(4), "/proc/self/fd/4");
+}
 
-    int fd = ::open(region.path().c_str(), O_RDWR);
+/// The region can be opened again through `/proc/self/fd/N` by the process that holds the
+/// descriptor - which is exactly what the command does with the path it receives.
+TEST(SharedMemoryRegion, OpenableThroughProcSelfFd)
+{
+    SharedMemoryRegion region(4096);
+
+    const std::string payload = "through-proc";
+    memcpy(region.data(), payload.data(), payload.size());
+
+    int fd = ::open(SharedMemoryRegion::pathForChildFd(region.fd()).c_str(), O_RDWR);
     ASSERT_NE(fd, -1);
-    void * other = ::mmap(nullptr, region.size(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    ASSERT_NE(other, MAP_FAILED);
+    {
+        OtherMapping other(fd);
+        EXPECT_EQ(other.size, 4096u);
+        EXPECT_EQ(std::string(other.data, payload.size()), payload);
+    }
     ::close(fd);
-
-    auto * other_data = static_cast<char *>(other);
-
-    /// Server -> command, the way `WriteBufferToSharedMemoryRegion` does it.
-    const std::string in = "input-from-server";
-    region.writeBackingFile(in.data(), 0, in.size());
-    EXPECT_EQ(std::string(other_data, in.size()), in);
-
-    /// Command -> server: the command writes through its mapping, the server copies it out.
-    const std::string out = "output-from-child";
-    memcpy(other_data + 2048, out.data(), out.size());
-
-    std::string read_back(out.size(), '\0');
-    region.readBackingFile(read_back.data(), 2048, out.size());
-    EXPECT_EQ(read_back, out);
-
-    ::munmap(other, region.size());
 }
 
-/// The bound is the region's own size, and it is checked against what the region claims rather than
-/// against the file - the file is the command's to change, so asking it would be asking the very
-/// thing that cannot be trusted.
-TEST(SharedMemoryRegion, WriteBackingFileRejectsWritesPastTheRegion)
-{
-    SharedMemoryRegion region(regionDir(), 4096);
-
-    const std::string payload(64, 'x');
-    EXPECT_THROW(region.writeBackingFile(payload.data(), 4096 - 32, payload.size()), DB::Exception);
-    EXPECT_THROW(region.writeBackingFile(payload.data(), 8192, payload.size()), DB::Exception);
-
-    /// And the last byte that does fit is still allowed.
-    EXPECT_NO_THROW(region.writeBackingFile(payload.data(), 4096 - payload.size(), payload.size()));
-}
-
-/// Why the input goes through the descriptor at all. The command holds the region open for writing
-/// and can shorten it at any moment, including between the server's check that the file is whole
-/// and the server's own store. Through the mapping that store lands on a page the file no longer
-/// backs, and the resulting `SIGBUS` cannot be caught: it would take the whole server down, and
-/// this test process with it. A `pwrite` of the same range simply extends the file again.
-TEST(SharedMemoryRegion, WriteBackingFileSurvivesTheFileBeingTruncatedUnderIt)
-{
-    SharedMemoryRegion region(regionDir(), 4096);
-
-    /// What the command can do to the file it was handed - here at the worst possible moment.
-    int fd = ::open(region.path().c_str(), O_RDWR);
-    ASSERT_NE(fd, -1);
-    ASSERT_EQ(::ftruncate(fd, 0), 0);
-    ::close(fd);
-
-    const std::string payload = "written-after-the-file-was-truncated";
-    EXPECT_NO_THROW(region.writeBackingFile(payload.data(), 0, payload.size()));
-
-    std::string read_back(payload.size(), '\0');
-    EXPECT_NO_THROW(region.readBackingFile(read_back.data(), 0, payload.size()));
-    EXPECT_EQ(read_back, payload);
-
-    /// The region still knows what it is charged for; only the file changed under it, which is what
-    /// `backingFileState` is there to report.
-    EXPECT_EQ(region.size(), 4096u);
-    EXPECT_EQ(region.backingFileState().size, payload.size());
-}
-
-/// What a pooled region is charged for while it sits idle has to be what the `tmpfs` is really
-/// holding. The command holds its region open for writing, so the file can be longer than the
-/// region believes - by its own doing, or because a `grow` whose rollback failed left it that way -
-/// and those extra pages would otherwise be held by nobody and counted by nobody for as long as the
-/// worker stayed idle. Putting the file back is what gives them up.
-TEST(SharedMemoryRegion, ReconcileGivesBackPagesTheFileGrewBy)
-{
-    SharedMemoryRegion region(regionDir(), 4096);
-    const std::string path = region.path();
-
-    const std::string payload = "kept across the reconcile";
-    region.writeBackingFile(payload.data(), 0, payload.size());
-
-    /// What the command can do to the file it was handed.
-    int fd = ::open(path.c_str(), O_RDWR);
-    ASSERT_NE(fd, -1);
-    ASSERT_EQ(::ftruncate(fd, 65536), 0);
-    ::close(fd);
-
-    EXPECT_EQ(region.reconcileBackingFileSize(), 4096u);
-
-    struct stat st{};
-    ASSERT_EQ(::stat(path.c_str(), &st), 0);
-    EXPECT_EQ(static_cast<size_t>(st.st_size), 4096u) << "the pages the file grew by were not given back";
-
-    /// The region itself is untouched, contents included.
-    EXPECT_EQ(region.size(), 4096u);
-    std::string read_back(payload.size(), '\0');
-    region.readBackingFile(read_back.data(), 0, payload.size());
-    EXPECT_EQ(read_back, payload);
-}
-
-/// The other direction is not this method's business. A file that got *shorter* is a hazard rather
-/// than an accounting error - `backingFileState` reports it and the consumer discards the worker
-/// over it - and extending it again here would paper over exactly that.
-TEST(SharedMemoryRegion, ReconcileLeavesAShortenedFileAlone)
-{
-    SharedMemoryRegion region(regionDir(), 4096);
-    const std::string path = region.path();
-
-    int fd = ::open(path.c_str(), O_RDWR);
-    ASSERT_NE(fd, -1);
-    ASSERT_EQ(::ftruncate(fd, 1024), 0);
-    ::close(fd);
-
-    /// Charged for what it reserved, not for what is left of it.
-    EXPECT_EQ(region.reconcileBackingFileSize(), 4096u);
-
-    struct stat st{};
-    ASSERT_EQ(::stat(path.c_str(), &st), 0);
-    EXPECT_EQ(static_cast<size_t>(st.st_size), 1024u) << "a shortened file must be left for the integrity check to find";
-    EXPECT_EQ(region.backingFileState().size, 1024u);
-}
-
-/// The ordinary case: nothing has touched the file, so nothing happens to it.
-TEST(SharedMemoryRegion, ReconcileIsANoOpOnAnUntouchedRegion)
-{
-    SharedMemoryRegion region(regionDir(), 4096);
-
-    EXPECT_EQ(region.reconcileBackingFileSize(), 4096u);
-    EXPECT_EQ(region.backingFileState().size, 4096u);
-
-    region.grow(8192);
-    EXPECT_EQ(region.reconcileBackingFileSize(), 8192u);
-    EXPECT_EQ(region.backingFileState().size, 8192u);
-}
-
-/// The whole point of MAP_SHARED: a second, independent mapping of the same file (as the child
-/// process does) observes writes made through the region, and vice versa.
+/// Both directions of the protocol go through two mappings of the same file: the server writes
+/// input, the command writes output where the server reads it in place.
 TEST(SharedMemoryRegion, SharedAcrossMappings)
 {
-    SharedMemoryRegion region(regionDir(), 4096);
-
-    int fd = ::open(region.path().c_str(), O_RDWR);
-    ASSERT_NE(fd, -1);
-    void * other = ::mmap(nullptr, region.size(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    ASSERT_NE(other, MAP_FAILED);
-    ::close(fd);
-
-    auto * other_data = static_cast<char *>(other);
+    SharedMemoryRegion region(4096);
+    OtherMapping other(region.fd());
 
     /// Server -> child direction.
     const std::string in = "input-from-server";
     memcpy(region.data(), in.data(), in.size());
-    EXPECT_EQ(std::string(other_data, in.size()), in);
+    EXPECT_EQ(std::string(other.data, in.size()), in);
 
     /// Child -> server direction (written after the input, as the protocol does).
     const std::string out = "output-from-child";
-    memcpy(other_data + 2048, out.data(), out.size());
+    memcpy(other.data + 2048, out.data(), out.size());
     EXPECT_EQ(std::string(region.data() + 2048, out.size()), out);
-
-    ::munmap(other, region.size());
 }
 
-/// Growing the region enlarges the backing file, preserves the previously written bytes, keeps the
-/// same path, and makes the larger size visible to a freshly opened second mapping (as the child
-/// does on its next request).
+/// Growing the region enlarges the file, preserves the previously written bytes, keeps the same
+/// descriptor, and makes the larger size visible to a fresh mapping made from that descriptor
+/// (as the command makes one on its next request).
 TEST(SharedMemoryRegion, GrowPreservesDataAndEnlargesFile)
 {
-    SharedMemoryRegion region(regionDir(), 1024);
-    const std::string path = region.path();
+    SharedMemoryRegion region(1024);
+    const int fd = region.fd();
 
     const std::string payload = "payload-before-growth";
     memcpy(region.data(), payload.data(), payload.size());
 
     region.grow(8192);
     EXPECT_EQ(region.size(), 8192u);
-    EXPECT_EQ(region.path(), path);
+    EXPECT_EQ(region.backingSize(), 8192u);
+    EXPECT_EQ(region.fd(), fd);
     EXPECT_EQ(std::string(region.data(), payload.size()), payload);
 
-    /// The on-disk file (and hence a second mapping) reflects the new size.
-    int fd = ::open(path.c_str(), O_RDWR);
-    ASSERT_NE(fd, -1);
-    struct stat st{};
-    ASSERT_EQ(::fstat(fd, &st), 0);
-    EXPECT_EQ(static_cast<size_t>(st.st_size), 8192u);
-
-    void * other = ::mmap(nullptr, region.size(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    ASSERT_NE(other, MAP_FAILED);
-    ::close(fd);
-    EXPECT_EQ(std::string(static_cast<char *>(other), payload.size()), payload);
-    ::munmap(other, region.size());
+    OtherMapping other(fd);
+    EXPECT_EQ(other.size, 8192u);
+    EXPECT_EQ(std::string(other.data, payload.size()), payload);
 }
 
 TEST(SharedMemoryRegion, GrowToSmallerOrEqualThrows)
 {
-    SharedMemoryRegion region(regionDir(), 4096);
+    SharedMemoryRegion region(4096);
     EXPECT_THROW(region.grow(4096), DB::Exception);
     EXPECT_THROW(region.grow(1024), DB::Exception);
     EXPECT_EQ(region.size(), 4096u);
 }
 
-/// `shrink` gives the backing pages of a region back after a borrow grew it for one outsized
-/// chunk. The file must actually become smaller (that is what releases the tmpfs memory), the
-/// path must stay the same, and the surviving prefix must still be readable through both the
-/// region and a mapping made by another process.
-TEST(SharedMemoryRegion, ShrinkReleasesBackingFileAndKeepsPrefix)
+/// A growth that cannot be backed must leave the region exactly as it was: same size, same
+/// mapping, same contents. `posix_fallocate` undoes itself on failure, and the mapping is only
+/// replaced once the storage is there.
+///
+/// The failure is provoked with `RLIMIT_FSIZE`, which the kernel checks before it commits a single
+/// page (`EFBIG`). An impossibly large size would not do: the internal mount behind a `memfd` has
+/// no size limit, so the kernel would keep allocating pages until the machine ran out of them.
+/// The kernel also raises `SIGXFSZ` along with `EFBIG`, whose default action ends the process, so
+/// it is ignored for the duration.
+TEST(SharedMemoryRegion, FailedGrowLeavesRegionIntact)
 {
-    SharedMemoryRegion region(regionDir(), 8192);
-    const std::string path = region.path();
-
-    const std::string payload = "payload-before-shrink";
+    SharedMemoryRegion region(4096);
+    char * data_before = region.data();
+    const std::string payload = "survives-a-failed-growth";
     memcpy(region.data(), payload.data(), payload.size());
 
-    region.shrink(1024);
-    EXPECT_EQ(region.size(), 1024u);
-    EXPECT_EQ(region.path(), path);
+    /// Capture the enumerator outside of any macro: glibc defines `RLIMIT_FSIZE` as a
+    /// self-referential macro, which trips -Wdisabled-macro-expansion when re-scanned inside
+    /// gtest's macros.
+    const auto fsize_resource = RLIMIT_FSIZE;
+
+    struct rlimit old_limit{};
+    ASSERT_EQ(0, ::getrlimit(fsize_resource, &old_limit));
+    auto old_sigxfsz = std::signal(SIGXFSZ, SIG_IGN);
+
+    /// Restore the process-wide state on every exit path, including a fatal ASSERT_* failure, which
+    /// returns from the function rather than throwing.
+    struct StateGuard
+    {
+        decltype(fsize_resource) resource;
+        struct rlimit limit;
+        decltype(old_sigxfsz) handler;
+
+        ~StateGuard()
+        {
+            EXPECT_EQ(0, ::setrlimit(resource, &limit));
+            (void)std::signal(SIGXFSZ, handler);
+        }
+    } guard{fsize_resource, old_limit, old_sigxfsz};
+
+    struct rlimit limit = old_limit;
+    limit.rlim_cur = 8192;
+    ASSERT_EQ(0, ::setrlimit(fsize_resource, &limit));
+
+    EXPECT_THROW(region.grow(16384), DB::Exception);
+
+    EXPECT_EQ(region.size(), 4096u);
+    EXPECT_EQ(region.backingSize(), 4096u);
+    EXPECT_EQ(region.data(), data_before);
     EXPECT_EQ(std::string(region.data(), payload.size()), payload);
 
     struct stat st{};
-    ASSERT_EQ(::stat(path.c_str(), &st), 0);
-    EXPECT_EQ(static_cast<size_t>(st.st_size), 1024u);
-
-    int fd = ::open(path.c_str(), O_RDWR);
-    ASSERT_NE(fd, -1);
-    void * other = ::mmap(nullptr, region.size(), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    ASSERT_NE(other, MAP_FAILED);
-    ::close(fd);
-    EXPECT_EQ(std::string(static_cast<char *>(other), payload.size()), payload);
-    ::munmap(other, region.size());
-
-    /// A shrunk region can be grown again: this is what the next pool borrow does.
-    region.grow(4096);
-    EXPECT_EQ(region.size(), 4096u);
-    EXPECT_EQ(std::string(region.data(), payload.size()), payload);
-}
-
-/// When `grow` enlarges the backing file with `ftruncate` but reserving the new range fails, it
-/// must roll the file size back; otherwise a pooled region left with a larger tmpfs file than
-/// `region.size` would leak unaccounted memory across borrows. We force the
-/// `ftruncate`-succeeds/reservation-fails path by growing to a size that a sparse tmpfs file
-/// accepts but cannot back with pages. This needs tmpfs (`/dev/shm`); skip where it is not
-/// available.
-TEST(SharedMemoryRegion, GrowRollsBackFileSizeOnReserveFailure)
-{
-    const std::string shm_dir = "/dev/shm";
-    if (!std::filesystem::exists(shm_dir))
-        GTEST_SKIP() << "/dev/shm not available";
-
-    SharedMemoryRegion region(shm_dir, 4096);
-    const std::string path = region.path();
-    region.data()[0] = 'Z';
-
-    /// ftruncate to this size succeeds on tmpfs (sparse), but mmap of ~1 EiB cannot be reserved.
-    const size_t huge = static_cast<size_t>(1) << 60;
-    EXPECT_THROW(region.grow(huge), DB::Exception);
-
-    /// The object is unchanged: same size, data intact and still readable.
-    EXPECT_EQ(region.size(), 4096u);
-    EXPECT_EQ(region.data()[0], 'Z');
-
-    /// The backing file must have been rolled back to the old size, not left enlarged.
-    struct stat st{};
-    ASSERT_EQ(::stat(path.c_str(), &st), 0);
+    ASSERT_EQ(::fstat(region.fd(), &st), 0);
     EXPECT_EQ(static_cast<size_t>(st.st_size), 4096u);
 }
 
-/// Models the server<->child ping-pong within one process: a producer writes an "input" area and
-/// hands off; a consumer reads it and writes an "output" area; the producer reads the output. The
-/// handoff is fully synchronized, so the access is race-free (a clean target for ThreadSanitizer).
+/// The other half of a failed growth: the pages were committed, and then the replacement mapping
+/// could not be made. The file is sealed against shrinking, so those pages cannot be given back;
+/// the region must report them as its cost (`backingSize`) while keeping the mapping - `size`,
+/// `data`, the bytes - exactly as it was. The next growth to that size then only maps.
+///
+/// The mapping is refused through `RLIMIT_AS`: the address-space limit stops `mmap` but not
+/// `posix_fallocate`, which allocates file pages and no address space. Not under the sanitizers,
+/// which keep the address space to themselves and fail in their own ways under such a limit.
+#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+TEST(SharedMemoryRegion, GrowThatCommitsButCannotMapKeepsMappingAndReportsBackingSize)
+{
+    SharedMemoryRegion region(4096);
+    char * data_before = region.data();
+    const std::string payload = "survives-a-failed-remap";
+    memcpy(region.data(), payload.data(), payload.size());
+
+    const auto as_resource = RLIMIT_AS;
+
+    struct rlimit old_limit{};
+    ASSERT_EQ(0, ::getrlimit(as_resource, &old_limit));
+
+    struct StateGuard
+    {
+        decltype(as_resource) resource;
+        struct rlimit limit;
+
+        ~StateGuard()
+        {
+            EXPECT_EQ(0, ::setrlimit(resource, &limit));
+        }
+    } guard{as_resource, old_limit};
+
+    /// Cap the address space just above what the process uses now, so that a mapping of many
+    /// megabytes is refused while everything already mapped stays valid. The `posix_fallocate`
+    /// before it is not subject to the limit: it allocates file pages, not address space.
+    size_t vm_size_pages = 0;
+    {
+        std::ifstream statm("/proc/self/statm");
+        ASSERT_TRUE(statm >> vm_size_pages);
+    }
+    /// Small enough that reserving it cannot fail on a constrained machine, large enough that a
+    /// mapping of it is refused under the limit set below, which leaves a fraction of it free.
+    const size_t page_size = static_cast<size_t>(::sysconf(_SC_PAGESIZE));
+    const size_t new_size = 16 << 20;
+
+    struct rlimit limit = old_limit;
+    limit.rlim_cur = vm_size_pages * page_size + (new_size / 4);
+    ASSERT_EQ(0, ::setrlimit(as_resource, &limit));
+
+    EXPECT_THROW(region.grow(new_size), DB::Exception);
+
+    /// The mapping is untouched ...
+    EXPECT_EQ(region.size(), 4096u);
+    EXPECT_EQ(region.data(), data_before);
+    EXPECT_EQ(std::string(region.data(), payload.size()), payload);
+
+    /// ... but the file is not, and the region says so.
+    EXPECT_EQ(region.backingSize(), new_size);
+    struct stat st{};
+    ASSERT_EQ(::fstat(region.fd(), &st), 0);
+    EXPECT_EQ(static_cast<size_t>(st.st_size), new_size);
+
+    /// With the limit lifted, growing to the committed size maps without committing anything more.
+    ASSERT_EQ(0, ::setrlimit(as_resource, &old_limit));
+    region.grow(new_size);
+    EXPECT_EQ(region.size(), new_size);
+    EXPECT_EQ(region.backingSize(), new_size);
+    EXPECT_EQ(std::string(region.data(), payload.size()), payload);
+}
+#endif
+
 TEST(SharedMemoryRegion, SynchronizedHandoff)
 {
-    SharedMemoryRegion region(regionDir(), 4096);
+    SharedMemoryRegion region(4096);
 
     std::mutex mutex;
     std::condition_variable cv;
@@ -535,48 +393,6 @@ TEST(SharedMemoryRegion, SynchronizedHandoff)
 
     consumer.join();
     EXPECT_EQ(std::string(region.data() + 2048, response.size()), response);
-}
-
-/// The configuration check is the first thing to touch the region directory, and after an unclean
-/// shutdown it is the first thing to find it full of files nobody owns any more. It has to reclaim
-/// them itself: it probes the directory by creating a file there, so leftovers that filled the
-/// filesystem would fail the probe, the function would never load - and since creating a region is
-/// what would have swept them away, nothing else ever would either. One crash would leave the
-/// feature unusable until the directory was cleaned by hand.
-TEST(SharedMemoryRegion, ConfigurationCheckReclaimsLeftoverRegionFiles)
-{
-    /// A directory of its own, so this is the first call to reclaim in it: the sweep runs at most
-    /// once a minute per directory, and a shared one might have been swept by another test already.
-    const std::string directory
-        = regionDir() + "/clickhouse_shm_check_leftovers_" + std::to_string(::getpid()) + "_" + getRandomASCIIString(16);
-    std::filesystem::create_directories(directory);
-    SCOPE_EXIT({ std::filesystem::remove_all(directory); });
-    ASSERT_EQ(::chmod(directory.c_str(), 0700), 0);
-
-    const std::string private_directory = directory + "/" + regionDirectoryName();
-    std::filesystem::create_directories(private_directory);
-    ASSERT_EQ(::chmod(private_directory.c_str(), 0700), 0);
-
-    /// Unlocked and unowned, exactly like a file left behind by a process that is gone.
-    const std::string leftover = private_directory + "/clickhouse_udf_shm_leftover";
-    {
-        int fd = ::open(leftover.c_str(), O_CREAT | O_RDWR, 0600);
-        ASSERT_NE(fd, -1);
-        ASSERT_EQ(::ftruncate(fd, 4096), 0);
-        ::close(fd);
-    }
-
-    /// And one that is still owned, which must survive being looked at.
-    const std::string locked = private_directory + "/clickhouse_udf_shm_locked";
-    int locked_fd = ::open(locked.c_str(), O_CREAT | O_RDWR, 0600);
-    ASSERT_NE(locked_fd, -1);
-    SCOPE_EXIT({ ::close(locked_fd); });
-    ASSERT_EQ(::flock(locked_fd, LOCK_EX | LOCK_NB), 0);
-
-    ASSERT_NO_THROW(SharedMemoryRegion::checkSupported(directory));
-
-    EXPECT_FALSE(std::filesystem::exists(leftover));
-    EXPECT_TRUE(std::filesystem::exists(locked));
 }
 
 #endif

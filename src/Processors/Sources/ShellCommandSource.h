@@ -31,13 +31,12 @@ using ShellCommandHolderPtr = std::unique_ptr<ShellCommandHolder>;
 
 /// The configuration options that only the shared-memory transport understands. `use_shared_memory`
 /// comes first: it is the one that turns the transport on, and the rest only qualify it.
-inline constexpr std::array<std::string_view, 5> SHARED_MEMORY_CONFIGURATION_KEYS
+inline constexpr std::array<std::string_view, 4> SHARED_MEMORY_CONFIGURATION_KEYS
 {
     "use_shared_memory",
     "shared_memory_size",
     "shared_memory_max_size",
     "shared_memory_pipeline",
-    "shared_memory_path",
 };
 
 /// Throws if any of the options above appears under `config_prefix`. For a surface that does not
@@ -133,9 +132,6 @@ public:
         /// use_shared_memory = true.
         bool shared_memory_pipeline = false;
 
-        /// Directory (expected to be tmpfs) where the shared-memory file is created.
-        /// Valid only if use_shared_memory = true.
-        std::string shared_memory_path;
 
     };
 

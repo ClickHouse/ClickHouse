@@ -272,44 +272,14 @@
     </function>
 
     <function>
-        <type>executable</type>
-        <name>test_function_shm_initial_enospc_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tiny</shared_memory_path>
-        <shared_memory_size>2097152</shared_memory_size>
-        <command>shm_udf.py</command>
-    </function>
-
-    <function>
-        <type>executable</type>
-        <name>test_function_shm_grow_enospc_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tiny</shared_memory_path>
-        <shared_memory_size>4096</shared_memory_size>
-        <shared_memory_max_size>2097152</shared_memory_max_size>
-        <command>shm_udf_grow.py</command>
-    </function>
-
-    <function>
         <type>executable_pool</type>
-        <name>test_function_shm_pipeline_pool_partial_region_enospc_python</name>
+        <name>test_function_shm_pipeline_pool_partial_region_python</name>
         <return_type>String</return_type>
         <argument>
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tiny</shared_memory_path>
         <shared_memory_size>786432</shared_memory_size>
         <shared_memory_pipeline>1</shared_memory_pipeline>
         <command>shm_udf.py</command>
@@ -324,7 +294,6 @@
         </argument>
         <format>TabSeparated</format>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_accounting</shared_memory_path>
         <shared_memory_size>786432</shared_memory_size>
         <command>shm_udf.py --report-pid</command>
     </function>
@@ -338,7 +307,6 @@
         </argument>
         <format>TabSeparated</format>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_pipeline_accounting</shared_memory_path>
         <shared_memory_size>8388608</shared_memory_size>
         <command>shm_udf.py</command>
     </function>
@@ -352,7 +320,6 @@
         </argument>
         <format>TabSeparated</format>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_pipeline_accounting</shared_memory_path>
         <shared_memory_size>8388608</shared_memory_size>
         <shared_memory_pipeline>1</shared_memory_pipeline>
         <command>shm_udf.py</command>
@@ -367,7 +334,6 @@
         </argument>
         <format>TabSeparated</format>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_error</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_error.py</command>
     </function>
@@ -381,53 +347,12 @@
         <format>TabSeparated</format>
         <pool_size>2</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_die</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_die.py</command>
     </function>
     <function>
         <type>executable_pool</type>
-        <name>test_function_shm_enlarge_pool_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
-        <shared_memory_size>4096</shared_memory_size>
-        <command>shm_udf_enlarge.py</command>
-    </function>
-    <function>
-        <type>executable_pool</type>
-        <name>test_function_shm_unlink_pool_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
-        <shared_memory_size>4096</shared_memory_size>
-        <command>shm_udf_unlink.py</command>
-    </function>
-    <function>
-        <type>executable_pool</type>
-        <name>test_function_shm_late_unlink_pool_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <pool_size>1</pool_size>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
-        <shared_memory_size>4096</shared_memory_size>
-        <command>shm_udf_late_unlink.py</command>
-    </function>
-    <function>
-        <type>executable_pool</type>
-        <name>test_function_shm_pipeline_grow_trim_pool_python</name>
+        <name>test_function_shm_pipeline_grow_keep_pool_python</name>
         <return_type>String</return_type>
         <argument>
             <type>UInt64</type>
@@ -436,7 +361,6 @@
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_pipeline>1</shared_memory_pipeline>
-        <shared_memory_path>/shm_udf_pipeline_trim</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <shared_memory_max_size>1048576</shared_memory_max_size>
         <command>shm_udf_grow.py</command>
@@ -452,7 +376,6 @@
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_pipeline>1</shared_memory_pipeline>
-        <shared_memory_path>/shm_udf_pipeline_idle</shared_memory_path>
         <shared_memory_size>33554432</shared_memory_size>
         <command>shm_udf.py</command>
     </function>
@@ -466,8 +389,33 @@
         <format>TabSeparated</format>
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_idle_charge</shared_memory_path>
         <shared_memory_size>67108864</shared_memory_size>
+        <command>shm_udf.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_server_limit_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>805306368</shared_memory_size>
+        <command>shm_udf.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_server_limit_second_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <use_shared_memory>1</use_shared_memory>
+        <shared_memory_size>805306368</shared_memory_size>
         <command>shm_udf.py</command>
     </function>
     <function>
@@ -481,7 +429,6 @@
         <pool_size>1</pool_size>
         <check_exit_code>0</check_exit_code>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>16777216</shared_memory_size>
         <command>shm_udf_chatty_stderr.py</command>
     </function>
@@ -495,7 +442,6 @@
         <format>TabSeparated</format>
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_quiet_stderr.py</command>
     </function>
@@ -509,7 +455,6 @@
         <format>TabSeparated</format>
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>16777216</shared_memory_size>
         <command>shm_udf_chatty_stderr.py</command>
     </function>
@@ -523,7 +468,6 @@
         <format>TabSeparated</format>
         <stderr_reaction>throw</stderr_reaction>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_stderr_on_the_way_out.py</command>
     </function>
@@ -539,7 +483,21 @@
         <stderr_reaction>none</stderr_reaction>
         <command_read_timeout>5000</command_read_timeout>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
+        <shared_memory_size>4096</shared_memory_size>
+        <command>shm_udf_stderr_flood_after_gap.py</command>
+    </function>
+    <function>
+        <type>executable_pool</type>
+        <name>test_function_shm_stderr_flood_after_gap_throw_pool_python</name>
+        <return_type>String</return_type>
+        <argument>
+            <type>UInt64</type>
+        </argument>
+        <format>TabSeparated</format>
+        <pool_size>1</pool_size>
+        <stderr_reaction>throw</stderr_reaction>
+        <command_read_timeout>5000</command_read_timeout>
+        <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_stderr_flood_after_gap.py</command>
     </function>
@@ -555,7 +513,6 @@
         <stderr_reaction>none</stderr_reaction>
         <command_read_timeout>5000</command_read_timeout>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_stderr_flood_none.py</command>
     </function>
@@ -574,7 +531,6 @@
         <format>RowBinary</format>
         <pool_size>2</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>1048576</shared_memory_size>
         <command>shm_udf_binary.py</command>
     </function>
@@ -598,7 +554,6 @@
         <format>TabSeparated</format>
         <stderr_reaction>throw</stderr_reaction>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>16777216</shared_memory_size>
         <command>shm_udf_stderr_then_exit.py</command>
     </function>
@@ -612,7 +567,6 @@
         <format>TabSeparated</format>
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_stray_byte_after_probe.py</command>
     </function>
@@ -627,7 +581,6 @@
         <stderr_reaction>throw</stderr_reaction>
         <check_exit_code>0</check_exit_code>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_stderr_on_the_way_out.py</command>
     </function>
@@ -641,7 +594,6 @@
         <format>TabSeparated</format>
         <command_termination_timeout>2</command_termination_timeout>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_lingers.py</command>
     </function>
@@ -656,7 +608,6 @@
         <command_termination_timeout>2</command_termination_timeout>
         <check_exit_code>0</check_exit_code>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_lingers.py</command>
     </function>
@@ -671,7 +622,6 @@
         <command_read_timeout>2000</command_read_timeout>
         <stderr_reaction>none</stderr_reaction>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_chatty_stderr_stalls.py</command>
     </function>
@@ -685,7 +635,6 @@
         <format>TabSeparated</format>
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_busy_chatty.py</command>
     </function>
@@ -699,7 +648,6 @@
         <format>TabSeparated</format>
         <command_read_timeout>2000</command_read_timeout>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_quiet_stderr_stalls.py</command>
     </function>
@@ -713,7 +661,6 @@
         <format>TabSeparated</format>
         <stderr_reaction>none</stderr_reaction>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_stderr_after_stdout.py</command>
     </function>
@@ -728,7 +675,6 @@
         <pool_size>1</pool_size>
         <stderr_reaction>throw</stderr_reaction>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>16777216</shared_memory_size>
         <command>shm_udf_chatty_stderr.py</command>
     </function>
@@ -742,7 +688,6 @@
         <format>TabSeparated</format>
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_flooding_stdout.py</command>
     </function>
@@ -757,7 +702,6 @@
         <pool_size>1</pool_size>
         <stderr_reaction>none</stderr_reaction>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_flooding_stderr.py</command>
     </function>
@@ -771,47 +715,8 @@
         <format>TabSeparated</format>
         <pool_size>1</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_tamper</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <command>shm_udf_chatty.py</command>
-    </function>
-    <function>
-        <type>executable</type>
-        <name>test_function_shm_shrink_after_check_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_shrink</shared_memory_path>
-        <shared_memory_size>4096</shared_memory_size>
-        <command>shm_udf_shrink_after_check.py</command>
-    </function>
-    <function>
-        <type>executable</type>
-        <name>test_function_shm_shrink_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_size>4096</shared_memory_size>
-        <command>shm_udf_shrink.py</command>
-    </function>
-    <function>
-        <type>executable_pool</type>
-        <name>test_function_shm_shrink_pool_python</name>
-        <return_type>String</return_type>
-        <argument>
-            <type>UInt64</type>
-        </argument>
-        <format>TabSeparated</format>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_shrink</shared_memory_path>
-        <shared_memory_size>4096</shared_memory_size>
-        <command>shm_udf_shrink.py</command>
     </function>
     <function>
         <type>executable</type>
@@ -827,14 +732,13 @@
     </function>
     <function>
         <type>executable_pool</type>
-        <name>test_function_shm_grow_trim_pool_python</name>
+        <name>test_function_shm_grow_keep_pool_python</name>
         <return_type>String</return_type>
         <argument>
             <type>UInt64</type>
         </argument>
         <format>TabSeparated</format>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_trim</shared_memory_path>
         <shared_memory_size>4096</shared_memory_size>
         <shared_memory_max_size>1048576</shared_memory_max_size>
         <command>shm_udf_grow.py</command>
@@ -848,7 +752,6 @@
         </argument>
         <format>TabSeparated</format>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_path>/shm_udf_discard</shared_memory_path>
         <shared_memory_size>786432</shared_memory_size>
         <command>shm_udf_over.py</command>
     </function>
@@ -895,50 +798,12 @@
         <command>shm_udf.py</command>
     </function>
     <function>
-        <type>executable</type><name>test_function_shm_bad_path_no_shm</name>
-        <return_type>String</return_type><argument><type>UInt64</type></argument>
-        <format>TabSeparated</format>
-        <shared_memory_path>/dev/shm</shared_memory_path>
-        <command>shm_udf.py</command>
-    </function>
-
-    <function>
         <type>executable</type><name>test_function_shm_bad_max_lt_size</name>
         <return_type>String</return_type><argument><type>UInt64</type></argument>
         <format>TabSeparated</format>
         <use_shared_memory>1</use_shared_memory>
         <shared_memory_size>1048576</shared_memory_size>
         <shared_memory_max_size>524288</shared_memory_max_size>
-        <command>shm_udf.py</command>
-    </function>
-
-    <function>
-        <type>executable</type><name>test_function_shm_bad_empty_path</name>
-        <return_type>String</return_type><argument><type>UInt64</type></argument>
-        <format>TabSeparated</format>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_size>1048576</shared_memory_size>
-        <shared_memory_path></shared_memory_path>
-        <command>shm_udf.py</command>
-    </function>
-
-    <function>
-        <type>executable</type><name>test_function_shm_bad_relative_path</name>
-        <return_type>String</return_type><argument><type>UInt64</type></argument>
-        <format>TabSeparated</format>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_size>1048576</shared_memory_size>
-        <shared_memory_path>dev/shm</shared_memory_path>
-        <command>shm_udf.py</command>
-    </function>
-
-    <function>
-        <type>executable</type><name>test_function_shm_unsupported_path</name>
-        <return_type>String</return_type><argument><type>UInt64</type></argument>
-        <format>TabSeparated</format>
-        <use_shared_memory>1</use_shared_memory>
-        <shared_memory_size>1048576</shared_memory_size>
-        <shared_memory_path>/proc</shared_memory_path>
         <command>shm_udf.py</command>
     </function>
 </functions>

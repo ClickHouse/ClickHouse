@@ -3,9 +3,10 @@
 # are functionally identical echoes (see functions.xml / user_scripts), while bench_shm_busy adds
 # artificial command-side CPU work and is reported separately.
 #
-# It runs each variant with clickhouse-local, reports the median query time over several iterations
-# and the amount of data that crossed the kernel via read()/write() syscalls (OSReadChars /
-# OSWriteChars) — the latter is a build-independent structural metric of the transport.
+# It runs each variant against a throw-away server (see lib.sh for why not clickhouse-local),
+# reports the median query time over several iterations and the amount of data that crossed the
+# kernel via read()/write() syscalls (OSReadChars / OSWriteChars) — the latter is a
+# build-independent structural metric of the transport.
 #
 # Usage:
 #   ./run.sh [--clickhouse PATH] [--rows N] [--row-bytes B] [--iters K] [--threads T]
@@ -23,8 +24,8 @@ ROW_BYTES=100
 ITERS=7
 THREADS=1
 # Pinned rather than left to the server default: the block-size sweep in README.md moves the
-# pipe-vs-shared-memory ratio from 1.37x faster to 0.88x slower, so an unstated block size can flip
-# the sign of the headline result without anything about the transport changing.
+# pipe-vs-shared-memory ratio from 1.98x to 1.31x, so an unstated block size changes the headline
+# result without anything about the transport changing.
 BLOCK_SIZE=65536
 
 while [[ $# -gt 0 ]]; do
@@ -46,22 +47,9 @@ if [[ -z "$CLICKHOUSE" ]]; then
 fi
 [[ -n "$CLICKHOUSE" ]] || { echo "clickhouse binary not found; pass --clickhouse PATH" >&2; exit 1; }
 
-WORK="$(mktemp -d)"
-trap 'rm -rf "$WORK"' EXIT
-mkdir -p "$WORK/user_scripts" "$WORK/state"
-cp "$HERE"/user_scripts/*.py "$WORK/user_scripts/"
-chmod +x "$WORK"/user_scripts/*.py
-cp "$HERE/functions.xml" "$WORK/functions.xml"
-cat > "$WORK/config.xml" <<EOF
-<clickhouse>
-    <path>$WORK/state</path>
-    <user_scripts_path>$WORK/user_scripts/</user_scripts_path>
-    <user_defined_executable_functions_config>$WORK/functions.xml</user_defined_executable_functions_config>
-    <!-- The shared-memory transport is experimental and off by default; the shm variants below ask
-         for it, and without this they would simply fail to load. -->
-    <allow_experimental_executable_udf_shared_memory>1</allow_experimental_executable_udf_shared_memory>
-</clickhouse>
-EOF
+# shellcheck source=lib.sh
+source "$HERE/lib.sh"
+bench_start_server
 
 query_for() {
     local fn="$1"
@@ -71,84 +59,23 @@ query_for() {
     echo "SELECT sum(length($fn(val))) FROM (SELECT leftPad(toString(number), $ROW_BYTES, '0') AS val FROM numbers_mt($ROWS)) SETTINGS max_threads = $THREADS, max_block_size = $BLOCK_SIZE"
 }
 
-run_once() { # prints elapsed seconds (from --time, last stderr line)
-    local fn="$1" elapsed
-    if ! "$CLICKHOUSE" local --config-file "$WORK/config.xml" --time \
-        --query "$(query_for "$fn")" 2> "$WORK/t.err" 1> /dev/null; then
-        echo "run of $fn failed:" >&2
-        cat "$WORK/t.err" >&2
-        return 1
-    fi
-    # Anything but a number here means the run printed something else to stderr and the "sample"
-    # would be that text. `set -e` does not reach into the command substitution this is called
-    # from, so say it out loud instead of measuring a diagnostic.
-    elapsed="$(tail -n 1 "$WORK/t.err")"
-    if [[ ! "$elapsed" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
-        echo "expected an elapsed time for $fn, got: $elapsed" >&2
-        cat "$WORK/t.err" >&2
-        return 1
-    fi
-    printf '%s\n' "$elapsed"
-}
-
-median() { # median of stdin numbers
-    sort -g | awk '{a[NR]=$1} END{ if(NR%2) print a[(NR+1)/2]; else printf "%.4f\n",(a[NR/2]+a[NR/2+1])/2 }'
-}
-
-syscall_io() { # prints "readMB writeMB" for one run with profile events
-    local fn="$1"
-    if ! "$CLICKHOUSE" local --config-file "$WORK/config.xml" --print-profile-events \
-        --query "$(query_for "$fn")" 2> "$WORK/p.err" 1> /dev/null; then
-        cat "$WORK/p.err" >&2
-        return 1
-    fi
-    # Count the events, not just sum them: with no matching lines awk would happily print 0.00 0.00,
-    # and a renamed setting or event would look like the perfect shared-memory result.
-    awk '/OSReadChars:/{r+=$(NF-1); n++} /OSWriteChars:/{w+=$(NF-1); n++}
-         END{ if (n < 2) exit 1; printf "%.2f %.2f\n", r/1048576, w/1048576}' "$WORK/p.err" && return 0
-
-    echo "no OSReadChars/OSWriteChars in the profile events of $fn - cannot report syscall I/O" >&2
-    cat "$WORK/p.err" >&2
-    return 1
-}
-
-# Every shared-memory worker reserves its whole region with `posix_fallocate`, and one worker is
-# borrowed per parallel UDF call, so `--threads N` needs N regions at once. A container /dev/shm
-# (often 64 MiB) does not fit even one; say so before the run instead of failing halfway through it.
-check_shared_memory_capacity() {
-    local dir="/dev/shm" region workers required available
-    region="$(grep -o '<shared_memory_size>[0-9]*' "$HERE/functions.xml" | head -1 | grep -o '[0-9]*')"
-    [[ -n "$region" ]] || return 0
-    workers="$1"
-    required=$(( region * workers ))
-    available="$(df -B1 --output=avail "$dir" 2>/dev/null | tail -n 1 | tr -d ' ')"
-    [[ -n "$available" ]] || return 0
-    if (( available < required )); then
-        echo "not enough space in $dir: the benchmark needs $(( required / 1048576 )) MiB" \
-             "($(( region / 1048576 )) MiB per worker x $workers), $(( available / 1048576 )) MiB available." >&2
-        echo "Mount a bigger $dir (docker: --shm-size), lower <shared_memory_size> in functions.xml," \
-             "or use fewer threads." >&2
-        exit 1
-    fi
-}
-
-check_shared_memory_capacity "$THREADS"
-
 echo "clickhouse : $CLICKHOUSE"
-echo "workload   : $ROWS rows x $ROW_BYTES bytes, max_threads=$THREADS, max_block_size=$BLOCK_SIZE, iters=$ITERS (median), warmup dropped"
+echo "workload   : $ROWS rows x $ROW_BYTES bytes, max_threads=$THREADS, max_block_size=$BLOCK_SIZE, iters=$ITERS (median) after one warm-up query per function"
 echo
 printf "%-26s %12s %14s %14s\n" "transport" "median, s" "read via sc" "write via sc"
 printf "%-26s %12s %14s %14s\n" "--------------------------" "---------" "-----------" "------------"
 
 for fn in bench_pipe_stream bench_pipe_chunk bench_shm bench_shm_busy; do
-    run_once "$fn" >/dev/null                       # warmup (dropped)
+    # The first query starts the function's pool - the worker processes and, for shared memory,
+    # their regions. It is not a sample: that is the cost a server pays once per worker.
+    bench_query "$(query_for "$fn")" || exit 1
     times=""
     for _ in $(seq 1 "$ITERS"); do
-        sample="$(run_once "$fn")" || exit 1
+        sample="$(bench_time "$(query_for "$fn")")" || exit 1
         times+="$sample"$'\n'
     done
-    med="$(printf '%s' "$times" | median)"
-    io="$(syscall_io "$fn")" || exit 1
+    med="$(printf '%s' "$times" | bench_median)"
+    io="$(bench_syscall_io "$(query_for "$fn")")" || exit 1
     read -r rmb wmb <<< "$io"
     printf "%-26s %12s %11s MB %11s MB\n" "$fn" "$med" "$rmb" "$wmb"
 done

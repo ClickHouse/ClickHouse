@@ -37,7 +37,11 @@
         <format>TabSeparated</format>
         <pool_size>16</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_size>134217728</shared_memory_size>
+        <!-- Sized for one block of the default workload (65536 rows x 100 B, echoed in place), with
+             room to grow for the row-size sweep. The whole region is reserved when a worker is
+             started, so an oversized region is paid for on every pool warm-up. -->
+        <shared_memory_size>16777216</shared_memory_size>
+        <shared_memory_max_size>134217728</shared_memory_max_size>
         <command>echo_shm.py</command>
     </function>
 
@@ -53,7 +57,8 @@
         <format>TabSeparated</format>
         <pool_size>16</pool_size>
         <use_shared_memory>1</use_shared_memory>
-        <shared_memory_size>134217728</shared_memory_size>
+        <shared_memory_size>16777216</shared_memory_size>
+        <shared_memory_max_size>134217728</shared_memory_max_size>
         <command>echo_shm_busy.py</command>
     </function>
 

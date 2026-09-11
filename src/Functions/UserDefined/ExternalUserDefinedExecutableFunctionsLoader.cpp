@@ -246,12 +246,6 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
     size_t shared_memory_size = config.getUInt64(key_in_config + ".shared_memory_size", 0);
     size_t shared_memory_max_size = config.getUInt64(key_in_config + ".shared_memory_max_size", 0);
     bool shared_memory_pipeline = config.getBool(key_in_config + ".shared_memory_pipeline", false);
-    /// The default is only a default *for the shared-memory transport*. A function that does not
-    /// use it has no shared-memory directory at all, and saying `/dev/shm` anyway would put a
-    /// path on every pipe-mode function in `system.user_defined_functions` - which reads as though
-    /// it had one. The `else` branch below, which is where "not using it" is established, empties
-    /// it again.
-    std::string shared_memory_path = config.getString(key_in_config + ".shared_memory_path", "/dev/shm");
 
     if (use_shared_memory)
     {
@@ -279,22 +273,6 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
                 "Executable user defined function {}: `shared_memory_size` must be greater than zero when `use_shared_memory` is enabled",
                 name);
 
-        /// An explicitly empty `shared_memory_path` would place the backing file at the filesystem
-        /// root instead of the `/dev/shm` default, so reject it here rather than at query time.
-        if (shared_memory_path.empty())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Executable user defined function {}: `shared_memory_path` must not be empty",
-                name);
-
-        if (!shared_memory_path.starts_with('/'))
-            throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                "Executable user defined function {}: `shared_memory_path` ({}) must be an absolute path",
-                name, shared_memory_path);
-
-        /// The size is later charged to a signed memory tracker (`Int64`) and passed to `ftruncate`
-        /// (`off_t`, a signed 64-bit type on Linux). Reject values that would overflow those signed
-        /// types: otherwise a huge `UInt64` would become a negative allocation in the memory tracker
-        /// (corrupting accounting and possibly bypassing the memory limit) before `ftruncate` fails.
         static constexpr UInt64 max_shared_memory_size = static_cast<UInt64>(std::numeric_limits<Int64>::max());
         if (shared_memory_size > max_shared_memory_size)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -319,17 +297,12 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
                 "Executable user defined function {}: total shared-memory charge ({} regions of up to {} bytes) must not exceed {}",
                 name, shared_memory_region_count, shared_memory_max_size, max_shared_memory_size);
 
-        /// Validate filesystem support and `/proc/self/fd` access while loading the function, so an
-        /// unusable configuration is rejected once instead of failing every invocation.
-        SharedMemoryRegion::checkSupported(shared_memory_path);
+        /// Validate platform support (`memfd_create` with sealing) while loading the function, so
+        /// an unusable platform is rejected once instead of failing every invocation.
+        SharedMemoryRegion::checkSupported();
     }
     else
     {
-        /// Nothing here has a shared-memory directory, so it must not report one: the rest of the
-        /// server, and `system.user_defined_functions`, read a non-empty path as a function that
-        /// uses the transport.
-        shared_memory_path.clear();
-
         /// Every one of these knobs only means anything to the shared-memory transport, so a
         /// configuration that spells one out without enabling that transport is a mistake: the
         /// function silently runs over the pipes instead, which is the one outcome whoever wrote
@@ -438,8 +411,7 @@ ExternalLoader::LoadableMutablePtr ExternalUserDefinedExecutableFunctionsLoader:
         .use_shared_memory = use_shared_memory,
         .shared_memory_size = shared_memory_size,
         .shared_memory_max_size = shared_memory_max_size,
-        .shared_memory_pipeline = shared_memory_pipeline,
-        .shared_memory_path = std::move(shared_memory_path)
+        .shared_memory_pipeline = shared_memory_pipeline
     };
 
     auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);

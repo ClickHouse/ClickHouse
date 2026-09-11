@@ -10,29 +10,10 @@ SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
 from helpers.cluster import ClickHouseCluster
 
 cluster = ClickHouseCluster(__file__)
-# The server puts its region files in a per-uid subdirectory of the configured path, so that a
-# shared parent like `/dev/shm` can hold one of these per OS user. The tests do not care which uid
-# the server runs as, so they look for any of them.
-REGION_DIRECTORY_GLOB = "*/.clickhouse-udf-shared-memory-*"
-LATE_UNLINK_MARKER = "/tmp/clickhouse_shm_udf_late_unlink_once"
 node = cluster.add_instance(
     "node",
     stay_alive=True,
     main_configs=["config/allow_shared_memory.xml"],
-    tmpfs=[
-        "/shm_udf_tiny:size=1M",
-        "/shm_udf_accounting:size=1M",
-        "/shm_udf_pipeline_accounting:size=32M",
-        "/shm_udf_discard:size=1M",
-        "/shm_udf_trim:size=4M",
-        "/shm_udf_shrink:size=1M",
-        "/shm_udf_error:size=1M",
-        "/shm_udf_die:size=1M",
-        "/shm_udf_tamper:size=128M",
-        "/shm_udf_idle_charge:size=256M",
-        "/shm_udf_pipeline_trim:size=8M",
-        "/shm_udf_pipeline_idle:size=192M",
-    ],
 )
 
 
@@ -68,14 +49,14 @@ def pooled_shared_memory_bytes():
     )
 
 
-def pooled_shared_memory_baseline(path):
+def pooled_shared_memory_baseline(region_size):
     # What pooled workers of *other* functions hold, which the assertions below are measured against.
     # It is a fixed number rather than a settling one: the metric moves only when a shared-memory
     # UDF is borrowed, returned or discarded, the tests in this file run one at a time, and a worker
     # an earlier test left in its pool just sits there charged. The caller has reloaded the function
     # it is about to measure, so the one contribution that must not be in here is its own - which
-    # the absence of its region files proves.
-    assert shm_file_count(path) == 0
+    # the absence of regions of its (unique to it) size proves.
+    assert region_size not in shm_region_sizes()
     return pooled_shared_memory_bytes()
 
 
@@ -115,46 +96,33 @@ def profile_event_value(event):
     )
 
 
-def shm_file_count(path):
-    return int(
-        node.exec_in_container(
-            [
-                "bash",
-                "-c",
-                f"find {path} -mindepth 2 -maxdepth 2 -path '{REGION_DIRECTORY_GLOB}' "
-                f"-name 'clickhouse_udf_shm_*' | wc -l",
-            ]
-        ).strip()
-    )
-
-
-def tiny_shm_file_count():
-    return shm_file_count("/shm_udf_tiny")
-
-
-def discard_shm_file_count():
-    return shm_file_count("/shm_udf_discard")
-
-
-def shm_file_names(path):
+def shm_regions():
+    # The regions the server holds right now, as `(inode, size)` of its `memfd` descriptors. A region
+    # has no name in any filesystem, so the server's descriptor is the only place it can be seen
+    # from outside. The inode tells one region from another, and the size of the file behind the
+    # descriptor is exactly the region's size: the file is sealed against shrinking and nobody but
+    # the server ever grows it. The command's copy of the descriptor lives in the command's process,
+    # so every region is counted once.
+    pid = node.get_process_pid("clickhouse server")
+    assert pid is not None
     listing = node.exec_in_container(
         [
             "bash",
             "-c",
-            f"find {path} -mindepth 2 -maxdepth 2 -path '{REGION_DIRECTORY_GLOB}' "
-            f"-name 'clickhouse_udf_shm_*' -printf '%f\\n'",
+            f"for fd in /proc/{pid}/fd/*; do "
+            f'if [ "$(readlink "$fd")" = "/memfd:clickhouse_udf_shm (deleted)" ]; '
+            f'then stat -L -c "%i %s" "$fd"; fi; done',
         ]
-    ).split()
-    return sorted(listing)
+    ).splitlines()
+    return sorted(tuple(int(field) for field in line.split()) for line in listing if line)
 
 
-def shm_file_sizes(path):
-    find = (
-        f"find {path} -mindepth 2 -maxdepth 2 -path '{REGION_DIRECTORY_GLOB}' "
-        f"-name 'clickhouse_udf_shm_*' -printf '%s\\n'"
-    )
-    listing = node.exec_in_container(["bash", "-c", find]).split()
-    return sorted(int(size) for size in listing)
+def shm_region_sizes():
+    return sorted(size for _, size in shm_regions())
+
+
+def shm_region_count():
+    return len(shm_regions())
 
 
 config = """<clickhouse>
@@ -282,7 +250,7 @@ def test_shared_memory_udf_pipeline_charges_both_regions_to_query(started_cluste
 def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started_cluster):
     skip_test_msan(node)
 
-    assert shm_file_count("/shm_udf_accounting") == 0
+    regions_before = shm_region_count()
 
     with pytest.raises(Exception) as exc:
         node.query(
@@ -291,7 +259,7 @@ def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started
         )
 
     assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value)
-    assert shm_file_count("/shm_udf_accounting") == 0
+    assert shm_region_count() == regions_before
 
     successful_query = (
         "SELECT test_function_shm_pool_accounting_python(1) "
@@ -299,6 +267,8 @@ def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started
     )
     worker_pid = node.query(successful_query).strip()
     assert worker_pid.isdigit()
+    regions_with_worker = set(shm_regions())
+    assert len(regions_with_worker) == regions_before + 1
 
     # The region now exists, so this borrow fails while charging it in the source constructor.
     # No request has reached the worker and the pool must remain usable.
@@ -311,8 +281,12 @@ def test_shared_memory_udf_pool_failed_first_borrow_drops_created_region(started
     assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value)
     # No request reached the worker, so the pool must hand back the very same process - a new pid
     # here would mean a healthy worker was discarded (and its region rebuilt) over a failure that
-    # never touched it.
+    # never touched it - together with the very same region: the worker inherited that region's
+    # descriptor when it was started and answers into it, so a worker kept with its region dropped
+    # would have the next borrow read its answer out of a fresh region the worker never writes to.
+    assert set(shm_regions()) == regions_with_worker
     assert node.query(successful_query).strip() == worker_pid
+    assert set(shm_regions()) == regions_with_worker
 
 
 def test_shared_memory_udf_pool_short_result_does_not_hang(started_cluster):
@@ -348,7 +322,9 @@ def test_shared_memory_udf_pool_overproduction_invalidates_worker(started_cluste
 def test_shared_memory_udf_pool_discard_releases_region(started_cluster):
     skip_test_msan(node)
 
-    assert discard_shm_file_count() == 0
+    # A discarded worker takes its region with it: nothing stays pinned on the pool slot for the
+    # replacement, which inherits a region of its own when it is started.
+    regions_before = shm_region_count()
 
     for _ in range(3):
         with pytest.raises(Exception) as exc:
@@ -357,7 +333,7 @@ def test_shared_memory_udf_pool_discard_releases_region(started_cluster):
                 "FROM numbers(3) FORMAT Null"
             )
         assert "wrong result, expected 3 row(s)" in str(exc.value)
-        assert discard_shm_file_count() == 0
+        assert shm_region_count() == regions_before
 
 
 def test_shared_memory_udf_pipeline_pool_overproduction_invalidates_worker(started_cluster):
@@ -415,8 +391,8 @@ def test_shared_memory_udf_grows_with_room_for_the_result(started_cluster):
 def test_shared_memory_udf_grows_pool(started_cluster):
     skip_test_msan(node)
 
-    # Same, but through the pool: every borrow of the reused worker grows the region again, because
-    # a borrow gives back the space it grew (see test_shared_memory_udf_pool_trims_grown_region).
+    # Same, but through the pool: the first borrow grows the region and the later ones reuse it at
+    # its grown size (see test_shared_memory_udf_pool_keeps_grown_region).
     expected = "".join(f"{i}\n" for i in range(200))
     for _ in range(3):
         assert (
@@ -425,24 +401,41 @@ def test_shared_memory_udf_grows_pool(started_cluster):
         )
 
 
-def test_shared_memory_udf_pool_trims_grown_region(started_cluster):
+def test_shared_memory_udf_pool_keeps_grown_region(started_cluster):
     skip_test_msan(node)
 
-    # A pooled region that one chunk had to grow must not stay that large while the worker waits in
-    # the pool: nothing would ever shrink it again, and its memory is charged server-wide, where no
-    # query is blamed for it. The region file is therefore back at the configured
-    # shared_memory_size (4096) once the query is over, and the next borrow grows it again.
-    assert shm_file_sizes("/shm_udf_trim") == []
+    # A pooled region that one chunk had to grow stays that large for as long as its worker lives:
+    # the region is sealed against shrinking, so there is nothing to trim it back with, and the
+    # next borrow finds it already big enough. `shared_memory_max_size` is therefore what a pooled
+    # worker may hold, and the idle charge (see the idle-worker tests) is the grown size.
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_grow_keep_pool_python")
+    sizes_before = shm_region_sizes()
+    growths_before = profile_event_value("ExecutableUDFSharedMemoryRegionGrowths")
 
     expected = "".join(f"{i}\n" for i in range(2000))
-    for _ in range(3):
+    assert (
+        node.query("SELECT test_function_shm_grow_keep_pool_python(number) FROM numbers(2000)")
+        == expected
+    )
+    growths_after_first = profile_event_value("ExecutableUDFSharedMemoryRegionGrowths")
+    assert growths_after_first > growths_before
+
+    sizes_after = shm_region_sizes()
+    # Exactly one region appeared, and it is larger than the configured 4096 bytes.
+    assert len(sizes_after) == len(sizes_before) + 1
+    grown = sorted(set(sizes_after) - set(sizes_before)) or [
+        size for size in sizes_after if sizes_after.count(size) > sizes_before.count(size)
+    ]
+    assert grown and grown[0] > 4096, (sizes_before, sizes_after)
+
+    # The later borrows find the region at its grown size and never grow it again.
+    for _ in range(2):
         assert (
-            node.query(
-                "SELECT test_function_shm_grow_trim_pool_python(number) FROM numbers(2000)"
-            )
+            node.query("SELECT test_function_shm_grow_keep_pool_python(number) FROM numbers(2000)")
             == expected
         )
-        assert shm_file_sizes("/shm_udf_trim") == [4096]
+        assert shm_region_sizes() == sizes_after
+    assert profile_event_value("ExecutableUDFSharedMemoryRegionGrowths") == growths_after_first
 
 
 def test_shared_memory_udf_pipeline(started_cluster):
@@ -544,16 +537,17 @@ def test_shared_memory_udf_pool_survives_an_error_response(started_cluster):
 
     # A command that answers with the protocol's error status has told the server it cannot process
     # this input and is back to waiting for the next request - a report, not a protocol violation.
-    # The pooled worker must survive it, which shows as the same region file (a discarded worker
-    # takes its region with it and the next borrow creates a new one under a new random name).
-    assert shm_file_names("/shm_udf_error") == []
+    # The pooled worker must survive it, which shows as the same region (a discarded worker takes
+    # its region with it and the next borrow creates a new one, with a new inode).
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_pool_error_python")
+    regions_before = set(shm_regions())
 
     regions = []
     for _ in range(3):
         with pytest.raises(Exception) as exc:
             node.query("SELECT test_function_shm_pool_error_python(1) FORMAT Null")
         assert "reported an error" in str(exc.value)
-        regions.append(shm_file_names("/shm_udf_error"))
+        regions.append(set(shm_regions()) - regions_before)
 
     assert len(regions[0]) == 1
     assert regions[0] == regions[1] == regions[2]
@@ -565,7 +559,7 @@ def test_shared_memory_udf_pool_command_died(started_cluster):
     # The pooled command exits without answering. Every such borrow has to fail quickly, drop the
     # dead worker together with its region, and give the pool slot back - so more failures than
     # `pool_size` (2 here) must not start timing out, and the pool must still be usable afterwards.
-    assert shm_file_names("/shm_udf_die") == []
+    regions_before = shm_region_count()
 
     for _ in range(5):
         with pytest.raises(Exception) as exc:
@@ -573,7 +567,7 @@ def test_shared_memory_udf_pool_command_died(started_cluster):
         message = str(exc.value)
         assert "test_function_shm_pool_die_python" in message
         assert "Could not get process from pool" not in message
-        assert shm_file_names("/shm_udf_die") == []
+        assert shm_region_count() == regions_before
 
     assert node.query("SELECT test_function_shm_python(1)") == "Key 1\n"
 
@@ -625,11 +619,7 @@ def test_shared_memory_udf_invalid_config_is_rejected(started_cluster):
         # for shared memory run over the pipes instead, with nothing said about it at load time.
         ("test_function_shm_bad_size_no_shm", "`shared_memory_size` requires `use_shared_memory`"),
         ("test_function_shm_bad_max_size_no_shm", "`shared_memory_max_size` requires `use_shared_memory`"),
-        ("test_function_shm_bad_path_no_shm", "`shared_memory_path` requires `use_shared_memory`"),
         ("test_function_shm_bad_max_lt_size", "`shared_memory_max_size` (524288) must not be smaller"),
-        ("test_function_shm_bad_empty_path", "`shared_memory_path` must not be empty"),
-        ("test_function_shm_bad_relative_path", "must be an absolute path"),
-        ("test_function_shm_unsupported_path", "SharedMemoryRegion"),
     ]:
         # The function must not exist at all: a config the loader rejected leaves no function
         # behind, so this is UNKNOWN_FUNCTION rather than some runtime failure that happens to
@@ -649,9 +639,9 @@ def test_shared_memory_udf_invalid_config_is_rejected(started_cluster):
 def test_shared_memory_udf_requires_the_experimental_setting(started_cluster):
     skip_test_msan(node)
 
-    # The transport is a new execution mechanism - a file the command may write to, a protocol of
-    # its own, `tmpfs` allocation - so it is off by default and a function that asks for it does not
-    # load. The whole suite runs with the setting on; this closes it and reopens it.
+    # The transport is a new execution mechanism - memory the command may write to, a protocol of
+    # its own, descriptors handed to the command - so it is off by default and a function that asks
+    # for it does not load. The whole suite runs with the setting on; this closes it and reopens it.
     #
     # `SYSTEM RELOAD CONFIG` rather than a restart, because that is the part worth testing. A check
     # made only when a function is created cannot revoke anything: `ExternalLoader` re-creates an
@@ -679,6 +669,13 @@ def test_shared_memory_udf_requires_the_experimental_setting(started_cluster):
 
         # A pipe-mode function in the same server is unaffected: the gate is about one transport.
         assert node.query("SELECT test_function_pipe_alongside_shm_python(1)") == "Key 1\n"
+
+        # The load-time half of the gate: re-creating the function while the setting is off is
+        # refused by the loader itself, naming the setting, so a server that starts with the setting
+        # off never gets a shared-memory function at all - not one that fails per call.
+        with pytest.raises(Exception) as exc:
+            node.query("SYSTEM RELOAD FUNCTION test_function_shm_python")
+        assert "allow_experimental_executable_udf_shared_memory" in str(exc.value), str(exc.value)
     finally:
         node.exec_in_container(["bash", "-c", f"cat > {gate} <<'XMLEOF'\n{enabled_content}\nXMLEOF"])
         node.query("SYSTEM RELOAD CONFIG")
@@ -704,180 +701,91 @@ def test_shared_memory_udf_pipeline_size_too_large(started_cluster):
     assert node.contains_in_log("total shared-memory charge (2 regions of up to")
 
 
-def test_shared_memory_udf_initial_region_reserves_backing_storage(started_cluster):
-    skip_test_msan(node)
-
-    with pytest.raises(Exception) as exc:
-        node.query("SELECT test_function_shm_initial_enospc_python(1) FORMAT Null")
-
-    assert "Cannot reserve backing storage" in str(exc.value)
-    assert "No space left on device" in str(exc.value)
-
-
-def test_shared_memory_udf_failed_constructor_does_not_wait_for_the_command(started_cluster):
-    skip_test_msan(node)
-
-    # The same failure, timed: the region cannot be created, so the source fails before its stdin
-    # write buffer exists. The command is already running and blocked reading its stdin, so unless
-    # that descriptor is closed anyway, the query only ends once command_termination_timeout
-    # (10 seconds by default) expires and the command is signalled.
-    started_at = time.monotonic()
-    with pytest.raises(Exception) as exc:
-        node.query("SELECT test_function_shm_initial_enospc_python(1) FORMAT Null")
-    elapsed = time.monotonic() - started_at
-
-    assert "Cannot reserve backing storage" in str(exc.value)
-    # Well below the 10 seconds the bug cost, and well above what a failing query needs on a loaded
-    # CI machine, so the assertion catches the regression without being timing-sensitive.
-    assert elapsed < 7
-
-
-def test_shared_memory_udf_grow_reserves_backing_storage(started_cluster):
-    skip_test_msan(node)
-
-    with pytest.raises(Exception) as exc:
-        node.query(
-            "SELECT test_function_shm_grow_enospc_python(number) FROM numbers(200000) FORMAT Null "
-            "SETTINGS max_block_size=200000"
-        )
-
-    assert "Cannot reserve backing storage" in str(exc.value)
-
-
 def test_shared_memory_udf_pipeline_pool_failed_constructor_drops_partial_regions(started_cluster):
     skip_test_msan(node)
 
-    assert tiny_shm_file_count() == 0
+    # Two regions of 768 KiB each, and a limit of 1 MiB: the first region is charged and created,
+    # the second one is refused by the memory limit. The region that was created must not survive
+    # the failed borrow on the pool slot - the next borrow starts a process of its own and would
+    # not be able to use it anyway.
+    regions_before = shm_region_count()
 
+    query_id = "shm_pipeline_pool_partial_region"
     with pytest.raises(Exception) as exc:
         node.query(
-            "SELECT test_function_shm_pipeline_pool_partial_region_enospc_python(1) FORMAT Null"
+            "SELECT test_function_shm_pipeline_pool_partial_region_python(1) FORMAT Null "
+            "SETTINGS max_memory_usage=1048576, max_untracked_memory=0",
+            query_id=query_id,
         )
 
-    assert "Cannot reserve backing storage" in str(exc.value)
-    assert tiny_shm_file_count() == 0
+    assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value)
+    # The first region was indeed created before the second one was refused, so this is the
+    # partial case and not a borrow that failed before it did anything.
+    assert query_profile_event(query_id, "ExecutableUDFSharedMemoryAllocatedBytes") == 786432
+    assert shm_region_count() == regions_before
 
 
-def test_shared_memory_udf_command_shrinks_the_region(started_cluster):
-    skip_test_msan(node)
-
-    # The command truncates the region file and then answers with an offset the server still
-    # believes to be inside it. Those pages are no longer backed by the file, so reading them would
-    # raise SIGBUS and take the whole server down; the server must notice the resize instead.
-    for _ in range(3):
-        with pytest.raises(Exception) as exc:
-            node.query("SELECT test_function_shm_shrink_python(1) FORMAT Null")
-        assert "resized its shared-memory region" in str(exc.value)
-
-    # The point of the test: the server is still there.
-    assert node.query("SELECT 1") == "1\n"
-
-
-def test_shared_memory_udf_command_shrinks_the_region_after_the_check(started_cluster):
-    skip_test_msan(node)
-
-    # The gap the region checks cannot close: the command truncates after the server has verified
-    # the file is whole, and then answers with an offset and size the bounds check has no reason to
-    # reject. The server therefore goes to read output the file no longer holds. Reading it through
-    # the mapping is a `SIGBUS` - not an error, a dead server, taking every unrelated query with it -
-    # which is why the response is copied out with `pread` instead. Then it is a short read, the one
-    # query that caused it fails, and the assertion below that the server is still answering is the
-    # whole point of this test.
-    with pytest.raises(Exception) as exc:
-        node.query("SELECT test_function_shm_shrink_after_check_python(1) FORMAT Null")
-
-    assert "ends after" in str(exc.value)
-
-    assert node.query("SELECT 1") == "1\n"
-
-
-def test_shared_memory_udf_pool_command_shrinks_the_region(started_cluster):
-    skip_test_msan(node)
-
-    # Same, through the pool: such a worker is discarded rather than handed to the next query, so it
-    # takes its region with it and nothing is left behind in the shared-memory directory.
-    assert shm_file_count("/shm_udf_shrink") == 0
-
-    for _ in range(3):
-        with pytest.raises(Exception) as exc:
-            node.query("SELECT test_function_shm_shrink_pool_python(1) FORMAT Null")
-        assert "resized its shared-memory region" in str(exc.value)
-        assert shm_file_count("/shm_udf_shrink") == 0
-
-    assert node.query("SELECT 1") == "1\n"
-
-
-def test_shared_memory_udf_pool_command_enlarges_the_region(started_cluster):
-    skip_test_msan(node)
-
-    # The command enlarges the region file and touches the new pages. Nothing faults and the answer
-    # itself is valid, so this is only caught by comparing the file against the mapping — and it has
-    # to be caught: those pages are committed in the tmpfs and charged to nobody, and trimming the
-    # region on the way back to the pool would leave them behind.
-    assert shm_file_names("/shm_udf_tamper") == []
-
-    for _ in range(3):
-        with pytest.raises(Exception) as exc:
-            node.query("SELECT test_function_shm_enlarge_pool_python(1) FORMAT Null")
-        assert "resized its shared-memory region" in str(exc.value)
-        # The worker is discarded, so it takes the enlarged file with it.
-        assert shm_file_names("/shm_udf_tamper") == []
-
-    assert node.query("SELECT 1") == "1\n"
-
-
-def test_shared_memory_udf_pool_command_unlinks_the_region(started_cluster):
-    skip_test_msan(node)
-
-    # The command deletes the region file after mapping it. The server's descriptor keeps the file
-    # alive, so the request itself could still succeed — but the path is gone, and reusing such a
-    # worker would hand the next borrow a name that leads nowhere and poison the pool slot.
-    assert shm_file_names("/shm_udf_tamper") == []
-
-    for _ in range(3):
-        with pytest.raises(Exception) as exc:
-            node.query("SELECT test_function_shm_unlink_pool_python(1) FORMAT Null")
-        assert "removed or replaced its shared-memory file" in str(exc.value)
-        assert shm_file_names("/shm_udf_tamper") == []
-
-    assert node.query("SELECT 1") == "1\n"
-
-
-def test_shared_memory_udf_pool_rechecks_region_during_cleanup(started_cluster):
-    skip_test_msan(node)
-
-    # The first response sends its status, waits for the normal response-side integrity check to
-    # finish, then unlinks the region before completing the otherwise valid response. Cleanup must
-    # re-check the region and discard this worker. The replacement sees the marker and behaves.
-    node.exec_in_container(["rm", "-f", LATE_UNLINK_MARKER])
-    assert node.query("SELECT test_function_shm_late_unlink_pool_python(1)") == "1\n"
-    assert node.query("SELECT test_function_shm_late_unlink_pool_python(2)") == "2\n"
-
-    assert node.query("SELECT 1") == "1\n"
-
-
-def test_shared_memory_udf_pipeline_pool_trims_both_grown_regions(started_cluster):
+def test_shared_memory_udf_pipeline_pool_keeps_both_grown_regions(started_cluster):
     skip_test_msan(node)
 
     # Pooled and pipelined at once, with growth on top - the combination the other tests only cover
-    # a piece of each. `max_block_size` is small enough that the query passes several blocks, so the
-    # producer uses both regions and both have to grow past the configured 4096 bytes; both then
-    # have to be trimmed back before the worker goes idle, because nothing would ever shrink them
-    # again and their bytes are charged server-wide, where no query is blamed for them. A trim that
-    # reached only the region the last chunk happened to use would leave the other one pinned here.
-    assert shm_file_sizes("/shm_udf_pipeline_trim") == []
+    # a piece of each. An executable function passes one block per call, so only the region the
+    # first block lands in ever grows; the second one stays at the configured 4096 bytes. What has
+    # to hold is that a grown region stays grown with its worker, that the second region is neither
+    # lost nor grown for nothing, and that the later borrows use both as they are.
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_pipeline_grow_keep_pool_python")
+    sizes_before = shm_region_sizes()
+    growths_before = profile_event_value("ExecutableUDFSharedMemoryRegionGrowths")
+    # The reload above dropped this function's pool; whatever is charged now belongs to others.
+    pooled_before = pooled_shared_memory_bytes()
 
     expected = "".join(f"{i}\n" for i in range(8000))
-    for _ in range(3):
+    assert (
+        node.query(
+            "SELECT test_function_shm_pipeline_grow_keep_pool_python(number) "
+            "FROM numbers(8000) SETTINGS max_block_size = 2000"
+        )
+        == expected
+    )
+    growths_after_first = profile_event_value("ExecutableUDFSharedMemoryRegionGrowths")
+    assert growths_after_first > growths_before
+
+    sizes_after = shm_region_sizes()
+    assert len(sizes_after) == len(sizes_before) + 2
+    added = list(sizes_after)
+    for size in sizes_before:
+        added.remove(size)
+    assert sorted(added)[0] == 4096 and sorted(added)[1] > 4096, (sizes_before, sizes_after)
+
+    # The worker is idle now, and the server is charged for what it actually holds: the grown
+    # region at its grown size plus the other one at the configured size - not two base regions
+    # (the charge would have to be the size the borrow asked for) and not two grown ones (a growth
+    # of one region must not be counted against both).
+    wait_for_pooled_shared_memory_bytes(
+        pooled_before + sum(added),
+        "an idle pipelined worker is not charged for one grown and one base-sized region",
+    )
+
+    for _ in range(2):
         assert (
             node.query(
-                "SELECT test_function_shm_pipeline_grow_trim_pool_python(number) "
+                "SELECT test_function_shm_pipeline_grow_keep_pool_python(number) "
                 "FROM numbers(8000) SETTINGS max_block_size = 2000"
             )
             == expected
         )
-        # Two regions, both back at the configured size: the pool holds exactly what it started with.
-        assert shm_file_sizes("/shm_udf_pipeline_trim") == [4096, 4096]
+        assert shm_region_sizes() == sizes_after
+        # Borrowed and handed back again: the charge comes back as exactly what it was.
+        wait_for_pooled_shared_memory_bytes(
+            pooled_before + sum(added), "re-borrowing the pipelined worker changed its idle charge"
+        )
+    assert profile_event_value("ExecutableUDFSharedMemoryRegionGrowths") == growths_after_first
+
+    # Dropping the pool releases both regions and the whole charge.
+    node.query("SYSTEM RELOAD FUNCTION test_function_shm_pipeline_grow_keep_pool_python")
+    wait_for_pooled_shared_memory_bytes(
+        pooled_before, "the charge for the grown pipelined regions was not released with the pool"
+    )
 
 
 def test_shared_memory_udf_pipeline_pool_idle_worker_is_charged_for_both_regions(started_cluster):
@@ -886,14 +794,14 @@ def test_shared_memory_udf_pipeline_pool_idle_worker_is_charged_for_both_regions
     # A pipelined pooled worker sits in the pool holding two regions, and the docs promise that both
     # of them count against `max_server_memory_usage` for as long as it does. Only the exact figure
     # separates two regions from one: a hand-over that gave back a single region's charge and
-    # dropped the other leaves the files on disk untouched, so no size assertion can see it.
+    # dropped the other leaves the regions themselves untouched, so no size assertion can see it.
     total = 2 * PIPELINE_IDLE_REGION_SIZE
 
     node.query("SYSTEM RELOAD FUNCTION test_function_shm_pipeline_idle_charge_python")
-    before = pooled_shared_memory_baseline("/shm_udf_pipeline_idle")
+    before = pooled_shared_memory_baseline(PIPELINE_IDLE_REGION_SIZE)
 
     assert node.query("SELECT test_function_shm_pipeline_idle_charge_python(1)") == "Key 1\n"
-    assert shm_file_sizes("/shm_udf_pipeline_idle") == [PIPELINE_IDLE_REGION_SIZE] * 2
+    assert shm_region_sizes().count(PIPELINE_IDLE_REGION_SIZE) == 2
 
     wait_for_pooled_shared_memory_bytes(
         before + total,
@@ -905,7 +813,7 @@ def test_shared_memory_udf_pipeline_pool_idle_worker_is_charged_for_both_regions
     wait_for_pooled_shared_memory_bytes(
         before, "the charge for the two pipelined regions was not released with the pool"
     )
-    assert shm_file_count("/shm_udf_pipeline_idle") == 0
+    assert PIPELINE_IDLE_REGION_SIZE not in shm_region_sizes()
 
 
 def test_shared_memory_udf_pool_idle_worker_is_charged_server_wide(started_cluster):
@@ -913,17 +821,17 @@ def test_shared_memory_udf_pool_idle_worker_is_charged_server_wide(started_clust
 
     # A pooled region stays mapped between invocations, and in between there is no query to charge
     # for it: the borrow hands the charge over to the server, which is what makes those bytes count
-    # against `max_server_memory_usage` while the worker just sits in the pool. The region-file
-    # checks elsewhere in this suite say nothing about that hand-over - they would stay green if an
-    # idle region were accounted to nobody at all.
+    # against `max_server_memory_usage` while the worker just sits in the pool. The region checks
+    # elsewhere in this suite say nothing about that hand-over - they would stay green if an idle
+    # region were accounted to nobody at all.
 
     # Start from a pool that holds nothing: reloading the function drops any worker, and the region
     # that goes with it, that an earlier run left behind.
     node.query("SYSTEM RELOAD FUNCTION test_function_shm_idle_charge_python")
-    before = pooled_shared_memory_baseline("/shm_udf_idle_charge")
+    before = pooled_shared_memory_baseline(IDLE_CHARGE_REGION_SIZE)
 
     assert node.query("SELECT test_function_shm_idle_charge_python(1)") == "Key 1\n"
-    assert shm_file_count("/shm_udf_idle_charge") == 1
+    assert shm_region_sizes().count(IDLE_CHARGE_REGION_SIZE) == 1
 
     # The query is over and its own charge is gone with it, but its worker went back to the pool
     # with the region still mapped, so the region is charged to the server now - all of it, and
@@ -946,7 +854,112 @@ def test_shared_memory_udf_pool_idle_worker_is_charged_server_wide(started_clust
     wait_for_pooled_shared_memory_bytes(
         before, "the charge for the pooled region was not released with the pool"
     )
-    assert shm_file_count("/shm_udf_idle_charge") == 0
+    assert IDLE_CHARGE_REGION_SIZE not in shm_region_sizes()
+
+
+def tracked_server_memory():
+    # The amount of the server-wide memory tracker - the number `max_server_memory_usage` is
+    # checked against.
+    return int(node.query("SELECT value FROM system.metrics WHERE metric = 'MemoryTracking'").strip())
+
+
+def resident_server_memory():
+    # The tracker also refuses an allocation when the resident size it is told about plus the
+    # allocation would pass the limit. Which figure it is told about depends on the environment -
+    # the cgroup's usage where there is one, the allocator's resident size otherwise - so take the
+    # largest of everything on offer: a limit set above that is above whichever one is in use.
+    raw = node.query(
+        "SELECT max(value) FROM system.asynchronous_metrics "
+        "WHERE metric IN ('MemoryResident', 'CGroupMemoryUsed', 'jemalloc.resident')"
+    ).strip()
+    return int(float(raw))
+
+
+def test_shared_memory_udf_idle_pooled_region_counts_against_the_server_limit(started_cluster):
+    skip_test_msan(node)
+
+    # The pooled-bytes metric elsewhere in this suite is the idle charge told apart from everything
+    # else; this is the charge doing what a charge is for. An idle pooled worker holds a region
+    # nobody is querying through, and the documentation promises it counts against
+    # `max_server_memory_usage`. Two things have to be true for that, and both are checked here:
+    # the server-wide tracker's amount goes up by the region while the worker is idle, and an
+    # allocation that would fit into the server's headroom is refused while it does.
+    #
+    # The allocation is a second region of the same size, for a second function: it is charged
+    # before it is created, so nothing is actually allocated when it is refused, and it leaves the
+    # resident size alone - the tracker checks that too, and a probe that touched hundreds of MiB
+    # would move it. The limit leaves room for one region and a half above what the server uses
+    # now: the first region fits (a server over its limit at rest refuses every query, the one
+    # that would drop the pool included), the second does not. `max_server_memory_usage` is
+    # applied on `SYSTEM RELOAD CONFIG`, so no second server is needed.
+    #
+    # The resident size can run ahead of the tracked amount (allocator retention, cgroup page
+    # cache, sanitizer shadow), and the limit has to sit above it; the room the second region has
+    # to overflow shrinks by that gap, and if it is gone the check cannot be made here.
+    region_size = 768 * 1048576
+    tolerance = 32 * 1048576
+    first = "test_function_shm_server_limit_python"
+    second = "test_function_shm_server_limit_second_python"
+
+    node.query(f"SYSTEM RELOAD FUNCTION {first}")
+    node.query(f"SYSTEM RELOAD FUNCTION {second}")
+    pooled_before = pooled_shared_memory_baseline(region_size)
+    tracked_before = tracked_server_memory()
+    base = max(tracked_before, resident_server_memory())
+    gap = base - tracked_before
+    if gap + tolerance >= region_size // 2:
+        pytest.skip(f"resident memory exceeds tracked memory by {gap >> 20} MiB, leaving the second region no room to overflow")
+
+    limit_config = "/etc/clickhouse-server/config.d/tight_server_memory_limit.xml"
+
+    def set_server_limit(limit):
+        if limit is None:
+            node.exec_in_container(["rm", "-f", limit_config])
+        else:
+            node.exec_in_container(
+                [
+                    "bash",
+                    "-c",
+                    f"printf '%s' '<clickhouse><max_server_memory_usage>{limit}"
+                    f"</max_server_memory_usage></clickhouse>' > {limit_config}",
+                ]
+            )
+        node.query("SYSTEM RELOAD CONFIG")
+
+    set_server_limit(base + region_size + region_size // 2)
+    try:
+        # An idle worker sits in the pool holding a region no query is charged for. It went under
+        # the limit: its creation is charged to the query that made it, and one region fits.
+        assert node.query(f"SELECT {first}(1)") == "Key 1\n"
+        assert shm_region_sizes().count(region_size) == 1
+        wait_for_pooled_shared_memory_bytes(
+            pooled_before + region_size, "the idle region is not charged to the server"
+        )
+
+        # Directly on the tracker the limit is enforced against, not just on the metric: the whole
+        # region, once, give or take what the server allocates and frees on its own meanwhile.
+        tracked_idle = tracked_server_memory()
+        assert abs((tracked_idle - tracked_before) - region_size) < tolerance, (tracked_before, tracked_idle)
+
+        # The idle region has eaten into the headroom, so a second one is refused ...
+        with pytest.raises(Exception) as exc:
+            node.query(f"SELECT {second}(1) FORMAT Null")
+        assert "MEMORY_LIMIT_EXCEEDED" in str(exc.value), str(exc.value)
+        assert "total" in str(exc.value), str(exc.value)
+        # ... before it is created: refused is refused, not created and then rolled back.
+        assert shm_region_sizes().count(region_size) == 1
+
+        # Once the first pool is dropped, its region and charge go with it, and the second region
+        # fits under the same limit: the only thing that changed is the idle region.
+        node.query(f"SYSTEM RELOAD FUNCTION {first}")
+        wait_for_pooled_shared_memory_bytes(
+            pooled_before, "the idle region's charge was not released with the pool"
+        )
+        assert node.query(f"SELECT {second}(1)") == "Key 1\n"
+        assert shm_region_sizes().count(region_size) == 1
+    finally:
+        set_server_limit(None)
+        node.query(f"SYSTEM RELOAD FUNCTION {second}")
 
 
 def test_shared_memory_udf_pool_command_leaves_stdout_dirty(started_cluster):
@@ -972,6 +985,30 @@ def test_shared_memory_udf_pool_command_leaves_stdout_dirty(started_cluster):
     assert node.contains_in_log("left unread output on its stdout after answering")
 
     assert node.query("SELECT 1") == "1\n"
+
+
+def test_shared_memory_udf_previous_borrow_stderr_is_not_thrown_at_the_next_query(started_cluster):
+    skip_test_msan(node)
+
+    # The quiet-gap command under `throw`: it answers, waits out the hand-back probe, then writes two
+    # pipefuls to stderr and sits blocked in `write`. The next borrow finds those bytes on the pipe.
+    # They are the earlier query's, and that query has already succeeded - the probe finished before
+    # they arrived, which is the documented boundary - so the borrow has to take them off the pipe
+    # without putting them through its own reaction: under `throw`, feeding them through would fail
+    # this query for a diagnostic it did not cause. Two pipefuls, because the borrow-start report is
+    # capped at a few KiB and the rest goes through a separate drain: only a flood proves that drain
+    # is reaction-free as well.
+    first = node.query("SELECT test_function_shm_stderr_flood_after_gap_throw_pool_python(0)").strip()
+
+    pids = {first}
+    for i in range(1, 3):
+        time.sleep(0.5)
+        pids.add(node.query(f"SELECT test_function_shm_stderr_flood_after_gap_throw_pool_python({i})").strip())
+
+    assert len(pids) == 1, f"the worker was not reused: {pids}"
+    assert node.contains_in_log(
+        "The process of an executable UDF had unread output on its stderr when it was borrowed"
+    )
 
 
 def test_shared_memory_udf_none_reaction_worker_flooding_after_a_quiet_gap(started_cluster):
@@ -1240,27 +1277,26 @@ def test_shared_memory_udf_configuration_is_visible_in_system_table(started_clus
     # at `system.user_defined_functions` should be able to tell a shared-memory function from a pipe
     # one, and see how large its region may get, without reading the XML off the server.
     row = node.query(
-        "SELECT use_shared_memory, shared_memory_size, shared_memory_max_size, shared_memory_pipeline, shared_memory_path "
+        "SELECT use_shared_memory, shared_memory_size, shared_memory_max_size, shared_memory_pipeline "
         "FROM system.user_defined_functions WHERE name = 'test_function_shm_pipeline_pool_python'"
     ).strip()
-    assert row == "1\t1048576\t1048576\t1\t/dev/shm", row
+    assert row == "1\t1048576\t1048576\t1", row
 
     # A region that is allowed to grow reports the bound it may grow to, not the raw `0` the
     # configuration uses to mean "it may not".
     row = node.query(
-        "SELECT use_shared_memory, shared_memory_size, shared_memory_max_size, shared_memory_pipeline, shared_memory_path "
+        "SELECT use_shared_memory, shared_memory_size, shared_memory_max_size, shared_memory_pipeline "
         "FROM system.user_defined_functions WHERE name = 'test_function_shm_grow_python'"
     ).strip()
-    assert row == "1\t16\t1048576\t0\t/dev/shm", row
+    assert row == "1\t16\t1048576\t0", row
 
     # A function the loader refused has no configuration at all, so the columns are at their
     # defaults rather than showing something half-read out of a config that was never accepted.
     row = node.query(
         "SELECT load_status, use_shared_memory, shared_memory_size, shared_memory_max_size, "
-        "shared_memory_pipeline, shared_memory_path "
+        "shared_memory_pipeline "
         "FROM system.user_defined_functions WHERE name = 'test_function_shm_bad_size_no_shm'"
     ).strip()
-    # The trailing empty `shared_memory_path` is what `strip` takes off the end.
     assert row == "Failed\t0\t0\t0\t0", row
 
 
