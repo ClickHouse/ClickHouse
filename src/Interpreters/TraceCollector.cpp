@@ -35,8 +35,8 @@ namespace ErrorCodes
 namespace
 {
 
-/// `trace` holds addresses already normalized to physical file offsets, which is what
-/// SymbolIndex::findSymbol expects; StackTrace::toString would need raw runtime frame pointers.
+/// Frames in the main object arrive here already reduced to physical file offsets (see run()), which
+/// StackTrace::toString cannot resolve; SymbolIndex::findSymbol accepts either representation.
 std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
 {
     std::string result;

@@ -9,6 +9,8 @@ cluster = ClickHouseCluster(__file__)
 
 THRESHOLD = 64 * 1024 * 1024
 LOG_MARKER = "Single allocation of"
+# The Upgrade check fails a job on any <Error> record it does not excuse, so the level is contract.
+LOG_RECORD_PREFIX = "<Warning> MemoryTracker: "
 # One PODArray doubling past the threshold: reallocs of 64, 128 and 256 MiB, no limit in the way.
 TRIGGER = "SELECT length(groupArray(number)) FROM numbers(30000000) SETTINGS max_memory_usage = 0"
 
@@ -49,6 +51,7 @@ def stack_of_first_record(instance):
     lines = instance.grep_in_log(LOG_MARKER, after=40, only_latest=True).splitlines()
     assert any(LOG_MARKER in line for line in lines), lines
     start = next(i for i, line in enumerate(lines) if LOG_MARKER in line)
+    assert LOG_RECORD_PREFIX + LOG_MARKER in lines[start], lines[start]
 
     frames = []
     for line in lines[start + 1 :]:

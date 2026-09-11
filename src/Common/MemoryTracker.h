@@ -352,7 +352,7 @@ public:
     static void setMinAllocationSizeToLogStackTrace(UInt64 value);
     static UInt64 getMinAllocationSizeToLogStackTrace();
 
-    /// Refills the budget for the traces above. Called once per TraceCollector, see its constructor.
+    /// Resets the budget for the traces above. Called once per TraceCollector, see its constructor.
     static void resetLargeAllocationTraceBudget();
 
     /// Prints info about peak memory consumption into log.
