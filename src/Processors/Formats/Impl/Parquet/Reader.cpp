@@ -2427,12 +2427,11 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
         res += (column_info.levels.back().rep - 1) * 8. * static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
 
     /// One byte per instance of each Nullable(Tuple(...)) group this leaf derives a null map for.
-    /// A group under an array has one instance per element, bounded above by num_values.
-    if (!column_info.derive_group_defs.empty())
-        res += static_cast<double>(column_info.derive_group_defs.size())
-            * (column_info.levels.back().rep == 0
-                   ? 1.
-                   : static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows));
+    /// A group below an array has one instance per element of it rather than one per row.
+    for (UInt8 group_def : column_info.derive_group_defs)
+        res += column_info.levels[group_def].rep == 0
+            ? 1.
+            : static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
 
     return res;
 }
@@ -2467,10 +2466,13 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (column.need_group_null_map)
     {
         subchunk.group_null_maps.resize(column_info.derive_group_defs.size());
-        for (auto & group_null_map : subchunk.group_null_maps)
+        for (size_t i = 0; i < subchunk.group_null_maps.size(); ++i)
         {
-            group_null_map = ColumnUInt8::create();
-            group_null_map->reserve(output_num_values_estimate);
+            subchunk.group_null_maps[i] = ColumnUInt8::create();
+            subchunk.group_null_maps[i]->reserve(
+                column_info.levels[column_info.derive_group_defs[i]].rep == 0
+                    ? row_subgroup.filter.rows_pass
+                    : output_num_values_estimate);
         }
     }
 
