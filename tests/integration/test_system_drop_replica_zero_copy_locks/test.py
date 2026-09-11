@@ -284,9 +284,10 @@ def test_system_drop_last_replica_drops_zero_copy_root(started_cluster):
         n.query(f"DROP TABLE IF EXISTS {table} SYNC")
 
 
-def test_system_drop_replica_from_zkpath_warns_about_per_table_zero_copy_path(started_cluster):
+def test_system_drop_replica_from_zkpath_logs_about_per_table_zero_copy_path(started_cluster):
     # A per-table remote_fs_zero_copy_zookeeper_path is not recorded in ZooKeeper, so FROM ZKPATH
-    # cannot find the locks under it, and must say so instead of silently succeeding.
+    # cannot find the locks under it, and must say so in the server log instead of silently succeeding.
+    # It is not a warning, because the same happens for every table that does not use zero-copy replication.
     table = "zc_drop_replica_per_table_path"
     zk_path = f"/clickhouse/tables/{table}"
     node1, node2, node3 = (cluster.instances[n] for n in NODES)

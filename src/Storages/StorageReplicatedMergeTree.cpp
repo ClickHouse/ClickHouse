@@ -1580,8 +1580,9 @@ StorageReplicatedMergeTree::ZeroCopyLockRoots StorageReplicatedMergeTree::getZer
         = local_context->getMacros()->expand(server_settings[MergeTreeSetting::remote_fs_zero_copy_zookeeper_path].toString());
 
     auto roots = findZeroCopyLockRoots(zookeeper, zookeeper_info.path, zero_copy_zookeeper_path, table_shared_id);
+    /// Not a warning: this is also the case for every table that does not use zero-copy replication, which cannot be told apart.
     if (roots.modern.empty())
-        LOG_WARNING(logger, "No zero-copy locks of table {} were found under {}. If the table uses zero-copy replication with "
+        LOG_INFO(logger, "No zero-copy locks of table {} were found under {}. If the table uses zero-copy replication with "
                             "a per-table remote_fs_zero_copy_zookeeper_path, which is not recorded in ZooKeeper, the locks of "
                             "replica {} will not be released. To release them, drop the replica with "
                             "SYSTEM DROP REPLICA ... FROM TABLE on a server that has the table",

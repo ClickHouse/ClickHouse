@@ -273,7 +273,7 @@ public:
     /// Zero-copy lock roots for `SYSTEM DROP REPLICA ... FROM ZKPATH`, where there is no local table to take the settings from.
     /// Must be called before the replica is dropped, because `table_shared_id` is removed together with the last replica.
     /// The legacy roots are exact. The modern roots assume the server-level `remote_fs_zero_copy_zookeeper_path`,
-    /// because a per-table override of this setting is not recorded in ZooKeeper; a warning is logged if nothing is found there.
+    /// because a per-table override of this setting is not recorded in ZooKeeper; a message is logged if nothing is found there.
     static ZeroCopyLockRoots getZeroCopyLockRootsForOrphanReplicaDrop(
         zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, ContextPtr local_context, LoggerPtr logger);
 
