@@ -179,9 +179,9 @@ REGISTER_FUNCTION(ArrayShuffle)
 Returns an array of the same size as the original array containing the elements in shuffled order.
 Elements are reordered in such a way that each possible permutation of those elements has equal probability of appearance.
 
-:::note
+<Note>
 This function will not materialize constants.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = "arrayShuffle(arr [, seed])";
     FunctionDocumentation::Arguments arguments = {
@@ -204,11 +204,11 @@ Returns an array of the same size as the original array where elements in range 
 subset of the original array. Remaining `(limit..n]` shall contain the elements not in `[1..limit]` range in undefined order.
 Value of limit shall be in range `[1..n]`. Values outside of that range are equivalent to performing full `arrayShuffle`:
 
-:::note
+<Note>
 This function will not materialize constants.
 
 The value of `limit` should be in the range `[1..N]`. Values outside of that range are equivalent to performing full [`arrayShuffle`](#arrayShuffle).
-:::
+</Note>
     )";
     syntax = "arrayPartialShuffle(arr [, limit[, seed]])";
     arguments = {

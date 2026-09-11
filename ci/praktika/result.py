@@ -477,6 +477,9 @@ class Result(MetaClasses.Serializable):
             sub_res = cls.from_dict(result_dict)
             sub_results.append(sub_res)
         obj["results"] = sub_results
+        # Ignore unknown keys to avoid NBC on field removal
+        known_fields = {f.name for f in dataclasses.fields(cls)}
+        obj = {k: v for k, v in obj.items() if k in known_fields}
         return Result(**obj)
 
     def update_duration(self):
@@ -1280,6 +1283,7 @@ class ResultInfo:
     OPEN_ISSUES_CHECK_ERROR = "Failed to check open issues"
 
     NOT_FINALIZED = "Job failed to produce Result due to a script error or CI runner issue"
+    JOB_DID_NOT_FINISH = "Job did not finish, GitHub reported"
 
     S3_ERROR = "S3 call failure"
 
