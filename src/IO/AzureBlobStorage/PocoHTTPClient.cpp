@@ -6,6 +6,7 @@
 
 #include <IO/HTTPCommon.h>  // Add this include at the top
 #include <Common/NetException.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/Throttler.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/logger_useful.h>
@@ -148,6 +149,24 @@ private:
         return static_cast<size_t>(stream.gcount());
     }
 };
+
+void addOpenTelemetryTraceContextHeaders(Poco::Net::HTTPRequest & request)
+{
+    const auto & current_trace_context = OpenTelemetry::CurrentContext();
+    if (!current_trace_context.isTraceEnabled())
+        return;
+
+    request.set("traceparent", current_trace_context.composeTraceparentHeader());
+
+    /// Client-provided tracestate may be kept for internal span logging even if
+    /// it is not safe as an HTTP header.
+    if (!current_trace_context.tracestate.empty()
+        && current_trace_context.tracestate.find('\r') == String::npos
+        && current_trace_context.tracestate.find('\n') == String::npos)
+        request.set("tracestate", current_trace_context.tracestate);
+    else
+        request.erase("tracestate");
+}
 
 }
 
@@ -430,6 +449,7 @@ std::unique_ptr<Azure::Core::Http::RawResponse> PocoAzureHTTPClient::makeRequest
             if (!header.value.empty())  // Skip empty headers
                 poco_request.set(header.name, header.value);
         }
+        addOpenTelemetryTraceContextHeaders(poco_request);
 
         /// Some SDK clients (e.g. Key Vault) do not set the `Content-Length` header themselves
         /// and rely on the transport to compute it from the body stream (the removed curl-based
