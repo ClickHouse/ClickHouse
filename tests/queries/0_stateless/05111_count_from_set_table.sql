@@ -1,6 +1,11 @@
 -- A `Set` table cannot be read from, but it knows exactly how many rows it holds, so `count` is
 -- answered from that instead of failing. `Join` already behaves this way.
 
+-- The setting randomizer in CI can turn `optimize_trivial_count_query` off, and without the
+-- optimization the query falls back to reading from the storage, which a `Set` table does not
+-- support. Pin it, because this test is about the optimization itself.
+SET optimize_trivial_count_query = 1;
+
 DROP TABLE IF EXISTS t_set;
 CREATE TABLE t_set (key UInt64) ENGINE = Set();
 
