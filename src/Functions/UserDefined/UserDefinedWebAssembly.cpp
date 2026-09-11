@@ -1067,7 +1067,11 @@ private:
             /// Cut first, materialize second: `ColumnConst::cut` is O(1), while materializing
             /// the whole block first would make the per-row measurement O(rows^2). A wire that
             /// encodes constness itself keeps the wrapper instead of materializing at all.
-            ColumnPtr column = arguments[i].column->cut(start_idx, length);
+            /// Skip the copy when the requested range already covers the whole column -
+            /// the whole-block flush does exactly that for every argument.
+            ColumnPtr column = arguments[i].column;
+            if (start_idx != 0 || length != column->size())
+                column = column->cut(start_idx, length);
             if (!preserve_const_columns)
                 column = column->convertToFullColumnIfConst();
             String column_name = declared_idx < argument_names.size() && !argument_names[declared_idx].empty()
