@@ -109,9 +109,9 @@ The samples can be passed in one of three forms:
 
 If several samples have the same timestamp, only one of them is used: the sample with the greatest value. A NaN value loses to any other value, so a NaN value is used only if all samples at this timestamp are NaN.
 
-:::note
+<Note>
 This function is in private preview, enable it by setting `enable_time_series_aggregate_functions=true`.
-:::
+</Note>
     )";
     FunctionDocumentation::Syntax syntax = R"(
 timeSeriesGroupArray(timestamp, value)
