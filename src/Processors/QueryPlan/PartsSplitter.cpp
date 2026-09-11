@@ -38,6 +38,11 @@ std::string toString(const Values & value)
     return fmt::format("({})", fmt::join(value, ", "));
 }
 
+} /// end anonymous namespace
+
+namespace DB
+{
+
 /** We rely that FieldVisitorAccurateLess will have strict weak ordering for any Field values including
   * NaN, Null and containers (Array, Tuple, Map) that contain NaN or Null. But right now it does not properly
   * support NaN and Nulls inside containers, because it uses Field operator< or accurate::lessOp for comparison
@@ -90,11 +95,6 @@ bool isSafePrimaryDataKeyType(const IDataType & data_type)
 
     return true;
 }
-
-} /// end anonymous namespace
-
-namespace DB
-{
 
 bool isSafePrimaryKey(const KeyDescription & primary_key)
 {

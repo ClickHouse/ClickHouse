@@ -15,6 +15,8 @@
 #include <Parsers/parseQuery.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Planner/AnalyzeExpression.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Common/Logger.h>
 #include <unordered_map>
