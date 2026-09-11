@@ -515,7 +515,8 @@ void PostgreSQLReplicationHandler::adoptLegacyReplicationIdentityIfNeeded(pqxx::
                 "the legacy publication {} publishes no tables, so the schema-blind legacy replication slot "
                 "cannot be proven to belong to this engine's schema '{}'",
                 doubleQuoteString(legacy_publication_name), postgres_schema);
-        for (const auto & row : result)
+        /// `pqxx::result` iteration yields `pqxx::row_ref` proxies by value.
+        for (const auto row : result)
         {
             if (row[0].as<std::string>() != postgres_schema)
             {
