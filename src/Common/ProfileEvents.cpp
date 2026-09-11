@@ -437,6 +437,10 @@
     M(ExternalAggregationMerge, "Number of times temporary files were merged for aggregation in external memory.", ValueType::Number) \
     M(ExternalAggregationCompressedBytes, "Number of bytes written to disk for aggregation in external memory.", ValueType::Bytes) \
     M(ExternalAggregationUncompressedBytes, "Amount of data (uncompressed, before compression) written to disk for aggregation in external memory.", ValueType::Bytes) \
+\
+    M(GPUAggregationRows, "Number of rows summed on a GPU by the experimental GPU aggregation.", ValueType::Number) \
+    M(GPUAggregationBatches, "Number of batches of values sent to a GPU by the experimental GPU aggregation. One batch is one transfer and one reduction.", ValueType::Number) \
+    M(GPUAggregationMicroseconds, "Total time spent transferring batches of values to a GPU and reducing them there.", ValueType::Microseconds) \
     M(ExternalJoinWritePart, "Number of times a temporary file was written to disk for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \

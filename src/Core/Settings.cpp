@@ -9352,6 +9352,65 @@ Maximum number of WebAssembly UDF instances that can run in parallel per functio
     DECLARE(Bool, allow_experimental_eval_table_function, false, R"(
 Enable experimental table function `eval`.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, allow_experimental_gpu_aggregation, false, R"(
+Compute supported aggregations on a CUDA GPU instead of on the CPU.
+
+What is supported so far is `sum` over a column of a fixed-width numeric type (`UInt8` to
+`UInt64`, `Int8` to `Int64`, `Float32`, `Float64`), with or without `GROUP BY`, in a query over a
+single local `MergeTree` table. A `GROUP BY` key has to be a fixed-width integer: floats are
+excluded from the keys, because cuDF groups them by IEEE equality, which would put `0.0` and `-0.0`
+in one group where ClickHouse puts them in two.
+
+Everything else - another aggregate function, a `Nullable`, `Decimal` or `LowCardinality` argument
+or key, `ROLLUP`, `CUBE`, `GROUPING SETS`, `WITH TOTALS`, `group_by_use_nulls`, several tables, a
+distributed query - is aggregated on the CPU as before, so this setting does not change what a
+query returns, only where it is computed. `EXPLAIN` names the step `GPUAggregating` when the device
+is used.
+
+Requires a build with `-DENABLE_GPU=1` and has no effect without one. In a build that has it, a
+query which would have used the device on a machine that has none usable fails, rather than quietly
+aggregating on the CPU.
+
+:::note
+Every value has to cross the PCIe link to reach the device, and that link is narrower than the
+CPU's own path to memory - so a sum computed this way is normally **slower** than the same sum on
+the CPU, and slower still than the CPU using several threads. What this buys today is the path
+itself; the speed is meant to come from keeping columns in device memory between queries, which it
+does not do yet. `GPUAggregationRows`, `GPUAggregationBatches` and `GPUAggregationMicroseconds` in
+`system.events` say how much data went over and how long it took.
+:::
+
+:::note
+`sum` over a `Float32` or `Float64` column adds the values in a different order than the CPU
+implementation does, so the last bits of the result can differ from it. The order is fixed, so
+repeated runs of the same query agree with each other. Integer sums are identical to the CPU's,
+wraparound included.
+:::
+
+Possible values:
+
+- 0 - Aggregations are computed on the CPU.
+- 1 - Supported aggregations are computed on a GPU.
+)", EXPERIMENTAL) \
+    DECLARE(UInt64, gpu_aggregation_batch_bytes, 256 * 1024 * 1024, R"(
+How much of a column `allow_experimental_gpu_aggregation` gathers in host memory before sending it
+to the device.
+
+A block is 65536 rows, half a megabyte of `UInt64`, and a transfer that small spends its time in
+the launch rather than moving data - so blocks are gathered into a batch first. Bigger batches
+amortize more of it and need more memory, on the host and on the device both: while a query runs,
+one batch of this size is staged in host memory and a copy of it is on the device. Without
+`GROUP BY` the budget is per aggregated column; with it, one batch covers a whole row - every key
+column and every aggregated column together - since they have to be grouped as one.
+
+The host side counts towards `max_memory_usage`. The device side is outside every memory limit the
+server knows about, and with `GROUP BY` so is the partial result, which holds one row per group
+seen so far for as long as the query runs.
+
+A `GROUP BY` on the device also returns all of its groups in one block, where the CPU path returns
+them in blocks of `max_block_size`. For a query with very many groups that is a memory spike the
+setting does not bound.
+)", EXPERIMENTAL) \
     \
     /* ####################################################### */ \
     /* ############ END OF EXPERIMENTAL FEATURES ############# */ \

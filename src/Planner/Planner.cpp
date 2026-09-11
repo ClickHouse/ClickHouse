@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Analyzer/IQueryTreeNode.h>
 #include <Planner/Planner.h>
 #include <Columns/IColumn.h>
@@ -31,6 +33,8 @@
 #include <Processors/QueryPlan/IntersectOrExceptStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/GPUAggregatingStep.h>
+#include <GPU/GPUAggregation.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/SortingStep.h>
 #include <Processors/QueryPlan/StreamInQueryResultCacheStep.h>
@@ -167,6 +171,8 @@ namespace Setting
     extern const SettingsDouble max_bytes_ratio_before_external_group_by;
     extern const SettingsUInt64 min_free_disk_space_for_temporary_data;
     extern const SettingsBool compile_aggregate_expressions;
+    extern const SettingsBool allow_experimental_gpu_aggregation;
+    extern const SettingsUInt64 gpu_aggregation_batch_bytes;
     extern const SettingsUInt64 min_count_to_compile_aggregate_expression;
     extern const SettingsBool enable_software_prefetch_in_aggregation;
     extern const SettingsBool optimize_group_by_constant_keys;
@@ -922,6 +928,74 @@ void applyTopKPushdownToPartialAggregation(
         });
 }
 
+#if USE_GPU
+/** Whether this aggregation is one the GPU can do, all of it.
+  *
+  * The conditions are narrow on purpose - it is the first aggregation to run on a device at all -
+  * and every one of them sends the query to the CPU path instead, which is why none of them
+  * changes a result. `GPUAggregatingStep::canRunOnDevice` covers the aggregate functions, the
+  * `GROUP BY` keys and their types; what is left here is about the query around them.
+  */
+bool canAggregateOnDevice(
+    const QueryPlan & query_plan,
+    const QueryNode & query_node,
+    const AggregationAnalysisResult & aggregation_analysis_result,
+    const QueryAnalysisResult & query_analysis_result,
+    const PlannerContextPtr & planner_context,
+    const Aggregator::Params & aggregator_params)
+{
+    /// A partial aggregation produces states for a merging step above to combine, and this step
+    /// produces final values.
+    if (!query_analysis_result.aggregate_final)
+        return false;
+
+    /// Every one of these aggregates the same rows several times over, once per set of keys, and
+    /// this step runs one aggregation. `WITH TOTALS` is the same thing in a different place - a
+    /// second, keyless result alongside the keyed one - and `GPUAggregatingStep` drops the totals
+    /// port rather than filling it.
+    if (!aggregation_analysis_result.grouping_sets_parameters_list.empty()
+        || query_node.isGroupByWithRollup()
+        || query_node.isGroupByWithCube()
+        || query_node.isGroupByWithGroupingSets()
+        || query_node.isGroupByWithTotals())
+        return false;
+
+    /// `group_by_use_nulls` makes every key column `Nullable`, so that a key can carry the `NULL`
+    /// that `ROLLUP` and friends put in the columns they do not group by. Nullable keys are out of
+    /// scope for the device path - a validity bitmask is a layout it does not stage or upload - and
+    /// the setting applies even without a modifier, so it has to be checked here rather than being
+    /// covered by the modifier checks above.
+    if (planner_context->getQueryContext()->getSettingsRef()[Setting::group_by_use_nulls]
+        && !aggregation_analysis_result.aggregation_keys.empty())
+        return false;
+
+    /// With parallel replicas the plan is serialized and sent to the replicas, and this step has
+    /// no serialization - a prototype has no format to keep compatible with yet.
+    if (planner_context->getQueryContext()->canUseTaskBasedParallelReplicas())
+        return false;
+
+    /// A single local `MergeTree` table, which is where the columns this sums come from.
+    const auto & table_expression_node_to_data = planner_context->getTableExpressionNodeToData();
+    if (table_expression_node_to_data.size() != 1)
+        return false;
+
+    const auto & table_expression_node = table_expression_node_to_data.begin()->first;
+
+    StoragePtr storage;
+    if (const auto * table_node = table_expression_node->as<TableNode>())
+        storage = table_node->getStorage();
+    else if (const auto * table_function_node = table_expression_node->as<TableFunctionNode>())
+        storage = table_function_node->getStorageOrThrow();
+    else
+        return false;
+
+    if (!storage->isMergeTree() || storage->isRemote())
+        return false;
+
+    return GPUAggregatingStep::canRunOnDevice(*query_plan.getCurrentHeader(), aggregator_params);
+}
+#endif
+
 void addAggregationStep(QueryPlan & query_plan,
     const QueryNode & query_node,
     PlannerExpressionsAnalysisResult & expression_analysis_result,
@@ -931,6 +1005,29 @@ void addAggregationStep(QueryPlan & query_plan,
     auto aggregation_analysis_result = expression_analysis_result.getAggregation();
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
     auto aggregator_params = getAggregatorParams(planner_context, aggregation_analysis_result, query_analysis_result);
+
+#if USE_GPU
+    if (settings[Setting::allow_experimental_gpu_aggregation]
+        && canAggregateOnDevice(
+            query_plan, query_node, aggregation_analysis_result, query_analysis_result, planner_context, aggregator_params))
+    {
+        /// Everything about the query fits, so the only thing left that can stand in the way is
+        /// the machine. Say so rather than quietly aggregating on the CPU: this setting is off by
+        /// default and was asked for.
+        if (const String & probe_error = GPU::deviceProbeError(); !probe_error.empty())
+            throw Exception(
+                ErrorCodes::SUPPORT_IS_DISABLED,
+                "Cannot aggregate on a GPU, which `allow_experimental_gpu_aggregation` asks for: {}",
+                probe_error);
+
+        query_plan.addStep(std::make_unique<GPUAggregatingStep>(
+            query_plan.getCurrentHeader(),
+            std::move(aggregator_params),
+            settings[Setting::gpu_aggregation_batch_bytes]));
+
+        return;
+    }
+#endif
 
     SortDescription sort_description_for_merging;
     SortDescription group_by_sort_description;
