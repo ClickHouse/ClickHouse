@@ -120,11 +120,14 @@ doc_type: 'reference'
 
 Time-Based One-Time Password (TOTP) можно использовать для аутентификации пользователей ClickHouse с помощью временных кодов доступа, действующих ограниченное время.
 Этот метод аутентификации TOTP соответствует стандарту [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238), поэтому он совместим с популярными TOTP-приложениями, такими как Google Authenticator, 1Password и аналогичными инструментами.
-Его можно настроить через конфигурационный файл `users.xml` в дополнение к аутентификации по паролю.
+Его можно настроить через файл конфигурации `users.xml` в дополнение к аутентификации по паролю.
 В управлении доступом через SQL это пока не поддерживается.
 
 Для аутентификации с использованием TOTP пользователь должен указать основной пароль вместе с одноразовым паролем, сгенерированным TOTP-приложением, либо через параметр командной строки `--one-time-password`, либо добавив его к основному паролю через символ &#39;+&#39;.
 Например, если основной пароль — `some_password`, а сгенерированный TOTP-код — `345123`, пользователь может указать `--password some_password+345123` или `--password some_password --one-time-password 345123` при подключении к ClickHouse. Если пароль не указан, `clickhouse-client` запросит его интерактивно.
+
+Каждый код принимается не более одного раза, как требует [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2), поэтому пользователь может успешно пройти аутентификацию не более одного раза за `period`.
+Учитывайте это для клиентов, которые выполняют аутентификацию при каждом запросе или подключении (например, для скриптов, использующих HTTP-интерфейс): для каждой аутентификации требуется новый код.
 
 Чтобы включить аутентификацию TOTP для пользователя, настройте раздел `time_based_one_time_password` в `users.xml`. В этом разделе задаются параметры TOTP, такие как секретный ключ, период действия, количество цифр и алгоритм хеширования.
 
@@ -135,32 +138,32 @@ Time-Based One-Time Password (TOTP) можно использовать для �
     <!-- ... -->
     <users>
         <my_user>
-            <!-- Основная аутентификация на основе пароля: -->
+            <!-- Primary password-based authentication: -->
             <password>some_password</password>
             <password_sha256_hex>1464acd6765f91fccd3f5bf4f14ebb7ca69f53af91b0a5790c2bba9d8819417b</password_sha256_hex>
-            <!-- ... или любой другой поддерживаемый метод аутентификации ... -->
+            <!-- ... or any other supported authentication method ... -->
 
-            <!-- Настройка аутентификации TOTP -->
+            <!-- TOTP authentication configuration -->
             <time_based_one_time_password>
-                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Секрет TOTP в кодировке Base32 -->
-                <period>30</period>                    <!-- Необязательно: срок действия OTP в секундах -->
-                <digits>6</digits>                     <!-- Необязательно: количество цифр в OTP -->
-                <algorithm>SHA1</algorithm>            <!-- Необязательно: алгоритм хэширования: SHA1, SHA256, SHA512 -->
+                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Base32-encoded TOTP secret -->
+                <period>30</period>                    <!-- Optional: OTP validity period in seconds -->
+                <digits>6</digits>                     <!-- Optional: Number of digits in the OTP -->
+                <algorithm>SHA1</algorithm>            <!-- Optional: Hash algorithm: SHA1, SHA256, SHA512 -->
             </time_based_one_time_password>
         </my_user>
     </users>
 </clickhouse>
 
-Параметры:
+Parameters:
 
-- secret — (обязательный) Секретный ключ в кодировке base32, используемый для генерации кодов TOTP.
-- period — необязательный. Задаёт срок действия каждого OTP в секундах. Должно быть положительным числом, не превышающим 120. Значение по умолчанию: 30.
-- digits — необязательный. Задаёт количество цифр в каждом OTP. Допустимые значения: от 4 до 10. Значение по умолчанию: 6.
-- algorithm — необязательный. Определяет алгоритм хэширования для генерации OTP. Поддерживаемые значения: SHA1, SHA256 и SHA512. Значение по умолчанию: SHA1.
+- secret - (Required) The base32-encoded secret key used to generate TOTP codes.
+- period - Optional. Sets the validity period of each OTP in seconds. Must be a positive number not exceeding 120. Default is 30.
+- digits - Optional. Specifies the number of digits in each OTP. Must be between 4 and 10. Default is 6.
+- algorithm - Optional. Defines the hash algorithm for generating OTPs. Supported values are SHA1, SHA256, and SHA512. Default is SHA1.
 
-Генерация секрета TOTP
+Generating a TOTP Secret
 
-Чтобы сгенерировать совместимый с TOTP секрет для использования с ClickHouse, выполните следующую команду в терминале:
+To generate a TOTP-compatible secret for use with ClickHouse, run the following command in the terminal:
 
 ```bash
 $ base32 -w32 < /dev/urandom | head -1

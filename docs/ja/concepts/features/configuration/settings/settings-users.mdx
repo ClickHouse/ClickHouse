@@ -126,6 +126,9 @@ Time-Based One-Time Password (TOTP) は、一定時間だけ有効な一時的�
 TOTP を使用して認証するには、ユーザーはプライマリパスワードに加えて、TOTP アプリで生成されたワンタイムパスワードを指定する必要があります。指定方法は、`--one-time-password` コマンドラインオプションを使うか、メインパスワードの末尾に &#39;+&#39; 文字を付けて連結します。
 たとえば、プライマリパスワードが `some_password` で、生成された TOTP コードが `345123` の場合、ClickHouse への接続時に `--password some_password+345123` または `--password some_password --one-time-password 345123` を指定できます。パスワードを指定しない場合、`clickhouse-client` は対話形式で入力を求めます。
 
+[RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2) の要件に従い、各コードは最大 1 回しか受け付けられないため、ユーザーは `period` ごとに最大 1 回しか認証に成功できません。
+リクエストや接続のたびに認証を行うクライアント (たとえば HTTP インターフェイスを使用するスクリプト) では、この点に注意してください。認証のたびに新しいコードが必要になります。
+
 ユーザーの TOTP 認証を有効にするには、`users.xml` で `time_based_one_time_password` セクションを設定します。このセクションでは、secret、有効期間、桁数、hash アルゴリズムなどの TOTP 設定を定義します。
 
 **例**
@@ -135,32 +138,32 @@ TOTP を使用して認証するには、ユーザーはプライマリパスワ
     <!-- ... -->
     <users>
         <my_user>
-            <!-- プライマリパスワードベースの認証: -->
+            <!-- Primary password-based authentication: -->
             <password>some_password</password>
             <password_sha256_hex>1464acd6765f91fccd3f5bf4f14ebb7ca69f53af91b0a5790c2bba9d8819417b</password_sha256_hex>
-            <!-- ... またはその他のサポートされている認証方式 ... -->
+            <!-- ... or any other supported authentication method ... -->
 
-            <!-- TOTP認証の設定 -->
+            <!-- TOTP authentication configuration -->
             <time_based_one_time_password>
-                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Base32エンコードされたTOTPシークレット -->
-                <period>30</period>                    <!-- 任意: OTPの有効期間（秒） -->
-                <digits>6</digits>                     <!-- 任意: OTPの桁数 -->
-                <algorithm>SHA1</algorithm>            <!-- 任意: ハッシュアルゴリズム: SHA1、SHA256、SHA512 -->
+                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Base32-encoded TOTP secret -->
+                <period>30</period>                    <!-- Optional: OTP validity period in seconds -->
+                <digits>6</digits>                     <!-- Optional: Number of digits in the OTP -->
+                <algorithm>SHA1</algorithm>            <!-- Optional: Hash algorithm: SHA1, SHA256, SHA512 -->
             </time_based_one_time_password>
         </my_user>
     </users>
 </clickhouse>
 
-パラメータ:
+Parameters:
 
-- secret - （必須）TOTPコードの生成に使用するBase32エンコードされたシークレットキー。
-- period - 任意。各OTPの有効期間を秒単位で設定します。120以下の正の数を指定する必要があります。デフォルトは30です。
-- digits - 任意。各OTPの桁数を指定します。4以上10以下の値を指定する必要があります。デフォルトは6です。
-- algorithm - 任意。OTP生成に使用するハッシュアルゴリズムを指定します。使用可能な値はSHA1、SHA256、SHA512です。デフォルトはSHA1です。
+- secret - (Required) The base32-encoded secret key used to generate TOTP codes.
+- period - Optional. Sets the validity period of each OTP in seconds. Must be a positive number not exceeding 120. Default is 30.
+- digits - Optional. Specifies the number of digits in each OTP. Must be between 4 and 10. Default is 6.
+- algorithm - Optional. Defines the hash algorithm for generating OTPs. Supported values are SHA1, SHA256, and SHA512. Default is SHA1.
 
-TOTPシークレットの生成
+Generating a TOTP Secret
 
-ClickHouseで使用するTOTP互換のシークレットを生成するには、ターミナルで以下のコマンドを実行してください:
+To generate a TOTP-compatible secret for use with ClickHouse, run the following command in the terminal:
 
 ```bash
 $ base32 -w32 < /dev/urandom | head -1

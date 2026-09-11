@@ -126,6 +126,9 @@ Aún no es compatible con el control de acceso basado en SQL.
 Para autenticarse mediante TOTP, los usuarios deben proporcionar una contraseña principal junto con una contraseña de un solo uso generada por su aplicación TOTP mediante la opción de línea de comandos `--one-time-password` o concatenada a la contraseña principal con el carácter &#39;+&#39;.
 Por ejemplo, si la contraseña principal es `some_password` y el código TOTP generado es `345123`, el usuario puede especificar `--password some_password+345123` o `--password some_password --one-time-password 345123` al conectarse a ClickHouse. Si no se especifica ninguna contraseña, `clickhouse-client` la solicitará de forma interactiva.
 
+Cada código se acepta como máximo una vez, tal como exige [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2), de modo que un usuario puede autenticarse correctamente como máximo una vez por `period`.
+Tenga esto en cuenta con los clients que se autentican en cada solicitud o conexión (por ejemplo, scripts que usan la interfaz HTTP): cada autenticación necesita un código nuevo.
+
 Para habilitar la autenticación TOTP para un usuario, configure la sección `time_based_one_time_password` en `users.xml`. Esta sección define la configuración de TOTP, como el secreto, el período de validez, la cantidad de dígitos y el algoritmo hash.
 
 **Ejemplo**
@@ -135,32 +138,32 @@ Para habilitar la autenticación TOTP para un usuario, configure la sección `ti
     <!-- ... -->
     <users>
         <my_user>
-            <!-- Autenticación primaria basada en contraseña: -->
+            <!-- Primary password-based authentication: -->
             <password>some_password</password>
             <password_sha256_hex>1464acd6765f91fccd3f5bf4f14ebb7ca69f53af91b0a5790c2bba9d8819417b</password_sha256_hex>
-            <!-- ... o cualquier otro método de autenticación compatible ... -->
+            <!-- ... or any other supported authentication method ... -->
 
-            <!-- Configuración de autenticación TOTP -->
+            <!-- TOTP authentication configuration -->
             <time_based_one_time_password>
-                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Secreto TOTP codificado en Base32 -->
-                <period>30</period>                    <!-- Opcional: período de validez del OTP en segundos -->
-                <digits>6</digits>                     <!-- Opcional: número de dígitos del OTP -->
-                <algorithm>SHA1</algorithm>            <!-- Opcional: algoritmo hash: SHA1, SHA256, SHA512 -->
+                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Base32-encoded TOTP secret -->
+                <period>30</period>                    <!-- Optional: OTP validity period in seconds -->
+                <digits>6</digits>                     <!-- Optional: Number of digits in the OTP -->
+                <algorithm>SHA1</algorithm>            <!-- Optional: Hash algorithm: SHA1, SHA256, SHA512 -->
             </time_based_one_time_password>
         </my_user>
     </users>
 </clickhouse>
 
-Parámetros:
+Parameters:
 
-- secret - (Obligatorio) La clave secreta codificada en base32 utilizada para generar códigos TOTP.
-- period - Opcional. Establece el período de validez de cada OTP en segundos. Debe ser un número positivo que no supere 120. El valor predeterminado es 30.
-- digits - Opcional. Especifica el número de dígitos de cada OTP. Debe estar entre 4 y 10. El valor predeterminado es 6.
-- algorithm - Opcional. Define el algoritmo hash para generar los OTP. Los valores admitidos son SHA1, SHA256 y SHA512. El valor predeterminado es SHA1.
+- secret - (Required) The base32-encoded secret key used to generate TOTP codes.
+- period - Optional. Sets the validity period of each OTP in seconds. Must be a positive number not exceeding 120. Default is 30.
+- digits - Optional. Specifies the number of digits in each OTP. Must be between 4 and 10. Default is 6.
+- algorithm - Optional. Defines the hash algorithm for generating OTPs. Supported values are SHA1, SHA256, and SHA512. Default is SHA1.
 
-Generación de un secreto TOTP
+Generating a TOTP Secret
 
-Para generar un secreto compatible con TOTP para usarlo con ClickHouse, ejecute el siguiente comando en la terminal:
+To generate a TOTP-compatible secret for use with ClickHouse, run the following command in the terminal:
 
 ```bash
 $ base32 -w32 < /dev/urandom | head -1

@@ -126,6 +126,9 @@ Elle n’est pas encore prise en charge par le contrôle d’accès piloté par 
 Pour s’authentifier à l’aide de TOTP, les utilisateurs doivent fournir un mot de passe principal ainsi qu’un mot de passe à usage unique généré par leur application TOTP, soit via l’option de ligne de commande `--one-time-password`, soit en le concaténant au mot de passe principal avec le caractère &#39;+&#39;.
 Par exemple, si le mot de passe principal est `some_password` et que le code TOTP généré est `345123`, l’utilisateur peut spécifier `--password some_password+345123` ou `--password some_password --one-time-password 345123` lors de la connexion à ClickHouse. Si aucun mot de passe n’est indiqué, `clickhouse-client` le demandera de manière interactive.
 
+Chaque code n’est accepté qu’une seule fois, conformément à l’exigence de la [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2) : un utilisateur ne peut donc s’authentifier avec succès qu’une fois par `period`.
+Gardez ce point à l’esprit pour les clients qui s’authentifient à chaque requête ou connexion (par exemple, des scripts utilisant l’interface HTTP) : chaque authentification nécessite un nouveau code.
+
 Pour activer l’authentification TOTP pour un utilisateur, configurez la section `time_based_one_time_password` dans `users.xml`. Cette section définit les paramètres TOTP, tels que le secret, la durée de validité, le nombre de chiffres et l’algorithme de hachage.
 
 **Exemple**

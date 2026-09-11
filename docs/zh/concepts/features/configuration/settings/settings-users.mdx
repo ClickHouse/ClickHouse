@@ -126,6 +126,9 @@ doc_type: 'reference'
 使用 TOTP 进行身份验证时，用户必须提供主密码，以及由其 TOTP 应用生成的一次性密码；可以通过 `--one-time-password` 命令行选项提供，也可以使用 &#39;+&#39; 字符将其拼接到主密码后。
 例如，如果主密码为 `some_password`，生成的 TOTP 代码为 `345123`，则用户在连接到 ClickHouse 时可以指定 `--password some_password+345123` 或 `--password some_password --one-time-password 345123`。如果未指定密码，`clickhouse-client` 会以交互方式提示输入。
 
+按照 [RFC 6238](https://datatracker.ietf.org/doc/html/rfc6238#section-5.2) 的要求，每个验证码最多只能被接受一次，因此用户在每个 `period` 内最多只能成功完成一次身份验证。
+对于在每次请求或连接时都进行身份验证的客户端 (例如使用 HTTP 接口的脚本)，请务必注意这一点：每次身份验证都需要一个新的验证码。
+
 要为用户启用 TOTP 身份验证，请在 `users.xml` 中配置 `time_based_one_time_password` 部分。该部分定义了 TOTP 设置，例如 secret、有效期、位数和哈希算法。
 
 **示例**
@@ -135,17 +138,17 @@ doc_type: 'reference'
     <!-- ... -->
     <users>
         <my_user>
-            <!-- 基于密码的主身份验证： -->
+            <!-- Primary password-based authentication: -->
             <password>some_password</password>
             <password_sha256_hex>1464acd6765f91fccd3f5bf4f14ebb7ca69f53af91b0a5790c2bba9d8819417b</password_sha256_hex>
-            <!-- ... 或任何其他受支持的身份验证方法 ... -->
+            <!-- ... or any other supported authentication method ... -->
 
-            <!-- TOTP 身份验证配置 -->
+            <!-- TOTP authentication configuration -->
             <time_based_one_time_password>
-                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Base32 编码的 TOTP 密钥 -->
-                <period>30</period>                    <!-- 可选：OTP 有效期（秒） -->
-                <digits>6</digits>                     <!-- 可选：OTP 的位数 -->
-                <algorithm>SHA1</algorithm>            <!-- 可选：哈希算法：SHA1、SHA256、SHA512 -->
+                <secret>JBSWY3DPEHPK3PXP</secret>      <!-- Base32-encoded TOTP secret -->
+                <period>30</period>                    <!-- Optional: OTP validity period in seconds -->
+                <digits>6</digits>                     <!-- Optional: Number of digits in the OTP -->
+                <algorithm>SHA1</algorithm>            <!-- Optional: Hash algorithm: SHA1, SHA256, SHA512 -->
             </time_based_one_time_password>
         </my_user>
     </users>
