@@ -66,6 +66,7 @@
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Analyzer/Utils.h>
 
+#include <Planner/CollectSets.h>
 #include <Planner/Planner.h>
 #include <Planner/Utils.h>
 
@@ -620,6 +621,11 @@ bool StorageDistributed::isShardingKeySuitsQueryTreeNodeExpression(
 {
     ColumnsWithTypeAndName empty_input_columns;
     ColumnNodePtrWithHashSet empty_correlated_columns_set;
+
+    /// The set registry of a planner context derived per child table is empty, and
+    /// `PlannerActionsVisitor` resolves `IN` through it.
+    collectSets(expr, *query_info.planner_context);
+
     // When comparing sharding key expressions, we need to ignore table qualifiers in column names
     // because the sharding key is defined without table qualifiers, but the query expression
     // may have internal table aliases (e.g. __table1.id). Setting use_column_identifier_as_action_node_name=false
