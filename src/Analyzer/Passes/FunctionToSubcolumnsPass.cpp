@@ -1,4 +1,5 @@
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -518,6 +519,14 @@ void optimizeFunctionHasForMap(QueryTreeNodePtr &, FunctionNode & function_node,
 {
     /// Replace `has(map_argument, argument)` and `notHas(map_argument, argument)` with the same
     /// function over `map_argument.keys`.
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+
+    /// The Map implementation removes LowCardinality before comparing keys. Rewriting to the
+    /// keys subcolumn would use the Array(LowCardinality) path and can change comparisons for
+    /// values such as a FixedString needle wider than the Map key type.
+    if (WhichDataType(data_type_map.getKeyType()).isLowCardinality())
+        return;
+
     if (optimizeMapFunctionToKeys(function_node, ctx))
     {
         const auto function_name = function_node.getFunctionName();
