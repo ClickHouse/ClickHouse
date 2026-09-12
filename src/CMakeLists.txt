@@ -1066,6 +1066,7 @@ if (ENABLE_FILC)
     add_glob(filc_hash_join_sources Interpreters/HashJoin/*.cpp)
     set_source_files_properties(
         Core/Settings.cpp
+        AggregateFunctions/TimeSeries/AggregateFunctionTimeseriesHelpers.cpp
         DataTypes/Serializations/SerializationMap.cpp
         Interpreters/Aggregator.cpp
         ${filc_hash_join_sources}
