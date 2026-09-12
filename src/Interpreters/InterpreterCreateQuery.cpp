@@ -49,6 +49,9 @@
 
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
+#include <Storages/MergeTree/ActiveDataPartSet.h>
+#include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageFactory.h>
 #include <Storages/StorageInMemoryMetadata.h>
@@ -157,6 +160,13 @@ namespace Setting
     extern const SettingsBool restore_replace_external_dictionary_source_to_null;
     extern const SettingsBool stop_refreshable_materialized_views_on_startup;
     extern const SettingsBool use_legacy_to_time;
+}
+
+namespace MergeTreeSetting
+{
+    extern const MergeTreeSettingsString disk;
+    extern const MergeTreeSettingsString storage_policy;
+    extern const MergeTreeSettingsBool table_disk;
 }
 
 namespace ServerSetting
@@ -3932,8 +3942,41 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     /// When converting to replicated, remove all transaction metadata files
     if (to_replicated && !engine_name.starts_with("Replicated"))
     {
-        String table_data_path = database->getTableDataPath(create);
-        clearTransactionMetadata(table_data_path, getContext());
+        /// The table is still a MergeTree here, so the MergeTree settings are the right baseline,
+        /// not the Replicated ones.
+        auto storage_settings = std::make_unique<MergeTreeSettings>(getContext()->getMergeTreeSettings());
+        auto storage_def = create.storage->clone();
+        storage_settings->loadFromQuery(
+            storage_def->as<ASTStorage &>(),
+            getContext(),
+            /*is_loading_from_existing_metadata=*/false,
+            /*for_system_database=*/create.getDatabase() == DatabaseCatalog::SYSTEM_DATABASE);
+
+        StoragePolicyPtr storage_policy;
+        if ((*storage_settings)[MergeTreeSetting::disk].changed)
+            storage_policy = getContext()->getStoragePolicyFromDisk((*storage_settings)[MergeTreeSetting::disk]);
+        else
+            storage_policy = getContext()->getStoragePolicy((*storage_settings)[MergeTreeSetting::storage_policy]);
+
+        /// With `table_disk` the parts live at the disk root and the table has no relative path.
+        String relative_data_path
+            = (*storage_settings)[MergeTreeSetting::table_disk] ? "" : database->getTableDataPath(create);
+
+        /// The version to fall back to when no disk carries `format_version.txt`: the old format
+        /// exists only for the old-style definition, which names a date column instead of a
+        /// partitioning expression.
+        const auto & engine_args = create.storage->engine->arguments;
+        const bool is_extended_definition = !engine_args || engine_args->children.empty()
+            || create.storage->isExtendedStorageDefinition()
+            || (create.columns_list
+                && ((create.columns_list->indices && !create.columns_list->indices->children.empty())
+                    || (create.columns_list->projections && !create.columns_list->projections->children.empty())));
+
+        clearTransactionMetadata(
+            relative_data_path,
+            storage_policy,
+            is_extended_definition ? MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING : MERGE_TREE_DATA_OLD_FORMAT_VERSION,
+            getContext());
     }
 
     /// Set new engine
@@ -3952,51 +3995,191 @@ void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & cr
     db_disk->replaceFile(table_metadata_tmp_path, table_metadata_path);
 }
 
-void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_path, ContextPtr local_context)
+void InterpreterCreateQuery::clearTransactionMetadata(
+    const String & relative_data_path,
+    const StoragePolicyPtr & storage_policy,
+    MergeTreeDataFormatVersion fallback_format_version,
+    ContextPtr local_context)
 {
-    LOG_INFO(getLogger("InterpreterCreateQuery"), "Clearing transaction metadata for table, relative path: {} when ATTACH AS REPLICATED.", table_data_path);
+    auto log = getLogger("InterpreterCreateQuery");
+    LOG_INFO(log, "Clearing transaction metadata for table, relative path: {} when ATTACH AS REPLICATED.", relative_data_path);
 
-    /// Use disk API to remove transaction metadata files from all disks
-    auto disks = local_context->getDisksMap();
+    /// The table's own disks, not every configured disk: an encrypted or cached wrapper shares the
+    /// path of the disk it delegates to, so reading a part file through the wrong one yields
+    /// ciphertext.
+    const auto disks = storage_policy->getDisks();
+    const auto read_settings = local_context->getReadSettings();
+
+    /// The format version is needed to recognise part names below. Disks that carry the file must
+    /// agree; a read-only or write-once disk legitimately does not carry it at all.
+    std::optional<UInt32> read_format_version;
+    for (const auto & disk : disks)
+    {
+        if (disk->isBroken())
+            continue;
+
+        auto buf = disk->readFileIfExists(fs::path(relative_data_path) / MergeTreeData::FORMAT_VERSION_FILE_NAME, read_settings);
+        if (!buf)
+            continue;
+
+        UInt32 current_format_version = 0;
+        readIntText(current_format_version, *buf);
+        if (!buf->eof())
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                            "Cannot ATTACH AS REPLICATED: the MergeTree format version file on disk {} is corrupted",
+                            disk->getName());
+
+        if (!read_format_version.has_value())
+            read_format_version = current_format_version;
+        else if (*read_format_version != current_format_version)
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                            "Cannot ATTACH AS REPLICATED: the MergeTree format version differs between the disks "
+                            "of the table ({} and {})", *read_format_version, current_format_version);
+    }
+    const MergeTreeDataFormatVersion format_version{read_format_version.value_or(fallback_format_version.toUnderType())};
+
+    /// The loader derives the same minimum from the table definition and refuses a lower one.
+    if (format_version < fallback_format_version)
+        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "Cannot ATTACH AS REPLICATED: the MergeTree format version on disk ({}) does not support "
+                        "the table's custom partitioning", format_version.toUnderType());
+
+    struct PartTxnFiles
+    {
+        DiskPtr disk;
+        String path;
+    };
+
+    /// Parts whose recorded state says they are part of the table's committed data, so that removing
+    /// their transaction metadata cannot change what the table loads.
+    Strings retained_parts;
+    /// The rest, each with what disqualified it.
+    std::vector<std::pair<String, String>> other_parts;
+    std::vector<PartTxnFiles> parts_to_strip;
+    size_t examined_parts = 0;
+
+    for (const auto & disk : disks)
+    {
+        if (disk->isBroken())
+            continue;
+
+        if (!disk->existsDirectory(relative_data_path))
+            continue;
+
+        for (auto it = disk->iterateDirectory(relative_data_path); it->isValid(); it->next())
+        {
+            const String & part_name = it->name();
+            if (startsWith(part_name, "tmp") || part_name == MergeTreeData::FORMAT_VERSION_FILE_NAME
+                || part_name == MergeTreeData::DETACHED_DIR_NAME)
+                continue;
+
+            /// The part loader ignores a directory whose name is not a part name, so it cannot affect
+            /// the loaded table state and must be left exactly as it is.
+            if (!MergeTreePartInfo::tryParsePartName(part_name, format_version))
+                continue;
+
+            const String part_path = fs::path(relative_data_path) / part_name;
+            if (!disk->existsDirectory(part_path))
+                continue;
+
+            ++examined_parts;
+
+            VersionInfo version_info;
+            bool has_version_file = false;
+            try
+            {
+                if (auto buf = disk->readFileIfExists(
+                        fs::path(part_path) / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME, read_settings))
+                {
+                    version_info.readFromBuffer(*buf, /*one_line=*/false);
+                    has_version_file = true;
+                }
+            }
+            catch (...)
+            {
+                throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                                "Cannot ATTACH AS REPLICATED: failed to read the transaction metadata of part {} on disk {}, "
+                                "due to {}", part_name, disk->getName(), getCurrentExceptionMessage(false));
+            }
+
+            if (!has_version_file)
+            {
+                /// Nothing here can contradict the part's presence in the active set. A lone `.tmp`
+                /// counts as nothing: it is a committed part with a leftover file, and the conversion
+                /// removes the leftover.
+                retained_parts.push_back(part_name);
+                if (disk->existsFile(fs::path(part_path) / VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME))
+                    parts_to_strip.push_back({disk, part_path});
+                continue;
+            }
+
+            parts_to_strip.push_back({disk, part_path});
+
+            /// `isCreated()` alone would accept a rolled-back part, because it short-circuits on a
+            /// non-transactional creation TID. And a removal is disqualifying as soon as its TID is
+            /// recorded: an unresolved removal may still turn out to have committed.
+            if (version_info.creation_csn != Tx::RolledBackCSN && version_info.isCreated() && version_info.removal_tid.isEmpty())
+                retained_parts.push_back(part_name);
+            else if (version_info.creation_csn == Tx::RolledBackCSN)
+                other_parts.emplace_back(part_name, fmt::format("was created by transaction {}, which was rolled back", version_info.creation_tid));
+            else if (!version_info.isCreated())
+                other_parts.emplace_back(part_name, fmt::format("was created by transaction {}, whose commit is not recorded on disk", version_info.creation_tid));
+            else
+                other_parts.emplace_back(part_name, fmt::format("is being removed by transaction {}", version_info.removal_tid));
+        }
+    }
+
+    /// Every refusal, here and above, precedes the first removal, so a refused conversion leaves a
+    /// working MergeTree table whose metadata file was never rewritten.
+    ActiveDataPartSet active_parts(format_version);
+    for (const auto & part_name : retained_parts)
+    {
+        String reason;
+        if (active_parts.tryAdd(part_name, &reason) == ActiveDataPartSet::AddPartOutcome::HasIntersectingPart)
+        {
+            /// Keep only the first sentence, which names both parts: the rest of the set's message
+            /// blames the ZooKeeper data, and this table is not replicated yet.
+            if (auto sentence_end = reason.find(". "); sentence_end != String::npos)
+                reason.resize(sentence_end + 1);
+
+            throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                            "Cannot ATTACH AS REPLICATED: two parts that both look committed intersect, so the "
+                            "table's active set cannot be determined. {} Attach the table with a plain ATTACH TABLE "
+                            "and investigate those parts", reason);
+        }
+    }
+
+    for (const auto & [part_name, disqualification] : other_parts)
+    {
+        /// Safe to strip: the part is covered by a part that stays active, so the loader keeps
+        /// deriving its outdated state from the part names alone, with or without the metadata.
+        if (!active_parts.getContainingPart(part_name).empty())
+            continue;
+
+        throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
+                        "Cannot ATTACH AS REPLICATED: part {} {}, and no active part covers it, so removing its "
+                        "transaction metadata would add it to the table's data. Attach the table with a plain ATTACH "
+                        "TABLE first: if the transaction state is merely unresolved, that records the outcome on the "
+                        "part and the conversion succeeds afterwards, otherwise the part directory has to be removed "
+                        "or moved aside by hand", part_name, disqualification);
+    }
+
     size_t total_removed = 0;
-
-    for (const auto & [disk_name, disk] : disks)
+    for (const auto & [disk, part_path] : parts_to_strip)
     {
         try
         {
-            /// Skip if the table data path doesn't exist on this disk
-            if (!disk->existsDirectory(table_data_path))
-                continue;
-
-            /// Iterate through all parts in the table data directory
-            for (auto it = disk->iterateDirectory(table_data_path); it->isValid(); it->next())
+            /// Remove the temporary file first so the cleanup is fail-closed: if removing the main file
+            /// then throws, the part is left with a valid `txn_version.txt` (still a committed part)
+            /// rather than a lone `.tmp`, which the part loader reads as an uncommitted creation.
+            for (const auto * file_name : {VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME,
+                                           VersionMetadata::TXN_VERSION_METADATA_FILE_NAME})
             {
-                String part_name = it->name();
-                String part_path = fs::path(table_data_path) / part_name;
-
-                /// Check if it's a directory (part directory)
-                if (!disk->existsDirectory(part_path))
-                    continue;
-
-                /// Remove the committed metadata file (`txn_version.txt`) and any leftover
-                /// temporary file (`txn_version.txt.tmp`). A `.tmp` file can legitimately linger
-                /// on a part (for example, hardlinked onto a mutated part from its source during
-                /// a merge/mutation race on object storage). If it is left behind here, the part
-                /// is later misread as a rolled-back transaction (see
-                /// `VersionMetadataOnDisk::loadMetadata`) and wrongly discarded as `Outdated`,
-                /// which resurrects pre-mutation data after `ATTACH AS REPLICATED`.
-                /// Remove the temporary file first so the cleanup is fail-closed: if removing the
-                /// main file then throws, the part is left with a valid `txn_version.txt` (still a
-                /// committed part) rather than the dangerous tmp-only state described above.
-                for (const auto * file_name : {VersionMetadata::TMP_TXN_VERSION_METADATA_FILE_NAME,
-                                               VersionMetadata::TXN_VERSION_METADATA_FILE_NAME})
+                String txn_file = fs::path(part_path) / file_name;
+                if (disk->existsFile(txn_file))
                 {
-                    String txn_file = fs::path(part_path) / file_name;
-                    if (disk->existsFile(txn_file))
-                    {
-                        disk->removeFile(txn_file);
-                        total_removed++;
-                    }
+                    disk->removeFile(txn_file);
+                    total_removed++;
                 }
             }
         }
@@ -4004,11 +4187,12 @@ void InterpreterCreateQuery::clearTransactionMetadata(const String & table_data_
         {
             throw Exception(ErrorCodes::CANNOT_RESTORE_TABLE,
                            "Cannot ATTACH AS REPLICATED: failed to clear transaction metadata on disk {}, due to {}",
-                           disk_name, getCurrentExceptionMessage(false));
+                           disk->getName(), getCurrentExceptionMessage(false));
         }
     }
 
-    LOG_INFO(getLogger("InterpreterCreateQuery"), "Removed {} transaction metadata files for table, relative path: {}.", total_removed, table_data_path);
+    LOG_INFO(log, "Removed {} transaction metadata files out of {} part directories examined for table, relative path: {}.",
+             total_removed, examined_parts, relative_data_path);
 }
 
 void registerInterpreterCreateQuery(InterpreterFactory & factory);

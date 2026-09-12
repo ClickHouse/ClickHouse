@@ -7,7 +7,13 @@ cluster = ClickHouseCluster(__file__)
 # reaches `TransactionLog::instance`, whose constructor calls `loadLogFromZooKeeper`
 # unconditionally. No `allow_experimental_transactions` config is needed - part loading never
 # goes through `Context::checkTransactionsAreAllowed`.
-node = cluster.add_instance("node", with_zookeeper=True)
+# `{shard}`/`{replica}` are needed by `ATTACH TABLE ... AS REPLICATED`, which resolves
+# `default_replica_path` (`/clickhouse/tables/{uuid}/{shard}`) before it touches anything. They are
+# not configured by default, so the conversion would fail with NO_ELEMENTS_IN_CONFIG instead of
+# reaching the check under test. The values match what `helpers/cluster.py` picks for itself.
+node = cluster.add_instance(
+    "node", with_zookeeper=True, macros={"shard": "default", "replica": "node"}
+)
 
 # On-disk transaction metadata of a rolled-back part, byte for byte (no trailing newline).
 # `storing_version` is required: without it the old-format fallback overrides `creation_csn` with
@@ -25,8 +31,11 @@ ROLLED_BACK_TXN_VERSION = (
     "removal_csn: 0"
 )
 
-# A plausible in-flight record for the tmp-only layout. Its content is irrelevant: rollback is
-# decided purely from the presence of `txn_version.txt.tmp` without a final `txn_version.txt`.
+# A creating transaction whose outcome is not recorded on the part: `creation_csn: 0` is
+# `Tx::UnknownCSN`, so `VersionInfo::isCreated()` is false. As the content of a
+# `txn_version.txt.tmp` it is decoration, because rollback is then decided purely from that file's
+# presence without a final `txn_version.txt`; as the content of a final `txn_version.txt` the
+# unresolved CSN is the state under test.
 IN_FLIGHT_TXN_VERSION = ROLLED_BACK_TXN_VERSION.replace(
     "creation_csn: 18446744073709551615", "creation_csn: 0"
 )
@@ -359,6 +368,93 @@ def test_tmp_metadata(started_cluster):
     stop_merges(table)
 
     assert active_parts(table) == {"all_1_1_0", "all_2_3_0_0"}
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_attach_as_replicated_refuses_tmp_only_intersection(started_cluster):
+    """
+    `ATTACH TABLE ... AS REPLICATED` strips a lone `txn_version.txt.tmp`, which the part loader reads
+    as an uncommitted creation, so the conversion must refuse when such a part intersects a part that
+    stays active: stripping would leave the loader with two committed-looking intersecting parts and
+    the terminal `LOGICAL_ERROR`.
+
+    Every part here looks committed to the conversion, which is the case a retained-set check that
+    only runs when some part is disqualified misses.
+    """
+    table = "t_plt_attach_as_replicated_tmp_only"
+    data_path = create_table_with_one_part(table)
+
+    fabricate_part(
+        data_path, "all_1_1_0", "all_1_2_1_0", txn_version_tmp=IN_FLIGHT_TXN_VERSION
+    )
+    fabricate_part(data_path, "all_1_1_0", "all_2_3_0_0")
+
+    # Both parts are named without their zero mutation version: `getPartNameForLogs` omits it.
+    error = node.query_and_get_error(f"ATTACH TABLE {table} AS REPLICATED")
+    assert "CANNOT_RESTORE_TABLE" in error, error
+    assert "all_1_2_1" in error and "all_2_3_0" in error, error
+
+    # Nothing was modified: the tmp file is still there, the table still attaches as a MergeTree, and
+    # the loader resolves the same intersection correctly while that file exists.
+    listing = node.exec_in_container(
+        ["bash", "-c", f"ls {data_path}all_1_2_1_0"]
+    ).split()
+    assert "txn_version.txt.tmp" in listing
+
+    node.query(f"ATTACH TABLE {table}")
+    stop_merges(table)
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables"
+            f" WHERE database = 'default' AND name = '{table}'"
+        ).strip()
+        == "MergeTree"
+    )
+    assert active_parts(table) == {"all_1_1_0", "all_2_3_0_0"}
+
+    node.query(f"DROP TABLE {table} SYNC")
+
+
+def test_attach_as_replicated_refuses_uncommitted_creation(started_cluster):
+    """
+    A part whose `txn_version.txt` records a creating transaction with no commit CSN is not committed
+    data (`VersionInfo::isCreated()` is false), and no active part covers this one. Stripping that file
+    would leave the loader reading the part as plain committed data, so rows of a transaction that
+    never committed would become queryable, which is why the conversion has to refuse.
+    """
+    table = "t_plt_attach_as_replicated_in_flight"
+    data_path = create_table_with_one_part(table)
+
+    fabricate_part(
+        data_path, "all_1_1_0", "all_5_5_0", txn_version=IN_FLIGHT_TXN_VERSION
+    )
+
+    error = node.query_and_get_error(f"ATTACH TABLE {table} AS REPLICATED")
+    assert "CANNOT_RESTORE_TABLE" in error, error
+    assert "all_5_5_0" in error, error
+
+    # Nothing was modified: the metadata is byte-identical to what was planted.
+    assert (
+        node.exec_in_container(
+            ["bash", "-c", f"cat {data_path}all_5_5_0/txn_version.txt"]
+        )
+        == IN_FLIGHT_TXN_VERSION
+    )
+
+    # The loader agrees the part is not committed data: a transaction with no CSN and no running
+    # transaction is resolved as rolled back (`VersionMetadata::tryGetCSN`), so the part never becomes
+    # active. That resolution is written back to `txn_version.txt`, hence it is asserted above first.
+    node.query(f"ATTACH TABLE {table}")
+    stop_merges(table)
+    assert (
+        node.query(
+            "SELECT engine FROM system.tables"
+            f" WHERE database = 'default' AND name = '{table}'"
+        ).strip()
+        == "MergeTree"
+    )
+    assert active_parts(table) == {"all_1_1_0"}
 
     node.query(f"DROP TABLE {table} SYNC")
 
