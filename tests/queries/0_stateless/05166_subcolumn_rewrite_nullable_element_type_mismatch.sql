@@ -1,8 +1,6 @@
--- A member of a `Nullable(Tuple(...))` whose own type cannot be inside `Nullable` is exposed bare,
--- while that member's own subcolumns are wrapped by the enclosing null map. So a tuple element read
--- from the type definition can be declared `UInt64` while storage resolves it to `Nullable(UInt64)`,
--- and an element whose type absorbs the wrap is unaffected. Every query below must give the same
--- answer with the optimization on and off.
+-- A member of a `Nullable(Tuple(...))` whose own type cannot be inside `Nullable` (a `Variant`) is
+-- exposed bare, while a member that can be is wrapped by the enclosing null map. Every query below
+-- must give the same answer with the optimization on and off.
 
 SET enable_analyzer = 1;
 SET enable_nullable_tuple_type = 1;
@@ -20,7 +18,8 @@ ENGINE = MergeTree ORDER BY key;
 
 INSERT INTO t_nullable_tuple_element VALUES (1, ((10, 1), 5::Int64)), (2, NULL), (3, ((30, NULL), 'str'));
 
--- `t.inner.x` is `Nullable(UInt64)` in storage while `tupleElement` is declared `UInt64`.
+-- `t.inner` is `Nullable(Tuple(...))`, so `t.inner.x` is `Nullable(UInt64)` both in storage and as
+-- the result of `tupleElement`, and the row whose whole tuple is NULL reads as NULL.
 
 SELECT 'nested tuple element';
 SELECT key, tupleElement(t.inner, 'x'), toTypeName(tupleElement(t.inner, 'x')) FROM t_nullable_tuple_element ORDER BY key SETTINGS optimize_functions_to_subcolumns = 0;
@@ -36,7 +35,7 @@ SELECT 'nested tuple element, aggregated';
 SELECT sum(tupleElement(t.inner, 'x')) FROM t_nullable_tuple_element SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT sum(tupleElement(t.inner, 'x')) FROM t_nullable_tuple_element SETTINGS optimize_functions_to_subcolumns = 1;
 
--- `a` is already `Nullable`, so the enclosing null map does not change its type and the rewrite holds.
+-- `a` is already `Nullable`, so the enclosing null map does not change its type.
 
 SELECT 'nested tuple element, already nullable';
 SELECT key, tupleElement(t.inner, 'a') FROM t_nullable_tuple_element ORDER BY key SETTINGS optimize_functions_to_subcolumns = 0;
@@ -64,8 +63,10 @@ SELECT 'plain tuple element';
 SELECT key, tupleElement(t.inner, 'x'), variantElement(t.v, 'Int64') FROM t_plain_tuple_element ORDER BY key SETTINGS optimize_functions_to_subcolumns = 0;
 SELECT key, tupleElement(t.inner, 'x'), variantElement(t.v, 'Int64') FROM t_plain_tuple_element ORDER BY key SETTINGS optimize_functions_to_subcolumns = 1;
 
--- The answers above are equal whether or not a rewrite happened, so assert which rewrites fire:
--- only the one whose declared type disagrees with storage is declined.
+-- The answers above are equal whether or not a rewrite happened, so assert which rewrites fire.
+-- `t.inner` is `Nullable(Tuple(...))`, and `FunctionToSubcolumnsPass` keys its transformers on
+-- `Tuple`, so no `tupleElement` over it is rewritten. `t.v` is a `Variant`, which cannot be inside
+-- `Nullable`, so it stays bare and its rewrite fires, as do both rewrites on the plain tuple.
 
 SELECT 'rewrite fired';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT tupleElement(t.inner, 'x') FROM t_nullable_tuple_element SETTINGS optimize_functions_to_subcolumns = 1) WHERE explain ILIKE '%t.inner.x%';

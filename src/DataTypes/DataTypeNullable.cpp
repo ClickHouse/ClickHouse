@@ -154,15 +154,10 @@ void registerDataTypeNullable(DataTypeFactory & factory)
 Allows to store special marker ([NULL](/reference/syntax)) that denotes "missing value" alongside normal values allowed by `T`. For example, a `Nullable(Int8)` type column can store `Int8` type values, and the rows that do not have a value will store `NULL`.
 
 `T` can't be any of the following composite data types:
-- [Array](/reference/data-types/array) — Not supported
-- [Map](/reference/data-types/map) — Not supported
-- [Tuple](/reference/data-types/tuple) — Beta support available*
+- [Array](/reference/data-types/array)
+- [Map](/reference/data-types/map)
 
 However, composite data types **can contain** `Nullable` type values, e.g. `Array(Nullable(Int8))` or `Tuple(Nullable(String), Nullable(Int64))`.
-
-<Note title="Beta: Nullable Tuples">
-* [Nullable(Tuple(...))](/reference/data-types/tuple#nullable-tuple) is supported when `enable_nullable_tuple_type = 1` is enabled.
-</Note>
 
 A `Nullable` type field can't be included in table indexes.
 

@@ -669,9 +669,9 @@ static std::shared_ptr<ListNode> makeInArrayArgumentsList(
     /// (`nullIn` compares `NULL`s, `in` does not), not of the `transform_null_in` setting, which
     /// only renames `in` to `nullIn` before this rewrite. Types that cannot be inside `Nullable`,
     /// such as `Array(...)` or `Map(...)`, are left as they are - the `Nullable` wrapper would be
-    /// rejected when the column is created. `Tuple(...)` is excluded explicitly, because it reports
-    /// that it can be inside `Nullable` while a `Nullable(Tuple(...))` column cannot be created by
-    /// default.
+    /// rejected when the column is created. `Tuple(...)` is left as it is as well: a tuple array
+    /// that contains `NULL` already has `Nullable(Tuple(...))` elements, and the tuple comparison
+    /// gives the same results as the scalar one without the wrapper.
     if ((rhs_has_null || !compare_nulls)
         && !isTuple(common_type))
         common_type = makeNullableOrLowCardinalityNullableSafe(common_type);

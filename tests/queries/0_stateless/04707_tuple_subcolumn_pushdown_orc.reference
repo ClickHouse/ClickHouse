@@ -2,6 +2,8 @@
 {"label":"top_level","result":[{"count()":1}],"rows_read":2000}
 {"label":"tuple_element","result":[{"count()":1}],"rows_read":2000}
 {"label":"tuple_element_ci","result":[{"count()":1}],"rows_read":2000}
+-- an inferred Nullable(Tuple(...)) element does not reach the search argument
+{"label":"tuple_element_inferred","result":[{"count()":1}],"rows_read":20000}
 -- refused as key names: only named tuple elements have their own statistics
 {"label":"map_keys","result":[{"count()":2857}],"rows_read":20000}
 {"label":"map_values","result":[{"count()":20000}],"rows_read":20000}

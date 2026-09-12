@@ -1,16 +1,16 @@
 nested tuple element
-1	10	UInt64
-2	0	UInt64
-3	30	UInt64
-1	10	UInt64
-2	0	UInt64
-3	30	UInt64
+1	10	Nullable(UInt64)
+2	\N	Nullable(UInt64)
+3	30	Nullable(UInt64)
+1	10	Nullable(UInt64)
+2	\N	Nullable(UInt64)
+3	30	Nullable(UInt64)
 nested tuple element, ordinal
 1	10
-2	0
+2	\N
 3	30
 1	10
-2	0
+2	\N
 3	30
 nested tuple element, aggregated
 40
@@ -39,7 +39,7 @@ plain tuple element
 rewrite fired
 0
 0
-1
+0
 1
 1
 1

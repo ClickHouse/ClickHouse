@@ -418,8 +418,8 @@ CREATE TABLE IF NOT EXISTS `StringIntUnion`
 ```
 
 #### Unsupported Protobuf schemas {#unsupported-proto-schemas}
-The following Protobuf schemas are unsupported by the connector:
-- multi-message unions (**before CH version 26.1**)
+The following Protobuf schemas are unsupported by the connector on older ClickHouse versions:
+- multi-message unions (**before CH version 26.1**, and before CH version 26.9 unless a setting is enabled, see below)
 ```protobuf
 syntax = "proto3";
 
@@ -431,19 +431,19 @@ message TwoRecords {
     TypeB type_b = 3;
   }
 
-  // translates to Nullable(Tuple(label String)) in ClickHouse, which is unsupported
+  // translates to Nullable(Tuple(label String)) in ClickHouse, which is unsupported before 26.1
   message TypeA {
     string label = 1;
   }
 
-  // translates to Nullable(Tuple(count Int32)) in ClickHouse, which is unsupported
+  // translates to Nullable(Tuple(count Int32)) in ClickHouse, which is unsupported before 26.1
   message TypeB {
     int32 count = 1;
   }
 }
 ```
 
-From CH version 26.1 onwards, this schema is supported when `allow_experimental_nullable_tuple_type=1` (see [this documentation page](/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
+From ClickHouse version 26.9 onwards, this schema is supported by default. In versions 26.1 to 26.8 it requires the setting `allow_experimental_nullable_tuple_type = 1` (see [this documentation page](/reference/settings/session-settings/allow-experimental#allow_experimental_nullable_tuple_type)).
 
 ### JSON schema support {#json-schema-support}
 
