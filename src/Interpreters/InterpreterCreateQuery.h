@@ -81,8 +81,10 @@ public:
     /// pass false for objects that never evaluate their own column defaults over an insert block
     /// (ordinary views and external-target materialized views).
     static ColumnsDescription getColumnsDescription(const ASTExpressionList & columns, ContextPtr context, LoadingStrictnessLevel mode, bool is_restore_from_backup = false, bool check_defaults_over_virtual_columns = true);
-    static ConstraintsDescription
-    getConstraintsDescription(const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context);
+    /// is_fresh_definition rejects constraint shapes that only a newly supplied declaration may not use;
+    /// pass false for a definition read back from stored metadata, which must stay loadable.
+    static ConstraintsDescription getConstraintsDescription(
+        const ASTExpressionList * constraints, const ColumnsDescription & columns, ContextPtr local_context, bool is_fresh_definition);
 
     static void prepareOnClusterQuery(ASTCreateQuery & create, ContextPtr context, const String & cluster_name);
 

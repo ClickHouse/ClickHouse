@@ -16,6 +16,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTSubquery.h>
 
@@ -27,6 +28,9 @@
 #include <Analyzer/Passes/QueryAnalysisPass.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/misc.h>
+
+#include <Common/checkStackSize.h>
 
 #include <unordered_set>
 
@@ -34,8 +38,41 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_QUERY;
+}
+
+void checkConstraintExpressionIsValid(const IAST & ast)
+{
+    checkStackSize();
+
+    /// A subquery body is SELECT-scoped, where `x IN table` is legal shorthand for
+    /// `x IN (SELECT * FROM table)`. Only the constraint's own row-scoped expression is checked.
+    if (ast.as<ASTSubquery>())
+        return;
+
+    /// A constraint is evaluated against the row being inserted, so a bare identifier can only mean a
+    /// column of this table, while `AddDefaultDatabaseVisitor` rewrites it into a table reference.
+    if (const auto * func = ast.as<ASTFunction>(); func && functionIsInOrGlobalInOperator(func->name))
+    {
+        const auto * args = func->arguments ? func->arguments->as<ASTExpressionList>() : nullptr;
+        if (args && args->children.size() == 2)
+        {
+            const auto & rhs = args->children[1];
+            const auto * identifier = rhs->as<ASTIdentifier>();
+            /// A name the visitor cannot turn into a table reference stays row-scoped and evaluates as
+            /// an expression, so only a convertible one is rejected: `createTable` declines a name of
+            /// three or more parts, such as the subcolumn path `t.a.b`, and a parameterised name.
+            /// `typeid_cast` matches the exact type only, so `ASTTableIdentifier` needs its own test.
+            if (rhs->as<ASTTableIdentifier>() || (identifier && identifier->createTable()))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS, "Constraint expressions cannot contain a table in the 'IN' operator");
+        }
+    }
+
+    for (const auto & child : ast.children)
+        checkConstraintExpressionIsValid(*child);
 }
 
 String ConstraintsDescription::toString() const

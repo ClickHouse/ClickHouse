@@ -133,7 +133,10 @@ void validateCreateQuery(const ASTCreateQuery & query, const VirtualColumnsDescr
     }
     if (columns.constraints)
     {
-        InterpreterCreateQuery::getConstraintsDescription(columns.constraints, columns_desc, context);
+        /// Whole-metadata validation, so a newly-supplied constraint declaration is not distinguishable
+        /// here; those are checked by AlterCommands::validate and on the CREATE path.
+        InterpreterCreateQuery::getConstraintsDescription(
+            columns.constraints, columns_desc, context, /*is_fresh_definition=*/false);
     }
     if (columns.projections)
     {
