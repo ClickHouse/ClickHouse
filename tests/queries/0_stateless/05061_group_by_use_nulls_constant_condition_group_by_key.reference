@@ -1,0 +1,53 @@
+bare key, rollup	true
+bare key, rollup	\N
+bare key, grouping sets	true
+if, rollup	true
+if, rollup	\N
+if, cube	true
+if, cube	\N
+if, grouping sets	true
+if false branch, rollup	true
+if false branch, rollup	\N
+multiIf, rollup	true
+multiIf, rollup	\N
+multiIf kept, rollup	true
+multiIf kept, rollup	\N
+if, rollup, grouping()	true	0
+if, rollup, grouping()	\N	1
+two if keys, cube	true	false
+two if keys, cube	true	\N
+two if keys, cube	\N	false
+two if keys, cube	\N	\N
+reported query	true	1
+reported query	\N	1
+if, rollup, UInt8	1
+if, rollup, UInt8	\N
+if, rollup, UInt64	1
+if, rollup, UInt64	\N
+if, rollup, String	x
+if, rollup, String	\N
+if, rollup, Nullable	true
+if, rollup, Nullable	\N
+if and bare key, rollup	true
+if and bare key, rollup	\N
+if, totals	true
+
+if, totals	\N
+if, rollup, setting off	false
+if, rollup, setting off	true
+projection, rollup	true	1
+projection, rollup	\N	1
+projection, cube	true	1
+projection, cube	\N	1
+projection, grouping sets	true	1
+projection, grouping sets	\N	1
+projection, setting off	false	1
+projection, setting off	true	1
+constant if key	a	a	Nullable(String)
+constant if key	a	a	Nullable(String)
+constant if key, enum	a	a	Nullable(String)
+constant if key, enum	a	a	Nullable(String)
+constant multiIf key	Nullable(String)	String
+constant multiIf key	Nullable(String)	String
+constant multiIf key, enum	Nullable(String)	String
+constant multiIf key, enum	Nullable(String)	String
