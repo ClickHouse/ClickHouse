@@ -1,0 +1,17 @@
+--- =: external
+--- =: local
+7
+--- IN: external
+3
+--- IN: local
+3
+--- IN list: external
+3
+--- IN list: local
+3
+--- NOT IN: external
+7
+x
+--- NOT IN: local
+7
+x

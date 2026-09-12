@@ -254,7 +254,8 @@ bool typeMayContainDecimal(const IDataType & type);
 /// round-trip across distributed / serialized-plan boundaries without going through Float64 or the
 /// DateTime text-parsing heuristics. Decimal-free values use the same representation as
 /// getFieldFromColumnForASTLiteral.
-ASTPtr columnConstantToExactLiteralAST(const ColumnPtr & column, size_t row, const DataTypePtr & type);
+ASTPtr columnConstantToExactLiteralAST(
+    const ColumnPtr & column, size_t row, const DataTypePtr & type, bool name_dynamic_member_types = true);
 
 /// Wrap `value` in `_CAST(value, type_name)`, but skip the wrapping when `value` is already a
 /// `_CAST(..., type_name)` to the same type (e.g. the exact carrier produced for a scalar

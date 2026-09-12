@@ -239,6 +239,37 @@ TEST(TransformQueryForExternalDatabase, InWithSingleElement)
           R"(SELECT "field" FROM "test"."table" WHERE "field" NOT IN ('hello', 'world'))");
 }
 
+TEST(TransformQueryForExternalDatabase, DynamicConstant)
+{
+    const State & state = State::instance();
+
+    /// A `Dynamic` constant is pushed as its active member's literal with the member type left unnamed:
+    /// an external database has no `Dynamic`, and a named `Enum8` member folds back to the enum's name
+    /// ('7') rather than its value (3), a different predicate over a text column. Analyzer-only path.
+    checkNewAnalyzer(state, {"field"},
+          R"(SELECT field FROM test.table WHERE field = CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic))",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" = 3)");
+
+    checkNewAnalyzer(state, {"field"},
+          R"(SELECT field FROM test.table WHERE field IN (CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic)))",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IN (3))");
+
+    checkNewAnalyzer(state, {"field"},
+          R"(SELECT field FROM test.table WHERE field NOT IN (CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic)))",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" NOT IN (3))");
+
+    /// A multi-element list travels as one constant `tuple`, so it is the only shape that observes its elements left unnamed too.
+    checkNewAnalyzer(state, {"field"},
+          R"(SELECT field FROM test.table WHERE field IN (CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic), CAST(CAST('3', 'Enum8(\'3\' = 4)') AS Dynamic)))",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" IN (3, 4))");
+
+    /// `Dynamic(max_types = 0)` keeps every value in the shared binary variant, a second value exit that
+    /// forwards the opt-out on its own, so the external path needs its own case here.
+    checkNewAnalyzer(state, {"field"},
+          R"(SELECT field FROM test.table WHERE field = CAST(CAST('7', 'Enum8(\'7\' = 3)') AS Dynamic(max_types = 0)))",
+          R"(SELECT "field" FROM "test"."table" WHERE "field" = 3)");
+}
+
 TEST(TransformQueryForExternalDatabase, InWithMultipleColumns)
 {
     const State & state = State::instance();

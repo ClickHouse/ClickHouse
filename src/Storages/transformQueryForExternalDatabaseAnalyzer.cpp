@@ -89,7 +89,9 @@ ASTPtr getASTForExternalDatabaseFromQueryTree(ContextPtr context, const QueryTre
             removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
     }
 
-    auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false, .fully_qualified_identifiers = false });
+    auto query_node_ast = query_node->toAST({ .add_cast_for_constants = false,
+                                              .name_dynamic_member_types = false,
+                                              .fully_qualified_identifiers = false });
     const IAST * ast = query_node_ast.get();
 
     if (const auto * ast_subquery = ast->as<ASTSubquery>())
