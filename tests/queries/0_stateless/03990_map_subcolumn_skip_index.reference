@@ -68,6 +68,8 @@ Granules: 1/1
 1	1
 -- physical column named m.key_nokey: indexed count, oracle
 1	1
+-- physical column named m.key_nokey, text index on mapKeys: indexed count, oracle
+1	1
 -- key of a different map under the same name space: indexed count, oracle
 1	1
 -- parents rendering to the same name: indexed count, oracle

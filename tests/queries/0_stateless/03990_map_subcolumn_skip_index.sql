@@ -421,6 +421,25 @@ FROM t_shadow_physical WHERE `m.key_nokey` = 'hello' SETTINGS use_skip_indexes =
 
 DROP TABLE t_shadow_physical;
 
+DROP TABLE IF EXISTS t_shadow_physical_text;
+
+-- Same name collision reaching the `text` index's mapKeys path, which validates the name separately.
+CREATE TABLE t_shadow_physical_text
+(
+    m Map(String, String),
+    `m.key_nokey` String,
+    INDEX idx mapKeys(m) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_shadow_physical_text VALUES ({'abc':'x'}, 'hello');
+
+SELECT '-- physical column named m.key_nokey, text index on mapKeys: indexed count, oracle';
+SELECT count(), (SELECT count() FROM t_shadow_physical_text WHERE hasToken(`m.key_nokey`, 'hello') SETTINGS use_skip_indexes = 0)
+FROM t_shadow_physical_text WHERE hasToken(`m.key_nokey`, 'hello') SETTINGS use_skip_indexes = 1;
+
+DROP TABLE t_shadow_physical_text;
+
 DROP TABLE IF EXISTS t_shadow_other_map;
 
 -- Two maps in one name space: the key belongs to the JSON's map, the index covers the physical one.
