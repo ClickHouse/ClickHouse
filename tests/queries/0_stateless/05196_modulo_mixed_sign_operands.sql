@@ -15,9 +15,12 @@ SELECT modulo(toUInt32(7), toInt32(-3)), modulo(toUInt64(7), toInt64(-3));
 SELECT '-- the wide integers take a separate branch';
 SELECT modulo(toInt128(-1), toUInt128(10)), modulo(toInt256(-1), toUInt256(10));
 
-SELECT '-- the other four functions share ModuloImpl';
-SELECT moduloLegacy(toInt32(-1), toUInt32(10)), moduloOrZero(toInt32(-1), toUInt32(10)), moduloOrNull(toInt32(-1), toUInt32(10));
+SELECT '-- moduloOrZero and moduloOrNull share the fixed ModuloImpl';
+SELECT moduloOrZero(toInt32(-1), toUInt32(10)), moduloOrNull(toInt32(-1), toUInt32(10));
 SELECT moduloOrZero(toInt64(-100000), toUInt64(100000));
+
+SELECT '-- moduloLegacy does NOT: it is frozen for MergeTree partition-key backward compatibility';
+SELECT moduloLegacy(toInt32(-1), toUInt32(10));
 
 SELECT '-- a narrower unsigned divisor was always correct, because promotion lifts both to signed int';
 SELECT positiveModulo(toInt32(-1), toUInt16(10)), positiveModulo(toInt32(-1), 10);
@@ -59,3 +62,16 @@ SELECT modulo(toInt128('-170141183460469231731687303715884105728'), toUInt128('3
 
 SELECT '-- regression: a UInt128 value above Int128::max was silently corrupted before reaching the kernel';
 SELECT modulo(toUInt128('170141183460469231731687303715884105729'), toInt8(-7));
+
+SELECT '-- regression: moduloLegacy briefly inherited the fixed ModuloImpl::apply, which is exactly';
+SELECT '-- backward-incompatible for MergeTree partition keys - it must keep the raw C++ % semantics';
+SELECT moduloLegacy(toInt32(-1), toUInt32(10));
+SELECT moduloLegacy(toUInt128(20), toInt8(-7));
+SELECT moduloLegacy(toInt256(-1), toUInt256(10));
+
+SELECT '-- regression: a UInt256 operand has no wider signed type to widen into for the pruning path,';
+SELECT '-- so modulo/moduloOrNull must not be pruned via a common signed type for it - the direct';
+SELECT '-- kernel needs no such cast and stays exact';
+SELECT modulo(toUInt256('57896044618658097711785492504343953926634992332820282019728792003956564819968'), toInt8(-7));
+SELECT modulo(toUInt256('57896044618658097711785492504343953926634992332820282019728792003956564819968'), toInt128(-7));
+SELECT moduloLegacy(toUInt256('57896044618658097711785492504343953926634992332820282019728792003956564819968'), toInt8(-7));

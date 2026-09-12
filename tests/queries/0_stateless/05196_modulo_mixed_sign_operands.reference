@@ -7,9 +7,11 @@
 1	1
 -- the wide integers take a separate branch
 -1	-1
--- the other four functions share ModuloImpl
--1	-1	-1
+-- moduloOrZero and moduloOrNull share the fixed ModuloImpl
+-1	-1
 0
+-- moduloLegacy does NOT: it is frozen for MergeTree partition-key backward compatibility
+5
 -- a narrower unsigned divisor was always correct, because promotion lifts both to signed int
 9	9
 -- control: intDiv on the same operand types, unchanged
@@ -36,3 +38,14 @@
 -170141183460469231731687303715884105728
 -- regression: a UInt128 value above Int128::max was silently corrupted before reaching the kernel
 3
+-- regression: moduloLegacy briefly inherited the fixed ModuloImpl::apply, which is exactly
+-- backward-incompatible for MergeTree partition keys - it must keep the raw C++ % semantics
+5
+20
+5
+-- regression: a UInt256 operand has no wider signed type to widen into for the pruning path,
+-- so modulo/moduloOrNull must not be pruned via a common signed type for it - the direct
+-- kernel needs no such cast and stays exact
+1
+1
+0

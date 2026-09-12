@@ -311,10 +311,58 @@ template <typename A, typename B>
 struct ModuloLegacyImpl : ModuloImpl<A, B>
 {
     using ResultType = typename NumberTraits::ResultOfModuloLegacy<A, B>::Type;
+    using IntegerAType = typename NumberTraits::ToInteger<A>::Type;
+    using IntegerBType = typename NumberTraits::ToInteger<B>::Type;
 
 #if USE_EMBEDDED_COMPILER
     static constexpr bool compilable = false; /// moduloLegacy is only used in partition key expression
 #endif
+
+    /// `moduloToModuloLegacyRecursive` (`KeyDescription.cpp`) silently rewrites every `modulo` in a
+    /// `PARTITION BY` expression to `moduloLegacy`, so this is the function that computes
+    /// on-disk partition IDs for any table partitioned by a modulo expression - the one place where
+    /// "correct" is the wrong goal, because a partition ID computed one way by an old server and
+    /// another way by a new one is a silent, on-disk-incompatible change for existing tables.
+    /// `ModuloImpl::apply` above no longer matches this: it now computes the SIGNED remainder for a
+    /// mixed-sign pair, e.g. `moduloLegacy(toInt32(-1), toUInt32(10))` moved from `5` to `-1` when it
+    /// briefly inherited that fix. This keeps the historical, unsigned-computed behaviour verbatim -
+    /// the exact `apply` this function had before that fix - deliberately, not as an oversight.
+    template <typename Result = ResultType>
+    static Result apply(A a, B b)
+    {
+        if constexpr (is_floating_point<ResultType>)
+        {
+            return static_cast<ResultType>(a) - std::trunc(static_cast<ResultType>(a) / static_cast<ResultType>(b)) * static_cast<ResultType>(b);
+        }
+        else
+        {
+            if constexpr (is_floating_point<A>)
+                if (isNaN(a) || a > std::numeric_limits<IntegerAType>::max() || a < std::numeric_limits<IntegerAType>::lowest())
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
+
+            if constexpr (is_floating_point<B>)
+                if (isNaN(b) || b > std::numeric_limits<IntegerBType>::max() || b < std::numeric_limits<IntegerBType>::lowest())
+                    throw Exception(ErrorCodes::ILLEGAL_DIVISION, "Cannot perform integer division on infinite or too large floating point numbers");
+
+            throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
+
+            if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
+            {
+                using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
+                using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
+
+                CastA int_a(a);
+                CastB int_b(b);
+
+                if constexpr (is_big_int_v<IntegerBType> && sizeof(IntegerAType) <= sizeof(IntegerBType))
+                    return static_cast<Result>(static_cast<CastB>(int_a) % int_b);
+                else
+                    return static_cast<Result>(int_a % static_cast<CastA>(int_b));
+            }
+            else
+                return static_cast<Result>(IntegerAType(a) % IntegerBType(b));
+        }
+    }
 };
 
 template <typename A, typename B>
