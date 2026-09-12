@@ -10,6 +10,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 #include <Interpreters/DatabaseCatalog.h>
@@ -107,6 +108,15 @@ std::shared_ptr<InterpreterSelectWithUnionQuery> interpretSubquery(
         else
         {
             auto table_id = context->resolveStorageID(table_expression);
+            /// Without the analyzer a bare table on the right-hand side of `IN` / `GLOBAL IN` /
+            /// `GLOBAL JOIN` is turned into `SELECT * FROM table` here, and the lookup below loads
+            /// it. Behind a read-only `Overlay` facade that would load the underlying source table
+            /// before any source-side grant is proven, so the fail-closed precheck must run first:
+            /// otherwise a hidden broken source surfaces its own error to a user granted only on
+            /// the facade, turning the facade into an existence oracle. `SHOW_TABLES` is required
+            /// because any grant on the source table implies it; the precise privilege on both the
+            /// facade and the source is still verified against the loaded storage later.
+            DatabaseOverlay::checkSourceTableAccessIfFacade(table_id, context, AccessType::SHOW_TABLES);
             const auto & storage = DatabaseCatalog::instance().getTable(table_id, context);
             auto metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
             columns = metadata_snapshot->getColumns().getOrdinary();

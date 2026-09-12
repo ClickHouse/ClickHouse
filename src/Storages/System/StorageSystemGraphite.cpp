@@ -5,6 +5,7 @@
 #include <Core/NamesAndTypes.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -48,6 +49,12 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
     {
         /// Check if database can contain MergeTree tables
         if (db.second->isExternal())
+            continue;
+
+        /// A read-only `Overlay` facade exposes the tables of its underlying source databases,
+        /// which this loop already visits directly; walking the facade too would report each
+        /// physical table twice (both times under the source table's own id).
+        if (DatabaseOverlay::isReadonlyFacade(db.second.get()))
             continue;
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())

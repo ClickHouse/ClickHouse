@@ -16,6 +16,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/DatabaseFactory.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/enableAllExperimentalSettings.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
@@ -190,6 +191,7 @@ namespace ErrorCodes
     extern const int DELTA_KERNEL_ERROR;
     extern const int FAULT_INJECTED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
 }
 
 namespace FailPoints
@@ -215,6 +217,17 @@ namespace ActionLocks
 
 namespace
 {
+
+/// A read-only `Overlay` facade re-exposes the tables of its underlying source databases under its
+/// own name. `SYSTEM` commands that iterate a database's tables would therefore reach those source
+/// tables through the facade and act on them behind the user's back, with only a facade-scoped grant.
+/// Whole-server `SYSTEM` handlers skip such facades while iterating databases (the same source tables
+/// are reached directly through their owner database, which is iterated too), while table- and
+/// database-targeted handlers reject them outright (see `InterpreterSystemQuery::execute`).
+bool isReadOnlyOverlayDatabase(const DatabasePtr & database)
+{
+    return database && database->isReadOnly() && typeid_cast<const DatabaseOverlay *>(database.get());
+}
 
 /// Sequentially tries to execute all commands and throws exception with info about failed commands
 void executeCommandsAndThrowIfError(std::vector<std::function<void()>> commands)
@@ -313,6 +326,8 @@ void InterpreterSystemQuery::startStopAction(StorageActionBlockType action_type,
     {
         for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
+            if (isReadOnlyOverlayDatabase(elem.second))
+                continue;
             startStopActionInDatabase(action_type, start, elem.first, elem.second, getContext(), log);
         }
     }
@@ -395,6 +410,39 @@ BlockIO InterpreterSystemQuery::execute()
             table_id = getContext()->resolveStorageID(id_in_query, Context::ResolveOrdinary);
     }
 
+    /// `SYSTEM` commands that name a read-only `Overlay` facade — table-targeted (db_overlay.t) or
+    /// database-scoped (e.g. SYSTEM DROP REPLICA ... FROM DATABASE db_overlay) — would resolve the
+    /// facade to the underlying source tables and act on them (stop/start merges, restart/sync/drop
+    /// replica, etc.) behind the user's back, with only a facade-scoped grant. Reject them: they must
+    /// be run against the underlying database that owns the data. Whole-server commands (no database
+    /// named) instead skip read-only `Overlay` facades while iterating databases — see
+    /// `isReadOnlyOverlayDatabase`.
+    {
+        auto reject_if_read_only_overlay = [&](const String & database_name)
+        {
+            if (!database_name.empty() && isReadOnlyOverlayDatabase(DatabaseCatalog::instance().tryGetDatabase(database_name)))
+                throw Exception(
+                    ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                    "Database {} is an Overlay facade (read-only). "
+                    "Run SYSTEM commands in the underlying database that owns the table",
+                    backQuote(database_name));
+        };
+
+        if (table_id)
+            reject_if_read_only_overlay(table_id.database_name);
+        else if (query.database)
+            reject_if_read_only_overlay(query.getDatabase());
+
+        /// `SYSTEM FLUSH ASYNC INSERT QUEUE` names its targets in `query.tables`, not in
+        /// `query.table` / `query.database`, so the checks above do not see them; without this loop
+        /// `SYSTEM FLUSH ASYNC INSERT QUEUE db_overlay.t` (or an unqualified `t` with the facade as
+        /// the current database) resolves through the facade and flushes the underlying source table.
+        /// `SYSTEM FLUSH LOGS` also uses `query.tables`, but there the entries are log names, not
+        /// tables of an arbitrary database, so it is not affected.
+        if (query.type == Type::FLUSH_ASYNC_INSERT_QUEUE)
+            for (const auto & [database, table] : query.tables)
+                reject_if_read_only_overlay(database.empty() ? getContext()->getCurrentDatabase() : database);
+    }
 
     BlockIO result;
 
@@ -1607,6 +1655,11 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
         if (elem.second->isExternal())
             continue;
 
+        /// Skip a read-only `Overlay` facade: its source tables are restarted directly through
+        /// their owner database, which is iterated here too.
+        if (isReadOnlyOverlayDatabase(elem.second))
+            continue;
+
         if (!access_is_granted_globally && !show_tables_is_granted_globally && !access->isGranted(AccessType::SHOW_TABLES, elem.first))
         {
             LOG_INFO(log, "Access {} denied, skipping {}", "SHOW TABLES", elem.first);
@@ -1674,6 +1727,8 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         std::vector<String> required_access;
         for (auto & elem : databases)
         {
+            if (isReadOnlyOverlayDatabase(elem.second))
+                continue;
             if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_DROP_REPLICA, elem.first))
             {
                 required_access.emplace_back(elem.first);
@@ -1692,6 +1747,10 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         for (auto & elem : databases)
         {
             DatabasePtr & database = elem.second;
+            /// Skip a read-only `Overlay` facade: its source tables are reached directly through
+            /// their owner database, which is iterated here too.
+            if (isReadOnlyOverlayDatabase(database))
+                continue;
             dropStorageReplicasFromDatabase(query.replica, database);
             LOG_TRACE(log, "Dropped replica {} from database {}", query.replica, backQuoteIfNeed(database->getDatabaseName()));
         }
@@ -1717,6 +1776,8 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
             DatabasePtr & database = elem.second;
+            if (isReadOnlyOverlayDatabase(database))
+                continue;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
                 if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
@@ -2269,6 +2330,10 @@ void InterpreterSystemQuery::restartDisk(const String & disk_name)
     bool disk_refreshed = false;
     for (auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
     {
+        /// Skip a read-only `Overlay` facade: its source tables are refreshed directly through
+        /// their owner database, which is iterated here too.
+        if (isReadOnlyOverlayDatabase(elem.second))
+            continue;
         /// skip_not_loaded: act only on already-loaded tables, do not block on async loading.
         for (auto it = elem.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
         {
@@ -2420,6 +2485,10 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
 
         for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
         {
+            /// Skip a read-only `Overlay` facade: its source tables are reached directly through
+            /// their owner database, which is iterated here too.
+            if (isReadOnlyOverlayDatabase(database.second))
+                continue;
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
                 if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
@@ -2606,6 +2675,9 @@ std::vector<StoragePtr> InterpreterSystemQuery::getAccessibleStreamingStorages()
     std::vector<StoragePtr> result;
     for (const auto & elem : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_remote_databases = false}))
     {
+        if (isReadOnlyOverlayDatabase(elem.second))
+            continue;
+
         const auto & database_name = elem.first;
         for (auto iterator = elem.second->getTablesIterator(ctx); iterator->isValid(); iterator->next())
         {

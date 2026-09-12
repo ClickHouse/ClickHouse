@@ -1,0 +1,8 @@
+a scan of the detached tables works with a facade present
+1
+the detached table of the source is reported for the source only
+source	gone
+the facade reports no detached tables even when asked about it directly
+0
+the attached table is still visible through the facade
+attached

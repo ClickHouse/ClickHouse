@@ -14,6 +14,7 @@
 #include <Access/ContextAccess.h>
 #include <Common/typeid_cast.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOverlay.h>
 
 
 namespace DB
@@ -95,6 +96,12 @@ void StorageSystemReplicationQueue::fillData(MutableColumns & res_columns, Conte
             if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
                 continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
+                continue;
+
+            /// A table reached through a read-only `Overlay` facade also requires `SHOW_TABLES`
+            /// on the underlying source table: the facade must not widen metadata visibility.
+            /// This runs regardless of the facade-side per-database grant shortcut.
+            if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, db.first, iterator->name(), table))
                 continue;
             replicated_tables[db.first][iterator->name()] = table;
         }

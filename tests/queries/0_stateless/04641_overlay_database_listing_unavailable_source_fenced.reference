@@ -1,0 +1,9 @@
+Facade-only grants: SHOW TABLES through the facade is empty, not the connection error
+rc=0
+Facade-only grants: system.tables shows no tables for the facade, not the connection error
+0
+Facade-only grants: system.columns shows no columns for the facade, not the connection error
+0
+Dual grants: the source connection error is visible, the same as on direct listing
+ALL_CONNECTION_TRIES_FAILED
+ALL_CONNECTION_TRIES_FAILED

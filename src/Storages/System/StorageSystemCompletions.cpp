@@ -8,6 +8,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Dictionaries/DictionaryStructure.h>
 #include <Dictionaries/IDictionary.h>
 #include <Dictionaries/IDictionarySource.h>
@@ -83,6 +84,16 @@ static void fillDataWithTableColumns(
     if (!table)
         return; // table was dropped or deleted, while adding columns for previous table
 
+    /// A table reached through a read-only `Overlay` facade also requires `SHOW_TABLES`
+    /// on the underlying source table: the facade must not widen metadata visibility.
+    /// This runs regardless of the facade-side per-database grant shortcut.
+    if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, database_name, table_name, table))
+        return;
+
+    /// Same for the column tokens: through the facade, `SHOW_COLUMNS` must be granted on
+    /// the underlying source table (and column) as well, mirroring `system.columns`.
+    const auto overlay_source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database_name, table_name}, table);
+
     res_columns[0]->insert(table_name);
     res_columns[1]->insert(TABLE_CONTEXT);
     res_columns[2]->insert(database_name);
@@ -95,6 +106,14 @@ static void fillDataWithTableColumns(
     const auto & columns = snapshot->getColumns();
     for (const auto & column : columns)
     {
+        /// The source-side check runs regardless of the facade-side per-database grant
+        /// shortcut (`check_access_for_columns`), since such a shortcut does not cover
+        /// the source database.
+        if (overlay_source_id
+            && !access->isGranted(
+                AccessType::SHOW_COLUMNS, overlay_source_id->database_name, overlay_source_id->table_name, column.name))
+            continue;
+
         if (check_access_for_columns && !access->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name, column.name))
             continue;
 

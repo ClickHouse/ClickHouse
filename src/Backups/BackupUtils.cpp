@@ -2,9 +2,11 @@
 #include <Backups/BackupUtils.h>
 #include <Backups/DDLAdjustingForBackupVisitor.h>
 #include <Databases/DDLRenamingVisitor.h>
+#include <Databases/DatabaseFactory.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTFunction.h>
 #include <Storages/TimeSeries/normalizeTimeSeriesDefinition.h>
 #include <Common/typeid_cast.h>
 
@@ -135,7 +137,27 @@ bool compareRestoredTableDef(const IAST & restored_table_create_query, const IAS
 
 bool compareRestoredDatabaseDef(const IAST & restored_database_create_query, const IAST & create_query_from_backup, const ContextPtr & global_context)
 {
-    return compareRestoredTableDef(restored_database_create_query, create_query_from_backup, global_context);
+    /// The definition from the backup was parsed from text, and the parser canonicalizes
+    /// function-like engine names that have special SQL syntax: e.g. `ENGINE = Overlay(...)`
+    /// is parsed as the string function `overlay`. The definition of the existing database,
+    /// on the contrary, always carries the canonical engine name. Resolve both sides through
+    /// `DatabaseFactory` before comparison, the same way `DatabaseFactory::get` does before
+    /// creating a database.
+    auto canonicalize_engine_name = [](const IAST & query) -> ASTPtr
+    {
+        auto new_query = boost::static_pointer_cast<ASTCreateQuery>(query.clone());
+        if (new_query->storage && new_query->storage->engine)
+        {
+            String canonical_name = DatabaseFactory::instance().resolveCanonicalEngineName(new_query->storage->engine->name);
+            if (!canonical_name.empty())
+                new_query->storage->engine->name = canonical_name;
+        }
+        return new_query;
+    };
+
+    auto query1 = canonicalize_engine_name(restored_database_create_query);
+    auto query2 = canonicalize_engine_name(create_query_from_backup);
+    return compareRestoredTableDef(*query1, *query2, global_context);
 }
 
 bool isInnerTable(const QualifiedTableName & table_name)

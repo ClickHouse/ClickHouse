@@ -1,0 +1,22 @@
+the facade has no UUID, the source keeps its own
+facade	1
+source	0
+a table created through the facade lands in the Atomic source with a UUID
+1	1
+t
+the table is reachable through the facade by name, and the facade id carries no UUID
+2
+x	UInt8					
+a name that already resolves through the facade is not created again
+1
+TABLE_ALREADY_EXISTS
+the CREATE TABLE grant is required on the facade and on the source
+ACCESS_DENIED
+underlying source database of this Overlay facade
+the denial does not name the source: 0
+0
+t
+t_by_user
+the facade can be detached and attached again
+t
+t_by_user

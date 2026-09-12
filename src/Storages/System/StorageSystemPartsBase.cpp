@@ -20,6 +20,7 @@
 #include <Storages/System/getQueriedColumnsMaskAndHeader.h>
 #include <Access/ContextAccess.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <QueryPipeline/Pipe.h>
@@ -179,6 +180,12 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                         continue;
 
                     if (check_access_for_tables_in_db && !access->isGranted(AccessType::SHOW_TABLES, database_name, table_name))
+                        continue;
+
+                    /// A table reached through a read-only `Overlay` facade also requires `SHOW_TABLES`
+                    /// on the underlying source table: the facade must not widen metadata visibility.
+                    /// This runs regardless of the facade-side per-database grant shortcut.
+                    if (DatabaseOverlay::isSourceTableHiddenFromShow(*access, database_name, table_name, storage))
                         continue;
 
                     storages[storage_uuid] = storage;

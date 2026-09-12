@@ -4,6 +4,7 @@
 #include <filesystem>
 
 #include <Access/AccessControl.h>
+#include <Access/ContextAccess.h>
 #include <Access/User.h>
 
 #include <Core/Settings.h>
@@ -61,6 +62,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/executeDDLQueryOnCluster.h>
 #include <Interpreters/executeQuery.h>
 #include <Interpreters/QueryConstructionSettings.h>
@@ -90,8 +92,9 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
-#include <Databases/TablesLoader.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Databases/LoadingStrictnessLevel.h>
+#include <Databases/TablesLoader.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
@@ -192,6 +195,7 @@ namespace ErrorCodes
     extern const int UNKNOWN_DATABASE;
     extern const int PATH_ACCESS_DENIED;
     extern const int ACCESS_DENIED;
+    extern const int TABLE_IS_PERMANENTLY_READ_ONLY;
     extern const int NOT_IMPLEMENTED;
     extern const int ENGINE_REQUIRED;
     extern const int UNKNOWN_STORAGE;
@@ -410,7 +414,10 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
 
     bool need_write_metadata = !create.attach || !default_db_disk->existsFile(metadata_file_path);
     bool need_lock_uuid = internal || need_write_metadata;
-    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ false);
+    /// During RESTORE the database is created in secondary (SECONDARY_CREATE) mode, like restored
+    /// tables: this skips creation-time checks that do not hold mid-restore, e.g. an `Overlay` facade
+    /// whose source databases are restored in the same operation and may not exist yet at this point.
+    auto mode = getLoadingStrictnessLevel(create.attach, force_attach, has_force_restore_data_flag, /*secondary*/ is_restore_from_backup);
 
     /// Lock uuid, so we will known it's already in use.
     /// We do it when attaching databases on server startup (internal) and on CREATE query (!create.attach);
@@ -889,6 +896,24 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
+    /// `CREATE TABLE ... AS other_table` (including `CLONE AS`) copies the schema of `other_table`,
+    /// so when `other_table` is reached through a read-only `Overlay` facade, `SHOW_COLUMNS` is
+    /// required on the underlying source table too: the facade must not widen metadata access
+    /// (see the `Overlay` access-control contract). The check must run before `setEngine` below,
+    /// which already loads the source's create query through the facade, and it is fail-closed
+    /// the same way as `DESCRIBE` / `SHOW CREATE` (a failing existence probe on a remote-catalog
+    /// source is remasked as the same `ACCESS_DENIED` a denied healthy source would produce).
+    /// The gate is keyed on fresh user input rather than on the strictness level ordering: only
+    /// loading previously-validated metadata (server startup / force-restore) is exempt. Today no
+    /// grammar reaches here with `attach` and a schema-copy `as_table` at once (`ATTACH TABLE x AS`
+    /// only accepts `[NOT] REPLICATED`), so this keeps the check fail-closed if that ever changes.
+    if (!create.as_table.empty() && !isLoadingFromExistingMetadata(mode))
+    {
+        String as_database_name = getContext()->resolveDatabase(create.as_database);
+        if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(as_database_name))
+            facade->checkSourceTableAccess(create.as_table, getContext(), AccessType::SHOW_COLUMNS);
+    }
+
     /// CLONE AS only makes sense with a source table: the partition-attach step performed after table
     /// creation needs real partitions to copy. Reject CLONE AS SELECT / CLONE AS table_function for a
     /// fresh CREATE and for a user-supplied full ATTACH definition (an ATTACH that carries an explicit
@@ -971,6 +996,11 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, create.as_table);
         StoragePtr as_storage = DatabaseCatalog::instance().getTable({as_database_name, create.as_table}, getContext());
+
+        /// Re-verify against the loaded storage: the name could have started resolving through a
+        /// read-only `Overlay` facade between the metadata-only check above and the lookup.
+        if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade({as_database_name, create.as_table}, as_storage))
+            getContext()->checkAccess(AccessType::SHOW_COLUMNS, *source_id);
 
         /// as_storage->getColumns() and setEngine(...) must be called under structure lock of other_table for CREATE ... AS other_table.
         as_storage_lock = as_storage->lockForShare(getContext()->getCurrentQueryId(), getContext()->getSettingsRef()[Setting::lock_acquire_timeout]);
@@ -2429,7 +2459,60 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     DatabasePtr database;
 
     database = DatabaseCatalog::instance().getDatabase(create.getDatabase());
-    assertOrSetUUID(create, database);
+
+    /// A read-only `Overlay` facade owns no storage of its own, so `ATTACH TABLE` through it is
+    /// rejected up front, in every syntax and regardless of `IF NOT EXISTS`: the generic existence
+    /// check below would otherwise answer for a name that already resolves through the facade, and
+    /// the full syntax would otherwise be delegated to a source like `CREATE TABLE` (see below).
+    if (create.attach)
+        if (const auto * overlay = typeid_cast<const DatabaseOverlay *>(database.get()); overlay && overlay->isReadOnly())
+            throw Exception(
+                ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+                "Database {} is an Overlay facade (read-only). Run ATTACH TABLE in an underlying database",
+                backQuoteIfNeed(create.getDatabase()));
+
+    /// A read-only `Overlay` facade with no writable source database cannot receive a table at all,
+    /// so reject that up front too, before any probe of the facade or its sources: the facade-wide
+    /// existence check below walks the sources, so its answer (`TABLE_ALREADY_EXISTS`, a silent
+    /// `IF NOT EXISTS`, or a broken source's own error) would otherwise tell the caller which names
+    /// the hidden sources hold, and the source-side grant check below has nothing to check against.
+    if (const auto * overlay = typeid_cast<const DatabaseOverlay *>(database.get());
+        overlay && overlay->isReadOnly() && !overlay->tryGetTableCreationDatabase())
+        throw Exception(
+            ErrorCodes::TABLE_IS_PERMANENTLY_READ_ONLY,
+            "Database {} is an Overlay facade (read-only) without a writable source database. "
+            "Run CREATE TABLE in an underlying database",
+            backQuoteIfNeed(create.getDatabase()));
+
+    /// `CREATE TABLE` through a read-only `Overlay` facade is delegated to its first writable source
+    /// database (see below), and the facade's dual-grant contract applies: the grants for the query
+    /// as written (on the facade) were checked already, and the same grants are required on the
+    /// source database that receives the table. The source-side grant is proved here, before any
+    /// probe of the facade or its sources: the facade-wide existence check below walks the sources,
+    /// so its answer (`TABLE_ALREADY_EXISTS`, a silent `IF NOT EXISTS`, or a broken source's own
+    /// error) would otherwise tell a caller without the source-side grant which names the hidden
+    /// sources hold. The source is probed rather than named, so the denial is keyed to the facade name.
+    const DatabasePtr table_creation_database = DatabaseOverlay::resolveTableCreationDatabase(database);
+    if (table_creation_database != database)
+    {
+        const String facade_name = create.getDatabase();
+        create.setDatabase(table_creation_database->getDatabaseName());
+        const bool granted_on_source = getContext()->getAccess()->isGranted(getRequiredAccess());
+        create.setDatabase(facade_name);
+        if (!granted_on_source)
+            throw Exception(
+                ErrorCodes::ACCESS_DENIED,
+                "{}: Not enough privileges. To execute this query, it's necessary to have the grant {} ON {}.{} in the "
+                "underlying source database of this Overlay facade",
+                getContext()->getUserName(),
+                toString(create.is_dictionary ? AccessType::CREATE_DICTIONARY : (create.isView() ? AccessType::CREATE_VIEW : AccessType::CREATE_TABLE)),
+                backQuote(facade_name),
+                backQuote(create.getTable()));
+    }
+
+    /// The facade itself has no UUID, so the source that receives the table decides whether it
+    /// needs a UUID (`Atomic`) or not.
+    assertOrSetUUID(create, table_creation_database);
 
     String storage_name = create.is_dictionary ? "Dictionary" : "Table";
     auto storage_already_exists_error_code = create.is_dictionary ? ErrorCodes::DICTIONARY_ALREADY_EXISTS : ErrorCodes::TABLE_ALREADY_EXISTS;
@@ -2489,6 +2572,19 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         /// We are not checking this for secondary creates to avoid backward compatibility issues.
         if (mode <= LoadingStrictnessLevel::CREATE)
             database->checkTableNameLength(create.getTable());
+    }
+
+    /// A table created through a read-only `Overlay` facade is created in the facade's first
+    /// writable source database, from here on exactly as if the query had named that database: the
+    /// source owns the table, its metadata file and its data path, and the table's `StorageID` must
+    /// carry the source name (an `Atomic` database refuses a query that names another database).
+    /// The name was checked above against the facade as a whole, so a name that already resolves
+    /// through any source is still rejected (`ATTACH` was rejected up front), and the source-side
+    /// grant was proved before that check.
+    if (table_creation_database != database)
+    {
+        create.setDatabase(table_creation_database->getDatabaseName());
+        database = table_creation_database;
     }
 
     data_path = database->getTableDataPath(create);
@@ -3773,12 +3869,51 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
         {
             const auto & target_id = target.table_id;
             if (target_id)
+            {
                 required_access.emplace_back(AccessType::SELECT | AccessType::INSERT, target_id.database_name, target_id.table_name);
+
+                /// A `TO` target reached through a read-only `Overlay` facade resolves to the
+                /// underlying source table at write time, and a plain materialized view (no
+                /// `SQL SECURITY` clause) performs those writes without re-checking the target
+                /// grant. So creating it must prove `SELECT` and `INSERT` on the source table
+                /// too, exactly as a direct `INSERT INTO`/`SELECT FROM` the facade name would:
+                /// the facade must not widen access. Fail-closed the same way as `DESCRIBE`.
+                if (const auto facade
+                    = DatabaseOverlay::tryGetReadonlyFacade(getContext()->resolveDatabase(target_id.database_name)))
+                {
+                    facade->checkSourceTableAccess(target_id.table_name, getContext(), AccessType::SELECT);
+                    facade->checkSourceTableAccess(target_id.table_name, getContext(), AccessType::INSERT);
+                }
+            }
         }
     }
 
     if (create.storage && create.storage->engine)
-        required_access.emplace_back(AccessType::TABLE_ENGINE, create.storage->engine->name);
+    {
+        String engine_name = create.storage->engine->name;
+        if (!create.table)
+        {
+            /// The parser may canonicalize a database engine name (e.g. `Overlay` is parsed as the
+            /// SQL-standard `overlay` function), and `TABLE ENGINE` grants are case-sensitive,
+            /// so resolve the canonical database engine name before forming the access element.
+            if (String canonical = DatabaseFactory::instance().resolveCanonicalEngineName(engine_name); !canonical.empty())
+                engine_name = canonical;
+
+            if (engine_name == "Overlay" && create.storage->engine->arguments)
+            {
+                /// Overlay re-exposes the tables of the databases it unions, so creating it
+                /// requires SELECT on each source database.
+                for (const auto & arg : create.storage->engine->arguments->children)
+                {
+                    auto resolved = evaluateConstantExpressionOrIdentifierAsLiteral(arg, getContext());
+                    const auto & literal = resolved->as<ASTLiteral &>();
+                    const String source_db = literal.value.safeGet<String>();
+                    required_access.emplace_back(AccessType::SELECT, source_db);
+                }
+            }
+        }
+        required_access.emplace_back(AccessType::TABLE_ENGINE, engine_name);
+    }
 
     return required_access;
 }

@@ -1,0 +1,10 @@
+-- ATTACH of a facade over another facade is rejected
+BAD_ARGUMENTS
+-- listing a facade among several sources is rejected too
+BAD_ARGUMENTS
+-- the rejected facade was not persisted
+0
+-- ATTACH of a facade over a regular database works
+2
+-- DETACH / ATTACH roundtrip of a valid facade keeps working
+2

@@ -67,6 +67,7 @@
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/ColumnsDescription.h>
 
 #include <Access/Common/AccessFlags.h>
@@ -5882,18 +5883,44 @@ void QueryAnalyzer::inlineViewSubqueryIfNeeded(QueryTreeNodePtr & join_tree_node
     /// Use getAll() rather than getOrdinary(): a view can expose ALIAS (and MATERIALIZED) columns,
     /// which the planner's per-column SELECT check treats as separate privileges, so they must be
     /// covered here too - otherwise a caller lacking SELECT on an ALIAS column would still inline.
-    if (!scope.context->getAccess()->isGranted(
-            AccessType::SELECT,
-            storage_id.getDatabaseName(),
-            storage_id.getTableName(),
-            storage_snapshot->metadata->getColumns().getAll().getNames()))
-        return;
+    /// When the view is reached through a read-only `Overlay` facade, `storage_id` is the underlying
+    /// source view while `written_id` is the facade name, and reading requires the grant on *both*.
+    /// The gate must therefore hold for both ids: checking only the source would let a caller who
+    /// has `SELECT` on the source but not on the facade inline the view and so skip the facade-side
+    /// check the planner performs for a `TableNode`.
+    const auto & written_id = table_node->getStorageID();
+    std::vector<StorageID> ids_to_check{storage_id};
+    if (DatabaseOverlay::getSourceTableIdForReadonlyFacade(written_id, storage))
+        ids_to_check.push_back(written_id);
+
+    const auto view_column_names = storage_snapshot->metadata->getColumns().getAll().getNames();
+    for (const auto & id : ids_to_check)
+    {
+        if (!scope.context->getAccess()->isGranted(
+                AccessType::SELECT,
+                id.getDatabaseName(),
+                id.getTableName(),
+                view_column_names))
+            return;
+    }
 
     auto view_context = StorageView::getViewSubqueryContext(scope.context, storage_snapshot);
 
     /// Check for row policies on the view itself.
     auto row_policy_filter = scope.context->getRowPolicyFilter(
         storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    /// When the view is reached through a read-only `Overlay` facade, `storage_id` is the underlying
+    /// source view, but the facade's own row policies must apply too (a row must pass both). Combine
+    /// them here, mirroring `getEffectiveRowPolicyFilter` on the non-inlined path — otherwise
+    /// inlining the view would silently drop the facade filter.
+    if (ids_to_check.size() > 1)
+    {
+        auto facade_filter = scope.context->getRowPolicyFilter(
+            written_id.getDatabaseName(), written_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        row_policy_filter = combineRowPolicyFilters(row_policy_filter, facade_filter);
+    }
+
     bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
 
     /// Build the query tree from the view's inner query AST.

@@ -34,6 +34,12 @@ public:
 
     const TablesWithColumns & tablesWithColumns() const { return tables_with_columns; }
 
+    /// The left table id exactly as written in the query (after database/UUID resolution but
+    /// before resolving an `Overlay` facade to the underlying source table). Empty until
+    /// `getLeftTableStorage` has been called for a plain table reference. Used to check access
+    /// against the facade name in addition to the underlying source database.
+    const StorageID & leftTableStorageID() const { return left_table_id; }
+
     bool isLeftTableSubquery() const;
     bool isLeftTableFunction() const;
     size_t tablesCount() const { return table_expressions.size(); }
@@ -51,6 +57,7 @@ private:
     /// Legacy (duplicated left table values)
     ASTPtr left_table_expression;
     std::optional<DatabaseAndTableWithAlias> left_db_and_table;
+    StorageID left_table_id = StorageID::createEmpty();
     const ASTSelectQuery & select_query;
     const bool is_create_parameterized_view;
 };

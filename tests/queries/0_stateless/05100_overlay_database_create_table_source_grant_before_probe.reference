@@ -1,0 +1,12 @@
+without the source-side grant, a taken hidden name and a free name are denied identically
+ACCESS_DENIED Code: 497 grant CREATE TABLE ON `db_ovl_DB`.`secret` in the underlying source database of this Overlay facade 
+ACCESS_DENIED Code: 497 grant CREATE TABLE ON `db_ovl_DB`.`secret` in the underlying source database of this Overlay facade 
+ACCESS_DENIED Code: 497 grant CREATE TABLE ON `db_ovl_DB`.`absent` in the underlying source database of this Overlay facade 
+ACCESS_DENIED Code: 497 grant CREATE TABLE ON `db_ovl_DB`.`absent` in the underlying source database of this Overlay facade 
+the denial does not name a source: 0
+nothing was created: 1
+with the grant on the receiving source, the facade-wide existence check applies
+Code: 57 TABLE_ALREADY_EXISTS 
+IF NOT EXISTS on a taken name is a no-op
+1	absent
+0	secret

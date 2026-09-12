@@ -1,0 +1,6 @@
+analyzer_inline_views=1: the facade row policy still applies after view inlining (expect 1 2)
+1 2
+analyzer_inline_views=0: the facade row policy applies without inlining (expect 1 2)
+1 2
+direct reads of the source view are unaffected by the facade policy (expect 1 2 3 4)
+1 2 3 4

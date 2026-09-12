@@ -9,6 +9,7 @@
 #include <Backups/IBackupCoordination.h>
 #include <Core/Settings.h>
 #include <Databases/IDatabase.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/StorageID.h>
@@ -482,6 +483,13 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
             return;
         }
 
+        /// A backed-up `CREATE DATABASE ... ENGINE = Overlay(...)` names every source database of
+        /// the facade, so writing it into the backup requires `SHOW DATABASES` on all of them, the
+        /// same gate the other database-metadata paths apply: `BACKUP DATABASE` on the facade must
+        /// not become a way around the source-database visibility model.
+        if (const auto * facade = DatabaseOverlay::asReadonlyFacade(database_info.database.get()))
+            facade->checkSourceDatabaseNamesVisible(context);
+
         auto * create = create_database_query->as<ASTCreateQuery>();
         if (create->getDatabase() != database_name)
         {
@@ -500,6 +508,17 @@ void BackupEntriesCollector::gatherDatabaseMetadata(
 
     if (table_name)
     {
+        /// A read-only `Overlay` facade owns no tables (`getTablesForBackup` returns nothing for
+        /// it), so an explicit `BACKUP TABLE` on the facade would misreport the table as missing.
+        /// Reject it up front — unconditionally, before any source lookup, so the error does not
+        /// depend on whether the table exists and cannot be used as an existence oracle.
+        if (database_name != DatabaseCatalog::TEMPORARY_DATABASE && DatabaseOverlay::asReadonlyFacade(database_info.database.get()))
+            throw Exception(
+                ErrorCodes::CANNOT_BACKUP_TABLE,
+                "Database {} is an Overlay facade (read-only) and owns no tables. "
+                "Run BACKUP TABLE on the underlying database that owns the table",
+                backQuote(database_name));
+
         auto & table_params = database_info.tables[*table_name];
         if (throw_if_table_not_found)
             table_params.throw_if_table_not_found = true;

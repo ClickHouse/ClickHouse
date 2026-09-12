@@ -13,6 +13,7 @@
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
 
+#include <Databases/DatabaseOverlay.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/Context.h>
@@ -307,6 +308,21 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     storage_id = context->resolveStorageID(storage_id);
     bool is_temporary_table = storage_id.getDatabaseName() == DatabaseCatalog::TEMPORARY_DATABASE;
 
+    /// Fail-closed source-side visibility precheck for a table reached through a read-only
+    /// `Overlay` facade: it must run before the catalog lookups below resolve and load the
+    /// underlying source table, because loading can surface the hidden source's own startup /
+    /// metadata / remote error to a user with no grant on the source, turning the facade into an
+    /// oracle for hidden broken sources. `SHOW_TABLES` is checked (not the operation's own
+    /// access type) because any grant on the source table implies it, so users holding only
+    /// column-level grants are not over-denied here; the precise operation grant on both the
+    /// facade and the source is still verified against the loaded storage at planning time
+    /// (`checkAccessRights` in `PlannerJoinTree`), which also closes the resolution race.
+    if (!is_temporary_table)
+    {
+        if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(storage_id.getDatabaseName()))
+            facade->checkSourceTableAccess(storage_id.getTableName(), context, AccessType::SHOW_TABLES);
+    }
+
     StoragePtr storage;
     TableLockHolder storage_lock;
 
@@ -400,12 +416,34 @@ static void checkAccessToTableMetadata(const TableNode & table_node, const Conte
     /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
     /// `system` and `information_schema` databases is granted after implications are derived.
     const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
-    for (const auto & column : table_node.getStorageSnapshot()->metadata->getColumns())
+    const auto & columns = table_node.getStorageSnapshot()->metadata->getColumns();
+    auto has_visible_column = [&](const StorageID & id)
     {
-        if (access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
-            || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
-            return;
-    }
+        for (const auto & column : columns)
+        {
+            if (access_rights->isGranted(AccessType::SELECT, id.database_name, id.table_name, column.name)
+                || access_rights->isGranted(AccessType::SHOW_COLUMNS, id.database_name, id.table_name, column.name))
+                return true;
+        }
+        return false;
+    };
+
+    bool visible = has_visible_column(storage_id);
+
+    /// The metadata obtained through a read-only `Overlay` facade is that of the underlying source
+    /// table, and reading through the facade requires the grant on both names, so the facade must
+    /// not widen metadata visibility either: at least one column has to be visible on the source
+    /// too (see the `Overlay` access-control contract). Without this, an analyzer-only path that
+    /// never reaches `checkAccessRights` in `PlannerJoinTree` (`EXPLAIN QUERY TREE`,
+    /// `EXPLAIN SYNTAX`) would resolve names against the full source schema for a user granted on
+    /// the facade alone. The source is only probed, never named: the denial below is reported for
+    /// the id as written, exactly as for a table the user cannot see at all.
+    if (visible)
+        if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(storage_id, table_node.getStorage()))
+            visible = has_visible_column(*source_id);
+
+    if (visible)
+        return;
 
     /// Not a single column of the table is visible to the user. Report the denial through the
     /// standard check, so the message and the query log get the table-level requirement without

@@ -13,6 +13,7 @@
 #include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Core/Settings.h>
+#include <Databases/DatabaseOverlay.h>
 #include <Storages/StorageView.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -187,15 +188,38 @@ void InterpreterDescribeQuery::fillColumnsFromTableFunction(const ASTTableExpres
     /// access-check exception.
     {
         auto [database_name, table_name] = extractDatabaseAndTableNameForParameterizedView(table_function_name, current_context);
-        StoragePtr table;
+
+        /// The written name can resolve to a parameterized view through a read-only `Overlay`
+        /// facade. The lookup below would load the underlying source view before any source-side
+        /// grant is proven, so a fail-closed visibility precheck runs first: without
+        /// `SHOW_COLUMNS` on the source name the branch is skipped and the name falls through to
+        /// the `UNKNOWN_FUNCTION` branch, exactly as for a missing name — a denied name, a
+        /// missing name, and a hidden broken source stay indistinguishable.
+        bool source_visible = true;
         if (!table_name.empty())
+            if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(database_name))
+                source_visible = facade->isSourceTableVisibleNoLoad(table_name, current_context, AccessType::SHOW_COLUMNS);
+
+        StoragePtr table;
+        if (!table_name.empty() && source_visible)
             table = DatabaseCatalog::instance().tryGetTable({database_name, table_name}, current_context);
 
-        /// An existing parameterized view the user cannot see (`SHOW COLUMNS` not granted) must also fall
-        /// through to the `UNKNOWN_FUNCTION` branch rather than throw `ACCESS_DENIED`, which would leak
-        /// the existence of the view.
+        /// Re-verify against the loaded storage: the name could have started resolving to a
+        /// (different) source between the metadata-only check above and the lookup. Through a
+        /// facade the described columns are those of the underlying source view, so
+        /// `SHOW_COLUMNS` is required on the source name too — the facade must not widen access.
+        bool source_show_columns_granted = true;
+        if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(StorageID{database_name, table_name}, table))
+            source_show_columns_granted
+                = current_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, source_id->database_name, source_id->table_name);
+
+        /// An existing parameterized view the user cannot see (`SHOW COLUMNS` not granted, on the
+        /// facade name or on the underlying source name) must also fall through to the
+        /// `UNKNOWN_FUNCTION` branch rather than throw `ACCESS_DENIED`, which would leak the
+        /// existence of the view.
         if (auto * storage_view = table ? table->as<StorageView>() : nullptr;
             storage_view && storage_view->isParameterizedView()
+            && source_show_columns_granted
             && current_context->getAccess()->isGranted(AccessType::SHOW_COLUMNS, database_name, table_name))
         {
             auto view_metadata = storage_view->getInMemoryMetadataPtr(current_context, false);
@@ -250,11 +274,30 @@ void InterpreterDescribeQuery::fillColumnsFromTable(const ASTTableExpression & t
     auto table_id = query_context->resolveStorageID(table_expression.database_and_table_name, resolve_type);
     query_context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
 
+    /// Through a read-only `Overlay` facade the described columns are those of the underlying
+    /// source table, so `SHOW_COLUMNS` is required on the source too: the facade must not widen
+    /// access (see the `Overlay` access-control contract). The source id is resolved from
+    /// metadata only, without loading the source table, and fail-closed: the check must run
+    /// *before* the lookup below, which loads the source table and could throw its own load
+    /// error — and a failing existence probe on a source backed by a remote catalog is remasked
+    /// as the same `ACCESS_DENIED` a denied healthy source would produce — otherwise a user
+    /// without the source-side grant could observe the source's error and use the facade as an
+    /// oracle for hidden broken sources.
+    if (table_id.hasDatabase())
+        if (const auto facade = DatabaseOverlay::tryGetReadonlyFacade(table_id.database_name))
+            facade->checkSourceTableAccess(table_id.table_name, query_context, AccessType::SHOW_COLUMNS);
+
     auto table = DatabaseCatalog::instance().getTable(table_id, query_context);
+
+    /// Re-verify against the loaded storage: the name could have started resolving to a
+    /// (different) source between the metadata-only check above and the lookup.
+    if (auto source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(table_id, table))
+        query_context->checkAccess(AccessType::SHOW_COLUMNS, *source_id);
 
     if (const auto * alias = table->as<StorageAlias>();
         alias && !alias->isTargetTableGranted(query_context, AccessType::SHOW_COLUMNS, {}))
         throw Exception(ErrorCodes::ACCESS_DENIED, "Not enough privileges to describe metadata exposed by {}", table_id.getNameForLogs());
+
 
     if (auto * storage_view = table->as<StorageView>())
     {

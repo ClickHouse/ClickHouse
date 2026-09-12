@@ -1,0 +1,12 @@
+CHECK on the Overlay database alone is not enough to CHECK TABLE through the facade
+ACCESS_DENIED
+CHECK on both the Overlay and the underlying database succeeds
+1
+ALTER on the Overlay database alone is not enough to KILL MUTATION through the facade row
+ACCESS_DENIED
+The mutation is still there
+1
+ALTER on both the Overlay and the underlying database kills the mutation through the facade row
+waiting
+No mutations are left
+0
