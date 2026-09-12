@@ -631,24 +631,11 @@ public:
         algo->pullAll(pending);
         algo = makeAlgorithm(new_algorithm, unit);
         algorithm = new_algorithm;
-        // `fair` projects each query's virtual runtime in push() and stores it in the (per-query)
-        // scheduling context, which outlives this leaf's algorithm instances. The new instance
-        // starts from a zero system virtual time, so reset each migrated query's projected vruntime
-        // for this leaf before re-pushing — otherwise the pending backlog's projection would be
-        // double-counted on top of what a previous `fair` stint left behind (re-keying the same
-        // requests advances vruntime again). attained_cost is real accrued service, left untouched.
-        // Resetting a context repeatedly is idempotent, so no dedup is needed before the push loop.
-        //
-        // Only queries that hold a pending request at the swap are reset here. A query that had
-        // already drained its queue keeps the vruntime from the previous `fair` instance, so its
-        // next request after a `fair -> other -> fair` toggle re-enters at max(system_vruntime,
-        // stale_vruntime) and is transiently deprioritized until system_vruntime catches up. This
-        // is bounded and self-correcting, and only reachable by live-reconfiguring a workload's
-        // scheduler between `fair` stints; eliminating it entirely would require storing vruntime
-        // per fair-instance (with drain-time cleanup to avoid an unbounded per-query map), which is
-        // not worth the added state and lifetime complexity for so rare a case.
-        // Return each migrated request's consumed correction to the shared state before re-pushing,
-        // so a live swap does not drop it.
+        // Migrate the backlog to the new algorithm. First return each request's consumed
+        // cost-correction (the previous algorithm may have taken it at push, and the request is being
+        // re-pushed rather than served). Then, switching to `fair`, reset each migrated query's
+        // vruntime: the fresh instance restarts system virtual time at 0, so the stale projection
+        // would otherwise be double-counted. attained_cost is real accrued service and is kept.
         for (ResourceRequest * request : pending)
             returnConsumedCorrection(request);
         if (new_algorithm == SchedulerAlgorithm::Fair)
