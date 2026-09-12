@@ -88,6 +88,30 @@ namespace FailPoints
     extern const char parallel_replicas_wait_for_unused_replicas[];
 }
 
+static void setClusterForParallelReplicas(const ContextMutablePtr & context, const String & cluster_name, const LoggerPtr & log)
+{
+    const String previous_cluster_name = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
+    if (context->getSettingsRef()[Setting::cluster_for_parallel_replicas].changed && previous_cluster_name != cluster_name)
+        LOG_INFO(
+            log,
+            "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is used: {}",
+            previous_cluster_name,
+            cluster_name);
+
+    /// Any count present here was selected by an outer parallel-replica dispatch, not by the one this
+    /// `Distributed` read is about to start: every replica set reached through this step gets its own
+    /// coordinator from `executeQueryWithParallelReplicas`, which owns and re-sends the count. Clear it
+    /// unconditionally. Keying the reset on the cluster name alone would not be enough, because
+    /// `prepareClusterForParallelReplicas` scopes the coordinator by the per-query `_shard_num` scalar as well:
+    /// a fan-out over the same cluster name but a different shard is a different replica set, and must not
+    /// inherit the previous shard's count.
+    context->getClientInfo().obsolete_count_participating_replicas = 0;
+    context->clearParallelReplicasCoordinatorCount();
+
+    LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
+    context->setSetting("cluster_for_parallel_replicas", cluster_name);
+}
+
 static void addConvertingActions(Pipe & pipe, const Block & header, const ContextPtr & context, bool use_positions_to_match = false)
 {
     if (blocksHaveEqualStructure(pipe.getHeader(), header))
@@ -582,22 +606,7 @@ void ReadFromRemote::addLazyPipe(
     /// execution can mismatch the parallel replicas cluster shard count, causing a crash
     /// in prepareClusterForParallelReplicas (STID 5066).
     if (context->canUseTaskBasedParallelReplicas())
-    {
-        if (context->getSettingsRef()[Setting::cluster_for_parallel_replicas].changed)
-        {
-            const String cluster_for_parallel_replicas = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
-            if (cluster_for_parallel_replicas != cluster_name)
-                LOG_INFO(
-                    log,
-                    "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is "
-                    "used: {}",
-                    cluster_for_parallel_replicas,
-                    cluster_name);
-        }
-
-        LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
-        context->setSetting("cluster_for_parallel_replicas", cluster_name);
-    }
+        setClusterForParallelReplicas(context, cluster_name, log);
 
     /// The storage is only consumed by the stale-replica branch below, which applies solely to
     /// replicated tables. Table functions have an empty main table and reach this path only when the
@@ -766,22 +775,7 @@ void ReadFromRemote::addPipe(
         = Block{{DataTypeUInt32().createColumnConst(1, shard.shard_info.shard_num), std::make_shared<DataTypeUInt32>(), "_shard_num"}};
 
     if (context->canUseTaskBasedParallelReplicas())
-    {
-        if (context->getSettingsRef()[Setting::cluster_for_parallel_replicas].changed)
-        {
-            const String cluster_for_parallel_replicas = context->getSettingsRef()[Setting::cluster_for_parallel_replicas];
-            if (cluster_for_parallel_replicas != cluster_name)
-                LOG_INFO(
-                    log,
-                    "cluster_for_parallel_replicas has been set for the query but has no effect: {}. Distributed table cluster is "
-                    "used: {}",
-                    cluster_for_parallel_replicas,
-                    cluster_name);
-        }
-
-        LOG_TRACE(log, "Setting `cluster_for_parallel_replicas` to {}", cluster_name);
-        context->setSetting("cluster_for_parallel_replicas", cluster_name);
-    }
+        setClusterForParallelReplicas(context, cluster_name, log);
 
     bool enable_analyzer = context->getSettingsRef()[Setting::allow_experimental_analyzer];
 

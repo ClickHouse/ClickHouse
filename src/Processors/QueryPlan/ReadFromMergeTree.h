@@ -617,6 +617,12 @@ private:
         /// a single pool reads the whole table (no splitting).
         std::optional<size_t> split_index = std::nullopt);
 
+    /// The active-and-capped replica count used to size the parallel-replicas mark-segment heuristic.
+    /// Snapshotted once per step so every consumer within this read -- `PoolSettings.total_query_nodes`
+    /// (feeds `calculateMinMarksPerTask`) and `ParallelReadingExtension::total_nodes_count` (feeds
+    /// `chooseSegmentSize`) -- sizes by the SAME count instead of re-reading live liveness at each site.
+    size_t getActiveReplicasCountForSegmentSizing();
+
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,
@@ -698,6 +704,9 @@ private:
     bool is_parallel_reading_from_replicas;
     std::optional<MergeTreeAllRangesCallback> all_ranges_callback;
     std::optional<MergeTreeReadTaskCallback> read_task_callback;
+    /// Memoized result of `getActiveReplicasCountForSegmentSizing` -- computed once, reused by every
+    /// segment-sizing consumer so live liveness is read a single time per step.
+    std::optional<size_t> active_replicas_count_for_segment_sizing;
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
 

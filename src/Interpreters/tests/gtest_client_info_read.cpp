@@ -3,8 +3,11 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/ClientInfo.h>
+#include <Interpreters/ClusterProxy/executeQuery.h>
+#include <Interpreters/Context.h>
 #include <Common/Exception.h>
 #include <Common/logger_useful.h>
+#include <Common/tests/gtest_global_context.h>
 #include <Poco/AutoPtr.h>
 #include <Poco/Net/SocketAddress.h>
 #include <Poco/StreamChannel.h>
@@ -52,7 +55,8 @@ String makeFullClientInfoWire(
     UInt64 client_version_major = 1,
     UInt64 client_version_minor = 1,
     UInt64 client_version_patch = DBMS_TCP_PROTOCOL_VERSION,
-    UInt64 client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION)
+    UInt64 client_tcp_protocol_version = DBMS_TCP_PROTOCOL_VERSION,
+    UInt64 coordinator_replicas_count = 0)
 {
     WriteBufferFromOwnString buf;
     writeBinary(static_cast<UInt8>(query_kind), buf);
@@ -73,7 +77,7 @@ String makeFullClientInfoWire(
     writeVarUInt(client_version_patch, buf);                   /// client_version_patch (TCP, >= 54401)
     writeBinary(static_cast<UInt8>(0), buf);                   /// have OpenTelemetry trace id = no (>= 54442)
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// collaborate_with_initiator (>= 54453)
-    writeVarUInt(static_cast<UInt64>(0), buf);                 /// obsolete_count_participating_replicas
+    writeVarUInt(coordinator_replicas_count, buf);             /// obsolete_count_participating_replicas
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// number_of_current_replica
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// script_query_number (>= 54475)
     writeVarUInt(static_cast<UInt64>(0), buf);                 /// script_line_number
@@ -83,6 +87,49 @@ String makeFullClientInfoWire(
     writeBinary(static_cast<UInt8>(0), buf);                   /// have_current_roles = no (>= 54488)
     buf.finalize();
     return buf.str();
+}
+
+TEST(ClientInfoRead, PreservesInitiatorCoordinatorReplicasCount)
+{
+    ClientInfo info;
+    ReadBufferFromOwnString in(makeFullClientInfoWire(
+        ClientInfo::QueryKind::SECONDARY_QUERY,
+        "127.0.0.1:9000",
+        1,
+        1,
+        DBMS_TCP_PROTOCOL_VERSION,
+        DBMS_TCP_PROTOCOL_VERSION,
+        2));
+
+    info.read(in, DBMS_TCP_PROTOCOL_VERSION);
+    EXPECT_EQ(info.obsolete_count_participating_replicas, 2);
+}
+
+TEST(ClientInfoRead, UsesInitiatorCoordinatorReplicasCountForRemoteReplica)
+{
+    auto context = Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    context->setQueryKind(ClientInfo::QueryKind::SECONDARY_QUERY);
+    context->getClientInfo().obsolete_count_participating_replicas = 2;
+
+    /// A remote replica must use the initiator's snapshot before consulting its own cluster liveness.
+    /// Passing no cluster makes this test fail if the override is removed and local liveness is recomputed.
+    EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
+}
+
+TEST(ClientInfoRead, InitialQueryCannotOverrideCoordinatorReplicasCount)
+{
+    auto context = Context::createCopy(getContext().context);
+    context->makeQueryContext();
+    /// `ClientInfo` is deserialized from the client's `Query` packet and copied verbatim into the query
+    /// context, so a custom client can put any value in this field on an *initial* query. It must not be
+    /// able to resize the mark-segment-size heuristic away from the count the coordinator was sized with:
+    /// on an initial query only the out-of-band context carrier, written by the dispatch itself, counts.
+    context->setQueryKind(ClientInfo::QueryKind::INITIAL_QUERY);
+    context->getClientInfo().obsolete_count_participating_replicas = 5;
+    context->setParallelReplicasCoordinatorCount(2);
+
+    EXPECT_EQ(ClusterProxy::getActiveReplicasCountForParallelReplicas(context, {}), 2);
 }
 
 class LoggerStateGuard final

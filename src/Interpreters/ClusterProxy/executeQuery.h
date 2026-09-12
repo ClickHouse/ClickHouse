@@ -113,6 +113,12 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 
+/// Number of replicas the parallel replicas reading coordinator is sized with: the active replica count when
+/// liveness is known, otherwise the registered node count. Matches the sizing done in
+/// `executeQueryWithParallelReplicas`, so the mark-segment-size heuristic in `ReadFromMergeTree` uses the same
+/// replica count as the coordinator. See `is_active` in `system.clusters`.
+size_t getActiveReplicasCountForParallelReplicas(const ContextPtr & context, const ClusterPtr & cluster);
+
 /// Parallel-replicas state captured from the `ReadFromParallelRemoteReplicasStep` removed from the local
 /// INSERT SELECT plan. Carrying it into the remote-pool pass lets that pass reuse the exact coordinator,
 /// connection pools, and local replica numbering decided while building the local pipeline, instead of
