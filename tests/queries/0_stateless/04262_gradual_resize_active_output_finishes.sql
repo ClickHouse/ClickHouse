@@ -43,6 +43,18 @@ SET merge_tree_min_bytes_for_concurrent_read = 0;
 SET max_rows_to_group_by = 10;
 SET group_by_overflow_mode = 'break';
 
+-- Positive control: the branch under test only exists inside `GradualResizeProcessor`, so the
+-- termination check below is meaningless unless the query really is planned with one. `EXPLAIN
+-- PIPELINE` is taken with the very settings of the query that follows.
+SELECT count() > 0 FROM
+(
+    EXPLAIN PIPELINE
+    SELECT k, count() AS c
+    FROM test_gradual_resize_active
+    GROUP BY k
+)
+WHERE explain LIKE '%GradualResize%';
+
 -- Partial output under `break` mode is non-deterministic in row count, so we only check
 -- that the query terminates and produces at least one aggregated row.
 SELECT count() > 0 FROM
@@ -56,6 +68,17 @@ SELECT count() > 0 FROM
 -- so the deadlock-avoidance branch must fire independently per group.
 SET min_outstreams_per_resize_after_split = 4;
 SET max_threads = 16;
+
+-- Positive control for the split case: one `GradualResizeProcessor` per split group
+-- (`EXPLAIN PIPELINE` collapses the identical per-group processors into `GradualResize × G`).
+SELECT count() > 0 FROM
+(
+    EXPLAIN PIPELINE
+    SELECT k, count() AS c
+    FROM test_gradual_resize_active
+    GROUP BY k
+)
+WHERE explain LIKE '%GradualResize × %';
 
 SELECT count() > 0 FROM
 (

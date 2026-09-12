@@ -172,17 +172,23 @@ SELECT count() FROM
 -- Per-group threshold scaling under split-resize: with split-resize active, `Pipe::resizeGradual`
 -- builds one `GradualResizeProcessor` per split group and divides the global row/byte threshold
 -- among the groups (`per_group_min_rows = 1 + (min_rows_per_output - 1) / groups`), so cumulative
--- activation across all groups still matches the documented global semantics. The threshold here
--- (100000) is larger than the per-stream input, which exercises the per-group division branch and
--- the regime where, without split-resize, a single resize would never fully activate.
+-- activation across all groups still matches the documented global semantics.
 --
 -- This case must read from the `MergeTree` source `test_gradual_resize`, NOT from `numbers(...)`:
 -- `numbers` reports `hasEvenlyDistributedRead = true`, so `AggregatingStep` skips the
--- pre-aggregation `resizeGradual` entirely and the split per-group path would never run. We assert
--- that split-resize is still applied to the gradual path at this high threshold (`GradualResize × `,
--- which collapses the identical per-group processors), so this fails if split `resizeGradual` is
--- silently dropped from the gradual path, and we also check that results stay correct.
-SET min_rows_per_stream_for_gradual_resize = 100000;
+-- pre-aggregation `resizeGradual` entirely and the split per-group path would never run.
+--
+-- The threshold is picked so that only the divided one can fire: the table has 1000000 rows, and
+-- with `max_threads = 16` and `min_outstreams_per_resize_after_split = 4` there are 4 groups of 4
+-- outputs, so each group's `GradualResizeProcessor` sees about 250000 rows. A global threshold of
+-- 400000 is never reached by a single group, while the per-group threshold it is divided into
+-- (100000) is crossed in every group. The pipeline shape alone cannot tell the two apart - a
+-- `GradualResize × ` would be planned either way - so the observable is a runtime one: a group
+-- that never activates feeds one of its outputs, and one more only if the deadlock-avoidance
+-- branch promotes a waiting output, while a group that activates spreads the rest of its rows
+-- over all of its outputs. Measured on the fixture below: 16 of 16 `AggregatingTransform` receive
+-- rows with the division, 5 without it, so the check is "more than two per group".
+SET min_rows_per_stream_for_gradual_resize = 400000;
 SET min_bytes_per_stream_for_gradual_resize = 0;
 SET min_outstreams_per_resize_after_split = 4;
 SET max_threads = 16;
@@ -197,6 +203,36 @@ FROM
     GROUP BY k
 )
 WHERE explain LIKE '%GradualResize × %';
+
+SET log_processors_profiles = 1;
+
+SELECT k, count() AS c
+FROM test_gradual_resize
+GROUP BY k
+ORDER BY k
+FORMAT Null SETTINGS log_comment = '04039_split_threshold_scaling';
+
+SET log_processors_profiles = 0;
+
+SYSTEM FLUSH LOGS processors_profile_log, query_log;
+
+-- One `GradualResize` per split group, and more than two aggregation streams fed per group: without
+-- the per-group division no group would ever activate its remaining outputs and the second value
+-- would be `0`. The `event_time` bound keeps the log scans cheap: without it every flaky-check
+-- rerun scans all the log rows accumulated by the earlier runs.
+SELECT
+    countIf(name = 'GradualResize') AS gradual_resizes,
+    countIf(name = 'AggregatingTransform' AND input_rows > 0) > 2 * countIf(name = 'GradualResize') AS activated_the_remaining_outputs
+FROM system.processors_profile_log AS p
+INNER JOIN
+(
+    SELECT query_id
+    FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE
+      AND current_database = currentDatabase() AND type = 'QueryFinish'
+      AND log_comment = '04039_split_threshold_scaling'
+) AS q ON p.query_id = q.query_id
+WHERE p.event_date >= yesterday() AND p.event_time >= now() - INTERVAL 10 MINUTE;
 
 SELECT k, count() AS c
 FROM test_gradual_resize

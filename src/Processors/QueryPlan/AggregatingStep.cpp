@@ -1428,6 +1428,12 @@ void AggregatingStep::rebaseOntoInput(const SharedHeader & new_input_header, Nam
     /// (`AggregationPushdown`) rejects in-order aggregation in `checkPattern`.
     chassert(sort_description_for_merging.empty() && group_by_sort_description.empty()
         && !explicit_sorting_required_for_aggregation_in_order);
+    /// `group_by_keys_semantically_constant` was decided for the previous key set by the planner, from the
+    /// pre-aggregation actions DAG that no longer describes this step (`AggregationPushdown` rebases the
+    /// pushed partial aggregation onto the join keys). Keeping it would be a stale claim in both
+    /// directions, so drop it here, exactly like the hash-table stats identity the caller resets: the
+    /// remaining header-based `ColumnConst` check still catches keys that are constant in the new input.
+    group_by_keys_semantically_constant = false;
     params.keys = std::move(new_keys);
     params.keys_size = params.keys.size();
     updateInputHeader(new_input_header);
