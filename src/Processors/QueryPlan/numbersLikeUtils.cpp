@@ -5,7 +5,6 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterSelectQuery.h>
-#include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Processors/Sources/NullSource.h>
 #include <QueryPipeline/SizeLimits.h>
@@ -63,19 +62,6 @@ void addNullSource(Pipe & pipe, SharedHeader header)
 namespace
 {
 
-bool astContainsArrayJoinFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>())
-        if (function->name == "arrayJoin")
-            return true;
-    for (const auto & child : ast->children)
-        if (!child->as<ASTSelectQuery>() && astContainsArrayJoinFunction(child))
-            return true;
-    return false;
-}
-
 bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSelectQuery::LimitInfo & lim_info)
 {
     /// Reject negative, fractional, and zero limits for pushdown, and limits whose
@@ -118,7 +104,9 @@ bool shouldPushdownLimit(const SelectQueryInfo & query_info, const InterpreterSe
         /// For the analyzer, window will be deleted from AST, so we should not use query.window()
         && !query_info.has_window
         && !query_info.additional_filter_ast
-        && !query.limit_with_ties;
+        && !query.limit_with_ties
+        && !query.limitAfter()
+        && !query.limitUntil();
 }
 
 }

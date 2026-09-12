@@ -1,10 +1,8 @@
 #pragma once
 
-#include <Processors/Executors/Runtime/ExecutingGraph.h>
 #include <Processors/Executors/Runtime/PipelineExecutionStatus.h>
-#include <Processors/IProcessor.h>
+#include <Processors/IProcessor_fwd.h>
 #include <Processors/Executors/Runtime/ExecutorTasks.h>
-#include <Common/EventCounter.h>
 #include <Common/Logger.h>
 #include <Common/ThreadPool_fwd.h>
 #include <Common/ISlotControl.h>
@@ -119,8 +117,8 @@ private:
 
     /// This queue can grow a lot and lead to OOM. That is why we use non-default
     /// allocator for container which throws exceptions in operator new
-    using DequeWithMemoryTracker = boost::container::devector<ExecutingGraph::Node *, AllocatorWithMemoryTracking<ExecutingGraph::Node *>>;
-    using Queue = std::queue<ExecutingGraph::Node *, DequeWithMemoryTracker>;
+    using DequeWithMemoryTracker = boost::container::devector<IProcessor *, AllocatorWithMemoryTracking<IProcessor *>>;
+    using Queue = std::queue<IProcessor *, DequeWithMemoryTracker>;
 
     void initializeExecution(size_t num_threads, bool concurrency_control); /// Initialize executor contexts and task_queue.
     void finalizeExecution(); /// Check all processors are finished.

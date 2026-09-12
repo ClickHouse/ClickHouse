@@ -1283,6 +1283,7 @@ class ResultInfo:
     OPEN_ISSUES_CHECK_ERROR = "Failed to check open issues"
 
     NOT_FINALIZED = "Job failed to produce Result due to a script error or CI runner issue"
+    JOB_DID_NOT_FINISH = "Job did not finish, GitHub reported"
 
     S3_ERROR = "S3 call failure"
 
@@ -1462,8 +1463,16 @@ class _ResultS3:
         pipeline_utilization=None,
         report_messages=None,
         clear_report_sources=None,
+        replace_usage=False,
+        top_links=None,
     ):
-        assert new_sub_results
+        # ``replace_usage=True`` SETS the usage aggregates instead of merging
+        # (accumulating) them. The native orchestrator recomputes the full
+        # storage/compute/pipeline aggregate from all job Results and re-asserts
+        # it every loop, so it must overwrite — not add — or the totals would
+        # multiply. The per-job runner path keeps replace_usage=False (each job
+        # contributes its slice once). See orchestrator/REPORT_OWNERSHIP.md.
+        assert new_sub_results or top_links
 
         attempt = 1
         prev_status = ""
@@ -1479,22 +1488,30 @@ class _ResultS3:
                     new_sub_results = [new_sub_results]
                 for result_ in new_sub_results:
                     workflow_result.update_sub_result(result_, drop_nested_results=True).dump()
-            # TODO: consider not accumulating these 2 for reruns:
+            # replace_usage=True overwrites (orchestrator recomputes the full
+            # aggregate each loop); otherwise merge/accumulate (per-job runner
+            # contributions). Merge double-counts on a rerun — acceptable for the
+            # per-job path; the orchestrator path avoids it by recomputing+setting.
             if storage_usage:
-                workflow_storage_usage = StorageUsage.from_dict(workflow_result.ext.get("storage_usage", {})).merge_with(storage_usage)
-                workflow_result.ext["storage_usage"] = workflow_storage_usage
+                workflow_result.ext["storage_usage"] = (
+                    storage_usage
+                    if replace_usage
+                    else StorageUsage.from_dict(workflow_result.ext.get("storage_usage", {})).merge_with(storage_usage)
+                )
 
             if compute_usage:
-                workflow_compute_usage = ComputeUsage.from_dict(workflow_result.ext.get("compute_usage", {})).merge_with(compute_usage)
-                workflow_result.ext["compute_usage"] = workflow_compute_usage
+                workflow_result.ext["compute_usage"] = (
+                    compute_usage
+                    if replace_usage
+                    else ComputeUsage.from_dict(workflow_result.ext.get("compute_usage", {})).merge_with(compute_usage)
+                )
 
             if pipeline_utilization:
-                # TODO: like storage_usage/compute_usage above, this only adds -
-                # a job rerun double-counts its contribution (jobs, *_area, ...).
-                # Reruns are rare and this is a monitoring aggregate; make it
-                # rerun-safe (recompute from the workflow sub-results) if needed.
-                workflow_pipeline_utilization = PipelineUtilization.from_dict(workflow_result.ext.get("pipeline_utilization", {})).merge_with(pipeline_utilization)
-                workflow_result.ext["pipeline_utilization"] = workflow_pipeline_utilization
+                workflow_result.ext["pipeline_utilization"] = (
+                    pipeline_utilization
+                    if replace_usage
+                    else PipelineUtilization.from_dict(workflow_result.ext.get("pipeline_utilization", {})).merge_with(pipeline_utilization)
+                )
 
             if clear_report_sources:
                 for key in cls._REPORT_MESSAGE_KIND_TO_EXT_KEY.values():
@@ -1503,6 +1520,11 @@ class _ResultS3:
 
             if report_messages:
                 cls.append_report_messages(workflow_result, report_messages)
+
+            if top_links:
+                for _lnk in top_links:
+                    if _lnk and _lnk not in workflow_result.links:
+                        workflow_result.links.append(_lnk)
 
             new_status = workflow_result.status
             if cls.copy_result_to_s3_with_version(
