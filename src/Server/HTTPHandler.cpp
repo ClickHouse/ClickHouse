@@ -1234,18 +1234,21 @@ void HTTPHandler::processQuery(
                 String framing_name = framing ? framing->getName() : "";
 
                 /// The buffered output is discarded on an exception, so the framing format is recreated
-                /// below from `framing_name` alone. Carry over the log and profile-events queues that
+                /// below from `framing_name` alone. Carry over the log, profile-events and profile-traces queues that
                 /// were attached during parsing and planning (the `framing` object goes out of scope
-                /// before this writer runs, so the queues are captured by value here) - otherwise the
-                /// framed exception response would drop the `log` / `profile_events` packets that the
-                /// streaming path and the documentation promise.
+                /// before this writer runs, so the queues are captured by value here). Trace draining
+                /// is deferred for fully buffered responses; logs and profile events retain only the
+                /// entries still pending in their queues.
                 std::shared_ptr<InternalTextLogsQueue> framing_logs_queue = framing ? framing->getLogsQueue() : nullptr;
                 InternalProfileEventsQueuePtr framing_profile_events_queue = framing ? framing->getProfileEventsQueue() : nullptr;
                 String framing_profile_events_host_name = framing ? framing->getProfileEventsHostName() : "";
                 UInt64 framing_profile_events_period_us = framing ? framing->getProfileEventsPeriodMicroseconds() : 0;
+                InternalProfileTracesQueuePtr framing_profile_traces_queue = framing ? framing->getProfileTracesQueue() : nullptr;
+                UInt64 framing_profile_traces_period_us = framing ? framing->getProfileTracesPeriodMicroseconds() : 0;
 
                 used_output.exception_writer = [&, format_name, framing_name, header, context_, format_settings, session_id, close_session,
-                    framing_logs_queue, framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us](WriteBuffer & buf, int code, const String & message)
+                    framing_logs_queue, framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us,
+                    framing_profile_traces_queue, framing_profile_traces_period_us](WriteBuffer & buf, int code, const String & message)
                 {
                     if (used_output.out_holder->isCanceled())
                     {
@@ -1259,8 +1262,8 @@ void HTTPHandler::processQuery(
                     if (!framing_name.empty())
                     {
                         /// All the output buffered so far is discarded, so the framing format is created
-                        /// anew, and the response consists of the auxiliary packets (logs, profile events)
-                        /// accumulated so far followed by a single exception packet.
+                        /// anew, and the response drains the retained trace queue and pending logs/profile events,
+                        /// followed by a single exception packet.
                         auto framing_for_exception = createFramingFormat(
                             framing_name, buf, format_settings ? *format_settings : getFormatSettings(context_), {.is_http = true});
                         if (framing_logs_queue)
@@ -1268,6 +1271,8 @@ void HTTPHandler::processQuery(
                         if (framing_profile_events_queue)
                             framing_for_exception->setProfileEventsQueue(
                                 framing_profile_events_queue, framing_profile_events_host_name, framing_profile_events_period_us);
+                        if (framing_profile_traces_queue)
+                            framing_for_exception->setProfileTracesQueue(framing_profile_traces_queue, framing_profile_traces_period_us);
                         framing_for_exception->setException(message);
                         framing_for_exception->finalize();
                     }
@@ -1363,6 +1368,7 @@ void HTTPHandler::processQuery(
     };
     query_flags.parse_query_from_initial_buffer
         = settings[Setting::input_format_max_block_wait_ms] != 0 && url_query_starts_with_insert();
+    query_flags.http_response_fully_buffered = wait_end_of_query;
 
     executeQuery(
         std::move(in),
@@ -1392,7 +1398,7 @@ try
     /// (pushing the delayed results, finalizing the compression, closing the response stream) and
     /// a failure of the framed exception delivery itself: when `handle_exception_in_output_format`
     /// throws while writing the terminal `exception` packet (for example while draining the `log`
-    /// / `profile_events` queues) after `data` packets were already streamed, the escaped
+    /// / `profile_events` / `profile_traces` queues) after `data` packets were already streamed, the escaped
     /// exception lands here with the packet stream unterminated and `exception_is_written` still
     /// false. In both cases some (or all) of the framed stream is already on the wire. The same
     /// applies when framed packets are merely buffered: even before `response.sent()`, bytes

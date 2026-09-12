@@ -1,0 +1,3 @@
+Native wire opt-in captures background BACKUP allocations
+Native wire and SQL opt-out complete BACKUP without traces
+Native SQL-only opt-in captures background BACKUP allocations after one SQL rewrite

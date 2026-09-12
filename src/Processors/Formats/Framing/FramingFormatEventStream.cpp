@@ -58,6 +58,19 @@ void FramingFormatEventStream::writeProfileEventsPacket(const Block & block)
     writeCString("]\n\n", out);
 }
 
+void FramingFormatEventStream::writeProfileTracesPacket(const Block & block)
+{
+    writeCString("event: profile_traces\ndata: [", out);
+    size_t rows = block.rows();
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (i != 0)
+            writeChar(',', out);
+        writeProfileTraceRowJSON(block, i, out);
+    }
+    writeCString("]\n\n", out);
+}
+
 void FramingFormatEventStream::writeExceptionPacket(const String & message)
 {
     writeCString("event: exception\ndata: {\"exception\":", out);

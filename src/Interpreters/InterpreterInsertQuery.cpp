@@ -1114,7 +1114,7 @@ std::optional<QueryPipeline> InterpreterInsertQuery::distributedWriteIntoReplica
     /// and its source SELECT) so those names — including the new HTTP table-as-file settings — do not reach
     /// the shards and trip `UNKNOWN_SETTING` on a rolling upgrade; the per-shard context is stripped below.
     auto query_to_send = query.clone();
-    ClusterProxy::stripInitiatorOnlySettingsFromQuery(query_to_send);
+    ClusterProxy::prepareSecondaryQueryAST(query_to_send);
     String query_str;
     {
         WriteBufferFromOwnString buf;
