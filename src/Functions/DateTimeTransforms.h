@@ -854,11 +854,18 @@ struct ToWeekImpl
 template <IntervalKind::Kind unit>
 struct ToStartOfInterval;
 
-/// Truncating division rounds a negative time towards the epoch, which would move it into the next interval.
+/// Truncating division rounds a negative time towards the epoch, which would move it into the next interval,
+/// so a negative time is first biased by `scale_multiplier - 1` and the truncation then rounds it down.
 inline Int64 scaleDivideFloor(Int64 t, Int64 scale_multiplier)
 {
-    const Int64 res = t / scale_multiplier;
-    return t < 0 && res * scale_multiplier != t ? res - 1 : res;
+    Int64 biased = 0;
+    if (common::subOverflow(t, (scale_multiplier - 1) & (t >> 63), biased)) [[unlikely]]
+    {
+        /// The bias underflows only within `scale_multiplier` of the bottom of the Int64 range.
+        const Int64 res = t / scale_multiplier;
+        return res * scale_multiplier == t ? res : res - 1;
+    }
+    return biased / scale_multiplier;
 }
 
 static constexpr auto TO_START_OF_INTERVAL_NAME = "toStartOfInterval";

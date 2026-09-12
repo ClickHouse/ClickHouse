@@ -62,11 +62,20 @@ FieldType saturatingResultCast(Int64 value)
 }
 
 /// A DateTime64 value in the scale of `scale_multiplier`, as whole seconds. Truncating division rounds a
-/// negative time towards the epoch, which would move it into the next interval.
+/// negative time towards the epoch, which would move it into the next interval, so a negative time is first
+/// biased by `scale_multiplier - 1` and the truncation then rounds it down. Correcting the quotient afterwards
+/// instead costs more: the compiler keeps the multiplication of the correction on every row, and guarding it
+/// with `t < 0` only trades that for a branch that a column of mixed signs mispredicts.
 Int64 toWholeSecondsFloor(Int64 t, const libdivide::divider<Int64, libdivide::BRANCHFULL> & scale_divider, Int64 scale_multiplier)
 {
-    const Int64 whole = t / scale_divider;
-    return t < 0 && whole * scale_multiplier != t ? whole - 1 : whole;
+    Int64 biased = 0;
+    if (common::subOverflow(t, (scale_multiplier - 1) & (t >> 63), biased)) [[unlikely]]
+    {
+        /// The bias underflows only within `scale_multiplier` of the bottom of the Int64 range.
+        const Int64 whole = t / scale_divider;
+        return whole * scale_multiplier == t ? whole : whole - 1;
+    }
+    return biased / scale_divider;
 }
 
 /// Seconds per unit of the fixed-length units, nothing for the calendar ones, whose length depends on where
