@@ -61,11 +61,35 @@ TEST(FsSnapshot, WideDirectorySharesUnchangedEntries)
     EXPECT_EQ(changed.listDirectory("table").size(), 10000);
 }
 
+TEST(FsSnapshot, WideDirectoryRemovalSharesUnchangedEntries)
+{
+    FsSnapshot original;
+    for (size_t i = 0; i < 10000; ++i)
+        original.recordDirectoryPath("table/" + std::to_string(i), {.remote_path = std::to_string(i), .etag = "", .files = {}});
+
+    auto children = original.getRoot()->subdirectories.get("table")->subdirectories;
+    FsSnapshot changed(original.getRoot());
+    changed.removeDirectory("table/5000");
+
+    size_t copied_entries = 0;
+    children.forEach([&](const auto &, const auto & child)
+    {
+        if (child.use_count() > 1)
+            ++copied_entries;
+    });
+    /// Removing one child must share siblings, just like updating one child.
+    EXPECT_LT(copied_entries, 32);
+    EXPECT_TRUE(original.existsDirectory("table/5000"));
+    EXPECT_FALSE(changed.existsDirectory("table/5000"));
+    EXPECT_EQ(original.listDirectory("table").size(), 10000);
+    EXPECT_EQ(changed.listDirectory("table").size(), 9999);
+}
+
 TEST(FsSnapshot, DirectoryMapMatchesOrderedMap)
 {
     FsDirectoryMap actual;
     std::map<std::string, std::shared_ptr<FsNode>> expected;
-    std::mt19937 random(123);
+    std::mt19937 random(123); // NOLINT(bugprone-random-generator-seed,cert-msc32-c,cert-msc51-cpp): deterministic seed for reproducible test
 
     auto check = [](const auto & map, const auto & reference)
     {
