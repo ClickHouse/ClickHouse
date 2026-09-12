@@ -94,9 +94,8 @@ SQLQueryPiece applyHistogramQuantile(
     /// Step 1: Extract le tags, group by non-le labels (keeping __name__ so that
     /// distinct histograms remain separate), and compute quantile.
     /// SELECT timeSeriesRemoveTag(group, 'le') AS new_group,
-    ///        quantilePrometheusHistogramForEach(phi)(
-    ///            arrayResize(CAST([] AS Array(Float64)), length(values),
-    ///                ifNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')), nan)),
+    ///        quantilePrometheusHistogramArray(phi)(
+    ///            ifNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')), nan),
     ///            values) AS values
     /// FROM <subquery>
     /// WHERE isNotNull(toFloat64OrNull(timeSeriesExtractTag(group, 'le')))
@@ -154,29 +153,19 @@ SQLQueryPiece applyHistogramQuantile(
         }
         else
         {
-            /// quantilePrometheusHistogramForEach(phi)(le_array, values)
-            ///
-            /// le_array is constructed for each row as an array of the same length as values,
-            /// filled with the extracted `le` tag value. Series without a parsable `le` are
-            /// excluded by the WHERE clause added below, so the NaN fallback here is just a
-            /// safety net — `quantilePrometheusHistogramForEach` treats NaN `le` as
-            /// "ignore this bucket".
-            auto le_array_expr = makeASTFunction(
-                "arrayResize",
-                makeASTFunction("CAST",
-                    make_intrusive<ASTLiteral>(Array{}),
-                    make_intrusive<ASTLiteral>("Array(Float64)")),
-                makeASTFunction("length", make_intrusive<ASTIdentifier>(ColumnNames::Values)),
-                makeASTFunction("ifNull",
-                    makeASTFunction("toFloat64OrNull",
-                        makeASTFunction("timeSeriesExtractTag",
-                            make_intrusive<ASTIdentifier>(ColumnNames::Group),
-                            make_intrusive<ASTLiteral>("le"))),
-                    make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN())));
+            /// The histogram-specific array aggregate consumes the scalar `le` once per input
+            /// series and keeps one cumulative-value vector per bucket bound.
+            auto le_expr = makeASTFunction(
+                "ifNull",
+                makeASTFunction("toFloat64OrNull",
+                    makeASTFunction("timeSeriesExtractTag",
+                        make_intrusive<ASTIdentifier>(ColumnNames::Group),
+                        make_intrusive<ASTLiteral>("le"))),
+                make_intrusive<ASTLiteral>(std::numeric_limits<Float64>::quiet_NaN()));
 
             quantile_expr = addParametersToAggregateFunction(
-                makeASTFunction("quantilePrometheusHistogramForEach",
-                    std::move(le_array_expr),
+                makeASTFunction("quantilePrometheusHistogramArray",
+                    std::move(le_expr),
                     make_intrusive<ASTIdentifier>(ColumnNames::Values)),
                 make_intrusive<ASTLiteral>(phi));
         }
