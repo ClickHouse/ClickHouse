@@ -505,13 +505,15 @@ void checkAccessRightsForSelect(
 }
 
 /// Settings-provided filters are user-controlled expressions over table columns and need the same check as the query.
-void checkAccessRightsForFilter(const ContextPtr & context, const StorageID & table_id, const StoragePtr & storage,
-    const StorageSnapshotPtr & storage_snapshot, const StorageMetadataPtr & metadata_snapshot,
+void checkAccessRightsForFilter(const ContextPtr & context, const StorageID & table_id, const StorageID & written_table_id,
+    const StoragePtr & storage, const StorageSnapshotPtr & storage_snapshot, const StorageMetadataPtr & metadata_snapshot,
     const TablesWithColumns & tables_with_columns, const ASTPtr & filter_ast)
 {
+    /// The synthesized query reads from the resolved table, which is the one carrying the columns,
+    /// while the grants are still required on both the facade and the source — see `checkAccessRightsForSelect`.
     ASTPtr query_ast = makeSelectFromTable(table_id, {filter_ast->clone()});
     auto syntax_result = TreeRewriter(context).analyzeSelect(query_ast, TreeRewriterResult({}, storage, storage_snapshot), {}, tables_with_columns);
-    checkAccessRightsForSelect(context, table_id, storage, metadata_snapshot, *syntax_result);
+    checkAccessRightsForSelect(context, table_id, written_table_id, storage, metadata_snapshot, *syntax_result);
 }
 
 ASTPtr parseAdditionalFilterConditionForTable(
@@ -1210,15 +1212,15 @@ InterpreterSelectQuery::InterpreterSelectQuery(
 
         if (query_info.additional_filter_ast)
             checkAccessRightsForFilter(
-                context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, query_info.additional_filter_ast);
+                context, table_id, joined_tables.leftTableStorageID(), storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, query_info.additional_filter_ast);
 
         if (parallel_replicas_custom_filter_ast)
             checkAccessRightsForFilter(
-                context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_filter_ast);
+                context, table_id, joined_tables.leftTableStorageID(), storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_filter_ast);
 
         if (parallel_replicas_custom_key_ast_to_check)
             checkAccessRightsForFilter(
-                context, table_id, storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_key_ast_to_check);
+                context, table_id, joined_tables.leftTableStorageID(), storage, storage_snapshot, metadata_snapshot, filter_tables_with_columns, parallel_replicas_custom_key_ast_to_check);
 
         /// Remove limits for some tables in the `system` database.
         if (shouldIgnoreQuotaAndLimits(table_id) && (joined_tables.tablesCount() <= 1))
