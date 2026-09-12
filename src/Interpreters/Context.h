@@ -1265,7 +1265,7 @@ public:
     void setSetting(std::string_view name, const Field & value);
     void setServerSetting(std::string_view name, const Field & value);
     void applySettingChange(const SettingChange & change);
-    void applySettingsChanges(const SettingsChanges & changes);
+    void applySettingsChanges(const SettingsChanges & changes, std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles = nullptr);
 
     /// Checks the constraints.
     void checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source);
@@ -2084,11 +2084,14 @@ public:
 private:
     std::shared_ptr<const SettingsConstraintsAndProfileIDs> getSettingsConstraintsAndCurrentProfilesWithLock() const;
 
-    void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock,
+        std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles = nullptr);
 
-    void setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock,
+        std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles = nullptr);
 
-    void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock);
+    void setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock,
+        std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles = nullptr);
 
     void setCurrentRolesWithLock(const std::vector<UUID> & new_current_roles, const std::lock_guard<ContextSharedMutex> & lock);
 
@@ -2098,13 +2101,17 @@ private:
 
     void setAuthenticationValidUntilWithLock(time_t authentication_valid_until_, const std::lock_guard<ContextSharedMutex> & lock);
 
-    void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock);
+    void setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock,
+        std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles = nullptr);
 
-    void setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock);
+    void setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock,
+        std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles = nullptr);
 
-    void applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock);
+    void applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock,
+        std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles = nullptr);
 
-    void applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex> & lock);
+    void applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex> & lock,
+        std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles = nullptr);
 
     void setUserIDWithLock(const UUID & user_id_, const std::lock_guard<ContextSharedMutex> & lock);
 

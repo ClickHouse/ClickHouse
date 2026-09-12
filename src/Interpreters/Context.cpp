@@ -2525,12 +2525,13 @@ std::vector<QuotaUsage> Context::getQuotaUsages() const
     return getAccess()->getQuotaUsages();
 }
 
-void Context::setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::setCurrentProfileWithLock(const String & profile_name, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock,
+    std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles)
 {
     try
     {
         UUID profile_id = getAccessControl().getID<SettingsProfile>(profile_name);
-        setCurrentProfileWithLock(profile_id, check_constraints, lock);
+        setCurrentProfileWithLock(profile_id, check_constraints, lock, applied_profiles);
     }
     catch (Exception & e)
     {
@@ -2539,17 +2540,23 @@ void Context::setCurrentProfileWithLock(const String & profile_name, bool check_
     }
 }
 
-void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::setCurrentProfileWithLock(const UUID & profile_id, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock,
+    std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles)
 {
     auto profile_info = getAccessControl().getSettingsProfileInfo(profile_id);
-    setCurrentProfilesWithLock(*profile_info, check_constraints, lock);
+    /// Record the resolved snapshot right where it's applied, so a subquery's SETTINGS clause
+    /// can later be checked for exactly which settings it contributed (see #119019).
+    if (applied_profiles)
+        applied_profiles->push_back(profile_info);
+    setCurrentProfilesWithLock(*profile_info, check_constraints, lock, applied_profiles);
 }
 
-void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::setCurrentProfilesWithLock(const SettingsProfilesInfo & profiles_info, bool check_constraints, const std::lock_guard<ContextSharedMutex> & lock,
+    std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles)
 {
     if (check_constraints)
         checkSettingsConstraintsWithLock(profiles_info.settings, SettingSource::PROFILE);
-    applySettingsChangesWithLock(profiles_info.settings, lock);
+    applySettingsChangesWithLock(profiles_info.settings, lock, applied_profiles);
     settings_constraints_and_current_profiles = profiles_info.getConstraintsAndProfileIDs(settings_constraints_and_current_profiles);
     contextSanityClampSettingsWithLock(*this, *settings, lock);
 }
@@ -3514,11 +3521,12 @@ void Context::setSettings(const Settings & settings_)
     contextSanityClampSettings(*this, *settings);
 }
 
-void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::setSettingWithLock(std::string_view name, const String & value, const std::lock_guard<ContextSharedMutex> & lock,
+    std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles)
 {
     if (name == "profile")
     {
-        setCurrentProfileWithLock(value, true /*check_constraints*/, lock);
+        setCurrentProfileWithLock(value, true /*check_constraints*/, lock, applied_profiles);
         return;
     }
     settings->set(name, value);
@@ -3527,11 +3535,12 @@ void Context::setSettingWithLock(std::string_view name, const String & value, co
     contextSanityClampSettingsWithLock(*this, *settings, lock);
 }
 
-void Context::setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::setSettingWithLock(std::string_view name, const Field & value, const std::lock_guard<ContextSharedMutex> & lock,
+    std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles)
 {
     if (name == "profile")
     {
-        setCurrentProfileWithLock(value.safeGet<String>(), true /*check_constraints*/, lock);
+        setCurrentProfileWithLock(value.safeGet<String>(), true /*check_constraints*/, lock, applied_profiles);
         return;
     }
     settings->set(name, value);
@@ -3539,7 +3548,8 @@ void Context::setSettingWithLock(std::string_view name, const Field & value, con
         need_recalculate_access = true;
 }
 
-void Context::applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock)
+void Context::applySettingChangeWithLock(const SettingChange & change, const std::lock_guard<ContextSharedMutex> & lock,
+    std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles)
 {
     try
     {
@@ -3547,7 +3557,7 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
         /// it does not know the settings schema. `setSettingWithLock` takes a name and a value, so
         /// the check has to happen here, where the change is still whole.
         settings->checkShorthandChange(change);
-        setSettingWithLock(change.name, change.value, lock);
+        setSettingWithLock(change.name, change.value, lock, applied_profiles);
         contextSanityClampSettingsWithLock(*this, *settings, lock);
     }
     catch (Exception & e)
@@ -3559,10 +3569,11 @@ void Context::applySettingChangeWithLock(const SettingChange & change, const std
     }
 }
 
-void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock)
+void Context::applySettingsChangesWithLock(const SettingsChanges & changes, const std::lock_guard<ContextSharedMutex>& lock,
+    std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles)
 {
     for (const SettingChange & change : changes)
-        applySettingChangeWithLock(change, lock);
+        applySettingChangeWithLock(change, lock, applied_profiles);
     applySettingsQuirks(*settings);
     adjustSettingsForMakeDistributedPlan(*settings);
 }
@@ -3603,10 +3614,10 @@ void Context::applySettingChange(const SettingChange & change)
 }
 
 
-void Context::applySettingsChanges(const SettingsChanges & changes)
+void Context::applySettingsChanges(const SettingsChanges & changes, std::vector<std::shared_ptr<const SettingsProfilesInfo>> * applied_profiles)
 {
     std::lock_guard lock(mutex);
-    applySettingsChangesWithLock(changes, lock);
+    applySettingsChangesWithLock(changes, lock, applied_profiles);
 }
 
 void Context::checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source)

@@ -311,10 +311,16 @@ void SettingsConstraints::checkOrClamp(const Settings & current_settings, Settin
 {
     /// If we filter out settings that match the current default here, `compatibility` will silently override them.
     /// So when `compatibility` is present, we keep unchanged settings so they are applied after `compatibility`.
+    /// The same applies to `profile`: a profile applied earlier in the same batch can set a setting to some
+    /// value, and a literal change later in the same clause must still be applied after the profile even if
+    /// it happens to match the value the setting had before the batch started - dropping it as a no-op against
+    /// the pre-batch value would let the profile's value win instead of the explicit override (#119019).
     bool has_compatibility_setting = changes.tryGet("compatibility") != nullptr;
+    bool has_profile_setting = changes.tryGet("profile") != nullptr;
+    bool ignore_unchanged_settings = has_compatibility_setting || has_profile_setting;
     std::erase_if(changes, [&](SettingChange & change)
     {
-        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/has_compatibility_setting);
+        return !checkImpl(current_settings, change, reaction, source, /*ignore_unchanged_settings=*/ignore_unchanged_settings);
     });
 }
 

@@ -121,6 +121,7 @@ namespace Setting
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
+    extern const SettingsBool use_query_cache;
     extern const SettingsBool enable_writes_to_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
@@ -2496,16 +2497,13 @@ static bool shouldUseQueryCacheForSubquery(
         || query_context->getClientInfo().query_kind != ClientInfo::QueryKind::INITIAL_QUERY)
         return false;
 
-    /// Only check explicit per-node `use_query_cache` for actual subqueries.
+    /// Only check `use_query_cache` for actual subqueries, and only when the subquery's own
+    /// SETTINGS clause contributed it (directly or through a profile) — reading the node's
+    /// context value here, rather than re-scanning the clause's literal names, means a profile
+    /// that sets `use_query_cache` is honored the same way a literal `use_query_cache = 1` is (#119019).
     /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
-    if (is_subquery && query_node.hasSettingsChanges())
-    {
-        for (const auto & change : query_node.getSettingsChanges())
-        {
-            if (change.name == "use_query_cache")
-                return change.value.safeGet<bool>();
-        }
-    }
+    if (is_subquery && query_node.contributesSetting("use_query_cache"))
+        return query_node.getContext()->getSettingsRef()[Setting::use_query_cache];
 
     /// `query_cache_for_subqueries` enables the Planner-level (`is_subquery = true`) cache
     /// only for actual subqueries. The top-level query is cached separately by `executeQuery`
