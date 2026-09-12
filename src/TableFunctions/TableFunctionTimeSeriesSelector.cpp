@@ -1,5 +1,7 @@
 #include <TableFunctions/TableFunctionTimeSeriesSelector.h>
 
+#include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeTuple.h>
 #include <Parsers/ASTFunction.h>
 #include <Storages/TimeSeries/TimeSeriesColumnNames.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -27,10 +29,11 @@ void TableFunctionTimeSeriesSelector::parseArguments(const ASTPtr & ast_function
 
 ColumnsDescription TableFunctionTimeSeriesSelector::getActualTableStructure(ContextPtr /* context */, bool /* is_insert_query */) const
 {
+    DataTypePtr time_series_data_type = std::make_shared<DataTypeArray>(std::make_shared<DataTypeTuple>(DataTypes{config.timestamp_data_type, config.scalar_data_type}));
+
     return ColumnsDescription({
         {TimeSeriesColumnNames::ID, config.id_data_type},
-        {TimeSeriesColumnNames::Timestamp, config.timestamp_data_type},
-        {TimeSeriesColumnNames::Value, config.scalar_data_type}
+        {TimeSeriesColumnNames::TimeSeries, time_series_data_type}
     });
 }
 

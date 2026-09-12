@@ -1,0 +1,13 @@
+-- the defaults: one partition per month for the samples table, 5-hour partitions for the recent samples table
+recentsamples	AggregatingMergeTree PARTITION BY toStartOfInterval(bucket, toIntervalHour(5)) ORDER BY (id, bucket) TTL bucket + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 262144, ttl_only_drop_parts = 1
+samples	AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 512, index_granularity_bytes = 524288
+202601	1
+202602	2
+-- the settings define the partition keys and the index granularity
+recentsamples	AggregatingMergeTree PARTITION BY toStartOfHour(bucket) ORDER BY (id, bucket) TTL bucket + toIntervalSecond(346500) SETTINGS index_granularity = 8192, index_granularity_bytes = 65536, ttl_only_drop_parts = 1
+samples	AggregatingMergeTree PARTITION BY toStartOfWeek(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 1024, index_granularity_bytes = 4194304
+-- the settings override the engine declaration, the declared values are kept if the settings are not set
+recentsamples	AggregatingMergeTree PARTITION BY toDate(bucket) ORDER BY (id, bucket) TTL bucket + toIntervalSecond(346500) SETTINGS index_granularity_bytes = 131072, index_granularity = 256, ttl_only_drop_parts = 1
+samples	AggregatingMergeTree PARTITION BY toStartOfWeek(bucket) ORDER BY (id, bucket) SETTINGS index_granularity_bytes = 2097152, index_granularity = 512
+-- a partition key requires a MergeTree-family engine, the index granularity is just ignored for other engines
+Memory

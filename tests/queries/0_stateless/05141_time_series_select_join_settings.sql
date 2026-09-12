@@ -32,7 +32,7 @@ FROM ts_join_settings FINAL;
 
 SET join_algorithm = 'full_sorting_merge';
 SELECT metric_name, tags['n'], arraySort(time_series), metric_family, unit, help, type
-FROM ts_join_settings;
+FROM ts_join_settings FINAL;
 
 -- The legacy `ANY` semantics also return each series once with all its samples.
 SET join_algorithm = 'hash';

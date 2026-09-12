@@ -138,8 +138,12 @@ ${CLICKHOUSE_CLIENT} -q "CREATE DATABASE ${DB} ENGINE = Replicated('${ZK_PATH}',
 # it is the control case.
 # ---------------------------------------------------------------------------------------------
 
-${CLIENT} -q "CREATE TABLE ${DB}.ext_data (id UUID, timestamp DateTime64(3), value Float64)
-              ENGINE = ReplicatedMergeTree ORDER BY (id, timestamp)"
+${CLIENT} -q "CREATE TABLE ${DB}.ext_data (id UUID,
+                  samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(3), value Float64))),
+                  bucket DateTime64(3),
+                  min_time SimpleAggregateFunction(min, DateTime64(3)),
+                  max_time SimpleAggregateFunction(max, DateTime64(3)))
+              ENGINE = ReplicatedAggregatingMergeTree ORDER BY (id, bucket)"
 ${CLIENT} -q "CREATE TABLE ${DB}.ext_tags (
                   id UUID DEFAULT reinterpretAsUUID(sipHash128(metric_name, all_tags)),
                   metric_name LowCardinality(String),
@@ -183,7 +187,7 @@ ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.tables WHERE database = '${D
 # and re-create leaves the inner tables empty, so a regression that made the eager inner drop a
 # silent no-op would leave these rows in place.
 SAMPLES_TABLE=$(${CLICKHOUSE_CLIENT} -q "SELECT name FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.samples.%'")
-${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` (timestamp, value) SELECT now64(3), number FROM numbers(50)"
+${CLICKHOUSE_CLIENT} -q "INSERT INTO ${DB}.\`${SAMPLES_TABLE}\` (bucket) SELECT toDateTime(number) FROM numbers(50)"
 ${CLICKHOUSE_CLIENT} -q "SELECT sum(total_rows) FROM system.tables WHERE database = '${DB}' AND name LIKE '.inner_id.%'"
 
 RECOVERIES_BEFORE=$(count_recovery_completions)

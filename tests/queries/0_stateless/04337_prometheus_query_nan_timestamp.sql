@@ -15,8 +15,15 @@ DROP TABLE IF EXISTS ts_tags;
 DROP TABLE IF EXISTS ts_metrics;
 DROP TABLE IF EXISTS ts_ns;
 
-CREATE TABLE ts_data (id UUID, timestamp DateTime64(9, 'UTC'), value Float64)
-ENGINE = MergeTree ORDER BY (id, timestamp);
+CREATE TABLE ts_data
+(
+    id UUID,
+    samples SimpleAggregateFunction(timeSeriesGroupArray, Array(Tuple(timestamp DateTime64(9, 'UTC'), value Float64))),
+    bucket DateTime64(9, 'UTC'),
+    min_time SimpleAggregateFunction(min, DateTime64(9, 'UTC')),
+    max_time SimpleAggregateFunction(max, DateTime64(9, 'UTC'))
+)
+ENGINE = AggregatingMergeTree ORDER BY (id, bucket);
 
 CREATE TABLE ts_tags (
     id UUID,
