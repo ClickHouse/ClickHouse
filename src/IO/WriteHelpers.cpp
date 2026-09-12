@@ -131,6 +131,7 @@ static inline void writeProbablyQuotedStringImpl(std::string_view s, WriteBuffer
         /// These keywords cause parsing ambiguity when used as function or identifier names
         /// because the parser consumes them as clause-starting keywords.
         && !isCaseInsensitiveEqual(s, "from")
+        && !isCaseInsensitiveEqual(s, "top")
         && !isCaseInsensitiveEqual(s, "values"))
     {
         writeString(s, buf);
