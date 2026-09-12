@@ -1070,6 +1070,13 @@ bool StorageMaterializedView::isRemote() const
     return false;
 }
 
+bool StorageMaterializedView::readRequiresAnalyzedQuery() const
+{
+    if (auto table = tryGetTargetTable())
+        return table->readRequiresAnalyzedQuery();
+    return false;
+}
+
 void StorageMaterializedView::onActionLockRemove(StorageActionBlockType action_type)
 {
     if ((action_type == ActionLocks::ViewRefresh || action_type == ActionLocks::ViewRefreshPause) && refresher)

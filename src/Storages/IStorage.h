@@ -118,6 +118,11 @@ public:
     /// Returns true if the storage receives data from a remote server or servers.
     virtual bool isRemote() const { return false; }
 
+    /// Returns true if `read` is known to require an analyzed query (an AST or a query tree) in
+    /// `SelectQueryInfo`, which not every caller of `read` has: a remote read always does, and so does a
+    /// read that rewrites the query per underlying table. Wrappers answer for the table they forward to.
+    virtual bool readRequiresAnalyzedQuery() const { return isRemote(); }
+
     /// Returns true for storages that do not store data themselves but read it from other tables,
     /// e.g. `Distributed`, `Merge`, `Buffer`, `Alias`. The `_table` and `_database` virtual columns
     /// of the rows read from such a storage carry the name of the table that actually produced
