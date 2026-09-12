@@ -1,0 +1,52 @@
+--- (a) control: with its source intact a replayed definition still reads its row ---
+attached sel
+attached pq
+attached pqr
+1
+1
+5
+--- (b) after the source is dropped all three definitions still attach ---
+attached sel
+attached pq
+attached pqr
+--- (c) and reading them reports the missing source ---
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+--- (d) a full definition naming a table that never existed attaches ---
+attached never_existed
+--- (e) after the source is renamed the definition still attaches, and the read reports it ---
+attached sel_renamed
+UNKNOWN_TABLE
+--- (g) a fresh CREATE whose structure is inferred from the function still requires the source ---
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+--- (g2) with an explicit column list nothing is resolved at CREATE ---
+created explicit_columns
+--- (c2) so its missing source is reported on the first read, not hidden ---
+UNKNOWN_TABLE
+--- (h) the tags target is dropped while the TimeSeries table survives ---
+attached sel_no_tags
+UNKNOWN_TABLE
+--- (i) the whole database of the source is dropped ---
+attached sel_no_database
+--- (l) the time bounds are still converted, so the checks that read them still fire ---
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+--- (m) a stored definition binds to the database it was created in, not the replaying session ---
+attached sel_qual
+attached pq_qual
+sel_qual	1
+pq_qual	1
+--- (n) a definition naming the table being created attaches, and the read reports the engine ---
+created selfref
+attached selfref
+UNEXPECTED_TABLE_ENGINE
+--- (o) a real load replays every definition of a database at once ---
+created bad_promql
+attached database
+sel_load	1
+pq_load	1
+UNKNOWN_TABLE
+UNEXPECTED_TABLE_ENGINE
+CANNOT_PARSE_PROMQL_QUERY
