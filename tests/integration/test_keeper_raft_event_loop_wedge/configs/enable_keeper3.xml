@@ -1,0 +1,54 @@
+<clickhouse>
+    <keeper_server>
+        <use_cluster>false</use_cluster>
+        <tcp_port>9181</tcp_port>
+        <server_id>3</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <!-- No snapshot on exit, so that after a restart the on-disk logs are not covered by a
+             snapshot and have to be replayed (localLogsPreprocessed() == false during startup). -->
+        <create_snapshot_on_exit>false</create_snapshot_on_exit>
+
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <!-- Nobody takes a snapshot and the leader never compacts, so the restarted node has to
+                 be caught up by streamed log entries rather than by install_snapshot. -->
+            <snapshot_distance>1000000</snapshot_distance>
+            <reserved_log_items>1000000</reserved_log_items>
+            <!-- A silent peer is force-reconnected after reconnect_limit * heart_beat_interval_ms,
+                 and every reconnect brings a fresh connection, handled by another thread of the
+                 Raft event loop. 100 ms compresses the time axis of the incident 50 times. -->
+            <heart_beat_interval_ms>100</heart_beat_interval_ms>
+            <raft_limits_reconnect_limit>1</raft_limits_reconnect_limit>
+            <!-- The wait for the replay lasts heart_beat_interval_ms * raft_limits_response_limit,
+                 200 ms here, so it always expires long before a replay of this size finishes. -->
+            <raft_limits_response_limit>2</raft_limits_response_limit>
+            <election_timeout_lower_bound_ms>1000</election_timeout_lower_bound_ms>
+            <election_timeout_upper_bound_ms>2000</election_timeout_upper_bound_ms>
+            <startup_timeout>180000</startup_timeout>
+            <raft_logs_level>information</raft_logs_level>
+        </coordination_settings>
+
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>node1</hostname>
+                <port>9234</port>
+                <priority>3</priority>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>node2</hostname>
+                <port>9234</port>
+                <priority>1</priority>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>node3</hostname>
+                <port>9234</port>
+                <priority>2</priority>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
