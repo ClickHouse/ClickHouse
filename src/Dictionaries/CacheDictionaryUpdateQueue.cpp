@@ -1,6 +1,7 @@
 #include <Dictionaries/CacheDictionaryUpdateQueue.h>
 
 #include <Common/CurrentMetrics.h>
+#include <Common/CurrentThread.h>
 #include <Common/setThreadName.h>
 
 namespace CurrentMetrics
@@ -84,16 +85,39 @@ void CacheDictionaryUpdateQueue<dictionary_key_type>::waitForCurrentUpdateFinish
 
     std::unique_lock<std::mutex> update_lock(update_unit_ptr->update_mutex);
 
-    bool result = update_unit_ptr->is_update_finished.wait_for(
-        update_lock,
-        std::chrono::milliseconds(configuration.query_wait_timeout_milliseconds),
-        [&]
-        {
-            return update_unit_ptr->is_done || update_unit_ptr->current_exception;
-        });
+    auto is_update_finished = [&]
+    {
+        return update_unit_ptr->is_done || update_unit_ptr->current_exception;
+    };
+
+    /// Wait in slices rather than for the whole query_wait_timeout_milliseconds at once, so that
+    /// cancellation of this query is observed instead of being deferred until the timeout expires.
+    static constexpr auto wait_slice = std::chrono::milliseconds(100);
+    const auto deadline
+        = std::chrono::steady_clock::now() + std::chrono::milliseconds(configuration.query_wait_timeout_milliseconds);
+
+    bool result = is_update_finished();
+
+    while (!result)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= deadline)
+            break;
+
+        CurrentThread::checkIfNotCancelled();
+
+        result = update_unit_ptr->is_update_finished.wait_for(
+            update_lock,
+            std::min(wait_slice, std::chrono::ceil<std::chrono::milliseconds>(deadline - now)),
+            is_update_finished);
+    }
 
     if (!result)
     {
+        /// The wait may have expired in the same slice in which the query was cancelled; report the
+        /// cancellation rather than a source timeout.
+        CurrentThread::checkIfNotCancelled();
+
         throw DB::Exception(
             ErrorCodes::TIMEOUT_EXCEEDED,
             "Dictionary {} source seems unavailable, because {} ms timeout exceeded.",
