@@ -186,10 +186,15 @@ INSERT INTO t_size_values VALUES ('{"a":[7,8,9]}');
 SELECT '12 size0 JSONAllValues', count() FROM t_size_values WHERE j.a.size0 = 3;
 
 -- 13: a null map is 1 exactly where the path is ABSENT, the opposite of what the path set models.
+-- The shared data serialization is pinned because reading the null map of an absent path yields 0
+-- under `advanced` and 1 under `map`, which is a property of that serialization and not of index
+-- analysis; leaving it randomized would make this arm assert the reader rather than the tail rule.
 DROP TABLE IF EXISTS t_null_map;
 CREATE TABLE t_null_map (j JSON,
     INDEX idx JSONAllPaths(j) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1,
+    object_shared_data_serialization_version = 'map',
+    object_shared_data_serialization_version_for_zero_level_parts = 'map';
 INSERT INTO t_null_map VALUES ('{"zzz":1}');
 
 SELECT '13 null map of a hinted path', count() FROM t_null_map WHERE j.a.:String.null = 1;
