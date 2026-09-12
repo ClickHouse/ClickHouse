@@ -1836,6 +1836,8 @@ What the Linux kernel does when the server makes a system call that it is not su
 
 At startup the server installs a [`seccomp`](https://man7.org/linux/man-pages/man2/seccomp.2.html) filter on itself, allowing only the system calls ClickHouse uses. An attacker who manages to run code inside the server process is then left without the kernel interfaces that turn code execution into something worse: loading kernel modules, rebooting, mounting filesystems, `chroot`, changing the process identity, creating namespaces, `ptrace` and reading another process's memory, eBPF, the kernel keyring, `userfaultfd` and `vmsplice`, file handles, `fanotify`, swap and quota control, setting the system clock or the host name, and System V and POSIX message queues. The two requests of `ioctl` that let a process take over the terminal it holds, `TIOCSTI` and `TIOCLINUX`, are refused as well. The server also sets `PR_SET_NO_NEW_PRIVS`, so that neither it nor anything it starts can gain privileges by running a setuid program.
 
+Creating a namespace is refused in every form it takes: `unshare` and `setns` are not allowed at all, a `clone` that asks for a namespace among its flags is refused, and `clone3` - whose arguments live in a structure that a filter cannot read, so that a namespace cannot be told from a thread - is refused as a whole, with `ENOSYS`. That is how a libc discovers that it has to use `clone` instead, so making threads and processes keeps working; `docker` and `systemd` refuse `clone3` the same way in their own policies.
+
 Possible values:
 
 - `trap` - the kernel sends `SIGSYS` to the offending thread. ClickHouse treats it as any other fatal signal: the system call number and a stack trace go to the log, and the server terminates.

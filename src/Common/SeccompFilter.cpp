@@ -16,6 +16,7 @@
 #include <linux/audit.h>
 #include <linux/filter.h>
 #include <linux/seccomp.h>
+#include <sched.h>
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
@@ -23,6 +24,7 @@
 #include <algorithm>
 #include <bit>
 #include <cerrno>
+#include <csignal>
 #include <cstddef>
 #include <cstring>
 #include <filesystem>
@@ -46,7 +48,7 @@ namespace ErrorCodes
 ///
 /// The list is deliberately generous within each group: a system call that is merely an older or
 /// a newer spelling of an allowed one (`open` next to `openat`, `epoll_wait` next to
-/// `epoll_pwait2`, `clone` next to `clone3`) is allowed too, because which one is used depends on
+/// `epoll_pwait2`, `fork` next to `clone`) is allowed too, because which one is used depends on
 /// the libc version and on the running kernel rather than on anything ClickHouse decides. Denying
 /// those would turn a libc upgrade into a crash without taking away any capability the server does
 /// not already have.
@@ -55,12 +57,13 @@ namespace ErrorCodes
 /// achieved code execution inside the process would reach for: loading kernel modules
 /// (`init_module`), rebooting (`reboot`, `kexec_load`), mounting and the whole new mount API
 /// (`mount`, `pivot_root`, `fsopen`, `move_mount`), `chroot`, changing the process identity
-/// (`setuid` and friends, `capset`), creating namespaces (`unshare`, `setns`), `ptrace` and
-/// cross-process memory access (`process_vm_readv`, `process_vm_writev`, `pidfd_getfd`), eBPF
-/// (`bpf`), the kernel keyring (`add_key`, `keyctl`), `userfaultfd` and `vmsplice` (both standard
-/// exploitation primitives), file handles (`open_by_handle_at`), `fanotify`, swap and quota
-/// control, setting the system clock and the host name, System V and POSIX IPC, and the
-/// extended-attribute calls.
+/// (`setuid` and friends, `capset`), creating namespaces (`unshare` and `setns`, and also `clone`
+/// and `clone3`, which can do it too - see `denied_clone_flags` and `clone3_syscall_number`),
+/// `ptrace` and cross-process memory access (`process_vm_readv`, `process_vm_writev`,
+/// `pidfd_getfd`), eBPF (`bpf`), the kernel keyring (`add_key`, `keyctl`), `userfaultfd` and
+/// `vmsplice` (both standard exploitation primitives), file handles (`open_by_handle_at`),
+/// `fanotify`, swap and quota control, setting the system clock and the host name, System V and
+/// POSIX IPC, and the extended-attribute calls.
 ///
 /// Two of the allowed calls are worth calling out, because they are the largest remaining surface
 /// and both are here only because ClickHouse genuinely uses them: `perf_event_open` (for
@@ -100,7 +103,9 @@ namespace ErrorCodes
     M(mlock) M(mlock2) M(munlock) M(mlockall) M(munlockall) M(membarrier) M(get_mempolicy) \
     \
     /* Threads and processes. Forking and `execve` are needed by executable dictionaries and */ \
-    /* user defined functions, by the bridges, and by the OOM canary. */ \
+    /* user defined functions, by the bridges, and by the OOM canary. Which flags `clone` may */ \
+    /* carry is decided separately, in a block of the program of its own, so that entry does */ \
+    /* not go into the table of numbers. */ \
     M(clone) M(execve) M(execveat) M(exit) M(exit_group) M(wait4) M(waitid) \
     M(set_tid_address) M(set_robust_list) M(get_robust_list) M(setsid) M(setpgid) \
     M(getpgid) M(getsid) \
@@ -171,7 +176,7 @@ namespace ErrorCodes
     /* The `io_uring` read method. */ \
     N(io_uring_setup, 425) N(io_uring_enter, 426) N(io_uring_register, 427) \
     /* Newer spellings of calls allowed above; which one is used is up to the libc. */ \
-    N(clone3, 435) N(close_range, 436) N(openat2, 437) N(faccessat2, 439) N(epoll_pwait2, 441) \
+    N(close_range, 436) N(openat2, 437) N(faccessat2, 439) N(epoll_pwait2, 441) \
     N(futex_waitv, 449) N(fchmodat2, 452) N(futex_wake, 454) N(futex_wait, 455) \
     N(futex_requeue, 456) \
     /* How a libc with shadow stacks enabled starts a thread, and how one seals its mappings. */ \
@@ -187,6 +192,17 @@ constexpr int rseq_syscall_number = 334;
 #else
 constexpr int rseq_syscall_number = 293;
 #endif
+
+/// `clone3` is the newer spelling of `clone` and the one a recent libc reaches for first, but it
+/// is not in the table above, because it cannot be simply allowed: everything it is asked to do,
+/// including creating a namespace, is described by a structure in the calling process's memory,
+/// which a filter cannot read. So there is no way to let the thread-creating calls through and
+/// refuse the rest, and the call is refused as a whole - with `ENOSYS`, which is how a libc
+/// discovers that the kernel it runs on has no `clone3` and falls back to `clone`, whose flags the
+/// filter can see. A recent glibc asks once and remembers the answer, so this costs a single
+/// refused system call in a process rather than one per thread. `docker` and `systemd` refuse
+/// `clone3` the same way in their own policies, for the same reason.
+constexpr int clone3_syscall_number = 435;
 
 constexpr int allowed_syscalls[] =
 {
@@ -206,6 +222,18 @@ constexpr int allowed_syscalls[] =
 /// Everything else `ioctl` can do is reachable through system calls that are allowed anyway.
 constexpr UInt32 denied_ioctl_requests[] = {TIOCSTI, TIOCLINUX};
 
+/// Creating a namespace takes neither `unshare` nor `setns`, both of which the policy refuses:
+/// `clone` does it too, when its flags ask for one. These are the flags it must not carry. A
+/// thread, a `fork` and a `posix_spawn` ask for none of them, so nothing the server does is
+/// affected - and a compromised one is left without the user namespace that is the usual way from
+/// code execution to the kernel.
+///
+/// `CLONE_NEWTIME` is not in the list because this `clone` cannot reach it: its bit falls inside
+/// the exit signal in the low byte, which the kernel masks off. Only `unshare` and `clone3` can
+/// ask for a time namespace, and both are refused.
+constexpr UInt32 denied_clone_flags
+    = CLONE_NEWNS | CLONE_NEWCGROUP | CLONE_NEWUTS | CLONE_NEWIPC | CLONE_NEWUSER | CLONE_NEWPID | CLONE_NEWNET;
+
 #if defined(__x86_64__)
 constexpr UInt32 expected_audit_arch = AUDIT_ARCH_X86_64;
 #else
@@ -220,6 +248,10 @@ constexpr UInt32 offset_arch = offsetof(struct seccomp_data, arch);
 /// half comes first. Looking at the low half alone is also what makes the check unavoidable:
 /// passing `TIOCSTI` with junk in the high bits still reaches `TIOCSTI`, and still matches here.
 constexpr UInt32 offset_ioctl_request = offsetof(struct seccomp_data, args) + sizeof(UInt64);
+/// The `flags` argument of `clone`. The kernel takes the low half of it twice - once for the
+/// flags and once for the exit signal in the lowest byte - and never looks at the high half, so
+/// matching on the low half, which comes first on a little-endian machine, is exact.
+constexpr UInt32 offset_clone_flags = offsetof(struct seccomp_data, args);
 
 static_assert(
     std::endian::native == std::endian::little,
@@ -244,7 +276,10 @@ constexpr sock_filter jump(UInt32 code, UInt32 k, UInt32 jt, UInt32 jf)
 /// one. No real distance can collide with these: the program is a few hundred instructions long.
 constexpr UInt32 jump_to_allow = 0xFFFFFFFFU;
 constexpr UInt32 jump_to_deny = 0xFFFFFFFEU;
-constexpr UInt32 jump_to_ioctl_check = 0xFFFFFFFDU;
+constexpr UInt32 jump_to_argument_checks = 0xFFFFFFFDU;
+constexpr UInt32 jump_to_ioctl_check = 0xFFFFFFFCU;
+constexpr UInt32 jump_to_clone_check = 0xFFFFFFFBU;
+constexpr UInt32 jump_to_clone3 = 0xFFFFFFFAU;
 
 /// A maximal run of consecutive allowed system call numbers, `[first, last]`.
 struct Range
@@ -268,22 +303,24 @@ std::vector<Range> toRanges(std::span<const int> sorted_numbers)
     return ranges;
 }
 
-/// Emits the test of a single range, with the system call number already in the accumulator.
+/// Emits the test of a single range, with the system call number already in the accumulator. A
+/// number the range does not cover goes on to the argument checks rather than straight to the
+/// deny block, because the calls whose fate depends on an argument are not in any range.
 void emitRangeCheck(Program & program, const Range & range)
 {
     if (range.first == range.last)
     {
         program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, static_cast<UInt32>(range.first), 0, 1));
         program.push_back(statement(BPF_JMP | BPF_JA, jump_to_allow));
-        program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
+        program.push_back(statement(BPF_JMP | BPF_JA, jump_to_argument_checks));
         return;
     }
 
     program.push_back(jump(BPF_JMP | BPF_JGT | BPF_K, static_cast<UInt32>(range.last), 0, 1));
-    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_argument_checks));
     program.push_back(jump(BPF_JMP | BPF_JGE | BPF_K, static_cast<UInt32>(range.first), 0, 1));
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_allow));
-    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_argument_checks));
 }
 
 /// Emits a binary search over `ranges`, which must be sorted and disjoint. A linear chain of
@@ -291,7 +328,8 @@ void emitRangeCheck(Program & program, const Range & range)
 /// so the depth is kept logarithmic: about a dozen instructions rather than a few hundred.
 ///
 /// The comparisons are unsigned, and that is what makes a number outside the table - a negative
-/// one, or an x32 number with bit 30 set - fall past the last range and into the deny block.
+/// one, or an x32 number with bit 30 set - fall past the last range and, through the argument
+/// checks, into the deny block.
 void emitSearch(Program & program, std::span<const Range> ranges)
 {
     if (ranges.size() == 1)
@@ -315,8 +353,19 @@ void emitSearch(Program & program, std::span<const Range> ranges)
     program.insert(program.end(), upper.begin(), upper.end());
 }
 
+/// Where each of the blocks at the end of the program begins.
+struct Blocks
+{
+    size_t argument_checks;
+    size_t ioctl_check;
+    size_t clone_check;
+    size_t clone3;
+    size_t allow;
+    size_t deny;
+};
+
 /// Replaces the placeholder distances with real ones.
-void link(Program & program, size_t allow_index, size_t deny_index, size_t ioctl_check_index)
+void link(Program & program, const Blocks & blocks)
 {
     for (size_t index = 0; index < program.size(); ++index)
     {
@@ -326,11 +375,17 @@ void link(Program & program, size_t allow_index, size_t deny_index, size_t ioctl
 
         size_t target = 0;
         if (instruction.k == jump_to_allow)
-            target = allow_index;
+            target = blocks.allow;
         else if (instruction.k == jump_to_deny)
-            target = deny_index;
+            target = blocks.deny;
+        else if (instruction.k == jump_to_argument_checks)
+            target = blocks.argument_checks;
         else if (instruction.k == jump_to_ioctl_check)
-            target = ioctl_check_index;
+            target = blocks.ioctl_check;
+        else if (instruction.k == jump_to_clone_check)
+            target = blocks.clone_check;
+        else if (instruction.k == jump_to_clone3)
+            target = blocks.clone3;
         else
             continue;
 
@@ -347,7 +402,7 @@ void link(Program & program, size_t allow_index, size_t deny_index, size_t ioctl
     }
 }
 
-Program buildProgram(std::span<const Range> ranges, UInt32 default_action)
+Program buildProgram(std::span<const Range> ranges, UInt32 default_action, UInt32 clone3_action)
 {
     if (ranges.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "The seccomp policy allows no system calls at all");
@@ -361,12 +416,24 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action)
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
 
     program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_nr));
-    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_ioctl, 0, 1));
-    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_ioctl_check));
-
     emitSearch(program, ranges);
 
-    /// The `ioctl` block comes before the two terminal blocks because it jumps to them.
+    /// The three calls whose fate takes more than their number to decide are in none of the
+    /// ranges, so the search sends them here. Keeping these checks after the search rather than
+    /// ahead of it is what keeps them off the path of every other system call: the price of
+    /// looking at an argument is paid by the call whose argument it is, and by the refused ones,
+    /// which are nobody's hot path.
+    const size_t argument_checks_index = program.size();
+    program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_nr));
+    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_ioctl, 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_ioctl_check));
+    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, __NR_clone, 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_clone_check));
+    program.push_back(jump(BPF_JMP | BPF_JEQ | BPF_K, static_cast<UInt32>(clone3_syscall_number), 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_clone3));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
+
+    /// The blocks that look at an argument come before the terminal ones because they jump to them.
     const size_t ioctl_check_index = program.size();
     program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_ioctl_request));
     for (UInt32 request : denied_ioctl_requests)
@@ -376,12 +443,28 @@ Program buildProgram(std::span<const Range> ranges, UInt32 default_action)
     }
     program.push_back(statement(BPF_JMP | BPF_JA, jump_to_allow));
 
+    const size_t clone_check_index = program.size();
+    program.push_back(statement(BPF_LD | BPF_W | BPF_ABS, offset_clone_flags));
+    program.push_back(jump(BPF_JMP | BPF_JSET | BPF_K, denied_clone_flags, 0, 1));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_deny));
+    program.push_back(statement(BPF_JMP | BPF_JA, jump_to_allow));
+
+    const size_t clone3_index = program.size();
+    program.push_back(statement(BPF_RET | BPF_K, clone3_action));
+
     const size_t allow_index = program.size();
     program.push_back(statement(BPF_RET | BPF_K, SECCOMP_RET_ALLOW));
     const size_t deny_index = program.size();
     program.push_back(statement(BPF_RET | BPF_K, default_action));
 
-    link(program, allow_index, deny_index, ioctl_check_index);
+    link(
+        program,
+        {.argument_checks = argument_checks_index,
+         .ioctl_check = ioctl_check_index,
+         .clone_check = clone_check_index,
+         .clone3 = clone3_index,
+         .allow = allow_index,
+         .deny = deny_index});
     return program;
 }
 
@@ -417,6 +500,8 @@ UInt32 evaluate(const Program & program, const struct seccomp_data & data)
             index += 1 + (accumulator >= instruction.k ? instruction.jt : instruction.jf);
         else if (instruction.code == (BPF_JMP | BPF_JGT | BPF_K))
             index += 1 + (accumulator > instruction.k ? instruction.jt : instruction.jf);
+        else if (instruction.code == (BPF_JMP | BPF_JSET | BPF_K))
+            index += 1 + ((accumulator & instruction.k) != 0 ? instruction.jt : instruction.jf);
         else
             throw Exception(
                 ErrorCodes::LOGICAL_ERROR, "Unexpected instruction {:#x} in the generated seccomp filter", instruction.code);
@@ -425,7 +510,8 @@ UInt32 evaluate(const Program & program, const struct seccomp_data & data)
     throw Exception(ErrorCodes::LOGICAL_ERROR, "The generated seccomp filter runs past its last instruction");
 }
 
-void verifyProgram(const Program & program, const std::unordered_set<int> & allowed, UInt32 default_action)
+void verifyProgram(
+    const Program & program, const std::unordered_set<int> & allowed, UInt32 default_action, UInt32 clone3_action)
 {
     auto check = [&](const struct seccomp_data & data, UInt32 expected)
     {
@@ -436,20 +522,25 @@ void verifyProgram(const Program & program, const std::unordered_set<int> & allo
         throw Exception(
             ErrorCodes::LOGICAL_ERROR,
             "The generated seccomp filter returns {:#x} instead of {:#x} for system call {} of architecture {:#x} "
-            "with second argument {:#x}",
+            "with first argument {:#x} and second argument {:#x}",
             result,
             expected,
             data.nr,
             data.arch,
+            data.args[0],
             data.args[1]);
     };
 
     /// Every number the running kernel could put into `nr`, and then some, so that a range which
-    /// is off by one on either end cannot go unnoticed.
+    /// is off by one on either end cannot go unnoticed. The two calls that are decided by an
+    /// argument are in `allowed`, and with every argument zero that is indeed the answer they get.
     for (int nr = -4096; nr < 8192; ++nr)
-        check(
-            {.nr = nr, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {}},
-            allowed.contains(nr) ? SECCOMP_RET_ALLOW : default_action);
+    {
+        UInt32 expected = allowed.contains(nr) ? SECCOMP_RET_ALLOW : default_action;
+        if (nr == clone3_syscall_number)
+            expected = clone3_action;
+        check({.nr = nr, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {}}, expected);
+    }
 
     /// The x32 ABI reports the same `arch` as x86-64 but sets bit 30 of the number, so its numbers
     /// must not be taken for the 64-bit ones.
@@ -478,6 +569,43 @@ void verifyProgram(const Program & program, const std::unordered_set<int> & allo
         check(
             {.nr = __NR_ioctl, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {0, request, 0, 0, 0, 0}},
             SECCOMP_RET_ALLOW);
+
+    /// `clone` makes a thread or a process - the first three are the flags a libc passes for a
+    /// thread, for `fork` and for `posix_spawn` - and the high half of the argument, which the
+    /// kernel does not look at, does not change that.
+    for (UInt64 flags : {UInt64{CLONE_VM | CLONE_FS | CLONE_FILES | CLONE_SIGHAND | CLONE_THREAD | CLONE_SYSVSEM
+                                | CLONE_SETTLS | CLONE_PARENT_SETTID | CLONE_CHILD_CLEARTID},
+                         UInt64{CLONE_CHILD_SETTID | CLONE_CHILD_CLEARTID | SIGCHLD},
+                         UInt64{CLONE_VM | CLONE_VFORK | SIGCHLD},
+                         UInt64{0},
+                         UInt64{1} << 32})
+        check(
+            {.nr = __NR_clone, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {flags, 0, 0, 0, 0, 0}},
+            SECCOMP_RET_ALLOW);
+
+    /// A `clone` that asks for a namespace is refused, whether it asks for it alone, among the
+    /// flags of an ordinary thread, or with junk in the half of the argument the kernel ignores.
+    for (UInt32 flag : {UInt32{CLONE_NEWNS},
+                        UInt32{CLONE_NEWCGROUP},
+                        UInt32{CLONE_NEWUTS},
+                        UInt32{CLONE_NEWIPC},
+                        UInt32{CLONE_NEWUSER},
+                        UInt32{CLONE_NEWPID},
+                        UInt32{CLONE_NEWNET}})
+        for (UInt64 flags : {UInt64{flag}, UInt64{flag} | CLONE_VM | CLONE_FILES | SIGCHLD, UInt64{1} << 32 | flag})
+            check(
+                {.nr = __NR_clone, .arch = expected_audit_arch, .instruction_pointer = 0, .args = {flags, 0, 0, 0, 0, 0}},
+                default_action);
+
+    /// What `clone3` is asked to do is in a structure the filter cannot read, so the call gets the
+    /// same answer whatever its arguments are.
+    for (UInt64 argument : {UInt64{0}, UInt64{1}, ~UInt64{0}})
+        check(
+            {.nr = clone3_syscall_number,
+             .arch = expected_audit_arch,
+             .instruction_pointer = 0,
+             .args = {argument, argument, argument, argument, argument, argument}},
+            clone3_action);
 }
 
 UInt32 getDefaultAction(SeccompMode mode)
@@ -582,12 +710,18 @@ size_t installSeccompFilter(SeccompMode mode)
 
     const std::unordered_set<int> allowed(numbers.begin(), numbers.end());
 
-    /// `ioctl` is decided by request in a block of its own, so it must not also be in the table.
+    /// `ioctl` is decided by its request and `clone` by its flags, in blocks of their own, so
+    /// neither must also be in the table.
     std::erase(numbers, __NR_ioctl);
+    std::erase(numbers, __NR_clone);
 
     const UInt32 default_action = getDefaultAction(mode);
-    Program program = buildProgram(toRanges(numbers), default_action);
-    verifyProgram(program, allowed, default_action);
+    /// `clone3` is refused with `ENOSYS` rather than with the configured action, so that a libc
+    /// falls back to `clone` instead of failing to make a thread. Nothing is refused in the `log`
+    /// mode, so there the call gets the same treatment as the rest of the policy.
+    const UInt32 clone3_action = mode == SeccompMode::Log ? default_action : (SECCOMP_RET_ERRNO | UInt32{ENOSYS});
+    Program program = buildProgram(toRanges(numbers), default_action, clone3_action);
+    verifyProgram(program, allowed, default_action, clone3_action);
 
     if (program.size() > size_t{BPF_MAXINSNS})
         throw Exception(

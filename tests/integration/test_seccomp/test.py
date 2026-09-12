@@ -66,8 +66,9 @@ def run_probe(node):
     # dictionary, a bridge, or the OOM canary runs under the same policy as the server.
     return node.query(
         "SELECT * FROM executable('seccomp_status.py', 'TabSeparated', "
-        "'mode String, getxattr_result String')"
-    )
+        "'mode String, getxattr_result String, clone_result String, clone3_result String, "
+        "thread_result String')"
+    ).split()
 
 
 def test_setting_is_reported(started_cluster):
@@ -114,17 +115,37 @@ def test_no_filter_when_disabled(started_cluster):
     assert get_status_field(disabled_node, pid, "Seccomp") == SECCOMP_MODE_DISABLED
     assert not disabled_node.contains_in_log("Applied a seccomp policy to this process")
 
-    # Without a filter the call goes through to the kernel, which answers about the attribute
-    # itself - which of the two answers it gives depends on the filesystem, and neither is `EPERM`.
-    mode, getxattr_result = run_probe(disabled_node).split()
+    # Without a filter every call goes through to the kernel, which answers about the call itself:
+    # about the attribute, which is missing (and which of the two answers it gives for that depends
+    # on the filesystem), about the flags of the `clone`, which name a combination it rejects on its
+    # own, and about the null `struct clone_args` of the `clone3`. None of those answers is `EPERM`
+    # or `ENOSYS`.
+    mode, getxattr_result, clone_result, clone3_result, thread_result = run_probe(
+        disabled_node
+    )
     assert mode == SECCOMP_MODE_DISABLED
     assert getxattr_result in ("ENODATA", "ENOTSUP", "EOPNOTSUPP")
+    assert clone_result == "EINVAL"
+    # A kernel too old for `clone3` answers `ENOSYS` by itself, and then the policy has nothing to
+    # refuse either.
+    assert clone3_result in ("EFAULT", "ENOSYS")
+    assert thread_result == "OK"
 
 
 def test_system_call_outside_the_policy_is_refused(started_cluster):
     # `getxattr` is not in the policy, so the `errno` mode turns it into `EPERM` - which is what
-    # makes the filter more than a formality.
-    assert run_probe(errno_node) == f"{SECCOMP_MODE_FILTER}\tEPERM\n"
+    # makes the filter more than a formality. A `clone` that asks for a user namespace is refused
+    # by its flags, and `clone3`, whose arguments a filter cannot read, is refused as a whole with
+    # `ENOSYS` - and making a thread keeps working, because `ENOSYS` is what sends the libc back to
+    # `clone`.
+    mode, getxattr_result, clone_result, clone3_result, thread_result = run_probe(
+        errno_node
+    )
+    assert mode == SECCOMP_MODE_FILTER
+    assert getxattr_result == "EPERM"
+    assert clone_result == "EPERM"
+    assert clone3_result == "ENOSYS"
+    assert thread_result == "OK"
 
 
 def test_server_works_under_the_filter(started_cluster):
