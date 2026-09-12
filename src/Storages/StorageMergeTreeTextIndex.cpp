@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Interpreters/ClientInfo.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Processors/ISource.h>
@@ -25,7 +26,6 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Access/Common/AccessFlags.h>
 #include <Access/EnabledRowPolicies.h>
-#include <Interpreters/RequiredSourceColumnsVisitor.h>
 
 namespace DB
 {
@@ -361,7 +361,10 @@ void ReadFromMergeTreeTextIndex::applyFilters(ActionDAGNodes added_filter_nodes)
 
 void ReadFromMergeTreeTextIndex::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(storage->data_parts, virtual_columns_filter);
+    /// Taken at read time: the storage outlives the query in a table created from the function before that was forbidden.
+    auto data_parts = dynamic_cast<const MergeTreeData &>(*storage->source_table).getDataPartsVectorForInternalUsage();
+    std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
+    auto filtered_parts = VirtualColumnUtils::filterDataPartsWithExpression(data_parts, virtual_columns_filter);
 
     if (filtered_parts.empty())
     {
@@ -407,12 +410,8 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     , source_table(source_table_)
     , text_index(std::move(text_index_))
 {
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
-    if (!merge_tree)
+    if (!dynamic_cast<const MergeTreeData *>(source_table.get()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table->getName());
-
-    data_parts = merge_tree->getDataPartsVectorForInternalUsage();
-    std::erase_if(data_parts, [](const MergeTreeData::DataPartPtr & part) { return part->isEmpty(); });
 
     StorageInMemoryMetadata storage_metadata;
     storage_metadata.setColumns(columns);
@@ -428,6 +427,31 @@ VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals()
     return desc;
 }
 
+void StorageMergeTreeTextIndex::checkAccess(const ContextPtr & context, const StorageID & source_storage_id, const IMergeTreeIndex & index)
+{
+    /// The checks below are for the user who runs the query. A shard reached through an ordinary connection runs a
+    /// distributed query as the user of that connection and does not know who initiated it; only through an
+    /// interserver connection does the shard authenticate the initiating user itself.
+    const auto & client_info = context->getClientInfo();
+    if (client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY && client_info.interface != ClientInfo::Interface::TCP_INTERSERVER)
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Table function `mergeTreeTextIndex` checks the access of the user who runs the query, so a shard of a "
+            "distributed query can execute it only when the cluster uses an interserver secret");
+
+    context->checkAccess(AccessType::SELECT, source_storage_id, index.getColumnsRequiredForIndexCalc());
+
+    /// The index is built over all rows of a part, so it contains tokens of the rows a row policy hides,
+    /// regardless of which columns the policy filters on. The policy cannot be applied to the dictionary.
+    auto row_policy_filter = context->getRowPolicyFilter(
+        source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        throw Exception(ErrorCodes::ACCESS_DENIED,
+            "Cannot read from `mergeTreeTextIndex` because a row policy is applied on table {}. "
+            "The text index covers all rows of the table, so reading its tokens would violate the row policy",
+            source_storage_id.getNameForLogs());
+}
+
 void StorageMergeTreeTextIndex::readImpl(
     QueryPlan & query_plan,
     const Names & column_names,
@@ -438,30 +462,7 @@ void StorageMergeTreeTextIndex::readImpl(
     size_t max_block_size,
     size_t num_streams)
 {
-    auto source_storage_id = source_table->getStorageID();
-    auto required_columns = text_index->getColumnsRequiredForIndexCalc();
-    context->checkAccess(AccessType::SELECT, source_storage_id, required_columns);
-    /// If the row policy filter references any column required for building the index,
-    /// reading from the text index would expose tokens derived from those columnsand violate the row policy.
-    auto row_policy_filter = context->getRowPolicyFilter(source_storage_id.getDatabaseName(), source_storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
-
-    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
-    {
-        RequiredSourceColumnsVisitor::Data columns_context;
-        RequiredSourceColumnsVisitor(columns_context).visit(row_policy_filter->expression);
-        NameSet row_policy_columns = columns_context.requiredColumns();
-
-        for (const auto & column_name : required_columns)
-        {
-            if (row_policy_columns.contains(column_name))
-            {
-                throw Exception(ErrorCodes::ACCESS_DENIED,
-                    "Cannot read from `mergeTreeTextIndex` because a row policy on column `{}` "
-                    "is applied on table {}. Reading text index tokens could violate the row policy",
-                    column_name, source_storage_id.getNameForLogs());
-            }
-        }
-    }
+    checkAccess(context, source_table->getStorageID(), *text_index);
 
     auto sample_block = std::make_shared<const Block>(storage_snapshot->getSampleBlockForColumns(column_names));
     auto this_ptr = std::static_pointer_cast<StorageMergeTreeTextIndex>(shared_from_this());
