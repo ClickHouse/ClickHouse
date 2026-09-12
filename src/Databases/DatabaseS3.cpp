@@ -205,11 +205,12 @@ void DatabaseS3::shutdown()
 {
 }
 
-DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_)
+DatabaseS3::Configuration DatabaseS3::parseArguments(ASTs engine_args, ContextPtr context_, const String & database_name_)
 {
     Configuration result;
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_))
+    const StorageID database_id = StorageID::createDatabaseOnly(database_name_);
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, context_, true, nullptr, &database_id))
     {
         auto & collection = *named_collection;
 
@@ -337,7 +338,7 @@ void registerDatabaseS3(DatabaseFactory & factory)
         if (engine->arguments && !engine->arguments->children.empty())
         {
             ASTs & engine_args = engine->arguments->children;
-            config = DatabaseS3::parseArguments(engine_args, args.context);
+            config = DatabaseS3::parseArguments(engine_args, args.context, args.database_name);
         }
 
         return std::make_shared<DatabaseS3>(args.database_name, config, args.context);

@@ -24,7 +24,7 @@ void TableFunctionFuzzJSON::parseArguments(const ASTPtr & ast_function, ContextP
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments", getName());
 
     auto args = args_func.at(0)->children;
-    configuration = StorageFuzzJSON::getConfiguration(args, context);
+    configuration = StorageFuzzJSON::getConfiguration(args, context, nullptr, getUsedNamedCollectionNameForUpdate());
 }
 
 ColumnsDescription TableFunctionFuzzJSON::getActualTableStructure(ContextPtr /*context*/, bool /*is_insert_query*/) const

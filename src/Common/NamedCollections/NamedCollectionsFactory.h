@@ -11,6 +11,9 @@
 #include <boost/multi_index/composite_key.hpp>
 #include <boost/multi_index/mem_fun.hpp>
 
+#include <set>
+#include <tuple>
+
 namespace DB
 {
 class ASTCreateNamedCollectionQuery;
@@ -81,6 +84,10 @@ public:
     void createFromSQL(const ASTCreateNamedCollectionQuery & query);
 
     void removeFromSQL(const ASTDropNamedCollectionQuery & query);
+    /// Removes the collection only when no active or detached dependency was registered while the
+    /// factory mutex was held. This serializes the final drop check with named-collection lookup
+    /// and dependency registration during CREATE and ATTACH.
+    bool removeFromSQLIfNoDependencies(const ASTDropNamedCollectionQuery & query);
 
     void updateFromSQL(const ASTAlterNamedCollectionQuery & query);
 
@@ -91,14 +98,64 @@ public:
     void shutdown();
 
     void addDependency(const String & collection_name, const StorageID & table_id);
+    NamedCollectionPtr getAndAddDependency(const String & collection_name, bool throw_unknown_collection, const StorageID & table_id);
     void removeDependencies(const StorageID & table_id);
-    void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
+    /// Removes one exact entry: the collection and the whole `StorageID` (database, table, UUID) must
+    /// match. The stale-entry cleanup of `DROP NAMED COLLECTION` uses it because the proof of staleness
+    /// it holds - the `DDLGuard` of the recorded table name - covers only that exact entry: erasing
+    /// everything under the entry's UUID could remove the live dependency of an in-flight
+    /// `CREATE TABLE ... UUID` that reuses the UUID under a different table name.
+    void removeDependency(const String & collection_name, const StorageID & table_id);
+    /// Follows a `RENAME TABLE`: moves the entries recorded under the exact old name to the new one.
+    /// An `EXCHANGE` calls this once per direction and must pass `exchange = true`, which restricts the
+    /// move to the entries without a UUID: re-keying UUID entries by name would apply the second call
+    /// to the entries the first one just moved.
+    void renameDependencies(const StorageID & from_table_id, const StorageID & to_table_id, bool exchange);
+    /// A `RENAME TABLE` that moves a table between an `Ordinary` and an `Atomic` database changes the
+    /// identity the dependency is keyed by: the move into `Atomic` assigns a fresh UUID to the table and
+    /// the move out of it drops the UUID, while the rename interpreter only knows the names. Re-key the
+    /// entries of the moved table to its new `StorageID` so that a later `DETACH`, `DROP` or `RENAME`
+    /// still finds them.
+    void rekeyDependencies(const StorageID & from_table_id, const StorageID & to_table_id);
     std::vector<StorageID> getDependents(const String & collection_name) const;
+    /// Whether any collection has a dependency recorded for exactly this `StorageID` - the database,
+    /// the table name and the UUID all have to match. It tells apart a table that was renamed after
+    /// its dependency was registered (its entries keep the old name, and no entry carries the current
+    /// one) from a `CREATE TABLE ... UUID` that reused the UUID of a failed create under a different
+    /// name (the committed table has its own entries, recorded under its current name).
+    bool hasDependencyRegisteredFor(const StorageID & table_id) const;
+
+    /// `DETACH TABLE` moves the dependencies of the table here: a detached table is not in
+    /// `DatabaseCatalog`, but the metadata it is attached from still references the collections, so they
+    /// must not be dropped. An entry is removed only when the table is dropped, detached permanently, or
+    /// renamed (all of which require the table to have been attached back first), and when its database
+    /// is dropped. `ATTACH` itself does not remove the entry: the dependencies are registered again while
+    /// the engine arguments are resolved, but the attach can still fail after that, leaving the table
+    /// detached. The `DROP NAMED COLLECTION` check does not prune the entries of tables that exist in
+    /// `DatabaseCatalog` either: the table's existence there is racy against in-flight `ATTACH`/`DETACH`
+    /// and proves nothing about whether the drop validated the live dependency.
+    /// The list is kept in memory only, which is consistent across a restart: a plainly detached table
+    /// is attached again at the next start (its dependencies are registered normally), and a permanently
+    /// detached table does not record entries at all - it is not loaded at startup, so a dropped
+    /// collection cannot break the start. The list is deliberately imprecise: an entry may keep refusing
+    /// the drop after the table was attached back (until the table is dropped or renamed) or after the
+    /// detached table itself is gone.
+    void markDependenciesDetached(const StorageID & table_id);
+    /// The detached tables that referenced the collection when they were detached.
+    std::vector<StorageID> getDetachedDependents(const String & collection_name) const;
+    /// `DROP TABLE` and `DETACH TABLE ... PERMANENTLY` remove the metadata the entry stands for.
+    void removeDetachedDependencies(const StorageID & table_id);
+    /// `DROP DATABASE` drops the detached tables of the database too: forget about them.
+    void removeDetachedDependencies(const String & database_name);
+    /// `RENAME DATABASE` moves the metadata of its detached tables along: re-key their entries.
+    void renameDetachedDependencies(const String & from_database_name, const String & to_database_name);
 
 protected:
     mutable NamedCollectionsMap loaded_named_collections;
     mutable std::mutex mutex;
     NamedCollectionDependencies dependencies;
+    /// (collection name, database name, table name) of the dependencies of detached tables.
+    std::set<std::tuple<String, String, String>> detached_dependencies;
 
     const LoggerPtr log = getLogger("NamedCollectionFactory");
 

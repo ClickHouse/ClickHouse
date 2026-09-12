@@ -42,7 +42,7 @@ CREATE TABLE ${MEMORY_DB}.test_nc_dep_table (x UInt32) ENGINE = URL(${NC_NAME});
 "
 
 # Should fail because table uses the named collection (check_named_collection_dependencies is true by default)
-$CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
+$CLICKHOUSE_CLIENT -m -q "SET check_named_collection_dependencies = true; DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # With check_named_collection_dependencies disabled, drop should succeed even with dependent table
 $CLICKHOUSE_CLIENT -m -q "
@@ -59,11 +59,11 @@ CREATE TABLE test_nc_dep_table (x UInt32) ENGINE = URL(${NC_NAME});
 "
 
 # Should fail again with setting enabled
-$CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
+$CLICKHOUSE_CLIENT -m -q "SET check_named_collection_dependencies = true; DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Test rename: dependency should be tracked after rename (Atomic database uses UUID, so rename is transparent)
 $CLICKHOUSE_CLIENT -q "RENAME TABLE test_nc_dep_table TO test_nc_dep_table_renamed;"
-$CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
+$CLICKHOUSE_CLIENT -m -q "SET check_named_collection_dependencies = true; DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Test EXCHANGE TABLES in Atomic database (UUID-based tracking handles this automatically)
 NC_NAME2="test_nc_dep2_${CLICKHOUSE_DATABASE}"
@@ -78,15 +78,15 @@ CREATE TABLE test_nc_dep_table2 (x UInt32) ENGINE = URL(${NC_NAME2});
 "
 
 # Both named collections should be protected
-$CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
-$CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME2}; -- { serverError NAMED_COLLECTION_IS_USED }"
+$CLICKHOUSE_CLIENT -m -q "SET check_named_collection_dependencies = true; DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
+$CLICKHOUSE_CLIENT -m -q "SET check_named_collection_dependencies = true; DROP NAMED COLLECTION ${NC_NAME2}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Exchange the tables - dependencies should still work (UUID-based tracking)
 $CLICKHOUSE_CLIENT -q "EXCHANGE TABLES test_nc_dep_table_renamed AND test_nc_dep_table2;"
 
 # After exchange, both named collections should still be protected
-$CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
-$CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME2}; -- { serverError NAMED_COLLECTION_IS_USED }"
+$CLICKHOUSE_CLIENT -m -q "SET check_named_collection_dependencies = true; DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
+$CLICKHOUSE_CLIENT -m -q "SET check_named_collection_dependencies = true; DROP NAMED COLLECTION ${NC_NAME2}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Clean up
 $CLICKHOUSE_CLIENT -m -q "
@@ -114,15 +114,15 @@ CREATE TABLE ${ORDINARY_DB}.test_nc_dep_ordinary (x UInt32) ENGINE = URL(${NC_NA
 "
 
 # Should fail because both tables use the named collection
-$CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
+$CLICKHOUSE_CLIENT -m -q "SET check_named_collection_dependencies = true; DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Test rename in Ordinary database (name-based tracking should update)
 $CLICKHOUSE_CLIENT -q "RENAME TABLE ${ORDINARY_DB}.test_nc_dep_ordinary TO ${ORDINARY_DB}.test_nc_dep_ordinary_renamed;"
-$CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
+$CLICKHOUSE_CLIENT -m -q "SET check_named_collection_dependencies = true; DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Drop the Atomic table, should still fail because Ordinary table uses the collection
 $CLICKHOUSE_CLIENT -q "DROP TABLE test_nc_dep_atomic SETTINGS ast_fuzzer_runs = 0;"
-$CLICKHOUSE_CLIENT -m -q "DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
+$CLICKHOUSE_CLIENT -m -q "SET check_named_collection_dependencies = true; DROP NAMED COLLECTION ${NC_NAME}; -- { serverError NAMED_COLLECTION_IS_USED }"
 
 # Drop the Ordinary table, now drop should succeed
 $CLICKHOUSE_CLIENT -m -q "

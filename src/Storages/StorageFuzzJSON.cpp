@@ -690,11 +690,11 @@ void StorageFuzzJSON::processNamedCollectionResult(Configuration & configuration
     }
 }
 
-StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_args, ContextPtr local_context, const StorageID * table_id)
+StorageFuzzJSON::Configuration StorageFuzzJSON::getConfiguration(ASTs & engine_args, ContextPtr local_context, const StorageID * table_id, String * used_named_collection_name)
 {
     StorageFuzzJSON::Configuration configuration{};
 
-    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
+    if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id, used_named_collection_name))
     {
         /// Perform strict validation of ASTs in addition to name collection extraction.
         for (auto args_it = std::next(engine_args.begin()); args_it != engine_args.end(); ++args_it)
@@ -749,7 +749,9 @@ void registerStorageFuzzJSON(StorageFactory & factory)
 
             return std::make_shared<StorageFuzzJSON>(args.table_id, args.columns, args.comment, configuration);
         },
-        {},
+        StorageFactory::StorageFeatures{
+            .supports_named_collections = true,
+        },
         Documentation{
             .description = "Generates random JSON strings by mutating a supplied JSON template. Useful for producing fuzzed JSON input for testing. The table must consist solely of columns of type `String`.",
             .syntax = "ENGINE = FuzzJSON(json_template[, random_seed])",
