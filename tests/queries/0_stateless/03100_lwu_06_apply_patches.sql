@@ -1,4 +1,5 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, no-random-detach
+-- no-random-detach: test checks system.parts
 -- no-replicated-database: OPTIMIZE is replicated which affects the part names.
 
 SET insert_keeper_fault_injection_probability = 0.0;

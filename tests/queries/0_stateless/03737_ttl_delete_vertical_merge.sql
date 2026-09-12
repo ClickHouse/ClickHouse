@@ -1,3 +1,8 @@
+-- Tags: no-random-detach
+-- no-random-detach: the test inspects `system.part_log` for the merge algorithm of the just-finished merge.
+-- Random `DETACH`/`ATTACH` cycles around `OPTIMIZE TABLE FINAL` can produce a stale
+-- `MergeParts` row whose `merge_algorithm` is `Undecided`, which makes the assertions flaky.
+
 SET alter_sync = 2;
 SET optimize_throw_if_noop = 0;
 

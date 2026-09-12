@@ -1,3 +1,6 @@
+-- Tags: no-random-detach, no-flaky-check
+-- no-random-detach: long test, DETACH/ATTACH adds too much overhead
+-- no-flaky-check: takes ~200s on the debug build with randomized settings, over the 180s flaky-check cap
 DROP TABLE IF EXISTS t64;
 
 CREATE TABLE t64

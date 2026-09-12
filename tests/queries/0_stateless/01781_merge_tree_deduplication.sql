@@ -1,4 +1,5 @@
--- Tags: no-replicated-database
+-- Tags: no-replicated-database, no-random-detach
+-- no-random-detach: test checks deduplication
 -- Tag no-replicated-database: Unsupported type of ALTER query
 
 DROP TABLE IF EXISTS merge_tree_deduplication;

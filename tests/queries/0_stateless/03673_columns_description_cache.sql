@@ -1,3 +1,5 @@
+-- Tags: no-random-detach
+-- no-random-detach: test uses DETACH/ATTACH itself
 -- Cache is only for MergeTree
 drop table if exists t_mem;
 create table t_mem (key Int) engine=Memory();

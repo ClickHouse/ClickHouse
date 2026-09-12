@@ -1,4 +1,8 @@
--- Tags: distributed
+-- Tags: distributed, no-random-detach
+-- no-random-detach: the table uses `non_replicated_deduplication_window`, which on
+-- `cached_s3_encrypted` storage exposes a latent issue where `MergeTreeDeduplicationLog`
+-- metadata in the local cache points at an S3 object that is no longer present after
+-- DETACH/ATTACH, causing `loadDeduplicationLog` to fail with S3_ERROR `No such key`.
 
 SET optimize_trivial_insert_select = 0;
 

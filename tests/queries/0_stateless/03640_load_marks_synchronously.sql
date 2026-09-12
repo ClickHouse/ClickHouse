@@ -1,4 +1,5 @@
--- Tags: no-parallel-replicas, no-parallel
+-- Tags: no-parallel-replicas, no-parallel, no-random-detach
+-- no-random-detach: test checks cache state
 -- Test depends on mark cache, don't run with others in parallel
 
 -- Note: we need to have index_granularity==number or rows, to avoid processing

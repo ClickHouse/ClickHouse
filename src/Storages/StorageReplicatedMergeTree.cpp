@@ -5931,6 +5931,27 @@ void StorageReplicatedMergeTree::startup()
     auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::startup");
     startOutdatedAndUnexpectedDataPartsLoadingTask();
     startStatisticsCache();
+
+    /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
+    /// `shutdown_called`. `shutdown()` publishes that flag before deactivating the periodic tasks, so if
+    /// we observe it here — after arming — we must deactivate the tasks we just re-armed; otherwise a
+    /// logically shut-down table would keep doing periodic work until some later `shutdown()` stops it.
+    /// Also stop right here: continuing into `attach_thread->start()` / `startupImpl` would pointlessly
+    /// re-arm the attach/restarting threads that `flushAndPrepareForShutdown()` has already shut down.
+    /// `shutdown_called` is never reset, so this storage object is only going to be destroyed — there is
+    /// nothing to start up. This check is best-effort (the flag can flip right after it); whatever a
+    /// startup that slipped past it re-arms is torn down again by the `already_called` branch of
+    /// `shutdown`, either via the cleanup path of `startupImpl` or at the latest by the destructor.
+    if (shutdown_called.load())
+    {
+        if (refresh_parts_task)
+            refresh_parts_task->deactivate();
+        if (refresh_stats_task)
+            refresh_stats_task->deactivate();
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
+        return;
+    }
+
     if (attach_thread)
     {
         attach_thread->start();
@@ -6123,17 +6144,84 @@ void StorageReplicatedMergeTree::partialShutdown()
 
 void StorageReplicatedMergeTree::shutdown(bool)
 {
-    if (shutdown_called.exchange(true))
-        return;
+    /// Serialize concurrent calls entirely, including the choice of the branch below. The lock must be
+    /// taken *before* consulting `shutdown_called`: otherwise two first-time callers would split into the
+    /// full-shutdown and `already_called` paths before either takes the lock, and the `already_called`
+    /// cleanup could then win the lock and tear down the interserver parts exchange endpoint (via
+    /// `partialShutdown` and the endpoint reset below) while the full shutdown still relies on it for
+    /// `waitForUniquePartsToBeFetchedByOtherReplicas`. The lock also protects the non-atomic members both
+    /// branches touch (`session_expired_callback_handler`, `replica_is_active_node`) from the failure path
+    /// of `startupImpl` racing with the first shutdown. Holding it across the full shutdown is safe: the
+    /// threads the full shutdown joins (the attach and restarting threads) never call `shutdown` themselves.
+    std::lock_guard shutdown_guard{shutdown_mutex};
 
-    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::shutdown");
+    /// Publish the shutdown intent *before* deactivating the periodic tasks below. This, together with
+    /// the matching re-check at the end of `startup()`, closes a `startup()`/`shutdown()` race (e.g. when a
+    /// table is detached while its async startup is still in flight): whatever the interleaving, the tasks
+    /// end up deactivated. If `startup()` arms them before this deactivate runs, this deactivate stops them;
+    /// if it arms them afterwards, it observes `shutdown_called == true` here and stops them itself.
+    const bool already_called = shutdown_called.exchange(true);
 
-    LOG_TRACE(log, "Shutdown started");
-
+    /// Deactivate the periodic refresh tasks unconditionally on every call. Without this, the destructor's
+    /// `shutdown(false)` would take the `already_called` branch and could leave `refreshStatistics` running
+    /// concurrently with `~MergeTreeData` destroying `cached_estimator`, which is a data race. Deactivation
+    /// is idempotent.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
+
+    if (already_called)
+    {
+        /// A racing `startup()` can pass its `shutdown_called` check just before the first (full) shutdown
+        /// runs, and then re-arm what that shutdown has already stopped. The late `shutdown_called` check in
+        /// `startupImpl` routes its cleanup into `shutdown(false)` — this branch — and the destructor's
+        /// `shutdown(false)` takes this branch too. So stop everything a second startup could have armed
+        /// after the first shutdown:
+        ///   - the outdated/unexpected data parts loading tasks (their holders are destroyed after
+        ///     `outdated_unloaded_data_parts` and `unexpected_data_parts`, so an armed task could fire while
+        ///     `~MergeTreeData` destroys the state its callback touches),
+        ///   - the attach and restarting threads, leader election, and everything the restarting thread
+        ///     activates (via `partialShutdown`),
+        ///   - the session-expired callback, the part moves orchestrator and background moves,
+        ///   - the interserver parts exchange endpoint.
+        /// All of these stops are idempotent, so this is safe after a complete first shutdown as well.
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
+
+        if (attach_thread)
+            attach_thread->shutdown();
+
+        restarting_thread.shutdown(/* part_of_full_shutdown */ true);
+        stopBeingLeader();
+        session_expired_callback_handler.reset();
+
+        /// Needed only if a second startup's restarting thread actually re-activated the replica —
+        /// that is the only path that resets `partial_shutdown_called` (and it does so before arming
+        /// the queue tasks, so the flag still set means nothing is armed). The restarting thread is
+        /// already stopped above, so the flag is stable here. The check also keeps the
+        /// `ReplicaPartialShutdown` profile event meaningful for the common destructor call after a
+        /// complete first shutdown.
+        if (!partial_shutdown_called)
+            partialShutdown();
+
+        part_moves_between_shards_orchestrator.shutdown();
+        background_moves_assignee.finish();
+
+        auto data_parts_exchange_ptr = std::atomic_exchange(&data_parts_exchange_endpoint, InterserverIOEndpointPtr{});
+        if (data_parts_exchange_ptr)
+        {
+            getContext()->getInterserverIOHandler().removeEndpointIfExists(data_parts_exchange_ptr->getId(getEndpointName()));
+            /// Ask all parts exchange handlers to finish asap. New ones will fail to start
+            data_parts_exchange_ptr->blocker.cancelForever();
+            /// Wait for all of them
+            std::lock_guard lock(data_parts_exchange_ptr->rwlock);
+        }
+        return;
+    }
+
+    auto component_guard = Coordination::setCurrentComponent("StorageReplicatedMergeTree::shutdown");
+
+    LOG_TRACE(log, "Shutdown started");
 
     flushAndPrepareForShutdown();
 

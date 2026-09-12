@@ -1,4 +1,5 @@
--- Tags: zookeeper
+-- Tags: zookeeper, no-random-detach
+-- no-random-detach: relies on `STOP MERGES` to keep parts in the old type; reattaching detaches parts as broken
 
 -- Test that skip indexes are properly handled when `ALTER MODIFY COLUMN` changes
 -- the column type and the mutation has not yet been applied (ReplicatedMergeTree variant).

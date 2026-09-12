@@ -1,4 +1,10 @@
--- Tags: no-async-insert
+-- Tags: no-random-detach, no-async-insert, no-flaky-check
+-- no-random-detach: random DETACH/ATTACH races with INSERT and produces flaky
+-- 'Unexpected packet from server (got Progress)' over the native protocol.
+-- no-flaky-check: the same 'Unexpected packet from server (got Progress)' flake on the
+-- INSERT expecting an exception pre-exists on the base branch independently of random
+-- DETACH/ATTACH (seen on unrelated PRs where reruns pass), so flaky-check reruns of this
+-- tag-only edit keep tripping on it.
 -- - no-async-insert -- with wait_for_async_insert=0 the INSERT is fire-and-forget, so the constraint error is raised in the background flush and never reaches the client, breaking the { serverError } assertion.
 
 CREATE TABLE check_constraint (c0 Int) ENGINE = MergeTree() ORDER BY tuple();

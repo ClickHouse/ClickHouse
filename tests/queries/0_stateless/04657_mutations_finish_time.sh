@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Tags: no-random-detach
+# no-random-detach: `finish_time` of a mutation is kept in memory only, so a DETACH/ATTACH between
+# the mutation and the poll resets it to zero forever; the test also takes an action lock with
+# `SYSTEM STOP MERGES`, which a reattach would drop.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

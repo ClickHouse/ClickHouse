@@ -13,6 +13,7 @@
 #include <boost/algorithm/string/trim.hpp>
 
 #include <Common/Exception.h>
+#include <Common/logger_useful.h>
 
 namespace DB
 {
@@ -139,10 +140,18 @@ void MergeTreeDeduplicationLog::load()
         /// Start new log, drop previous
         rotateAndDropIfNeeded();
 
-        /// Can happen in case we have unfinished log
-        if (!current_writer)
-            current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+        /// If the current log is unfinished, an appending writer for it is opened lazily on the first
+        /// written record (see `ensureWriter`). Opening it eagerly here would add a phantom blob to the
+        /// log file on object storages when the table is shut down without writing any record: finalizing
+        /// an empty `WriteMode::Append` buffer registers the blob in the metadata without uploading any
+        /// object, and a subsequent load would fail to read it (e.g. with `NoSuchKey` on S3).
     }
+}
+
+void MergeTreeDeduplicationLog::ensureWriter()
+{
+    if (!current_writer)
+        current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
 }
 
 size_t MergeTreeDeduplicationLog::loadSingleLog(const std::string & path)
@@ -204,9 +213,16 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
     /// Go from end to the beginning
     for (auto itr = existing_logs.rbegin(); itr != existing_logs.rend(); ++itr)
     {
-        if (current_sum > deduplication_window)
+        /// Never drop the current active log — it may still be open for writing
+        if (itr->first == current_log_number)
         {
-            /// We have more logs than required, all older files (including current) can be dropped
+            current_sum += itr->second.entries_count;
+            continue;
+        }
+
+        if (current_sum >= deduplication_window)
+        {
+            /// We have more logs than required, all older files (excluding current) can be dropped
             remove_from_value = itr->first;
             break;
         }
@@ -222,6 +238,7 @@ void MergeTreeDeduplicationLog::dropOutdatedLogs()
         for (auto itr = existing_logs.begin(); itr != existing_logs.end();)
         {
             size_t number = itr->first;
+            LOG_DEBUG(getLogger("MergeTreeDeduplicationLog"), "Dropping outdated deduplication log {}", itr->second.path);
             disk->removeFile(itr->second.path);
             itr = existing_logs.erase(itr);
             if (remove_from_value == number)
@@ -290,7 +307,7 @@ std::vector<MergeTreeDeduplicationLog::AddPartResult> MergeTreeDeduplicationLog:
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we add this part.");
     }
 
-    chassert(current_writer != nullptr);
+    ensureWriter();
 
     for (const auto & block_id : block_ids)
     {
@@ -328,7 +345,7 @@ void MergeTreeDeduplicationLog::dropPart(const MergeTreePartInfo & drop_part_inf
         throw Exception(ErrorCodes::ABORTED, "Storage has been shutdown when we drop this part.");
     }
 
-    chassert(current_writer != nullptr);
+    ensureWriter();
 
     for (auto itr = deduplication_map.begin(); itr != deduplication_map.end(); /* no increment here, we erasing from map */)
     {
@@ -378,9 +395,8 @@ void MergeTreeDeduplicationLog::setDeduplicationWindowSize(size_t deduplication_
     deduplication_map.setMaxSize(deduplication_window);
     rotateAndDropIfNeeded();
 
-    /// Can happen in case we have unfinished log
-    if (!current_writer)
-        current_writer = disk->writeFile(existing_logs.rbegin()->second.path, DBMS_DEFAULT_BUFFER_SIZE, WriteMode::Append);
+    /// If the current log is unfinished, an appending writer for it is opened lazily on the first
+    /// written record (see `ensureWriter` and the comment in `load`).
 }
 
 
@@ -399,6 +415,7 @@ void MergeTreeDeduplicationLog::shutdown()
         try
         {
             current_writer->finalize();
+            current_writer->sync();
             current_writer.reset();
         }
         catch (...)

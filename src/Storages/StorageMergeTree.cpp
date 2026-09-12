@@ -263,6 +263,26 @@ void StorageMergeTree::startup()
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
+
+        /// A concurrent `shutdown()` (e.g. a `DETACH` racing with this async startup) may have already set
+        /// `shutdown_called`. `shutdown()` publishes that flag before stopping the background workers, so if
+        /// we observe it here — after arming — we must unwind *everything* we just armed above; otherwise a
+        /// logically shut-down table would keep doing background work until some later `shutdown()` stops it.
+        /// In particular, if the concurrent `shutdown()` has already run `flushAndPrepareForShutdown()`
+        /// (guarded by `flush_called`, so it never runs again), nothing else would ever stop the assignees
+        /// and the cleanup thread re-armed by this startup. All the stops below are idempotent.
+        if (shutdown_called.load())
+        {
+            if (refresh_parts_task)
+                refresh_parts_task->deactivate();
+            if (refresh_stats_task)
+                refresh_stats_task->deactivate();
+            stopOutdatedAndUnexpectedDataPartsLoadingTask();
+            background_operations_assignee.finish();
+            background_moves_assignee.finish();
+            background_streaming_assignee.finish();
+            cleanup_thread.stop();
+        }
     }
     catch (...)
     {
@@ -304,14 +324,40 @@ void StorageMergeTree::flushAndPrepareForShutdown()
 
 void StorageMergeTree::shutdown(bool)
 {
-    if (shutdown_called.exchange(true))
-        return;
+    /// Publish the shutdown intent *before* deactivating the periodic tasks below. This, together with
+    /// the matching re-check at the end of `startup()`, closes a `startup()`/`shutdown()` race (e.g. when a
+    /// table is detached while its async startup is still in flight): whatever the interleaving, the tasks
+    /// end up deactivated. If `startup()` arms them before this deactivate runs, this deactivate stops them;
+    /// if it arms them afterwards, it observes `shutdown_called == true` here and stops them itself.
+    const bool already_called = shutdown_called.exchange(true);
 
+    /// Deactivate the periodic refresh tasks unconditionally on every call. Without this, the destructor's
+    /// `shutdown(false)` would early-return and leave `refreshStatistics` running concurrently with
+    /// `~MergeTreeData` destroying `cached_estimator`, which is a data race. Deactivation is idempotent.
     if (refresh_parts_task)
         refresh_parts_task->deactivate();
 
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
+
+    if (already_called)
+    {
+        /// The same race applies to the outdated/unexpected data parts loading tasks: a racing `startup()`
+        /// can re-arm them via `startOutdatedAndUnexpectedDataPartsLoadingTask` after the first `shutdown()`
+        /// already stopped them. The destructor's `shutdown(false)` takes this branch, so stop them again
+        /// here: otherwise an armed task could fire while `~MergeTreeData` destroys the state its callback
+        /// touches (the task holders are destroyed after `outdated_unloaded_data_parts` and
+        /// `unexpected_data_parts`). Stopping is idempotent and waits for a running iteration to finish.
+        stopOutdatedAndUnexpectedDataPartsLoadingTask();
+        /// Same for the cleanup thread: `flushAndPrepareForShutdown()` never runs again once `flush_called`
+        /// is set, so a cleanup thread re-armed by a racing `startup()` must be stopped here as well.
+        /// A failed `startup()` reaches this branch through its exception handler, so stop the assignees too.
+        cleanup_thread.stop();
+        background_operations_assignee.finish();
+        background_moves_assignee.finish();
+        background_streaming_assignee.finish();
+        return;
+    }
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 

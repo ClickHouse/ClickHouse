@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, use-rocksdb
+# Tags: no-fasttest, use-rocksdb, no-random-detach
 
 # A read_only EmbeddedRocksDB table whose data directory is emptied by TRUNCATE
 # can no longer be reopened: initDB() calls OpenForReadOnly() on the now empty

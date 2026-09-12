@@ -1,3 +1,7 @@
+-- Tags: no-flaky-check
+-- no-flaky-check: takes 140-159 s on its own (async insert busy timeouts) and exceeds the 180 s
+-- per-run budget of the flaky check under TSan; the test itself is unchanged by this PR
+
 set async_insert = 1;
 set wait_for_async_insert = 0;
 set async_insert_deduplicate = 1;

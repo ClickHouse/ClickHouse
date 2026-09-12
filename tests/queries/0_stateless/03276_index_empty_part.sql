@@ -1,3 +1,6 @@
+-- Tags: no-random-detach
+-- no-random-detach: test uses DETACH/ATTACH itself
+
 DROP TABLE IF EXISTS t_index_empty_part;
 
 CREATE TABLE t_index_empty_part (c0 Int, c1 Int)

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: long, no-replicated-database
+# Tags: long, no-replicated-database, no-random-detach
+# no-random-detach: race condition test, DETACH/ATTACH makes it worse
 
 # Regression test for https://github.com/ClickHouse/ClickHouse/issues/95742
 #
