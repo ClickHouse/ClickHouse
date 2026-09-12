@@ -107,7 +107,9 @@ ColumnsDescription TraceLogElement::getColumnsDescription()
             "For profiler-collected trace types, on ELF platforms except FreeBSD, addresses inside the main ClickHouse binary are stored as physical file offsets, "
             "and other addresses are virtual memory addresses inside the ClickHouse server process. "
             "Instrumentation trace rows are an exception: they store raw virtual memory addresses."},
-        {"size", std::make_shared<DataTypeInt64>(), "For trace types Memory, MemorySample, MemoryAllocatedWithoutCheck or MemoryPeak is the amount of memory allocated, for MemoryLargeAllocation is the size of the charge to the global memory tracker, for other trace types is 0."},
+        {"size", std::make_shared<DataTypeInt64>(), "For the memory trace types is a size in bytes: the allocated size for Memory and MemoryAllocatedWithoutCheck; "
+            "the allocated size, negated on a deallocation, for MemorySample and JemallocSample; the new peak of the tracker for MemoryPeak; "
+            "the size of the charge to the global memory tracker for MemoryLargeAllocation. For other trace types is 0."},
         {"ptr", std::make_shared<DataTypeUInt64>(), "The address of the allocated chunk."},
         {"memory_context", std::make_shared<ContextDataType>(context_values), fmt::format("Memory Tracker context (only for Memory, MemoryPeak and MemoryLargeAllocation): {}", context_description)},
         {"memory_blocked_context", std::make_shared<ContextDataType>(context_values), fmt::format("Context for which memory tracker is blocked (for ClickHouse developers only): {}", context_description)},
