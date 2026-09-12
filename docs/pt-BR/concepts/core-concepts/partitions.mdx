@@ -142,7 +142,7 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
   ### Otimização de consultas
 </div>
 
-As partições podem ajudar no desempenho das consultas, mas isso depende muito dos padrões de acesso. Se as consultas atingirem apenas algumas partições (idealmente uma), o desempenho pode melhorar. Em geral, isso só é útil se a chave de particionamento não estiver na chave primária e você estiver filtrando por ela, como mostra a consulta de exemplo abaixo.
+As partições podem ajudar no desempenho das consultas, mas isso depende muito dos padrões de acesso. Se as consultas atingirem apenas algumas partições (idealmente uma), o desempenho pode melhorar. Em geral, isso só é útil se a chave de partição não estiver na chave primária e você estiver filtrando por ela, como mostra a consulta de exemplo abaixo.
 
 <RunnableCode>
   ```sql
@@ -154,7 +154,7 @@ As partições podem ajudar no desempenho das consultas, mas isso depende muito 
   ```
 </RunnableCode>
 
-A consulta é executada na nossa tabela de exemplo acima e [calcula](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) o maior preço entre todos os imóveis vendidos em Londres em dezembro de 2020, filtrando tanto por uma coluna (`date`) usada na chave de particionamento da tabela quanto por uma coluna (`town`) usada na chave primária da tabela (e `date` não faz parte da chave primária).
+A consulta é executada na nossa tabela de exemplo acima e [calcula](https://sql.clickhouse.com/?query=U0VMRUNUIE1BWChwcmljZSkgQVMgaGlnaGVzdF9wcmljZQpGUk9NIHVrLnVrX3ByaWNlX3BhaWRfc2ltcGxlX3BhcnRpdGlvbmVkCldIRVJFIGRhdGUgPj0gJzIwMjAtMTItMDEnCiAgQU5EIGRhdGUgPD0gJzIwMjAtMTItMzEnCiAgQU5EIHRvd24gPSAnTE9ORE9OJzs\&run_query=true\&tab=results) o maior preço entre todos os imóveis vendidos em Londres em dezembro de 2020, filtrando tanto por uma coluna (`date`) usada na chave de partição da tabela quanto por uma coluna (`town`) usada na chave primária da tabela (e `date` não faz parte da chave primária).
 
 O ClickHouse processa essa consulta aplicando uma sequência de técnicas de poda para evitar avaliar dados irrelevantes:
 
@@ -162,9 +162,15 @@ O ClickHouse processa essa consulta aplicando uma sequência de técnicas de pod
 
 <br />
 
-① **Poda de partições**: [Índices MinMax](/pt-BR/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) são usados para ignorar partições inteiras (conjuntos de partes) que, logicamente, não podem corresponder ao filtro da consulta em colunas usadas na chave de particionamento da tabela.
+<Steps>
+  <Step title="Poda de partições">
+    [Índices MinMax](/pt-BR/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) são usados para ignorar partições inteiras (conjuntos de partes) que, logicamente, não podem corresponder ao filtro da consulta em colunas usadas na chave de partição da tabela.
+  </Step>
 
-② **Poda de grânulos**: Para as partes de dados restantes após a etapa ①, seu [índice primário](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) é usado para ignorar todos os [grânulos](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocos de linhas) que, logicamente, não podem corresponder ao filtro da consulta em colunas usadas na chave primária da tabela.
+  <Step title="Poda de grânulos">
+    Para as partes de dados restantes após a etapa de poda de partições, seu [índice primário](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) é usado para ignorar todos os [grânulos](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) (blocos de linhas) que, logicamente, não podem corresponder ao filtro da consulta em colunas usadas na chave primária da tabela.
+  </Step>
+</Steps>
 
 Podemos observar essas etapas de poda de dados [inspecionando](https://sql.clickhouse.com/?query=RVhQTEFJTiBpbmRleGVzID0gMQpTRUxFQ1QgTUFYKHByaWNlKSBBUyBoaWdoZXN0X3ByaWNlCkZST00gdWsudWtfcHJpY2VfcGFpZF9zaW1wbGVfcGFydGl0aW9uZWQKV0hFUkUgZGF0ZSA-PSAnMjAyMC0xMi0wMScKICBBTkQgZGF0ZSA8PSAnMjAyMC0xMi0zMScKICBBTkQgdG93biA9ICdMT05ET04nOw\&run_query=true\&tab=results) o plano físico de execução da nossa consulta de exemplo acima por meio de uma cláusula [EXPLAIN](/pt-BR/reference/statements/explain) :
 
@@ -208,14 +214,20 @@ WHERE date >= '2020-12-01'
 
 A saída acima mostra:
 
-① Poda de partições: As linhas 7 a 18 da saída de EXPLAIN acima mostram que o ClickHouse primeiro usa o [índice MinMax](/pt-BR/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) do campo `date` para identificar 11 dos 3257 [grânulos](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) existentes (blocos de linhas) armazenados em 1 das 436 partes de dados ativas existentes que contêm linhas correspondentes ao filtro `date` da consulta.
+<Steps>
+  <Step title="Poda de partições">
+    As linhas 7 a 18 da saída de `EXPLAIN` acima mostram que o ClickHouse primeiro usa o [índice MinMax](/pt-BR/concepts/core-concepts/partitions#what-are-table-partitions-in-clickhouse) do campo `date` para identificar 11 dos 3257 [grânulos](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-organized-into-granules-for-parallel-data-processing) existentes (blocos de linhas) armazenados em 1 das 436 partes de dados ativas existentes que contêm linhas correspondentes ao filtro `date` da consulta.
+  </Step>
 
-② Poda de grânulos: As linhas 19 a 24 da saída de EXPLAIN acima indicam que o ClickHouse então usa o [índice primário](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) (criado sobre o campo `town`) da parte de dados identificada na etapa ① para reduzir ainda mais o número de grânulos (que potencialmente também contêm linhas correspondentes ao filtro `town` da consulta) de 11 para 1. Isso também se reflete na saída do cliente ClickHouse que exibimos mais acima para a execução da consulta:
+  <Step title="Poda de grânulos">
+    As linhas 19 a 24 da saída de `EXPLAIN` acima indicam que o ClickHouse então usa o [índice primário](/pt-BR/guides/clickhouse/data-modelling/sparse-primary-indexes) (criado sobre o campo `town`) da parte de dados identificada na etapa de poda de partições para reduzir ainda mais o número de grânulos (que potencialmente também contêm linhas correspondentes ao filtro `town` da consulta) de 11 para 1. Isso também se reflete na saída do cliente ClickHouse que exibimos mais acima para a execução da consulta:
 
-```response
-... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
-Peak memory usage: 2.73 MiB.
-```
+    ```response
+    ... Elapsed: 0.006 sec. Processed 8.19 thousand rows, 57.34 KB (1.36 million rows/s., 9.49 MB/s.)
+    Peak memory usage: 2.73 MiB.
+    ```
+  </Step>
+</Steps>
 
 Isso significa que o ClickHouse varreu e processou 1 grânulo (bloco de [8192](/pt-BR/reference/settings/merge-tree-settings/index-granularity#index_granularity) linhas) em 6 milissegundos para calcular o resultado da consulta.
 

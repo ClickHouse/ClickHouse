@@ -50,7 +50,7 @@ import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
 
 لتعديل TTL، يمكنك اختيار أحد الخيارين التاليين:
 
-1. **تعديل مخططات الجداول (موصى به)**. يتطلب ذلك الاتصال بمثيل ClickHouse، على سبيل المثال باستخدام [clickhouse-client](/ar/concepts/features/interfaces/cli) أو [Cloud SQL Console](/ar/products/cloud/features/sql-console-features/sql-console). على سبيل المثال، يمكن تعديل TTL للجدول `otel_logs` باستخدام عبارة DDL التالية:
+1. **تعديل مخططات الجداول (موصى به)**. يتطلب ذلك الاتصال بمثيل ClickHouse، على سبيل المثال باستخدام [clickhouse-client](/ar/concepts/features/interfaces/client) أو [Cloud SQL Console](/ar/products/cloud/features/sql-console-features/sql-console). على سبيل المثال، يمكن تعديل TTL للجدول `otel_logs` باستخدام عبارة DDL التالية:
 
 ```sql
 ALTER TABLE default.otel_logs

@@ -81,6 +81,32 @@ inline time_t minWholeSecondsForDateTime64(Int64 scale_multiplier)
     return std::max<Int64>(MIN_DATETIME64_TIMESTAMP, std::numeric_limits<Int64>::min() / scale_multiplier);
 }
 
+/// Largest representable value in ticks: the last whole second plus as much fraction as the Int64 holds
+inline Int64 maxTicksForDateTime64(Int64 scale_multiplier)
+{
+    const Int64 whole = maxWholeSecondsForDateTime64(scale_multiplier) * scale_multiplier;
+    return whole + std::min(scale_multiplier - 1, std::numeric_limits<Int64>::max() - whole);
+}
+
+/// Smallest representable value in ticks; the calendar bound starts exactly at a second, the Int64 one does not
+inline Int64 minTicksForDateTime64(Int64 scale_multiplier)
+{
+    if (minWholeSecondsForDateTime64(scale_multiplier) == MIN_DATETIME64_TIMESTAMP)
+        return MIN_DATETIME64_TIMESTAMP * scale_multiplier;
+    return std::numeric_limits<Int64>::min();
+}
+
+/// Time64 caps the scale at 9, so this cannot overflow Int64
+inline Int64 maxTicksForTime64(Int64 scale_multiplier)
+{
+    return MAX_TIME_TIMESTAMP * scale_multiplier + scale_multiplier - 1;
+}
+
+inline Int64 minTicksForTime64(Int64 scale_multiplier)
+{
+    return -maxTicksForTime64(scale_multiplier);
+}
+
 /// The window of day numbers whose midnight in `time_zone` is representable as a `DateTime64` with the given scale
 /// multiplier, intersected with the `Date32` range. Because of the scale-dependent bounds above, a perfectly valid
 /// `Date32` value such as `9999-12-31` has no scale-9 representation at all, so a `Date32` -> `DateTime64` conversion
@@ -159,6 +185,35 @@ inline const DateLUTImpl & preimageParseTimeZone(const DataTypeDateTime & type)
     return type.hasExplicitTimeZone() ? type.getTimeZone() : DateLUT::instance();
 }
 
+/// The UTC time whose civil components equal those of `source_time` in `parse_time_zone`. The optimizer
+/// renders preimage bounds as UTC civil strings that the comparison parses back in the column's parse
+/// time zone, so this is the value the bound has to carry. Boundaries need not be midnight
+/// (`America/Lima` started 1994 at 01:00:00), and an ambiguous or skipped local time does not
+/// round-trip, in which case there is no surrogate and the caller declines.
+inline std::optional<DateLUTImpl::Time> makeUTCCivilTimeSurrogate(
+    const DateLUTImpl & parse_time_zone, DateLUTImpl::Time source_time)
+{
+    const auto components = parse_time_zone.toDateTimeComponents(source_time);
+    const auto reparsed_source_time = parse_time_zone.makeDateTime(
+        components.date.year,
+        components.date.month,
+        components.date.day,
+        static_cast<UInt8>(components.time.hour),
+        components.time.minute,
+        components.time.second);
+
+    if (reparsed_source_time != source_time)
+        return std::nullopt;
+
+    return DateLUT::instance("UTC").makeDateTime(
+        components.date.year,
+        components.date.month,
+        components.date.day,
+        static_cast<UInt8>(components.time.hour),
+        components.time.minute,
+        components.time.second);
+}
+
 /// `transform_time_zone` is the one the rounding function itself runs in; it differs from the parse
 /// time zone for implicit-time-zone columns, where `DateTimeTransformImpl` takes `Date` results from
 /// the argument type but `DateTime` results from the session-resolved result type.
@@ -191,41 +246,89 @@ inline FieldIntervalPtr makeDateOrDateTimePreimageForDayRange(
         return nullptr;
 
     /// The optimizer renders the bounds as UTC civil strings that are parsed back in the column's
-    /// parse time zone, so carry the local components of that time zone over. Boundaries need not be
-    /// midnight (`America/Lima` started 1994 at 01:00:00), and ambiguous local times may not
-    /// round-trip, in which case decline.
+    /// parse time zone, so carry the local components of that time zone over.
     const auto & parse_time_zone = preimageParseTimeZone(*date_time_type);
-    const auto make_utc_civil_time_surrogate =
-        [&](DateLUTImpl::Time source_time) -> std::optional<DateLUTImpl::Time>
-    {
-        const auto components = parse_time_zone.toDateTimeComponents(source_time);
-        const auto reparsed_source_time = parse_time_zone.makeDateTime(
-            components.date.year,
-            components.date.month,
-            components.date.day,
-            static_cast<UInt8>(components.time.hour),
-            components.time.minute,
-            components.time.second);
-
-        if (reparsed_source_time != source_time)
-            return std::nullopt;
-
-        return utc_time_zone.makeDateTime(
-            components.date.year,
-            components.date.month,
-            components.date.day,
-            static_cast<UInt8>(components.time.hour),
-            components.time.minute,
-            components.time.second);
-    };
-
-    const auto start_surrogate = make_utc_civil_time_surrogate(source_start);
-    const auto end_surrogate = make_utc_civil_time_surrogate(source_end);
+    const auto start_surrogate = makeUTCCivilTimeSurrogate(parse_time_zone, source_start);
+    const auto end_surrogate = makeUTCCivilTimeSurrogate(parse_time_zone, source_end);
     if (!start_surrogate || !end_surrogate)
         return nullptr;
 
     return std::make_shared<FieldInterval>(
         Field(*start_surrogate), Field(*end_surrogate));
+}
+
+/// The `DateTime64` counterpart of `makeDateOrDateTimePreimageForDayRange`. The bounds go through the
+/// same civil-string round trip, but the representable range depends on the scale: the optimizer
+/// renders the endpoints as untyped literals that the comparison re-parses against the column type,
+/// and a whole-second endpoint the scaled `Int64` tick count cannot hold throws `DECIMAL_OVERFLOW`
+/// on that re-parse (`toYear(x) = 2262` on a `DateTime64(9)` column), so decline it. The extended
+/// calendar reaches back to year `0000`, which the text parser does not round-trip either, see below.
+inline FieldIntervalPtr makeDateTime64PreimageForDayRange(
+    const DataTypeDateTime64 & type, ExtendedDayNum start_day, ExtendedDayNum end_day)
+{
+    if (start_day.toUnderType() < DATE_LUT_MIN_EXTEND_DAY_NUM || end_day.toUnderType() > DATE_LUT_MAX_EXTEND_DAY_NUM)
+        return nullptr;
+
+    const auto & source_time_zone = type.getTimeZone();
+    const Int64 source_start = source_time_zone.fromDayNum(start_day);
+    const Int64 source_end = source_time_zone.fromDayNum(end_day);
+
+    const Int64 max_whole_seconds
+        = std::numeric_limits<Int64>::max() / DecimalUtils::scaleMultiplier<Int64>(type.getScale());
+    if (source_start < -max_whole_seconds || source_end > max_whole_seconds)
+        return nullptr;
+
+    const auto & parse_time_zone = type.hasExplicitTimeZone() ? type.getTimeZone() : DateLUT::instance();
+    const auto start_surrogate = makeUTCCivilTimeSurrogate(parse_time_zone, source_start);
+    const auto end_surrogate = makeUTCCivilTimeSurrogate(parse_time_zone, source_end);
+    if (!start_surrogate || !end_surrogate)
+        return nullptr;
+
+    /// A surrogate is rendered as a civil string, and `readDateTime64Text` maps every literal whose
+    /// year component is `0000` to the Unix epoch instead of year zero, so a year-zero boundary comes
+    /// back as 1970 and the rewrite would compare against the wrong instant. `Date` and `DateTime`
+    /// cannot reach year zero, `Date32` is parsed by a day-number parser that has no such case, so
+    /// only `DateTime64` needs the guard: `toYear(x) = 0` and `toYYYYMM(x) = 1`.
+    const auto & utc_time_zone = DateLUT::instance("UTC");
+    if (utc_time_zone.toDateTimeComponents(*start_surrogate).date.year == 0
+        || utc_time_zone.toDateTimeComponents(*end_surrogate).date.year == 0)
+        return nullptr;
+
+    return std::make_shared<FieldInterval>(
+        Field(*start_surrogate), Field(*end_surrogate));
+}
+
+/** The preimage of a civil calendar period - a whole year for `toYear`, a whole month for `toYYYYMM` -
+  * for every argument type those functions accept. Unlike the rounding functions, their result does
+  * not saturate to the `Date` range, so `Date32` and `DateTime64` arguments have a single interval
+  * too. The `Date`/`DateTime` and `DateTime64` helpers decline endpoints outside the column type: an
+  * endpoint the type cannot represent saturates on re-parse (`Date` clamps to `2149-06-06`,
+  * `DateTime` to `2106-02-07 06:28:15`), and since the rewrite compares strictly against the
+  * *exclusive* upper endpoint, a saturated endpoint lands on a real, storable value and the boundary
+  * rows flip: `toYear(d) = 2149` loses `2149-06-06`, `toYear(d) != 2149` returns it as a phantom,
+  * and `toYear(d) >= 2150` returns rows no row can satisfy.
+  */
+inline FieldIntervalPtr makeCivilPeriodPreimage(const IDataType & type, ExtendedDayNum start_day, ExtendedDayNum end_day)
+{
+    if (isDate(type) || isDateTime(type))
+        return makeDateOrDateTimePreimageForDayRange(type, start_day, end_day);
+
+    if (isDate32(type))
+    {
+        /// `Date32` is a civil day number like `Date`, so no time-zone conversion is involved, and it
+        /// spans the whole extended calendar, which is wider than every period this can produce.
+        if (start_day.toUnderType() < DATE_LUT_MIN_EXTEND_DAY_NUM || end_day.toUnderType() > DATE_LUT_MAX_EXTEND_DAY_NUM)
+            return nullptr;
+
+        const auto & utc_time_zone = DateLUT::instance("UTC");
+        return std::make_shared<FieldInterval>(
+            Field(utc_time_zone.fromDayNum(start_day)), Field(utc_time_zone.fromDayNum(end_day)));
+    }
+
+    if (const auto * date_time64_type = checkAndGetDataType<DataTypeDateTime64>(&type))
+        return makeDateTime64PreimageForDayRange(*date_time64_type, start_day, end_day);
+
+    return nullptr;
 }
 
 inline FieldIntervalPtr getPreimageForDateRounding(
@@ -1820,18 +1923,17 @@ struct ToYearImpl
         /// preimage would be the first moment of the next year, which is not representable.
         if (year >= DATE_LUT_MAX_REPRESENTABLE_YEAR) return nullptr;
 
-        const DateLUTImpl & date_lut = DateLUT::instance("UTC");
+        if (!isDateOrDate32(type) && !isDateTime(type) && !isDateTime64(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
+                type.getName(),
+                name);
 
-        auto start_time = date_lut.makeDateTime(static_cast<Int16>(year), 1, 1, 0, 0, 0);
-        auto end_time = date_lut.addYears(start_time, 1);
-
-        if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return std::make_shared<FieldInterval>(Field(start_time), Field(end_time));
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-            type.getName(),
-            name);
+        const DateLUTImpl & calendar = DateLUT::instance("UTC");
+        const auto start_day = calendar.makeDayNum(static_cast<Int16>(year), 1, 1);
+        const auto end_day = calendar.addYears(start_day, 1);
+        return makeCivilPeriodPreimage(type, start_day, end_day);
     }
 
     using FactorTransform = ZeroTransform;
@@ -2211,6 +2313,39 @@ struct ToSecondImpl
     using FactorTransform = ToStartOfMinuteImpl;
 };
 
+/// The factor transform of the subsecond extractors. They restart at zero every second, so their
+/// monotonicity claim holds only where both ends of the key range fall into the same second.
+/// For the argument types where the extractor is the constant 0 - a `DateTime` has no subsecond part,
+/// and neither does a `DateTime64(0)` - or is not supported at all, every pair of endpoints has to
+/// share a factor, because a constant function is monotonic; the extractors' own `execute` overloads
+/// reject the unsupported types before index analysis can be reached.
+struct ToStartOfSecondFactorImpl
+{
+    static constexpr auto name = "toStartOfSecond";
+
+    static DateTime64 execute(const DateTime64 & datetime64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        /// A zero-precision value has no subsecond part at all, so the extractor is the constant 0 on it.
+        if (scale_multiplier == 1)
+            return DateTime64(0);
+        return ToStartOfSecondImpl::execute(datetime64, scale_multiplier, time_zone);
+    }
+
+    static Time64 execute(const Time64 & time64, Int64 scale_multiplier, const DateLUTImpl & time_zone)
+    {
+        if (scale_multiplier == 1)
+            return Time64(0);
+        return ToStartOfSecondImpl::execute(time64, scale_multiplier, time_zone);
+    }
+
+    static UInt32 execute(UInt32, const DateLUTImpl &) { return 0; }
+    static UInt32 execute(Int32, const DateLUTImpl &) { return 0; }
+    static UInt32 execute(Int64, const DateLUTImpl &) { return 0; }
+    static UInt32 execute(UInt16, const DateLUTImpl &) { return 0; }
+
+    using FactorTransform = ZeroTransform;
+};
+
 struct ToMillisecondImpl
 {
     static constexpr auto name = "toMillisecond";
@@ -2243,7 +2378,7 @@ struct ToMillisecondImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = ToStartOfSecondFactorImpl;
 };
 
 struct ToMicrosecondImpl
@@ -2278,7 +2413,7 @@ struct ToMicrosecondImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = ToStartOfSecondFactorImpl;
 };
 
 struct ToNanosecondImpl
@@ -2313,7 +2448,7 @@ struct ToNanosecondImpl
     }
     static constexpr bool hasPreimage() { return false; }
 
-    using FactorTransform = ZeroTransform;
+    using FactorTransform = ToStartOfSecondFactorImpl;
 };
 
 struct ToISOYearImpl
@@ -2840,18 +2975,17 @@ struct ToYYYYMMImpl
         if (year > DATE_LUT_MAX_REPRESENTABLE_YEAR || month < 1 || month > 12 || (year == DATE_LUT_MAX_REPRESENTABLE_YEAR && month == 12))
             return nullptr;
 
-        const DateLUTImpl & date_lut = DateLUT::instance("UTC");
+        if (!isDateOrDate32(type) && !isDateTime(type) && !isDateTime64(type))
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
+                type.getName(),
+                name);
 
-        auto start_time = date_lut.makeDateTime(static_cast<Int16>(year), static_cast<UInt8>(month), 1, 0, 0, 0);
-        auto end_time = date_lut.addMonths(start_time, 1);
-
-        if (isDateOrDate32(type) || isDateTime(type) || isDateTime64(type))
-            return std::make_shared<FieldInterval>(Field(start_time), Field(end_time));
-        throw Exception(
-            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-            "Illegal type {} of argument of function {}. Should be Date, Date32, DateTime or DateTime64",
-            type.getName(),
-            name);
+        const DateLUTImpl & calendar = DateLUT::instance("UTC");
+        const auto start_day = calendar.makeDayNum(static_cast<Int16>(year), static_cast<UInt8>(month), 1);
+        const auto end_day = calendar.addMonths(start_day, 1);
+        return makeCivilPeriodPreimage(type, start_day, end_day);
     }
 
     using FactorTransform = ZeroTransform;

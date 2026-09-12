@@ -96,7 +96,25 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// per-field version gate; the rest rely on the whole stream being rejected by its leading version.
 /// Version 9 registers the `Rollup` and `Cube` steps, so a plan with `GROUP BY ... WITH ROLLUP`
 /// or `WITH CUBE` can be shipped under `make_distributed_plan`.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 9;
+/// Version 10 adds the part storage-type tag (with the blob-list manifest payload) to the worker read
+/// step, in the slot of the former `is_packed` flag. The values 0/1 are wire-compatible with the flag;
+/// only the new tag 2 requires this version, and the serializer refuses to emit it towards older peers.
+/// Version 11 serializes the plan-level `max_threads` and `concurrency_control` fields. They are not
+/// properties of individual steps, so a remote plan fragment would otherwise execute with its default
+/// execution limits after deserialization.
+/// Version 12 adds the ReadInOrder info in the reading step in the plan
+/// Version 13 adds the `only_merge` flag (bit 128) on `AggregatingStep`, set on the merge step
+/// synthesized by the Cascades aggregation-pushdown transformation. Both sides gate the flag on
+/// the version, so a mixed-version cluster fails at plan time instead of at runtime.
+/// Version 14 registers the `IntersectOrExcept` step, so a plan with `INTERSECT` or `EXCEPT`
+/// can be shipped under `make_distributed_plan`.
+/// Version 15 registers the `LimitRange` step (`LIMIT [n] AFTER ... [UNTIL ...]`).
+/// Version 16 tells a receiver of a `JoinStepLogical` which of the decisions taken from a row
+/// estimate were already taken: the join order, and whether the runtime filter pass declined the
+/// join for a small probe side. Estimates themselves are not part of the plan format, so a receiver
+/// that took either decision again would take it from an empty estimate and could decide
+/// differently from the sender.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 16;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -113,9 +131,25 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PACKED_STRI
 /// `adaptive_aggregator_freeze_threshold` plan setting names. Gates writing them in
 /// `AggregatingStep::serializeSettings`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR = 7;
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOBS_LIST_PARTS = 10;
+/// First query-plan serialization version that preserves plan-level `max_threads` and `concurrency_control`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_EXECUTION_LIMITS = 11;
+/// First query-plan serialization version that carries the ReadInOrder info
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_READ_IN_ORDER = 12;
+/// First query-plan serialization version with the `only_merge` flag (bit 128) on `AggregatingStep`,
+/// set on the merge step synthesized by the Cascades aggregation pushdown. Gated on both sides so a
+/// mixed-version cluster fails at plan time.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ONLY_MERGE_AGGREGATION = 13;
+/// First query-plan serialization version that registers a "LimitRange" step. Gates serializing a
+/// `LimitRangeStep` for `make_distributed_plan`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE_STEP = 15;
+/// First query-plan serialization version that carries the estimate-derived decisions of
+/// `JoinStepLogical`: the join order, and the runtime filter pass's small-probe decision.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS = 16;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
-static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 2;
+/// Version 3 added the error code of a failed task to its status reply.
+static constexpr auto DBMS_DISTRIBUTED_TASK_SERIALIZATION_VERSION = 3;
 
 static constexpr auto DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET = 54441;
 
