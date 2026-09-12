@@ -220,6 +220,8 @@ private:
     void appendPath(const std::string & path);
     /// Drops a file from the list. Used to retire a file as soon as it has been deleted.
     void retirePath(const std::string & path);
+    /// Replaces a file in the list, keeping its position. Used when a file is renamed after processing.
+    void renamePath(const std::string & path, const std::string & new_path);
 
     std::optional<ArchiveInfo> archive_info;
 

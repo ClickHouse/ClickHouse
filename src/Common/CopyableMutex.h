@@ -11,7 +11,8 @@ struct CopyableMutex : public std::mutex
 {
     CopyableMutex() = default;
     CopyableMutex(const CopyableMutex &) {}
-    CopyableMutex & operator=(const CopyableMutex &) { return *this; }
+    /// Nothing is copied, so self-assignment needs no special handling.
+    CopyableMutex & operator=(const CopyableMutex &) { return *this; }  /// NOLINT(cert-oop54-cpp)
 };
 
 }

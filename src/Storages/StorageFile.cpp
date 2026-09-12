@@ -1659,7 +1659,7 @@ void StorageFileSource::beforeDestroy()
         if (storage->readers_counter.load(std::memory_order_acquire) != 0 || storage->was_renamed)
             return;
 
-        for (auto & file_path_ref : storage->getPathsSnapshot())
+        for (const auto & file_path_ref : storage->getPathsSnapshot())
         {
             try
             {
@@ -1676,7 +1676,9 @@ void StorageFileSource::beforeDestroy()
                     throw Exception(ErrorCodes::FILE_ALREADY_EXISTS, "File {} already exists", file_path.string());
 
                 fs::rename(fs::path(file_path_ref), file_path);
-                file_path_ref = file_path.string();
+                /// The table keeps reading the file under its new name: the rename happens while the query
+                /// that has read it is still running, and another reader of the same table may follow.
+                storage->renamePath(file_path_ref, file_path.string());
                 storage->was_renamed = true;
             }
             catch (const std::exception & e)
@@ -3374,6 +3376,12 @@ void StorageFile::retirePath(const String & path)
 {
     std::lock_guard lock(paths_mutex);
     std::erase(paths, path);
+}
+
+void StorageFile::renamePath(const String & path, const String & new_path)
+{
+    std::lock_guard lock(paths_mutex);
+    std::replace(paths.begin(), paths.end(), path, new_path);
 }
 
 Strings StorageFile::getDataPaths() const
