@@ -9,8 +9,10 @@ namespace DB
 enum class IdentifierQuotingStyle : uint8_t
 {
     Backticks, /// `clickhouse` style
-    DoubleQuotes, /// "postgres" style
+    DoubleQuotes, /// "postgres" style, but with ClickHouse escaping: '\"' for an embedded quote, '\\' for a backslash
     BackticksMySQL, /// `mysql` style, most same as Backticks, but it uses '``' to escape '`'
+    DoubleQuotesStandard, /// standard SQL style: an embedded double quote is doubled ('""'), a backslash stays literal (SQLite, PostgreSQL)
+    BackticksSQLite, /// SQLite strict identifier style: an embedded backtick is doubled, every other byte stays literal
 };
 
 enum class IdentifierQuotingRule : uint8_t
@@ -22,5 +24,20 @@ enum class IdentifierQuotingRule : uint8_t
     Always,
     /// When the identifiers is a keyword (defined in `DB::Keyword`)
     UserDisplay,
+    /// Unless the identifier contains upper-case characters.
+    /// This is the rule for re-serializing a query that is sent to an external database which folds an
+    /// unquoted identifier to lower case and matches a quoted one case-sensitively (PostgreSQL). Quoting a
+    /// name without upper-case characters resolves to exactly the same column as leaving it unquoted, so it
+    /// is always safe and it makes reserved words such as `where` or `group` survive the re-serialization,
+    /// while a name that contains upper-case characters is left unquoted and keeps being folded as before -
+    /// `(SELECT Foo FROM t)` has to keep resolving to the column `foo`, not to a case-sensitive `Foo`.
+    ///
+    /// A name that the user wrote quoted solely to preserve a mixed-case spelling (`(SELECT "Foo" FROM t)`)
+    /// therefore comes out unquoted and is folded to `foo` as well. That is not a property of this rule:
+    /// `ParserIdentifier` does not record whether an identifier was quoted, so `"Foo"` and `Foo` are the very
+    /// same parsed identifier, and every rule that does not quote unconditionally - `WhenNecessary`, which
+    /// this one replaced, included - emits it the same way. Only the `query('...')` form, which is passed to
+    /// the external database verbatim, can express a case-sensitive mixed-case identifier.
+    AlwaysUnlessUpperCase,
 };
 }

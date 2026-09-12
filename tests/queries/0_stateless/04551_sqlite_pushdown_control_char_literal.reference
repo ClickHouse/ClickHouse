@@ -1,0 +1,8 @@
+Pushdown of a literal with a newline finds its row:
+1
+Pushdown of a literal with a tab finds its row:
+2
+Pushdown of a literal with a backslash finds its row:
+3
+The same pushdown through a query-backed table function:
+1

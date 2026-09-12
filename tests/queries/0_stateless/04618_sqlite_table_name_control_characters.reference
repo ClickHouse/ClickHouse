@@ -1,0 +1,14 @@
+Schema inference for a table name with a newline:
+x	Nullable(Int64)					
+s	Nullable(String)					
+Read through the table function for a table name with a newline:
+1	one
+2	two
+Read through the table function for a table name with a tab:
+42
+Existence check and read through the database engine:
+2
+1
+1
+A missing name that is a backslash-escaped rendering of the real one does not exist:
+0

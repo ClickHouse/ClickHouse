@@ -1,0 +1,11 @@
+Infinity through the SQLite storage engine:
+1
+Infinity through the sqlite table function:
+1
+NaN is also kept local instead of producing invalid SQLite SQL:
+0
+A tuple IN set containing infinity is kept local:
+2
+Query: SELECT `x` FROM `t`
+Query: SELECT `x` FROM `t`
+Query: SELECT `x` FROM `t` WHERE `x` = 1.5

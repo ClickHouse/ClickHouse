@@ -103,6 +103,7 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         LiteralEscapingStyle::Regular,
         remote_database_name,
         remote_table_name,
+        getStorageID(),
         local_context);
     LOG_TRACE(log, "Query: {}", query);
 

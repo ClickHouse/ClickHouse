@@ -43,6 +43,35 @@ void convertToHeader(QueryPlan & query_plan, const Block & header, ContextPtr co
 
 }
 
+NameSet StorageWithCommonVirtualColumns::getPlanVirtualColumnNames(const StorageMetadataPtr & metadata)
+{
+    NameSet result;
+    for (const auto & column : metadata->virtuals.getNamesAndTypes(VirtualsKind::Ephemeral, VirtualsMaterializationPlace::Plan))
+        result.insert(column.name);
+    return result;
+}
+
+NameSet StorageWithCommonVirtualColumns::getLocalOnlyColumnNames(const StorageMetadataPtr & metadata)
+{
+    NameSet result = getPlanVirtualColumnNames(metadata);
+    for (const auto & column : metadata->getColumns())
+    {
+        /// Only a column whose value this storage computes on its own is local. An `ALIAS` column always has
+        /// an expression; a `MATERIALIZED` one normally has it too, but an external storage may also use the
+        /// expressionless `MATERIALIZED` classification as a marker for a column that the data source itself
+        /// generates (`StorageSQLite` does that for SQLite `GENERATED ALWAYS AS` columns). Such a column is
+        /// read from the source like any other physical column, so it is not local-only: a predicate over it
+        /// is pushed down, and `external_table_strict_query = 1` must keep accepting it.
+        const bool is_local = (column.default_desc.kind == ColumnDefaultKind::Materialized
+                               || column.default_desc.kind == ColumnDefaultKind::Alias)
+            && column.default_desc.expression != nullptr;
+
+        if (is_local)
+            result.insert(column.name);
+    }
+    return result;
+}
+
 void StorageWithCommonVirtualColumns::read(
     QueryPlan & query_plan,
     const Names & column_names,

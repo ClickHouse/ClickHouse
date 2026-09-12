@@ -1,0 +1,12 @@
+enable_analyzer = 1
+materialized filter, default	1
+alias filter, default	1
+ordinary filter, strict	1
+materialized filter, strict: 1
+alias filter, strict: 1
+enable_analyzer = 0
+materialized filter, default	1
+alias filter, default	1
+ordinary filter, strict	1
+materialized filter, strict: 1
+alias filter, strict: 1
