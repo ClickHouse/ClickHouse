@@ -1,0 +1,30 @@
+Text index on an ALIAS column
+No matching token
+0
+PREWHERE and WHERE both keep row 1
+1
+WHERE keeps nothing PREWHERE kept
+0
+Derived name selected above the filter
+['-hello','-world']
+Derived name selected next to a physical column
+1	['-hello','-world']	2
+Derived name grouped above the filter
+['-hello','-world']	1
+Direct read on
+1
+Direct read off
+0
+Text index on an expression over a physical column
+No matching token
+0
+Matching token
+1
+Derived name selected above the filter
+['192.168.1.1']
+Index still usable
+1
+Direct read on
+1
+Direct read off
+0
