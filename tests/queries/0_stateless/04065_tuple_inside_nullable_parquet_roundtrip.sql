@@ -285,6 +285,27 @@ SELECT c0 FROM file(currentDatabase() || '_04065_all_missing.parquet', 'Parquet'
 
 DROP TABLE test_nullable_tuple_all_missing;
 
+-- Same refusal for a REQUIRED inner group requested as Nullable(Tuple) (case 2) with every element
+-- requested inside it missing: the refusal is per group, so it fires for the inner group even though
+-- the outer one keeps a physical leaf in b.
+DROP TABLE IF EXISTS test_nullable_tuple_req_inner_all_missing;
+CREATE TABLE test_nullable_tuple_req_inner_all_missing (c0 Nullable(Tuple(inner Tuple(a UInt32), b UInt32))) ENGINE = Memory;
+INSERT INTO test_nullable_tuple_req_inner_all_missing VALUES (((1,), 10)), (NULL), (((3,), 30));
+
+INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_req_inner_all_missing.parquet', 'Parquet') SELECT c0 FROM test_nullable_tuple_req_inner_all_missing;
+
+SELECT c0 FROM file(currentDatabase() || '_04065_req_inner_all_missing.parquet', 'Parquet', 'c0 Nullable(Tuple(inner Nullable(Tuple(z UInt32)), b UInt32))') SETTINGS input_format_parquet_allow_missing_columns = 1; -- { serverError TYPE_MISMATCH }
+
+-- Leaving the inner group as a plain Tuple reads: a REQUIRED group is never null on its own, so
+-- nothing is dropped by not reporting it as Nullable, and the outer nulls still come from b.
+SELECT c0 FROM file(currentDatabase() || '_04065_req_inner_all_missing.parquet', 'Parquet', 'c0 Nullable(Tuple(inner Tuple(z UInt32), b UInt32))') SETTINGS input_format_parquet_allow_missing_columns = 1;
+
+-- Requesting the element that does exist makes the same inner Nullable(Tuple) readable, and it is
+-- NULL where the outer struct is (visible only from under assumeNotNull, which the outer map hides).
+SELECT c0, assumeNotNull(c0).inner AS inner_group, inner_group IS NULL FROM file(currentDatabase() || '_04065_req_inner_all_missing.parquet', 'Parquet', 'c0 Nullable(Tuple(inner Nullable(Tuple(a UInt32)), b UInt32))');
+
+DROP TABLE test_nullable_tuple_req_inner_all_missing;
+
 -- Array as the only element. A struct-NULL row must occupy exactly one level entry, not one per
 -- value the nested array holds there; nullIf keeps that array non-empty, which VALUES and CAST of a
 -- literal do not (they leave it empty, which hides the difference).
