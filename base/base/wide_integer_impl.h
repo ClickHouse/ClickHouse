@@ -294,7 +294,7 @@ namespace wide
 /// compiler emits a `__udivti3` call.
 constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, uint64_t divisor, uint64_t & remainder)
 {
-#if defined(__x86_64__)
+#if defined(__x86_64__) && !defined(__FILC__)
     if (!std::is_constant_evaluated())
     {
         uint64_t quotient;
