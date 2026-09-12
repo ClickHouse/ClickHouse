@@ -98,7 +98,8 @@ public:
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
-        bool has_positions_);
+        bool has_positions_,
+        NameSet columns_shadowing_map_subcolumns_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -210,6 +211,7 @@ private:
     StorageMetadataPtr metadata_snapshot;
     Block header;
     std::optional<String> normalized_index_column_name;
+    NameSet columns_shadowing_map_subcolumns;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
     std::shared_ptr<const ITokenizer> owned_tokenizer;
