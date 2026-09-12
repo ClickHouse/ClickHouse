@@ -25,8 +25,8 @@ SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(equals(k, 0), 
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND coalesce(equals(k, 0), 0)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND coalesce(equals(k, 0), 0) SETTINGS force_primary_key = 1;
 
--- A truthy fallback is not equivalent to `X`, so `ifNull(X, 1)` must not be rewritten: no `k` range,
--- only the `team_id` range remains.
+-- Over a non-Nullable inner the fallback is dead code, so `ifNull(X, 1)` is still the identity `X`
+-- and is simplified away during analysis: the `k` range is built exactly as for the bare comparison.
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_keycond WHERE team_id = 1 AND ifNull(equals(k, 0), 1)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
 
 -- No inner-function whitelist: any indexable predicate works under the wrapper.
@@ -68,6 +68,13 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_
 SELECT count() FROM t_ifnull_nullable WHERE NOT ifNull(equals(k, 0), 0);
 SELECT count() FROM t_ifnull_nullable WHERE NOT ifNull(equals(k, 0), 0) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
 
+-- Truthy-fallback guard: over a `Nullable` inner the fallback is reachable on the `NULL` row, so
+-- `ifNull(X, 1)` is not the identity and must not be simplified. No `k` range is built (condition stays
+-- `true`), and `k = 0`, `k = 1`, `k = NULL` are all kept (3 rows).
+SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT count() FROM t_ifnull_nullable WHERE ifNull(equals(k, 0), 1)) WHERE explain LIKE '%Condition%' OR explain LIKE '%Granules%';
+SELECT count() FROM t_ifnull_nullable WHERE ifNull(equals(k, 0), 1);
+SELECT count() FROM t_ifnull_nullable WHERE ifNull(equals(k, 0), 1) SETTINGS force_primary_key = 1; -- { serverError INDEX_NOT_USED }
+
 DROP TABLE t_ifnull_nullable;
 
 -- Value-context guard: as a value argument of another function the wrapper is a value, not a condition, so the
@@ -83,8 +90,9 @@ SELECT count() FROM t_ifnull_value_ctx WHERE equals(ifNull(equals(k, 0), 0), 0);
 DROP TABLE t_ifnull_value_ctx;
 
 -- Skip indexes build their own RPN from the canonicalized predicate, so they must prune through the
--- wrapper exactly like the bare comparison. `force_data_skipping_indices` asserts the index is used;
--- a truthy fallback `ifNull(X, 1)` is not rewritten and must not be used.
+-- wrapper exactly like the bare comparison. `force_data_skipping_indices` asserts the index is used.
+-- The inner `x` is non-Nullable here, so `ifNull(X, 1)` is a pure identity and is simplified away too,
+-- letting the index be used just like the bare comparison.
 SET enable_full_text_index = 1;
 
 DROP TABLE IF EXISTS t_ifnull_bf;
@@ -96,7 +104,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_bf WHE
 SELECT trimLeft(explain) FROM (EXPLAIN indexes = 1 SELECT * FROM t_ifnull_bf WHERE ifNull(equals(x, '100'), 0)) WHERE explain LIKE '%Granules%';
 SELECT count() FROM t_ifnull_bf WHERE ifNull(equals(x, '100'), 0) SETTINGS force_data_skipping_indices = 'idx';
 SELECT count() FROM t_ifnull_bf WHERE coalesce(equals(x, '100'), 0) SETTINGS force_data_skipping_indices = 'idx';
-SELECT count() FROM t_ifnull_bf WHERE ifNull(equals(x, '100'), 1) SETTINGS force_data_skipping_indices = 'idx'; -- { serverError INDEX_NOT_USED }
+SELECT count() FROM t_ifnull_bf WHERE ifNull(equals(x, '100'), 1) SETTINGS force_data_skipping_indices = 'idx';
 
 DROP TABLE t_ifnull_bf;
 
