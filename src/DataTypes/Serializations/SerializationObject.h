@@ -88,11 +88,6 @@ public:
     /// between an object and its path steps.
     static bool isTransparentWrapper(const Substream & substream);
 
-    /// Whether the substream path from `from` onward still denotes the value stored at the path
-    /// rather than a property derived from it. Only two spellings do: nothing at all, and the
-    /// ``.:`Type``` hint that narrows the value to one Variant alternative.
-    static bool isAllowedPathTail(const SubstreamPath & path, size_t from);
-
     void serializeBinaryBulkStatePrefix(
         const IColumn & column,
         SerializeBinaryBulkSettings & settings,

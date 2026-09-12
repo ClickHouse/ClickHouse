@@ -8,6 +8,8 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -30,6 +32,40 @@ bool substreamsEqual(const ISerialization::Substream & lhs, const ISerialization
     return lhs.type == rhs.type && lhs.name_of_substream == rhs.name_of_substream
         && lhs.object_path_name == rhs.object_path_name && lhs.variant_element_name == rhs.variant_element_name
         && lhs.bucket == rhs.bucket;
+}
+
+/// Whether the substream path from `from` onward descends into the value stored at the path instead
+/// of reading a property derived from it. Both index contents require this, for different reasons.
+/// `JSONAllValues` holds the values the paths carry, so a length or a discriminator is a constant
+/// that value set can never contain and the granule is pruned exactly when the predicate is true.
+/// `JSONAllPaths` answers from the path set, which is equivalent only while an absent path makes the
+/// predicate false; a null map is 1 precisely where the path is ABSENT, so it inverts that.
+/// The allowed set is closed: a substream type nobody has classified must refuse, not slip through.
+bool isValuePreservingTail(const ISerialization::SubstreamPath & path, size_t from)
+{
+    using Substream = ISerialization::Substream;
+
+    for (size_t i = from; i < path.size(); ++i)
+    {
+        switch (path[i].type)
+        {
+            case Substream::ArrayElements:
+            case Substream::NullableElements:
+            case Substream::TupleElement:
+            case Substream::MapKeyValue:
+            case Substream::VariantElements:
+            case Substream::VariantElement:
+            case Substream::DynamicData:
+            case Substream::ObjectData:
+            case Substream::ObjectTypedPath:
+            case Substream::ObjectDynamicPath:
+                continue;
+            default:
+                return false;
+        }
+    }
+
+    return true;
 }
 
 /// A name resolved through the table metadata: the storage column it belongs to, and which substream
@@ -68,32 +104,31 @@ std::optional<ResolvedName> resolveName(const ColumnsDescription & columns, cons
     if (auto column = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), name))
         return substreamPathOf(*column);
 
-    for (size_t tried_length = 0;;)
+    /// Every declared column that could own a path of this name, in ONE pass over the schema: index
+    /// analysis precedes any read and observes no cancellation, so its cost must stay bounded by the
+    /// schema rather than by the name, which can embed a folded constant.
+    std::vector<const ColumnDescription *> roots;
+    for (const auto & column : columns)
     {
-        /// Shortest declared name that is a dot-prefix of `name` and longer than the last one tried.
-        const ColumnDescription * root = nullptr;
-        for (const auto & column : columns)
-        {
-            if (column.name.size() <= tried_length || (root && column.name.size() >= root->name.size()))
-                continue;
-            if (name.size() <= column.name.size() + 1 || !name.starts_with(column.name)
-                || name[column.name.size()] != '.')
-                continue;
+        if (name.size() <= column.name.size() + 1 || !name.starts_with(column.name)
+            || name[column.name.size()] != '.' || !column.type->hasDynamicSubcolumns())
+            continue;
 
-            root = &column;
-        }
-
-        if (!root)
-            return std::nullopt;
-
-        tried_length = root->name.size();
-        if (root->type->hasDynamicSubcolumns())
-        {
-            auto subcolumn_name = std::string_view(name).substr(root->name.size() + 1);
-            if (auto info = root->type->tryGetSubcolumnInfo(subcolumn_name))
-                return ResolvedName{root->name, std::move(info->substreams_path)};
-        }
+        roots.push_back(&column);
     }
+
+    /// Shortest first, as the resolver does. Two distinct names cannot tie here: both are dot-prefixes
+    /// of `name`, so equal length makes them the same name.
+    std::sort(roots.begin(), roots.end(), [](const auto * lhs, const auto * rhs) { return lhs->name.size() < rhs->name.size(); });
+
+    for (const auto * root : roots)
+    {
+        auto subcolumn_name = std::string_view(name).substr(root->name.size() + 1);
+        if (auto info = root->type->tryGetSubcolumnInfo(subcolumn_name))
+            return ResolvedName{root->name, std::move(info->substreams_path)};
+    }
+
+    return std::nullopt;
 }
 
 /// The JSON path `name` denotes, when it is reached from `json_column` by JSON path steps alone.
@@ -132,10 +167,7 @@ std::optional<String> tryGetPathThroughJSONColumn(const ResolvedName & json_colu
         after_last_step = ++position;
     }
 
-    /// Anything beyond the path steps reads a property derived from the path's value, and its truth
-    /// does not follow from the path being present: a `.null` map yields 1 exactly where the path is
-    /// ABSENT, so answering it from the path set drops the only matching rows.
-    if (path.empty() || !SerializationObject::isAllowedPathTail(full, after_last_step))
+    if (path.empty() || !isValuePreservingTail(full, after_last_step))
         return std::nullopt;
 
     return path;
@@ -169,14 +201,8 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const std::string_view name = column_name;
     const size_t json_column_offset = json_function_name.size() + 1;
 
-    /// Resolved on the first textual match and then reused: most names match no index column at all,
-    /// and resolution walks the metadata.
-    std::optional<ResolvedName> resolved_name;
-    bool name_resolved = false;
-
     std::string_view matched_json_column;
     std::string_view matched_subcolumn;
-    String matched_path;
     size_t matched_position = 0;
     bool matched = false;
 
@@ -199,29 +225,8 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         if (matched && json_column.size() >= matched_json_column.size())
             continue;
 
-        if (!name_resolved)
-        {
-            resolved_name = resolveName(columns, column_name);
-            name_resolved = true;
-        }
-
-        if (!resolved_name)
-            return std::nullopt;
-
-        /// Per candidate, not once after the loop: a name may be a path of a longer index column
-        /// while merely looking like a path of a shorter one, and an index can carry several JSON
-        /// columns, so rejecting the shortest match must not discard the valid longer one.
-        auto resolved_json_column = resolveName(columns, String(json_column));
-        if (!resolved_json_column)
-            continue;
-
-        auto path = tryGetPathThroughJSONColumn(*resolved_json_column, *resolved_name);
-        if (!path)
-            continue;
-
         matched_json_column = json_column;
         matched_subcolumn = name.substr(json_column.size() + 1);
-        matched_path = std::move(*path);
         matched_position = position;
         matched = true;
     }
@@ -236,9 +241,21 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
         || isPrefixedSubcolumn(matched_subcolumn, DataTypeObject::COMBINED_SUBCOLUMN_PREFIX))
         return std::nullopt;
 
+    /// Only the entry the scan selected is validated; a longer entry that also owns the name is not
+    /// tried in its place. Probing that one asks for the path the name denotes inside it, and
+    /// `JSONAllPaths` emits only the first element of a path that continues into a nested object.
+    auto resolved_json_column = resolveName(columns, String(matched_json_column));
+    auto resolved_name = resolveName(columns, column_name);
+    if (!resolved_json_column || !resolved_name)
+        return std::nullopt;
+
+    auto path = tryGetPathThroughJSONColumn(*resolved_json_column, *resolved_name);
+    if (!path)
+        return std::nullopt;
+
     return JSONSubcolumnIndexInfo{
         .json_column_name = String(matched_json_column),
-        .path = std::move(matched_path),
+        .path = std::move(*path),
         .header_position = matched_position,
     };
 }
