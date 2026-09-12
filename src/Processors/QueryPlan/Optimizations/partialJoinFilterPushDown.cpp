@@ -1,5 +1,6 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -72,16 +73,9 @@ bool onlyDependsOnAvailableColumns(const ActionsDAG::Node & node, const NameSet 
     }
     else
     {
-        /// The extracted predicate is pushed below the join while the original filter stays on top,
-        /// so a non-deterministic function would be drawn twice per row, independently. A row that
-        /// satisfies the query's own filter can then be discarded by the pre-filter's own draw.
-        /// A nullary function such as `rand` has no inputs, so nothing else here rejects it. The main
-        /// filter pushdown refuses to move non-deterministic conjuncts for the same reason.
-        ///
-        /// Stateful functions need no check here: `tryPushDownFilter` returns early for a filter
-        /// whose expression `hasStatefulFunctions`, so such a filter never reaches this extraction.
-        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base
-            && !node.function_base->isDeterministicInScopeOfQuery())
+        /// The extracted predicate runs in addition to the filter above the JOIN, so a per-row draw such as
+        /// `rand` happens twice and only a row passing both survives; a lambda body is a separate DAG.
+        if (!allNodeFunctions(node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }))
             return false;
 
         for (const auto * child : node.children)

@@ -1,5 +1,6 @@
 #include <Interpreters/QueryThreadLog.h>
 #include <base/getFQDNOrHostName.h>
+#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeDate.h>
@@ -25,6 +26,8 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", low_cardinality_string, "Hostname of the server executing the query."},
+        {"clickhouse_version", low_cardinality_string, "Version of the ClickHouse server that produced the row."},
+        {"system_processor", low_cardinality_string, "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "The date when the thread has finished execution of the query."},
         {"event_time", std::make_shared<DataTypeDateTime>(), "The date and time when the thread has finished execution of the query."},
         {"event_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "The date and time when the thread has finished execution of the query with microseconds precision."},
@@ -60,7 +63,7 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
         {"initial_query_start_time", std::make_shared<DataTypeDateTime>(), "Start time of the initial query in the same query chain."},
         {"initial_query_start_time_microseconds", std::make_shared<DataTypeDateTime64>(6), "Start time of the initial query in the same query chain, with microsecond precision."},
         {"authenticated_user", low_cardinality_string, "Name of the user who was authenticated in the session."},
-        {"interface", std::make_shared<DataTypeUInt8>(), "Interface that the query was initiated from. Possible values: 1 — TCP, 2 — HTTP."},
+        {"interface", getReportedClientInterfaceEnum(), "Interface that the query was initiated from, as reported by the client. `Unknown` if the reported interface is not one this server recognizes."},
         {"is_secure", std::make_shared<DataTypeUInt8>(), "The flag which shows whether the connection was secure."},
         {"os_user", low_cardinality_string, "OSs username who runs clickhouse-client."},
         {"client_hostname", low_cardinality_string, "Hostname of the client machine where the clickhouse-client or another TCP client is run."},
@@ -72,7 +75,7 @@ ColumnsDescription QueryThreadLogElement::getColumnsDescription()
         {"client_version_patch", std::make_shared<DataTypeUInt32>(), "Patch component of the clickhouse-client or another TCP client version."},
         {"script_query_number", std::make_shared<DataTypeUInt32>(), "A sequential query number in a multi-query script."},
         {"script_line_number", std::make_shared<DataTypeUInt32>(), "A line number in a multi-query script where the current query starts."},
-        {"http_method", std::make_shared<DataTypeUInt8>(), "HTTP method that initiated the query. Possible values: 0 - The query was launched from the TCP interface, 1 - GET method was used, 2 - POST method was used, 4 - PUT method was used, 5 - DELETE method was used, 6 - HEAD method was used."},
+        {"http_method", getClientHTTPMethodEnum(), "HTTP method that initiated the query. `UNKNOWN` if the query did not arrive over HTTP, or if the reported method is not one this server recognizes."},
         {"http_user_agent", low_cardinality_string, "The UserAgent header passed in the HTTP request."},
         {"http_referer", std::make_shared<DataTypeString>(), "HTTP header `Referer` passed in the HTTP query (contains an absolute or partial address of the page making the query)."},
         {"forwarded_for", std::make_shared<DataTypeString>(), "HTTP header `X-Forwarded-For` passed in the HTTP query."},
@@ -99,6 +102,8 @@ void QueryThreadLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
+    columns[i++]->insert(VERSION_STRING);
+    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
     columns[i++]->insert(event_time_microseconds);
