@@ -123,6 +123,11 @@ bool ExecutionThreadContext::executeTask()
         execution_time_watch.emplace();
 #endif
 
+    /// The thread counters only grow, so the difference around `executeJob` is the memory activity of this processor.
+    ThreadStatus * thread_status = profile_processors ? current_thread : nullptr;
+    UInt64 memory_allocated_bytes_before = thread_status ? thread_status->memory_allocated_bytes : 0;
+    UInt64 memory_freed_bytes_before = thread_status ? thread_status->memory_freed_bytes : 0;
+
     bool success = true;
     try
     {
@@ -139,6 +144,13 @@ bool ExecutionThreadContext::executeTask()
     {
         UInt64 elapsed_ns = execution_time_watch->elapsedNanoseconds();
         node->processor()->elapsed_ns += elapsed_ns;
+
+        if (thread_status)
+        {
+            node->processor()->memory_allocated_bytes += thread_status->memory_allocated_bytes - memory_allocated_bytes_before;
+            node->processor()->memory_freed_bytes += thread_status->memory_freed_bytes - memory_freed_bytes_before;
+        }
+
         if (trace_processors)
             span->addAttribute("execution_time_ms", elapsed_ns / 1000U);
     }

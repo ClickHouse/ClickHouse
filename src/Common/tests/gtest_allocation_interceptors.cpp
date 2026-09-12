@@ -8,6 +8,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/LockMemoryExceptionInThread.h>
+#include <Common/MemoryTrackerBlockerInThread.h>
 #include <Common/MemoryTracker.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
@@ -167,6 +168,36 @@ TEST(AllocationInterceptors, MallocZeroFreeDoesNotCauseNegativeDrift)
 
     EXPECT_GE(CurrentThread::get().memory_tracker.get() - before_thread, -64 * 1024);
     EXPECT_GE(total_memory_tracker.get() - before_global, -64 * 1024);
+}
+
+TEST(AllocationInterceptors, ThreadMemoryAllocatedAndFreedBytes)
+{
+    MainThreadStatus::getInstance();
+    CurrentThread::flushUntrackedMemory();
+
+    auto & thread = CurrentThread::get();
+    SCOPE_EXIT({ CurrentThread::flushUntrackedMemory(); });
+
+    const UInt64 allocated_before = thread.memory_allocated_bytes;
+    const UInt64 freed_before = thread.memory_freed_bytes;
+
+    std::ignore = CurrentMemoryTracker::alloc(4096);
+    EXPECT_EQ(thread.memory_allocated_bytes - allocated_before, 4096);
+    EXPECT_EQ(thread.memory_freed_bytes - freed_before, 0);
+
+    std::ignore = CurrentMemoryTracker::free(4096);
+    EXPECT_EQ(thread.memory_allocated_bytes - allocated_before, 4096);
+    EXPECT_EQ(thread.memory_freed_bytes - freed_before, 4096);
+
+    /// Memory blocked on the process level is not counted.
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Process);
+        std::ignore = CurrentMemoryTracker::alloc(2048);
+        std::ignore = CurrentMemoryTracker::free(2048);
+    }
+
+    EXPECT_EQ(thread.memory_allocated_bytes - allocated_before, 4096);
+    EXPECT_EQ(thread.memory_freed_bytes - freed_before, 4096);
 }
 
 namespace

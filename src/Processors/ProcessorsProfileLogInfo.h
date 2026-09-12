@@ -25,6 +25,8 @@ struct ProcessorsProfileLogInfo
     UInt64 input_bytes = 0;
     UInt64 output_rows = 0;
     UInt64 output_bytes = 0;
+    UInt64 memory_allocated_bytes = 0;
+    UInt64 memory_freed_bytes = 0;
 };
 
 }

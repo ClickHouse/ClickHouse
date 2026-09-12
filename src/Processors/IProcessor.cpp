@@ -197,6 +197,8 @@ ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
     info.input_bytes = stats.input_bytes;
     info.output_rows = stats.output_rows;
     info.output_bytes = stats.output_bytes;
+    info.memory_allocated_bytes = memory_allocated_bytes;
+    info.memory_freed_bytes = memory_freed_bytes;
 
     return info;
 }

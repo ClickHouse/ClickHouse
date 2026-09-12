@@ -401,6 +401,8 @@ private:
     /// - elapsed_ns
     /// - num_executed_jobs
     /// - query_plan_step_wall_clock_ptr
+    /// - memory_allocated_bytes
+    /// - memory_freed_bytes
     friend class ExecutionThreadContext;
     /// For
     /// - input_wait_elapsed_ns
@@ -416,6 +418,8 @@ private:
     uint64_t input_wait_elapsed_ns = 0;
     Stopwatch output_wait_watch;
     uint64_t output_wait_elapsed_ns = 0;
+    UInt64 memory_allocated_bytes = 0;
+    UInt64 memory_freed_bytes = 0;
 
     size_t stream_number = NO_STREAM;
 

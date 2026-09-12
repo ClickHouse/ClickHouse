@@ -108,6 +108,10 @@ AllocationTrace CurrentMemoryTracker::allocImpl(Int64 size, bool enforce_memory_
             }
         }
 
+        /// Memory blocked on the query/process level is not attributed to the thread.
+        if (blocker_level > VariableContext::Process)
+            cur_thread->memory_allocated_bytes += static_cast<UInt64>(size);
+
         return AllocationTrace(cur_thread->getEffectiveSampleProbability(size));
     }
 
@@ -182,6 +186,10 @@ AllocationTrace CurrentMemoryTracker::free(Int64 size)
             else
                 std::ignore = memory_tracker->free(-new_untracked_memory, /*_sample_probability=*/ 0.0);
         }
+
+        /// Memory blocked on the query/process level is not attributed to the thread.
+        if (blocker_level > VariableContext::Process)
+            cur_thread->memory_freed_bytes += static_cast<UInt64>(size);
 
         return AllocationTrace(cur_thread->getEffectiveSampleProbability(size));
     }

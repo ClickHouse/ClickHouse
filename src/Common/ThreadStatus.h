@@ -203,6 +203,11 @@ public:
     VariableContext untracked_memory_blocker_level = VariableContext::Max;
     /// Each thread could new/delete memory in range of (-untracked_memory_limit, untracked_memory_limit) without access to common counters.
     Int64 untracked_memory_limit = 4 * 1024 * 1024;
+    /// Monotonic counters of the memory allocated and freed by this thread, as seen by `CurrentMemoryTracker`.
+    /// Memory blocked at `VariableContext::Process` or lower is not counted.
+    /// Taking a snapshot before and after a scope gives the memory activity of that scope.
+    UInt64 memory_allocated_bytes = 0;
+    UInt64 memory_freed_bytes = 0;
     /// Per-CPU untracked memory
     PerCPUMemoryThreadState per_cpu_untracked_memory;
 
