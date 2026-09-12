@@ -478,7 +478,7 @@ void HTTPHandler::processQuery(
     context->setCurrentQueryId(query_id);
 
     context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
-    context->applySettingsChanges(settings_changes);
+    context->applySettingsChangesAndResets(settings_changes, {}, SettingSource::QUERY);
 
     const auto & settings = context->getSettingsRef();
 

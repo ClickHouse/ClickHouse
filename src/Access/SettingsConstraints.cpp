@@ -254,9 +254,9 @@ void SettingsConstraints::check(const Settings & current_settings, SettingsChang
     checkOrClamp(current_settings, changes, THROW_ON_VIOLATION, source);
 }
 
-void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const std::vector<String> & names, SettingSource source) const
+void SettingsConstraints::checkResetToDefault(const Settings & current_settings, const Settings & after_reset, const std::vector<String> & names, SettingSource source) const
 {
-    /// A reset of a built-in setting is equivalent to assigning its declared default. The regular
+    /// A reset of a built-in setting is equivalent to assigning the value it lands on. The regular
     /// check also deliberately permits a reset that does not change the value.
     ///
     /// A `merge_tree_`-prefixed name is not a `Settings` setting, but it names a `MergeTreeSettings` one,
@@ -267,7 +267,12 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
     {
         if (settingIsBuiltin(name))
         {
-            check(current_settings, SettingChange{name, settingDefaultValue(name)}, source);
+            /// The `merge_tree_` prefix does not identify the class, because `Settings` owns 22 such
+            /// names itself. A name it does not own is the `MergeTreeSettings` one, a custom setting
+            /// here that is absent once reset, so it lands on its declared default; a `Settings`
+            /// setting lands on `after_reset`, which an active `compatibility` may have derived.
+            const Field value = Settings::hasBuiltin(name) ? after_reset.get(name) : settingDefaultValue(name);
+            check(current_settings, SettingChange{name, value}, source);
             continue;
         }
 
@@ -289,6 +294,67 @@ void SettingsConstraints::checkResetToDefault(const Settings & current_settings,
             getChecker(current_settings, Settings::resolveName(name)).check(change, current_value, THROW_ON_VIOLATION, source);
         }
     }
+}
+
+void SettingsConstraints::checkMovedValues(
+    const Settings & current_settings,
+    const Settings & settings_before,
+    const SettingsConstraints * constraints_before,
+    SettingSource source) const
+{
+    /// Walk the constraints rather than the settings: an old `compatibility` value moves hundreds of
+    /// them, while a profile constrains a handful.
+    for (const auto & [name, constraint] : constraints)
+    {
+        /// A profile also constrains `MergeTreeSettings` and custom names. Only a `Settings` setting can
+        /// be moved by a `compatibility` or by a post-processor, and reading one of the others off the
+        /// session settings throws instead of reporting that it is absent.
+        if (!Settings::hasBuiltin(name))
+            continue;
+
+        /// A value something assigned is checked where it is assigned, and a profile's own settings are
+        /// applied without checking the profile's own constraints - deliberately, or no statement could
+        /// run under a profile whose settings its constraints forbid.
+        if (current_settings.isExplicitlyAssigned(name))
+            continue;
+
+        const Field value = current_settings.get(name);
+        if (value != settings_before.get(name))
+        {
+            /// The value is already in place, so the regular check would see a change that keeps the
+            /// current value and permit it. Here the value itself is what has to satisfy the constraint.
+            SettingChange change{name, value};
+            Checker(constraint, Settings::resolveName).check(change, value, THROW_ON_VIOLATION, source);
+            continue;
+        }
+
+        /// Nothing wrote this value, so who may write the setting has nothing to answer for. Which values
+        /// are allowed still does, once this request is what brings the two together: a profile installs a
+        /// constraint over a value its own `compatibility` derives, which no check has ever compared.
+        if (!allowedValuesArrivedWithRequest(name, constraint, constraints_before))
+            continue;
+
+        /// A value nothing derived is the one the setting holds when nothing has been assigned to it, and
+        /// a profile whose constraint forbids that is still selectable, the way it is at login.
+        if (!current_settings.isChanged(name))
+            continue;
+
+        SettingChange change{name, value};
+        Checker(constraint, Settings::resolveName)
+            .check(change, value, THROW_ON_VIOLATION, source, Checker::ALLOWED_VALUES_ONLY);
+    }
+}
+
+bool SettingsConstraints::allowedValuesArrivedWithRequest(
+    const String & name, const Constraint & constraint, const SettingsConstraints * constraints_before)
+{
+    if (!constraints_before)
+        return true;
+    const auto it = constraints_before->constraints.find(name);
+    if (it == constraints_before->constraints.end())
+        return true;
+    return it->second.min_value != constraint.min_value || it->second.max_value != constraint.max_value
+        || it->second.disallowed_values != constraint.disallowed_values;
 }
 
 void SettingsConstraints::check(const MergeTreeSettings & current_settings, const SettingChange & change) const
@@ -473,7 +539,8 @@ bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, 
 bool SettingsConstraints::Checker::check(SettingChange & change,
                                          const Field & new_value,
                                          ReactionOnViolation reaction,
-                                         SettingSource source) const
+                                         SettingSource source,
+                                         RestrictionsToCheck restrictions) const
 {
     if (!explain.text.empty())
     {
@@ -513,7 +580,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
     };
 
 
-    if (constraint.writability == SettingConstraintWritability::CONST)
+    if (restrictions == ALL_RESTRICTIONS && constraint.writability == SettingConstraintWritability::CONST)
     {
         if (reaction == THROW_ON_VIOLATION)
             throw Exception(ErrorCodes::SETTING_CONSTRAINT_VIOLATION, "Setting {} should not be changed", setting_name);
@@ -578,7 +645,7 @@ bool SettingsConstraints::Checker::check(SettingChange & change,
         }
     }
 
-    if (!getSettingSourceRestrictions(setting_name).isSourceAllowed(source))
+    if (restrictions == ALL_RESTRICTIONS && !getSettingSourceRestrictions(setting_name).isSourceAllowed(source))
     {
         if (reaction == THROW_ON_VIOLATION)
             throw Exception(ErrorCodes::READONLY, "Setting {} is not allowed to be set by {}", setting_name, toString(source));

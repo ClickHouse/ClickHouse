@@ -1267,16 +1267,23 @@ public:
     void applySettingChange(const SettingChange & change);
     void applySettingsChanges(const SettingsChanges & changes);
 
+    /// Applies `changes` and then resets `names_to_reset`, the way a `SET` statement does, and checks the
+    /// values `compatibility` derives for the settings neither of them names - which no other check sees,
+    /// because nobody asked for them. The resets are checked against the state `changes` leave behind, so
+    /// the caller must not check them itself. On a violation nothing the call did is left in place.
+    /// Only for callers that fail a forbidden change: one that clamps instead must not use this.
+    void applySettingsChangesAndResets(const SettingsChanges & changes, const std::vector<String> & names_to_reset, SettingSource source);
+
     /// Checks the constraints.
     void checkSettingsConstraints(const AlterSettingsProfileElements & profile_elements, SettingSource source);
     void checkSettingsConstraints(const SettingChange & change, SettingSource source);
     void checkSettingsConstraints(const SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
-    void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
-    /// Reset settings to default value
+    /// Reset settings to the default that is in effect for them, which under an active `compatibility`
+    /// is the value that version implies rather than the declared default.
     void resetSettingsToDefaultValue(const std::vector<String> & names);
 
     /// Returns the current constraints (can return null).
@@ -2128,6 +2135,25 @@ private:
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;
 
     void checkMergeTreeSettingsConstraintsWithLock(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
+
+    /// Checks the constrained settings the request did not assign: a value `compatibility` derived, one it
+    /// stopped deriving, one a post-processor moved, and one a profile the request selects constrains
+    /// without moving. Only the state after the change tells what they are, so the caller has to apply the
+    /// change before calling this, and to pass the constraints that were in force before it.
+    void checkSettingsMovedWithoutBeingAssignedWithLock(
+        const Settings & settings_before,
+        const std::shared_ptr<const SettingsConstraintsAndProfileIDs> & profiles_before,
+        SettingSource source) const;
+
+    /// Performs the resets on `target`, which is either the live settings or a copy the caller checks
+    /// before committing to them. One routine for both, so the value checked is the value applied.
+    void resetToDefaultValueWithLock(
+        Settings & target, const std::vector<String> & names, const std::lock_guard<ContextSharedMutex> & lock) const;
+
+    void resetSettingsToDefaultValueWithLock(const std::vector<String> & names, const std::lock_guard<ContextSharedMutex> & lock);
+
+    void checkSettingsConstraintsForSettingsResetWithLock(
+        const std::vector<String> & names, SettingSource source, const std::lock_guard<ContextSharedMutex> & lock) const;
 
     ExternalDictionariesLoader & getExternalDictionariesLoaderWithLock(const std::lock_guard<std::mutex> & lock);
 

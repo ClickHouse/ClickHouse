@@ -2819,15 +2819,17 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     auto settings_changes = passed_settings.changes();
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
-        /// Throw an exception if the passed settings violate the constraints.
+        /// Throw an exception if the passed settings violate the constraints, including the values a
+        /// `compatibility` among them derives for the settings the query did not pass.
         state->query_context->checkSettingsConstraints(settings_changes, SettingSource::QUERY);
+        state->query_context->applySettingsChangesAndResets(settings_changes, {}, SettingSource::QUERY);
     }
     else
     {
         /// Quietly clamp to the constraints if it's not an initial query.
         state->query_context->clampToSettingsConstraints(settings_changes, SettingSource::QUERY);
+        state->query_context->applySettingsChanges(settings_changes);
     }
-    state->query_context->applySettingsChanges(settings_changes);
 
     /// Sets the default database if it wasn't set earlier for the session context. This runs after
     /// the passed settings are applied, so the database explicitly carried by the query packet wins
