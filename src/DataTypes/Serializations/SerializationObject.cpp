@@ -195,6 +195,26 @@ struct DeserializeBinaryBulkStateObject : public ISerialization::DeserializeBina
     }
 };
 
+bool SerializationObject::isPathStep(const Substream & substream)
+{
+    return substream.type == Substream::ObjectTypedPath || substream.type == Substream::ObjectDynamicPath;
+}
+
+bool SerializationObject::isTransparentWrapper(const Substream & substream)
+{
+    return substream.type == Substream::ObjectData || substream.type == Substream::NullableElements;
+}
+
+bool SerializationObject::isAllowedPathTail(const SubstreamPath & path, size_t from)
+{
+    if (from == path.size())
+        return true;
+
+    /// ``.:`Type```: still the value stored at the path, narrowed to one Variant alternative.
+    return from + 2 == path.size() && path[from].type == Substream::DynamicData
+        && path[from + 1].type == Substream::VariantElement;
+}
+
 void SerializationObject::enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
     settings.path.push_back(Substream::ObjectStructure);

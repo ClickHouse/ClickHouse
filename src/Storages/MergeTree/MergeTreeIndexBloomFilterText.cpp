@@ -155,10 +155,12 @@ void MergeTreeIndexAggregatorBloomFilterText::update(const Block & block, size_t
 MergeTreeConditionBloomFilterText::MergeTreeConditionBloomFilterText(
     const ActionsDAG::Node * predicate,
     ContextPtr context,
+    StorageMetadataPtr metadata_snapshot_,
     const Block & index_sample_block,
     const BloomFilterParameters & params_,
     TokenizerPtr token_extactor_)
-    : index_columns(index_sample_block.getNames())
+    : metadata_snapshot(std::move(metadata_snapshot_))
+    , index_columns(index_sample_block.getNames())
     , index_data_types(index_sample_block.getNamesAndTypesList().getTypes())
     , params(params_)
     , owned_tokenizer(token_extactor_ && token_extactor_->isStateful() ? token_extactor_->clone() : nullptr)
@@ -365,7 +367,8 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
         if (function_name == "isNotNull" && arguments_size == 1)
         {
             auto arg = function_node.getArgumentAt(0);
-            if (auto json_info = tryMatchNodeToJSONIndex(arg, index_columns, "JSONAllPaths"))
+            if (auto json_info = tryMatchNodeToJSONIndex(
+                    arg, index_columns, "JSONAllPaths", getColumnsToMatchJSONSubcolumn(metadata_snapshot)))
             {
                 auto arg_type = arg.getDAGNode()->result_type;
                 /// It doesn't make sense to use bloom filter for isNotNull on non-Nullable type, as isNotNull will be always true.
@@ -533,7 +536,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     /// but we tokenize the *path* string against the JSONAllPaths index, not the value.
     if (function_name == "equals")
     {
-        if (auto json_info = tryMatchNodeToJSONIndex(key_node, index_columns, "JSONAllPaths"))
+        if (auto json_info = tryMatchNodeToJSONIndex(
+                key_node, index_columns, "JSONAllPaths", getColumnsToMatchJSONSubcolumn(metadata_snapshot)))
         {
             auto key_type = key_node.getDAGNode()->result_type;
             if (!isJSONPathFilterSafe(key_type, value_field))
@@ -977,7 +981,7 @@ MergeTreeIndexAggregatorPtr MergeTreeIndexBloomFilterText::createIndexAggregator
 MergeTreeIndexConditionPtr MergeTreeIndexBloomFilterText::createIndexCondition(
         const ActionsDAG::Node * predicate, ContextPtr context) const
 {
-    return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, index.sample_block, params, tokenizer.get());
+    return std::make_shared<MergeTreeConditionBloomFilterText>(predicate, context, metadata_snapshot, index.sample_block, params, tokenizer.get());
 }
 
 MergeTreeIndexPtr bloomFilterIndexTextCreator(StorageMetadataPtr metadata_snapshot, const IndexDescription & index, const MergeTreeSettings & /*settings*/)

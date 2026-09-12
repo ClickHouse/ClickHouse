@@ -68,6 +68,7 @@ public:
     MergeTreeConditionBloomFilterText(
             const ActionsDAG::Node * predicate,
             ContextPtr context,
+            StorageMetadataPtr metadata_snapshot_,
             const Block & index_sample_block,
             const BloomFilterParameters & params_,
             TokenizerPtr token_extactor_);
@@ -146,6 +147,8 @@ private:
     static bool createFunctionEqualsCondition(
         RPNElement & out, const Field & value, const BloomFilterParameters & params, TokenizerPtr tokenizer);
 
+    /// The table's columns, to tell a JSON path apart from a column merely named like one.
+    StorageMetadataPtr metadata_snapshot;
     Names index_columns;
     DataTypes index_data_types;
     BloomFilterParameters params;

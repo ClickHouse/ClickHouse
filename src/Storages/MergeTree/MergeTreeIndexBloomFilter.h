@@ -72,7 +72,8 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_);
+    MergeTreeIndexConditionBloomFilter(
+        const ActionsDAG::Node * predicate, ContextPtr context_, StorageMetadataPtr metadata_snapshot_, const Block & header_, size_t hash_functions_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -87,6 +88,8 @@ public:
     std::string getDescription() const override { return ""; }
 
 private:
+    /// The table's columns, to tell a JSON path apart from a column merely named like one.
+    StorageMetadataPtr metadata_snapshot;
     const Block & header;
     const size_t hash_functions;
     std::vector<RPNElement> rpn;
