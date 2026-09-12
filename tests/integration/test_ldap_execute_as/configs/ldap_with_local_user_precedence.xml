@@ -1,0 +1,42 @@
+<clickhouse>
+    <!-- Strip the top-level `<users_config>` so that the only access storages are
+         the ones declared in `<user_directories>` below. Without this the
+         framework's default `<users_config>users.xml</users_config>` would force a
+         `users_xml` storage to be inserted BEFORE any user-directories storage,
+         and the precedence bug (LDAP shadowing a local user) could not be
+         reproduced. With this removed, `<user_directories>` decides the order
+         end-to-end. -->
+    <users_config remove="remove"/>
+    <ldap_servers>
+        <openldap>
+            <host>openldap</host>
+            <port>1389</port>
+            <bind_dn>cn={user_name},ou=users,dc=example,dc=org</bind_dn>
+            <enable_tls>no</enable_tls>
+            <!-- Service-bind credentials used to resolve users on EXECUTE AS before
+                 they have authenticated against this server. -->
+            <lookup_bind_dn>cn=admin,dc=example,dc=org</lookup_bind_dn>
+            <lookup_password>clickhouse</lookup_password>
+            <user_dn_detection>
+                <base_dn>ou=users,dc=example,dc=org</base_dn>
+                <search_filter>(&amp;(objectClass=person)(cn={user_name}))</search_filter>
+            </user_dn_detection>
+        </openldap>
+    </ldap_servers>
+    <!-- Worst-case ordering for the precedence-preservation test: the LDAP
+         user-directory comes BEFORE the local `users_xml` directory. Without the
+         two-pass lookup in `InterpreterExecuteAsQuery`, the forced LDAP lookup
+         materializes `janedoe` from the directory and shadows the local user
+         defined in `users.xml`. The two-pass fix restores the local user as the
+         winner because the first (non-forced) `find<User>` walks the storages
+         normally and the local one matches. `replace="replace"` is needed so
+         the order here fully overrides the default `user_directories`. -->
+    <user_directories replace="replace">
+        <ldap>
+            <server>openldap</server>
+        </ldap>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+    </user_directories>
+</clickhouse>
