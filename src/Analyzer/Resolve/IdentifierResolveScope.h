@@ -210,6 +210,9 @@ struct IdentifierResolveScope
     /// Join retutns NULLs instead of default values
     bool join_use_nulls = false;
     bool allow_resolve_from_using = true;
+    /// Points to the JOIN node whose ON expression is currently being resolved (where both sides should be accessible)
+    /// nullptr when not resolving any JOIN ON expression
+    const IQueryTreeNode * resolving_join_on_expression = nullptr;
 
     /** True while the `PREWHERE` expression of this query is being resolved.
       * `PREWHERE` is evaluated by the reading step and cannot contain a correlated subquery,
@@ -223,9 +226,6 @@ struct IdentifierResolveScope
 
     /// JOIN USING count (joins whose keys can retype a matched column)
     size_t using_joins_count = 0;
-
-    /// True while resolving a JOIN ON expression.
-    bool resolving_join_on_expression = false;
 
     /// Subquery depth
     size_t subquery_depth = 0;
