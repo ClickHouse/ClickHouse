@@ -311,6 +311,31 @@ inline DecimalComponents<DecimalType> splitWithScaleMultiplier(
     return {whole, fractional};
 }
 
+/** Split decimal into whole and fractional parts with given scale_multiplier, rounding the whole part
+ * towards negative infinity: -1.125 splits to -2 / 0.875 instead of -1 / 0.125.
+ *
+ * `splitWithScaleMultiplier` truncates towards zero, which for a negative value moves the whole part into
+ * the future. Date/time transforms that round down to a boundary have to floor it first: otherwise a
+ * scale > 0 argument disagrees with the same instant at scale 0, the result can be greater than the
+ * argument, and the monotonicity factor that `KeyCondition` evaluates disagrees with the execution path,
+ * which prunes granules that hold matching rows.
+ */
+template <typename DecimalType>
+inline DecimalComponents<DecimalType> splitFlooringNegative(
+        const DecimalType & decimal,
+        typename DecimalType::NativeType scale_multiplier)
+{
+    using T = typename DecimalType::NativeType;
+    auto components = splitWithScaleMultiplier(decimal, scale_multiplier);
+    /// Unreachable at scale 0, where `fractional` is always zero, so `whole` cannot underflow here.
+    if (decimal.value < T(0) && components.fractional)
+    {
+        components.fractional = scale_multiplier + (components.whole ? T(-1) : T(1)) * components.fractional;
+        --components.whole;
+    }
+    return components;
+}
+
 /// Split decimal into components: whole and fractional part, @see `DecimalComponents` for details.
 template <typename DecimalType>
 inline DecimalComponents<DecimalType> split(const DecimalType & decimal, UInt32 scale)
