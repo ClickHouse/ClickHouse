@@ -732,7 +732,9 @@ inline ReturnType readUUIDTextImpl(UUID & uuid, ReadBuffer & buf)
 {
     static constexpr bool throw_exception = std::is_same_v<ReturnType, void>;
 
-    char s[36];
+    /// Filled with one 32-byte copy and read back byte by byte; aligned so the copy can never
+    /// straddle a page, where a split store is not forwarded to the loads that follow it.
+    alignas(64) char s[36];
     size_t size = buf.read(s, 32);
 
     if (size == 32)
