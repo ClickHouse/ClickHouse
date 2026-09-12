@@ -38,6 +38,7 @@
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
 #include <Processors/QueryPlan/CommonSubplanStep.h>
+#include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -780,6 +781,17 @@ QueryPlan decorrelateQueryPlan(
             filter_step->getExpression().tryRestoreColumn(column.name);
 
         node->step->updateInputHeader(input_header);
+
+        decorrelated_query_plan.addStep(std::move(node->step));
+        return decorrelated_query_plan;
+    }
+    if (typeid_cast<DelayedCreatingSetsStep *>(node->step.get()))
+    {
+        auto decorrelated_query_plan = decorrelateQueryPlan(context, node->children.front());
+
+        /// The step is a placeholder whose output header equals its input, and the sets it carries
+        /// cannot reference the correlated columns, so only the header has to be refreshed.
+        node->step->updateInputHeader(decorrelated_query_plan.getCurrentHeader());
 
         decorrelated_query_plan.addStep(std::move(node->step));
         return decorrelated_query_plan;

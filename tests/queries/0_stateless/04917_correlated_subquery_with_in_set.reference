@@ -1,0 +1,70 @@
+-- dictGet comparison rewritten to an IN set inside a correlated EXISTS
+100
+100
+1
+0
+-- plain IN (SELECT ...) inside a correlated EXISTS
+100
+100
+20
+20
+-- partially matching IN set
+60
+60
+-- IN set with no matching value
+0
+0
+-- empty IN set
+0
+-- per-row equality against the constant-set rewrite
+0
+-- Nullable key
+60
+60
+-- LowCardinality key
+20
+20
+-- LowCardinality(Nullable) key
+20
+20
+-- tuple key
+60
+60
+-- constant on the left of IN
+0
+0
+-- correlated scalar subquery
+51
+51
+-- NOT IN
+80
+80
+-- GLOBAL IN
+60
+60
+-- correlated NOT EXISTS
+40
+40
+-- IN sets in both arms of a UNION ALL body
+80
+80
+-- IN set beneath an aggregation
+51
+51
+-- two independent IN sets in one body
+20
+20
+-- two-level nested correlated subquery, IN set in the inner body
+60
+60
+-- a correlated set subquery is still rejected
+-- an ordinary CTE body without an IN set is unaffected
+100
+-- unchanged when parallel replicas are requested
+60
+-- the delayed step is expanded before execution and does not survive
+1
+0
+-- the same query without a set subquery builds no set at all
+0
+0
