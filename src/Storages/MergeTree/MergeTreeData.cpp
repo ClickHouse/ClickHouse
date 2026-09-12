@@ -1669,8 +1669,17 @@ void MergeTreeData::checkTTLExpressions(const StorageInMemoryMetadata & new_meta
 namespace
 {
 
-void checkSpecialColumn(const std::string_view column_meta_name, const AlterCommand & command, bool allow_clear = false)
+void checkSpecialColumn(
+    const std::string_view column_meta_name,
+    const AlterCommand & command,
+    bool allow_clear = false,
+    const String & special_column_name = {})
 {
+    /// A `DROP COLUMN` of a `Nested` group names the group, not the special column inside it, so report both.
+    const String described_column = (special_column_name.empty() || special_column_name == command.column_name)
+        ? backQuoteIfNeed(command.column_name)
+        : fmt::format("{} in {}", backQuoteIfNeed(special_column_name), backQuoteIfNeed(command.column_name));
+
     if (command.type == AlterCommand::DROP_COLUMN)
     {
         if (allow_clear && command.clear)
@@ -1680,7 +1689,7 @@ void checkSpecialColumn(const std::string_view column_meta_name, const AlterComm
             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
             "Trying to ALTER DROP {} ({}) column",
             column_meta_name,
-            backQuoteIfNeed(command.column_name));
+            described_column);
     }
     else if (command.type == AlterCommand::RENAME_COLUMN)
     {
@@ -1688,7 +1697,7 @@ void checkSpecialColumn(const std::string_view column_meta_name, const AlterComm
             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
             "Trying to ALTER RENAME {} ({}) column",
             column_meta_name,
-            backQuoteIfNeed(command.column_name));
+            described_column);
     }
     else if (command.type == AlterCommand::MODIFY_COLUMN
         && (command.default_kind == ColumnDefaultKind::Ephemeral || command.default_kind == ColumnDefaultKind::Alias))
@@ -1697,7 +1706,7 @@ void checkSpecialColumn(const std::string_view column_meta_name, const AlterComm
             ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
             "Cannot modify {} column ({}) to {}",
             column_meta_name,
-            backQuoteIfNeed(command.column_name),
+            described_column,
             toString(command.default_kind));
     }
 };
@@ -5261,18 +5270,28 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
 
         const char * verb = command.clear ? "CLEAR" : "DROP";
 
+        /// With `share_nested_offsets`, a name that is not a column of the table denotes the whole
+        /// `Nested` group `<name>.*`, so the command affects every column of the group.
+        const Names affected_columns = getColumnNamesAffectedByDrop(old_columns, command.column_name, share_nested_offsets);
+
+        auto affects_column = [&affected_columns](const String & special_column)
+        {
+            return !special_column.empty() && std::ranges::contains(affected_columns, special_column);
+        };
+
         /// A special column of the engine is named by its role, which explains the refusal better than
         /// "a part of key expression". It has to be checked here as well, because such a column may also
         /// be used in a key, and then the key check below would answer first with the less precise reason.
         /// For the commands this loop does not handle the same check runs in the per-command loop below.
-        if (command.column_name == merging_params.version_column)
-            checkSpecialColumn("version", command);
-        else if (command.column_name == merging_params.is_deleted_column)
-            checkSpecialColumn("is_deleted", command);
-        else if (command.column_name == merging_params.sign_column)
-            checkSpecialColumn("sign", command);
-        else if (std::ranges::contains(merging_params.columns_to_sum, command.column_name))
-            checkSpecialColumn("columns to sum", command, /* allow_clear = */ true);
+        if (affects_column(merging_params.version_column))
+            checkSpecialColumn("version", command, /* allow_clear = */ false, merging_params.version_column);
+        else if (affects_column(merging_params.is_deleted_column))
+            checkSpecialColumn("is_deleted", command, /* allow_clear = */ false, merging_params.is_deleted_column);
+        else if (affects_column(merging_params.sign_column))
+            checkSpecialColumn("sign", command, /* allow_clear = */ false, merging_params.sign_column);
+        else if (const auto summed = std::ranges::find_if(merging_params.columns_to_sum, affects_column);
+                 summed != merging_params.columns_to_sum.end())
+            checkSpecialColumn("columns to sum", command, /* allow_clear = */ true, *summed);
 
         if (columns_in_keys.contains(command.column_name))
         {
@@ -5293,15 +5312,14 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 backQuotedList(it->second));
         }
 
-        /// When shared nested offsets are enabled, a name that is not a column of the table denotes
-        /// the whole Nested group `<name>.*`, and the command affects every column of the group.
+        /// A whole-group command is refused when any column of the group is part of a key.
         if (share_nested_offsets && old_columns.hasNested(command.column_name))
         {
             std::vector<String> key_columns_in_group;
-            for (const auto & nested_column : old_columns.getNested(command.column_name))
+            for (const auto & nested_column_name : affected_columns)
             {
-                if (columns_in_keys.contains(nested_column.name) || column_to_subcolumns_used_in_keys.contains(nested_column.name))
-                    key_columns_in_group.push_back(nested_column.name);
+                if (columns_in_keys.contains(nested_column_name) || column_to_subcolumns_used_in_keys.contains(nested_column_name))
+                    key_columns_in_group.push_back(nested_column_name);
             }
 
             if (!key_columns_in_group.empty())
@@ -5747,6 +5765,9 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         }
         else if (command.type == AlterCommand::DROP_COLUMN)
         {
+            const Names column_names_to_drop
+                = getColumnNamesAffectedByDrop(old_columns, command.column_name, share_nested_offsets);
+
             if (!command.clear)
             {
                 /// Don't check columns in indices or projections here. If required columns of indices
@@ -5755,12 +5776,15 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                 /// 02691_drop_column_with_projections_replicated.sql.
                 if (!name_deps)
                     name_deps = getDependentViewsByColumn(local_context);
-                const auto & deps_mv = name_deps.value()[command.column_name];
-                if (!deps_mv.empty())
+                for (const auto & column_name_to_drop : column_names_to_drop)
                 {
-                    throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
-                        "Trying to ALTER DROP column {} which is referenced by materialized view {}",
-                        backQuoteIfNeed(command.column_name), toString(deps_mv));
+                    const auto & deps_mv = name_deps.value()[column_name_to_drop];
+                    if (!deps_mv.empty())
+                    {
+                        throw Exception(ErrorCodes::ALTER_OF_COLUMN_IS_FORBIDDEN,
+                            "Trying to ALTER DROP column {} which is referenced by materialized view {}",
+                            backQuoteIfNeed(command.column_name), toString(deps_mv));
+                    }
                 }
             }
             else
@@ -12722,6 +12746,21 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
     if (!command.isDropOrRename() || unfinished_mutations.empty())
         return;
 
+    const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    const bool share_nested_offsets = (*getSettings())[MergeTreeSetting::share_nested_offsets];
+
+    /// Expand a `Nested` group name to the physical columns it covers, so that a command naming the
+    /// group and a command naming one member are recognised as touching the same storage columns.
+    auto expand = [&](const String & name)
+    {
+        const Names expanded = getColumnNamesAffectedByDrop(metadata_snapshot->columns, name, share_nested_offsets);
+        return NameSet(expanded.begin(), expanded.end());
+    };
+
+    NameSet affected_column_names{command.column_name};
+    if (command.type == AlterCommand::DROP_COLUMN)
+        affected_column_names = expand(command.column_name);
+
     auto throw_exception = [] (
         const std::string & mutation_name,
         const std::string & action_name,
@@ -12757,7 +12796,18 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
             {
                 const std::string action = (command.type == AlterCommand::DROP_COLUMN) ? "drop" : "rename";
 
-                if (mutation_command.column_name == command.column_name)
+                /// The unfinished mutation may itself name a whole `Nested` group, so expand both
+                /// sides before comparing. A group-wide `CLEAR COLUMN n` and a later `DROP COLUMN n.a`
+                /// touch the same physical columns even though the raw names differ.
+                if (mutation_command.type == MutationCommand::Type::DROP_COLUMN
+                    || mutation_command.type == MutationCommand::Type::RENAME_COLUMN)
+                {
+                    const NameSet mutation_column_names = expand(mutation_command.column_name);
+                    if (std::ranges::any_of(
+                            mutation_column_names, [&](const auto & name) { return affected_column_names.contains(name); }))
+                        throw_exception(mutation_name, action, "column", command.column_name);
+                }
+                else if (affected_column_names.contains(mutation_command.column_name))
                     throw_exception(mutation_name, action, "column", command.column_name);
 
                 auto alter = mutation_command.ast();
@@ -12773,7 +12823,8 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     auto query_tree = buildQueryTree(predicate, local_context);
                     auto identifiers = collectIdentifiersFullNames(query_tree);
 
-                    if (identifiers.contains(command.column_name))
+                    if (std::ranges::any_of(
+                            affected_column_names, [&](const auto & column_name) { return identifiers.contains(column_name); }))
                         throw_exception(mutation_name, action, "column", command.column_name);
                 }
 
@@ -12782,7 +12833,7 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
                     for (const auto & child : alter->update_assignments->children)
                     {
                         const auto & assignment = child->as<ASTAssignment &>();
-                        if (assignment.column_name == command.column_name)
+                        if (affected_column_names.contains(assignment.column_name))
                             throw_exception(mutation_name, action, "column", command.column_name);
 
                         ASTPtr assignment_expression = assignment.expression();
@@ -12790,7 +12841,8 @@ void MergeTreeData::checkDropOrRenameCommandDoesntAffectInProgressMutations(
 
                         auto query_tree = buildQueryTree(assignment_expression, local_context);
                         auto identifiers = collectIdentifiersFullNames(query_tree);
-                        if (identifiers.contains(command.column_name))
+                        if (std::ranges::any_of(
+                                affected_column_names, [&](const auto & column_name) { return identifiers.contains(column_name); }))
                             throw_exception(mutation_name, action, "column", command.column_name);
                     }
                 }

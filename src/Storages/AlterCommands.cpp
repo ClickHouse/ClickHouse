@@ -723,8 +723,10 @@ void AlterCommand::apply(
     StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets, const ColumnsDescription * columns_before_alter) const
 {
     /// Helper function for column existence check with IF EXISTS
-    auto should_skip_column_operation = [&]() -> bool {
-        return if_exists && !metadata.columns.has(column_name);
+    auto should_skip_column_operation = [&]() -> bool
+    {
+        return if_exists && !metadata.columns.has(column_name)
+            && (type != DROP_COLUMN || !share_nested_offsets || !metadata.columns.hasNested(column_name));
     };
 
     if (type == ADD_COLUMN)
@@ -2272,6 +2274,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         {
             if (all_columns.has(command.column_name) || (share_nested && all_columns.hasNested(command.column_name)))
             {
+                const auto affected_column_names = getColumnNamesAffectedByDrop(all_columns, command.column_name, share_nested);
+                const NameSet dropped_column_names(affected_column_names.begin(), affected_column_names.end());
+
                 if (!command.clear) /// CLEAR column is Ok even if there are dependencies.
                 {
                     /// Check if we are going to DROP a column that some other columns depend on.
@@ -2295,7 +2300,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                     for (const auto & selected_column : table_expression->getSelectedColumnsNames())
                                     {
                                         auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, selected_column);
-                                        if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
+                                        if (column_name_and_type && dropped_column_names.contains(column_name_and_type->getNameInStorage()))
                                             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                     }
                                 }
@@ -2314,7 +2319,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                                 for (const auto & required_column : actions->getRequiredColumns())
                                 {
                                     auto column_name_and_type = all_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::All, required_column);
-                                    if (column_name_and_type && column_name_and_type->getNameInStorage() == command.column_name)
+                                    if (column_name_and_type && dropped_column_names.contains(column_name_and_type->getNameInStorage()))
                                         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot drop column {}, because column {} depends on it", backQuote(command.column_name), backQuote(column.name));
                                 }
                             }
@@ -2583,6 +2588,30 @@ MutationCommands AlterCommands::getMutationCommands(StorageInMemoryMetadata meta
     }
 
     return result;
+}
+
+Names getColumnNamesAffectedByDrop(const ColumnsDescription & columns, const String & column_name, bool share_nested_offsets)
+{
+    if (!share_nested_offsets)
+        return {column_name};
+
+    /// With `flatten_nested = 1` the group is stored as the flattened columns `<name>.*` and there is
+    /// no column named `<name>`, so the name denotes the whole group.
+    if (!columns.has(column_name) && columns.hasNested(column_name))
+    {
+        Names nested_column_names;
+        for (const auto & nested_column : columns.getNested(column_name))
+            nested_column_names.push_back(nested_column.name);
+        return nested_column_names;
+    }
+
+    /// With `flatten_nested = 0` the group is one real column, but a materialized view selects its
+    /// members by their full names (`<name>.<member>`), and dependent-view keys record those names
+    /// verbatim. Dropping the storage column removes the members too, so report them as well.
+    Names names{column_name};
+    for (const auto & subcolumn : columns.getSubcolumns(column_name))
+        names.push_back(subcolumn.name);
+    return names;
 }
 
 }
