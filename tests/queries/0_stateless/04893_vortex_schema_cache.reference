@@ -1,0 +1,15 @@
+n	Nullable(UInt64)					
+s	Nullable(String)					
+t	Tuple(\n    `1` Nullable(UInt64),\n    `2` Nullable(String))					
+n	UInt64					
+s	String					
+t	Tuple(\n    `1` UInt64,\n    `2` String)					
+n	Nullable(UInt64)					
+s	Nullable(String)					
+t	Tuple(\n    `1` Nullable(UInt64),\n    `2` Nullable(String))					
+n	UInt64					
+s	String					
+t	Tuple(\n    `1` UInt64,\n    `2` String)					
+4
+schema cache hits	1
+geoparquet cache keys	2	2

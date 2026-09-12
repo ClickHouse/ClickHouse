@@ -1,0 +1,10 @@
+Schema inference:
+x	Nullable(Nothing)					
+arr	Array(Nullable(Nothing))					
+y	Nullable(Nothing)					
+Round trip:
+\N	[]	\N
+\N	[]	\N
+\N	[]	\N
+Count:
+3

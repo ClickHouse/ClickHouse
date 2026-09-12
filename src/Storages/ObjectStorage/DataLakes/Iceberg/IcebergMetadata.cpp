@@ -1382,9 +1382,12 @@ bool IcebergMetadata::shouldReloadSchemaForConsistency(ContextPtr) const
 void IcebergMetadata::modifyFormatSettings(FormatSettings & format_settings, const Context & local_context) const
 {
     if (!local_context.getSettingsRef()[Setting::use_roaring_bitmap_iceberg_positional_deletes].value)
+    {
         /// IcebergStreamingPositionDeleteTransform requires increasing row numbers from both the
         /// data reader and the deletes reader.
         format_settings.parquet.preserve_order = true;
+        format_settings.vortex.preserve_order = true;
+    }
 }
 
 void IcebergMetadata::addDeleteTransformers(

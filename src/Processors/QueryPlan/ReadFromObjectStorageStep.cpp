@@ -81,7 +81,8 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     if (!filter_actions_dag)
         return;
 
-    if (boost::iequals(configuration->format, "Parquet") || boost::iequals(configuration->format, "ORC"))
+    if (boost::iequals(configuration->format, "Parquet") || boost::iequals(configuration->format, "ORC")
+        || boost::iequals(configuration->format, "Vortex"))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -129,6 +130,10 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
         query_info.prewhere_info);
+    // Delete transforms in data lakes need row numbers
+    format_filter_info->need_row_numbers = lazy_row_index_registry != nullptr
+        || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns)
+        || configuration->isDataLakeConfiguration();
 
     for (size_t i = 0; i < num_streams; ++i)
     {
@@ -202,8 +207,8 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
 
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
-    /// Only the Parquet reader supports both.
-    if (!boost::iequals(configuration->format, "Parquet"))
+    /// Only the Parquet and Vortex readers support both.
+    if (!boost::iequals(configuration->format, "Parquet") && !boost::iequals(configuration->format, "Vortex"))
         return false;
 
     /// Data lakes can have per-file formats, deletes, and schema evolution; the configuration

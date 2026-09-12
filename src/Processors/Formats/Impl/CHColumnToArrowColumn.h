@@ -33,6 +33,12 @@ public:
         bool use_64_bit_indexes_for_dictionary = false;
         /// Output Date as UInt16 instead of Arrow DATE32 for backward compatibility.
         bool output_date_as_uint16 = false;
+        /// Output DateTime as Arrow TIMESTAMP with second precision instead of UInt32,
+        /// so the temporal type survives a round-trip through the format.
+        bool output_datetime_as_timestamp = false;
+        /// Output the Nothing type (e.g. `SELECT NULL`) as the Arrow Null type.
+        /// By default such columns raise an UNKNOWN_TYPE exception.
+        bool output_nothing_as_null = false;
         /// Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
         bool output_unsupported_types_as_binary = false;
     };
