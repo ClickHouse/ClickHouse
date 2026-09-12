@@ -89,10 +89,11 @@ static int compareValuesWithOffset(const IColumn * _compared_column,
     const auto * reference_column = assert_cast<const ColumnType *>(
         _reference_column);
 
-    using ValueType = typename ColumnType::ValueType;
+    // A `Decimal` column's value type is `Decimal<>`; the arithmetic below needs the underlying integer.
+    using ValueType = NativeType<typename ColumnType::ValueType>;
     // Note that the storage type of offset returned by get<> is different, so
     // we need to specify the type explicitly.
-    const ValueType offset = static_cast<ValueType>(_offset.safeGet<ValueType>());
+    const ValueType offset = static_cast<typename ColumnType::ValueType>(_offset.safeGet<typename ColumnType::ValueType>());
     chassert(offset >= 0);
 
     const auto compared_value_data = compared_column->getDataAt(compared_row);
@@ -191,14 +192,21 @@ APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int32>) \
 APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int64>) \
 APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnVector<Int128>) \
 \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnDecimal<Decimal32>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnDecimal<Decimal64>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnDecimal<Decimal128>) \
+APPLY_FOR_ONE_NEST_TYPE(FUNCTION, ColumnDecimal<Decimal256>) \
+\
 APPLY_FOR_ONE_NEST_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
 APPLY_FOR_ONE_NEST_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
 \
 else \
 { \
+    /* Dereferencing inside typeid() would trip -Wpotentially-evaluated-expression. */ \
+    const IColumn * nest_column_for_error = nest_compared_column.get(); \
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, \
         "The RANGE OFFSET frame for '{}' ORDER BY nest column is not implemented", \
-        demangle(typeid(nest_compared_column).name())); \
+        demangle(typeid(*nest_column_for_error).name())); \
 }
 
 // A specialization of compareValuesWithOffset for nullable.
@@ -263,6 +271,11 @@ APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int16>) \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int32>) \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int64>) \
 APPLY_FOR_ONE_TYPE(FUNCTION, ColumnVector<Int128>) \
+\
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnDecimal<Decimal32>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnDecimal<Decimal64>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnDecimal<Decimal128>) \
+APPLY_FOR_ONE_TYPE(FUNCTION, ColumnDecimal<Decimal256>) \
 \
 APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float32>) \
 APPLY_FOR_ONE_TYPE(FUNCTION##Float, ColumnVector<Float64>) \
@@ -403,7 +416,7 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
             if (accurateLess(window_description.frame.end_offset, Field(0)))
             {
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                    "Window frame start offset must be nonnegative, {} given",
+                    "Window frame end offset must be nonnegative, {} given",
                     window_description.frame.end_offset);
             }
         }
