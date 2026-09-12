@@ -2960,10 +2960,33 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             const auto & untuple_argument_projection_name = arguments_projection_names.at(0);
             result_projection_names.clear();
 
+            /// When `untuple` is the body of an inlined lambda (SQL UDF), the alias of the call it replaces applies to it
+            /// and takes priority over an alias inside the body, as in the old analyzer. The call is the top of the parent
+            /// scope's expression stack; nested calls are walked the same way, so the outermost alias wins.
+            String untuple_alias = node->getAlias();
+            const auto * current_scope = &scope;
+            const auto * current_node = node.get();
+            while (current_scope->parent_scope)
+            {
+                const auto * lambda_scope_node = current_scope->scope_node->as<LambdaNode>();
+                if (!lambda_scope_node || lambda_scope_node->getExpression().get() != current_node)
+                    break;
+
+                const auto & parent_expressions_stack = current_scope->parent_scope->expressions_in_resolve_process_stack;
+                if (parent_expressions_stack.empty())
+                    break;
+
+                const auto & call_node = parent_expressions_stack.getTop();
+                if (call_node->hasAlias())
+                    untuple_alias = call_node->getAlias();
+                current_node = call_node.get();
+                current_scope = current_scope->parent_scope;
+            }
+
             for (const auto & element_name : element_names)
             {
-                if (node->hasAlias())
-                    result_projection_names.push_back(node->getAlias() + '.' + element_name);
+                if (!untuple_alias.empty())
+                    result_projection_names.push_back(untuple_alias + '.' + element_name);
                 else
                     result_projection_names.push_back(fmt::format("tupleElement({}, '{}')", untuple_argument_projection_name, element_name));
             }
