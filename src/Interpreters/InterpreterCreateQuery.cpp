@@ -3887,9 +3887,9 @@ void InterpreterCreateQuery::processSQLSecurityOption(ContextMutablePtr context_
 void InterpreterCreateQuery::convertMergeTreeTableIfPossible(ASTCreateQuery & create, DatabasePtr database, bool to_replicated)
 {
     /// Check engine can be changed
-    if (database->getEngineName() != "Atomic")
+    if (database->getEngineName() != "Atomic" && database->getEngineName() != "Ordinary")
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Table engine conversion to replicated is supported only for Atomic databases");
+            "Table engine conversion to replicated is supported only for Atomic and Ordinary databases");
 
     if (!create.storage || !create.storage->engine || !create.storage->engine->name.contains("MergeTree"))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,

@@ -72,7 +72,6 @@ namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int UNKNOWN_DATABASE_ENGINE;
-    extern const int NOT_IMPLEMENTED;
     extern const int UNEXPECTED_NODE_IN_ZOOKEEPER;
     extern const int UNKNOWN_TABLE;
     extern const int QUERY_IS_TOO_LARGE;
@@ -87,6 +86,16 @@ extern const DatabaseMetadataDiskSettingsUInt64 max_tables;
 
 
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
+
+static String getReplicaPath(const ASTCreateQuery & create_query, ContextPtr local_context)
+{
+    if (create_query.uuid == UUIDHelpers::Nil)
+    {
+        return "/clickhouse/tables/{database}/{table}";
+    }
+
+    return local_context->getServerSettings()[ServerSetting::default_replica_path];
+}
 
 DatabaseOrdinary::DatabaseOrdinary(
     const String & name_, const String & metadata_path_, ContextPtr context_, DatabaseMetadataDiskSettings database_metadata_disk_settings_)
@@ -134,8 +143,7 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
     info.expand_special_macros_only = false;
 
     auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::checkReplicaPathExists");
-    const auto & server_settings = local_context->getServerSettings();
-    String replica_path = server_settings[ServerSetting::default_replica_path];
+    String replica_path = getReplicaPath(create_query, local_context);
     String zookeeper_path = local_context->getMacros()->expand(replica_path, info);
     if (local_context->getZooKeeper()->exists(zookeeper_path))
         throw Exception(
@@ -152,7 +160,7 @@ void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_quer
     /// with '/' applies to a genuinely new table, not to a template this server has long been expanding.
     const auto & server_settings = local_context->getServerSettings();
     TableZnodeInfo::resolve(
-        server_settings[ServerSetting::default_replica_path],
+        getReplicaPath(create_query, local_context),
         server_settings[ServerSetting::default_replica_name],
         StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid),
         create_query,
@@ -171,7 +179,7 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     if (replicated)
     {
         const auto & server_settings = local_context->getServerSettings();
-        String replica_path = server_settings[ServerSetting::default_replica_path];
+        String replica_path = getReplicaPath(create_query, local_context);
         String replica_name = server_settings[ServerSetting::default_replica_name];
 
         args->children.push_back(make_intrusive<ASTLiteral>(replica_path));
@@ -241,10 +249,6 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
     if (!checking_disk->existsFile(convert_to_replicated_flag_path))
         return;
-
-    if (getUUID() == UUIDHelpers::Nil)
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Table engine conversion to replicated is supported only for Atomic databases. Convert your database engine to Atomic first.");
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
