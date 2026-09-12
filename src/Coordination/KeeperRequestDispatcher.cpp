@@ -725,7 +725,7 @@ void KeeperRequestDispatcher::dispatchThread()
                 /// Read request must be executed after all previous requests from the same session.
                 /// There are 3 cases:
                 ///  (1) Reads that depend on some earlier writes in the batch we're making.
-                ///      Put them in the batch's `reads`.
+                ///      Put them in the batch's `intermediate_reads`.
                 ///  (2) Reads that depend on some writes in an earlier batch that is not committed yet.
                 ///      Add them to that batch's `late_reads`.
                 ///  (3) Reads from sessions that have no writes in progress.
@@ -862,6 +862,7 @@ void KeeperRequestDispatcher::dispatchThread()
                             chassert(!requests.empty());
                             if (session)
                                 session->reordering_version = current_reordering_version;
+                            initializeWaitForWriteSpan(request);
                             late_reads.push_back(std::move(request));
                         }
                         else
@@ -1017,6 +1018,29 @@ void KeeperRequestDispatcher::addErrorResponse(const KeeperRequestForSession & r
     onResponse(std::move(response_for_session));
 }
 
+void KeeperRequestDispatcher::initializeWaitForWriteSpan(const KeeperRequestForSession & read_request)
+{
+    read_request.request->spans.maybeInitialize(
+        KeeperSpan::ReadWaitForWrite, read_request.request->tracing_context.get());
+}
+
+void KeeperRequestDispatcher::finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads)
+{
+    for (const auto & read_request : reads)
+    {
+        read_request.request->spans.maybeFinalize(
+            KeeperSpan::ReadWaitForWrite,
+            [&]
+            {
+                return std::vector<OpenTelemetry::SpanAttribute>{
+                    {"keeper.operation", Coordination::opNumToString(read_request.request->getOpNum())},
+                    {"keeper.session_id", read_request.session_id},
+                    {"keeper.xid", read_request.request->xid},
+                };
+            });
+    }
+}
+
 void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_for_session)
 {
     /// When Close commits, mark the session as dead so that
@@ -1071,6 +1095,8 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
         auto reads = std::move(batch.intermediate_reads[batch.intermediate_reads_idx].second);
         batch.intermediate_reads_idx += 1;
 
+        finalizeWaitForWriteSpans(reads);
+
         /// (We could re-check whether the requests' sessions are still alive, but it doesn't seem
         ///  worth the map lookup cost. We already checked session liveness just before starting
         ///  this raft batch, and hopefully raft commit latency doesn't get high in practice even
@@ -1104,6 +1130,7 @@ void KeeperRequestDispatcher::onCommit(const KeeperRequestForSession & request_f
             auto reads = batch.late_reads.takeAndFinishIfEmpty();
             if (reads.empty())
                 break;
+            finalizeWaitForWriteSpans(reads);
             executeReads(std::move(reads));
         }
 

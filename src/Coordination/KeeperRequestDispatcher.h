@@ -126,6 +126,9 @@ public:
 private:
     friend class KeeperRequestDispatcherTestAccessor;
 
+    static void initializeWaitForWriteSpan(const KeeperRequestForSession & read_request);
+    static void finalizeWaitForWriteSpans(const KeeperRequestsForSessions & reads);
+
     /// Suppose we get a write request from some session and put it in batch B and send that
     /// batch to leader. While B is still in flight, we get a read request from the same session.
     /// We'd like to execute that read as soon as B is committed. So we want a list of such
@@ -140,6 +143,7 @@ private:
         {
             if (!lock())
                 return false;
+            initializeWaitForWriteSpan(request_for_session);
             reads.push_back(std::move(request_for_session));
             unlock(Status::Available);
             return true;
@@ -254,6 +258,7 @@ private:
         {
             committed_requests = 0;
             intermediate_reads_idx = 0;
+
             late_reads.activate(std::move(initial_late_reads));
             active.store(true);
         }
