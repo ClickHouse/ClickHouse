@@ -313,11 +313,6 @@ private:
     NonblockingBoundedQueue<KeeperRequestForSession> requests_queue;
     std::atomic<int64_t> requests_queue_bytes {};
 
-    /// TODO: Currently responses to all requests are formed on all nodes, and go through this queue
-    ///       and through responseThread and session id lookup on all nodes, and all except one node
-    ///       discard the response. Consider adding server id to the request so that we can tell
-    ///       early that response is not needed. It would also save time in
-    ///       KeeperRequestDispatcher::onCommit, we won't have to check most requests against the queue.
     /// TODO: Maybe we should remove this and pass responses directly to KeeperTCPHandler queues.
     ///       But this intermediate queue may in theory improve performance: it's much cheaper to
     ///       push a batch of responses to this queue than to push individual responses to the

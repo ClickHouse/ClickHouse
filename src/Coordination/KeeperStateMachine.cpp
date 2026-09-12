@@ -222,12 +222,18 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 
         if (entry && entry->get_val_type() == nuraft::log_val_type::app_log)
         {
-            auto request_for_session = parseRequest(entry->get_buf(), /*final=*/false);
-            if (!request_for_session->zxid)
-                request_for_session->zxid = log_idx;
-            request_for_session->log_idx = log_idx;
+            auto batch = parseRequestBatch(entry->get_buf(), /*final=*/false);
+            if (batch->first_zxid == 0)
+            {
+                /// A legacy entry from an older node that didn't assign zxids;
+                /// use the log_idx as the zxid, like the older nodes do on commit.
+                if (batch->requests.size() != 1)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch->requests.size());
+                batch->first_zxid = log_idx;
+            }
+            batch->log_idx = log_idx;
 
-            preprocess(*request_for_session, lock_mutex);
+            preprocessBatch(*batch, lock_mutex);
         }
 
         if ((i + 1) % 50000 == 0)
@@ -238,32 +244,6 @@ void KeeperStateMachine::preprocessUncommittedLogEntries(uint64_t start_idx, uin
 
 namespace
 {
-
-void assertDigest(
-    const KeeperDigest & expected,
-    const KeeperDigest & actual,
-    const Coordination::ZooKeeperRequest & request,
-    uint64_t log_idx,
-    uint64_t session_id,
-    bool committing)
-{
-    if (!KeeperStorage::checkDigest(expected, actual))
-    {
-        LOG_FATAL(
-            getLogger("KeeperStateMachine"),
-            "Digest for nodes is not matching after {} request of type '{}' at log index {} for session {}.\nExpected digest - {}, actual digest - {} "
-            "(digest {}). Keeper will terminate to avoid inconsistencies.\nExtra information about the request:\n{}",
-            committing ? "committing" : "preprocessing",
-            request.getOpNum(),
-            log_idx,
-            session_id,
-            expected.value,
-            actual.value,
-            expected.version,
-            request.toString());
-        std::terminate();
-    }
-}
 
 /// Macros to construct timed lock guards for state_machine_storage_mutex with appropriate ProfileEvents.
 /// We cannot use a factory function because TSA does not track lock ownership across function boundaries.
@@ -281,6 +261,15 @@ union XidHelper
         uint32_t upper;
     } parts;
     int64_t xid;
+};
+
+/// Requests with these xids don't go through the parsed request cache.
+constexpr std::array non_cacheable_xids{
+    Coordination::WATCH_XID,
+    Coordination::PING_XID,
+    Coordination::AUTH_XID,
+    Coordination::CLOSE_XID,
+    Coordination::CLOSE_XID_64,
 };
 
 }
@@ -312,51 +301,57 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::pre_commit(uint64_t log_idx, nur
     if (!keeper_context->localLogsPreprocessed())
         return result;
 
-    auto request_for_session = parseRequest(data, /*final=*/false);
-    if (!request_for_session->zxid)
-        request_for_session->zxid = log_idx;
-
-    request_for_session->log_idx = log_idx;
-
-    const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+    auto batch = parseRequestBatch(data, /*final=*/false);
+    if (batch->first_zxid == 0)
     {
-        request_for_session->request->spans.maybeInitialize(
-            KeeperSpan::PreCommit,
-            request_for_session->request->tracing_context.get(),
-            start_time_us);
+        if (batch->requests.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch->requests.size());
+        batch->first_zxid = log_idx;
+    }
 
-        request_for_session->request->spans.maybeFinalize(
-            KeeperSpan::PreCommit,
-            [&]
-            {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                    {"keeper.session_id", request_for_session->session_id},
-                    {"keeper.xid", request_for_session->request->xid},
-                    {"raft.log_idx", log_idx},
-                };
-            },
-            status,
-            error_message);
+    batch->log_idx = log_idx;
+
+    const auto maybe_log_opentelemetry_spans = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+    {
+        for (const auto & request_for_session : batch->requests)
+        {
+            request_for_session.request->spans.maybeInitialize(
+                KeeperSpan::PreCommit,
+                request_for_session.request->tracing_context.get(),
+                start_time_us);
+
+            request_for_session.request->spans.maybeFinalize(
+                KeeperSpan::PreCommit,
+                [&]
+                {
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request_for_session.request->getOpNum())},
+                        {"keeper.session_id", request_for_session.session_id},
+                        {"keeper.xid", request_for_session.request->xid},
+                        {"raft.log_idx", log_idx},
+                    };
+                },
+                status,
+                error_message);
+        }
     };
 
     try
     {
-        preprocess(*request_for_session, /*lock_mutex=*/ true);
+        preprocessBatch(*batch, /*lock_mutex=*/ true);
     }
     catch (...)
     {
-        maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+        maybe_log_opentelemetry_spans(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
         throw;
     }
 
-    maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
+    maybe_log_opentelemetry_spans(OpenTelemetry::SpanStatus::OK, "");
 
     return result;
 }
 
-// Serialize the request for the log entry
-nuraft::ptr<nuraft::buffer> KeeperStateMachine::getZooKeeperLogEntry(const KeeperRequestForSession & request_for_session)
+nuraft::ptr<nuraft::buffer> KeeperStateMachine::serializeRequestInOldFormat(const KeeperRequestForSession & request_for_session)
 {
     DB::WriteBufferFromNuraftBuffer write_buf;
     DB::writeIntBinary(request_for_session.session_id, write_buf);
@@ -394,17 +389,30 @@ nuraft::ptr<nuraft::buffer> KeeperStateMachine::getZooKeeperLogEntry(const Keepe
     return write_buf.getBuffer();
 }
 
-std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
-    nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * request_end_position)
+bool KeeperStateMachine::shouldCacheParsedEntry(int64_t session_id, int64_t xid, size_t entry_size) const
+{
+    return min_request_size_to_cache != 0 && session_id != -1
+        && session_id != keeper_internal_ttl_garbage_collector_session_id
+        && session_id != keeper_internal_container_garbage_collector_session_id
+        && entry_size >= min_request_size_to_cache
+        && std::all_of(
+            non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
+}
+
+KeeperRequestBatchPtr KeeperStateMachine::parseRequestInOldFormat(
+    nuraft::buffer & data,
+    bool final,
+    ZooKeeperLogSerializationVersion * serialization_version,
+    size_t * patched_fields_offset)
 {
     ReadBufferFromNuraftBuffer buffer(data);
-    auto request_for_session = std::make_shared<KeeperRequestForSession>();
-    readIntBinary(request_for_session->session_id, buffer);
+    int64_t session_id = 0;
+    readIntBinary(session_id, buffer);
 
     int32_t length = 0;
     Coordination::read(length, buffer);
     /// Request should not exceed max_request_size (this is verified in KeeperTCPHandler)
-    if (length < 0)
+    if (length < static_cast<int32_t>(sizeof(uint32_t)))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid request length: {}", length);
 
     /// because of backwards compatibility, only 32bit xid could be written
@@ -418,33 +426,35 @@ std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
     auto buffer_position = buffer.getPosition();
     buffer.seek(length - sizeof(uint32_t), SEEK_CUR);
 
-    if (request_end_position)
-        *request_end_position = buffer.getPosition();
+    if (patched_fields_offset)
+        *patched_fields_offset = buffer.getPosition();
 
     using enum ZooKeeperLogSerializationVersion;
     ZooKeeperLogSerializationVersion version = INITIAL;
 
+    int64_t time = 0;
+    int64_t zxid = 0;
+    KeeperDigest digest;
+
     if (!buffer.eof())
     {
         version = WITH_TIME;
-        readIntBinary(request_for_session->time, buffer);
+        readIntBinary(time, buffer);
     }
     else
-        request_for_session->time
-            = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+        time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
 
     if (!buffer.eof())
     {
         version = WITH_ZXID_DIGEST;
 
-        readIntBinary(request_for_session->zxid, buffer);
+        readIntBinary(zxid, buffer);
 
         chassert(!buffer.eof());
 
-        request_for_session->digest.emplace();
-        readIntBinary(request_for_session->digest->version, buffer);
-        if (request_for_session->digest->version != KeeperDigestVersion::NO_DIGEST || !buffer.eof())
-            readIntBinary(request_for_session->digest->value, buffer);
+        readIntBinary(digest.version, buffer);
+        if (digest.version != KeeperDigestVersion::NO_DIGEST || !buffer.eof())
+            readIntBinary(digest.value, buffer);
     }
 
     if (!buffer.eof())
@@ -469,108 +479,319 @@ std::shared_ptr<KeeperRequestForSession> KeeperStateMachine::parseRequest(
     if (serialization_version)
         *serialization_version = version;
 
-    int64_t xid = xid_helper.xid;
-
-    buffer.seek(buffer_position, SEEK_SET);
-
-    static constexpr std::array non_cacheable_xids{
-        Coordination::WATCH_XID,
-        Coordination::PING_XID,
-        Coordination::AUTH_XID,
-        Coordination::CLOSE_XID,
-        Coordination::CLOSE_XID_64,
-    };
-
-    const bool should_cache
-        = min_request_size_to_cache != 0 && request_for_session->session_id != -1
-        && request_for_session->session_id != keeper_internal_ttl_garbage_collector_session_id && data.size() >= min_request_size_to_cache
-        && std::all_of(
-              non_cacheable_xids.begin(), non_cacheable_xids.end(), [&](const auto non_cacheable_xid) { return xid != non_cacheable_xid; });
+    const int64_t xid = xid_helper.xid;
+    const bool should_cache = shouldCacheParsedEntry(session_id, xid, data.size());
 
     if (should_cache)
     {
         std::lock_guard lock(request_cache_mutex);
-        if (auto xid_to_request_it = parsed_request_cache.find(request_for_session->session_id);
-            xid_to_request_it != parsed_request_cache.end())
+        if (auto xid_to_batch_it = parsed_batch_cache.find(session_id); xid_to_batch_it != parsed_batch_cache.end())
         {
-            auto & xid_to_request = xid_to_request_it->second;
-            if (auto request_it = xid_to_request.find(xid); request_it != xid_to_request.end())
+            auto & xid_to_batch = xid_to_batch_it->second;
+            if (auto batch_it = xid_to_batch.find(xid); batch_it != xid_to_batch.end())
             {
+                auto batch = batch_it->second;
+                chassert(batch->requests.size() == 1);
+                /// Reapply the patchable fields on every parse: the leader may have patched the
+                /// buffer in place since a previous parse cached the entry.
+                batch->first_zxid = zxid;
+                batch->digest = digest;
                 if (final)
-                {
-                    auto request = std::move(request_it->second);
-                    xid_to_request.erase(request_it);
-                    return request;
-                }
-                return request_it->second;
+                    xid_to_batch.erase(batch_it);
+                return batch;
             }
         }
     }
 
+    buffer.seek(buffer_position, SEEK_SET);
+
     Coordination::OpNum opnum = {};
     Coordination::read(opnum, buffer);
 
-    request_for_session->request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
-    request_for_session->request->xid = xid;
-    request_for_session->request->readImpl(buffer);
+    auto batch = std::make_shared<KeeperRequestBatch>();
+    batch->first_zxid = zxid;
+    batch->digest = digest;
+    auto & request_for_session = batch->requests.emplace_back();
+    request_for_session.session_id = session_id;
+    request_for_session.time = time;
+    request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+    request_for_session.request->xid = xid;
+    request_for_session.request->readImpl(buffer);
 
     if (tracing_context)
-        request_for_session->request->tracing_context = std::move(tracing_context);
+        request_for_session.request->tracing_context = std::move(tracing_context);
 
     if (should_cache && !final)
     {
         std::lock_guard lock(request_cache_mutex);
-        parsed_request_cache[request_for_session->session_id].emplace(xid, request_for_session);
+        parsed_batch_cache[session_id].emplace(xid, batch);
     }
 
-    return request_for_session;
+    return batch;
 }
 
-std::optional<KeeperDigest> KeeperStateMachine::preprocess(const KeeperRequestForSession & request_for_session, bool lock_mutex) TSA_NO_THREAD_SAFETY_ANALYSIS
+std::vector<nuraft::ptr<nuraft::buffer>> KeeperStateMachine::serializeRequestBatch(const KeeperRequestBatch & batch, bool use_batched_format)
 {
-    const auto op_num = request_for_session.request->getOpNum();
+    chassert(!batch.requests.empty());
 
-    KeeperDigest digest_after_preprocessing;
+    if (!use_batched_format)
+    {
+        /// Legacy format: one log entry per request, for compatibility with older servers.
+        std::vector<nuraft::ptr<nuraft::buffer>> entries;
+        entries.reserve(batch.requests.size());
+        for (const auto & request_for_session : batch.requests)
+            entries.push_back(serializeRequestInOldFormat(request_for_session));
+        return entries;
+    }
+
+    DB::WriteBufferFromNuraftBuffer write_buf;
+
+    writeIntBinary(BATCH_ENTRY_MARKER, write_buf);
+    /// New fields can be added at the end of header, increasing header_size. parseRequestBatch will
+    /// silently skip them. For forward-incompatible changes (while we'll hopefully never need),
+    /// increment BATCH_ENTRY_MARKER to make old parseRequestBatch reject the entry.
+    constexpr uint32_t header_size = BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET
+        + sizeof(int64_t) /*committed_log_idx*/ + sizeof(int64_t) /*first_zxid*/ + sizeof(uint8_t)
+        + sizeof(uint64_t) /*digest*/ + sizeof(int32_t) /*dispatcher_server_id*/
+        + sizeof(uint32_t) /*request count*/;
+    writeIntBinary(header_size, write_buf);
+
+    /// Patchable fields. On the dispatcher side these are placeholders (zxids are not assigned
+    /// yet); the leader overwrites them in place in the PreAppendLogLeader callback
+    /// (patchSerializedRequestBatch).
+    chassert(write_buf.offset() == BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET);
+    writeIntBinary(batch.first_zxid, write_buf);
+    writeIntBinary(static_cast<uint8_t>(batch.digest.version), write_buf);
+    writeIntBinary(batch.digest.value, write_buf);
+    writeIntBinary(batch.committed_log_idx, write_buf);
+
+    writeIntBinary(batch.dispatcher_server_id, write_buf);
+    writeIntBinary(static_cast<uint32_t>(batch.requests.size()), write_buf);
+
+    for (const auto & request_for_session : batch.requests)
+    {
+        const auto & request = request_for_session.request;
+
+        writeIntBinary(request_for_session.session_id, write_buf);
+        writeIntBinary(request->xid, write_buf);
+        writeIntBinary(request_for_session.time, write_buf);
+
+        writeIntBinary(static_cast<uint8_t>(request->tracing_context != nullptr), write_buf);
+        if (request->tracing_context)
+            request->tracing_context->serialize(write_buf);
+
+        /// Similarly to header_size, new fields can be added after the request.
+        uint32_t request_size = static_cast<uint32_t>(Coordination::size(request->getOpNum()) + request->sizeImpl());
+        writeIntBinary(request_size, write_buf);
+        Coordination::write(request->getOpNum(), write_buf);
+        request->writeImpl(write_buf);
+    }
+
+    return {write_buf.getBuffer()};
+}
+
+void KeeperStateMachine::patchSerializedRequestBatch(
+    nuraft::buffer & data, ZooKeeperLogSerializationVersion serialization_version, size_t patched_fields_offset, const KeeperRequestBatch & batch)
+{
+    chassert(data.size() > patched_fields_offset);
+    if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::REQUEST_BATCH)
+        chassert(batch.requests.size() == 1);
+
+    auto * fields_start = reinterpret_cast<BufferBase::Position>(data.data_begin() + patched_fields_offset);
+    WriteBufferFromPointer write_buf(fields_start, data.size() - patched_fields_offset);
+    if (serialization_version < KeeperStateMachine::ZooKeeperLogSerializationVersion::REQUEST_BATCH)
+        writeIntBinary(batch.requests[0].time, write_buf);
+    writeIntBinary(batch.first_zxid, write_buf);
+    writeIntBinary(static_cast<uint8_t>(batch.digest.version), write_buf);
+    writeIntBinary(batch.digest.value, write_buf);
+    if (serialization_version >= KeeperStateMachine::ZooKeeperLogSerializationVersion::REQUEST_BATCH)
+        writeIntBinary(batch.committed_log_idx, write_buf);
+    write_buf.finalize();
+}
+
+KeeperRequestBatchPtr KeeperStateMachine::parseRequestBatch(
+    nuraft::buffer & data, bool final, ZooKeeperLogSerializationVersion * serialization_version, size_t * patched_fields_offset)
+{
+    ReadBufferFromNuraftBuffer buffer(data);
+
+    int64_t marker = 0;
+    readIntBinary(marker, buffer);
+
+    if (marker != BATCH_ENTRY_MARKER)
+    {
+        /// Legacy format: the entry is a single request, and `marker` is its session id.
+        /// For legacy versions `patched_fields_offset` is the request end position; which
+        /// patchable fields follow it is determined by `serialization_version`.
+        return parseRequestInOldFormat(data, final, serialization_version, patched_fields_offset);
+    }
+
+    if (serialization_version)
+        *serialization_version = ZooKeeperLogSerializationVersion::REQUEST_BATCH;
+    if (patched_fields_offset)
+        *patched_fields_offset = BATCH_ENTRY_PATCHABLE_FIELDS_OFFSET;
+
+    uint32_t header_size = 0;
+    readIntBinary(header_size, buffer);
+
+    int64_t committed_log_idx = 0;
+    int64_t first_zxid = 0;
+    KeeperDigest digest;
+    readIntBinary(first_zxid, buffer);
+    uint8_t digest_version = 0;
+    readIntBinary(digest_version, buffer);
+    digest.version = static_cast<KeeperDigestVersion>(digest_version);
+    readIntBinary(digest.value, buffer);
+    readIntBinary(committed_log_idx, buffer);
+
+    int32_t dispatcher_server_id = -1;
+    readIntBinary(dispatcher_server_id, buffer);
+    uint32_t request_count = 0;
+    readIntBinary(request_count, buffer);
+
+    /// Skip header fields appended by future format extensions.
+    if (header_size < static_cast<size_t>(buffer.getPosition()) || header_size > data.size())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA, "Corrupted batch log entry: invalid header size {} in entry of {} bytes", header_size, data.size());
+    buffer.seek(header_size, SEEK_SET);
+
+    /// Loose lower bound on the serialized size of one request, only used to reject corrupted
+    /// counts before reserving memory.
+    constexpr size_t min_request_record_size = 3 * sizeof(int64_t) + sizeof(uint8_t) + sizeof(uint32_t) + sizeof(int32_t);
+    if (request_count == 0 || request_count > (data.size() - header_size) / min_request_record_size)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA, "Corrupted batch log entry: {} requests don't fit in {} bytes", request_count, data.size());
+
+    /// Reapply the patchable fields on every parse: the leader may have patched the buffer in
+    /// place since a previous parse cached the batch.
+    const auto update_patched_fields = [&](KeeperRequestBatch & batch)
+    {
+        batch.committed_log_idx = committed_log_idx;
+        batch.first_zxid = first_zxid;
+        batch.digest = digest;
+    };
+
+    /// The batch cache is keyed by (session_id, xid) of the first request.
+    int64_t first_session_id = 0;
+    int64_t first_xid = 0;
+    readIntBinary(first_session_id, buffer);
+    readIntBinary(first_xid, buffer);
+    buffer.seek(header_size, SEEK_SET);
+
+    const bool should_cache = shouldCacheParsedEntry(first_session_id, first_xid, data.size());
+
+    if (should_cache)
+    {
+        std::lock_guard lock(request_cache_mutex);
+        if (auto xid_to_batch_it = parsed_batch_cache.find(first_session_id); xid_to_batch_it != parsed_batch_cache.end())
+        {
+            auto & xid_to_batch = xid_to_batch_it->second;
+            if (auto batch_it = xid_to_batch.find(first_xid); batch_it != xid_to_batch.end())
+            {
+                auto batch = batch_it->second;
+                chassert(batch->requests.size() == request_count);
+                update_patched_fields(*batch);
+                if (final)
+                    xid_to_batch.erase(batch_it);
+                return batch;
+            }
+        }
+    }
+
+    auto batch = std::make_shared<KeeperRequestBatch>();
+    batch->dispatcher_server_id = dispatcher_server_id;
+    batch->requests.reserve(request_count);
+
+    for (uint32_t i = 0; i < request_count; ++i)
+    {
+        auto & request_for_session = batch->requests.emplace_back();
+        readIntBinary(request_for_session.session_id, buffer);
+        int64_t xid = 0;
+        readIntBinary(xid, buffer);
+        readIntBinary(request_for_session.time, buffer);
+
+        uint8_t has_tracing_context = 0;
+        readIntBinary(has_tracing_context, buffer);
+        std::shared_ptr<OpenTelemetry::TracingContext> tracing_context;
+        if (has_tracing_context)
+        {
+            tracing_context = std::make_shared<OpenTelemetry::TracingContext>();
+            tracing_context->deserialize(buffer);
+        }
+
+        uint32_t request_size = 0;
+        readIntBinary(request_size, buffer);
+        const size_t body_end_position = static_cast<size_t>(buffer.getPosition()) + request_size;
+        if (body_end_position > data.size())
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA, "Corrupted batch log entry: request {} of {} exceeds the entry", i, request_count);
+
+        Coordination::OpNum opnum = {};
+        Coordination::read(opnum, buffer);
+        request_for_session.request = Coordination::ZooKeeperRequestFactory::instance().get(opnum);
+        request_for_session.request->xid = xid;
+        request_for_session.request->readImpl(buffer);
+        if (static_cast<size_t>(buffer.getPosition()) > body_end_position)
+            throw Exception(
+                ErrorCodes::CORRUPTED_DATA,
+                "Corrupted batch log entry: request {} of {} has declared size {} but parsing consumed more",
+                i,
+                request_count,
+                request_size);
+        /// Skip request fields appended by future format extensions.
+        buffer.seek(body_end_position, SEEK_SET);
+
+        if (tracing_context)
+            request_for_session.request->tracing_context = std::move(tracing_context);
+    }
+
+    if (static_cast<size_t>(buffer.getPosition()) != data.size())
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Corrupted batch log entry: {} bytes left over after parsing {} requests",
+            data.size() - buffer.getPosition(),
+            request_count);
+
+    update_patched_fields(*batch);
+
+    if (should_cache && !final)
+    {
+        std::lock_guard lock(request_cache_mutex);
+        parsed_batch_cache[first_session_id].emplace(first_xid, batch);
+    }
+
+    return batch;
+}
+
+std::optional<KeeperDigest> KeeperStateMachine::preprocessBatch(const KeeperRequestBatch & batch, bool lock_mutex) TSA_NO_THREAD_SAFETY_ANALYSIS
+{
+    chassert(!batch.requests.empty());
+    chassert(batch.first_zxid != 0);
+
+    std::optional<KeeperDigest> digest_after_preprocessing;
     try
     {
         ProfiledSharedLock lock(state_machine_storage_mutex, ProfileEvents::KeeperStorageSharedLockWaitMicroseconds, std::defer_lock);
         if (lock_mutex)
             lock.lock();
 
-        if (op_num == Coordination::OpNum::SessionID || op_num == Coordination::OpNum::Reconfig)
-            return storage->getNodesDigest(false, /*lock_transaction_mutex=*/true);
-
-        if (storage->isFinalized())
-            return std::nullopt;
-
-        digest_after_preprocessing = storage->preprocessRequest(
-            request_for_session.request,
-            request_for_session.session_id,
-            request_for_session.time,
-            request_for_session.zxid,
-            true /* check_acl */,
-            request_for_session.digest,
-            request_for_session.log_idx);
+        digest_after_preprocessing = storage->preprocessBatch(batch, /*check_acl=*/true);
     }
     catch (...)
     {
         LOG_FATAL(
             log,
             "Failed to preprocess stored log at index {}: {}",
-            request_for_session.log_idx,
+            batch.log_idx,
             getCurrentExceptionMessage(true, true, false));
         LOG_FATAL(log, "Aborting to avoid inconsistent state");
         abort();
     }
 
-    if (keeper_context->digestEnabled() && request_for_session.digest)
-        assertDigest(
-            *request_for_session.digest,
-            digest_after_preprocessing,
-            *request_for_session.request,
-            request_for_session.log_idx,
-            request_for_session.session_id,
-            false);
+    if (!digest_after_preprocessing)
+        return std::nullopt;
+
+    if (keeper_context->digestEnabled())
+        assertDigest(batch, *digest_after_preprocessing, "preprocessing");
 
     return digest_after_preprocessing;
 }
@@ -590,7 +811,8 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
 
     const auto & request = static_cast<const Coordination::ZooKeeperReconfigRequest &>(*request_for_session.request);
     const int64_t session_id = request_for_session.session_id;
-    const int64_t zxid = request_for_session.zxid;
+    /// Reconfig requests don't go through raft, so they have no zxid.
+    const int64_t zxid = 0;
 
     using enum Coordination::Error;
     auto bad_request = [&](Coordination::Error code = ZBADARGUMENTS) -> KeeperResponseForSession
@@ -652,110 +874,126 @@ KeeperResponseForSession KeeperStateMachine::processReconfiguration(
 
 nuraft::ptr<nuraft::buffer> KeeperStateMachine::commit(const uint64_t log_idx, nuraft::buffer & data)
 {
-    const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
+    auto batch = parseRequestBatch(data, true);
+    if (batch->first_zxid == 0)
+    {
+        /// A legacy entry from an older node that didn't assign a zxid; use the log_idx as the zxid.
+        if (batch->requests.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch->requests.size());
+        batch->first_zxid = log_idx;
+    }
 
-    auto request_for_session = parseRequest(data, true);
-    if (!request_for_session->zxid)
-        request_for_session->zxid = log_idx;
+    batch->log_idx = log_idx;
 
-    request_for_session->log_idx = log_idx;
-
-    if (!keeper_context->localLogsPreprocessed() && !preprocess(*request_for_session, /*lock_mutex=*/ true))
+    if (!keeper_context->localLogsPreprocessed() && !preprocessBatch(*batch, /*lock_mutex=*/ true))
         return nullptr;
 
-    const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
+    /// Responses are only needed on the server that owns the batch's client sessions (the one
+    /// whose dispatcher produced the batch); other servers would just discard them in their
+    /// response threads. -1 means the owner is unknown (e.g. a legacy log entry), then produce
+    /// responses everywhere.
+    const bool produce_responses = batch->dispatcher_server_id == -1
+        || batch->dispatcher_server_id == keeper_context->getServerID();
+
+    for (size_t request_idx = 0; request_idx < batch->requests.size(); ++request_idx)
     {
-        request_for_session->request->spans.maybeInitialize(
-            KeeperSpan::Commit,
-            request_for_session->request->tracing_context.get(),
-            start_time_us);
+        const UInt64 start_time_us = ZooKeeperOpentelemetrySpans::now();
 
-        request_for_session->request->spans.maybeFinalize(
-            KeeperSpan::Commit,
-            [&]
-            {
-                return std::vector<OpenTelemetry::SpanAttribute>{
-                    {"keeper.operation", Coordination::opNumToString(request_for_session->request->getOpNum())},
-                    {"keeper.session_id", request_for_session->session_id},
-                    {"keeper.xid", request_for_session->request->xid},
-                    {"raft.log_idx", log_idx},
-                };
-            },
-            status,
-            error_message);
-    };
+        const auto & request_for_session = batch->requests[request_idx];
+        bool is_last_in_batch = request_idx + 1 == batch->requests.size();
 
-    try
-    {
-        const auto op_num = request_for_session->request->getOpNum();
-        if (op_num == Coordination::OpNum::SessionID)
+        const auto maybe_log_opentelemetry_span = [&](OpenTelemetry::SpanStatus status, const std::string & error_message)
         {
-            const Coordination::ZooKeeperSessionIDRequest & session_id_request
-                = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session->request);
-            int64_t session_id = 0;
-            std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
-            KeeperResponseForSession response_for_session;
-            response_for_session.session_id = -1;
-            response_for_session.response = response;
-            response_for_session.request = request_for_session->request;
+            request_for_session.request->spans.maybeInitialize(
+                KeeperSpan::Commit,
+                request_for_session.request->tracing_context.get(),
+                start_time_us);
 
-            KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-            session_id = storage->getSessionID(session_id_request.session_timeout_ms);
-            LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
-            response->session_id = session_id;
-            if (response_callback)
-                response_callback(std::move(response_for_session));
-        }
-        else
-        {
-            if (op_num == Coordination::OpNum::Close)
-            {
-                std::lock_guard cache_lock(request_cache_mutex);
-                parsed_request_cache.erase(request_for_session->session_id);
-            }
-
-            {
-                KEEPER_STORAGE_LOCK_SHARED(lock);
+            request_for_session.request->spans.maybeFinalize(
+                KeeperSpan::Commit,
+                [&]
                 {
+                    return std::vector<OpenTelemetry::SpanAttribute>{
+                        {"keeper.operation", Coordination::opNumToString(request_for_session.request->getOpNum())},
+                        {"keeper.session_id", request_for_session.session_id},
+                        {"keeper.xid", request_for_session.request->xid},
+                        {"raft.log_idx", log_idx},
+                    };
+                },
+                status,
+                error_message);
+        };
+
+        try
+        {
+            const auto op_num = request_for_session.request->getOpNum();
+            if (op_num == Coordination::OpNum::SessionID)
+            {
+                const Coordination::ZooKeeperSessionIDRequest & session_id_request
+                    = dynamic_cast<const Coordination::ZooKeeperSessionIDRequest &>(*request_for_session.request);
+
+                KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
+                int64_t session_id = storage->getSessionID(session_id_request.session_timeout_ms);
+                LOG_DEBUG(log, "Session ID response {} with timeout {}", session_id, session_id_request.session_timeout_ms);
+
+                if (produce_responses && response_callback)
+                {
+                    std::shared_ptr<Coordination::ZooKeeperSessionIDResponse> response
+                        = std::dynamic_pointer_cast<Coordination::ZooKeeperSessionIDResponse>(session_id_request.makeResponse());
+                    response->session_id = session_id;
+                    KeeperResponseForSession response_for_session;
+                    response_for_session.session_id = -1;
+                    response_for_session.response = std::move(response);
+                    response_for_session.request = request_for_session.request;
+                    response_callback(std::move(response_for_session));
+                }
+
+                if (is_last_in_batch)
+                    storage->endProcessBatch(*batch);
+            }
+            else
+            {
+                if (op_num == Coordination::OpNum::Close)
+                {
+                    std::lock_guard cache_lock(request_cache_mutex);
+                    parsed_batch_cache.erase(request_for_session.session_id);
+                }
+
+                {
+                    KEEPER_STORAGE_LOCK_SHARED(lock);
                     ProfiledExclusiveLock response_lock(process_and_responses_lock, ProfileEvents::KeeperProcessAndResponsesLockWaitMicroseconds);
-                    KeeperResponsesForSessions responses_for_sessions
-                        = storage->processRequest(request_for_session->request, request_for_session->session_id, request_for_session->zxid);
+                    KeeperResponsesForSessions responses_for_sessions = storage->processOneRequest(
+                        request_for_session.request, request_for_session.session_id, batch->getZxid(request_idx), produce_responses);
                     for (auto & response_for_session : responses_for_sessions)
                     {
                         if (response_for_session.response->xid != Coordination::WATCH_XID)
-                            response_for_session.request = request_for_session->request;
+                            response_for_session.request = request_for_session.request;
 
                         if (response_callback)
                             response_callback(std::move(response_for_session));
                     }
-                }
 
-                if (keeper_context->digestEnabled() && request_for_session->digest)
-                    assertDigest(
-                        *request_for_session->digest,
-                        storage->getNodesDigest(true, /*lock_transaction_mutex=*/true),
-                        *request_for_session->request,
-                        request_for_session->log_idx,
-                        request_for_session->session_id,
-                        true);
+                    if (is_last_in_batch)
+                        storage->endProcessBatch(*batch);
+                }
             }
+
+            ProfileEvents::increment(ProfileEvents::KeeperCommits);
+
+            if (commit_callback)
+                commit_callback(log_idx, request_for_session);
+        }
+        catch (...)
+        {
+            maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
+            tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
+            throw;
         }
 
-        ProfileEvents::increment(ProfileEvents::KeeperCommits);
-
-        if (commit_callback)
-            commit_callback(log_idx, *request_for_session);
-
-        keeper_context->setLastCommitIndex(log_idx);
-    }
-    catch (...)
-    {
-        maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::ERROR, getCurrentExceptionMessage(true));
-        tryLogCurrentException(log, fmt::format("Failed to commit stored log at index {}", log_idx));
-        throw;
+        maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
     }
 
-    maybe_log_opentelemetry_span(OpenTelemetry::SpanStatus::OK, "");
+    keeper_context->setLastCommitIndex(log_idx);
 
     return nullptr;
 }
@@ -999,23 +1237,25 @@ void KeeperStateMachine::rollback(uint64_t log_idx, nuraft::buffer & data)
     if (!keeper_context->localLogsPreprocessed())
         return;
 
-    auto request_for_session = parseRequest(data, true);
+    auto batch = parseRequestBatch(data, true);
     // If we received a log from an older node, use the log_idx as the zxid
     // log_idx will always be larger or equal to the zxid so we can safely do this
     // (log_idx is increased for all logs, while zxid is only increased for requests)
-    if (!request_for_session->zxid)
-        request_for_session->zxid = log_idx;
+    // (only applies to legacy single-request entries; batch entries always carry explicit zxids)
+    if (batch->first_zxid == 0)
+    {
+        if (batch->requests.size() != 1)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Request batch without zxid in log: log_idx={}, requests={}", log_idx, batch->requests.size());
+        batch->first_zxid = log_idx;
+    }
 
-    rollbackRequest(*request_for_session, false);
+    rollbackRequestBatch(*batch, false);
 }
 
-void KeeperStateMachine::rollbackRequest(const KeeperRequestForSession & request_for_session, bool allow_missing)
+void KeeperStateMachine::rollbackRequestBatch(const KeeperRequestBatch & batch, bool allow_missing)
 {
-    if (request_for_session.request->getOpNum() == Coordination::OpNum::SessionID)
-        return;
-
     KEEPER_STORAGE_LOCK_EXCLUSIVE(lock);
-    storage->rollbackRequest(request_for_session.zxid, allow_missing);
+    storage->rollbackBatch(batch, allow_missing);
 }
 
 nuraft::ptr<nuraft::snapshot> KeeperStateMachine::last_snapshot()

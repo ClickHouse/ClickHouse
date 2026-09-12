@@ -762,7 +762,6 @@ void KeeperRequestDispatcherOld::shutdown()
                     .session_id = session,
                     .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
                     .request = std::move(request),
-                    .digest = std::nullopt
                 };
 
                 close_requests.push_back(std::move(request_info));

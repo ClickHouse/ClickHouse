@@ -2142,7 +2142,7 @@ TEST_P(CoordinationTestWithCompression, TestStorageSnapshotTTLRoundTrip)
     create_request->include_ttl = true;
     create_request->ttl = ttl_ms;
 
-    storage.preprocessRequest(create_request, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+    storage.preprocessRequest(create_request, session_id, /*time=*/0, ++zxid, /*check_acl=*/true, /*log_idx=*/0);
     auto responses = storage.processRequest(create_request, session_id, zxid);
     ASSERT_EQ(responses[0].response->error, Error::ZOK);
 

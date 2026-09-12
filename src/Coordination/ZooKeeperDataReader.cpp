@@ -589,7 +589,7 @@ static bool deserializeTxn(KeeperMemoryStorage & storage, ReadBuffer & in, Logge
             if (request->getOpNum() == Coordination::OpNum::Multi && hasErrorsInMultiRequest(request))
                 return true;
 
-            storage.preprocessRequest(request, session_id, time, zxid, /* check_acl = */ false, /*digest=*/std::nullopt, /*log_idx=*/0);
+            storage.preprocessRequest(request, session_id, time, zxid, /* check_acl = */ false, /*log_idx=*/0);
             storage.processRequest(request, session_id, zxid);
         }
     }

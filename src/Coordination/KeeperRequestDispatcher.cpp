@@ -69,6 +69,7 @@ namespace CoordinationSetting
     extern const CoordinationSettingsMilliseconds session_shutdown_timeout;
     extern const CoordinationSettingsMilliseconds stream_in_flight_drain_timeout_ms;
     extern const CoordinationSettingsMilliseconds stream_suspect_retry_delay_ms;
+    extern const CoordinationSettingsBool use_batched_log_entries;
 }
 
 namespace ErrorCodes
@@ -235,7 +236,6 @@ void KeeperRequestDispatcher::shutdownRequests()
                 .session_id = session_id,
                 .time = duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count(),
                 .request = std::move(request),
-                .digest = std::nullopt
             };
 
             close_requests.push_back(std::move(request_info));
@@ -257,10 +257,11 @@ void KeeperRequestDispatcher::shutdownRequests()
         auto temp_stream = server->raft_instance->open_client_req_stream(saturatedWaitMillisecondsCountNonZero(timeout_ms));
         if (temp_stream)
         {
-            std::vector<nuraft::ptr<nuraft::buffer>> entries;
-            entries.reserve(close_requests.size());
-            for (const auto & r : close_requests)
-                entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
+            KeeperRequestBatch close_batch;
+            close_batch.requests = std::move(close_requests);
+            close_batch.dispatcher_server_id = server->getServerID();
+            auto entries = KeeperStateMachine::serializeRequestBatch(
+                close_batch, keeper_context->getCoordinationSettings()[CoordinationSetting::use_batched_log_entries]);
 
             temp_stream->append(std::move(entries));
 
@@ -702,6 +703,7 @@ void KeeperRequestDispatcher::dispatchThread()
             size_t max_read_batch_bytes_size = coordination_settings[CoordinationSetting::max_read_batch_bytes_size];
             bool optimize_read_order = coordination_settings[CoordinationSetting::optimize_read_order];
             bool is_exceeding_memory_soft_limit = server->isExceedingMemorySoftLimit();
+            bool use_batched_log_entries = coordination_settings[CoordinationSetting::use_batched_log_entries];
 
             /// Write requests to put in the batch.
             /// (And possibly some read requests that need to go through raft.)
@@ -917,16 +919,17 @@ void KeeperRequestDispatcher::dispatchThread()
 
                 LOG_TEST(log, "Starting batch {}, {} bytes, {} writes, {} reads ({} of them are at the end of batch). First request: {}", batch_idx, batch_bytes, requests.size(), reads_requests, late_reads.size(), requests[0].request->toString());
 
-                std::vector<nuraft::ptr<nuraft::buffer>> entries;
-                entries.reserve(requests.size());
-                for (const auto & r : requests)
-                    entries.push_back(KeeperStateMachine::getZooKeeperLogEntry(r));
+                KeeperRequestBatch log_entry_batch;
+                log_entry_batch.requests = std::move(requests);
+                log_entry_batch.dispatcher_server_id = server->getServerID();
+                auto entries = KeeperStateMachine::serializeRequestBatch(
+                    log_entry_batch, use_batched_log_entries);
 
                 /// Add information about the batch to the queue of in-flight requests.
 
                 auto & batch = in_flight_batches[batch_idx % in_flight_batches.size()];
                 batch.start_time = std::chrono::steady_clock::now();
-                batch.requests = std::move(requests);
+                batch.requests = std::move(log_entry_batch.requests);
                 batch.intermediate_reads = std::move(intermediate_reads);
                 batch.activate(std::move(late_reads));
                 tail_idx.store(batch_idx + 1);
