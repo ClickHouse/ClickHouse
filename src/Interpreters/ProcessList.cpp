@@ -143,22 +143,14 @@ ProcessList::EntryPtr ProcessList::insert(
     MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
-        // One deadline shared by the query slot and the memory reservation (acquired sequentially
-        // below), so the whole pre-execution admission wait is bounded by a single
-        // `workload_admission_timeout_ms` budget; 0 means no timeout. It saturates rather than overflows
-        // the nanosecond steady_clock time_point (the `Milliseconds` setting can hold values whose
-        // millisecond-to-nanosecond widening would overflow), so anything representable (~292 years)
-        // keeps its exact deadline and a larger, absurd timeout behaves as no timeout.
+        // One deadline shared by the query slot and the memory reservation (acquired sequentially below),
+        // so the whole pre-execution admission wait is bounded by a single `workload_admission_timeout_ms`
+        // budget. `saturatedMilliseconds` caps the wait at ~1 year (the standard idiom — a longer timeout
+        // is effectively no timeout); 0 is the explicit "no timeout" and maps to an infinite deadline.
         const UInt64 admission_timeout_ms = static_cast<UInt64>(settings[Setting::workload_admission_timeout_ms].totalMilliseconds());
-        std::chrono::steady_clock::time_point admission_deadline{};
-        if (admission_timeout_ms)
-        {
-            const auto now = std::chrono::steady_clock::now();
-            const auto timeout = std::chrono::milliseconds(admission_timeout_ms);
-            const auto headroom = std::chrono::duration_cast<std::chrono::milliseconds>(
-                std::chrono::steady_clock::time_point::max() - now);
-            admission_deadline = timeout < headroom ? now + timeout : std::chrono::steady_clock::time_point::max();
-        }
+        const auto admission_deadline = admission_timeout_ms
+            ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
+            : std::chrono::steady_clock::time_point::max();
 
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
@@ -166,7 +158,7 @@ ProcessList::EntryPtr ProcessList::insert(
         if (!query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
-                query_slot = std::make_unique<QuerySlot>(link, admission_timeout_ms, admission_deadline);
+                query_slot = std::make_unique<QuerySlot>(link, admission_deadline);
         }
         String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
         if (!memory_reservation_resource_name.empty())
@@ -178,7 +170,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_timeout_ms, admission_deadline);
+                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);
             }
         }
     }

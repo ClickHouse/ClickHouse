@@ -26,7 +26,7 @@ namespace ErrorCodes
     extern const int QUERY_SLOT_ACQUISITION_TIMEOUT;
 }
 
-QuerySlot::QuerySlot(ResourceLink link_, UInt64 admission_timeout_ms_, std::chrono::steady_clock::time_point admission_deadline_)
+QuerySlot::QuerySlot(ResourceLink link_, std::chrono::steady_clock::time_point admission_deadline_)
     : link(link_)
 {
     chassert(link);
@@ -34,11 +34,9 @@ QuerySlot::QuerySlot(ResourceLink link_, UInt64 admission_timeout_ms_, std::chro
     CurrentMetrics::Increment scheduled(CurrentMetrics::ConcurrentQueryScheduled);
     auto timer = CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrentQueryWaitMicroseconds);
     std::unique_lock lock{mutex};
-    if (admission_timeout_ms_ == 0)
-    {
-        cv.wait(lock, [this] { return granted || exception; });
-    }
-    else if (!cv.wait_until(lock, admission_deadline_, [this] { return granted || exception; }))
+    // An infinite deadline (`time_point::max()`) means no timeout: wait_until never fires on time and
+    // blocks until the slot is granted or the request fails, exactly like an untimed wait.
+    if (!cv.wait_until(lock, admission_deadline_, [this] { return granted || exception; }))
     {
         // Admission timed out: the request is still enqueued (neither granted nor failed). Cancel it so
         // the scheduler never hands a slot to an abandoned query. `cancelRequest` takes the scheduler
@@ -47,8 +45,7 @@ QuerySlot::QuerySlot(ResourceLink link_, UInt64 admission_timeout_ms_, std::chro
         lock.unlock();
         if (link.queue->cancelRequest(this))
             throw Exception(ErrorCodes::QUERY_SLOT_ACQUISITION_TIMEOUT,
-                "Timed out acquiring a query slot for workload scheduling: waited longer than "
-                "workload_admission_timeout_ms = {} ms", admission_timeout_ms_);
+                "Timed out waiting to acquire a query slot for workload scheduling (exceeded workload_admission_timeout_ms)");
 
         // The scheduler dequeued the request between the timeout and the cancel attempt, so
         // execute()/failed() has run or will run. Wait for that definite outcome.

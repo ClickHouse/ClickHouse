@@ -34,7 +34,7 @@ namespace ErrorCodes
 }
 
 MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size_,
-                                     UInt64 admission_timeout_ms_, std::chrono::steady_clock::time_point admission_deadline_)
+                                     std::chrono::steady_clock::time_point admission_deadline_)
     : ResourceAllocation(*link.allocation_queue, id_)
     , reserved_size(reserved_size_)
     , approved_increment(CurrentMetrics::MemoryReservationApproved, 0)
@@ -60,10 +60,9 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
             std::unique_lock lock(mutex);
             auto admit_timer = CurrentThread::getProfileEvents().timer(ProfileEvents::MemoryReservationAdmitMicroseconds);
             auto admitted_pred = [this] { return kill_reason || fail_reason || actual_size <= allocated_size; };
-            if (admission_timeout_ms_ == 0)
-                cv.wait(lock, admitted_pred);
-            else
-                timed_out = !cv.wait_until(lock, admission_deadline_, admitted_pred);
+            // An infinite deadline (`time_point::max()`) means no timeout: wait_until never fires on time
+            // and blocks until the reservation is admitted, killed, or failed.
+            timed_out = !cv.wait_until(lock, admission_deadline_, admitted_pred);
             // Flush deferred profile-event counters before potentially throwing,
             // so failure metrics (e.g. MemoryReservationFailed) are not lost.
             metrics.apply();
@@ -86,8 +85,7 @@ MemoryReservation::MemoryReservation(ResourceLink link, const String & id_, Reso
             // surface the cancellation as `MEMORY_RESERVATION_FAILED`.
             if (timed_out)
                 throw Exception(ErrorCodes::MEMORY_RESERVATION_ACQUISITION_TIMEOUT,
-                    "Timed out acquiring a memory reservation for workload scheduling: waited longer than "
-                    "workload_admission_timeout_ms = {} ms", admission_timeout_ms_);
+                    "Timed out waiting to acquire a memory reservation for workload scheduling (exceeded workload_admission_timeout_ms)");
             throwIfNeeded();
         }
     }

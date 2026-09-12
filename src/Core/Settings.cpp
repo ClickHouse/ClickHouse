@@ -7612,7 +7612,7 @@ was waiting for: `QUERY_SLOT_ACQUISITION_TIMEOUT` for a query slot, or
 
 Possible values:
 
-- Positive integer — timeout in milliseconds.
+- Positive integer — timeout in milliseconds. Values above roughly one year are treated as no timeout.
 - 0 — Infinite timeout: the query waits indefinitely for admission (default). It can still be rejected
   immediately when the workload's `max_waiting_queries` limit is reached.
 )", 0) \
