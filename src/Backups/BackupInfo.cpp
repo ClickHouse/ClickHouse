@@ -11,6 +11,7 @@
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ExpressionElementParsers.h>
+#include <Parsers/FunctionSecretArgumentsFinder.h>
 #include <Parsers/parseQuery.h>
 #include <Storages/NamedCollectionsHelpers.h>
 
@@ -121,6 +122,100 @@ namespace
             return literal->value.safeGet<String>();
 
         return std::nullopt;
+    }
+
+    /// Returns the effective value of a key-value assignment, resolving a constant expression with the
+    /// context the same way `S3StorageParsedArguments::collectCredentials` resolves it when opening the
+    /// locator. A value written as an expression (e.g. concat('arn::', 'role')) is therefore classified
+    /// by what it loads as. Without a context, or when it is no constant string, it is rejected.
+    std::optional<String> getEffectiveKeyValueArgStringValue(const ASTPtr & ast, const ContextPtr & context)
+    {
+        if (auto value = getKeyValueArgStringValue(ast))
+            return value;
+
+        const auto * func = ast->as<const ASTFunction>();
+        if (!func || func->name != "equals")
+            return std::nullopt;
+
+        const auto * list = func->arguments ? func->arguments->as<const ASTExpressionList>() : nullptr;
+        if (!list || list->children.size() != 2)
+            return std::nullopt;
+
+        if (!context)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS, "Cannot remove credentials from the base backup locator with a non-literal argument value");
+
+        ASTPtr evaluated = evaluateConstantExpressionOrIdentifierAsLiteral(list->children[1], context);
+        const auto * evaluated_literal = evaluated->as<const ASTLiteral>();
+        if (!evaluated_literal || evaluated_literal->value.getType() != Field::Types::Which::String)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The base backup locator argument value must be a constant string expression");
+        return evaluated_literal->value.safeGet<String>();
+    }
+
+    /// Rebuilds an `extra_credentials(...)` keeping only its non-secret keys, or `nullptr` if none are
+    /// left. `role_arn` and `role_session_name` only name the role to assume, which grants nothing
+    /// without the server's own identity and a matching trust policy, so `isNonSecretExtraCredentialsKey`
+    /// keeps them -- the same predicate that keeps them visible in a logged query. `external_id` is the
+    /// shared secret of the triple, and anything unclassifiable is dropped.
+    ASTPtr withoutSecretExtraCredentials(const ASTPtr & function_arg, const ContextPtr & context)
+    {
+        const auto * func = function_arg->as<const ASTFunction>();
+        /// Only `extra_credentials` is consumed by `registerBackupEngineS3`; don't guess at anything else.
+        if (!func || func->name != "extra_credentials" || !func->arguments)
+            return nullptr;
+
+        ASTs kept;
+        for (const auto & child : func->arguments->children)
+        {
+            auto key = getEffectiveKeyValueArgName(child, context);
+            if (!key || !FunctionSecretArgumentsFinder::isNonSecretExtraCredentialsKey(*key))
+                continue;
+            /// The value is only classified, not rewritten: an expression the open path resolves stays as
+            /// it was written, so a locator that loses nothing serializes byte for byte.
+            if (!getEffectiveKeyValueArgStringValue(child, context))
+                continue;
+            kept.push_back(child);
+        }
+
+        if (kept.empty())
+            return nullptr;
+
+        /// Keep the original node when nothing is dropped, so the locator serializes byte for byte.
+        if (kept.size() == func->arguments->children.size())
+            return function_arg;
+
+        /// The AST may be shared with the query, so it must not be modified in place.
+        auto res = make_intrusive<ASTFunction>();
+        res->name = func->name;
+        res->arguments = make_intrusive<ASTExpressionList>();
+        res->arguments->children = std::move(kept);
+        res->children.push_back(res->arguments);
+        return res;
+    }
+
+    /// Whether the trailing function is an `extra_credentials(...)` clause that authenticates. Only a
+    /// non-empty `role_arn` makes `getCredentialsProvider` wrap the provider chain in the STS assume-role
+    /// provider, so a clause carrying only `role_session_name` or `external_id` names no identity to lend
+    /// and is not credentials to copy. No other trailing function is carried over either.
+    /// Keys and values are resolved with the context the way `collectCredentials` resolves them when the
+    /// locator is opened, so every spelling is classified by what it loads as rather than how it is
+    /// written; without a context only literals can be read and anything else is not lent.
+    bool hasRoleToAssume(const ASTPtr & function_arg, const ContextPtr & context)
+    {
+        const auto * func = function_arg ? function_arg->as<const ASTFunction>() : nullptr;
+        if (!func || func->name != "extra_credentials" || !func->arguments)
+            return false;
+
+        for (const auto & child : func->arguments->children)
+        {
+            auto key = context ? getEffectiveKeyValueArgName(child, context) : getKeyValueArgName(child);
+            if (!key || *key != "role_arn")
+                continue;
+            auto value = context ? getEffectiveKeyValueArgStringValue(child, context) : getKeyValueArgStringValue(child);
+            return value && !value->empty();
+        }
+
+        return false;
     }
 
     /// Removes the credentials embedded in the URL itself: the userinfo part and the authentication
@@ -249,15 +344,15 @@ String BackupInfo::toStringForLogging() const
     return toAST()->formatForLogging();
 }
 
-bool BackupInfo::canCopyS3CredentialsTo(const BackupInfo & dest) const
+bool BackupInfo::canCopyS3CredentialsTo(const BackupInfo & dest, ContextPtr context) const
 {
     /// Must mirror the conditions checked by `copyS3CredentialsTo`.
     return id_arg.empty() && dest.id_arg.empty()
         && backup_engine_name == "S3" && dest.backup_engine_name == "S3"
-        && args.size() == 3;
+        && (args.size() == 3 || hasRoleToAssume(function_arg, context));
 }
 
-void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
+void BackupInfo::copyS3CredentialsTo(BackupInfo & dest, ContextPtr context) const
 {
     /// named_collection case, no need to update
     if (!dest.id_arg.empty() || !id_arg.empty())
@@ -267,13 +362,41 @@ void BackupInfo::copyS3CredentialsTo(BackupInfo & dest) const
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup supported only for S3, got {}", toStringForLogging());
     if (dest.backup_engine_name != "S3")
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup supported only for S3, got {}", dest.toStringForLogging());
-    if (args.size() != 3)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "use_same_s3_credentials_for_base_backup requires access_key_id, secret_access_key, got {}", toStringForLogging());
 
-    auto & dest_args = dest.args;
-    dest_args.resize(3);
-    dest_args[1] = args[1];
-    dest_args[2] = args[2];
+    /// An `S3` locator authenticates with a positional key pair or with a role to assume. Both are
+    /// carried over, so a role-authenticated backup can lend its credentials the way a key pair does.
+    /// A clause naming no role authenticates nothing and is rejected, the same way a locator carrying
+    /// no credentials at all is.
+    const bool has_key_pair = args.size() == 3;
+    const bool has_role_to_assume = hasRoleToAssume(function_arg, context);
+    if (!has_key_pair && !has_role_to_assume)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "use_same_s3_credentials_for_base_backup requires access_key_id and secret_access_key, or extra_credentials naming a "
+            "role_arn, got {}",
+            toStringForLogging());
+
+    /// What the destination may keep is what the metadata can carry back. `withoutS3Credentials` strips a
+    /// positional key pair and only a source key pair can replay it, so one the source cannot reproduce
+    /// would open the base backup here and fail to on restore -- it is dropped. A `role_arn` survives
+    /// redaction, so a destination role is kept when the source names none, and lending credentials does
+    /// not cost the destination the identity it named. A clause naming no role assumes nothing, and keeping
+    /// it would only leave the locator unreconstructable from its stripped form, which is what
+    /// `writeBackupMetadata` compares before emitting the marker.
+    if (dest.args.size() > 1)
+        dest.args.resize(1);
+    if (!hasRoleToAssume(dest.function_arg, context))
+        dest.function_arg = nullptr;
+
+    if (has_key_pair)
+    {
+        dest.args.resize(3);
+        dest.args[1] = args[1];
+        dest.args[2] = args[2];
+    }
+
+    if (has_role_to_assume)
+        dest.function_arg = function_arg;
 }
 
 BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
@@ -295,8 +418,9 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
 
     /// S3(collection, secret_access_key = '...') -> S3(collection)
     /// The keys are the `S3` authentication arguments consumed by `registerBackupEngineS3`
-    /// and `S3StorageParsedArguments::collectCredentials`. The key is resolved with the context, so
-    /// that an expression key (e.g. concat('secret_', 'access_key')) is recognized as well.
+    /// and `S3StorageParsedArguments::collectCredentials`, minus the non-secret role identifiers, which
+    /// stay so that a role-authenticated base backup remains openable. The key is resolved with the
+    /// context, so that an expression key (e.g. concat('secret_', 'access_key')) is recognized as well.
     res.kv_args.erase(
         std::remove_if(
             res.kv_args.begin(),
@@ -305,14 +429,16 @@ BackupInfo BackupInfo::withoutS3Credentials(ContextPtr context) const
             {
                 auto key = getEffectiveKeyValueArgName(kv_arg, context);
                 return key
-                    && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token" || *key == "role_arn"
-                        || *key == "role_session_name" || *key == "external_id"
+                    && (*key == "access_key_id" || *key == "secret_access_key" || *key == "session_token"
+                        || *key == "external_id"
                         || *key == "google_adc_client_secret" || *key == "google_adc_refresh_token");
             }),
         res.kv_args.end());
 
-    /// S3('url', extra_credentials(role_arn = '...')) -> S3('url')
-    res.function_arg = nullptr;
+    /// S3('url', extra_credentials(role_arn = '...', external_id = '...'))
+    ///     -> S3('url', extra_credentials(role_arn = '...'))
+    if (res.function_arg)
+        res.function_arg = withoutSecretExtraCredentials(res.function_arg, context);
 
     /// S3(collection, url = 'https://...?X-Amz-Signature=...') -> redact the `url` override as well
     for (auto & kv_arg : res.kv_args)
