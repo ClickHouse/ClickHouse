@@ -1496,6 +1496,117 @@ void StorageReplicatedMergeTree::dropZookeeperZeroCopyLockPaths(zkutil::ZooKeepe
     }
 }
 
+StorageReplicatedMergeTree::ZeroCopyLockRoots StorageReplicatedMergeTree::findZeroCopyLockRoots(
+    const zkutil::ZooKeeperPtr & zookeeper, const String & zookeeper_path, const String & zero_copy_zookeeper_path,
+    const String & table_shared_id)
+{
+    static constexpr std::string_view zero_copy_prefix = "zero_copy_";
+    ZeroCopyLockRoots roots;
+
+    Strings children;
+    if (zookeeper->tryGetChildren(zookeeper_path, children) == Coordination::Error::ZOK)
+    {
+        for (const auto & child : children)
+            if (child.starts_with(zero_copy_prefix))
+                roots.legacy.push_back(fs::path(zookeeper_path) / child / "shared");
+    }
+
+    if (table_shared_id.empty() || table_shared_id == toString(UUIDHelpers::Nil))
+        return roots;
+
+    children.clear();
+    if (zookeeper->tryGetChildren(zero_copy_zookeeper_path, children) == Coordination::Error::ZOK)
+    {
+        for (const auto & child : children)
+        {
+            String root = fs::path(zero_copy_zookeeper_path) / child / table_shared_id;
+            if (child.starts_with(zero_copy_prefix) && zookeeper->exists(root))
+                roots.modern.push_back(root);
+        }
+    }
+
+    return roots;
+}
+
+void StorageReplicatedMergeTree::removeReplicaZeroCopyLocks(
+    const zkutil::ZooKeeperPtr & zookeeper, const Strings & zero_copy_locks_roots, const String & zookeeper_path,
+    const String & replica_name, LoggerPtr logger)
+{
+    const String replica_path = zookeeper_path + "/replicas/" + replica_name;
+
+    for (const auto & zero_copy_locks_root : zero_copy_locks_roots)
+    {
+        Strings part_names;
+        if (zookeeper->tryGetChildren(zero_copy_locks_root, part_names) != Coordination::Error::ZOK)
+            continue;
+
+        for (const auto & part_name : part_names)
+        {
+            /// If the removal of the replica was incomplete, or a replica with the same name was created again,
+            /// its locks may protect blobs that it still uses. The check is repeated for every part to keep
+            /// the window for a concurrent creation of the replica short.
+            if (zookeeper->exists(replica_path))
+            {
+                LOG_WARNING(logger, "Replica {} exists, will not release its zero-copy locks", replica_path);
+                return;
+            }
+
+            auto part_path = fs::path(zero_copy_locks_root) / part_name;
+
+            Strings uniq_ids;
+            if (zookeeper->tryGetChildren(part_path, uniq_ids) != Coordination::Error::ZOK)
+                continue;
+
+            for (const auto & uniq_id : uniq_ids)
+            {
+                auto lock_path = part_path / uniq_id / replica_name;
+                auto code = zookeeper->tryRemove(lock_path);
+                if (code != Coordination::Error::ZOK && code != Coordination::Error::ZNONODE)
+                    LOG_WARNING(logger, "Failed to remove zero-copy lock {} left by dropped replica {}: {}",
+                                lock_path.string(), replica_name, code);
+            }
+        }
+    }
+}
+
+StorageReplicatedMergeTree::ZeroCopyLockRoots StorageReplicatedMergeTree::getZeroCopyLockRootsForOrphanReplicaDrop(
+    zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, ContextPtr local_context, LoggerPtr logger)
+{
+    String table_shared_id;
+    zookeeper->tryGet(zookeeper_info.path + "/table_shared_id", table_shared_id);
+
+    const auto & server_settings = local_context->getReplicatedMergeTreeSettings();
+    const String zero_copy_zookeeper_path
+        = local_context->getMacros()->expand(server_settings[MergeTreeSetting::remote_fs_zero_copy_zookeeper_path].toString());
+
+    auto roots = findZeroCopyLockRoots(zookeeper, zookeeper_info.path, zero_copy_zookeeper_path, table_shared_id);
+    /// Not a warning: this is also the case for every table that does not use zero-copy replication, which cannot be told apart.
+    if (roots.modern.empty())
+        LOG_INFO(logger, "No zero-copy locks of table {} were found under {}. If the table uses zero-copy replication with "
+                            "a per-table remote_fs_zero_copy_zookeeper_path, which is not recorded in ZooKeeper, the locks of "
+                            "replica {} will not be released. To release them, drop the replica with "
+                            "SYSTEM DROP REPLICA ... FROM TABLE on a server that has the table",
+                    zookeeper_info.path, zero_copy_zookeeper_path, zookeeper_info.replica_name);
+
+    return roots;
+}
+
+void StorageReplicatedMergeTree::releaseZeroCopyLocksOfDroppedReplica(
+    zkutil::ZooKeeperPtr zookeeper, const TableZnodeInfo & zookeeper_info, const ZeroCopyLockRoots & zero_copy_locks_roots,
+    bool last_replica_dropped, LoggerPtr logger)
+{
+    if (last_replica_dropped)
+    {
+        /// The whole zero-copy subtree of the table is garbage now, as in `DROP TABLE`. The legacy roots were removed
+        /// together with the nodes of the table and must not be touched: a new table may already exist at the same path.
+        dropZookeeperZeroCopyLockPaths(zookeeper, zero_copy_locks_roots.modern, logger);
+        return;
+    }
+
+    removeReplicaZeroCopyLocks(zookeeper, zero_copy_locks_roots.modern, zookeeper_info.path, zookeeper_info.replica_name, logger);
+    removeReplicaZeroCopyLocks(zookeeper, zero_copy_locks_roots.legacy, zookeeper_info.path, zookeeper_info.replica_name, logger);
+}
+
 void StorageReplicatedMergeTree::drop()
 {
     /// There is also the case when user has configured ClickHouse to wrong ZooKeeper cluster
@@ -1699,9 +1810,20 @@ bool StorageReplicatedMergeTree::dropReplica(const String & drop_replica, Logger
     if (zookeeper->exists(zookeeper_info.path + "/replicas/" + drop_replica + "/is_active"))
         throw Exception(ErrorCodes::TABLE_WAS_NOT_DROPPED, "Can't drop replica: {}, because it's active", drop_replica);
 
+    /// The dropped replica is a replica of this same table, so the settings of this table apply to it.
+    /// Collected before the drop, because `table_shared_id` is removed together with the last replica.
+    const auto settings = getSettings();
+    auto zero_copy_locks_roots = findZeroCopyLockRoots(
+        zookeeper,
+        zookeeper_info.path,
+        getContext()->getMacros()->expand((*settings)[MergeTreeSetting::remote_fs_zero_copy_zookeeper_path].toString()),
+        getTableSharedID());
+
     TableZnodeInfo info = zookeeper_info;
     info.replica_name = drop_replica;
-    return dropReplica(zookeeper, info, logger);
+    bool last_replica_dropped = dropReplica(zookeeper, info, logger);
+    releaseZeroCopyLocksOfDroppedReplica(zookeeper, info, zero_copy_locks_roots, last_replica_dropped, logger);
+    return last_replica_dropped;
 }
 
 
@@ -10906,9 +11028,25 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         return std::make_pair(true, NameSet{});
     }
 
+    /// We remove parts during table shutdown. If exception happen, restarting thread will be already turned
+    /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
+    /// context.
+    auto set_keeper = [&]
+    {
+        if (shutdown_called.load())
+            zookeeper->setKeeper(getZooKeeperIfTableShutDown());
+        else
+            zookeeper->setKeeper(getZooKeeper());
+    };
+
     auto shared_id = getTableSharedID();
     if (shared_id == toString(UUIDHelpers::Nil))
     {
+        /// The overload without Keeper passes a null one, e.g. when a table whose replica was dropped from ZooKeeper
+        /// is dropped: without a Keeper, `exists` throws, and the drop is retried forever.
+        if (zookeeper->isNull())
+            set_keeper();
+
         if (zookeeper->exists(zookeeper_path))
         {
             LOG_WARNING(log, "Not removing shared data for part {} because replica does not have metadata in ZooKeeper, "
@@ -10975,6 +11113,9 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
 
     if (has_metadata_in_zookeeper.has_value() && !has_metadata_in_zookeeper)
     {
+        if (zookeeper->isNull())
+            set_keeper();
+
         if (zookeeper->exists(zookeeper_path))
         {
             LOG_WARNING(log, "Not removing shared data for part {} because replica does not have metadata in ZooKeeper, "
@@ -10986,13 +11127,7 @@ StorageReplicatedMergeTree::unlockSharedData(const IMergeTreeDataPart & part, co
         return std::make_pair(true, NameSet{});
     }
 
-    /// We remove parts during table shutdown. If exception happen, restarting thread will be already turned
-    /// off and nobody will reconnect our zookeeper connection. In this case we use zookeeper connection from
-    /// context.
-    if (shutdown_called.load())
-        zookeeper->setKeeper(getZooKeeperIfTableShutDown());
-    else
-        zookeeper->setKeeper(getZooKeeper());
+    set_keeper();
 
     /// It can happen that we didn't had the connection to zookeeper during table creation, but actually
     /// table is completely dropped, so we can drop it without any additional checks.

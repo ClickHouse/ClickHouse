@@ -1757,7 +1757,11 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
         TableZnodeInfo info;
         info.path = query.replica_zk_path;
         info.replica_name = query.replica;
-        StorageReplicatedMergeTree::dropReplica(zookeeper, info, log);
+
+        auto zero_copy_locks_roots = StorageReplicatedMergeTree::getZeroCopyLockRootsForOrphanReplicaDrop(zookeeper, info, getContext(), log);
+        bool last_replica_dropped = StorageReplicatedMergeTree::dropReplica(zookeeper, info, log);
+        StorageReplicatedMergeTree::releaseZeroCopyLocksOfDroppedReplica(zookeeper, info, zero_copy_locks_roots, last_replica_dropped, log);
+
         LOG_INFO(log, "Dropped replica {}", remote_replica_path);
     }
 }
