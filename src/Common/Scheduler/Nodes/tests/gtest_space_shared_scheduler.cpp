@@ -2422,6 +2422,62 @@ TEST(SchedulerSpaceShared, RecoverySyncWaitsForDedicatedSpill)
     tracker.adjustWithUntrackedMemory(-tracker.get());
 }
 
+TEST(SchedulerSpaceShared, ReservationTimeoutEndsRecoveryDuringDedicatedSpill)
+{
+    SpaceSharedTest t;
+    SpaceSharedResourceHolder r(t);
+    r.addLimit("/", 10000);
+    AllocationQueue * queue = r.addQueue("/queue");
+    r.registerResource();
+    ResourceLink link;
+    link.allocation_queue = queue;
+    MemoryTracker tracker;
+    auto scheduler = std::make_shared<MemorySpillScheduler>(false);
+    auto processor = std::make_shared<ManualSpillProcessor>(4096, false);
+    scheduler->registerProcessor(processor);
+    MemoryReservation::Settings settings;
+    settings.force_spill_before_eviction = true;
+    settings.suction_queue_timeout_ms = 1000;
+    settings.pressure_policy.max_allocation_before_suction_bytes = 1;
+    MemoryReservation reservation(link, "requester", 0, settings);
+    reservation.setMemorySpillScheduler(scheduler);
+    tracker.adjustWithUntrackedMemory(8000);
+    reservation.syncWithMemoryTracker(&tracker);
+
+    std::promise<void> started;
+    auto started_future = started.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future();
+    processor->runOnDedicatedSpill([&]
+    {
+        started.set_value();
+        release_future.wait();
+    });
+    tracker.adjustWithUntrackedMemory(3000);
+    auto growth = std::async(std::launch::async, [&] { reservation.syncWithMemoryTracker(&tracker); });
+    const auto entered = started_future.wait_for(std::chrono::seconds(5));
+    EXPECT_EQ(entered, std::future_status::ready);
+    if (entered == std::future_status::ready)
+    {
+        /// Keep the callback in flight past the configured deadline. A second real reservation
+        /// worker must observe the timeout and advance recovery without waiting for that callback.
+        const auto deadline = std::chrono::steady_clock::now()
+            + std::chrono::milliseconds(settings.suction_queue_timeout_ms);
+        EXPECT_EQ(growth.wait_until(deadline), std::future_status::timeout);
+    }
+    auto timeout_worker = std::async(std::launch::async, [&] { reservation.syncWithMemoryTracker(&tracker); });
+    const auto timed_out = timeout_worker.wait_for(std::chrono::seconds(5));
+    EXPECT_EQ(timed_out, std::future_status::ready);
+    /// Always unblock dedicated work before collecting futures, including on a failed assertion.
+    release.set_value();
+    EXPECT_THROW(timeout_worker.get(), DB::Exception);
+    EXPECT_THROW(growth.get(), DB::Exception);
+    EXPECT_FALSE(reservation.isGrowthRecoveryActive());
+    EXPECT_EQ(processor->spillCallCount(), 1u);
+    EXPECT_EQ(processor->workCallCount(), 0u);
+    tracker.adjustWithUntrackedMemory(-tracker.get());
+}
+
 TEST(SchedulerSpaceShared, DedicatedSpillNoProgressReachesEviction)
 {
     SpaceSharedTest t;
