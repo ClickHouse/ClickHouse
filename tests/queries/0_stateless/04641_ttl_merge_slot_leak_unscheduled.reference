@@ -1,0 +1,3 @@
+count after inserts: 2
+OK: background TTL merge ran after a dropped selection
+OK: second background TTL merge cycle ran

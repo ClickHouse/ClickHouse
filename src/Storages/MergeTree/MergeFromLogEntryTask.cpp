@@ -16,6 +16,8 @@
 
 #include <Core/BackgroundSchedulePool.h>
 
+#include <base/scope_guard.h>
+
 namespace ProfileEvents
 {
     extern const Event DataAfterMergeDiffersFromReplica;
@@ -353,9 +355,15 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         }
     }
 
-    /// Account TTL merge
+    /// Account TTL merge. The booking is handed to the `MergeList` entry below (released in
+    /// `onEntryDestroy`); the guard releases it if anything between here and the insert throws.
+    scope_guard ttl_merge_booking;
     if (isTTLMergeType(future_merged_part->merge_type))
-        storage.getContext()->getMergeList().bookMergeWithTTL();
+    {
+        auto & merge_list = storage.getContext()->getMergeList();
+        ttl_merge_booking = [&merge_list] { merge_list.cancelMergeWithTTL(); };
+        merge_list.bookMergeWithTTL();
+    }
 
     auto table_id = storage.getStorageID();
 
@@ -368,6 +376,7 @@ ReplicatedMergeMutateTaskBase::PrepareResult MergeFromLogEntryTask::prepare()
         storage.getStorageID(),
         future_merged_part,
         task_context);
+    ttl_merge_booking.release();
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,

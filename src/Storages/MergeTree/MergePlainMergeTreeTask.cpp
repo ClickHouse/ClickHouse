@@ -99,6 +99,10 @@ void MergePlainMergeTreeTask::prepare()
         storage.getStorageID(),
         future_part,
         task_context);
+    /// The `MergeList` entry now carries the TTL merge slot booking (released in `onEntryDestroy`),
+    /// so hand it over: disarm the guard without releasing. Must be the next statement after a
+    /// successful insert so nothing in between can throw and double-release the slot.
+    merge_mutate_entry->ttl_merge_booking.release();
 
     storage.writePartLog(
         PartLogElement::MERGE_PARTS_START, {}, 0,
