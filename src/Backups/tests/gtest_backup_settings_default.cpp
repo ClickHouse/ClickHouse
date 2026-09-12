@@ -153,6 +153,38 @@ TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsAResetCustomSetting)
     EXPECT_EQ(Field(UInt64{4}), *kept);
 }
 
+/// A `merge_tree_`-prefixed setting is stored under the exact name that wrote it, and a reset clears what
+/// every one of its names wrote (`Context::resetSettingsToDefaultValue`), so the rebuild has to drop the
+/// overrides of all of them: a surviving one arrives set on hosts that never saw the reset.
+TEST(BackupSettingsDefault, BackupCopySettingsToQueryDropsEveryNameOfAResetMergeTreeSetting)
+{
+    /// `merge_tree_enable_block_number_column` and `merge_tree_allow_experimental_block_number_column` are
+    /// the two names of one setting (`DECLARE_WITH_ALIAS`); `merge_tree_enable_block_offset_column` is a
+    /// separate setting and the control.
+    const String query = "BACKUP TABLE t TO Disk('d', 'b') SETTINGS "
+                         "merge_tree_enable_block_number_column = 1, merge_tree_enable_block_offset_column = 1, "
+                         "merge_tree_allow_experimental_block_number_column = DEFAULT";
+    ASTPtr holder;
+    ASTBackupQuery * backup_query = parseBackupQuery(holder, query);
+    ASSERT_NE(nullptr, backup_query) << "query: " << query;
+
+    BackupSettings settings = BackupSettings::fromBackupQuery(*backup_query);
+    settings.copySettingsToQuery(*backup_query);
+
+    ASSERT_NE(nullptr, backup_query->settings);
+    const auto & rebuilt = backup_query->settings->as<const ASTSetQuery &>();
+
+    EXPECT_EQ(nullptr, rebuilt.changes.tryGet("merge_tree_enable_block_number_column"))
+        << "the reset setting's other name arrives set on every other host: "
+        << backup_query->formatWithSecretsOneLine();
+    EXPECT_EQ(nullptr, rebuilt.changes.tryGet("merge_tree_allow_experimental_block_number_column"))
+        << "rebuilt: " << backup_query->formatWithSecretsOneLine();
+
+    const auto * kept = rebuilt.changes.tryGet("merge_tree_enable_block_offset_column");
+    ASSERT_NE(nullptr, kept) << "an unrelated MergeTree override was dropped with it";
+    EXPECT_EQ(Field(UInt64{1}), *kept);
+}
+
 /// The RESTORE twin of the case above. `restore_uuid` is generated after parsing exactly like
 /// `backup_uuid` and emitted by the `LIST_OF_RESTORE_SETTINGS` copy loop, so the same defect is
 /// possible on this side and is pinned the same way.

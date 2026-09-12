@@ -1,5 +1,6 @@
 #include <Backups/resolveDefaultedSettings.h>
 
+#include <Access/resolveSetting.h>
 #include <Core/Settings.h>
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTSetQuery.h>
@@ -75,10 +76,18 @@ void appendCoreDefaultsAsChanges(SettingsChanges & changes, const std::vector<St
     {
         /// A name that is not a built-in setting has no declared default to send, so dropping every
         /// override of it is what leaves the receiver where the reset leaves the initiator: with the
-        /// setting absent. Matched exactly, because a custom setting is addressed by its exact name.
+        /// setting absent. A `merge_tree_` setting is stored under the exact name that wrote it, so an
+        /// override written through any of that setting's names is an override of it.
         if (!Settings::hasBuiltin(name))
         {
-            std::erase_if(changes, [&](const SettingChange & change) { return change.name == name; });
+            const Strings & equivalent_names = settingEquivalentNames(name);
+            std::erase_if(
+                changes,
+                [&](const SettingChange & change)
+                {
+                    return change.name == name
+                        || std::ranges::find(equivalent_names, change.name) != equivalent_names.end();
+                });
             continue;
         }
 
