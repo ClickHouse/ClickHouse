@@ -54,7 +54,6 @@ namespace ErrorCodes
 extern const int INCORRECT_DATA;
 extern const int TOO_MANY_QUERY_PLAN_OPTIMIZATIONS;
 extern const int PROJECTION_NOT_USED;
-extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace QueryPlanOptimizations
@@ -95,6 +94,18 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.lower_array_join_function,
         optimization_settings.enable_lazy_columns_replication,
     };
+}
+  
+static String describeProjectionRejections(const std::unordered_map<String, String> & reject_reasons)
+{
+    if (reject_reasons.empty())
+        return "no projection was considered";
+
+    std::vector<String> formatted_reasons;
+    for (const auto & [projection, reason] : reject_reasons)
+        formatted_reasons.push_back(fmt::format("projection {} is rejected because {}", projection, reason));
+
+    return fmt::format("{}", fmt::join(formatted_reasons, "; "));
 }
 
 void optimizeTreeFirstPass(const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes)
@@ -211,26 +222,18 @@ void tryMakeDistributedSorting(const Stack & stack, QueryPlan::Node & node, Quer
 void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 void optimizeExchanges(QueryPlan::Node & root, const QueryPlanOptimizationSettings & optimization_settings);
 void materializeConstantsForSetOperationBranches(QueryPlan::Node & root, QueryPlan::Nodes & nodes);
-bool planHasUnsupportedDistributedStep(const QueryPlan::Node & root);
-bool planHasInOrderAggregation(const QueryPlan::Node & root);
 bool planContainsLogicalExchange(const QueryPlan::Node & root);
-void checkDistributedReadSupported(const QueryPlan::Node & root);
 void checkCascadesSupported(const QueryPlan::Node & root);
-void validateDistributedPlanBucketCounts(const QueryPlanOptimizationSettings & optimization_settings);
 void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 
-static String describeProjectionRejections(const std::unordered_map<String, String> & reject_reasons)
-{
-    if (reject_reasons.empty())
-        return "no projection was considered";
-
-    std::vector<String> formatted_reasons;
-    for (const auto & [projection, reason] : reject_reasons)
-        formatted_reasons.push_back(fmt::format("projection {} is rejected because {}", projection, reason));
-
-    return fmt::format("{}", fmt::join(formatted_reasons, "; "));
-}
-
+/// Rule for passes under `make_distributed_plan`: a pass that can turn a serializable step into a
+/// non-serializable one, or insert one (read-in-order, distinct-in-order, aggregation-in-order,
+/// lazy materialization and lazy FINAL, the scattered full-sorting merge join), must not run while
+/// the distributed plan is being built. The fallback decision (`QueryPlan::applyDistributedPlanFallbackToLocal`)
+/// is taken before this function on the unoptimized plan, so it stays correct only if no pass here
+/// creates a step it did not see; `convertToDistributed` throws if one slips through. Nothing is
+/// lost by skipping: every worker re-optimizes its fragment with `make_distributed_plan = 0` and
+/// applies these passes to its own part of the plan.
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
@@ -410,25 +413,7 @@ void optimizeTreeSecondPass(
     const bool make_distributed_plan = optimization_settings.make_distributed_plan
         && !planContainsLogicalExchange(root);
 
-    /// WITH TOTALS / extremes produce extra streams the exchange protocol does not carry, and
-    /// PASTE JOIN pairs rows by position, which exchanges do not preserve, so such plans cannot
-    /// be distributed. make_distributed_plan is explicit, so fail rather than silently running
-    /// single-node.
-    if (make_distributed_plan && planHasUnsupportedDistributedStep(root))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support WITH TOTALS, extremes or PASTE JOIN");
-    /// An in-order aggregation (from `force_aggregation_in_order`) relies on its input order,
-    /// which the exchanges do not preserve.
-    if (make_distributed_plan && planHasInOrderAggregation(root))
-        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-            "make_distributed_plan does not support in-order aggregation");
-    /// Reject reads whose coordinator snapshot/part-order state a worker cannot reproduce.
-    if (make_distributed_plan)
-        checkDistributedReadSupported(root);
-    /// Reject out-of-range bucket counts before any distributed optimization sizes exchange fan-outs or
-    /// read-bucket vectors from them. The tryMakeDistributed* pass below uses the raw setting values.
-    if (make_distributed_plan)
-        validateDistributedPlanBucketCounts(optimization_settings);
+
     /// Cascades runs only when both settings are on (see below); `enable_cascades_optimizer`
     /// alone (with `make_distributed_plan = 0`) keeps the normal single-node optimizer.
     const bool cascades_active = make_distributed_plan && optimization_settings.enable_cascades_optimizer;
@@ -655,6 +640,9 @@ void optimizeTreeSecondPass(
         else if (auto * read_from_time_series = typeid_cast<ReadFromTimeSeriesStep *>(frame.node->step.get()))
         {
             QueryPlanOptimizationSettings sub_settings(read_from_time_series->getReadContext());
+            /// The sub-plan becomes part of the current plan, so it must follow the current plan's
+            /// distributed-plan decision, which the read context (copied before that decision) does not carry.
+            sub_settings.make_distributed_plan = optimization_settings.make_distributed_plan;
             auto sub_plan = read_from_time_series->extractQueryPlan();
             sub_plan->optimize(sub_settings);
 
@@ -750,7 +738,7 @@ void optimizeTreeSecondPass(
     /// projection optimizations can introduce additional reading step
     /// so, applying lazy materialization after it, since it's dependent on reading step
     bool lazy_materialization_applied = false;
-    if (optimization_settings.optimize_lazy_materialization || optimization_settings.optimize_lazy_final)
+    if ((optimization_settings.optimize_lazy_materialization || optimization_settings.optimize_lazy_final) && !optimization_settings.make_distributed_plan)
     {
         chassert(stack.empty());
         stack.push_back({.node = &root});
