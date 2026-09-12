@@ -1,0 +1,34 @@
+1 text equals	1
+1 text equals unindexed	1
+2 ngrambf equals	1
+3 bloom_filter equals	1
+3 bloom_filter in	1
+4 JSONAllValues hasAnyTokens	1
+5 subcolumn of claimant	1
+6a dynamic path under claimant	1
+6a unindexed	1
+6b nested typed path keeps index	1
+6c nested dynamic path still prunes	1	1
+7 top-level dynamic path still prunes	1	1
+8 top-level typed path keeps index	1
+9 no re-selection	1
+9 unindexed	1
+10 reversed order	0
+10 reversed order unindexed	0
+12 size0 JSONAllPaths	1
+12 size0 JSONAllValues	1
+13 null map of a hinted path	1
+14 type hint	1
+14 type hint keeps index	1
+15 flatten still prunes	1	1
+15 flatten count	1
+16 tuple element	1
+16 tuple element keeps index	1
+16 variant alternative	1
+16 variant alternative keeps index	1
+16 map key value	1
+16 map key value keeps index	1
+17 Nullable(JSON) still prunes	1	1
+17 Nullable(JSON) count	1
+18 dynamic path under typed array	1
+18 dynamic path under typed array keeps index	1
