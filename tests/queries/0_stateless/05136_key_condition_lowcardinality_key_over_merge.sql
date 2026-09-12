@@ -1,10 +1,15 @@
--- Regression test for a LOGICAL_ERROR ("Arguments of 'minus'/'plus' have incorrect data types")
--- during primary-key index analysis when a monotonic arithmetic function is applied over a
--- LowCardinality key column exposed through a Merge table whose header declares the plain type.
--- KeyCondition::applyFunction executed the monotonic function on the raw LowCardinality index
--- column while the function was resolved against the plain key type, throwing a LOGICAL_ERROR
--- exception. The function must be applied to the full (non-LowCardinality) representation, as the
--- sibling applyFunctionChainToColumn already does.
+-- Regression test for a LOGICAL_ERROR ("Arguments of 'minus'/'plus' have incorrect data types",
+-- and "Bad cast" for the CAST-wrapped variants) during primary-key index analysis when a monotonic
+-- function chain is applied over a LowCardinality key column exposed through a Merge table whose
+-- header declares the plain type. KeyCondition executed the chain on the raw LowCardinality index
+-- column while the chain was built against the recursively stripped key type.
+--
+-- The exception itself is fixed by https://github.com/ClickHouse/ClickHouse/pull/111050, which
+-- normalizes the chain's input type inside applyMonotonicFunctionsChainToRange; every statement
+-- below passes on master. This test pins that behaviour for the four ways the chain is reached -
+-- the dense cached-column path, the sparse constant-coordinate path, the explicit-field path in
+-- both LowCardinality directions, and two-link chains whose intermediate result type re-introduces
+-- LowCardinality - because a mismatch on any of them is silent until it throws.
 
 SET allow_suspicious_low_cardinality_types = 1;
 -- The sparse (lightweight) primary-key analysis overload is selected by this setting, which the
@@ -177,7 +182,8 @@ DROP TABLE t_05136_merge3;
 -- Same both-direction mismatch on the DENSE cached-column path: normal WHERE pruning builds
 -- block-backed FieldRefs, so a two-link chain whose intermediate result type is LowCardinality reaches
 -- `applyFunction`'s cache-miss branch, which strips the column to plain while the next link was
--- resolved against a LowCardinality argument type (previously a Bad cast LOGICAL_ERROR, on master too).
+-- resolved against a LowCardinality argument type. That link must be handed back the representation
+-- it was resolved against, or the wrapper rejects the plain column with a Bad cast.
 DROP TABLE IF EXISTS t_05136_lc4;
 DROP TABLE IF EXISTS t_05136_merge4;
 CREATE TABLE t_05136_lc4 (k LowCardinality(UInt16), v String) ENGINE = MergeTree ORDER BY k
