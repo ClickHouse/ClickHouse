@@ -1,5 +1,3 @@
--- Tags: no-parallel
-
 -- Regression test for countBytesInFilterWithNull with non-boolean UInt8 conditions.
 -- Before the fix, the scalar tail overcounted when (filter_byte != 0 && null_byte != 0)
 -- because (*pos & ~*pos2) != 0 evaluated to true (e.g. 2 & ~1 == 2 != 0).
