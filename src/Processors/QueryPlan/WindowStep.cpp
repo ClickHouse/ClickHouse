@@ -47,9 +47,14 @@ static ITransformingStep::Traits getTraits(bool preserves_sorting)
 
 /// Whether the frame aggregate tree can serve this step at all: the frame start moves and at least one
 /// function merges partial states in place of re-adding rows. The threshold decides separately.
+/// Without `ORDER BY` every row of a `RANGE` or `GROUPS` frame is a peer of every other one, so the
+/// frame start stays at the partition start.
 static bool frameTreeApplies(const WindowDescription & window_description, const std::vector<WindowFunctionDescription> & window_functions)
 {
-    if (window_description.frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+    const auto & frame = window_description.frame;
+    if (frame.begin_type == WindowFrame::BoundaryType::Unbounded)
+        return false;
+    if (frame.type != WindowFrame::FrameType::ROWS && window_description.order_by.empty())
         return false;
     return std::ranges::any_of(window_functions, [](const auto & function)
     {

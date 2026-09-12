@@ -3,6 +3,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <Core/Block.h>
 #include <Core/ProtocolDefines.h>
+#include <Core/SortDescription.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/SetSerialization.h>
@@ -52,7 +53,14 @@ WindowFrame rangeFrame(WindowFrame::BoundaryType begin_type)
     return frame;
 }
 
-bool serializes(const String & function_name, const WindowFrame & frame, UInt64 threshold, UInt64 version)
+WindowFrame groupsFrame(UInt64 preceding)
+{
+    WindowFrame frame = rowsFrame(preceding);
+    frame.type = WindowFrame::FrameType::GROUPS;
+    return frame;
+}
+
+bool serializes(const String & function_name, const WindowFrame & frame, UInt64 threshold, UInt64 version, bool ordered = true)
 {
     tryRegisterAggregateFunctions();
 
@@ -62,6 +70,8 @@ bool serializes(const String & function_name, const WindowFrame & frame, UInt64 
     WindowDescription description;
     description.window_name = "w";
     description.frame = frame;
+    if (ordered)
+        description.order_by.emplace_back("v");
 
     WindowFunctionDescription function;
     function.column_name = function_name + "(v) OVER w";
@@ -103,6 +113,9 @@ TEST(WindowStepAggregateTreeVersion, AcceptsOlderPeerWhenTheTreeCannotRun)
     EXPECT_TRUE(serializes("sum", rowsFrame(default_threshold - 2), default_threshold, pre_threshold_version));
     /// The frame start never moves.
     EXPECT_TRUE(serializes("sum", rangeFrame(WindowFrame::BoundaryType::Unbounded), default_threshold, pre_threshold_version));
+    /// Without ORDER BY all rows are peers, so a RANGE or GROUPS frame starts at the partition start.
+    EXPECT_TRUE(serializes("sum", rangeFrame(WindowFrame::BoundaryType::Current), default_threshold, pre_threshold_version, /*ordered=*/false));
+    EXPECT_TRUE(serializes("sum", groupsFrame(1), default_threshold, pre_threshold_version, /*ordered=*/false));
     /// The tree is disabled, as `compatibility` with a version before the tree does.
     EXPECT_TRUE(serializes("sum", rowsFrame(default_threshold), disabled_threshold, pre_threshold_version));
     /// The function keeps the recompute path (`count` has a constant-time batch add).

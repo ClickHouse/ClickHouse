@@ -14,6 +14,11 @@ GatherExchange (sorted by (p ASC, n ASC))
 GatherExchange (sorted by (p ASC, n ASC))
 └──Window (Window step for window \'PARTITION BY p ORDER BY n ASC ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW\')
    │  Aggregate tree threshold: 1000000000 rows
+-- a RANGE or GROUPS frame without ORDER BY keeps its start at the partition start, so no threshold applies
+GatherExchange (sorted by (p ASC))
+└──Window (Window step for window \'PARTITION BY p RANGE BETWEEN CURRENT ROW AND CURRENT ROW\')
+GatherExchange (sorted by (p ASC))
+└──Window (Window step for window \'PARTITION BY p GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW\')
 -- exact integer aggregates above the threshold match between the distributed and the plain plan
 0
 -- compatibility disables the tree in both window shapes

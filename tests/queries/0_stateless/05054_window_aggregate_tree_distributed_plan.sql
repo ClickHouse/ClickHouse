@@ -43,6 +43,14 @@ SELECT explain FROM (EXPLAIN SELECT sum(i) OVER w AS s FROM (SELECT *, n % 2 AS 
     SETTINGS min_window_frame_rows_for_aggregate_tree = 1000000000)
 WHERE explain LIKE '%Window (%' OR explain LIKE '%GatherExchange%' OR explain LIKE '%Aggregate tree threshold%';
 
+SELECT '-- a RANGE or GROUPS frame without ORDER BY keeps its start at the partition start, so no threshold applies';
+SELECT explain FROM (EXPLAIN SELECT sum(i) OVER w AS s FROM (SELECT *, n % 2 AS p FROM t_window_tree_dist) WINDOW w AS (PARTITION BY p RANGE BETWEEN CURRENT ROW AND CURRENT ROW)
+    SETTINGS min_window_frame_rows_for_aggregate_tree = 1000)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%GatherExchange%' OR explain LIKE '%Aggregate tree threshold%';
+SELECT explain FROM (EXPLAIN SELECT sum(i) OVER w AS s FROM (SELECT *, n % 2 AS p FROM t_window_tree_dist) WINDOW w AS (PARTITION BY p GROUPS BETWEEN 1 PRECEDING AND CURRENT ROW)
+    SETTINGS min_window_frame_rows_for_aggregate_tree = 1000)
+WHERE explain LIKE '%Window (%' OR explain LIKE '%GatherExchange%' OR explain LIKE '%Aggregate tree threshold%';
+
 SELECT '-- exact integer aggregates above the threshold match between the distributed and the plain plan';
 SELECT countIf(NOT (s = s2 AND mn = mn2 AND c = c2)) AS mismatches
 FROM
