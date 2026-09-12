@@ -1084,7 +1084,8 @@ static bool matchesNodeToJSONAllValuesIndex(
             if (result_type_without_wrappers->getTypeId() == TypeIndex::String)
                 return hasContextIndependentJSONAllValuesSerialization(argument_type);
 
-            return result_type_without_wrappers->getName() == argument_type_without_wrappers->getName();
+            return !isVariant(result_type_without_wrappers)
+                && result_type_without_wrappers->getName() == argument_type_without_wrappers->getName();
         }
     }
 
