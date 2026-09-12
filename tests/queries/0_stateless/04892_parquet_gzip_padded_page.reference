@@ -1,0 +1,10 @@
+the padded file reads back exactly like the original
+1
+an empty trailing member and magic-prefixed padding read back exactly
+1
+members that collectively fill the page read back exactly
+1
+a page whose gzip trailer is cut off is rejected
+1
+a second gzip member beyond the declared output is rejected
+1
