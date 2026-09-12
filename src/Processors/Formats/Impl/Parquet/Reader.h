@@ -162,13 +162,19 @@ struct Reader
         DataTypePtr decoded_type; // what decoder outputs, not Nullable
         DataTypePtr output_type; // maybe Nullable
         bool output_nullable = false;
-        /// This leaf is inside a Tuple group that is requested as Nullable(Tuple(...)) and is
-        /// eligible for it (the OPTIONAL group has no optional/nullable ancestor and an all-REQUIRED,
-        /// non-array subtree). Then this leaf's definition-level null map is exactly the group's null
-        /// map. We keep that null map (instead of throwing CANNOT_INSERT_NULL) and fill defaults at
-        /// the null rows; the group null map is later used to wrap the assembled ColumnTuple in
-        /// ColumnNullable. See OutputColumnInfo::nullable_group.
-        bool group_nullable = false;
+        /// Definition levels of the enclosing Tuple groups that are read as Nullable(Tuple(...)),
+        /// outermost first. A group is NULL exactly where `def[i] < group_def`, a different threshold
+        /// from this leaf's own null map at max_def, so one leaf's levels answer both questions.
+        /// See OutputColumnInfo::nullable_group_def.
+        std::vector<UInt8> nullable_group_defs;
+        /// Levels of the groups whose null maps this leaf derives, one per consumer (an output's
+        /// nullable_group_map_idx below), so entries may repeat.
+        /// ColumnSubchunk::group_null_maps is parallel to this.
+        std::vector<UInt8> derive_group_defs;
+        /// Whether an enclosing group tells apart the nulls of this leaf that are the group's from
+        /// the ones the element itself carries (OutputColumnInfo::element_null_check_leaves). If not,
+        /// a null in this leaf is rejected as soon as it is decoded.
+        bool element_nulls_checked_by_group = false;
         /// TODO [parquet]: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
@@ -236,12 +242,28 @@ struct Reader
         bool is_missing_column = false;
         bool needs_cast = false; // if output_type is different from input_type
 
-        /// If set, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the group
-        /// null map reconstructed from the leaves' definition levels. Used to read a physically
-        /// nullable parquet struct (OPTIONAL group) as Nullable(Tuple(...)). Only set when the group
-        /// has no optional/nullable ancestor and an all-REQUIRED, non-array subtree, so every leaf's
-        /// null map equals the group null map. `needs_cast` (if any) is applied after wrapping.
-        bool nullable_group = false;
+        /// If nonzero, the assembled column (a ColumnTuple) is wrapped in ColumnNullable using the
+        /// null map derived at this definition level, which reads a physically nullable parquet
+        /// struct (OPTIONAL group) as Nullable(Tuple(...)). The value identifies the group among the
+        /// nullable groups enclosing its leaves, so nesting works at any depth. Zero is never a
+        /// nullable group's level: the root level is level 0 and is always defined.
+        /// `needs_cast` (if any) is applied after wrapping.
+        UInt8 nullable_group_def = 0;
+        /// Index in primitive_columns of the leaf that supplies the above null map. Preference goes
+        /// to a leaf whose path under the group adds no definition level, i.e. whose max_def equals
+        /// nullable_group_def: for such a leaf a level below the group can only mean the group
+        /// itself, whereas a leaf with a nullable or repeated path under the group needs the writer
+        /// to have encoded the group's own level correctly. Element order in the requested type is
+        /// the user's, so the first leaf is not a sound choice.
+        size_t nullable_group_source = 0;
+        /// Index in that leaf's derive_group_defs, hence in ColumnSubchunk::group_null_maps, of this
+        /// group's map. One entry per consumer: forming the output moves the map out.
+        size_t nullable_group_map_idx = 0;
+        /// Leaves inside this group read as non-Nullable, whose nulls this group's null map tells
+        /// apart: a null where the group is NULL is the group's, any other is the element's own and
+        /// cannot go into a non-Nullable column. Checked here, not on the leaf, because the map comes
+        /// from nullable_group_source, whose levels may disagree with the leaf that saw the null.
+        std::vector<size_t> element_null_check_leaves;
 
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
@@ -337,6 +359,7 @@ struct Reader
         bool use_dictionary_filter = false;
         bool use_column_index = false;
         bool need_null_map = false;
+        bool need_group_null_map = false;
 
         /// Prefetches.
         /// TODO [parquet]: Check that all handles and tokens are reset after correct stages.
@@ -402,13 +425,11 @@ struct Reader
 
         MutableColumnPtr null_map;
 
-        /// For a leaf of a physically-nullable struct read as Nullable(Tuple(...)) (see
-        /// PrimitiveColumnInfo::group_nullable): the group's definition-level null map, moved here
-        /// in decodePrimitiveColumn before any leaf-level Nullable wrapping can consume `null_map`.
-        /// formOutputColumn reads it from the group's first leaf to wrap the assembled ColumnTuple
-        /// in ColumnNullable. Kept separate from `null_map` so it survives even when the leaf itself
-        /// is materialized as Nullable(...) (which moves `null_map` into the leaf's ColumnNullable).
-        MutableColumnPtr group_null_map;
+        /// Null maps of the enclosing Tuple groups read as Nullable(Tuple(...)) that this leaf
+        /// derives, parallel to PrimitiveColumnInfo::derive_group_defs. Each holds one entry per
+        /// instance of its group, so it is independent of `null_map` (which answers the leaf's own
+        /// nullness) and survives the leaf being materialized as Nullable(...).
+        MutableColumns group_null_maps;
 
         /// If this primitive column is inside an array, this is the offsets for `ColumnArray`s at
         /// all nesting levels, from outer to inner. Index is repetition level - 1.
@@ -623,6 +644,11 @@ struct Reader
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
+
+    /// Throws CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN for a null that `group_null_map` does not
+    /// attribute to the group being NULL (see OutputColumnInfo::element_null_check_leaves).
+    void checkElementNullsUnderNullableGroup(
+        const RowSubgroup & row_subgroup, const OutputColumnInfo & output_info, const IColumn & group_null_map) const;
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 
