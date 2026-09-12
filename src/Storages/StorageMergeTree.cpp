@@ -2,7 +2,9 @@
 
 #include <optional>
 #include <ranges>
+#include <set>
 #include <thread>
+#include <unordered_map>
 
 #include <Backups/BackupEntriesCollector.h>
 #include <Core/BackgroundSchedulePool.h>
@@ -1943,6 +1945,14 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
 
     CurrentlyMergingPartsTaggerPtr tagger;
 
+    /// Patch parts are applied to the source part before any of the mutation commands are evaluated,
+    /// and the set of applied patches is bounded from above by the data version of the result part.
+    /// So a batch of mutations squashed into a single task must not span the version of a patch part:
+    /// the commands with a lower version would be evaluated over an update that they must not see.
+    std::unordered_map<String, std::set<Int64>> patch_versions_by_partition;
+    for (const auto & patch : getPatchPartsVectorForInternalUsage())
+        patch_versions_by_partition[patch->info.getOriginalPartitionId()].insert(patch->info.getDataVersion());
+
     auto mutations_end_it = current_mutations_by_version.end();
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
@@ -2035,6 +2045,10 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             }
         }
 
+        const std::set<Int64> * patch_versions = nullptr;
+        if (auto patches_it = patch_versions_by_partition.find(part->info.getPartitionId()); patches_it != patch_versions_by_partition.end())
+            patch_versions = &patches_it->second;
+
         auto commands = std::make_shared<MutationCommands>();
         Strings mutation_ids;
         size_t current_ast_elements = 0;
@@ -2044,6 +2058,15 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
             /// Do not squash mutations from different transactions to be able to commit/rollback them independently.
             if (first_mutation_tid != it->second.tid)
                 break;
+
+            /// Stop before a mutation that is separated from the previous one by a patch part - see the
+            /// comment about `patch_versions_by_partition` above. The same is done for a replicated table
+            /// in `ReplicatedMergeTreeZooKeeperMergePredicate::getExpectedMutationVersion`.
+            if (patch_versions && it != mutations_begin_it
+                && patch_versions->lower_bound(std::prev(it)->first) != patch_versions->upper_bound(it->first))
+            {
+                break;
+            }
 
             size_t commands_size = 0;
             MutationCommands commands_for_size_validation;
