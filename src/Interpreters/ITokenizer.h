@@ -211,9 +211,8 @@ inline ALWAYS_INLINE UInt32 separatorBits(const ByteSetLookup & separators, cons
     for (size_t i = 0; i < block_length; ++i)
         bits |= static_cast<UInt32>(separators.contains(block[i])) << i;
 #endif
-    if (block_length < ByteSetLookup::BLOCK_SIZE)
-        bits &= (1u << block_length) - 1;
-    return bits;
+    /// For a full block the mask is 0xFFFF and keeps every bit.
+    return bits & ((1u << block_length) - 1);
 }
 
 /// Calls `callback` for every maximal run of bytes outside `separators`; stops if it returns true.
