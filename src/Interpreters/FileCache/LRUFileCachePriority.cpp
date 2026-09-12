@@ -123,7 +123,12 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::add( /// NOLINT
     assertNotSealed("add");
     auto lock = getPriorityGuard().writeLock();
     return std::make_shared<LRUIterator>(add(
-        std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata),
+        createEntry(
+            key_metadata->key,
+            offset,
+            size,
+            key_metadata,
+            getOrCreateUsageCounters(key_metadata->origin->user_id)),
         lock,
         state_lock));
 }
@@ -138,7 +143,14 @@ IFileCachePriority::IteratorPtr LRUFileCachePriority::addForRestore( /// NOLINT
 {
     assertNotSealed("addForRestore");
     return std::make_shared<LRUIterator>(add(
-        std::make_shared<Entry>(key_metadata->key, offset, size, key_metadata), lock, state_lock));
+        createEntry(
+            key_metadata->key,
+            offset,
+            size,
+            key_metadata,
+            getOrCreateUsageCounters(key_metadata->origin->user_id)),
+        lock,
+        state_lock));
 }
 
 LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
@@ -181,7 +193,10 @@ LRUFileCachePriority::LRUIterator LRUFileCachePriority::add(
         CurrentMetrics::add(CurrentMetrics::FilesystemCachePriorityQueueElements);
 
     if (entry->size)
+    {
+        addTrackedUsage(*entry, entry->size, 1);
         entryAdd(entry->size, /* elements */1, *state_lock);
+    }
 
     LOG_TEST(
         log, "Added entry into LRU queue, key: {}, offset: {}, size: {}",
@@ -196,7 +211,10 @@ LRUFileCachePriority::remove(LRUQueue::iterator it, const CachePriorityGuard::Wr
     /// If size is 0, entry is invalidated, current_elements_num was already updated.
     auto & entry = **it;
     if (entry.size)
+    {
+        subTrackedUsage(entry, entry.size.load(), 1);
         entrySub(entry.size, /* elements */1);
+    }
 
     const bool was_invalidated = entry.getState() == Entry::State::Invalidated;
     entry.setRemoved(lock);
@@ -816,7 +834,10 @@ void LRUFileCachePriority::LRUIterator::invalidateImpl() noexcept
              entry_ptr->toString(), cache_priority->getApproxStateInfoForLog());
 #endif
 
-    size_t entry_size = entry_ptr->size;
+    const size_t entry_size = entry_ptr->size;
+    if (entry_size)
+        LRUFileCachePriority::subTrackedUsage(*entry_ptr, entry_size, 1);
+
     entry_ptr->size = 0;
     entry_ptr->setInvalidatedFlag();
     if (cache_priority->getQueueType() == QueueType::Main)
@@ -850,6 +871,8 @@ void LRUFileCachePriority::LRUIterator::incrementSize(
         "Incrementing size with {} in LRU queue for entry {}",
         size, entry_ptr->toString());
 
+    LRUFileCachePriority::addTrackedUsage(*entry_ptr, size, elements);
+
     cache_priority->entryAdd(size, elements, lock);
     entry_ptr->size += size;
 
@@ -871,6 +894,7 @@ void LRUFileCachePriority::LRUIterator::decrementSize(size_t size)
              size, entry_ptr->toString());
 
     const bool became_empty = entry_ptr->size == size;
+    LRUFileCachePriority::subTrackedUsage(*entry_ptr, size, became_empty ? 1 : 0);
     cache_priority->entrySub(size, /* elements */became_empty ? 1 : 0);
     entry_ptr->size -= size;
 }

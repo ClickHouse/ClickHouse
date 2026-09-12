@@ -17,13 +17,13 @@
 #include <Common/callOnce.h>
 #include <Common/Exception.h>
 #include <Common/ThreadPool.h>
+#include <Common/DimensionalMetrics.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/FailPoint.h>
 #include <Common/randomSeed.h>
 #include <Common/ConcurrentBoundedQueue.h>
 #include <Core/ServerUUID.h>
 #include <Core/BackgroundSchedulePool.h>
-#include <Common/DimensionalMetrics.h>
 #include <Common/HistogramMetrics.h>
 #include <base/unit.h>
 #if ENABLE_DISTRIBUTED_CACHE
@@ -136,6 +136,7 @@ namespace FileCacheSetting
     extern const FileCacheSettingsUInt64 idle_client_ttl_sec;
     extern const FileCacheSettingsUInt64 idle_client_check_interval_sec;
     extern const FileCacheSettingsNonZeroUInt64 idle_client_eviction_threads;
+    extern const FileCacheSettingsBool expose_prometheus_cache_usage_metrics_per_user;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics;
     extern const FileCacheSettingsBool expose_prometheus_eviction_metrics_per_user;
     extern const FileCacheSettingsNonZeroUInt64 drop_cache_threads;
@@ -322,6 +323,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , split_cache_ratio(settings[FileCacheSetting::split_cache_ratio])
     , system_cache_extensions(parseSystemCacheExtensions(settings[FileCacheSetting::system_cache_extensions].value))
     , skip_cache_on_disk_failure(settings[FileCacheSetting::skip_cache_on_disk_failure])
+    , expose_usage_metrics_per_user(settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user])
     , expose_eviction_metrics(settings[FileCacheSetting::expose_prometheus_eviction_metrics])
     , expose_eviction_metrics_per_user(settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user])
     , name(cache_name)
@@ -337,7 +339,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     {
         case FileCachePolicy::LRU:
         {
-            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, size_t /*size_ratio*/, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
+            creator_function = [](
+                IFileCachePriority::QueueType queue_type,
+                size_t max_size,
+                size_t max_elements,
+                double /*size_ratio*/,
+                size_t /*overcommit_eviction_evict_step*/,
+                String description) -> IFileCachePriorityPtr
             {
                 return std::make_unique<LRUFileCachePriority>(
                     queue_type,
@@ -349,7 +357,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         }
         case FileCachePolicy::SLRU:
         {
-            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t /*overcommit_eviction_evict_step*/, String description) -> IFileCachePriorityPtr
+            creator_function = [](
+                IFileCachePriority::QueueType queue_type,
+                size_t max_size,
+                size_t max_elements,
+                double size_ratio,
+                size_t /*overcommit_eviction_evict_step*/,
+                String description) -> IFileCachePriorityPtr
             {
                 return std::make_unique<SLRUFileCachePriority>(
                     queue_type,
@@ -363,7 +377,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
 #if ENABLE_DISTRIBUTED_CACHE
         case FileCachePolicy::LRU_OVERCOMMIT:
         {
-            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double /*size_ratio*/, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
+            creator_function = [](
+                IFileCachePriority::QueueType queue_type,
+                size_t max_size,
+                size_t max_elements,
+                double /*size_ratio*/,
+                size_t overcommit_eviction_evict_step,
+                String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<LRUFileCachePriority>>(
                     overcommit_eviction_evict_step,
@@ -376,7 +396,13 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
         }
         case FileCachePolicy::SLRU_OVERCOMMIT:
         {
-            creator_function = [](IFileCachePriority::QueueType queue_type, size_t max_size, size_t max_elements, double size_ratio, size_t overcommit_eviction_evict_step, String /*description*/) -> IFileCachePriorityPtr
+            creator_function = [](
+                IFileCachePriority::QueueType queue_type,
+                size_t max_size,
+                size_t max_elements,
+                double size_ratio,
+                size_t overcommit_eviction_evict_step,
+                String /*description*/) -> IFileCachePriorityPtr
             {
                 return std::make_unique<OvercommitFileCachePriority<SLRUFileCachePriority>>(
                     overcommit_eviction_evict_step,
@@ -424,7 +450,6 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
             cache_name
         );
     }
-
     LOG_DEBUG(log, "Using {} cache policy", settings[FileCacheSetting::cache_policy].value);
 
     supports_dynamic_resize = main_priority->supportsDynamicResize();
@@ -440,6 +465,12 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     const bool is_overcommit_policy =
         cache_policy == FileCachePolicy::LRU_OVERCOMMIT || cache_policy == FileCachePolicy::SLRU_OVERCOMMIT;
     client_tracking_possible = is_overcommit_policy && write_cache_per_user_directory;
+
+    /// Overcommit policies keep per-client usage themselves and answer
+    /// `getUsageStatPerClient` from it, so the tracker is only needed for the other policies.
+    if (expose_usage_metrics_per_user && !is_overcommit_policy)
+        main_priority->setUsageTracker(std::make_shared<FileCacheUsageTracker>());
+
     if (write_cache_per_user_directory && idle_client_ttl_sec.load() > 0 && !is_overcommit_policy)
         LOG_WARNING(log, "idle_client_ttl_sec is set but the cache policy does not track "
                          "per-client usage; idle-client eviction is disabled");
@@ -2755,7 +2786,18 @@ IFileCachePriority::Type FileCache::getEvictionPolicyType()
 std::unordered_map<std::string, FileCache::UsageStat> FileCache::getUsageStatPerClient()
 {
     assertInitialized();
-    return main_priority->getUsageStatPerClient();
+    /// Take the state lock so that a concurrent SLRU queue move (which charges the new
+    /// entry before discharging the old one, both under this lock) cannot be observed
+    /// in its intermediate state, where the moved segment would be counted twice.
+    ///
+    /// The lock makes the snapshot free of over-reporting, not equal to the cache total at
+    /// every instant: per the lock order in `Guards.h`, cache decrements are lock-free, so
+    /// even `getSize(Lock)` is exact only with respect to concurrent growth. A removal that
+    /// is in flight while this runs discharges the per-client counters before it discharges
+    /// the queue state (see `subTrackedUsage` at every removal site), so the sample can be
+    /// behind the total by the sizes of the removals in flight - never ahead of it.
+    auto state_lock = cache_state_guard.lock();
+    return main_priority->getUsageStatPerClient(state_lock);
 }
 
 std::vector<String> FileCache::tryGetCachePaths(const Key & key)
@@ -2988,6 +3030,25 @@ void FileCache::applySettingsIfPossible(const FileCacheSettings & new_settings, 
     {
         expose_eviction_metrics_per_user.store(new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user], std::memory_order_relaxed);
         actual_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user] = new_settings[FileCacheSetting::expose_prometheus_eviction_metrics_per_user];
+    }
+
+    /// Unlike the eviction metrics above, this one is startup-only.
+    /// Usage counters are attached to a priority queue entry when the entry is created, so
+    /// enabling the feature on a live cache would never account for the entries which are
+    /// already cached: the gauges would keep under-reporting the real usage until every
+    /// pre-existing entry happens to be evicted. An unnoticeably wrong gauge is worse than
+    /// an absent one, so refuse the change instead and say so in the log.
+    /// `actual_settings` is deliberately left at the effective value, so that
+    /// `system.filesystem_cache_settings` keeps showing what the cache actually does.
+    if (new_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user]
+        != actual_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user])
+    {
+        LOG_WARNING(
+            log,
+            "Setting `expose_prometheus_cache_usage_metrics_per_user` was changed to {} in the configuration, "
+            "but it cannot be changed without a server restart, therefore it stays {}",
+            new_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user].value,
+            actual_settings[FileCacheSetting::expose_prometheus_cache_usage_metrics_per_user].value);
     }
 }
 

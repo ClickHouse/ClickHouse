@@ -1,6 +1,8 @@
 ---
 description: 'This table contains dimensional metrics that can be calculated instantly
-  and exported in the Prometheus format. It is always up to date.'
+  and exported in the Prometheus format. Most of the metrics are always up to date;
+  the metrics which are sampled by the asynchronous metrics task are marked as such
+  in their descriptions.'
 keywords: ['system table', 'dimensional_metrics']
 slug: /operations/system-tables/dimensional_metrics
 title: 'system.dimensional_metrics'
@@ -13,7 +15,9 @@ import SystemTableCloud from '/snippets/_system_table_cloud.mdx';
 
 ## Description {#description}
 
-This table contains dimensional metrics that can be calculated instantly and exported in the Prometheus format. It is always up to date.
+This table contains dimensional metrics that can be calculated instantly and exported in the Prometheus format.
+
+Most of the metrics are updated in place and are therefore always up to date when the table is read. The exception is the metrics which are sampled by the asynchronous metrics task — currently `filesystem_cache_size_bytes` and `filesystem_cache_elements`. Those can lag behind the current state by one update interval (`asynchronous_metrics_update_period_s`); their descriptions below say so explicitly, and `SYSTEM RELOAD ASYNCHRONOUS METRICS` requests an immediate sample.
 
 ## Columns {#columns}
 
@@ -52,6 +56,32 @@ Indicates startup scripts failures by error type. Set to 1 when a startup script
 
 ### merge_tree_parts {#merge_tree_parts}
 Number of merge tree data parts, labelled by part state, part type, and whether it is a projection part.
+
+### `filesystem_cache_size_bytes` {#filesystem-cache-size-bytes}
+Filesystem cache size in bytes, labelled by cache name and cache client id (`user_id`). Disabled by default; enable with `expose_prometheus_cache_usage_metrics_per_user`. The gauge is sampled periodically by the asynchronous metrics task, so it can lag behind current cache usage by one update interval. Run `SYSTEM RELOAD ASYNCHRONOUS METRICS` to request an immediate sample.
+
+### `filesystem_cache_elements` {#filesystem-cache-elements}
+Filesystem cache elements (file segments), labelled by cache name and cache client id (`user_id`). Disabled by default; enable with `expose_prometheus_cache_usage_metrics_per_user`. The gauge is sampled periodically by the asynchronous metrics task, so it can lag behind current cache usage by one update interval. Run `SYSTEM RELOAD ASYNCHRONOUS METRICS` to request an immediate sample.
+
+:::note
+The `user_id` label identifies the *filesystem cache client* which owns the cached data, not the SQL user which ran a query. On the ordinary cache paths a server uses a single cache client, so a plain `clickhouse-server` reports one series per cache, labelled with the server UUID. Several distinct `user_id` values appear where the cache is populated on behalf of several clients — for example a distributed cache server, or a server for which `Context::setFilesystemCacheUser` is set.
+:::
+
+:::note
+A sample of these gauges never reports more cache usage than the cache really holds, but it can
+report less. Cache removals are lock-free by design, so a removal which is in flight while the
+sample is taken is already discharged from the per-client counters while the cache total
+(`FilesystemCacheBytes` in `system.asynchronous_metrics`) still counts it. The two therefore agree
+in a quiescent cache and can differ, by the size of the removals in flight, in a busy one.
+:::
+
+:::note
+When several cache configurations share the same `path`, they refer to a single physical cache instance (see `FileCacheFactory`). The `cache_name` label of the usage gauges above is the *primary* cache name — the name of the configuration that first created the instance. Usage is reported once, under the primary name, to avoid double-counting the shared cache. Other alias names for the same instance have no separate series, even though `system.filesystem_cache_settings` reports the same `current_size` and `current_elements_num` for each alias.
+:::
+
+:::note
+Unlike the eviction metrics below, `expose_prometheus_cache_usage_metrics_per_user` cannot be changed by `SYSTEM RELOAD CONFIG` — a server restart is required. Usage is accounted per cache entry from the moment the entry is created, so a cache which was populated while the setting was off cannot be accounted retroactively. A configuration change is refused with a warning in the server log, and `system.filesystem_cache_settings` keeps reporting the value the cache actually runs with.
+:::
 
 ### `filesystem_cache_evictions_total` {#filesystem-cache-evictions-total}
 Number of file segments evicted from a filesystem cache, labelled by cache name. Disabled by default; enable with `expose_prometheus_eviction_metrics`.

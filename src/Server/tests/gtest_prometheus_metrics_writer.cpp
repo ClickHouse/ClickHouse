@@ -185,3 +185,24 @@ TEST(PrometheusMetricsWriter, DimensionalCounter)
 
     EXPECT_EQ(expected, output);
 }
+
+TEST(PrometheusMetricsWriter, DimensionalRemoveLabels)
+{
+    DimensionalMetrics::MetricFamily family("test_dimensional_remove_gtest", "Test dimensional metrics", {"database", "table"});
+    family.withLabels({"db1", "users"}).set(42.0);
+
+    EXPECT_FALSE(family.removeLabels({"db2", "users"}));
+    EXPECT_TRUE(family.removeLabels({"db1", "users"}));
+
+    std::string output;
+    {
+        WriteBufferFromString buffer(output);
+        PrometheusMetricsWriter::writeDimensionalMetric(buffer, family);
+    }
+
+    static constexpr const char * expected =
+        "# HELP ClickHouseDimensionalMetrics_test_dimensional_remove_gtest Test dimensional metrics\n"
+        "# TYPE ClickHouseDimensionalMetrics_test_dimensional_remove_gtest gauge\n";
+
+    EXPECT_EQ(expected, output);
+}
