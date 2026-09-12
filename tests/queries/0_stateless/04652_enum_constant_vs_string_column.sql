@@ -395,9 +395,8 @@ SELECT 'control_fixed_string_padding', (SELECT count() FROM pk_fixed10 WHERE key
 -- The hint propagation is added by https://github.com/ClickHouse/ClickHouse/pull/110084.
 SELECT 'known_limitation_array_element', (SELECT hex(x[1]) FROM values('x Array(String)', [CAST('7', 'Enum8(\'7\' = 3)')])) = '33';
 
--- hasAny and hasAll cast both arrays to their least supertype, so a constant Array(Enum) searched over
--- an Array(String) column is compared by the name of the enum value, and createColumnFromConstantArray
--- hashes the names. Hashing the number instead used to over prune.
+-- hasAny and hasAll go through createColumnFromConstantArray, which converts the elements with their
+-- own type as well, so their bloom filter lookup agrees with the function - as it does for has above.
 SELECT 'bloom_filter_has_any', (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')]))
     = (SELECT groupArray(v) FROM bf_array WHERE hasAny(v, [CAST('7', 'Enum8(\'7\' = 3)')]) SETTINGS use_skip_indexes = 0);
 SELECT 'bloom_filter_has_all', (SELECT groupArray(v) FROM bf_array WHERE hasAll(v, [CAST('7', 'Enum8(\'7\' = 3)')]))

@@ -39,6 +39,7 @@ namespace Setting
     extern const SettingsBool serialize_query_plan;
     extern const SettingsBool enable_group_by_top_k_optimization;
     extern const SettingsUInt64 group_by_top_k_optimization_observation_rows;
+    extern const SettingsBool distributed_plan_fallback_to_local_execution;
     extern const SettingsBool distributed_plan_execute_locally;
     extern const SettingsBool optimize_aggregation_in_order;
     extern const SettingsBool optimize_distinct_in_order;
@@ -154,9 +155,6 @@ namespace Setting
     extern const SettingsVectorSearchFilterStrategy vector_search_filter_strategy;
     extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool parallel_replicas_plan_based;
-    extern const SettingsBool query_plan_derive_not_null_filters_from_joins;
-    extern const SettingsBool query_plan_allow_derived_not_null_filters_execution;
-    extern const SettingsDouble query_plan_max_selectivity_for_not_null_filters_execution;
 }
 
 namespace ServerSetting
@@ -291,17 +289,9 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
             "make_distributed_plan does not support parallel replicas, "
             "disable the `enable_parallel_replicas` and `automatic_parallel_replicas_mode` settings");
 
-    /// A distributed read buckets the part, and `ReadFromMergeTree::serialize` rejects a bucketed read
-    /// served from a projection; the implicit count/minmax projection would also be counted once per
-    /// bucket and multiply the result. Turn projection rewrites off so such a read is never built.
-    if (make_distributed_plan)
-    {
-        optimize_projection = false;
-        optimize_use_implicit_projections = false;
-        force_use_projection = false;
-        force_projection_name = {};
-    }
-
+    /// NOTE: projection rewrites are disabled for a distributed plan in `QueryPlan::optimize`, after
+    /// the decision on whether the plan is distributed at all.
+    distributed_plan_fallback_to_local_execution = from[Setting::distributed_plan_fallback_to_local_execution];
     distributed_plan_execute_locally = from[Setting::distributed_plan_execute_locally];
     distributed_plan_default_shuffle_join_bucket_count = from[Setting::distributed_plan_default_shuffle_join_bucket_count];
     distributed_plan_default_reader_bucket_count = from[Setting::distributed_plan_default_reader_bucket_count];
@@ -397,13 +387,6 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     min_bytes_per_task_for_reading = from[Setting::merge_tree_min_bytes_per_task_for_remote_reading];
 
     parallel_replicas_filter_pushdown = from[Setting::parallel_replicas_filter_pushdown];
-
-    derive_not_null_filters_from_joins = from[Setting::query_plan_convert_outer_join_to_inner_join]
-        && from[Setting::query_plan_derive_not_null_filters_from_joins];
-
-    allow_derived_not_null_filters_execution = from[Setting::query_plan_allow_derived_not_null_filters_execution];
-
-    max_selectivity_for_not_null_filters_execution = from[Setting::query_plan_max_selectivity_for_not_null_filters_execution];
 }
 
 QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(ContextPtr from)
