@@ -327,6 +327,7 @@ private:
 
     static void convertAndFilterSourceStream(
         const Block & header,
+        const SelectQueryInfo & outer_query_info,
         SelectQueryInfo & modified_query_info,
         const StorageSnapshotPtr & snapshot,
         const Aliases & aliases,
