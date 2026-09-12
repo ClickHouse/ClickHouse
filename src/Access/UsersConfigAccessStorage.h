@@ -55,11 +55,17 @@ private:
     AccessEntityPtr readImpl(const UUID & id, bool throw_if_not_exists) const override;
     std::optional<std::pair<String, AccessEntityType>> readNameWithTypeImpl(const UUID & id, bool throw_if_not_exists) const override;
 
+    /// Redirects the UUID an older server generated from the escaped config-key spelling of a dotted entity name
+    /// to the canonical UUID generated from the un-escaped name. Returns the id unchanged when there is no alias.
+    UUID resolveLegacyID(const UUID & id) const;
+
     AccessControl & access_control;
     MemoryAccessStorage memory_storage;
     String path;
     std::unique_ptr<ConfigReloader> config_reloader;
     bool backup_allowed = false;
     mutable std::mutex load_mutex;
+    mutable std::mutex legacy_ids_mutex;
+    std::unordered_map<UUID, UUID> legacy_ids;
 };
 }
