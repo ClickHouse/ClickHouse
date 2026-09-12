@@ -1,6 +1,8 @@
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseFilesystem.h>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
 #include <Common/Logger.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
@@ -137,6 +139,12 @@ StoragePtr DatabaseFilesystem::tryGetTableFromCache(const std::string & name) co
 
 bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) const
 {
+    /// `EXISTS TABLE` requires only `SHOW TABLES`, so answering it without the read source grant turns
+    /// this database into an oracle for `user_files`. Claim the table: resolving it reports the denial.
+    /// `isGrantedWithFilter` does not exist on this branch; with an empty filter it is `isGranted`.
+    if (!context_->getAccess()->isGranted(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE)))
+        return true;
+
     if (tryGetTableFromCache(name))
         return true;
 
@@ -145,6 +153,11 @@ bool DatabaseFilesystem::isTableExist(const String & name, ContextPtr context_) 
 
 StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr context_, bool throw_on_error) const
 {
+    /// Resolving a table of this database requires the read source grant. It is checked here, above the
+    /// cache, because the cache is keyed on the table name alone: an entry resolved by one user is
+    /// handed to every later caller. `file` reports no URI, so the grant is checked with no filter.
+    context_->getAccess()->checkAccessWithFilter(AccessType::READ, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
     /// A renaming rule belongs to the one query that set it, while a cached table is shared with the
     /// later queries of every user. Such a table is therefore neither taken from the cache, where it
     /// would arrive without the rule, nor put into it, where it would rename for an unrelated query.
