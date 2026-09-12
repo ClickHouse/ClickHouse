@@ -129,6 +129,7 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     }
 
     version = index_format.version;
+    part_metadata = index->deserializePartMetadata(streams);
 }
 
 void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges)
@@ -144,7 +145,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
         }
 
         if (!res)
-            res = index->createIndexGranule();
+            res = index->createIndexGranule(part_metadata);
 
         MergeTreeIndexDeserializationState state
         {
@@ -214,10 +215,10 @@ MergeTreeReaderSettings MergeTreeIndexReader::patchSettings(MergeTreeReaderSetti
     using enum MergeTreeIndexSubstream::Type;
     settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream);
 
-    /// Adjust read buffer sizes for text index dictionaries and postings
+    /// Adjust read buffer sizes for text index dictionaries, postings, and `JSON` value filters
     /// because usually we read relatively small amounts of data from random places of
     /// these substreams. So, it doesn't make sense to read more data in the buffer.
-    if (substream == TextIndexDictionary || substream == TextIndexPostings)
+    if (substream == TextIndexDictionary || substream == TextIndexPostings || substream == JSONBloomFilterValues)
     {
         settings.read_settings.local_fs_settings.buffer_size = 16 * 1024;
         settings.read_settings.remote_fs_settings.buffer_size = 16 * 1024;

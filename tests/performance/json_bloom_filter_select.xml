@@ -1,0 +1,43 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>ignored</name>
+            <values>
+                <value>bf_full,bf_narrow</value>
+                <value>bf_narrow</value>
+                <value>bf_full</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <max_threads>1</max_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_skip_indexes_on_data_read>0</use_skip_indexes_on_data_read>
+    </settings>
+
+    <create_query>CREATE TABLE json_bf_select (j JSON(tags Array(String))) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity_bytes = 0</create_query>
+    <create_query do_not_check_in_pr="113022">ALTER TABLE json_bf_select ADD INDEX bf_full j TYPE jsonbf_v1() GRANULARITY 1</create_query>
+    <create_query do_not_check_in_pr="113022">ALTER TABLE json_bf_select ADD INDEX bf_narrow j TYPE jsonbf_v1(include_paths = ['id', 'request_id', 'tags']) GRANULARITY 1</create_query>
+    <fill_query>INSERT INTO json_bf_select SELECT ('{{"id":' || toString(number) || ',"request_id":"req-' || toString(number) || '","tenant":"tenant-' || toString(number % 100) || '","tags":["tag-' || toString(number) || '","common"],' || arrayStringConcat(arrayMap(i -> '"payload' || toString(i) || '":"' || toString(cityHash64(number + i)) || '"', range(12)), ',') || '}}')::JSON(tags Array(String)) FROM numbers(1000000)</fill_query>
+
+    <query>SELECT count() FROM json_bf_select WHERE j.id = -1000000 SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE j.id = 500000 SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE j.id.:Int64 = -1000000 SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE j.id.:Int64 = 500000 SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE j.request_id = 'missing-request' SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE j.request_id.:String = 'req-500000' SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE j.id.:Int64 IN (500000, 750000) SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE has(j.tags, 'tag-500000') SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE hasAny(j.tags, ['tag-500000', 'missing-tag']) SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE hasAll(j.tags, ['tag-500000', 'missing-tag']) SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE j.tenant = 'tenant-10' SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE has(j.tags, 'common') SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+
+    <query>SELECT count() FROM json_bf_select WHERE j.payload0.:String = 'missing-payload' AND j.payload1.:String = 'missing-payload' AND j.payload2.:String = 'missing-payload' AND j.payload3.:String = 'missing-payload' AND j.payload4.:String = 'missing-payload' AND j.payload5.:String = 'missing-payload' AND j.payload6.:String = 'missing-payload' AND j.payload7.:String = 'missing-payload' AND j.payload8.:String = 'missing-payload' AND j.payload9.:String = 'missing-payload' AND j.payload10.:String = 'missing-payload' AND j.payload11.:String = 'missing-payload' SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+    <query>SELECT count() FROM json_bf_select WHERE j.payload0.:String = 'missing-payload' OR j.payload1.:String = 'missing-payload' OR j.payload2.:String = 'missing-payload' OR j.payload3.:String = 'missing-payload' OR j.payload4.:String = 'missing-payload' OR j.payload5.:String = 'missing-payload' OR j.payload6.:String = 'missing-payload' OR j.payload7.:String = 'missing-payload' OR j.payload8.:String = 'missing-payload' OR j.payload9.:String = 'missing-payload' OR j.payload10.:String = 'missing-payload' OR j.payload11.:String = 'missing-payload' SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+
+    <query>SELECT count() FROM json_bf_select WHERE j.tenant = 'tenant-10' OR j.request_id = 'req-500000' SETTINGS ignore_data_skipping_indices = '{ignored}'</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_bf_select</drop_query>
+</test>

@@ -173,7 +173,7 @@ The syntax mirrors `ALTER TABLE ... ADD INDEX`, but no index is built or written
 
 - `name` — index name; must be unique within `(database, table)` for this session.
 - `expression` — the column or expression to index.
-- `TYPE type` — `minmax`, `set(N)`, `bloom_filter(p)`, `ngrambf_v1(...)`, `tokenbf_v1(...)`. `text` and `vector_similarity` are not supported and rejected at `CREATE` time, because their real `ALTER TABLE ... ADD INDEX` validation depends on table-level settings the session-only store can't replicate.
+- `TYPE type` — `minmax`, `set(N)`, `bloom_filter(p)`, `ngrambf_v1(...)`, `tokenbf_v1(...)`, `sparse_grams(...)`, `jsonbf_v1(...)`. The `jsonbf_v1` index requires a direct `JSON` column. `text` and `vector_similarity` are not supported and rejected at `CREATE` time, because their real `ALTER TABLE ... ADD INDEX` validation depends on table-level settings the session-only store can't replicate.
 - `GRANULARITY value` — number of data granules per index granule. Defaults to 1.
 
 The target table must be a `MergeTree` family table in an `Atomic` database (it must have a UUID). Tables without a UUID — for example in a legacy `Ordinary` database, or old-syntax `MergeTree` — are rejected, because the session store keys hypothetical indexes by table UUID.

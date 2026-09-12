@@ -1668,6 +1668,7 @@ see ["Understanding ClickHouse data skipping indexes"](/concepts/features/perfor
 - [`MinMax`](#minmax) index
 - [`Set`](#set) index
 - [`bloom_filter`](#bloom-filter) index
+- [`jsonbf_v1`](#json-bloom-filter) index
 - [`ngrambf_v1`](#n-gram-bloom-filter) index *(Deprecated)*
 - [`tokenbf_v1`](#token-bloom-filter) index *(Deprecated)*
 - [`text`](#text) index
@@ -1722,6 +1723,26 @@ For the `Map` data type, the client can specify if the index should be created f
 <Note title="JSON data type: indexing JSON paths">
 For the [`JSON`](/reference/data-types/newjson) data type, a bloom filter index can be created on the set of paths using the [`JSONAllPaths`](/reference/functions/regular-functions/json-functions#JSONAllPaths) function. This allows skipping granules where a queried JSON path is absent. See [Data skipping indexes for JSON](/reference/data-types/newjson#data-skipping-indexes-for-json) for details.
 </Note>
+
+#### JSON Bloom filter {#json-bloom-filter}
+
+The `jsonbf_v1` index covers scalar leaves of one direct `JSON` column. It separates values by logical path and container role, indexes array elements and named `Tuple` fields, and indexes declared typed `Map` values by key.
+
+```sql title="Syntax"
+INDEX json_values json_column TYPE jsonbf_v1(
+    false_positive_rate = 0.025,
+    include_paths = ['tenant', 'items'],
+    include_paths_regexp = ['_id$'],
+    skip_paths = ['items.payload'],
+    skip_paths_regexp = ['_debug$']
+) GRANULARITY 1
+```
+
+All parameters are optional and named. `false_positive_rate` must be a `Float64` between 0 and 1; its default is `0.025`. The path parameters are arrays of strings. Exact paths include their descendants; regular expressions use partial matches. Include rules are combined with OR, and skip rules take precedence. Without include rules, all paths are included. Array elements do not add a path segment: a field below `items Array(JSON)` has a logical path such as `items.item_id`.
+
+Supported predicates include equality, typed `IN`, `has`, `hasAny`, and `hasAll`. Direct `Dynamic` scalar paths also support `isNotNull`. Unsupported runtime types and conversions are handled conservatively. Runtime `Map` values accessed through a `Dynamic` type hint do not support keyed pruning. The index does not support range, substring, or full-text predicates, and cannot be declared on a subcolumn or an expression.
+
+See [type-aware JSON indexing](/reference/data-types/newjson#json-indexes-jsonbf-v1) for an example.
 
 #### N-gram bloom filter *(Deprecated)* {#n-gram-bloom-filter}
 
@@ -1829,47 +1850,47 @@ Conditions in the `WHERE` clause contains calls of the functions that operate wi
 
 Indexes of type `set` can be utilized by all functions. The other index types are supported as follows:
 
-| Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | sparse_grams | text |
-|--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|--------------|------|
-| [equals (=, ==)](/reference/functions/regular-functions/comparison-functions#equals)                                                     | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notEquals(!=, &lt;&gt;)](/reference/functions/regular-functions/comparison-functions#notEquals)                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
-| [like](/reference/functions/regular-functions/string-search-functions#like)                                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [notLike](/reference/functions/regular-functions/string-search-functions#notLike)                                                        | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
-| [match](/reference/functions/regular-functions/string-search-functions#match)                                                            | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                                                         | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                                                             | ✗           | ✗      | ✔          | ✔          | ✗            | ✔            | ✔    |
-| [multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                          | ✗           | ✗      | ✔          | ✗          | ✗            | ✗            | ✔    |
-| [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [in](/reference/functions/regular-functions/in-functions)                                                                                    | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [notIn](/reference/functions/regular-functions/in-functions)                                                                                 | ✔           | ✔      | ✔          | ✔          | ✗            | ✔            | ✗    |
-| [less (`<`)](/reference/functions/regular-functions/comparison-functions#less)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [greater (`>`)](/reference/functions/regular-functions/comparison-functions#greater)                                                     | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [lessOrEquals (`<=`)](/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [greaterOrEquals (`>=`)](/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                                    | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [empty](/reference/functions/regular-functions/array-functions#empty)                                                                       | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            | ✗    |
-| [notEmpty](/reference/functions/regular-functions/array-functions#notEmpty)                                                                 | ✗           | ✔      | ✗          | ✗          | ✗            | ✔            | ✗    |
-| [has](/reference/functions/regular-functions/array-functions#has)                                                                            | ✔           | ✔      | ✔          | ✔          | ✔            | ✔            | ✔    |
-| [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                                                                      | ✗           | ✗      | ✔          | ✔          | ✔            | ✔            | ✗    |
-| [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken)                                                      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
-| [hasTokenOrNull](/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                          | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✔    |
-| [hasTokenCaseInsensitive (`*`)](/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)                  | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasTokenCaseInsensitiveOrNull (`*`)](/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull)      | ✗           | ✗      | ✗          | ✔          | ✗            | ✗            | ✗    |
-| [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [pointInPolygon](/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                                   | ✔           | ✔      | ✗          | ✗          | ✗            | ✗            |  ✗    |
-| [mapContains (mapContainsKey)](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                                          | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                              | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
-| [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗            | ✔    |
+| Function (operator) / Index                                                                                                    | primary key | minmax | ngrambf_v1 | tokenbf_v1 | bloom_filter | jsonbf_v1 | sparse_grams | text |
+|--------------------------------------------------------------------------------------------------------------------------------|-------------|--------|------------|------------|--------------|-----------|--------------|------|
+| [equals (=, ==)](/reference/functions/regular-functions/comparison-functions#equals)                                           | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         | ✔            | ✔    |
+| [notEquals(!=, &lt;&gt;)](/reference/functions/regular-functions/comparison-functions#notEquals)                               | ✔           | ✔      | ✔          | ✔          | ✗            | ✗         | ✔            | ✗    |
+| [like](/reference/functions/regular-functions/string-search-functions#like)                                                    | ✔           | ✔      | ✔          | ✔          | ✗            | ✗         | ✔            | ✔    |
+| [notLike](/reference/functions/regular-functions/string-search-functions#notLike)                                              | ✔           | ✔      | ✔          | ✔          | ✗            | ✗         | ✔            | ✗    |
+| [match](/reference/functions/regular-functions/string-search-functions#match)                                                  | ✗           | ✗      | ✔          | ✔          | ✗            | ✗         | ✔            | ✔    |
+| [startsWith](/reference/functions/regular-functions/string-functions#startsWith)                                               | ✔           | ✔      | ✔          | ✔          | ✗            | ✗         | ✔            | ✔    |
+| [endsWith](/reference/functions/regular-functions/string-functions#endsWith)                                                   | ✗           | ✗      | ✔          | ✔          | ✗            | ✗         | ✔            | ✔    |
+| [multiSearchAny](/reference/functions/regular-functions/string-search-functions#multiSearchAny)                                | ✗           | ✗      | ✔          | ✗          | ✗            | ✗         | ✗            | ✔    |
+| [multiSearchAnyUTF8](/reference/functions/regular-functions/string-search-functions#multiSearchAnyUTF8)                        | ✗           | ✗      | ✗          | ✗          | ✗            | ✗         | ✗            | ✔    |
+| [multiMatchAny](/reference/functions/regular-functions/string-search-functions#multiMatchAny)                                  | ✗           | ✗      | ✗          | ✗          | ✗            | ✗         | ✗            | ✔    |
+| [in](/reference/functions/regular-functions/in-functions)                                                                      | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         | ✔            | ✔    |
+| [notIn](/reference/functions/regular-functions/in-functions)                                                                   | ✔           | ✔      | ✔          | ✔          | ✗            | ✗         | ✔            | ✗    |
+| [less (`<`)](/reference/functions/regular-functions/comparison-functions#less)                                                 | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         | ✗            | ✗    |
+| [greater (`>`)](/reference/functions/regular-functions/comparison-functions#greater)                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         | ✗            | ✗    |
+| [lessOrEquals (`<=`)](/reference/functions/regular-functions/comparison-functions#lessOrEquals)                                | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         | ✗            | ✗    |
+| [greaterOrEquals (`>=`)](/reference/functions/regular-functions/comparison-functions#greaterOrEquals)                          | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         | ✗            | ✗    |
+| [empty](/reference/functions/regular-functions/array-functions#empty)                                                           | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         | ✗            | ✗    |
+| [notEmpty](/reference/functions/regular-functions/array-functions#notEmpty)                                                     | ✗           | ✔      | ✗          | ✗          | ✗            | ✗         | ✔            | ✗    |
+| [has](/reference/functions/regular-functions/array-functions#has)                                                               | ✔           | ✔      | ✔          | ✔          | ✔            | ✔         | ✔            | ✔    |
+| [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         | ✔            | ✗    |
+| [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                                                         | ✗           | ✗      | ✔          | ✔          | ✔            | ✔         | ✔            | ✗    |
+| [hasToken](/reference/functions/regular-functions/string-search-functions#hasToken)                                            | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         | ✗            | ✔    |
+| [hasTokenOrNull](/reference/functions/regular-functions/string-search-functions#hasTokenOrNull)                                | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         | ✗            | ✔    |
+| [hasTokenCaseInsensitive (`*`)](/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitive)        | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         | ✗            | ✗    |
+| [hasTokenCaseInsensitiveOrNull (`*`)](/reference/functions/regular-functions/string-search-functions#hasTokenCaseInsensitiveOrNull) | ✗           | ✗      | ✗          | ✔          | ✗            | ✗         | ✗            | ✗    |
+| [hasAnyTokens](/reference/functions/regular-functions/string-search-functions#hasAnyTokens)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗         | ✗            | ✔    |
+| [hasAllTokens](/reference/functions/regular-functions/string-search-functions#hasAllTokens)                                    | ✗           | ✗      | ✗          | ✗          | ✗            | ✗         | ✗            | ✔    |
+| [pointInPolygon](/reference/functions/regular-functions/geo/coordinates#pointinpolygon)                                        | ✔           | ✔      | ✗          | ✗          | ✗            | ✗         | ✗            | ✗    |
+| [mapContains (mapContainsKey)](/reference/functions/regular-functions/tuple-map-functions#mapContainsKey)                      | ✗           | ✗      | ✗          | ✗          | ✗            | ✗         | ✗            | ✔    |
+| [mapContainsKeyLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsKeyLike)                            | ✗           | ✗      | ✗          | ✗          | ✗            | ✗         | ✗            | ✔    |
+| [mapContainsValue](/reference/functions/regular-functions/tuple-map-functions#mapContainsValue)                                | ✗           | ✗      | ✗          | ✗          | ✗            | ✗         | ✗            | ✔    |
+| [mapContainsValueLike](/reference/functions/regular-functions/tuple-map-functions#mapContainsValueLike)                        | ✗           | ✗      | ✗          | ✗          | ✗            | ✗         | ✗            | ✔    |
 
 Functions with a constant argument that is less than ngram size can't be used by `ngrambf_v1` for query optimization.
 
 (*) For `hasTokenCaseInsensitive` and `hasTokenCaseInsensitiveOrNull` to be effective, the `tokenbf_v1` index must be created on lowercased data, for example `INDEX idx (lower(str_col)) TYPE tokenbf_v1(512, 3, 0)`.
 
 <Note>
-Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`, and `bloom_filter` indexes can not be used for optimizing queries where the result of a function is expected to be false.
+Bloom filters can have false positive matches, so the `ngrambf_v1`, `tokenbf_v1`, `sparse_grams`, `bloom_filter`, and `jsonbf_v1` indexes can not be used for optimizing queries where the result of a function is expected to be false.
 
 For example:
 

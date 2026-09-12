@@ -47,6 +47,7 @@ private:
 
     StreamMap streams;
     std::vector<std::unique_ptr<MergeTreeReaderStream>> stream_holders;
+    MergeTreeIndexPartMetadataPtr part_metadata;
 
     uint8_t version = 0;
     size_t stream_mark = 0;

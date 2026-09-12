@@ -1,0 +1,32 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>use_index</name>
+            <values><value>0</value><value>1</value></values>
+        </substitution>
+        <substitution>
+            <name>missing</name>
+            <values><value>100000000</value><value>100000197</value><value>100000394</value><value>100000591</value></values>
+        </substitution>
+    </substitutions>
+
+    <settings>
+        <max_threads>1</max_threads>
+        <use_query_condition_cache>0</use_query_condition_cache>
+        <use_skip_indexes_on_data_read>0</use_skip_indexes_on_data_read>
+    </settings>
+
+    <create_query>CREATE TABLE json_bf_dynamic (j JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity_bytes = 0</create_query>
+    <create_query do_not_check_in_pr="113022">ALTER TABLE json_bf_dynamic ADD INDEX bf j TYPE jsonbf_v1() GRANULARITY 1</create_query>
+    <fill_query>INSERT INTO json_bf_dynamic SELECT concat('{{"integer":', toString(number), ',"string":"value-', toString(number), '","mixed":', multiIf(number % 3 = 0, toString(number), number % 3 = 1, toString(toUInt64(9223372036854775808) + number), concat(toString(number), '.5')), '}}')::JSON FROM numbers(1000000)</fill_query>
+
+    <query>SELECT count() FROM json_bf_dynamic WHERE j.integer = {missing} SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_dynamic WHERE j.integer = '{missing}' SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_dynamic WHERE j.string = 'value-{missing}' SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_dynamic WHERE j.mixed = {missing} SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_dynamic WHERE j.mixed = '{missing}' SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_dynamic WHERE j.mixed = 500001 SETTINGS use_skip_indexes = {use_index}</query>
+    <query>SELECT count() FROM json_bf_dynamic WHERE j.mixed = '500001' SETTINGS use_skip_indexes = {use_index}</query>
+
+    <drop_query>DROP TABLE IF EXISTS json_bf_dynamic</drop_query>
+</test>

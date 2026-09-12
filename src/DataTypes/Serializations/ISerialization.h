@@ -483,7 +483,8 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings{};
 
-        bool object_and_dynamic_read_statistics = false;
+        /// Whether the stream contains statistics for `Dynamic`, `JSON`, and `Map`.
+        bool read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.
         StreamCallback dynamic_subcolumns_callback;

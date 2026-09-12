@@ -6,6 +6,7 @@
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Interpreters/BloomFilter.h>
 #include <Interpreters/ITokenizer.h>
+#include <Formats/FormatSettings.h>
 
 
 namespace DB
@@ -153,6 +154,7 @@ private:
 
     std::unique_ptr<ITokenizer> owned_tokenizer;
     TokenizerPtr tokenizer;
+    const FormatSettings comparison_format_settings;
     NameSet columns_shadowing_map_subcolumns;
 
     RPN rpn;

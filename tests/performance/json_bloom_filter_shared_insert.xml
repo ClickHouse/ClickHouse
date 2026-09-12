@@ -1,0 +1,18 @@
+<test>
+    <substitutions>
+        <substitution><name>budget</name><values><value>0</value><value>64</value></values></substitution>
+    </substitutions>
+    <settings><max_insert_threads>1</max_insert_threads></settings>
+    <create_query>CREATE TABLE json_bf_shared_source_{budget} (j JSON(max_dynamic_paths = {budget})) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE json_bf_shared_indexed_{budget} (j JSON(max_dynamic_paths = {budget})) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query do_not_check_in_pr="113022">ALTER TABLE json_bf_shared_indexed_{budget} ADD INDEX bf j TYPE jsonbf_v1() GRANULARITY 1</create_query>
+    <create_query>CREATE TABLE json_bf_shared_control_{budget} AS json_bf_shared_source_{budget} ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <fill_query>INSERT INTO json_bf_shared_source_{budget} SELECT ('{{' || arrayStringConcat(arrayMap(i -> '"p' || toString(i) || '":"' || toString(cityHash64(number, i)) || '"', range(8)), ',') || '}}')::JSON(max_dynamic_paths = {budget}) FROM numbers(200000)</fill_query>
+    <fill_query>SYSTEM STOP MERGES json_bf_shared_indexed_{budget}</fill_query>
+    <fill_query>SYSTEM STOP MERGES json_bf_shared_control_{budget}</fill_query>
+    <query>INSERT INTO json_bf_shared_indexed_{budget} SELECT * FROM json_bf_shared_source_{budget}</query>
+    <query>INSERT INTO json_bf_shared_control_{budget} SELECT * FROM json_bf_shared_source_{budget}</query>
+    <drop_query>DROP TABLE IF EXISTS json_bf_shared_indexed_{budget}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_bf_shared_control_{budget}</drop_query>
+    <drop_query>DROP TABLE IF EXISTS json_bf_shared_source_{budget}</drop_query>
+</test>
