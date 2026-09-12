@@ -36,10 +36,8 @@
     FROM numbers(64 * 676 * 7)
   </fill_query>
 
-  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' SETTINGS use_text_index_pattern_bypass_cache = 0</query>
-  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%' SETTINGS use_text_index_pattern_bypass_cache = 1</query>
-  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message ILIKE '%PA%' SETTINGS use_text_index_pattern_bypass_cache = 0</query>
-  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message ILIKE '%PA%' SETTINGS use_text_index_pattern_bypass_cache = 1</query>
+  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message LIKE '%pa%'</query>
+  <query>SELECT count() FROM text_index_pattern_bypass_cache WHERE message ILIKE '%PA%'</query>
 
   <drop_query>DROP TABLE text_index_pattern_bypass_cache</drop_query>
 </test>
