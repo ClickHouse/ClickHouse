@@ -52,8 +52,10 @@ struct WrapperPick
 
 /// Greedily assign required columns to wrappers, preferring the wrapper that
 /// covers the most uncovered columns (ties broken by the smaller wrapper).
-/// Cost guard: only use a wrapper that replaces >= 2 column reads; a wrapper
-/// that saves fewer reads only adds the per-row unpacking overhead.
+/// Cost guard: a wrapper is read as one stream holding every wrapped field, so it
+/// must replace >= 2 column reads (fewer only adds the per-row unpacking overhead)
+/// and cover at least half of its fields (otherwise the read decompresses more
+/// bytes than the columns it replaces would).
 std::vector<WrapperPick> pickWrappers(
     const Names & required_columns, const std::vector<RowWrapperInfo> & wrappers, const std::unordered_set<String> & not_coverable)
 {
@@ -75,7 +77,7 @@ std::vector<WrapperPick> pickWrappers(
                 if (uncovered.contains(w.wrapped_columns[i]))
                     overlap.push_back({w.wrapped_columns[i], i + 1});
 
-            if (overlap.size() < 2)
+            if (overlap.size() < 2 || overlap.size() * 2 < w.wrapped_columns.size())
                 continue;
 
             const bool better = !best

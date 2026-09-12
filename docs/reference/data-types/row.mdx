@@ -107,7 +107,10 @@ Default: `1` (enabled).
 Toggles the optimizer rule that routes column reads through a `Row(...)`
 wrapper. The rule only fires when the wrapper would cover **at least two**
 of the requested columns, to avoid trading a plain column read for the
-per-row unpacking overhead of the wrapper. Set to `0` to compare baseline
+per-row unpacking overhead of the wrapper, and only when those columns make up
+**at least half** of the wrapper's fields, because the wrapper is one stream
+holding every field and a narrow projection would otherwise decompress far
+more bytes than the columns it replaces. Set to `0` to compare baseline
 vs. wrapper performance; the performance test
 `tests/performance/row_wrapper_scattered_reads.xml` runs the scattered-lookup
 workload both ways.
