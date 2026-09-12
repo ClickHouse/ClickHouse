@@ -2197,4 +2197,76 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     }
 }
 
+TableSettings StorageObjectStorageQueue::getTableSettings(ContextPtr query_context) const
+{
+    /// This storage keeps no settings object: `getSettings` rebuilds one, and the values it puts in
+    /// come from three places - the table metadata in Keeper, which every replica shares; the
+    /// metadata object; and plain members of this storage. An `ALTER ... MODIFY SETTING` run on
+    /// another replica changes the first without this replica's definition changing, which is why
+    /// this table is asked rather than a settings type enumerated statically.
+    auto settings = getSettings().enumerateSettings();
+
+    /// `getSettings` assigns every setting it knows, so `isValueChanged` is true for all of them
+    /// and distinguishes nothing - the same reason `dumpToSystemEngineSettingsColumns` compares
+    /// against the table metadata instead. Recover the distinction by value.
+    for (auto & setting : settings)
+        setting.origin = setting.value == setting.default_value
+            ? TableSettingOrigin::Default
+            : TableSettingOrigin::Other;
+
+    /// The definition may spell a setting the way this engine used to accept it - with the
+    /// `s3queue_` prefix, or as `enable_logging_to_s3queue_log` - because `loadFromQuery` rewrites
+    /// those rather than declaring them as aliases. Attribution has to read them the same way, or a
+    /// table created with a legacy spelling reports its settings as coming from nowhere.
+    settings = attributeSettingsStatedInDefinition(
+        std::move(settings), query_context, ObjectStorageQueueSettings::adjustSettingName);
+
+    /// `use_hive_partitioning` is folded into `partitioning_mode` when the table metadata is built,
+    /// so the rebuilt settings object always carries its default. Report what the table actually
+    /// does, which is what `partitioning_mode` now says.
+    for (auto & setting : settings)
+    {
+        if (setting.name != "use_hive_partitioning")
+            continue;
+
+        const auto mode = std::find_if(settings.begin(), settings.end(),
+            [](const TableSetting & s) { return s.name == "partitioning_mode"; });
+        if (mode == settings.end())
+            break;
+
+        setting.value = mode->value == "hive" ? "1" : "0";
+        /// Unconditionally from `partitioning_mode`, including when the derived value is the
+        /// default. They are one setting after the fold, so whatever acted on that one acted on
+        /// this one, and `source` answers who set a setting rather than whether the result differs
+        /// from the default - `SETTINGS partitioning_mode = 'none'` is a choice, not an absence.
+        setting.origin = mode->origin;
+        break;
+    }
+
+    /// Applied after the definition, because for these the shared metadata is what the table
+    /// actually uses: an `ALTER` on another replica has already changed them here, while this
+    /// replica's `CREATE` query still states whatever it was created with.
+    /// `parallel_inserts` is deliberately not here, even though two things claim otherwise:
+    /// `getSettings` reads it from the table metadata, and `ObjectStorageQueueTableMetadata::
+    /// isStoredInKeeper` lists its name. Both claims are unbacked - the field is declared and never
+    /// written. The constructor from settings does not set it, `toString` does not serialize it and
+    /// the JSON constructor does not read it, so nothing ever puts it into Keeper and nothing reads
+    /// it back. Serialization is the authority on what the shared metadata holds; a name registry
+    /// is not. Reporting `shared_metadata` here would be wrong about exactly the thing this table
+    /// exists to explain. Whether the value can be reported at all is an engine question, not one
+    /// for this hook: `getSettings` returns the never-written field, so a table created with
+    /// `parallel_inserts = 1` reports `0`, with `source = 'definition'` from the `CREATE` query.
+    static const NameSet held_in_shared_metadata{
+        "mode", "after_processing", "keeper_path", "loading_retries", "processing_threads_num",
+        "last_processed_path", "bucketing_mode", "partitioning_mode",
+        "partition_regex", "partition_component", "tracked_file_ttl_sec", "tracked_files_limit",
+        "buckets"};
+
+    for (auto & setting : settings)
+        if (held_in_shared_metadata.contains(setting.name))
+            setting.origin = TableSettingOrigin::SharedMetadata;
+
+    return settings;
+}
+
 }

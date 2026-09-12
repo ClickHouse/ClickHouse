@@ -1307,6 +1307,8 @@ public:
     /// When `settings_changes` is provided, apply the overrides on top of the table settings.
     MergeTreeSettingsPtr getSettings(const SettingsChanges * settings_changes = nullptr) const;
 
+    TableSettings getTableSettings(ContextPtr query_context) const override;
+
     StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr query_context, bool bypass_metadata_cache) const override;
 
     /// Whether the per-part metadata version is stored in the engine's metadata storage instead of

@@ -407,7 +407,8 @@ CREATE TABLE system.merge_tree_settings
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
-    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16)
+    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16),
+    `alias_for` String
 )
 ENGINE = SystemMergeTreeSettings
 COMMENT 'Contains a list of all MergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.'
@@ -1032,7 +1033,8 @@ CREATE TABLE system.replicated_merge_tree_settings
     `readonly` UInt8,
     `type` String,
     `is_obsolete` UInt8,
-    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16)
+    `tier` Enum8('Production' = 0, 'Obsolete' = 4, 'Experimental' = 8, 'Beta' = 12, 'PrivatePreview' = 16),
+    `alias_for` String
 )
 ENGINE = SystemReplicatedMergeTreeSettings
 COMMENT 'Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query. '

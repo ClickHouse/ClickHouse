@@ -290,6 +290,7 @@ void registerStorageExecutable(StorageFactory & factory)
     StorageFactory::StorageFeatures storage_features;
     storage_features.supports_settings = true;
     storage_features.has_builtin_setting_fn = ExecutableSettings::hasBuiltin;
+    storage_features.enumerate_engine_settings_fn = ExecutableSettings::enumerateEngineSettings;
 
     factory.registerStorage("Executable", [&](const StorageFactory::Arguments & args)
     {
@@ -742,6 +743,11 @@ ClickHouse will maintain 4 processes on-demand when your client queries the `sen
 )DOCS_MD",
         .syntax = "ENGINE = ExecutablePool(script_name, format[, input_query...])",
         .related = {"Executable"}});
+}
+
+TableSettings StorageExecutable::getTableSettings(ContextPtr query_context) const
+{
+    return attributeSettingsStatedInDefinition(settings->enumerateSettings(), query_context);
 }
 
 }

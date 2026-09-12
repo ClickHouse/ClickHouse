@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -81,4 +82,7 @@ bool ExecutableSettings::hasBuiltin(std::string_view name)
 {
     return ExecutableSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(ExecutableSettings)
+
 }

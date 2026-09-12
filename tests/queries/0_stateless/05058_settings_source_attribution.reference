@@ -1,0 +1,11 @@
+-- a MergeTree setting the config sets
+merge_max_block_size	1234	8192	config
+-- a Distributed setting the config sets
+bytes_to_throw_insert	1000000	0	config
+-- the definition wins over the config, and is recognised through an alias
+background_insert_batch	1	definition
+bytes_to_throw_insert	7	definition
+-- settings compatibility rolled back, against the current defaults
+1	0
+-- and none of them when nothing sets anything
+0

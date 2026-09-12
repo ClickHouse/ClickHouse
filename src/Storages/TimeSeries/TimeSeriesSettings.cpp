@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/TimeSeries/TimeSeriesSettings.h>
 
 #include <Core/BaseSettings.h>
@@ -104,6 +105,8 @@ bool TimeSeriesSettings::hasBuiltin(std::string_view name)
 {
     return TimeSeriesSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(TimeSeriesSettings)
 
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings)
 {

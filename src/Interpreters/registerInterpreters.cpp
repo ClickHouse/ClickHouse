@@ -14,6 +14,7 @@ void registerInterpreterUndropQuery(InterpreterFactory & factory);
 void registerInterpreterRenameQuery(InterpreterFactory & factory);
 void registerInterpreterShowTablesQuery(InterpreterFactory & factory);
 void registerInterpreterShowColumnsQuery(InterpreterFactory & factory);
+void registerInterpreterShowTableSettingsQuery(InterpreterFactory & factory);
 void registerInterpreterShowIndexesQuery(InterpreterFactory & factory);
 void registerInterpreterShowSettingQuery(InterpreterFactory & factory);
 void registerInterpreterShowEnginesQuery(InterpreterFactory & factory);
@@ -85,6 +86,7 @@ void registerInterpreters()
     registerInterpreterRenameQuery(factory);
     registerInterpreterShowTablesQuery(factory);
     registerInterpreterShowColumnsQuery(factory);
+    registerInterpreterShowTableSettingsQuery(factory);
     registerInterpreterShowIndexesQuery(factory);
     registerInterpreterShowSettingQuery(factory);
     registerInterpreterShowEnginesQuery(factory);

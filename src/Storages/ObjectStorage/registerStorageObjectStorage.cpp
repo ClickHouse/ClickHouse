@@ -142,6 +142,7 @@ static void registerStorageAzure(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::AZURE,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = StorageObjectStorageSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -765,6 +766,7 @@ ENGINE = S3('https://my-bucket.s3.amazonaws.com/data/*.csv', extra_credentials(r
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::S3,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = StorageObjectStorageSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = description,
@@ -808,6 +810,7 @@ static void registerStorageHDFS(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::HDFS,
         .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = StorageObjectStorageSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -1144,6 +1147,7 @@ void registerStorageIceberg(StorageFactory & factory)
             /// This source access type is probably a bug which was overlooked and we do not know how to fix it simply, so we keep it as it is.
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1560,6 +1564,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored in Amazon S3 or S3-compatible object storage.",
@@ -1599,6 +1604,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored in Microsoft Azure Blob Storage.",
@@ -1620,6 +1626,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::HDFS,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides an integration with existing Apache Iceberg tables stored in HDFS.",
@@ -1658,6 +1665,7 @@ SETTINGS iceberg_metadata_staleness_ms=120000
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides an integration with Apache Iceberg tables stored on the local filesystem.",
@@ -1745,6 +1753,7 @@ void registerStoragePaimon(StorageFactory & factory)
             /// access-type resolution.
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -2046,6 +2055,7 @@ Data types supported in Paimon partition keys:
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in Amazon S3 or S3-compatible object storage. "
@@ -2093,6 +2103,7 @@ Data types supported in Paimon partition keys:
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in Microsoft Azure Blob Storage. "
@@ -2118,6 +2129,7 @@ Data types supported in Paimon partition keys:
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::HDFS,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored in HDFS. "
@@ -2164,6 +2176,7 @@ Data types supported in Paimon partition keys:
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Apache Paimon tables stored on the local filesystem. "
@@ -2220,6 +2233,7 @@ void registerStorageDeltaLake(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -2399,6 +2413,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Delta Lake tables stored in Amazon S3 or S3-compatible object storage.",
@@ -2437,6 +2452,7 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::AZURE,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Delta Lake tables stored in Microsoft Azure Blob Storage.",
@@ -2473,7 +2489,8 @@ The `DeltaLake` table engine and table function support data caching, the same a
             .supports_settings = true,
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::FILE,
-            .has_builtin_setting_fn = StorageObjectStorageSettings::hasBuiltin,
+            .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = "Provides a read-only integration with existing Delta Lake tables stored on the local filesystem.",
@@ -2499,6 +2516,7 @@ void registerStorageHudi(StorageFactory & factory)
             .supports_schema_inference = true,
             .source_access_type = AccessTypeObjects::Source::S3,
             .has_builtin_setting_fn = DataLakeStorageSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = DataLakeStorageSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(

@@ -70,6 +70,8 @@ public:
 
     ObjectStorageQueueSettings getSettings() const;
 
+    TableSettings getTableSettings(ContextPtr query_context) const override;
+
     /// Block until `path` is marked as processed (or failed) in Keeper by this
     /// queue, then return.
     ///

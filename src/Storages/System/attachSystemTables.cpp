@@ -64,6 +64,7 @@
 #include <Storages/System/StorageSystemSettings.h>
 #include <Storages/System/StorageSystemSettingsChanges.h>
 #include <Storages/System/StorageSystemMergeTreeSettings.h>
+#include <Storages/System/StorageSystemEngineSettings.h>
 #include <Storages/System/StorageSystemDatabaseEngines.h>
 #include <Storages/System/StorageSystemStatements.h>
 #include <Storages/System/StorageSystemTableEngines.h>
@@ -71,6 +72,7 @@
 #include <Storages/System/StorageSystemTables.h>
 #include <Storages/System/StorageSystemProjections.h>
 #include <Storages/System/StorageSystemConstraints.h>
+#include <Storages/System/StorageSystemTableSettings.h>
 #include <Storages/System/StorageSystemZooKeeper.h>
 #include <Storages/System/StorageSystemZooKeeperInfo.h>
 #include <Storages/System/StorageSystemContributors.h>
@@ -230,6 +232,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
     attach<StorageSystemSettingsChanges>(context, system_database, "settings_changes", "Contains the information about the settings changes through different ClickHouse versions. You may make ClickHouse behave like a particular previous version by changing the `compatibility` user-level settings.");
     attach<SystemMergeTreeSettings<false>>(context, system_database, "merge_tree_settings", "Contains a list of all MergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query.");
     attach<SystemMergeTreeSettings<true>>(context, system_database, "replicated_merge_tree_settings", "Contains a list of all ReplicatedMergeTree engine specific settings, their current and default values along with descriptions. You may change any of them in SETTINGS section in CREATE query. ");
+    attach<StorageSystemEngineSettings>(context, system_database, "engine_settings", "Settings of every table engine that has settings of its own, with the value the engine uses on this server and its default. Describes engines rather than tables: for the settings in effect for one table, see system.table_settings.");
     attach<StorageSystemBuildOptions>(context, system_database, "build_options", "Contains a list of all build flags, compiler options and commit hash for used build.");
     attach<StorageSystemHypotheticalIndexes>(context, system_database, "hypothetical_indexes", "Shows session-scoped hypothetical indexes created with CREATE HYPOTHETICAL INDEX for use with EXPLAIN WHATIF.");
     attach<StorageSystemHypotheticalProjections>(context, system_database, "hypothetical_projections", "Shows session-scoped hypothetical projections created with CREATE HYPOTHETICAL PROJECTION for use with EXPLAIN WHATIF.");
@@ -272,6 +275,7 @@ void attachSystemTablesServerExceptOne(ContextPtr context, IDatabase & system_da
     attachNoDescription<StorageSystemDataSkippingIndices>(context, system_database, "data_skipping_indices", "Contains all the information about all the data skipping indices in tables, similar to system.columns.");
     attachNoDescription<StorageSystemProjections>(context, system_database, "projections", "Contains all the information about all the projections in tables, similar to system.data_skipping_indices.");
     attachNoDescription<StorageSystemConstraints>(context, system_database, "constraints", "Contains all the information about all the constraints in tables, similar to system.data_skipping_indices.");
+    attachNoDescription<StorageSystemTableSettings>(context, system_database, "table_settings", "Settings of every table as they are actually in effect, which need not be the values its CREATE query states. Describes tables; for the settings an engine supports, see system.engine_settings. A table reports nothing here when its engine consumes its settings at creation and keeps none of them - `Set`, `QueryRunner`, `PostgreSQL`, `MaterializedPostgreSQL` and plain object storage (`S3`, `GCS`, `AzureBlobStorage`, `HDFS`) - because the effective values can come from the query context, a named collection or a connection pool default, and only what the CREATE query states could be reported, which would look like a complete answer without being one.");
     attach<StorageSystemLicenses>(context, system_database, "licenses", "Contains licenses of third-party libraries that are located in the contrib directory of ClickHouse sources.");
     attach<StorageSystemTimeZones>(context, system_database, "time_zones", "Contains a list of time zones that are supported by the ClickHouse server. This list of timezones might vary depending on the version of ClickHouse.");
     attach<StorageSystemBackups>(context, system_database, "backups", "Contains a list of all BACKUP or RESTORE operations with their current states and other properties. Note, that table is not persistent and it shows only operations executed after the last server restart.");

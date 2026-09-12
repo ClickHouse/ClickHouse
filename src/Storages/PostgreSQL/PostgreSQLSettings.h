@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -46,6 +49,7 @@ struct PostgreSQLSettings
     void loadFromQueryContext(const Context & context);
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(PostgreSQLSettings)
 
 private:
     std::unique_ptr<PostgreSQLSettingsImpl> impl;

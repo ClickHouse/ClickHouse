@@ -169,7 +169,8 @@ void registerStorageYTsaurus(StorageFactory & factory)
     {
         .supports_settings = true,
         .source_access_type = AccessTypeObjects::Source::YTSAURUS,
-        .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin
+        .has_builtin_setting_fn = YTsaurusSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = YTsaurusSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -294,6 +295,13 @@ SELECT * FROM yt_saurus;
 )DOCS_MD",
         .syntax = "ENGINE = YTsaurus('http_proxy_url', 'cypress_path', 'oauth_token')",
     });
+}
+
+TableSettings StorageYTsaurus::getTableSettings(ContextPtr query_context) const
+{
+    /// A named collection may also have set these, but this storage does not keep the
+    /// collection's name, so a setting it changed reports `other` rather than a guess.
+    return attributeSettingsStatedInDefinition(settings.enumerateSettings(), query_context);
 }
 
 }

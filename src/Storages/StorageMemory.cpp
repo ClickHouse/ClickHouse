@@ -768,6 +768,7 @@ void registerStorageMemory(StorageFactory & factory)
         .supports_settings = true,
         .supports_parallel_insert = true,
         .has_builtin_setting_fn = MemorySettings::hasBuiltin,
+        .enumerate_engine_settings_fn = MemorySettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(
@@ -870,6 +871,11 @@ SELECT total_bytes, total_rows FROM system.tables WHERE name = 'memory' AND data
 ```
 )DOCS_MD",
         .syntax = "ENGINE = Memory"});
+}
+
+TableSettings StorageMemory::getTableSettings(ContextPtr query_context) const
+{
+    return attributeSettingsStatedInDefinition(memory_settings->enumerateSettings(), query_context);
 }
 
 }

@@ -11,6 +11,7 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
+#include <Storages/TableSetting.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
@@ -255,6 +256,46 @@ public:
     {
         return metadata.get();
     }
+
+    /// Report this table's settings as they are actually in effect, for `system.table_settings`.
+    ///
+    /// The base implementation answers from the table's own `SETTINGS` clause, which is all a
+    /// storage that keeps no settings struct can say - `File`, `URL`, `Join` and the `Log` family
+    /// name global query settings there rather than settings of their own, so for them this is the
+    /// complete answer rather than a fallback.
+    ///
+    /// An engine that keeps a settings struct overrides this to report every setting it has,
+    /// including values that never reach the `CREATE` query: compiled defaults, values taken from a
+    /// named collection, values held in replicated metadata, and values the engine adjusted while
+    /// running. Those last two are why this is a method on the storage rather than a static
+    /// enumeration of the settings type - see `StorageObjectStorageQueue`, which reconstructs its
+    /// settings from Keeper.
+    virtual TableSettings getTableSettings(ContextPtr context) const;
+
+    /// The settings the table's own `SETTINGS` clause names, for an override of
+    /// `getTableSettings` refining `origin`: a setting stated there came from the definition,
+    /// whatever else may also have set it, because the clause is applied last.
+    NameSet getSettingNamesStatedInDefinition(ContextPtr context) const;
+
+    /// Marks as `Definition` every setting the table's own `SETTINGS` clause names, and leaves the
+    /// rest as enumerated. Enough for an engine whose settings can only come from its defaults or
+    /// its definition; an engine with a further source - a config section, a named collection,
+    /// replicated metadata - attributes that itself before or after calling this.
+    /// Maps a name as the definition spells it to the name the settings struct uses, or nullopt when
+    /// the two are the same. For an engine that accepts legacy spellings its loader rewrites -
+    /// `ObjectStorageQueue` takes `s3queue_processing_threads_num` for `processing_threads_num` -
+    /// without declaring them as aliases, so nothing else can know they refer to the same setting.
+    using SettingNameNormalizer = std::function<std::optional<std::string_view>(std::string_view)>;
+    /// For an engine that consumes its settings at construction and keeps nothing. It cannot say
+    /// what its settings are, and the base implementation would report only what the definition
+    /// states - which looks like a complete answer and is not, since the effective values can come
+    /// from the query context, a named collection or a connection pool default. An engine that is
+    /// advertised by `system.engine_settings` and cannot answer for a table reports nothing here
+    /// rather than a partial truth. Reporting them properly is its own piece of work.
+    static TableSettings settingsNotRetainedByEngine() { return {}; }
+
+    TableSettings attributeSettingsStatedInDefinition(
+        TableSettings settings, ContextPtr context, const SettingNameNormalizer & normalize = {}) const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without

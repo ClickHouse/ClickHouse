@@ -1,15 +1,21 @@
 #pragma once
 
+#include <optional>
+
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Columns/IColumn_fwd.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
 {
+struct MutableColumnsAndConstraints;
 class ASTStorage;
 struct ObjectStorageQueueSettingsImpl;
-struct MutableColumnsAndConstraints;
 class StorageObjectStorageQueue;
 class SettingsChanges;
 struct StorageID;
@@ -72,6 +78,11 @@ struct ObjectStorageQueueSettings
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
+    /// The canonical name for a spelling the definition may use, or nullopt when it already is the
+    /// canonical one. `loadFromQuery` rewrites these before applying them, so a stored `CREATE`
+    /// query can name a setting in a form the settings struct does not know.
+    static std::optional<std::string_view> adjustSettingName(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(ObjectStorageQueueSettings)
 
 private:
     std::unique_ptr<ObjectStorageQueueSettingsImpl> impl;

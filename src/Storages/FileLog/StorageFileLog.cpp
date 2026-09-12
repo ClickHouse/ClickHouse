@@ -907,6 +907,7 @@ void registerStorageFileLog(StorageFactory & factory)
         StorageFactory::StorageFeatures{
             .supports_settings = true,
             .has_builtin_setting_fn = FileLogSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = FileLogSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1202,6 +1203,11 @@ bool StorageFileLog::updateFileInfos()
     chassert(file_infos.file_names.size() == file_infos.context_by_name.size());
 
     return events.empty() || file_infos.file_names.empty();
+}
+
+TableSettings StorageFileLog::getTableSettings(ContextPtr query_context) const
+{
+    return attributeSettingsStatedInDefinition(filelog_settings->enumerateSettings(), query_context);
 }
 
 }

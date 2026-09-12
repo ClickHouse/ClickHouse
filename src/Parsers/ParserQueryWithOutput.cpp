@@ -18,6 +18,7 @@
 #include <Parsers/ParserShowProcesslistQuery.h>
 #include <Parsers/ParserShowTablesQuery.h>
 #include <Parsers/ParserShowColumnsQuery.h>
+#include <Parsers/ParserShowTableSettingsQuery.h>
 #include <Parsers/ParserShowEngineQuery.h>
 #include <Parsers/ParserShowFunctionsQuery.h>
 #include <Parsers/ParserShowIndexesQuery.h>
@@ -84,6 +85,7 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
 {
     ParserShowTablesQuery show_tables_p;
     ParserShowColumnsQuery show_columns_p;
+    ParserShowTableSettingsQuery show_table_settings_p;
     ParserShowEnginesQuery show_engine_p;
     ParserShowFunctionsQuery show_functions_p;
     ParserShowIndexesQuery show_indexes_p;
@@ -111,6 +113,11 @@ bool ParserQueryWithOutput::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
            explain_p.parse(pos, query, expected)
         || select_p.parse(pos, query, expected)
         || parseShowCreateAccessEntityQuery(pos, query, expected) /// should be before `show_tables_p`
+        /// Before `show_tables_p`, which also begins with `SHOW`: it rejects the singular `TABLE`
+        /// and restores the position, so either order parses, but trying the narrower one first
+        /// keeps the `Expected` diagnostics on a mistyped `SHOW TABLE SETTINGS` about this
+        /// statement rather than about `SHOW TABLES`.
+        || show_table_settings_p.parse(pos, query, expected)
         || show_tables_p.parse(pos, query, expected)
         || show_columns_p.parse(pos, query, expected)
         || show_engine_p.parse(pos, query, expected)

@@ -79,6 +79,90 @@ class MySQLNodeInstance:
             self.mysql_connection.close()
 
 
+def test_table_settings_for_mysql_database(started_cluster):
+    """`system.table_settings` reaches tables inside a MySQL database.
+
+    It selects databases the same way `system.tables` and `system.columns` do, rather than
+    excluding every external database the way `system.constraints` and `system.projections` do.
+    Those exclude one because a table in it has no ClickHouse constraints or projections to report;
+    a `StorageMySQL` table does have settings, so the same exclusion would hide real rows.
+    """
+    with contextlib.closing(
+        MySQLNodeInstance(
+            started_cluster,
+            "mysql80",
+            "root", mysql_pass, started_cluster.mysql8_ip, started_cluster.mysql8_port
+        )
+    ) as mysql_node:
+        mysql_node.query("DROP DATABASE IF EXISTS test_settings_database")
+        mysql_node.query("CREATE DATABASE test_settings_database DEFAULT CHARACTER SET 'utf8'")
+        mysql_node.query(
+            "CREATE TABLE `test_settings_database`.`t` ( `id` int(11) NOT NULL, PRIMARY KEY (`id`) ) ENGINE=InnoDB;"
+        )
+
+        clickhouse_node.query("DROP DATABASE IF EXISTS test_settings_database")
+        clickhouse_node.query(
+            "CREATE DATABASE test_settings_database ENGINE = MySQL("
+            f"'mysql80:3306', 'test_settings_database', 'root', '{mysql_pass}')"
+        )
+
+        settings = clickhouse_node.query(
+            "SELECT name FROM system.table_settings "
+            "WHERE database = 'test_settings_database' AND table = 't' ORDER BY name"
+        )
+        assert "connection_pool_size" in settings
+
+        # The statement reaches them too, and does so without the caller having to know that a
+        # setting governs whether the database is visible at all.
+        shown = clickhouse_node.query(
+            "SHOW TABLE SETTINGS FROM test_settings_database.t"
+        )
+        assert "connection_pool_size" in shown
+
+        # And the setting still governs it: turning it off hides the database again.
+        hidden = clickhouse_node.query(
+            "SELECT count() FROM system.table_settings WHERE database = 'test_settings_database' "
+            "SETTINGS show_remote_databases_in_system_tables = 0"
+        )
+        assert hidden.strip() == "0"
+
+        # `SHOW TABLE SETTINGS` turns the visibility setting on for a database named explicitly.
+        # That must not also hand out rows the user has no `SHOW TABLES` for: it runs on a copy of
+        # the caller's context, so the grant still decides. Proven here rather than in a stateless
+        # test because only a reachable remote database exercises the enabling path at all.
+        clickhouse_node.query("DROP USER IF EXISTS mysql_settings_denied")
+        clickhouse_node.query("CREATE USER mysql_settings_denied IDENTIFIED WITH no_password")
+        clickhouse_node.query(
+            "GRANT SELECT ON system.table_settings TO mysql_settings_denied"
+        )
+
+        denied = clickhouse_node.query(
+            "SELECT count() FROM system.table_settings WHERE database = 'test_settings_database'",
+            user="mysql_settings_denied",
+        )
+        assert denied.strip() == "0"
+
+        denied_show = clickhouse_node.query(
+            "SHOW TABLE SETTINGS FROM test_settings_database.t",
+            user="mysql_settings_denied",
+        )
+        assert denied_show.strip() == ""
+
+        clickhouse_node.query(
+            "GRANT SHOW TABLES ON test_settings_database.t TO mysql_settings_denied"
+        )
+        granted_show = clickhouse_node.query(
+            "SHOW TABLE SETTINGS FROM test_settings_database.t",
+            user="mysql_settings_denied",
+        )
+        assert "connection_pool_size" in granted_show
+
+        clickhouse_node.query("DROP USER mysql_settings_denied")
+
+        mysql_node.query("DROP DATABASE test_settings_database")
+        clickhouse_node.query("DROP DATABASE test_settings_database")
+
+
 def test_mysql_ddl_for_mysql_database(started_cluster):
     with contextlib.closing(
         MySQLNodeInstance(

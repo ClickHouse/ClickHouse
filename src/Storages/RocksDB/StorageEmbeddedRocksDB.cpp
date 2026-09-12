@@ -1100,6 +1100,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .supports_ttl = true,
         .supports_parallel_insert = true,
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = RocksDBSettings::enumerateEngineSettings,
     };
 
     factory.registerStorage("EmbeddedRocksDB", create, features, Documentation{
@@ -1344,6 +1345,11 @@ void StorageEmbeddedRocksDB::checkAlterIsPossible(const AlterCommands & commands
                 RocksDBSettings::checkCanSet(change.name, change.value);
         }
     }
+}
+
+TableSettings StorageEmbeddedRocksDB::getTableSettings(ContextPtr query_context) const
+{
+    return attributeSettingsStatedInDefinition(storage_settings.get()->enumerateSettings(), query_context);
 }
 
 }

@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace Poco::Util
@@ -48,6 +51,7 @@ struct MySQLSettings
     void loadFromNamedCollection(const NamedCollection & named_collection);
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(MySQLSettings)
 
 private:
     std::unique_ptr<MySQLSettingsImpl> impl;

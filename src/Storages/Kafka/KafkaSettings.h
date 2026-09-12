@@ -3,6 +3,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Storages/TableSetting.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/SettingsChanges.h>
 
@@ -75,6 +76,7 @@ struct KafkaSettings
     void sanityCheck(ContextPtr global_context) const;
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(KafkaSettings)
 
 private:
     std::unique_ptr<KafkaSettingsImpl> impl;

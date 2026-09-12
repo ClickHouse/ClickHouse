@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 namespace DB
@@ -37,6 +40,7 @@ struct ExecutableSettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(ExecutableSettings)
 
 private:
     std::unique_ptr<ExecutableSettingsImpl> impl;

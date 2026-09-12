@@ -1,5 +1,7 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include "config.h"
 
 #if USE_HIVE
@@ -7,6 +9,7 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace Poco::Util
 {
@@ -65,6 +68,7 @@ struct HiveSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(HiveSettings)
 
 private:
     std::unique_ptr<HiveSettingsImpl> impl;

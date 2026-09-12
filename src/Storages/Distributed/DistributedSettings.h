@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace Poco::Util
 {
@@ -40,6 +43,10 @@ struct DistributedSettings
     void applyChanges(const SettingsChanges & changes);
 
     static bool hasBuiltin(std::string_view name);
+    /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
+    TableSettings enumerateSettings() const;
+    /// The engine's own settings, for `system.engine_settings`.
+    static TableSettings enumerateEngineSettings(ContextPtr context);
 
 private:
     std::unique_ptr<DistributedSettingsImpl> impl;

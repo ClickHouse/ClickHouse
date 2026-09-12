@@ -723,6 +723,11 @@ struct ContextSharedPart : boost::noncopyable
 
     std::optional<MergeTreeSettings> merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of MergeTree* engines.
     std::optional<MergeTreeSettings> replicated_merge_tree_settings TSA_GUARDED_BY(mutex);   /// Settings of ReplicatedMergeTree* engines.
+    /// How each of the two above was assembled. Whichever context first asks for a baseline decides
+    /// it for the lifetime of the server, so a reader cannot recover any of this by looking at its
+    /// own settings - see `Context::getMergeTreeSettingsProvenance`.
+    Context::MergeTreeSettingsProvenance merge_tree_settings_provenance TSA_GUARDED_BY(mutex);
+    Context::MergeTreeSettingsProvenance replicated_merge_tree_settings_provenance TSA_GUARDED_BY(mutex);
     std::optional<DatabaseReplicatedSettings> database_replicated_settings TSA_GUARDED_BY(mutex); /// Settings of DatabaseReplicated engine.
     std::optional<DistributedSettings> distributed_settings TSA_GUARDED_BY(mutex);
     std::atomic_size_t max_table_size_to_drop = 50000000000lu; /// Protects MergeTree tables from accidental DROP (50GB by default)
@@ -7525,13 +7530,41 @@ const MergeTreeSettings & Context::getMergeTreeSettings() const
 
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+        const String compatibility = (*settings)[Setting::compatibility];
+        mt_settings.applyCompatibilitySetting(compatibility);
+
+        /// Only `compatibility` has touched the object at this point, so what it reports as changed
+        /// is exactly what `compatibility` assigned.
+        for (const auto & change : mt_settings.changes())
+            shared->merge_tree_settings_provenance.set_by_compatibility.insert(change.name);
 
         mt_settings.loadFromConfig("merge_tree", config);
+
+        /// A separate object for the config section, because it is applied on top of the
+        /// compatibility values: a name assigned by both would otherwise be indistinguishable, and
+        /// the config section is the one that wins.
+        MergeTreeSettings from_config_only;
+        from_config_only.loadFromConfig("merge_tree", config);
+        for (const auto & change : from_config_only.changes())
+            shared->merge_tree_settings_provenance.set_in_config.insert(change.name);
+
         shared->merge_tree_settings.emplace(mt_settings);
     }
 
     return *shared->merge_tree_settings;
+}
+
+Context::MergeTreeSettingsProvenance Context::getMergeTreeSettingsProvenance(bool replicated) const
+{
+    /// Builds the baseline if nothing has yet, so the answer never reports "nothing was assigned"
+    /// merely because no table has been created; the two are then consistent by construction.
+    if (replicated)
+        getReplicatedMergeTreeSettings();
+    else
+        getMergeTreeSettings();
+
+    std::lock_guard lock(shared->mutex);
+    return replicated ? shared->replicated_merge_tree_settings_provenance : shared->merge_tree_settings_provenance;
 }
 
 const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
@@ -7545,10 +7578,23 @@ const MergeTreeSettings & Context::getReplicatedMergeTreeSettings() const
 
         /// Respect compatibility setting from the default profile.
         /// First, we apply compatibility values, and only after apply changes from the config.
-        mt_settings.applyCompatibilitySetting((*settings)[Setting::compatibility]);
+        const String compatibility = (*settings)[Setting::compatibility];
+        mt_settings.applyCompatibilitySetting(compatibility);
+
+        /// See `Context::getMergeTreeSettings` - the same capture, for the baseline that reads the
+        /// additional `replicated_merge_tree` section.
+        for (const auto & change : mt_settings.changes())
+            shared->replicated_merge_tree_settings_provenance.set_by_compatibility.insert(change.name);
 
         mt_settings.loadFromConfig("merge_tree", config);
         mt_settings.loadFromConfig("replicated_merge_tree", config);
+
+        MergeTreeSettings from_config_only;
+        from_config_only.loadFromConfig("merge_tree", config);
+        from_config_only.loadFromConfig("replicated_merge_tree", config);
+        for (const auto & change : from_config_only.changes())
+            shared->replicated_merge_tree_settings_provenance.set_in_config.insert(change.name);
+
         shared->replicated_merge_tree_settings.emplace(mt_settings);
     }
 

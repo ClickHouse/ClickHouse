@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
 #include <Storages/IPartitionStrategy.h>
 #include <Formats/FormatSettings.h>
 #include <Storages/prepareReadingFromFormat.h>
@@ -63,6 +64,11 @@ public:
 
     StorageObjectStorageConfiguration() = default;
     virtual ~StorageObjectStorageConfiguration() = default;
+
+    /// The engine settings this configuration holds, for `system.table_settings`. Only the data
+    /// lake configurations keep any; plain object storage consumes its settings at creation and
+    /// keeps nothing to report.
+    virtual TableSettings enumerateSettings() const { return {}; }
 
     static constexpr auto SCHEMA_HASH_WILDCARD = "{_schema_hash}";
 

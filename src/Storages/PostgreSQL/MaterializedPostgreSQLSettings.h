@@ -1,11 +1,14 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include "config.h"
 
 #if USE_LIBPQXX
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
@@ -36,6 +39,7 @@ struct MaterializedPostgreSQLSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(MaterializedPostgreSQLSettings)
 
 private:
     std::unique_ptr<MaterializedPostgreSQLSettingsImpl> impl;

@@ -44,18 +44,54 @@ development and the expectations one might have when using them:
 * PRIVATE PREVIEW: The feature is on a clear path to general availability. Its applicability is still limited and it is not recommended for production use.
 * OBSOLETE: No longer supported. Either it is already removed or it will be removed in future releases.
 )"},
+        {"alias_for",   std::make_shared<DataTypeString>(),
+            "Empty on a setting's own row. A setting writable under more than one name also gets a row per other name, "
+            "carrying the same values, with this naming the one it is declared under. As in `system.settings`."},
     };
 }
 
 template <bool replicated>
 void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8>) const
 {
-    const auto & settings = replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
-    auto constraints_and_current_profiles = context->getSettingsConstraintsAndCurrentProfiles();
-    const auto & constraints = constraints_and_current_profiles->constraints;
+    /// The same enumeration `system.engine_settings` reads, so the two tables cannot drift apart -
+    /// this one is that one restricted to a single engine family. It carries the settings
+    /// constraints of the current user already, which is what `dumpToSystemMergeTreeSettingsColumns`
+    /// used to do here.
+    const auto settings = replicated
+        ? MergeTreeSettings::enumerateReplicatedEngineSettings(context)
+        : MergeTreeSettings::enumerateEngineSettings(context);
 
-    MutableColumnsAndConstraints params(res_columns, constraints);
-    settings.dumpToSystemMergeTreeSettingsColumns(params);
+    /// A row per name the setting answers to, as `system.settings` does.
+    auto add_row = [&](std::string_view name, const TableSetting & setting, std::string_view alias_for)
+    {
+        size_t i = 0;
+        res_columns[i++]->insert(name);
+        res_columns[i++]->insert(setting.value);
+        res_columns[i++]->insert(setting.default_value);
+        res_columns[i++]->insert(setting.origin != TableSettingOrigin::Default);
+        res_columns[i++]->insert(setting.description);
+        res_columns[i++]->insert(setting.min_value ? Field(*setting.min_value) : Field());
+        res_columns[i++]->insert(setting.max_value ? Field(*setting.max_value) : Field());
+
+        Array disallowed;
+        disallowed.reserve(setting.disallowed_values.size());
+        for (const auto & disallowed_value : setting.disallowed_values)
+            disallowed.emplace_back(disallowed_value);
+        res_columns[i++]->insert(disallowed);
+
+        res_columns[i++]->insert(setting.readonly);
+        res_columns[i++]->insert(setting.type);
+        res_columns[i++]->insert(setting.tier == SettingsTierType::OBSOLETE);
+        res_columns[i++]->insert(setting.tier);
+        res_columns[i++]->insert(alias_for);
+    };
+
+    for (const auto & setting : settings)
+    {
+        add_row(setting.name, setting, "");
+        for (const auto alias : setting.aliases)
+            add_row(alias, setting, setting.name);
+    }
 }
 
 template class SystemMergeTreeSettings<false>;

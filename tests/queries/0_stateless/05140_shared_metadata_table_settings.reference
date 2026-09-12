@@ -1,0 +1,11 @@
+-- settings the shared metadata is authoritative for
+after_processing	keep	shared_metadata
+loading_retries	42	shared_metadata
+mode	unordered	shared_metadata
+keeper_path	1	shared_metadata
+-- a setting the queue does not keep there is still attributed normally
+parallel_inserts	default
+polling_min_timeout_ms	default
+-- every source this table reports
+default
+shared_metadata

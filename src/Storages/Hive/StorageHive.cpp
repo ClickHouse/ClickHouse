@@ -1152,6 +1152,7 @@ void registerStorageHive(StorageFactory & factory)
             .supports_sort_order = true,
             .source_access_type = AccessTypeObjects::Source::HIVE,
             .has_builtin_setting_fn = HiveSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = HiveSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1570,6 +1571,13 @@ day:         2021-09-18
 )DOCS_MD",
             .syntax = "ENGINE = Hive('thrift://host:port', 'database', 'table') PARTITION BY expr",
         });
+}
+
+TableSettings StorageHive::getTableSettings(ContextPtr query_context) const
+{
+    /// `HiveSettings::loadFromConfig` exists but nothing calls it, so despite the `hive` config
+    /// section a `Hive` table's settings can only come from its defaults or its definition.
+    return attributeSettingsStatedInDefinition(storage_settings->enumerateSettings(), query_context);
 }
 
 }

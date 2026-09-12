@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Common/SettingsChanges.h>
 
@@ -58,6 +61,7 @@ struct RabbitMQSettings
     SettingsChanges getFormatSettings() const;
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(RabbitMQSettings)
 
 private:
     std::unique_ptr<RabbitMQSettingsImpl> impl;

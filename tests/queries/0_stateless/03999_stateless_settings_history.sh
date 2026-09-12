@@ -122,7 +122,7 @@ $CLICKHOUSE_LOCAL --query "
         -- New MergeTree setting that is neither in the frozen snapshot nor documented.
         SELECT 'PLEASE ADD THE NEW MERGE_TREE_SETTING TO SettingsChangesHistory.cpp: ' || name
         FROM system.merge_tree_settings
-        WHERE is_obsolete = 0
+        WHERE alias_for = '' AND is_obsolete = 0
           AND name NOT IN (SELECT name FROM baseline WHERE kind = 'MergeTree')
           AND name NOT IN (SELECT name FROM mergetree_documented)
 
@@ -138,7 +138,7 @@ $CLICKHOUSE_LOCAL --query "
 
         SELECT 'MERGE_TREE_SETTING IN SettingsChangesHistory.cpp DOES NOT EXIST (typo/rename?): ' || name
         FROM mergetree_documented
-        WHERE name NOT IN (SELECT name FROM system.merge_tree_settings)
+        WHERE name NOT IN (SELECT name FROM system.merge_tree_settings WHERE alias_for = '')
 
         UNION ALL
 
@@ -168,7 +168,7 @@ $CLICKHOUSE_LOCAL --query "
             || ' default is ' || s.default || ' but history last records ' || e.expected
         FROM system.merge_tree_settings s
         JOIN mergetree_expected_default e ON s.name = e.name
-        WHERE s.is_obsolete = 0
+        WHERE s.alias_for = '' AND s.is_obsolete = 0
           AND s.default NOT LIKE 'auto(%'
           AND s.type != 'Map'
           AND s.name NOT IN (SELECT name FROM value_drift_ignore)
@@ -206,7 +206,7 @@ $CLICKHOUSE_LOCAL --query "
             || ' default changed from ' || b.default || ' to ' || s.default || ' since the baseline but has no history entry'
         FROM system.merge_tree_settings s
         JOIN baseline b ON b.name = s.name AND b.kind = 'MergeTree'
-        WHERE s.is_obsolete = 0
+        WHERE s.alias_for = '' AND s.is_obsolete = 0
           AND s.default NOT LIKE 'auto(%'
           AND s.default != b.default
           AND s.name NOT IN (SELECT name FROM mergetree_documented)

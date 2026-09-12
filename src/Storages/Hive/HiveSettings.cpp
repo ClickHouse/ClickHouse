@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/Hive/HiveSettings.h>
 
 #if USE_HIVE
@@ -94,5 +95,8 @@ bool HiveSettings::hasBuiltin(std::string_view name)
 {
     return HiveSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(HiveSettings)
+
 }
 #endif

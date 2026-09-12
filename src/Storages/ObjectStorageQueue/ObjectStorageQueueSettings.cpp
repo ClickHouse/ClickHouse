@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <optional>
 #include <Columns/IColumn.h>
 #include <Core/BaseSettings.h>
@@ -140,10 +141,7 @@ void ObjectStorageQueueSettings::applyChanges(const SettingsChanges & changes)
     impl->applyChanges(changes);
 }
 
-namespace
-{
-
-std::optional<std::string_view> adjustSettingName(std::string_view name)
+std::optional<std::string_view> ObjectStorageQueueSettings::adjustSettingName(std::string_view name)
 {
     static constexpr std::string_view s3queue_prefix = "s3queue_";
 
@@ -166,8 +164,6 @@ std::optional<std::string_view> adjustSettingName(std::string_view name)
     return std::nullopt;
 }
 
-}
-
 void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is_attach, const StorageID & storage_id)
 {
     if (storage_def.settings)
@@ -182,7 +178,7 @@ void ObjectStorageQueueSettings::loadFromQuery(ASTStorage & storage_def, bool is
             /// We support settings starting with s3_ for compatibility.
             for (auto & change : settings_changes)
             {
-                if (auto maybe_new_name = adjustSettingName(change.name); maybe_new_name.has_value())
+                if (auto maybe_new_name = ObjectStorageQueueSettings::adjustSettingName(change.name); maybe_new_name.has_value())
                     change.name = std::string{*maybe_new_name};
 
                 if (change.name == "current_shard_num")
@@ -243,4 +239,7 @@ bool ObjectStorageQueueSettings::hasBuiltin(std::string_view name)
         name = *maybe_new_name;
     return ObjectStorageQueueSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(ObjectStorageQueueSettings)
+
 }

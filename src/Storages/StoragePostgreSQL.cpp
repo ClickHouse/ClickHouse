@@ -913,6 +913,7 @@ void registerStoragePostgreSQL(StorageFactory & factory)
         .supports_schema_inference = true,
         .source_access_type = AccessTypeObjects::Source::POSTGRES,
         .has_builtin_setting_fn = PostgreSQLSettings::hasBuiltin,
+        .enumerate_engine_settings_fn = PostgreSQLSettings::enumerateEngineSettings,
     },
     Documentation{
         .description = R"DOCS_MD(

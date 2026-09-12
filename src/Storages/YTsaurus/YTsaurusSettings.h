@@ -1,7 +1,10 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #if USE_YTSAURUS
 #include <Core/BaseSettingsFwdMacros.h>
+#include <Interpreters/Context_fwd.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
 #include <Common/VectorWithMemoryTracking.h>
@@ -42,6 +45,7 @@ struct YTsaurusSettings
     static YTsaurusSettings createFromQuery(ASTStorage & storage_def);
     static YTsaurusSettings createFromQuery(const ASTSetQuery & settings_def);
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(YTsaurusSettings)
 
 private:
     std::unique_ptr<YTsaurusSettingsImpl> impl;

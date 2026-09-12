@@ -131,6 +131,8 @@ public:
 
     const auto & getFileLogSettings() const { return filelog_settings; }
 
+    TableSettings getTableSettings(ContextPtr query_context) const override;
+
 private:
     friend class ReadFromStorageFileLog;
 

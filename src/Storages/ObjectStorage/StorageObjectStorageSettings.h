@@ -1,15 +1,17 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 
 
 namespace DB
 {
 class ASTSetQuery;
 struct StorageObjectStorageSettingsImpl;
-struct MutableColumnsAndConstraints;
 class StorageObjectStorage;
 class SettingsChanges;
 
@@ -63,6 +65,7 @@ struct StorageObjectStorageSettings
     Field get(const std::string & name);
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(StorageObjectStorageSettings)
 
 private:
     std::unique_ptr<StorageObjectStorageSettingsImpl> impl;

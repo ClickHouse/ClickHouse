@@ -1,8 +1,11 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -58,6 +61,7 @@ struct FileLogSettings
     void loadFromQuery(ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(FileLogSettings)
 
 private:
     std::unique_ptr<FileLogSettingsImpl> impl;

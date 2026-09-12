@@ -1148,4 +1148,18 @@ bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & as
     return configuration->scheduleDataProcessingJob(assignee, *this);
 }
 
+TableSettings StorageObjectStorage::getTableSettings(ContextPtr query_context) const
+{
+    /// The settings belong to the configuration rather than to this storage. A data lake
+    /// configuration keeps them; plain object storage - `S3`, `GCS`, `AzureBlobStorage`, `HDFS` -
+    /// never builds a `StorageObjectStorageSettings` at all, since `createStorageObjectStorage`
+    /// applies the `SETTINGS` clause to a copy of `Settings` and converts the result to
+    /// `FormatSettings`. It therefore cannot say what its settings are.
+    auto settings = configuration->enumerateSettings();
+    if (settings.empty())
+        return settingsNotRetainedByEngine();
+
+    return attributeSettingsStatedInDefinition(std::move(settings), query_context);
+}
+
 }

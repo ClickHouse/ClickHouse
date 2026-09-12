@@ -1554,6 +1554,7 @@ void registerStorageRabbitMQ(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::RABBITMQ,
             .has_builtin_setting_fn = RabbitMQSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = RabbitMQSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1768,6 +1769,13 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 )DOCS_MD",
             .syntax = "ENGINE = RabbitMQ() SETTINGS rabbitmq_host_port = 'host:port', rabbitmq_exchange_name = 'exchange', rabbitmq_format = 'format', ...",
             .related = {"Kafka", "NATS", "FileLog"}});
+}
+
+TableSettings StorageRabbitMQ::getTableSettings(ContextPtr query_context) const
+{
+    /// A named collection may also have set these, but this storage does not keep the
+    /// collection's name, so a setting it changed reports `other` rather than a guess.
+    return attributeSettingsStatedInDefinition(rabbitmq_settings->enumerateSettings(), query_context);
 }
 
 }

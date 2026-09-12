@@ -118,6 +118,8 @@ public:
     std::vector<StorageID> getInnerStorageIDs() const override;
 #endif
 
+    TableSettings getTableSettings(ContextPtr query_context) const override;
+
 private:
     /// Represents one of the target tables; `is_inner_table` is true when the table was auto-created by TimeSeries and is owned by it.
     struct Target

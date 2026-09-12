@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Storages/PostgreSQL/MaterializedPostgreSQLSettings.h>
 
 #if USE_LIBPQXX
@@ -91,6 +92,9 @@ bool MaterializedPostgreSQLSettings::hasBuiltin(std::string_view name)
 {
     return MaterializedPostgreSQLSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(MaterializedPostgreSQLSettings)
+
 }
 
 #endif

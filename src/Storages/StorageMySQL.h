@@ -111,6 +111,8 @@ public:
         const ContextPtr & context_,
         MultiEnum<MySQLDataTypesSupport> type_support);
 
+    TableSettings getTableSettings(ContextPtr query_context) const override;
+
 private:
     friend class StorageMySQLSink;
 

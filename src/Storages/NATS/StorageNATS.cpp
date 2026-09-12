@@ -1306,6 +1306,7 @@ void registerStorageNATS(StorageFactory & factory)
             .supports_settings = true,
             .source_access_type = AccessTypeObjects::Source::NATS,
             .has_builtin_setting_fn = NATSSettings::hasBuiltin,
+            .enumerate_engine_settings_fn = NATSSettings::enumerateEngineSettings,
         },
         Documentation{
             .description = R"DOCS_MD(
@@ -1629,6 +1630,13 @@ For the recommended materialized-view consumption path (the acknowledgement is s
 )DOCS_MD",
             .syntax = "ENGINE = NATS() SETTINGS nats_url = 'host:port', nats_subjects = 'subject', nats_format = 'format', ...",
             .related = {"Kafka", "RabbitMQ", "FileLog"}});
+}
+
+TableSettings StorageNATS::getTableSettings(ContextPtr query_context) const
+{
+    /// A named collection may also have set these, but this storage does not keep the
+    /// collection's name, so a setting it changed reports `other` rather than a guess.
+    return attributeSettingsStatedInDefinition(nats_settings->enumerateSettings(), query_context);
 }
 
 }

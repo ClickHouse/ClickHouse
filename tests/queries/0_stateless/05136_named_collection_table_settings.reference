@@ -1,0 +1,9 @@
+-- what the collection supplied, and the three rows it did not
+input_format_allow_errors_num	0	other
+input_format_allow_errors_ratio	0	other
+input_format_skip_unknown_fields	1	other
+kafka_broker_list	b:9092	named_collection
+kafka_format	CSV	named_collection
+kafka_group_name	g	named_collection
+kafka_max_block_size	4242	named_collection
+kafka_topic_list	t	named_collection

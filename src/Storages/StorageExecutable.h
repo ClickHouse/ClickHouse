@@ -42,6 +42,8 @@ public:
         size_t max_block_size,
         size_t threads) override;
 
+    TableSettings getTableSettings(ContextPtr query_context) const override;
+
 private:
     std::unique_ptr<ExecutableSettings> settings;
     VectorWithMemoryTracking<ASTPtr> input_queries;

@@ -1,7 +1,10 @@
 #pragma once
 
+#include <Storages/TableSetting.h>
+
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
+#include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
@@ -29,6 +32,7 @@ struct RocksDBSettings
     void loadFromQuery(const ASTStorage & storage_def);
 
     static bool hasBuiltin(std::string_view name);
+    DECLARE_SETTINGS_ENUMERATION(RocksDBSettings)
     static void checkCanSet(std::string_view name, const Field & value);
 
 private:

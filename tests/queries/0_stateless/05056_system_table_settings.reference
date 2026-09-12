@@ -1,0 +1,43 @@
+-- structure
+database	String
+table	String
+engine	LowCardinality(String)
+name	String
+value	String
+default	String
+changed	UInt8
+description	String
+min	Nullable(String)
+max	Nullable(String)
+disallowed_values	Array(String)
+readonly	UInt8
+type	String
+is_obsolete	UInt8
+tier	Enum8(\'Production\' = 0, \'Obsolete\' = 4, \'Experimental\' = 8, \'Beta\' = 12, \'PrivatePreview\' = 16)
+alias_for	String
+source	Enum8(\'default\' = 0, \'config\' = 1, \'compatibility\' = 2, \'definition\' = 3, \'named_collection\' = 4, \'shared_metadata\' = 5, \'runtime\' = 6, \'other\' = 7)
+is_masked	UInt8
+-- every engine reports what its definition states
+jn	Join	persistent	0	1	definition
+lg	Log	disk	default	1	definition
+mt	MergeTree	enable_block_number_column	1	1	definition
+mt	MergeTree	index_granularity	4096	1	definition
+-- an engine with a settings struct reports its defaults too, one without does not
+jn	0
+lg	0
+mt	1
+-- a secret is masked, and says so
+kafka_sasl_password	[HIDDEN]	1
+-- a setting that is not secret is not masked
+0
+-- an engine with no secret settings masks nothing
+0
+-- a setting is findable by an alias, carrying the same values
+allow_experimental_block_number_column	1	definition	enable_block_number_column
+enable_block_number_column	1	definition	
+index_granularity	4096	definition	
+-- the columns shared with system.merge_tree_settings agree, except where the definition differs
+-- settings the engine makes read-only are reported as such
+1
+-- filtering by database reaches the scan
+0

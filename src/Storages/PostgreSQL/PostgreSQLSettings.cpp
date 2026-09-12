@@ -1,3 +1,4 @@
+#include <Storages/enumerateSettingsFromImpl.h>
 #include <Core/BaseSettings.h>
 #include <Core/BaseSettingsFwdMacrosImpl.h>
 #include <Core/Settings.h>
@@ -109,5 +110,7 @@ bool PostgreSQLSettings::hasBuiltin(std::string_view name)
 {
     return PostgreSQLSettingsImpl::hasBuiltin(name);
 }
+
+IMPLEMENT_SETTINGS_ENUMERATION(PostgreSQLSettings)
 
 }
