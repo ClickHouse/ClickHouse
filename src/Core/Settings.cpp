@@ -7537,7 +7537,7 @@ The `compatibility` setting causes ClickHouse to use the default settings of a p
 
 If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
 
-Changes marked `StartUsingNew` in [`system.settings_changes`](/reference/system-tables/settings_changes) block rollback of that change and all earlier changes to the same setting.
+Changes marked `Ignore` in [`system.settings_changes`](/reference/system-tables/settings_changes) block rollback of that change and all earlier changes to the same setting.
 
 This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`. An empty value means that this setting is disabled.
 
@@ -9835,7 +9835,7 @@ struct ResolvedCompatibilityChange
     const Field * previous_value;
     /// Whether `previous_value` is what the setting holds when nothing changed it.
     bool previous_value_is_default;
-    SettingsChangesHistory::SettingChange::CompatibilityMode compatibility_mode;
+    SettingsChangesHistory::SettingChange::CompatibilitySetting compatibility_mode;
 };
 
 using ResolvedCompatibilityHistory = std::vector<std::pair<ClickHouseVersion, std::vector<ResolvedCompatibilityChange>>>;
@@ -9921,7 +9921,7 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         /// Apply reversed changes from this version.
         for (const auto & change : it->second)
         {
-            if (change.compatibility_mode == SettingsChangesHistory::SettingChange::CompatibilityMode::StartUsingNew)
+            if (change.compatibility_mode == SettingsChangesHistory::SettingChange::CompatibilitySetting::Ignore)
                 blocked_settings.set(change.index);
 
             if (blocked_settings[change.index])

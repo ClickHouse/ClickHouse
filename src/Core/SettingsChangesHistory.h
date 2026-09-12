@@ -16,19 +16,19 @@ namespace SettingsChangesHistory
 {
     struct SettingChange
     {
-        enum class CompatibilityMode
+        enum class CompatibilitySetting
         {
             /// Restore `previous_value` when `compatibility` requests an older version.
-            RollbackToOld,
+            Apply,
             /// Block rollback of this change and all earlier changes to the same setting.
-            StartUsingNew,
+            Ignore,
         };
 
         String name;
         Field previous_value;
         Field new_value;
         String reason;
-        CompatibilityMode compatibility_mode = CompatibilityMode::RollbackToOld;
+        CompatibilitySetting compatibility_mode = CompatibilitySetting::Apply;
     };
 
     using SettingsChanges = VectorWithMemoryTracking<SettingChange>;
