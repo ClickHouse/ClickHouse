@@ -88,8 +88,19 @@ public:
     /// Whether the effective security context of the view hides rows by itself, through settings
     /// inherited from a `SQL SECURITY DEFINER` view's definer profile (a `limit`, an extra filter,
     /// `final`, a limit with a non-throwing overflow mode, ...). Fails closed like `canHideRows`,
-    /// of which it is the settings-only part.
+    /// of which it is the settings-only part. Only settings that hide rows of *any* query belong
+    /// here; the ones whose effect depends on the shape of the query are in
+    /// `shapeDependentOverflowCanHideRows`.
     static bool effectiveContextCanHideRows(const ContextPtr & context);
+
+    /// Whether the effective security context hides rows through a limit with a non-throwing
+    /// overflow mode on an operator that the query actually contains: `max_rows_to_group_by` /
+    /// `group_by_overflow_mode` need a `GROUP BY` (or an aggregation), `max_rows_to_sort` /
+    /// `sort_overflow_mode` an `ORDER BY`, `max_rows_in_distinct` / `distinct_overflow_mode` a
+    /// `DISTINCT`. A caller that injects one of those operators itself - the `ORDER BY ... LIMIT`
+    /// pushdown into a view - passes the corresponding flag even when the view's own query has no
+    /// such clause.
+    static bool shapeDependentOverflowCanHideRows(const ContextPtr & context, bool has_sort, bool has_grouping, bool has_distinct);
 
     /// Whether the view's inner query can drop or collapse rows at all. `false` is returned only
     /// when the query provably preserves every row of a plainly readable source, so that a

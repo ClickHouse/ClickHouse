@@ -1495,6 +1495,20 @@ void pushOrderByIntoView(
         if (StorageView::effectiveContextCanHideRows(view_context))
             return;
 
+        /// This optimization injects a sort into the view's inner query, so a definer profile
+        /// `sort_overflow_mode = 'break'` with a sort limit would truncate the sorted result
+        /// even though the view's own query has no `ORDER BY` - the injected top-N would keep an
+        /// arbitrary subset instead of the correct one. The aggregation and `DISTINCT` limits are
+        /// passed according to the view's own shape: they hide rows only where those operators
+        /// already exist, and there they do so with or without the pushdown, but pushing a
+        /// truncating `LIMIT` below them is not worth proving sound.
+        if (StorageView::shapeDependentOverflowCanHideRows(
+                view_context,
+                /*has_sort=*/ true,
+                /*has_grouping=*/ sel->groupBy() != nullptr || sel->group_by_all || sel->having() != nullptr,
+                /*has_distinct=*/ sel->distinct))
+            return;
+
         /// A definer profile `prefer_column_name_to_alias` reintroduces the alias-vs-source-column
         /// ambiguity that the outer-context guard already excludes. It hides no rows, so it is not
         /// part of the shared set above.

@@ -1168,15 +1168,32 @@ bool StorageView::effectiveContextCanHideRows(const ContextPtr & context)
         && settings[Setting::max_execution_time].totalMilliseconds() != 0;
     const bool timeout_leaf_breaks = settings[Setting::timeout_overflow_mode_leaf] == OverflowMode::BREAK
         && settings[Setting::max_execution_time_leaf].totalMilliseconds() != 0;
-    const bool group_by_breaks = settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
+    /// The `GROUP BY` / sort / `DISTINCT` overflow settings are deliberately absent: they cannot
+    /// drop a row of a query that never aggregates, sorts or deduplicates, so they are checked by
+    /// `shapeDependentOverflowCanHideRows` once the shape of the query is known. Checking them
+    /// here would make every `SQL SECURITY DEFINER` view whose definer profile happens to carry
+    /// `group_by_overflow_mode` or `distinct_overflow_mode` a barrier for no semantic reason.
+    return read_breaks || read_leaf_breaks || timeout_breaks || timeout_leaf_breaks;
+}
+
+bool StorageView::shapeDependentOverflowCanHideRows(const ContextPtr & context, bool has_sort, bool has_grouping, bool has_distinct)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Each of these limits stops one operator early and returns what it has produced so far, so
+    /// the query exposes an arbitrary subset of its rows - but only when the query contains that
+    /// operator at all. With the default `throw` mode none of them hide anything either.
+    const bool group_by_breaks = has_grouping
+        && settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
         && settings[Setting::max_rows_to_group_by] != 0;
-    const bool sort_breaks = settings[Setting::sort_overflow_mode] == OverflowMode::BREAK
+    const bool sort_breaks = has_sort
+        && settings[Setting::sort_overflow_mode] == OverflowMode::BREAK
         && (settings[Setting::max_rows_to_sort] != 0 || settings[Setting::max_bytes_to_sort] != 0);
-    const bool distinct_breaks = settings[Setting::distinct_overflow_mode] == OverflowMode::BREAK
+    const bool distinct_breaks = has_distinct
+        && settings[Setting::distinct_overflow_mode] == OverflowMode::BREAK
         && (settings[Setting::max_rows_in_distinct] != 0 || settings[Setting::max_bytes_in_distinct] != 0);
 
-    return read_breaks || read_leaf_breaks || timeout_breaks || timeout_leaf_breaks || group_by_breaks || sort_breaks
-        || distinct_breaks;
+    return group_by_breaks || sort_breaks || distinct_breaks;
 }
 
 bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & context, bool remote_source_is_read_identically)
@@ -1221,6 +1238,18 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     /// `arrayJoin` function does what the clause does without appearing in the clause list -
     /// possibly behind a SQL user-defined function that is expanded only later.
     if (select->arrayJoinExpressionList().first || hasRowHidingFunctionOutsideSubqueries(*select))
+        return true;
+
+    /// Now that the shape of the query is known, the overflow-mode settings of the effective
+    /// context that depend on it can be checked as well. Everything that aggregates or
+    /// deduplicates has already failed closed above, so in practice only an inner `ORDER BY`
+    /// combined with a definer profile `sort_overflow_mode = 'break'` is left; the flags are
+    /// spelled out anyway so that the proof does not silently weaken if a check above is relaxed.
+    if (shapeDependentOverflowCanHideRows(
+            context,
+            /*has_sort=*/ select->orderBy() != nullptr || select->order_by_all,
+            /*has_grouping=*/ select->groupBy() != nullptr || select->group_by_all || select->having() != nullptr,
+            /*has_distinct=*/ select->distinct))
         return true;
 
     const auto & tables = select->tables();
