@@ -155,6 +155,23 @@ def test_tsdb_empty_table_returns_zero_statistics():
     }
 
 
+def test_tsdb_empty_table_ignores_empty_result_for_aggregation_setting():
+    data = get_json_from_api(
+        "/empty/api/v1/status/tsdb?empty_result_for_aggregation_by_empty_set=1"
+    )
+    assert data["headStats"] == {
+        "numSeries": 0,
+        "numLabelPairs": 0,
+        "chunkCount": 0,
+        "minTime": 0,
+        "maxTime": 0,
+    }
+    assert data["seriesCountByMetricName"] == []
+    assert data["labelValueCountByLabelName"] == []
+    assert data["memoryInBytesByLabelName"] == []
+    assert data["seriesCountByLabelValuePair"] == []
+
+
 def test_tsdb_without_stored_time_bounds_still_returns_cardinality():
     data = get_json_from_api("/no_bounds/api/v1/status/tsdb")
     assert data["headStats"] == {

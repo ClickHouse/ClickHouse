@@ -1280,11 +1280,13 @@ void PrometheusHTTPProtocolAPI::getTSDBStats(
     LOG_TRACE(log, "SQL query to execute:\n{}", sql_query->formatForLogging());
 
     /// Functions timeSeriesStoreTags() and timeSeriesIdToTags() are supported by the analyzer only.
-    getContext()->setSetting("allow_experimental_analyzer", true);
+    auto query_context = Context::createCopy(getContext());
+    query_context->setSetting("allow_experimental_analyzer", true);
     if (!getContext()->getSettingsRef()[Setting::enable_materialized_cte].changed)
-        getContext()->setSetting("enable_materialized_cte", true);
+        query_context->setSetting("enable_materialized_cte", true);
+    query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
 
-    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), getContext(), {}, QueryProcessingStage::Complete);
+    auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 
     try
     {
