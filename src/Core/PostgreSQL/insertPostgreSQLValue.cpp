@@ -135,8 +135,7 @@ try
         case ExternalResultDescription::ValueType::vtDecimal256:
         {
             ReadBufferFromString istr(value);
-            static const FormatSettings decimal_settings;
-            data_type->getDefaultSerialization()->deserializeWholeText(column, istr, decimal_settings);
+            data_type->getDefaultSerialization()->deserializeWholeText(column, istr, FormatSettings{});
             break;
         }
         case ExternalResultDescription::ValueType::vtArray:

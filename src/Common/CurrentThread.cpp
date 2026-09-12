@@ -115,13 +115,6 @@ ContextPtr CurrentThread::tryGetQueryContext()
     return current_thread->tryGetQueryContext();
 }
 
-const Context * CurrentThread::retainQueryContext()
-{
-    if (unlikely(!current_thread))
-        return nullptr;
-    return current_thread->retainQueryContext();
-}
-
 MemoryPressureMonitor & CurrentThread::getMemoryPressureMonitor()
 {
     if (auto group = getGroup())

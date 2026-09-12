@@ -109,8 +109,6 @@ public:
 
     /// Returns attached query context or nullptr if there is no query context
     static ContextPtr tryGetQueryContext();
-    /// Keeps the current query context alive until this thread detaches.
-    static const Context * retainQueryContext();
 
     static std::string_view getQueryId();
 

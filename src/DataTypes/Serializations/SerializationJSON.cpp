@@ -1,8 +1,6 @@
 #include <algorithm>
 #include <unordered_map>
 #include <Poco/Mutex.h>
-#include <base/getThreadId.h>
-#include <Common/CacheLine.h>
 #include <Common/SipHash.h>
 #include <Common/CurrentThread.h>
 #include <Common/DateLUT.h>
@@ -99,8 +97,20 @@ SerializationPtr SerializationJSON::create(
     return pooled(hash.get128(), creator);
 }
 
+namespace Setting
+{
+    extern const SettingsBool allow_simdjson;
+    extern const SettingsTimezone session_timezone;
+}
+
 namespace
 {
+
+#if USE_RAPIDJSON
+using FallbackJSONParser = RapidJSONParser;
+#else
+using FallbackJSONParser = DummyJSONParser;
+#endif
 
 template <typename Parser>
 struct JSONParserState
@@ -111,81 +121,78 @@ struct JSONParserState
     explicit JSONParserState(const DataTypePtr & type) : tree(buildJSONExtractTree<Parser>(type, "JSON serialization")) {}
 };
 
-}
-
-struct JSONParsingPools
+/// Parsers and extraction trees are mutable and expensive to build, so they stay out of the immutable,
+/// pooled serialization and are cached per thread instead. A thread-local cache needs no locking.
+///
+/// Retention policy: every entry is released as soon as the thread starts serving a different query
+/// context or a different effective session timezone (the same rule as `DataTypesCache`), and a map is
+/// cleared when it holds `MAX_ELEMENTS` schemas. An idle thread keeps the state of its last query until then.
+class JSONParserStateCache
 {
-    /// The pool key owns the serialization, so an address cannot be reused for a different schema.
-    /// Each backend has its own pool; the timezone also isolates dynamically inferred types.
-    struct Lookup
-    {
-        const ISerialization * serialization;
-        std::string_view session_timezone;
-    };
-    struct Key
-    {
-        SerializationPtr serialization;
-        String session_timezone;
+public:
+    template <typename Parser>
+    using Pool = SimpleObjectPool<JSONParserState<Parser>, Poco::NullMutex>;
 
-        explicit Key(Lookup lookup) : serialization(lookup.serialization->shared_from_this()), session_timezone(lookup.session_timezone)
-        {
-        }
-    };
-    struct Compare
+    template <typename Parser>
+    struct Entry
     {
-        using is_transparent = void;
-        bool operator()(const auto & lhs, const auto & rhs) const
-        {
-            auto * lhs_serialization = std::to_address(lhs.serialization);
-            auto * rhs_serialization = std::to_address(rhs.serialization);
-            if (lhs_serialization != rhs_serialization)
-                return std::less<const ISerialization *>{}(lhs_serialization, rhs_serialization);
-            return std::string_view(lhs.session_timezone) < std::string_view(rhs.session_timezone);
-        }
+        /// Owning the serialization guarantees that its address is not reused by another schema while cached.
+        SerializationPtr owner;
+        std::shared_ptr<Pool<Parser>> pool;
     };
-    /// Exact thread IDs give each OS thread a private shard. Parsing must not suspend between acquisition and lease return.
-    /// Restore real pool mutexes if parsing can yield or shards become shared between threads.
-    struct alignas(CH_CACHE_LINE_SIZE) Shard
+
+    template <typename Parser>
+    using Pools = std::unordered_map<const ISerialization *, Entry<Parser>>;
+
+    void clearIfContextChanged(const ContextPtr & current_query_context, std::string_view current_session_timezone)
     {
+        /// Owner-based comparison: the weak pointer keeps the control block alive, so an expired
+        /// context cannot be confused with a new one allocated at the same address.
+        bool same_query_context = !query_context.owner_before(current_query_context) && !current_query_context.owner_before(query_context);
+        if (same_query_context && session_timezone == current_session_timezone)
+            return;
+
 #if USE_SIMDJSON
-        ObjectPoolMap<JSONParserState<SimdJSONParser>, Key, Compare, Poco::NullMutex> simdjson;
+        simdjson_pools.clear();
 #endif
-#if USE_RAPIDJSON
-        ObjectPoolMap<JSONParserState<RapidJSONParser>, Key, Compare, Poco::NullMutex> rapidjson;
-#else
-        ObjectPoolMap<JSONParserState<DummyJSONParser>, Key, Compare, Poco::NullMutex> dummy;
-#endif
-    };
-
-    std::mutex mutex;
-    /// Shards are never erased while these pools are alive.
-    std::unordered_map<UInt64, std::unique_ptr<Shard>> shards;
-
-    static Shard & getShard(const std::shared_ptr<JSONParsingState> & holder)
-    {
-        /// The caller owns the holder; matching owners keep the cached pointer valid without extending its lifetime.
-        static thread_local std::weak_ptr<JSONParsingState> cached_holder;
-        static thread_local Shard * cached_shard = nullptr;
-        if (cached_holder.owner_before(holder) || holder.owner_before(cached_holder))
-        {
-            std::call_once(holder->initialization_flag, [&] { holder->pools = std::make_shared<JSONParsingPools>(); });
-            auto & pools = holder->pools;
-            std::lock_guard lock(pools->mutex);
-            auto & shard = pools->shards[getThreadId()];
-            if (!shard)
-                shard = std::make_unique<Shard>();
-            cached_shard = shard.get();
-            cached_holder = holder;
-        }
-        chassert(cached_shard);
-        return *cached_shard;
+        fallback_pools.clear();
+        query_context = current_query_context;
+        session_timezone = current_session_timezone;
     }
+
+    /// The caller must hold the returned pool for the whole parse: leases reference it directly,
+    /// and a later lookup may evict it from the cache.
+    template <typename Parser>
+    std::shared_ptr<Pool<Parser>> get(Pools<Parser> & pools, const ISerialization & serialization)
+    {
+        auto it = pools.find(&serialization);
+        if (it == pools.end())
+        {
+            if (pools.size() >= MAX_ELEMENTS)
+                pools.clear();
+            it = pools.emplace(&serialization, Entry<Parser>{serialization.shared_from_this(), std::make_shared<Pool<Parser>>()}).first;
+        }
+        return it->second.pool;
+    }
+
+#if USE_SIMDJSON
+    Pools<SimdJSONParser> simdjson_pools;
+#endif
+    Pools<FallbackJSONParser> fallback_pools;
+
+private:
+    static constexpr size_t MAX_ELEMENTS = 64;
+
+    ContextWeakPtr query_context;
+    String session_timezone;
 };
 
-namespace Setting
+JSONParserStateCache & getJSONParserStateCache()
 {
-    extern const SettingsBool allow_simdjson;
-    extern const SettingsTimezone session_timezone;
+    static thread_local JSONParserStateCache cache;
+    return cache;
+}
+
 }
 
 namespace
@@ -430,26 +437,26 @@ void SerializationJSON::serializeTextImpl(const IColumn & column, size_t row_num
 
 void SerializationJSON::deserializeObject(IColumn & column, std::string_view object, const FormatSettings & settings) const
 {
-    /// Resolve the context once for both the parser backend and the effective timezone.
-    const auto * context = CurrentThread::retainQueryContext();
-    ContextPtr global_context;
-    if (!context)
-    {
-        global_context = Context::getGlobalContextInstance();
-        context = global_context.get();
-    }
-    std::string_view session_timezone_name;
+    /// The parser backend and the timezone of implicitly typed `DateTime` paths follow the live query
+    /// settings, falling back to the global context the same way `DateLUT::instance` does.
+    ContextPtr query_context = CurrentThread::tryGetQueryContext();
+    ContextPtr context = query_context ? query_context : Context::getGlobalContextInstance();
+    std::string_view session_timezone;
     if (context)
-        session_timezone_name = context->getSettingsRef()[Setting::session_timezone].value;
-    if (session_timezone_name.empty())
-        session_timezone_name = DateLUT::serverTimezoneInstance().getTimeZone();
+        session_timezone = context->getSettingsRef()[Setting::session_timezone].value;
+    if (session_timezone.empty())
+        session_timezone = DateLUT::serverTimezoneInstance().getTimeZone();
 
-    auto & shard = JSONParsingPools::getShard(settings.json_parsing_state);
-    JSONParsingPools::Lookup key{this, session_timezone_name};
-    auto deserialize = [&]<typename Parser>(ObjectPoolMap<JSONParserState<Parser>, JSONParsingPools::Key, JSONParsingPools::Compare, Poco::NullMutex> & pool)
+    auto & cache = getJSONParserStateCache();
+    cache.clearIfContextChanged(query_context, session_timezone);
+
+    auto deserialize = [&]<typename Parser>(JSONParserStateCache::Pools<Parser> & pools)
     {
-        auto lease = pool.get(key, [&]
+        auto pool = cache.get(pools, *this);
+        auto lease = pool->get([&]
         {
+            /// The tree is rebuilt from the type instead of keeping a reference to it: a strong
+            /// reference would form a cycle with the serialization cached inside `DataTypeObject`.
             Strings regexps;
             for (const auto & regexp : path_regexps_to_skip)
                 regexps.push_back(regexp.pattern());
@@ -471,17 +478,13 @@ void SerializationJSON::deserializeObject(IColumn & column, std::string_view obj
             throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot insert data into JSON column: {}", error);
     };
 #if USE_SIMDJSON
-    if (context->getSettingsRef()[Setting::allow_simdjson])
+    if (!context || context->getSettingsRef()[Setting::allow_simdjson])
     {
-        deserialize(shard.simdjson);
+        deserialize(cache.simdjson_pools);
         return;
     }
 #endif
-#if USE_RAPIDJSON
-    deserialize(shard.rapidjson);
-#else
-    deserialize(shard.dummy);
-#endif
+    deserialize(cache.fallback_pools);
 }
 
 void SerializationJSON::serializeText(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const

@@ -156,13 +156,16 @@ std::unique_ptr<IDataType::SubcolumnInfo> makeSubcolumnInfo(const ISerialization
     return result;
 }
 
-}
 
-std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
+/// Resolves a subcolumn by enumerating the streams of `data.serialization`. With `prune_typed_paths`
+/// serializations may skip streams that cannot contribute to this lookup (see
+/// `SerializationObject::enumerateStreams`); the result must not depend on it.
+std::unique_ptr<IDataType::SubcolumnInfo> getSubcolumnInfoFromStreams(
     std::string_view subcolumn_name,
-    const SubstreamData & data,
+    const ISerialization::SubstreamData & data,
     size_t initial_array_level,
-    bool throw_if_null)
+    bool prune_typed_paths,
+    size_t & array_level)
 {
     std::unique_ptr<IDataType::SubcolumnInfo> res;
     /// Track whether res was set by an exact name match, so that exact matches
@@ -226,11 +229,38 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
     settings.enumerate_dynamic_streams = false;
     settings.enumerate_virtual_streams = true;
     settings.array_level = initial_array_level;
-    settings.subcolumn_name = subcolumn_name;
+    if (prune_typed_paths)
+        settings.subcolumn_name = subcolumn_name;
     data.serialization->enumerateStreams(settings, callback_with_data, data);
+    array_level = settings.array_level;
+    return res;
+}
+
+}
+
+std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
+    std::string_view subcolumn_name,
+    const SubstreamData & data,
+    size_t initial_array_level,
+    bool throw_if_null)
+{
+    size_t array_level = initial_array_level;
+    auto res = getSubcolumnInfoFromStreams(subcolumn_name, data, initial_array_level, true, array_level);
+
+#ifdef DEBUG_OR_SANITIZER_BUILD
+    /// Pruning typed paths must never change what a subcolumn resolves to.
+    size_t full_array_level = initial_array_level;
+    auto full_res = getSubcolumnInfoFromStreams(subcolumn_name, data, initial_array_level, false, full_array_level);
+    chassert(static_cast<bool>(res) == static_cast<bool>(full_res));
+    if (res)
+    {
+        chassert(res->data.type->getName() == full_res->data.type->getName());
+        chassert(ISerialization::getSubcolumnNameForStream(res->substreams_path, false) == ISerialization::getSubcolumnNameForStream(full_res->substreams_path, false));
+    }
+#endif
 
     if (!res && data.type->hasDynamicSubcolumnsData())
-        res = data.type->getDynamicSubcolumnInfo(subcolumn_name, data, settings.array_level, throw_if_null);
+        res = data.type->getDynamicSubcolumnInfo(subcolumn_name, data, array_level, throw_if_null);
 
     if (!res && throw_if_null)
         throw Exception(ErrorCodes::ILLEGAL_COLUMN, "There is no subcolumn {} in type {}", subcolumn_name, data.type->getName());

@@ -962,9 +962,7 @@ static void serializeTextImpl(
         auto tmp_variant_column = variant_type->createColumn();
         /// Pass the decoded type so a cache miss doesn't parse the name through DataTypeFactory again.
         auto variant_serialization = getDataTypesCache().getSerialization(variant_type->getName(), variant_type);
-        /// Shared variants use binary defaults, so these settings never allocate text parsing resources.
-        static const FormatSettings binary_settings;
-        variant_serialization->deserializeBinary(*tmp_variant_column, buf, binary_settings);
+        variant_serialization->deserializeBinary(*tmp_variant_column, buf, FormatSettings{});
         nested_serialize(*variant_serialization, *tmp_variant_column, 0, ostr);
         return;
     }

@@ -278,7 +278,6 @@ public:
 
         if constexpr (std::is_same_v<T, Field>)
         {
-            const FormatSettings format_settings;
             for (const Field & element : values)
             {
                 if (element.isNull())
@@ -288,7 +287,7 @@ public:
                 else
                 {
                     writeBinary(true, buf);
-                    serialization->serializeBinary(element, buf, format_settings);
+                    serialization->serializeBinary(element, buf, {});
                 }
             }
         }
@@ -318,14 +317,13 @@ public:
 
         if constexpr (Data::is_value_generic_field)
         {
-            const FormatSettings format_settings;
             values.resize(size);
             for (Field & element : values)
             {
                 bool has_value = false;
                 readBinary(has_value, buf);
                 if (has_value)
-                    serialization->deserializeBinary(element, buf, format_settings);
+                    serialization->deserializeBinary(element, buf, {});
             }
         }
         else

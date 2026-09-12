@@ -4,19 +4,9 @@
 #include <Core/Names.h>
 #include <base/types.h>
 #include <base/unit.h>
-#include <memory>
-#include <mutex>
 
 namespace DB
 {
-
-struct JSONParsingPools;
-
-struct JSONParsingState
-{
-    std::once_flag initialization_flag;
-    std::shared_ptr<JSONParsingPools> pools;
-};
 
 /**
   * Various tweaks for input/output formats. Text serialization/deserialization
@@ -31,10 +21,6 @@ struct JSONParsingState
   */
 struct FormatSettings
 {
-    /// Copies share parsing resources; independent settings own separate pools.
-    /// Parsers and extraction trees are allocated only when decoding JSON text.
-    std::shared_ptr<JSONParsingState> json_parsing_state = std::make_shared<JSONParsingState>();
-
     bool skip_unknown_fields = false;
     bool with_names_use_header = false;
     bool with_types_use_header = false;

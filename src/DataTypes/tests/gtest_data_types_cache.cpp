@@ -216,30 +216,6 @@ TEST(DataTypesCache, JSONParsingFollowsSettingsWithinOneClientContext)
     }
 }
 
-TEST(DataTypesCache, JSONParsingReleasesContextOnDetach)
-{
-    ResetCurrentThreadGuard reset_current_thread;
-    ThreadStatus thread_status;
-    auto type = DataTypeFactory::instance().get("JSON(d DateTime)");
-    auto serialization = type->getDefaultSerialization();
-    FormatSettings settings;
-
-    for (const auto * session_timezone : {"UTC", "Asia/Tokyo"})
-    {
-        auto context = makeQueryContext("json_context_lifetime", session_timezone);
-        std::weak_ptr<const Context> weak_context = context;
-        {
-            auto scope = QueryScope::create(context);
-            auto column = type->createColumn();
-            ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));
-            serialization->deserializeWholeText(*column, input, settings);
-            context.reset();
-            EXPECT_FALSE(weak_context.expired());
-        }
-        EXPECT_TRUE(weak_context.expired());
-    }
-}
-
 TEST(DataTypesCache, JSONParsingFollowsNestedThreadGroups)
 {
     ResetCurrentThreadGuard reset_current_thread;
@@ -279,7 +255,6 @@ TEST(DataTypesCache, JSONParsingAfterQueryContextExpires)
     std::weak_ptr<const Context> weak_context = context;
     context.reset();
     ASSERT_TRUE(weak_context.expired());
-    EXPECT_EQ(CurrentThread::retainQueryContext(), nullptr);
 
     auto column = type->createColumn();
     ReadBufferFromString input(std::string_view(R"({"d":"2024-01-01 12:00:00"})"));

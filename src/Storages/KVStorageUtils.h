@@ -30,7 +30,7 @@ void fillColumns(const K & key, const V & value, size_t key_pos, const Block & h
     ReadBufferFromString key_buffer(key);
     ReadBufferFromString value_buffer(value);
 
-    static const FormatSettings format_settings;
+    FormatSettings format_settings;
     for (size_t i = 0; i < header.columns(); ++i)
     {
         const auto & serialization = header.getByPosition(i).type->getDefaultSerialization();
@@ -42,11 +42,10 @@ template <typename S>
 void fillColumns(const S & slice, const std::vector<size_t> & pos, const Block & header, MutableColumns & columns)
 {
     ReadBufferFromString buffer(slice);
-    static const FormatSettings format_settings;
     for (const auto col : pos)
     {
         const auto & serialization = header.getByPosition(col).type->getDefaultSerialization();
-        serialization->deserializeBinary(*columns[col], buffer, format_settings);
+        serialization->deserializeBinary(*columns[col], buffer, {});
     }
 }
 

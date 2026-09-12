@@ -74,25 +74,25 @@ public:
 
 
 /// Like SimpleObjectPool, but additionally allows store different kind of objects that are identified by Key
-template <typename T, typename Key, typename Compare = std::less<Key>, typename Mutex = std::mutex>
+template <typename T, typename Key>
 class ObjectPoolMap
 {
 private:
 
-    using Object = SimpleObjectPool<T, Mutex>;
+    using Object = SimpleObjectPool<T>;
 
     /// Key -> objects
-    using Container = std::map<Key, std::unique_ptr<Object>, Compare>;
+    using Container = std::map<Key, std::unique_ptr<Object>>;
 
     Container container;
-    Mutex mutex;
+    std::mutex mutex;
 
 public:
 
     using Pointer = typename Object::Pointer;
 
-    template <typename Lookup, typename Factory>
-    Pointer get(const Lookup & key, Factory && f)
+    template <typename Factory>
+    Pointer get(const Key & key, Factory && f)
     {
         std::lock_guard lock(mutex);
 

@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeDateTime.h>
+#include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/Serializations/SerializationJSON.h>
@@ -15,6 +17,7 @@
 #include <Columns/ColumnDynamic.h>
 #include <Interpreters/castColumn.h>
 #include <Common/DateLUT.h>
+#include <Common/assert_cast.h>
 #include <Common/SipHash.h>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/quoteString.h>
@@ -38,6 +41,37 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_COMPILE_REGEXP;
     extern const int ILLEGAL_COLUMN;
+}
+
+namespace
+{
+
+/// `DateTime`-like types without an explicit timezone resolve the session timezone when their
+/// serialization is constructed (see `DataTypeDateTime::doGetSerialization`), so a cached `JSON`
+/// serialization containing them is only valid for the timezone it was built under.
+bool isTimezoneDependent(const IDataType & type)
+{
+    switch (type.getTypeId())
+    {
+        case TypeIndex::DateTime:
+            return !assert_cast<const DataTypeDateTime &>(type).hasExplicitTimeZone();
+        case TypeIndex::DateTime64:
+            return !assert_cast<const DataTypeDateTime64 &>(type).hasExplicitTimeZone();
+        case TypeIndex::Time:
+        case TypeIndex::Time64:
+            return true;
+        default:
+            return false;
+    }
+}
+
+bool hasTimezoneDependentSerialization(const IDataType & type)
+{
+    bool result = isTimezoneDependent(type);
+    type.forEachChild([&](const IDataType & child) { result = result || isTimezoneDependent(child); });
+    return result;
+}
+
 }
 
 DataTypeObject::DataTypeObject(
@@ -79,6 +113,8 @@ DataTypeObject::DataTypeObject(
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Path '{}' is specified with the data type ('{}') and matches the SKIP REGEXP '{}'", typed_path, type->getName(), path_regex_to_skip);
         }
     }
+
+    has_timezone_dependent_typed_paths = std::ranges::any_of(typed_paths, [](const auto & path) { return hasTimezoneDependentSerialization(*path.second); });
 }
 
 DataTypeObject::DataTypeObject(const DB::DataTypeObject::SchemaFormat & schema_format_, size_t max_dynamic_paths_, size_t max_dynamic_types_)
@@ -149,8 +185,9 @@ bool DataTypeObject::equals(const IDataType & rhs) const
 
 SerializationPtr DataTypeObject::doGetSerialization(const SerializationInfoSettings & settings) const
 {
-    /// Typed `DateTime` children without an explicit timezone capture the current session timezone.
-    const auto * timezone = &DateLUT::instance();
+    /// Typed `DateTime` children without an explicit timezone capture the current session timezone;
+    /// resolving it costs a context lookup, so only schemas that contain such paths pay for it.
+    const DateLUTImpl * timezone = has_timezone_dependent_typed_paths ? &DateLUT::instance() : nullptr;
     const bool is_default = settings == SerializationInfoSettings{};
     {
         std::lock_guard lock(serializations_mutex);

@@ -224,8 +224,6 @@ protected:
     ContextWeakPtr global_context;
     /// Use it only from current thread
     ContextWeakPtr query_context;
-    /// Acquired only by hot paths that need live settings; released when detaching.
-    ContextPtr retained_query_context;
 
     /// Is used to send logs from logs_queue to client in case of fatal errors.
     using FatalErrorCallback = std::function<void()>;
@@ -294,8 +292,6 @@ public:
     std::string_view getQueryId() const;
 
     ContextPtr tryGetQueryContext() const;
-    /// Keeps the context alive until detach; the returned pointer must not outlive the attachment.
-    const Context * retainQueryContext();
     ContextPtr getGlobalContext() const;
 
     /// Attaches slave thread to existing thread group

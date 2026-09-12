@@ -138,8 +138,7 @@ public:
         SerializationInfoPtr info = type_ptr->getSerializationInfo(*column);
         SerializationPtr type_serialization_ptr = type_ptr->getSerialization(*info);
 
-        static const FormatSettings format_settings;
-        type_serialization_ptr->serializeBinary(*column, row_num, *data(place).calculator, format_settings);
+        type_serialization_ptr->serializeBinary(*column, row_num, *data(place).calculator, {});
     }
 
     void addBatchSparseSinglePlace(

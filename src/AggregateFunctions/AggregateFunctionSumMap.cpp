@@ -273,7 +273,6 @@ public:
 
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
-        const FormatSettings format_settings;
         if (!version)
             version = getDefaultVersion();
 
@@ -288,7 +287,7 @@ public:
             {
                 serialize = [&](size_t col_idx, const Array & values)
                 {
-                    values_serializations[col_idx]->serializeBinary(values[col_idx], buf, format_settings);
+                    values_serializations[col_idx]->serializeBinary(values[col_idx], buf, {});
                 };
                 break;
             }
@@ -316,7 +315,7 @@ public:
                         }
                     }
 
-                    promoted_values_serializations[col_idx]->serializeBinary(value, buf, format_settings);
+                    promoted_values_serializations[col_idx]->serializeBinary(value, buf, {});
                 };
                 break;
             }
@@ -330,7 +329,7 @@ public:
 
         for (const auto & elem : merged_maps)
         {
-            keys_serialization->serializeBinary(elem.first, buf, format_settings);
+            keys_serialization->serializeBinary(elem.first, buf, {});
             for (size_t col = 0; col < values_types.size(); ++col)
                 serialize(col, elem.second);
         }

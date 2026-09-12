@@ -5,7 +5,6 @@
 #if USE_SQLITE
 #include <Core/ExternalResultDescription.h>
 #include <DataTypes/IDataType.h>
-#include <Formats/FormatSettings.h>
 #include <Processors/ISource.h>
 
 #include <sqlite3.h>
@@ -43,7 +42,6 @@ private:
     UInt64 max_block_size;
 
     ExternalResultDescription description;
-    const FormatSettings format_settings;
     SQLitePtr sqlite_db;
     std::unique_ptr<sqlite3_stmt, StatementDeleter> compiled_statement;
 };

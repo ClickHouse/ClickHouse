@@ -47,16 +47,14 @@ constexpr auto KEY_MISSING_COL_TYPE = "type";
 
 void writeJSONKey(std::string_view key, WriteBuffer & out)
 {
-    static const FormatSettings format_settings;
-    writeJSONString(key, out, format_settings);
+    writeJSONString(key, out, {});
     writeChar(':', out);
 }
 
 void writeJSONKeyValue(std::string_view key, std::string_view value, WriteBuffer & out)
 {
     writeJSONKey(key, out);
-    static const FormatSettings format_settings;
-    writeJSONString(value, out, format_settings);
+    writeJSONString(value, out, {});
 }
 
 void writeJSONKeyValue(std::string_view key, size_t value, WriteBuffer & out)

@@ -74,7 +74,8 @@ const SimpleDataTypesCache & getSimpleDataTypesCache();
 /// wrong results (e.g. DateTime values rendered in another query's timezone).
 ///
 /// `SerializationJSON` can be shared across queries when its child serializations support pooling.
-/// Its parsers and extraction trees belong to `FormatSettings`, independently of this cache.
+/// Its parsers and extraction trees are cached per thread in `SerializationJSON.cpp`, with the same
+/// query-context invalidation rule as this cache.
 class DataTypesCache
 {
 public:

@@ -121,6 +121,8 @@ private:
     size_t max_dynamic_paths;
     /// Limit of dynamic types that should be used for Dynamic columns.
     size_t max_dynamic_types;
+    /// Whether some typed path (at any depth) has a serialization that depends on the session timezone.
+    bool has_timezone_dependent_typed_paths = false;
 };
 
 }

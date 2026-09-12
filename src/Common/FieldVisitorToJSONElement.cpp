@@ -12,8 +12,7 @@ namespace DB
 static inline String formatString(const String & x)
 {
     WriteBufferFromOwnString wb;
-    static const FormatSettings settings;
-    writeJSONString(x, wb, settings);
+    writeJSONString(x, wb, FormatSettings{});
     return wb.str();
 }
 
@@ -31,7 +30,8 @@ template <typename T>
 static inline String formatNumber(T x)
 {
     WriteBufferFromOwnString wb;
-    static const FormatSettings settings{.json = {.quote_64bit_integers = false}};
+    FormatSettings settings;
+    settings.json.quote_64bit_integers = false;
     writeJSONNumber(x, wb, settings);
     return wb.str();
 }

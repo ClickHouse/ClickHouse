@@ -218,13 +218,6 @@ ContextPtr ThreadStatus::tryGetQueryContext() const
     return query_context.lock();
 }
 
-const Context * ThreadStatus::retainQueryContext()
-{
-    if (!retained_query_context)
-        retained_query_context = query_context.lock();
-    return retained_query_context.get();
-}
-
 ContextPtr ThreadStatus::getGlobalContext() const
 {
     return global_context.lock();

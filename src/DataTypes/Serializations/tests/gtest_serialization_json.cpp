@@ -1,18 +1,11 @@
-#include <Core/Block.h>
-#include <Columns/ColumnString.h>
 #include <DataTypes/DataTypeCustom.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNumberBase.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/Serializations/SerializationNumber.h>
 #include <Formats/FormatSettings.h>
-#include <Formats/FormatFactory.h>
-#include <Formats/NativeWriter.h>
-#include <Functions/FunctionsConversion.h>
-#include <Functions/FunctionsComparison.h>
 #include <IO/ReadBufferFromString.h>
 #include <IO/WriteBufferFromString.h>
 #include <Common/tests/gtest_global_context.h>
@@ -20,18 +13,12 @@
 #include <Common/QueryScope.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/convertFieldToType.h>
-#include <Processors/Formats/IInputFormat.h>
-#include <Processors/Formats/ISchemaReader.h>
-#include <Storages/HivePartitioningUtils.h>
+#include <fmt/format.h>
 
-#include <array>
 #include <future>
 #include <gtest/gtest.h>
 
 using namespace DB;
-
-extern template class DB::FunctionComparison<DB::EqualsOp, DB::NameEquals>;
 
 namespace
 {
@@ -158,169 +145,23 @@ TEST(SerializationJSON, ValidatesSchemasWhenConstructingSerialization)
     EXPECT_NO_THROW(factory.get("JSON(x Array(Map(String, UInt64)), y Nullable(DateTime), z LowCardinality(String))")->getDefaultSerialization());
 }
 
-TEST(SerializationJSON, ParsingSettingsOwnResources)
+TEST(SerializationJSON, ParsingManySchemasOnOneThread)
 {
+    /// More distinct schemas than the per-thread parser cache holds, parsed twice, so entries get evicted and rebuilt.
     ASSERT_NE(getContext().context, nullptr);
-    std::weak_ptr<const ISerialization> weak_serialization;
-    std::weak_ptr<const IDataType> weak_type;
-    auto settings = std::make_unique<FormatSettings>();
-    EXPECT_EQ(settings->json_parsing_state->pools, nullptr);
+    FormatSettings settings;
+    std::vector<DataTypePtr> types;
+    for (size_t i = 0; i < 70; ++i)
+        types.push_back(DataTypeFactory::instance().get(fmt::format("JSON(p{} UInt64)", i)));
+    for (size_t round = 0; round < 2; ++round)
     {
-        FormatSettings copy;
-        EXPECT_EQ(copy.json_parsing_state->pools, nullptr);
-        copy = *settings;
-        EXPECT_EQ(settings->json_parsing_state->pools, nullptr);
-        EXPECT_EQ(settings->json_parsing_state, copy.json_parsing_state);
-        FormatSettings independent;
-        EXPECT_NE(settings->json_parsing_state, independent.json_parsing_state);
-        independent = copy;
-        EXPECT_EQ(settings->json_parsing_state, independent.json_parsing_state);
-        auto type = DataTypeFactory::instance().get("JSON(x UInt64)");
-        auto serialization = type->getDefaultSerialization();
-        weak_type = type;
-        weak_serialization = serialization;
-        auto column = type->createColumn();
-        EXPECT_EQ(settings->json_parsing_state->pools, nullptr);
-        ReadBufferFromString input(std::string_view(R"({"x":42,"nested":{"a":[1,2]}})"));
-        serialization->deserializeWholeText(*column, input, copy);
-        EXPECT_NE(settings->json_parsing_state->pools, nullptr);
-    }
-    EXPECT_TRUE(weak_type.expired());
-    EXPECT_FALSE(weak_serialization.expired());
-    settings.reset();
-    EXPECT_TRUE(weak_serialization.expired());
-}
-
-TEST(SerializationJSON, InputReleasesResourcesWithPersistentSettings)
-{
-    tryRegisterFormats();
-    auto context = Context::createCopy(getContext().context);
-    context->setSetting("input_format_parallel_parsing", false);
-    context->setSetting("input_format_skip_unknown_fields", false);
-    std::optional<FormatSettings> settings{std::in_place};
-    settings->skip_unknown_fields = true;
-
-    for (const auto * path : {"x", "y"})
-    {
-        std::weak_ptr<const ISerialization> weak_serialization;
+        for (size_t i = 0; i < types.size(); ++i)
         {
-            auto type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
-                std::unordered_map<String, DataTypePtr>{{path, DataTypeFactory::instance().get("UInt64")}});
-            weak_serialization = type->getDefaultSerialization();
-            Block header{{type->createColumn(), type, "j"}};
-            const String data = R"({"ignored":0,"j":{")" + String(path) + R"(":42}})";
+            auto column = types[i]->createColumn();
+            const String data = fmt::format(R"({{"p{}":{}}})", i, i);
             ReadBufferFromString input(data);
-            auto format = FormatFactory::instance().getInput("JSONEachRow", input, header, context, 10, settings);
-            auto chunk = format->read();
-            ASSERT_EQ(chunk.getNumRows(), 1);
-            EXPECT_EQ(type->getSubcolumn(path, chunk.getColumns()[0])->getUInt(0), 42);
-            EXPECT_EQ(format->read().getNumRows(), 0);
-            EXPECT_EQ(settings->json_parsing_state->pools, nullptr);
-        }
-        EXPECT_TRUE(weak_serialization.expired());
-    }
-}
-
-TEST(SerializationJSON, HivePartitionParsingReleasesResourcesWithPersistentSettings)
-{
-    std::optional<FormatSettings> settings{std::in_place};
-    std::weak_ptr<const ISerialization> weak_serialization;
-    {
-        auto type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
-            std::unordered_map<String, DataTypePtr>{{"x", DataTypeFactory::instance().get("UInt64")}});
-        weak_serialization = type->getDefaultSerialization();
-        auto hive_settings = HivePartitioningUtils::buildHiveFormatSettings(settings, getContext().context);
-        auto value = convertFieldToType(Field(String(R"({"x":42})")), *type, nullptr, hive_settings);
-        EXPECT_FALSE(value.isNull());
-        EXPECT_NE(hive_settings.json_parsing_state->pools, nullptr);
-        EXPECT_EQ(settings->json_parsing_state->pools, nullptr);
-    }
-    EXPECT_TRUE(weak_serialization.expired());
-}
-
-TEST(SerializationJSON, NativeSchemaInferenceDoesNotPopulatePersistentSettings)
-{
-    tryRegisterFormats();
-    auto type = DataTypeFactory::instance().get("JSON(x UInt64)");
-    auto column = type->createColumn();
-    column->insert(Field(Object{{"x", UInt64(42)}}));
-    Block block{{std::move(column), type, "j"}};
-    std::optional<FormatSettings> settings{std::in_place};
-    settings->native.write_json_as_string = true;
-    WriteBufferFromOwnString output;
-    NativeWriter writer(output, 0, std::make_shared<const Block>(block.cloneEmpty()), settings);
-    writer.write(block);
-    writer.flush();
-    ReadBufferFromString input(output.str());
-    auto reader = FormatFactory::instance().getSchemaReader("Native", input, getContext().context, settings);
-    auto schema = reader->readSchema();
-    ASSERT_EQ(schema.size(), 1);
-    EXPECT_EQ(schema.front().type->getName(), type->getName());
-    EXPECT_EQ(settings->json_parsing_state->pools, nullptr);
-}
-
-TEST(SerializationJSON, CastBlocksReleaseResourcesWithPersistentSettings)
-{
-    const FunctionConvertSettings settings(getContext().context, FormatSettings::DateTimeOverflowBehavior::Ignore);
-    for (size_t block = 0; block < 2; ++block)
-    {
-        std::weak_ptr<const ISerialization> weak_serialization;
-        {
-            auto type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
-                std::unordered_map<String, DataTypePtr>{{"x", DataTypeFactory::instance().get("UInt64")}});
-            weak_serialization = type->getDefaultSerialization();
-            auto strings = ColumnString::create();
-            strings->insert(Field(String(R"({"x":42})")));
-            ColumnsWithTypeAndName arguments{{std::move(strings), std::make_shared<DataTypeString>(), "j"}};
-            auto result = DB::detail::ConvertImplGenericFromString<true>::execute(arguments, type, nullptr, 1, settings);
-            EXPECT_EQ(type->getSubcolumn("x", result)->getUInt(0), 42);
-            EXPECT_EQ(settings.format_settings.json_parsing_state->pools, nullptr);
-        }
-        EXPECT_TRUE(weak_serialization.expired());
-    }
-}
-
-TEST(SerializationJSON, ComparisonBlocksReleaseResourcesWithPersistentSettings)
-{
-    const ComparisonParams params;
-    FunctionPtr function = std::make_shared<FunctionComparison<EqualsOp, NameEquals>>(params);
-    for (size_t block = 0; block < 2; ++block)
-    {
-        std::weak_ptr<const ISerialization> weak_serialization;
-        {
-            auto type = std::make_shared<DataTypeObject>(DataTypeObject::SchemaFormat::JSON,
-                std::unordered_map<String, DataTypePtr>{{"x", DataTypeFactory::instance().get("UInt64")}});
-            weak_serialization = type->getDefaultSerialization();
-            auto objects = type->createColumn();
-            objects->insert(Field(Object{{"x", UInt64(42)}}));
-            auto string_type = std::make_shared<DataTypeString>();
-            auto constant = string_type->createColumnConst(1, Field(String(R"({"x":42})")));
-            ColumnsWithTypeAndName arguments{{std::move(objects), type, "j"}, {std::move(constant), string_type, "s"}};
-            auto result = function->executeImpl(arguments, std::make_shared<DataTypeUInt8>(), 1);
-            EXPECT_EQ(result->getUInt(0), 1);
-            EXPECT_EQ(params.format_settings.json_parsing_state->pools, nullptr);
-        }
-        EXPECT_TRUE(weak_serialization.expired());
-    }
-}
-
-TEST(SerializationJSON, AlternatingParsingSettingsLifetimes)
-{
-    ASSERT_NE(getContext().context, nullptr);
-    auto type = DataTypeFactory::instance().get("JSON(x UInt64)");
-    auto serialization = type->getDefaultSerialization();
-    for (size_t iteration = 0; iteration < 10; ++iteration)
-    {
-        std::array<FormatSettings, 2> settings;
-        for (size_t row = 0; row < 3; ++row)
-        {
-            for (const auto & current_settings : settings)
-            {
-                auto column = type->createColumn();
-                ReadBufferFromString input(std::string_view(R"({"x":42})"));
-                serialization->deserializeWholeText(*column, input, current_settings);
-                EXPECT_EQ(type->getSubcolumn("x", column->getPtr())->getUInt(0), 42);
-            }
+            types[i]->getDefaultSerialization()->deserializeWholeText(*column, input, settings);
+            EXPECT_EQ(types[i]->getSubcolumn(fmt::format("p{}", i), column->getPtr())->getUInt(0), i);
         }
     }
 }
@@ -330,7 +171,6 @@ TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)
     ASSERT_NE(getContext().context, nullptr);
     FormatSettings settings;
     settings.json.try_infer_numbers_from_strings = false;
-    EXPECT_EQ(settings.json_parsing_state->pools, nullptr);
     auto type = DataTypeFactory::instance().get("JSON(x UInt64, nested Array(JSON))");
     auto serialization = type->getDefaultSerialization();
     std::vector<std::future<void>> workers;
@@ -338,7 +178,7 @@ TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)
     {
         workers.push_back(std::async(std::launch::async, [&]
         {
-            FormatSettings worker_settings = settings; // NOLINT(performance-unnecessary-copy-initialization) -- Test concurrent first copies.
+            const FormatSettings & worker_settings = settings;
             ThreadStatus thread_status;
             auto context = Context::createCopy(getContext().context);
             context->makeQueryContext();
@@ -358,7 +198,6 @@ TEST(SerializationJSON, ConcurrentParsingAndBinaryStrings)
 
                 WriteBufferFromOwnString output;
                 FormatSettings binary_settings = worker_settings;
-                EXPECT_EQ(binary_settings.json_parsing_state, worker_settings.json_parsing_state);
                 binary_settings.binary.write_json_as_string = true;
                 binary_settings.binary.read_json_as_string = true;
                 serialization->serializeBinary(*column, 0, output, binary_settings);

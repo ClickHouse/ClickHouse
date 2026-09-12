@@ -696,9 +696,7 @@ bool ConstantExpressionTemplate::parseLiteralAndAssertType(
                 return false;
         }
 
-        /// The checks above restrict conversion to numeric collections, which need no text parsing resources.
-        static const FormatSettings numeric_settings;
-        Field array_same_types = convertFieldToType(collection, *complex_type, nullptr, numeric_settings);
+        Field array_same_types = convertFieldToType(collection, *complex_type, nullptr);
         columns[column_idx]->insert(array_same_types);
         return true;
     }
