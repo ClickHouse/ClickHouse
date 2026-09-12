@@ -22,6 +22,9 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+#if USE_DATASKETCHES
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+#endif
 }
 
 
@@ -214,6 +217,63 @@ createAggregateFunctionUniq(const std::string & name, const DataTypes & argument
 
     return std::make_shared<AggregateFunctionUniqVariadic<DataForVariadic<false, false, is_able_to_parallelize_merge>>>(argument_types);
 }
+
+#if USE_DATASKETCHES
+/** `uniqHLL` promises that its state is a plain Apache DataSketches HLL sketch, so it must only accept
+  * arguments for which DataSketches defines an encoding that another implementation can reproduce from
+  * the same logical values. The generic `createAggregateFunctionUniq` dispatcher would silently fall back
+  * to hashing ClickHouse's internal representation (for `Decimal*` and for multiple arguments) or to
+  * hashing raw bytes (for `UUID` and `IPv6`), which produces sketches that are valid DataSketches wire
+  * format but not interoperable. Reject those cases up front instead, exactly like `serializedHLL` does.
+  */
+AggregateFunctionPtr
+createAggregateFunctionUniqHLL(const std::string & name, const DataTypes & argument_types, const Array & params, const Settings *)
+{
+    assertNoParameters(name, params);
+    assertUnary(name, argument_types);
+
+    const IDataType & argument_type = *argument_types[0];
+    WhichDataType which(argument_type);
+
+    if (which.isInt128() || which.isUInt128() || which.isInt256() || which.isUInt256())
+        throw Exception(
+            ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+            "Illegal type {} of argument for aggregate function {}: 128/256-bit integers have no "
+            "Apache DataSketches-compatible encoding. Convert the values to a supported type explicitly, "
+            "e.g. to String with toString.",
+            argument_types[0]->getName(), name);
+
+    if (AggregateFunctionPtr res = createUniqWithNumericType<AggregateFunctionUniqHLLData>(argument_type, argument_types))
+        return res;
+
+    if (which.isDate())
+    {
+        using T = DataTypeDate::FieldType;
+        return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, AggregateFunctionUniqHLLData>>(argument_types);
+    }
+    if (which.isDate32())
+    {
+        using T = DataTypeDate32::FieldType;
+        return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, AggregateFunctionUniqHLLData>>(argument_types);
+    }
+    if (which.isDateTime())
+    {
+        using T = DataTypeDateTime::FieldType;
+        return std::make_shared<AggregateFunctionUniq<T, ColumnVector<T>, AggregateFunctionUniqHLLData>>(argument_types);
+    }
+    if (which.isString())
+        return std::make_shared<AggregateFunctionUniq<std::string_view, ColumnString, AggregateFunctionUniqHLLData>>(argument_types);
+    if (which.isFixedString())
+        return std::make_shared<AggregateFunctionUniq<std::string_view, ColumnFixedString, AggregateFunctionUniqHLLData>>(argument_types);
+
+    throw Exception(
+        ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+        "Illegal type {} of argument for aggregate function {}: it has no Apache DataSketches-compatible "
+        "encoding, so the resulting sketch would not be interoperable. Convert the values to a supported "
+        "type explicitly, e.g. to String with toString.",
+        argument_types[0]->getName(), name);
+}
+#endif
 
 }
 
@@ -483,6 +543,43 @@ FROM example_theta;
 
     factory.registerFunction("uniqTheta",
         {createAggregateFunctionUniq<AggregateFunctionUniqThetaData, AggregateFunctionUniqThetaDataForVariadic>, documentation_uniqTheta, properties});
+    /// uniqHLL documentation
+    FunctionDocumentation::Description description_uniqHLL = R"(
+Calculates the approximate number of different argument values, using the [Apache DataSketches HLL sketch](https://datasketches.apache.org/docs/HLL/HllSketches.html).
+
+Unlike [`uniqHLL12`](/sql-reference/aggregate-functions/reference/uniqhll12), this function uses the Apache DataSketches implementation of HyperLogLog,
+so its state is binary-compatible with HLL sketches produced by other DataSketches implementations (Java, Python, and others).
+
+To keep that guarantee, the function accepts a single argument of a type that Apache DataSketches can encode.
+Types without such an encoding - `Decimal*`, `DateTime64`, 128/256-bit integers, `UUID`, `IPv6`, `Tuple` and several arguments -
+are rejected instead of being hashed in a ClickHouse-specific way that no other DataSketches implementation could reproduce.
+    )";
+    FunctionDocumentation::Syntax syntax_uniqHLL = R"(
+uniqHLL(x)
+    )";
+    FunctionDocumentation::Arguments arguments_uniqHLL = {
+        {"x", "The value to count distinct occurrences of. Only types that Apache DataSketches can encode the same way are accepted, so that the state stays reproducible by other DataSketches implementations.", {"(U)Int8/16/32/64", "Float*", "Enum", "Date", "Date32", "DateTime", "String", "FixedString"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_uniqHLL = {"Returns a UInt64-type number representing the approximate number of different argument values.", {"UInt64"}};
+    FunctionDocumentation::Examples examples_uniqHLL = {
+    {
+        "Basic usage",
+        R"(
+SELECT uniqHLL(number % 10) FROM numbers(1000);
+        )",
+        R"(
+┌─uniqHLL(modulo(number, 10))─┐
+│                          10 │
+└─────────────────────────────┘
+        )"
+    }
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_uniqHLL = {26, 1};
+    FunctionDocumentation::Category category_uniqHLL = FunctionDocumentation::Category::AggregateFunction;
+    FunctionDocumentation documentation_uniqHLL = {description_uniqHLL, syntax_uniqHLL, arguments_uniqHLL, {}, returned_value_uniqHLL, examples_uniqHLL, introduced_in_uniqHLL, category_uniqHLL};
+
+    factory.registerFunction("uniqHLL",
+        {createAggregateFunctionUniqHLL, documentation_uniqHLL, properties});
 #endif
 
 }

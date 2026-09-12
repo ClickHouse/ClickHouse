@@ -1,0 +1,8 @@
+state round-trip preserves inferred lg_k and HLL_8 representation
+14	2	1
+state round-trip preserves inferred HLL_6 representation
+14	1
+merging empty partial states keeps the empty-string result
+1
+single-stage aggregation over empty sketch strings agrees
+1
