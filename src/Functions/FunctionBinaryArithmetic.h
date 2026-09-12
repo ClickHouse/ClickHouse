@@ -3765,6 +3765,30 @@ public:
         if (isCompoundForMonotonicity(type) || (return_type && isCompoundForMonotonicity(*return_type)))
             return {false, true, false, false};
 
+        /** A `divide` or `multiply` by a constant that can turn a legal `Float` input into `NaN` is not
+          * monotonic even when the endpoints of the range are unknown - which is how the read-in-order
+          * match asks, with Null points. `ORDER BY x / inf` over a key holding `-inf` returned that
+          * `NaN` row first, because the forward read of the key was kept while the transformed value
+          * sorts last, and under `LIMIT` the `NaN` row displaced a correct one. The constants that can
+          * do it are exactly `0` and `±inf` (`±inf / ±inf`, `0 * ±inf`), plus a `NaN` constant, which
+          * maps every input to `NaN`.
+          */
+        if ((name_view == "divide" || name_view == "multiply") && return_type
+            && isFloat(*removeNullable(recursiveRemoveLowCardinality(return_type))))
+        {
+            const bool left_is_const = left.column && isColumnConst(*left.column);
+            const bool right_is_const = right.column && isColumnConst(*right.column);
+
+            if (left_is_const || right_is_const)
+            {
+                const Field constant = left_is_const ? (*left.column)[0] : (*right.column)[0];
+                const bool constant_is_number = isNumber(removeNullable(recursiveRemoveLowCardinality(left_is_const ? left.type : right.type)));
+
+                if (constant.isNaN() || constant.isInf() || (constant_is_number && accurateEquals(constant, Field(0))))
+                    return {false, true, false, false};
+            }
+        }
+
         if ((name_view == "divide" || name_view == "intDiv") && left.column && isColumnConst(*left.column))
         {
             // `const / variable` monotonicity is modelled only for plain numeric operands. `IPv4`/`IPv6`
