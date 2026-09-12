@@ -136,6 +136,11 @@ ColumnPtr replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
 
 }
 
+bool IExecutableFunction::isNullPropagating(const DataTypePtr & result_type) const
+{
+    return useDefaultImplementationForNulls() && isNullableOrLowCardinalityNullable(result_type);
+}
+
 ColumnPtr IExecutableFunction::defaultImplementationForConstantArguments(
     const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count, bool dry_run) const
 {
@@ -934,6 +939,11 @@ FunctionBasePtr IFunctionOverloadResolver::buildImpl(const ColumnsWithTypeAndNam
 DataTypePtr IFunctionOverloadResolver::getReturnTypeImpl(const DataTypes & /*arguments*/) const
 {
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "getReturnType is not implemented for {}", getName());
+}
+
+bool IFunction::isNullPropagating(const DataTypePtr & result_type) const
+{
+    return useDefaultImplementationForNulls() && isNullableOrLowCardinalityNullable(result_type);
 }
 
 IFunctionBase::Monotonicity IFunction::getMonotonicityForRange(const IDataType & /*type*/, const Field & /*left*/, const Field & /*right*/) const
