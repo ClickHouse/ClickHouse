@@ -1,0 +1,15 @@
+<test>
+    <!-- The expression lifted above the sort by `query_plan_execute_functions_after_sorting`
+         is evaluated above `MergingSortedTransform`, which produces a single stream. -->
+    <query>SELECT number AS k, arrayMap(i -> sipHash64(i, k), range(64)) AS a FROM numbers_mt(2000000) ORDER BY k DESC FORMAT Null</query>
+    <query>SELECT k, count() AS c, arrayMap(i -> sipHash64(i, k), range(32)) AS a FROM (SELECT number % 1000000 AS k FROM numbers_mt(8000000)) GROUP BY k ORDER BY c DESC, k FORMAT Null</query>
+
+    <!-- A sort `LIMIT` that fits in one block keeps the single-stream path, because the lifted
+         expression sees a single chunk there. These guard that path against the extra processors. -->
+    <query>SELECT number AS k, arrayMap(i -> sipHash64(i, k), range(64)) AS a FROM numbers_mt(2000000) ORDER BY k DESC LIMIT 10 FORMAT Null</query>
+    <query>SELECT number AS k, arrayMap(i -> sipHash64(i, k), range(64)) AS a FROM numbers_mt(2000000) ORDER BY k DESC LIMIT 1000 FORMAT Null</query>
+
+    <!-- A sort `LIMIT` above one block leaves several post-sort chunks, so the lifted expression
+         is still worth spreading over the threads. -->
+    <query>SELECT number AS k, arrayMap(i -> sipHash64(i, k), range(64)) AS a FROM numbers_mt(2000000) ORDER BY k DESC LIMIT 1000000 FORMAT Null</query>
+</test>
