@@ -1586,16 +1586,36 @@ static void processStatisticsChanges(
     auto storage_settings = source_part.storage.getSettings();
     String statistics_file_name(ColumnsStatistics::FILENAME);
 
+    /** A rename's target can be another rename's source: `a` and `b` exchange names when a mutation
+      * carries the composed pair `{a -> b, b -> a}`, and a chain (`a` -> `a1` -> `b`) resolves through
+      * an intermediate name. Applying the commands to `all_statistics` in place cannot express the
+      * first case - the target is still held by the other column when the first rename runs, so the
+      * insert did nothing and the following erase dropped the entry - so a renamed entry waits here
+      * until every command has been read, and a command looks for its source in both maps.
+      */
+    std::map<String, ColumnStatisticsPtr> renamed_statistics;
+
     auto process_rename = [&](const String & from_name, const String & to_name)
     {
-        auto it = all_statistics.find(from_name);
-        if (it == all_statistics.end())
+        ColumnStatisticsPtr statistics;
+
+        if (auto it = all_statistics.find(from_name); it != all_statistics.end())
+        {
+            statistics = it->second;
+            all_statistics.erase(it);
+        }
+        else if (auto renamed_it = renamed_statistics.find(from_name); renamed_it != renamed_statistics.end())
+        {
+            statistics = renamed_it->second;
+            renamed_statistics.erase(renamed_it);
+        }
+        else
+        {
             return;
+        }
 
         if (!to_name.empty())
-            all_statistics.emplace(to_name, it->second);
-
-        all_statistics.erase(it);
+            renamed_statistics.emplace(to_name, std::move(statistics));
     };
 
     for (const auto & command : commands_for_renames)
@@ -1623,6 +1643,22 @@ static void processStatisticsChanges(
             if (!column_desc || column_desc->statistics.empty())
                 process_rename(command.column_name, "");
         }
+    }
+
+    for (auto & [name, statistics] : renamed_statistics)
+    {
+        /// `emplace` and not an overwrite: a target name that another rename did not free still holds
+        /// the statistics of the column that lives there now, and those are the ones that describe it.
+        /// The entry being renamed is dropped in that case, as it was before.
+        ///
+        /// The statistics carry the type they were built for, so a rename onto a column of another type
+        /// - the two halves of a swap of differently-typed columns - drops them instead: writing them
+        /// would fail the type check while building the mutated part.
+        const auto * column_description = metadata_snapshot->getColumns().tryGet(name);
+        if (!column_description || !column_description->type->equals(*statistics->getDataType()))
+            continue;
+
+        all_statistics.emplace(name, std::move(statistics));
     }
 
     if (!stats_to_recalc.empty())
