@@ -36,7 +36,7 @@ WHERE explain ILIKE '%__topKFilter%';
 -- The projection is still selected and the read is InOrder (the projection does the work).
 SELECT count() > 0 AS uses_projection_in_order
 FROM (
-    EXPLAIN projections = 1
+    EXPLAIN projections = 1, actions = 1
     SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
     SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
 )
@@ -74,7 +74,7 @@ WHERE explain ILIKE '%__topKFilter%';
 
 SELECT count() > 0 AS filtered_in_order
 FROM (
-    EXPLAIN projections = 1
+    EXPLAIN projections = 1, actions = 1
     SELECT id, cityHash64(payload) FROM t_topk_proj_rio WHERE k = 7 ORDER BY score, id LIMIT 10
     SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
 )
@@ -96,7 +96,7 @@ WHERE explain ILIKE '%__topKFilter%';
 
 SELECT count() > 0 AS pinned_in_order
 FROM (
-    EXPLAIN projections = 1
+    EXPLAIN projections = 1, actions = 1
     SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
     SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'p_other'
 )
@@ -123,7 +123,7 @@ WHERE explain ILIKE '%p_score%';
 
 SELECT count() > 0 AS unpinned_in_order
 FROM (
-    EXPLAIN projections = 1
+    EXPLAIN projections = 1, actions = 1
     SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
     SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, preferred_optimize_projection_name = 'does_not_exist'
 )
@@ -150,7 +150,7 @@ WHERE explain ILIKE '%__topKFilter%';
 
 SELECT count() > 0 AS unmaterialized_in_order
 FROM (
-    EXPLAIN projections = 1
+    EXPLAIN projections = 1, actions = 1
     SELECT id, cityHash64(payload) FROM t_topk_unmat ORDER BY score, id LIMIT 10
     SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
 )
@@ -207,7 +207,7 @@ WHERE explain ILIKE '%__topKFilter%';
 
 SELECT count() > 0 AS sampled_in_order
 FROM (
-    EXPLAIN projections = 1
+    EXPLAIN projections = 1, actions = 1
     SELECT id, cityHash64(payload) FROM t_topk_sample SAMPLE 1/2 ORDER BY score, id LIMIT 10
     SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
 )
@@ -234,7 +234,7 @@ WHERE explain ILIKE '%__topKFilter%';
 
 SELECT count() > 0 AS nulls_first_in_order
 FROM (
-    EXPLAIN projections = 1
+    EXPLAIN projections = 1, actions = 1
     SELECT id, cityHash64(payload) FROM t_topk_nulls ORDER BY score ASC NULLS FIRST, id LIMIT 10
     SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
 )
@@ -309,7 +309,7 @@ WHERE explain ILIKE '%p_narrow_noord%';
 
 SELECT count() > 0 AS competitor_in_order
 FROM (
-    EXPLAIN projections = 1
+    EXPLAIN projections = 1, actions = 1
     SELECT id FROM t_topk_cheaper_competitor ORDER BY score, id LIMIT 10
     SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
 )
