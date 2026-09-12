@@ -2,6 +2,11 @@
 #include <Common/StackTrace.h>
 #include <Common/thread_local_rng.h>
 #include <Common/ProfileEvents.h>
+#include <Common/ProfileEventsNonAllocatingEvents.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ProfileEventsHotEvents.h>
+#include <Common/LockMemoryExceptionInThread.h>
+#include <array>
 #include <Common/PerCPU.h>
 #include <Common/CurrentThread.h>
 #include <Common/TraceSender.h>
@@ -1764,6 +1769,149 @@ namespace ProfileEvents
     APPLY_FOR_EVENTS(M)
 #undef M
 constexpr Event END = Event(__COUNTER__);
+namespace
+{
+
+constexpr size_t hot_counter_count = 128;
+constexpr size_t cold_page_size = 32;
+constexpr size_t event_count = static_cast<size_t>(END);
+constexpr size_t cold_page_count = (event_count - hot_counter_count + cold_page_size - 1) / cold_page_size;
+static_assert(event_count >= hot_counter_count);
+
+struct CounterLayout
+{
+    std::array<size_t, event_count> slot_of{};
+    std::array<size_t, event_count> event_at_slot{};
+
+    CounterLayout()
+    {
+        const std::array hot_events = {
+#define M(NAME) static_cast<size_t>(NAME),
+            APPLY_FOR_HOT_PROFILE_EVENTS(M)
+#undef M
+        };
+        static_assert(hot_events.size() == hot_counter_count);
+        std::array<bool, event_count> is_hot{};
+        size_t slot = 0;
+        for (const size_t event : hot_events)
+        {
+            chassert(!is_hot[event]);
+            is_hot[event] = true;
+            event_at_slot[slot] = event;
+            slot_of[event] = slot++;
+        }
+        for (size_t event = 0; event < event_count; ++event)
+        {
+            if (!is_hot[event])
+            {
+                event_at_slot[slot] = event;
+                slot_of[event] = slot++;
+            }
+        }
+    }
+};
+
+const CounterLayout & counterLayout()
+{
+    /// Initialized before a query counter is published; no allocation or signal-path initialization.
+    static const CounterLayout layout;
+    return layout;
+}
+
+}
+
+struct Counters::PagedCounters
+{
+    const CounterLayout & layout = counterLayout();
+    mutable std::array<Count, hot_counter_count> hot{};
+    std::array<std::atomic<Count *>, cold_page_count> pages{};
+
+    ~PagedCounters()
+    {
+        for (auto & page : pages)
+            delete[] page.load(std::memory_order_relaxed);
+    }
+
+    void incrementHot(Event event, Count amount) noexcept
+    {
+        const size_t slot = layout.slot_of[event];
+        chassert(slot < hot_counter_count);
+        std::atomic_ref<Count>(hot[slot]).fetch_add(amount, std::memory_order_relaxed);
+    }
+
+    void increment(Event event, Count amount)
+    {
+        if (!amount)
+            return;
+        const size_t slot = layout.slot_of[event];
+        if (slot < hot_counter_count)
+        {
+            std::atomic_ref<Count>(hot[slot]).fetch_add(amount, std::memory_order_relaxed);
+            return;
+        }
+        const size_t cold_slot = slot - hot_counter_count;
+        auto & page_pointer = pages[cold_slot / cold_page_size];
+        auto * page = page_pointer.load(std::memory_order_acquire);
+        if (!page)
+        {
+            /// Metrics can be published from destructors. Keep memory accounting, but do not
+            /// introduce a query memory-limit exception or overcommit wait for a counter page.
+            LockMemoryExceptionInThread lock(VariableContext::Global);
+            auto fresh = std::make_unique<Count[]>(cold_page_size);
+            Count * expected = nullptr;
+            if (page_pointer.compare_exchange_strong(
+                    expected, fresh.get(), std::memory_order_acq_rel, std::memory_order_acquire))
+                page = fresh.release();
+            else
+                page = expected;
+        }
+        std::atomic_ref<Count>(page[cold_slot % cold_page_size]).fetch_add(amount, std::memory_order_relaxed);
+    }
+
+    Count load(Event event) const
+    {
+        const size_t slot = layout.slot_of[event];
+        if (slot < hot_counter_count)
+            return std::atomic_ref<Count>(hot[slot]).load(std::memory_order_relaxed);
+        const size_t cold_slot = slot - hot_counter_count;
+        auto * page = pages[cold_slot / cold_page_size].load(std::memory_order_acquire);
+        return page ? std::atomic_ref<Count>(page[cold_slot % cold_page_size]).load(std::memory_order_relaxed) : 0;
+    }
+
+    void snapshot(Count * output) const
+    {
+        /// The caller supplies a zeroed dense snapshot, including cells in absent pages.
+        for (size_t slot = 0; slot < hot_counter_count; ++slot)
+            output[layout.event_at_slot[slot]] = std::atomic_ref<Count>(hot[slot]).load(std::memory_order_relaxed);
+        for (size_t index = 0; index < cold_page_count; ++index)
+        {
+            auto * page = pages[index].load(std::memory_order_acquire);
+            if (!page)
+                continue;
+            const size_t first_slot = hot_counter_count + index * cold_page_size;
+            const size_t cells = std::min(cold_page_size, event_count - first_slot);
+            for (size_t cell_index = 0; cell_index < cells; ++cell_index)
+                output[layout.event_at_slot[first_slot + cell_index]]
+                    = std::atomic_ref<Count>(page[cell_index]).load(std::memory_order_relaxed);
+        }
+    }
+
+    void reset()
+    {
+        for (auto & value : hot)
+            std::atomic_ref<Count>(value).store(0, std::memory_order_relaxed);
+        /// Published pages remain alive until destruction; readers may hold their pointers.
+        for (auto & page_pointer : pages)
+        {
+            if (auto * page = page_pointer.load(std::memory_order_acquire))
+            {
+                for (size_t index = 0; index < cold_page_size; ++index)
+                    std::atomic_ref<Count>(page[index]).store(0, std::memory_order_relaxed);
+            }
+        }
+    }
+};
+
 
 /// Row stride padded so each per-CPU row ends on a cache-line boundary. Without this the last
 /// few events of one row share a cache line with the first events of the next row, causing
@@ -1864,7 +2012,8 @@ Counters::Counters(VariableContext level_, Counters * parent_)
     /// other levels stay single-row (`cpus == 0`). `cpus` is read once and the allocation is
     /// sized from it, so the layout and the row count cannot disagree.
     : cpus(level_ == VariableContext::User ? user_counters_cpus.load(std::memory_order_relaxed) : 0)
-    , counters_holder(allocateCounters(cellCount(cpus.load(std::memory_order_relaxed))))
+    , counters_holder(level_ == VariableContext::Process ? AlignedCounters{} : allocateCounters(cellCount(cpus.load(std::memory_order_relaxed))))
+    , paged_counters(level_ == VariableContext::Process ? std::make_unique<PagedCounters>() : nullptr)
     , parent(parent_)
     , level(level_)
 {
@@ -1875,6 +2024,7 @@ Counters::Counters(Counters && src) noexcept
     : counters(std::exchange(src.counters, nullptr))
     , cpus(src.cpus.exchange(0, std::memory_order_relaxed))
     , counters_holder(std::move(src.counters_holder))
+    , paged_counters(std::move(src.paged_counters))
     , parent(src.parent.exchange(nullptr, std::memory_order_acquire))
     , should_trace_array(src.should_trace_array.exchange(nullptr, std::memory_order_acquire))
     , should_trace_holder(std::move(src.should_trace_holder))
@@ -1883,8 +2033,15 @@ Counters::Counters(Counters && src) noexcept
 {
 }
 
+Counters::~Counters() = default;
+
 void Counters::resetCounters()
 {
+    if (paged_counters)
+    {
+        paged_counters->reset();
+        return;
+    }
     if (!counters)
         return;
     const size_t total = cellCount(cpus.load(std::memory_order_relaxed));
@@ -1894,6 +2051,8 @@ void Counters::resetCounters()
 
 Count Counters::load(Event event) const
 {
+    if (paged_counters)
+        return paged_counters->load(event);
     const uint32_t rows = cpus.load(std::memory_order_relaxed);
     if (!rows)
         return cell(counters, 0, event).load(std::memory_order_relaxed);
@@ -1929,6 +2088,11 @@ void Counters::setTraceAllProfileEvents()
 
 void Counters::fetchAdd(Event event, Count amount, int32_t cpu)
 {
+    if (paged_counters)
+    {
+        paged_counters->increment(event, amount);
+        return;
+    }
     const uint32_t rows = cpus.load(std::memory_order_relaxed);
     if (rows)
     {
@@ -1974,6 +2138,11 @@ Counters::Snapshot & Counters::Snapshot::operator=(const Snapshot & other)
 Counters::Snapshot Counters::getPartiallyAtomicSnapshot() const
 {
     Snapshot res;
+    if (paged_counters)
+    {
+        paged_counters->snapshot(res.counters_holder.get());
+        return res;
+    }
     for (Event i = Event(0); i < num_counters; ++i)
         res.counters_holder[i] = load(i);
     return res;
@@ -2137,7 +2306,7 @@ void incrementNoTrace(Event event, Count amount)
     DB::CurrentThread::getProfileEvents().incrementNoTrace(event, amount);
 }
 
-void incrementSignalSafe(Event event, Count amount)
+void incrementSignalSafe(NonAllocatingEvent event, Count amount)
 {
     DB::CurrentThread::getProfileEvents().incrementSignalSafe(event, amount);
 }
@@ -2192,6 +2361,12 @@ void Counters::increment(Event event, Count amount)
         DB::TraceSender::send(DB::TraceType::ProfileEvent, StackTrace(), {.event = event, .increment = amount});
 }
 
+void Counters::incrementNonAllocating(NonAllocatingEvent event, Count amount) noexcept
+{
+    DENY_ALLOCATIONS_IN_SCOPE;
+    increment(event.value(), amount);
+}
+
 void Counters::incrementNoTrace(Event event, Count amount)
 {
     Counters * current = this;
@@ -2203,7 +2378,7 @@ void Counters::incrementNoTrace(Event event, Count amount)
     } while (current != nullptr);
 }
 
-void Counters::incrementSignalSafe(Event event, Count amount)
+void Counters::incrementSignalSafe(NonAllocatingEvent event, Count amount)
 {
     static_assert(std::atomic_ref<Count>::is_always_lock_free);
 
@@ -2212,7 +2387,10 @@ void Counters::incrementSignalSafe(Event event, Count amount)
     /// it does not call `sched_getcpu`; `cpu = -1` routes every level to its row 0.
     do
     {
-        current->fetchAdd(event, amount, -1);
+        if (current->paged_counters)
+            current->paged_counters->incrementHot(event.value(), amount);
+        else
+            current->fetchAdd(event.value(), amount, -1);
         current = current->parent.load(std::memory_order_acquire);
     } while (current != nullptr);
 }

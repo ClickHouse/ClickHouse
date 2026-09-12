@@ -33,7 +33,7 @@ public:
 
     ~FifoQueue() override
     {
-        purgeQueue();
+        FifoQueue::purgeQueue();
     }
 
     std::string_view getTypeName() const override { return "fifo"; }
@@ -137,7 +137,7 @@ public:
 
     void updateQueueLimit(Int64 value)
     {
-        std::lock_guard lock(mutex);
+        std::unique_lock lock(mutex);
         if (value <= 0)
             throw Exception(
                 ErrorCodes::INVALID_SCHEDULER_NODE,
@@ -148,21 +148,19 @@ public:
         while (requests.size() > static_cast<size_t>(max_queued))
         {
             ResourceRequest * request = &requests.back();
+            auto exception = std::make_exception_ptr(
+                Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached: {} of {}", requests.size() - 1, max_queued));
             requests.pop_back();
-            request->failed(std::make_exception_ptr(
-                Exception(ErrorCodes::SERVER_OVERLOADED, "Workload limit `max_waiting_queries` has been reached: {} of {}", requests.size(), max_queued)));
-
             queue_cost -= request->cost;
             rejected_requests++;
             rejected_cost += request->cost;
-        }
 
-        // In case if limit decreased to zero (which effectively disables the queue)
-        // NOTE: this is not allowed to be set using WorkloadSettings
-        if (requests.empty())
-        {
-            busy_periods++;
-            cancelActivation();
+            /// Failure callbacks may acquire the allocation mutex; cancellation takes
+            /// that mutex before the queue mutex. Also, the callback can release the
+            /// request's owner, so finish accounting before invoking it.
+            lock.unlock();
+            request->failed(exception);
+            lock.lock();
         }
     }
 
