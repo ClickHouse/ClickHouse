@@ -178,7 +178,8 @@ private:
 
     /// Update create query with columns description from storage if query doesn't have it.
     /// It's used to prevent automatic schema inference while table creation on each server startup.
-    void addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
+    /// Returns whether the query now carries an inferred column list.
+    bool addColumnsDescriptionToCreateQueryIfNecessary(ASTCreateQuery & create, const StoragePtr & storage);
 
     BlockIO executeQueryOnCluster(ASTCreateQuery & create);
 
