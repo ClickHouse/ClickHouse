@@ -1,0 +1,5 @@
+statistics materialized	1
+every estimate was extracted	1
+negating an unknown atom gives its complement	1
+a negated unknown composes as its own estimate	1
+a negated unknown does not split the ranges around it	1
