@@ -67,16 +67,16 @@ public:
       * evaluating it has no effect beyond looking the table up. `timeSeriesSamples(db, ts)` is such a
       * reference: it names the samples table of the `TimeSeries` table `db.ts`, and every replica has one.
       *
-      * The returned id must be the *user-visible* table the call names (`db.ts`), not whatever internal
-      * table it currently resolves to. A hidden inner table is named after the outer table's UUID, which is
-      * an identity local to the server that resolved it, so it is not a name another replica can be asked about.
+      * The returned id is the *user-visible* table the call names (`db.ts`), not whatever internal table it
+      * currently resolves to.
       *
       * Returns an empty `StorageID` for a table function that produces a storage of its own (`s3`, `numbers`,
       * `view`, `merge`), which is the default. Parallel replicas use this to decide whether a table function
       * can anchor a distributed read: the read is coordinated across replicas that each resolve the call
       * locally, so it is only correct for a stable reference. Such a read is always sent as query text, even
       * under `parallel_replicas_plan_based`, because a shipped plan fragment can only name the storage the
-      * call resolved to on the initiator.
+      * call resolved to on the initiator. It is only a predicate - the read is still addressed by the
+      * storage it resolved to, see `getStorageIDForParallelReplicas`.
       */
     virtual StorageID getReferencedTableID() const { return StorageID::createEmpty(); }
 

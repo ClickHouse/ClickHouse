@@ -2622,8 +2622,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             auto metadata_snapshot = storage->getInMemoryMetadataPtr(query_context, false);
                             ClusterProxy::executeQueryWithParallelReplicasCustomKey(
                                 query_plan_parallel_replicas,
-                                getStorageIDForParallelReplicas(
-                                    table_node ? static_cast<const ITableExpressionNode &>(*table_node) : *table_function_node),
+                                storage->getStorageID(),
                                 modified_query_info,
                                 metadata_snapshot->getColumns(),
                                 storage_snapshot,
@@ -2715,8 +2714,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 QueryPlanStepPtr reading_step = std::move(reading_node->step);
                                 ClusterProxy::executeQueryWithParallelReplicas(
                                     query_plan_parallel_replicas,
-                                    getStorageIDForParallelReplicas(
-                                        table_node ? static_cast<const ITableExpressionNode &>(*table_node) : *table_function_node),
+                                    storage->getStorageID(),
                                     till_stage,
                                     table_expression_query_info.query_tree,
                                     table_expression_query_info.planner_context,
