@@ -46,6 +46,11 @@ SerializationPtr SerializationObjectDistinctPaths::create(const std::vector<Stri
     return ISerialization::pooled(getHash(typed_paths_), [&] { return new SerializationObjectDistinctPaths(typed_paths_); });
 }
 
+bool SerializationObjectDistinctPaths::isDistinctPathsSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && path.back().type == Substream::ObjectDistinctPaths;
+}
+
 struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::DeserializeBinaryBulkState
 {
     /// State of the whole Object column structure.
