@@ -198,8 +198,8 @@ BlockIO InterpreterUpdateQuery::execute()
     }
 
     /// Add default database to table identifiers that we can encounter in the update expression.
-    /// A separate visitor per expression: it remembers the names of the recursive common table
-    /// expressions it walked, and the two expressions have separate scopes.
+    /// A separate visitor per expression: it remembers the `WITH` aliases it walked, and the two
+    /// expressions have separate scopes.
     if (update_query.predicate)
     {
         AddDefaultDatabaseVisitor visitor(getContext(), table_id.getDatabaseName());

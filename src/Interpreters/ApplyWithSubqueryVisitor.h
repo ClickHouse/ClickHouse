@@ -12,6 +12,7 @@ class ASTFunction;
 class ASTSelectQuery;
 class ASTSelectWithUnionQuery;
 struct ASTTableExpression;
+class ASTWithElement;
 
 class ApplyWithSubqueryVisitor
 {
@@ -30,6 +31,7 @@ private:
     static void visit(ASTPtr & ast, const Data & data);
     static void visit(ASTSelectQuery & ast, const Data & data);
     static void visit(ASTSelectWithUnionQuery & ast, const Data & data);
+    static void visitRecursiveWithElement(ASTWithElement & with_element, const Data & data);
     static void visit(ASTTableExpression & table, const Data & data);
     static void visit(ASTFunction & func, const Data & data);
 };
