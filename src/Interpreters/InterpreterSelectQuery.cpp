@@ -3164,6 +3164,16 @@ void InterpreterSelectQuery::executeAggregation(
         should_produce_results_in_order_of_bucket_number,
         settings[Setting::enable_memory_bound_merging_of_aggregation_results],
         force_aggregation_in_order);
+
+    /// The header-based constant-key check in `AggregatingStep` misses keys whose constness was
+    /// stripped by `materialize`; derive it from the pre-aggregation actions instead.
+    if (expression && allAggregationKeysAreSemanticallyConstant(expression->dag, keys))
+        aggregating_step->markGroupByKeysSemanticallyConstant();
+
+    /// The pre-aggregation of the user's `GROUP BY` is the only aggregation that may take the gradual
+    /// resize (see `AggregatingStep::enableGradualResize`).
+    aggregating_step->enableGradualResize();
+
     query_plan.addStep(std::move(aggregating_step));
 }
 
