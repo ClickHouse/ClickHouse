@@ -52,6 +52,11 @@ public:
 
     String getName() const override;
 
+    bool isVersioned() const override;
+    size_t getDefaultVersion() const override;
+    DataTypePtr getStateType() const override;
+    size_t getVersionFromRevision(size_t revision) const override;
+
     static const VectorWithMemoryTracking<std::string> & getNameAndAliases()
     {
         static const VectorWithMemoryTracking<std::string> aliases = {"groupConcat", "group_concat", "string_agg"};
