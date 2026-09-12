@@ -1,52 +1,109 @@
--- Partition manipulation for a key containing `modulo` whose left operand is unsigned and whose right
--- operand is signed: the value computed for a part and the value parsed from the query must agree.
+-- A partition key containing `modulo` whose left operand is unsigned and whose right operand is
+-- signed. Every value rendered for such a part (in `system.parts`, `parts_columns`,
+-- `projection_parts`, the part log and the partition pruner) must be the value partition manipulation
+-- accepts; `projection_parts_columns` is a control that must keep printing `tuple()`.
 
 CREATE TABLE mod_drop (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (37528 % c0);
 INSERT INTO mod_drop VALUES (167682982);
 ALTER TABLE mod_drop DROP PARTITION 37528;
 SELECT 'drop partition', count() FROM mod_drop;
+DROP TABLE mod_drop;
 
 SET mutations_sync = 2;
 CREATE TABLE mod_delete (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (37528 % c0);
 INSERT INTO mod_delete VALUES (167682982);
 DELETE FROM mod_delete IN PARTITION 37528 WHERE 1;
 SELECT 'delete in partition', count() FROM mod_delete;
+DROP TABLE mod_delete;
 
 CREATE TABLE mod_complex (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (c0, 37528 % c0);
 INSERT INTO mod_complex VALUES (167682982);
 ALTER TABLE mod_complex DROP PARTITION (167682982, 37528);
 SELECT 'complex key', count() FROM mod_complex;
+DROP TABLE mod_complex;
 
 -- The partition value is hashed into the partition ID once it no longer fits 8 bytes.
 CREATE TABLE mod_wide (c0 Int128) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (CAST(37528, 'UInt64') % c0);
 INSERT INTO mod_wide VALUES (167682982);
+SELECT 'wide render', partition FROM system.parts WHERE database = currentDatabase() AND table = 'mod_wide' AND active;
+SELECT 'wide render columns', partition FROM system.parts_columns WHERE database = currentDatabase() AND table = 'mod_wide' AND active AND column = 'c0';
 ALTER TABLE mod_wide DROP PARTITION 37528;
 SELECT 'wide key', count() FROM mod_wide;
 DROP TABLE mod_wide;
+
+-- A projection part has no partition value of its own; `system.projection_parts` renders its parent's,
+-- so it needs the same adjusted key.
+CREATE TABLE mod_proj (c0 Int128, c1 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (CAST(37528, 'UInt64') % c0);
+ALTER TABLE mod_proj ADD PROJECTION p (SELECT c1 ORDER BY c1);
+INSERT INTO mod_proj VALUES (167682982, 1);
+SELECT 'projection render', partition FROM system.projection_parts WHERE database = currentDatabase() AND table = 'mod_proj' AND active;
+SELECT 'projection columns render', partition FROM system.projection_parts_columns WHERE database = currentDatabase() AND table = 'mod_proj' AND active AND column = 'c1';
+DROP TABLE mod_proj;
+
+-- Scheduling a merge renders the partition value before any data is read, and so does the row written
+-- to `system.part_log`, so both need the adjusted key.
+CREATE TABLE mod_merge (c0 Int128) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (CAST(37528, 'UInt64') % c0);
+INSERT INTO mod_merge SETTINGS async_insert = 0 VALUES (167682982);
+INSERT INTO mod_merge SETTINGS async_insert = 0 VALUES (167682982);
+OPTIMIZE TABLE mod_merge FINAL;
+SELECT 'merge', count() FROM system.parts WHERE database = currentDatabase() AND table = 'mod_merge' AND active;
+SYSTEM FLUSH LOGS part_log;
+SELECT 'part log', toString(event_type) AS ev, partition FROM system.part_log
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND database = currentDatabase() AND table = 'mod_merge'
+  AND table_uuid = (SELECT uuid FROM system.tables WHERE database = currentDatabase() AND name = 'mod_merge')
+  AND event_type IN ('NewPart', 'MergePartsStart', 'MergeParts')
+GROUP BY ev, partition ORDER BY ev;
+DROP TABLE mod_merge;
+
+-- `use_skip_indexes = 0` skips the part-level minmax analysis but not the partition pruner, so here
+-- the pruner is what excludes a partition, and it renders the value of the partition it excluded.
+CREATE TABLE mod_prune (c1 Int32, c0 Int128) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (c1, CAST(37528, 'UInt64') % c0);
+INSERT INTO mod_prune VALUES (1, 167682982);
+INSERT INTO mod_prune VALUES (2, 167682982);
+SELECT 'pruned read', c1 FROM mod_prune WHERE c1 = 1 SETTINGS use_skip_indexes = 0;
+SELECT 'pruned plan', countIf(explain LIKE '%Parts: 2/2%') = 1 AND countIf(explain LIKE '%Parts: 1/2%') = 1
+FROM (EXPLAIN indexes = 1 SELECT c1 FROM mod_prune WHERE c1 = 1 SETTINGS use_skip_indexes = 0);
+DROP TABLE mod_prune;
 
 -- A value outside the range of the partition key type addresses no partition and is rejected.
 CREATE TABLE mod_range (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (c0 % 37528);
 INSERT INTO mod_range VALUES (5);
 ALTER TABLE mod_range DROP PARTITION 40000; -- { serverError ARGUMENT_OUT_OF_BOUND }
 SELECT 'out of range', count() FROM mod_range;
+DROP TABLE mod_range;
 
 -- Partition IDs must be unaffected.
 CREATE TABLE mod_id (d Date, c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (d, 37528 % c0);
 INSERT INTO mod_id VALUES ('2020-05-23', 167682982);
 SELECT 'partition id', partition_id FROM system.parts WHERE database = currentDatabase() AND table = 'mod_id' AND active;
+DROP TABLE mod_id;
 
 -- Keys where the result signedness is the same either way, and keys with no `modulo` at all.
 CREATE TABLE mod_unsigned (c0 UInt32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (37528 % c0);
 INSERT INTO mod_unsigned VALUES (167682982);
+SELECT 'unsigned render', partition FROM system.parts WHERE database = currentDatabase() AND table = 'mod_unsigned' AND active;
 ALTER TABLE mod_unsigned DROP PARTITION 37528;
 SELECT 'unsigned column', count() FROM mod_unsigned;
+DROP TABLE mod_unsigned;
 
 CREATE TABLE mod_signed_left (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (c0 % 37528);
 INSERT INTO mod_signed_left VALUES (5);
 ALTER TABLE mod_signed_left DROP PARTITION 5;
 SELECT 'signed left operand', count() FROM mod_signed_left;
+DROP TABLE mod_signed_left;
 
 CREATE TABLE mod_none (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY positiveModulo(37528, c0);
 INSERT INTO mod_none VALUES (167682982);
 ALTER TABLE mod_none DROP PARTITION 37528;
 SELECT 'no modulo', count() FROM mod_none;
+DROP TABLE mod_none;
+
+-- `moduloLegacy`'s result type is signed where `modulo`'s is unsigned, so the stored value must be rendered
+-- with the same key that produced it: the rendered value is the one `DROP PARTITION` accepts.
+CREATE TABLE mod_narrow (c0 Int32) ENGINE = MergeTree ORDER BY tuple() PARTITION BY (CAST(3000000000, 'UInt64') % c0);
+INSERT INTO mod_narrow VALUES (-5);
+SELECT 'narrow render', partition FROM system.parts WHERE database = currentDatabase() AND table = 'mod_narrow' AND active;
+ALTER TABLE mod_narrow DROP PARTITION 3000000000; -- { serverError ARGUMENT_OUT_OF_BOUND }
+ALTER TABLE mod_narrow DROP PARTITION -1294967296;
+SELECT 'narrow round-trip', count() FROM mod_narrow;
+DROP TABLE mod_narrow;
