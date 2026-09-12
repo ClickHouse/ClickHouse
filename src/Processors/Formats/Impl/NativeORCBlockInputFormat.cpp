@@ -74,6 +74,7 @@ extern const int THERE_IS_NO_COLUMN;
 extern const int INCORRECT_DATA;
 extern const int ARGUMENT_OUT_OF_BOUND;
 extern const int TOO_DEEP_RECURSION;
+extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -1015,6 +1016,21 @@ std::unique_ptr<orc::SearchArgument> buildORCSearchArgument(
     return builder->build();
 }
 
+std::unique_ptr<orc::Reader> createORCReader(std::unique_ptr<orc::InputStream> input_stream, const orc::ReaderOptions & options)
+{
+    try
+    {
+        return orc::createReader(std::move(input_stream), options);
+    }
+    catch (const orc::NotImplementedYet & e)
+    {
+        /// Not INCORRECT_DATA: the file may be valid. The ORC format declares compression codecs
+        /// that this reader does not implement (BROTLI, for one), and those arrive here. A file with
+        /// no compression field at all is a ParseError, and still reports corruption.
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "ORC file uses a feature that is not implemented: {}", e.what());
+    }
+}
+
 static void getFileReader(
     ReadBuffer & in,
     std::unique_ptr<orc::Reader> & file_reader,
@@ -1036,7 +1052,7 @@ static void getFileReader(
     options.setCacheOptions(orc::CacheOptions{.holeSizeLimit = hole_size_limit, .rangeSizeLimit = range_size_limit});
 
     auto input_stream = asORCInputStream(in, format_settings, use_prefetch, is_stopped);
-    file_reader = orc::createReader(std::move(input_stream), options);
+    file_reader = createORCReader(std::move(input_stream), options);
 }
 
 static const orc::Type *
