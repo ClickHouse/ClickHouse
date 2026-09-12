@@ -383,7 +383,7 @@ namespace
         return conditions;
     }
 
-    ASTPtr makeWhereFilterForSamplesTable(
+    ASTPtr makeFilterForSamplesTable(
         ASTPtr select_query_from_tags_table,
         DateTime64 min_time,
         DateTime64 max_time,
@@ -440,6 +440,7 @@ namespace
                                         DateTime64 max_time,
                                         const DataTypePtr & timestamp_data_type,
                                         UInt64 bucket_step_seconds,
+                                        bool use_prewhere,
                                         ASTs whole_metric_id_range_conditions)
     {
         auto select_query = make_intrusive<ASTSelectQuery>();
@@ -451,8 +452,8 @@ namespace
         ///
         /// The `id` column is read as is, without a cast to the data type declared by this storage.
         /// A cast aliased in the SELECT list (e.g. `toUInt64(id) AS id`) would shadow the raw column,
-        /// and the WHERE conditions below would wrap the primary key column, degrading the index
-        /// analysis and the ordering of the PREWHERE conditions.
+        /// and the filter conditions below would wrap the primary key column, degrading the index
+        /// analysis and their ordering.
         /// The casts to the declared types are applied by an outer SELECT instead (see `makeSelectQuery`).
         {
             auto select_list_exp = make_intrusive<ASTExpressionList>();
@@ -485,15 +486,22 @@ namespace
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
 
-        /// WHERE (bucket >= <min_bucket>) AND (bucket <= <max_bucket>) AND (max_time >= min_time) AND (min_time <= max_time)
-        ///       AND (id IN <select_query_from_tags_table>)
+        /// PREWHERE (bucket >= <min_bucket>) AND (bucket <= <max_bucket>) AND (max_time >= min_time) AND (min_time <= max_time)
+        ///          AND (id IN <select_query_from_tags_table>)
+        ///
+        /// or WHERE with the same conditions if the samples storage doesn't support PREWHERE.
         ///
         /// where <select_query_from_tags_table> is roughly:
         ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
         {
-            auto where_filter = makeWhereFilterForSamplesTable(
+            /// Keep the cheap row-selection conditions in an explicit PREWHERE. If they are left in WHERE,
+            /// predicate pushdown combines them with the outer `notEmpty(time_series)` filter and moves the
+            /// whole expression to PREWHERE, so the large `samples` column is read before these conditions
+            /// can discard rows.
+            auto filter = makeFilterForSamplesTable(
                 select_query_from_tags_table, min_time, max_time, timestamp_data_type, bucket_step_seconds, std::move(whole_metric_id_range_conditions));
-            select_query->setExpression(ASTSelectQuery::Expression::WHERE, std::move(where_filter));
+            select_query->setExpression(
+                use_prewhere ? ASTSelectQuery::Expression::PREWHERE : ASTSelectQuery::Expression::WHERE, std::move(filter));
         }
 
         /// Wrap the select query into ASTSelectWithUnionQuery.
@@ -517,7 +525,7 @@ namespace
     /// so its result types are the physical column types, which can differ from the expected ones
     /// (e.g. a samples table can store timestamps with a different timezone, and the tuple elements
     /// of the `samples` column have names). Casting in an outer
-    /// SELECT keeps the WHERE conditions of the inner query on the bare primary key columns, and
+    /// SELECT keeps the filter conditions of the inner query on the bare primary key columns, and
     /// the casts run only for the rows which passed the filter. The internal `_CAST` is used here
     /// because it returns exactly the specified type (`CAST` and conversion functions like
     /// `toDateTime64` keep the timezone of the casted expression), and it is free when the type
@@ -951,8 +959,21 @@ void StorageTimeSeriesSelector::readImpl(
     ASTPtr select_query_from_tags_table = makeSelectQueryFromTagsTable(
         tags_table_id, matchers, column_name_by_tag_name, min_time_to_filter_ids, max_time_to_filter_ids, config.timestamp_data_type);
 
-    auto samples_table_metadata = time_series_storage->getTargetTable(samples_table_kind, context)->getInMemoryMetadataPtr(context, false);
+    auto samples_table = time_series_storage->getTargetTable(samples_table_kind, context);
+    auto samples_table_metadata = samples_table->getInMemoryMetadataPtr(context, false);
     auto tags_table_metadata = time_series_storage->getTargetTable(ViewTarget::Tags, context)->getInMemoryMetadataPtr(context, false);
+
+    bool samples_table_can_use_prewhere = samples_table->supportsPrewhere() && samples_table->canMoveConditionsToPrewhere();
+    if (samples_table_can_use_prewhere)
+    {
+        if (const auto supported_prewhere_columns = samples_table->supportedPrewhereColumns())
+        {
+            samples_table_can_use_prewhere = supported_prewhere_columns->contains(TimeSeriesColumnNames::ID)
+                && supported_prewhere_columns->contains(TimeSeriesColumnNames::Bucket)
+                && supported_prewhere_columns->contains(TimeSeriesColumnNames::MinTime)
+                && supported_prewhere_columns->contains(TimeSeriesColumnNames::MaxTime);
+        }
+    }
 
     ASTs whole_metric_id_range_conditions = tryMakeWholeMetricIDRangeConditions(
         matchers,
@@ -988,7 +1009,7 @@ void StorageTimeSeriesSelector::readImpl(
 
     if (!whole_metric_id_range_conditions.empty())
     {
-        /// The `id IN <tags subquery>` condition stays in the WHERE for exact row-level filtering
+        /// The `id IN <tags subquery>` condition stays in the row-level filter for exact filtering
         /// (and its subquery keeps collecting the tags of the matched series), but its set must
         /// not enter primary-key index analysis: `KeyCondition` runs a generic exclusion search
         /// with the whole set, which costs hundreds of milliseconds per part for tens of
@@ -1008,6 +1029,7 @@ void StorageTimeSeriesSelector::readImpl(
         max_time,
         config.timestamp_data_type,
         bucket_step_seconds,
+        samples_table_can_use_prewhere,
         std::move(whole_metric_id_range_conditions));
 
     ASTPtr select_query = makeSelectQuery(
