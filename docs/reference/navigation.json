@@ -421,13 +421,20 @@
             "reference/engines/database-engines/atomic",
             "reference/engines/database-engines/backup",
             "reference/engines/database-engines/datalake",
+            "reference/engines/database-engines/dictionary",
+            "reference/engines/database-engines/filesystem",
+            "reference/engines/database-engines/hdfs",
             "reference/engines/database-engines/materialized-postgresql",
+            "reference/engines/database-engines/memory",
             "reference/engines/database-engines/mysql",
+            "reference/engines/database-engines/ordinary",
             "reference/engines/database-engines/postgresql",
             "reference/engines/database-engines/remote",
             "reference/engines/database-engines/replicated",
+            "reference/engines/database-engines/s3",
             "reference/engines/database-engines/shared",
-            "reference/engines/database-engines/sqlite"
+            "reference/engines/database-engines/sqlite",
+            "reference/engines/database-engines/url"
           ]
         }
       ]
@@ -1075,9 +1082,11 @@
         "reference/system-tables/iceberg_metadata_log",
         "reference/system-tables/information_schema",
         "reference/system-tables/instrumentation",
+        "reference/system-tables/jemalloc_arena_bins",
         "reference/system-tables/jemalloc_bins",
         "reference/system-tables/jemalloc_stats",
         "reference/system-tables/jemalloc_profile_text",
+        "reference/system-tables/jemalloc_sampled_allocations",
         "reference/system-tables/kafka_consumers",
         "reference/system-tables/keeper_changelogs",
         "reference/system-tables/keeper_cluster",
@@ -1139,6 +1148,7 @@
         "reference/system-tables/schema_inference_cache",
         "reference/system-tables/server_settings",
         "reference/system-tables/session_log",
+        "reference/system-tables/session_query_ids",
         "reference/system-tables/settings",
         "reference/system-tables/settings_changes",
         "reference/system-tables/settings_profile_elements",
