@@ -42,6 +42,10 @@ public:
     /// range: dropping the tracking avoids an extra `getExtremes` scan of every build-side chunk.
     void disableKeyRangeTracking() { track_key_range = false; }
 
+    /// False for a filter that can never yield a positive pruning predicate (a negating `LEFT ANTI`
+    /// filter), or for one no probe-side read consumes.
+    bool isKeyRangeTrackingEnabled() const { return track_key_range; }
+
     void setConditionForQueryConditionCache(UInt64 condition_hash_, const String & condition_);
 
     void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;

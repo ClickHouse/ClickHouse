@@ -321,6 +321,15 @@ public:
         return join_runtime_filters_for_index_analysis;
     }
 
+    /// Drop the descriptors of the given filters: they can never produce a positive pruning predicate,
+    /// so keeping them would only install the dynamic-predicate machinery for nothing.
+    void removeJoinRuntimeFiltersForIndexAnalysis(const std::unordered_set<String> & filter_ids)
+    {
+        std::erase_if(
+            join_runtime_filters_for_index_analysis,
+            [&](const auto & descriptor) { return filter_ids.contains(descriptor.filter_id); });
+    }
+
     static AnalysisResultPtr selectRangesToRead(
         const RangesInDataParts & parts,
         MergeTreeData::MutationsSnapshotPtr mutations_snapshot,

@@ -16,16 +16,19 @@ DROP TABLE IF EXISTS probe_pk;
 DROP TABLE IF EXISTS probe_skip_index;
 DROP TABLE IF EXISTS probe_no_index;
 DROP TABLE IF EXISTS build_side;
+DROP TABLE IF EXISTS build_two_keys;
 
 CREATE TABLE probe_pk (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE probe_skip_index (k UInt64, v UInt64, INDEX idx_v v TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE probe_no_index (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 CREATE TABLE build_side (k UInt64) ENGINE = MergeTree ORDER BY k;
+CREATE TABLE build_two_keys (k UInt64, v UInt64) ENGINE = MergeTree ORDER BY k;
 
 INSERT INTO probe_pk SELECT number, number FROM numbers(1000);
 INSERT INTO probe_skip_index SELECT number, number FROM numbers(1000);
 INSERT INTO probe_no_index SELECT number, number FROM numbers(1000);
 INSERT INTO build_side SELECT number FROM numbers(10);
+INSERT INTO build_two_keys SELECT number, number FROM numbers(10);
 
 -- The join key is the primary key of the probe side: the range is used, so it is tracked.
 SELECT 'primary key';
@@ -69,12 +72,38 @@ SELECT trim(explain) FROM (
     INNER JOIN build_side AS b2 ON p.v = b2.k
 ) WHERE explain LIKE '%Key range tracking%' OR explain LIKE '%Build runtime join filter%';
 
+-- A `LEFT ANTI` join builds a negating filter (`ExactNotContains`), which exposes neither recorded
+-- key values nor a key range, so no pruning predicate can ever be derived from it - even when the
+-- join key is the primary key of the probe side. Tracking must be off there too.
+SELECT 'single-key anti join on the primary key';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1 SELECT count() FROM probe_pk AS p LEFT ANTI JOIN build_side AS b ON p.k = b.k
+) WHERE explain LIKE '%Key range tracking%';
+
+-- The multi-key `LEFT ANTI` case builds one filter on a tuple of the keys, also negating.
+SELECT 'multi-key anti join on the primary key';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1 SELECT count() FROM probe_pk AS p LEFT ANTI JOIN build_two_keys AS b ON p.k = b.k AND p.v = b.v
+) WHERE explain LIKE '%Key range tracking%';
+
+-- One prunable inner-join filter and one anti-join filter in the same query: only the first is tracked.
+SELECT 'anti join next to an inner join';
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    SELECT count() FROM probe_pk AS p
+    INNER JOIN build_side AS b1 ON p.k = b1.k
+    LEFT ANTI JOIN build_side AS b2 ON p.k = b2.k
+) WHERE explain LIKE '%Key range tracking%' OR explain LIKE '%Build runtime join filter%';
+
 -- The results must not depend on the pruning.
 SELECT 'results';
 SELECT count() FROM probe_pk AS p INNER JOIN build_side AS b ON p.k = b.k;
 SELECT count() FROM probe_no_index AS p INNER JOIN build_side AS b ON p.v = b.k;
+SELECT count() FROM probe_pk AS p LEFT ANTI JOIN build_side AS b ON p.k = b.k;
+SELECT count() FROM probe_pk AS p LEFT ANTI JOIN build_two_keys AS b ON p.k = b.k AND p.v = b.v;
 
 DROP TABLE probe_pk;
 DROP TABLE probe_skip_index;
 DROP TABLE probe_no_index;
 DROP TABLE build_side;
+DROP TABLE build_two_keys;
