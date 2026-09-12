@@ -61,4 +61,24 @@ WHERE current_database = currentDatabase() AND query LIKE '%formatDateTime(d, ''
 ORDER BY event_time_microseconds DESC
 LIMIT 1;
 
+-- `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch` are frozen by the `Variant` / `Dynamic`
+-- function adaptors when the function is built and decide whether an alternative that is incompatible with the
+-- function throws or evaluates to `NULL`. The result type is the same either way, so the condition's
+-- `ActionsDAG` looks identical: a lenient session must not prime a "no marks match" verdict that is then served
+-- to a strict session instead of its exception.
+DROP TABLE IF EXISTS t_qcc_variant;
+CREATE TABLE t_qcc_variant (k UInt64, v Variant(UInt64, String), d Dynamic) ENGINE = MergeTree ORDER BY k
+    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
+INSERT INTO t_qcc_variant SELECT number, 'abc'::Variant(UInt64, String), 'abc'::Dynamic FROM numbers(1000000);
+
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_variant WHERE v + 1 = 2 SETTINGS variant_throw_on_type_mismatch = 0;
+SELECT count() FROM t_qcc_variant WHERE v + 1 = 2 SETTINGS variant_throw_on_type_mismatch = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_variant WHERE d + 1 = 2 SETTINGS dynamic_throw_on_type_mismatch = 0;
+SELECT count() FROM t_qcc_variant WHERE d + 1 = 2 SETTINGS dynamic_throw_on_type_mismatch = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+DROP TABLE t_qcc_variant;
+
 DROP TABLE t_qcc_formatdatetime;

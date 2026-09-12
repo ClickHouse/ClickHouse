@@ -45,6 +45,8 @@ namespace Setting
     extern const SettingsBool validate_enum_literals_in_operators;
     extern const SettingsBool use_variant_default_implementation_for_comparisons;
     extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool variant_throw_on_type_mismatch;
+    extern const SettingsBool dynamic_throw_on_type_mismatch;
 }
 
 UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
@@ -86,6 +88,12 @@ UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
     hash.update(settings[Setting::validate_enum_literals_in_operators].value);
     hash.update(settings[Setting::use_variant_default_implementation_for_comparisons].value);
     hash.update(static_cast<UInt64>(settings[Setting::cast_string_to_date_time_mode].value));
+    /// The `Variant` / `Dynamic` function adaptors freeze this strictness when the function is built and then
+    /// decide per alternative whether an incompatible type throws or evaluates to `NULL`. The result type is
+    /// the same either way, so a lenient session must not prime a "no marks match" verdict for a strict one,
+    /// which is supposed to see the exception.
+    hash.update(settings[Setting::variant_throw_on_type_mismatch].value);
+    hash.update(settings[Setting::dynamic_throw_on_type_mismatch].value);
     return hash.get64();
 }
 
