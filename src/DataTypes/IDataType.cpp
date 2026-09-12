@@ -18,6 +18,8 @@
 
 #include <DataTypes/Serializations/SerializationDetached.h>
 
+#include <Functions/CancellationBudget.h>
+
 namespace DB
 {
 
@@ -28,6 +30,10 @@ namespace ErrorCodes
     extern const int ILLEGAL_COLUMN;
     extern const int NOT_IMPLEMENTED;
 }
+
+/// One unit of enumeration work constructs several serializations, so it costs far more than the
+/// cheapest loop `units_per_check` is calibrated for: this polls once per 256 units.
+static constexpr size_t cancellation_units_per_substream = CancellationBudget::units_per_check / 256;
 
 IDataType::IDataType() = default;
 
@@ -117,15 +123,25 @@ size_t IDataType::getSizeOfValueInMemory() const
 
 void IDataType::forEachSubcolumn(
     const SubcolumnCallback & callback,
-    const SubstreamData & data)
+    const SubstreamData & data,
+    CancellationBudget * budget)
 {
     ISerialization::StreamCallback callback_with_data = [&](const auto & subpath)
     {
+        if (budget)
+            budget->chargeUnits(cancellation_units_per_substream);
+
         for (size_t i = 0; i < subpath.size(); ++i)
         {
             size_t prefix_len = i + 1;
             if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
             {
+                /// A type whose substream tree is one long path produces a single callback, and
+                /// `createFromPath` reapplies every preceding creator, so one subcolumn costs
+                /// `prefix_len`.
+                if (budget)
+                    budget->chargeUnits(cancellation_units_per_substream * prefix_len);
+
                 auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len);
                 auto subdata = ISerialization::createFromPath(subpath, prefix_len);
                 auto path_copy = subpath;
