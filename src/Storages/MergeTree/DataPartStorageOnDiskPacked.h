@@ -135,6 +135,12 @@ private:
     /// which forces the whole archive to be copied rather than hardlinked during a clone/freeze.
     bool anyArchivedFileRequestedForCopy(const NameSet & files_to_copy_instead_of_hardlinks) const;
 
+    /// Copies the separately written invalidated_system_columns.txt of this part (if any) into
+    /// dest_storage. freeze/freezeRemote carry only data.packed, so the separately written files
+    /// need explicit treatment; see the call sites.
+    void copyInvalidatedSystemColumnsFile(
+        DataPartStorageOnDiskPacked & dest_storage, const ReadSettings & read_settings, const WriteSettings & write_settings) const;
+
     /// Native file access hooks for the base storage. On packed-part storage skp_idx.packed is a
     /// virtual file inside data.packed, so the base file-read overlay (which reads a standalone
     /// skp_idx.packed) is disabled here via getArchiveReaderForFile below; these hooks serve both the
