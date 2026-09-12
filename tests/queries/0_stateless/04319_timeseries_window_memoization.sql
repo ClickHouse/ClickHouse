@@ -1,10 +1,11 @@
 -- Tests the memoization in the recompute path (`AggregateFunctionTimeseriesSlidingSum::getCurrentSum`, driven
 -- from `AggregateFunctionTimeseriesBase::doInsertResultInto`): the merged window aggregate is reused across
 -- consecutive grid points that cover the same set of populated buckets. Here `buckets_per_window` = 10, below
--- `BPW_TO_FORCE_TWO_STACKS` (20), so even `timeSeriesDerivToGrid` (the only function here that could use
--- two-stacks) stays on recompute; the other functions always recompute. A window (1000) much wider than the data
--- extent (300..700) makes a run of grid points share the identical full bucket set (memo hits), while the edges
--- (buckets entering/leaving) force recomputes.
+-- `BPW_TO_FORCE_TWO_STACKS` (12), and the sparse data (5 populated of 21 buckets) keeps the average populated
+-- buckets per window at 2, below `AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS` (4), so even `timeSeriesDerivToGrid`
+-- (the only function here that could use two-stacks) stays on recompute; the other functions always recompute.
+-- A window (1000) much wider than the data extent (300..700) makes a run of grid points share the identical full
+-- bucket set (memo hits), while the edges (buckets entering/leaving) force recomputes.
 SET allow_experimental_time_series_aggregate_functions = 1;
 SET allow_experimental_ts_to_grid_aggregate_function = 1;
 

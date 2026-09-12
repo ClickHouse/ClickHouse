@@ -85,26 +85,32 @@ inline time_t minWholeSecondsForDateTime64(Int64 scale_multiplier)
 /// The same window expressed in ticks rather than in whole seconds. A conversion from a floating-point source can
 /// land inside the last representable second - at scale 9 the last whole second is `9223372036`, yet
 /// `9223372036.5` still fits the `Int64` ticks - so a whole-seconds bound would reject a representable value.
+/// Largest representable value in ticks: the last whole second plus as much fraction as the `Int64` holds.
 inline Int64 maxTicksForDateTime64(Int64 scale_multiplier)
 {
-    if (MAX_DATETIME64_TIMESTAMP > std::numeric_limits<Int64>::max() / scale_multiplier)
-        return std::numeric_limits<Int64>::max();
-    return MAX_DATETIME64_TIMESTAMP * scale_multiplier + scale_multiplier - 1;
+    const Int64 whole = maxWholeSecondsForDateTime64(scale_multiplier) * scale_multiplier;
+    return whole + std::min(scale_multiplier - 1, std::numeric_limits<Int64>::max() - whole);
 }
 
+/// Smallest representable value in ticks; the calendar bound starts exactly at a second, the `Int64` one does not.
 inline Int64 minTicksForDateTime64(Int64 scale_multiplier)
 {
-    /// `MIN_DATETIME64_TIMESTAMP` is the first representable second, so there is no sub-second tail below it.
-    if (MIN_DATETIME64_TIMESTAMP < std::numeric_limits<Int64>::min() / scale_multiplier)
-        return std::numeric_limits<Int64>::min();
-    return MIN_DATETIME64_TIMESTAMP * scale_multiplier;
+    if (minWholeSecondsForDateTime64(scale_multiplier) == MIN_DATETIME64_TIMESTAMP)
+        return MIN_DATETIME64_TIMESTAMP * scale_multiplier;
+    return std::numeric_limits<Int64>::min();
 }
 
 /// `Time64` holds a signed clock reading within `[-999:59:59.9..., 999:59:59.9...]`, so both ends carry the
 /// sub-second tail of the last representable second and never come close to the `Int64` tick limit.
+/// `Time64` caps the scale at 9, so this cannot overflow `Int64`.
 inline Int64 maxTicksForTime64(Int64 scale_multiplier)
 {
     return MAX_TIME_TIMESTAMP * scale_multiplier + scale_multiplier - 1;
+}
+
+inline Int64 minTicksForTime64(Int64 scale_multiplier)
+{
+    return -maxTicksForTime64(scale_multiplier);
 }
 
 /// The largest value of the floating-point type `T` that does not exceed `bound`, and the smallest one that is not
