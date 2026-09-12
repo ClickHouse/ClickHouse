@@ -868,7 +868,7 @@ void finishBloomFilter(ColumnChunkIndexes & indexes, PODArray<UInt32> && unfolde
     /// Fold down the bloom filter (i.e. merge 2^fold_count neighboring blocks) as many times as possible without exceeding that implied fpp.
     /// This requires the fpp of the concrete data in the current unfolded filter which can be calculated from its
     /// average block fill rate and the fact that each membership check compares 8 bits in the filter as fill_rate ^ 8.
-    /// The below then uses the fact that the file rate after folding two independant blocks comes out to 1 - (1-avg_fill_rate)^2.
+    /// The below then uses the fact that the fill rate after folding two independent blocks comes out to 1 - (1-avg_fill_rate)^2.
     const double fpp = std::pow(1 - std::exp(-8 * (1 / options.bloom_filter_bits_per_value)), 8);
     size_t total_set_bits = 0;
     for (size_t i = 0; i < num_blocks * 8; ++i)
@@ -1225,6 +1225,8 @@ void writeColumnImpl(
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
                 auto & bd = *bloom_data;
                 const size_t num_blocks = bd.size() / 8;
+                static constexpr UInt32 salt[8] = {
+                    0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U};
 
                 for (size_t i = 0; i < data_count; ++i)
                 {
@@ -1239,8 +1241,6 @@ void writeColumnImpl(
                         static_assert(sizeof(converted[i]) <= 12, "unexpected non-primitive type");
                         h = XXH_INLINE_XXH64(reinterpret_cast<const void*>(&converted[i]), sizeof(converted[i]), seed);
                     }
-                    static constexpr UInt32 salt[8] = {
-                        0x47b6137bU, 0x44974d91U, 0x8824ad5bU, 0xa2b7289dU, 0x705495c7U, 0x2df1424bU, 0x9efc4947U, 0x5c6bfb31U,};
                     const size_t block_idx = ((h >> 32) * num_blocks) >> 32;
                     chassert(block_idx < num_blocks);
                     const UInt32 x = UInt32(h); // overflow to take the lower 32 bits

@@ -1,0 +1,8 @@
+the filter of the duplicate-heavy column is much smaller than the one of the distinct column
+yes
+every row group is written with a bloom filter
+0	200
+no false negatives: 50 of 50 row groups with a matching value were read
+pruning still effective for present values
+absent values pruned
+no false negatives with 4 bits per value: 50 of 50
