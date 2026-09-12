@@ -55,6 +55,7 @@ namespace FailPoints
 {
     extern const char backup_fail_before_writing_metadata[];
     extern const char backup_fail_lock_file_removal[];
+    extern const char backup_fail_reading_archive_size[];
     extern const char backup_pause_before_lock_file_creation[];
 }
 
@@ -1582,6 +1583,15 @@ void BackupImpl::writeFile(const BackupFileInfo & info, BackupEntryPtr entry)
 
     std::ranges::for_each(info.data_file_copies, copy_file_inside_backup);
 
+    /// Make the just-written data file and its copies durable. Archives are synced as a single
+    /// file in finalizeWriting instead. Concurrency-safe: each call fsyncs its own file.
+    if (params.fsync_backup_files && !use_archive)
+    {
+        writer->syncFileToDisk(info.data_file_name);
+        for (const auto & data_file_copy : info.data_file_copies)
+            writer->syncFileToDisk(data_file_copy);
+    }
+
     {
         std::lock_guard lock{mutex};
         ++num_entries;
@@ -1627,6 +1637,30 @@ void BackupImpl::finalizeWriting()
             uncompressed_size += encryption_sidecar->write();
 #endif
         closeArchive(/* finalize= */ true);
+    }
+
+    /// The backup is published at this point: `.backup` is readable at the destination, or the
+    /// archive has been finalized. A published backup must never be removed as a failed one, so arm
+    /// the guard read by `setIsCorrupted` before the steps below, which can still throw.
+    writing_finalized = true;
+
+    if (params.fsync_backup_files && writer)
+    {
+        /// Sync the manifest (or, for archives, the archive file) last, after all data files were
+        /// synced in writeFile, so a persisted manifest never precedes its payload. Only the
+        /// initiator writes the manifest.
+        if (!params.is_internal_backup)
+            writer->syncFileToDisk(use_archive ? archive_params.archive_name : ".backup");
+
+        /// Every writer syncs its directory entries, including the internal writers of BACKUP ON
+        /// CLUSTER, which write their own data files.
+        writer->syncDirectoriesToDisk();
+    }
+
+    if (!params.is_internal_backup)
+    {
+        /// For an archive this reads the size back off the destination disk and can throw, so it
+        /// must stay below the guard above.
         setCompressedSize();
 #if CLICKHOUSE_CLOUD
         if (params.resume)
@@ -1635,20 +1669,24 @@ void BackupImpl::finalizeWriting()
         removeLockFile();
         LOG_TRACE(log, "Finalized backup {}", backup_name_for_logging);
     }
-
-    writing_finalized = true;
 }
 
 
 void BackupImpl::setCompressedSize()
 {
     if (use_archive)
+    {
+        fiu_do_on(FailPoints::backup_fail_reading_archive_size,
+        {
+            throw Exception(ErrorCodes::FAULT_INJECTED, "Failpoint backup_fail_reading_archive_size is triggered");
+        });
         compressed_size = writer ? writer->getFileSize(archive_params.archive_name) : reader->getFileSize(archive_params.archive_name);
 #if CLICKHOUSE_CLOUD && USE_SSL
         /// The encryption config file is written outside of the archive, so its size must be added
         /// to the size of the archive to get the physical footprint of the backup.
         compressed_size += encryption_sidecar->getFileSize();
 #endif
+    }
     else
         compressed_size = uncompressed_size;
 }
