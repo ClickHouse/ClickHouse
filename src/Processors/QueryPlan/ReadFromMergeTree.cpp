@@ -3911,9 +3911,11 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     if (query_info.prewhere_info && top_k_filter_info && !result_sort_description.empty())
     {
         auto top_k_column = topKDynamicFilterColumn(*query_info.prewhere_info);
-        /// Undo only a filter this read was stamped for: the internal function is not registered in
-        /// `FunctionFactory`, so an executable UDF can carry the same name.
-        if (top_k_column && *top_k_column == top_k_filter_info->column_name
+        /// Undo only the optimizer's own threshold filter: the name is not reserved, so a user function
+        /// can carry it, and the stamp is also set by the skip-index half alone. `where_clause` is false
+        /// exactly when the top-k pass saw no user filter below the limit, so none can be matched here.
+        if (top_k_column && !top_k_filter_info->where_clause
+            && *top_k_column == top_k_filter_info->column_name
             && *top_k_column == result_sort_description.front().column_name)
         {
             /// A prewhere moves its own DAG's outputs to the front of the header, so reading the
