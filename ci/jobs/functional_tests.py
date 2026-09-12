@@ -1025,13 +1025,38 @@ def main():
             if not (CH.start_seaweedfs(test_type="stateless") and CH.start_azurite()):
                 print("SETUP FAILURE: seaweedfs/azurite did not start")
                 return False
-            if not CH.start():
-                print("SETUP FAILURE: clickhouse-server process did not start")
-                return False
-            if not CH.wait_ready():
-                # wait_ready() already tails the server err log to stdout on
-                # timeout; the marker just names the sub-step for triage.
-                print("SETUP FAILURE: clickhouse-server not ready (wait_ready)")
+            # Only the initial setup boot is retried; the per-build-type
+            # binary-swap boot below stays fail-closed.
+            boot_attempts = 3
+            booted = False
+            for boot_attempt in range(boot_attempts):
+                if not CH.start():
+                    setup_failure = "clickhouse-server process did not start"
+                elif not CH.wait_ready():
+                    # wait_ready() already tails the server err log to stdout on
+                    # timeout; the marker just names the sub-step for triage.
+                    setup_failure = "clickhouse-server not ready (wait_ready)"
+                else:
+                    booted = True
+                    break
+                # Only a boot no tracked replica survived is retried. While one is
+                # still up, the next attempt would wipe the run directory it is
+                # using, so this fails with `wait_ready`'s diagnostics instead.
+                if any(
+                    p is not None and p.poll() is None
+                    for p in (CH.proc, CH.proc_1, CH.proc_2)
+                ):
+                    break
+                if boot_attempt + 1 < boot_attempts:
+                    print(
+                        f"SETUP WARNING: {setup_failure} "
+                        f"(attempt {boot_attempt + 1}/{boot_attempts}); restarting"
+                    )
+                    CH.stop_server()
+                    CH.clean_logs()
+                    Utils.sleep(5)
+            if not booted:
+                print(f"SETUP FAILURE: {setup_failure}")
                 return False
 
             if not CH.start_kafka():
