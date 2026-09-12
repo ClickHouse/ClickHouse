@@ -309,6 +309,7 @@ public:
     bool trivial() const noexcept; /// If actions has no functions or array join.
     void assertDeterministic() const; /// Throw if not isDeterministic.
     bool hasNonDeterministic() const;
+    bool isSuitableForConstantFolding() const;
     /// A computed node reuses an input's name (`CAST(x, ...) AS x`). Names then can't identify carriers.
     bool hasInputNameShadowedByComputedNode() const;
 

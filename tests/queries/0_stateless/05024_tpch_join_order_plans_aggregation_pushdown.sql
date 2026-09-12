@@ -116,10 +116,10 @@ SET max_rows_to_group_by = 0;
 -- the worker tasks and filter at the reads. `rewrite_in_to_join` stays off; the explicit
 -- rewrite is covered by 04653 and by the per-query variants below.
 SET rewrite_in_to_join = 0;
--- Without this, index analysis builds the `IN` sets during planning from the single synthetic
--- row per table; an empty set prunes the reads to zero ranges and collapses the plan to one
--- node, so the asserted shape would depend on the fake data instead of the hints.
+-- Do not let `IN` sets built from the synthetic rows collapse reads to empty ranges; the
+-- asserted plan must depend on the injected hints instead of the fake data.
 SET use_index_for_in_with_subqueries = 0;
+SET enable_early_constant_folding = 0;
 SET correlated_subqueries_use_in_memory_buffer = 0;
 SET allow_experimental_correlated_subqueries = 1;
 -- The CI test profile sets non-zero max_rows_in_join/max_bytes_in_join, which alters the
