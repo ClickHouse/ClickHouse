@@ -91,11 +91,12 @@ INSERT INTO t_qcc_json SELECT number, '{"d":1000}' FROM numbers(1000000);
 -- An unquoted JSON number extracted into `DateTime64(3)` is a Unix timestamp in seconds by default (1000 seconds)
 -- and the raw scaled value with `input_format_read_datetime_number_as_raw_value` (1000 ticks = one second), so the
 -- condition matches no row under the first value and every row under the second one. The result type is
--- `DateTime64(3)` either way.
+-- `DateTime64(3)` either way. The literal is pinned to `UTC` because the test harness randomizes
+-- `session_timezone` over time zones that are deliberately ill-defined around 1970.
 SYSTEM DROP QUERY CONDITION CACHE;
-SELECT count() FROM t_qcc_json WHERE JSONExtract(j, 'd', 'DateTime64(3)') = toDateTime64('1970-01-01 00:00:01', 3) SETTINGS input_format_read_datetime_number_as_raw_value = 0;
-SELECT count() FROM t_qcc_json WHERE JSONExtract(j, 'd', 'DateTime64(3)') = toDateTime64('1970-01-01 00:00:01', 3) SETTINGS input_format_read_datetime_number_as_raw_value = 1;
-SELECT count() FROM t_qcc_json WHERE JSONExtract(j, 'd', 'DateTime64(3)') = toDateTime64('1970-01-01 00:00:01', 3) SETTINGS use_query_condition_cache = 0, input_format_read_datetime_number_as_raw_value = 1;
+SELECT count() FROM t_qcc_json WHERE JSONExtract(j, 'd', 'DateTime64(3)') = toDateTime64('1970-01-01 00:00:01', 3, 'UTC') SETTINGS input_format_read_datetime_number_as_raw_value = 0;
+SELECT count() FROM t_qcc_json WHERE JSONExtract(j, 'd', 'DateTime64(3)') = toDateTime64('1970-01-01 00:00:01', 3, 'UTC') SETTINGS input_format_read_datetime_number_as_raw_value = 1;
+SELECT count() FROM t_qcc_json WHERE JSONExtract(j, 'd', 'DateTime64(3)') = toDateTime64('1970-01-01 00:00:01', 3, 'UTC') SETTINGS use_query_condition_cache = 0, input_format_read_datetime_number_as_raw_value = 1;
 
 DROP TABLE t_qcc_json;
 
