@@ -114,6 +114,16 @@
           "products/cloud/api-reference/backup/backup-bucket-update",
           "products/cloud/api-reference/backup/backup-bucket-delete"
         ]
+      },
+      {
+        "group": "Query API endpoints",
+        "pages": [
+          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-create",
+          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-list",
+          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-delete",
+          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-get",
+          "products/cloud/api-reference/query-api-endpoints/query-api-endpoint-update"
+        ]
       }
     ]
   },

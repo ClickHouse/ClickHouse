@@ -5,7 +5,7 @@
     "version": "1.0",
     "contact": {
       "name": "ClickHouse Support",
-      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1108675",
+      "url": "https://clickhouse.com/docs/en/cloud/manage/openapi?referrer=openapi-1108755",
       "email": "support@clickhouse.com"
     }
   },
@@ -55,6 +55,9 @@
     },
     {
       "name": "UDF"
+    },
+    {
+      "name": "Query API endpoints"
     }
   ],
   "paths": {
@@ -16535,6 +16538,1251 @@
         "x-mint": {
           "content": "Update mutable fields for an existing reverse private endpoint. customPrivateDnsMappings is a full replacement list. Use an empty array to clear mappings."
         }
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints": {
+      "post": {
+        "operationId": "queryApiEndpointCreate",
+        "summary": "Create a Query API endpoint",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Creates a Query API endpoint.",
+        "tags": [
+          "Query API endpoints"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "schema": {
+              "description": "ID of the requested organization.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested organization."
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "schema": {
+              "description": "ID of the requested service.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested service."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicQueryApiEndpointRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "The Query API endpoint was created.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 201,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/PublicQueryApiEndpoint"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "requestId",
+                    "result"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 400,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request is forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 403,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 404,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 500,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "get": {
+        "operationId": "queryApiEndpointList",
+        "summary": "List Query API endpoints",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns all active Query API endpoints for the service.",
+        "tags": [
+          "Query API endpoints"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "schema": {
+              "description": "ID of the requested organization.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested organization."
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "schema": {
+              "description": "ID of the requested service.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested service."
+          },
+          {
+            "in": "query",
+            "name": "cursor",
+            "schema": {
+              "description": "Cursor returned in `pagination.nextCursor` from the previous page.",
+              "type": "string"
+            },
+            "description": "Cursor returned in `pagination.nextCursor` from the previous page."
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "schema": {
+              "description": "Maximum number of records to return per page. Defaults to 100. Maximum is 100.",
+              "default": 100,
+              "type": "integer",
+              "exclusiveMinimum": 0,
+              "maximum": 100
+            },
+            "description": "Maximum number of records to return per page. Defaults to 100. Maximum is 100."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 200,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/QueryApiEndpointListResponse"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "requestId",
+                    "result"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 400,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request is forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 403,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Service not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 404,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 500,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      }
+    },
+    "/v1/organizations/{organizationId}/services/{serviceId}/query-api-endpoints/{endpointId}": {
+      "delete": {
+        "operationId": "queryApiEndpointDelete",
+        "summary": "Delete a Query API endpoint",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Deletes a Query API endpoint.",
+        "tags": [
+          "Query API endpoints"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "schema": {
+              "description": "ID of the requested organization.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested organization."
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "schema": {
+              "description": "ID of the requested service.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested service."
+          },
+          {
+            "in": "path",
+            "name": "endpointId",
+            "schema": {
+              "description": "ID of the requested Query API endpoint.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested Query API endpoint."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The Query API endpoint was deleted.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 200,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Error message.",
+                      "type": "string"
+                    },
+                    "issues": {
+                      "description": "Validation issues that caused the request to be rejected.",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "description": "Path to the invalid field.",
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            }
+                          },
+                          "code": {
+                            "description": "Validation issue code.",
+                            "type": "string"
+                          },
+                          "message": {
+                            "description": "Human-readable description of the issue.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "code",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 400,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request is forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 403,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Query API endpoint not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 404,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Query API endpoint can not be managed via this API.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 409,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 500,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "get": {
+        "operationId": "queryApiEndpointGet",
+        "summary": "Get a Query API endpoint",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Returns a Query API endpoint.",
+        "tags": [
+          "Query API endpoints"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "schema": {
+              "description": "ID of the requested organization.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested organization."
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "schema": {
+              "description": "ID of the requested service.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested service."
+          },
+          {
+            "in": "path",
+            "name": "endpointId",
+            "schema": {
+              "description": "ID of the requested Query API endpoint.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested Query API endpoint."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful response.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 200,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/PublicQueryApiEndpoint"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "requestId",
+                    "result"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error. Please verify your request parameters and try again.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Error message.",
+                      "type": "string"
+                    },
+                    "issues": {
+                      "description": "Validation issues that caused the request to be rejected.",
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "path": {
+                            "description": "Path to the invalid field.",
+                            "type": "array",
+                            "items": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                }
+                              ]
+                            }
+                          },
+                          "code": {
+                            "description": "Validation issue code.",
+                            "type": "string"
+                          },
+                          "message": {
+                            "description": "Human-readable description of the issue.",
+                            "type": "string"
+                          }
+                        },
+                        "required": [
+                          "path",
+                          "code",
+                          "message"
+                        ],
+                        "additionalProperties": false
+                      }
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 400,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request is forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 403,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Query API endpoint not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 404,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 500,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
+      },
+      "put": {
+        "operationId": "queryApiEndpointUpdate",
+        "summary": "Update a Query API endpoint",
+        "description": "**Disclaimer:** This beta endpoint is evolving; the API contract may change. <br /><br /> Updates a Query API endpoint.",
+        "tags": [
+          "Query API endpoints"
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "organizationId",
+            "schema": {
+              "description": "ID of the requested organization.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested organization."
+          },
+          {
+            "in": "path",
+            "name": "serviceId",
+            "schema": {
+              "description": "ID of the requested service.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested service."
+          },
+          {
+            "in": "path",
+            "name": "endpointId",
+            "schema": {
+              "description": "ID of the requested Query API endpoint.",
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            },
+            "required": true,
+            "description": "ID of the requested Query API endpoint."
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PublicQueryApiEndpointRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The Query API endpoint was updated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 200,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    },
+                    "result": {
+                      "$ref": "#/components/schemas/PublicQueryApiEndpoint"
+                    }
+                  },
+                  "required": [
+                    "status",
+                    "requestId",
+                    "result"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The request cannot be processed due to a client error.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 400,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "The request is forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 403,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Query API endpoint not found.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 404,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Query API endpoint can not be managed via this API.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Human-readable error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 409,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "An internal server error has occurred. If this issue persists, please contact ClickHouse Cloud support for assistance.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "error": {
+                      "description": "Error message.",
+                      "type": "string"
+                    },
+                    "status": {
+                      "description": "HTTP status code.",
+                      "example": 500,
+                      "type": "integer"
+                    },
+                    "requestId": {
+                      "description": "Unique id assigned to every request. UUIDv4",
+                      "type": "string",
+                      "format": "uuid",
+                      "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+                    }
+                  },
+                  "required": [
+                    "error",
+                    "status",
+                    "requestId"
+                  ],
+                  "additionalProperties": {}
+                }
+              }
+            }
+          }
+        },
+        "x-badges": [
+          {
+            "name": "Beta",
+            "position": "after"
+          }
+        ]
       }
     },
     "/v1/organizations/{organizationId}/udfs/{functionName}/attachments/{serviceId}": {
@@ -34968,6 +36216,73 @@
           }
         }
       },
+      "PublicQueryApiEndpointRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "description": "Name of the Query API endpoint.",
+            "type": "string",
+            "minLength": 1,
+            "pattern": "\\S"
+          },
+          "sql": {
+            "description": "SQL executed by the endpoint.",
+            "type": "string",
+            "maxLength": 4194304,
+            "pattern": "\\S"
+          },
+          "database": {
+            "description": "Database used by the Query API endpoint.",
+            "type": "string",
+            "pattern": "\\S"
+          },
+          "parameters": {
+            "description": "Default query parameters.",
+            "default": {},
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "apiKeyIds": {
+            "description": "API key IDs allowed to call the endpoint.",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            }
+          },
+          "roles": {
+            "description": "Database roles used by the endpoint.",
+            "minItems": 1,
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "allowedOrigins": {
+            "description": "Origins allowed by the endpoint CORS policy.",
+            "default": [],
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "name",
+          "sql",
+          "database",
+          "apiKeyIds",
+          "roles"
+        ]
+      },
       "UdfCreateRequest": {
         "oneOf": [
           {
@@ -35512,6 +36827,177 @@
         ],
         "type": "object"
       },
+      "PublicQueryApiEndpoint": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Unique ID of the Query API endpoint.",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+          },
+          "name": {
+            "description": "Name of the Query API endpoint.",
+            "type": "string"
+          },
+          "sql": {
+            "description": "SQL executed by the endpoint.",
+            "type": "string",
+            "maxLength": 4194304
+          },
+          "database": {
+            "description": "Database used by the Query API endpoint.",
+            "type": "string"
+          },
+          "parameters": {
+            "description": "Query parameters.",
+            "type": "object",
+            "propertyNames": {
+              "type": "string"
+            },
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "apiKeyIds": {
+            "description": "API key IDs allowed to call the endpoint.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            }
+          },
+          "roles": {
+            "description": "Database roles used by the endpoint.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedOrigins": {
+            "description": "Origins allowed by the endpoint CORS policy.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "url": {
+            "description": "Public URL used to execute the endpoint.",
+            "example": "https://queries.clickhouse.cloud/run/00000000-0000-0000-0000-000000000000",
+            "type": "string",
+            "format": "uri"
+          },
+          "ownerType": {
+            "description": "Owner type of the Query API endpoint. Endpoints with a user owned query cannot be updated or deleted through this API.",
+            "type": "string",
+            "enum": [
+              "user",
+              "queryApiEndpoint"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "sql",
+          "database",
+          "parameters",
+          "apiKeyIds",
+          "roles",
+          "allowedOrigins",
+          "url",
+          "ownerType"
+        ],
+        "additionalProperties": false
+      },
+      "QueryApiEndpointListResponse": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "description": "Active Query API endpoints for the service, including both owner types.",
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PublicQueryApiEndpointListItem"
+            }
+          },
+          "pagination": {
+            "$ref": "#/components/schemas/Pagination"
+          }
+        },
+        "required": [
+          "items",
+          "pagination"
+        ],
+        "additionalProperties": false
+      },
+      "PublicQueryApiEndpointListItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "description": "Unique ID of the Query API endpoint.",
+            "type": "string",
+            "format": "uuid",
+            "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+          },
+          "name": {
+            "description": "Name of the Query API endpoint.",
+            "type": "string"
+          },
+          "database": {
+            "description": "Database used by the Query API endpoint.",
+            "type": "string"
+          },
+          "apiKeyIds": {
+            "description": "API key IDs allowed to call the endpoint.",
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid",
+              "pattern": "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}|00000000-0000-0000-0000-000000000000)$"
+            }
+          },
+          "roles": {
+            "description": "Database roles used by the endpoint.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "allowedOrigins": {
+            "description": "Origins allowed by the endpoint CORS policy.",
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "url": {
+            "description": "Public URL used to execute the endpoint.",
+            "example": "https://queries.clickhouse.cloud/run/00000000-0000-0000-0000-000000000000",
+            "type": "string",
+            "format": "uri"
+          },
+          "ownerType": {
+            "description": "Owner type of the Query API endpoint. Endpoints with a user owned query cannot be updated or deleted through this API.",
+            "type": "string",
+            "enum": [
+              "user",
+              "queryApiEndpoint"
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "database",
+          "apiKeyIds",
+          "roles",
+          "allowedOrigins",
+          "url",
+          "ownerType"
+        ],
+        "additionalProperties": false
+      },
       "Pagination": {
         "type": "object",
         "properties": {
@@ -35903,7 +37389,8 @@
       "name": "Service",
       "tags": [
         "Service",
-        "Backup"
+        "Backup",
+        "Query API endpoints"
       ]
     },
     {
