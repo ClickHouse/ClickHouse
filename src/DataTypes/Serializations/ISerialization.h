@@ -483,6 +483,11 @@ public:
         bool native_format = false;
         const FormatSettings * format_settings{};
 
+        /// The caller knows exactly how many rows follow, not an upper bound, and that number comes from
+        /// data the server itself wrote. Only then may a column whose serialized form carries no length
+        /// be reconstructed from it: an untrusted count would let a tiny input ask for unbounded memory.
+        bool number_of_rows_is_exact = false;
+
         bool object_and_dynamic_read_statistics = false;
 
         /// Callback that should be called when new dynamic subcolumns are discovered during prefix deserialization.

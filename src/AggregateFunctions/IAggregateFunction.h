@@ -189,6 +189,10 @@ public:
     /// How the data structure should be aligned.
     virtual size_t alignOfData() const = 0;
 
+    /// Whether `serialize` writes no bytes at all, for every state, so that the number of states in a
+    /// column cannot be recovered from the data. It is a property of the function and never of a state.
+    virtual bool serializedStateIsEmpty() const { return false; }
+
     /** Adds a value into aggregation data on which place points to.
      *  columns points to columns containing arguments of aggregation function.
      *  row_num is number of row which should be added.
