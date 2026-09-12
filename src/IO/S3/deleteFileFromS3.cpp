@@ -28,11 +28,14 @@ void deleteFileFromS3(
     BlobStorageLogWriterPtr blob_storage_log,
     const String & local_path_for_blob_storage_log,
     size_t file_size_for_blob_storage_log,
-    std::optional<ProfileEvents::Event> profile_event)
+    std::optional<ProfileEvents::Event> profile_event,
+    const String & version_id)
 {
     S3::DeleteObjectRequest request;
     request.SetBucket(bucket);
     request.SetKey(key);
+    if (!version_id.empty())
+        request.SetVersionId(version_id);
 
     ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
     if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)

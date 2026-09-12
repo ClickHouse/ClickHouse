@@ -81,9 +81,8 @@ def put_s3_file_content(started_cluster, filename, data, bucket=None):
 
 
 def put_azure_file_content(started_cluster, filename, data, bucket=None):
-    client = started_cluster.blob_service_client.get_blob_client(
-        started_cluster.azurite_container, filename
-    )
+    bucket = started_cluster.azurite_container if bucket is None else bucket
+    client = started_cluster.blob_service_client.get_blob_client(bucket, filename)
     buf = io.BytesIO(data)
     client.upload_blob(buf, "BlockBlob", len(data))
 

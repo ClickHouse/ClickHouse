@@ -32,7 +32,9 @@ void deleteFileFromS3(
     BlobStorageLogWriterPtr blob_storage_log = nullptr,
     const String & local_path_for_blob_storage_log = {},
     size_t file_size_for_blob_storage_log = 0,
-    std::optional<ProfileEvents::Event> profile_event = std::nullopt);
+    std::optional<ProfileEvents::Event> profile_event = std::nullopt,
+    /// Deletes exactly this version instead of the key as a whole (no delete marker). Versioned buckets only.
+    const String & version_id = {});
 
 /// Deletes multiple files from S3 using batch requests when it's possible.
 void deleteFilesFromS3(
