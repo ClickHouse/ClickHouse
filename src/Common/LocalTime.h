@@ -32,13 +32,9 @@ private:
      */
     void init(time_t time, const DateLUTImpl & time_zone)
     {
-        if (time < 0)
-            is_negative = true;
+        const auto components = time_zone.toTimeComponents(static_cast<DateLUTImpl::Time>(time));
 
-        auto time_to_split = is_negative ? time * (-1) : time;
-
-        const auto components = time_zone.toTimeComponents(static_cast<DateLUTImpl::Time>(time_to_split));
-
+        is_negative = components.is_negative;
         m_hour = components.hour;
         m_minute = components.minute;
         m_second = components.second;
