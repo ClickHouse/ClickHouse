@@ -789,6 +789,45 @@ partition and not on subset.
 Possible values:
 - true, false
 )", false) \
+    DECLARE(UInt64, min_partition_age_to_force_merge_seconds, 0, R"(
+Merge parts in a partition if every part in it is older than this value, i.e.
+the partition no longer receives inserts. Unlike
+`min_age_to_force_merge_seconds` with `min_age_to_force_merge_on_partition_only`,
+the partition does not have to fit into a single merge: each merge still
+respects `max_bytes_to_merge_at_max_space_in_pool`. Works for Simple and
+StochasticSimple merge selectors.
+
+The age compared here is the age of the youngest part in the partition
+(`now - modification_time`, minimised over its parts), so the rule arms only
+once every part has aged past this value. Any new part resets it: an insert, a
+mutation, and also each merge this setting itself assigns, because the merged
+part is new. Forcing therefore disarms as soon as a forced merge lands and
+re-arms only after this value elapses again with no new parts, so a partition
+that needs several merges is compacted over successive rounds spaced by this
+interval rather than in one continuous pass.
+
+Forcing works exactly like `min_age_to_force_merge_seconds`: it waives the
+size-ratio requirement that normally keeps an unbalanced merge from being
+assigned, and it also waives the `min_parts_to_merge_at_once` floor, so a
+forced merge can cover fewer parts than that floor asks for. No other
+heuristic is turned off: `merge_selector_window_size` still bounds which parts
+are examined, and `merge_selector_enable_heuristic_to_remove_small_parts_at_right`
+still trims a trailing small part from a selected range of three parts or more.
+Either of those that a workload needs off must be turned off explicitly through
+its own setting.
+
+Under the Simple and StochasticSimple merge selectors, cannot be combined with
+`min_age_to_force_merge_seconds` together with
+`min_age_to_force_merge_on_partition_only`. That pair merges a whole partition
+at once, and only such a merge is marked final, which is what lets a
+`ReplacingMergeTree` run `CLEANUP`; forcing regular merges by partition age
+would pre-empt it. Use the pair for partitions that fit into a single merge and
+this setting for the ones that do not. Other selectors ignore this setting, so
+the combination is accepted with them.
+
+Possible values:
+- Positive integer.
+)", 0) \
     DECLARE(Bool, enable_max_bytes_limit_for_min_age_to_force_merge, true, R"(
 If settings `min_age_to_force_merge_seconds` and
 `min_age_to_force_merge_on_partition_only` should respect setting
@@ -957,9 +996,9 @@ If the number of inactive parts in a single partition in the table exceeds
 the `inactive_parts_to_delay_insert` value, an `INSERT` is artificially
 slowed down.
 
-:::tip
+<Tip>
 It is useful when a server fails to clean up parts quickly enough.
-:::
+</Tip>
 
 Possible values:
 - Any positive integer.
@@ -1004,9 +1043,9 @@ If the number of blobs pending removal in the dead blobs queues of the table's d
 The dead blobs queue belongs to the disk and is shared by all tables on it (including blobs of already
 dropped tables), so size the threshold for the whole disk rather than a single table.
 
-:::tip
+<Tip>
 It is useful when a server fails to clean up blobs quickly enough.
-:::
+</Tip>
 
 Possible values:
 - Any positive integer.
@@ -1246,11 +1285,11 @@ insert is not executed. Note that this setting:
 Possible values:
 - Any positive integer.
 
-:::note
+<Note>
 If both `min_free_disk_bytes_to_perform_insert` and `min_free_disk_ratio_to_perform_insert`
 are specified, ClickHouse will count on the value that will allow to perform
 inserts on a bigger amount of free memory.
-:::
+</Note>
 )", 0) \
     DECLARE(Float, min_free_disk_ratio_to_perform_insert, 0.0, R"(
 The minimum free to total disk space ratio to perform an `INSERT`. Must be a
@@ -1394,13 +1433,13 @@ Possible values:
 When this setting has a value greater than zero only a single replica starts
 the merge immediately if merged part on shared storage.
 
-:::note
+<Note>
 Zero-copy replication is not ready for production
 Zero-copy replication is disabled by default in ClickHouse version 22.8 and
 higher.
 
 This feature is not recommended for production use.
-:::
+</Note>
 
 Possible values:
 - Any positive integer.
@@ -2003,9 +2042,9 @@ Default value: `0` (no limit).
 The minimal number of marks read by the query for applying the [max_concurrent_queries](#max_concurrent_queries)
 setting.
 
-:::note
+<Note>
 Queries will still be limited by other `max_concurrent_queries` settings.
-:::
+</Note>
 
 Possible values:
 - Positive integer.
@@ -2244,9 +2283,9 @@ Run zero-copy in compatible mode during conversion process.
 Force read-through filesystem cache for merges
 )", EXPERIMENTAL) \
     DECLARE(Bool, cache_populated_by_fetch, false, R"(
-:::note
+<Note>
 This setting applies only to ClickHouse Cloud.
-:::
+</Note>
 
 When `cache_populated_by_fetch` is disabled (the default setting), new data
 parts are loaded into the filesystem cache only when a query is run that requires
@@ -2263,9 +2302,9 @@ to trigger such an action.
 - [cache_warmer_threads](/reference/settings/session-settings/other#cache_warmer_threads)
 )", 0) \
     DECLARE(String, cache_populated_by_fetch_filename_regexp, "", R"(
-:::note
+<Note>
 This setting applies only to ClickHouse Cloud.
-:::
+</Note>
 
 If not empty, only files that match this regex will be prewarmed into the cache after fetch (if `cache_populated_by_fetch` is enabled).
 )", 0) \
@@ -2688,6 +2727,25 @@ void MergeTreeSettingsImpl::sanityCheck(size_t background_pool_tasks, bool backg
             background_pool_tasks);
     }
 
+    /// Only the Simple and StochasticSimple selectors read min_partition_age_to_force_merge_seconds,
+    /// so only they can pre-empt the whole-partition (final) merge with a regular one.
+    const auto merge_selector_algorithm = (*this)[MergeTreeSetting::merge_selector_algorithm].value;
+    if ((*this)[MergeTreeSetting::min_partition_age_to_force_merge_seconds]
+        && (*this)[MergeTreeSetting::min_age_to_force_merge_on_partition_only]
+        && (*this)[MergeTreeSetting::min_age_to_force_merge_seconds]
+        && (merge_selector_algorithm == MergeSelectorAlgorithm::SIMPLE
+            || merge_selector_algorithm == MergeSelectorAlgorithm::STOCHASTIC_SIMPLE))
+    {
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "Setting 'min_partition_age_to_force_merge_seconds' cannot be combined with "
+            "'min_age_to_force_merge_seconds' + 'min_age_to_force_merge_on_partition_only' under the Simple or "
+            "StochasticSimple merge selector: the latter merges a whole partition at once, and only that merge is "
+            "marked final, which is what enables ReplacingMergeTree cleanup. Use one of the two mechanisms: "
+            "'min_age_to_force_merge_on_partition_only' for partitions that fit into a single merge, "
+            "'min_partition_age_to_force_merge_seconds' for partitions that do not.");
+    }
+
     // Zero index_granularity is nonsensical.
     if ((*this)[MergeTreeSetting::index_granularity] < 1)
     {
@@ -3074,8 +3132,8 @@ void MergeTreeSettings::dumpToSystemMergeTreeSettingsColumns(MutableColumnsAndCo
         const auto & setting_name = setting.getName();
         size_t col = 0;
         res_columns[col++]->insert(setting_name);
-        res_columns[col++]->insert(setting.getValueString());
-        res_columns[col++]->insert(setting.getDefaultValueString());
+        res_columns[col++]->insert(setting.getValueString(/* show_secrets */ true));
+        res_columns[col++]->insert(setting.getDefaultValueString(/* show_secrets */ true));
         res_columns[col++]->insert(setting.isValueChanged());
         res_columns[col++]->insert(setting.getDescription());
         Field min;

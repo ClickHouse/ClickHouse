@@ -91,6 +91,7 @@
 #include <Databases/DatabaseOnDisk.h>
 #include <Databases/DatabaseOrdinary.h>
 #include <Databases/TablesLoader.h>
+#include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
@@ -99,6 +100,7 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -838,9 +840,68 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
 }
 
 
+namespace
+{
+
+/// A table function whose storage is chosen by the current user's grants cannot be persisted at any
+/// nesting depth: the outermost one is refused through `canBeUsedToCreateTable`, but the same
+/// function nested in an argument of another table function, e.g. `remote(..., viewIfPermitted(...))`
+/// or `remote(..., loop(viewIfPermitted(...)))`, would be persisted along with it and later resolved
+/// on a local shard under the connection's credentials instead of the reader's grants, disclosing
+/// the guarded structure or data. The same carrier exists in a table engine definition: the `Remote`
+/// and `RemoteSecure` engines store a table function target in `remote_table_function_ptr`, so the
+/// veto is applied to the engine arguments as well.
+void throwIfNestedTableFunctionDependsOnCurrentUserGrants(const ASTPtr & ast, const ContextPtr & context)
+{
+    for (const auto & child : ast->children)
+    {
+        if (const auto * function = child->as<ASTFunction>())
+        {
+            if (const auto nested_table_function = TableFunctionFactory::instance().tryGet(function->name, context);
+                nested_table_function && nested_table_function->dependsOnCurrentUserGrants())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table function '{}' cannot be used to create a table, neither directly nor nested in another table "
+                    "function or in a table engine argument",
+                    function->name);
+            }
+        }
+        throwIfNestedTableFunctionDependsOnCurrentUserGrants(child, context);
+    }
+}
+
+/// The veto for `CREATE TABLE ... AS f(...)` over a table function `f`. It has to run before the table function is
+/// resolved in any way: without a column list the structure is inferred from the function, and that
+/// resolution has side effects of its own (`remote(...)` connects to the shards, an `ELSE` arm of
+/// `viewIfPermitted` is analyzed), which would otherwise turn a deterministic `BAD_ARGUMENTS` into
+/// a connection error, or happen at all for a definition that is refused anyway.
+void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function_ast, const ITableFunction & table_function, const ContextPtr & context)
+{
+    if (!table_function.canBeUsedToCreateTable())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function.getName());
+
+    throwIfNestedTableFunctionDependsOnCurrentUserGrants(table_function_ast, context);
+}
+
+}
+
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
+    /// CLONE AS only makes sense with a source table: the partition-attach step performed after table
+    /// creation needs real partitions to copy. Reject CLONE AS SELECT / CLONE AS table_function for a
+    /// fresh CREATE and for a user-supplied full ATTACH definition (an ATTACH that carries an explicit
+    /// schema, so `attach_short_syntax` is false and it goes through the create-like path). Short ATTACH
+    /// (`ATTACH TABLE t;`) and SECONDARY_CREATE (`DatabaseReplicated` internal queries, `RESTORE`) stay
+    /// permissive so previously-validated metadata that persisted these forms still loads. Server startup
+    /// does not reach this function (tables are loaded via `createTableFromAST`), so it is unaffected.
+    const bool is_fresh_create = mode <= LoadingStrictnessLevel::CREATE;
+    const bool is_full_user_attach = mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax;
+    if ((is_fresh_create || is_full_user_attach) && create.is_clone_as && create.as_table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "CLONE AS requires a source table name, not a SELECT query or table function");
+
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
 
@@ -1114,6 +1175,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
         /// Table function without columns list.
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
+        throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
         properties.columns = table_function->getActualTableStructureWithAccess(getContext(), /*is_insert_query*/ true);
     }
     else if (create.is_dictionary)
@@ -1573,10 +1635,16 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 return;
             }
         }
+        else if (as_create.is_time_series_table)
+        {
+            /// Only the engine is inherited here: the settings and the inner tables are copied by normalizeTimeSeriesDefinition.
+            storage_def = make_intrusive<ASTStorage>();
+            storage_def->set(storage_def->engine, as_create.storage->engine->clone());
+            create.is_time_series_table = true;
+        }
         else if (as_create.storage)
         {
             storage_def = boost::static_pointer_cast<ASTStorage>(as_create.storage->ptr());
-            create.is_time_series_table = as_create.is_time_series_table;
         }
         else
         {
@@ -1887,6 +1955,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types
         getContext()->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
     }
+
+    /// Both a definition supplied to this interpreter directly (RESTORE re-parses one from a backup)
+    /// and one the branch above re-parsed from stored metadata arrive un-normalized: parsing fills
+    /// only `list_of_modes`, and the analyzer rejects `union_mode == UNION_DEFAULT`.
+    normalizeSetOperations(query_ptr, getContext());
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
     if (!create.attach_short_syntax && create.attach_as_replicated.has_value())
@@ -2519,8 +2592,10 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
         auto table_function_ast = create.as_table_function->ptr();
         auto table_function = TableFunctionFactory::instance().get(table_function_ast, getContext());
 
-        if (!table_function->canBeUsedToCreateTable())
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function '{}' cannot be used to create a table", table_function->getName());
+        /// Already checked in `getTablePropertiesAndNormalizeCreateQuery` when the structure was inferred
+        /// from the function; a definition with an explicit column list skips that inference and is
+        /// checked here.
+        throwIfTableFunctionCannotBeUsedToCreateTable(table_function_ast, *table_function, getContext());
 
         /// In case of CREATE AS table_function() query we should use global context
         /// in storage creation because there will be no query context on server startup
@@ -2535,6 +2610,14 @@ bool InterpreterCreateQuery::doCreateTable(ASTCreateQuery & create,
     }
     else
     {
+        /// A table engine can carry a table function target of its own: `ENGINE = Remote(..., f(...))`
+        /// stores `f` in `remote_table_function_ptr` and resolves it later, so the same veto that the
+        /// `AS <table function>` path applies must hold here. Definitions loaded back from metadata
+        /// that was already validated when the table was created are not re-checked, so a table that
+        /// predates this check still attaches instead of disappearing on server startup.
+        if (create.storage && create.storage->engine && !isLoadingFromExistingMetadata(mode) && !create.attach_short_syntax)
+            throwIfNestedTableFunctionDependsOnCurrentUserGrants(create.storage->engine->ptr(), getContext());
+
         res = StorageFactory::instance().get(create,
             data_path,
             getContext(),
@@ -3520,8 +3603,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// With an old DDL entry format the query is shipped un-normalized, so hosts running different releases
     /// of ClickHouse would pin different latest versions. Pin the initiator's one here, like the UUIDs above.
-    /// A query with an AS clause is left alone: the hosts take the settings, including the version, from the other table.
-    if (create.is_time_series_table && create.as_table.empty() && !hasExplicitTimeSeriesSettingVersion(create))
+    if (create.is_time_series_table && !hasExplicitTimeSeriesSettingVersion(create))
         setTimeSeriesSettingVersion(create, TimeSeriesVersion::LATEST);
 
     /// For cross-replication cluster we cannot use UUID in replica path.

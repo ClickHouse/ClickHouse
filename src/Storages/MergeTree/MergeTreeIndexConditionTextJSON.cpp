@@ -847,7 +847,7 @@ bool MergeTreeIndexConditionText::traverseJSONPathValuesFunction(
 std::optional<MergeTreeIndexConditionText::JSONPathValuesNodeInfo>
 MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode & node) const
 {
-    if (!json_path_values_configuration)
+    if (!json_path_values_configuration || columns_shadowing_map_subcolumns.contains(node.getColumnName()))
         return std::nullopt;
 
     const auto & object_type = assert_cast<const DataTypeObject &>(*json_path_values_configuration->json_type);
@@ -895,7 +895,7 @@ MergeTreeIndexConditionText::tryMatchJSONPathValuesNode(const RPNBuilderTreeNode
         }
     }
 
-    if (auto map_subcolumn = tryParseMapSubcolumnName(node.getColumnName()))
+    if (auto map_subcolumn = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns))
     {
         auto & [map_column_name, serialized_key] = *map_subcolumn;
         if (auto info = make_map_element_info(map_column_name, std::move(serialized_key)))
