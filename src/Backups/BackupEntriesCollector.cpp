@@ -571,7 +571,7 @@ void BackupEntriesCollector::gatherTablesMetadata()
             /// Record REPLACE targets of refreshable materialized views from the create query, not
             /// the storage object: for Replicated/Shared databases `getTablesForBackup` resolves it
             /// from a ZooKeeper snapshot and may return null if not yet created on this replica.
-            if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->append
+            if (create.is_materialized_view && create.refresh_strategy && !create.refresh_strategy->isAppend()
                 && create.hasTargetTableID(ViewTarget::To))
             {
                 StorageID target_id = create.getTargetTableID(ViewTarget::To);
