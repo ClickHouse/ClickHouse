@@ -149,7 +149,13 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "File format can't be empty for hive style partitioning");
         }
 
-        const auto partition_key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), {}, context);
+        /// Do not canonicalize the key type here. Object-storage partitioning stores the partition value as a
+        /// string in the file path (produced by getPartitionExpressionActions with this same context) and reads
+        /// it back by parsing the path, so there is no persisted binary key file whose type must be pinned. The
+        /// stored partition_key_description type must therefore match the type getPartitionExpressionActions
+        /// actually produces under this context; canonicalizing only the stored side would diverge the recorded
+        /// key type from the directory names written for a type-affecting session setting.
+        const auto partition_key_description = KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), {}, context, /*additional_columns=*/{}, /*canonicalize_key_types=*/false);
 
         for (const auto & partition_expression_column : partition_key_description.sample_block)
         {
@@ -205,8 +211,11 @@ namespace
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Partition strategy {} can not be used with partition_columns_in_data_file=0", "wildcard");
         }
 
+        /// See createHivePartitionStrategy: the partition value is produced/consumed via this context (not a
+        /// persisted binary key file), so keep the key type in sync with getPartitionExpressionActions rather
+        /// than canonicalizing only the stored side.
         return std::make_shared<WildcardPartitionStrategy>(
-            KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), {}, context),
+            KeyDescription::getKeyFromAST(partition_by, ColumnsDescription::fromNamesAndTypes(sample_block.getNamesAndTypes()), {}, context, /*additional_columns=*/{}, /*canonicalize_key_types=*/false),
             sample_block,
             context);
     }
