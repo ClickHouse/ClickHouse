@@ -623,6 +623,7 @@ void MergeTreeReaderWide::readData(
     /// Only the columns whose data files are partly there (see `addStreams`) are refilled by
     /// `IMergeTreeReader::fillMissingColumns`; any other column has to be read in full.
     deserialize_settings.partially_read_columns_are_refilled = partially_read_columns.contains(name_and_type.name);
+    deserialize_settings.number_of_rows_is_exact = true;
 
     deserializePrefix(serialization, name_and_type, from_mark, deserialize_binary_bulk_state_map, cache, deserialize_states_cache, {});
 

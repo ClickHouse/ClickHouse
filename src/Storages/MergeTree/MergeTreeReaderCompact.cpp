@@ -232,6 +232,7 @@ void MergeTreeReaderCompact::readData(
         /// `findColumnForOffsets`) are refilled by `IMergeTreeReader::fillMissingColumns`; any
         /// other column has to be read in full.
         deserialize_settings.partially_read_columns_are_refilled = partially_read_columns.contains(name);
+        deserialize_settings.number_of_rows_is_exact = true;
         deserialize_settings.get_avg_value_size_hint_callback
             = [&](const ISerialization::SubstreamPath & substream_path) -> double
         {
