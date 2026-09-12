@@ -390,6 +390,15 @@ protected:
         bool prune_typed_paths,
         size_t & array_level);
 
+    /// "sizeN" counts `Array` wrappers from the root of the column, so the array sizes get a
+    /// different number once the name is resolved against the type of a dynamically typed value
+    /// alone, which is what a serialization keeping the name does later: the inner sizes of an
+    /// element of type `Array(Array(Int64))` are "size2" below one wrapper and "size1" there. No
+    /// other name depends on the level, hence `resolved_path` rather than the name alone.
+    static String getSubcolumnNameForZeroArrayLevel(
+        std::string_view subcolumn_name,
+        const SubstreamPath & resolved_path);
+
     virtual std::unique_ptr<SubcolumnInfo> getDynamicSubcolumnInfo(
         std::string_view subcolumn_name,
         const SubstreamData & data,
