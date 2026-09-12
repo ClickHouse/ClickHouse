@@ -6047,15 +6047,15 @@ ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstim
 
     const RangesInDataParts & parts = analyzed_result ? analyzed_result->parts_with_ranges : getParts();
 
-    /// `PREWHERE` can request statistics before range analysis. Reuse the partition
-    /// condition built by `applyFilters`, without performing or memoizing a full read
-    /// analysis while the plan is still being optimized.
-    if (!analyzed_result && indexes && indexes->partition_pruner && !indexes->partition_pruner->isUseless())
+    /// Use the execution path's min-max-before-partition order: min-max pruning can
+    /// exclude parts on which partition expressions would throw.
+    if (!analyzed_result && indexes)
     {
-        RangesInDataParts pruned_parts;
-        for (const auto & part : parts)
-            if (!indexes->partition_pruner->canBePruned(*part.data_part))
-                pruned_parts.push_back(part);
+        IndexStats unused_stats;
+        auto pruned_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
+            parts, indexes->partition_pruner, indexes->minmax_idx_condition,
+            indexes->part_values, getStorageMetadata(), data, getContext(),
+            max_block_numbers_to_read.get(), getLogger("ReadFromMergeTree"), unused_stats);
         return data.getConditionSelectivityEstimator(pruned_parts, required_columns, getContext());
     }
 
