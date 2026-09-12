@@ -42,6 +42,12 @@ public:
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & /*metadata_snapshot*/, ContextPtr context, bool async_insert) override;
 
     std::string getName() const override;
+
+    /// `StorageXDBC` (ODBC/JDBC) extends `IStorageURLBase`, but its read path POSTs a query to the
+    /// `clickhouse-odbc-bridge`/`-jdbc-bridge` rather than reading the `uri` directly. The base
+    /// `getModificationHash` probes that bridge endpoint's `ETag`, which is unrelated to the external
+    /// table's data, so it must not be used to validate consistency. Fail closed.
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & /*storage_snapshot*/, ContextPtr /*context*/) const override { return {}; }
 private:
     BridgeHelperPtr bridge_helper;
     std::string remote_database_name;

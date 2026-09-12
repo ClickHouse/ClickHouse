@@ -59,6 +59,9 @@ void ASTRefreshStrategy::formatImpl(
         }
     }
 
+    if (if_changed)
+        ostr << " IF CHANGED";
+
     if (spread)
     {
         ostr << " RANDOMIZE FOR ";
@@ -87,6 +90,8 @@ void ASTRefreshStrategy::writeJSON(WriteBuffer & out) const
     w.writeChild("spread", spread);
     w.writeChild("settings", settings);
     w.writeChild("dependencies", dependencies);
+    if (if_changed)
+        w.writeBool("if_changed", true);
     if (append)
         w.writeBool("append", true);
 }
@@ -126,6 +131,7 @@ void ASTRefreshStrategy::readJSON(const Poco::JSON::Object & json)
                     "`RefreshStrategy` 'dependencies' must contain only table identifiers during AST JSON deserialization");
         set(dependencies, dependencies_child);
     }
+    if_changed = r.getBool("if_changed");
     append = r.getBool("append");
 
     /// Mirror `ParserRefreshStrategy`'s schedule-shape invariants. `REFRESH EVERY <interval>` always

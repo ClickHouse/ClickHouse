@@ -1,4 +1,5 @@
 #include <thread>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageMaterializedView.h>
 
 #include <Storages/ColumnDefault.h>
@@ -44,7 +45,10 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <QueryPipeline/Pipe.h>
+#include <Interpreters/Cache/QueryResultCache.h>
 #include <Common/checkStackSize.h>
+#include <Common/SipHash.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/typeid_cast.h>
 #include <Common/randomSeed.h>
 #include <Core/UUID.h>
@@ -970,6 +974,66 @@ StoragePtr StorageMaterializedView::tryGetTargetTable() const
 {
     checkStackSize();
     return DatabaseCatalog::instance().tryGetTable(getTargetTableId(), getContext());
+}
+
+std::optional<UInt128> StorageMaterializedView::getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const
+{
+    /// Reading a materialized view reads its target table, so its modification hash is derived from the
+    /// target's. The target can itself be a view-like storage, so guard against a cycle the same way
+    /// `StorageView`, `Merge` and `Distributed` do: fail closed on re-entry on this thread.
+    static thread_local std::unordered_set<const IStorage *> views_being_hashed;
+    if (!views_being_hashed.insert(this).second)
+        return {};
+    SCOPE_EXIT({ views_being_hashed.erase(this); });
+
+    /// Without a table UUID (a materialized view in an `Ordinary` database) we cannot distinguish
+    /// incarnations of a same-named view: a DROP + CREATE resets the per-lifetime metadata version
+    /// folded below, so a definition change that keeps the same columns and target (e.g. a security
+    /// change) could repeat an earlier hash. Fail closed, matching `StorageView` and the other engines.
+    if (!getStorageID().hasUUID())
+        return {};
+
+    try
+    {
+        /// `readImpl` reads the target table under `getSQLSecurityOverriddenContext`, so sample it under the
+        /// same context: for `SQL SECURITY DEFINER` / `NONE` it is the effective reader's grants that the
+        /// read is allowed by, so those are the grants the check below has to use. Reading a materialized
+        /// view pushes the read straight into the target storage and applies no `SELECT` row policy of the
+        /// target at all - neither the definer's nor the caller's - so unlike `StorageView` no row-policy
+        /// change can move the result here; failing closed on the effective reader's policy (which
+        /// `computeTableModificationHashForConsistency` does) is merely conservative. See
+        /// `StorageView::getModificationHash` for the rest of the reasoning. Unlike `system.tables`, this
+        /// query-consistency path must use the effective reader context because it describes the rows read.
+        auto effective_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(query_context);
+
+        /// `computeTableModificationHashForConsistency` checks the effective reader's `SELECT` access on the
+        /// target table and folds its identity (including the UUID, so a re-created target is distinguished).
+        auto target_hash = computeTableModificationHashForConsistency(getTargetTableId(), effective_context);
+        if (!target_hash)
+            return {};
+
+        SipHash hash;
+        /// Per-incarnation identity: a DROP + CREATE in an `Atomic` database gets a fresh UUID, so a
+        /// re-created view never repeats the hash of an earlier incarnation. See `StorageView`.
+        hash.update(getStorageID().uuid);
+        hash.update(storage_snapshot->metadata->getColumns().toString(/*include_comments=*/ false));
+        /// Loop-free metadata version for this view's own column metadata. See
+        /// `IStorage::getMetadataVersionForModificationHash`.
+        hash.update(getMetadataVersionForModificationHash());
+        /// The execution security context is part of what the view returns (under row policies an
+        /// `INVOKER` and a `DEFINER` view can see different rows of the target table). See `StorageView`.
+        /// Canonicalized the way `getSQLSecurityOverriddenContext` reads it, so that a security change
+        /// with no effect on the read does not look like a data change.
+        updateHashWithEffectiveSQLSecurity(hash, *storage_snapshot->metadata);
+        hash.update(*target_hash);
+        return hash.get128();
+    }
+    catch (...)
+    {
+        /// Ok to ignore: we could not inspect the target table, so we conservatively assume the data may
+        /// have changed.
+        return {};
+    }
 }
 
 Strings StorageMaterializedView::getDataPaths() const

@@ -98,6 +98,8 @@ public:
     StoragePtr tryGetTargetTable() const;
     StorageID getTargetTableId() const;
 
+    std::optional<UInt128> getModificationHash(const StorageSnapshotPtr & storage_snapshot, ContextPtr query_context) const override;
+
     ActionLock getActionLock(StorageActionBlockType type) override;
     void onActionLockRemove(StorageActionBlockType action_type) override;
 

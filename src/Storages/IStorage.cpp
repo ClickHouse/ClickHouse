@@ -456,4 +456,51 @@ std::string FilterDAGInfo::dump() const
     return ss.str();
 }
 
+std::optional<UInt128> getModificationHashWithRefreshedMetadata(const StoragePtr & storage, const ContextPtr & context)
+{
+    if (!storage)
+        return {};
+
+    /// The same call the interpreter makes before analysis, so that the hash taken here agrees with the
+    /// one taken after a read has already triggered the lazy update. It may perform credentialed I/O (an
+    /// object listing), so every caller must have checked the user's access to the table first.
+    try
+    {
+        storage->updateExternalDynamicMetadataIfExists(context);
+    }
+    catch (...)
+    {
+        /// Ok to ignore: the metadata update failed, so we cannot tell whether the table changed and
+        /// conservatively bail out.
+        return {};
+    }
+
+    auto metadata = storage->getInMemoryMetadataPtr(context, false);
+    auto snapshot = storage->getStorageSnapshotWithoutData(metadata, context);
+    return storage->getModificationHash(snapshot, context);
+}
+
+namespace
+{
+
+thread_local bool modification_hash_introspection = false;
+
+}
+
+ModificationHashIntrospectionScope::ModificationHashIntrospectionScope()
+    : previous(modification_hash_introspection)
+{
+    modification_hash_introspection = true;
+}
+
+ModificationHashIntrospectionScope::~ModificationHashIntrospectionScope()
+{
+    modification_hash_introspection = previous;
+}
+
+bool isModificationHashIntrospection()
+{
+    return modification_hash_introspection;
+}
+
 }
