@@ -854,6 +854,13 @@ struct ToWeekImpl
 template <IntervalKind::Kind unit>
 struct ToStartOfInterval;
 
+/// Truncating division rounds a negative time towards the epoch, which would move it into the next interval.
+inline Int64 scaleDivideFloor(Int64 t, Int64 scale_multiplier)
+{
+    const Int64 res = t / scale_multiplier;
+    return t < 0 && res * scale_multiplier != t ? res - 1 : res;
+}
+
 static constexpr auto TO_START_OF_INTERVAL_NAME = "toStartOfInterval";
 
 /// Implementation shared by the subsecond ToStartOfInterval specializations (millisecond, microsecond, nanosecond).
@@ -1023,7 +1030,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Second>
     }
     static Int64 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfSecondInterval(t / scale_multiplier, seconds);
+        return time_zone.toStartOfSecondInterval(scaleDivideFloor(t, scale_multiplier), seconds);
     }
 };
 
@@ -1044,7 +1051,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Minute>
     }
     static Int64 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfMinuteInterval(t / scale_multiplier, minutes);
+        return time_zone.toStartOfMinuteInterval(scaleDivideFloor(t, scale_multiplier), minutes);
     }
 };
 
@@ -1065,7 +1072,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Hour>
     }
     static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfHourInterval(t / scale_multiplier, hours);
+        return time_zone.toStartOfHourInterval(scaleDivideFloor(t, scale_multiplier), hours);
     }
 };
 
@@ -1087,7 +1094,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
     }
     static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
     {
-        return time_zone.toStartOfDayInterval(time_zone.toDayNum(t / scale_multiplier), days);
+        return time_zone.toStartOfDayInterval(time_zone.toDayNum(scaleDivideFloor(t, scale_multiplier)), days);
     }
 };
 
@@ -1109,7 +1116,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     static Int64 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
         if (!origin.has_value())
-            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t / scale_multiplier), weeks);
+            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(scaleDivideFloor(t, scale_multiplier)), weeks);
         Int64 days = 0;
         if (common::mulOverflow(weeks, static_cast<Int64>(7), days))
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -1134,11 +1141,11 @@ struct ToStartOfInterval<IntervalKind::Kind::Month>
     }
     static Int64 execute(Int64 t, Int64 months, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
-        const Int64 scaled_time = t / scale_multiplier;
+        const Int64 scaled_time = scaleDivideFloor(t, scale_multiplier);
         if (!origin.has_value())
             return time_zone.toStartOfMonthInterval(time_zone.toDayNum(scaled_time), months);
 
-        const Int64 scaled_origin = origin.value() / scale_multiplier;
+        const Int64 scaled_origin = scaleDivideFloor(origin.value(), scale_multiplier);
         const Int64 days = time_zone.toDayOfMonth(scaled_time + scaled_origin) - time_zone.toDayOfMonth(scaled_origin);
         Int64 months_to_add = time_zone.toMonth(scaled_time + scaled_origin) - time_zone.toMonth(scaled_origin);
         const Int64 years = time_zone.toYear(scaled_time + scaled_origin) - time_zone.toYear(scaled_origin);
@@ -1168,7 +1175,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Quarter>
     static Int64 execute(Int64 t, Int64 quarters, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
         if (!origin.has_value())
-            return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(t / scale_multiplier), quarters);
+            return time_zone.toStartOfQuarterInterval(time_zone.toDayNum(scaleDivideFloor(t, scale_multiplier)), quarters);
         Int64 months = 0;
         if (common::mulOverflow(quarters, static_cast<Int64>(3), months))
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
@@ -1194,7 +1201,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Year>
     static Int64 execute(Int64 t, Int64 years, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
     {
         if (!origin.has_value())
-            return time_zone.toStartOfYearInterval(time_zone.toDayNum(t / scale_multiplier), years);
+            return time_zone.toStartOfYearInterval(time_zone.toDayNum(scaleDivideFloor(t, scale_multiplier)), years);
         Int64 months = 0;
         if (common::mulOverflow(years, static_cast<Int64>(12), months))
             throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");

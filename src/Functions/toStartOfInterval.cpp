@@ -61,6 +61,14 @@ FieldType saturatingResultCast(Int64 value)
         return static_cast<FieldType>(value);
 }
 
+/// A DateTime64 value in the scale of `scale_multiplier`, as whole seconds. Truncating division rounds a
+/// negative time towards the epoch, which would move it into the next interval.
+Int64 toWholeSecondsFloor(Int64 t, const libdivide::divider<Int64, libdivide::BRANCHFULL> & scale_divider, Int64 scale_multiplier)
+{
+    const Int64 whole = t / scale_divider;
+    return t < 0 && whole * scale_multiplier != t ? whole - 1 : whole;
+}
+
 class FunctionToStartOfInterval final : public IFunction
 {
 private:
@@ -295,14 +303,15 @@ private:
                 /// A one-second interval never consults the LUT, so it needs no range check.
 #pragma clang loop vectorize(disable)
                 for (size_t i = 0; i != size; ++i)
-                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(static_cast<Int64>(time_data[i]) / scale_divider);
+                    result_data[i] = saturatingResultCast<saturate, ResultFieldType>(
+                        toWholeSecondsFloor(static_cast<Int64>(time_data[i]), scale_divider, scale_multiplier));
                 return true;
             }
             const libdivide::divider<Int64, libdivide::BRANCHFULL> divider(divisor);
 #pragma clang loop vectorize(disable)
             for (size_t i = 0; i != size; ++i)
             {
-                const Int64 t = static_cast<Int64>(time_data[i]) / scale_divider;
+                const Int64 t = toWholeSecondsFloor(static_cast<Int64>(time_data[i]), scale_divider, scale_multiplier);
                 /// Out of the LUT range the offset is extrapolated and can have a sub-divisor component
                 /// (e.g. `Asia/Kolkata` is +5:21:10 before 1906), so the rounding is not modular there, nor
                 /// before the epoch unless `valid_before_epoch`.

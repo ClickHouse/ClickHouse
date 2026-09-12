@@ -23,6 +23,8 @@ namespace DB
  *     R execute(DecimalUtils::DecimalComponents<DateTime64> components, ... )
  *
  * Where R could be of arbitrary type, in case of (3) if R is DecimalUtils::DecimalComponents<DateTime64>, result is re-assembed back into DateTime64.
+ *
+ * In cases (1) and (3) the whole part is rounded towards negative infinity, see `splitFlooringNegative`.
 */
 template <typename Transform>
 class TransformDateTime64
@@ -39,6 +41,23 @@ private:
 
     template<typename... Args>
     static constexpr bool TransformHasExecuteOverload_v = TransformHasExecuteOverload<void, Args...>::value;
+
+    /// `splitWithScaleMultiplier` truncates towards zero, which moves a negative value into the future. The
+    /// wrapped transforms round down to a boundary, so the whole part has to be floored first: otherwise a
+    /// scale > 0 argument disagrees with the same instant at scale 0, the result can be greater than the
+    /// argument, and the monotonicity factor that `KeyCondition` evaluates through this same wrapper
+    /// disagrees with the execution path, which prunes granules that hold matching rows.
+    DecimalUtils::DecimalComponents<DateTime64> splitFlooringNegative(const DateTime64 & t) const
+    {
+        auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+        /// Unreachable at scale 0, where `fractional` is always zero, so `whole` cannot underflow here.
+        if (t.value < 0 && components.fractional)
+        {
+            components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
+            --components.whole;
+        }
+        return components;
+    }
 
 public:
     static constexpr auto name = Transform::name;
@@ -64,7 +83,7 @@ public:
         }
         else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
         {
-            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            const auto components = splitFlooringNegative(t);
 
             const auto result = wrapped_transform.execute(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;
@@ -80,9 +99,7 @@ public:
         }
         else
         {
-            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-            if (t.value < 0 && components.fractional)
-                --components.whole;
+            const auto components = splitFlooringNegative(t);
 
             return wrapped_transform.execute(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
@@ -108,7 +125,7 @@ public:
         }
         else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<DateTime64>, Args...>)
         {
-            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            const auto components = splitFlooringNegative(t);
 
             const auto result = wrapped_transform.executeExtendedResult(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;
@@ -124,12 +141,7 @@ public:
         }
         else
         {
-            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-            /// Round towards negative infinity, same as in `execute`. Without this a value in the last
-            /// fractional second before a day boundary is attributed to the next day, which disagrees
-            /// with `execute` and breaks monotonicity analysis that compares factors across both paths.
-            if (t.value < 0 && components.fractional)
-                --components.whole;
+            const auto components = splitFlooringNegative(t);
 
             return wrapped_transform.executeExtendedResult(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
