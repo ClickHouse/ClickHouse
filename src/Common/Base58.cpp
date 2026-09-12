@@ -627,7 +627,7 @@ std::optional<size_t> decodeBase58Short(const UInt8 * src, size_t body_length, U
 } // anonymous namespace
 
 
-size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation)
+size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation, size_t * shared_work_since_check)
 {
     const char * base58_encoding_alphabet = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
 
@@ -658,7 +658,10 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
     /// rather than by outer iterations: the time limit and `KILL QUERY` stay prompt even with the size
     /// limit disabled. The unit counted is one (input element, accumulator element) pair, and one
     /// iteration covers `BASE58_ENCODE_BYTES_PER_PASS * BASE58_ENCODE_WORD_DIGITS` of them, hence the scaling.
-    size_t work_since_check = 0;
+    /// The count carries over between calls when the caller owns it, so the work of values too small to
+    /// reach a check on their own still adds up to one.
+    size_t own_work_since_check = 0;
+    size_t & work_since_check = shared_work_since_check ? *shared_work_since_check : own_work_since_check;
     static constexpr size_t work_per_check = 1ULL << 20;
 
     /// A short leading pass goes first, so every pass below reads exactly `BASE58_ENCODE_BYTES_PER_PASS` bytes.
@@ -763,7 +766,7 @@ size_t encodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std
 }
 
 
-std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation)
+std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 * dst, const std::function<void()> & check_cancellation, size_t * shared_work_since_check)
 {
     // clang-format off
     static const Int8 map_digits[256] =
@@ -815,8 +818,11 @@ std::optional<size_t> decodeBase58(const UInt8 * src, size_t src_length, UInt8 *
     size_t word_count = 0;
 
     /// As in `encodeBase58`, the check is driven by accumulated inner-loop work, and one iteration
-    /// covers `BASE58_DECODE_CHARS_PER_PASS * sizeof(UInt64)` of the pairs that unit counts.
-    size_t work_since_check = 0;
+    /// covers `BASE58_DECODE_CHARS_PER_PASS * sizeof(UInt64)` of the pairs that unit counts. The count
+    /// likewise carries over between calls when the caller owns it. Going through the reference is what
+    /// keeps the work of a value rejected mid-loop below charged to the caller.
+    size_t own_work_since_check = 0;
+    size_t & work_since_check = shared_work_since_check ? *shared_work_since_check : own_work_since_check;
     static constexpr size_t work_per_check = 1ULL << 20;
 
     /// A short leading pass goes first, so every pass below reads exactly `BASE58_DECODE_CHARS_PER_PASS` characters.
