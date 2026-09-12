@@ -5,6 +5,35 @@ a finer-scale constant
 a representable constant still prunes
 1
 1
+a String spelling of the same point
+1
+1
+the lossless normalizations prune
+1
+1
+1
+1
+the lossy normalization does not prune
+a finer-scale set element
+2
+2
+1
+1
+2
+2
+0
+0
+the same set element against a bare key
+2
+2
+1
+1
+2
+2
+0
+0
+a lossless set element prunes
+1
 the same shape in a partition key
 2
 2
