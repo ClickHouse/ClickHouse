@@ -108,6 +108,19 @@ struct KeeperSnapshotReader
 
     KeeperContextPtr keeper_context;
 
+    /// Whether orphaned nodes (nodes whose parent is absent from the snapshot) may be removed
+    /// while loading this snapshot. Set only when loading the latest local snapshot during server
+    /// startup (`remove_orphaned_nodes_on_startup` recovery). It must never be set when applying
+    /// a snapshot received from another node (`KeeperStateMachine::apply_snapshot`), otherwise
+    /// this replica would silently diverge from the rest of the cluster.
+    bool allow_orphaned_nodes_removal = false;
+
+    /// Filled in by `loadNodesFromSnapshot` when orphaned nodes were removed: the topmost paths that
+    /// are absent from this snapshot, i.e. the roots of the region where the loaded tree differs from
+    /// the tree that the raft log above this snapshot was produced against. Verified by
+    /// `KeeperStateMachine::findOrphanConflictInLogTail` before the raft server is launched.
+    std::vector<std::string> removed_orphan_subtree_roots;
+
     SnapshotVersion current_version = SnapshotVersion::V0;
     SnapshotMetadataPtr snapshot_meta;
     ClusterConfigPtr cluster_config;
@@ -130,6 +143,9 @@ struct SnapshotDeserializationResult
     /// Snapshot metadata (up_to_log_idx and so on)
     SnapshotMetadataPtr snapshot_meta;
     ClusterConfigPtr cluster_config;
+    /// See `KeeperSnapshotReader::removed_orphan_subtree_roots`. Empty unless orphaned nodes were
+    /// removed while loading this snapshot.
+    std::vector<std::string> removed_orphan_subtree_roots;
 };
 
 /// In memory keeper snapshot. Keeper Storage based on a hash map which can be
@@ -265,7 +281,11 @@ public:
     /// TODO: Rename methods that just copy a buffer to/from file from serialize*/deserialize* to
     ///       read/write or something, to avoid confusion with methods that actually serialize/deserialize.
 
-    /// Restore storage from latest available snapshot
+    /// Restore storage from latest available snapshot.
+    /// Orphaned-nodes removal (`remove_orphaned_nodes_on_startup` startup recovery) is deliberately
+    /// NOT allowed here: `KeeperStateMachine::init` is the only caller that may remove orphans,
+    /// because `KeeperServer::startup` then verifies that no local log entry above the snapshot
+    /// references the removed paths. Pruning from here would skip that verification.
     SnapshotDeserializationResult restoreFromLatestSnapshot(KeeperStorage & storage);
 
     /// Compress snapshot and serialize it to buffer
@@ -315,7 +335,10 @@ public:
 
     std::unique_ptr<KeeperSnapshotReader> makeSnapshotReader(nuraft::ptr<nuraft::buffer> buffer) const;
 
-    SnapshotDeserializationResult deserializeSnapshotFromBuffer(nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage) const;
+    /// `allow_orphaned_nodes_removal` must be set only when loading a snapshot from the local disk
+    /// during server startup; see `KeeperSnapshotReader::allow_orphaned_nodes_removal`.
+    SnapshotDeserializationResult deserializeSnapshotFromBuffer(
+        nuraft::ptr<nuraft::buffer> buffer, KeeperStorage & storage, bool allow_orphaned_nodes_removal = false) const;
 
     SnapshotMetadataPtr deserializeSnapshotMetadataFromBuffer(nuraft::ptr<nuraft::buffer> buffer) const;
 

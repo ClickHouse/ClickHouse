@@ -21,6 +21,30 @@ TEST(ZooKeeperTest, TestMatchPath)
     ASSERT_EQ(matchPath("/path/", "/path"), PathMatchResult::EXACT);
 }
 
+/// The orphaned-nodes log-tail guard (`KeeperStateMachine::findOrphanConflictInLogTail`) decides whether
+/// a request path and a removed subtree root lie on the same root-to-leaf chain by calling `matchPath`
+/// in both directions. Pin the boundary cases that decision depends on.
+TEST(ZooKeeperTest, TestMatchPathChainOverlap)
+{
+    /// A shared textual prefix that is not a path prefix must not match.
+    ASSERT_EQ(matchPath("/ab", "/a"), PathMatchResult::NOT_MATCH);
+    ASSERT_EQ(matchPath("/abc/d", "/ab"), PathMatchResult::NOT_MATCH);
+
+    /// Descendant direction.
+    ASSERT_EQ(matchPath("/a/b", "/a"), PathMatchResult::IS_CHILD);
+    ASSERT_EQ(matchPath("/a/b/c", "/a"), PathMatchResult::IS_CHILD);
+    ASSERT_EQ(matchPath("/x", "/"), PathMatchResult::IS_CHILD);
+
+    /// Ancestor direction: not a match forwards, but a match with the arguments reversed. This is the
+    /// asymmetry the guard relies on to also flag entries touching a parent of a removed subtree.
+    ASSERT_EQ(matchPath("/a", "/a/b"), PathMatchResult::NOT_MATCH);
+    ASSERT_EQ(matchPath("/a/b", "/a"), PathMatchResult::IS_CHILD);
+
+    /// Unrelated siblings match in neither direction.
+    ASSERT_EQ(matchPath("/a", "/b"), PathMatchResult::NOT_MATCH);
+    ASSERT_EQ(matchPath("/b", "/a"), PathMatchResult::NOT_MATCH);
+}
+
 TEST(ZooKeeperTest, ExtractZooKeeperPathAndCollapseTrailingSlashes)
 {
     using zkutil::extractZooKeeperPathAndCollapseTrailingSlashes;
