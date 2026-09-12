@@ -167,6 +167,12 @@ public:
     using UpdatePartialDisjunctionResultFn = KeyCondition::UpdatePartialDisjunctionResultFn;
     virtual bool mayBeTrueOnGranule(MergeTreeIndexGranulePtr granule, const UpdatePartialDisjunctionResultFn & update_partial_disjunction_result_fn) const = 0;
 
+    /// Whether the condition holds for every value in the hyperrectangle, whose axes are the index columns in declared order.
+    virtual bool alwaysTrueOnHyperrectangle(const Hyperrectangle & /*hyperrectangle*/) const
+    {
+        return false;
+    }
+
     using FilteredGranules = std::vector<size_t>;
     virtual FilteredGranules getPossibleGranules(const MergeTreeIndexBulkGranulesPtr &) const
     {
