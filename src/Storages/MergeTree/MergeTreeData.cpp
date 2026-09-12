@@ -1506,11 +1506,20 @@ ExpressionActionsPtr getCombinedIndicesExpression(
     auto dag = key.expression->getActionsDAG().clone();
     for (const auto & index : indices)
     {
-        ActionsDAG::NodeRawConstPtrs outputs;
-        dag.mergeNodes(index->index.expression->getActionsDAG().clone(), &outputs);
-        for (const auto * output : outputs)
-            dag.addOrReplaceInOutputs(*output);
+        /// Keep source inputs available to each index instead of adding duplicate input nodes.
+        for (const auto * input : dag.getInputs())
+            if (!dag.tryFindInOutputs(input->result_name))
+                dag.addOrReplaceInOutputs(*input);
+
+        /// Lambda capture nodes can share names without representing the same function.
+        dag.mergeInplace(index->index.expression->getActionsDAG().clone());
     }
+
+    /// Several indexes can have the same expression; expose each result only once.
+    ActionsDAG::NodeRawConstPtrs outputs;
+    outputs.swap(dag.getOutputs());
+    for (const auto * output : outputs)
+        dag.addOrReplaceInOutputs(*output);
 
     /// Index actions project away their inputs. The writer must keep those columns to store them.
     for (const auto * input : dag.getInputs())
