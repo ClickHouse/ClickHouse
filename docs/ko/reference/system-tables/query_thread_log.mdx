@@ -53,19 +53,19 @@ ClickHouse는 테이블에서 데이터를 자동으로 삭제하지 않습니�
 * `current_database` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 현재 데이터베이스 이름입니다.
 * `query` ([String](/ko/reference/data-types/string)) — 쿼리 문자열.
 * `normalized_query_hash` ([UInt64](/ko/reference/data-types/int-uint)) — 상수 등이 제거된 정규화된 쿼리의 해시입니다.
-* `is_initial_query` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리 유형입니다. 가능한 값: 1 — 클라이언트가 시작한 쿼리, 0 — 분산 쿼리 실행을 위해 다른 쿼리에서 시작한 쿘리입니다.
+* `is_initial_query` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 초기 쿼리인지 여부입니다. 가능한 값: 1 — 초기(최상위 수준) 쿼리, 0 — 분산 실행용 쿼리와 내부 서브쿼리를 포함하여 다른 쿼리에서 시작된 자식 쿼리입니다.
 * `connection_address` ([IPv6](/ko/reference/data-types/ipv6)) — 연결을 시작한 클라이언트의 IP 주소입니다. 프록시를 통해 연결한 경우 이 값은 프록시의 주소입니다.
 * `connection_port` ([UInt16](/ko/reference/data-types/int-uint)) — 연결이 설정된 클라이언트의 포트입니다. 프록시를 통해 연결된 경우에는 프록시의 포트가 됩니다.
 * `user` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 현재 쿼리를 실행한 사용자의 이름입니다.
 * `query_id` ([String](/ko/reference/data-types/string)) — 쿼리의 ID.
 * `address` ([IPv6](/ko/reference/data-types/ipv6)) — 쿼리를 보낼 때 사용된 IP 주소입니다. 프록시를 통해 연결되어 있고 `auth_use_forwarded_address`가 설정된 경우, 이 값은 프록시 주소가 아니라 클라이언트 주소가 됩니다.
 * `port` ([UInt16](/ko/reference/data-types/int-uint)) — 쿼리를 실행할 때 사용된 클라이언트 포트입니다. 프록시를 통해 연결되어 있고 `auth_use_forwarded_address`가 설정된 경우, 이 값은 프록시의 포트가 아니라 클라이언트의 포트입니다.
-* `initial_user` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 초기 쿼리(분산 쿼리 실행 시)를 실행한 사용자의 이름입니다.
-* `initial_query_id` ([String](/ko/reference/data-types/string)) — 초기 쿼리의 ID입니다(분산 쿼리 실행 시 사용).
-* `initial_address` ([IPv6](/ko/reference/data-types/ipv6)) — 상위 쿼리가 실행된 IP 주소입니다.
-* `initial_port` ([UInt16](/ko/reference/data-types/int-uint)) — 상위 쿼리를 실행할 때 사용된 클라이언트 포트입니다.
-* `initial_query_start_time` ([DateTime](/ko/reference/data-types/datetime)) — 초기 쿼리 실행 시작 시간입니다.
-* `initial_query_start_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 초기 쿼리 실행의 시작 시간
+* `initial_user` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 동일한 쿼리 체인에서 초기 쿼리를 실행한 사용자의 이름입니다.
+* `initial_query_id` ([String](/ko/reference/data-types/string)) — 동일한 쿼리 체인에서 초기 쿼리의 ID입니다.
+* `initial_address` ([IPv6](/ko/reference/data-types/ipv6)) — 동일한 쿼리 체인에서 초기 쿼리가 시작된 IP 주소입니다.
+* `initial_port` ([UInt16](/ko/reference/data-types/int-uint)) — 동일한 쿼리 체인에서 초기 쿼리가 시작된 클라이언트 포트입니다.
+* `initial_query_start_time` ([DateTime](/ko/reference/data-types/datetime)) — 동일한 쿼리 체인에서 초기 쿼리의 시작 시간입니다.
+* `initial_query_start_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 동일한 쿼리 체인에서 초기 쿼리의 시작 시간이며, 마이크로초 정밀도를 지원합니다.
 * `authenticated_user` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 세션에서 인증된 사용자의 이름입니다.
 * `interface` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 시작된 인터페이스입니다. 가능한 값: 1 — TCP, 2 — HTTP.
 * `is_secure` ([UInt8](/ko/reference/data-types/int-uint)) — 연결이 보안되었는지 여부를 나타내는 플래그입니다.

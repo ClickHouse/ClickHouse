@@ -147,7 +147,7 @@ void MergeTreeReaderWide::prefetchForAllColumns(
 
 size_t MergeTreeReaderWide::readRows(
     size_t from_mark, bool continue_reading, size_t max_rows_to_read,
-    size_t rows_offset, Columns & res_columns)
+    MutableColumns & res_columns)
 {
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
@@ -177,12 +177,12 @@ size_t MergeTreeReaderWide::readRows(
 
             const auto & column_to_read = columns_to_read[pos];
 
-            /// The column is already present in the block so we will append the values to the end.
-            bool append = res_columns[pos] != nullptr;
-            if (!append)
-                res_columns[pos] = column_to_read.type->createColumn(*serializations[pos]);
-
+            /// The column may already be present (we append the values to the end) or empty; either way it is
+            /// uniquely owned here, so we read into it directly without cloning.
             auto & column = res_columns[pos];
+            if (!column)
+                column = column_to_read.type->createColumn(*serializations[pos]);
+
             try
             {
                 size_t column_size_before_reading = column->size();
@@ -192,11 +192,10 @@ size_t MergeTreeReaderWide::readRows(
                 readData(
                     column_to_read,
                     serializations[pos],
-                    column,
+                    *column,
                     from_mark,
                     continue_reading,
                     max_rows_to_read,
-                    rows_offset,
                     cache,
                     deserialize_states_cache);
 
@@ -215,26 +214,6 @@ size_t MergeTreeReaderWide::readRows(
             if (column->empty() && max_rows_to_read > 0)
                 res_columns[pos] = nullptr;
         }
-
-#if defined(DEBUG_OR_SANITIZER_BUILD)
-        /// Before dropping the substreams caches, verify that the reference counts of the columns
-        /// shared between the caches, the deserialize states and the result columns account for all
-        /// those holders. Broken copy-on-write reference counting would free such a column here while
-        /// it is still referenced from the result, leading to use-after-free (issue #105626).
-        ColumnsOwnershipValidator ownership_validator;
-        for (const auto & [_, cache] : caches)
-            ownership_validator.add(cache);
-        for (const auto & [_, states] : deserialize_states_caches)
-            ownership_validator.add(states);
-        ownership_validator.add(deserialize_binary_bulk_state_map);
-        ownership_validator.add(deserialize_binary_bulk_state_map_for_subcolumns);
-        /// The reader-local `deserialize_binary_bulk_state_map` holds clones of the prefix states; the
-        /// originals stay in the shared cache and share the same column references (e.g. a single-part
-        /// `LowCardinality` `global_dictionary`), so count those cache-held holders too.
-        if (deserialization_prefixes_cache)
-            deserialization_prefixes_cache->addToOwnershipValidator(ownership_validator);
-        ownership_validator.validate(res_columns);
-#endif
 
         prefetched_streams.clear();
         caches.clear();
@@ -255,7 +234,7 @@ size_t MergeTreeReaderWide::readRows(
         }
         catch (Exception & e)
         {
-            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read, rows_offset));
+            e.addMessage(getMessageForDiagnosticOfBrokenPart(from_mark, max_rows_to_read));
         }
 
         throw;
@@ -581,6 +560,8 @@ void MergeTreeReaderWide::prefetchForColumn(
     bool continue_reading,
     ISerialization::SubstreamsCache & cache)
 {
+    const bool prefix_deserialized = deserialize_binary_bulk_state_map.contains(name_and_type.name);
+
     auto callback = [&](const ISerialization::SubstreamPath & substream_path)
     {
         /// Skip ephemeral subcolumns that don't store any real data.
@@ -589,6 +570,15 @@ void MergeTreeReaderWide::prefetchForColumn(
 
         /// Skip substreams that don't need to be prefetched.
         if (!ISerialization::isPrefetchNeededForSubstream(substream_path, substream_path.size(), settings.prefetch_json_shared_data_substreams))
+            return;
+
+        /// Metadata streams (for example, the structure of `Dynamic` or `JSON`) are read only while deserializing
+        /// the prefix, which always reads from the beginning of the file, and are released right after that.
+        /// Prefetching such a stream pays off only in `prefetchBeginOfRange` for a range starting at mark 0:
+        /// there the prefix is not deserialized yet, and it will reuse exactly this prefetch. Otherwise the
+        /// prefetch is either at a wrong offset or the prefix is already deserialized, and the only effect is
+        /// creating the stream again and reading the file a second time.
+        if (ISerialization::isMetadataStream(substream_path) && (prefix_deserialized || from_mark != 0))
             return;
 
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
@@ -621,11 +611,10 @@ void MergeTreeReaderWide::prefetchForColumn(
 void MergeTreeReaderWide::readData(
     const NameAndTypePair & name_and_type,
     const SerializationPtr & serialization,
-    ColumnPtr & column,
+    IColumn & column,
     size_t from_mark,
     bool continue_reading,
     size_t max_rows_to_read,
-    size_t rows_offset,
     ISerialization::SubstreamsCache & cache,
     ISerialization::SubstreamsDeserializeStatesCache & deserialize_states_cache)
 {
@@ -698,7 +687,7 @@ void MergeTreeReaderWide::readData(
     auto & deserialize_state = deserialize_binary_bulk_state_map[name_and_type.name];
 
     serialization->deserializeBinaryBulkWithMultipleStreams(
-        column, rows_offset, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
+        column, max_rows_to_read, deserialize_settings, deserialize_state, &cache);
 }
 
 std::unordered_map<String, std::vector<String>> MergeTreeReaderWide::getAllColumnsSubstreams()

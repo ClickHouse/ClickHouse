@@ -2,13 +2,15 @@
 slug: /guides/developer/deduplicating-inserts-on-retries
 title: '再試行時の挿入の重複排除'
 description: '挿入操作の再試行時に重複データを防ぐ'
-keywords: ['重複排除', '重複を排除する', '挿入の再試行', '挿入']
+keywords: ['重複排除', '重複を排除する', '挿入の再試行', '挿入', '非同期挿入']
 doc_type: 'guide'
 ---
 
-挿入操作は、タイムアウトなどのエラーによって失敗することがあります。挿入に失敗した場合、データがすでに正常に挿入されていることもあれば、まだ挿入されていないこともあります。このガイドでは、同じデータが複数回挿入されないように、挿入の再試行時に重複排除を有効にする方法を説明します。
+挿入操作は、タイムアウトなどのエラーによって失敗することがあります。挿入に失敗した場合、データがすでに正常に挿入されていることもあれば、まだ挿入されていないこともあります。このガイドでは、同じデータが複数回挿入されないように、挿入の再試行時の重複排除の仕組みを説明します。
 
 挿入が再試行されると、ClickHouse はそのデータがすでに正常に挿入済みかどうかを判定しようとします。挿入済みのデータが重複としてマークされた場合、ClickHouse はそれを宛先テーブルに挿入しません。ただし、ユーザーには、そのデータが通常どおり挿入された場合と同様に、操作成功のステータスが返されます。
+
+重複排除は、同期挿入、非同期挿入、`INSERT ... SELECT` クエリに対応しています。`deduplicate_insert` 設定は、同期挿入と非同期挿入を制御します。`INSERT ... SELECT` には追加の注意が必要で、専用の設定があります。[挿入の重複排除を制御する設定](#settings-that-control-insert-deduplication)を参照してください。
 
 <div id="limitations">
   ## 制限事項
@@ -26,25 +28,72 @@ doc_type: 'guide'
 
 再試行の過程で、`*_deduplication_window` を超える数の他の挿入操作が行われると、重複排除が意図どおりに機能しない場合があります。この場合、同じデータが複数回挿入される可能性があります。
 
-<div id="enabling-insert-deduplication-on-retries">
-  ## 再試行時の挿入の重複排除を有効にする
+<div id="settings-that-control-insert-deduplication">
+  ## 挿入の重複排除を制御する設定
 </div>
 
+ClickHouse が挿入時に重複排除を行うのは、次の両方の条件が満たされる場合のみです。
+
+1. 宛先テーブルで重複排除ログが保持されていること。これはテーブルレベルの設定です。
+2. クエリで重複排除が有効になっていること。これはクエリレベルの設定です。
+
 <div id="insert-deduplication-for-tables">
-  ### テーブルの挿入の重複排除
+  ### テーブルレベルの設定
 </div>
 
 **挿入時の重複排除をサポートするのは `*MergeTree` エンジンのみです。**
 
-`*ReplicatedMergeTree` エンジンでは、挿入の重複排除はデフォルトで有効になっており、[`replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) および [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) 設定で制御されます。非レプリケートの `*MergeTree` エンジンでは、挿入の重複排除は [`non_replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) 設定で制御されます。
+`*ReplicatedMergeTree` エンジンでは、重複排除ログはデフォルトで有効になっており、[`replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) および [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds) 設定で制御されます。非レプリケートの `*MergeTree` エンジンでは、ログは [`non_replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window) 設定で制御され、デフォルト値は `0` です。したがって、通常の `MergeTree` テーブルでは、そのウィンドウを正の値に設定するまで重複排除は行われません。
 
 上記の設定は、テーブルの重複排除ログのパラメーターを決定します。重複排除ログには有限個の `block_id` が保存され、これによって重複排除の動作が決まります (以下を参照) 。
 
+<Note>
+  [`replicated_deduplication_window_for_async_inserts`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_for_async_inserts) および [`replicated_deduplication_window_seconds_for_async_inserts`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds_for_async_inserts) はレガシー設定です。現在、同期挿入と非同期挿入は 1 つの重複排除ログを共有するため、`replicated_deduplication_window` が両方を制御します。レガシー設定は古い ClickHouse Keeper ディレクトリの範囲のみを制限しており、これはローリングアップグレード中に重要になります。
+</Note>
+
 <div id="query-level-insert-deduplication">
-  ### クエリレベルの挿入の重複排除
+  ### クエリレベルの設定
 </div>
 
-設定 `insert_deduplicate=1` を使用すると、クエリレベルの重複排除が有効になります。`insert_deduplicate=0` でデータを挿入した場合、その後 `insert_deduplicate=1` で挿入を再試行しても、そのデータは重複排除されない点に注意してください。これは、`insert_deduplicate=0` での挿入時には、各ブロックに対する `block_id` が書き込まれないためです。
+| 設定                                                                                                                                                    | 適用対象                      | デフォルト                  | 目的                                  |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------- | ---------------------- | ----------------------------------- |
+| [`deduplicate_insert`](/ja/reference/settings/session-settings/deduplicate-insert#deduplicate_insert)                                                    | 同期・非同期を問わずすべての `INSERT`   | `enable`               | 挿入の重複排除のメインスイッチ                     |
+| [`deduplicate_insert_select`](/ja/reference/settings/session-settings/deduplicate-insert#deduplicate_insert_select)                                      | `INSERT ... SELECT`       | `enable_when_possible` | `SELECT` の結果を再現できない場合の処理を決定         |
+| [`insert_deduplication_token`](/ja/reference/settings/session-settings/insert#insert_deduplication_token)                                                | すべての `INSERT`             | `''`                   | データではなく、ユーザー指定の文字列で挿入を識別            |
+| [`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) | materialized view 配下のテーブル | `1`                    | 依存する materialized view の宛先にも重複排除を適用 |
+
+`deduplicate_insert` には次の 3 つの値を指定できます。
+
+* `enable` — `INSERT` クエリの重複排除を有効にします。
+* `disable` — `INSERT` クエリの重複排除を無効にします。
+* `backward_compatible_choice` — レガシー設定の `insert_deduplicate` (同期挿入) および `async_insert_deduplicate` (非同期挿入) に判断を委ねます。
+
+`deduplicate_insert = disable` で実行したクエリでは、そのブロックの `block_id` は書き込まれないことに注意してください。このようなデータは、後から `deduplicate_insert = enable` を指定して挿入を再試行しても重複排除できません。宛先テーブルに重複排除ログがない場合も同様です。何も記録されないため、再試行時に照合できません。
+
+<div id="precedence">
+  ### 優先順位
+</div>
+
+1. `INSERT ... SELECT` クエリでは、`deduplicate_insert_select` が使用されます。[INSERT ... SELECT の重複排除](#deduplication-for-insert-select)を参照してください。
+2. その他のすべての `INSERT` では、`deduplicate_insert` が使用されます。
+3. `insert_deduplicate` と `async_insert_deduplicate` は、`deduplicate_insert` が `backward_compatible_choice` の場合にのみ読み取られます。
+
+<div id="legacy-and-obsolete-settings">
+  ### レガシーおよび廃止された設定
+</div>
+
+| 設定                                                                                                       | ステータス                                                                | 代替設定                        |
+| -------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | --------------------------- |
+| [`insert_deduplicate`](/ja/reference/settings/session-settings/insert#insert_deduplicate)                   | レガシー。`deduplicate_insert = backward_compatible_choice` の場合にのみ読み取られます | `deduplicate_insert`        |
+| [`async_insert_deduplicate`](/ja/reference/settings/session-settings/async-insert#async_insert_deduplicate) | レガシー。`deduplicate_insert = backward_compatible_choice` の場合にのみ読み取られます | `deduplicate_insert`        |
+| `insert_select_deduplicate`                                                                              | 廃止された設定。効果はありません                                                     | `deduplicate_insert_select` |
+| `update_insert_deduplication_token_in_dependent_materialized_views`                                      | 廃止された設定。効果はありません                                                     | —                           |
+
+<Warning>
+  バージョン 26.2 以降、`deduplicate_insert` のデフォルトは `enable` です。そのため、`insert_deduplicate = 0` を設定しても、それだけでは重複排除は無効になりません。重複排除を無効にするには、`deduplicate_insert = disable` を設定します。
+</Warning>
+
+バージョン 26.2 では、`async_insert` と `deduplicate_blocks_in_dependent_materialized_views` のデフォルトも有効に変更されました。[`compatibility`](/ja/reference/settings/session-settings/compatibility#compatibility) 互換性設定は、これら 3 つすべてを制御します。`compatibility` を `26.2` より前のバージョンに設定すると、これらの設定には以前のデフォルトが適用されます。`deduplicate_insert` は `backward_compatible_choice` となり、`insert_deduplicate` と `async_insert_deduplicate` に判断を委ねます。明示的に設定した値は常に優先され、`compatibility` の影響を受けません。
 
 <div id="how-insert-deduplication-works">
   ## 挿入の重複排除の仕組み
@@ -52,14 +101,81 @@ doc_type: 'guide'
 
 ClickHouse にデータが挿入されると、行数とバイト数に基づいてデータはブロックに分割されます。
 
-`*MergeTree` エンジンを使用するテーブルでは、各ブロックに一意の `block_id` が割り当てられます。これは、そのブロック内のデータのハッシュです。この `block_id` は、insert 操作の一意なキーとして使用されます。同じ `block_id` が重複排除ログ内で見つかった場合、そのブロックは重複と見なされ、テーブルには挿入されません。
+`*MergeTree` エンジンを使用するテーブルでは、各ブロックに一意の `block_id` が割り当てられます。これは、そのブロック内のデータのハッシュです。この `block_id` は、挿入操作の一意なキーとして使用されます。同じ `block_id` が重複排除ログ内で見つかった場合、そのブロックは重複と見なされ、テーブルには挿入されません。
 
-このアプローチは、挿入操作に異なるデータが含まれる場合には有効です。ただし、同じデータを意図的に複数回挿入する場合は、重複排除の処理を制御するために `insert_deduplication_token` 設定を使用する必要があります。この設定では、各 insert に対して一意のトークンを指定でき、ClickHouse はそれを使用してデータが重複かどうかを判定します。
+このアプローチは、挿入操作に異なるデータが含まれる場合には有効です。ただし、同じデータを意図的に複数回挿入する場合は、重複排除の処理を制御するために `insert_deduplication_token` 設定を使用する必要があります。この設定では、各 insert に対して一意のトークンを指定でき、ClickHouse はそれを使用してデータが重複かどうかを判定します。`insert_deduplication_token` の優先度が高く、トークンが指定されている場合、ClickHouse はデータのハッシュ値を使用しません。
 
 `INSERT ... VALUES` クエリでは、挿入されるデータのブロックへの分割は決定論的であり、設定によって決まります。したがって、挿入を再試行する際は、初回の操作と同じ設定値を使用する必要があります。
 
-`INSERT ... SELECT` クエリでは、クエリの `SELECT` 部分が、各操作で同じ順序の同じデータを返すことが重要です。なお、これは実際には実現が困難です。再試行時にデータの順序を安定させるには、クエリの `SELECT` 部分で `ORDER BY ALL` 句を定義してください。現時点では、クエリで正確に `ORDER BY ALL` を使用する必要があります。`ORDER BY` のサポートはまだ実装されておらず、クエリの `SELECT` 部分は安定しているとは見なされません。また、再試行の間に選択元のテーブルが更新される可能性がある点にも注意してください。その場合、結果データが変わってしまい、重複排除は行われません。さらに、大量のデータを挿入する場合、挿入後のブロック数が重複排除ログのウィンドウを超過する可能性があり、その場合 ClickHouse はブロックを重複排除すべきか判断できません。
-現時点では、`INSERT ... SELECT` の動作は `insert_select_deduplicate` 設定によって制御されます。この設定は、`INSERT ... SELECT` クエリで挿入されたデータに重複排除を適用するかどうかを決定します。詳細と使用例については、リンク先のドキュメントを参照してください。
+<div id="deduplication-for-insert-select">
+  ## `INSERT ... SELECT` の重複排除
+</div>
+
+`INSERT ... SELECT` クエリでは、`SELECT` 部分が試行のたびに同じデータを同じ順序で返す必要があります。そうでない場合、ブロックと `block_id` が異なるため、再試行は重複として認識されません。
+
+ClickHouse はログソースデータが変更されていないことを検証できませんが、クエリ自体が再現可能な結果を生成するかどうかは確認できます。次の両方を満たす場合、`SELECT` は**安定**していると見なされます。
+
+* クエリに `ORDER BY ALL` 句が含まれている。認識されるのはリテラルの `ORDER BY ALL` のみです。通常の `ORDER BY <expressions>` は認識されず、2 つ以上の `SELECT` を `UNION` したクエリは安定とは見なされません。
+* 読み取りパイプラインが単一ストリームで終了する。
+
+空でない `insert_deduplication_token` は安定性の代替手段として同等です。この場合、データではなくトークンによって insert が識別されます。
+
+設定 `deduplicate_insert_select` で動作を選択します。
+
+| 値                               | 動作                                                                                      |
+| ------------------------------- | --------------------------------------------------------------------------------------- |
+| `enable_when_possible` (デフォルト)  | `SELECT` が安定している場合、またはトークンが設定されている場合に重複排除します。それ以外の場合は重複排除をスキップし、サーバーログにメッセージを書き込みます。    |
+| `force_enable`                  | 常に重複排除します。`SELECT` が安定しておらず、トークンも設定されていない場合は、`DEDUPLICATION_IS_NOT_POSSIBLE` 例外をスローします。 |
+| `enable_even_for_bad_queries`   | 安定性に関係なく重複排除します。後方互換性のために維持されています。不安定な `SELECT` では、通常、再試行は重複として認識されないため、別の値を使用してください。   |
+| `disable`                       | `INSERT ... SELECT` の重複排除は行いません。                                                        |
+
+`enable_when_possible` と `enable_even_for_bad_queries` は `deduplicate_insert` の設定も考慮します。これが `disable` の場合、クエリは重複排除されません。`force_enable` は `deduplicate_insert` をオーバーライドします。
+
+選択したテーブルは再試行の間に更新される可能性があることに注意してください。この場合、2 つの方法は逆の動作をします。
+
+* `insert_deduplication_token` がない場合、`block_id` はデータから計算されます。結果が変更されると異なる `block_id` が生成され、重複排除は行われません。そのため、再試行では最初の試行で書き込まれたデータに加えて、新しいデータが挿入されます。
+* `insert_deduplication_token` がある場合、トークンだけで insert が識別されます。異なるデータを挿入することになった場合でも、再試行は重複として認識され、破棄されます。
+
+再試行にどのような意味を持たせたいかに応じて、適切な方法を選択してください。また、大量のデータを挿入すると、ブロック数が重複排除ログウィンドウの上限を超えることがあり、その場合 ClickHouse はブロックを重複排除すべきか判断できなくなります。
+
+<div id="deduplication-for-asynchronous-inserts">
+  ## 非同期挿入の重複排除
+</div>
+
+非同期挿入 (バージョン 26.2 以降はデフォルトで有効な [`async_insert`](/ja/reference/settings/session-settings/async-insert#async_insert)) では、同期挿入と同様に、再試行時に重複排除が行われます。`deduplicate_insert` は両方を制御するため、個別の設定は不要です。
+
+この 2 種類の挿入は同じ重複排除ログを共有し、`block_id` も同じ方法で計算します。そのため、重複排除を損なうことなくクライアントを同期挿入と非同期挿入の間で切り替えられます。また、一方のモードで送信した再試行も、もう一方のモードで送信した試行の重複として認識されます。重複排除に依存するテーブルでも、ワークロードを同期挿入から非同期挿入へ安全に移行できます。
+
+<Note>
+  バージョン 26.2 より前では、非同期挿入の重複排除はデフォルトで無効で、`async_insert_deduplicate` によって制御されていました。この設定は現在、`deduplicate_insert` が `backward_compatible_choice` の場合にのみ読み取られます。
+</Note>
+
+<div id="asynchronous-insert-deduplication-granularity">
+  ### 重複排除の粒度
+</div>
+
+サーバーは複数の非同期挿入を1つのバッチにまとめ、そのバッチを1つ以上のパーツとして書き込みます。パーティションキーの値ごとに、少なくとも1つのパーツが作成されます。重複排除はバッチ単位ではなく、ユーザークエリ単位で行われます。
+
+* キューに入れられた各クエリは、バッチに1つの重複排除トークンを追加します。
+* トークンは、クエリで `insert_deduplication_token` が指定されている場合はその値、指定されていない場合はそのクエリが追加した行のハッシュです。
+* バッチ化はトークンに影響せず、`insert_deduplication_token` はクエリのバッチへのグループ化方法に影響しません。
+
+これには2つの結果があります。
+
+* バッチ内の1つのクエリが重複している場合、ClickHouse はそのクエリの行のみを削除します。バッチ内の残りの行は通常どおり挿入されます。パーツ内のすべての行が削除される場合にのみ、そのパーツ全体がスキップされます。
+* 同じバッチ内の2つのクエリが同じトークンを持つ場合、2つ目のクエリはパーツが書き込まれる前に破棄されます。これはパーティションごとに適用されます。2つのクエリが異なるパーティションに行を書き込む場合、両方とも保持されます。
+
+[`system.events`](/ja/reference/system-tables/events) の `DuplicatedAsyncInserts` および `SelfDuplicatedAsyncInserts` イベントは、これら2つのケースをカウントします。
+
+<div id="asynchronous-inserts-and-materialized-views">
+  ### 非同期挿入とmaterialized view
+</div>
+
+非同期挿入の重複排除は、依存するmaterialized viewと連動して機能します。ルールは単純です。1つのブロックが入力されると、1つのブロックが出力されます。ビューの内部クエリが1つの入力ブロックを1つの出力ブロックに変換する場合、重複排除は機能します。ビューが2つ目のブロックを出力すると、ClickHouseは`NOT_IMPLEMENTED`例外をスローします。
+
+ビューの出力が1つのブロックに収まらない場合、2つ目のブロックが出力されます。[`max_block_size`](/ja/reference/settings/session-settings/max#max_block_size)は、1つのブロックに収まる行数を設定します。カラム変換、フィルタリング、集約で行数が増えることはないため、常に1つのブロックに収まります。`JOIN`では行数が増える場合があります。結果が`max_block_size`以下であれば機能しますが、それを超えると失敗します。
+
+複数のブロックを出力するビューを介して挿入するには、`deduplicate_blocks_in_dependent_materialized_views = 0`を設定するか、同期挿入を使用します。
 
 <div id="insert-deduplication-with-materialized-views">
   ## materialized view における挿入の重複排除
@@ -73,8 +189,7 @@ ClickHouse にデータが挿入されると、行数とバイト数に基づい
 * [`replicated_deduplication_window_seconds`](/ja/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)
 * [`non_replicated_deduplication_window`](/ja/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)
 
-さらに、ユーザープロファイル設定 [`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) も有効にする必要があります。
-設定 `insert_deduplicate=1` を有効にすると、挿入されたデータはソーステーブルで重複排除されます。設定 `deduplicate_blocks_in_dependent_materialized_views=1` を有効にすると、依存先テーブルでの重複排除も追加で有効になります。完全な重複排除を行うには、両方を有効にする必要があります。
+materialized view 配下のテーブルでの重複排除は、ユーザープロファイル設定 [`deduplicate_blocks_in_dependent_materialized_views`](/ja/reference/settings/session-settings/other#deduplicate_blocks_in_dependent_materialized_views) によっても制御され、バージョン 26.2 以降はデフォルトで有効になっています。両方の設定で許可する必要があります。`deduplicate_insert` はソーステーブルに挿入されたデータを重複排除し、`deduplicate_blocks_in_dependent_materialized_views` は依存先テーブル内のデータも追加で重複排除します。完全な重複排除を行う場合は、両方を有効にしてください。
 
 materialized view 配下のテーブルにブロックを挿入する際、ClickHouse はソーステーブルの `block_id` と追加の識別子を組み合わせた文字列をハッシュ化して `block_id` を計算します。これにより、materialized view 内で正確な重複排除が保証され、materialized view 配下の宛先テーブルに到達する前にどのような変換が適用されたかにかかわらず、元の挿入に基づいてデータを区別できるようになります。
 
@@ -122,11 +237,11 @@ SET min_insert_block_size_bytes=0;
 
 上記の設定により、1行しか含まないブロックが連続するテーブルから選択できるようになります。これらの小さなブロックはまとめられず、テーブルに挿入されるまでそのままの状態が保たれます。
 
+デフォルトで有効になっていますが、materialized view での重複排除を明示的に指定します:
+
 ```sql
 SET deduplicate_blocks_in_dependent_materialized_views=1;
 ```
-
-materialized view で重複排除を有効化する必要があります:
 
 ```sql
 INSERT INTO dst SELECT

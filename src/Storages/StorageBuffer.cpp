@@ -178,16 +178,9 @@ StorageBuffer::StorageBuffer(
     , bg_pool(getContext()->getBufferFlushSchedulePool())
 {
     StorageInMemoryMetadata storage_metadata;
-    /// Reached when loading already-validated metadata, which stores no column list for this engine.
-    /// A freshly created table infers its structure in `registerStorageBuffer` under the user's context.
-    if (columns_.empty())
-    {
-        auto dest_table = DatabaseCatalog::instance().getTable(destination_id, context_);
-        auto dest_table_metadata = dest_table->getInMemoryMetadataPtr(context_, false);
-        storage_metadata.setColumns(dest_table_metadata->getColumns());
-    }
-    else
-        storage_metadata.setColumns(columns_);
+    /// Columns are always resolved by `registerStorageBuffer` under the user's context, so the
+    /// destination's structure is never read here under the long-lived context this storage holds.
+    storage_metadata.setColumns(columns_);
 
     storage_metadata.setConstraints(constraints_);
     storage_metadata.setComment(comment);
@@ -937,6 +930,21 @@ void StorageBuffer::startup()
 }
 
 
+size_t StorageBuffer::flushBufferedRowsBeforeShutdown()
+{
+    /// Sequential and without the threshold check: this runs once per shutdown, before any database
+    /// is gone, and every buffer that holds anything has to move now. The destination may be another
+    /// `Buffer` that is drained by a later pass of the caller's loop.
+    size_t buffers_flushed = 0;
+    for (auto & buffer : buffers)
+    {
+        if (flushBuffer(buffer, /*check_thresholds=*/ false, /*locked=*/ false))
+            ++buffers_flushed;
+    }
+    return buffers_flushed;
+}
+
+
 void StorageBuffer::flushAndPrepareForShutdown()
 {
     if (!flush_handle)
@@ -1049,6 +1057,13 @@ bool StorageBuffer::supportsOptimizationToSubcolumns() const
 {
     if (auto destination = getDestinationTable())
         return destination->supportsOptimizationToSubcolumns();
+    return false;
+}
+
+bool StorageBuffer::supportsOptimizationToTupleElementSubcolumns() const
+{
+    if (auto destination = getDestinationTable())
+        return destination->supportsOptimizationToTupleElementSubcolumns();
     return false;
 }
 
@@ -1532,16 +1547,19 @@ void registerStorageBuffer(StorageFactory & factory)
             destination_id.table_name = destination_table;
         }
 
-        /// An omitted structure is inferred here, under the user's context: `StorageBuffer` holds only
-        /// a long-lived context and would read the destination's columns with no user at all. Loading
-        /// of already-validated metadata has no user either, so it keeps inferring in the constructor.
+        /// Infer an omitted structure here, so the constructor never reads the destination under
+        /// the long-lived context it holds. A definition restored from metadata (including a short
+        /// `ATTACH`) has no user, so it is neither access-checked nor resolved under one.
         ColumnsDescription columns = args.columns;
-        if (columns.empty() && !destination_id.empty()
-            && !(isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax))
+        if (columns.empty() && !destination_id.empty())
         {
-            args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
-            auto destination = DatabaseCatalog::instance().getTable(destination_id, args.getLocalContext());
-            auto destination_metadata = destination->getInMemoryMetadataPtr(args.getLocalContext(), false);
+            const bool from_existing_metadata = isLoadingFromExistingMetadata(args.mode) || args.query.attach_short_syntax;
+            const ContextPtr & structure_context = from_existing_metadata ? args.getContext() : args.getLocalContext();
+            if (!from_existing_metadata)
+                args.getLocalContext()->checkAccess(AccessType::SHOW_COLUMNS, destination_id);
+
+            auto destination = DatabaseCatalog::instance().getTable(destination_id, structure_context);
+            auto destination_metadata = destination->getInMemoryMetadataPtr(structure_context, false);
             columns = destination_metadata->getColumns();
         }
 
@@ -1566,9 +1584,9 @@ void registerStorageBuffer(StorageFactory & factory)
         .description = R"DOCS_MD(
 Buffers the data to write in RAM, periodically flushing it to another table. During the read operation, data is read from the buffer and the other table simultaneously.
 
-:::note
+<Note>
 A recommended alternative to the Buffer Table Engine is enabling [asynchronous inserts](/concepts/features/operations/insert/asyncinserts).
-:::
+</Note>
 
 ```sql
 Buffer(database, table, num_layers, min_time, max_time, min_rows, max_rows, min_bytes, max_bytes [,flush_time [,flush_rows [,flush_bytes]]])
@@ -1644,9 +1662,9 @@ If the set of columns in the Buffer table does not match the set of columns in a
 If the types do not match for one of the columns in the Buffer table and a subordinate table, an error message is entered in the server log, and the buffer is cleared.
 The same happens if the subordinate table does not exist when the buffer is flushed.
 
-:::note
+<Note>
 Running ALTER on the Buffer table in releases made before 26 Oct 2021 will cause a `Block structure mismatch` error (see [#15117](https://github.com/ClickHouse/ClickHouse/issues/15117) and [#30565](https://github.com/ClickHouse/ClickHouse/pull/30565)), so deleting the Buffer table and then recreating is the only option. Check that this error is fixed in your release before trying to run ALTER on the Buffer table.
-:::
+</Note>
 
 If the server is restarted abnormally, the data in the buffer is lost.
 

@@ -164,6 +164,11 @@ public:
     }
 };
 
+/// `getLogger` locks a process-global mutex and looks the logger up by name, while range readers are
+/// constructed once per read step for every read task, so the lookup is cached in a function-local
+/// static (defined in the .cpp, so that the cache is not duplicated per shared object).
+LoggerPtr getMergeTreeRangeReaderLogger();
+
 /// MergeTreeReader iterator which allows sequential reading for arbitrary number of rows between pairs of marks in the same part.
 /// Stores reading state, which can be inside granule. Can skip rows in current granule and start reading from next mark.
 /// Used generally for reading number of rows less than index granularity to decrease cache misses for fat blocks.
@@ -201,12 +206,12 @@ private:
         /// Returns the number of rows added to block.
         /// NOTE: have to return number of rows because block has broken invariant:
         ///       some columns may have different size (for example, default columns may be zero size).
-        size_t read(Columns & columns, size_t from_mark, size_t offset, size_t num_rows);
+        size_t read(MutableColumns & columns, size_t from_mark, size_t offset, size_t num_rows);
 
         size_t numDelayedRows() const { return num_delayed_rows; }
 
         /// Skip extra rows to current_offset and perform actual reading
-        size_t finalize(Columns & columns);
+        size_t finalize(MutableColumns & columns);
 
         bool isFinished() const { return is_finished; }
 
@@ -225,7 +230,7 @@ private:
 
         /// Current position from the beginning of file in rows
         size_t position() const;
-        size_t readRows(Columns & columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, size_t num_rows);
     };
 
     /// Very thin wrapper for DelayedStream
@@ -237,8 +242,8 @@ private:
         Stream(size_t from_mark, size_t to_mark, IMergeTreeReader * merge_tree_reader);
 
         /// Returns the number of rows added to block.
-        size_t read(Columns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
-        size_t finalize(Columns & columns);
+        size_t read(MutableColumns & columns, size_t num_rows, bool skip_remaining_rows_in_current_granule);
+        size_t finalize(MutableColumns & columns);
         void skip(size_t num_rows);
 
         void finish() { current_mark = last_mark; }
@@ -271,7 +276,7 @@ private:
         void checkEnoughSpaceInCurrentGranule(size_t num_rows) const;
         void checkNoDelayedRows() const;
 
-        size_t readRows(Columns & columns, size_t num_rows);
+        size_t readRows(MutableColumns & columns, size_t num_rows);
         void toNextMark();
         size_t ceilRowsToCompleteGranules(size_t rows_num) const;
     };
@@ -400,7 +405,8 @@ public:
         GranuleOffsets granule_offsets;
         /// Sum(rows_per_granule)
         size_t total_rows_per_granule = 0;
-        /// The number of rows was read at first step. May be zero if no read columns present in part.
+        /// The number of rows read at the first step. A step that materializes no on-disk column
+        /// contributes its granule-derived row count, so this is zero only when no granule was read.
         size_t num_read_rows = 0;
 
         /// Diagnostic counters for debugging adjustLastGranule assertions.
@@ -483,7 +489,7 @@ private:
     bool main_reader = false; /// Whether it is the main reader or one of the readers for prewhere steps
     bool can_read_incomplete_granules = false; /// Combined flag: true only if ALL readers in the chain support incomplete granules
 
-    LoggerPtr log = getLogger("MergeTreeRangeReader");
+    LoggerPtr log = getMergeTreeRangeReaderLogger();
 };
 
 }

@@ -166,6 +166,11 @@ def test_cmd_mntr(started_cluster):
         assert int(result["zk_outstanding_requests"]) == 0
 
         assert result["zk_server_state"] == "leader"
+        assert int(result["zk_leader_uptime"]) >= 0
+        assert int(result["zk_sum_leader_unavailable_time"]) >= 0
+        assert int(result["zk_cnt_leader_unavailable_time"]) >= 0
+        assert int(result["zk_sum_election_time"]) >= 0
+        assert int(result["zk_cnt_election_time"]) >= 0
 
         # contains:
         #   10 nodes created by test
@@ -211,6 +216,10 @@ def test_cmd_srst(started_cluster):
 
     assert int(result["zk_packets_received"]) == 0
     assert int(result["zk_packets_sent"]) == 0
+    assert int(result["zk_sum_leader_unavailable_time"]) == 0
+    assert int(result["zk_cnt_leader_unavailable_time"]) == 0
+    assert int(result["zk_sum_election_time"]) == 0
+    assert int(result["zk_cnt_election_time"]) == 0
 
 
 def test_cmd_conf(started_cluster):
