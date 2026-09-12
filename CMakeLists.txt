@@ -376,6 +376,20 @@ if (ARCH_AMD64)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
+if (OS_LINUX AND ARCH_AARCH64)
+    # Sign the return address in the prologue and authenticate it before returning, so that
+    # overwriting a saved return address cannot redirect control flow. `paciasp` and `autiasp`
+    # live in the `NOP` encoding space: they are real operations on a core implementing
+    # `FEAT_PAuth` (ARMv8.3 and later, which covers Graviton3 and Graviton4) and decode as no-ops
+    # on older cores, so one binary still runs everywhere - just unprotected on the older ones.
+    # Leaf functions are left unsigned, which is the default and free, because they do not spill
+    # the return address to the stack.
+    # `bti` is deliberately left out. The linker keeps the BTI property only when every input
+    # object carries it, including hand-written assembly and every contrib, so enabling it needs
+    # its own audit; without one it would cost code size and enforce nothing.
+    set (COMPILER_FLAGS "${COMPILER_FLAGS} -mbranch-protection=pac-ret")
+endif()
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
