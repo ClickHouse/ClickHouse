@@ -286,6 +286,7 @@ public:
     struct InFunctionOrJoin
     {
         QueryTreeNodePtr query_node;
+        QueryTreeNodePtr parent_query_node;
         size_t subquery_depth = 0;
     };
 
@@ -314,6 +315,9 @@ public:
 
     void enterImpl(QueryTreeNodePtr & node)
     {
+        if (node->as<QueryNode>())
+            query_node_stack.push_back(node);
+
         auto * function_node = node->as<FunctionNode>();
         auto * join_node = node->as<JoinNode>();
 
@@ -322,6 +326,8 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
+            if (!query_node_stack.empty())
+                in_function_or_join_entry.parent_query_node = query_node_stack.back();
             in_function_or_join_entry.subquery_depth = getSubqueryDepth();
             global_in_or_join_nodes.push_back(std::move(in_function_or_join_entry));
             return;
@@ -332,6 +338,8 @@ public:
         {
             InFunctionOrJoin in_function_or_join_entry;
             in_function_or_join_entry.query_node = node;
+            if (!query_node_stack.empty())
+                in_function_or_join_entry.parent_query_node = query_node_stack.back();
             in_function_or_join_entry.subquery_depth = getSubqueryDepth();
             in_function_or_join_stack.push_back(in_function_or_join_entry);
             return;
@@ -345,6 +353,9 @@ public:
     {
         if (!in_function_or_join_stack.empty() && node.get() == in_function_or_join_stack.back().query_node.get())
             in_function_or_join_stack.pop_back();
+
+        if (node->as<QueryNode>())
+            query_node_stack.pop_back();
     }
 
 private:
@@ -414,6 +425,7 @@ private:
     }
 
     std::vector<InFunctionOrJoin> in_function_or_join_stack;
+    std::vector<QueryTreeNodePtr> query_node_stack;
     IQueryTreeNode::ReplacementMap replacement_map;
     std::vector<InFunctionOrJoin> global_in_or_join_nodes;
 };
@@ -923,6 +935,24 @@ QueryTreeNodePtr buildQueryTreeForShard(const PlannerContextPtr & planner_contex
             }
 
             auto subquery_node = getSubqueryFromTableExpression(join_table_expression, column_source_to_columns, planner_context->getQueryContext());
+
+            auto * parent_query_node = global_in_or_join_node.parent_query_node
+                ? global_in_or_join_node.parent_query_node->as<QueryNode>()
+                : nullptr;
+            if (parent_query_node && parent_query_node->hasPrewhere())
+            {
+                auto prewhere_table_expression = getPrewhereTableExpression(parent_query_node->getPrewhere());
+
+                if (prewhere_table_expression && isNodePartOfTree(prewhere_table_expression.get(), join_table_expression.get()))
+                {
+                    auto * subquery_query_node = subquery_node->as<QueryNode>();
+                    if (!subquery_query_node || subquery_query_node->hasPrewhere())
+                        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot move PREWHERE into GLOBAL JOIN subquery");
+
+                    subquery_query_node->getPrewhere() = parent_query_node->getPrewhere()->clone();
+                    parent_query_node->getPrewhere() = {};
+                }
+            }
 
             auto temporary_table_expression_node = executeSubqueryNode(subquery_node,
                 planner_context->getMutableQueryContext(),

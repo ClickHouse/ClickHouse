@@ -1,0 +1,27 @@
+left_prewhere
+1	a	1	A	4
+\N	\N	2	B	2
+\N	\N	3	C	2
+right_prewhere
+1	a	1	A	4
+\N	\N	3	C	2
+constant_prewhere
+\N	\N	1	A	2
+\N	\N	2	B	2
+\N	\N	3	C	2
+distributed_product_mode
+1	a	1	A	4
+\N	\N	2	B	2
+\N	\N	3	C	2
+prewhere_with_set
+1	a	1	A	4
+\N	\N	2	B	2
+\N	\N	3	C	2
+full_join
+1	a	1	A	4
+\N	\N	2	B	2
+\N	\N	3	C	2
+one_shard
+1	a	1	A	2
+\N	\N	2	B	2
+\N	\N	3	C	2

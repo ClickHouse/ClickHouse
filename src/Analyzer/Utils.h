@@ -187,6 +187,12 @@ void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const Stri
 /// Second element of pair is true if there is at most one source, false if there are multiple sources.
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node);
 
+/** Return the table or table function that a `PREWHERE` expression's columns come from, or nullptr
+  * when the expression has no such column (a constant `PREWHERE`). Nested `QUERY` / `UNION` / `LAMBDA`
+  * nodes are not visited, so a set subquery does not hide the outer column source.
+  */
+TableExpressionNodePtr getPrewhereTableExpression(const QueryTreeNodePtr & prewhere);
+
 /// Update mutable context for subquery execution
 void updateContextForSubqueryExecution(ContextMutablePtr & mutable_context);
 

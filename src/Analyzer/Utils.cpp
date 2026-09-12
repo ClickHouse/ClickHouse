@@ -1157,6 +1157,55 @@ std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodeP
     return {nullptr, false};
 }
 
+namespace
+{
+
+class CollectPrewhereTableExpressionVisitor : public ConstInDepthQueryTreeVisitor<CollectPrewhereTableExpressionVisitor>
+{
+public:
+    const TableExpressionNodePtr & getTableExpression() const
+    {
+        return table_expression;
+    }
+
+    void visitImpl(const QueryTreeNodePtr & node)
+    {
+        const auto * column_node = node->as<ColumnNode>();
+        if (!column_node)
+            return;
+
+        auto column_source = column_node->getColumnSourceOrNull();
+        if (!column_source || (!column_source->as<TableNode>() && !column_source->as<TableFunctionNode>()))
+            return;
+
+        if (!table_expression)
+            table_expression = std::static_pointer_cast<ITableExpressionNode>(std::move(column_source));
+    }
+
+    static bool needChildVisit(const QueryTreeNodePtr &, const QueryTreeNodePtr & child_node)
+    {
+        const auto child_type = child_node->getNodeType();
+        return child_type != QueryTreeNodeType::QUERY
+            && child_type != QueryTreeNodeType::UNION
+            && child_type != QueryTreeNodeType::LAMBDA;
+    }
+
+private:
+    TableExpressionNodePtr table_expression;
+};
+
+}
+
+TableExpressionNodePtr getPrewhereTableExpression(const QueryTreeNodePtr & prewhere)
+{
+    if (!prewhere)
+        return {};
+
+    CollectPrewhereTableExpressionVisitor visitor;
+    visitor.visit(prewhere);
+    return visitor.getTableExpression();
+}
+
 /** There are no limits on the maximum size of the result for the subquery.
   * Since the result of the query is not the result of the entire query.
   */
