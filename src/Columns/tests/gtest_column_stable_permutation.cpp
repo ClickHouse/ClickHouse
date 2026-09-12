@@ -486,16 +486,17 @@ TEST(StablePermutation, ColumnSparse)
     }
 }
 
-TEST(StablePermutation, UpdatePermutationPreservesEqualKeys)
+template <typename Column, typename ColumnCreateFunc>
+static void assertUpdatePermutationPreservesEqualKeys(ColumnCreateFunc create_column)
 {
     for (size_t size : {128, 80000})
     {
-        auto type = ColumnInt64::create();
-        auto id = ColumnInt64::create();
+        auto type = create_column();
+        auto id = create_column();
         for (size_t i = 0; i < size; ++i)
         {
-            type->insertValue((i / 2) % 64);
-            id->insertValue(i / 2);
+            type->insertValue(typename Column::ValueType((i / 2) % 64));
+            id->insertValue(typename Column::ValueType(i / 2));
         }
 
         for (auto direction : {IColumn::PermutationSortDirection::Ascending, IColumn::PermutationSortDirection::Descending})
@@ -526,4 +527,19 @@ TEST(StablePermutation, UpdatePermutationPreservesEqualKeys)
             }
         }
     }
+}
+
+TEST(StablePermutation, UpdatePermutationPreservesEqualKeys)
+{
+    assertUpdatePermutationPreservesEqualKeys<ColumnInt64>([] { return ColumnInt64::create(); });
+}
+
+TEST(StablePermutation, UpdatePermutationPreservesEqualDecimalKeys)
+{
+    assertUpdatePermutationPreservesEqualKeys<ColumnDecimal<Decimal64>>([] { return ColumnDecimal<Decimal64>::create(0, 4); });
+}
+
+TEST(StablePermutation, UpdatePermutationPreservesEqualDateTime64Keys)
+{
+    assertUpdatePermutationPreservesEqualKeys<ColumnDecimal<DateTime64>>([] { return ColumnDecimal<DateTime64>::create(0, 3); });
 }

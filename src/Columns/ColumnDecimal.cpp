@@ -298,8 +298,9 @@ void ColumnDecimal<T>::updatePermutation(IColumn::PermutationSortDirection direc
 
         if (size >= 256 && size <= std::numeric_limits<UInt32>::max() && use_radix_sort)
         {
-            bool try_sort = trySort(begin, end, pred);
-            if (try_sort)
+            /// `trySort` can reorder equal values even when it returns false.
+            /// Stable radix sorting must preserve the incoming order within equal ranges.
+            if (!sort_is_stable && trySort(begin, end, pred))
                 return;
 
             PaddedPODArray<ValueWithIndex<NativeT>> pairs(size);
