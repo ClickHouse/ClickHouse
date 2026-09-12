@@ -1875,7 +1875,8 @@ tar -czf ./ci/tmp/logs.tar.gz \
     # Only the hard backstop, which is where the job is about to be cancelled. See
     # `run_pytest_and_collect_results`.
     hard_killed = False
-    session_timeout_parallel = 3600 * 2
+    # A ceiling for a suite that is not finishing, not a budget the shard is expected to spend.
+    session_timeout_parallel = 9000
     session_timeout_sequential = 3600
 
     if is_llvm_coverage:
