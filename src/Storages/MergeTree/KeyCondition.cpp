@@ -1206,6 +1206,15 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, !need_inversion, boolean_context);
                 handled_inversion = true;
             }
+            else if (name == "indexHint" && need_inversion)
+            {
+                /// `indexHint` returns 1 for every row, so an inverted hint is 0 for every row. Index
+                /// analysis re-reads a hint's arguments from the `FunctionIndexHint` object, not from the
+                /// cloned children, so an inverted hint node would contribute its condition un-inverted.
+                auto uint8_type = std::make_shared<DataTypeUInt8>();
+                res = &inverted_dag.addColumn(uint8_type->createColumnConst(0, 0), uint8_type, "false");
+                handled_inversion = true;
+            }
             else if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
@@ -1217,7 +1226,8 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                         children = index_hint_dag.getOutputs();
 
                         for (auto & arg : children)
-                            arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
+                            arg = &cloneDAGWithInversionPushDown(
+                                *arg, inverted_dag, inputs_mapping, context, /* need_inversion */ false, boolean_context);
                     }
                 }
 
@@ -1444,7 +1454,7 @@ void KeyCondition::getAllSpaceFillingCurves(const BuildInfo & info)
                 /// All arguments should be regular input columns.
                 if (child->type == ActionsDAG::ActionType::INPUT)
                 {
-                    curve.arguments.push_back(child->result_name);
+                    curve.arguments.push_back({child->result_name, child->result_type});
                 }
                 else
                 {
@@ -3452,11 +3462,11 @@ bool KeyCondition::isKeyPossiblyWrappedByMonotonicFunctionsImpl(
         {
             for (size_t i = 0, size = curve.arguments.size(); i < size; ++i)
             {
-                if (curve.arguments[i] == name)
+                if (curve.arguments[i].name == name)
                 {
                     out_key_column_num = curve.key_column_pos;
                     out_argument_num_of_space_filling_curve = i;
-                    out_key_column_type = sample_block.getByName(name).type;
+                    out_key_column_type = curve.arguments[i].type;
                     return true;
                 }
             }
@@ -4568,6 +4578,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             return false;
         }
 
+        /// After every conversion above, this is the value that becomes a range endpoint. The `Field`
+        /// total order puts a `NaN` after all finite values, which SQL comparison does not follow.
+        if (anyFieldSatisfies(const_value, isNaNField))
+            return false;
+
         const auto atom_it = atom_map.find(func_name);
 
         out.key_columns.push_back(key_column_num);
@@ -4581,10 +4596,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
         return atom_it->second(out, const_value);
     }
-    if (node.tryGetConstant(const_value, const_type))
+    /// For cases where it says, for example, `WHERE 0 AND something`.
+    /// A constant whose type has no boolean reading (`String`, `Decimal`, a wide integer) can only
+    /// reach a condition position inside `indexHint`, which never evaluates its arguments, so it
+    /// states nothing about the data and must leave the atom unknown.
+    if (node.tryGetConstant(const_value, const_type) && const_type->canBeUsedInBooleanContext())
     {
-        /// For cases where it says, for example, `WHERE 0 AND something`
-
         if (const_value.isNull())
         {
             out.function = RPNElement::ALWAYS_FALSE;
@@ -4633,8 +4650,11 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
             /// optimization (`SELECT count() ... WHERE nullable_key`) would count such NULL-only granules
             /// without reading them and return a wrong result. Leaving the atom unset (`FUNCTION_UNKNOWN`)
             /// reverts to reading and filtering those rows, which is correct.
+            /// Require a boolean reading, not merely a numeric type: `WHERE w` is rejected for a
+            /// wide integer or a `BFloat16`, so reading such a key as `key != 0` would prune
+            /// granules that no row-level filter can account for.
             if (!key_type_not_low_cardinality->isNullable()
-                && (isInteger(key_type_not_low_cardinality) || isFloat(key_type_not_low_cardinality)))
+                && key_type_not_low_cardinality->canBeUsedInBooleanContext())
             {
                 out.function = RPNElement::FUNCTION_NOT_IN_RANGE;
                 out.range = Range(Field(UInt64(0)));
