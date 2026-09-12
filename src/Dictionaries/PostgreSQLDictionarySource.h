@@ -56,6 +56,8 @@ public:
 private:
     String getUpdateFieldAndDate();
     String doInvalidateQuery(const std::string & request) const;
+    /// Empty unless the source has a custom QUERY, whose columns are mapped by position.
+    String getCustomQueryStructureHint() const;
     QueryPipeline loadBase(const String & query);
 
     const DictionaryStructure dict_struct;

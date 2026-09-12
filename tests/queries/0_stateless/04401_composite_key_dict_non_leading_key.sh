@@ -59,3 +59,29 @@ SELECT dictHas(currentDatabase() || '.dict_positional', toUInt64(100));
 
 DROP DICTIONARY dict_positional;
 "
+
+# A range dictionary expects the range columns right after the key, but the query below returns
+# them last. Names still match, so the load must reorder them (issue #113935).
+${CLICKHOUSE_CLIENT} --multiquery "
+DROP DICTIONARY IF EXISTS dict_range_non_leading;
+DROP TABLE IF EXISTS dict_range_source;
+
+CREATE TABLE dict_range_source (meter_no String, id Int64, contract_time Date, end_date Date) ENGINE = MergeTree ORDER BY meter_no;
+INSERT INTO dict_range_source VALUES ('M1', 97955, '2020-01-01', '2030-01-01');
+
+CREATE DICTIONARY dict_range_non_leading (meter_no String, id Int64, contract_time Date, end_date Date)
+    PRIMARY KEY meter_no
+    SOURCE(CLICKHOUSE(
+        HOST 'localhost'
+        PORT tcpPort()
+        USER 'default'
+        PASSWORD ''
+        DB currentDatabase()
+        QUERY 'SELECT meter_no, id, contract_time, end_date FROM ${CLICKHOUSE_DATABASE}.dict_range_source'))
+    LAYOUT(RANGE_HASHED()) RANGE(MIN contract_time MAX end_date) LIFETIME(MIN 0 MAX 0);
+
+SELECT dictGet(currentDatabase() || '.dict_range_non_leading', 'id', 'M1', toDate('2025-01-01'));
+
+DROP DICTIONARY dict_range_non_leading;
+DROP TABLE dict_range_source;
+"
