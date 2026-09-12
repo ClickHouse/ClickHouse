@@ -172,14 +172,6 @@ void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::st
     if (!ast)
         return;
 
-    auto is_stripped = [&](std::string_view name)
-    {
-        for (const auto & stripped : setting_names)
-            if (stripped == name)
-                return true;
-        return false;
-    };
-
     /// Walk only the first-order structure of the query - the INSERT clause, the union tree of the
     /// top-level SELECT, and each first-order SELECT's own SETTINGS clause. Unlike removeSettingsFromQuery,
     /// this never descends into `children` generically, so SETTINGS clauses inside table expressions,
@@ -190,7 +182,7 @@ void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::st
         if (insert_query->settings_ast)
             if (auto * set_query = insert_query->settings_ast->as<ASTSetQuery>())
             {
-                stripNamesFromSetQuery(*set_query, is_stripped);
+                stripNamesFromSetQuery(*set_query, setting_names);
                 if (isEmptySetQuery(*set_query))
                     insert_query->reset(insert_query->settings_ast);
             }
@@ -204,7 +196,7 @@ void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::st
         if (select_with_union->settings_ast)
             if (auto * set_query = select_with_union->settings_ast->as<ASTSetQuery>())
             {
-                stripNamesFromSetQuery(*set_query, is_stripped);
+                stripNamesFromSetQuery(*set_query, setting_names);
                 if (isEmptySetQuery(*set_query))
                     select_with_union->reset(select_with_union->settings_ast);
             }
@@ -228,7 +220,7 @@ void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::st
         if (auto settings = select_query->settings())
             if (auto * set_query = settings->as<ASTSetQuery>())
             {
-                stripNamesFromSetQuery(*set_query, is_stripped);
+                stripNamesFromSetQuery(*set_query, setting_names);
                 if (isEmptySetQuery(*set_query))
                     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }
