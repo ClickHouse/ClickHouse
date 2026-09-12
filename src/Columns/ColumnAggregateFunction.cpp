@@ -9,6 +9,7 @@
 #include <IO/Operators.h>
 #include <IO/NullWriteBuffer.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/SipHashingWriteBuffer.h>
 #include <IO/WriteBufferFromArena.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -454,9 +455,11 @@ INSTANTIATE_INDEX_IMPL(ColumnAggregateFunction)
 /// Is required to support operations with Set
 void ColumnAggregateFunction::updateHashWithValue(size_t n, SipHash & hash) const
 {
-    WriteBufferFromOwnString wbuf;
+    char window[1024];
+    SipHashingWriteBuffer wbuf(hash, sizeof(window), window);
     func->serialize(data[n], wbuf, version);
-    hash.update(wbuf.str().c_str(), wbuf.str().size());
+    /// Mandatory: the destructor discards whatever is still in the window unhashed.
+    wbuf.finalize();
 }
 
 void ColumnAggregateFunction::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
