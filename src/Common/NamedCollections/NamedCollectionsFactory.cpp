@@ -427,6 +427,21 @@ void NamedCollectionFactory::updateFunc()
 void NamedCollectionFactory::addDependency(const String & collection_name, const StorageID & table_id)
 {
     std::lock_guard lock(mutex);
+
+    /// Idempotent: the dependency is set-membership. `removeDependencies` erases *all* entries for a
+    /// table and there is no "remove one", so a duplicate would survive a single `removeDependencies`
+    /// and be double-counted by `getDependents`.
+    const auto & idx = dependencies.get<Collection>();
+    auto range = idx.equal_range(collection_name);
+    for (auto it = range.first; it != range.second; ++it)
+    {
+        if (it->table_id == table_id)
+        {
+            LOG_TRACE(log, "Dependency already exists: collection={}, table={}", collection_name, table_id.getNameForLogs());
+            return;
+        }
+    }
+
     LOG_TRACE(log, "Adding dependency: collection={}, table={}", collection_name, table_id.getNameForLogs());
     dependencies.emplace(collection_name, table_id);
 }
