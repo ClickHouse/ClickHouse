@@ -95,6 +95,56 @@ DEFAULT_ENV_NAME = ".env"
 # the cwd, which differs between a CI job and a native pytest run.
 TEMP_ABS_DIR = p.abspath(p.join(HELPERS_DIR, "..", temp_dir))
 
+# Marker of the one docker failure mode that looks exactly like a broken server: the
+# container keeps running but has no network interface at all, so every connection to it
+# fails with `No route to host` and every connection out of it with `Network is unreachable`
+# until the module ends.
+#
+# Docker picks the name of a new endpoint's host-side `veth` by generating a random
+# `veth<7 hex digits>` and checking that no interface of that name exists in the *host*
+# network namespace. The peer name it hands to a container comes from the same space, but it
+# is invisible to that check once the container has renamed it to `eth0`. So a new endpoint
+# can legitimately be given the name that a live container's interface will revert to, and
+# when that older container is destroyed the bridge driver deletes the interface *by name* -
+# unregistering the host-side `veth` of the unrelated running container instead. Present at
+# least up to moby 28.3.3 (`endpoint.srcName = containerIfName` in `CreateEndpoint`, deleted
+# through `LinkByName(ep.srcName)` in `DeleteEndpoint`).
+#
+# We cannot fix moby from here, but the resulting state is unambiguous and cheap to
+# recognise, so the harness says so instead of blaming the server. The CI job matches this
+# marker to label such results as infrastructure errors, so it is part of the contract with
+# `ci/jobs/integration_test_job.py` - see `LOST_NETWORK_INTERFACE_ERROR` there.
+LOST_NETWORK_INTERFACE_ERROR = "Docker removed the network interface of the container"
+
+# Echoed by the interface probe below so a `docker exec` that never ran is told apart from
+# one that ran and found nothing. Without it a dead container or a busy daemon would read as
+# "the interface is gone".
+NETWORK_INTERFACE_PROBE_TOKEN = "__INTERFACE_PROBE_OK__"
+
+# The probe lists the network namespace's devices straight out of sysfs: no `iproute2` in the
+# image to depend on, and nothing to parse. A trailing slash in the glob keeps it to
+# directories, so the plain files that also live there (`bonding_masters`) are not mistaken
+# for interfaces; an unmatched glob yields the pattern itself, which reads as "something is
+# there" and so withholds the verdict rather than inventing one.
+NETWORK_INTERFACE_PROBE = (
+    'for d in /sys/class/net/*/; do d="${d%/}"; echo "${d##*/}"; done; '
+    f"echo {NETWORK_INTERFACE_PROBE_TOKEN}"
+)
+
+# Interface names that do not connect a container to anything, so a container left with only
+# these has been cut off from its network.
+DISCONNECTED_INTERFACE_NAMES = frozenset(["lo"])
+
+# The probe reads one directory of kernel state, so it either answers at once or the docker
+# daemon is not answering at all. Far below `RUN_AND_CHECK_DEFAULT_TIMEOUT`, because it runs
+# inside retry loops of failing queries and must not extend them noticeably.
+NETWORK_INTERFACE_PROBE_TIMEOUT = 30
+
+# The errors the lost-interface state produces on the client side. Kept narrow on purpose:
+# the probe below only runs when a query has already failed with one of these, so the normal
+# path costs nothing and an ordinary refused connection is not investigated.
+UNREACHABLE_ADDRESS_ERRORS = ("No route to host", "Network is unreachable")
+
 
 def find_default_config_path():
     path = os.environ.get("CLICKHOUSE_TESTS_BASE_CONFIG_DIR", None)
@@ -5196,6 +5246,63 @@ class ClickHouseInstance:
     def is_built_with_memory_sanitizer(self):
         return self.is_built_with_sanitizer("memory")
 
+    def describe_lost_network_interface(self):
+        """Whether docker removed this container's network interface behind our back.
+
+        Returns the message to report, or an empty string when the interface is in place -
+        so a caller can use the result as the condition itself.
+
+        The verdict needs both sides to disagree: docker attached the container to the
+        cluster network - which is why the harness has an address to aim every connection in
+        this module at - yet the still-running container holds no interface that could carry
+        it. Nothing a test does produces that: `PartitionManager` only adds `iptables` rules
+        and leaves the interface in place, a stopped server does not touch it either, and no
+        test takes an interface down. So a match is always
+        `LOST_NETWORK_INTERFACE_ERROR`.
+
+        A state that answers only one half reports nothing rather than guessing: before
+        `start` and after `shutdown` there is no attachment to contradict, and a `docker
+        exec` that never ran (container gone, daemon busy) leaves the inside unknown - which
+        is why the probe echoes a token instead of trusting empty output.
+        """
+        expected_ip = self.ip_address
+        if not expected_ip:
+            return ""
+
+        try:
+            probe = self.exec_in_container(
+                ["bash", "-c", NETWORK_INTERFACE_PROBE],
+                nothrow=True,
+                user="root",
+                timeout=NETWORK_INTERFACE_PROBE_TIMEOUT,
+            )
+        except Exception as ex:
+            # Not a fallback path: this is a diagnostic about an error that has already
+            # happened, and every caller reports that error next. Letting the probe's own
+            # failure out would replace the failure under investigation with a note about
+            # the investigation, so it is logged and the verdict is withheld.
+            logging.warning(
+                "Cannot probe the interfaces of %s, not classifying its network error: %s",
+                self.name,
+                ex,
+            )
+            return ""
+
+        if NETWORK_INTERFACE_PROBE_TOKEN not in probe:
+            return ""
+
+        interfaces = set(probe.split()) - {NETWORK_INTERFACE_PROBE_TOKEN}
+        if interfaces - DISCONNECTED_INTERFACE_NAMES:
+            return ""
+
+        return (
+            f"{LOST_NETWORK_INTERFACE_ERROR} {self.docker_id}: docker attached it to the "
+            f"cluster network with address {expected_ip}, but the running container is "
+            f"left with no network interface at all (/sys/class/net holds "
+            f"{sorted(interfaces)}). The server under test did not fail - this is the moby "
+            "veth name collision."
+        )
+
     # Connects to the instance via clickhouse-client, sends a query (1st argument) and returns the answer
     def query(
         self,
@@ -5217,19 +5324,37 @@ class ClickHouseInstance:
         else:
             sql_for_log = sql
         logging.debug("Executing query %s on %s", sql_for_log, self.name)
-        return self.client.query(
-            sql,
-            stdin=stdin,
-            timeout=timeout,
-            settings=settings,
-            user=user,
-            password=password,
-            database=database,
-            ignore_error=ignore_error,
-            query_id=query_id,
-            host=host,
-            parse=parse,
-        )
+        try:
+            return self.client.query(
+                sql,
+                stdin=stdin,
+                timeout=timeout,
+                settings=settings,
+                user=user,
+                password=password,
+                database=database,
+                ignore_error=ignore_error,
+                query_id=query_id,
+                host=host,
+                parse=parse,
+            )
+        except QueryRuntimeException as ex:
+            # Not a fallback: the query stays failed either way. The only thing added is
+            # who broke the connection, which the client cannot tell from its side and
+            # which decides whether the result is a test failure or an infrastructure one.
+            if not any(error in str(ex) for error in UNREACHABLE_ADDRESS_ERRORS):
+                raise
+            lost_interface = self.describe_lost_network_interface()
+            if not lost_interface:
+                raise
+            # Same exception type and same `returncode`/`stderr`, because tests read those:
+            # only the message gains the cause, so `except QueryRuntimeException` arms and
+            # `match=` patterns keep working.
+            raise QueryRuntimeException(
+                f"{lost_interface} Query failed with: {ex}",
+                ex.returncode,
+                ex.stderr,
+            ) from ex
 
     def query_with_retry(
         self,
@@ -6176,9 +6301,16 @@ class ClickHouseInstance:
 
             current_time = time.time()
             if current_time >= deadline:
+                # `EHOSTUNREACH` is retried below, so a container whose interface docker
+                # removed spins here until the deadline and then reports a timeout that
+                # reads like a slow server. Name the real cause while the evidence is
+                # still there - this is the path that loses a whole test module.
+                lost_interface = self.describe_lost_network_interface()
                 raise Exception(
                     f"Timed out while waiting for instance `{self.name}' with ip address {self.ip_address} to start. "
-                    f"Container status: {status}, logs: {handle.logs().decode('utf-8')}"
+                    f"Container status: {status}, "
+                    + (f"{lost_interface} " if lost_interface else "")
+                    + f"logs: {handle.logs().decode('utf-8')}"
                 )
 
             socket_timeout = min(timeout, deadline - current_time)
