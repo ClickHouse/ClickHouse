@@ -16,7 +16,6 @@ inline static constexpr uint64_t DEFAULT_KEEP_ALIVE_MAX_REQUESTS = 100;
 
 inline static constexpr bool DEFAULT_USE_ENVIRONMENT_CREDENTIALS = true;
 inline static constexpr bool DEFAULT_NO_SIGN_REQUEST = false;
-inline static constexpr bool DEFAULT_DISABLE_CHECKSUM = false;
 inline static constexpr bool DEFAULT_USE_ADAPTIVE_TIMEOUTS = true;
 
 /// Upload settings.
