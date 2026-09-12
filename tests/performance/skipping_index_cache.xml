@@ -1,0 +1,25 @@
+<test>
+    <create_query>
+        CREATE TABLE test_skipping_index_cache
+        (
+            ts UInt64,
+            account_id UInt64,
+            INDEX idx_account_id account_id TYPE bloom_filter(0.01) GRANULARITY 1
+        )
+        ENGINE = MergeTree
+        ORDER BY ts
+        SETTINGS index_granularity = 8192
+    </create_query>
+
+    <!-- Many parts, and values of account_id come in runs so that the bloom filter is selective. -->
+    <fill_query>
+        INSERT INTO test_skipping_index_cache
+        SETTINGS max_insert_threads = 8, max_insert_block_size = 500000, min_insert_block_size_rows = 500000
+        SELECT number, cityHash64(intDiv(number, 4096)) % 1500 FROM numbers(20000000)
+    </fill_query>
+
+    <query>SELECT count() FROM test_skipping_index_cache WHERE account_id = 123</query>
+    <query>SELECT count() FROM test_skipping_index_cache WHERE account_id IN (7, 42, 999)</query>
+
+    <drop_query>DROP TABLE IF EXISTS test_skipping_index_cache</drop_query>
+</test>

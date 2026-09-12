@@ -1,0 +1,143 @@
+#pragma once
+
+#include <Common/CacheBase.h>
+#include <Common/ProfileEvents.h>
+#include <Common/SipHash.h>
+#include <Storages/MergeTree/MarkRange.h>
+#include <Storages/MergeTree/MergeTreeIndices.h>
+
+namespace ProfileEvents
+{
+    extern const Event SkippingIndexCacheMisses;
+    extern const Event SkippingIndexCacheHits;
+    extern const Event SkippingIndexCacheWeightLost;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric SkippingIndexCacheBytes;
+    extern const Metric SkippingIndexCacheCells;
+}
+
+namespace DB
+{
+
+/// One cache entry holds a contiguous block of deserialized granules of one skipping index of one part.
+/// Caching per block instead of per granule keeps the number of cache lookups (and thus the contention
+/// on the cache mutex) low for indexes with a small GRANULARITY.
+struct SkippingIndexCacheKey
+{
+    /// Storage-related path of the part - uniquely identifies one part from another
+    String path_to_data_part;
+    /// A part with the same path can be replaced by another one with the same name (e.g. detached and fetched again)
+    /// while a block is being loaded, so the content of the part is a part of the key as well.
+    UInt128 part_checksum{};
+    String index_name;
+    /// A deserialized granule is a function of the file bytes AND the index definition: e.g. the bloom filter
+    /// bitmap is sized from the parameters of the current metadata, not from the file. After
+    /// `ALTER TABLE ... DROP INDEX x, ADD INDEX x ...` (same name, different definition), active parts keep the
+    /// old index file until the mutation rewrites them, so readers holding different metadata snapshots would
+    /// otherwise share entries under the same {path, checksum, name} and read each other's mis-sized granules.
+    UInt128 index_definition_hash{};
+    /// Index of the block of granules: index_mark / SkippingIndexCache::GRANULES_PER_ENTRY.
+    size_t block_number = 0;
+
+    bool operator==(const SkippingIndexCacheKey & rhs) const
+    {
+        return path_to_data_part == rhs.path_to_data_part && part_checksum == rhs.part_checksum && index_name == rhs.index_name
+            && index_definition_hash == rhs.index_definition_hash && block_number == rhs.block_number;
+    }
+};
+
+struct SkippingIndexCacheHashFunction
+{
+    size_t operator()(const SkippingIndexCacheKey & key) const
+    {
+        SipHash siphash;
+        siphash.update(key.path_to_data_part);
+        siphash.update(key.part_checksum);
+        siphash.update(key.index_name);
+        siphash.update(key.index_definition_hash);
+        siphash.update(key.block_number);
+
+        return siphash.get64();
+    }
+};
+
+struct SkippingIndexCacheCell
+{
+    /// memoryUsageBytes() of the granules counts only the payload, so add a guess for the objects themselves.
+    static constexpr auto GRANULE_OVERHEAD_BYTES_GUESS = 128uz;
+    static constexpr auto ENTRY_OVERHEAD_BYTES_GUESS = 200uz;
+
+    MergeTreeIndexGranules granules;
+    size_t memory_bytes;
+
+    explicit SkippingIndexCacheCell(MergeTreeIndexGranules granules_)
+        : granules(std::move(granules_))
+        , memory_bytes(ENTRY_OVERHEAD_BYTES_GUESS)
+    {
+        for (const auto & granule : granules)
+            memory_bytes += granule->memoryUsageBytes() + GRANULE_OVERHEAD_BYTES_GUESS;
+    }
+};
+
+struct SkippingIndexCacheWeightFunction
+{
+    size_t operator()(const SkippingIndexCacheCell & cell) const
+    {
+        return cell.memory_bytes;
+    }
+};
+
+/// Cache of deserialized skipping index granules, see `IMergeTreeIndex::supportsGranuleCache`.
+class SkippingIndexCache : public CacheBase<SkippingIndexCacheKey, SkippingIndexCacheCell, SkippingIndexCacheHashFunction, SkippingIndexCacheWeightFunction>
+{
+public:
+    using Base = CacheBase<SkippingIndexCacheKey, SkippingIndexCacheCell, SkippingIndexCacheHashFunction, SkippingIndexCacheWeightFunction>;
+
+    /// Number of consecutive index granules stored in one cache entry.
+    static constexpr size_t GRANULES_PER_ENTRY = 32;
+
+    /// See SkippingIndexCacheKey::index_definition_hash.
+    static UInt128 hashIndexDefinition(const IndexDescription & index);
+
+    SkippingIndexCache(const String & cache_policy, size_t max_size_in_bytes, size_t max_count, double size_ratio)
+        : Base(cache_policy, CurrentMetrics::SkippingIndexCacheBytes, CurrentMetrics::SkippingIndexCacheCells, max_size_in_bytes, max_count, size_ratio)
+    {}
+
+    /// Marks of the index granules stored in the block.
+    static MarkRange blockRange(size_t block_number, size_t marks_count)
+    {
+        size_t begin = block_number * GRANULES_PER_ENTRY;
+        return {begin, std::min(marks_count, begin + GRANULES_PER_ENTRY)};
+    }
+
+    template <typename LoadFunc>
+    MappedPtr getOrSet(const Key & key, LoadFunc && load)
+    {
+        auto [cell, missed] = Base::getOrSet(key, [&] { return std::make_shared<SkippingIndexCacheCell>(load()); });
+        ProfileEvents::increment(missed ? ProfileEvents::SkippingIndexCacheMisses : ProfileEvents::SkippingIndexCacheHits);
+        return cell;
+    }
+
+    /// Removes the entries of one index of one part by key. This runs in the background cleanup of outdated parts,
+    /// so it must not scan the whole cache (which may hold millions of entries) under the cache mutex.
+    void removeEntriesFromCache(const String & path_to_data_part, UInt128 part_checksum, const String & index_name, UInt128 index_definition_hash, size_t marks_count)
+    {
+        Key key{path_to_data_part, part_checksum, index_name, index_definition_hash, 0};
+        size_t blocks_count = (marks_count + GRANULES_PER_ENTRY - 1) / GRANULES_PER_ENTRY;
+        for (key.block_number = 0; key.block_number < blocks_count; ++key.block_number)
+            Base::remove(key);
+    }
+
+private:
+    void onEntryRemoval(const size_t weight_loss, const MappedPtr &) override
+    {
+        ProfileEvents::increment(ProfileEvents::SkippingIndexCacheWeightLost, weight_loss);
+    }
+};
+
+using SkippingIndexCachePtr = std::shared_ptr<SkippingIndexCache>;
+
+}

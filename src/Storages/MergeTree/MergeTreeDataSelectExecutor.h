@@ -21,6 +21,7 @@ namespace DB
 
 class KeyCondition;
 class VectorSimilarityIndexCache;
+class SkippingIndexCache;
 struct ProjectionDescription;
 using ProjectionDescriptionRawPtr = const ProjectionDescription *;
 
@@ -120,6 +121,7 @@ public:
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
         VectorSimilarityIndexCache * vector_similarity_index_cache,
+        SkippingIndexCache * skipping_index_cache,
         bool use_skip_indexes_for_disjunctions,
         PartialDisjunctionResult & partial_disjunction_result,
         LoggerPtr log);
@@ -133,7 +135,8 @@ public:
         const MergeTreeReaderSettings & reader_settings,
         MarkCache * mark_cache,
         UncompressedCache * uncompressed_cache,
-        VectorSimilarityIndexCache * vector_similarity_index_cache);
+        VectorSimilarityIndexCache * vector_similarity_index_cache,
+        SkippingIndexCache * skipping_index_cache);
 
     /// Maximum number of elements in the RPN condition when evaluation of OR-connected filter conditions using skip indexes (setting
     /// 'use_skip_indexes_for_disjunctions') is enabled.
