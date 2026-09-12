@@ -466,6 +466,21 @@ public:
         return false;
     }
 
+    /// The parameters that belong to the state's identity: they are printed both in the state type
+    /// and in the name that travels with a serialized state. All of them by default.
+    virtual Array getStateParameters() const
+    {
+        /** A combinator and the adapter for `Nullable` arguments are constructed with the caller's
+          * parameters and answer for the function they wrap, as for `shouldPrintParametersWithTypes`:
+          * `argMinIfState(map(1, 2))(a, b, cond)` must no more carry the ignored parameter into the
+          * persisted type than `argMinState(map(1, 2))(a, b)` does. A combinator that takes
+          * parameters of its own keeps those and lets the wrapped function answer for the rest.
+          */
+        if (auto nested = getNestedFunction())
+            return nested->getStateParameters();
+        return parameters;
+    }
+
     // Any aggregate function can be calculated over a window, but there are some
     // window functions such as rank() that require a different interface, e.g.
     // because they don't respect the window frame, or need to be notified when

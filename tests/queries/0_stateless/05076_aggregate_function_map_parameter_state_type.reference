@@ -1,0 +1,9 @@
+AggregateFunction(argMin, UInt64, UInt64)
+AggregateFunction(intervalLengthSum, Float64, Float64)
+0
+1
+AggregateFunction(argMin, UInt8, UInt8)
+AggregateFunction(intervalLengthSum, Float64, Float64)
+AggregateFunction(groupArrayMovingSum(42::Int64), Int64)
+AggregateFunction(timeSeriesInstantRateToGrid(\'1734004810\'::Decimal64(3), \'1734004860\'::Decimal64(3), 10, 60), Array(DateTime64(3)), Array(Float64))
+3

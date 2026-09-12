@@ -14,7 +14,8 @@ extern const int NOT_IMPLEMENTED;
 
 DataTypePtr IAggregateFunction::getStateType() const
 {
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters);
+    return std::make_shared<DataTypeAggregateFunction>(
+        shared_from_this(), argument_types, getStateParameters());
 }
 
 DataTypePtr IAggregateFunction::getNormalizedStateType() const
@@ -23,7 +24,8 @@ DataTypePtr IAggregateFunction::getNormalizedStateType() const
     normalized_argument_types.reserve(argument_types.size());
     for (const auto & arg : argument_types)
         normalized_argument_types.emplace_back(arg->getNormalizedType());
-    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), normalized_argument_types, parameters);
+    return std::make_shared<DataTypeAggregateFunction>(
+        shared_from_this(), normalized_argument_types, getStateParameters());
 }
 
 String IAggregateFunction::getDescription() const
