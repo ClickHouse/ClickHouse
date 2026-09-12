@@ -14,6 +14,11 @@ a	1	1
 b	0	0
 short circuit off	1
 short circuit on	1
+Enum16	1
+an enum that declares 0	1
+\N	\N
+z	1
+a	0
 a constant NULL	\N
 hash	15
 parallel_hash	15

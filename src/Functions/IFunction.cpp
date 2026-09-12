@@ -206,6 +206,19 @@ namespace
 /// value. With `only_enums` the other argument types are left alone, which is what the paths that
 /// discard the values of null rows afterwards want; the path that has to produce `f(default(input))`
 /// for a null row (see below) passes false and normalizes everything.
+///
+/// `only_enums` is deliberately not "every type whose payload some function might reject". An `Enum`
+/// payload is outside the domain of its own type - no valid `Enum` column can hold it - so
+/// `createBlockWithNestedColumns` hands the function a malformed column, and installing the type's
+/// default repairs a type invariant. A `String` or a number under a null map, in contrast, is a well
+/// formed value of its type, and a function that rejects it - `match` handed an invalid regular
+/// expression, `hasToken` handed a token separator - rejects it as data, exactly as it would in a
+/// non-null row. Installing the type default there would only swap one arbitrary value for another,
+/// while costing a per-row copy of every `Nullable` argument on paths whose whole point is to avoid
+/// even a `countBytesInFilter`. The fix for that family is to stop evaluating the discarded rows,
+/// which is what the short-circuit branch below already does when
+/// `short_circuit_function_evaluation_for_nulls_threshold` lets it;
+/// see https://github.com/ClickHouse/ClickHouse/issues/119614.
 void patchNullSlots(
     const ColumnsWithTypeAndName & args, ColumnsWithTypeAndName & nested_args, size_t input_rows_count, bool only_enums)
 {

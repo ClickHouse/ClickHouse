@@ -32,6 +32,22 @@ SELECT 'short circuit off', count() FROM t_05207 WHERE e LIKE 'a%' SETTINGS shor
 SELECT 'short circuit on', count() FROM t_05207 WHERE e LIKE 'a%'
 SETTINGS short_circuit_function_evaluation_for_nulls = 1, short_circuit_function_evaluation_for_nulls_threshold = 0;
 
+-- `Enum16` stores the code in two bytes and is otherwise the same.
+DROP TABLE IF EXISTS t_05207_16;
+CREATE TABLE t_05207_16 (e Nullable(Enum16('a' = 1, 'b' = 2))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_05207_16 VALUES (NULL), ('a'), ('b');
+SELECT 'Enum16', count() FROM t_05207_16 WHERE e LIKE 'a%';
+DROP TABLE t_05207_16;
+
+-- An enum that declares 0 never had the problem, because the value the null slot holds is a member
+-- of the type. Normalizing the slot must not change what such a column answers.
+DROP TABLE IF EXISTS t_05207_zero;
+CREATE TABLE t_05207_zero (e Nullable(Enum8('z' = 0, 'a' = 1))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_05207_zero VALUES (NULL), ('z'), ('a');
+SELECT 'an enum that declares 0', count() FROM t_05207_zero WHERE e LIKE 'z%';
+SELECT e, e LIKE 'z%' FROM t_05207_zero ORDER BY e NULLS FIRST;
+DROP TABLE t_05207_zero;
+
 -- A constant NULL of an enum type takes the same path.
 SELECT 'a constant NULL', CAST(NULL AS Nullable(Enum8('a' = 1, 'b' = 2))) LIKE 'a%';
 
