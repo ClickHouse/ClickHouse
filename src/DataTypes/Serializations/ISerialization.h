@@ -12,6 +12,7 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
+#include <absl/functional/function_ref.h>
 #include <boost/noncopyable.hpp>
 #include <map>
 #include <unordered_map>
@@ -275,6 +276,11 @@ public:
             ObjectSharedDataCopyPathsIndexes,
             ObjectSharedDataCopyValues,
             ObjectStructure,
+
+            MapKeyValue,
+            ObjectDistinctPaths,
+            ObjectSubObject,
+            ObjectCombinedPath,
 
             Bucket,
             MapBucketsInfo,
@@ -775,7 +781,7 @@ protected:
 
     /// Look up the pool by hash; on cache miss call the creator to build
     /// the object.  The creator is invoked at most once and only on miss.
-    static SerializationPtr pooled(UInt128 hash, std::function<ISerialization *()> creator);
+    static SerializationPtr pooled(UInt128 hash, absl::FunctionRef<ISerialization *()> creator);
 
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
 

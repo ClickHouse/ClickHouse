@@ -1,6 +1,7 @@
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnAggregateFunction.h>
+#include <Core/Defines.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/IDataType.h>
 #include <Common/SipHash.h>
@@ -13,9 +14,12 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
 #include <absl/container/inlined_vector.h>
+#include <base/arithmeticOverflow.h>
 #include <Common/Arena.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+
+#include <algorithm>
 
 namespace DB
 {
@@ -23,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 
@@ -71,14 +76,14 @@ void SerializationAggregateFunction::deserializeBinary(IColumn & column, ReadBuf
     try
     {
         function->deserialize(place, istr, version, &arena);
+        /// Inside the guard: `push_back` can throw, and until it succeeds nothing owns `place`.
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-
-    column_concrete.getData().push_back(place);
 }
 
 void SerializationAggregateFunction::serializeBinaryBulk(const IColumn & column, WriteBuffer & ostr, size_t offset, size_t limit) const
@@ -100,16 +105,42 @@ void SerializationAggregateFunction::deserializeBinaryBulk(IColumn & column, Rea
 
     Arena & arena = real_column.createOrGetArena();
     real_column.set(function, version);
-    vec.reserve(vec.size() + limit);
 
     size_t size_of_state = function->sizeOfData();
     size_t align_of_state = function->alignOfData();
 
     /// Adjust the size of state to make all states aligned in vector.
     size_t total_size_of_state = (size_of_state + align_of_state - 1) / align_of_state * align_of_state;
-    char * place = arena.alignedAlloc(total_size_of_state * limit, align_of_state);
 
-    function->createAndDeserializeBatch(vec, place, total_size_of_state, limit, istr, version, &arena);
+    /// The number of rows comes from the data, so it must not be turned into an allocation on its
+    /// own: allocating all the states at once would multiply it by the size of a state, which comes
+    /// from the data as well, and the product both overflows and lets a tiny block ask for an
+    /// enormous allocation. The states are allocated in blocks bounded by the size of the array of
+    /// pointers that is reserved for them anyway, so a block of rows of an ordinary state still
+    /// takes a single allocation, and a state larger than that bound is allocated on its own.
+    static constexpr size_t max_bytes_per_block = DEFAULT_INSERT_BLOCK_SIZE * sizeof(AggregateDataPtr);
+    const size_t states_per_block = total_size_of_state == 0
+        ? DEFAULT_INSERT_BLOCK_SIZE
+        : std::max<size_t>(1, max_bytes_per_block / total_size_of_state);
+
+    vec.reserve(vec.size() + std::min<size_t>(limit, DEFAULT_INSERT_BLOCK_SIZE));
+
+    for (size_t remaining = limit; remaining != 0 && !istr.eof();)
+    {
+        const size_t states_in_block = std::min(remaining, states_per_block);
+
+        size_t size_of_block = 0;
+        if (common::mulOverflow(total_size_of_state, states_in_block, size_of_block))
+            throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Too large aggregate function states: {} states of {} bytes each", states_in_block, total_size_of_state);
+
+        char * place = arena.alignedAlloc(size_of_block, align_of_state);
+
+        /// Reads less than the whole block when the data ends, and then the loop stops on `eof`.
+        function->createAndDeserializeBatch(vec, place, total_size_of_state, states_in_block, istr, version, &arena);
+
+        remaining -= states_in_block;
+    }
 }
 
 static String serializeToString(const AggregateFunctionPtr & function, const IColumn & column, size_t row_num, size_t version)
@@ -143,14 +174,14 @@ static void deserializeFromString(const AggregateFunctionPtr & function, IColumn
                 function->getName(),
                 trailing_bytes);
         }
+
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-
-    column_concrete.getData().push_back(place);
 }
 
 static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn & column, const String & value_str, const FormatSettings & settings)
@@ -189,13 +220,14 @@ static void deserializeFromValue(const AggregateFunctionPtr & function, IColumn 
                 columns_ptrs.push_back(col.get());
             function->add(place, columns_ptrs.data(), 0, &arena);
         }
+
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-    column_concrete.getData().push_back(place);
 }
 
 static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn & column, const String & array_str, const FormatSettings & settings)
@@ -244,14 +276,14 @@ static void deserializeFromArray(const AggregateFunctionPtr & function, IColumn 
             tmp_column->popBack(1);
         }
         assertChar(']', buf);
+
+        column_concrete.getData().push_back(place);
     }
     catch (...)
     {
         function->destroy(place);
         throw;
     }
-
-    column_concrete.getData().push_back(place);
 }
 
 SerializationPtr SerializationAggregateFunction::create(const AggregateFunctionPtr & function_, String type_name_, size_t version_)

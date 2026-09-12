@@ -109,7 +109,7 @@ OpenCelliD Project 采用 Creative Commons Attribution-ShareAlike 4.0 Internatio
     2. 从公共 S3 bucket 导入数据集 (686 MB) ：
 
     ```sql
-    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', 'CSVWithNames')
+    INSERT INTO cell_towers SELECT * FROM s3('https://datasets-documentation.s3.amazonaws.com/cell_towers/cell_towers.csv.xz', NOSIGN, 'CSVWithNames')
     ```
   </Tab>
 </Tabs>
