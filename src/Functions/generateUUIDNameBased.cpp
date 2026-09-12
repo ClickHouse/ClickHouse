@@ -79,7 +79,10 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        const auto * col_namespace = checkAndGetColumn<ColumnUUID>(arguments[0].column.get());
+        /// The default implementation for constants only handles the case when all arguments are constant,
+        /// so a constant namespace combined with a non-constant name still reaches this method.
+        const ColumnPtr col_namespace_full = arguments[0].column->convertToFullColumnIfConst();
+        const auto * col_namespace = checkAndGetColumn<ColumnUUID>(col_namespace_full.get());
         if (!col_namespace)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}",
                 arguments[0].column->getName(), getName());

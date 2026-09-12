@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-openssl-fips
 -- no-fasttest: requires OpenSSL
+-- no-openssl-fips: MD5 and SHA-1 are not available in FIPS mode
 
 -- Tests functions generateUUIDv3 and generateUUIDv5
 
@@ -40,6 +41,14 @@ SELECT generateUUIDv3(toUUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8'), 'x') = gen
 SELECT 'Non-constant columns';
 SELECT generateUUIDv3(materialize(toUUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')), materialize('name' || toString(number))) FROM numbers(3);
 SELECT generateUUIDv5(materialize(toUUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')), materialize('name' || toString(number))) FROM numbers(3);
+
+SELECT 'Constant namespace with non-constant name';
+SELECT generateUUIDv3(toUUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8'), 'name' || toString(number)) FROM numbers(3);
+SELECT generateUUIDv5(toUUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8'), 'name' || toString(number)) FROM numbers(3);
+
+SELECT 'Non-constant namespace with constant name';
+SELECT generateUUIDv3(materialize(toUUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')), 'python.org');
+SELECT generateUUIDv5(materialize(toUUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')), 'python.org');
 
 SELECT 'FixedString name';
 SELECT generateUUIDv3(toUUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8'), toFixedString('python.org', 10));
