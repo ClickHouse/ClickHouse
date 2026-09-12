@@ -593,6 +593,13 @@ target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTER
 
 option (ENABLE_LIBFIU "Enable libfiu" ON)
 
+# Stack canary: a guard value is placed between the local variables and the return address and checked
+# before returning, so that an overflow of a local buffer aborts instead of returning to an address the
+# attacker wrote. 'strong' instruments only the functions that can actually be overflowed, those with a
+# local array, an address-taken local or an alloca, which keeps the cost low enough to always enable.
+set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fstack-protector-strong")
+set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fstack-protector-strong")
+
 option(WERROR "Enable -Werror compiler option" ON)
 
 if (WERROR)

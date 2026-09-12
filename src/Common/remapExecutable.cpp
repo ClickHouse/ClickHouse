@@ -42,8 +42,15 @@ namespace
 #    define NO_PROFILE_INSTRUMENTATION
 #endif
 
+/** The two functions below read and write the return address at a fixed offset from the stack pointer.
+  * A stack canary sits between the locals and the return address and moves it, so `8(%rsp)` would then
+  * refer to the canary instead. `-fstack-protector-strong` does not instrument either of them today
+  * (neither has locals), but the attribute pins that down rather than leaving it to the heuristic.
+  */
+#define NO_STACK_PROTECTOR __attribute__((no_stack_protector))
+
 /// NOLINTNEXTLINE(cert-dcl50-cpp)
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) int64_t our_syscall(...)
+NO_PROFILE_INSTRUMENTATION NO_STACK_PROTECTOR __attribute__((__noinline__)) int64_t our_syscall(...)
 {
     __asm__ __volatile__ (R"(
         movq %%rdi,%%rax;
@@ -60,7 +67,7 @@ NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) int64_t our_syscall(...
 }
 
 
-NO_PROFILE_INSTRUMENTATION __attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
+NO_PROFILE_INSTRUMENTATION NO_STACK_PROTECTOR __attribute__((__noinline__)) void remapToHugeStep3(void * scratch, size_t size, size_t offset)
 {
     /// The function should not use the stack, otherwise various optimizations, including "omit-frame-pointer" may break the code.
 
