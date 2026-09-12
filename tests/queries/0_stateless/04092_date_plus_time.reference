@@ -488,7 +488,55 @@ SELECT toDate32('2299-12-31') + t FROM test_saturate_intermediate ORDER BY t;
 2261-12-21 02:40:00.000000000
 2262-04-11 23:47:16.854775807
 DROP TABLE test_saturate_intermediate;
+SET date_time_overflow_behavior = 'ignore';
+-- Date + Time uses the Time column's internal seconds, so two distinct Time values
+-- produce distinct DateTime results (and equal Times produce equal results). This does
+-- not rely on any out-of-range value.
+DROP TABLE IF EXISTS test_internal_time;
+CREATE TABLE test_internal_time (t_a Time, t_b Time) ENGINE = Memory;
+INSERT INTO test_internal_time VALUES (3600, 7200);
+SELECT t_a, t_b, t_a = t_b AS same_time FROM test_internal_time;
+01:00:00	02:00:00	0
+SELECT
+    toDate('2024-01-15') + t_a AS dt_a,
+    toDate('2024-01-15') + t_b AS dt_b,
+    dt_a = dt_b AS same_dt
+FROM test_internal_time;
+2024-01-15 01:00:00	2024-01-15 02:00:00	0
+DROP TABLE test_internal_time;
+-- A numeric VALUES expression into a Time column now respects date_time_overflow_behavior
+-- (same rule as toTime/CAST), clamping the out-of-visible-range value instead of storing it raw.
+-- The expression reaches convertFieldToType only with expression templates disabled: the default
+-- input_format_values_deduce_templates_of_expressions = 1 routes the row through a template that
+-- ends in castColumn, i.e. CAST itself, so the assertion would not exercise the coercion at all.
+DROP TABLE IF EXISTS test_values_expr_time;
+CREATE TABLE test_values_expr_time (x Time) ENGINE = Memory;
+SET input_format_values_deduce_templates_of_expressions = 0;
+INSERT INTO test_values_expr_time VALUES (9999999 + 0);
+SET input_format_values_deduce_templates_of_expressions = 1;
+SELECT toInt32(x) FROM test_values_expr_time;
+3599999
+DROP TABLE test_values_expr_time;
 SET date_time_overflow_behavior = 'throw';
+-- A numeric VALUES expression into a Time column raises in throw mode, like toTime/CAST (again with
+-- templates disabled, for the same reason as above).
+-- The overflow may surface as a client or a server error depending on async_insert, so the
+-- error hint below accepts either kind rather than requiring a server error.
+DROP TABLE IF EXISTS test_values_expr_time;
+CREATE TABLE test_values_expr_time (x Time) ENGINE = Memory;
+SET input_format_values_deduce_templates_of_expressions = 0;
+INSERT INTO test_values_expr_time VALUES (9999999 + 0); -- { error VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SET input_format_values_deduce_templates_of_expressions = 1;
+DROP TABLE test_values_expr_time;
+-- Numeric cast of an out-of-visible-range Time now respects date_time_overflow_behavior:
+-- throw raises, while saturate/ignore clamp to the max visible Time (999:59:59 = 3599999 s).
+SELECT toTime(9999999); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDate('2024-01-15') + toTime(9999999); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SET date_time_overflow_behavior = 'saturate';
+SELECT toTime(9999999) AS t, toInt32(t) AS raw;
+999:59:59	3599999
+SELECT toDate('2024-01-15') + toTime(9999999) AS dt;
+2024-02-25 15:59:59
 -- Numeric inputs to `Time` are capped to the range of the type ([-999:59:59, 999:59:59]),
 -- whatever the width of the source type is, so a value beyond the visible range is stored
 -- saturated instead of keeping its full numeric value. Date+Time uses the stored value,
@@ -507,3 +555,8 @@ SELECT
     (toDate('2024-01-15') + toTime(9999999)) =
     (toDate('2024-01-15') + toTime(3599999)) AS same_dt_from_same_visible_time;
 1
+SET date_time_overflow_behavior = 'ignore';
+SELECT toTime(9999999) AS t, toInt32(t) AS raw;
+999:59:59	3599999
+SELECT toDate('2024-01-15') + toTime(9999999) AS dt;
+2024-02-25 15:59:59

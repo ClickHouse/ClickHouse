@@ -71,6 +71,14 @@ class IDataType;
   *   CAST('33.3', 'Decimal64(1)') IN (CAST('33.33', 'Decimal64(2)'))           -> 0
   *   CAST('33.3', 'Decimal64(1)') IN (33.33)                                   -> 0
   *   (CAST('33.3', 'Decimal64(1)'), 1) IN ((CAST('33.33', 'Decimal64(2)'), 1)) -> 0
+  *
+  * `temporal_numeric_is_offset` marks a numeric source that is a *distance* in the target's underlying
+  * units rather than a temporal point - a window frame `RANGE` offset is the only such caller. A distance
+  * must not be reinterpreted as a day number or a unix timestamp, and must not be clamped to the target's
+  * visible range; it is range-checked against the storage type instead, so an offset the storage type
+  * cannot hold is rejected (Null) in every overflow mode:
+  *   convertFieldToType(Field(65536), Date, .., false, true)       -> day number 0 (65536 read as a timestamp)
+  *   convertFieldToType(Field(65536), Date, .., false, true, true) -> Field(Null)  (outside UInt16 storage)
   */
 Field convertFieldToType(
     const Field & from_value,
@@ -78,7 +86,8 @@ Field convertFieldToType(
     const IDataType * from_type_hint = nullptr,
     const FormatSettings & format_settings = {},
     bool strict = false,
-    bool convert_inexact_floats = false);
+    bool convert_inexact_floats = false,
+    bool temporal_numeric_is_offset = false);
 
 /// Same as convertFieldToType but returns empty Field in case of an exception.
 Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool strict = false, bool convert_inexact_floats = false);
@@ -88,7 +97,8 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 /// `ALTER ... PARTITION` resolution) reject float literals that are not exactly representable instead
 /// of silently rounding them. Value-materialization callers (the `values`/`VALUES` table function,
 /// `WITH FILL`, window frame offsets, ...) pass it as true to convert to the nearest representable
-/// floating-point value like CAST.
-Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool convert_inexact_floats = false);
+/// floating-point value like CAST. Window frame offsets additionally pass
+/// `temporal_numeric_is_offset = true`, because an offset is a distance rather than a temporal point.
+Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool convert_inexact_floats = false, bool temporal_numeric_is_offset = false);
 
 }
