@@ -28,7 +28,10 @@ job command with no new config classes::
 The provider is any name in the AI registry (``mock`` / ``anthropic`` /
 ``bedrock-anthropic`` / ``bedrock-openai``); ``--model`` overrides its default model.
 ``--prompt`` points at a repo-local Markdown file with project-specific review
-guidance, appended to the fixed review protocol.
+guidance, appended to the fixed review protocol. ``--fail-for-draft-pr`` makes
+the job fail (without consulting the model) while the PR is a draft — unless the
+job was manually re-run (``Info().rerun_count > 0``), which is taken as an
+explicit "review it anyway" request and lets the review run on the draft.
 """
 import json
 import os
@@ -521,6 +524,20 @@ def review(args):
     if not info.pr_number or int(info.pr_number) <= 0:
         print("Not a PR — skipping AI review")
         return Result.create_from(status=Result.Status.SKIPPED, info="not a PR")
+
+    # Draft PRs fail the review by default so it doesn't run on unfinished work.
+    # A manual re-run (rerun_count > 0) is an explicit "review it anyway" signal,
+    # so let it through even while the PR is still a draft.
+    if (
+        getattr(args, "fail_for_draft_pr", False)
+        and info.pr_is_draft
+        and info.rerun_count == 0
+    ):
+        print("PR is a draft — failing without running the review (re-run to override)")
+        return Result.create_from(
+            status=Result.Status.FAIL,
+            info="PR is a draft — mark it ready for review, or re-run this job to review anyway",
+        )
 
     project_prompt = ""
     if args.prompt:
