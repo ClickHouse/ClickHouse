@@ -21,6 +21,9 @@ struct ModuloOrZeroImpl
     {
         if constexpr (is_floating_point<ResultType>)
         {
+            if (unlikely(moduloLeadsToFPE(a, b)))
+                return 0;
+
             /// This computation is similar to `fmod` but the latter is not inlined and has 40 times worse performance.
             return ResultType(a) - trunc(ResultType(a) / ResultType(b)) * ResultType(b);
         }
