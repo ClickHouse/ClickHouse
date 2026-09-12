@@ -59,9 +59,6 @@ public:
 
         table[byte] = true;
 
-        if (byte >= 0x80)
-            ascii_only = false;
-
         UInt8 high = byte >> 4;
         UInt8 low = byte & 0x0F;
 
@@ -106,7 +103,7 @@ public:
 
 #if defined(__SSSE3__) || defined(__aarch64__)
             if (vectorized)
-                pos = ascii_only ? findVectorized<positive, true>(pos, end) : findVectorized<positive, false>(pos, end);
+                pos = findVectorized<positive>(pos, end);
 #endif
         }
 
@@ -128,7 +125,7 @@ public:
         {
             UInt8x16 bytes;
             memcpy(&bytes, pos, BLOCK_SIZE);
-            return blockMask(ascii_only ? classify<true>(bytes) : classify<false>(bytes));
+            return blockMask(classify(bytes));
         }
 #endif
         UInt32 mask = 0;
@@ -157,31 +154,13 @@ private:
 #endif
     }
 
-    /// Returns a vector with `table[bytes[i] & 0x0F]` in lane `i`.
-    template <bool ascii_only>
-    static ALWAYS_INLINE UInt8x16 lookupByLowNibble(UInt8x16 table, UInt8x16 bytes)
-    {
-#if defined(__SSSE3__)
-        /// `pshufb` reads only the low 4 bits of an index and zeroes the lane if bit 7 is set. For a set
-        /// without non-ASCII members that is exactly the wanted result for 0x80-0xFF too, so the masking
-        /// can be skipped. NEON `tbl` zeroes every index >= 16 instead, so it has no such shortcut.
-        if constexpr (ascii_only)
-            return lookupBytes(table, bytes);
-        else
-            return lookupBytes(table, bytes & 0x0F);
-#else
-        return lookupBytes(table, bytes & 0x0F);
-#endif
-    }
-
     /// 0xFF in the lanes of the bytes that are in the set, 0x00 in the others.
-    template <bool ascii_only>
     ALWAYS_INLINE Int8x16 classify(UInt8x16 bytes) const
     {
         const auto low_table = std::bit_cast<UInt8x16>(low_nibble_table);
         const auto high_table = std::bit_cast<UInt8x16>(high_nibble_table);
 
-        UInt8x16 low = lookupByLowNibble<ascii_only>(low_table, bytes);
+        UInt8x16 low = lookupBytes(low_table, bytes & 0x0F);
         UInt8x16 high = lookupBytes(high_table, bytes >> 4);
         return (low & high) != UInt8x16{};
     }
@@ -202,7 +181,7 @@ private:
 
     /// Scans whole blocks. Returns the position of the first byte matching the search,
     /// or the position from which fewer than `BLOCK_SIZE` bytes remain.
-    template <bool positive, bool ascii_only>
+    template <bool positive>
     const char * findVectorized(const char * pos, const char * end) const
     {
         for (; end - pos >= static_cast<ptrdiff_t>(BLOCK_SIZE); pos += BLOCK_SIZE)
@@ -210,7 +189,7 @@ private:
             UInt8x16 bytes;
             memcpy(&bytes, pos, BLOCK_SIZE);
 
-            auto match = classify<ascii_only>(bytes);
+            auto match = classify(bytes);
             if constexpr (!positive)
                 match = ~match;
 
@@ -232,8 +211,6 @@ private:
     UInt8 high_nibble_bit[16]{};
     size_t num_high_nibbles = 0;
     bool vectorized = true;
-    /// No member is >= 0x80, which allows a cheaper low-nibble lookup on x86.
-    bool ascii_only = true;
 };
 
 }
