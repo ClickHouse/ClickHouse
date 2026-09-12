@@ -255,6 +255,10 @@ void MergeTreeDataPartWriterWide::addStreams(
             throw Exception(ErrorCodes::FAULT_INJECTED, "Injected failure in Wide part writer addStreams");
         });
 
+        if (settings.stream_base_manifest && claim_column_stream_bases)
+            settings.stream_base_manifest->registerStreamBase(
+                stream_name, {StreamBaseManifest::Kind::Column, name_and_type.name});
+
         column_streams.emplace(stream_name, std::make_unique<MergeTreeWriterStream>(
             stream_name,
             data_part_storage,
@@ -833,6 +837,7 @@ void MergeTreeDataPartWriterWide::validateColumnOfFixedSize(const NameAndTypePai
 void MergeTreeDataPartWriterWide::finalizeIndexGranularity()
 {
     /// If no data was written, streams and columns substreams will be uninitialized, but we need them.
+    claim_column_stream_bases = streams_initialized;
     initStreamsAndSubstreamsIfNeeded();
 
     auto serialize_settings = getSerializationSettings();
