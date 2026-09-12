@@ -1,0 +1,24 @@
+<test>
+    <substitutions>
+        <substitution>
+            <name>varying_blocks</name>
+            <values>
+                <!-- Four length classes cycle with period 10: 0 / 2..37 / 200..500 / 4000..4200 bytes,
+                     that is 1 / 1 / 4..8 / 63..66 MD5 blocks, mean length 492 bytes. No batch of lanes
+                     is uniform in block count at any SIMD width, so each costs what its longest row
+                     costs. -->
+                <value>repeat('x', multiIf(number % 10 = 0, 0, number % 10 >= 9, 4000 + number % 201, number % 10 >= 7, 200 + number % 301, 1 + number % 40))</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <!-- Lengths that vary in block count. -->
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(MD5({varying_blocks}))</query>
+
+    <!-- 500 bytes throughout: comparable mean length and the same row count, but one block count, so
+         every lane in a batch already retires together and no reordering can pay. -->
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(MD5(rightPad(toString(number), 500, 'x')))</query>
+
+    <!-- The first column again under a hash this change does not touch, as a noise floor. -->
+    <query>SELECT count() FROM numbers(1000000) WHERE NOT ignore(SHA1({varying_blocks}))</query>
+</test>
