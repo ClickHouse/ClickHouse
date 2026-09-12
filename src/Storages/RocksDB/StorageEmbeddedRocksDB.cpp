@@ -37,7 +37,9 @@
 #include <Poco/Logger.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <Common/SharedLockGuard.h>
+#include <Common/atomicRename.h>
 #include <Common/JSONBuilder.h>
 #include <Common/Logger.h>
 #include <Common/filesystemHelpers.h>
@@ -75,9 +77,17 @@ namespace RocksDBSetting
 extern const RocksDBSettingsBool optimize_for_bulk_insert;
 }
 
+namespace FailPoints
+{
+extern const char rocksdb_rename_throw_filesystem_error[];
+extern const char rocksdb_rename_fail_reopen[];
+extern const char rocksdb_rename_pause_before_rollback[];
+}
+
 namespace ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
+extern const int FAULT_INJECTED;
 extern const int LOGICAL_ERROR;
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 extern const int ROCKSDB_ERROR;
@@ -242,6 +252,7 @@ StorageEmbeddedRocksDB::StorageEmbeddedRocksDB(
     , WithContext(context_->getGlobalContext())
     , log(getLogger(fmt::format("StorageEmbeddedRocksDB ({})", getStorageID().getNameForLogs())))
     , primary_keys{std::move(primary_keys_)}
+    , implicit_path(rocksdb_dir_.empty())
     , rocksdb_dir(std::move(rocksdb_dir_))
     , ttl(ttl_)
     , read_only(read_only_)
@@ -309,6 +320,101 @@ void StorageEmbeddedRocksDB::truncate(const ASTPtr &, const StorageMetadataPtr &
     (void)fs::remove_all(rocksdb_dir);
     fs::create_directories(rocksdb_dir);
     initDB();
+}
+
+void StorageEmbeddedRocksDB::initDBForRename()
+{
+    /// initDB() is also called from the constructor and from truncate(); the failpoint is applied
+    /// here so that only rename() can be made to fail.
+    fiu_do_on(FailPoints::rocksdb_rename_fail_reopen,
+    {
+        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while reopening RocksDB after a rename");
+    });
+    initDB();
+}
+
+void StorageEmbeddedRocksDB::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
+{
+    /// A directory given explicitly in the engine arguments does not belong to the table's
+    /// location, may be shared, and must stay where the user put it.
+    if (implicit_path)
+    {
+        const String new_rocksdb_dir = getContext()->getPath() + new_path_to_table_data;
+        if (new_rocksdb_dir != rocksdb_dir)
+        {
+            std::lock_guard lock(rocksdb_ptr_mx);
+
+            const String old_rocksdb_dir = rocksdb_dir;
+            if (rocksdb_ptr)
+            {
+                rocksdb_ptr->Close();
+                rocksdb_ptr = nullptr;
+            }
+
+            /// Whether the directory was relocated. The rollback below must know this instead of
+            /// inferring it from the paths: the old one can exist again for a reason other than
+            /// "the move never happened", and reopening it then serves an empty table for data
+            /// that is still on disk.
+            bool moved = false;
+
+            try
+            {
+                fs::create_directories(parentPath(new_rocksdb_dir));
+                fiu_do_on(FailPoints::rocksdb_rename_throw_filesystem_error,
+                {
+                    throw fs::filesystem_error(
+                        "injected", old_rocksdb_dir, new_rocksdb_dir,
+                        std::make_error_code(std::errc::no_such_file_or_directory));
+                });
+                renameNoReplace(old_rocksdb_dir, new_rocksdb_dir);
+                moved = true;
+                rocksdb_dir = new_rocksdb_dir;
+                initDBForRename();
+            }
+            catch (...)
+            {
+                /// The caller re-attaches the table under the old name when we throw, so the
+                /// handle has to be usable again before we rethrow.
+                try
+                {
+                    FailPointInjection::pauseFailPoint(FailPoints::rocksdb_rename_pause_before_rollback);
+                    /// If the data cannot be moved back, rocksdb_dir is left naming the directory
+                    /// that holds it and the table refuses reads instead of answering zero rows.
+                    if (moved)
+                    {
+                        try
+                        {
+                            renameNoReplace(new_rocksdb_dir, old_rocksdb_dir);
+                        }
+                        catch (...)
+                        {
+                            /// An empty directory cannot hold data, so removing one that occupies
+                            /// the old location and letting the data come back loses nothing.
+                            /// Anything else stays where it is and the move back keeps failing.
+                            std::error_code ec;
+                            if (!fs::is_directory(old_rocksdb_dir, ec) || !fs::is_empty(old_rocksdb_dir, ec))
+                                throw;
+                            fs::remove(old_rocksdb_dir, ec);
+                            renameNoReplace(new_rocksdb_dir, old_rocksdb_dir);
+                        }
+                    }
+                    rocksdb_dir = old_rocksdb_dir;
+                    if (!rocksdb_ptr)
+                        initDBForRename();
+                }
+                catch (...)
+                {
+                    /// The table stays attached under the old name, so remember that it cannot
+                    /// serve its data: reads have to refuse instead of reporting zero rows.
+                    handle_unusable = true;
+                    tryLogCurrentException(log, "Failed to restore RocksDB handle after a failed rename");
+                }
+                throw;
+            }
+        }
+    }
+
+    renameInMemory(new_table_id);
 }
 
 void StorageEmbeddedRocksDB::checkMutationIsPossible(const MutationCommands & commands, const Settings & /* settings */) const
@@ -672,6 +778,9 @@ void StorageEmbeddedRocksDB::initDB()
 
         rocksdb_ptr = std::unique_ptr<rocksdb::DB>(db);
     }
+
+    /// The handle is usable again, whatever left it unusable before.
+    handle_unusable = false;
 }
 
 class ReadFromEmbeddedRocksDB : public SourceStepWithFilter
@@ -745,6 +854,11 @@ void ReadFromEmbeddedRocksDB::initializePipeline(QueryPipelineBuilder & pipeline
             SharedLockGuard lock(storage.rocksdb_ptr_mx);
             if (!storage.rocksdb_ptr)
             {
+                if (storage.handle_unusable)
+                    throw Exception(
+                        ErrorCodes::ROCKSDB_ERROR,
+                        "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
+                        storage.getStorageID().getNameForLogs(), storage.rocksdb_dir);
                 pipeline.init(Pipe(std::make_shared<NullSource>(sample_block)));
                 return;
             }
@@ -940,7 +1054,14 @@ StorageEmbeddedRocksDB::multiGet(const std::vector<rocksdb::Slice> & slices_keys
 {
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
+    {
+        if (handle_unusable)
+            throw Exception(
+                ErrorCodes::ROCKSDB_ERROR,
+                "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
+                getStorageID().getNameForLogs(), rocksdb_dir);
         return {};
+    }
     return rocksdb_ptr->MultiGet(rocksdb::ReadOptions(), slices_keys, &values);
 }
 
@@ -1060,7 +1181,14 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalRows(ContextPtr query_context
         return {};
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
+    {
+        if (handle_unusable)
+            throw Exception(
+                ErrorCodes::ROCKSDB_ERROR,
+                "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
+                getStorageID().getNameForLogs(), rocksdb_dir);
         return {};
+    }
     UInt64 estimated_rows = 0;
     if (!rocksdb_ptr->GetIntProperty("rocksdb.estimate-num-keys", &estimated_rows))
         return {};
@@ -1071,7 +1199,14 @@ std::optional<UInt64> StorageEmbeddedRocksDB::totalBytes(ContextPtr) const
 {
     SharedLockGuard lock(rocksdb_ptr_mx);
     if (!rocksdb_ptr)
+    {
+        if (handle_unusable)
+            throw Exception(
+                ErrorCodes::ROCKSDB_ERROR,
+                "Table {} has no usable RocksDB handle after a failed rename; its data is at {}",
+                getStorageID().getNameForLogs(), rocksdb_dir);
         return {};
+    }
     UInt64 estimated_bytes = 0;
     if (!rocksdb_ptr->GetAggregatedIntProperty("rocksdb.estimate-live-data-size", &estimated_bytes))
         return {};

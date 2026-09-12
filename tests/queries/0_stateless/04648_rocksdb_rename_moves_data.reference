@@ -1,0 +1,28 @@
+1 atomic->ordinary live 60
+1 atomic->ordinary reloaded 60
+2 ordinary->ordinary live 11
+2 ordinary->ordinary reloaded 11
+3 ordinary same-db live 10
+3 ordinary same-db reloaded 10
+4 ordinary->atomic live 13
+4 ordinary->atomic reloaded 13
+5 atomic->atomic control reloaded 12
+6 ttl reloaded 9
+7 explicit path unchanged 1
+7 explicit dir still there 1
+7 explicit path reloaded 8
+8 read_only explicit path reloaded 6
+9 attach from count 7
+9 attach from moved 1
+9 attach from reloaded 7
+9 source dir gone 1
+11 rename failed 1
+11 table still readable 4
+11 table still reloadable 4
+12 rename failed 1
+12 full scan refuses 1
+12 key lookup refuses 1
+12 reloaded 3
+13 concurrent read excluded 1
+13 attach from count 5
+13 attach from reloaded 5
