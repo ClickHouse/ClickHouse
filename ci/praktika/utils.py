@@ -546,6 +546,9 @@ class Shell:
                             print("ERROR: Final attempt failed, no more retries left.")
                 if proc:
                     proc.kill()
+                    # Reap it here or a later exit code read below is `None`: the kill
+                    # only signals, and a cancelled retry never reaches `proc.wait`.
+                    proc.wait()
                 if terminal:
                     if strict:
                         raise
