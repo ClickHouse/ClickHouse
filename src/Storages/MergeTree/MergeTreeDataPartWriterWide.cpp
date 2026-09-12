@@ -149,6 +149,7 @@ ISerialization::EnumerateStreamsSettings MergeTreeDataPartWriterWide::getEnumera
     enumerate_settings.object_serialization_version = settings_.object_serialization_version;
     enumerate_settings.object_shared_data_serialization_version = settings_.object_shared_data_serialization_version;
     enumerate_settings.object_shared_data_buckets = settings_.object_shared_data_buckets;
+    enumerate_settings.object_shared_data_target_chunk_rows = settings_.object_shared_data_target_chunk_rows;
     enumerate_settings.max_buckets_in_map = settings_.max_buckets_in_map;
     enumerate_settings.map_buckets_strategy = settings_.map_buckets_strategy;
     enumerate_settings.map_buckets_coefficient = settings_.map_buckets_coefficient;
@@ -571,6 +572,7 @@ ISerialization::SerializeBinaryBulkSettings MergeTreeDataPartWriterWide::getSeri
     serialize_settings.object_serialization_version = settings.object_serialization_version;
     serialize_settings.object_shared_data_serialization_version = settings.object_shared_data_serialization_version;
     serialize_settings.object_shared_data_buckets = settings.object_shared_data_buckets;
+    serialize_settings.object_shared_data_target_chunk_rows = settings.object_shared_data_target_chunk_rows;
     serialize_settings.max_buckets_in_map = settings.max_buckets_in_map;
     serialize_settings.map_buckets_strategy = settings.map_buckets_strategy;
     serialize_settings.map_buckets_coefficient = settings.map_buckets_coefficient;

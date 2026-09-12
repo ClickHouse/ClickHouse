@@ -360,23 +360,30 @@ Possible values:
 - `map_with_buckets` - store shared data as several separate `Map(String, String)` columns. Using buckets improves reading individual paths from shared data.
 - `advanced` - special serialization of shared data designed to significantly improve reading of individual paths from shared data.
 Note that this serialization increases the shared data storage size on disk because we store a lot of additional information.
+- `advanced_chunked` - the same as `advanced` but with support for splitting rows into smaller chunks during serialization to reduce peak memory during merges of JSON columns with many unique paths. The chunk size is controlled by the [object_shared_data_target_chunk_rows](#object_shared_data_target_chunk_rows) setting.
 
-The number of buckets for `map_with_buckets` and `advanced` serializations is determined by settings
+The number of buckets for `map_with_buckets`, `advanced`, and `advanced_chunked` serializations is determined by settings
 [object_shared_data_buckets_for_compact_part](#object_shared_data_buckets_for_compact_part)/[object_shared_data_buckets_for_wide_part](#object_shared_data_buckets_for_wide_part).
 )", 0) \
     DECLARE(MergeTreeObjectSharedDataSerializationVersion, object_shared_data_serialization_version_for_zero_level_parts, "map_with_buckets", R"(
 This setting allows to specify different serialization version of the
 shared data inside JSON type for zero level parts that are created during inserts.
-It's recommended not to use `advanced` shared data serialization for zero level parts because it can increase
+It's recommended not to use `advanced` or `advanced_chunked` shared data serialization for zero level parts because it can increase
 the insertion time significantly.
 )", 0) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_compact_part, 8, R"(
-The number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+The number of buckets for JSON shared data serialization in Compact parts. Works with `map_with_buckets`, `advanced`, and `advanced_chunked` shared data serializations.
 The maximum allowed value is 256.
 )", 0) \
     DECLARE(NonZeroUInt64, object_shared_data_buckets_for_wide_part, 32, R"(
-The number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets` and `advanced` shared data serializations.
+The number of buckets for JSON shared data serialization in Wide parts. Works with `map_with_buckets`, `advanced`, and `advanced_chunked` shared data serializations.
 The maximum allowed value is 256.
+)", 0) \
+    DECLARE(NonZeroUInt64, object_shared_data_target_chunk_rows, 8192, R"(
+Target number of rows per chunk during `advanced_chunked` JSON shared data serialization.
+This is not a hard limit: if the last chunk would be smaller than half the target, it is merged with the previous chunk,
+so actual chunk sizes range from `target/2` to `1.5 * target`.
+Smaller values reduce peak memory during merges of JSON columns with many unique paths at the cost of more chunks.
 )", 0) \
     DECLARE(MergeTreeDynamicSerializationVersion, dynamic_serialization_version, "v3", R"(
 Serialization version for Dynamic data type. Required for compatibility.

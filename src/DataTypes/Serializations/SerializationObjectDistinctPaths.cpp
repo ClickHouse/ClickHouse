@@ -111,6 +111,7 @@ void SerializationObjectDistinctPaths::enumerateStreams(
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
+        case SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED:
         {
             for (size_t bucket = 0; bucket < object_structure_state->shared_data_buckets; ++bucket)
             {
@@ -192,6 +193,7 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkStatePrefix(
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
+        case SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED:
         {
             object_distinct_paths_state->bucket_shared_data_structure_states.resize(object_structure_state->shared_data_buckets);
             for (size_t bucket = 0; bucket != object_structure_state->shared_data_buckets; ++bucket)
@@ -283,6 +285,7 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
             break;
         }
         case SerializationObjectSharedData::SerializationVersion::ADVANCED:
+        case SerializationObjectSharedData::SerializationVersion::ADVANCED_CHUNKED:
         {
             for (size_t bucket = 0; bucket < object_structure_state->shared_data_buckets; ++bucket)
             {
@@ -290,14 +293,14 @@ void SerializationObjectDistinctPaths::deserializeBinaryBulkWithMultipleStreams(
                 settings.path.back().bucket = bucket;
 
                 auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(object_distinct_paths_state->bucket_shared_data_structure_states[bucket]);
-                auto structure_granules = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
-                for (const auto & structure_granule : *structure_granules)
+                auto chunk_structures = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
+                for (const auto & chunk_structure : *chunk_structures)
                 {
-                    for (const auto & path : structure_granule.all_paths)
+                    for (const auto & path : chunk_structure.all_paths)
                         paths_column.insertData(path.data(), path.size());
 
                     if (bucket == 0)
-                        num_new_rows += structure_granule.limit;
+                        num_new_rows += chunk_structure.limit;
                 }
                 settings.path.pop_back();
             }
