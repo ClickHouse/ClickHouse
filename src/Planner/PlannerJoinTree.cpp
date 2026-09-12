@@ -1154,7 +1154,7 @@ bool mustSkipQueryConditionCacheInParallelReplicasEstimate(const SelectQueryInfo
 }
 
 std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
-    AliasColumnExpressions & alias_column_expressions, const SharedHeader & current_header)
+    AliasColumnExpressions & alias_column_expressions, const SharedHeader & current_header, UsefulSets & useful_sets)
 {
     ActionsDAG merged_alias_columns_actions_dag(current_header->getColumnsWithTypeAndName());
     ActionsDAG::NodeRawConstPtrs action_dag_outputs = merged_alias_columns_actions_dag.getInputs();
@@ -1173,6 +1173,13 @@ std::unique_ptr<ExpressionStep> createComputeAliasColumnsStep(
 
     auto alias_column_step = std::make_unique<ExpressionStep>(current_header, std::move(merged_alias_columns_actions_dag));
     alias_column_step->setStepDescription("Compute alias columns");
+
+    /// An ALIAS expression may contain an `IN` over a table, a table function or a subquery, whose set
+    /// `CollectSourceColumnsVisitor` registered in the prepared sets when it expanded the column. Only
+    /// the sets reported as useful here get a `CreatingSet` step, so a set left out of this report is
+    /// never built and evaluating the expression fails with "Not-ready Set is passed".
+    appendSetsFromActionsDAG(alias_column_step->getExpression(), useful_sets);
+
     return alias_column_step;
 }
 
@@ -2747,7 +2754,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
                 if (!alias_column_expressions.empty() && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
                 {
-                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
+                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader(), useful_sets);
                     query_plan.addStep(std::move(alias_column_step));
                 }
 
@@ -2802,7 +2809,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                 auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
                 if (!alias_column_expressions.empty())
                 {
-                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
+                    auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader(), useful_sets);
                     query_plan.addStep(std::move(alias_column_step));
                 }
             }
@@ -2842,7 +2849,7 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
         auto & alias_column_expressions = table_expression_data.getAliasColumnExpressions();
         if (!alias_column_expressions.empty() && query_plan.isInitialized() && till_stage == QueryProcessingStage::FetchColumns)
         {
-            auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader());
+            auto alias_column_step = createComputeAliasColumnsStep(alias_column_expressions, query_plan.getCurrentHeader(), useful_sets);
             query_plan.addStep(std::move(alias_column_step));
         }
     }
