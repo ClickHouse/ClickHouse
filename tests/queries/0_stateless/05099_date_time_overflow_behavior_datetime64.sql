@@ -94,3 +94,35 @@ SELECT accurateCast(toDateTime64('2299-12-31 00:00:00', 0, 'UTC'), 'DateTime64(9
 SELECT accurateCastOrDefault(toDateTime64('2299-12-31 00:00:00', 0, 'UTC'), 'DateTime64(9, \'UTC\')', toDateTime64('2025-01-01 00:00:00', 9, 'UTC'));
 -- The boundaries of the scale-9 window round-trip, and narrowing the scale never overflows.
 SELECT CAST(toDateTime64('2262-04-11 00:00:00', 0, 'UTC'), 'DateTime64(9, \'UTC\')'), CAST(toDateTime64('2262-04-11 00:00:00', 9, 'UTC'), 'DateTime64(0, \'UTC\')');
+
+-- Every integer carrier reaches the overflow-aware transforms, not only the wide ones: a `UInt32` counting more
+-- seconds than `Time64` can hold used to be stored raw, and the wide integers used to surface `DECIMAL_OVERFLOW`.
+SELECT 'integers';
+SELECT CAST(3600000::UInt32, 'Time64(3)'), toTime64(toUInt32(3600000), 3) SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT CAST(3600000::UInt32, 'Time64(3)') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT accurateCastOrNull(3600000::UInt32, 'Time64(3)'), accurateCastOrNull(3599999::UInt32, 'Time64(3)');
+-- `UInt8` and `UInt16` cannot overflow either target, so the transform only passes them through.
+SELECT CAST(255::UInt8, 'Time64(3)'), CAST(65535::UInt16, 'DateTime64(3)');
+SELECT toDateTime64(toUInt128('300000000000'), 9, 'UTC'), toDateTime64(toInt128('-300000000000'), 9, 'UTC'), toDateTime64(toUInt256('300000000000'), 9, 'UTC'), toDateTime64(toInt256('-300000000000'), 9, 'UTC') SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT toDateTime64(toUInt128('300000000000'), 9, 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime64(materialize(toUInt128('300000000000')), 9, 'UTC'), toDateTime64(materialize(toInt256('-300000000000')), 9, 'UTC') SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT toTime64(toUInt128('3600000'), 3), toTime64(toInt256('-3600000'), 3) SETTINGS date_time_overflow_behavior = 'saturate';
+
+-- A `Decimal` source is a count of seconds with a fractional part, so it follows the same rules as a number
+-- instead of the generic decimal conversion, which reported an out-of-range value as `DECIMAL_OVERFLOW`.
+SELECT 'decimals';
+SELECT toDateTime64(CAST('10500000000.1' AS Decimal64(1)), 9, 'UTC') SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT toDateTime64(CAST('10500000000.1' AS Decimal64(1)), 9, 'UTC') SETTINGS date_time_overflow_behavior = 'ignore';
+SELECT toDateTime64(CAST('10500000000.1' AS Decimal64(1)), 9, 'UTC') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT toDateTime64(CAST('-10500000000.1' AS Decimal64(1)), 9, 'UTC') SETTINGS date_time_overflow_behavior = 'saturate';
+-- The same value is perfectly representable at a coarser scale.
+SELECT toDateTime64(CAST('10500000000.1' AS Decimal64(1)), 3, 'UTC') SETTINGS date_time_overflow_behavior = 'throw';
+SELECT accurateCastOrNull(CAST('10500000000.1' AS Decimal64(1)), 'DateTime64(9, \'UTC\')'), accurateCastOrNull(CAST('1735689600.5' AS Decimal64(1)), 'DateTime64(9, \'UTC\')');
+SELECT accurateCast(CAST('10500000000.1' AS Decimal64(1)), 'DateTime64(9, \'UTC\')'); -- { serverError CANNOT_CONVERT_TYPE }
+SELECT accurateCastOrDefault(CAST('10500000000.1' AS Decimal64(1)), 'DateTime64(9, \'UTC\')', toDateTime64('2025-01-01 00:00:00', 9, 'UTC'));
+-- A `Decimal` that fits the `Int64` ticks of the target can still be outside its clock or calendar window.
+SELECT CAST(CAST('3600000.5' AS Decimal64(1)), 'Time64(3)') SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT CAST(CAST('-3600000.5' AS Decimal64(1)), 'Time64(3)') SETTINGS date_time_overflow_behavior = 'saturate';
+SELECT CAST(CAST('3600000.5' AS Decimal64(1)), 'Time64(3)') SETTINGS date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SELECT accurateCastOrNull(CAST('3600000.5' AS Decimal64(1)), 'Time64(3)'), accurateCastOrNull(CAST('3599999.5' AS Decimal64(1)), 'Time64(3)');
+SELECT CAST(toDecimal128('1000000000000', 3), 'DateTime64(3, \'UTC\')') SETTINGS date_time_overflow_behavior = 'saturate';

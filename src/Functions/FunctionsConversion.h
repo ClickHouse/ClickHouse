@@ -635,7 +635,9 @@ struct ToDateTime64TransformUnsigned
             if (accurate::greaterOp(from, max_whole)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", conversionSourceForMessage(from));
             else
-                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
+                /// The value is within the bound, so the narrowing cast is well defined; a wide integer has no
+                /// implicit conversion to the `Int64` the components are built from anyway.
+                return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
         }
         else
         {
@@ -2258,14 +2260,14 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformSigned<typename FromDataType::FieldType, date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, targetScale(additions));
         }
-        /// Without this UInt32 skips the saturating transform and stores an out-of-range value raw. UInt8 and
-        /// UInt16 cannot exceed MAX_TIME_TIMESTAMP, so they have nothing to saturate and keep the generic path.
-        else if constexpr (std::is_same_v<FromDataType, DataTypeUInt32> && std::is_same_v<ToDataType, DataTypeTime64>)
-        {
-            return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
-                arguments, result_type, input_rows_count, additions);
-        }
-        else if constexpr ((std::is_same_v<FromDataType, DataTypeUInt64>
+        /// Every unsigned carrier goes through the saturating transforms, not only the wide ones: without this
+        /// `UInt32` skips them for `Time64` and stores an out-of-range value raw, and the narrow types would
+        /// report the overflow mode differently from their signed counterparts. `UInt8` and `UInt16` cannot
+        /// exceed either target, so for them the transform is only a (free) pass-through.
+        else if constexpr ((std::is_same_v<FromDataType, DataTypeUInt8>
+                || std::is_same_v<FromDataType, DataTypeUInt16>
+                || std::is_same_v<FromDataType, DataTypeUInt32>
+                || std::is_same_v<FromDataType, DataTypeUInt64>
                 || std::is_same_v<FromDataType, DataTypeUInt128>
                 || std::is_same_v<FromDataType, DataTypeUInt256>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
@@ -2473,14 +2475,17 @@ struct ConvertImpl
             else
                 return col_to;
         }
-        /// Rescaling a `DateTime64` to a finer scale can leave the representable window: the ticks are an `Int64`,
-        /// so a scale-0 value in the year 2299 has no scale-9 representation at all. Plain `convertDecimals` reports
-        /// that as `DECIMAL_OVERFLOW`, which neither honours `date_time_overflow_behavior` nor lets
-        /// `accurateCastOrNull` report the value as `NULL`, so the rescaling follows the same rules as the other
-        /// conversions to `DateTime64` here: the accurate casts reject an unrepresentable value, and the overflow
-        /// modes throw or clamp to the extreme tick of the target.
-        else if constexpr (std::is_same_v<FromDataType, DataTypeDateTime64>
-                        && std::is_same_v<ToDataType, DataTypeDateTime64>)
+        /// Conversion of a `Decimal` (including the rescaling of a `DateTime64`) to `DateTime64` or `Time64`.
+        /// Both of these carry their value in `Int64` ticks, so a source outside the window of the target - a
+        /// `Decimal64` counting more seconds than `Time64` can hold, or a scale-0 `DateTime64` in the year 2299
+        /// that has no scale-9 representation - cannot be converted. Plain `convertDecimals` reports that as
+        /// `DECIMAL_OVERFLOW`, which neither honours `date_time_overflow_behavior` nor lets `accurateCastOrNull`
+        /// report the value as `NULL`, so these conversions follow the same rules as the numeric ones here: the
+        /// accurate casts reject an unrepresentable value, and the overflow modes throw or clamp to the extreme
+        /// representable tick of the target.
+        else if constexpr ((std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>)
+                        && ((IsDataTypeDecimal<FromDataType> && !IsDataTypeDateOrDateTimeOrTime<FromDataType>)
+                            || (std::is_same_v<FromDataType, DataTypeDateTime64> && std::is_same_v<ToDataType, DataTypeDateTime64>)))
         {
             using ToFieldType = typename ToDataType::FieldType;
             using ColVecFrom = typename FromDataType::ColumnType;
@@ -2508,14 +2513,20 @@ struct ConvertImpl
                 vec_null_map_to = &col_null_map_to->getData();
             }
 
-            const Int64 to_scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(col_to->getScale());
-            [[maybe_unused]] const Int64 max_ticks = maxTicksForDateTime64(to_scale_multiplier);
-            [[maybe_unused]] const Int64 min_ticks = minTicksForDateTime64(to_scale_multiplier);
+            const Int64 to_scale_multiplier = DecimalUtils::scaleMultiplier<typename ToDataType::FieldType::NativeType>(col_to->getScale());
+            const Int64 max_ticks = std::is_same_v<ToDataType, DataTypeTime64>
+                ? maxTicksForTime64(to_scale_multiplier) : maxTicksForDateTime64(to_scale_multiplier);
+            const Int64 min_ticks = std::is_same_v<ToDataType, DataTypeTime64>
+                ? minTicksForTime64(to_scale_multiplier) : minTicksForDateTime64(to_scale_multiplier);
 
             for (size_t i = 0; i < input_rows_count; ++i)
             {
                 ToFieldType result{};
-                if (tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result))
+                /// `tryConvertDecimals` only reports an overflow of the `Int64` ticks, while the target also has a
+                /// calendar (or clock) window inside them: a `Decimal64(3)` of 10^12 seconds rescales without
+                /// overflowing yet is no `DateTime64`, so the window is checked here as well.
+                if (tryConvertDecimals<FromDataType, ToDataType>(vec_from[i], col_from->getScale(), col_to->getScale(), result)
+                    && result.value >= min_ticks && result.value <= max_ticks)
                 {
                     vec_to[i] = result;
                     continue;
@@ -2534,7 +2545,8 @@ struct ConvertImpl
                 else if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
                 {
                     throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
-                        "Value {} is out of bounds of type DateTime64 with scale {}", vec_from[i].value, col_to->getScale());
+                        "Value {} is out of bounds of type {} with scale {}",
+                        vec_from[i].value, ToDataType::family_name, col_to->getScale());
                 }
                 else
                 {

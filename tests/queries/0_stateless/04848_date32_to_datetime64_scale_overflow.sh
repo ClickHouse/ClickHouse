@@ -13,12 +13,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # Every query that is expected to fail runs in a single `clickhouse-local`, and so does every query that is
 # expected to succeed: formatting an exception message symbolizes the stack trace, which costs tens of seconds
 # in a sanitizer build and is paid once per process, so a process per query makes the test time out there.
+# The failing ones are fed through stdin so that the `serverError` hints are checked by the client itself and
+# the following query still runs; an unmet hint is reported on stderr and shows up in the output of the test.
 
 echo "cast"
-${CLICKHOUSE_LOCAL} --ignore-error -q "
-    select cast(toDate32('9999-12-31') as DateTime64(9, 'UTC')) settings date_time_overflow_behavior = 'throw';
-    select cast(toDate32('0000-01-01') as DateTime64(9, 'UTC')) settings date_time_overflow_behavior = 'throw';
-" 2>&1 | grep -c "VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE"
+${CLICKHOUSE_LOCAL} --multiquery 2>&1 <<'SQL'
+select cast(toDate32('9999-12-31') as DateTime64(9, 'UTC')) settings date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+select cast(toDate32('0000-01-01') as DateTime64(9, 'UTC')) settings date_time_overflow_behavior = 'throw'; -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+SQL
 
 ${CLICKHOUSE_LOCAL} -q "
     select cast(toDate32('9999-12-31') as DateTime64(9, 'UTC')), cast(toDate32('0000-01-01') as DateTime64(9, 'UTC')) settings date_time_overflow_behavior = 'saturate';
@@ -41,9 +43,10 @@ echo "out of range at scale 9"
 QUERIES=""
 for format in "${FORMATS[@]}"
 do
-    QUERIES+="select * from file('${CLICKHOUSE_TMP}/04848_date.$format', $format, 'date DateTime64(9, \'UTC\')');"
+    QUERIES+="select * from file('${CLICKHOUSE_TMP}/04848_date.$format', $format, 'date DateTime64(9, \'UTC\')'); -- { serverError VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE }
+"
 done
-${CLICKHOUSE_LOCAL} --ignore-error -q "$QUERIES" 2>&1 | grep -c "VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE"
+echo "$QUERIES" | ${CLICKHOUSE_LOCAL} --multiquery 2>&1
 
 for format in "${FORMATS[@]}"
 do

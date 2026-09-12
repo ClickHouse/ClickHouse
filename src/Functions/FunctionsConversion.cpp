@@ -685,6 +685,10 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
+            /// `DateTime64` and `Time64` are `Decimal` carriers, so tell a plain `Decimal` source apart from them.
+            static constexpr bool left_is_plain_decimal
+                = IsDataTypeDecimal<LeftDataType> && !IsDataTypeDateOrDateTimeOrTime<LeftDataType>;
+
             if constexpr (IsDataTypeDecimalOrNumber<LeftDataType> && IsDataTypeDecimalOrNumber<RightDataType> && !(std::is_same_v<DataTypeDateTime64, RightDataType> || std::is_same_v<DataTypeTime64, RightDataType>))
             {
                 if (cast_type == CastType::accurate)
@@ -706,7 +710,7 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     return true;
                 }
             }
-            else if constexpr ((IsDataTypeNumber<LeftDataType> || IsDataTypeDateOrDateTimeOrTime<LeftDataType>)
+            else if constexpr ((IsDataTypeNumber<LeftDataType> || left_is_plain_decimal || IsDataTypeDateOrDateTimeOrTime<LeftDataType>)
                 && (std::is_same_v<RightDataType, DataTypeDateTime64> || std::is_same_v<RightDataType, DataTypeTime64>))
             {
                 /// These are the conversions handled by this wrapper that can overflow the target: the whole-seconds
@@ -714,7 +718,7 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                 /// ends at 2262-04-11, and `Time64` holds at most 999:59:59), so `date_time_overflow_behavior` has to
                 /// reach the transform - unlike the other branches here, which cannot lose a value and therefore use
                 /// the default mode.
-                if constexpr (IsDataTypeNumber<LeftDataType>
+                if constexpr (IsDataTypeNumber<LeftDataType> || left_is_plain_decimal
                     || (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
                     || (std::is_same_v<LeftDataType, DataTypeDateTime64> && std::is_same_v<RightDataType, DataTypeDateTime64>))
                 {
@@ -725,6 +729,9 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     /// others stay inside the representable window of every scale - so it needs the same treatment.
                     /// A `DateTime64` source needs it as well: widening the scale of a value outside the target's
                     /// window (a scale-0 value in the year 2299 has no scale-9 representation) overflows the ticks.
+                    /// A plain `Decimal` source is a count of seconds just like a number, only with a fractional
+                    /// part, so it belongs to the same family: `CAST('10500000000.1' AS Decimal64(1))` has no
+                    /// scale-9 `DateTime64` representation either.
                     if (cast_type == CastType::accurate)
                     {
                         AccurateConvertStrategyAdditions additions;
