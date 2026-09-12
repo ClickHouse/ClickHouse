@@ -6,6 +6,7 @@ SET optimize_rewrite_has_to_in = 0;
 
 DROP TABLE IF EXISTS t_map_keys_values_filter_only;
 DROP TABLE IF EXISTS t_map_keys_values_filter_only_buckets;
+DROP TABLE IF EXISTS t_map_keys_values_filter_only_indexed;
 CREATE TABLE t_map_keys_values_filter_only
 (
     id UInt64,
@@ -135,5 +136,67 @@ FROM t_map_keys_values_filter_only_buckets
 PREWHERE has(mapValues(m), 'api')
 ORDER BY id;
 
+-- Indexed Map columns keep the existing index-aware path. The filter-only
+-- subcolumn rewrite is intentionally not applied to these columns yet.
+CREATE TABLE t_map_keys_values_filter_only_indexed
+(
+    id UInt64,
+    m Map(String, String),
+    INDEX idx_keys mapKeys(m) TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 1,
+    INDEX idx_values mapValues(m) TYPE tokenbf_v1(32768, 3, 0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS
+    index_granularity = 1,
+    min_bytes_for_wide_part = 1,
+    min_rows_for_wide_part = 1;
+
+INSERT INTO t_map_keys_values_filter_only_indexed VALUES
+    (0, {'service': 'api', 'debug': '1'}),
+    (1, {'service': 'worker'}),
+    (2, {'debug': '1'}),
+    (3, {}),
+    (4, {'service': 'api'});
+
+SELECT count()
+FROM t_map_keys_values_filter_only_indexed
+WHERE has(mapKeys(m), 'service');
+
+SELECT count()
+FROM t_map_keys_values_filter_only_indexed
+WHERE has(mapValues(m), 'api');
+
+SELECT id, m
+FROM t_map_keys_values_filter_only_indexed
+WHERE has(mapKeys(m), 'service')
+ORDER BY id;
+
+SELECT id, m
+FROM t_map_keys_values_filter_only_indexed
+WHERE has(mapValues(m), 'api')
+ORDER BY id;
+
+-- The original Map index expressions remain visible to index analysis.
+SELECT count() > 0
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id, m
+    FROM t_map_keys_values_filter_only_indexed
+    WHERE has(mapKeys(m), 'service')
+)
+WHERE explain LIKE '%idx_keys%';
+
+SELECT count() > 0
+FROM
+(
+    EXPLAIN indexes = 1
+    SELECT id, m
+    FROM t_map_keys_values_filter_only_indexed
+    WHERE has(mapValues(m), 'api')
+)
+WHERE explain LIKE '%idx_values%';
+
 DROP TABLE t_map_keys_values_filter_only;
 DROP TABLE t_map_keys_values_filter_only_buckets;
+DROP TABLE t_map_keys_values_filter_only_indexed;
