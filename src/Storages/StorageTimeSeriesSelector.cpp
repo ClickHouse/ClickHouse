@@ -424,6 +424,12 @@ namespace
         auto select_as_subquery = make_intrusive<ASTSubquery>(std::move(select_query_from_tags_table));
         conditions.push_back(makeASTFunction("in", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::ID), std::move(select_as_subquery)));
 
+        /// notEmpty(time_series)
+        /// Filters out the rows which match the coarse `min_time` and `max_time` conditions but have no samples in the requested interval.
+        /// It goes last because it evaluates `timeSeriesSliceSortedArray`, and it is kept inside this flat `and`
+        /// because an outer `WHERE` would be pushed down as a nested `and(and(...), notEmpty(...))` which the expression JIT compiles.
+        conditions.push_back(makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)));
+
         /// For a whole-metric selector over a metric-clustered id layout one more condition is
         /// added: indexHint(<raw id column> >= tuple(hash(metric_name), min) AND <raw id column>
         /// <= tuple(hash(metric_name), max)). `indexHint` keeps it out of the row-level filter, so
@@ -486,7 +492,7 @@ namespace
         }
 
         /// WHERE (bucket >= <min_bucket>) AND (bucket <= <max_bucket>) AND (max_time >= min_time) AND (min_time <= max_time)
-        ///       AND (id IN <select_query_from_tags_table>)
+        ///       AND (id IN <select_query_from_tags_table>) AND notEmpty(time_series)
         ///
         /// where <select_query_from_tags_table> is roughly:
         ///   SELECT timeSeriesStoreTags(id, tags, '__name__', metric_name, ...) FROM tags_table WHERE <matchers>
@@ -564,12 +570,6 @@ namespace
 
             select_query->setExpression(ASTSelectQuery::Expression::TABLES, tables);
         }
-
-        /// WHERE notEmpty(time_series)
-        /// The conditions of the inner query select the rows by `min_time` and `max_time`, so a row can match them
-        /// without having samples in the requested interval; such rows are filtered out here.
-        select_query->setExpression(ASTSelectQuery::Expression::WHERE,
-            makeASTFunction("notEmpty", make_intrusive<ASTIdentifier>(TimeSeriesColumnNames::TimeSeries)));
 
         /// Wrap the select query into ASTSelectWithUnionQuery.
         auto select_with_union_query = make_intrusive<ASTSelectWithUnionQuery>();
