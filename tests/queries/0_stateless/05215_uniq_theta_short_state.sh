@@ -26,8 +26,10 @@ outcome()
 # The leading byte of each `char` is the length of the state that follows it. All of these states are
 # eight bytes long - the most the parser checks for before it reads further out.
 #
-# The first four stop at `check_seed_hash`, which is what the fuzzer produced. Only serial version 1
-# computes the seed hash itself instead of comparing it, so only it reaches the premature reads.
+# The four states the fuzzer produced come first, and their seed hash is zero. Serial versions 2, 3
+# and 4 compare that against the one they compute and stop at `check_seed_hash`; serial version 1
+# computes the seed hash itself instead of comparing it, so it is the only one of the four that
+# reaches the premature reads at all. Serial version 5 does not exist and is refused outright.
 for STATE in \
     "char(8, 0, 1, 3, 0, 0, 0, 0, 0)" \
     "char(8, 0, 2, 3, 0, 0, 0, 0, 0)" \
