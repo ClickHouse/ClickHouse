@@ -161,8 +161,6 @@ private:
 
     static void validateTableExpressionModifiers(const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
 
-    static void validateJoinTableExpressionWithoutAlias(const QueryTreeNodePtr & join_node, const QueryTreeNodePtr & table_expression_node, IdentifierResolveScope & scope);
-
     static void checkDuplicateTableNamesOrAliasForPasteJoin(const JoinNode & join_node, IdentifierResolveScope & scope);
 
     static std::pair<bool, UInt64> recursivelyCollectMaxOrdinaryExpressions(QueryTreeNodePtr & node, QueryTreeNodes & into);
@@ -243,6 +241,12 @@ private:
     QueryTreeNodesWithNames resolveQualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 
     QueryTreeNodesWithNames resolveUnqualifiedMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
+
+    static void validateMatchedColumnsFromJoinCanBeQualified(
+        const QueryTreeNodePtr & matcher_node,
+        const QueryTreeNodes & matched_nodes,
+        const ProjectionNames & matched_projection_names,
+        const IdentifierResolveScope & scope);
 
     ProjectionNames resolveMatcher(QueryTreeNodePtr & matcher_node, IdentifierResolveScope & scope);
 

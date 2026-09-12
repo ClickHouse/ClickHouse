@@ -26,6 +26,9 @@
 #include <Analyzer/TableNode.h>
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/JoinNode.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/UnionNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 
 #include <Analyzer/Resolve/IdentifierResolver.h>
@@ -46,6 +49,7 @@ namespace Setting
 {
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsBool single_join_prefer_left_table;
+    extern const SettingsBool joined_subquery_requires_alias;
     extern const SettingsBool analyzer_compatibility_allow_compound_identifiers_in_unflatten_nested;
     extern const SettingsBool analyzer_compatibility_prefer_alias_over_subcolumn;
 }
@@ -54,6 +58,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
     extern const int AMBIGUOUS_IDENTIFIER;
+    extern const int ALIAS_REQUIRED;
     extern const int INVALID_IDENTIFIER;
     extern const int UNSUPPORTED_METHOD;
     extern const int LOGICAL_ERROR;
@@ -1147,6 +1152,89 @@ static JoinTableSide choseSideForEqualIdenfifiersFromJoin(
     return JoinTableSide::Left;
 }
 
+/** A subquery, union or table function without an alias cannot be referenced by name.
+  *
+  * `ARRAY JOIN` is transparent for this purpose: it keeps the columns of the table expression it wraps, and an
+  * array-joined column is a column of that table expression, so it is qualifiable only if the wrapped table
+  * expression is. The column source of an array-joined column is the `ArrayJoinNode` itself, hence the unwrapping.
+  */
+static QueryTreeNodePtr getUnaliasedSubqueryOrTableFunctionTableExpression(const QueryTreeNodePtr & table_expression)
+{
+    if (!table_expression || table_expression->hasAlias())
+        return nullptr;
+
+    switch (table_expression->getNodeType())
+    {
+        case QueryTreeNodeType::QUERY:
+            return table_expression->as<QueryNode &>().getCTEName().empty() ? table_expression : nullptr;
+        case QueryTreeNodeType::UNION:
+            return table_expression->as<UnionNode &>().getCTEName().empty() ? table_expression : nullptr;
+        case QueryTreeNodeType::TABLE_FUNCTION:
+            return table_expression;
+        case QueryTreeNodeType::ARRAY_JOIN:
+            return getUnaliasedSubqueryOrTableFunctionTableExpression(table_expression->as<ArrayJoinNode &>().getTableExpressionNode());
+        default:
+            return nullptr;
+    }
+}
+
+QueryTreeNodePtr IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(const QueryTreeNodePtr & resolved_expression)
+{
+    if (const auto * column_node = resolved_expression->as<ColumnNode>())
+        return getUnaliasedSubqueryOrTableFunctionTableExpression(column_node->getColumnSourceOrNull());
+
+    /// Subcolumns and `Nested` columns are resolved into functions (`getSubcolumn`, `nested`) over the actual columns.
+    if (const auto * function_node = resolved_expression->as<FunctionNode>())
+    {
+        for (const auto & argument : function_node->getArguments().getNodes())
+        {
+            if (auto column_source = getUnaliasedSubqueryOrTableFunctionSource(argument))
+                return column_source;
+        }
+    }
+
+    return nullptr;
+}
+
+/** An identifier that resolves to a column of several table expressions of a join can be pinned to one of them only by
+  * qualifying it with the name or alias of that table expression. A subquery, union or table function without an alias
+  * has no such name, so with `joined_subquery_requires_alias` enabled the ambiguity is reported as a missing alias
+  * instead of being reported as a plain ambiguity or silently resolved by `single_join_prefer_left_table` or by
+  * `choseSideForEqualIdenfifiersFromJoin`.
+  *
+  * This is the only situation where the missing alias matters: an identifier that resolves from a single table
+  * expression does not need to be qualified, so no alias is required for it.
+  */
+static void throwIfAmbiguousIdentifierFromUnaliasedTableExpression(
+    const IdentifierLookup & identifier_lookup,
+    const QueryTreeNodePtr & join_node,
+    const QueryTreeNodePtr & first_resolved_identifier,
+    const QueryTreeNodePtr & second_resolved_identifier,
+    const IdentifierResolveScope & scope)
+{
+    if (!scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
+        return;
+
+    /// `PASTE JOIN` concatenates the operands positionally and allows equally named columns. Its duplicate column names are
+    /// validated separately (see QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin).
+    if (const auto * join = join_node->as<const JoinNode>(); join && join->getKind() == JoinKind::Paste)
+        return;
+
+    auto unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(first_resolved_identifier);
+    if (!unaliased_table_expression)
+        unaliased_table_expression = IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(second_resolved_identifier);
+    if (!unaliased_table_expression)
+        return;
+
+    throw Exception(ErrorCodes::ALIAS_REQUIRED,
+        "JOIN {} ambiguous identifier '{}' cannot be qualified: no alias for subquery or table function {}. "
+        "In scope {} (set joined_subquery_requires_alias = 0 to disable restriction)",
+        join_node->formatASTForErrorMessage(),
+        identifier_lookup.identifier.getFullName(),
+        unaliased_table_expression->formatASTForErrorMessage(),
+        scope.scope_node->formatASTForErrorMessage());
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(const IdentifierLookup & identifier_lookup,
     const TableExpressionNodePtr & table_expression_node,
     IdentifierResolveScope & scope)
@@ -1183,6 +1271,15 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
 
         if (resolve_result.resolved_identifier->isEqual(*identifier.resolved_identifier, IQueryTreeNode::CompareOptions{.compare_aliases = false}))
         {
+            /** Two structurally equal table expressions still hold different rows of the result: a cross join pairs
+              * every row of one operand with every row of the other, so which operand the identifier binds to is
+              * observable. `choseSideForEqualIdenfifiersFromJoin` below picks that operand by which of the two carries
+              * an alias, so for an unaliased subquery or table function the result would depend on an alias that
+              * cannot be written for it. Require the alias, exactly as for the plainly ambiguous case below.
+              */
+            throwIfAmbiguousIdentifierFromUnaliasedTableExpression(
+                identifier_lookup, table_expression_node, resolve_result.resolved_identifier, identifier.resolved_identifier, scope);
+
             const auto & identifier_path_part = identifier_lookup.identifier.front();
             auto * left_resolved_identifier_column = resolve_result.resolved_identifier->as<ColumnNode>();
             auto * right_resolved_identifier_column = identifier.resolved_identifier->as<ColumnNode>();
@@ -1194,13 +1291,17 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
                     resolve_result = identifier;
             }
         }
-        else if (!prefer_left_table)
+        else
         {
-            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "JOIN {} ambiguous identifier '{}'. In scope {}",
-                table_expression_node->formatASTForErrorMessage(),
-                identifier_lookup.identifier.getFullName(),
-                scope.scope_node->formatASTForErrorMessage());
+            throwIfAmbiguousIdentifierFromUnaliasedTableExpression(
+                identifier_lookup, table_expression_node, resolve_result.resolved_identifier, identifier.resolved_identifier, scope);
+
+            if (!prefer_left_table)
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "JOIN {} ambiguous identifier '{}'. In scope {}",
+                    table_expression_node->formatASTForErrorMessage(),
+                    identifier_lookup.identifier.getFullName(),
+                    scope.scope_node->formatASTForErrorMessage());
         }
     }
 
@@ -1662,6 +1763,14 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
         else if (resolvedIdenfiersFromJoinAreEquals(left_resolved_identifier, right_resolved_identifier, scope))
         {
+            /** Equal lineage is not equal values: an OUTER JOIN default-fills the side that did not match, so the side
+              * chosen below is observable. `choseSideForEqualIdenfifiersFromJoin` picks it by which side carries an
+              * alias, so for an unaliased subquery or table function the result would depend on an alias that cannot
+              * be written for it. Require the alias, exactly as for the plainly ambiguous case below.
+              */
+            throwIfAmbiguousIdentifierFromUnaliasedTableExpression(
+                identifier_lookup, table_expression_node, left_resolved_identifier, right_resolved_identifier, scope);
+
             const auto & identifier_path_part = identifier_lookup.identifier.front();
             auto * left_resolved_identifier_column = left_resolved_identifier->as<ColumnNode>();
             auto * right_resolved_identifier_column = right_resolved_identifier->as<ColumnNode>();
@@ -1691,18 +1800,24 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
         }
-        else if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
-        {
-            resolved_side = JoinTableSide::Left;
-            resolved_identifier = left_resolved_identifier;
-        }
         else
         {
-            throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
-                "JOIN {} ambiguous identifier '{}'. In scope {}",
-                table_expression_node->formatASTForErrorMessage(),
-                identifier_lookup.identifier.getFullName(),
-                scope.scope_node->formatASTForErrorMessage());
+            throwIfAmbiguousIdentifierFromUnaliasedTableExpression(
+                identifier_lookup, table_expression_node, left_resolved_identifier, right_resolved_identifier, scope);
+
+            if (scope.joins_count == 1 && scope.context->getSettingsRef()[Setting::single_join_prefer_left_table])
+            {
+                resolved_side = JoinTableSide::Left;
+                resolved_identifier = left_resolved_identifier;
+            }
+            else
+            {
+                throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
+                    "JOIN {} ambiguous identifier '{}'. In scope {}",
+                    table_expression_node->formatASTForErrorMessage(),
+                    identifier_lookup.identifier.getFullName(),
+                    scope.scope_node->formatASTForErrorMessage());
+            }
         }
     }
     else if (left_resolved_identifier)
