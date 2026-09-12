@@ -34,12 +34,11 @@ d2	3	30
 SELECT _table FROM m2 ORDER BY _table ASC;
 d1
 d1
-d8
-d8
+d4
+d4
 SELECT count(_table) FROM m2 WHERE _table = 'd1' GROUP BY _table;
 2
 SELECT _table, key, value FROM m2 WHERE _table = 'd8' and value >= 60;
-d8	6	60
 SELECT _table, key, value FROM (SELECT _table, key, value FROM d1 UNION ALL SELECT _table, key, value FROM d2) ORDER BY key ASC;
 d1	1	10
 d1	2	20
@@ -67,19 +66,15 @@ d1	1	10
 d1	2	20
 d2	3	30
 d2	4	40
-SELECT _table, * FROM m3 ORDER BY key ASC;
-d1	1	10
-d1	2	20
+SELECT _table, * FROM m3 ORDER BY key ASC, _table ASC;
+m1	1	10
+m1	2	20
 d2	3	30
-d2	3	30
+m1	3	30
 d2	4	40
-d2	4	40
+m1	4	40
 SELECT _table, * FROM m4 WHERE _table = 'd8' ORDER BY key ASC;
-d8	5	50
-d8	6	60
 SELECT _table, * FROM m5 WHERE _table = 'd8' ORDER BY key ASC;
-d8	5	50
-d8	6	60
 SELECT _table, * FROM temp1 ORDER BY key ASC;
 temp1	1
 SELECT _table, * FROM temp2 ORDER BY key ASC;

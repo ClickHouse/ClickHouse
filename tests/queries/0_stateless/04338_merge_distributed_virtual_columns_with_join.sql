@@ -1,13 +1,15 @@
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/84139
--- Fixed by https://github.com/ClickHouse/ClickHouse/pull/102304 and
--- https://github.com/ClickHouse/ClickHouse/pull/102471, which made `Merge`
--- always proxy virtual columns to the underlying storages, so `_database`
--- and `_table` are produced natively by the nested `Distributed` query.
 --
--- Before the fix, with the analyzer enabled, selecting `_table` (and/or
--- `_database`) from a `Merge` over a `Distributed` table together with a
--- `LEFT JOIN` returned default (empty) values instead of the real ones,
--- and could also scramble other columns (e.g. `id` was returned as `0`).
+-- With the analyzer enabled, selecting `_table` (and/or `_database`) from a
+-- `Merge` over a `Distributed` table together with a `LEFT JOIN` returned
+-- default (empty) values instead of the real ones, and could also scramble
+-- other columns (e.g. `id` was returned as `0`).
+--
+-- The `Merge` engine's `_database` and `_table` virtual columns carry the name
+-- of the Merge table's own child (here the `Distributed` table), not the name
+-- of the table the child delegates its read to: those are the names the
+-- `WHERE _table = ...` child-pruning filter matches, so producing any other
+-- name would make such filters silently drop rows.
 
 SET enable_analyzer = 1;
 

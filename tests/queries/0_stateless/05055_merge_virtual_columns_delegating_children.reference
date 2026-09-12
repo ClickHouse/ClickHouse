@@ -1,0 +1,43 @@
+-- rows carry the child name, not the remote table name
+t_dist	1
+t_dist
+-- a remote GROUP BY over the virtual column
+t_dist	12
+-- a filter on the child name keeps all rows, both analyzers
+12
+12
+-- the remote table name matches no child
+0
+-- an expression over the virtual column, computed on the shards
+t_dist/0
+t_dist/1
+t_dist/2
+-- a JOIN above the Merge must not turn the values into defaults
+t_dist	0
+t_dist	1
+t_dist	2
+-- each Merge level reports its own child
+m_inner
+6
+t_leaf
+6
+-- a Buffer child is also reported under its own name
+t_buf
+6
+-- a correlated subquery over the virtual column also sees the child name
+6
+0
+6
+0
+-- same-structure children never share a rewritten query that carries one child name
+2
+2
+3
+3
+t_a	1
+t_b	2
+t_c	3
+-- an ALIAS column over the child own _table resolves per child
+t_alias_b
+1	t_alias_a
+2	t_alias_b

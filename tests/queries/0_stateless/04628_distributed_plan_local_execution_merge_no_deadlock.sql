@@ -35,10 +35,10 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
     distributed_plan_default_shuffle_join_bucket_count = 2, distributed_plan_default_reader_bucket_count = 2,
     max_threads = 1, distributed_aggregation_memory_efficient = 0;
 
-SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_1' GROUP BY _table;
-SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
-SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_1' GROUP BY _table;
-SELECT count(_table) FROM m_dlk WHERE _table = 'base_dlk_2' GROUP BY _table;
+SELECT count(_table) FROM m_dlk WHERE _table = 'd_dlk_1' GROUP BY _table;
+SELECT count(_table) FROM m_dlk WHERE _table = 'd_dlk_2' GROUP BY _table;
+SELECT count(_table) FROM m_dlk WHERE _table = 'd_dlk_1' GROUP BY _table;
+SELECT count(_table) FROM m_dlk WHERE _table = 'd_dlk_2' GROUP BY _table;
 
 DROP TABLE m_dlk;
 DROP TABLE d_dlk_1;
