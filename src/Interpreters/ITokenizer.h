@@ -213,7 +213,7 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
 
     /// Non-alphanumeric ASCII bytes separate tokens; every other byte, including all bytes of
     /// UTF-8 sequences, belongs to a token.
-    inline static const ByteSet separator_chars = ByteSet::fromPredicate([](char c) { return isASCII(c) && !isAlphaNumericASCII(c); });
+    static constexpr ByteSet separator_chars = ByteSet::fromPredicate([](char c) { return isASCII(c) && !isAlphaNumericASCII(c); });
 
     /// High-performance callback-based tokenizer with SIMD optimization.
     /// Assumes data is padded from the right with at least 15 bytes (as our Columns provide).

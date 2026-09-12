@@ -4,6 +4,7 @@
 #include <base/types.h>
 
 #include <bit>
+#include <cstddef>
 #include <cstring>
 
 #if defined(__SSSE3__)
@@ -17,8 +18,9 @@ namespace DB
 {
 
 /// A set of bytes with an O(1) membership test and a vectorized search for the first byte that
-/// is (or is not) in the set. Building a set is cheap, so it fits both character classes fixed at
-/// compile time and delimiter sets coming from user input.
+/// is (or is not) in the set. Building a set is cheap and works in constant expressions, so it fits
+/// both character classes fixed in the code (declare them `constexpr`, then the dispatch on the
+/// set's properties below folds away) and delimiter sets coming from user input.
 ///
 /// The vectorized search classifies 16 bytes at once with two nibble lookups (`pshufb` / `tbl`):
 ///
@@ -36,11 +38,11 @@ class ByteSet
 public:
     static constexpr size_t BLOCK_SIZE = 16;
 
-    ByteSet() = default;
+    constexpr ByteSet() = default;
 
     /// The set of all bytes for which `predicate` returns true.
     template <typename Predicate>
-    static ByteSet fromPredicate(Predicate && predicate)
+    static constexpr ByteSet fromPredicate(Predicate && predicate)
     {
         ByteSet set;
         for (int c = 0; c < 256; ++c)
@@ -49,13 +51,16 @@ public:
         return set;
     }
 
-    void add(char c)
+    constexpr void add(char c)
     {
         auto byte = static_cast<UInt8>(c);
         if (table[byte])
             return;
 
         table[byte] = true;
+
+        if (byte >= 0x80)
+            ascii_only = false;
 
         UInt8 high = byte >> 4;
         UInt8 low = byte & 0x0F;
@@ -76,7 +81,7 @@ public:
         high_nibble_table[high] = high_nibble_bit[high];
     }
 
-    ALWAYS_INLINE bool contains(char c) const
+    ALWAYS_INLINE constexpr bool contains(char c) const
     {
         return table[static_cast<UInt8>(c)];
     }
@@ -98,7 +103,7 @@ public:
 
 #if defined(__SSSE3__) || defined(__aarch64__)
         if (vectorized)
-            pos = findVectorized<positive>(pos, end);
+            pos = ascii_only ? findVectorized<positive, true>(pos, end) : findVectorized<positive, false>(pos, end);
 #endif
 
         for (; pos < end; ++pos)
@@ -119,7 +124,7 @@ public:
         {
             UInt8x16 bytes;
             memcpy(&bytes, pos, BLOCK_SIZE);
-            return blockMask(classify(bytes));
+            return blockMask(ascii_only ? classify<true>(bytes) : classify<false>(bytes));
         }
 #endif
         UInt32 mask = 0;
@@ -148,13 +153,31 @@ private:
 #endif
     }
 
+    /// Returns a vector with `table[bytes[i] & 0x0F]` in lane `i`.
+    template <bool ascii_only>
+    static ALWAYS_INLINE UInt8x16 lookupByLowNibble(UInt8x16 table, UInt8x16 bytes)
+    {
+#if defined(__SSSE3__)
+        /// `pshufb` reads only the low 4 bits of an index and zeroes the lane if bit 7 is set. For a set
+        /// without non-ASCII members that is exactly the wanted result for 0x80-0xFF too, so the masking
+        /// can be skipped. NEON `tbl` zeroes every index >= 16 instead, so it has no such shortcut.
+        if constexpr (ascii_only)
+            return lookupBytes(table, bytes);
+        else
+            return lookupBytes(table, bytes & 0x0F);
+#else
+        return lookupBytes(table, bytes & 0x0F);
+#endif
+    }
+
     /// 0xFF in the lanes of the bytes that are in the set, 0x00 in the others.
+    template <bool ascii_only>
     ALWAYS_INLINE Int8x16 classify(UInt8x16 bytes) const
     {
         const auto low_table = std::bit_cast<UInt8x16>(low_nibble_table);
         const auto high_table = std::bit_cast<UInt8x16>(high_nibble_table);
 
-        UInt8x16 low = lookupBytes(low_table, bytes & 0x0F);
+        UInt8x16 low = lookupByLowNibble<ascii_only>(low_table, bytes);
         UInt8x16 high = lookupBytes(high_table, bytes >> 4);
         return (low & high) != UInt8x16{};
     }
@@ -175,7 +198,7 @@ private:
 
     /// Scans whole blocks. Returns the position of the first byte matching the search,
     /// or the position from which fewer than `BLOCK_SIZE` bytes remain.
-    template <bool positive>
+    template <bool positive, bool ascii_only>
     const char * findVectorized(const char * pos, const char * end) const
     {
         for (; end - pos >= static_cast<ptrdiff_t>(BLOCK_SIZE); pos += BLOCK_SIZE)
@@ -183,7 +206,7 @@ private:
             UInt8x16 bytes;
             memcpy(&bytes, pos, BLOCK_SIZE);
 
-            auto match = classify(bytes);
+            auto match = classify<ascii_only>(bytes);
             if constexpr (!positive)
                 match = ~match;
 
@@ -205,6 +228,8 @@ private:
     UInt8 high_nibble_bit[16]{};
     size_t num_high_nibbles = 0;
     bool vectorized = true;
+    /// No member is >= 0x80, which allows a cheaper low-nibble lookup on x86.
+    bool ascii_only = true;
 };
 
 }
