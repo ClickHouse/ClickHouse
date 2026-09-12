@@ -25,10 +25,16 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeDataPartChecksum.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/ProfileEvents.h>
 #include <Common/formatReadable.h>
 #include <Common/logger_useful.h>
 
 #include <fmt/ranges.h>
+
+namespace ProfileEvents
+{
+    extern const Event PackedSkipIndicesArchiveIndexLoads;
+}
 
 namespace DB
 {
@@ -1218,6 +1224,8 @@ std::shared_ptr<const PackedFilesReader> DataPartStorageOnDiskBase::getSkipIndic
         Expect404ResponseScope scope;
         try
         {
+            /// Counts attempts: the catch below does not cache a miss, so a re-probe counts again.
+            ProfileEvents::increment(ProfileEvents::PackedSkipIndicesArchiveIndexLoads);
             skip_indices_packed_reader = std::make_shared<PackedFilesReader>(disk, packed_path, ReadSettings{});
         }
         catch (const Exception &)
