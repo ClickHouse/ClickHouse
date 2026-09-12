@@ -7,8 +7,15 @@
 #include <Core/SettingsEnums.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
 
+#include <memory>
+
 namespace DB
 {
+
+class ASTSelectQuery;
+class IQueryTreeNode;
+using QueryTreeNodePtr = std::shared_ptr<IQueryTreeNode>;
+
 struct ParallelReplicasCustomKeyFilter
 {
     ParallelReplicasMode filter_type;
@@ -27,5 +34,19 @@ ASTPtr getCustomKeyFilterForParallelReplica(
     const ContextPtr & context);
 
 ASTPtr parseCustomKeyForTable(const String & custom_keys, const Context & context);
+
+/// Custom key parallel replicas skip the merging step on the initiator (via distributed_group_by_no_merge),
+/// concatenating per-replica results as-is. This is only correct when every row that shares a GROUP BY key
+/// is guaranteed to be processed by a single replica, i.e. when the custom key is a function of the GROUP BY
+/// keys (so all rows of a group get the same custom key value and land on the same replica). For queries with
+/// aggregation whose GROUP BY keys do not cover the custom key columns (including plain aggregation without
+/// GROUP BY, e.g. `SELECT count()`), concatenating per-replica partial results yields wrong results.
+///
+/// Expression GROUP BY keys are supported (e.g. `GROUP BY mod(number, 3)` with a custom key over
+/// `mod(number, 3)`). A custom key whose value can differ per replica for the same group is rejected, whether
+/// it is non-deterministic (`y + rand()`), stateful, or a server constant (`getMacro('replica')`). GROUP BY
+/// WITH TOTALS/ROLLUP/CUBE/GROUPING SETS is rejected. `custom_key` is the parsed custom key expression.
+bool customKeyResultCanSkipMerge(const ASTSelectQuery & select, const ASTPtr & custom_key, const Context & context);
+bool customKeyResultCanSkipMerge(const QueryTreeNodePtr & query_tree, const ASTPtr & custom_key, const Context & context);
 
 }
