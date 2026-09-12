@@ -1,0 +1,4 @@
+(1,'str',42.42)	Row(a UInt32, b String, c Float32)
+(1,'str',42.42)	Row(a UInt32, b String, c Float32)
+(1,('str',(42.42,-30)))	Row(a UInt32, b Row(c String, d Tuple(e Float32, f Int8)))
+(1,('str',(42.42,-30)))	Row(a UInt32, b Row(c String, d Tuple(e Float32, f Int8)))
