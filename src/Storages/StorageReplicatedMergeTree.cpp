@@ -272,6 +272,7 @@ namespace FailPoints
     extern const char rmt_mutation_prune_pause_before_analysis[];
     extern const char rmt_mutation_prune_pause_before_block_allocation[];
     extern const char rmt_mutation_prune_pause_before_zk_partition_list[];
+    extern const char replicated_merge_tree_pause_after_alter_metadata_zk_commit[];
     extern const char check_table_inject_retryable_zk_error[];
 }
 
@@ -1871,12 +1872,10 @@ bool StorageReplicatedMergeTree::checkTableStructureAttempt(
         "{}\nZookeeper columns:\n{}", old_columns.toString(true), columns_from_zk.toString(true));
 }
 
-void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
-    ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff, int32_t new_metadata_version)
+StorageInMemoryMetadata StorageReplicatedMergeTree::applyMetadataInMemory(const ContextPtr & local_context,
+    const StorageInMemoryMetadata & old_metadata, ColumnsDescription new_columns,
+    const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff, int32_t new_metadata_version)
 {
-    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
-    const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
-
     StorageInMemoryMetadata new_metadata = metadata_diff.getNewMetadata(new_columns, old_metadata.virtuals, local_context, old_metadata);
     new_metadata.setMetadataVersion(new_metadata_version);
 
@@ -1891,6 +1890,18 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
     checkTTLExpressions(new_metadata, old_metadata);
     setProperties(new_metadata, old_metadata);
 
+    return new_metadata;
+}
+
+void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, const ContextPtr & local_context,
+    ColumnsDescription new_columns, const ReplicatedMergeTreeTableMetadata::Diff & metadata_diff, int32_t new_metadata_version)
+{
+    auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
+    const StorageInMemoryMetadata & old_metadata = *metadata_snapshot;
+
+    StorageInMemoryMetadata new_metadata
+        = applyMetadataInMemory(local_context, old_metadata, std::move(new_columns), metadata_diff, new_metadata_version);
+
     try
     {
         DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/false);
@@ -1900,6 +1911,100 @@ void StorageReplicatedMergeTree::setTableStructure(const StorageID & table_id, c
         LOG_ERROR(log, "Failed to set table structure, reverting changes");
         setProperties(old_metadata, new_metadata);
         throw;
+    }
+}
+
+
+void StorageReplicatedMergeTree::adoptCommittedMetadataFromPendingAlter(const zkutil::ZooKeeperPtr & zookeeper)
+{
+    /// A Replicated database sets these three znodes inside the DDL transaction that
+    /// executeMetadataAlter needs to replay the entry, so adopting here would have to reconstruct that
+    /// transaction. That engine keeps the window; recovering it is a separate change.
+    if (DatabaseCatalog::instance().getDatabase(getStorageID().database_name)->getEngineName() == "Replicated")
+        return;
+
+    auto current_metadata = getInMemoryMetadataPtr(getContext(), false);
+    const fs::path replica_path_fs(replica_path);
+
+    const String zk_columns = zookeeper->get(replica_path_fs / "columns");
+    auto columns_from_zk = ColumnsDescription::parse(zk_columns);
+    const String zk_metadata = zookeeper->get(replica_path_fs / "metadata");
+
+    if (columns_from_zk == current_metadata->getColumns())
+    {
+        /// The column sets agree, so any sorting key/TTL/index expression in the Keeper metadata can only
+        /// reference columns the local table already has, which is what makes parsing it here safe.
+        auto metadata_from_zk = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+            zk_metadata, current_metadata->getColumns(),
+            current_metadata->add_minmax_index_for_numeric_columns,
+            current_metadata->add_minmax_index_for_string_columns,
+            getContext());
+
+        /// Non-strict, so that a difference in a field a metadata ALTER may change reports inequality
+        /// instead of throwing, while a difference in an immutable field still throws here.
+        if (ReplicatedMergeTreeTableMetadata(*this, current_metadata)
+                .checkEquals(metadata_from_zk, current_metadata->columns, current_metadata->virtuals,
+                             getStorageID().getNameForLogs(), getContext(), /*check_index_granularity*/ true,
+                             /*strict_check*/ false, /*logger*/ nullptr))
+            return;
+    }
+
+    String replica_metadata_version_str;
+    if (!zookeeper->tryGet(replica_path_fs / "metadata_version", replica_metadata_version_str))
+        return;
+    const Int32 replica_metadata_version = parse<Int32>(replica_metadata_version_str);
+
+    /// Look for an entry that the queue has not acknowledged yet and that accounts for exactly the metadata
+    /// committed in this replica's own znodes above. Several entries may legitimately carry the same
+    /// alter_version (see ReplicatedMergeTreeAltersSequence), and all of them match the same two znodes.
+    LogEntryPtr pending_alter;
+    for (const String & entry_name : zookeeper->getChildren(replica_path_fs / "queue"))
+    {
+        String entry_str;
+        Coordination::Stat entry_stat;
+        if (!zookeeper->tryGet(replica_path_fs / "queue" / entry_name, entry_str, &entry_stat))
+            continue;
+
+        LogEntryPtr entry = LogEntry::parse(entry_str, entry_stat, format_version);
+        if (entry->type == LogEntry::ALTER_METADATA && entry->alter_version == replica_metadata_version
+            && entry->columns_str == zk_columns && entry->metadata_str == zk_metadata)
+        {
+            /// LogEntry::parse does not fill in znode_name, the queue assigns it separately.
+            entry->znode_name = entry_name;
+            pending_alter = entry;
+            break;
+        }
+    }
+
+    if (!pending_alter)
+        return;
+
+    LOG_WARNING(log, "Local table metadata does not match the metadata committed in {}, and queue entry {} "
+                "(ALTER_METADATA, alter_version {}) is still queued (not acknowledged). Applying that metadata in "
+                "memory so that startup can proceed; the queue will persist it.",
+                replica_path, pending_alter->znode_name, pending_alter->alter_version);
+
+    auto columns_from_entry = ColumnsDescription::parse(pending_alter->columns_str);
+    auto metadata_from_entry = ReplicatedMergeTreeTableMetadata::parseAndNormalize(
+        pending_alter->metadata_str, columns_from_entry,
+        current_metadata->add_minmax_index_for_numeric_columns,
+        current_metadata->add_minmax_index_for_string_columns,
+        getContext());
+
+    {
+        auto alter_lock_holder = lockForAlter((*getSettings())[MergeTreeSetting::lock_acquire_timeout_for_background_operations]);
+        const auto table_metadata = ReplicatedMergeTreeTableMetadata(*this, current_metadata);
+        auto metadata_diff = table_metadata.checkAndFindDiff(
+            metadata_from_entry, current_metadata->columns, current_metadata->virtuals, getStorageID().getNameForLogs(), getContext());
+        /// Not pending_alter->alter_version: cloneMetadataIfNeeded skips the ALTER_METADATA entry it
+        /// creates for a lost replica once the in-memory version already equals the source's.
+        applyMetadataInMemory(
+            getContext(), *current_metadata, std::move(columns_from_entry), metadata_diff, current_metadata->getMetadataVersion());
+    }
+
+    {
+        auto parts_lock = lockParts();
+        resetSerializationHints(parts_lock);
     }
 }
 
@@ -6788,6 +6893,7 @@ bool StorageReplicatedMergeTree::executeMetadataAlter(const StorageReplicatedMer
     else
     {
         zookeeper->multi(requests, /* check_session_valid */ true);
+        FailPointInjection::pauseFailPoint(FailPoints::replicated_merge_tree_pause_after_alter_metadata_zk_commit);
     }
 
     {
