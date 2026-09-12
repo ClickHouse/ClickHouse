@@ -237,8 +237,11 @@ public:
     void validate(const StoragePtr & table, ContextPtr context) const;
 
     /// Prepare alter commands. Set ignore flag to some of them and set some
-    /// parts to commands from storage's metadata (for example, absent default)
-    void prepare(const StorageInMemoryMetadata & metadata, bool share_nested_offsets = true);
+    /// parts to commands from storage's metadata (for example, absent default).
+    /// `context` is required: prepare() advances a working snapshot of the columns per command
+    /// (ADD/DROP/RENAME) the same way validate() and apply() do, and the ADD expansion reads
+    /// the flatten_nested setting from it.
+    void prepare(const StorageInMemoryMetadata & metadata, ContextPtr context, bool share_nested_offsets = true);
 
     /// Apply all alter command in sequential order to storage metadata.
     /// Commands have to be prepared before apply.

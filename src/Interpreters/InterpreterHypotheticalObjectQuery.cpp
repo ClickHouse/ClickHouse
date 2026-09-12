@@ -200,7 +200,7 @@ void checkHypotheticalProjectionIsAddable(
     AlterCommands commands;
     commands.push_back(std::move(*command));
     /// the eligibility check applies the commands, which requires prepare first
-    commands.prepare(*metadata, (*merge_tree.getSettings())[MergeTreeSetting::share_nested_offsets]);
+    commands.prepare(*metadata, context, (*merge_tree.getSettings())[MergeTreeSetting::share_nested_offsets]);
     merge_tree.checkAlterEligibility(commands, context);
 }
 
