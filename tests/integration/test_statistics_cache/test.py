@@ -210,6 +210,52 @@ def test_staleness_after_inserts_stays_hit():
         "SELECT count() FROM ins_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='ins-hit2' FORMAT Null"
     )
 
+def test_failed_refresh_drops_stale_cache():
+    table = "refresh_failure"
+    _create_tbl(ch1, table, 1)
+    query = f"SELECT count() FROM {table} WHERE v>0.99 AND k>0"
+    _wait_hit(
+        ch1,
+        "refresh-failure-warm",
+        f"{query} SETTINGS use_statistics_cache=1, log_comment='refresh-failure-warm' FORMAT Null",
+    )
+
+    started_us = int(_query(ch1, "SELECT toUnixTimestamp64Micro(now64(6)) FORMAT TabSeparated").strip())
+    try:
+        _query(ch1, "SYSTEM ENABLE FAILPOINT merge_tree_load_statistics_throw")
+        _query(ch1, f"""
+            INSERT INTO {table}
+            SELECT number + {ROWS_SMALL}, toFloat64(rand()) / 4294967296.0
+            FROM numbers({ROWS_SMALL})
+        """)
+        ch1.query_with_retry(
+            SET_PREFIX + f"""
+                SELECT count()
+                FROM system.text_log
+                WHERE toUnixTimestamp64Micro(event_time_microseconds) >= {started_us}
+                  AND logger_name LIKE '%{table}%'
+                  AND message LIKE 'Failed to refresh statistics%'
+                FORMAT TabSeparated
+            """,
+            retry_count=50,
+            sleep_time=0.2,
+            check_callback=lambda result: int(result.strip() or "0") > 0,
+        )
+
+        error = ch1.query_and_get_error(
+            SET_PREFIX
+            + f"""
+                {query}
+                SETTINGS use_statistics_cache=1
+                FORMAT Null
+            """
+        )
+        assert "CANNOT_READ_ALL_DATA" in error, error
+    finally:
+        _query(ch1, "SYSTEM DISABLE FAILPOINT merge_tree_load_statistics_throw")
+
+    assert _query(ch1, f"{query} FORMAT TabSeparated").strip().isdigit()
+
 def test_mutation_optimize_replace_drop_keep_hit():
     _create_src_tbl(ch1, "mut_tbl", 1)
     _wait_hit(
@@ -280,6 +326,102 @@ def test_join_load_then_hit_and_parallel_readers():
     for t in threads:
         t.join()
     assert not errs, f"errors: {errs}"
+
+def test_mixed_materialization_does_not_use_partial_statistics():
+    """A column statistic is usable only when every selected part contributes it."""
+    partial = "mixed_scope_stats"
+    dim = "mixed_scope_dim"
+    _query_retry(ch1, f"DROP TABLE IF EXISTS {partial} SYNC")
+    _query_retry(ch1, f"DROP TABLE IF EXISTS {dim} SYNC")
+    _query_retry(ch1, f"""
+        CREATE TABLE {partial} (p UInt8, k UInt32, u UInt32, v UInt32)
+        ENGINE = MergeTree PARTITION BY p ORDER BY k
+        SETTINGS min_bytes_for_wide_part = 0,
+                 refresh_statistics_interval = 1,
+                 auto_statistics_types = ''
+    """)
+    _query(ch1, f"""
+        SET materialize_statistics_on_insert = 0;
+        INSERT INTO {partial} SELECT 0, number, number, number FROM numbers(1000)
+    """)
+    _query_retry(ch1, f"ALTER TABLE {partial} ADD STATISTICS u TYPE Basic")
+    _query_retry(ch1, f"ALTER TABLE {partial} ADD STATISTICS v TYPE Basic")
+    _query_retry(ch1, f"ALTER TABLE {partial} MATERIALIZE STATISTICS u, v")
+    _query(ch1, f"""
+        SET materialize_statistics_on_insert = 0;
+        INSERT INTO {partial}
+        SELECT 1, number + 1000, number + 1000, number + 1000 FROM numbers(1000)
+    """)
+    _query_retry(ch1, f"ALTER TABLE {partial} MATERIALIZE STATISTICS u")
+
+    assert _query(ch1, f"""
+        SELECT column, countIf(notEmpty(statistics))
+        FROM system.parts_columns
+        WHERE database = currentDatabase() AND table = '{partial}'
+          AND active AND column IN ('u', 'v')
+        GROUP BY column
+        ORDER BY column
+        FORMAT TabSeparated
+    """).strip() == "u\t2\nv\t1"
+
+    _wait_hit(
+        ch1,
+        "mixed-scope-cache-warm",
+        f"""
+            SELECT count() FROM {partial} WHERE u >= 0
+            SETTINGS use_statistics_cache=1, log_comment='mixed-scope-cache-warm'
+            FORMAT Null
+        """,
+    )
+
+    _query_retry(ch1, f"""
+        CREATE TABLE {dim} (k UInt32)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS auto_statistics_types = ''
+    """)
+    _query(ch1, f"INSERT INTO {dim} SELECT number FROM numbers(2000)")
+
+    join_sql = f"""
+        SELECT count()
+        FROM {partial} AS s INNER JOIN {dim} AS d ON s.k = d.k
+        WHERE s.v >= 1500
+    """
+
+    def _plan(use_statistics, use_statistics_cache):
+        return _query(ch1, f"""
+            EXPLAIN PLAN keep_logical_steps=1, actions=1
+            {join_sql}
+            SETTINGS use_statistics={use_statistics}, use_statistics_cache={use_statistics_cache},
+                     use_statistics_for_part_pruning=0,
+                     optimize_use_projections=0, optimize_use_implicit_projections=0,
+                     query_plan_optimize_join_order_limit=10,
+                     query_plan_optimize_join_order_randomize=0
+        """)
+
+    def _result_rows(plan):
+        return tuple(line.strip() for line in plan.splitlines() if "ResultRows:" in line)
+
+    no_stats_rows = _result_rows(_plan(0, 0))
+    mixed_rows = _result_rows(_plan(1, 0))
+    cached_mixed_rows = _result_rows(_plan(1, 1))
+    assert no_stats_rows, "expected row estimates in the EXPLAIN PLAN output"
+    assert mixed_rows == no_stats_rows, {
+        "mixed_rows": mixed_rows,
+        "no_stats_rows": no_stats_rows,
+    }
+    assert cached_mixed_rows == no_stats_rows, {
+        "cached_mixed_rows": cached_mixed_rows,
+        "no_stats_rows": no_stats_rows,
+    }
+    assert _query(ch1, f"{join_sql} FORMAT TabSeparated").strip() == "500"
+
+    _query_retry(ch1, f"ALTER TABLE {partial} MATERIALIZE STATISTICS v")
+    complete_rows = _result_rows(_plan(1, 0))
+    assert complete_rows != no_stats_rows, {
+        "complete_rows": complete_rows,
+        "no_stats_rows": no_stats_rows,
+    }
+    assert _query(ch1, f"{join_sql} FORMAT TabSeparated").strip() == "500"
 
 def test_alter_interval_requires_detach_attach():
     _create_tbl(ch1, "alt_tbl", 0)
