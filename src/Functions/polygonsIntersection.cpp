@@ -51,8 +51,9 @@ public:
         return 2;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
+        checkGeometryArgumentTypes(arguments[0], arguments[1], getName(), GeoKindNonAreal, "Any argument of function {} must not be {}", ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT);
         /// Intersection of each with figure with each could be easily represent as MultiPolygon.
         return DataTypeFactory::instance().get("MultiPolygon");
     }
