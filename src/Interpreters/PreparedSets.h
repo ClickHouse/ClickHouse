@@ -218,9 +218,12 @@ public:
     /// Whether it is filled *yet* is a different question, answered by `get`.
     bool isMutableDuringQuery() const override { return false; }
 
+    /// `recoverable_build` marks the one in-place build whose result the deferred build can still redo;
+    /// see `CreatingSetStep::recoverable_build`. Deliberately not defaulted.
     std::unique_ptr<QueryPlan> build(
         const SizeLimits & network_transfer_limits,
-        const PreparedSetsCachePtr & prepared_sets_cache);
+        const PreparedSetsCachePtr & prepared_sets_cache,
+        bool recoverable_build);
 
     /// Prepare the set for a distributed plan, which ships its values with the worker tasks:
     /// retain the values, and make the source run as a distributed plan when its shape allows
