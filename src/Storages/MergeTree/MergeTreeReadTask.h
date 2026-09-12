@@ -121,8 +121,9 @@ struct MergeTreeReadTaskInfo
     /// Column names to read during PREWHERE and WHERE
     MergeTreeReadTaskColumns task_columns;
     /// `task_columns` with Arrays converted to subcolumns of Nested (see `convertRequestedColumns`),
-    /// computed once per part instead of once per reader. Call `fillConvertedColumns` after
-    /// `task_columns` is final.
+    /// computed once per part instead of once per reader. A list is left empty when the conversion
+    /// changes nothing, so parts without Nested groups do not hold a second copy of their columns.
+    /// Call `fillConvertedColumns` after `task_columns` is final.
     NamesAndTypesList converted_columns;
     NamesAndTypesLists converted_pre_columns;
     NamesAndTypesLists converted_patch_columns;

@@ -631,7 +631,16 @@ String IMergeTreeReader::getMessageForDiagnosticOfBrokenPart(size_t from_mark, s
 
 NamesAndTypesList convertRequestedColumns(const NamesAndTypesList & columns, const MergeTreeSettings & storage_settings)
 {
-    return storage_settings[MergeTreeSetting::share_nested_offsets] ? Nested::convertToSubcolumns(columns) : columns;
+    if (auto converted = tryConvertRequestedColumns(columns, storage_settings))
+        return std::move(*converted);
+    return columns;
+}
+
+std::optional<NamesAndTypesList> tryConvertRequestedColumns(const NamesAndTypesList & columns, const MergeTreeSettings & storage_settings)
+{
+    if (!storage_settings[MergeTreeSetting::share_nested_offsets])
+        return std::nullopt;
+    return Nested::tryConvertToSubcolumns(columns);
 }
 
 MergeTreeReaderPtr createMergeTreeReaderCompact(

@@ -217,6 +217,8 @@ using MergeTreeReaderPtr = std::unique_ptr<IMergeTreeReader>;
 /// `columns` with Arrays converted to subcolumns of Nested when `share_nested_offsets` is enabled.
 /// The reader keeps both lists; callers that create many readers for one part compute it once.
 NamesAndTypesList convertRequestedColumns(const NamesAndTypesList & columns, const MergeTreeSettings & storage_settings);
+/// Same, but `std::nullopt` when the conversion leaves `columns` unchanged.
+std::optional<NamesAndTypesList> tryConvertRequestedColumns(const NamesAndTypesList & columns, const MergeTreeSettings & storage_settings);
 
 MergeTreeReaderPtr createMergeTreeReader(
     const MergeTreeDataPartInfoForReaderPtr & read_info,

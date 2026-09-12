@@ -175,17 +175,28 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
 
 void MergeTreeReadTaskInfo::fillConvertedColumns(const MergeTreeSettings & storage_settings)
 {
-    converted_columns = convertRequestedColumns(task_columns.columns, storage_settings);
+    auto convert = [&](const NamesAndTypesList & columns)
+    {
+        return tryConvertRequestedColumns(columns, storage_settings).value_or(NamesAndTypesList{});
+    };
+
+    converted_columns = convert(task_columns.columns);
 
     converted_pre_columns.clear();
     converted_pre_columns.reserve(task_columns.pre_columns.size());
     for (const auto & pre_columns_per_step : task_columns.pre_columns)
-        converted_pre_columns.push_back(convertRequestedColumns(pre_columns_per_step, storage_settings));
+        converted_pre_columns.push_back(convert(pre_columns_per_step));
 
     converted_patch_columns.clear();
     converted_patch_columns.reserve(task_columns.patch_columns.size());
     for (const auto & patch_columns : task_columns.patch_columns)
-        converted_patch_columns.push_back(convertRequestedColumns(patch_columns, storage_settings));
+        converted_patch_columns.push_back(convert(patch_columns));
+}
+
+/// See `MergeTreeReadTaskInfo::converted_columns`: an empty converted list stands for the original one.
+static const NamesAndTypesList & convertedOrOriginal(const NamesAndTypesList & converted, const NamesAndTypesList & original)
+{
+    return converted.empty() ? original : converted;
 }
 
 MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
@@ -196,7 +207,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 {
     Readers new_readers;
 
-    chassert(read_info->converted_columns.size() == read_info->task_columns.columns.size());
+    chassert(read_info->converted_columns.empty() || read_info->converted_columns.size() == read_info->task_columns.columns.size());
     chassert(read_info->converted_pre_columns.size() == read_info->task_columns.pre_columns.size());
     chassert(read_info->converted_patch_columns.size() == read_info->task_columns.patch_columns.size());
 
@@ -205,7 +216,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         return createMergeTreeReader(
             read_info->data_part_info,
             columns_to_read,
-            converted_columns_to_read,
+            convertedOrOriginal(converted_columns_to_read, columns_to_read),
             extras.storage_snapshot,
             read_info->data_part_info->getStorageSettings(),
             ranges,
@@ -254,7 +265,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         return createMergeTreeReader(
             read_info->patch_parts[part_idx].part,
             read_info->task_columns.patch_columns[part_idx],
-            read_info->converted_patch_columns[part_idx],
+            convertedOrOriginal(read_info->converted_patch_columns[part_idx], read_info->task_columns.patch_columns[part_idx]),
             extras.storage_snapshot,
             read_info->data_part_info->getStorageSettings(),
             patches_ranges[part_idx],
