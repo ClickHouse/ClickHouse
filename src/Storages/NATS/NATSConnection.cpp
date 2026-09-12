@@ -1,10 +1,53 @@
 #include <Storages/NATS/NATSConnection.h>
 
 #include <IO/WriteHelpers.h>
+#include <Common/Exception.h>
 #include <Common/logger_useful.h>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+    extern const int CANNOT_CONNECT_NATS;
+}
+
+void loadNATSCertificates(natsOptions * options, const NATSConfiguration & configuration)
+{
+    if (!configuration.ca_file.empty())
+    {
+        auto status = natsOptions_LoadCATrustedCertificates(options, configuration.ca_file.c_str());
+        if (status != NATS_OK)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot load NATS trusted CA certificates from {}. Nats status text: {}. Last error message: {}",
+                configuration.ca_file, natsStatus_GetText(status), getNATSLastError());
+    }
+
+    if (!configuration.client_cert_file.empty())
+    {
+        auto status = natsOptions_LoadCertificatesChain(
+            options, configuration.client_cert_file.c_str(), configuration.client_key_file.c_str());
+        if (status != NATS_OK)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Cannot load NATS client certificate chain from {} with key {}. Nats status text: {}. Last error message: {}",
+                configuration.client_cert_file, configuration.client_key_file,
+                natsStatus_GetText(status), getNATSLastError());
+    }
+}
+
+void validateNATSCertificates(const NATSConfiguration & configuration)
+{
+    natsOptions * options = nullptr;
+    auto status = natsOptions_Create(&options);
+    if (status != NATS_OK)
+        throw Exception(ErrorCodes::CANNOT_CONNECT_NATS, "Can not initialize NATS options. Nats error: {}", natsStatus_GetText(status));
+
+    NATSOptionsPtr holder(options, &natsOptions_Destroy);
+    loadNATSCertificates(options, configuration);
+}
 
 /// disconnectedCallback may be called after connection destroy
 LoggerPtr NATSConnection::callback_logger = getLogger("NATSConnection callback");
@@ -27,6 +70,7 @@ NATSConnection::NATSConnection(const NATSConfiguration & configuration_, LoggerP
     if (configuration.secure)
     {
         natsOptions_SetSecure(options.get(), true);
+        loadNATSCertificates(options.get(), configuration);
     }
 
     // use CLICKHOUSE_NATS_TLS_SECURE=0 env var to skip TLS verification of server cert

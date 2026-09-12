@@ -44,6 +44,7 @@ doc_type: 'guide'
             <execution_time>0</execution_time>
         </interval>
     </default>
+</quotas>
 ```
 
 بشكل افتراضي، تتتبّع الحصة استهلاك الموارد كل ساعة، من دون تقييد الاستخدام.
@@ -153,6 +154,7 @@ doc_type: 'guide'
         <keyed_by_forwarded_ip />.
     -->
     <keyed />
+</web_global>
 ```
 
 يمكنك أيضًا تعيين `quotas` استنادًا إلى تجزئة الاستعلام المُطبَّع، بحيث يكون لكل نمط استعلام مميّز حيّز حصة مستقل خاص به. في تكوين XML، يُكتب ذلك على النحو `<keyed_by_normalized_query_hash />`:

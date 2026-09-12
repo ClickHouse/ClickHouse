@@ -50,5 +50,5 @@ control_bool_to_string	1
 control_plain_string_constant	1
 control_fixed_string_padding	1
 known_limitation_array_element	1
-known_limitation_has_any	1
-known_limitation_has_all	1
+bloom_filter_has_any	1
+bloom_filter_has_all	1

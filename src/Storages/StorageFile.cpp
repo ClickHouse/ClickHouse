@@ -9,6 +9,9 @@
 #include <Storages/HivePartitioningUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
 
+#include <Access/ContextAccess.h>
+#include <Access/Common/AccessFlags.h>
+
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
 #include <Interpreters/evaluateConstantExpression.h>
@@ -60,6 +63,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/checkStackSize.h>
 #include <Common/escapeForFileName.h>
+#include <Common/FailPoint.h>
 #include <Common/typeid_cast.h>
 #include <Common/parseGlobs.h>
 #include <Common/filesystemHelpers.h>
@@ -67,6 +71,7 @@
 #include <Common/ProfileEvents.h>
 #include <Common/re2.h>
 #include <Common/ErrnoException.h>
+#include <Common/saturatedDuration.h>
 #include <Formats/SchemaInferenceUtils.h>
 #include <base/defines.h>
 
@@ -152,6 +157,11 @@ namespace ErrorCodes
     extern const int TOO_DEEP_RECURSION;
     extern const int TOO_MANY_ROWS;
     extern const int FILE_CHANGED_DURING_READ;
+}
+
+namespace FailPoints
+{
+    extern const char file_read_inject_version_token_mismatch[];
 }
 
 using String = std::string;
@@ -1374,6 +1384,7 @@ StorageFile::StorageFile(FileSource file_source_, CommonArguments args)
     is_path_with_globs = file_source_.with_globs;
     path_for_partitioned_write = std::move(file_source_.path_for_partitioned_write);
     archive_info = std::move(file_source_.archive_info);
+    total_bytes_to_read = file_source_.total_bytes_to_read;
 
     is_db_table = false;
 
@@ -1487,7 +1498,7 @@ static std::chrono::seconds getLockTimeout(const ContextPtr & context)
     Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
-    return std::chrono::seconds{lock_timeout};
+    return saturatedSeconds(lock_timeout);
 }
 
 using StorageFilePtr = std::shared_ptr<StorageFile>;
@@ -2397,6 +2408,13 @@ void StorageFile::read(
     size_t max_block_size,
     size_t num_streams)
 {
+    /// A storage carrying a renaming rule renames the files it read once its readers are destroyed
+    /// (`StorageFileSource::beforeDestroy`), so reading it needs `WRITE` on the source besides `READ`.
+    /// This context is the reading query's, not that of the query which built the storage.
+    if (!file_renamer.isEmpty())
+        context->getAccess()->checkAccessWithFilter(
+            AccessType::WRITE, toStringSource(AccessTypeObjects::Source::FILE), /* filter */ "");
+
     if (distributed_processing && context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions])
         num_streams = clampClusterFunctionNumStreams(
             context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
@@ -2452,7 +2470,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
 }
 
-void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
+void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & build_settings)
 {
     createIterator(nullptr);
 
@@ -2509,8 +2527,10 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     auto pipe = Pipe::unitePipes(std::move(pipes));
     size_t output_ports = pipe.numOutputPorts();
     const bool parallelize_output = ctx->getSettingsRef()[Setting::parallelize_output_from_storages];
-    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < max_num_streams)
-        pipe.resize(max_num_streams);
+    /// `max_num_streams` is a read-parallelism request, not a thread budget.
+    const size_t resize_to = std::min(max_num_streams, build_settings.max_threads);
+    if (parallelize_output && storage->parallelizeOutputAfterReading(ctx) && output_ports > 0 && output_ports < resize_to)
+        pipe.resize(resize_to);
 
     if (pipe.empty())
         pipe = Pipe(std::make_shared<NullSource>(std::make_shared<const Block>(info.source_header)));
@@ -2572,6 +2592,8 @@ public:
                 /// and keeps the byte size - the same residual window every single-pass read of a
                 /// concurrently rewritten local file has. (getFileStat throws if the file is gone.)
                 auto file_stat = getFileStat(path, /*use_table_fd=*/ false, -1, storage->getName());
+                /// Armed, this stands in for a replacement of the file: the inode is what a rename changes.
+                fiu_do_on(FailPoints::file_read_inject_version_token_mismatch, { file_stat.st_ino = 0; });
                 if (computeFileCacheVersionToken(file_stat) != file.file.version_token)
                     throwFileChanged(path);
 
@@ -3248,9 +3270,9 @@ Usage scenarios:
 - Convert data from one format to another.
 - Updating data in ClickHouse via editing a file on a disk.
 
-:::note
+<Note>
 This engine is not currently available in ClickHouse Cloud, please [use the S3 table function instead](/reference/functions/table-functions/s3).
-:::
+</Note>
 
 ## Usage in ClickHouse Server {#usage-in-clickhouse-server}
 
@@ -3269,9 +3291,9 @@ When creating table using `File(Format)` it creates empty subdirectory in that f
 
 You may manually create this subfolder and file in server filesystem and then [ATTACH](/reference/statements/attach) it to table information with matching name, so you can query data from that file.
 
-:::note
+<Note>
 Be careful with this functionality, because ClickHouse does not keep track of external changes to such files. The result of simultaneous writes via ClickHouse and outside of ClickHouse is undefined.
-:::
+</Note>
 
 ## Example {#example}
 

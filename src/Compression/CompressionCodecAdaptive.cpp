@@ -106,7 +106,7 @@ private:
 
 }
 
-Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodecPtr & deployment_default)
+Codecs AdaptiveCodec::poolForType(const DataTypePtr & type, const CompressionCodecPtr & deployment_default)
 {
     /// An encrypting default must not reach here as substituting a codec would drop the encryption. Must handle this in the caller.
     if (deployment_default->isEncryption())
@@ -114,14 +114,17 @@ Codecs AdaptiveCodec::poolForType(const IDataType & type, const CompressionCodec
 
     static const CompressionCodecPtr none_codec = CompressionCodecFactory::instance().get("NONE", {});
     Codecs pool{none_codec, deployment_default};
-    const TypeIndex type_id = type.getTypeId();
+    if (!type)
+        return pool;
+
+    const TypeIndex type_id = type->getTypeId();
     for (const auto & [codec_expr, types] : CANDIDATES)
         if (std::ranges::find(types, type_id) != types.end())
-            pool.push_back(buildCodecForType(codec_expr, type));
+            pool.push_back(buildCodecForType(codec_expr, *type));
     return pool;
 }
 
-CompressionCodecAdaptive::CompressionCodecAdaptive(const IDataType & type, const CompressionCodecPtr & deployment_default)
+CompressionCodecAdaptive::CompressionCodecAdaptive(const DataTypePtr & type, const CompressionCodecPtr & deployment_default)
     : pool(AdaptiveCodec::poolForType(type, deployment_default))
 {
     chassert(!pool.empty());
