@@ -203,6 +203,7 @@ namespace ProfileEvents
 {
     extern const Event UserTimeMicroseconds;
     extern const Event SystemTimeMicroseconds;
+    extern const Event ThrottlerSleepMicroseconds;
 }
 
 namespace
@@ -2134,6 +2135,7 @@ void ClientBase::onProfileEvents(Block & block)
 
         std::string_view user_time_name = ProfileEvents::getName(ProfileEvents::UserTimeMicroseconds);
         std::string_view system_time_name = ProfileEvents::getName(ProfileEvents::SystemTimeMicroseconds);
+        std::string_view throttler_sleep_name = ProfileEvents::getName(ProfileEvents::ThrottlerSleepMicroseconds);
 
         HostToTimesMap thread_times;
         for (size_t i = 0; i < rows; ++i)
@@ -2158,6 +2160,8 @@ void ClientBase::onProfileEvents(Block & block)
                 thread_times[host_name].user_ms = value;
             else if (event_name == system_time_name)
                 thread_times[host_name].system_ms = value;
+            else if (event_name == throttler_sleep_name)
+                thread_times[host_name].waited_us = value;
             else if (event_name == MemoryTracker::USAGE_EVENT_NAME)
                 thread_times[host_name].memory_usage = value;
             else if (event_name == MemoryTracker::PEAK_USAGE_EVENT_NAME)
