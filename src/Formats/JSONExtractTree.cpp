@@ -1828,7 +1828,7 @@ private:
             {
                 auto type = std::make_shared<DataTypeInt64>();
                 if (element.getInt64() < 0)
-                    json_inference_info.negative_integers.insert(type.get());
+                    json_inference_info.markNegativeInteger(type);
                 return type;
             }
             case ElementType::UINT64:

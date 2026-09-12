@@ -188,10 +188,9 @@ SELECT d, dynamicType(d) FROM format(TSV, 'd Dynamic', '007');
 SELECT d, dynamicType(d) FROM format(CSV, 'd Dynamic', '0.0');
 
 -- 15. TSKV also uses the Escaped rule, so a leading-zero decimal now infers Float64 there too. TSKV
--- decodes escape sequences before inferring but parses the original bytes when reading, so a field whose
--- escapes were decoded must keep inferring String. Nested values are out of that guard's reach, so an
--- escaped number inside an array still infers a numeric element type. The escaped forms below use unhex
--- so the exact wire bytes are unambiguous: 783D305C783245350A is `x=0\x2E5` plus a newline.
+-- infers from the raw field bytes, the same bytes its value path parses, so an escaped value infers
+-- String and reads back. The escaped forms below use unhex so the exact wire bytes are unambiguous:
+-- 783D305C783245350A is `x=0\x2E5` plus a newline.
 SELECT 'group 15: TSKV plain values';
 DESC format(TSKV, 'x=0.5\n');
 SELECT * FROM format(TSKV, 'x=0.5\n');
@@ -214,10 +213,13 @@ DESC format(TSKV, unhex('783D615C783245620A'));
 SELECT * FROM format(TSKV, unhex('783D615C783245620A'));
 DESC format(TSKV, unhex('783D305C700A'));
 SELECT * FROM format(TSKV, unhex('783D305C700A'));
--- The guard requires both a decoded escape and a numeric inferred type, so a decoded escape in a Date or
--- in a nested value keeps that type. DESC only: both reads fail here and on master alike.
+-- An escape in a Date or in a nested value used to keep that type, because inference tested only the
+-- top-level inferred type of the decoded field. Inference now reads the raw bytes, so both infer String
+-- and both read back. Kept here as a cross-check that the two fixes compose.
 -- 783D323032302D30312D305C7833310A is `x=2020-01-0\x31` plus a newline, 633D5B305C783245355D0A is
 -- `c=[0\x2E5]` plus a newline.
-SELECT 'group 15: a decoded escape outside the numeric guard keeps its type';
+SELECT 'group 15: an escape in a Date or a nested value now infers String and reads back';
 DESC format(TSKV, unhex('783D323032302D30312D305C7833310A'));
+SELECT * FROM format(TSKV, unhex('783D323032302D30312D305C7833310A'));
 DESC format(TSKV, unhex('633D5B305C783245355D0A'));
+SELECT * FROM format(TSKV, unhex('633D5B305C783245355D0A'));

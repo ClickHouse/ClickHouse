@@ -44,10 +44,10 @@ c2	Nullable(String)
 c3	Array(Nullable(UInt64))					
 c4	Tuple(Nullable(UInt64), Nullable(String))					
 TSKV
-a	Nullable(String)					
+a	Nullable(UInt64)					
 b	Nullable(String)					
 c	Array(Nullable(UInt64))					
-d	Nullable(String)					
+d	Tuple(Nullable(UInt64), Nullable(String))					
 JSONObjectEachRow
 a	Nullable(UInt64)					
 b	Nullable(String)					

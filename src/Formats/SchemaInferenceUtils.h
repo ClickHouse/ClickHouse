@@ -21,10 +21,26 @@ struct JSONInferenceInfo
     /// We store numbers that were parsed from strings.
     /// It's used in types transformation to change such numbers back to string if needed.
     std::unordered_set<const IDataType *> numbers_parsed_from_json_strings;
-    /// Store integer types that were inferred from negative numbers.
-    /// It's used to determine common type for Int64 and UInt64
-    /// TODO: check it not only in JSON formats.
-    std::unordered_set<const IDataType *> negative_integers;
+
+    /// Record that `type` was inferred from a literal an unsigned type cannot read back (which ones:
+    /// see `hasUnreadableSign`). Keyed on the type object's ADDRESS, so a recorded type must stay
+    /// alive as long as the record, or a later allocation reuses the address and reads as marked.
+    void markNegativeInteger(const DataTypePtr & type)
+    {
+        /// Retain the owner only for a new identity; re-marking one has nothing left to keep alive.
+        if (negative_integers.insert(type.get()).second)
+            provenance_keepalive.push_back(type);
+    }
+
+    /// The same for a type reached through `owner`, whose subtree it belongs to. Retaining the owner
+    /// keeps the whole subtree alive, because every container type owns its nested types.
+    void markNegativeIntegerWithin(const IDataType * type, const DataTypePtr & owner)
+    {
+        if (negative_integers.insert(type).second)
+            provenance_keepalive.push_back(owner);
+    }
+
+    bool isNegativeInteger(const IDataType * type) const { return negative_integers.contains(type); }
 
     /// Indicates if currently we are inferring type for Map/Object key.
     bool is_object_key = false;
@@ -33,6 +49,13 @@ struct JSONInferenceInfo
     /// because DataTypeJSONPaths was already finalized to named tuple. IN this case
     /// we can only merge named tuples from different files together.
     bool allow_merging_named_tuples = false;
+
+private:
+    /// Integer types an unsigned type cannot read back, keyed on the type object address, plus the
+    /// owning pointers that keep those addresses from being reused. See markNegativeInteger.
+    /// TODO: check it not only in JSON formats.
+    std::unordered_set<const IDataType *> negative_integers;
+    std::vector<DataTypePtr> provenance_keepalive;
 };
 
 /// Check whether a type can be wrapped into Nullable according to schema inference settings.
@@ -51,6 +74,12 @@ bool canBeInsideNullableBySchemaSettings(const DataTypePtr & type, const FormatS
 /// Otherwise we try to read a number.
 DataTypePtr tryInferDataTypeForSingleField(ReadBuffer & buf, const FormatSettings & settings);
 DataTypePtr tryInferDataTypeForSingleField(std::string_view field, const FormatSettings & settings);
+
+/// The same as above, but records inference provenance in json_info (currently: which Int64 came from
+/// a signed literal), so that types transformation can tell Int64 and UInt64 apart. Pass
+/// `reader_refuses_plus` if this caller's value reader goes through `readIntTextUnsafe`.
+DataTypePtr tryInferDataTypeForSingleField(
+    std::string_view field, const FormatSettings & settings, JSONInferenceInfo * json_info, bool reader_refuses_plus = false);
 
 /// The same as tryInferDataTypeForSingleField, but for JSON values.
 DataTypePtr tryInferDataTypeForSingleJSONField(ReadBuffer & buf, const FormatSettings & settings, JSONInferenceInfo * json_info);
@@ -85,6 +114,20 @@ DataTypePtr tryInferJSONNumberFromString(std::string_view field, const FormatSet
 ///     For example, if we have Tuple(UInt64, Nullable(Nothing)) and Tuple(Nullable(Nothing), String) we will convert both
 ///     types to common type Tuple(Nullable(UInt64), Nullable(String))
 void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings);
+
+/// The same as above, but uses the inference provenance recorded in json_info (currently: which Int64
+/// came from a signed literal, so that such an Int64 is not widened to UInt64).
+void transformInferredTypesIfNeeded(DataTypePtr & first, DataTypePtr & second, const FormatSettings & settings, JSONInferenceInfo * json_info);
+
+/// True if merging these two types could perform the one widening whose correctness depends on
+/// inference provenance: Int64 to UInt64, at the top level or at the same nested position, as
+/// transformTypesRecursively would pair them. A caller with no provenance can decline exactly those.
+bool isSignDependentIntegerWidening(const DataTypePtr & first, const DataTypePtr & second);
+
+/// Re-record on `to` the inference provenance held for the equal type `from`, recursively. Keyed on
+/// type object identity, so keeping one of two equal types and dropping the other loses the dropped
+/// object's provenance unless this runs first. Does nothing unless the two types are equal.
+void carryOverInferenceProvenance(const DataTypePtr & from, const DataTypePtr & to, JSONInferenceInfo * json_info);
 
 /// The same as transformInferredTypesIfNeeded but uses some specific transformations for JSON.
 /// Example 1:

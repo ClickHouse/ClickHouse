@@ -537,6 +537,11 @@ void TemplateSchemaReader::transformTypesIfNeeded(DataTypePtr & type, DataTypePt
     transformInferredTypesByEscapingRuleIfNeeded(type, new_type, format_settings, row_format.escaping_rules[field_index], &json_inference_info);
 }
 
+void TemplateSchemaReader::carryOverProvenanceOnEqualTypes(const DataTypePtr & dropped, const DataTypePtr & retained)
+{
+    carryOverInferenceProvenance(dropped, retained, &json_inference_info);
+}
+
 static ParsedTemplateFormatString fillResultSetFormat(const FormatSettings & settings)
 {
     ParsedTemplateFormatString resultset_format;
