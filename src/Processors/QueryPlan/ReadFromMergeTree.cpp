@@ -15,6 +15,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -148,7 +149,14 @@ bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting
 
 bool isNodeDeterministic(const ActionsDAG::Node * node)
 {
-    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && !node->function_base->isDeterministic())
+    /// A `COLUMN` node is not always an innocent literal. `node->isDeterministic` covers the function of a
+    /// `FUNCTION` node and a constant that was folded from a non-deterministic expression such as `now`.
+    /// `allNodeFunctions` additionally looks inside a lambda that constant folding turned into a `COLUMN`
+    /// node holding a `ColumnFunction`: a call on the lambda argument lives in the lambda's own
+    /// `ActionsDAG`, so it is invisible to a walk over this DAG alone.
+    if (!node->isDeterministic())
+        return false;
+    if (!allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); }))
         return false;
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
