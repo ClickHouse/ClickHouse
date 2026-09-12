@@ -1,0 +1,14 @@
+the granule paths	['a']
+a nested JSON typed path	4
+the same without the index	4
+isNotNull	4
+IN	4
+a cast	4
+a Tuple typed path	4
+the same without the index	4
+a token bloom filter	4
+the same without the index	4
+a scalar typed path	4
+the dynamic granule paths	['a.b']
+a nested dynamic path	4
+an absent path is still pruned	0
