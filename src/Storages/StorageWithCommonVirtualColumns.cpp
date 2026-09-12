@@ -51,6 +51,16 @@ NameSet StorageWithCommonVirtualColumns::getPlanVirtualColumnNames(const Storage
     return result;
 }
 
+NameSet StorageWithCommonVirtualColumns::getLocalOnlyColumnNames(const StorageMetadataPtr & metadata)
+{
+    NameSet result = getPlanVirtualColumnNames(metadata);
+    for (const auto & column : metadata->getColumns().getMaterialized())
+        result.insert(column.name);
+    for (const auto & column : metadata->getColumns().getAliases())
+        result.insert(column.name);
+    return result;
+}
+
 void StorageWithCommonVirtualColumns::read(
     QueryPlan & query_plan,
     const Names & column_names,

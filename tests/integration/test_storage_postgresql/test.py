@@ -1209,6 +1209,23 @@ def test_postgres_query_passing(started_cluster):
     assert node1.query(f"SELECT foo FROM {q_folded} ORDER BY id").rstrip() == "folded_value"
     cursor.execute(f"DROP TABLE {folded_name}")
 
+    # A name that PostgreSQL reserves (`where`, `group`, ...) must keep its quotes in the re-serialized
+    # query: PostgreSQL resolves the quoted lower-case name to exactly the same column as the unquoted
+    # one, but rejects the unquoted reserved word with a syntax error.
+    keyword_name = "test_query_passing_keyword"
+    cursor.execute(f'DROP TABLE IF EXISTS "{keyword_name}"')
+    cursor.execute(f'CREATE TABLE "{keyword_name}" (id integer, "where" text, "group" text)')
+    cursor.execute(f'INSERT INTO "{keyword_name}" VALUES (1, \'where_value\', \'group_value\')')
+    started_cluster.postgres_conn.commit()
+    q_keyword = (
+        f"postgresql('{host}', 'postgres', "
+        f'(SELECT id, "where", "group" FROM "{keyword_name}"), \'postgres\', \'{pg_pass}\')'
+    )
+    assert node1.query(f'SELECT "where", "group" FROM {q_keyword} ORDER BY id').rstrip() == (
+        "where_value\tgroup_value"
+    )
+    cursor.execute(f'DROP TABLE "{keyword_name}"')
+
     # external_table_strict_query: an outer filter that cannot be pushed down into the passed query is
     # applied locally by default, but rejected with INCORRECT_QUERY under external_table_strict_query = 1.
     q_strict = f"postgresql('{host}', 'postgres', query('SELECT a, b FROM {table_name}'), 'postgres', '{pg_pass}')"
@@ -1364,6 +1381,45 @@ def test_postgres_query_passing_edge_cases(started_cluster):
     cursor.execute(f"DROP TABLE {num_table}")
 
     cursor.execute(f"DROP TABLE {table_name}")
+
+
+def test_postgres_strict_query_local_only_column(started_cluster):
+    # A `MATERIALIZED` / `ALIAS` column of the table-backed engine belongs to this source, but its
+    # predicates are not pushed down to PostgreSQL - such a filter is applied locally. Under
+    # `external_table_strict_query` it must be rejected instead of being silently dropped as if it
+    # belonged to another table, while a filter over an ordinary column is still pushed down.
+    cursor = started_cluster.postgres_conn.cursor()
+    host = f"{started_cluster.postgres_ip}:{started_cluster.postgres_port}"
+    table_name = "test_strict_local_only_column"
+    cursor.execute(f"DROP TABLE IF EXISTS {table_name}")
+    cursor.execute(f"CREATE TABLE {table_name} (a integer, m integer)")
+    cursor.execute(f"INSERT INTO {table_name} VALUES (1, 2), (2, 3)")
+    started_cluster.postgres_conn.commit()
+
+    node1.query("DROP TABLE IF EXISTS pg_strict_local_only")
+    node1.query(
+        f"CREATE TABLE pg_strict_local_only (a Int32, m Int32 MATERIALIZED a + 1, l Int32 ALIAS a * 10) "
+        f"ENGINE = PostgreSQL('{host}', 'postgres', '{table_name}', 'postgres', '{pg_pass}')"
+    )
+
+    assert node1.query("SELECT count() FROM pg_strict_local_only WHERE m = 2").rstrip() == "1"
+    assert node1.query("SELECT count() FROM pg_strict_local_only WHERE l = 10").rstrip() == "1"
+    assert (
+        node1.query(
+            "SELECT count() FROM pg_strict_local_only WHERE a = 1 SETTINGS external_table_strict_query = 1"
+        ).rstrip()
+        == "1"
+    )
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        "SELECT count() FROM pg_strict_local_only WHERE m = 2 SETTINGS external_table_strict_query = 1"
+    )
+    assert "INCORRECT_QUERY" in node1.query_and_get_error(
+        "SELECT count() FROM pg_strict_local_only WHERE l = 10 SETTINGS external_table_strict_query = 1"
+    )
+
+    node1.query("DROP TABLE pg_strict_local_only")
+    cursor.execute(f"DROP TABLE {table_name}")
+    started_cluster.postgres_conn.commit()
 
 
 if __name__ == "__main__":

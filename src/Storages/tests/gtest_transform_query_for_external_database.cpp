@@ -735,13 +735,41 @@ static String formatQueryTableArgument(
     const State & state,
     const std::string & argument,
     IdentifierQuotingStyle identifier_quoting_style,
-    LiteralEscapingStyle literal_escaping_style)
+    LiteralEscapingStyle literal_escaping_style,
+    IdentifierQuotingRule identifier_quoting_rule = IdentifierQuotingRule::WhenNecessary)
 {
     ParserSubquery parser;
     ASTPtr ast = parseQuery(parser, argument, 1000, 1000, 1000000);
-    auto query = tryGetExternalDatabaseQuery(ast, state.context, identifier_quoting_style, literal_escaping_style);
+    auto query = tryGetExternalDatabaseQuery(
+        ast, state.context, identifier_quoting_style, literal_escaping_style, identifier_quoting_rule);
     EXPECT_TRUE(query.has_value()) << argument;
     return query.value_or("");
+}
+
+TEST(TransformQueryForExternalDatabase, QueryTableArgumentIdentifierQuotingForPostgreSQL)
+{
+    const State & state = State::instance();
+
+    /// PostgreSQL folds an unquoted identifier to lower case and matches a quoted one case-sensitively,
+    /// so the re-serialization of a `(SELECT ...)` source must keep a name that contains upper-case
+    /// characters unquoted (`Foo` keeps resolving to the column `foo`), while a name without upper-case
+    /// characters is quoted: PostgreSQL resolves `"where"` to the very same column as the bare `where`,
+    /// which it rejects as a syntax error, being a reserved word.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            R"((SELECT "where", Foo FROM "group"))",
+            IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL,
+            IdentifierQuotingRule::AlwaysUnlessUpperCase),
+        R"(SELECT "where", Foo FROM "group")");
+
+    /// The quoting of a lower-case name does not change how PostgreSQL resolves it, and a mixed-case name
+    /// is left to the ordinary folding.
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            "(SELECT field, Value FROM test.table)",
+            IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL,
+            IdentifierQuotingRule::AlwaysUnlessUpperCase),
+        R"(SELECT "field", Value FROM "test"."table")");
 }
 
 TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)

@@ -281,7 +281,7 @@ void StoragePostgreSQL::readImpl(
         max_block_size,
         remote_table_schema,
         remote_table_or_query,
-        getPlanVirtualColumnNames(storage_snapshot->metadata),
+        getLocalOnlyColumnNames(storage_snapshot->metadata),
         pool);
     query_plan.addStep(std::move(reading));
 }
@@ -847,9 +847,12 @@ StoragePostgreSQL::Configuration StoragePostgreSQL::getConfiguration(ASTs engine
         /// Identifiers are quoted only when they need to be: PostgreSQL folds an unquoted identifier to
         /// lower case, while a quoted one is matched case-sensitively, so force-quoting every identifier
         /// would make `(SELECT Foo FROM t)` look for the column `Foo` instead of `foo` and break queries
-        /// that rely on the ordinary unquoted name resolution.
+        /// that rely on the ordinary unquoted name resolution. A name without upper-case characters is
+        /// quoted nonetheless: PostgreSQL resolves `"where"` and `where` to the same column, but rejects the
+        /// latter as a syntax error, so a source such as `(SELECT "where" FROM "group")` keeps its quotes.
         auto maybe_query = tryGetExternalDatabaseQuery(
-            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL);
+            engine_args[2], context, IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL,
+            IdentifierQuotingRule::AlwaysUnlessUpperCase);
         for (size_t i = 0; i < engine_args.size(); ++i)
         {
             if (i == 2 && maybe_query)

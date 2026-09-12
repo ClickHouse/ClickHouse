@@ -24,5 +24,13 @@ enum class IdentifierQuotingRule : uint8_t
     Always,
     /// When the identifiers is a keyword (defined in `DB::Keyword`)
     UserDisplay,
+    /// Unless the identifier contains upper-case characters.
+    /// This is the rule for re-serializing a query that is sent to an external database which folds an
+    /// unquoted identifier to lower case and matches a quoted one case-sensitively (PostgreSQL). Quoting a
+    /// name without upper-case characters resolves to exactly the same column as leaving it unquoted, so it
+    /// is always safe and it makes reserved words such as `where` or `group` survive the re-serialization,
+    /// while a name that contains upper-case characters is left unquoted and keeps being folded as before -
+    /// `(SELECT Foo FROM t)` has to keep resolving to the column `foo`, not to a case-sensitive `Foo`.
+    AlwaysUnlessUpperCase,
 };
 }

@@ -353,6 +353,15 @@ void IAST::FormatSettings::writeIdentifier(WriteBuffer & ostr, const String & na
         const auto & keyword_set = getKeyWordSet();
         must_quote = keyword_set.contains(Poco::toUpper(name));
     }
+    else if (identifier_quoting_rule == IdentifierQuotingRule::AlwaysUnlessUpperCase && !must_quote)
+    {
+        /// An external database that folds an unquoted identifier to lower case (PostgreSQL) resolves a
+        /// quoted name without upper-case characters to the same column as the unquoted one, so quoting it
+        /// is always safe and keeps reserved words such as `where` parsable. Quoting a name that contains
+        /// upper-case characters, on the contrary, would turn `Foo` into a case-sensitive reference instead
+        /// of the folded `foo`, so such a name is left alone.
+        must_quote = std::none_of(name.begin(), name.end(), [](char c) { return isUpperAlphaASCII(c); });
+    }
 
     switch (identifier_quoting_style)
     {

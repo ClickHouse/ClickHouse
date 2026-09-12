@@ -30,6 +30,12 @@ public:
 protected:
     static NameSet getPlanVirtualColumnNames(const StorageMetadataPtr & metadata);
 
+    /// The names of the columns of this storage that are never read from the external data source, but are
+    /// produced locally: the virtual columns materialized by the query plan and the `MATERIALIZED` / `ALIAS`
+    /// columns computed from the storage's own expressions. They belong to this storage - a predicate over
+    /// them is a filter on this table, not on another one - but cannot be pushed down to the data source.
+    static NameSet getLocalOnlyColumnNames(const StorageMetadataPtr & metadata);
+
     virtual void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,

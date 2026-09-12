@@ -287,7 +287,7 @@ Pipe StorageSQLite::read(
     reclassifyGeneratedColumnsFromRemote(context_);
 
     storage_snapshot->check(column_names);
-    NameSet local_only_columns = getPlanVirtualColumnNames(storage_snapshot->metadata);
+    NameSet local_only_columns = getLocalOnlyColumnNames(storage_snapshot->metadata);
 
     String query;
     if (remote_table_or_query.isQuery())

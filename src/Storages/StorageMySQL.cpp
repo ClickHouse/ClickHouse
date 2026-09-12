@@ -157,7 +157,7 @@ void StorageMySQL::readImpl(
     size_t /*num_streams*/)
 {
     storage_snapshot->check(column_names);
-    const auto local_only_columns = getPlanVirtualColumnNames(storage_snapshot->metadata);
+    const auto local_only_columns = getLocalOnlyColumnNames(storage_snapshot->metadata);
     String query;
     if (remote_table_or_query.isQuery())
     {
