@@ -1423,7 +1423,7 @@ void WindowTransform::appendChunk(Chunk & chunk)
         block.original_input_columns = columns;
         for (size_t i = 0; i < columns.size(); ++i)
             if (should_materialize[i])
-                columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullColumnIfReplicated()->convertToFullColumnIfConst()->convertToFullColumnIfSparse());
+                columns[i] = recursiveRemoveLowCardinality(std::move(columns[i])->convertToFullIfWrapped());
 
         block.input_columns = std::move(columns);
 

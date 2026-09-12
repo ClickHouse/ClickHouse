@@ -170,6 +170,12 @@ Configurações de compressão de dados para tabelas com o motor [MergeTree](/pt
 </compression>
 ```
 
+<div id="config-file">
+  ## config-file
+</div>
+
+<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Indica o arquivo de configuração do servidor.
+
 <div id="config_reload_interval_ms">
   ## config_reload_interval_ms
 </div>
@@ -177,12 +183,6 @@ Configurações de compressão de dados para tabelas com o motor [MergeTree](/pt
 <SettingsInfoBlock type="UInt64" default_value="2000" changeable_without_restart="Sim" />
 
 Com que frequência o ClickHouse recarrega a config e verifica se há novas alterações
-
-<div id="config-file">
-  ## config-file
-</div>
-
-<SettingsInfoBlock type="String" default_value="config.xml" changeable_without_restart="No" />Indica o arquivo de configuração do servidor.
 
 <div id="core_dump">
   ## core_dump
@@ -973,7 +973,7 @@ Para mais informações, consulte a seção [Criando tabelas replicadas](/pt-BR/
   ## message_queue_disable_insertion
 </div>
 
-<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="Yes" />Desabilita a inserção dos motores de fila de mensagens (Kafka, RabbitMQ, NATS) nas visões materializadas anexadas
+<SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />Desabilita a inserção dos motores de fila de mensagens (Kafka, RabbitMQ, NATS) nas visões materializadas anexadas
 
 <div id="metric_log">
   ## metric_log

@@ -78,7 +78,9 @@ public:
         unexpected("readObject");
     }
     void removeObjectIfExists(const StoredObject &) override { unexpected("removeObjectIfExists"); }
-    void removeObjectsIfExist(const StoredObjects &) override { unexpected("removeObjectsIfExist"); }
+    void removeObjectsIfExist(
+        const StoredObjects &,
+        StoredObjects *) override { unexpected("removeObjectsIfExist"); }
     void copyObject( /// NOLINT
         const StoredObject &,
         const StoredObject &,
@@ -102,7 +104,10 @@ private:
 /// Drives the real commit against a stub whose write fails with `write_error_code`.
 bool commitWithFailingWrite(int write_error_code)
 {
-    Iceberg::IcebergPathResolver resolver("/table", "/table");
+    Iceberg::IcebergPathResolver resolver(
+        "/table",
+        "/table",
+        Iceberg::BlobStorageDescription{.type_name = "local", .namespace_name = "", .allow_foreign_namespaces = false});
     GeneratedMetadataFileWithInfo metadata_file_info{
         .path = Iceberg::IcebergPathFromMetadata::deserialize("/table/metadata/v2.metadata.json"),
         .version = 2,
