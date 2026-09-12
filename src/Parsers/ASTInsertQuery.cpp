@@ -179,8 +179,14 @@ void ASTInsertQuery::readJSON(const Poco::JSON::Object & json)
     child = r.readChildOfType<ASTLiteral>("compression");
     if (child)
     {
-        if (!infile)
-            throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' is only valid together with 'infile' during AST JSON deserialization");
+        /// Mirrors ParserInsertQuery's own invariant: 'compression' is only valid together with
+        /// 'infile', a bare 'format' (no SELECT), or a SELECT that reads via input() -- otherwise
+        /// there is no data stream for it to apply to.
+        bool has_data_stream = infile || (!select && !format.empty()) || (select && selectReadsInlineDataViaInputFunction(select));
+        if (!has_data_stream)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "'compression' is only valid together with 'infile', a bare 'format' (no 'select'), "
+                "or a 'select' that reads via input() during AST JSON deserialization");
         if (child->as<ASTLiteral &>().value.getType() != Field::Types::String)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "'compression' must be a string literal during AST JSON deserialization");
         compression = child;
@@ -283,6 +289,16 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
     ///
     char delim = settings_ast ? settings.nl_or_ws : ' ';
 
+    /// COMPRESSION for inline data (bare FORMAT or via input()) is parsed before the whole
+    /// VALUES/FORMAT/SELECT clause, so it must be printed before it too -- mirroring the FROM
+    /// INFILE case above, which already prints its own COMPRESSION right after the file name.
+    if (!infile && compression)
+    {
+        ostr << delim
+            << "COMPRESSION" << " " << quoteString(compression->as<ASTLiteral &>().value.safeGet<std::string>());
+        delim = ' ';
+    }
+
     if (select)
     {
         ostr << delim;
@@ -296,10 +312,8 @@ void ASTInsertQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & setti
         /// For INSERT ... SELECT ... FROM input('...') FORMAT Values,
         /// the FORMAT clause must be preserved in the formatted output.
         if (!format.empty())
-        {
             ostr << delim
                 << "FORMAT" << " " << format;
-        }
     }
     else
     {
@@ -348,6 +362,13 @@ static void tryFindInputFunctionImpl(const ASTPtr & ast, ASTPtr & input_function
 void ASTInsertQuery::tryFindInputFunction(ASTPtr & input_function) const
 {
     tryFindInputFunctionImpl(select, input_function);
+}
+
+bool selectReadsInlineDataViaInputFunction(const ASTPtr & select)
+{
+    ASTPtr input_function;
+    tryFindInputFunctionImpl(select, input_function);
+    return input_function != nullptr;
 }
 
 }

@@ -27,26 +27,6 @@ namespace ErrorCodes
 }
 
 
-namespace
-{
-
-/// Whether the SELECT of an INSERT ... SELECT reads inline data through the `input` table function.
-/// Only in that case does an INSERT with a SELECT carry inline data following the FORMAT clause.
-bool selectReadsInlineDataViaInputFunction(const ASTPtr & ast)
-{
-    if (!ast)
-        return false;
-    if (const auto * function = ast->as<ASTFunction>(); function && function->name == "input")
-        return true;
-    for (const auto & child : ast->children)
-        if (selectReadsInlineDataViaInputFunction(child))
-            return true;
-    return false;
-}
-
-}
-
-
 bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     /// Create parsers
@@ -84,6 +64,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     ASTPtr partition_by_expr;
     ASTPtr compression;
     ASTPtr with_expression_list;
+    bool has_format_clause = false;
 
     /// Insertion data
     const char * data = nullptr;
@@ -188,6 +169,20 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
     }
 
+    /// Check for 'COMPRESSION' parameter (optional), for insert data supplied inline (bare FORMAT
+    /// or via input()), as opposed to FROM INFILE (whose own COMPRESSION, if any, was already
+    /// consumed above, right after the file name). Parsed here, after SETTINGS but before
+    /// VALUES/FORMAT/SELECT are recognized, so it can never be confused with insert data: the data
+    /// zone hasn't opened yet at this position, unlike a clause placed after FORMAT would be. This
+    /// order (SETTINGS then COMPRESSION) matches formatImpl's printing order, so round-tripping
+    /// through EXPLAIN AST / query logging stays reparseable.
+    if (!infile && s_compression.ignore(pos, expected))
+    {
+        ParserStringLiteral compression_p;
+        if (!compression_p.parse(pos, compression, expected))
+            return false;
+    }
+
     String format_str;
     Pos before_values = pos;
 
@@ -209,6 +204,7 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
             return false;
 
         tryGetIdentifierNameInto(format, format_str);
+        has_format_clause = true;
     }
     else if (s_select.ignore(pos, expected) || s_with.ignore(pos, expected) || s_from.ignore(pos, expected) || s_lparen.ignore(pos, expected))
     {
@@ -240,16 +236,34 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
         }
 
         /// FORMAT section is expected if we have input() in SELECT part
-        if (s_format.ignore(pos, expected) && !name_p.parse(pos, format, expected))
-            return false;
+        if (s_format.ignore(pos, expected))
+        {
+            if (!name_p.parse(pos, format, expected))
+                return false;
 
-        tryGetIdentifierNameInto(format, format_str);
+            tryGetIdentifierNameInto(format, format_str);
+            has_format_clause = true;
+        }
+        else
+        {
+            tryGetIdentifierNameInto(format, format_str);
+        }
     }
     else if (!infile)
     {
         /// If all previous conditions were false and it's not FROM INFILE, query is incorrect
         return false;
     }
+
+    /// COMPRESSION is only meaningful when there's a real data stream to decompress: bare FORMAT
+    /// (no SELECT), input(), or FROM INFILE. Reject it next to VALUES or a plain SELECT (no
+    /// input()), where there's nothing to decompress -- a trailing FORMAT there is just an output
+    /// format (e.g. for EXPLAIN), not a data stream, so has_format_clause alone is not enough.
+    bool has_data_stream = (!select && has_format_clause) || (select && selectReadsInlineDataViaInputFunction(select));
+    if (compression && !infile && !has_data_stream)
+        throw Exception(ErrorCodes::SYNTAX_ERROR,
+                        "COMPRESSION clause is only supported next to FORMAT (including via input()) "
+                        "or FROM INFILE, not with VALUES or a plain SELECT");
 
     /// Read SETTINGS after FORMAT.
     ///
@@ -323,11 +337,13 @@ bool ParserInsertQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     if (infile)
     {
         query->infile = infile;
-        query->compression = compression;
-
         query->children.push_back(infile);
-        if (compression)
-            query->children.push_back(compression);
+    }
+
+    if (compression)
+    {
+        query->compression = compression;
+        query->children.push_back(compression);
     }
 
     if (table_function)
@@ -604,6 +620,49 @@ INSERT INTO infile_globs FROM INFILE 'input_{1,2}.csv' FORMAT CSV;
 INSERT INTO infile_globs FROM INFILE 'input_?.csv' FORMAT CSV;
 ```
 </Tip>
+
+## Inserting Compressed Data via stdin {#inserting-compressed-data-via-stdin}
+
+**Syntax**
+
+```sql
+INSERT INTO [TABLE] [db.]table [(c1, c2, c3)] [SETTINGS ...] COMPRESSION type FORMAT format_name
+```
+
+A `COMPRESSION` clause can also be used before a bare `FORMAT` clause, i.e. without `FROM INFILE`, to insert compressed data supplied via stdin. This is supported in the [command-line client](/interfaces/cli) and [clickhouse-local](/operations/utilities/clickhouse-local); the client decompresses the data locally before sending it to the server. `type` is a string literal; supported types are: `'none'`, `'auto'`, `'gzip'`, `'deflate'`, `'br'`, `'xz'`, `'zstd'`, `'lz4'`, `'bz2'`, `'snappy'`. `'auto'` keeps the same filename-based autodetection that is used by default when `COMPRESSION` is omitted and stdin is redirected from a file.
+
+<Note>
+`COMPRESSION` before a bare `FORMAT` is only supported for data piped via stdin, not for compressed data embedded inline in the query text. Compressed bytes have no unambiguous end marker that the client can use to separate this query's data from a following query's text in a `--multiquery` script, so inline compressed data is rejected with an error.
+</Note>
+
+<Note>
+`COMPRESSION` before a bare `FORMAT` is decompressed by the client, not the server, so it only takes effect for the [command-line client](/interfaces/cli) and `clickhouse-local`. The [HTTP interface](/interfaces/http) parses this syntax but does not decompress the body for it — use the `Content-Encoding` HTTP header instead for HTTP inserts.
+</Note>
+
+<Note>
+Each `INSERT ... COMPRESSION type FORMAT format_name` piped via stdin reads from stdin until it is exhausted. In a `--multiquery` script with more than one such statement, only the first one reads any data; subsequent ones see an already-exhausted stdin and insert zero rows without an error. This is the existing behavior of bare `FORMAT` with stdin in general, not specific to `COMPRESSION`. Run each stdin-fed `INSERT` as a separate client invocation instead.
+</Note>
+
+<Note>
+`'auto'` detects compression from the name of the file backing stdin (e.g. `< data.csv.gz`), not from the data itself. If stdin is a pipe with no backing file (e.g. `cat data.csv.gz | clickhouse-client ...`), there is no filename to detect from, so `'auto'` silently falls back to no decompression, the same as `'none'`. If the piped data is actually compressed, this results in a format-parsing error rather than a clear compression-related one. Use an explicit `COMPRESSION` type (e.g. `'gzip'`) instead of `'auto'` when stdin may be a pipe.
+</Note>
+
+**Example**
+
+```bash title="Query"
+echo 1,A > input.csv ; echo 2,B >> input.csv
+gzip -k input.csv
+clickhouse-client --query="CREATE TABLE table_from_stdin (id UInt32, text String) ENGINE=MergeTree() ORDER BY id;"
+clickhouse-client --query="INSERT INTO table_from_stdin COMPRESSION 'gzip' FORMAT CSV" < input.csv.gz
+clickhouse-client --query="SELECT * FROM table_from_stdin FORMAT PrettyCompact;"
+```
+
+```text title="Response"
+┌─id─┬─text─┐
+│  1 │ A    │
+│  2 │ B    │
+└────┴──────┘
+```
 
 ## Inserting using a Table Function {#inserting-using-a-table-function}
 
