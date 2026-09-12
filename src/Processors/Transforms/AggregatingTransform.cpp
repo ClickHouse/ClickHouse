@@ -431,10 +431,26 @@ protected:
                 const Int32 bucket = current_bucket_num++;
                 if (updater)
                     updater->recordAggregationStateSizes(*variant, bucket);
-                auto agg_chunk = params->aggregator.convertOneBucketToChunk(*variant, arena, params->final, bucket);
+
+                /// Filled by the Top-K conversion when the statistics ask for it (zero otherwise):
+                /// `Params::bucket_top_k` survives into the skip-merging pipeline, because the plan
+                /// pass that sets it runs before the one that skips the merge. The truncated chunk
+                /// carries only the kept groups, so its keys are not what the fragment would ship.
+                UInt64 topk_full_key_bytes = 0;
+                auto agg_chunk = params->aggregator.convertOneBucketToChunk(
+                    *variant, arena, params->final, bucket, updater ? &topk_full_key_bytes : nullptr);
                 if (updater)
-                    updater->recordAggregationKeySizes(
-                        agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
+                {
+                    if (topk_full_key_bytes)
+                        updater->recordAggregationKeySizes(
+                            agg_chunk.chunk,
+                            params->aggregator.getKeysPositions(),
+                            params->aggregator.getKeyTypes(),
+                            topk_full_key_bytes);
+                    else
+                        updater->recordAggregationKeySizes(
+                            agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
+                }
                 return convertToChunk(std::move(agg_chunk));
             }
         }
