@@ -538,8 +538,6 @@ void RecordBatchEncoder::encodeAsOpaque(
     PODArray<char> data;
     {
         WriteBufferFromVector<PODArray<char>> buffer(data);
-        /// Used only on the `Utf8` path, where a value has to be inspected before it is written out.
-        /// Both are reused across rows.
         WriteBufferFromOwnString value;
         String valid_utf8_scratch;
         for (size_t i = 0; i < num_rows; ++i)

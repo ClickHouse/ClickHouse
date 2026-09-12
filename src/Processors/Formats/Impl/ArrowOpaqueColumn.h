@@ -37,16 +37,14 @@ arrowOpaqueTypeIsUtf8(FormatSettings::ArrowUnsupportedTypes mode, const DataType
     return arrowOpaqueValueIsText(mode, type) && output_string_as_string;
 }
 
-/// Returns `value` unchanged when it is already valid UTF-8, otherwise a sanitized copy held in `scratch`,
-/// with each invalid sequence replaced by U+FFFD.
+/// Replaces each invalid UTF-8 sequence in `value` with U+FFFD. The result aliases `value` itself when it
+/// needs no change and `scratch` otherwise, so both have to outlive it.
 ///
 /// An Arrow `utf8` column is required by the format to hold valid UTF-8, and a text payload can break that:
 /// the serialized text of a `JSON` or `Dynamic` value embeds the bytes of its `String` subcolumns verbatim,
-/// and those can be arbitrary. The alternative of declaring `binary` instead is what
-/// `output_format_arrow_string_as_string = 0` selects, and it stays byte-exact; here the column has been
-/// declared as text, so the bytes are made to match the declaration. Only values that are already invalid
-/// change, and valid text - which is every value that a reader could have interpreted as text anyway - pays
-/// one validation pass and no copy.
+/// and those can be arbitrary. Declaring `binary` instead is what `output_format_arrow_string_as_string = 0`
+/// selects, and that stays byte-exact; here the column has been declared as text, so the bytes are made to
+/// match the declaration.
 inline std::string_view makeValidUTF8View(std::string_view value, String & scratch)
 {
     if (UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(value.data()), value.size()))

@@ -203,14 +203,13 @@ namespace DB
         size_t start,
         size_t end)
     {
-        /// `getArrowType` gives a text payload the `utf8` type only when a `String` column would get it too,
-        /// so the builder that was created tells whether this column is declared as text and therefore has
-        /// to hold valid UTF-8. A `utf8` builder implies `as_text`, both deriving from `arrowOpaqueTypeIsUtf8`.
+        /// The builder `getArrowType` picked is what says whether this column was declared as text and so
+        /// has to hold valid UTF-8; a `utf8` builder implies `as_text`, both deriving from
+        /// `arrowOpaqueTypeIsUtf8`.
         static constexpr bool target_is_utf8 = std::is_same_v<Builder, arrow::StringBuilder>;
 
         const auto serialization = column_type->getDefaultSerialization();
         arrow::Status status;
-        /// Reused across rows: a value's serialized form is only needed until it has been appended.
         WriteBufferFromOwnString value;
         String valid_utf8_scratch;
 
