@@ -1,0 +1,6 @@
+-- a finished mutation entry removed by the writer is ignored by the readonly table
+100	6050
+0
+0
+-- an entry above the readonly parts is still needed by them, so it must not be ignored
+ATTACH failed and named the missing entry
