@@ -1,0 +1,7 @@
+Test CREATE TABLE AS an Alias without any privilege on its target
+ACCESS_DENIED
+Test CREATE TABLE AS an Alias with a column-scoped privilege on its target
+ACCESS_DENIED
+Test CREATE TABLE AS an Alias with SHOW COLUMNS on its target
+id	UInt64
+value	String
