@@ -1072,7 +1072,6 @@ def test_lowering_loading_retries_is_honored_after_restart(started_cluster):
     # Give the scheduler a few polling cycles to re-evaluate the file after restart.
     logging.info("Waiting after restart to confirm no extra processing attempt is granted...")
     max_retries_seen_after_restart = retries_before_lowering
-    observed_terminal = False
     for elapsed in range(30):
         time.sleep(1)
         retries, is_terminal = get_retry_count_from_keeper()
@@ -1080,7 +1079,6 @@ def test_lowering_loading_retries_is_honored_after_restart(started_cluster):
             if retries > max_retries_seen_after_restart:
                 max_retries_seen_after_restart = retries
             if is_terminal:
-                observed_terminal = True
                 break
 
     final_retries, final_is_terminal = get_retry_count_from_keeper()
