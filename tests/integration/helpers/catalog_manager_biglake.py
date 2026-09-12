@@ -38,8 +38,8 @@ NAMESPACE_PREFIX = "ch_e2e_bl_"
 # object, never the token baked into the catalog. Retrying any catalog call after
 # the token expires just resends the same stale token until the deadline.
 # Rebuilding self.catalog mid-retry is unsafe because callers share it
-# concurrently (test_many_tables_pagination fans catalog calls across a 10-thread
-# pool), so auth expiry is always left to propagate. These mirror pyiceberg's own
+# concurrently (callers may fan catalog calls across a thread pool), so auth
+# expiry is always left to propagate. These mirror pyiceberg's own
 # retry-then-reraise set for its REST client (AuthorizationExpiredError,
 # UnauthorizedError; OAuthError covers the token-endpoint path).
 _AUTH_EXPIRY_ERRORS = (
@@ -51,10 +51,13 @@ _AUTH_EXPIRY_ERRORS = (
 # REST/network errors that create_table retries; pyiceberg's REST client
 # retries only auth errors (stop_after_attempt(2)), so these otherwise escape.
 # Auth-expiry errors are deliberately excluded (see _AUTH_EXPIRY_ERRORS).
+# NoSuchNamespaceError included: BigLake indexes a just-created namespace
+# asynchronously, so the session namespace can 404 for a few seconds.
 _TRANSIENT_CREATE_ERRORS = (
     ServerError,
     ServiceUnavailableError,
     CommitStateUnknownException,
+    NoSuchNamespaceError,
     requests.exceptions.RequestException,
 )
 
@@ -340,10 +343,9 @@ class BigLakeCatalogManager(CatalogManager):
         # uses a fresh unique name, so a partial prior attempt (table created,
         # append failed) cannot resurface as TableAlreadyExistsError nor
         # duplicate rows -- creation stays exactly-once. When a caller supplies
-        # a fixed table_name (test_many_tables_pagination asserts the exact
-        # short names it passed appear in SHOW TABLES, so we cannot substitute a
-        # UUID), a fresh name is not an option, so that path makes a single
-        # attempt and lets a transient error propagate as before.
+        # a fixed table_name, a fresh name is not an option, so that path makes
+        # a single attempt and lets a transient error propagate as before. It
+        # currently has no in-repo caller.
         namespace = self._session_namespace
         iceberg_schema = arrow_to_iceberg_schema(data)
 
@@ -390,8 +392,10 @@ class BigLakeCatalogManager(CatalogManager):
                 # raise CommitStateUnknownException after committing). Reconcile
                 # the partial attempt FIRST -- for every exception, transient or
                 # not -- so nothing is leaked untracked, then decide retry vs
-                # re-raise.
-                self._drop_failed_attempt(candidate)
+                # re-raise. NoSuchNamespaceError is the exception: only the
+                # create call maps a 404 to it, so no table can exist yet.
+                if not isinstance(exc, NoSuchNamespaceError):
+                    self._drop_failed_attempt(candidate)
                 if not isinstance(exc, _TRANSIENT_CREATE_ERRORS):
                     raise
                 if time.monotonic() >= deadline:
