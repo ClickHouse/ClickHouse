@@ -351,6 +351,9 @@ public:
         ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
         IColumn & elems_to = arr_to.getData();
 
+        /// Must stay before the loop: reserving after the first element has aliased its state is too late.
+        reserveForInsertResult(place, to);
+
         char * nested_state = state.array_of_aggregate_datas;
         for (size_t i = 0; i < state.dynamic_array_size; ++i)
         {
@@ -372,6 +375,20 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
+    }
+
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
+    {
+        const AggregateFunctionForEachData & state = data(place);
+
+        ColumnArray & arr_to = assert_cast<ColumnArray &>(to);
+        ColumnArray::Offsets & offsets_to = arr_to.getOffsets();
+        IColumn & elems_to = arr_to.getData();
+
+        /// Cover every element, so the per-element aliasing of a nested `-State` result cannot reallocate
+        /// once it starts.
+        elems_to.reserve(elems_to.size() + state.dynamic_array_size);
+        offsets_to.reserve(offsets_to.size() + 1);
     }
 
     bool allocatesMemoryInArena() const override

@@ -294,6 +294,11 @@ public:
     /// instead of just copying pointer to this AggregateData. Used in WindowTransform.
     virtual void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const;
 
+    /// Reserve capacity in `to` so that a subsequent insertResultInto for this place cannot reallocate.
+    /// Only meaningful for functions whose insertResultInto aliases `-State` sub-states into a
+    /// ColumnAggregateFunction, where a throw after a partial transfer double-destroys the states.
+    virtual void reserveForInsertResult(ConstAggregateDataPtr __restrict /*place*/, IColumn & /*to*/) const {}
+
     /// Used for machine learning methods. Predict result from trained model.
     /// Will insert result into `to` column for rows in range [offset, offset + limit).
     virtual void predictValues(

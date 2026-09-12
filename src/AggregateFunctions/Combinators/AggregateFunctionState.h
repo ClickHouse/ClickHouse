@@ -152,6 +152,14 @@ public:
         assert_cast<ColumnAggregateFunction &>(to).insertFrom(place);
     }
 
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict, IColumn & to) const override
+    {
+        /// insertResultInto aliases one state pointer into the column; reserve that one slot so the
+        /// push_back cannot reallocate and throw after ownership transfer has started.
+        auto & data = assert_cast<ColumnAggregateFunction &>(to).getData();
+        data.reserve(data.size() + 1);
+    }
+
     /// Aggregate function or aggregate function state.
     bool isState() const override { return true; }
 

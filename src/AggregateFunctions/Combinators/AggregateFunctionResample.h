@@ -235,6 +235,9 @@ public:
         auto & col = assert_cast<ColumnArray &>(to);
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
+        /// Must stay before the loop: reserving after the first bucket has aliased its state is too late.
+        reserveForInsertResult(place, to);
+
         for (size_t i = 0; i < total; ++i)
         {
             if constexpr (merge)
@@ -254,6 +257,17 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
+    }
+
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict, IColumn & to) const override
+    {
+        auto & col = assert_cast<ColumnArray &>(to);
+        auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
+
+        /// Cover every bucket, so the per-bucket aliasing of a nested `-State` result cannot reallocate
+        /// once it starts.
+        col.getData().reserve(col.getData().size() + total);
+        col_offsets.getData().reserve(col_offsets.size() + 1);
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

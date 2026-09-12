@@ -360,10 +360,14 @@ public:
         }
         ::sort(keys.begin(), keys.end());
 
-        // insert using sorted keys to result column
+        // All keys first, then all values: nothing may allocate once the value transfer has started.
+        key_column.reserve(key_column.size() + keys.size());
+        for (auto & key : keys)
+            key_column.insert(key);
+
+        val_column.reserve(val_column.size() + keys.size());
         for (auto & key : keys)
         {
-            key_column.insert(key);
             if constexpr (merge)
                 nested_func->insertMergeResultInto(merged_maps[key], val_column, arena);
             else
@@ -371,6 +375,7 @@ public:
         }
 
         IColumn::Offsets & res_offsets = nested_column.getOffsets();
+        res_offsets.reserve(res_offsets.size() + 1);
         res_offsets.push_back(val_column.size());
     }
 
@@ -382,6 +387,21 @@ public:
     void insertMergeResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena * arena) const override
     {
         insertResultIntoImpl<true>(place, to, arena);
+    }
+
+    void reserveForInsertResult(ConstAggregateDataPtr __restrict place, IColumn & to) const override
+    {
+        auto & map_column = assert_cast<ColumnMap &>(to);
+        auto & nested_data_column = map_column.getNestedData();
+        auto & key_column = nested_data_column.getColumn(0);
+        auto & val_column = nested_data_column.getColumn(1);
+
+        const auto & merged_maps = this->data(place).merged_maps;
+
+        /// `val_column` is what the `-State` value transfer aliases into, so it cannot reallocate once
+        /// that transfer starts.
+        key_column.reserve(key_column.size() + merged_maps.size());
+        val_column.reserve(val_column.size() + merged_maps.size());
     }
 
     bool allocatesMemoryInArena() const override { return true; }
