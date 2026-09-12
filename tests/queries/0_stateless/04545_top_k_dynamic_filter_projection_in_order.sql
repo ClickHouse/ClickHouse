@@ -157,9 +157,7 @@ FROM (
 WHERE explain ILIKE '%InOrder%';
 
 -- With the projection materialized for only some parts, the chooser reads the rest from the base
--- table under a union, and that branch is not in order: dynamic filtering must still apply
--- (expected 1). The projection assertion (expected 1) is what keeps the first one honest: without
--- it the arm also passes when no projection is selected at all, which is a different plan.
+-- table under a union, and that branch is not in order, so dynamic filtering must still apply there.
 DROP TABLE IF EXISTS t_topk_mixed;
 CREATE TABLE t_topk_mixed (part UInt8, id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
 ENGINE = MergeTree PARTITION BY part ORDER BY (k, id)
@@ -170,14 +168,23 @@ OPTIMIZE TABLE t_topk_mixed FINAL;
 ALTER TABLE t_topk_mixed ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
 ALTER TABLE t_topk_mixed MATERIALIZE PROJECTION p_score IN PARTITION 0 SETTINGS mutations_sync = 2;
 
-SELECT count() > 0 AS has_topk_filter
+-- Exactly one union child keeps the filter (the base-table child) and exactly one child reads in
+-- order (the projection child): the drop is per-branch, not all-or-nothing.
+SELECT countIf(explain ILIKE '%__topKFilter%') AS filtered_children
 FROM (
     EXPLAIN projections = 1, actions = 1
     SELECT id, cityHash64(payload) FROM t_topk_mixed ORDER BY score, id LIMIT 10
     SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
-)
-WHERE explain ILIKE '%__topKFilter%';
+);
 
+SELECT countIf(explain ILIKE '%InOrder%') AS in_order_children
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id, cityHash64(payload) FROM t_topk_mixed ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+);
+
+-- The union assertion is what proves the counts above are over the two-branch plan.
 SELECT count() > 0 AS mixed_reads_base_table_branch
 FROM (
     EXPLAIN projections = 1
