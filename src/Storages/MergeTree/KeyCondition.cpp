@@ -581,6 +581,33 @@ static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_i
     return need_inversion ? makeASTOperator("not", cloned_node) : cloned_node;
 }
 
+/// Comparison ops whose `not(op)` rewrite via `inverse_relations` is invalid when an operand can be NaN:
+/// `not(NaN > c)` is true while `NaN <= c` is false. `=` / `!=` do stay complements under NaN and are
+/// covered only to keep one rule for every comparison. A finite float constant is safe.
+static bool isFloatComparison(const String & name, const ActionsDAG::NodeRawConstPtrs & children)
+{
+    if (name != "equals" && name != "notEquals"
+        && name != "less" && name != "greater"
+        && name != "lessOrEquals" && name != "greaterOrEquals")
+        return false;
+
+    for (const auto * child : children)
+    {
+        if (!KeyCondition::typeMayHideNaN(child->result_type))
+            continue;
+
+        /// Non-constant: could be NaN at runtime, must not invert.
+        if (child->type != ActionsDAG::ActionType::COLUMN || !child->column || !isColumnConst(*child->column))
+            return true;
+
+        /// Constant: only a NaN blocks the rewrite.
+        const Field field = (*child->column)[0];
+        if (field.isNaN())
+            return true;
+    }
+    return false;
+}
+
 static bool isTrivialCast(const ActionsDAG::Node & node)
 {
     /// Recognize both the user-facing `CAST` and the analyzer-internal `_CAST` here; they
@@ -1301,7 +1328,9 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                     arg = &cloneDAGWithInversionPushDown(*arg, inverted_dag, inputs_mapping, context, false, child_boolean_context);
 
                 auto it = inverse_relations.find(name);
-                if (it != inverse_relations.end() && canFoldToInverseRelation(name, children))
+                if (it != inverse_relations.end()
+                    && canFoldToInverseRelation(name, children)
+                    && !(need_inversion && isFloatComparison(name, children)))
                 {
                     const auto & func_name = need_inversion ? it->second : it->first;
                     auto function_builder = FunctionFactory::instance().get(func_name, context);
@@ -1577,6 +1606,105 @@ bool KeyCondition::isRelaxed() const
             || ((elem.function == RPNElement::FUNCTION_IN_SET || elem.function == RPNElement::FUNCTION_NOT_IN_SET)
                 && elem.set_index->size() > 1);
     });
+}
+
+bool KeyCondition::typeMayHideNaN(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    const auto unwrapped = removeLowCardinalityAndNullable(type);
+    if (WhichDataType(unwrapped).isFloat())
+        return true;
+
+    if (const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get()))
+    {
+        for (const auto & element : tuple->getElements())
+            if (typeMayHideNaN(element))
+                return true;
+    }
+
+    return false;
+}
+
+void KeyCondition::relaxAtomsOverNaNHidingColumns(const DataTypes & key_types)
+{
+    auto column_may_hide_nan = [&key_types](size_t key_column)
+    {
+        return key_column < key_types.size() && typeMayHideNaN(key_types[key_column]);
+    };
+
+    /// A packed `Tuple` key keeps the mapped set column as a `ColumnTuple`, so an element can carry the
+    /// NaN nested rather than at the top level.
+    auto set_column_contains_nan = [](const IColumn & column)
+    {
+        Field field;
+        for (size_t i = 0, size = column.size(); i < size; ++i)
+        {
+            column.get(i, field);
+            if (anyFieldSatisfies(field, isNaNField))
+                return true;
+        }
+        return false;
+    };
+
+    for (auto & element : rpn)
+    {
+        switch (element.function)
+        {
+            case RPNElement::FUNCTION_IN_RANGE:
+            case RPNElement::FUNCTION_NOT_IN_RANGE:
+            {
+                if (element.key_columns.size() != 1 || !column_may_hide_nan(element.getKeyColumn()))
+                    break;
+
+                if (element.monotonic_functions_chain.empty())
+                    element.relaxed = true;
+                else
+                    element.function = RPNElement::FUNCTION_UNKNOWN;
+                break;
+            }
+            case RPNElement::FUNCTION_IN_SET:
+            case RPNElement::FUNCTION_NOT_IN_SET:
+            {
+                if (std::none_of(element.key_columns.begin(), element.key_columns.end(), column_may_hide_nan))
+                    break;
+
+                /// Without a prepared set there is nothing to inspect: assume the worst rather than
+                /// keep an unverified `can_be_true`.
+                if (!element.set_index)
+                {
+                    element.function = RPNElement::FUNCTION_UNKNOWN;
+                    break;
+                }
+
+                const auto & ordered_set = element.set_index->getOrderedSet();
+                const auto & mapping = element.set_index->getIndexesMapping();
+
+                bool relax = false;
+                for (size_t i = 0; i < mapping.size(); ++i)
+                {
+                    if (!column_may_hide_nan(mapping[i].key_index))
+                        continue;
+
+                    /// `ordered_set[i]` belongs to `mapping[i]`: the constructor sorts `indexes_mapping`
+                    /// and then indexes the set elements through it, so `tuple_index` is not a position here.
+                    if (!mapping[i].functions.empty() || set_column_contains_nan(*ordered_set[i]))
+                    {
+                        element.function = RPNElement::FUNCTION_UNKNOWN;
+                        relax = false;
+                        break;
+                    }
+                    relax = true;
+                }
+                if (relax)
+                    element.relaxed = true;
+                break;
+            }
+            default:
+                break;
+        }
+    }
 }
 
 bool KeyCondition::addCondition(const String & column, const Range & range)
