@@ -129,6 +129,10 @@ Whether the `BlockInfo` prefix is present depends on the channel, because the wr
 
 In other words, the byte examples in this section that begin with a `BlockInfo` prefix describe the TCP Data-packet payload. The same query taken through `FORMAT Native` produces the shorter form shown alongside them.
 
+### Storage-specific block indexes {#storage-specific-block-indexes}
+
+Some on-disk users of the Native block layout, including `StripeLog`, keep a separate index with the columns and offsets for each block. The column set is a property of each block, not of the whole stream, so blocks in one Native data file may contain different columns. A reader using such an index can project each block independently. If a requested column is absent from a block, the reader must read the columns recorded for that block and let the storage layer materialize the missing column from its schema and default expressions. This storage-specific index metadata is not part of the Native wire payload.
+
 ### BlockInfo {#blockinfo}
 
 BlockInfo is a sequence of fields, each preceded by a VarUInt field ID, terminated by a field ID of `0`. The wire format is **not** self-describing: a field ID does not encode the length or type of its value, so a reader must already know the type of every field ID it might encounter. ClickHouse's own reader treats an unrecognized field ID as corruption and raises an exception (`UNKNOWN_BLOCK_INFO_FIELD`). Forward compatibility is handled instead by the protocol revision: the sender only writes a field if the negotiated revision is at least that field's minimum revision, so an older receiver never sees a field it does not know.
