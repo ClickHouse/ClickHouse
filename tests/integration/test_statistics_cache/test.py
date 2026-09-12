@@ -1,4 +1,5 @@
 import uuid
+import time
 import threading
 import pytest
 from helpers.cluster import ClickHouseCluster
@@ -277,6 +278,38 @@ def test_staleness_after_inserts_stays_hit():
     _wait_hit(
         ch1, "ins-hit2",
         "SELECT count() FROM ins_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='ins-hit2' FORMAT Null"
+    )
+
+def test_prewarm_runs_once_per_part_set():
+    # The background prewarm reads the statistics of every active part into the part statistics
+    # cache once per change of the active part set. On a stable table it does nothing, so after
+    # `SYSTEM DROP STATISTICS CACHE` the next query still loads from disk although the refresh
+    # interval has elapsed several times; a new part makes the prewarm run again.
+    _create_tbl(ch1, "once_tbl", 1)
+    since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
+    # A skipped tick after the last part change proves the prewarm has caught up with the
+    # current part set, so no tick after the drop below can refill the cache.
+    for _ in range(50):
+        _query(ch1, "SYSTEM FLUSH LOGS text_log")
+        skipped = int(_query(ch1, f"""
+            SELECT count() FROM system.text_log
+            WHERE logger_name LIKE '{TEST_DB}.once_tbl%'
+              AND message LIKE 'The parts in this storage did not change%'
+              AND event_time_microseconds >= toDateTime64('{since}', 6)
+            FORMAT TabSeparated
+        """).strip())
+        if skipped:
+            break
+        time.sleep(0.2)
+    assert skipped, "the statistics prewarm never reported an unchanged part set"
+    _query(ch1, "SYSTEM DROP STATISTICS CACHE")
+    time.sleep(3)
+    _query(ch1, "SELECT count() FROM once_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='once-after-drop' FORMAT Null")
+    _assert_load(ch1, "once-after-drop")
+    _query(ch1, f"INSERT INTO once_tbl SELECT number+{ROWS_SMALL}, toFloat64(rand())/4294967296.0 FROM numbers({ROWS_SMALL})")
+    _wait_hit(
+        ch1, "once-after-insert",
+        "SELECT count() FROM once_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='once-after-insert' FORMAT Null"
     )
 
 def test_mutation_optimize_replace_drop_keep_hit():

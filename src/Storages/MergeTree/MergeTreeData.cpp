@@ -3441,11 +3441,26 @@ try
     }
     /// Prewarm the part statistics cache so queries do not pay the disk reads; queries build
     /// (and cache) their own estimators from it for exactly the part and column sets they need.
-    /// On an already-warm cache this loop is only a key lookup per part.
+    /// The prewarm runs once per change of the active part set. Repeating it on a stable table
+    /// would only reread from disk whatever the bounded cache has evicted meanwhile, evicting
+    /// other entries in turn, and would refill the cache right after `SYSTEM DROP STATISTICS CACHE`.
+    DataPartsVector data_parts = getDataPartsVectorForInternalUsage();
+    SipHash hash;
+    for (const DataPartPtr & data_part : data_parts)
+        updateHashWithString(hash, data_part->name);
+    const UInt128 parts_hash = hash.get128();
+    if (prewarmed_parts_hash == parts_hash)
+    {
+        LOG_DEBUG(log, "The parts in this storage did not change, will not refresh statistics");
+        if (interval_seconds)
+            refresh_stats_task->scheduleAfter(interval_seconds * 1000);
+        return;
+    }
     LOG_DEBUG(log, "Refreshing statistics");
     auto stats_cache = getContext()->getPartStatisticsCache();
-    for (const DataPartPtr & data_part : getDataPartsVectorForInternalUsage())
+    for (const DataPartPtr & data_part : data_parts)
         data_part->loadStatisticsWithCache(stats_cache.get(), {});
+    prewarmed_parts_hash = parts_hash;
     if (interval_seconds)
         refresh_stats_task->scheduleAfter(interval_seconds * 1000);
 }
