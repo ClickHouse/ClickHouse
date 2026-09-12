@@ -49,3 +49,5 @@ array join then full: rows
 0	0	3
 1	1	0
 2	1	2
+asof/inner non-leftmost: rows
+2	2020-01-01 12:00:00

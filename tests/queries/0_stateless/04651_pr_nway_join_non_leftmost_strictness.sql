@@ -1,19 +1,26 @@
 -- Parallel replicas must be disabled for an n-way join whose non-leftmost join is not replica-safe.
--- The whole join tree is shipped to every replica while only the leftmost leaf's reads are
--- coordinated, so such a join re-applies its own strictness independently on each replica and the
--- initiator concatenates the results, duplicating rows.
+-- The whole join tree is shipped to every replica, but a leaf's reads are coordinated only for the
+-- join shapes the search for that leaf descends. A non-leftmost join outside that set leaves no leaf
+-- coordinated, so every replica evaluates the whole join and the initiator concatenates the copies,
+-- multiplying every row by the replica count.
 
 DROP TABLE IF EXISTS t1 SYNC;
 DROP TABLE IF EXISTS t2 SYNC;
 DROP TABLE IF EXISTS t3 SYNC;
+DROP TABLE IF EXISTS t4 SYNC;
 
 CREATE TABLE t1 (c Int32, d DateTime) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t1', 'r1') ORDER BY c;
 CREATE TABLE t2 (c Int32) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t2', 'r1') ORDER BY c;
 CREATE TABLE t3 (c Int32, d DateTime) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t3', 'r1') ORDER BY c;
+-- `t4` carries the ASOF keys: they overlap `t1` (`t3`'s do not), and each key has two candidates, so
+-- the ASOF answer names one of them and the row assertion below is not vacuous.
+CREATE TABLE t4 (c Int32, d DateTime) ENGINE = ReplicatedMergeTree('/clickhouse/{database}/t4', 'r1') ORDER BY c;
 
 INSERT INTO t1 VALUES (1, '2020-01-01 00:00:00'), (2, '2020-01-02 00:00:00');
 INSERT INTO t2 VALUES (2), (3);
 INSERT INTO t3 VALUES (7, '2020-01-01 00:00:00'), (8, '2020-01-02 00:00:00');
+INSERT INTO t4 VALUES (1, '2019-12-31 00:00:00'), (1, '2019-12-31 12:00:00'),
+                      (2, '2020-01-01 00:00:00'), (2, '2020-01-01 12:00:00');
 
 SET enable_analyzer = 1;
 SET automatic_parallel_replicas_mode = 0;
@@ -106,9 +113,9 @@ SELECT 'two-way inner/any: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT * FROM t1 ANY INNER JOIN t2 ON 1 ORDER BY ALL);
 
--- The LEFT exemption is load-bearing: `ANY LEFT` / `SEMI LEFT` select their right row per
--- left row (`ConstantJoin` keeps `left_rows_to_join = All` for them), so applying them
--- independently on each replica and concatenating is correct and they stay eligible.
+-- The LEFT exemption is load-bearing: the search for the coordinated leaf descends through `LEFT`
+-- whatever the strictness, so the left side really is partitioned there and `ANY LEFT` / `SEMI LEFT`
+-- stay eligible. Being per-left-row is not what earns the exemption (see the ASOF case below).
 SELECT 'left/any non-leftmost: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT * FROM t1 INNER JOIN t2 ON t1.c = t2.c ANY LEFT JOIN t3 ON 1 ORDER BY ALL);
@@ -117,11 +124,13 @@ SELECT 'left/semi non-leftmost: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
     EXPLAIN SELECT t1.c FROM t1 INNER JOIN t2 ON t1.c = t2.c SEMI LEFT JOIN t3 ON 1 ORDER BY ALL);
 
--- `ASOF` is vetoed conservatively: it is not `ALL`, so the whitelist rejects it.
+-- `ASOF INNER` decides each left row on its own, and is vetoed anyway: outside `LEFT` the search for
+-- the coordinated leaf does not descend, so nothing partitions the left side and every replica
+-- returns the whole join. Its row assertion below is the measurement, not an argument.
 SELECT 'asof/inner non-leftmost: reads from remote replicas';
 SELECT countIf(explain ILIKE '%ReadFromRemoteParallelReplicas%') FROM (
-    EXPLAIN SELECT t1.c FROM t1 INNER JOIN t2 ON t1.c = t2.c
-        ASOF INNER JOIN t3 ON t1.c = t3.c AND t1.d < t3.d ORDER BY ALL);
+    EXPLAIN SELECT t1.c, t4.d FROM t1 INNER JOIN t2 ON t1.c = t2.c
+        ASOF INNER JOIN t4 ON t1.c = t4.c AND t1.d > t4.d ORDER BY ALL);
 
 -- `PASTE JOIN` pairs rows by position, so it is not distributive over a partition of the left side
 -- either. It carries `ALL` strictness (the parser forbids an explicit `ANY`/`ALL` on `PASTE`, and
@@ -160,6 +169,15 @@ SELECT t1.c, t2.c, t3.c FROM t1 INNER JOIN t2 ON t1.c = t2.c INNER JOIN t3 ON 1 
 SELECT 'array join then full: rows';
 SELECT t1.c, a, t2.c FROM t1 ARRAY JOIN [1] AS a FULL JOIN t2 ON t1.c = t2.c ORDER BY ALL;
 
+-- Row control for the ASOF half: `t2` leaves `t1.c = 2` as the only left row, and its ASOF match is
+-- the later of the two `t4` candidates. Without the veto this line returns that row once per replica,
+-- and it does so at `parallel_replicas_local_plan = 0`, which is why the value is pinned here.
+SELECT 'asof/inner non-leftmost: rows';
+SELECT t1.c, t4.d FROM t1 INNER JOIN t2 ON t1.c = t2.c
+    ASOF INNER JOIN t4 ON t1.c = t4.c AND t1.d > t4.d ORDER BY ALL
+    SETTINGS parallel_replicas_local_plan = 0;
+
 DROP TABLE t1 SYNC;
 DROP TABLE t2 SYNC;
 DROP TABLE t3 SYNC;
+DROP TABLE t4 SYNC;

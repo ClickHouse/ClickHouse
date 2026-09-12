@@ -3523,13 +3523,13 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 is_right_join_with_remote_table = right_expression_data.isRemote();
             }
 
-            /// Only the leftmost leaf's reads are coordinated, but the whole join tree is shipped to every
-            /// replica, so a non-leftmost join must be distributive over a partition of the left side.
-            /// `ALL` strictness and any `LEFT` kind are (each left row is decided independently); `INNER ANY`,
-            /// `RIGHT ANY` and `RIGHT SEMI` are not (`ConstantJoin` collapses them through one
-            /// `has_seen_matching_rows` CAS). Outside `LEFT` this is a whitelist, so a future
-            /// `JoinStrictness` is fail-closed there; under `LEFT` every strictness is admitted, which is
-            /// the point of the kind exemption.
+            /// The whole join tree is shipped to every replica, but a leaf's reads are coordinated only for the
+            /// shapes the search for that leaf descends: `LEFT`, `INNER` with `ALL`, and a qualifying `RIGHT`.
+            /// Any other non-leftmost join leaves no leaf coordinated, so every replica evaluates the whole
+            /// join and the initiator concatenates the copies, multiplying every row by the replica count.
+            /// That happens even to a join deciding each left row on its own, such as `INNER ASOF`. Under
+            /// `LEFT` every strictness is admitted, which is the point of the kind exemption; outside it this
+            /// stays a whitelist, so a future `JoinStrictness` is fail-closed.
             /// `GLOBAL`/`CROSS`, and a misplaced `RIGHT`, remain the business of the disjuncts
             /// below, which is why `ALL` is still admitted for those kinds here.
             /// Two kinds need their own term because they are unsafe while carrying `ALL`: `PASTE`
