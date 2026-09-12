@@ -1,0 +1,83 @@
+f_a
+(1)
+f_a.1	f_a.2
+1	2
+f_a.id	f_a.v
+1	2
+f_a.1	f_a.2	f_b.1	f_b.2
+1	2	3	4
+f_a.1	f_a.2
+1	2
+f_a.id
+1
+f_a.1
+1
+a.1	a.2
+1	2
+a.id	a.v
+1	2
+a.1	a.2	c
+1	2	5
+a.id
+1
+a.1
+1
+a.1	a.2	b
+1	2	(1,2)
+f_a	f_b
+1	2
+f_a	f_b
+2	3
+q_p_a
+3
+a	b
+2	2
+a	f_a	f_b
+99	1	2
+upper(toString(a))
+1
+toString(identity(a))
+1
+q_identity(a).1	q_identity(a).2
+1	2
+q_p_a.1	q_p_a.2
+1	2
+toString(p_a)
+1
+p_a	a
+1	1
+a	p_a
+1	1
+p_a	p_b	a	b
+1	2	1	2
+a	b	p_a	p_b
+1	2	1	2
+p_a	a
+1	1
+p_a	a
+1	1
+toString(p_a)	a
+1	1
+q_p_a	a
+1	1
+p_a	p_a	a	b
+1	1	1	2
+p_all
+1
+a	a
+1	1
+toString(a)	a
+1	1
+f_a	a
+1	1
+p_a.1	p_a.2	a
+1	2	(1,2)
+a	a
+1	1
+p_a	z
+1	1
+p_a	q_a
+1	1
+1
+a	b
+1	0

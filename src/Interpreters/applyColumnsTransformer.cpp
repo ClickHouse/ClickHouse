@@ -19,6 +19,7 @@ namespace ErrorCodes
     extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int CANNOT_COMPILE_REGEXP;
+    extern const int BAD_ARGUMENTS;
 }
 
 std::shared_ptr<re2::RE2> getColumnsExceptMatcher(const ASTColumnsExceptTransformer & transformer)
@@ -35,6 +36,21 @@ std::shared_ptr<re2::RE2> getColumnsExceptMatcher(const ASTColumnsExceptTransfor
 
 namespace
 {
+
+/// Column transformers (APPLY with a name prefix, REPLACE) assign an alias to the
+/// resulting node. Only ASTWithAlias nodes (identifiers, functions, literals, subqueries)
+/// support aliases. When a transformer expression expands to an asterisk / qualified
+/// asterisk / COLUMNS matcher (e.g. `* APPLY (x -> t.*, 'p_')`), the target does not
+/// support aliases and the default IAST::setAlias would throw a LOGICAL_ERROR (server
+/// abort in debug/sanitizer builds). Reject such queries with a clear user error instead.
+void setTransformerAlias(ASTPtr & node, const String & alias)
+{
+    if (!dynamic_cast<const ASTWithAlias *>(node.get()))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot set alias '{}' on '{}': the column transformer expression expands to an asterisk or "
+            "COLUMNS matcher, which does not support aliases", alias, node->formatForErrorMessage());
+    node->setAlias(alias);
+}
 
 void applyColumnsApplyTransformer(const ASTColumnsApplyTransformer & transformer, ASTs & nodes)
 {
@@ -79,7 +95,7 @@ void applyColumnsApplyTransformer(const ASTColumnsApplyTransformer & transformer
             column = function;
         }
         if (!transformer.column_name_prefix.empty())
-            column->setAlias(transformer.column_name_prefix + name);
+            setTransformerAlias(column, transformer.column_name_prefix + name);
     }
 }
 
@@ -177,7 +193,7 @@ void applyColumnsReplaceTransformer(const ASTColumnsReplaceTransformer & transfo
             if (replace_it != replace_map.end())
             {
                 column = replace_it->second;
-                column->setAlias(replace_it->first);
+                setTransformerAlias(column, replace_it->first);
                 replace_map.erase(replace_it);
             }
         }
@@ -190,7 +206,7 @@ void applyColumnsReplaceTransformer(const ASTColumnsReplaceTransformer & transfo
                 ast_with_alias->alias = ""; // remove the old alias as it's useless after replace transformation
                 replaceChildren(new_ast, column, replace_it->first);
                 column = new_ast;
-                column->setAlias(replace_it->first);
+                setTransformerAlias(column, replace_it->first);
                 replace_map.erase(replace_it);
             }
         }
