@@ -156,13 +156,11 @@ std::unique_ptr<IDataType::SubcolumnInfo> makeSubcolumnInfo(const ISerialization
     return result;
 }
 
+}
 
-/// Resolves a subcolumn by enumerating the streams of `data.serialization`. With `prune_typed_paths`
-/// serializations may skip streams that cannot contribute to this lookup (see
-/// `SerializationObject::enumerateStreams`); the result must not depend on it.
-std::unique_ptr<IDataType::SubcolumnInfo> getSubcolumnInfoFromStreams(
+std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfoFromStreams(
     std::string_view subcolumn_name,
-    const ISerialization::SubstreamData & data,
+    const SubstreamData & data,
     size_t initial_array_level,
     bool prune_typed_paths,
     size_t & array_level)
@@ -234,8 +232,6 @@ std::unique_ptr<IDataType::SubcolumnInfo> getSubcolumnInfoFromStreams(
     data.serialization->enumerateStreams(settings, callback_with_data, data);
     array_level = settings.array_level;
     return res;
-}
-
 }
 
 std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
