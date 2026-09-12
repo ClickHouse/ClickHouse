@@ -147,7 +147,7 @@ Expression (Project names)
                       JoinLogical (Broadcast HashJoin )
                         Expression (Change column names to column identifiers)
                           ReadFromMergeTree (ParallelRead default.supplier)
-                        Expression ((( + ) + Change column names to column identifiers))
+                        Expression (( + Change column names to column identifiers))
                           ReadFromMergeTree (ReplicatedRead default.nation)
 -- Q08
 Expression ((Project names + (Before ORDER BY + Projection) [lifted up part]))
