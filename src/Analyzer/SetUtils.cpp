@@ -9,6 +9,7 @@
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <Interpreters/Set.h>
@@ -651,8 +652,13 @@ bool columnCollectionHasTuple(const ColumnPtr & rhs_column, const DataTypePtr & 
 /// If `transform_null_in` is false, then `SELECT NULL IN (NULL, 1)` returns NULL, otherwise it returns true.
 
 ColumnsWithTypeAndName getSetElementsForConstantValue(
-    const DataTypePtr & lhs_expression_type, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type, GetSetElementParams params)
+    const DataTypePtr & lhs_expression_type_raw, const ColumnPtr & rhs_column, const DataTypePtr & rhs_type_raw, GetSetElementParams params)
 {
+    /// Everything below keys on Tuple, so Row types are classified and unpacked as their
+    /// named Tuple equivalents; `Set::execute` casts a Row probe column accordingly.
+    const DataTypePtr lhs_expression_type = lowerRowTypesToTuples(lhs_expression_type_raw);
+    const DataTypePtr rhs_type = lowerRowTypesToTuples(rhs_type_raw);
+
     DataTypes lhs_unpacked_types = {lhs_expression_type};
 
     /// Unpack `Tuple(...)` into tuple elements.

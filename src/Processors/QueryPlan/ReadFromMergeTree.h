@@ -274,6 +274,10 @@ public:
 
     const Names & getAllColumnNames() const { return all_column_names; }
 
+    /// Drop `covered_columns_to_remove` from the read set and add the Row(...)
+    /// `wrappers_to_add` instead; used by optimizeUseRowWrappers.
+    void replaceWithRowWrappers(const Names & covered_columns_to_remove, const Names & wrappers_to_add);
+
     /// Direct reads from a text index (see `createReadTasksForTextIndex`). The tasks are self-contained,
     /// so the get/set pair lets another step reading the same table (e.g. one built by lazy FINAL) reproduce them.
     const IndexReadTasks & getIndexReadTasks() const { return index_read_tasks; }

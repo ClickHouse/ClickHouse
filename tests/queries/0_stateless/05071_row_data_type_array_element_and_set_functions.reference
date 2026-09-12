@@ -1,0 +1,27 @@
+1	('alpha',10,'x')	Row(a String, b UInt32, c String)
+2	('beta',20,'y')	Row(a String, b UInt32, c String)
+1	('x',11,'alpha')	('x',11,'alpha')	('',0,'')
+2	('y',21,'beta')	('y',21,'beta')	('',0,'')
+1	('alpha',10,'x')
+2	('y',21,'beta')
+(1,'a')	Row(x UInt64, y String)
+(1,'a')	Row(x UInt64, y String)
+((1,'a'),2)	Tuple(\n    r Row(x UInt64, y String),\n    n UInt8)
+1	[(1,'a')]	Array(Row(x UInt64, y String))
+2	[]	Array(Row(x UInt64, y String))
+3	[(0,'z')]	Array(Row(x UInt64, y String))
+1	[(1,'a')]
+2	[(1,'b')]
+3	[(0,'z')]
+1	[(1,'a')]
+2	[(1,'b'),(2,'b')]
+3	[(0,'z')]
+1	[]
+2	[(1,'b'),(2,'b')]
+3	[]
+1	[[(1,'a')]]
+2	[]
+3	[[(0,'z')]]
+1	[(1,'a')]	[(1,'a'),(2,'b')]	[(2,'b')]
+2	[(2,'b')]	[(2,'b'),(3,'c')]	[(1,'b'),(2,'b'),(3,'c')]
+3	[]	[(0,'z')]	[(0,'z')]

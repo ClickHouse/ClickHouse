@@ -5,6 +5,7 @@
 
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeRow.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeString.h>
@@ -231,6 +232,13 @@ Field convertFieldToTypeImpl(const Field & src, const IDataType & type, const ID
     if (from_type_hint && from_type_hint->equals(type))
     {
         return src;
+    }
+
+    /// Row shares its Field and column representation with the equivalent named Tuple.
+    if (const auto * type_row = typeid_cast<const DataTypeRow *>(&type))
+    {
+        DataTypeTuple tuple_type(type_row->getElements(), type_row->getElementNames());
+        return convertFieldToTypeImpl(src, tuple_type, from_type_hint, format_settings, strict, convert_inexact_floats);
     }
 
     WhichDataType which_type(type);

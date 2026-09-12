@@ -1036,6 +1036,36 @@ Field 'b' stream (3 strings, 6 bytes):
 01 'x' 01 'y' 01 'z'         "x", "y", "z"
 ```
 
+#### Row(name1 T1, name2 T2, ...) {#row}
+
+Type string: `Row(name1 T1, name2 T2, ..., nameN TN)`, e.g. `Row(a UInt8, b String)`. Every field must be named — positional fields are rejected at type-parse time — and, unlike `Tuple`, the field names are an integral part of the type: field extraction addresses fields by name.
+
+In memory a `Row` column has the same representation as the equivalent named `Tuple`; only the wire/storage layout differs. Where `Tuple` writes one stream per element (column-major), `Row` is the one exception to the composite family's multiple-streams rule: it writes a **single stream of length-prefixed row records** (row-major):
+
+```text
+[VarUInt row_size][field 1][field 2]...[field N]     row 0
+[VarUInt row_size][field 1][field 2]...[field N]     row 1
+ ...
+```
+
+- `row_size` is the total byte size of the `N` field payloads that follow. Fields are self-delimiting, so a decoder does not need it to parse a row; it exists so that a reader can skip whole rows without decoding their fields.
+- Each field is encoded with the **single-value binary encoding** of its type (the same per-value encoding the `RowBinary` format uses), in declaration order.
+- The wrapper contributes no state prefix and keeps no cross-block state; fields are encoded value-by-value, so inner versioned types contribute no state prefix either.
+
+`Row(a UInt8, b String)` with 2 rows `(1, "x")`, `(2, "yy")` (9 bytes total):
+
+```text
+03                           row_size = 3
+01                           a = 1
+01 'x'                       b = "x"
+
+04                           row_size = 4
+02                           a = 2
+02 'y' 'y'                   b = "yy"
+```
+
+The [binary type encoding](/sql-reference/data-types/data-types-binary-encoding) of `Row` is tag `0x38` followed by the field count and, per field, the name and the encoded field type — the same shape `Nested` uses. A block header carrying a `Row` type is therefore writable with `output_format_native_encode_types_in_binary_format = 1`.
+
 ### Type aliases {#type-aliases}
 
 Several types are pure aliases: the server sends the alias name in the column header, but the bytes that follow are those of an underlying type. A decoder maps the alias to that type and reuses its codec — no new wire format is involved.

@@ -1,0 +1,8 @@
+11	1
+0	[]	str
+1	[]	str
+2	[]	str
+100	[(1,'a')]	q
+11	1	2
+[[]]	Array(Array(Row(x UInt64, y String)))
+[[]]

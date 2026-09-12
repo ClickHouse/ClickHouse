@@ -1,0 +1,13 @@
+INNER
+(0)	(0)
+(1)	(1)
+(9223372036854775807)	(9223372036854775807)
+SEMI
+(0)
+(1)
+(9223372036854775807)
+The types of the result are not affected
+Row(x UInt64)	Row(x Int64)
+A Row key against a Tuple key
+(1)	(1)
+A Row with a field that accurateCastOrNull cannot represent is rejected

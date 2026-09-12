@@ -1,0 +1,10 @@
+1	(0,'z')	Tuple(UInt64, String)
+2	(2,'b')	Tuple(UInt64, String)
+1	(10,'p')	Row(x UInt64, y String)
+2	(2,'b')	Row(x UInt64, y String)
+1	(1,'a')	Tuple(UInt64, String)
+2	(9,'q')	Tuple(UInt64, String)
+1	(1,'a')	(1,'z')	Tuple(UInt64, String)
+2	(1,'z')	(2,'b')	Tuple(UInt64, String)
+1	[(1,'a')]
+2	[]

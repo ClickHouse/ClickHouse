@@ -54,7 +54,8 @@ enum class TypeIndex : uint8_t
     IPv6,
     JSONPaths,
     Variant,
-    Dynamic
+    Dynamic,
+    Row
 };
 
 /**
