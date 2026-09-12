@@ -428,6 +428,10 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && (which.isInt() || which.isUInt() || which.isFloat());
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
+    /// Time64 -> Time is lossy (sub-second digits, out-of-range whole seconds); route it through the
+    /// accurate strategies explicitly, the generic dispatcher does not cover decimal sources.
+    can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
+        && which.isTime64() && to.isTime();
 
     if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
     {
@@ -543,6 +547,26 @@ case FormatSettings::DateTimeOverflowBehavior::OVERFLOW_MODE: \
                         settings,
                         AccurateConvertStrategyAdditions());
                 }
+                return true;
+            }
+            else if constexpr (std::is_same_v<LeftDataType, DataTypeTime64> && std::is_same_v<RightDataType, DataTypeTime>)
+            {
+                if (cast_type == CastType::accurate)
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments,
+                        result_type,
+                        input_rows_count,
+                        BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                        settings,
+                        AccurateConvertStrategyAdditions());
+                else
+                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
+                        arguments,
+                        result_type,
+                        input_rows_count,
+                        BehaviourOnErrorFromString::ConvertDefaultBehaviorTag,
+                        settings,
+                        AccurateOrNullConvertStrategyAdditions());
                 return true;
             }
 
