@@ -116,6 +116,17 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
     return {};
 }
 
+void rejectProjections(
+    UnorderedMapWithMemoryTracking<String, String> & reject_reasons,
+    const std::vector<const ProjectionDescription *> & projections,
+    const std::vector<const ProjectionDescription *> & kept,
+    const String & reason)
+{
+    for (const auto * projection : projections)
+        if (!std::ranges::contains(kept, projection))
+            reject_reasons.try_emplace(projection->name, reason);
+}
+
 void filterProjectionCandidates(std::vector<const ProjectionDescription *> & projections, const String & preferred_name)
 {
     auto is_preferred = [&](const auto * projection) { return projection->name == preferred_name; };
