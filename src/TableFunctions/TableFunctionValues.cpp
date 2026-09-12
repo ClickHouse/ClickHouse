@@ -3,10 +3,12 @@
 
 #include <Common/typeid_cast.h>
 #include <Common/assert_cast.h>
+#include <Common/PODArray.h>
 #include <Common/Exception.h>
 
 #include <Core/Block.h>
 #include <Storages/StorageValues.h>
+#include <DataTypes/DataTypeExponentialTimeDecayingFloat64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -39,6 +41,12 @@ namespace
 
 void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const Block & sample_block, size_t start, ContextPtr context)
 {
+    const DataTypes target_types = sample_block.getDataTypes();
+    PaddedPODArray<UInt8> validate_decaying_values;
+    validate_decaying_values.reserve(target_types.size());
+    for (const auto & target_type : target_types)
+        validate_decaying_values.push_back(containsExponentialTimeDecayingFloat64(target_type));
+
     if (res_columns.size() == 1) /// Parsing arguments as single values
     {
         for (size_t i = start; i < args.size(); ++i)
@@ -48,7 +56,10 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
             const auto & value_type = value.getType();
 
             ColumnPtr converted = convertColumnToTypeOrThrow(
-                *value_column, value_type, sample_block.getByPosition(0).type, {}, /*convert_inexact_floats=*/true);
+                *value_column, value_type, target_types[0], {}, /*convert_inexact_floats=*/true);
+            if (validate_decaying_values[0])
+                validateExponentialTimeDecayingFloat64Column(
+                    *converted, target_types[0], "VALUES table function");
             res_columns[0]->insertRangeFrom(*converted, 0, 1);
         }
     }
@@ -76,7 +87,10 @@ void parseAndInsertValues(MutableColumns & res_columns, const ASTs & args, const
             for (size_t j = 0; j < value_types_tuple.size(); ++j)
             {
                 ColumnPtr converted = convertColumnToTypeOrThrow(
-                    value_tuple.getColumn(j), value_types_tuple[j], sample_block.getByPosition(j).type, {}, /*convert_inexact_floats=*/true);
+                    value_tuple.getColumn(j), value_types_tuple[j], target_types[j], {}, /*convert_inexact_floats=*/true);
+                if (validate_decaying_values[j])
+                    validateExponentialTimeDecayingFloat64Column(
+                        *converted, target_types[j], "VALUES table function");
                 res_columns[j]->insertRangeFrom(*converted, 0, 1);
             }
         }

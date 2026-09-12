@@ -44,6 +44,7 @@ public:
     const DataTypes & getArgumentsDataTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
     String getName() const override;
+    std::optional<Field> getDefault() const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
 
