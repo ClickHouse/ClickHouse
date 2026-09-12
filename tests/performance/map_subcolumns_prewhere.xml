@@ -106,6 +106,18 @@
         SETTINGS optimize_functions_to_subcolumns=1
     </query>
 
+    <!-- Through a Distributed table (remote() over localhost). The initiator cannot rewrite
+         map['key'] to subcolumns (it does not know the shard metadata), so the rewrite must
+         happen on the shard; without it the whole Map is read. See issue #114174. -->
+    <query>
+        SELECT count() FROM remote('127.0.0.1', currentDatabase(), map_subcol_pw_wide)
+        WHERE tags['k0'] != '' AND tags['k1'] != '' AND tags['k2'] != '' AND tags['k3'] != ''
+          AND tags['k4'] != '' AND tags['k5'] != '' AND tags['k6'] != '' AND tags['k7'] != ''
+          AND tags['k8'] != '' AND tags['k9'] != '' AND tags['k10'] != '' AND tags['k11'] != ''
+          AND tags['k12'] != '' AND tags['k13'] != '' AND tags['k14'] != '' AND tags['k15'] != ''
+        SETTINGS optimize_functions_to_subcolumns=1
+    </query>
+
     <!-- Table with an extra column to test WHERE optimizer grouping.
          When Map subcolumn conditions are interleaved with another column in WHERE,
          the optimizer should group Map conditions together to avoid redundant reads. -->
