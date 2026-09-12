@@ -33,18 +33,18 @@ namespace DB
 ///
 /// The bits fit in one byte, so at most 8 distinct high nibbles are supported. That is enough
 /// for any set of ASCII characters; a set that needs more is searched by the scalar loop only.
-class ByteSet
+class ByteSetLookup
 {
 public:
     static constexpr size_t BLOCK_SIZE = 16;
 
-    constexpr ByteSet() = default;
+    constexpr ByteSetLookup() = default;
 
     /// The set of all bytes for which `predicate` returns true.
     template <typename Predicate>
-    static constexpr ByteSet fromPredicate(Predicate && predicate)
+    static constexpr ByteSetLookup fromPredicate(Predicate && predicate)
     {
-        ByteSet set;
+        ByteSetLookup set;
         for (int c = 0; c < 256; ++c)
             if (predicate(static_cast<char>(c)))
                 set.add(static_cast<char>(c));

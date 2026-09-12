@@ -2,7 +2,7 @@
 
 #include "config.h"
 
-#include <Common/ByteSet.h>
+#include <Common/ByteSetLookup.h>
 #include <Common/assert_cast.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/StringUtils.h>
@@ -213,7 +213,7 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
 
     /// Non-alphanumeric ASCII bytes separate tokens; every other byte, including all bytes of
     /// UTF-8 sequences, belongs to a token.
-    static constexpr ByteSet separator_chars = ByteSet::fromPredicate([](char c) { return isASCII(c) && !isAlphaNumericASCII(c); });
+    static constexpr ByteSetLookup separator_chars = ByteSetLookup::fromPredicate([](char c) { return isASCII(c) && !isAlphaNumericASCII(c); });
 
     /// High-performance callback-based tokenizer with SIMD optimization.
     /// Assumes data is padded from the right with at least 15 bytes (as our Columns provide).
@@ -228,7 +228,7 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
         {
 #if !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
             // NOTE: we assume that `data` string is padded from the right with 15 bytes.
-            const size_t haystack_length = ByteSet::BLOCK_SIZE;
+            const size_t haystack_length = ByteSetLookup::BLOCK_SIZE;
             // Every bit represents if the character of the haystack belongs to a token (1) or separates tokens (0)
             unsigned result_bitmask = ~separator_chars.matchBlock(pos) & 0xFFFFu;
             const char * next_pos = std::min(end, pos + haystack_length);
@@ -315,9 +315,9 @@ private:
 
     std::vector<String> separators;
     /// The first bytes of all separators. Only positions holding one of them can start a separator.
-    ByteSet separator_first_bytes;
+    ByteSetLookup separator_first_bytes;
     /// If every separator is a single byte, `separator_first_bytes` is exactly the set of separators
-    /// and both separator runs and tokens are delimited by `ByteSet::find` alone.
+    /// and both separator runs and tokens are delimited by `ByteSetLookup::find` alone.
     bool all_separators_single_byte = false;
 };
 
