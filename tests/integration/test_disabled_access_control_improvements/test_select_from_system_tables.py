@@ -38,6 +38,24 @@ def reset_after_test():
         pass
 
 
+def test_system_users_with_unbuilt_subquery_set():
+    # An `IN` subquery set is filled only once the pipeline runs, so `system.users` produces its rows
+    # from a source instead of while the pipeline is built, and `LIMIT 0` closes that source's port
+    # before any chunk is requested. The grant is therefore not checked on the row-producing path.
+    expected_error = "necessary to have the grant SHOW USERS ON *.*"
+    queries = [
+        f"SELECT * FROM system.users WHERE name IN (SELECT toString(number) FROM numbers(3)){suffix}"
+        for suffix in ["", " LIMIT 1", " LIMIT 0", " LIMIT 0 OFFSET 5"]
+    ]
+
+    for query in queries:
+        assert expected_error in node.query_and_get_error(query, user="another"), query
+
+    node.query("GRANT SHOW USERS ON *.* TO sqluser")
+    for query in queries:
+        node.query(query, user="sqluser")
+
+
 def test_system_db():
     assert node.query("SELECT count()>0 FROM system.settings") == "1\n"
     assert node.query("SELECT count()>0 FROM system.users") == "1\n"
