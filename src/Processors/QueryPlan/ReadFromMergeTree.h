@@ -314,6 +314,11 @@ public:
 
     void addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type);
 
+    /// Whether this read can consume a join runtime filter for granule pruning at all, regardless of
+    /// which key it is on. Every veto it lists is known already during plan optimization, so the build
+    /// side can ask the same question before the pipeline exists.
+    bool canUseJoinRuntimeFilterIndexAnalysis() const;
+
     /// The runtime filters this read actually consumes for granule pruning. Empty when no join key of
     /// this read is prunable, which is what tells the build side that tracking the key range is useless.
     const std::vector<RuntimeFilterIndexAnalysisDescriptor> & getJoinRuntimeFiltersForIndexAnalysis() const

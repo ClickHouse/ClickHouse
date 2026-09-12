@@ -22,8 +22,22 @@ BuildRuntimeFilter (Build runtime join filter on __table2.k)
 Key range tracking: 1
 BuildRuntimeFilter (Build runtime join filter on __table3.k)
 Key range tracking: 0
+skip index on the join key ignored, another one still active
+Key range tracking: 0
+skip index on the join key not ignored
+Key range tracking: 1
+skip indexes disabled
+Key range tracking: 0
+skip indexes disabled, join on the primary key
+Key range tracking: 1
+FINAL
+Key range tracking: 0
+no FINAL
+Key range tracking: 1
 results
 10
 10
 990
 990
+10
+10

@@ -2759,25 +2759,80 @@ bool areAllSkipIndexColumnsInPrimaryKey(const Names & primary_key_columns, const
     return true;
 }
 
+/// Only these index types record something that a runtime filter's `IN` set or recorded key range
+/// can be tested against, so only they can prune a granule on the probe side of a join.
+bool isIndexTypeApplicableToJoinRuntimeFilter(const String & index_type)
+{
+    return index_type == "minmax" || index_type == "set" || index_type == "bloom_filter";
+}
+
+std::unordered_set<String> getIgnoredDataSkippingIndices(const Settings & settings)
+{
+    if (!settings[Setting::ignore_data_skipping_indices].changed)
+        return {};
+
+    return parseIdentifiersOrStringLiteralsToSet(settings[Setting::ignore_data_skipping_indices].toString(), settings);
+}
+
+}
+
+bool ReadFromMergeTree::canUseJoinRuntimeFilterIndexAnalysis() const
+{
+    /// Every veto listed here is re-checked in `initializePipeline` through this same method, so the
+    /// plan-level pass that decides whether the build side has to track the key range and the pipeline
+    /// that actually consumes the filter cannot disagree. A disagreement is not a correctness bug, but
+    /// it makes the build side pay for a key range that nothing will ever read.
+    ///
+    /// `use_skip_indexes_on_data_read` is deliberately *not* checked here, even though
+    /// `initializePipeline` checks it: `EXPLAIN` forces it to `false` in its own context (see
+    /// `InterpreterExplainQuery`), so deciding the plan on it would make every `EXPLAIN` print a plan
+    /// that differs from the one the very same query runs. Turning that setting off is an explicit
+    /// opt-out of the whole read-time index path, and it leaves only the build-side key range pass
+    /// behind - no per-part work, because the dynamic predicate is not installed either.
+    return !query_info.isFinal()
+        /// A part with pending mutations is read through its mutated view, which the persisted
+        /// index granules do not describe.
+        && !(mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts())
+        /// Not supported under parallel replicas: the descriptor is not carried to remote replica
+        /// reads, so pruning would only cover the local replica's share. Skip it entirely there.
+        && !isParallelReadingFromReplicas();
 }
 
 void ReadFromMergeTree::addJoinRuntimeFilterIndexAnalysisOnDataRead(const String & filter_id, const String & column_name, const DataTypePtr & column_type)
 {
+    /// Do not register a descriptor this read will refuse to use anyway: the descriptor set is what
+    /// the build side inspects to decide whether tracking the key range is worth anything.
+    if (!canUseJoinRuntimeFilterIndexAnalysis())
+    {
+        LOG_DEBUG(log, "Not registering join runtime filter {} on column {}: this read cannot prune with it",
+            filter_id, column_name);
+        return;
+    }
+
     /// Prunable only if in the primary key or has a minmax/set/bloom_filter skip index.
+    const auto & settings = context->getSettingsRef();
     const auto & metadata = *storage_snapshot->metadata;
     const auto & primary_key_columns = metadata.getPrimaryKey().column_names;
     const bool is_primary_key_column
         = std::find(primary_key_columns.begin(), primary_key_columns.end(), column_name) != primary_key_columns.end();
 
+    /// The primary-key path only needs the data-read safety checks above; the secondary skip-index
+    /// part is additionally gated by `use_skip_indexes` and `ignore_data_skipping_indices`.
     bool has_applicable_skip_index = false;
-    for (const auto & index : metadata.getSecondaryIndices())
+    if (settings[Setting::use_skip_indexes])
     {
-        if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
-            continue;
-        if (std::find(index.column_names.begin(), index.column_names.end(), column_name) != index.column_names.end())
+        const auto ignored_index_names = getIgnoredDataSkippingIndices(settings);
+        for (const auto & index : metadata.getSecondaryIndices())
         {
-            has_applicable_skip_index = true;
-            break;
+            if (ignored_index_names.contains(index.name))
+                continue;
+            if (!isIndexTypeApplicableToJoinRuntimeFilter(index.type))
+                continue;
+            if (std::find(index.column_names.begin(), index.column_names.end(), column_name) != index.column_names.end())
+            {
+                has_applicable_skip_index = true;
+                break;
+            }
         }
     }
 
@@ -5030,17 +5085,14 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     MergeTreeSkipIndexReaderPtr skip_index_reader;
     MergeTreeProjectionIndexReaderPtr projection_index_reader;
 
-    /// Now check if we have to use primary-key or skip indexes for join pruning
+    /// Now check if we have to use primary-key or skip indexes for join pruning.
+    /// The read-level vetoes live in `canUseJoinRuntimeFilterIndexAnalysis`, which the plan-level
+    /// registration already applied, so a descriptor only survives here if this read can consume it.
     bool runtime_prune_primary_key = false;
-    const bool pending_mutations = mutations_snapshot->hasDataMutations() || mutations_snapshot->hasAlterMutations() || mutations_snapshot->hasPatchParts();
     MergeTreeIndices runtime_skip_indexes;
     if (context->getSettingsRef()[Setting::use_skip_indexes_on_data_read]
-        && !query_info.isFinal()
+        && canUseJoinRuntimeFilterIndexAnalysis()
         && !join_runtime_filters_for_index_analysis.empty()
-        && !pending_mutations
-        /// Not supported under parallel replicas: the descriptor is not carried to remote replica
-        /// reads, so pruning would only cover the local replica's share. Skip it entirely there.
-        && !isParallelReadingFromReplicas()
         && indexes.has_value())
     {
         /// The PK path only needs the data-read safety checks above; only the secondary skip-index
@@ -5048,11 +5100,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         const bool collect_skip_indexes = context->getSettingsRef()[Setting::use_skip_indexes];
 
         /// Need to check ignore_data_skipping_indices
-        std::unordered_set<String> ignored_index_names;
-        if (context->getSettingsRef()[Setting::ignore_data_skipping_indices].changed)
-            ignored_index_names = parseIdentifiersOrStringLiteralsToSet(
-                context->getSettingsRef()[Setting::ignore_data_skipping_indices].toString(),
-                context->getSettingsRef());
+        const auto ignored_index_names = getIgnoredDataSkippingIndices(context->getSettingsRef());
 
         const auto & metadata = *storage_snapshot->metadata;
         const auto & pk_columns = metadata.getPrimaryKey().column_names;
@@ -5070,7 +5118,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
             {
                 if (ignored_index_names.contains(index.name))
                     continue;
-                if (index.type != "minmax" && index.type != "set" && index.type != "bloom_filter")
+                if (!isIndexTypeApplicableToJoinRuntimeFilter(index.type))
                     continue;
                 if (std::find(index.column_names.begin(), index.column_names.end(), descr.key_column_name) == index.column_names.end())
                     continue;
@@ -5083,7 +5131,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
     /// Use a callback to isolate MergeTreeReader from JoinRuntimeFilter
     MergeTreeSkipIndexReader::DynamicPredicateBuilder dynamic_predicate_builder;
     MergeTreeSkipIndexReader::DynamicSkipIndexFilter dynamic_skip_index_filter;
-    if (!join_runtime_filters_for_index_analysis.empty())
+    /// Build the predicate only if there is something to apply it to. Otherwise a reader installed for
+    /// an unrelated skip index would materialize the runtime filter's `IN` set for every part and then
+    /// throw it away, which is exactly the work enabling this setting by default is supposed to avoid.
+    if (runtime_prune_primary_key || !runtime_skip_indexes.empty())
     {
         dynamic_predicate_builder =
             [lookup = context->getRuntimeFilterLookup(), descriptors = join_runtime_filters_for_index_analysis, ctx = context]
