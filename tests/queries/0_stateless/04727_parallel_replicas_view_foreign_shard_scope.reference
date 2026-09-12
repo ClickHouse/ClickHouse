@@ -1,0 +1,28 @@
+-- out-of-range foreign shard scope: declined, so no abort
+9900
+-- in-range foreign shard scope: declined, so the wrong shard is never read
+9900
+-- matching shard scope: still honoured, i.e. the feature is declined and not disabled
+9900
+-- renumbered derived cluster: declined, so no abort and no wrong shard
+29700
+-- out-of-range foreign shard scope, old analyzer: the view filter is applied
+7450
+-- out-of-range foreign shard scope, old analyzer: the view aggregate is computed
+7450
+-- out-of-range foreign shard scope, old analyzer: IN (subquery) reads shard-local rows
+7450
+-- ... and the same query with enable_parallel_replicas = 0 gives the same answer
+7450
+-- local shard, no foreign scope shipped: read is correct
+9900
+-- parallel replicas used? out_of_range / in_range / matching / derived / old analyzer filter, aggregate, IN (subquery), IN (subquery) with the feature off / local shard
+0
+0
+1
+0
+0
+0
+0
+0
+1

@@ -6277,7 +6277,9 @@ void StorageReplicatedMergeTree::read(
         return;
     }
     /// reading step for parallel replicas with the analyzer is built in Planner, so don't do it here
-    if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer])
+    /// A shard number shipped for a different cluster cannot scope this read.
+    if (local_context->canUseParallelReplicasOnInitiator() && !settings[Setting::allow_experimental_analyzer]
+        && !ClusterProxy::hasForeignShardScope(local_context))
     {
         readParallelReplicasImpl(query_plan, column_names, query_info, local_context, processed_stage);
         return;
