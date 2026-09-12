@@ -156,6 +156,11 @@ public:
 
     StorageID getNestedStorageID() const;
 
+    /// The name of the nested table holding the rows of a standalone MaterializedPostgreSQL table.
+    /// Unlike `getNestedStorageID` this only derives the name and never throws, so it can be used to
+    /// recognise a nested table before it has been loaded.
+    String getNestedTableName() const;
+
     void set(StoragePtr nested_storage);
 
     static std::shared_ptr<Context> makeNestedTableContext(ContextPtr from_context);
@@ -172,8 +177,6 @@ private:
             String name, String type, UInt64 default_value);
 
     static VirtualColumnsDescription createVirtuals();
-
-    String getNestedTableName() const;
 
     LoggerPtr log;
 
