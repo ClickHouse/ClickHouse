@@ -8,6 +8,7 @@
 #include <utility>
 #include <vector>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnSet.h>
 #include <Columns/ColumnsCommon.h>
 #include <Columns/IColumn.h>
@@ -15,6 +16,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeSet.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/hasNullable.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionsLogical.h>
@@ -278,6 +280,53 @@ UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 
     const double clamped_bloom_filter_bytes = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
     return std::max(static_cast<UInt64>(clamped_bloom_filter_bytes), default_bloom_filter_bytes);
 }
+
+struct PreparedRuntimeFilterColumn
+{
+    ColumnPtr full_column;
+    const IColumn * key_column = nullptr;
+    ConstNullMapPtr null_map = nullptr;
+};
+
+PreparedRuntimeFilterColumn prepareRuntimeFilterColumn(const ColumnPtr & column, bool extract_null_map)
+{
+    PreparedRuntimeFilterColumn prepared;
+    prepared.full_column = recursiveRemoveLowCardinality(column->convertToFullIfWrapped());
+    prepared.key_column = prepared.full_column.get();
+
+    if (!extract_null_map || prepared.key_column->empty())
+        return prepared;
+
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(prepared.key_column))
+    {
+        /// Only an outer Nullable means that the complete join key is SQL NULL.
+        /// NULLs nested in Tuple, Dynamic, or Variant are hashable parts of the key.
+        prepared.key_column = &nullable->getNestedColumn();
+        prepared.null_map = &nullable->getNullMapData();
+    }
+
+    return prepared;
+}
+
+void forceResultForNullRows(ColumnPtr & result, ConstNullMapPtr null_map, bool value_for_null_rows)
+{
+    if (!null_map)
+        return;
+
+    auto mutable_result = IColumn::mutate(std::move(result));
+    auto * result_vector = typeid_cast<ColumnUInt8 *>(mutable_result.get());
+    if (!result_vector)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Expected `UInt8` column as runtime filter result");
+
+    auto & result_data = result_vector->getData();
+    for (size_t i = 0; i < result_data.size(); ++i)
+    {
+        if ((*null_map)[i])
+            result_data[i] = value_for_null_rows;
+    }
+
+    result = std::move(mutable_result);
+}
 }
 
 static size_t countPassedStats(ColumnPtr values);
@@ -289,6 +338,8 @@ ExactSetRuntimeFilter<negate>::ExactSetRuntimeFilter(
     , argument_can_have_nulls(hasTypeThatCanContainNulls(filter_column_target_type_))
     , bytes_limit(bytes_limit_)
     , exact_values_limit(exact_values_limit_)
+    /// Keep nullable values hashable in `Set`. Positive filters reject only outer NULL rows
+    /// after lookup, while exclusion filters preserve their existing NULL-aware behavior.
     , lookup_state(Many{std::make_shared<Set>(SizeLimits{}, -1, argument_can_have_nulls)})
 {
     ColumnsWithTypeAndName set_header = {ColumnWithTypeAndName(filter_column_target_type_, String())};
@@ -346,7 +397,7 @@ void ExactSetRuntimeFilter<negate>::finishInsert()
     }
 
     /// If only one element is in the set then use `equals` instead of set lookup.
-    /// If the argument is `Nullable`, use `Set` because it can handle `NULL` values.
+    /// If the argument can have `NULL` values, use `Set` because it can handle them.
     if (set.getTotalRowCount() == 1 && !argument_can_have_nulls)
     {
         lookup_state = Single{set.getSetElements().front()};
@@ -397,7 +448,16 @@ ColumnPtr ExactSetRuntimeFilter<negate>::find(const ColumnWithTypeAndName & valu
                 if (!many.exact_values)
                     throw Exception(ErrorCodes::LOGICAL_ERROR, "Runtime filter exact values are not available");
 
-                return many.exact_values->execute({values}, negate);
+                auto result = many.exact_values->execute({values}, negate);
+                if constexpr (!negate)
+                {
+                    if (argument_can_have_nulls)
+                    {
+                        auto prepared_values = prepareRuntimeFilterColumn(values.column, true);
+                        forceResultForNullRows(result, prepared_values.null_map, false);
+                    }
+                }
+                return result;
             },
         },
         lookup_state);
@@ -448,11 +508,8 @@ void ExactSetRuntimeFilter<negate>::mergeFrom(const ExactSetRuntimeFilter & sour
 bool ApproximateSetRuntimeFilter::isDataTypeSupported(const DataTypePtr & data_type)
 {
     /// Runtime BloomFilter hashing uses byte representation from either fixed contiguous column storage or getDataAt().
-    /// LowCardinality reports a contiguous representation unconditionally, but its getDataAt() delegates to the
-    /// dictionary column; for LowCardinality(Nullable(...)) that is ColumnNullable::getDataAt(), which throws on a NULL.
-    /// Strip LowCardinality and test the inner type so LC(Nullable(...)) falls back to the exact (NULL-safe) Set path,
-    /// exactly like a plain Nullable(...) key already does.
-    return removeLowCardinality(data_type)->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
+    auto bloom_filter_value_type = removeNullableOrLowCardinalityNullable(recursiveRemoveLowCardinality(data_type));
+    return bloom_filter_value_type->isValueUnambiguouslyRepresentedInContiguousMemoryRegion();
 }
 
 ApproximateSetRuntimeFilter::ApproximateSetRuntimeFilter(UInt64 bytes_limit_, UInt64 bloom_filter_hash_functions_)
@@ -467,8 +524,24 @@ void ApproximateSetRuntimeFilter::insert(ColumnPtr values)
 
 void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values)
 {
+    auto prepared_values = prepareRuntimeFilterColumn(values, true);
+
+    if (prepared_values.null_map)
+    {
+        const size_t num_rows = prepared_values.key_column->size();
+        for (size_t row = 0; row < num_rows; ++row)
+        {
+            if ((*prepared_values.null_map)[row])
+                continue;
+
+            const auto value = prepared_values.key_column->getDataAt(row);
+            bloom_filter.add(value.data(), value.size());
+        }
+        return;
+    }
+
     forEachColumnHashBatch(
-        *values,
+        *prepared_values.key_column,
         bloom_filter.getSeed(),
         [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t /* start_row */)
         { bloom_filter.addHashPairs(hash_pairs, count); });
@@ -476,18 +549,39 @@ void ApproximateSetRuntimeFilter::insertIntoBloomFilter(const ColumnPtr & values
 
 ColumnPtr ApproximateSetRuntimeFilter::find(const ColumnWithTypeAndName & values, std::optional<size_t> & rows_passed) const
 {
+    auto prepared_values = prepareRuntimeFilterColumn(values.column, true);
+
     auto dst = ColumnVector<UInt8>::create();
     auto & dst_data = dst->getData();
-    dst_data.resize(values.column->size());
+    dst_data.resize(prepared_values.key_column->size());
 
     /// `findHashPairs` counts the matches while filling the mask; report that count through
     /// `rows_passed` so the caller does not rescan the mask to collect stats.
     size_t found_count = 0;
-    forEachColumnHashBatch(
-        *values.column,
-        bloom_filter.getSeed(),
-        [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
-        { found_count += bloom_filter.findHashPairs(hash_pairs, count, dst_data.data() + start_row); });
+    if (prepared_values.null_map)
+    {
+        for (size_t row = 0; row < prepared_values.key_column->size(); ++row)
+        {
+            if ((*prepared_values.null_map)[row])
+            {
+                dst_data[row] = false;
+                continue;
+            }
+
+            const auto value = prepared_values.key_column->getDataAt(row);
+            const bool found = bloom_filter.find(value.data(), value.size());
+            found_count += found ? 1 : 0;
+            dst_data[row] = found;
+        }
+    }
+    else
+    {
+        forEachColumnHashBatch(
+            *prepared_values.key_column,
+            bloom_filter.getSeed(),
+            [&](const BloomFilterHashPair * hash_pairs, size_t count, size_t start_row)
+            { found_count += bloom_filter.findHashPairs(hash_pairs, count, dst_data.data() + start_row); });
+    }
 
     rows_passed = found_count;
     return dst;
