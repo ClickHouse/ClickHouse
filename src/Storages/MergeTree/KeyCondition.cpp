@@ -2156,13 +2156,20 @@ static bool castKeptEveryValue(
     const DataTypePtr & cast_type,
     const IColumn::Filter * kept = nullptr)
 {
-    /// `castColumnAccurateOrNull` needs a target that can represent NULLs, and `canBeInsideNullable`
-    /// answers for the outer type only, so a `Tuple` holding an `Array` passes it and then throws.
     const DataTypePtr source_type = removeLowCardinality(type);
-    if ((!source_type->isNullable() && !source_type->canBeInsideNullable()) || !canBeAccurateCastOrNullTarget(source_type))
-        return false;
 
-    ColumnPtr back_column = castColumnAccurateOrNull({cast_column, cast_type, ""}, source_type);
+    /// The reverse cast has to be able to say that a value did not come back, which `accurateOrNull`
+    /// does by wrapping its target in `Nullable`; a target it cannot wrap (an `Array`, or a `Tuple`
+    /// holding one) leaves the question unanswered. A `Dynamic` cannot be wrapped either, because it
+    /// carries its own NULLs, but it also cannot refuse a value: every value fits a `Dynamic`, so there
+    /// the plain accurate cast is total and its result answers the question directly.
+    ColumnPtr back_column;
+    if (WhichDataType(*source_type).isDynamic())
+        back_column = castColumnAccurate({cast_column, cast_type, ""}, source_type);
+    else if (canBeAccurateCastOrNullTarget(source_type))
+        back_column = castColumnAccurateOrNull({cast_column, cast_type, ""}, source_type);
+    else
+        return false;
 
     for (size_t i = 0, size = column->size(); i < size; ++i)
     {
@@ -2223,9 +2230,10 @@ static bool castColumnWithoutNulls(
             return false;
 
     /// Every value fits, so ask the reverse cast whether anything was lost on the way. The probe above
-    /// is the forward cast, so it is read back instead of being computed again. An inexact cast costs
-    /// only the `can_be_false` half of the analysis.
-    out_is_exact = castKeptEveryValue(column, type, n.getNestedColumnPtr(), probe_type);
+    /// is the forward cast, so it is read back instead of being computed again - as its nested column,
+    /// whose type is the probe target with the `Nullable` that carried the failures removed. An inexact
+    /// cast costs only the `can_be_false` half of the analysis.
+    out_is_exact = castKeptEveryValue(column, type, n.getNestedColumnPtr(), removeNullable(probe_type));
 
     /// No NULLs were introduced, so the cast is accurate for every value. Produce the requested
     /// target_type (which may be LowCardinality and/or Nullable); the accurate cast cannot throw
