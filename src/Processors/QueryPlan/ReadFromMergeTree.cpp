@@ -3905,9 +3905,9 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
     updateSortDescription();
 
-    /// Once the read is ordered by the top-k sort column it delivers the rows the LIMIT wants first,
-    /// so the threshold prewhere can only reject rows the sort has already passed, and every rejected
-    /// row keeps the pipeline reading instead of letting the LIMIT cancel it.
+    /// Once the read is ordered by the top-k sort column it delivers the rows the LIMIT wants first, so
+    /// the threshold can only reject rows the read order has already passed: evaluating it per row and
+    /// pulling the sort column through a separate prewhere reader buys nothing.
     if (query_info.prewhere_info && top_k_filter_info && !result_sort_description.empty())
     {
         auto top_k_column = topKDynamicFilterColumn(*query_info.prewhere_info);
