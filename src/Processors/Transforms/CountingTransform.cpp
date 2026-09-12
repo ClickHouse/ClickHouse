@@ -25,8 +25,13 @@ void CountingTransform::onConsume(Chunk chunk)
 
     Progress local_progress{WriteProgress(chunk.getNumRows(), written_bytes)};
 
-    ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
-    ProfileEvents::increment(ProfileEvents::InsertedBytes, written_bytes);
+    /// These are global counters, so a nested insert whose rows an outer pipeline already accounted
+    /// must not re-charge them: system.query_log ProfileEvent_InsertedRows / _InsertedBytes double.
+    if (count_profile_events)
+    {
+        ProfileEvents::increment(ProfileEvents::InsertedRows, local_progress.written_rows);
+        ProfileEvents::increment(ProfileEvents::InsertedBytes, written_bytes);
+    }
 
     if (process_elem)
         process_elem->updateProgressOut(local_progress);

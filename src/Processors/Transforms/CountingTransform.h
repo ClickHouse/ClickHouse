@@ -36,6 +36,14 @@ public:
         process_elem = elem;
     }
 
+    /// Disable the global InsertedRows / InsertedBytes profile-event increments for this transform.
+    /// Used for the nested insert of a transparent forwarder (a distributed INSERT's local shard, an
+    /// INSERT through an Alias table), whose rows an outer pipeline already accounted for the query.
+    void disableProfileEventsCounting()
+    {
+        count_profile_events = false;
+    }
+
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {
@@ -51,6 +59,7 @@ protected:
     /// Quota is used to limit amount of written bytes.
     std::shared_ptr<const EnabledQuota> quota;
     UInt64 normalized_query_hash = 0;
+    bool count_profile_events = true;
     Chunk cur_chunk;
 };
 

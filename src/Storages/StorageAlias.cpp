@@ -144,6 +144,10 @@ public:
             /* no_destination */ false,
             /* async_insert */ async_insert);
 
+        /// The outer INSERT into this Alias already counted these rows for this query, once, before
+        /// this sink forwards them to the target table.
+        interpreter.setSkipWriteAccounting(true);
+
         block_io = interpreter.execute();
         executor = std::make_unique<PushingPipelineExecutor>(block_io.pipeline);
         executor->start();
