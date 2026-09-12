@@ -15,7 +15,8 @@ CREATE TABLE t_window_parametric (id UInt32, v UInt32) ENGINE = MergeTree ORDER 
 INSERT INTO t_window_parametric SELECT number, number FROM numbers(10);
 
 SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
-    distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0;
+    distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
+    distributed_plan_fallback_to_local_execution = 0;
 
 SELECT id, groupArrayMovingSum(3)(v) OVER (ORDER BY id ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS s
 FROM t_window_parametric ORDER BY id;

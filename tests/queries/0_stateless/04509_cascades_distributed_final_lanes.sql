@@ -43,7 +43,7 @@ SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_p
 
 SELECT '-- 2. results match the plain plan';
 SELECT count(), sum(v), max(ver) FROM t_final_lanes FINAL
-SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1;
+SETTINGS make_distributed_plan = 1, enable_cascades_optimizer = 1, distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT count(), sum(v), max(ver) FROM t_final_lanes FINAL
 SETTINGS make_distributed_plan = 0, enable_cascades_optimizer = 0;
 

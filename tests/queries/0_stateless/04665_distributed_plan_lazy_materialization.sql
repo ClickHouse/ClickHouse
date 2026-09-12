@@ -27,35 +27,35 @@ FROM (EXPLAIN PLAN distributed = 1 SELECT a, payload FROM t_dist_lazy ORDER BY b
 SELECT 'ORDER BY local', a, b, substring(payload, 1, 4) FROM t_dist_lazy ORDER BY b, a LIMIT 5
 SETTINGS make_distributed_plan = 0;
 SELECT 'ORDER BY distributed', a, b, substring(payload, 1, 4) FROM t_dist_lazy ORDER BY b, a LIMIT 5
-SETTINGS make_distributed_plan = 1;
+SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'DESC local', a, substring(payload, 1, 4) FROM t_dist_lazy ORDER BY b DESC, a DESC LIMIT 5
 SETTINGS make_distributed_plan = 0;
 SELECT 'DESC distributed', a, substring(payload, 1, 4) FROM t_dist_lazy ORDER BY b DESC, a DESC LIMIT 5
-SETTINGS make_distributed_plan = 1;
+SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 
 -- The coordinator applies OFFSET once; each bucket keeps its top (limit + offset) rows.
 SELECT 'OFFSET local', a, substring(payload, 1, 4) FROM t_dist_lazy ORDER BY b, a LIMIT 5 OFFSET 25
 SETTINGS make_distributed_plan = 0;
 SELECT 'OFFSET distributed', a, substring(payload, 1, 4) FROM t_dist_lazy ORDER BY b, a LIMIT 5 OFFSET 25
-SETTINGS make_distributed_plan = 1;
+SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 
 -- A filter splits into a main half (evaluated before the local limit) and a lazy half.
 SELECT 'FILTER local', a, substring(payload, 1, 4) FROM t_dist_lazy WHERE b LIKE '5%' ORDER BY b, a LIMIT 5
 SETTINGS make_distributed_plan = 0;
 SELECT 'FILTER distributed', a, substring(payload, 1, 4) FROM t_dist_lazy WHERE b LIKE '5%' ORDER BY b, a LIMIT 5
-SETTINGS make_distributed_plan = 1;
+SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'EXPRESSION local', a, substring(payload, 1, 4) FROM t_dist_lazy ORDER BY a % 7, b, a LIMIT 5
 SETTINGS make_distributed_plan = 0;
 SELECT 'EXPRESSION distributed', a, substring(payload, 1, 4) FROM t_dist_lazy ORDER BY a % 7, b, a LIMIT 5
-SETTINGS make_distributed_plan = 1;
+SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 
 -- A limit above the lazy materialization threshold: the rewrite does not apply, results stay correct.
 SELECT 'BEYOND THRESHOLD local', a, substring(payload, 1, 4) FROM t_dist_lazy ORDER BY b, a LIMIT 3 OFFSET 199997
 SETTINGS make_distributed_plan = 0;
 SELECT 'BEYOND THRESHOLD distributed', a, substring(payload, 1, 4) FROM t_dist_lazy ORDER BY b, a LIMIT 3 OFFSET 199997
-SETTINGS make_distributed_plan = 1;
+SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'WITH TIES local', count() FROM (SELECT a FROM t_dist_lazy ORDER BY a % 7 LIMIT 3 WITH TIES SETTINGS make_distributed_plan = 0);
 SELECT 'WITH TIES distributed', count() FROM (SELECT a FROM t_dist_lazy ORDER BY a % 7 LIMIT 3 WITH TIES SETTINGS make_distributed_plan = 1);
@@ -66,14 +66,17 @@ SELECT 'WITH TIES distributed', count() FROM (SELECT a FROM t_dist_lazy ORDER BY
 -- read), which would leave the `query_plan_optimize_lazy_materialization = 0` run nothing to be a
 -- baseline for, so pin it off here - the sort key is a `String`, i.e. a variable-length type.
 SELECT a FROM t_dist_lazy ORDER BY b, a LIMIT 5 FORMAT Null
-SETTINGS make_distributed_plan = 1, use_top_k_dynamic_filtering = 0, log_comment = '04665_key_only';
+SETTINGS make_distributed_plan = 1, use_top_k_dynamic_filtering = 0, log_comment = '04665_key_only',
+    distributed_plan_fallback_to_local_execution = 0;
 
 SELECT a, payload FROM t_dist_lazy ORDER BY b, a LIMIT 5 FORMAT Null
-SETTINGS make_distributed_plan = 1, use_top_k_dynamic_filtering = 0, log_comment = '04665_lazy_on';
+SETTINGS make_distributed_plan = 1, use_top_k_dynamic_filtering = 0, log_comment = '04665_lazy_on',
+    distributed_plan_fallback_to_local_execution = 0;
 
 SELECT a, payload FROM t_dist_lazy ORDER BY b, a LIMIT 5 FORMAT Null
 SETTINGS make_distributed_plan = 1, use_top_k_dynamic_filtering = 0,
-    query_plan_optimize_lazy_materialization = 0, log_comment = '04665_lazy_off';
+    query_plan_optimize_lazy_materialization = 0, log_comment = '04665_lazy_off',
+    distributed_plan_fallback_to_local_execution = 0;
 
 SYSTEM FLUSH LOGS query_log;
 

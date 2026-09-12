@@ -17,7 +17,7 @@ CREATE TABLE t_global_in_dst (k UInt64) ENGINE = MergeTree ORDER BY k;
 INSERT INTO t_global_in_dst SELECT number FROM numbers(100);
 
 SELECT count() FROM t_global_in_dst WHERE k GLOBAL IN (SELECT a FROM t_global_in_src) SETTINGS make_distributed_plan = 0;
-SELECT count() FROM t_global_in_dst WHERE k GLOBAL IN (SELECT a FROM t_global_in_src) SETTINGS make_distributed_plan = 1;
+SELECT count() FROM t_global_in_dst WHERE k GLOBAL IN (SELECT a FROM t_global_in_src) SETTINGS make_distributed_plan = 1, distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_global_in_src;
 DROP TABLE t_global_in_dst;

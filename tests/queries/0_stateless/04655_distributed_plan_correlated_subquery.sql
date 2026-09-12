@@ -31,12 +31,14 @@ SET make_distributed_plan = 1, distributed_plan_execute_locally = 1,
     query_plan_merge_filter_into_join_condition = 1;
 
 SELECT 'correlated scalar aggregate subquery works under make_distributed_plan';
-SELECT count() FROM t_corr_big AS o WHERE o.id < (SELECT avg(i.id) FROM t_corr_big AS i WHERE i.grp = o.grp);
+SELECT count() FROM t_corr_big AS o WHERE o.id < (SELECT avg(i.id) FROM t_corr_big AS i WHERE i.grp = o.grp)
+    SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_corr_big AS o WHERE o.id < (SELECT avg(i.id) FROM t_corr_big AS i WHERE i.grp = o.grp)
     SETTINGS make_distributed_plan = 0;
 
 SELECT 'correlated EXISTS works under make_distributed_plan';
-SELECT count() FROM t_corr_big AS o WHERE EXISTS (SELECT 1 FROM t_corr_small AS s WHERE s.grp = o.grp);
+SELECT count() FROM t_corr_big AS o WHERE EXISTS (SELECT 1 FROM t_corr_small AS s WHERE s.grp = o.grp)
+    SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM t_corr_big AS o WHERE EXISTS (SELECT 1 FROM t_corr_small AS s WHERE s.grp = o.grp)
     SETTINGS make_distributed_plan = 0;
 

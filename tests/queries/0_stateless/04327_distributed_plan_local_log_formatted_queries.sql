@@ -16,6 +16,6 @@ SELECT count()
 FROM t_04327 AS x, t_04327 AS y
 WHERE x.id = y.a
 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
-    log_formatted_queries = 1;
+    log_formatted_queries = 1, distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_04327;

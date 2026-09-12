@@ -97,13 +97,16 @@ SELECT '-- 5b. additional GROUP BY key from the right side: still pushed';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key, t2.name;
 
 SELECT '-- 6. execution: count() per key over LEFT JOIN (keys 0-7 match, 8 and 9 do not)';
-SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
+SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 6b. execution: count() per key over INNER JOIN (keys 8 and 9 drop out)';
-SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
+SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 7. execution: sum(t1.value) per (t1.key, t2.name) over LEFT JOIN';
-SELECT t1.key AS k, t2.name AS n, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key, t2.name ORDER BY k, n;
+SELECT t1.key AS k, t2.name AS n, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key, t2.name ORDER BY k, n
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 8. the same executions without the distributed planner must match';
 SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
@@ -117,11 +120,13 @@ SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 10
 
 SELECT '-- 9. duplicate right-side keys: each pushed group is duplicated by the join and merged m times';
 EXPLAIN SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims_multi AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
-SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims_multi AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k;
+SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims_multi AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 10. mixed condition (equi + non-equi): the pushed side groups by (key, value)';
 EXPLAIN SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value > t2.threshold GROUP BY t1.key ORDER BY k;
-SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value > t2.threshold GROUP BY t1.key ORDER BY k;
+SELECT t1.key AS k, count() AS c FROM t_push_facts AS t1 INNER JOIN t_push_dims_multi AS t2 ON t1.key = t2.key AND t1.value > t2.threshold GROUP BY t1.key ORDER BY k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- 11. the same executions without the distributed planner must match';
 SELECT t1.key AS k, count() AS c, sum(t1.value) AS s FROM t_push_facts AS t1 LEFT JOIN t_push_dims_multi AS t2 ON t1.key = t2.key GROUP BY t1.key ORDER BY k

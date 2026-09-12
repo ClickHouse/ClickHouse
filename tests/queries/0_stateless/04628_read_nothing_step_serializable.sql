@@ -27,10 +27,10 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0,
 -- All of the following previously failed with
 -- SUPPORT_IS_DISABLED: step 'ReadNothing' is not serializable for remote execution.
 SELECT 'aggregation over an empty table';
-SELECT sum(x) FROM t_read_nothing;
-SELECT count() FROM t_read_nothing;
+SELECT sum(x) FROM t_read_nothing SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM t_read_nothing SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT 'group by over an empty table';
-SELECT x % 8, sum(x) FROM t_read_nothing GROUP BY 1 ORDER BY 1;
+SELECT x % 8, sum(x) FROM t_read_nothing GROUP BY 1 ORDER BY 1 SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The serializability check only runs once a plan splits into more than one stage, so a query that
 -- stays single-stage would pass without ever reaching `ReadNothingStep::deserialize`. Assert that
@@ -46,21 +46,25 @@ WHERE explain LIKE '%ReadFromDistributedPlanSource%' LIMIT 1;
 
 SELECT 'empty side unioned with a populated table';
 SELECT sum(x) FROM (SELECT x FROM t_read_nothing UNION ALL SELECT x FROM t_read_nothing_full)
-GROUP BY x % 4 ORDER BY 1;
+GROUP BY x % 4 ORDER BY 1 SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT 'join with an empty side';
-SELECT count() FROM t_read_nothing_full a INNER JOIN t_read_nothing b ON a.x = b.x;
+SELECT count() FROM t_read_nothing_full a INNER JOIN t_read_nothing b ON a.x = b.x
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- The output header is the step's whole state and travels through the generic per-node preamble,
 -- so exercise wrapped and compound types explicitly.
 SELECT 'wrapped and compound header types';
-SELECT count(), min(lc), max(arr), min(m), max(t), sum(n) FROM t_read_nothing_types;
-SELECT lc, groupArray(arr) FROM t_read_nothing_types GROUP BY lc ORDER BY lc;
+SELECT count(), min(lc), max(arr), min(m), max(t), sum(n) FROM t_read_nothing_types
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT lc, groupArray(arr) FROM t_read_nothing_types GROUP BY lc ORDER BY lc
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- Only column names and types travel in the serialized header, so a projection above the source
 -- does not change what `ReadNothing` carries. Kept as a plain shape check.
 SELECT 'projection above an empty source';
-SELECT c, sum(x) FROM (SELECT 42 AS c, x FROM t_read_nothing) GROUP BY c ORDER BY c;
+SELECT c, sum(x) FROM (SELECT 42 AS c, x FROM t_read_nothing) GROUP BY c ORDER BY c
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_read_nothing;
 DROP TABLE t_read_nothing_full;

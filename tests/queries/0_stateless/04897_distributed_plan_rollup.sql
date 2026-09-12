@@ -23,12 +23,12 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 SELECT '-- rollup, group_by_use_nulls = 0';
 SELECT k1, k2, sum(v), count()
 FROM t_rollup_dist GROUP BY k1, k2 WITH ROLLUP ORDER BY ALL
-SETTINGS group_by_use_nulls = 0;
+SETTINGS group_by_use_nulls = 0, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- rollup, group_by_use_nulls = 1';
 SELECT k1, k2, sum(v), count()
 FROM t_rollup_dist GROUP BY k1, k2 WITH ROLLUP ORDER BY ALL
-SETTINGS group_by_use_nulls = 1;
+SETTINGS group_by_use_nulls = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- distributed plan';
 -- Pin off: with memory-efficient merging the plan dump gains a `Mode` line.

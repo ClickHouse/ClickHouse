@@ -25,17 +25,17 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 
 SELECT '-- two windows with different partition keys';
 EXPLAIN SELECT sum(v) OVER (PARTITION BY a ORDER BY v) AS s1, sum(v) OVER (PARTITION BY b ORDER BY v) AS s2 FROM t_window_shapes;
-SELECT sum(cityHash64(v, s1, s2)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s1, sum(v) OVER (PARTITION BY b ORDER BY v) AS s2 FROM t_window_shapes);
+SELECT sum(cityHash64(v, s1, s2)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s1, sum(v) OVER (PARTITION BY b ORDER BY v) AS s2 FROM t_window_shapes) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(v, s1, s2)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s1, sum(v) OVER (PARTITION BY b ORDER BY v) AS s2 FROM t_window_shapes) SETTINGS make_distributed_plan = 0;
 
 SELECT '-- expression partition key';
 EXPLAIN SELECT sum(v) OVER (PARTITION BY a % 2 ORDER BY v) AS s FROM t_window_shapes;
-SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a % 2 ORDER BY v) AS s FROM t_window_shapes);
+SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a % 2 ORDER BY v) AS s FROM t_window_shapes) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a % 2 ORDER BY v) AS s FROM t_window_shapes) SETTINGS make_distributed_plan = 0;
 
 SELECT '-- two partition columns';
 EXPLAIN SELECT sum(v) OVER (PARTITION BY a, b ORDER BY v) AS s FROM t_window_shapes;
-SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a, b ORDER BY v) AS s FROM t_window_shapes);
+SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a, b ORDER BY v) AS s FROM t_window_shapes) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a, b ORDER BY v) AS s FROM t_window_shapes) SETTINGS make_distributed_plan = 0;
 
 SELECT '-- window over a join';
@@ -43,32 +43,32 @@ SELECT '-- window over a join';
 EXPLAIN SELECT sum(t1.v) OVER (PARTITION BY t1.a ORDER BY t1.v) AS s FROM t_window_shapes t1 INNER JOIN t_window_shapes t2 ON t1.v = t2.v
 SETTINGS join_algorithm = 'hash', query_plan_join_swap_table = 'false',
     use_statistics = 0, query_plan_optimize_join_order_randomize = 0, query_plan_optimize_join_order_limit = 10;
-SELECT sum(cityHash64(v, s)) FROM (SELECT t1.v AS v, sum(t1.v) OVER (PARTITION BY t1.a ORDER BY t1.v) AS s FROM t_window_shapes t1 INNER JOIN t_window_shapes t2 ON t1.v = t2.v);
+SELECT sum(cityHash64(v, s)) FROM (SELECT t1.v AS v, sum(t1.v) OVER (PARTITION BY t1.a ORDER BY t1.v) AS s FROM t_window_shapes t1 INNER JOIN t_window_shapes t2 ON t1.v = t2.v) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(v, s)) FROM (SELECT t1.v AS v, sum(t1.v) OVER (PARTITION BY t1.a ORDER BY t1.v) AS s FROM t_window_shapes t1 INNER JOIN t_window_shapes t2 ON t1.v = t2.v) SETTINGS make_distributed_plan = 0;
 
 SELECT '-- window over a window';
 EXPLAIN SELECT sum(s) OVER (PARTITION BY b ORDER BY v) AS s2 FROM (SELECT b, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shapes);
-SELECT sum(cityHash64(v, s2)) FROM (SELECT v, sum(s) OVER (PARTITION BY b ORDER BY v) AS s2 FROM (SELECT b, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shapes));
+SELECT sum(cityHash64(v, s2)) FROM (SELECT v, sum(s) OVER (PARTITION BY b ORDER BY v) AS s2 FROM (SELECT b, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shapes)) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(v, s2)) FROM (SELECT v, sum(s) OVER (PARTITION BY b ORDER BY v) AS s2 FROM (SELECT b, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shapes)) SETTINGS make_distributed_plan = 0;
 
 SELECT '-- partitioned window with ORDER BY and LIMIT';
 EXPLAIN SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shapes ORDER BY a, v LIMIT 10;
-SELECT sum(cityHash64(a, v, s)) FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shapes ORDER BY a, v LIMIT 10);
+SELECT sum(cityHash64(a, v, s)) FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shapes ORDER BY a, v LIMIT 10) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(a, v, s)) FROM (SELECT a, v, sum(v) OVER (PARTITION BY a ORDER BY v) AS s FROM t_window_shapes ORDER BY a, v LIMIT 10) SETTINGS make_distributed_plan = 0;
 
 SELECT '-- partition without ORDER BY in the window';
 EXPLAIN SELECT sum(v) OVER (PARTITION BY a) AS s FROM t_window_shapes;
-SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a) AS s FROM t_window_shapes);
+SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a) AS s FROM t_window_shapes) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a) AS s FROM t_window_shapes) SETTINGS make_distributed_plan = 0;
 
 SELECT '-- ROWS frame';
 EXPLAIN SELECT sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS s FROM t_window_shapes;
-SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS s FROM t_window_shapes);
+SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS s FROM t_window_shapes) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN 2 PRECEDING AND CURRENT ROW) AS s FROM t_window_shapes) SETTINGS make_distributed_plan = 0;
 
 SELECT '-- RANGE frame';
 EXPLAIN SELECT sum(v) OVER (PARTITION BY a ORDER BY v RANGE BETWEEN 5 PRECEDING AND CURRENT ROW) AS s FROM t_window_shapes;
-SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v RANGE BETWEEN 5 PRECEDING AND CURRENT ROW) AS s FROM t_window_shapes);
+SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v RANGE BETWEEN 5 PRECEDING AND CURRENT ROW) AS s FROM t_window_shapes) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY a ORDER BY v RANGE BETWEEN 5 PRECEDING AND CURRENT ROW) AS s FROM t_window_shapes) SETTINGS make_distributed_plan = 0;
 
 -- A float partition key must not be scattered by hash: the scatter hashes the raw bit pattern while
@@ -90,7 +90,7 @@ FROM numbers(1000);
 
 SELECT '-- float partition key stays gathered';
 EXPLAIN SELECT sum(v) OVER (PARTITION BY k ORDER BY v) AS s FROM t_window_shapes_float;
-SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY k ORDER BY v) AS s FROM t_window_shapes_float);
+SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY k ORDER BY v) AS s FROM t_window_shapes_float) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(v, s)) FROM (SELECT v, sum(v) OVER (PARTITION BY k ORDER BY v) AS s FROM t_window_shapes_float) SETTINGS make_distributed_plan = 0;
 
 DROP TABLE t_window_shapes_float;

@@ -28,7 +28,7 @@ SELECT '-- 2. exact_rows_before_limit: one full sort instead';
 EXPLAIN SELECT v FROM t_topn_exact ORDER BY v LIMIT 3 SETTINGS exact_rows_before_limit = 1;
 
 SELECT '-- 3. same results in both modes';
-SELECT v FROM t_topn_exact ORDER BY v LIMIT 3;
-SELECT v FROM t_topn_exact ORDER BY v LIMIT 3 SETTINGS exact_rows_before_limit = 1;
+SELECT v FROM t_topn_exact ORDER BY v LIMIT 3 SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT v FROM t_topn_exact ORDER BY v LIMIT 3 SETTINGS exact_rows_before_limit = 1, distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_topn_exact;

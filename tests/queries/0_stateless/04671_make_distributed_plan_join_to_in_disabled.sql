@@ -22,7 +22,7 @@ SELECT trimLeft(explain) FROM (EXPLAIN distributed = 1 SELECT count() FROM tj1, 
     WHERE explain ILIKE '%CreatingSet%' OR trimLeft(explain) LIKE 'Join%';
 
 SELECT '-- results agree';
-SELECT count() FROM tj1, tj2 WHERE tj1.id = tj2.id;
+SELECT count() FROM tj1, tj2 WHERE tj1.id = tj2.id SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT count() FROM tj1, tj2 WHERE tj1.id = tj2.id SETTINGS make_distributed_plan = 0;
 
 DROP TABLE tj1;

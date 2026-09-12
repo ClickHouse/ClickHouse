@@ -45,7 +45,7 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 SELECT '-- distributed read over a projected table does not abort';
 SELECT count() FROM (
     SELECT s FROM t1 AS lhs LEFT JOIN (SELECT * FROM t2 PREWHERE id2 = 2 WHERE id2 = 2) AS rhs ON lhs.id = rhs.id2
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- Same query single-node, for an explicit value to compare against.
 SELECT '-- matches the single-node result';

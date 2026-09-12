@@ -13,6 +13,7 @@ SELECT v, sum(v) OVER (ORDER BY v ROWS BETWEEN 3 PRECEDING AND 1 PRECEDING) AS s
 FROM t_window_end_preceding
 ORDER BY v
 SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1,
-    distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0;
+    distributed_plan_max_rows_to_broadcast = 0, enable_join_runtime_filters = 0,
+    distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_window_end_preceding;

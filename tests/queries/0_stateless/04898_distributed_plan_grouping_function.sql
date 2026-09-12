@@ -29,25 +29,27 @@ SET make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_ex
 SELECT '-- grouping over rollup';
 SELECT k1, k2, grouping(k1) + grouping(k2) AS level, sum(v)
 FROM t_grouping_dist GROUP BY k1, k2 WITH ROLLUP ORDER BY ALL
-SETTINGS group_by_use_nulls = 0;
+SETTINGS group_by_use_nulls = 0, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- grouping over rollup, group_by_use_nulls = 1';
 SELECT k1, k2, grouping(k1) + grouping(k2) AS level, sum(v)
 FROM t_grouping_dist GROUP BY k1, k2 WITH ROLLUP ORDER BY ALL
-SETTINGS group_by_use_nulls = 1;
+SETTINGS group_by_use_nulls = 1, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- grouping over rollup, force_grouping_standard_compatibility = 0';
 SELECT k1, grouping(k1) AS g, sum(v)
 FROM t_grouping_dist GROUP BY k1 WITH ROLLUP ORDER BY ALL
-SETTINGS force_grouping_standard_compatibility = 0;
+SETTINGS force_grouping_standard_compatibility = 0, distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- grouping in HAVING';
 SELECT k1, sum(v)
-FROM t_grouping_dist GROUP BY k1 WITH ROLLUP HAVING grouping(k1) = 1 ORDER BY ALL;
+FROM t_grouping_dist GROUP BY k1 WITH ROLLUP HAVING grouping(k1) = 1 ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- grouping over plain GROUP BY';
 SELECT k1, grouping(k1) AS g, sum(v)
-FROM t_grouping_dist GROUP BY k1 ORDER BY ALL;
+FROM t_grouping_dist GROUP BY k1 ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- union of two rollups with different key counts';
 SELECT * FROM (
@@ -56,7 +58,8 @@ SELECT * FROM (
     UNION ALL
     SELECT 'b' AS src, k2, cityHash64(k1) % 2 AS kk, grouping(k2) + grouping(kk) AS g, sum(v) AS s
     FROM t_grouping_dist GROUP BY k2, kk WITH ROLLUP
-) ORDER BY ALL;
+) ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- rollup over a rollup subquery; the outer grouping has another key count';
 -- The inner grouping call keeps its unused argument columns alive as DAG inputs; the rewrite must
@@ -67,7 +70,8 @@ FROM (
     FROM t_grouping_dist GROUP BY k1, k2 WITH ROLLUP
 )
 GROUP BY k2, g_inner WITH ROLLUP
-ORDER BY ALL;
+ORDER BY ALL
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- distributed plan shows the specialization with its constant arguments';
 -- Pin off: with memory-efficient merging the plan dump gains a `Mode` line.

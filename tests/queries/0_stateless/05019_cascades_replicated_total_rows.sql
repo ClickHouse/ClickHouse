@@ -19,15 +19,15 @@ CREATE TABLE t_cascades_repl (k UInt64, x UInt64)
     ORDER BY k;
 INSERT INTO t_cascades_repl SELECT number % 5, number FROM numbers(1000);
 
-SELECT count() FROM t_cascades_repl;
-SELECT k, sum(x) FROM t_cascades_repl GROUP BY k ORDER BY k;
-SELECT count() FROM t_cascades_repl AS a JOIN t_cascades_repl AS b USING (k);
+SELECT count() FROM t_cascades_repl SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT k, sum(x) FROM t_cascades_repl GROUP BY k ORDER BY k SETTINGS distributed_plan_fallback_to_local_execution = 0;
+SELECT count() FROM t_cascades_repl AS a JOIN t_cascades_repl AS b USING (k) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- A filter on a non-key column leaves the row count unestimated, so the group's statistics are
 -- derived on demand instead of being prepopulated. `PREWHERE` puts the filter on the read step
 -- itself, which is what makes the count unestimable; `use_statistics = 0` keeps the
 -- column-statistics estimator from supplying one.
-SELECT k, count() FROM t_cascades_repl PREWHERE x > 10 GROUP BY k ORDER BY k SETTINGS use_statistics = 0;
+SELECT k, count() FROM t_cascades_repl PREWHERE x > 10 GROUP BY k ORDER BY k SETTINGS use_statistics = 0, distributed_plan_fallback_to_local_execution = 0;
 
 -- The results above are only meaningful if the distributed optimizer planned those queries, and a
 -- distributed read strategy is named in the plan only when it did. The table is small, so drop the

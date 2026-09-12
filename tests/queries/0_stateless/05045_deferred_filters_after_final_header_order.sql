@@ -70,10 +70,10 @@ SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 -- FINAL keeps v = 2 for every key, so s = 'b' survives and both predicates hold.
 SELECT '-- deferred prewhere, filter above the exchange';
 SELECT s FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
-SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1;
+SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT '-- ground truth: prewhere not deferred';
 SELECT s FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
-SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 0;
+SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 0, distributed_plan_fallback_to_local_execution = 0;
 SELECT '-- ground truth: no distributed plan';
 SELECT s FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
 SETTINGS apply_prewhere_after_final = 1, enable_cascades_optimizer = 0, make_distributed_plan = 0;
@@ -82,7 +82,7 @@ SETTINGS apply_prewhere_after_final = 1, enable_cascades_optimizer = 0, make_dis
 -- while the planned header holds it as a constant, so the two must still match by name and type.
 SELECT '-- deferred prewhere on a bare column';
 SELECT s FROM t_hdr_05045 FINAL PREWHERE v WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
-SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1;
+SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT '-- ground truth: bare column, no distributed plan';
 SELECT s FROM t_hdr_05045 FINAL PREWHERE v WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
 SETTINGS apply_prewhere_after_final = 1, enable_cascades_optimizer = 0, make_distributed_plan = 0;
@@ -91,15 +91,15 @@ SETTINGS apply_prewhere_after_final = 1, enable_cascades_optimizer = 0, make_dis
 -- deduplication nothing passes, while applying it before FINAL would admit all 20 keys.
 SELECT '-- deferred filter still excludes rows';
 SELECT count() FROM t_hdr_05045 FINAL PREWHERE v = 1 GROUP BY ALL WITH CUBE
-SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1;
+SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT '-- same predicate applied before final';
 SELECT count() FROM t_hdr_05045 FINAL PREWHERE v = 1 GROUP BY ALL WITH CUBE
-SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 0;
+SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 0, distributed_plan_fallback_to_local_execution = 0;
 
 -- The emitted shape must stay exactly the table's columns: no column dropped, none leaked.
 SELECT '-- select star under a deferred filter';
 SELECT * FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v ORDER BY k LIMIT 3
-SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1;
+SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT '-- ground truth: select star, no distributed plan';
 SELECT * FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v ORDER BY k LIMIT 3
 SETTINGS apply_prewhere_after_final = 1, enable_cascades_optimizer = 0, make_distributed_plan = 0;
@@ -108,7 +108,7 @@ SETTINGS apply_prewhere_after_final = 1, enable_cascades_optimizer = 0, make_dis
 -- and it is the shape the fuzzer found the defect with.
 SELECT '-- deferred prewhere with a virtual column';
 SELECT _table FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY _table
-SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1;
+SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT '-- ground truth: virtual column, no distributed plan';
 SELECT _table FROM t_hdr_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY _table
 SETTINGS apply_prewhere_after_final = 1, enable_cascades_optimizer = 0, make_distributed_plan = 0;
@@ -133,10 +133,10 @@ CREATE ROW POLICY policy_05045 ON t_rp_05045 USING v <= 10 TO ALL;
 
 SELECT '-- deferred row policy at default settings';
 SELECT s FROM t_rp_05045 FINAL WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT '-- ground truth: policy not deferred';
 SELECT s FROM t_rp_05045 FINAL WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
-SETTINGS distributed_plan_execute_locally = 1, apply_row_policy_after_final = 0;
+SETTINGS distributed_plan_execute_locally = 1, apply_row_policy_after_final = 0, distributed_plan_fallback_to_local_execution = 0;
 SELECT '-- ground truth: policy, no distributed plan';
 SELECT s FROM t_rp_05045 FINAL WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
@@ -144,7 +144,7 @@ SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 -- Both deferrals stacked.
 SELECT '-- deferred row policy and deferred prewhere';
 SELECT s FROM t_rp_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
-SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1;
+SETTINGS distributed_plan_execute_locally = 1, apply_prewhere_after_final = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT '-- ground truth: stacked, no distributed plan';
 SELECT s FROM t_rp_05045 FINAL PREWHERE v <= 10 WHERE 10 > v GROUP BY ALL WITH CUBE ORDER BY s
 SETTINGS apply_prewhere_after_final = 1, enable_cascades_optimizer = 0, make_distributed_plan = 0;
@@ -154,10 +154,10 @@ DROP ROW POLICY policy_05045 ON t_rp_05045;
 CREATE ROW POLICY policy_05045 ON t_rp_05045 USING v = 1 TO ALL;
 SELECT '-- deferred row policy still excludes rows';
 SELECT count() FROM t_rp_05045 FINAL GROUP BY ALL WITH CUBE
-SETTINGS distributed_plan_execute_locally = 1;
+SETTINGS distributed_plan_execute_locally = 1, distributed_plan_fallback_to_local_execution = 0;
 SELECT '-- same policy applied before final';
 SELECT count() FROM t_rp_05045 FINAL GROUP BY ALL WITH CUBE
-SETTINGS distributed_plan_execute_locally = 1, apply_row_policy_after_final = 0;
+SETTINGS distributed_plan_execute_locally = 1, apply_row_policy_after_final = 0, distributed_plan_fallback_to_local_execution = 0;
 
 DROP ROW POLICY policy_05045 ON t_rp_05045;
 DROP TABLE t_rp_05045;

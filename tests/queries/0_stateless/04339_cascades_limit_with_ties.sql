@@ -23,12 +23,12 @@ INSERT INTO t_limit_ties SELECT number FROM numbers(20);
 INSERT INTO t_limit_ties SELECT number FROM numbers(20);
 
 SELECT '-- ASC LIMIT WITH TIES';
-SELECT a FROM t_limit_ties ORDER BY a LIMIT 3 WITH TIES;
+SELECT a FROM t_limit_ties ORDER BY a LIMIT 3 WITH TIES SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- DESC LIMIT WITH TIES';
-SELECT a FROM t_limit_ties ORDER BY a DESC LIMIT 3 WITH TIES;
+SELECT a FROM t_limit_ties ORDER BY a DESC LIMIT 3 WITH TIES SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT '-- LIMIT WITH TIES + OFFSET';
-SELECT a FROM t_limit_ties ORDER BY a LIMIT 2 OFFSET 4 WITH TIES;
+SELECT a FROM t_limit_ties ORDER BY a LIMIT 2 OFFSET 4 WITH TIES SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_limit_ties;

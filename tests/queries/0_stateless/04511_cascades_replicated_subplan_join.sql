@@ -64,7 +64,8 @@ SELECT count(), sum(f.v)
 FROM rsj_fact AS f
 JOIN (SELECT d1.k AS k, d2.name AS name FROM rsj_dim1 AS d1 JOIN rsj_dim2 AS d2 ON d1.g = d2.g) AS d
 ON f.k = d.k
-WHERE d.name != '';
+WHERE d.name != ''
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count(), sum(f.v)
 FROM rsj_fact AS f
@@ -88,7 +89,8 @@ SELECT '-- 4. Outer join kinds are eligible too: results match the baseline';
 SELECT count()
 FROM rsj_fact AS f
 JOIN (SELECT d1.k AS k, d2.name AS name FROM rsj_dim1 AS d1 RIGHT JOIN rsj_dim2 AS d2 ON d1.g = d2.g) AS d
-ON f.k = d.k;
+ON f.k = d.k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count()
 FROM rsj_fact AS f

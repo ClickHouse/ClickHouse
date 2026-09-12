@@ -29,9 +29,9 @@ SET distributed_plan_read_in_order = 1;
 -- sorting stays between the sorting and the read, and nothing above may rely on the read's order. While
 -- the read was asked to read in order here anyway, the sorting merged streams the scatter had already
 -- interleaved and this returned rows from the wrong part of the table on every run.
-SELECT k FROM t_dist_rio_array_join ARRAY JOIN [1, 2] AS x ORDER BY k ASC LIMIT 10 OFFSET 24990;
+SELECT k FROM t_dist_rio_array_join ARRAY JOIN [1, 2] AS x ORDER BY k ASC LIMIT 10 OFFSET 24990 SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 -- Same shape with a filter between the read and the array join, and descending.
-SELECT k FROM t_dist_rio_array_join ARRAY JOIN [1, 2] AS x WHERE v > 5 ORDER BY k DESC LIMIT 10;
+SELECT k FROM t_dist_rio_array_join ARRAY JOIN [1, 2] AS x WHERE v > 5 ORDER BY k DESC LIMIT 10 SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 DROP TABLE t_dist_rio_array_join;
