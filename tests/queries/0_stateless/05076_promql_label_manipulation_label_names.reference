@@ -1,0 +1,7 @@
+-- valid UTF-8 label names are accepted
+1
+1
+-- label_replace keeps the empty source-label behavior
+1
+1
+-- invalid label names are rejected
