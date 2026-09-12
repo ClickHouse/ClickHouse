@@ -216,12 +216,13 @@ Expression (Project names)
     Sorting (Sorting for ORDER BY)
       Expression (Before ORDER BY)
         Distinct (Preliminary DISTINCT)
-          Expression (Projection)
-            Filter ((WHERE + (Change column names to column identifiers + Project names)))
-              Distinct (DISTINCT)
-                Distinct (Preliminary DISTINCT)
-                  Expression ((Projection + Change column names to column identifiers))
-                    ReadFromSystemOne
+          Expression ((Projection + (WHERE + (Change column names to column identifiers + Project names))))
+            ArrayJoin (ARRAY JOIN)
+              Expression (Before ARRAY JOIN)
+                Distinct (DISTINCT)
+                  Distinct (Preliminary DISTINCT)
+                    Expression ((Projection + Change column names to column identifiers))
+                      ReadFromSystemOne
 -- execute
 ['Istanbul','Berlin','Bensheim']
 -- GROUP BY before DISTINCT with on the same columns => remove DISTINCT
