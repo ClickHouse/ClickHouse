@@ -3,8 +3,12 @@
 #include <Core/Field.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/Serializations/SerializationInfoSettings.h>
+#include <mutex>
 #include <Common/UnorderedMapWithMemoryTracking.h>
 
+
+class DateLUTImpl;
 
 namespace DB
 {
@@ -99,6 +103,13 @@ private:
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_PATHS_REDUCE_FACTOR = 4;
     static constexpr size_t NESTED_OBJECT_MAX_DYNAMIC_TYPES_REDUCE_FACTOR = 2;
 
+    mutable std::mutex serializations_mutex;
+    mutable SerializationPtr default_serialization;
+    mutable const DateLUTImpl * default_serialization_timezone = nullptr;
+    mutable SerializationPtr nondefault_serialization;
+    mutable const DateLUTImpl * nondefault_serialization_timezone = nullptr;
+    mutable SerializationInfoSettings nondefault_serialization_settings;
+
     SchemaFormat schema_format;
     /// Set of paths with types that were specified in type declaration.
     std::unordered_map<String, DataTypePtr> typed_paths;
@@ -110,6 +121,8 @@ private:
     size_t max_dynamic_paths;
     /// Limit of dynamic types that should be used for Dynamic columns.
     size_t max_dynamic_types;
+    /// Whether some typed path (at any depth) has a serialization that depends on the session timezone.
+    bool has_timezone_dependent_typed_paths = false;
 };
 
 }

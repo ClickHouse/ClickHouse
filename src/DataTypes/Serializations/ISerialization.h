@@ -19,6 +19,7 @@
 #include <unordered_set>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <set>
 
 namespace DB
@@ -342,6 +343,8 @@ public:
     struct EnumerateStreamsSettings
     {
         SubstreamPath path;
+        /// When resolving a subcolumn, serializers may omit streams that cannot contribute to its lookup.
+        std::optional<std::string_view> subcolumn_name;
         bool position_independent_encoding = true;
         /// If set to false, don't enumerate dynamic subcolumns
         /// (such as dynamic types in Dynamic column or dynamic paths in JSON column).
@@ -770,7 +773,7 @@ public:
 
     /// Returns true if this serialization supports pooling (caching by hash).
     /// Returns false if the serialization or any of its nested serializations
-    /// cannot be cached (e.g. SerializationJSON which contains mutable state).
+    /// cannot be cached because it contains mutable state.
     virtual bool supportsPooling() const { return true; }
 
     /// Returns the hash that uniquely identifies this serialization object.

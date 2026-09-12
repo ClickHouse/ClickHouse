@@ -3,22 +3,39 @@
 #include <Storages/MergeTree/SharedPartColumns.h>
 #include <Storages/ColumnsDescription.h>
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNumberBase.h>
+#include <DataTypes/Serializations/SerializationNumber.h>
 #include <Common/tests/gtest_global_context.h>
 
 using namespace DB;
 
-/// A serialization that reports no pooling keeps mutable state, so the parts of a table must not share
-/// one: `SerializationJSON` accumulates caches inside its extraction tree and picks its parser from the
-/// settings of the query that built it. The serializations of the other columns are still shared.
+namespace
+{
+
+class NonPoolableSerialization : public SerializationNumber<UInt64>
+{
+public:
+    bool supportsPooling() const override { return false; }
+};
+
+class NonPoolableDataType : public DataTypeNumberBase<UInt64>
+{
+public:
+    bool equals(const IDataType & rhs) const override { return typeid(rhs) == typeid(*this); }
+
+    SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override
+    {
+        return std::make_shared<NonPoolableSerialization>();
+    }
+};
+
+}
+
 TEST(SharedPartColumns, NonPoolableSerializationsAreNotShared)
 {
-    /// The `JSON` serialization reads `allow_simdjson` from the query context, or the global one.
-    const auto & context_holder = getContext();
-    ASSERT_TRUE(context_holder.context != nullptr);
-
     NamesAndTypesList columns{
         {"id", DataTypeFactory::instance().get("UInt64")},
-        {"data", DataTypeFactory::instance().get("JSON")},
+        {"data", std::make_shared<NonPoolableDataType>()},
     };
 
     auto description = std::make_shared<const ColumnsDescription>(columns);
