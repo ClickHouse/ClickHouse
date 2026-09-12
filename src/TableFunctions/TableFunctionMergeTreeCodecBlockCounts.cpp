@@ -4,9 +4,8 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
-#include <Interpreters/DatabaseCatalog.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/evaluateConstantExpression.h>
-#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/checkAndGetLiteralArgument.h>
 #include <TableFunctions/ITableFunction.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -18,7 +17,6 @@ namespace DB
 namespace ErrorCodes
 {
 extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
-extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 }
 
@@ -35,6 +33,10 @@ public:
     ColumnsDescription getActualTableStructure(ContextPtr context, bool is_insert_query) const override;
 
 private:
+    /// The fixed structure. It is not derived from the source table, but the table function does not declare it as
+    /// static: resolving it is a read of the source table and has to check access to it, see `getActualTableStructure`.
+    static ColumnsDescription getColumns();
+
     StoragePtr executeImpl(
         const ASTPtr & ast_function,
         ContextPtr context,
@@ -72,13 +74,15 @@ void TableFunctionMergeTreeCodecBlockCounts::parseArguments(const ASTPtr & ast_f
 
 ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getActualTableStructure(ContextPtr context, bool /*is_insert_query*/) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
+    /// The structure is fixed, so nothing in it depends on the source table. The table is still resolved here, because
+    /// resolving the structure is a read of it and needs the same access as reading it: this is what `DESCRIBE`
+    /// and `CREATE TABLE ... AS` go through, under the context of the user who asks.
+    StorageMergeTreeCodecBlockCounts::resolveSourceTable(source_table_id, context);
+    return getColumns();
+}
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
-    if (!merge_tree)
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS, "Table function {} expected MergeTree table, got: {}", getName(), source_table->getName());
-
+ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getColumns()
+{
     auto codec_map = std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeUInt64>());
 
     ColumnsDescription columns;
@@ -102,16 +106,17 @@ ColumnsDescription TableFunctionMergeTreeCodecBlockCounts::getActualTableStructu
 
 StoragePtr TableFunctionMergeTreeCodecBlockCounts::executeImpl(
     const ASTPtr & /*ast_function*/,
-    ContextPtr context,
+    ContextPtr /*context*/,
     const std::string & table_name,
     ColumnsDescription /*cached_columns*/,
-    bool is_insert_query) const
+    bool /*is_insert_query*/) const
 {
-    auto source_table = DatabaseCatalog::instance().getTable(source_table_id, context);
-    auto columns = getActualTableStructure(context, is_insert_query);
-
+    /// Deliberately does not resolve the source table. `CREATE TABLE ... AS mergeTreeCodecBlockCounts(...)` runs this
+    /// under the global context, lazily, on the first read of the created table, so a check here would either pass
+    /// for everyone or, for a missing or non-`MergeTree` source, fail with an error that names the reason. The source is
+    /// resolved and checked by `StorageMergeTreeCodecBlockCounts::read`, under the context of the user who reads.
     StorageID storage_id(getDatabaseName(), table_name);
-    auto res = std::make_shared<StorageMergeTreeCodecBlockCounts>(std::move(storage_id), std::move(source_table), std::move(columns));
+    auto res = std::make_shared<StorageMergeTreeCodecBlockCounts>(std::move(storage_id), source_table_id, getColumns());
 
     res->startup();
     return res;
@@ -127,6 +132,8 @@ Reports, per (part, column, substream) of a MergeTree table, how many compressed
 Selecting `codec_block_counts` reads `.bin` data files, not just metadata. The other columns are metadata-only.
 
 Parts that do not record their substreams in `columns_substreams.txt` are not listed.
+
+Every reported value is derived from the table's data, so reading any column of the result requires the `SELECT` privilege on all columns of the table. A grant that covers only some of the columns is not enough. The privilege is also required to resolve the structure of the function, e.g. by `DESCRIBE`. A user who is not allowed to see the table at all, that is, one without the `SHOW TABLES` privilege on it, gets `ACCESS_DENIED` whether or not it exists, so the function does not tell such a user which tables exist.
 
 If a row policy applies to the table for the current user, reading `codec_block_counts` throws `ACCESS_DENIED`, because the counts would cover rows the policy hides. The other columns stay readable, `system.parts_columns` reports them regardless of row policies.
 
