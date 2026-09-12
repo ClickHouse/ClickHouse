@@ -227,6 +227,18 @@ using RelativePathWithMetadataPtr = std::shared_ptr<RelativePathWithMetadata>;
 using RelativePathsWithMetadata = std::vector<RelativePathWithMetadataPtr>;
 using ObjectKeysWithMetadata = std::vector<ObjectKeyWithMetadata>;
 
+/// Result of a single non-recursive ("one level") listing request that groups keys by a delimiter.
+/// `objects` are the keys directly under the requested prefix (the `Contents` of `ListObjectsV2`),
+/// `common_prefixes` are the immediate sub-"directories" (the `CommonPrefixes`), each ending with the delimiter.
+/// If `is_truncated` is true, `next_continuation_token` should be passed to the next request to get more results.
+struct ObjectStorageListResult
+{
+    RelativePathsWithMetadata objects;
+    std::vector<std::string> common_prefixes;
+    bool is_truncated = false;
+    std::string next_continuation_token;
+};
+
 class IObjectStorageIterator;
 using ObjectStorageIteratorPtr = std::shared_ptr<IObjectStorageIterator>;
 
@@ -272,6 +284,57 @@ public:
         size_t max_keys,
         bool with_tags,
         const std::optional<std::string> & start_after) const;
+
+    /// Whether `listObjectsSingleLevel` is implemented for this storage.
+    /// When true, the listing of a glob can be parallelized by walking the "directory" tree
+    /// (common prefixes) concurrently instead of listing the whole prefix in a single serial stream.
+    virtual bool supportsDelimitedListing() const { return false; }
+
+    /// Whether the parallel delimiter walk (see `supportsDelimitedListing`) may start from `key_prefix`.
+    /// The walk issues `ListObjectsV2` with `Delimiter='/'` from the glob's fixed prefix, and S3 Express /
+    /// directory buckets accept a delimiter only when the prefix ends with '/'. The caller can start a
+    /// delimiter walk from an earlier '/' boundary when a glob's fixed prefix ends mid-component, provided
+    /// that doing so still leaves a directory level to walk. The empty prefix (the bucket root) is always
+    /// allowed. Storages without this restriction just answer `supportsDelimitedListing`.
+    virtual bool supportsDelimitedListingFromPrefix(const std::string & /*key_prefix*/) const { return supportsDelimitedListing(); }
+
+    /// Whether `listObjectsSingleLevel` may resume strictly after an arbitrary key (`start_after`, i.e. the
+    /// `StartAfter` parameter of `ListObjectsV2`). Some endpoints (e.g. S3 Express / directory buckets) reject
+    /// it outright, so every listing path that would resume by key must first ask this: such a listing has to
+    /// be expressed with the '/' delimiter and continuation tokens only (see `ObjectStorageParallelListingIterator`).
+    virtual bool supportsStartAfterListing() const { return false; }
+
+    /// Whether a big flat "directory" (no sub-"directories") may be listed in parallel by splitting its
+    /// keyspace. The split issues `listObjectsSingleLevel` requests that resume strictly after an arbitrary
+    /// key (`start_after`) while keeping the '/' delimiter, so subdirectories discovered in later slices
+    /// remain visible as common prefixes. Endpoints without `StartAfter` support (see
+    /// `supportsStartAfterListing`) must answer false here, and flat ranges then fall back to serial
+    /// pagination (the hierarchical delimiter walk, which uses only '/' and continuation tokens, stays
+    /// available).
+    virtual bool supportsListingKeyspaceSplit() const { return supportsStartAfterListing(); }
+
+    /// The page size that list requests actually use when the caller passes `max_keys = 0`
+    /// ("use the storage-configured default", see `iterate` and `listObjectsSingleLevel`).
+    /// Callers that size buffers or budgets from a possibly-zero page-size setting must resolve
+    /// the zero through this, or the derived bound collapses to nothing while every response
+    /// still carries a full page. The base value matches the standard maximum page size of the
+    /// common object storages (S3, GCS, Azure) and the defaults of the corresponding settings.
+    virtual size_t getListObjectsDefaultPageSize() const { return 1000; }
+
+    /// List a single "directory level" under `path_prefix`, grouping deeper keys by `delimiter`.
+    /// Unlike `listObjects`/`iterate` (which list recursively), this returns only the keys directly
+    /// under the prefix together with the immediate sub-"directories" (common prefixes).
+    /// `start_after` (when not empty) resumes listing strictly after that key; it is only honored on
+    /// the first request of a listing (when `continuation_token` is empty), and lets a caller list an
+    /// arbitrary sub-range of the keyspace. One call corresponds to one page; pass the returned
+    /// continuation token back to fetch the next page.
+    virtual ObjectStorageListResult listObjectsSingleLevel(
+        const std::string & path_prefix,
+        const std::string & delimiter,
+        size_t max_keys,
+        bool with_tags,
+        const std::string & start_after,
+        const std::string & continuation_token) const;
 
     /// Get object metadata if supported. It should be possible to receive at least size of object
     virtual ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const = 0;
