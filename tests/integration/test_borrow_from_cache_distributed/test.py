@@ -1,0 +1,283 @@
+import pytest
+
+from helpers.cluster import ClickHouseCluster
+
+cluster = ClickHouseCluster(__file__)
+
+node = cluster.add_instance(
+    "node",
+    main_configs=["configs/storage.xml"],
+    with_minio=True,
+)
+
+
+@pytest.fixture(scope="module")
+def started_cluster():
+    try:
+        cluster.start()
+        yield cluster
+    finally:
+        cluster.shutdown()
+
+
+def test_distributed_on_borrow_from_cache_disk_is_rejected(started_cluster):
+    # `borrow_from_cache` uses the in-memory metadata storage, whose `getPath()` is just a
+    # placeholder root ("/") -- there is no real directory behind it. `Distributed` manages its
+    # local async-insert queue directories with raw `std::filesystem` calls on
+    # `disk->getPath() + relative_data_path`, bypassing the `IDisk` API entirely. Without a guard,
+    # creating a `Distributed` table on a storage policy backed by such a disk would attempt
+    # `fs::create_directories` under the container's real filesystem root instead of failing
+    # closed, so the table must be rejected outright.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE dist (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand(), 'borrowed_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "does not keep its directory structure on the host filesystem" in error
+
+    # No table should have been left behind, and no directories were created under `/`.
+    assert node.query("EXISTS TABLE dist").strip() == "0"
+
+
+def test_distributed_on_read_only_wrapped_borrow_from_cache_disk_is_rejected(started_cluster):
+    # The same disk wrapped in a `ReadOnlyDiskWrapper` (via `read_only = 1`) must also be rejected.
+    # The wrapper forwards `getPath()` to the delegate (still the placeholder root "/"), so it must
+    # forward `hasLocalFilesystemDirectoryNamespace()` as well; otherwise it would inherit the
+    # default `true` and
+    # let the `Distributed` table slip past the guard and touch the container's real filesystem root.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE dist_ro (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand(), 'borrowed_policy_ro')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "does not keep its directory structure on the host filesystem" in error
+
+    assert node.query("EXISTS TABLE dist_ro").strip() == "0"
+
+
+def test_distributed_on_web_disk_is_rejected(started_cluster):
+    # The same guard must cover the sibling `web` metadata backend: its `getPath()` is an empty
+    # placeholder root with no real directory behind it, so `MetadataStorageFromStaticFilesWebServer`
+    # reports `hasLocalFilesystemDirectoryNamespace() == false` too. Without that, a `Distributed` table on a web
+    # object-storage disk would `fs::create_directories` under a relative path from the working
+    # directory instead of failing closed. The web endpoint is never contacted -- the guard throws
+    # before any web access.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE dist_web (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand(), 'web_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "does not keep its directory structure on the host filesystem" in error
+
+    assert node.query("EXISTS TABLE dist_web").strip() == "0"
+
+
+def test_distributed_on_cached_web_disk_is_rejected(started_cluster):
+    # A cache layer over the web disk forwards `getPath()` to the underlying metadata storage, so
+    # it must forward `hasLocalFilesystemDirectoryNamespace()` as well; otherwise the wrapper would
+    # inherit the default `true` and let the `Distributed` table slip past the guard even though
+    # the path is still the web backend's empty placeholder.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE dist_cached_web (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand(), 'cached_web_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "does not keep its directory structure on the host filesystem" in error
+
+    assert node.query("EXISTS TABLE dist_cached_web").strip() == "0"
+
+
+def test_distributed_on_plain_s3_disk_is_rejected(started_cluster):
+    # For `plain` (and `plain_rewritable`) metadata over a remote object storage, `getPath()` is
+    # only an object-key prefix inside the bucket, not a local filesystem path, so the guard must
+    # reject the disk instead of running `fs::create_directories` on a path relative to the
+    # working directory. The `CREATE` itself never reaches S3 -- the guard throws first.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE dist_plain_s3 (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand(), 'plain_s3_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "does not keep its directory structure on the host filesystem" in error
+
+    assert node.query("EXISTS TABLE dist_plain_s3").strip() == "0"
+
+
+def test_distributed_on_plain_rewritable_local_disk_is_rejected(started_cluster):
+    # A `plain_rewritable` disk over a *local* object storage is the case a `getPath()`-only check
+    # misses: its `getPath()` really is a host directory, so "the path is on the local filesystem"
+    # is true, yet the directory tree is described by object keys in the metadata snapshot rather
+    # than by the host filesystem. The async-insert queue directory is created with raw
+    # `std::filesystem` calls and would therefore never enter that snapshot, so the later lifecycle
+    # paths that go through `IDisk` -- `renameOnDisk` (`moveDirectory`), `DROP` and `TRUNCATE` --
+    # would resolve a different, empty namespace: a rename would fail and pending blocks could be
+    # left behind. The guard must be the stronger `hasLocalFilesystemDirectoryNamespace()`, so the
+    # table is rejected outright.
+    error = node.query_and_get_error(
+        """
+        CREATE TABLE dist_plain_rewritable_local (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand(), 'plain_rewritable_local_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "does not keep its directory structure on the host filesystem" in error
+
+    assert node.query("EXISTS TABLE dist_plain_rewritable_local").strip() == "0"
+
+    # A plain local disk (the default `DiskLocal`) is of course still accepted: the guard must not
+    # over-reject and break ordinary `Distributed` tables.
+    node.query(
+        """
+        CREATE TABLE dist_default_disk (key UInt64) ENGINE = Distributed(test_cluster, currentDatabase(), 'underlying', rand())
+        """
+    )
+    assert node.query("EXISTS TABLE dist_default_disk").strip() == "1"
+    node.query("DROP TABLE dist_default_disk SYNC")
+
+
+def test_distributed_on_borrow_from_cache_disk_still_attaches(started_cluster):
+    # Only a new `CREATE` is rejected (tests above). A `Distributed` table already recorded in
+    # metadata -- e.g. created before an upgrade introduced the guard -- must still attach:
+    # rejecting it during table loading would invalidate pre-existing metadata and stop the
+    # server from bringing the table up at all. Such a table works without its local async-insert
+    # queue: SELECTs and foreground INSERTs are unaffected, and only a background INSERT (which
+    # has to spool the block on the disk with raw filesystem calls) is rejected.
+    node.query("DROP DATABASE IF EXISTS ordinary_borrow SYNC")
+    # A full-definition ATTACH (which takes the same non-CREATE loading path as server startup)
+    # needs an `Ordinary` database; `Atomic` requires an explicit UUID for it.
+    node.query(
+        "CREATE DATABASE ordinary_borrow ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    node.query(
+        "CREATE TABLE ordinary_borrow.underlying (key UInt64) ENGINE = MergeTree ORDER BY key"
+    )
+    node.query(
+        """
+        ATTACH TABLE ordinary_borrow.dist_attached (key UInt64)
+        ENGINE = Distributed(test_cluster_local, 'ordinary_borrow', 'underlying', rand(), 'borrowed_policy')
+        """
+    )
+
+    # The attached table is fully readable and foreground-writable through the local shard.
+    node.query(
+        "INSERT INTO ordinary_borrow.dist_attached SETTINGS distributed_foreground_insert = 1 VALUES (1)"
+    )
+    assert node.query("SELECT count() FROM ordinary_borrow.dist_attached").strip() == "1"
+
+    # A background INSERT to a *local* shard bypasses the on-disk queue entirely (the block goes
+    # straight into the local underlying table), so it works too. Only a background INSERT that has
+    # to spool a block for a remote shard needs the queue: attach the same table over a cluster with
+    # a remote shard and check it is rejected with a clear error instead of touching the container's
+    # real filesystem root through the placeholder disk path. The block never leaves the node -- the
+    # guard throws before anything is written or sent.
+    node.query(
+        """
+        ATTACH TABLE ordinary_borrow.dist_attached_remote (key UInt64)
+        ENGINE = Distributed(test_cluster, 'ordinary_borrow', 'underlying', rand(), 'borrowed_policy')
+        """
+    )
+    error = node.query_and_get_error(
+        "INSERT INTO ordinary_borrow.dist_attached_remote SETTINGS distributed_foreground_insert = 0 VALUES (2)"
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "cannot store pending blocks" in error
+
+    node.query("DROP DATABASE ordinary_borrow SYNC")
+
+
+def test_distributed_on_borrow_from_cache_disk_can_be_renamed(started_cluster):
+    # A table attached on a non-local disk has no local insert queue directory (see the attach
+    # test above), so `renameOnDisk` must not try to move it: an unconditional
+    # `moveDirectory(relative_data_path, ...)` would fail with `DIRECTORY_DOESNT_EXIST` and break
+    # the compatibility contract that pre-existing tables keep working after an upgrade. Only an
+    # `Ordinary` database moves data on rename (`Atomic` keeps UUID-based paths), so it is the
+    # database engine that reaches `renameOnDisk` here.
+    node.query("DROP DATABASE IF EXISTS ordinary_borrow_rename SYNC")
+    node.query(
+        "CREATE DATABASE ordinary_borrow_rename ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    node.query(
+        "CREATE TABLE ordinary_borrow_rename.underlying (key UInt64) ENGINE = MergeTree ORDER BY key"
+    )
+    node.query(
+        """
+        ATTACH TABLE ordinary_borrow_rename.dist_to_rename (key UInt64)
+        ENGINE = Distributed(test_cluster_local, 'ordinary_borrow_rename', 'underlying', rand(), 'borrowed_policy')
+        """
+    )
+    node.query(
+        "INSERT INTO ordinary_borrow_rename.dist_to_rename SETTINGS distributed_foreground_insert = 1 VALUES (1)"
+    )
+
+    node.query(
+        "RENAME TABLE ordinary_borrow_rename.dist_to_rename TO ordinary_borrow_rename.dist_renamed"
+    )
+
+    # The renamed table stays fully readable and foreground-writable.
+    node.query(
+        "INSERT INTO ordinary_borrow_rename.dist_renamed SETTINGS distributed_foreground_insert = 1 VALUES (2)"
+    )
+    assert node.query("SELECT count() FROM ordinary_borrow_rename.dist_renamed").strip() == "2"
+
+    node.query("DROP DATABASE ordinary_borrow_rename SYNC")
+
+
+def test_distributed_attach_with_legacy_queue_directory_is_rejected(started_cluster):
+    # An existing table on a disk without a host-filesystem directory namespace attaches without its
+    # local insert queue (see the attach test above). A version that still created the queue on such
+    # a disk could have spooled blocks into it with raw `std::filesystem` calls -- its `getPath()` is
+    # a real host directory for a `plain_rewritable` disk over local object storage. Attaching
+    # silently would abandon them: nothing sends them, `TRUNCATE` only drains the queues built at
+    # attach time, and `DROP` / `RENAME` resolve the `IDisk` namespace instead of that raw path. The
+    # attach must fail and leave the data untouched.
+    node.query("DROP DATABASE IF EXISTS ordinary_legacy_queue SYNC")
+    node.query(
+        "CREATE DATABASE ordinary_legacy_queue ENGINE = Ordinary",
+        settings={"allow_deprecated_database_ordinary": 1},
+    )
+    node.query(
+        "CREATE TABLE ordinary_legacy_queue.underlying (key UInt64) ENGINE = MergeTree ORDER BY key"
+    )
+
+    disk_path = node.query(
+        "SELECT path FROM system.disks WHERE name = 'plain_rewritable_local_disk'"
+    ).strip()
+    queue_path = f"{disk_path}data/ordinary_legacy_queue/dist_legacy_queue/shard1_replica1"
+    node.exec_in_container(
+        ["bash", "-c", f"mkdir -p '{queue_path}' && echo -n block > '{queue_path}/1.bin'"]
+    )
+
+    error = node.query_and_get_error(
+        """
+        ATTACH TABLE ordinary_legacy_queue.dist_legacy_queue (key UInt64)
+        ENGINE = Distributed(test_cluster, 'ordinary_legacy_queue', 'underlying', rand(), 'plain_rewritable_local_policy')
+        """
+    )
+    assert "NOT_IMPLEMENTED" in error
+    assert "pending async INSERT block written by an earlier version" in error
+
+    # The block is still there: failing the attach must not be a disguised way of dropping it.
+    assert (
+        node.exec_in_container(["bash", "-c", f"cat '{queue_path}/1.bin'"]).strip()
+        == "block"
+    )
+
+    # With the queue drained by hand the same table attaches, so the guard is about pending data
+    # rather than about the directory existing.
+    node.exec_in_container(["bash", "-c", f"rm '{queue_path}/1.bin'"])
+    node.query(
+        """
+        ATTACH TABLE ordinary_legacy_queue.dist_legacy_queue (key UInt64)
+        ENGINE = Distributed(test_cluster, 'ordinary_legacy_queue', 'underlying', rand(), 'plain_rewritable_local_policy')
+        """
+    )
+    assert (
+        node.query("EXISTS TABLE ordinary_legacy_queue.dist_legacy_queue").strip() == "1"
+    )
+
+    node.query("DROP DATABASE ordinary_legacy_queue SYNC")

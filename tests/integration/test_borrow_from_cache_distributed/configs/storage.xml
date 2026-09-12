@@ -1,0 +1,129 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <obj_local>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <path>obj_local/</path>
+            </obj_local>
+            <borrowed_cache>
+                <type>cache</type>
+                <disk>obj_local</disk>
+                <path>borrowed_cache/</path>
+                <max_size>104857600</max_size>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
+            </borrowed_cache>
+            <borrowed_disk>
+                <type>object_storage</type>
+                <object_storage_type>borrow_from_cache</object_storage_type>
+                <cache_name>borrowed_cache</cache_name>
+            </borrowed_disk>
+            <borrowed_disk_ro>
+                <type>object_storage</type>
+                <object_storage_type>borrow_from_cache</object_storage_type>
+                <cache_name>borrowed_cache</cache_name>
+                <read_only>1</read_only>
+            </borrowed_disk_ro>
+            <!-- The endpoint is never contacted: the `Distributed` guard fires before any web
+                 access, so no server needs to be running behind it. -->
+            <web_disk>
+                <type>web</type>
+                <endpoint>http://localhost:1/</endpoint>
+            </web_disk>
+            <cached_web_disk>
+                <type>cache</type>
+                <disk>web_disk</disk>
+                <path>cached_web/</path>
+                <max_size>104857600</max_size>
+                <load_metadata_asynchronously>0</load_metadata_asynchronously>
+            </cached_web_disk>
+            <!-- The `Distributed` guard fires before any S3 use, but the endpoint must be a real
+                 (minio) one: an unreachable S3 endpoint makes unrelated `MergeTree` startup
+                 probes (the orphaned-parts search over all configured disks) retry for minutes. -->
+            <plain_s3_disk>
+                <type>object_storage</type>
+                <object_storage_type>s3</object_storage_type>
+                <metadata_type>plain</metadata_type>
+                <endpoint>http://minio1:9001/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>1</skip_access_check>
+            </plain_s3_disk>
+            <!-- `plain_rewritable` metadata over a *local* object storage: `getPath()` is a real
+                 host directory, but the directory structure is described by object keys, so raw
+                 `std::filesystem` and `IDisk` directory operations resolve in different
+                 namespaces. `Distributed` must reject it too. -->
+            <plain_rewritable_local_disk>
+                <type>object_storage</type>
+                <object_storage_type>local</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <path>plain_rewritable_local/</path>
+            </plain_rewritable_local_disk>
+        </disks>
+        <policies>
+            <borrowed_policy>
+                <volumes>
+                    <main>
+                        <disk>borrowed_disk</disk>
+                    </main>
+                </volumes>
+            </borrowed_policy>
+            <borrowed_policy_ro>
+                <volumes>
+                    <main>
+                        <disk>borrowed_disk_ro</disk>
+                    </main>
+                </volumes>
+            </borrowed_policy_ro>
+            <web_policy>
+                <volumes>
+                    <main>
+                        <disk>web_disk</disk>
+                    </main>
+                </volumes>
+            </web_policy>
+            <cached_web_policy>
+                <volumes>
+                    <main>
+                        <disk>cached_web_disk</disk>
+                    </main>
+                </volumes>
+            </cached_web_policy>
+            <plain_s3_policy>
+                <volumes>
+                    <main>
+                        <disk>plain_s3_disk</disk>
+                    </main>
+                </volumes>
+            </plain_s3_policy>
+            <plain_rewritable_local_policy>
+                <volumes>
+                    <main>
+                        <disk>plain_rewritable_local_disk</disk>
+                    </main>
+                </volumes>
+            </plain_rewritable_local_policy>
+        </policies>
+    </storage_configuration>
+
+    <remote_servers>
+        <test_cluster>
+            <shard>
+                <replica>
+                    <host>not_existing</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster>
+        <!-- A cluster whose only shard is the node itself, so that an attached `Distributed`
+             table can actually be read from and written to (the shard is recognized as local). -->
+        <test_cluster_local>
+            <shard>
+                <replica>
+                    <host>127.0.0.1</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </test_cluster_local>
+    </remote_servers>
+</clickhouse>
