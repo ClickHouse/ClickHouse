@@ -351,7 +351,7 @@ void DiskAccessStorage::listsWritingThreadFunc()
         /// the following timeout.
         const auto timeout = std::chrono::minutes(1);
         SCOPE_EXIT({ lists_writing_thread_is_waiting = false; });
-        if (lists_writing_thread_should_exit.wait_for(lock, timeout) != std::cv_status::timeout)
+        if (lists_writing_thread_should_exit.wait_for(lock, timeout, [this] { return lists_writing_thread_must_exit; }))
             return; /// The destructor requires us to exit.
     }
 
@@ -363,6 +363,11 @@ void DiskAccessStorage::stopListsWritingThread()
 {
     if (lists_writing_thread && lists_writing_thread->joinable())
     {
+        {
+            /// `mutex` has to be released before `join`: `listsWritingThreadFunc` acquires it.
+            std::lock_guard lock{mutex};
+            lists_writing_thread_must_exit = true;
+        }
         lists_writing_thread_should_exit.notify_one();
         lists_writing_thread->join();
     }
