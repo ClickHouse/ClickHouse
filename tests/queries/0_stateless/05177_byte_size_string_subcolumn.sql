@@ -78,3 +78,31 @@ FROM t_byte_size_sparse
 SETTINGS optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_byte_size_sparse;
+
+DROP TABLE IF EXISTS t_byte_size_sparse_single_stream;
+
+CREATE TABLE t_byte_size_sparse_single_stream
+(
+    id UInt64,
+    s String
+)
+ENGINE = MergeTree
+ORDER BY tuple()
+SETTINGS
+    ratio_of_defaults_for_sparse_serialization = 0.1,
+    serialization_info_version = 'basic';
+
+INSERT INTO t_byte_size_sparse_single_stream
+SELECT
+    number,
+    if(number % 5 = 0, toString(number), '')
+FROM numbers(200);
+
+SELECT 'optimized_single_stream', sum(byteSize(s))
+FROM t_byte_size_sparse_single_stream;
+
+SELECT 'unoptimized_single_stream', sum(byteSize(s))
+FROM t_byte_size_sparse_single_stream
+SETTINGS optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_byte_size_sparse_single_stream;

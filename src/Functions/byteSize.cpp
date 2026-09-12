@@ -87,7 +87,8 @@ REGISTER_FUNCTION(ByteSize)
 {
     FunctionDocumentation::Description description = R"(
 Returns an estimation of the uncompressed byte size of its arguments in memory.
-For `String` arguments, the function returns the string length + 8 (length).
+For non-sparse `String` arguments, the function returns the string length + 8 bytes for the offset.
+For values in sparse `String` columns, the result also includes representation-dependent sparse overhead.
 If the function has multiple arguments, the function accumulates their byte sizes.
     )";
     FunctionDocumentation::Syntax syntax = "byteSize(arg1[, arg2, ...])";
