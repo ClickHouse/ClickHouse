@@ -27,6 +27,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ABORTED;
+    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -207,12 +208,10 @@ void MergeTreeBitmapStore::loadPart(const MergeTreePartInfo & part, const IDataP
         const auto target = MergeTreePartInfo::tryParsePartName(
             file.target, MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING);
         if (!target)
-        {
-            LOG_ERROR(log, "Delete bitmap '{}' in part '{}' does not name a parseable part, so "
-                "reads of that target will not find it",
+            throw Exception(ErrorCodes::CORRUPTED_DATA,
+                "Delete bitmap '{}' in part '{}' does not name a parseable part, so the rows it "
+                "kills cannot be found. Refusing to load the part rather than serve those rows",
                 file.fileName(), part.getPartNameV1());
-            continue;
-        }
 
         links.push_back({*target, file.version});
     }

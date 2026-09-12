@@ -233,6 +233,79 @@ TEST(MergeTreeBitmapStoreTest, AStagedVersionTakesItsPlaceAmongTheCarriedOnes)
     EXPECT_TRUE(older->contains(3));
 }
 
+TEST(MergeTreeBitmapStoreTest, ABitmapNamingAnUnparseableTargetRefusesTheLoad)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto holder = tbl.addPart("all_9_9_0", /*first_id=*/ 100, /*rows=*/ 1);
+
+    /// The kills in this file apply to a part nobody can name, so indexing it and carrying on
+    /// would serve rows it says are deleted. `CORRUPTED_DATA` rather than `LOGICAL_ERROR`: the
+    /// caller detaches the part on it, which an aborting code would never let it do.
+    DeleteBitmapFileOps::stageBitmap(partStorage(*holder), "not_a_part_name", bitmapWithRow(1));
+
+    EXPECT_THROW(
+        store.loadPart(holder->info, holder->getDataPartStorage()), Exception);
+}
+
+TEST(MergeTreeBitmapStoreTest, AStagedVersionResolvesIntoTheMiddleOfTheOrder)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 8);
+    const auto stager = tbl.addPart("all_5_5_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto carrier = tbl.addPart("all_9_9_0", /*first_id=*/ 200, /*rows=*/ 1);
+    const auto target_name = target->info.getPartNameV1();
+
+    /// Three carried versions straddling the staged one, so the resolve lands between two
+    /// existing entries rather than at either end -- the case two entries cannot show.
+    writeCarried(partStorage(*carrier), /*version=*/ 3, target_name, bitmapWithRow(3));
+    writeCarried(partStorage(*carrier), /*version=*/ 7, target_name, bitmapWithRow(7));
+    writeCarried(partStorage(*carrier), /*version=*/ 12, target_name, bitmapWithRow(12));
+    store.loadPart(carrier->info, carrier->getDataPartStorage());
+
+    DeleteBitmapFileOps::stageBitmap(partStorage(*stager), target->name, bitmapWithRow(5));
+    store.loadPart(stager->info, stager->getDataPartStorage());
+
+    /// The staged holder is prehistoric, so its version sorts below 3 and every carried read
+    /// has to be unaffected by the insertion.
+    EXPECT_EQ(store.readBitmap(target->info, /*snapshot_csn=*/ 3).second, 3u);
+    EXPECT_EQ(store.readBitmap(target->info, /*snapshot_csn=*/ 7).second, 7u);
+    EXPECT_EQ(store.readBitmap(target->info, UNBOUNDED_CSN).second, 12u);
+    EXPECT_TRUE(store.readBitmap(target->info, UNBOUNDED_CSN).first->contains(12));
+}
+
+TEST(MergeTreeBitmapStoreTest, AStagedLinkIsSweptOnceItsVersionResolves)
+{
+    TableFixture tbl;
+    MergeTreeBitmapStore store{*tbl.table, /*cache=*/nullptr};
+
+    const auto target = tbl.addPart("all_1_1_0", /*first_id=*/ 0, /*rows=*/ 8);
+    const auto stager = tbl.addPart("all_5_5_0", /*first_id=*/ 100, /*rows=*/ 1);
+    const auto carrier = tbl.addPart("all_9_9_0", /*first_id=*/ 200, /*rows=*/ 1);
+    const auto target_name = target->info.getPartNameV1();
+
+    writeCarried(partStorage(*carrier), /*version=*/ 7, target_name, bitmapWithRow(7));
+    writeCarried(partStorage(*carrier), /*version=*/ 12, target_name, bitmapWithRow(12));
+    store.loadPart(carrier->info, carrier->getDataPartStorage());
+
+    /// Staged and never read, so it is still unordered when the sweep starts. The sweep asks
+    /// `versionAt` for the floor first, which resolves it, so it is swept on the same terms as
+    /// any other version rather than surviving at the top of the order.
+    DeleteBitmapFileOps::stageBitmap(partStorage(*stager), target->name, bitmapWithRow(5));
+    store.loadPart(stager->info, stager->getDataPartStorage());
+
+    /// Both the staged version and the carried 7 are below the floor of 12.
+    EXPECT_EQ(store.removeObsoleteBitmaps(target->info, UNBOUNDED_CSN), 2u);
+    EXPECT_EQ(store.listBitmaps(stager->info).size(), 0u);
+
+    /// Nothing is lost: a version is cumulative, so the surviving floor subsumes both.
+    EXPECT_EQ(store.readBitmap(target->info, UNBOUNDED_CSN).second, 12u);
+    EXPECT_TRUE(store.readBitmap(target->info, UNBOUNDED_CSN).first->contains(12));
+}
+
 TEST(MergeTreeBitmapStoreTest, VersionsOfOnePartInterleaveAcrossTheHoldersOfThem)
 {
     TableFixture tbl;

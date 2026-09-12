@@ -2694,6 +2694,20 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         }
     }
 
+    /// Above `setState`: a broken part's children are promoted only while it is not Active.
+    try
+    {
+        loadUniqueKeyBitmaps(res.part);
+    }
+    catch (...)
+    {
+        if (isRetryableException(std::current_exception()))
+            throw;
+
+        mark_broken();
+        return res;
+    }
+
     res.part->setState(to_state);
 
     DataPartIteratorByInfo it;
@@ -2712,6 +2726,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         {
             LOG_ERROR(log, "Duplicate part {}", res.part->getDataPartStorage().getFullPath());
             res.part->is_duplicate = true;
+            /// Its links stay: the index is keyed by part info, so `dropPart` here would erase
+            /// the live part's links too.
             return res;
         }
 
@@ -2726,10 +2742,6 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
 
     if (res.part->hasLightweightDelete())
         has_lightweight_delete_parts.store(true);
-
-    /// Before the part is reachable by a query: `data_parts_indexes` above is under
-    /// `part_loading_mutex`, not the parts lock, so a reader can resolve it from here on.
-    loadUniqueKeyBitmaps(res.part);
 
     LOG_TRACE(log, "Finished loading {} part {} on disk {}", magic_enum::enum_name(to_state), part_name, part_disk_ptr->getName());
     return res;
