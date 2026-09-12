@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteObject.h>
 
 #include <Core/Field.h>
+#include <Core/Names.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <base/types.h>
 
@@ -17,6 +18,19 @@ namespace DB::Iceberg
 {
 
 String computePartitionId(const Row & partition_key_value);
+
+
+/// An identity-partition value from a manifest, with the reader header columns it may be injected into.
+struct IdentityPartitionColumn
+{
+    /// Dot-joined full name of the Iceberg field, as the schema mints it.
+    String name;
+    /// Each candidate is a header column name plus the tuple element path to walk inside that column;
+    /// an empty path means the whole column is the value. A joined name the Iceberg schema does not
+    /// uniquely identify is absent from this list.
+    std::vector<std::pair<String, Names>> injection_sites;
+    Field value;
+};
 
 
 struct IcebergObjectSerializableInfo
@@ -33,7 +47,7 @@ struct IcebergObjectSerializableInfo
     std::optional<Int64> record_count;
     std::optional<Int64> file_size_in_bytes;
     std::optional<UInt64> first_row_id;
-    std::vector<std::pair<String, Field>> identity_partition_columns;
+    std::vector<IdentityPartitionColumn> identity_partition_columns;
 
     void serializeForClusterFunctionProtocol(WriteBuffer & out, size_t protocol_version) const;
     void deserializeForClusterFunctionProtocol(ReadBuffer & in, size_t protocol_version);
@@ -69,7 +83,7 @@ struct IcebergDataObjectInfo : public ObjectInfo, std::enable_shared_from_this<I
         Iceberg::ProcessedManifestFileEntryPtr data_manifest_file_entry_,
         const String & resolved_storage_path_,
         Int32 schema_id_relevant_to_iterator_,
-        std::vector<std::pair<String, Field>> identity_partition_columns_);
+        std::vector<Iceberg::IdentityPartitionColumn> identity_partition_columns_);
 
     explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_);
     explicit IcebergDataObjectInfo(const RelativePathWithMetadata & path_, const Iceberg::IcebergObjectSerializableInfo & info_);
