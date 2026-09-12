@@ -1,0 +1,61 @@
+<test>
+    <settings>
+        <allow_statistics>1</allow_statistics>
+        <use_statistics>1</use_statistics>
+        <!--
+            Pinned for determinism, not necessity: the demotion is reachable under the default
+            `join_algorithm` too. It is pinned so a change in which algorithm gets picked cannot
+            quietly turn this into a measurement of two identical plans.
+        -->
+        <join_algorithm>parallel_hash</join_algorithm>
+    </settings>
+
+    <create_query>
+        CREATE TABLE jks_perf_left
+        (
+            high_card UInt64 STATISTICS(uniq),
+            low_card  UInt64 STATISTICS(uniq),
+            payload   UInt64
+        ) ENGINE = MergeTree ORDER BY low_card
+    </create_query>
+
+    <create_query>
+        CREATE TABLE jks_perf_right
+        (
+            high_card UInt64 STATISTICS(uniq),
+            low_card  UInt64 STATISTICS(uniq),
+            extra     UInt64
+        ) ENGINE = MergeTree ORDER BY high_card
+    </create_query>
+
+    <!--
+        10x cardinality ratio between the two equality keys (mirrors issue #102595):
+          high_card NDV = 10_000_000 (near-unique)
+          low_card  NDV =  1_000_000 (intDiv(number, 10))
+
+        Plain join on both keys, with no reference to
+        `query_plan_hash_join_subset_keys_auto` in the query: it is on by default, and
+        naming a setting the reference build does not know makes the query fail there
+        with `UNKNOWN_SETTING`, which drops it out of the comparison and into the
+        report's "Backward-incompatible Queries" table. On a build without the
+        optimization, both keys go into the hash table (~10M entries). With it,
+        the join-order optimizer keeps `low_card` as the hash key and evaluates
+        `high_card` during the probe, so the table holds ~1M entries instead of ~10M.
+        The probe then walks a bucket of ~10 rows per probe row to check the demoted
+        equality, so this measures what that costs against the memory it saves.
+    -->
+    <fill_query>INSERT INTO jks_perf_left  SELECT number, intDiv(number, 10), number FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO jks_perf_right SELECT number, intDiv(number, 10), number FROM numbers(10000000)</fill_query>
+
+    <fill_query>OPTIMIZE TABLE jks_perf_left  FINAL</fill_query>
+    <fill_query>OPTIMIZE TABLE jks_perf_right FINAL</fill_query>
+
+    <query>
+        SELECT count() FROM jks_perf_left l JOIN jks_perf_right r
+            ON l.high_card = r.high_card AND l.low_card = r.low_card
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS jks_perf_left</drop_query>
+    <drop_query>DROP TABLE IF EXISTS jks_perf_right</drop_query>
+</test>

@@ -396,6 +396,8 @@ bool JoinStepLogical::canRemoveUnusedColumns() const
         stack.push_back(join_action.getNode());
     for (const auto & join_action : join_operator.residual_filter)
         stack.push_back(join_action.getNode());
+    for (const auto & join_action : join_operator.probe_conditions)
+        stack.push_back(join_action.getNode());
 
     while (!stack.empty())
     {
@@ -493,6 +495,9 @@ JoinStepLogical::RemoveUnusedColumnsResult JoinStepLogical::removeUnusedColumns(
         required_nodes.push_back(join_action.getNode());
 
     for (const auto & join_action : join_operator.residual_filter)
+        required_nodes.push_back(join_action.getNode());
+
+    for (const auto & join_action : join_operator.probe_conditions)
         required_nodes.push_back(join_action.getNode());
 
     if (required_nodes.empty())
@@ -1611,11 +1616,21 @@ static QueryPlanNode buildPhysicalJoinImpl(
     /// after the join. For OUTER joins ON conditions affect matching (non-matching rows are
     /// NULL-extended, not dropped), so they are evaluated during the join as a mixed join
     /// expression, while the residual filter still drops rows from the result.
+    ///
+    /// The equi-keys demoted by `demoteHighNdvKeysToProbe` arrive in `join_operator.probe_conditions`
+    /// (NOT in `join_operator.residual_filter`); they are JOIN ON conditions and are routed into the
+    /// mixed join expression below, never applied as a post-join filter, so that outer joins keep
+    /// NULL-extending non-matching rows correctly while a genuine post-join `residual_filter`
+    /// predicate is left untouched.
     JoinActionRef on_clause_condition = concatConditions(join_expression);
     JoinActionRef residual_filter_condition = concatConditions(join_operator.residual_filter);
+    JoinActionRef probe_condition = concatConditions(join_operator.probe_conditions);
 
-    const bool build_mixed_join_expression
+    /// Conditions evaluated during the probe rather than as a post-join filter: a non-pushdownable
+    /// ON condition, and any equality demoted out of the hash-table key set.
+    const bool on_clause_to_mixed
         = on_clause_condition && (is_disjunctive_condition || !canPushDownFromOn(join_operator));
+    const bool build_mixed_join_expression = on_clause_to_mixed || static_cast<bool>(probe_condition);
 
     /// A prepared storage delivers its columns already converted to `Nullable`, so the conversion is
     /// dropped from the right-side expression below and the aliased `Nullable` node is what the join
@@ -1675,19 +1690,43 @@ static QueryPlanNode buildPhysicalJoinImpl(
     };
     collect_required_input_nodes(on_clause_condition);
     collect_required_input_nodes(residual_filter_condition);
+    collect_required_input_nodes(probe_condition);
 
     ExpressionActionsPtr ie_join_residual_condition;
     if (build_mixed_join_expression)
     {
-        auto on_clause_dag = JoinExpressionActions::getSubDAG(std::views::single(on_clause_condition));
-        auto on_clause_expression = std::make_shared<ExpressionActions>(std::move(on_clause_dag), optimization_settings.actions_settings);
+        /// Conditions evaluated during the probe rather than as a post-join filter:
+        ///  - non-pushdownable ON conditions (disjunctive, or outer-join semantics that
+        ///    NULL-extend non-matching rows);
+        ///  - equalities demoted out of the hash-table key set: being JOIN ON conditions,
+        ///    applying them as a post-join filter would drop NULL-extended rows on outer joins,
+        ///    so they are always evaluated during the probe. A genuine `residual_filter_condition`
+        ///    predicate stays a post-join filter.
+        std::vector<JoinActionRef> mixed_conditions;
+        if (on_clause_to_mixed)
+        {
+            mixed_conditions.push_back(on_clause_condition);
+            on_clause_condition = JoinActionRef(nullptr);
+        }
+        if (probe_condition)
+        {
+            /// `demoteHighNdvKeysToProbe` only fires when every enabled algorithm evaluates the mixed
+            /// join expression, which excludes `IE_JOIN`. Reaching here with a demoted equality and an
+            /// IEJoin would silently drop that equality and produce extra rows.
+            if (ie_join_description)
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "IEJoin cannot evaluate JOIN ON equalities demoted from the hash table key set");
+            mixed_conditions.push_back(probe_condition);
+        }
+
+        auto mixed_dag = JoinExpressionActions::getSubDAG(std::views::single(concatConditions(mixed_conditions)));
+        auto mixed_expression = std::make_shared<ExpressionActions>(std::move(mixed_dag), optimization_settings.actions_settings);
         /// For IEJoin the condition gates candidate pairs inside the operator; TableJoin's
         /// mixed join expression is consumed only by the hash-family algorithms.
         if (ie_join_description)
-            ie_join_residual_condition = std::move(on_clause_expression);
+            ie_join_residual_condition = std::move(mixed_expression);
         else
-            table_join->getMixedJoinExpression() = std::move(on_clause_expression);
-        on_clause_condition = JoinActionRef(nullptr);
+            table_join->getMixedJoinExpression() = std::move(mixed_expression);
     }
 
     if (on_clause_condition)
@@ -2347,6 +2386,8 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     for (auto & action : new_join_operator.expression)
         action = JoinActionRef(remap(action.getNode()), new_expression_actions);
     for (auto & action : new_join_operator.residual_filter)
+        action = JoinActionRef(remap(action.getNode()), new_expression_actions);
+    for (auto & action : new_join_operator.probe_conditions)
         action = JoinActionRef(remap(action.getNode()), new_expression_actions);
 
     auto result_step = std::make_unique<JoinStepLogical>(

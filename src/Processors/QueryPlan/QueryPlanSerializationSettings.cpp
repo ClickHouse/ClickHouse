@@ -117,6 +117,11 @@ namespace DB
     DECLARE(Bool, enable_software_prefetch_in_join, true, "Enable use of software prefetch in hash join probe phase", 0) \
     DECLARE(Bool, serialize_string_in_memory_with_zero_byte, true, "Serialize String values during aggregation with zero byte at the end. Enable to keep compatibility when querying cluster of incompatible versions.", 0) \
     DECLARE(Bool, use_hash_table_stats_for_join_reordering, false, "Enable using collected hash table statistics for cardinality estimation during join reordering", 0) \
+    DECLARE(Bool, query_plan_hash_join_subset_keys_auto, false, "Use column statistics to automatically demote high-NDV JOIN equality keys out of the hash table key set.", 0) \
+    DECLARE(UInt64, query_plan_hash_join_subset_keys_min_rows, 1000000, "Minimum estimated build-side row count for `query_plan_hash_join_subset_keys_auto` to kick in.", 0) \
+    DECLARE(Double, query_plan_hash_join_subset_keys_max_probe_cost_ns, 200.0, "Ceiling on estimated probe-time nanoseconds per probe row for query_plan_hash_join_subset_keys_auto.", 0) \
+DECLARE(UInt64, query_plan_hash_join_subset_keys_min_saving_bytes, 134217728, "Minimum estimated hash table saving in bytes for query_plan_hash_join_subset_keys_auto.", 0) \
+DECLARE(Double, query_plan_hash_join_subset_keys_min_kept_selectivity, 0.01, "Target NDV(kept_keys)/build_side_rows for `query_plan_hash_join_subset_keys_auto`.", 0) \
     DECLARE(Bool, enable_join_fixed_hash_table_conversion, true, R"(Enable converting the hash table to a flat array for joins when the key is a single integer with a small value range)", 0) \
     DECLARE(Bool, enable_join_key_only_hash_tables, true, R"(Use hash tables that store the join keys alone, without a reference to a right row, for joins whose result can never contain a value taken from a right row: `LEFT ANTI`, and `LEFT SEMI` when no right column is selected. Such a table has a smaller cell and lets the right blocks be dropped instead of stored.)", 0) \
     DECLARE(Bool, join_runtime_filter_from_fixed_hash_table, true, R"(When the hash join build side was converted to a FixedHashMap (see `enable_join_fixed_hash_table_conversion`), use that hash map directly as the runtime filter.)", 0) \

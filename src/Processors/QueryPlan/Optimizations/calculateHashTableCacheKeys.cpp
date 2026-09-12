@@ -127,28 +127,38 @@ namespace DB
 namespace QueryPlanOptimizations
 {
 
-UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
+UInt64 calculateJoinStepCacheKeyContribution(
+    const String & step_serialization_name, const std::vector<const ActionsDAG::Node *> & key_nodes)
 {
     SipHash hash;
 
-    hash.update(join_step.getSerializationName());
+    hash.update(step_serialization_name);
+    for (const auto * key_node : key_nodes)
+        key_node->updateHash(hash);
+
+    return hash.get64();
+}
+
+UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
+{
+    std::vector<const ActionsDAG::Node *> key_nodes;
     for (const auto & condition : join_step.getJoinOperator().expression)
     {
         auto [op, lhs, rhs] = condition.asBinaryPredicate();
         if (op == JoinConditionOperator::Equals || op == JoinConditionOperator::NullSafeEquals)
         {
             if (side == JoinTableSide::Left && lhs.fromLeft())
-                lhs.getNode()->updateHash(hash);
+                key_nodes.push_back(lhs.getNode());
             if (side == JoinTableSide::Left && rhs.fromLeft())
-                rhs.getNode()->updateHash(hash);
+                key_nodes.push_back(rhs.getNode());
             if (side == JoinTableSide::Right && lhs.fromRight())
-                lhs.getNode()->updateHash(hash);
+                key_nodes.push_back(lhs.getNode());
             if (side == JoinTableSide::Right && rhs.fromRight())
-                rhs.getNode()->updateHash(hash);
+                key_nodes.push_back(rhs.getNode());
         }
     }
 
-    return hash.get64();
+    return calculateJoinStepCacheKeyContribution(join_step.getSerializationName(), key_nodes);
 }
 
 /// These keys identify cached runtime dataflow statistics that feed the Auto-PR cost model, which is

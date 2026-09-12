@@ -342,6 +342,19 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     /// that would have matches in the right table. This means we need to add something like NOT IN filter.
     const bool check_left_does_not_contain = (join_operator.kind == JoinKind::Left && join_operator.strictness == JoinStrictness::Anti);
 
+    /// `demoteHighNdvKeysToProbe` (see `optimizeJoin.cpp`) moves some of the ON equalities out of
+    /// `join_operator.expression` into `join_operator.probe_conditions`, where they are evaluated
+    /// during the probe. The all-equality check below only walks `expression`, so a demoted equality
+    /// is invisible to it and the join looks like it has fewer keys than it matches on.
+    ///
+    /// For LEFT ANTI that breaks the exact `NOT IN` set the same way a non-equi condition would: the
+    /// set is built from the kept keys only, so a left row whose kept keys appear on the right is
+    /// excluded even when the full key tuple has no match and the row should have survived. The other
+    /// join kinds are unaffected - there a key-subset set only lets extra rows through the filter and
+    /// the join rejects them - so guard just this path.
+    if (check_left_does_not_contain && !join_operator.probe_conditions.empty())
+        return false;
+
     QueryPlan::Node * apply_filter_node = node.children[0];
     QueryPlan::Node * build_filter_node = node.children[1];
 

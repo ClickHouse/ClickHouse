@@ -5,11 +5,15 @@
 #include <Core/Joins.h>
 #include <Core/Settings.h>
 
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
 
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
+#include <Processors/QueryPlan/Optimizations/demoteJoinKeys.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/MergeJoin.h>
@@ -176,6 +180,30 @@ struct RuntimeHashStatisticsContext
         return {};
     }
 
+    /// What a previous run measured for a hash table built from the subtree whose parent-independent
+    /// hash is `raw_hash` and keyed on exactly `key_nodes`. Unlike `getCachedHint`, the key set is
+    /// given explicitly rather than taken from an existing join, so a candidate subset of the equi
+    /// keys can be scored before this join's own key set is final (see `demoteHighNdvKeysToProbe`).
+    std::optional<HashJoinEntry> getCachedHintForKeys(
+        UInt64 raw_hash, const String & step_serialization_name, const std::vector<const ActionsDAG::Node *> & key_nodes)
+    {
+        if (!raw_hash || key_nodes.empty())
+            return {};
+        const UInt64 probe_key = raw_hash ^ calculateJoinStepCacheKeyContribution(step_serialization_name, key_nodes);
+        return getHashTablesStatistics<HashJoinEntry>().getSizeHint(params.setKey(probe_key));
+    }
+
+    /// Same key as `getCachedHintForKeys`, different measurement: the probe-time fan-out a previous
+    /// execution saw for a table keyed on exactly these columns.
+    std::optional<HashJoinFanoutEntry> getCachedFanoutForKeys(
+        UInt64 raw_hash, const String & step_serialization_name, const std::vector<const ActionsDAG::Node *> & key_nodes)
+    {
+        if (!raw_hash || key_nodes.empty())
+            return {};
+        const UInt64 probe_key = raw_hash ^ calculateJoinStepCacheKeyContribution(step_serialization_name, key_nodes);
+        return getHashTablesStatistics<HashJoinFanoutEntry>().getSizeHint(params.setKey(probe_key));
+    }
+
     /// Mirror what `calculateHashTableCacheKeys` would have produced for an equivalent join in
     /// the original tree, but for `new_node` that the join-reorder pass is emitting on top of
     /// `left_child_node` and `right_child_node` (which can themselves be original leaves or
@@ -236,6 +264,15 @@ struct RuntimeHashStatisticsContext
                 continue;
             condition.getNode()->updateHash(output_hash);
         }
+
+        /// The equalities `demoteHighNdvKeysToProbe` moved out of `expression` are not covered by
+        /// `calculateJoinStepCacheKeyContribution` either, which by design hashes only the keys the
+        /// hash table is built on. They still filter the join output, so two joins over the same
+        /// subtrees that keep the same key subset but probe on different extra equalities must not
+        /// share a match-count hint - that hint drives the row-store decision in
+        /// `chooseJoinAlgorithm`, and reusing it would size the decision on unrelated fanout.
+        for (const auto & condition : join_operator.probe_conditions)
+            condition.getNode()->updateHash(output_hash);
 
         return {right_key, output_hash.get64()};
     }
@@ -435,7 +472,22 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         const auto & dag = filter_step->getExpression();
         const auto * predicate = static_cast<const ActionsDAG::Node *>(dag.tryFindInOutputs(filter_step->getFilterColumnName()));
-        auto stats = estimateReadRowsCount(*node.children.front(), predicate);
+
+        /// Both predicates of two stacked `FilterStep`s have to reach the estimator: passing only
+        /// the inner one down would drop the outer one's selectivity and over-estimate the relation,
+        /// which is what the join order and `query_plan_hash_join_subset_keys_auto` are sized from.
+        /// The conjunction is owned by a DAG built here, so it must outlive the recursive call below.
+        std::optional<ActionsDAG> conjunction_dag;
+        const auto * filter_to_push = predicate ? predicate : filter;
+        if (filter && predicate)
+        {
+            conjunction_dag = ActionsDAG::buildFilterActionsDAG({filter, predicate});
+            if (!conjunction_dag || conjunction_dag->getOutputs().empty())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to combine filters for row count estimation");
+            filter_to_push = conjunction_dag->getOutputs().front();
+        }
+
+        auto stats = estimateReadRowsCount(*node.children.front(), filter_to_push);
         remapColumnStats(stats.column_stats, filter_step->getExpression());
         return stats;
     }
@@ -1185,6 +1237,7 @@ constexpr bool isSwapOnlyJoinStrictness(JoinStrictness strictness)
     return strictness == JoinStrictness::Any || strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti;
 }
 
+
 static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, QueryPlan::Nodes & nodes, JoinStrictness join_strictness)
 {
     QueryGraph query_graph;
@@ -1199,10 +1252,15 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     std::unordered_map<BitSet, RelationEstimateInfo> relation_infos;
     Strings relations_without_statistics;
     std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
+    /// Leaves whose row count had to be guessed because column statistics are missing. Distinct from
+    /// `leaf_imprecise`, which is also set for the synthetic test sources (a stats hint, randomized
+    /// stats) - those carry usable NDVs, a primary-index guess does not.
+    std::vector<UInt8> leaf_missing_statistics(query_graph.relation_stats.size());
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
         leaf_imprecise[i] = rel.imprecise_estimate;
+        leaf_missing_statistics[i] = isMissingStatisticsSource(rel.source);
 
         relation_infos[BitSet().set(i)] = RelationEstimateInfo{
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
@@ -1559,6 +1617,54 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .composite = true};
 
             join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+
+            /// Demote before the cache keys below are derived: they hash the equalities left in the ON
+            /// expression, so the key then identifies the hash table that is actually built.
+            /// Skipped when the build-side row count had to be guessed because column statistics are
+            /// missing - choosing a key subset from a primary-index guess can shrink the wrong side.
+            bool build_side_missing_statistics = false;
+            for (size_t i = 0; i < leaf_missing_statistics.size(); ++i)
+                if (right_rels.test(i))
+                    build_side_missing_statistics |= leaf_missing_statistics[i];
+
+            if (!build_side_missing_statistics)
+            {
+                /// `left_rels`/`right_rels` and the child nodes were swapped together above, so the
+                /// build side is the DP entry the post-swap right child came from.
+                const auto & build_entry = flip_join ? *entry->left : *entry->right;
+                auto & statistics_context = query_graph_builder.context->statistics_context;
+                /// A `Join` engine right side is read through `StorageJoin::getJoinLocked`, which
+                /// rejects a mixed join expression outright and is reached before the algorithm
+                /// loop, so unlike every other declining path there is nothing to fall back to:
+                /// demoting there would turn a working query into an error.
+                auto * right_lookup = typeid_cast<JoinStepLogicalLookup *>(right_child_node->step.get());
+                const bool right_is_join_engine = right_lookup
+                    && right_lookup->getPreparedJoinStorage().storage_join != nullptr;
+                if (!right_is_join_engine)
+                {
+                    const UInt64 right_raw_hash = statistics_context.getRawHash(right_child_node);
+                    demoteHighNdvKeysToProbe(
+                        *join_step,
+                        build_entry.estimated_rows,
+                        build_entry.column_stats,
+                        [&](const std::vector<const ActionsDAG::Node *> & key_nodes) -> std::optional<UInt64>
+                        {
+                            if (!right_raw_hash)
+                                return {};
+                            auto hint = statistics_context.getCachedHintForKeys(
+                                right_raw_hash, join_step->getSerializationName(), key_nodes);
+                            return hint ? std::optional<UInt64>(hint->ht_size) : std::nullopt;
+                        },
+                        [&](const std::vector<const ActionsDAG::Node *> & key_nodes) -> std::optional<double>
+                        {
+                            if (!right_raw_hash)
+                                return {};
+                            auto hint = statistics_context.getCachedFanoutForKeys(
+                                right_raw_hash, join_step->getSerializationName(), key_nodes);
+                            return hint ? std::optional<double>(hint->candidates_per_probe_row) : std::nullopt;
+                        });
+                }
+            }
 
             auto & new_node = nodes.emplace_back();
 

@@ -1,5 +1,7 @@
 #pragma once
 
+#include <DataTypes/IDataType.h>
+
 #include <atomic>
 #include <deque>
 #include <memory>
@@ -212,6 +214,30 @@ public:
         size_t bucket_idx, size_t num_buckets) const override;
 
     void onBuildPhaseFinish() override;
+    /// Candidate rows the probe examined before the additional filter, and the probe rows they came
+    /// from. Only the additional-filter path reports these; without such a filter every candidate is
+    /// a match and `hash_table_matches` already counts them.
+    void recordProbeFanout(size_t candidate_rows, size_t probe_rows) const
+    {
+        if (!probe_rows)
+            return;
+        probe_candidate_rows.fetch_add(candidate_rows, std::memory_order_relaxed);
+        probe_row_count.fetch_add(probe_rows, std::memory_order_relaxed);
+    }
+
+    /// The raw sums, for a wrapper that has to combine several instances before taking the ratio.
+    size_t getProbeCandidateRows() const { return probe_candidate_rows.load(std::memory_order_relaxed); }
+    size_t getProbeRowCount() const { return probe_row_count.load(std::memory_order_relaxed); }
+
+    /// Measured candidates per probe row, or 0 when no additional filter ran.
+    double getProbeFanout() const
+    {
+        const size_t rows = probe_row_count.load(std::memory_order_relaxed);
+        if (!rows)
+            return 0.0;
+        return static_cast<double>(probe_candidate_rows.load(std::memory_order_relaxed)) / static_cast<double>(rows);
+    }
+
     void onProbePhaseFinish(size_t matched_right_rows) override
     {
         hash_table_matches = matched_right_rows;
@@ -704,6 +730,11 @@ private:
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
     size_t hash_table_matches = 0;
 
+    /// Probe-time fan-out summed across probe streams. Written from the probe, which holds the join
+    /// by const reference, hence `mutable`.
+    mutable std::atomic<size_t> probe_candidate_rows{0};
+    mutable std::atomic<size_t> probe_row_count{0};
+
     /// Whether the maps store keys alone, see `JoinMapsKind::Set`. Decided once, before they are created.
     bool use_set_maps = false;
 
@@ -728,6 +759,45 @@ private:
     bool canUseSetMaps() const;
 
 public:
+    /// The (kind, strictness) combinations for which the probe evaluates a mixed JOIN ON condition
+    /// (`TableJoin::getMixedJoinExpression`). Consulted by `validateAdditionalFilterExpression` and by
+    /// the optimizer passes that produce such a condition, so both share one definition of the matrix.
+    static bool isAdditionalFilterSupported(JoinKind kind, JoinStrictness strictness);
+
+    /// The map variant a hypothetical key set would use, given only the key types. `chooseMethod`
+    /// reads nothing but class-level properties of the key columns - `isNumeric`,
+    /// `sizeOfValueIfFixed`, `isFixedAndContiguous` and the column class itself - so empty columns
+    /// answer it exactly, and a plan-time caller can size a candidate key subset before any data
+    /// exists. Types are taken as given: a `Nullable` or `LowCardinality` key classifies here the
+    /// way its own column class dictates, which is not always what the join settles on after it
+    /// normalizes its keys. That only skews a size estimate, and skews both sides of a comparison
+    /// the same way, so callers comparing two key sets can use it directly.
+    static Type chooseMethodForTypes(const DataTypes & key_types, bool use_two_level_maps);
+
+    /// Bytes per cell of the map variant `type` under `strictness`, read out of `MapsTemplate`
+    /// itself so it cannot drift from the maps that are actually instantiated. Returns 0 for a
+    /// variant whose cell size is unknown, which callers must treat as "cannot estimate".
+    static size_t cellBytes(Type type, JoinStrictness strictness);
+
+    /// Whether the variant keeps its key outside the cell. The string variants copy the key bytes
+    /// into the join's own pool; the fixed-width ones store the key in the cell, and `hashed`
+    /// stores a digest of it there instead. Without this distinction a string-keyed table looks
+    /// cheaper than a `hashed` one purely because its cell is narrower, when in fact it also has to
+    /// keep every key byte.
+    static bool storesKeyOutOfLine(Type type);
+
+    /// Bytes the table would occupy for `key_count` distinct keys: the cell array, plus the keys
+    /// themselves for a variant that stores them out of line. The grower allocates a power-of-two
+    /// number of cells and keeps it at most half full, so the cell term is a step function of
+    /// `key_count` rather than proportional to it.
+    ///
+    /// `avg_key_bytes` is the average width of one key, and is required when the variant stores
+    /// keys out of line: passing 0 there reports 0 (cannot estimate) rather than silently
+    /// undercounting. The rows chaining past the first per key are still not counted - that arena
+    /// grows as keys are removed, so what remains is an upper bound on a demotion's saving.
+    static size_t estimateTableBytes(
+        size_t key_count, Type type, JoinStrictness strictness, Float64 avg_key_bytes = 0.0);
+
     bool mustKeepRightBlocks() const;
 
     /// Called by the algorithm that wraps this join, before it feeds it anything, when it may take

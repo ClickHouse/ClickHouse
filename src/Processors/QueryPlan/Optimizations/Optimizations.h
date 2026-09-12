@@ -342,6 +342,12 @@ void calculateHashTableCacheKeys(
 /// Per-side join-step hash used to derive HashTablesStatistics cache keys after join reorder.
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side);
 
+/// The same hash built from an explicit list of equi-key DAG nodes instead of from a join step, so
+/// that a candidate key subset can be scored against `HashTablesStatistics` before the join's own
+/// key set is final. `calculateJoinStepCacheKeyContribution` above is defined in terms of this.
+UInt64 calculateJoinStepCacheKeyContribution(
+    const String & step_serialization_name, const std::vector<const ActionsDAG::Node *> & key_nodes);
+
 bool convertLogicalJoinToPhysical(
     QueryPlan::Node & node,
     QueryPlan::Nodes &,

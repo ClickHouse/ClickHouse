@@ -208,6 +208,8 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         next_scattered_block = ScatteredBlock(std::move(raw_block), std::move(split_selector.second));
     }
 
+    join.recordProbeFanout(added_columns.lazy_output.candidate_rows, added_columns.lazy_output.probe_rows);
+
     auto join_result = std::make_unique<HashJoinResult>(
         std::move(added_columns.lazy_output),
         std::move(added_columns.columns),
@@ -1065,6 +1067,9 @@ size_t HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinRightColumnsWithAddi
             if (current_added_rows >= max_joined_rows)
                 break;
         }
+
+        added_columns.lazy_output.candidate_rows += current_added_rows;
+        added_columns.lazy_output.probe_rows += row_replicate_offset.size();
 
         if (selected_rows.size() != current_added_rows)
             throw Exception(

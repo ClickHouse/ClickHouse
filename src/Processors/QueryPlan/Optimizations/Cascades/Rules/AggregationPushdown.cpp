@@ -372,6 +372,13 @@ std::unique_ptr<JoinStepLogical> rebuildJoinWithNewInput(
 {
     const auto & join_operator = join_step.getJoinOperator();
 
+    /// The rebuild below reconstructs the join condition from `expression` and `residual_filter`
+    /// only. A join whose equalities were demoted to probe-time conditions
+    /// (`query_plan_hash_join_subset_keys_auto`) would come out of it missing part of its ON clause,
+    /// so leave such a join alone rather than rebuilding it wrongly.
+    if (!join_operator.probe_conditions.empty())
+        return nullptr;
+
     ActionsDAG::NodeRawConstPtrs cond_nodes;
     for (const auto & action : join_operator.expression)
         cond_nodes.push_back(action.getNode());

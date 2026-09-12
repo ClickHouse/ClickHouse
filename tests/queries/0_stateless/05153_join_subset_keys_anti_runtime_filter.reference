@@ -1,0 +1,15 @@
+reference
+2	1
+demotion off, runtime filter off
+2	1
+demotion on, runtime filter off
+2	1
+demotion off, runtime filter on
+2	1
+demotion on, runtime filter on
+2	1
+plan of the demoted anti join with runtime filters enabled
+Clauses: [(__table1.a) = (__table2.a)]
+Residual filter: equals(__table1.b, __table2.b)
+runtime filter steps in the demoted inner join
+1

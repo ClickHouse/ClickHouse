@@ -87,6 +87,23 @@ void updateStatistics(
     if (match_params.isCollectionAndUseEnabled() && probe_phase_finished)
         DB::getHashTablesStatistics<HashJoinMatchEntry>().update({.matches = hash_table_matches}, match_params);
 
+    /// The sub-joins partition one logical hash table, so their fan-out is summed rather than
+    /// averaged per instance, and written once under the shared build key.
+    if (build_params.isCollectionAndUseEnabled() && probe_phase_finished)
+    {
+        size_t candidates = 0;
+        size_t probe_rows = 0;
+        for (const auto & hash_join : hash_joins)
+        {
+            candidates += hash_join->data->getProbeCandidateRows();
+            probe_rows += hash_join->data->getProbeRowCount();
+        }
+        if (probe_rows)
+            DB::getHashTablesStatistics<HashJoinFanoutEntry>().update(
+                {.candidates_per_probe_row = static_cast<double>(candidates) / static_cast<double>(probe_rows)},
+                build_params);
+    }
+
     if (!build_params.isCollectionAndUseEnabled() || !hash_joins[0]->data->twoLevelMapIsUsed())
         return;
 

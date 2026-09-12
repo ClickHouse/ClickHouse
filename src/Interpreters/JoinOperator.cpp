@@ -79,6 +79,12 @@ namespace Setting
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
     extern const SettingsBool enable_hash_join_row_store;
     extern const SettingsDouble min_rows_ratio_for_hash_join_row_store;
+
+    extern const SettingsBool query_plan_hash_join_subset_keys_auto;
+    extern const SettingsUInt64 query_plan_hash_join_subset_keys_min_rows;
+    extern const SettingsDouble query_plan_hash_join_subset_keys_min_kept_selectivity;
+    extern const SettingsDouble query_plan_hash_join_subset_keys_max_probe_cost_ns;
+    extern const SettingsUInt64 query_plan_hash_join_subset_keys_min_saving_bytes;
 }
 
 namespace QueryPlanSerializationSetting
@@ -133,6 +139,12 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool join_runtime_filter_from_fixed_hash_table;
     extern const QueryPlanSerializationSettingsBool enable_hash_join_row_store;
     extern const QueryPlanSerializationSettingsDouble min_rows_ratio_for_hash_join_row_store;
+
+    extern const QueryPlanSerializationSettingsBool query_plan_hash_join_subset_keys_auto;
+    extern const QueryPlanSerializationSettingsUInt64 query_plan_hash_join_subset_keys_min_rows;
+    extern const QueryPlanSerializationSettingsDouble query_plan_hash_join_subset_keys_min_kept_selectivity;
+    extern const QueryPlanSerializationSettingsDouble query_plan_hash_join_subset_keys_max_probe_cost_ns;
+    extern const QueryPlanSerializationSettingsUInt64 query_plan_hash_join_subset_keys_min_saving_bytes;
 }
 
 JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_)
@@ -194,6 +206,12 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     join_runtime_filter_from_fixed_hash_table = query_settings[Setting::join_runtime_filter_from_fixed_hash_table];
     enable_hash_join_row_store = query_settings[Setting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = query_settings[Setting::min_rows_ratio_for_hash_join_row_store];
+
+    query_plan_hash_join_subset_keys_auto = query_settings[Setting::query_plan_hash_join_subset_keys_auto];
+    query_plan_hash_join_subset_keys_min_rows = query_settings[Setting::query_plan_hash_join_subset_keys_min_rows];
+    query_plan_hash_join_subset_keys_min_kept_selectivity = query_settings[Setting::query_plan_hash_join_subset_keys_min_kept_selectivity];
+    query_plan_hash_join_subset_keys_max_probe_cost_ns = query_settings[Setting::query_plan_hash_join_subset_keys_max_probe_cost_ns];
+    query_plan_hash_join_subset_keys_min_saving_bytes = query_settings[Setting::query_plan_hash_join_subset_keys_min_saving_bytes];
 }
 
 JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
@@ -252,6 +270,12 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     join_runtime_filter_from_fixed_hash_table = settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table];
     enable_hash_join_row_store = settings[QueryPlanSerializationSetting::enable_hash_join_row_store];
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
+
+    query_plan_hash_join_subset_keys_auto = settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_auto];
+    query_plan_hash_join_subset_keys_min_rows = settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_rows];
+    query_plan_hash_join_subset_keys_min_kept_selectivity = settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_kept_selectivity];
+    query_plan_hash_join_subset_keys_max_probe_cost_ns = settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_max_probe_cost_ns];
+    query_plan_hash_join_subset_keys_min_saving_bytes = settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_saving_bytes];
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
@@ -310,6 +334,12 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::join_runtime_filter_from_fixed_hash_table] = join_runtime_filter_from_fixed_hash_table;
     settings[QueryPlanSerializationSetting::enable_hash_join_row_store] = enable_hash_join_row_store;
     settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store] = min_rows_ratio_for_hash_join_row_store;
+
+    settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_auto] = query_plan_hash_join_subset_keys_auto;
+    settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_rows] = query_plan_hash_join_subset_keys_min_rows;
+    settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_kept_selectivity] = query_plan_hash_join_subset_keys_min_kept_selectivity;
+    settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_max_probe_cost_ns] = query_plan_hash_join_subset_keys_max_probe_cost_ns;
+    settings[QueryPlanSerializationSetting::query_plan_hash_join_subset_keys_min_saving_bytes] = query_plan_hash_join_subset_keys_min_saving_bytes;
 }
 
 UInt64 JoinSettings::getMaxBytesBeforeExternalJoin(UInt64 max_bytes_before_external_join, double max_bytes_ratio_before_external_join)
@@ -375,7 +405,21 @@ static void serializeNodeList(WriteBuffer & out, const std::unordered_map<const 
 void JoinOperator::serialize(WriteBuffer & out, const ActionsDAG * actions_dag) const
 {
     auto node_to_id = actions_dag->getNodeToIdMap();
-    serializeNodeList(out, node_to_id, expression);
+
+    if (probe_conditions.empty())
+    {
+        serializeNodeList(out, node_to_id, expression);
+    }
+    else
+    {
+        /// A probe-time equality is part of the join condition, so dropping it would add rows to the
+        /// join result. Rather than extend the format, write them back into the ON expression: the
+        /// reader keys the hash table on every equality, losing the optimization but never a row.
+        std::vector<JoinActionRef> undemoted_expression = expression;
+        undemoted_expression.insert(undemoted_expression.end(), probe_conditions.begin(), probe_conditions.end());
+        serializeNodeList(out, node_to_id, undemoted_expression);
+    }
+
     serializeNodeList(out, node_to_id, residual_filter);
 
     serializeJoinKind(kind, out);

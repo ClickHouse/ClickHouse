@@ -41,6 +41,20 @@ struct JoinOperator
     /// Set by the `joinRuntimeFilter` optimizer pass.
     std::vector<SharedRuntimeFilterDescriptor> shared_runtime_filter_descriptors = {};
 
+    /// Equality conditions from the ON clause that were demoted out of the hash-table key set by
+    /// `demoteHighNdvKeysToProbe` (see `optimizeJoin.cpp`). They stay JOIN ON conditions and are
+    /// evaluated during the probe via `mixed_join_expression`, never as a post-join filter, so
+    /// outer joins keep NULL-extending non-matching rows. Kept apart from `residual_filter`, which
+    /// holds genuine post-join predicates with different semantics, and apart from `expression`, so
+    /// that the hash-table statistics cache key (`calculateJoinStepCacheKeyContribution`, which
+    /// hashes only the equalities left in `expression`) reflects the keys actually inserted into
+    /// the hash table. The join-output statistics key is derived separately and does hash them (see
+    /// `deriveCacheKeysForNewJoin`), because they change the join result even though they leave the
+    /// hash table alone. `serialize` writes them back into the ON expression, so a deserialized plan
+    /// keys the hash table on every equality: the optimization does not cross a serialization
+    /// boundary, but no condition is ever lost.
+    std::vector<JoinActionRef> probe_conditions = {};
+
     explicit JoinOperator(
         JoinKind kind_ = JoinKind::Cross,
         JoinStrictness strictness_ = JoinStrictness::All,
@@ -126,6 +140,18 @@ struct JoinSettings
     bool enable_join_fixed_hash_table_conversion;
     bool enable_join_key_only_hash_tables;
     bool join_runtime_filter_from_fixed_hash_table;
+
+    /// Enable cardinality-driven automatic demotion of high-NDV equality keys to probe-time conditions.
+    bool query_plan_hash_join_subset_keys_auto;
+    /// Minimum estimated right-side row count for `query_plan_hash_join_subset_keys_auto` to apply.
+    UInt64 query_plan_hash_join_subset_keys_min_rows;
+    /// Target `NDV(kept_keys) / total_rows` for `query_plan_hash_join_subset_keys_auto`.
+    /// The smallest hash key subset reaching this selectivity is selected.
+    Float64 query_plan_hash_join_subset_keys_min_kept_selectivity;
+    /// Ceiling on the estimated probe-time work per probe row a demotion may create, in nanoseconds.
+    Float64 query_plan_hash_join_subset_keys_max_probe_cost_ns;
+    /// Minimum estimated hash-table saving, in bytes, for a demotion to be worth making.
+    UInt64 query_plan_hash_join_subset_keys_min_saving_bytes;
 
     /// Which statistics the join must collect for EXPLAIN ANALYZE
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
