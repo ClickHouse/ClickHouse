@@ -348,6 +348,11 @@ public:
     {
         return head.remaining();
     }
+
+    /// Where the next allocation will start. A caller that wants to `rollback` an allocation of its
+    /// own can compare this against its end to see whether anything else has allocated since - only
+    /// then is its allocation still the one at the top.
+    const char * position() const { return head.pos; }
 };
 
 using ArenaPtr = std::shared_ptr<Arena>;

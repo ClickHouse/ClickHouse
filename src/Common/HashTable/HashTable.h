@@ -166,6 +166,9 @@ struct HashTableCell
 
     /// Get the key (externally).
     const Key & getKey() const { return key; }
+    /// Only valid when the new key holds the same bytes as the old one: moves the key's storage
+    /// without changing which slot the cell belongs to.
+    void ALWAYS_INLINE relocateKey(const Key & new_key) { key = new_key; }
     VoidMapped getMapped() const { return {}; }
     const value_type & getValue() const { return key; }
 

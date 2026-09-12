@@ -215,6 +215,8 @@ public:
     ALWAYS_INLINE char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
 
     void batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(
+        VectorWithMemoryTracking<char *> & memories, size_t row_begin, size_t row_end, const IColumn::SerializationSettings * settings) const override;
 
     void serializeAsComparable(size_t n, String & out) const override;
     void batchSerializeAsComparable(size_t num_rows, VectorWithMemoryTracking<String> & out, const IColumn::Permutation * permutation, const UInt8 * null_map) const override;
