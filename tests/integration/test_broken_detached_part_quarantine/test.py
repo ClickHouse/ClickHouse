@@ -69,8 +69,24 @@ def test_broken_detached_part_is_renamed_with_broken_prefix(started_cluster):
     detached = node2.query(
         "SELECT name FROM system.detached_parts WHERE database = currentDatabase() AND table = 't' ORDER BY name"
     ).split()
-    assert any(name.startswith("broken") for name in detached), detached
     assert "all_0_0_0" not in detached, detached
+
+    # The quarantined directory has to be a plain `broken_<part>`, not `broken_attaching_<part>`: the
+    # temporary `attaching_` marker makes the name unparsable, and then `reason` and `partition_id` are
+    # `NULL` here and the partition-scoped `DROP DETACHED` below cannot see the part at all.
+    quarantined = node2.query(
+        "SELECT name, reason, partition_id FROM system.detached_parts "
+        "WHERE database = currentDatabase() AND table = 't' AND startsWith(name, 'broken') ORDER BY name"
+    )
+    assert quarantined == "broken_all_0_0_0\tbroken\tall\n", quarantined
+
+    node2.query("ALTER TABLE t DROP DETACHED PARTITION ALL SETTINGS allow_drop_detached = 1")
+    assert (
+        node2.query(
+            "SELECT count() FROM system.detached_parts WHERE database = currentDatabase() AND table = 't'"
+        )
+        == "0\n"
+    )
 
     for node in [node1, node2]:
         node.query("DROP TABLE t SYNC")
