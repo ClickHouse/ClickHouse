@@ -9,6 +9,7 @@
 #include <Databases/IDatabase.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/System/StorageSystemPartMovesBetweenShards.h>
 #include <Storages/VirtualColumnUtils.h>
@@ -70,10 +71,8 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
+            auto table = castStorage<StorageReplicatedMergeTree>(iterator->table(), StorageResolution::Peek);
             if (!table)
-                continue;
-            if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
                 continue;
             if (check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, db.first, iterator->name()))
                 continue;
@@ -119,6 +118,7 @@ void StorageSystemPartMovesBetweenShards::fillData(MutableColumns & res_columns,
         String database = (*col_database_to_filter)[i].safeGet<String>();
         String table = (*col_table_to_filter)[i].safeGet<String>();
 
+        /// NOLINT(storage-cast): `replicated_tables` is filled with already resolved storages.
         auto moves = dynamic_cast<StorageReplicatedMergeTree &>(*replicated_tables[database][table]).getPartMovesBetweenShardsEntries();
 
         for (auto & entry : moves)

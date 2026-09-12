@@ -13,6 +13,7 @@
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Databases/IDatabase.h>
 #include <rocksdb/statistics.h>
 
@@ -61,7 +62,7 @@ void StorageSystemRocksDB::fillData(MutableColumns & res_columns, ContextPtr con
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
             StoragePtr table = iterator->table();
-            RocksDBStoragePtr rocksdb_table = table ? std::dynamic_pointer_cast<StorageEmbeddedRocksDB>(table) : nullptr;
+            RocksDBStoragePtr rocksdb_table = table ? castStorage<StorageEmbeddedRocksDB>(table, StorageResolution::Peek) : nullptr;
             if (!rocksdb_table)
                 continue;
 

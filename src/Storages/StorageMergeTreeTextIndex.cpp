@@ -1,4 +1,5 @@
 
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageMergeTreeTextIndex.h>
 
 #include <Columns/ColumnString.h>
@@ -407,7 +408,7 @@ StorageMergeTreeTextIndex::StorageMergeTreeTextIndex(
     , source_table(source_table_)
     , text_index(std::move(text_index_))
 {
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(source_table.get());
+    const auto * merge_tree = castStorage<MergeTreeData>(source_table, StorageResolution::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Storage MergeTreeTextIndex expected MergeTree table, got: {}", source_table->getName());
 

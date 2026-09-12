@@ -14,13 +14,13 @@ CREATE VIEW v1 AS SELECT * FROM t1;
 DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
--- After re-attach, MergeTree shows as TableProxy; views load normally.
+-- After re-attach, the MergeTree table is not loaded yet; views load normally.
 USE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
+SELECT name, engine, is_loaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 SELECT * FROM {CLICKHOUSE_DATABASE_1:Identifier}.t1 ORDER BY id;
 
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
+SELECT name, engine, is_loaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 -- DROP on an unloaded lazy proxy forces nested load for cleanup.
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t2 (x UInt32) ENGINE = MergeTree ORDER BY x;
@@ -30,7 +30,7 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 USE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name = 't2';
+SELECT name, engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name = 't2';
 
 DROP TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t2;
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't2';
@@ -44,7 +44,7 @@ DETACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 
 USE {CLICKHOUSE_DATABASE_1:Identifier};
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() AND name IN ('src', 'mv') ORDER BY name;
+SELECT name, engine, is_loaded FROM system.tables WHERE database = currentDatabase() AND name IN ('src', 'mv') ORDER BY name;
 SELECT name FROM system.dictionaries WHERE database = currentDatabase() AND name = 'dict';
 
 -- RENAME on an unloaded lazy proxy.

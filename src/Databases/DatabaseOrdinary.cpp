@@ -29,7 +29,10 @@
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Parsers/parseQuery.h>
+#include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/StorageFactory.h>
+#include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/TableZnodeInfo.h>
@@ -225,7 +228,15 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     auto & create_query = ast->as<ASTCreateQuery &>();
 
-    if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree") || create_query.storage->engine->name.starts_with("Replicated") || create_query.storage->engine->name.starts_with("Shared"))
+    if (!create_query.storage || !create_query.storage->engine->name.ends_with("MergeTree"))
+        return;
+
+    const bool already_replicated = create_query.storage->engine->name.starts_with("Replicated")
+        || create_query.storage->engine->name.starts_with("Shared");
+
+    /// A run that rewrote the metadata but did not finalize the conversion leaves the flag behind. Only
+    /// a deferring database has to look for it here, since the startup job below sees the real storage.
+    if (already_replicated && !database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
         return;
 
     /// Get table's storage policy
@@ -240,6 +251,14 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
     auto storage_disks = policy->getDisks();
     auto checking_disk = storage_disks.empty() ? getDisk() : storage_disks[0];
     if (!checking_disk->existsFile(convert_to_replicated_flag_path))
+        return;
+
+    {
+        std::lock_guard lock(converting_to_replicated_mutex);
+        converting_to_replicated.insert(qualified_name.table);
+    }
+
+    if (already_replicated)
         return;
 
     if (getUUID() == UUIDHelpers::Nil)
@@ -437,15 +456,6 @@ void DatabaseOrdinary::loadTableFromMetadata(
     }
 }
 
-/// These engines run their ingestion in a background job that only `startup` starts.
-static bool isPushSourceEngine(const String & engine_name)
-{
-    static const std::unordered_set<std::string_view> push_source_engines
-        = {"Kafka", "RabbitMQ", "NATS", "FileLog", "S3Queue", "AzureQueue"};
-
-    return push_source_engines.contains(engine_name);
-}
-
 bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
@@ -455,32 +465,37 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
         || query.isParameterizedView())
         return false;
 
-    /// A lazy proxy would hide the TimeSeries type from the cross-database rename guard, so its
-    /// inner tables could be orphaned by a cross-database move. Load it eagerly, as for views.
-    if (query.is_time_series_table)
-        return false;
-
     /// Already handled by `StorageTableFunctionProxy`.
     if (query.as_table_function)
         return false;
 
-    /// A push source starts the background job that feeds its materialized views in its own `startup`,
-    /// which the lazy stand-in never calls: nothing reads such a table directly, so the consumer would
-    /// never start and the ingestion would stall silently until the table is read by hand. Load it
-    /// eagerly, as views are - but only when it really has a materialized view to feed, so that an
-    /// unused source table still costs nothing to load.
-    ///
-    /// `TablesLoader` publishes the view dependencies of everything it is about to load into
-    /// `DatabaseCatalog` before it creates the loading jobs, so the graph is already complete here,
-    /// and it also holds the views of the databases that were loaded earlier. A view created later
-    /// resolves its source table, and that materializes and starts up the stand-in on the spot,
-    /// through `StorageProxy::getStorageSnapshot`.
-    if (query.storage && query.storage->engine && isPushSourceEngine(query.storage->engine->name)
-        && !DatabaseCatalog::instance().getDependentViews(StorageID{name}).empty())
-        return false;
-
     if (mode == LoadingStrictnessLevel::FORCE_RESTORE)
         return false;
+
+    if (!query.storage || !query.storage->engine)
+        return false;
+
+    /// An engine opts in with `supports_deferred_load`. Unregistered engines are not deferred, so
+    /// the real error surfaces from the factory when the table is created.
+    const auto * features = StorageFactory::instance().tryGetStorageFeatures(query.storage->engine->name);
+    if (!features || !features->supports_deferred_load)
+        return false;
+
+    /// Its background job only feeds views, so a table without any costs nothing to defer. The view graph
+    /// is published before the load jobs run, and a view created later loads its source when it resolves it.
+    if (features->defers_only_without_dependent_views && !DatabaseCatalog::instance().getDependentViews(StorageID{name}).empty())
+        return false;
+
+    /// The columns of a replicated table with no column list would have to be read from ZooKeeper.
+    if (!query.columns_list || !query.columns_list->columns)
+        return false;
+
+    /// The startup job finalizes a pending conversion to replicated, which needs the real storage.
+    {
+        std::lock_guard lock(converting_to_replicated_mutex);
+        if (converting_to_replicated.contains(query.getTable()))
+            return false;
+    }
 
     return true;
 }
@@ -495,10 +510,11 @@ void DatabaseOrdinary::loadTableLazy(
 
     LOG_TRACE(log, "Lazy-loading table {}", name.getFullName());
 
+    /// The proxy reports only the columns. The rest of the structure is unknown until the real
+    /// storage exists, which `system.tables.is_loaded` reflects.
     ColumnsDescription columns;
     if (query.columns_list && query.columns_list->columns)
-        columns = InterpreterCreateQuery::getColumnsDescription(
-            *query.columns_list->columns, local_context, mode);
+        columns = InterpreterCreateQuery::getColumnsDescription(*query.columns_list->columns, local_context, mode);
 
     StorageID table_id(name.database, query.getTable(), query.uuid);
     String table_data_path = getTableDataPath(query);
@@ -526,7 +542,7 @@ void DatabaseOrdinary::loadTableLazy(
     };
 
     auto proxy = std::make_shared<StorageTableProxy>(
-        table_id, std::move(get_nested), std::move(columns));
+        table_id, std::move(get_nested), std::move(columns), query.storage->engine->name);
 
     attachTable(local_context, query.getTable(), proxy, table_data_path);
 }
@@ -557,7 +573,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    auto * rmt = table->as<StorageReplicatedMergeTree>();
+    auto rmt = castStorage<StorageReplicatedMergeTree>(table, StorageResolution::Peek);
     if (!rmt)
         return;
 
@@ -569,6 +585,10 @@ void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr tab
         return;
 
     checking_disk->removeFileIfExists(convert_to_replicated_flag_path);
+    {
+        std::lock_guard lock(converting_to_replicated_mutex);
+        converting_to_replicated.erase(name.table);
+    }
     LOG_INFO
     (
         log,

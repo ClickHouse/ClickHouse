@@ -110,11 +110,12 @@ DROP TABLE cm_merge;
 DROP TABLE cm_dist;
 DROP TABLE cm_leaf;
 
--- With `lazy_load_tables = 1`, a re-attached table is a `StorageTableProxy` wrapping the real
--- storage. `StorageProxy` forwards `supportsPrewhere()` but did not forward `supportedPrewhereColumns()`
--- (default: `std::nullopt`, meaning "everything supported") nor `canMoveConditionsToPrewhere()`, so a
--- lazily-loaded `outer` here would admit `PREWHERE x != 0` unrestricted and abort in `ActionsDAG`,
--- even though the same table is correctly rejected before the DETACH/ATTACH round trip.
+-- With `lazy_load_tables = 1`, a re-attached MergeTree is a `StorageTableProxy` wrapping the real
+-- storage, so the leaf below is a proxy while the two Merge tables above it load eagerly.
+-- `StorageProxy` forwards `supportsPrewhere()` but did not forward `supportedPrewhereColumns()`
+-- (default: `std::nullopt`, meaning "everything supported") nor `canMoveConditionsToPrewhere()`, which
+-- `Merge` consults on each underlying table, so `PREWHERE x != 0` would be admitted unrestricted and
+-- abort in `ActionsDAG`, even though it is correctly rejected before the DETACH/ATTACH round trip.
 
 DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Atomic SETTINGS lazy_load_tables = 1;
@@ -133,8 +134,8 @@ ATTACH DATABASE {CLICKHOUSE_DATABASE_1:Identifier};
 -- as the style check requires (a `{...:String}` parameter is not recognized by it).
 USE {CLICKHOUSE_DATABASE_1:Identifier};
 
-SELECT '-- re-attached tables are lazy proxies --';
-SELECT name, engine FROM system.tables WHERE database = currentDatabase() ORDER BY name;
+SELECT '-- only the re-attached MergeTree is a lazy proxy --';
+SELECT name, engine, is_loaded FROM system.tables WHERE database = currentDatabase() ORDER BY name;
 
 SELECT '-- the proxy must still reject the mismatched column, not abort --';
 SELECT x, y FROM lazy_outer PREWHERE x != 0 ORDER BY x LIMIT 3; -- { serverError ILLEGAL_PREWHERE }

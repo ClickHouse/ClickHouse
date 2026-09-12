@@ -2,6 +2,7 @@
 
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeData.h>
+#include <Storages/StorageProxy.h>
 #include <Processors/QueryPlan/SourceStepWithFilter.h>
 
 
@@ -75,7 +76,7 @@ public:
 
             info.engine = info.storage->getName();
 
-            info.data = dynamic_cast<MergeTreeData *>(info.storage.get());
+            info.data = castStorage<MergeTreeData>(info.storage, StorageResolution::Peek).get();
             if (!info.data)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown engine {}", info.engine);
 

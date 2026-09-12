@@ -7,6 +7,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/System/StorageSystemGraphite.h>
 
@@ -52,11 +53,7 @@ static StorageSystemGraphite::Configs getConfigs(ContextPtr context)
 
         for (auto iterator = db.second->getTablesIterator(context); iterator->isValid(); iterator->next())
         {
-            const auto & table = iterator->table();
-            if (!table)
-                continue;
-
-            const MergeTreeData * table_data = dynamic_cast<const MergeTreeData *>(table.get());
+            auto table_data = castStorage<MergeTreeData>(iterator->table(), StorageResolution::Peek);
             if (!table_data)
                 continue;
 
