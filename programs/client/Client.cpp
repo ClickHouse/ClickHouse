@@ -1455,12 +1455,19 @@ void Client::processConfig()
     }
     else
     {
-        ignore_error = config().getBool("ignore-error", false);
-
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
+
+    /// A delayed-interactive run executes the given queries through `runNonInteractive` before it
+    /// enters the prompt, so that prelude is a batch and follows the batch contract of
+    /// `--ignore-error`, the same as in `clickhouse-local` and in the embedded client. Taken from
+    /// the branch above, the option would be dropped for a delayed-interactive run on a terminal:
+    /// the prelude would stop at its first failing statement and the exit code of that statement
+    /// would end the run before the prompt.
+    if (!is_interactive || delayed_interactive)
+        ignore_error = config().getBool("ignore-error", false);
 
     setupEchoAndHighlightSettings();
 
