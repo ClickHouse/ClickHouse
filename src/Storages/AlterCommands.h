@@ -158,7 +158,7 @@ struct AlterCommand
     /// For MODIFY SETTING or MODIFY COLUMN MODIFY SETTING
     SettingsChanges settings_changes;
 
-    /// For RESET SETTING or MODIFY COLUMN RESET SETTING
+    /// For RESET SETTING, MODIFY SETTING name = DEFAULT, or MODIFY COLUMN RESET SETTING
     std::set<String> settings_resets;
 
     /// For MODIFY_QUERY

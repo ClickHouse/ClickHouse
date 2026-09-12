@@ -479,7 +479,7 @@ ClusterPtr DatabaseReplicated::getClusterImpl(bool all_groups) const
             break;
     }
     if (!success)
-        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot,"
+        throw Exception(ErrorCodes::ALL_CONNECTION_TRIES_FAILED, "Cannot get consistent cluster snapshot, "
                                                                  "because replicas are created or removed concurrently");
 
     LOG_TRACE(log, "Got a list of hosts after {} iterations. All hosts: [{}], filtered: [{}], ids: [{}]", iteration,
@@ -2930,9 +2930,9 @@ bool DatabaseReplicated::shouldReplicateQuery(const ContextPtr & query_context, 
             || alter->isUnlockSnapshot() || alter->isReplacePartitionAlter())
             return false;
 
-        // Allowed ALTER operation on KeeperMap still should be replicated
-        // to update metadata on all nodes and commit it to database metadata
-        if (is_keeper_map_table(query_ptr) && !alter->isCommentAlter())
+        /// A `KeeperMap` `ALTER` the storage applies rewrites the `CREATE` statement kept in Keeper and
+        /// needs a metadata transaction, so this predicate is deliberately wider than the storage's set.
+        if (is_keeper_map_table(query_ptr) && !alter->isSettingsOrCommentAlter())
             return false;
 
         if (has_many_shards() || !is_replicated_table(query_ptr))

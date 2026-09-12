@@ -75,9 +75,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char remote_query_executor_cancel_before_send[];
-    extern const char remote_query_executor_receive_packet_pause[];
-    extern const char remote_query_executor_finish_drain_pause[];
-    extern const char remote_query_executor_finish_drain_hold[];
+    extern const char remote_query_executor_cancel_and_drain_in_receive_window[];
 }
 
 ThrottlerPtr getThrottler(const ContextPtr & context)
@@ -653,14 +651,10 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::read()
                 return ReadResult(Block());
         }
 
-        /// Parks the reader in the window this fix is about: `was_cancelled` has just been checked
-        /// and the mutex released, so a parallel `onUpdatePorts` can cancel and drain these
-        /// connections before `receivePacket` below runs.
-        fiu_do_on(FailPoints::remote_query_executor_receive_packet_pause, {
-            in_receive_packet_window = true;
-            FailPointInjection::notifyPauseAndWaitForResume(FailPoints::remote_query_executor_receive_packet_pause);
-            in_receive_packet_window = false;
-        });
+        /// `was_cancelled` was checked and `was_cancelled_mutex` released above, so a parallel
+        /// `onUpdatePorts` -> `finish` can cancel and drain these connections before `receivePacket`
+        /// below runs. `finish()` takes that mutex itself, which is not held at this point.
+        fiu_do_on(FailPoints::remote_query_executor_cancel_and_drain_in_receive_window, { finish(); });
 
         auto packet = connections->receivePacket();
 
@@ -1006,13 +1000,6 @@ void RemoteQueryExecutor::finish()
         return;
     }
 
-    /// Published only once the `tryCancel` above has returned, so a `cancel` that observes it has
-    /// nothing left to send.
-    drain_in_progress = true;
-    SCOPE_EXIT({ drain_in_progress = false; });
-
-    FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_hold);
-
     /// Get the remaining packets so that there is no out of sync in the connections to the replicas.
     /// We do this manually instead of calling drain() because we want to process Log, ProfileEvents and Progress
     /// packets that had been sent before the connection is fully finished in order to have final statistics of what
@@ -1076,20 +1063,10 @@ void RemoteQueryExecutor::finish()
                 break;
         }
     }
-
-    /// Reached only with this executor's own reader parked above, i.e. with its connections
-    /// cancelled and fully drained - the state that reader will observe when it wakes.
-    if (in_receive_packet_window)
-        FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_finish_drain_pause);
 }
 
 void RemoteQueryExecutor::cancel()
 {
-    /// While `finish` drains it has already sent the `Cancel` packet, and the external-table flags
-    /// `cancelUnlocked` sets have no reader until it releases `was_cancelled_mutex`.
-    if (drain_in_progress)
-        return;
-
     LockAndBlocker guard(was_cancelled_mutex);
     cancelUnlocked();
 }
