@@ -219,9 +219,10 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         if (params.has("wait_for_ms"))
             wait_milliseconds = parse<UInt64>(params.get("wait_for_ms"));
 
-        UInt64 client_version = DBMS_MIN_PROTOCOL_VERSION_WITH_SERVER_QUERY_TIME_IN_PROGRESS;
-        if (params.has("client_version"))
-            client_version = parse<UInt64>(params.get("client_version"));
+        std::optional<UInt64> requested_status_version;
+        if (params.has("task_status_version"))
+            requested_status_version = parse<UInt64>(params.get("task_status_version"));
+        const UInt64 task_status_version = negotiateTaskStatusVersion(requested_status_version);
 
         body->eof();
         body.reset();
@@ -229,6 +230,7 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
         auto status = task_runner->getStatus(task_id, wait_milliseconds);
         DistributedQueryTaskStatus task_status;
         task_status.progress = std::move(status.progress);
+        task_status.logs = std::move(status.logs);
 
         switch (status.result)
         {
@@ -274,7 +276,9 @@ void StatelessWorkerEndpoint::processQuery(const HTMLForm & params, ReadBufferPt
                 break;
             }
         }
-        task_status.write(out, client_version);
+        /// Respond with version used to serialize task status
+        response.set("X-ClickHouse-Task-Status-Version", toString(task_status_version));
+        task_status.write(out, task_status_version);
     }
     else if (operation == "cancel")
     {

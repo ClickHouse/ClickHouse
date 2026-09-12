@@ -180,6 +180,17 @@ public:
         return true;
     }
 
+    [[nodiscard]] Container drainAll()
+    {
+        Container swap_container;
+        {
+            std::lock_guard queue_lock(queue_mutex);
+            std::swap(swap_container, queue);
+        }
+        push_condition.notify_all();
+        return swap_container;
+    }
+
     /// Returns size of queue
     size_t size() const
     {

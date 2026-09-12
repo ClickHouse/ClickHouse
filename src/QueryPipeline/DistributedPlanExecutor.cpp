@@ -49,6 +49,7 @@
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
@@ -1540,6 +1541,10 @@ protected:
 
             auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, wait_milliseconds, context);
 
+            /// Forward worker log lines to the initiator's send_logs_level stream.
+            if (task_status.logs.rows() != 0 && initiator_logs_queue)
+                initiator_logs_queue->pushBlock(std::move(task_status.logs));
+
             auto progress_callback = context->getProgressCallback();
             if (progress_callback)
                 progress_callback(task_status.progress);
@@ -1589,6 +1594,12 @@ protected:
                 try
                 {
                     auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, poll_wait_ms, context, /*for_cleanup*/ true);
+
+                    /// A task cancelled early (e.g. LIMIT satisfied) still delivers its logs
+                    /// through the cleanup polls.
+                    if (task_status.logs.rows() != 0 && initiator_logs_queue)
+                        initiator_logs_queue->pushBlock(std::move(task_status.logs));
+
                     if (task_status.status != "Running")
                         return task_status;
                 }
@@ -1744,6 +1755,9 @@ protected:
         StageWakeupPtr stage_wakeup;
         ThreadPool thread_pool;
         LoggerPtr logger;
+
+        /// Initiator logs queue captured at construction so it is tied to the main query's thread
+        InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
     };
 
     RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const
@@ -1773,6 +1787,10 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
+
+        /// Skip collecting worker logs the initiator has no queue to receive (e.g. HTTP without a framing format).
+        if (!CurrentThread::getInternalTextLogsQueue())
+            task_description.settings_changes.setSetting("send_logs_level", "none");
 
         const String unique_temp_file_path = toString(unique_query_id);
 
