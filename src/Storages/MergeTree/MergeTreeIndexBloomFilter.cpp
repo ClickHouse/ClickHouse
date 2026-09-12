@@ -615,7 +615,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             && setHasEmptyArray(index_type, converted_column, row_size))
             return false;
 
-        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size)));
+        out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+            index_type, BloomFilterHash::hashWithColumn(index_type, converted_column, 0, row_size), /*match_all=*/ false)));
 
         if (function_name == "in"  || function_name == "globalIn")
             out.function = RPNElement::FUNCTION_IN;
@@ -729,7 +730,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
             const auto & array_type = assert_cast<const DataTypeArray &>(*index_type);
             const auto & array_nested_type = array_type.getNestedType();
             const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size)));
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+                array_nested_type, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, row_size), /*match_all=*/ false)));
         }
         else
         {
@@ -768,8 +770,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeIn(
         return false;
 
     const auto & converted_column = castColumn(ColumnWithTypeAndName{column, type, ""}, array_nested_type);
-    out.predicate.emplace_back(
-        std::make_pair(position, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size())));
+    out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+        array_nested_type, BloomFilterHash::hashWithColumn(array_nested_type, converted_column, 0, column->size()), /*match_all=*/ false)));
     out.function = RPNElement::FUNCTION_HAS_ANY;
     return true;
 }
@@ -1040,7 +1042,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     return false;
 
                 out.function = RPNElement::FUNCTION_HAS_ANY;
-                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
+                out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+                    actual_type, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size()), /*match_all=*/ false)));
             }
         }
         else if (function_name == "hasAny" || function_name == "hasAll")
@@ -1057,7 +1060,8 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
             out.function = function_name == "hasAny" ?
                 RPNElement::FUNCTION_HAS_ANY :
                 RPNElement::FUNCTION_HAS_ALL;
-            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size())));
+            out.predicate.emplace_back(std::make_pair(position, BloomFilterHash::addLegacyNegativeZeroProbes(
+                actual_type, BloomFilterHash::hashWithColumn(actual_type, column, 0, column->size()), out.function == RPNElement::FUNCTION_HAS_ALL)));
         }
         else
         {
@@ -1280,8 +1284,24 @@ void MergeTreeIndexAggregatorBloomFilter::update(const Block & block, size_t * p
 
         const auto & index_col = checkAndGetColumn<ColumnUInt64>(*index_column);
         const auto & index_data = index_col.getData();
+
+        /// A floating point zero is hashed with negative zero canonicalized away
+        /// (see `base/normalizeNegativeZero.h`), but a server of an older version probes -0. with the
+        /// raw-bit hash, and would skip this granule. Both hashes are written, so that the readers of
+        /// both versions find it. Extra hashes only make the filter more permissive, and at most one
+        /// of them is added per granule and column.
+        const bool is_floating_point = BloomFilterHash::isFloatingPointIndexType(column_and_type.type);
+        const UInt64 zero_hash = BloomFilterHash::canonicalZeroHash();
+        bool has_zero = false;
+
         for (const auto & hash: index_data)
+        {
             column_hashes[column].insert(hash);
+            has_zero |= hash == zero_hash;
+        }
+
+        if (is_floating_point && has_zero)
+            column_hashes[column].insert(BloomFilterHash::legacyNegativeZeroHash());
     }
 
     *pos += max_read_rows;

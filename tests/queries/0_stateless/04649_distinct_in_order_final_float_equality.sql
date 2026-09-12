@@ -1,7 +1,8 @@
 -- The final DISTINCT over a stream sorted by a prefix of the distinct columns deduplicates the
 -- sorted prefix by comparison equality: Float values that compare equal (0.0 and -0.0, all NaN
 -- payloads) collapse into one row per equality class, matching IEEE 754 and LIMIT BY. The
--- hash-based DISTINCT keeps binary identity instead, so those values survive as separate rows.
+-- hash-based DISTINCT canonicalizes negative zero and so agrees on the zeros, but it keeps binary
+-- identity for NaN, so NaN values with different payloads survive as separate rows.
 
 -- The sorting key differs from the DISTINCT columns, so the pre-distinct stays hash-based and the
 -- final distinct above the ORDER BY f sort is the only processor that sees a sorted stream.
@@ -15,7 +16,7 @@ SET query_plan_remove_redundant_sorting = 0;
 -- One stream, so pipeline processor names come without the "x N" suffix.
 SET max_threads = 1;
 
-SELECT '-- hash DISTINCT keeps binary identity: all four rows survive';
+SELECT '-- hash DISTINCT canonicalizes the zeros and keeps the two NaN payloads apart';
 SET optimize_distinct_in_order = 0;
 SELECT count(), arraySort(groupArray(reinterpretAsUInt64(f))) FROM (SELECT DISTINCT f, b FROM t_distinct_float ORDER BY f);
 

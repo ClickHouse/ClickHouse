@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeIPv4andIPv6.h>
 
 #include <base/bit_cast.h>
+#include <base/normalizeNegativeZero.h>
 
 #include <Common/CombinedCardinalityEstimator.h>
 #include <Common/SipHash.h>
@@ -70,7 +71,8 @@ struct AggregateFunctionUniqCombinedTraits
         }
         else if constexpr (is_floating_point<T>)
         {
-            return static_cast<Key>(intHash64(bit_cast<UInt64>(x)));
+            /// Negative zero is equal to positive zero, but has a different binary representation.
+            return static_cast<Key>(intHash64(bit_cast<UInt64>(normalizeNegativeZero(x))));
         }
         else if constexpr (sizeof(T) > sizeof(UInt64))
         {

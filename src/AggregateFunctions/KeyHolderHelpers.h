@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Columns/IColumn.h>
+#include <Columns/canonicalizeNegativeZero.h>
 #include <Common/HashTable/HashTableKeyHolder.h>
 #include <IO/ReadBufferFromString.h>
 
@@ -23,11 +24,43 @@ static auto getKeyHolder(const IColumn & column, size_t row_num, Arena & arena)
     else
     {
         const char * begin = nullptr;
-        auto settings = IColumn::SerializationSettings::createForAggregationState();
+        /// The serialized value is used as a key in a hash table, so negative zeros are canonicalized:
+        /// otherwise the deduplication would disagree with the `equals` function
+        /// for the values that contain floating point zeros.
+        static constexpr auto settings = IColumn::SerializationSettings::createForAggregationStateKey();
         auto serialized = column.serializeValueIntoArena(row_num, arena, begin, &settings);
         chassert(!serialized.empty());
         return SerializedKeyHolder{serialized, arena};
     }
+}
+
+/// The raw bytes of a value of a plain column can contain floating point values - see
+/// `rawFloatValueWidth`. They are used as a hash table key as they are, so a canonicalized copy of
+/// the value is made in the arena, and it is rolled back if the key is not inserted.
+static SerializedKeyHolder getCanonicalizedRawKeyHolder(const IColumn & column, size_t row_num, Arena & arena, size_t float_width)
+{
+    auto value = column.getDataAt(row_num);
+    char * res = arena.alloc(value.size());
+    canonicalizeNegativeZeroInRawValue(value, float_width, res);
+    return SerializedKeyHolder{{res, value.size()}, arena};
+}
+
+/// Calls `f` with the key holder for the value of `column` at `row_num`.
+/// A separate key holder is used for the values that have to be canonicalized, because a
+/// canonicalized value is a copy, unlike the one that `getKeyHolder` returns for a plain column.
+template <bool is_plain_column, typename F>
+static void withKeyHolder(const IColumn & column, size_t row_num, Arena & arena, F && f)
+{
+    if constexpr (is_plain_column)
+    {
+        if (size_t float_width = rawFloatValueWidth(column))
+        {
+            f(getCanonicalizedRawKeyHolder(column, row_num, arena, float_width));
+            return;
+        }
+    }
+
+    f(getKeyHolder<is_plain_column>(column, row_num, arena));
 }
 
 template <bool is_plain_column>

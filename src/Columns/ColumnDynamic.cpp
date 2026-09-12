@@ -58,13 +58,18 @@ void sortAndKeepTop(Container & container, size_t limit, Compare compare)
     std::sort(container.begin(), container.end(), compare);
 }
 
-/// Static default format settings to avoid creating it every time.
 const FormatSettings & getFormatSettings()
 {
-    static const FormatSettings settings;
-    return settings;
+    return ColumnDynamic::getBinaryEncodedValueFormatSettings();
 }
 
+}
+
+const FormatSettings & ColumnDynamic::getBinaryEncodedValueFormatSettings()
+{
+    /// Static default format settings to avoid creating it every time.
+    static const FormatSettings settings;
+    return settings;
 }
 
 /// Shared variant will contain String values but we cannot use usual String type

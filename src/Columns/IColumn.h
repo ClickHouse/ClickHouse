@@ -339,11 +339,31 @@ public:
     {
         bool serialize_string_with_zero_byte = false;
 
-        static SerializationSettings createForAggregationState()
+        /// Replace negative zeros with positive zeros in floating point values.
+        /// See `base/normalizeNegativeZero.h`.
+        bool canonicalize_negative_zero = false;
+
+        static constexpr SerializationSettings createForAggregationState()
         {
             /// Same aggregation state can be serialized/deserialized by servers with different versions.
             /// Add zero byte to the end of the string in aggregation state to keep it compatible with old versions.
             return SerializationSettings{.serialize_string_with_zero_byte = true};
+        }
+
+        /// For a serialized value that is used as a key in a hash table: such a value has to be
+        /// serialized to the same bytes as an equal value, and negative zero is equal to positive zero,
+        /// but has a different binary representation.
+        static constexpr SerializationSettings createForHashTableKey()
+        {
+            return SerializationSettings{.canonicalize_negative_zero = true};
+        }
+
+        /// The same, for a key that is stored in an aggregation state.
+        static constexpr SerializationSettings createForAggregationStateKey()
+        {
+            auto settings = createForAggregationState();
+            settings.canonicalize_negative_zero = true;
+            return settings;
         }
     };
 

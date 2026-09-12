@@ -342,8 +342,10 @@ public:
 
         bool inserted = false;
         State::Set::LookupResult it = nullptr;
-        auto key_holder = getKeyHolder<is_plain_column>(*columns[0], row_num, *arena);
-        set.emplace(key_holder, it, inserted);
+        withKeyHolder<is_plain_column>(*columns[0], row_num, *arena, [&](auto && key_holder)
+        {
+            set.emplace(key_holder, it, inserted);
+        });
     }
 
     void mergeImpl(AggregateDataPtr __restrict place, ConstAggregateDataPtr rhs, Arena * arena) const override
