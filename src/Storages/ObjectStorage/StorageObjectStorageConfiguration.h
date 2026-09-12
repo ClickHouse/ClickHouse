@@ -16,6 +16,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <optional>
+#include <Common/CopyableMutex.h>
 #include <Databases/DataLake/StorageCredentials.h>
 #include <Storages/MergeTree/BackgroundJobsAssignee.h>
 
@@ -65,6 +66,7 @@ public:
 
     StorageObjectStorageConfiguration() = default;
     virtual ~StorageObjectStorageConfiguration() = default;
+
 
     static constexpr auto SCHEMA_HASH_WILDCARD = "{_schema_hash}";
 
@@ -125,8 +127,48 @@ public:
      * This list is used to determine the next file name and the set of files that shall be read from remote storage.
      * This is not ideal, there are much better ways to implement reads and writes. It should be eventually removed
      */
-    virtual const Paths & getPaths() const = 0;
-    virtual void setPaths(const Paths & paths) = 0;
+    /// The list is mutated by the writes - an insert with `*_create_new_file_on_insert` or
+    /// `*_split_on_write_by_size_bytes` appends the keys it writes to it, and a truncating insert retires them -
+    /// while the reads snapshot it at planning time, so it is guarded by `paths_mutex` and handed out by value.
+    /// The backends keep the storage of the list (`keys`, `blobs_paths`, `paths`) and reach it only through
+    /// `getPathsUnlocked` / `setPathsUnlocked`, which are called with the mutex held.
+    Paths getPaths() const
+    {
+        std::lock_guard lock(paths_mutex);
+        return getPathsUnlocked();
+    }
+
+    size_t getPathsCount() const
+    {
+        std::lock_guard lock(paths_mutex);
+        return getPathsUnlocked().size();
+    }
+
+    void setPaths(const Paths & paths)
+    {
+        std::lock_guard lock(paths_mutex);
+        setPathsUnlocked(paths);
+    }
+
+    /// Appends a path to the list, unless it is already there.
+    void appendPath(const Path & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        Paths paths = getPathsUnlocked();
+        if (std::find_if(paths.begin(), paths.end(), [&](const auto & p) { return p.path == path.path; }) != paths.end())
+            return;
+        paths.push_back(path);
+        setPathsUnlocked(paths);
+    }
+
+    /// Drops a path from the list. Used to retire a key as soon as it has been removed from the object storage.
+    void retirePath(const String & path)
+    {
+        std::lock_guard lock(paths_mutex);
+        Paths paths = getPathsUnlocked();
+        std::erase_if(paths, [&](const auto & p) { return p.path == path; });
+        setPathsUnlocked(paths);
+    }
 
     virtual String getDataSourceDescription() const = 0;
     virtual String getNamespace() const = 0;
@@ -379,6 +421,11 @@ public:
     String url_overridden_by_base_setting;
 
 protected:
+    virtual const Paths & getPathsUnlocked() const = 0;
+    virtual void setPathsUnlocked(const Paths & paths) = 0;
+
+    /// The mutex belongs to the object, so a copy of the configuration gets its own fresh one.
+    mutable CopyableMutex paths_mutex;
     void checkFormat() const;
 
     void initializeFromParsedArguments(const StorageParsedArguments & parsed_arguments);

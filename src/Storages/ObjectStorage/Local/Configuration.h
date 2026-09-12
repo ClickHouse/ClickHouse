@@ -64,8 +64,8 @@ public:
     void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return path.path; }
 
-    const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override
+    const Paths & getPathsUnlocked() const override { return paths; }
+    void setPathsUnlocked(const Paths & paths_) override
     {
         paths = paths_;
         path = paths_[0];

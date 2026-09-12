@@ -1,4 +1,5 @@
 #pragma once
+#include <functional>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/StorageFactory.h>
@@ -33,7 +34,13 @@ std::string getNextKeyForSplittingBySize(
 /// This is the precise variant, for a table that has written these objects itself and still remembers them:
 /// exactly they are deleted, even if the previous insert had to skip some of the numbers because the keys
 /// were taken by someone else.
-void removeStaleSplitObjects(IObjectStorage & object_storage, const std::vector<std::string> & stale_keys);
+/// `on_removed` is called for every key that is no longer there, right after it is gone, so that the caller can
+/// retire it from the list of the paths of the table one by one. A cleanup that throws in the middle then leaves
+/// the table reading exactly the objects that still exist, instead of the ones it has already removed.
+void removeStaleSplitObjects(
+    IObjectStorage & object_storage,
+    const std::vector<std::string> & stale_keys,
+    const std::function<void(const std::string &)> & on_removed);
 
 /// The same for a table that does not know the keys of the objects of the previous insert - an `INSERT` into
 /// a table function, or a table that was reloaded since then. The objects are written with consecutive numbers,

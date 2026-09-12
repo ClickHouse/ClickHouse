@@ -14,6 +14,7 @@
 #include <Common/Logger.h>
 
 #include <atomic>
+#include <mutex>
 #include <shared_mutex>
 #include <sys/stat.h>
 
@@ -203,7 +204,22 @@ private:
     String compression_method;
 
     std::string base_path;
+
+    /// The list of the files of the table. A write mutates it - an insert with
+    /// `engine_file_allow_create_multiple_files` or `engine_file_split_on_write_by_size_bytes` appends the new
+    /// numbered files to it, and a truncating insert retires them - while a read snapshots it at planning time,
+    /// so every access outside the constructors goes through the accessors below and is guarded by `paths_mutex`.
     std::vector<std::string> paths;
+    mutable std::mutex paths_mutex;
+
+    /// A copy of the list of the files, safe to use while a concurrent insert is appending to it.
+    std::vector<std::string> getPathsSnapshot() const;
+    size_t getPathsCount() const;
+    void setPaths(std::vector<std::string> new_paths);
+    /// Appends a file to the list, unless it is already there.
+    void appendPath(const std::string & path);
+    /// Drops a file from the list. Used to retire a file as soon as it has been deleted.
+    void retirePath(const std::string & path);
 
     std::optional<ArchiveInfo> archive_info;
 

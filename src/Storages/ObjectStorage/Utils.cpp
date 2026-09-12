@@ -97,10 +97,16 @@ String getNextKeyForSplittingBySize(
     }
 }
 
-void removeStaleSplitObjects(IObjectStorage & object_storage, const std::vector<String> & stale_keys)
+void removeStaleSplitObjects(
+    IObjectStorage & object_storage,
+    const std::vector<String> & stale_keys,
+    const std::function<void(const String &)> & on_removed)
 {
     for (const auto & stale_key : stale_keys)
+    {
         object_storage.removeObjectIfExists(StoredObject(stale_key));
+        on_removed(stale_key);
+    }
 }
 
 /// The numbered keys are not attributed to a particular table - the storage keeps no metadata about the objects

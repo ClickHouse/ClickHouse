@@ -407,7 +407,7 @@ size_t StorageObjectStorage::getMaxReadStreams(size_t num_streams, ContextPtr)
         return num_streams;
 
     /// A static list of keys: the read creates at most one source per key.
-    return std::min(num_streams, std::max(1uz, configuration->getPaths().size()));
+    return std::min(num_streams, std::max(1uz, configuration->getPathsCount()));
 }
 
 bool StorageObjectStorage::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -850,7 +850,13 @@ SinkToStoragePtr StorageObjectStorage::createSink(
             for (auto it = paths.begin() + 1; it != paths.end(); ++it)
                 stale_keys.push_back(it->path);
 
-            removeStaleSplitObjects(*object_storage, stale_keys);
+            /// A key is dropped from the list of the paths only after the object is gone, so that a failure to
+            /// remove one leaves the table reading exactly the objects that are still there: neither the whole
+            /// tail when nothing could be removed, nor a key whose object the cleanup has already deleted.
+            removeStaleSplitObjects(
+                *object_storage,
+                stale_keys,
+                [&](const String & removed_key) { configuration->retirePath(removed_key); });
         }
         else if (settings.split_on_write_by_size_bytes)
         {
@@ -886,12 +892,10 @@ SinkToStoragePtr StorageObjectStorage::createSink(
                          sequence_number = getStartSequenceNumber(paths.back().path, 1)]() mutable -> String
         {
             String new_key = getNextKeyForSplittingBySize(*storage, *config, settings, key, sequence_number);
-            auto all_paths = config->getPaths();
-            if (std::find_if(all_paths.begin(), all_paths.end(), [&](const auto & p) { return p.path == new_key; }) == all_paths.end())
-            {
-                all_paths.push_back({new_key});
-                config->setPaths(all_paths);
-            }
+            /// The registration is a single atomic step on the shared list, so that a `SELECT` that snapshots
+            /// it concurrently sees either the list without this key or the list with it, and never a copy of
+            /// a vector that is being reallocated under it.
+            config->appendPath({new_key});
             return new_key;
         };
     }

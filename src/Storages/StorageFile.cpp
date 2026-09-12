@@ -1659,7 +1659,7 @@ void StorageFileSource::beforeDestroy()
         if (storage->readers_counter.load(std::memory_order_acquire) != 0 || storage->was_renamed)
             return;
 
-        for (auto & file_path_ref : storage->paths)
+        for (auto & file_path_ref : storage->getPathsSnapshot())
         {
             try
             {
@@ -1933,7 +1933,7 @@ Chunk StorageFileSource::generate()
             if (storage->archive_info)
                 file_num = storage->archive_info->paths_to_archives.size();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
             else
-                file_num = storage->paths.size();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
+                file_num = storage->getPathsCount();  /// NOLINT(clang-analyzer-deadcode.DeadStores)
 
             chassert(file_num > 0);
 
@@ -2348,7 +2348,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
     /// The lazy pass reopens every path and uses the physical row positions from the main pass.
     /// Pipes and pseudo-files are single-pass streams, so their `stat` tokens cannot establish
     /// that the second read sees the same data.
-    for (const auto & path : storage->paths)
+    for (const auto & path : storage->getPathsSnapshot())
     {
         struct stat file_stat{};
         if (0 != stat(path.c_str(), &file_stat))
@@ -2360,7 +2360,7 @@ bool ReadFromFile::canUseLazyMaterialization() const
 
     /// The lazy pass rereads the surviving rows by their physical positions, which needs random
     /// access to the raw file; a compression wrapper reads only sequentially.
-    for (const auto & path : storage->paths)
+    for (const auto & path : storage->getPathsSnapshot())
         if (chooseCompressionMethod(path, storage->compression_method) != CompressionMethod::None)
             return false;
 
@@ -2424,7 +2424,7 @@ void StorageFile::read(
             context->getSettingsRef()[Setting::max_streams_for_files_processing_in_cluster_functions]);
 
     if (use_table_fd)
-        paths = {""};   /// when use fd, paths are empty
+        setPaths({""});   /// when use fd, paths are empty
 
     auto this_ptr = std::static_pointer_cast<StorageFile>(shared_from_this());
 
@@ -2464,7 +2464,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         return;
 
     files_iterator = std::make_shared<StorageFileSource::FilesIterator>(
-        storage->paths,
+        storage->getPathsSnapshot(),
         storage->archive_info,
         predicate,
         storage_snapshot->metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(),
@@ -2484,7 +2484,7 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     if (storage->archive_info)
         files_to_read = storage->archive_info->paths_to_archives.size();
     else
-        files_to_read = storage->paths.size();
+        files_to_read = storage->getPathsCount();
 
     if (max_num_streams > files_to_read)
         num_streams = files_to_read;
@@ -2777,7 +2777,10 @@ static String getNextPathForSplittingBySize(
 /// This is the precise variant, for a table that has written these files itself and still remembers them:
 /// exactly they are deleted, even if the previous insert had to skip some of the numbers because the names
 /// were taken by someone else.
-static void removeStaleSplitFiles(const Strings & stale_paths)
+/// `on_removed` is called for every file that is no longer there, right after it is gone, so that the caller
+/// can retire it from the list of the paths of the table one by one. A cleanup that throws in the middle then
+/// leaves the table reading exactly the files that still exist, instead of the ones it has already deleted.
+static void removeStaleSplitFiles(const Strings & stale_paths, const std::function<void(const String &)> & on_removed)
 {
     for (const auto & stale_path : stale_paths)
     {
@@ -2787,6 +2790,7 @@ static void removeStaleSplitFiles(const Strings & stale_paths)
         fs::remove(stale_path, error);
         if (error)
             throw Exception(ErrorCodes::CANNOT_UNLINK, "Cannot remove the stale file {}: {}", stale_path, error.message());
+        on_removed(stale_path);
     }
 }
 
@@ -3218,15 +3222,24 @@ SinkToStoragePtr StorageFile::write(
             flags);
     }
 
+    /// The lock of the whole insert is taken here rather than in the sink, so that the stale-tail cleanup
+    /// below and the update of the list of the paths happen under it as well: a `SELECT` that is already
+    /// reading this table holds the same lock for the duration of its read, and so finishes before the files
+    /// it reads are deleted or overwritten.
+    std::unique_lock write_lock{rwlock, getLockTimeout(context)};
+    if (!write_lock)
+        throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
+
     String path;
-    if (!paths.empty())
+    Strings current_paths = getPathsSnapshot();
+    if (!current_paths.empty())
     {
         if (is_path_with_globs)
             throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                             "Table '{}' is in readonly mode because of globs in filepath",
                             getStorageID().getNameForLogs());
 
-        path = paths.front();
+        path = current_paths.front();
         fs::create_directories(fs::path(path).parent_path());
 
         std::error_code error_code;
@@ -3236,7 +3249,7 @@ SinkToStoragePtr StorageFile::write(
         {
             if (context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files])
             {
-                size_t index = getStartSequenceNumber(path, paths.size());
+                size_t index = getStartSequenceNumber(path, current_paths.size());
                 String new_path;
                 do
                 {
@@ -3244,7 +3257,8 @@ SinkToStoragePtr StorageFile::write(
                     ++index;
                 }
                 while (fs::exists(new_path));
-                paths.push_back(new_path);
+                appendPath(new_path);
+                current_paths.push_back(new_path);
                 path = new_path;
             }
             else
@@ -3268,15 +3282,18 @@ SinkToStoragePtr StorageFile::write(
     /// has to drop the numbered tail of the previous split insert as well, otherwise both this table and
     /// the readers of the glob pattern over the directory keep seeing the stale rows.
     ///
-    /// The removal happens before the list of the paths is truncated, so that a failure to delete a file
-    /// leaves the table with the whole tail still visible instead of silently hiding it until a restart.
-    if (!use_table_fd && !paths.empty() && context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
+    /// A file is dropped from the list of the paths only after it has been deleted, so that a failure to
+    /// delete a file leaves the table reading exactly the files that are still there: neither the whole tail
+    /// when nothing could be removed, nor a file that is already gone when the removal stopped in the middle.
+    if (!use_table_fd && !current_paths.empty() && context->getSettingsRef()[Setting::engine_file_truncate_on_insert])
     {
-        if (paths.size() > 1)
+        if (current_paths.size() > 1)
         {
             /// These files were written by this table, and are deleted whatever their names are.
-            removeStaleSplitFiles(Strings(paths.begin() + 1, paths.end()));
-            paths.resize(1);
+            removeStaleSplitFiles(
+                Strings(current_paths.begin() + 1, current_paths.end()),
+                [this](const String & removed_path) { retirePath(removed_path); });
+            current_paths.resize(1);
         }
         else if (split_on_write_by_size_bytes)
         {
@@ -3290,7 +3307,7 @@ SinkToStoragePtr StorageFile::write(
     }
 
     StorageFileSink::GetNextPathCallback get_next_path;
-    if (split_on_write_by_size_bytes && !use_table_fd && !paths.empty())
+    if (split_on_write_by_size_bytes && !use_table_fd && !current_paths.empty())
     {
         /// The numbering is derived per insert from the name of the file this insert starts with:
         /// the next files continue it (`data.tsv` -> `data.1.tsv`, ..., and `data.4.tsv` -> `data.5.tsv`, ...).
@@ -3301,8 +3318,7 @@ SinkToStoragePtr StorageFile::write(
                          allow_create_multiple_files = context->getSettingsRef()[Setting::engine_file_allow_create_multiple_files].value]() mutable -> String
         {
             String new_path = getNextPathForSplittingBySize(first_path, sequence_number, truncate_on_insert, allow_create_multiple_files);
-            if (std::find(storage->paths.begin(), storage->paths.end(), new_path) == storage->paths.end())
-                storage->paths.push_back(new_path);
+            storage->appendPath(new_path);
             return new_path;
         };
     }
@@ -3310,7 +3326,7 @@ SinkToStoragePtr StorageFile::write(
     return std::make_shared<StorageFileSink>(
         metadata_snapshot,
         getStorageID().getNameForLogs(),
-        std::unique_lock{rwlock, getLockTimeout(context)},
+        std::move(write_lock),
         table_fd,
         use_table_fd,
         base_path,
@@ -3329,11 +3345,43 @@ bool StorageFile::storesDataOnDisk() const
     return is_db_table;
 }
 
+Strings StorageFile::getPathsSnapshot() const
+{
+    std::lock_guard lock(paths_mutex);
+    return paths;
+}
+
+size_t StorageFile::getPathsCount() const
+{
+    std::lock_guard lock(paths_mutex);
+    return paths.size();
+}
+
+void StorageFile::setPaths(Strings new_paths)
+{
+    std::lock_guard lock(paths_mutex);
+    paths = std::move(new_paths);
+}
+
+void StorageFile::appendPath(const String & path)
+{
+    std::lock_guard lock(paths_mutex);
+    if (std::find(paths.begin(), paths.end(), path) == paths.end())
+        paths.push_back(path);
+}
+
+void StorageFile::retirePath(const String & path)
+{
+    std::lock_guard lock(paths_mutex);
+    std::erase(paths, path);
+}
+
 Strings StorageFile::getDataPaths() const
 {
-    if (paths.empty())
+    Strings result = getPathsSnapshot();
+    if (result.empty())
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Table '{}' is in readonly mode", getStorageID().getNameForLogs());
-    return paths;
+    return result;
 }
 
 void StorageFile::rename(const String & new_path_to_table_data, const StorageID & new_table_id)
@@ -3342,17 +3390,18 @@ void StorageFile::rename(const String & new_path_to_table_data, const StorageID 
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED,
                         "Can't rename table {} bounded to user-defined file (or FD)", getStorageID().getNameForLogs());
 
-    if (paths.size() != 1)
+    Strings current_paths = getPathsSnapshot();
+    if (current_paths.size() != 1)
         throw Exception(ErrorCodes::DATABASE_ACCESS_DENIED, "Can't rename table {} in readonly mode", getStorageID().getNameForLogs());
 
     std::string path_new = getTablePath(base_path + new_path_to_table_data, format_name);
-    if (path_new == paths[0])
+    if (path_new == current_paths[0])
         return;
 
     fs::create_directories(fs::path(path_new).parent_path());
-    fs::rename(paths[0], path_new);
+    fs::rename(current_paths[0], path_new);
 
-    paths[0] = std::move(path_new);
+    setPaths({std::move(path_new)});
     renameInMemory(new_table_id);
 }
 
@@ -3372,7 +3421,7 @@ void StorageFile::truncate(
     }
     else
     {
-        for (const auto & path : paths)
+        for (const auto & path : getPathsSnapshot())
         {
             if (!fs::exists(path))
                 continue;
