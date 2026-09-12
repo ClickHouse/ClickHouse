@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/DataTypeNested.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/Serializations/SerializationQuantizedVector.h>
 #include <Common/escapeForFileName.h>
 #include <Compression/CachedCompressedReadBuffer.h>
@@ -82,7 +83,9 @@ IMergeTreeReader::IMergeTreeReader(
         const auto & column_to_read = columns_to_read.emplace_back(getColumnInPart(column));
         serializations.emplace_back(getSerializationInPart(column));
 
-        if (column.isSubcolumn())
+        if (!data_part_info_for_read->isWidePart()
+            && column.isSubcolumn()
+            && !serializations_of_full_columns.contains(column_to_read.getNameInStorage()))
         {
             NameAndTypePair requested_column_in_storage{column.getNameInStorage(), column.getTypeInStorage()};
             serializations_of_full_columns.emplace(column_to_read.getNameInStorage(), getSerializationInPart(requested_column_in_storage));
@@ -473,6 +476,13 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
         if (required_column.isSubcolumn())
             return type_in_storage->getSubcolumnSerialization(required_column.getSubcolumnName(), serialization);
         return serialization;
+    }
+
+    if (containsObjectType(*column_in_part->getTypeInStorage()))
+    {
+        auto serialization = data_part_info_for_read->getSerialization(*column_in_part);
+        if (serialization->supportsPooling())
+            return serialization;
     }
 
     if (auto it = infos.find(column_in_part->getNameInStorage()); it != infos.end())
