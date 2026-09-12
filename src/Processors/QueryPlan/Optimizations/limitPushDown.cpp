@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/QueryPlan/LimitByStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
@@ -8,6 +9,7 @@
 #include <Processors/QueryPlan/UnionStep.h>
 #include <Processors/QueryPlan/WindowStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Common/typeid_cast.h>
 
 namespace DB::QueryPlanOptimizations
@@ -37,6 +39,53 @@ static bool tryUpdateLimitForSortingSteps(QueryPlan::Node * node, size_t limit)
         tryUpdateLimitForSortingSteps(child, limit);
 
     return updated;
+}
+
+/// Whether any step in the subtree makes it unsafe to stop reading early below a `LIMIT BY`: a stateful
+/// expression sees a different set of rows and blocks, and a `TotalsHavingStep` emits totals only once its
+/// input finishes, so a closed input yields partial totals.
+///
+/// `descend_into_child_plans` must stay off before `ReadFromMerge` has its tables pruned, because
+/// `getChildPlans()` materializes its per-table plans, and they are then memoized as they are.
+static bool subtreeBlocksLimitByGroupHint(QueryPlan::Node * node, bool descend_into_child_plans)
+{
+    if (typeid_cast<const TotalsHavingStep *>(node->step.get()))
+        return true;
+
+    if (const auto * expression_step = typeid_cast<const ExpressionStep *>(node->step.get()))
+    {
+        if (expression_step->getExpression().hasStatefulFunctions())
+            return true;
+    }
+    else if (const auto * filter_step = typeid_cast<const FilterStep *>(node->step.get()))
+    {
+        if (filter_step->getExpression().hasStatefulFunctions())
+            return true;
+    }
+    else if (const auto * source_step = dynamic_cast<const SourceStepWithFilterBase *>(node->step.get()))
+    {
+        /// Reader-side filters (explicit `PREWHERE`, row-level security policy) evaluate their
+        /// expressions per block during the scan, so a stateful function there is subject to the same
+        /// truncation as one in a visible `ExpressionStep` / `FilterStep`.
+        const auto & prewhere_info = source_step->getPrewhereInfo();
+        const auto & row_level_filter = source_step->getRowLevelFilter();
+        if ((prewhere_info && prewhere_info->prewhere_actions.hasStatefulFunctions())
+            || (row_level_filter && row_level_filter->actions.hasStatefulFunctions()))
+            return true;
+    }
+
+    for (auto * child : node->children)
+        if (subtreeBlocksLimitByGroupHint(child, descend_into_child_plans))
+            return true;
+
+    /// A step can own whole nested plans instead of plan children (`ReadFromMerge` builds one per member
+    /// table), and their steps run in the same pipeline, so an early stop truncates them as well.
+    if (descend_into_child_plans)
+        for (auto * child_plan : node->step->getChildPlans())
+            if (child_plan && subtreeBlocksLimitByGroupHint(child_plan->getRootNode(), true))
+                return true;
+
+    return false;
 }
 
 size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & /*settings*/)
@@ -120,6 +169,22 @@ size_t tryPushDownLimit(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes,
         return 0;
     }
 
+    /// `LIMIT BY` consumes an unbounded number of input rows per output row, so no row bound may sit below
+    /// it. Record how many rows the outer `LIMIT` needs, which `pushLimitByIntoSort` turns into a group
+    /// bound for the per-stream `LIMIT BY` under the sort.
+    if (auto * limit_by = typeid_cast<LimitByStep *>(child.get()))
+    {
+        /// An early stop truncates `rows_before_limit_at_least`, which this input must report exactly.
+        if (limit->alwaysReadTillEnd())
+            return 0;
+        /// Scanned in this pass as well as where the hint is used: later passes move steps out of the plan
+        /// into fragments they own, so a stateful step visible now can be invisible by then.
+        if (subtreeBlocksLimitByGroupHint(child_node, /*descend_into_child_plans=*/false))
+            return 0;
+        limit_by->updateOuterLimitHint(limit->getLimitForSorting());
+        return 0;
+    }
+
     if (typeid_cast<const SortingStep *>(child.get()))
         return 0;
 
@@ -199,7 +264,17 @@ void pushLimitByIntoSort(QueryPlan::Node & node)
     if (length == 0 || length > std::numeric_limits<UInt64>::max() - offset)
         return;
 
-    sort->updateLimitByHint(limit_by->getColumns(), length + offset);
+    /// A group holding at most `offset` rows yields no output row, so the number of groups an outer
+    /// `LIMIT` needs is unbounded once the `LIMIT BY` offset is non-zero. The group hint is then
+    /// disabled; the per-stream row pre-cap below stays as it is, being offset-correct by widening.
+    UInt64 groups_hint = offset == 0 ? limit_by->getOuterLimitHint() : 0;
+
+    /// Nested child plans are scanned only here: `ReadFromMerge` has them by now, `applyFilters` having
+    /// pruned its tables in an earlier pass of this stage.
+    if (groups_hint && subtreeBlocksLimitByGroupHint(&node, /*descend_into_child_plans=*/true))
+        groups_hint = 0;
+
+    sort->updateLimitByHint(limit_by->getColumns(), length + offset, groups_hint);
 }
 
 }
