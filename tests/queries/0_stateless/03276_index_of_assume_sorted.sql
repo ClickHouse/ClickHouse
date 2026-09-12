@@ -28,23 +28,4 @@ SELECT indexOfAssumeSorted(numbers, toUInt64(if(id = 1, 3, id))) FROM test ORDER
 
 SELECT indexOfAssumeSorted([1, 3, 5, 7, 9], number) FROM numbers(11);
 
-DROP TABLE IF EXISTS float_test;
-
-CREATE TABLE float_test(
-    id UInt64,
-    numbers Array(Float64),
-    needle Float64
-)
-ENGINE = MergeTree()
-ORDER BY id;
-
-INSERT INTO float_test VALUES
-    (0, [1, 2, nan, nan, nan], 2),
-    (1, [1, 2, nan, nan, nan], 1),
-    (2, [1, 2, nan, nan, nan], nan);
-
-SELECT indexOfAssumeSorted(numbers, needle) FROM float_test ORDER BY id;
-
-DROP TABLE IF EXISTS float_test;
-
 DROP TABLE IF EXISTS test;

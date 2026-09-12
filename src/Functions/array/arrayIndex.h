@@ -19,7 +19,6 @@
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnNullable.h>
 #include <Common/FieldAccurateComparison.h>
-#include <Common/NaNUtils.h>
 #include <Core/AccurateComparison.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <base/memcmpSmall.h>
@@ -133,12 +132,6 @@ private:
 
     static bool lessOrEqual(const PaddedPODArray<Initial> & left, const Result & right, size_t i, size_t)
     {
-        if (isNaN(left[i]))
-            return true;
-
-        if (isNaN(right))
-            return false;
-
         return accurate::greaterOrEqualsOp(left[i], right);
     }
 
@@ -246,9 +239,11 @@ private:
         /** Use binary search if the following conditions are met.
           *   1. The array type is not nullable. (Case = 1)
           *   2. Target is not a generic column.
+          *   3. For a row-varying vector target, the array type is integral.
           */
         if constexpr (
-            std::is_same_v<ConcreteAction, IndexOfAssumeSorted> && !std::is_same_v<Target, IColumn> && Case == 1)
+            std::is_same_v<ConcreteAction, IndexOfAssumeSorted> && !std::is_same_v<Target, IColumn> && Case == 1
+            && (!std::is_same_v<Target, PaddedPODArray<Result>> || std::is_integral_v<Initial>))
         {
             if constexpr (std::is_same_v<Target, PaddedPODArray<Result>>)
                 return lowerBound(data, target[row_index], array_size, current_offset);
