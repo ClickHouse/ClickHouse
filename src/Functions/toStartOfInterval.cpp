@@ -378,6 +378,15 @@ private:
 
             constexpr std::optional<Int64> unit_seconds = fixedUnitSeconds<unit>();
 
+            [[maybe_unused]] Int64 interval_seconds = 0;
+            if constexpr (unit_seconds.has_value())
+            {
+                if (common::mulOverflow(num_units, *unit_seconds, interval_seconds))
+                    throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                        "The length of the {} interval ({} units) of function {} does not fit into Int64",
+                        IntervalKind(unit).toString(), num_units, getName());
+            }
+
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
 
             Int64 origin = origin_column.column->getInt(0);
@@ -411,14 +420,7 @@ private:
                 /// A whole number of interval units, in seconds.
                 Int64 offset = 0;
                 if constexpr (unit_seconds.has_value())
-                {
-                    Int64 interval_seconds = 0;
-                    if (common::mulOverflow(num_units, *unit_seconds, interval_seconds))
-                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
-                            "The length of the {} interval ({} units) of function {} does not fit into Int64",
-                            IntervalKind(unit).toString(), num_units, getName());
                     offset = time_diff / result_scale / interval_seconds * interval_seconds;
-                }
                 else
                     offset = ToStartOfInterval<unit>::execute(time_diff, num_units, time_zone, result_scale, origin);
 
