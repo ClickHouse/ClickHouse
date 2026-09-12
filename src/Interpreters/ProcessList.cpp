@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
     extern const SettingsUInt64 reserve_memory;
+    extern const SettingsMilliseconds workload_admission_timeout_ms;
 }
 
 namespace ErrorCodes
@@ -142,13 +143,22 @@ ProcessList::EntryPtr ProcessList::insert(
     MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
+        // One deadline shared by the query slot and the memory reservation (acquired sequentially below),
+        // so the whole pre-execution admission wait is bounded by a single `workload_admission_timeout_ms`
+        // budget. `saturatedMilliseconds` caps the wait at ~1 year (the standard idiom — a longer timeout
+        // is effectively no timeout); 0 is the explicit "no timeout" and maps to an infinite deadline.
+        const UInt64 admission_timeout_ms = static_cast<UInt64>(settings[Setting::workload_admission_timeout_ms].totalMilliseconds());
+        const auto admission_deadline = admission_timeout_ms
+            ? std::chrono::steady_clock::now() + saturatedMilliseconds(admission_timeout_ms)
+            : std::chrono::steady_clock::time_point::max();
+
         /// Hold a shared_ptr to keep the storage alive for the duration of this call, in case of concurrent shutdown.
         auto workload_entity_storage = query_context->getWorkloadEntityStoragePtr();
         String query_resource_name = workload_entity_storage->getQueryResourceName();
         if (!query_resource_name.empty())
         {
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
-                query_slot = std::make_unique<QuerySlot>(link);
+                query_slot = std::make_unique<QuerySlot>(link, admission_deadline);
         }
         String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
         if (!memory_reservation_resource_name.empty())
@@ -160,7 +170,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory]);
+                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], admission_deadline);
             }
         }
     }
