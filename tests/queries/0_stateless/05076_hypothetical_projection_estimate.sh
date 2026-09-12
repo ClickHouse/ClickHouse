@@ -41,14 +41,18 @@ $CLICKHOUSE_CLIENT -q "
 compare()
 {
     local projection_name="$1" projection_body="$2" query="$3" est="${4:-t_est}" real="${5:-t_real}"
-    echo "hypothetical:"
-    $CLICKHOUSE_CLIENT -q "
+    # both halves in one session: a client start costs more than everything the queries do
+    local out
+    out=$($CLICKHOUSE_CLIENT -q "
         CREATE HYPOTHETICAL PROJECTION ${projection_name} ON ${est} ${projection_body};
         EXPLAIN WHATIF ${query/TABLE/$est} SETTINGS ${PIN};
-    " | grep -E '^\s+(status|marks|rows|read_ratio|verdict|reason|source):' | awk '{$1=$1; print}'
+        SELECT '--- real ---';
+        EXPLAIN indexes = 1 ${query/TABLE/$real} SETTINGS ${PIN}, preferred_optimize_projection_name = '${projection_name}';
+    ")
+    echo "hypothetical:"
+    sed -n '1,/^--- real ---$/p' <<< "$out" | grep -E '^\s+(status|marks|rows|read_ratio|verdict|reason|source):' | awk '{$1=$1; print}'
     echo "real:"
-    $CLICKHOUSE_CLIENT -q "EXPLAIN indexes = 1 ${query/TABLE/$real} SETTINGS ${PIN}, preferred_optimize_projection_name = '${projection_name}'" \
-        | grep -oE 'ReadFromMergeTree \([^)]*\)|Granules: [0-9]+$'
+    sed -n '/^--- real ---$/,$p' <<< "$out" | grep -oE 'ReadFromMergeTree \([^)]*\)|Granules: [0-9]+$'
 }
 
 echo "--- point query on the projection key, three parts ---"
@@ -79,12 +83,12 @@ compare p_g "(SELECT a, b, v ORDER BY b) WITH SETTINGS (index_granularity = 50)"
 echo "--- no filter, the projection serves the ORDER BY ---"
 compare p_b "(SELECT a, b, v ORDER BY b)" "SELECT a, b, v FROM TABLE ORDER BY b"
 # every setting the planner's read-in-order gate is built from must switch the tie-break off
-for off in "optimize_read_in_order = 0" "query_plan_read_in_order = 0" "query_plan_enable_optimizations = 0"; do
-    $CLICKHOUSE_CLIENT -q "
-        CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
-        EXPLAIN WHATIF SELECT a, b, v FROM t_est ORDER BY b SETTINGS ${PIN}, ${off};
-    " | grep -E '^\s+reason:' | awk '{$1=$1; print}'
-done
+$CLICKHOUSE_CLIENT -q "
+    CREATE HYPOTHETICAL PROJECTION p_b ON t_est (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a, b, v FROM t_est ORDER BY b SETTINGS ${PIN}, optimize_read_in_order = 0;
+    EXPLAIN WHATIF SELECT a, b, v FROM t_est ORDER BY b SETTINGS ${PIN}, query_plan_read_in_order = 0;
+    EXPLAIN WHATIF SELECT a, b, v FROM t_est ORDER BY b SETTINGS ${PIN}, query_plan_enable_optimizations = 0;
+" | grep -E '^\s+reason:' | awk '{$1=$1; print}'
 
 echo "--- the INDEX form, which the optimizer serves the read from ---"
 compare p_idx "INDEX b TYPE basic" "SELECT count() FROM TABLE WHERE b = 42"
@@ -102,7 +106,6 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'real projection part marks:', marks FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_real_r' AND active;
 "
 compare p_r "(SELECT a, b, v ORDER BY b)" "SELECT a, b, v FROM TABLE WHERE b = 7" t_est_r t_real_r
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_r; DROP TABLE IF EXISTS t_real_r;"
 
 # a Compact part reports the whole part's size for every column, so the bytes must come from the scan;
 # such a part carries an adaptive granularity, which the constant model can miss by a granule
@@ -120,7 +123,6 @@ $CLICKHOUSE_CLIENT -q "
     SELECT 'real projection part marks:', marks FROM system.projection_parts WHERE database = currentDatabase() AND table = 't_real_c' AND active;
 "
 compare p_c "(SELECT id, b, v ORDER BY b)" "SELECT sum(v) FROM TABLE WHERE b >= 0" t_est_c t_real_c
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_c; DROP TABLE IF EXISTS t_real_c;"
 
 # the projection's own granularity makes it read more than a base read the primary key already pruned
 echo "--- a projection that reads more marks than the base table is not chosen ---"
@@ -149,7 +151,6 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_a ON t_est_a (SELECT a, b, v ORDER BY b);
     EXPLAIN WHATIF SELECT a, b, v FROM t_est_a ORDER BY b SETTINGS ${PIN};
 " | grep -E '^\s+(marks|read_ratio|verdict|reason):' | awk '{$1=$1; print}'
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_a;"
 
 # the read step of such a baseline carries the real projection's metadata, not the table's
 echo "--- a baseline already served by a real projection is reported as such ---"
@@ -162,7 +163,6 @@ $CLICKHOUSE_CLIENT -q "
     CREATE HYPOTHETICAL PROJECTION p_c ON t_served (SELECT a, b, c ORDER BY c);
     EXPLAIN WHATIF SELECT a, b FROM t_served WHERE b = 42 SETTINGS ${PIN};
 " | grep -E '^\s+(status|reason):' | awk '{$1=$1; print}'
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_served;"
 
 # `required_columns` omits a subcolumn whose physical column is present, the key expression still needs it
 echo "--- a sort key over a subcolumn ---"
@@ -176,7 +176,6 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_real_s SELECT (number % 100, number), number FROM numbers(1000);
 "
 compare p_s "(SELECT t, v ORDER BY t.x)" "SELECT t, v FROM TABLE WHERE t.x = 42" t_est_s t_real_s
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_s; DROP TABLE IF EXISTS t_real_s;"
 
 # a projection index also stores the parent offset, so a byte-driven granularity has to count it
 echo "--- a byte-driven projection index counts the parent offset it stores ---"
@@ -190,7 +189,6 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_real_i SELECT number, intDiv(number, 100), number FROM numbers(5000);
 "
 compare p_i "INDEX b TYPE basic" "SELECT count() FROM TABLE WHERE b = 7" t_est_i t_real_i
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_i; DROP TABLE IF EXISTS t_real_i;"
 
 # a merged part whose row width varies along the projection key: the writer sizes a granule per block
 # it stores, so one average over the part would be several times out
@@ -213,17 +211,16 @@ $CLICKHOUSE_CLIENT -q "
 # the granule layout of such a part depends on the blocks the writer was fed, which is not recorded,
 # so the estimate is held to the documented margin of a granule instead of to the exact count
 for w in "b >= 4000" "b < 2000"; do
-    est=$($CLICKHOUSE_CLIENT -q "
+    out=$($CLICKHOUSE_CLIENT -q "
         CREATE HYPOTHETICAL PROJECTION p_w ON t_est_w (SELECT a, b, s ORDER BY b);
         EXPLAIN WHATIF SELECT a, s FROM t_est_w WHERE ${w} SETTINGS ${PIN};
-    " | grep -E '^\s+marks:' | tail -1 | awk '{print $2}')
-    real=$($CLICKHOUSE_CLIENT -q "
         EXPLAIN indexes = 1 SELECT a, s FROM t_real_w WHERE ${w} SETTINGS ${PIN}, preferred_optimize_projection_name = 'p_w';
-    " | grep -oE 'Granules: [0-9]+' | head -1 | awk '{print $2}')
+    ")
+    est=$(grep -E '^\s+marks:' <<< "$out" | tail -1 | awk '{print $2}')
+    real=$(grep -oE 'Granules: [0-9]+' <<< "$out" | head -1 | awk '{print $2}')
     # a whole-part average would be several times out on the wide half of the key
     echo "${w}: within a granule of the real count: $(( est >= real - 1 && est <= real + 1 ? 1 : 0 ))"
 done
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_w; DROP TABLE IF EXISTS t_real_w;"
 
 # a lightweight delete leaves the dead rows in the part, and a projection without a WHERE keeps them:
 # the rebuild ANDs `_row_exists` into the projection's WHERE, and there is none here to AND it into
@@ -243,7 +240,6 @@ $CLICKHOUSE_CLIENT -q "
         WHERE database = currentDatabase() AND table = 't_real_d' AND active;
 "
 compare p_d "(SELECT a, b, v ORDER BY b)" "SELECT a, v FROM TABLE WHERE b < 30" t_est_d t_real_d
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;"
 
 # a projection that stores less per row gets bigger granules, so a full scan of it beats the base read
 # even when the predicate cannot prune its key and there is no ORDER BY to help
@@ -258,6 +254,3 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_real_n SELECT number, number % 1000, repeat('x', 500) FROM numbers(5000);
 "
 compare p_n "(SELECT a, b ORDER BY b)" "SELECT sum(b) FROM TABLE WHERE a % 7 = 3" t_est_n t_real_n
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est_n; DROP TABLE IF EXISTS t_real_n;"
-
-$CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS t_est; DROP TABLE IF EXISTS t_real; DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;"
