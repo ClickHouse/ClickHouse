@@ -3865,8 +3865,10 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// The conversion only produces its own leading sort columns; the extra merge columns of a
     /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
     /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
+    /// Coverage is the number of primary key columns the conversion reads, not the number of
+    /// columns it outputs: constant ORDER BY columns are outputs backed by no key column.
     if (widened_over_previous_request && virtual_row_conversion
-        && virtual_row_conversion->getSampleBlock().columns() < prefix_size)
+        && virtual_row_conversion->getRequiredColumnsWithTypes().size() < prefix_size)
         resetVirtualRowConversions();
 
     /// In case of read-in-order, don't create too many reading streams.
@@ -6454,8 +6456,8 @@ bool ReadFromMergeTree::supportsBucketedRead() const
         unsupported_deferred_filters = false;
 #endif
     /// An order set before the plan was optimized (the old analyzer's executeOrderOptimized) is rejected in
-    /// checkDistributedReadSupported, so it cannot reach here. Do not gate on it: the worker path asks for
-    /// its order before consulting this, and refusing would route the read to a node with no catalog.
+    /// getReasonReadCannotBeDistributed, so it cannot reach here. Do not gate on it: the worker
+    /// path asks for its order before consulting this, and refusing would route the read to a node with no catalog.
     return !unsupported_deferred_filters
         && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         && index_read_tasks.empty();
@@ -6486,7 +6488,7 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
     /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
-    /// earlier in checkDistributedReadSupported.)
+    /// earlier in getReasonReadCannotBeDistributed.)
     if (query_info.isStream())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read with the STREAM modifier");
