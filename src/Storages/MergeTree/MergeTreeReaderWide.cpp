@@ -80,7 +80,7 @@ MergeTreeReaderWide::MergeTreeReaderWide(
 
 void MergeTreeReaderWide::prefetchBeginOfRange(Priority priority)
 {
-    prefetched_streams.clear();
+    streams.clearPrefetched();
 
     if (all_mark_ranges.getNumberOfMarks() == 0)
         return;
@@ -152,7 +152,7 @@ size_t MergeTreeReaderWide::readRows(
     size_t read_rows = 0;
     if (prefetched_from_mark != -1 && static_cast<size_t>(prefetched_from_mark) != from_mark)
     {
-        prefetched_streams.clear();
+        streams.clearPrefetched();
         prefetched_from_mark = -1;
     }
 
@@ -215,7 +215,7 @@ size_t MergeTreeReaderWide::readRows(
                 res_columns[pos] = nullptr;
         }
 
-        prefetched_streams.clear();
+        streams.clearPrefetched();
         caches.clear();
 
         /// NOTE: positions for all streams must be kept in sync.
@@ -267,13 +267,7 @@ void MergeTreeReaderWide::addStreams(
             return;
         }
 
-        if (streams.contains(*stream_name))
-        {
-            has_any_stream = true;
-            return;
-        }
-
-        addStream(substream_path, *stream_name);
+        getOrAddStream(substream_path, *stream_name);
         has_any_stream = true;
     };
 
@@ -283,43 +277,107 @@ void MergeTreeReaderWide::addStreams(
         partially_read_columns.insert(name_and_type.name);
 }
 
-MergeTreeReaderWide::FileStreams::iterator MergeTreeReaderWide::addStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
+MergeTreeReaderStream * MergeTreeReaderWide::FileStreams::getOrCreate(const String & stream_name, const StreamFactory & factory)
 {
-    auto context = data_part_info_for_read->getContext();
-    auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
-    size_t num_marks_in_part = data_part_info_for_read->getMarksCount();
-
-    auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
-        data_part_info_for_read,
-        mark_cache,
-        data_part_info_for_read->getIndexGranularityInfo().getMarksFilePath(stream_name),
-        num_marks_in_part,
-        data_part_info_for_read->getIndexGranularityInfo(),
-        settings.save_marks_in_cache,
-        settings.read_settings,
-        load_marks_threadpool,
-        /*num_columns_in_mark=*/ 1,
-        settings.use_streaming_marks_compression);
-
-    auto stream_settings = settings;
-    stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path);
-    stream_settings.is_metadata_file = ISerialization::isMetadataStream(substream_path);
-    stream_settings.is_single_value_per_part = ISerialization::isSingleValuePerPartStream(substream_path);
-
-    auto create_stream = [&]<typename Stream>()
     {
-        return std::make_unique<Stream>(
-            data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
-            num_marks_in_part, all_mark_ranges, stream_settings,
-            uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
-            std::move(marks_loader), profile_callback, clock_type);
-    };
+        std::lock_guard lock(mutex);
+        if (auto it = streams.find(stream_name); it != streams.end())
+            return it->second.get();
+    }
 
-    if (read_without_marks)
-        return streams.emplace(stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumnWholePart>()).first;
+    auto stream = factory();
 
-    marks_loader->startAsyncLoad();
-    return streams.emplace(stream_name, create_stream.operator()<MergeTreeReaderStreamSingleColumn>()).first;
+    std::lock_guard lock(mutex);
+    auto [it, inserted] = streams.try_emplace(stream_name, std::move(stream));
+    chassert(inserted);
+    return it->second.get();
+}
+
+MergeTreeReaderStream * MergeTreeReaderWide::FileStreams::find(const String & stream_name) const
+{
+    std::lock_guard lock(mutex);
+    auto it = streams.find(stream_name);
+    return it == streams.end() ? nullptr : it->second.get();
+}
+
+void MergeTreeReaderWide::FileStreams::release(const String & stream_name)
+{
+    std::unique_ptr<MergeTreeReaderStream> stream;
+    {
+        std::lock_guard lock(mutex);
+        if (auto it = streams.find(stream_name); it != streams.end())
+        {
+            stream = std::move(it->second);
+            streams.erase(it);
+        }
+    }
+    /// Dropped outside the mutex: `~MergeTreeMarksLoader` waits for an in-flight marks load.
+}
+
+bool MergeTreeReaderWide::FileStreams::isPrefetched(const String & stream_name) const
+{
+    std::lock_guard lock(mutex);
+    return prefetched.contains(stream_name);
+}
+
+void MergeTreeReaderWide::FileStreams::markPrefetched(const String & stream_name)
+{
+    std::lock_guard lock(mutex);
+    prefetched.insert(stream_name);
+}
+
+void MergeTreeReaderWide::FileStreams::unmarkPrefetched(const String & stream_name)
+{
+    std::lock_guard lock(mutex);
+    prefetched.erase(stream_name);
+}
+
+void MergeTreeReaderWide::FileStreams::clearPrefetched()
+{
+    std::lock_guard lock(mutex);
+    prefetched.clear();
+}
+
+MergeTreeReaderStream * MergeTreeReaderWide::getOrAddStream(const ISerialization::SubstreamPath & substream_path, const String & stream_name)
+{
+    return streams.getOrCreate(stream_name, [&]() -> std::unique_ptr<MergeTreeReaderStream>
+    {
+        auto context = data_part_info_for_read->getContext();
+        auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+        size_t num_marks_in_part = data_part_info_for_read->getMarksCount();
+
+        auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
+            data_part_info_for_read,
+            mark_cache,
+            data_part_info_for_read->getIndexGranularityInfo().getMarksFilePath(stream_name),
+            num_marks_in_part,
+            data_part_info_for_read->getIndexGranularityInfo(),
+            settings.save_marks_in_cache,
+            settings.read_settings,
+            load_marks_threadpool,
+            /*num_columns_in_mark=*/ 1,
+            settings.use_streaming_marks_compression);
+
+        auto stream_settings = settings;
+        stream_settings.is_low_cardinality_dictionary = ISerialization::isLowCardinalityDictionarySubcolumn(substream_path);
+        stream_settings.is_metadata_file = ISerialization::isMetadataStream(substream_path);
+        stream_settings.is_single_value_per_part = ISerialization::isSingleValuePerPartStream(substream_path);
+
+        auto create_stream = [&]<typename Stream>()
+        {
+            return std::make_unique<Stream>(
+                data_part_info_for_read->getDataPartStorage(), stream_name, DATA_FILE_EXTENSION,
+                num_marks_in_part, all_mark_ranges, stream_settings,
+                uncompressed_cache, data_part_info_for_read->getFileSizeOrZero(stream_name + DATA_FILE_EXTENSION),
+                std::move(marks_loader), profile_callback, clock_type);
+        };
+
+        if (read_without_marks)
+            return create_stream.operator()<MergeTreeReaderStreamSingleColumnWholePart>();
+
+        marks_loader->startAsyncLoad();
+        return create_stream.operator()<MergeTreeReaderStreamSingleColumn>();
+    });
 }
 
 ReadBuffer * MergeTreeReaderWide::getStream(
@@ -354,25 +412,18 @@ ReadBuffer * MergeTreeReaderWide::getStream(
         return nullptr;
     }
 
-    auto it = streams.find(*stream_name);
-    if (it == streams.end())
-    {
-        /// If we didn't create requested stream, but file with this path exists, create a stream for it.
-        /// It may happen during reading of columns with dynamic subcolumns, because all streams are known
-        /// only after deserializing of binary bulk prefix.
-
-        it = addStream(substream_path, *stream_name);
-    }
-
-    MergeTreeReaderStream & stream = *it->second;
-    stream.adjustRightMark(last_mark_to_read);
+    /// If we didn't create requested stream, but file with this path exists, create a stream for it.
+    /// It may happen during reading of columns with dynamic subcolumns, because all streams are known
+    /// only after deserializing of binary bulk prefix.
+    auto * stream = getOrAddStream(substream_path, *stream_name);
+    stream->adjustRightMark(last_mark_to_read);
 
     if (seek_to_start)
-        stream.seekToStart();
+        stream->seekToStart();
     else if (seek_to_mark)
-        stream.seekToMark(from_mark);
+        stream->seekToMark(from_mark);
 
-    return stream.getDataBuffer();
+    return stream->getDataBuffer();
 }
 
 void MergeTreeReaderWide::deserializePrefix(
@@ -397,11 +448,10 @@ void MergeTreeReaderWide::deserializePrefix(
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             /// This stream could be prefetched in prefetchBeginOfRange, but here we
             /// have to seek the stream to the start of file to deserialize the prefix.
-            /// If we do not read from the first mark, we should remove this stream from
-            /// prefetched_streams to prefetch it again starting from the current mark
-            /// after prefix is deserialized.
+            /// If we do not read from the first mark, we should unmark this stream as prefetched
+            /// to prefetch it again starting from the current mark after prefix is deserialized.
             if (stream_name && from_mark != 0)
-                prefetched_streams.erase(*stream_name);
+                streams.unmarkPrefetched(*stream_name);
 
             return getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, cache);
         };
@@ -412,14 +462,11 @@ void MergeTreeReaderWide::deserializePrefix(
                 return;
 
             if (from_mark != 0)
-                prefetched_streams.erase(*stream_name);
+                streams.unmarkPrefetched(*stream_name);
 
-            auto it = streams.find(*stream_name);
-            if (it == streams.end())
-                it = addStream(substream_path, *stream_name);
-
-            it->second->adjustRightMark(last_mark_to_read);
-            it->second->seekToStart();
+            auto * stream = getOrAddStream(substream_path, *stream_name);
+            stream->adjustRightMark(last_mark_to_read);
+            stream->seekToStart();
         };
         /// Add streams for newly discovered dynamic subcolumns to start async marks loading beforehand if needed.
         deserialize_settings.dynamic_subcolumns_callback = [&](const ISerialization::SubstreamPath & substream_path)
@@ -429,14 +476,14 @@ void MergeTreeReaderWide::deserializePrefix(
                 return;
 
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-            if (stream_name && !streams.contains(*stream_name))
-                addStream(substream_path, *stream_name);
+            if (stream_name)
+                getOrAddStream(substream_path, *stream_name);
         };
         deserialize_settings.release_stream_callback = [&](const ISerialization::SubstreamPath & substream_path)
         {
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
             if (stream_name)
-                streams.erase(*stream_name);
+                streams.release(*stream_name);
         };
         deserialize_settings.check_stream_exists_callback = [&](const ISerialization::SubstreamPath & substream_path) -> bool
         {
@@ -471,11 +518,11 @@ void MergeTreeReaderWide::deserializePrefix(
             if (!stream_name)
                 return false;
 
-            auto it = streams.find(*stream_name);
-            if (it == streams.end())
+            auto * stream = streams.find(*stream_name);
+            if (!stream)
                 return false;
 
-            return it->second->hasAtMostNDistinctMarks(allowed_distinct_marks);
+            return stream->hasAtMostNDistinctMarks(allowed_distinct_marks);
         };
         serialization->deserializeBinaryBulkStatePrefix(deserialize_settings, deserialize_state_map[name], &deserialize_states_cache);
     }
@@ -535,16 +582,20 @@ void MergeTreeReaderWide::deserializePrefixForAllColumnsWithPrefetch(size_t num_
 {
     auto prefixes_prefetch_callback_getter = [&](const NameAndTypePair & name_and_type)
     {
-        return [&](const ISerialization::SubstreamPath & substream_path)
+        /// Resolved here, on the serial thread: the callback below runs on sibling prefix tasks, and
+        /// a non-const lookup in `caches` can insert, so several of them looking the same key up at
+        /// once would modify the map while the others read it.
+        auto * column_cache = &caches[name_and_type.getNameInStorage()];
+        return [&, column_cache](const ISerialization::SubstreamPath & substream_path)
         {
             auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-            if (stream_name && !prefetched_streams.contains(*stream_name))
+            if (!stream_name || streams.isPrefetched(*stream_name))
+                return;
+
+            if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, *column_cache))
             {
-                if (ReadBuffer * buf = getStream(/* seek_to_start = */true, substream_path, data_part_info_for_read->getChecksums(), name_and_type, 0, /* seek_to_mark = */false, caches[name_and_type.getNameInStorage()]))
-                {
-                    buf->prefetch(priority);
-                    prefetched_streams.insert(*stream_name);
-                }
+                buf->prefetch(priority);
+                streams.markPrefetched(*stream_name);
             }
         };
     };
@@ -583,13 +634,13 @@ void MergeTreeReaderWide::prefetchForColumn(
 
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
 
-        if (stream_name && !prefetched_streams.contains(*stream_name))
+        if (stream_name && !streams.isPrefetched(*stream_name))
         {
             bool seek_to_mark = !continue_reading && !read_without_marks;
             if (ReadBuffer * buf = getStream(false, substream_path, data_part_info_for_read->getChecksums(), name_and_type, from_mark, seek_to_mark, cache))
             {
                 buf->prefetch(priority);
-                prefetched_streams.insert(*stream_name);
+                streams.markPrefetched(*stream_name);
             }
         }
     };
@@ -626,7 +677,7 @@ void MergeTreeReaderWide::readData(
     deserialize_settings.getter = [&](const ISerialization::SubstreamPath & substream_path)
     {
         auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(name_and_type, substream_path, ".bin", data_part_info_for_read->getChecksums(), storage_settings);
-        bool was_prefetched = stream_name && prefetched_streams.contains(*stream_name);
+        bool was_prefetched = stream_name && streams.isPrefetched(*stream_name);
         bool seek_to_mark = !was_prefetched && !continue_reading && !read_without_marks;
 
         return getStream(
@@ -641,7 +692,11 @@ void MergeTreeReaderWide::readData(
         if (!stream_name)
             return;
 
-        streams[*stream_name]->seekToMark(mark);
+        auto * stream = streams.find(*stream_name);
+        if (!stream)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Stream {} for column {} is not found", *stream_name, name_and_type.name);
+
+        stream->seekToMark(mark);
     };
 
     /// Seek a substream's stream to the current granule's mark. Needed by serializations that read a
@@ -658,9 +713,8 @@ void MergeTreeReaderWide::readData(
         if (!stream_name)
             return;
 
-        auto it = streams.find(*stream_name);
-        if (it != streams.end())
-            it->second->seekToMark(from_mark);
+        if (auto * stream = streams.find(*stream_name))
+            stream->seekToMark(from_mark);
     };
 
     deserialize_settings.get_avg_value_size_hint_callback
