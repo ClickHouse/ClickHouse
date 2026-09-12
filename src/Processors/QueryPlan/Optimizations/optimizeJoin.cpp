@@ -880,17 +880,24 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 /// The set is intentionally small and conservative -- an unknown function is treated as opaque
 /// (contributes nothing), which can only make CD-A miss a valid reordering, never admit an invalid
 /// one. It excludes NULL-blocking functions on purpose (`coalesce`, `ifNull`, `assumeNotNull`, ...).
-static bool isNullPropagatingFunction(const String & name)
+static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
 {
     static const std::unordered_set<std::string_view> names = {
         /// comparisons (the atoms of equi/theta-join predicates)
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
         /// arithmetic that may wrap a column inside a comparison, e.g. `a.x + 1 = b.y`
         "plus", "minus", "multiply", "divide", "modulo", "negate",
-        /// a CAST of NULL is NULL
         "CAST", "_CAST",
     };
-    return names.contains(name);
+    const auto & name = node.function_base->getName();
+    if (!names.contains(name))
+        return false;
+    /// A cast to a non-`Nullable` type raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` rather than
+    /// returning `NULL`; a cast to `Variant`/`Dynamic` returns `NULL` but a join on such a key
+    /// matches `NULL` to `NULL`. Neither shape rejects a null-extended row, so neither counts.
+    if (name == "CAST" || name == "_CAST")
+        return isNullableOrLowCardinalityNullable(node.result_type);
+    return true;
 }
 
 /// Relations R such that `node` evaluates to NULL when all of R's columns are NULL ("strict" on R).
@@ -907,7 +914,7 @@ static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpress
             return node->children.empty() ? BitSet{} : strictOnRelations(node->children.front(), actions);
         case ActionsDAG::ActionType::FUNCTION:
         {
-            if (!node->function_base || !isNullPropagatingFunction(node->function_base->getName()))
+            if (!node->function_base || !isNullPropagatingFunction(*node))
                 return {};
             BitSet result;
             for (const auto * child : node->children)
