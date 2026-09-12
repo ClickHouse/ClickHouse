@@ -3074,13 +3074,33 @@ The above creates a view for table which can be used as table function by substi
 SELECT * FROM view(column1=value1, column2=value2 ...)
 ```
 
-Since the parameterized view depends on the parameter values, it doesn't have a schema when parameters are not provided.
-That means there's no information about parameterized views in the `system.columns` table.
-Also, `DESCRIBE` queries would work only if parameters are provided.
+Since the parameterized view depends on the parameter values, it doesn't have a schema of its own when parameters are not provided.
+That means there's no information about such a parameterized view in the `system.columns` table,
+and `DESCRIBE` queries work only if parameters are provided.
 
 ```sql
 DESCRIBE view(column1=value1, column2=value2 ...)
 ```
+
+A parameterized view can instead declare its schema explicitly, by writing a column list in its definition,
+while the experimental setting [`use_declared_schema_for_parameterized_views`](/operations/settings/settings#use_declared_schema_for_parameterized_views) is enabled:
+
+```sql
+SET use_declared_schema_for_parameterized_views = 1;
+
+CREATE VIEW view
+(
+    `n` UInt64
+)
+AS SELECT number AS n FROM numbers({upper_bound:UInt64});
+```
+
+Such a view exposes the declared schema without parameters: it appears in the `system.columns` table,
+`SHOW COLUMNS` lists its columns, and a bare `DESCRIBE view` returns them.
+It also enforces the declared schema, throwing `TYPE_MISMATCH` when the schema after parameter substitution differs from the declared one.
+
+The setting is read when the view is created, and the outcome is stored with the view definition,
+so it is the same on every replica and across restarts, and turning the setting on or off does not change views that already exist.
 
 ## Materialized View {#materialized-view}
 
