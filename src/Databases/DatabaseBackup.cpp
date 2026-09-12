@@ -257,7 +257,9 @@ void DatabaseBackup::beforeLoadingMetadata(ContextMutablePtr local_context, Load
 
     auto storage_policy_name = buildStoragePolicyName(getDatabaseName(), config);
 
-    getContext()->getOrCreateStoragePolicy(storage_policy_name, [&](const StoragePoliciesMap &)
+    /// Replace rather than reuse: a cached policy wraps the backup opened by a previous open of this
+    /// database, which may no longer be the backup the destination resolves to now.
+    getContext()->createOrReplaceTemporaryStoragePolicy([&](const StoragePoliciesMap &)
     {
         DiskBackup::PathPrefixReplacement path_prefix_replacement;
         path_prefix_replacement.from = data_path;
