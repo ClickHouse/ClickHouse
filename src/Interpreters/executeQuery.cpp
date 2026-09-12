@@ -2287,9 +2287,12 @@ static BlockIO executeQueryImpl(
             context->getSessionQueryIdsHistory().add(client_info.current_query_id, history_size);
     }
 
-    size_t max_query_size = settings[Setting::max_query_size];
-    /// Don't limit the size of internal queries or distributed subquery.
-    if (internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    const bool parse_as_internal = internal || context->isDDLOrOnClusterInternal();
+
+    const size_t fallback_query_size_limit = settings[Setting::max_query_size];
+    size_t max_query_size = fallback_query_size_limit;
+    /// Don't limit the size of internal queries, distributed subqueries, or server-generated DDL queries.
+    if (parse_as_internal || client_info.query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
         max_query_size = 0;
 
     String query;
@@ -2308,7 +2311,7 @@ static BlockIO executeQueryImpl(
             /// Increment ProfileEvents::Query here because Interpreter is not created.
             ProfileEvents::increment(ProfileEvents::Query);
         }
-        else if (settings[Setting::dialect] == Dialect::kusto && !internal)
+        else if (settings[Setting::dialect] == Dialect::kusto && !parse_as_internal)
         {
             const char * kql_pos = begin;
             if (!settings[Setting::allow_experimental_kusto_dialect])
@@ -2325,21 +2328,21 @@ static BlockIO executeQueryImpl(
                 out_ast = parseKQLQuery(
                     kql_pos, end, /*allow_multi_statements=*/false, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
-        else if (settings[Setting::dialect] == Dialect::prql && !internal)
+        else if (settings[Setting::dialect] == Dialect::prql && !parse_as_internal)
         {
             if (!settings[Setting::allow_experimental_prql_dialect])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PRQL is disabled (turn on setting 'allow_experimental_prql_dialect')");
             ParserPRQLQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
-        else if (settings[Setting::dialect] == Dialect::promql && !internal)
+        else if (settings[Setting::dialect] == Dialect::promql && !parse_as_internal)
         {
             if (!settings[Setting::enable_time_series_table])
                 throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for PromQL dialect is disabled (turn on setting 'enable_time_series_table')");
             ParserPrometheusQuery parser(settings[Setting::promql_database], settings[Setting::promql_table], Field{settings[Setting::promql_evaluation_time]});
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
-        else if (settings[Setting::dialect] == Dialect::polyglot && !internal)
+        else if (settings[Setting::dialect] == Dialect::polyglot && !parse_as_internal)
         {
             /// Pass through to `ParserPolyglotQuery` which handles SET queries
             /// internally (via the standard parser) even when the feature gate
@@ -2354,7 +2357,7 @@ static BlockIO executeQueryImpl(
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
-        else if (settings[Setting::dialect] == Dialect::trino && !internal)
+        else if (settings[Setting::dialect] == Dialect::trino && !parse_as_internal)
         {
             /// Like `ParserPolyglotQuery`, `ParserTrinoQuery` handles SET queries and
             /// the feature gate internally so users can always switch the dialect back.
@@ -2385,7 +2388,7 @@ static BlockIO executeQueryImpl(
                 context->setSetting("enable_analyzer", true);
             }
         }
-        else if (settings[Setting::dialect] == Dialect::clickhouse_json && !internal)
+        else if (settings[Setting::dialect] == Dialect::clickhouse_json && !parse_as_internal)
         {
             /// Allow `SET` queries in plain SQL so users can switch back to another dialect
             /// without being locked into JSON-only input. The experimental gate must be
@@ -2630,7 +2633,12 @@ static BlockIO executeQueryImpl(
     {
         /// Anyway log the query.
         if (query.empty())
-            query.assign(begin, std::min(static_cast<size_t>(end - begin), max_query_size));
+        {
+            size_t fallback_query_size = static_cast<size_t>(end - begin);
+            if (fallback_query_size_limit)
+                fallback_query_size = std::min(fallback_query_size, fallback_query_size_limit);
+            query.assign(begin, fallback_query_size);
+        }
 
         query_for_logging = wipeSensitiveDataAndCutToLength(query, log_queries_cut_to_length, true);
         logQuery(query_for_logging, context, internal, stage);
