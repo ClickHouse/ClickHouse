@@ -1,0 +1,30 @@
+EXISTS over the same table, the qualifier read as the enclosing table
+2
+2
+2
+the same qualifier read as the aliased inner table, which is the default
+0
+NOT EXISTS over the same table
+1
+a correlated scalar subquery
+1	30
+2	30
+3	\N
+the name of an aliased table still qualifies it where nothing else carries it
+3
+1
+1
+a subquery in the FROM clause keeps the qualifier, in either order of the enclosing FROM
+3
+3
+3
+3
+3
+3
+3
+3
+3
+3
+1
+1
+1

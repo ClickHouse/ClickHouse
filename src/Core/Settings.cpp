@@ -8422,6 +8422,19 @@ Allow to add compound identifiers to nested. This is a compatibility setting bec
     DECLARE(Bool, analyzer_compatibility_allow_non_aggregate_in_having, false, R"(
 When enabled, the analyzer mimics the legacy behavior of moving non-aggregate AND-conjuncts from `HAVING` to `WHERE` instead of raising `NOT_AN_AGGREGATE`. The standard-compliant rejection is the default; this is a migration aid for queries that were silently accepted by the old analyzer (`enable_analyzer = 0`). Conjuncts containing aggregate, `grouping`, or non-deterministic functions stay in `HAVING`. If any conjunct contains a window function or a stateful function (for example `rowNumberInBlock`), the rewrite is disabled for the whole `HAVING`, matching the legacy `PredicateExpressionsOptimizer` behavior. The setting is also ignored when `GROUP BY` uses `WITH CUBE`, `WITH ROLLUP`, `WITH TOTALS`, or `GROUPING SETS`.
 )", 0) \
+    DECLARE(Bool, analyzer_alias_hides_table_name, false, R"(
+When enabled, the alias of a table expression hides the table's own name from a qualifier, as SQL requires, whenever an enclosing query has a table expression addressed by that name.
+
+SQL says an alias replaces the name of the table it stands for, so `t.x` inside `... FROM t AS c ...` refers to a table `t` of an enclosing query, and the subquery is correlated. ClickHouse also accepts the table's own name as a qualifier, which is harmless while the name means nothing else in the query but silently changes the meaning of a correlated subquery:
+
+```sql
+SELECT count() FROM t WHERE EXISTS (SELECT 1 FROM t AS c WHERE c.grp = t.grp AND c.val > t.val);
+```
+
+By default `t.grp` and `t.val` refer to the aliased `t AS c`, which turns the predicate into a comparison of the inner row with itself, so the query answers 0. Enable to have them refer to the outer table, which makes the subquery correlated as SQL requires. Off by default, because the previous resolution is what several documented behaviours rely on, notably the `distributed_product_mode = 'local'` rewrite of an `IN` subquery over a `Distributed` table.
+
+The table's own name works as a qualifier either way whenever no enclosing query carries it, and also inside a subquery that sits in a `FROM` or `JOIN` of the enclosing query, which cannot read a column of its siblings at all.
+)", 0) \
     DECLARE(Bool, analyzer_compatibility_prefer_alias_over_subcolumn, false, R"(
 When a multi-part identifier like `b.id` could refer to either the column `id` of a table aliased `b` or to a Tuple subcolumn `b.id` of some other column, prefer the alias-prefix interpretation (column `id` of `b`). By default the analyzer prefers the subcolumn. Enable to match the old analyzer's resolution.
 )", 0) \
