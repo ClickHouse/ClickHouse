@@ -4,6 +4,9 @@
 
 #include <Storages/MergeTree/UniqueKey/UniqueKeyProbe.h>
 
+#include <Columns/IColumn.h>
+#include <Core/Names.h>
+
 #include <base/types.h>
 
 #include <memory>
@@ -27,6 +30,7 @@ namespace DB
 
 class IMergeTreeDataPart;
 class DeleteBitmap;
+class Block;
 
 /// Reads a part's `unique_key_index.sst` through `IDataPartStorage` via a custom
 /// RocksDB `Env`, so remote (S3 etc.) disks work as well. Block
@@ -76,6 +80,17 @@ public:
     void findRowIndexBatch(
         const std::vector<std::string_view> & encoded_keys,
         std::vector<std::optional<UInt64>> & out) const override;
+
+    /// Block-level entry point: encode `uk_names` columns of `block` (gathered
+    /// through `subset` if non-null, else all rows in block order) and probe
+    /// them, so `out[k]` is the merged-part row for source row `(*subset)[k]`.
+    void findRowIndexBatch(
+        const Block & block,
+        const Names & uk_names,
+        const IColumn::Permutation * subset,
+        UInt64 max_encoded_size,
+        std::vector<std::optional<UInt64>> & out) const;
+
     bool isRowDead(UInt64 row_number) const override;
     const IMergeTreeDataPart * getUnderlyingPart() const override { return part; }
 

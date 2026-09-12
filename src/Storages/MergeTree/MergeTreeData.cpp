@@ -131,6 +131,9 @@
 #include <Storages/MergeTree/PrimaryIndexCache.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/UniqueKey/UniqueKeyDenseIndexOps.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
+#include <Storages/MergeTree/UniqueKey/MergeTreeBitmapStore.h>
+#include <Storages/MergeTree/UniqueKey/DeleteBitmapCache.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Storages/MutationCommands.h>
@@ -370,6 +373,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool columns_and_secondary_indices_sizes_lazy_calculation;
     extern const MergeTreeSettingsSeconds refresh_parts_interval;
     extern const MergeTreeSettingsSeconds refresh_statistics_interval;
+    extern const MergeTreeSettingsSeconds unique_key_gc_interval_seconds;
     extern const MergeTreeSettingsBool remove_unused_patch_parts;
     extern const MergeTreeSettingsSearchOrphanedPartsDisks search_orphaned_parts_disks;
     extern const MergeTreeSettingsBool allow_part_offset_column_in_projections;
@@ -840,6 +844,21 @@ MergeTreeData::MergeTreeData(
     /// UNIQUE KEY — sidecar lifecycle helper. Constructed unconditionally;
     /// methods are no-ops on non-UK tables (one pointer + one ctor call cost).
     unique_key_dense_index_ops = std::make_unique<UniqueKeyDenseIndexOps>(*this);
+
+    /// Here and not on first use: `setProperties` above published the metadata, so the answer is
+    /// settled from this point on, and every caller of `uniqueKeyTxnManager()` already sits behind
+    /// `hasUniqueKey()`. Left null otherwise, which is what that accessor asserts on.
+    if (metadata_.hasUniqueKey())
+    {
+        /// The bitmap cache is co-owned with the Context, which outlives the table, so it cannot
+        /// dangle; null when caching is off, which the store tolerates.
+        DeleteBitmapCachePtr bitmap_cache;
+        if (auto ctx = getContext())
+            bitmap_cache = ctx->getDeleteBitmapCache();
+
+        unique_key_txn_manager = std::make_unique<UniqueKeyTxnManager>(
+            std::make_shared<MergeTreeBitmapStore>(*this, std::move(bitmap_cache)));
+    }
 
     String reason;
     if (!canUsePolymorphicParts(*settings, reason) && !reason.empty())
@@ -2675,6 +2694,20 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         }
     }
 
+    /// Above `setState`: a broken part's children are promoted only while it is not Active.
+    try
+    {
+        loadUniqueKeyBitmaps(res.part);
+    }
+    catch (...)
+    {
+        if (isRetryableException(std::current_exception()))
+            throw;
+
+        mark_broken();
+        return res;
+    }
+
     res.part->setState(to_state);
 
     DataPartIteratorByInfo it;
@@ -2693,6 +2726,8 @@ MergeTreeData::LoadPartResult MergeTreeData::loadDataPart(
         {
             LOG_ERROR(log, "Duplicate part {}", res.part->getDataPartStorage().getFullPath());
             res.part->is_duplicate = true;
+            /// Its links stay: the index is keyed by part info, so `dropPart` here would erase
+            /// the live part's links too.
             return res;
         }
 
@@ -3207,6 +3242,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
 
     /// If all disks are readonly or the table is explicitly marked as readonly,
     /// it does not make sense to load outdated parts (we will not own them).
+    ///
     if (!unloaded_parts.empty() && !all_disks_are_readonly && !is_table_readonly)
     {
         LOG_DEBUG(log, "Found {} outdated data parts. They will be loaded asynchronously", unloaded_parts.size());
@@ -3222,6 +3258,9 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
             [this, component_name = Coordination::getCurrentComponent()]
             {
                 auto local_component_guard = Coordination::setCurrentComponent(component_name);
+                /// TODO(unique-key): an Outdated part is indexed only once loaded, which happens
+                /// here -- after the table is readable. Until then a read of a part it holds kills
+                /// for applies fewer deletes than it should.
                 loadOutdatedDataParts(/*is_async=*/ true);
             });
     }
@@ -3366,7 +3405,12 @@ void MergeTreeData::refreshDataPartsOnce(UInt64 interval_milliseconds)
                 tryLogCurrentException(log,
                     fmt::format("The new data part {} has no usable UNIQUE KEY dense index - skip loading", res.part->name));
                 if (res.part->getState() == DataPartState::PreActive)
+                {
                     removePartsFromWorkingSetImmediatelyAndSetTemporaryState({res.part});
+                    /// This removal skips `removePartsFinally`, so it owes the reclaim itself:
+                    /// a link to a part in neither Active nor Outdated throws on every later read.
+                    dropUniqueKeyBitmaps({res.part});
+                }
                 continue;
             }
 
@@ -3613,6 +3657,7 @@ try
         outdated_data_parts_loading_finished = true;
         outdated_data_parts_cv.notify_all();
     }
+
 }
 catch (...)
 {
@@ -4139,6 +4184,14 @@ MergeTreeData::DataPartsVector MergeTreeData::grabOldParts(bool force)
                 continue;
             }
 
+            /// Above the `force` branch below: a forced round must not drop another part's kills either.
+            if (isPinnedByDeleteBitmap(*part, parts_lock))
+            {
+                part->removal_state.store(DataPartRemovalState::PINNED_BY_DELETE_BITMAP, std::memory_order_relaxed);
+                skipped_parts.push_back(part->info);
+                continue;
+            }
+
             /// First remove all covered parts, then remove covering empty part
             /// Avoids resurrection of old parts for MergeTree and issues with unexpected parts for Replicated
             if (part->rows_count == 0 && !getCoveredOutdatedParts(part, parts_lock).empty())
@@ -4227,6 +4280,11 @@ void MergeTreeData::removePartsFinally(const MergeTreeData::DataPartsVector & pa
                 removed_parts->push_back(part);
         }
     }
+
+    /// The parts are out of the set now, so nothing can resolve them and nothing will consult what
+    /// the unique-key bitmap store still has indexed under their names. Outside the lock above,
+    /// because the store must not be entered under the exclusive side of `data_parts_mutex`.
+    dropUniqueKeyBitmaps(parts);
 
     LOG_DEBUG(log, "Removing {} parts from memory: Parts: [{}]", parts.size(), fmt::join(parts, ", "));
 
@@ -4589,6 +4647,107 @@ size_t MergeTreeData::clearPartsFromFilesystemAndRollbackIfError(const DataParts
     return finally_remove_parts.size();
 }
 
+/// ----- UNIQUE KEY -----
+
+UniqueKeyTxnManager & MergeTreeData::uniqueKeyTxnManager() const
+{
+    chassert(unique_key_txn_manager);
+    return *unique_key_txn_manager;
+}
+
+bool MergeTreeData::isPinnedByDeleteBitmap(const IMergeTreeDataPart & part) const
+{
+    /// Ahead of the lock: every table without a unique key reaches this on its own cleanup path,
+    /// and none should pay a `data_parts_mutex` acquisition for an answer that is always no.
+    if (!unique_key_txn_manager)
+        return false;
+
+    const auto lock = readLockParts();
+    return isPinnedByDeleteBitmap(part, lock);
+}
+
+bool MergeTreeData::isPinnedByDeleteBitmap(const IMergeTreeDataPart & part, const DataPartsAnyLock & lock) const
+{
+    if (!unique_key_txn_manager)
+        return false;
+
+    return uniqueKeyTxnManager().bitmapStore().isPinned(part, lock);
+}
+
+void MergeTreeData::loadUniqueKeyBitmaps(const DataPartPtr & part)
+{
+    if (!unique_key_txn_manager)
+        return;
+
+    uniqueKeyTxnManager().bitmapStore().loadPart(part->info, part->getDataPartStorage());
+}
+
+void MergeTreeData::dropUniqueKeyBitmaps(const DataPartsVector & parts)
+{
+    if (parts.empty() || !unique_key_txn_manager)
+        return;
+
+    for (const auto & part : parts)
+    {
+        uniqueKeyTxnManager().bitmapStore().dropPart(*part);
+        LOG_TRACE(log, "Dropped the delete bitmaps of part {}", part->name);
+    }
+}
+
+void MergeTreeData::startUniqueKeyGCTaskIfNeeded()
+{
+    if (unique_key_gc_task)
+        unique_key_gc_task->deactivate();
+
+    if (!hasUniqueKey())
+        return;
+
+    /// The round unlinks files, which a readonly table promises not to do.
+    if ((*getSettings())[MergeTreeSetting::table_readonly] || isStaticStorage())
+        return;
+
+    unique_key_gc_task = getContext()->getSchedulePool()->createTask(
+        getStorageID(), "MergeTreeData::uniqueKeyGC",
+        [this]
+        {
+            const UInt64 gc_interval_ms = (*getSettings())[MergeTreeSetting::unique_key_gc_interval_seconds].totalMilliseconds();
+            if (!gc_interval_ms)
+                return;
+
+            try
+            {
+                runUniqueKeyGCRound();
+            }
+            catch (...)
+            {
+                tryLogCurrentException(log, "Background delete-bitmap GC round failed");
+            }
+
+            unique_key_gc_task->scheduleAfter(gc_interval_ms);
+        });
+    unique_key_gc_task->activateAndSchedule();
+}
+
+void MergeTreeData::runUniqueKeyGCRound() const
+{
+    /// Re-read per round, not captured at task creation: MODIFY SETTING can flip it under an
+    /// already-scheduled task. Same reason `scheduleDataMovingJob` checks it in its body.
+    if ((*getSettings())[MergeTreeSetting::table_readonly] || isStaticStorage())
+        return;
+
+    std::vector<MergeTreePartInfo> part_infos;
+    {
+        auto parts_lock = readLockParts();
+        for (const auto & part : getDataPartsStateRange(DataPartState::Active))
+            part_infos.push_back(part->info);
+    }
+
+    if (part_infos.empty())
+        return;
+
+    uniqueKeyTxnManager().runGCRound(part_infos);
+}
+
 size_t MergeTreeData::clearEmptyParts()
 {
     if (!(*getSettings())[MergeTreeSetting::remove_empty_parts])
@@ -4615,6 +4774,9 @@ size_t MergeTreeData::clearEmptyParts()
             /// Do not try to drop uncommitted parts. If the newest tx doesn't see it then it probably hasn't been committed yet
             if (!part->version->getInfo().creation_tid.isNonTransactional()
                 && !part->version->isVisible(TransactionLog::instance().getLatestSnapshot()))
+                continue;
+
+            if (isPinnedByDeleteBitmap(*part))
                 continue;
 
             parts_names_to_drop.emplace_back(part->name);
@@ -6592,6 +6754,13 @@ void MergeTreeData::changeSettings(
         UInt64 has_refresh_statistics_interval_changed
             = (*storage_settings.get())[MergeTreeSetting::refresh_statistics_interval].totalSeconds() != (*copy)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
 
+        bool has_unique_key_gc_interval_changed
+            = (*storage_settings.get())[MergeTreeSetting::unique_key_gc_interval_seconds].totalSeconds() != (*copy)[MergeTreeSetting::unique_key_gc_interval_seconds].totalSeconds();
+
+        /// `startup` creates no task on a readonly table, so clearing the flag must create one.
+        bool has_table_readonly_changed
+            = (*storage_settings.get())[MergeTreeSetting::table_readonly] != (*copy)[MergeTreeSetting::table_readonly];
+
         storage_settings.set(std::move(copy));
 
         /// Route the new `StorageInMemoryMetadata` clone (and the deeper clone produced by
@@ -6620,6 +6789,9 @@ void MergeTreeData::changeSettings(
         {
             startStatisticsCache();
         }
+
+        if (has_unique_key_gc_interval_changed || has_table_readonly_changed)
+            startUniqueKeyGCTaskIfNeeded();
     }
 }
 
@@ -7288,6 +7460,7 @@ void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & 
 {
     LOG_INFO(log, "Cloning part {} to unexpected_{} and making it obsolete.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
     const auto metadata_snapshot = getInMemoryMetadataPtr(getContext(), false);
+
     part_to_detach->makeCloneInDetached("unexpected", metadata_snapshot, /*disk_transaction*/ {});
 
     auto lock = lockParts();
@@ -7298,6 +7471,16 @@ void MergeTreeData::outdateUnexpectedPartAndCloneToDetached(const DataPartPtr & 
 
 void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeTreeData::DataPartPtr & part_to_detach, const String & prefix)
 {
+    /// Before anything is renamed or dropped, and ahead of `lockParts()` below: this route skips
+    /// Outdated, so `grabOldParts` never gets to hold the part back, and a bitmap inside it may
+    /// be the only copy of another part's kills.
+    /// TODO(unique-key): an operator escape for a part whose target will never go away.
+    if (isPinnedByDeleteBitmap(*part_to_detach))
+        throw Exception(ErrorCodes::ABORTED,
+            "Refusing to detach part {} of table {}: it holds delete bitmaps for other parts, and "
+            "`detached/` puts them out of reach of every read",
+            part_to_detach->name, getStorageID().getNameForLogs());
+
     if (prefix.empty())
         LOG_INFO(log, "Renaming {} to {} and forgetting it.", part_to_detach->getDataPartStorage().getPartDirectory(), part_to_detach->name);
     else
@@ -7365,6 +7548,10 @@ void MergeTreeData::forcefullyMovePartToDetachedAndRemoveFromMemory(const MergeT
 
     LOG_TEST(log, "forcefullyMovePartToDetachedAndRemoveFromMemory: removing {} from data_parts_indexes", part->getNameWithState());
     data_parts_indexes.erase(it_part);
+
+    /// This path skips `removePartsFinally`, so it owes the reclaim itself. Safe under the parts
+    /// lock: forgetting an index entry resolves no part.
+    dropUniqueKeyBitmaps({part});
 }
 
 
@@ -13630,7 +13817,8 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     const String & new_part_name,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeTransactionPtr & txn,
-    std::optional<PatchPartIndex> patch_part_index) const
+    std::optional<PatchPartIndex> patch_part_index,
+    bool precommit_storage) const
 {
     auto settings = getSettings();
 
@@ -13741,7 +13929,10 @@ std::pair<MergeTreeData::MutableDataPartPtr, scope_guard> MergeTreeData::createE
     out.finalizeIndexGranularity();
     out.finalizePart(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync_on_insert);
 
-    new_data_part_storage->precommitTransaction();
+    /// Sealing the storage closes the packed archive, so a caller with a sidecar still to write
+    /// defers it -- the same build/seal split `MergeTreeTemporaryPart::finalize` gives the insert path.
+    if (precommit_storage)
+        new_data_part_storage->precommitTransaction();
     return std::make_pair(std::move(new_data_part), std::move(tmp_dir_holder));
 }
 

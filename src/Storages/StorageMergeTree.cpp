@@ -50,6 +50,7 @@
 #include <Storages/MergeTree/MergeTreeSink.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSinkPatch.h>
+#include <Storages/MergeTree/UniqueKey/UniqueKeyTxn.h>
 #include <Storages/MergeTree/PatchParts/PatchPartsUtils.h>
 #include <Storages/MergeTree/checkDataPart.h>
 #include <Storages/PartitionCommands.h>
@@ -263,6 +264,7 @@ void StorageMergeTree::startup()
         startBackgroundMovesIfNeeded();
         startOutdatedAndUnexpectedDataPartsLoadingTask();
         startStatisticsCache();
+        startUniqueKeyGCTaskIfNeeded();
     }
     catch (...)
     {
@@ -312,6 +314,9 @@ void StorageMergeTree::shutdown(bool)
 
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
+
+    if (unique_key_gc_task)
+        unique_key_gc_task->deactivate();
 
     stopOutdatedAndUnexpectedDataPartsLoadingTask();
 

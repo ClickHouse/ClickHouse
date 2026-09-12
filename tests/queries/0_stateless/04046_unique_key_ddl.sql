@@ -394,6 +394,44 @@ SAMPLE BY sk
 UNIQUE KEY (c0)
 TTL ts + INTERVAL 1 DAY; -- { serverError SUPPORT_IS_DISABLED }
 
+-- 23. Only plain MergeTree accepts UNIQUE KEY. Every other engine in the family can drop a row it
+-- read during a merge, taking that row's kill mark with it. The check is in `create()` and fresh
+-- definitions only; a stored one still loads, which
+-- `test_unique_key_sst.py::test_unique_key_on_a_non_plain_engine_still_loads` covers.
+CREATE TABLE uk_engine_reject (id UInt64, v String, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_engine_reject (id UInt64, v String, sign Int8)
+ENGINE = CollapsingMergeTree(sign) ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_engine_reject (id UInt64, v UInt64)
+ENGINE = SummingMergeTree(v) ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_engine_reject (id UInt64, v UInt64)
+ENGINE = AggregatingMergeTree ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+
+CREATE TABLE uk_engine_reject (id UInt64, v String, sign Int8, ver UInt64)
+ENGINE = VersionedCollapsingMergeTree(sign, ver) ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+
+-- A full-definition ATTACH is user input, so it counts as fresh and is rejected too.
+-- Explicit UUID because Atomic rejects a bare ATTACH-with-definition; derived from the test
+-- number like the projection ATTACH above, hence this file's no-parallel tag.
+DROP TABLE IF EXISTS uk_engine_attach SYNC;
+ATTACH TABLE uk_engine_attach UUID '00000000-0000-0000-0000-000000104046'
+(id UInt64, v String, ver UInt64)
+ENGINE = ReplacingMergeTree(ver) ORDER BY id UNIQUE KEY (id); -- { serverError BAD_ARGUMENTS }
+SELECT 'unique_key_engine_rejected_on_attach';
+
+-- 24. A full-definition ATTACH is fresh input, so it needs the experimental setting;
+-- short-syntax ATTACH of an already-validated table (item 16) does not.
+DROP TABLE IF EXISTS uk_attach_gate SYNC;
+SET allow_experimental_unique_key = 0;
+ATTACH TABLE uk_attach_gate UUID '00000000-0000-0000-0000-000000204046'
+(id UInt64, v String)
+ENGINE = MergeTree ORDER BY id UNIQUE KEY (id); -- { serverError SUPPORT_IS_DISABLED }
+SET allow_experimental_unique_key = 1;
+SELECT 'unique_key_attach_needs_experimental_setting';
+
 DROP TABLE uk_t;
 DROP TABLE uk_t_src;
 DROP TABLE uk_t_other;

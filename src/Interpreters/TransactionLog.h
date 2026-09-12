@@ -92,6 +92,11 @@ public:
     /// Returns the oldest snapshot that is visible for some running transaction
     CSN getOldestSnapshot() const;
 
+    /// True while any transaction's outcome is undetermined -- `multi()` threw a hardware error
+    /// and `tryFinalizeUnknownStateTransactions` has not resolved it yet. A caller that cannot
+    /// fail closed on an unresolvable commit must refuse to proceed while this holds.
+    bool hasUnknownStateTransactions() const;
+
     /// Allocates TID, returns new transaction object
     MergeTreeTransactionPtr beginTransaction();
 
@@ -188,6 +193,8 @@ private:
     using UnknownStateList = std::vector<std::pair<MergeTreeTransactionPtr, scope_guard>>;
     UnknownStateList unknown_state_list TSA_GUARDED_BY(running_list_mutex);
     UnknownStateList unknown_state_list_loaded TSA_GUARDED_BY(running_list_mutex);
+
+    bool unknown_state_finalizing TSA_GUARDED_BY(running_list_mutex) = false;
     /// Ordered list of snapshots that are currently used by some transactions. Needed for background cleanup.
     std::list<CSN> snapshots_in_use TSA_GUARDED_BY(running_list_mutex);
 

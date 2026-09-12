@@ -35,6 +35,14 @@ public:
 
     bool readsFromOtherTables() const override { return true; }
 
+    /// The alias holds no metadata of its own, so the answer is the target's. Without this a
+    /// unique-key table read through an alias would look unconstrained to the planner.
+    bool hasUniqueKey() const override
+    {
+        auto target = tryGetTargetTable();
+        return target && target->hasUniqueKey();
+    }
+
     /// Get the target storage this alias points to
     StoragePtr getTargetTable(std::optional<TargetAccess> access_check = std::nullopt) const;
     StoragePtr tryGetTargetTable() const { return DatabaseCatalog::instance().tryGetTable(StorageID(target_database, target_table), getContext()); }

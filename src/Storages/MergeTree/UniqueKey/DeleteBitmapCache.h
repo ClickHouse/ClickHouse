@@ -26,10 +26,11 @@ struct DeleteBitmapWeightFunction
 /// Cache key for a deserialized `DeleteBitmap`: the part-identity string plus the bitmap version.
 ///
 /// `part_id` is the caller's stable cache identity — the part UUID, or the `disk:path` fallback
-/// when the UUID is nil (see `IMergeTreeDataPart::getDeleteBitmapCacheIdentity`). It is kept as an
-/// explicit field (rather than folded into one opaque hash together with the version) so `dropPart`
-/// can evict every cached version of a single part via `removeEntriesForPart` without enumerating
-/// versions. This mirrors `VectorSimilarityIndexCache`, which keys by part path and removes per part.
+/// when the UUID is nil (see `IMergeTreeDataPart::getDeleteBitmapCacheIdentity`).
+///
+/// A stale entry cannot alias a later part that reuses the same path: `version` is a csn, csns are
+/// allocated once and never reused, and a read only looks up a version the store's index holds for
+/// that part. Entries a part leaves behind are LRU pollution, which the cache's size cap bounds.
 struct DeleteBitmapCacheKey
 {
     String part_id;
@@ -75,10 +76,8 @@ public:
         return DeleteBitmapCacheKey{part_id, version};
     }
 
-    /// Evict every cached version of `part_id`. Used by `dropPart` so a dropped part's bitmaps
-    /// cannot alias a later incarnation that reuses the same `disk:path` identity, and so eviction
-    /// does not depend on the store's in-memory version index (which `installBitmap` may have
-    /// invalidated). Mirrors `VectorSimilarityIndexCache::removeEntriesFromCache`.
+    /// Every version cached for one part, dropped together with the part. Without this a retired
+    /// part's bitmaps stay resident until the size cap evicts them, competing with the live set.
     void removeEntriesForPart(const String & part_id)
     {
         Base::remove([&part_id](const Key & key, const MappedPtr &) { return key.part_id == part_id; });
