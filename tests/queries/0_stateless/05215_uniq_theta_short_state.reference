@@ -1,0 +1,8 @@
+rejected char(8, 0, 1, 3, 0, 0, 0, 0, 0)
+rejected char(8, 0, 2, 3, 0, 0, 0, 0, 0)
+rejected char(12, 0, 3, 3, 0, 0, 0, 0, 0, 1, 0, 0, 0)
+rejected char(8, 0, 4, 3, 0, 0, 0, 0, 0)
+at least 24 bytes expected, actual 8
+1000
+1000
+100

@@ -178,9 +178,22 @@ public:
         if (bytes.empty())
             return;
 
+        /** `compact_theta_sketch_parser::parse` verifies that the buffer holds 8 bytes and then reads
+          * header fields that lie beyond them before it checks the size again: `num_entries` at offset
+          * 8 and `theta` at offset 16 for serial versions 1, 2 and 3. A state that is shorter than that
+          * - which any `CAST` from a string can produce - is therefore read past its end, and the value
+          * it picks up decides the size the parser then demands. Pad the buffer to the largest offset
+          * the parser reads before validating it, so those reads stay inside this allocation, and keep
+          * the size handed to the parser exact so that a short state is still rejected.
+          */
+        static constexpr size_t bytes_read_before_size_check = 24;
+        const size_t serialized_size = bytes.size();
+        if (bytes.size() < bytes_read_before_size_check)
+            bytes.resize(bytes_read_before_size_check, 0);
+
         try
         {
-            auto sk = datasketches::compact_theta_sketch::deserialize(bytes.data(), bytes.size());
+            auto sk = datasketches::compact_theta_sketch::deserialize(bytes.data(), serialized_size);
             getSkUnion()->update(sk);
         }
         catch (const DB::Exception &)
