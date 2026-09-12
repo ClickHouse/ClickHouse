@@ -4,8 +4,8 @@
 -- Under make_distributed_plan the WindowStep is serialized for the worker fragment, and it must
 -- carry the initiator's min_window_frame_rows_for_aggregate_tree: the threshold decides between the
 -- frame aggregate tree and the recompute path, whose floating-point results are not bit-identical.
--- The distributed plan prints the threshold of every Window step whose sliding frame the tree could
--- serve. The window without PARTITION BY runs above the sorted gather; the one with PARTITION BY is
+-- The distributed plan prints the threshold of every Window step that can reach it: a sliding frame the tree
+-- serves, large enough for the threshold. The window without PARTITION BY runs above the sorted gather; the one with PARTITION BY is
 -- rebuilt per bucket below the gather (makeDistributed copies the threshold there).
 -- Only the Window, GatherExchange and threshold lines of each plan are checked: the rest of the plan
 -- (the reading step in particular) depends on the storage settings.

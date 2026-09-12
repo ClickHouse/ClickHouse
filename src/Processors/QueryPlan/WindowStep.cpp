@@ -62,6 +62,44 @@ static bool frameTreeApplies(const WindowDescription & window_description, const
     });
 }
 
+/// The largest number of rows a frame can span, when the frame bounds it: a ROWS frame with both
+/// ends at a fixed offset from the current row.
+static std::optional<UInt64> maxFrameRows(const WindowFrame & frame)
+{
+    if (frame.type != WindowFrame::FrameType::ROWS
+        || frame.begin_type == WindowFrame::BoundaryType::Unbounded
+        || frame.end_type == WindowFrame::BoundaryType::Unbounded)
+        return std::nullopt;
+
+    auto position = [](WindowFrame::BoundaryType type, const Field & offset, bool preceding) -> Int64
+    {
+        if (type == WindowFrame::BoundaryType::Current)
+            return 0;
+        /// `WindowFrame::checkValid` guarantees a nonnegative 32-bit integer.
+        const Int64 rows = offset.safeGet<Int64>();
+        return preceding ? -rows : rows;
+    };
+    const Int64 begin = position(frame.begin_type, frame.begin_offset, frame.begin_preceding);
+    const Int64 end = position(frame.end_type, frame.end_offset, frame.end_preceding);
+    return end < begin ? 0 : static_cast<UInt64>(end - begin + 1);
+}
+
+/// Mirrors the activation conditions of `WindowTransform`: the frame aggregate tree serves a frame
+/// whose start moves, once the frame reaches the threshold, for a function whose merge is
+/// equivalent to adding the rows.
+static bool mayUseAggregateTree(
+    const WindowDescription & window_description,
+    const std::vector<WindowFunctionDescription> & window_functions,
+    UInt64 min_frame_rows_for_aggregate_tree)
+{
+    if (min_frame_rows_for_aggregate_tree == std::numeric_limits<UInt64>::max())
+        return false;
+    if (!frameTreeApplies(window_description, window_functions))
+        return false;
+    const auto max_rows = maxFrameRows(window_description.frame);
+    return !max_rows || *max_rows >= min_frame_rows_for_aggregate_tree;
+}
+
 static Block addWindowFunctionResultColumns(const Block & block,
     std::vector<WindowFunctionDescription> window_functions)
 {
@@ -168,14 +206,8 @@ void WindowStep::describeActions(FormatSettings & settings) const
         settings.out << (settings.pretty ? QueryPlanFormat::formatColumnPretty(column_name, settings.pretty_names) : column_name) << "\n";
     }
 
-    if (frameTreeApplies(window_description, window_functions))
-    {
-        settings.out << prefix << "Aggregate tree threshold: ";
-        if (min_frame_rows_for_aggregate_tree == std::numeric_limits<UInt64>::max())
-            settings.out << "disabled\n";
-        else
-            settings.out << min_frame_rows_for_aggregate_tree << " rows\n";
-    }
+    if (mayUseAggregateTree(window_description, window_functions, min_frame_rows_for_aggregate_tree))
+        settings.out << prefix << "Aggregate tree threshold: " << min_frame_rows_for_aggregate_tree << " rows\n";
 }
 
 void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
@@ -198,13 +230,8 @@ void WindowStep::describeActions(JSONBuilder::JSONMap & map) const
 
     map.add("Functions", std::move(functions_array));
 
-    if (frameTreeApplies(window_description, window_functions))
-    {
-        if (min_frame_rows_for_aggregate_tree == std::numeric_limits<UInt64>::max())
-            map.add("Aggregate Tree Threshold", "disabled");
-        else
-            map.add("Aggregate Tree Threshold", min_frame_rows_for_aggregate_tree);
-    }
+    if (mayUseAggregateTree(window_description, window_functions, min_frame_rows_for_aggregate_tree))
+        map.add("Aggregate Tree Threshold", min_frame_rows_for_aggregate_tree);
 }
 
 void WindowStep::updateOutputHeader()
@@ -360,44 +387,6 @@ deserializeWindowFunctions(ReadBuffer & in, const Block & input_header)
     }
 
     return window_functions;
-}
-
-/// The largest number of rows a frame can span, when the frame bounds it: a ROWS frame with both
-/// ends at a fixed offset from the current row.
-static std::optional<UInt64> maxFrameRows(const WindowFrame & frame)
-{
-    if (frame.type != WindowFrame::FrameType::ROWS
-        || frame.begin_type == WindowFrame::BoundaryType::Unbounded
-        || frame.end_type == WindowFrame::BoundaryType::Unbounded)
-        return std::nullopt;
-
-    auto position = [](WindowFrame::BoundaryType type, const Field & offset, bool preceding) -> Int64
-    {
-        if (type == WindowFrame::BoundaryType::Current)
-            return 0;
-        /// `WindowFrame::checkValid` guarantees a nonnegative 32-bit integer.
-        const Int64 rows = offset.safeGet<Int64>();
-        return preceding ? -rows : rows;
-    };
-    const Int64 begin = position(frame.begin_type, frame.begin_offset, frame.begin_preceding);
-    const Int64 end = position(frame.end_type, frame.end_offset, frame.end_preceding);
-    return end < begin ? 0 : static_cast<UInt64>(end - begin + 1);
-}
-
-/// Mirrors the activation conditions of `WindowTransform`: the frame aggregate tree serves a frame
-/// whose start moves, once the frame reaches the threshold, for a function whose merge is
-/// equivalent to adding the rows.
-static bool mayUseAggregateTree(
-    const WindowDescription & window_description,
-    const std::vector<WindowFunctionDescription> & window_functions,
-    UInt64 min_frame_rows_for_aggregate_tree)
-{
-    if (min_frame_rows_for_aggregate_tree == std::numeric_limits<UInt64>::max())
-        return false;
-    if (!frameTreeApplies(window_description, window_functions))
-        return false;
-    const auto max_rows = maxFrameRows(window_description.frame);
-    return !max_rows || *max_rows >= min_frame_rows_for_aggregate_tree;
 }
 
 void WindowStep::serialize(Serialization & ctx) const

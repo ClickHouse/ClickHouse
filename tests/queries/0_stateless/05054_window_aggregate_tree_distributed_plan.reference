@@ -4,7 +4,6 @@ Window (Window step for window \'ORDER BY n ASC ROWS BETWEEN 2999 PRECEDING AND 
 └──GatherExchange (sorted by (n ASC))
 -- and a threshold above the frame size
 Window (Window step for window \'ORDER BY n ASC ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW\')
-│  Aggregate tree threshold: 1000000000 rows
 └──GatherExchange (sorted by (n ASC))
 -- the per-bucket window below the gather carries the threshold set on the initiator
 GatherExchange (sorted by (p ASC, n ASC))
@@ -13,7 +12,6 @@ GatherExchange (sorted by (p ASC, n ASC))
 -- and a threshold above the frame size
 GatherExchange (sorted by (p ASC, n ASC))
 └──Window (Window step for window \'PARTITION BY p ORDER BY n ASC ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW\')
-   │  Aggregate tree threshold: 1000000000 rows
 -- a RANGE or GROUPS frame without ORDER BY keeps its start at the partition start, so no threshold applies
 GatherExchange (sorted by (p ASC))
 └──Window (Window step for window \'PARTITION BY p RANGE BETWEEN CURRENT ROW AND CURRENT ROW\')
@@ -23,8 +21,6 @@ GatherExchange (sorted by (p ASC))
 0
 -- compatibility disables the tree in both window shapes
 Window (Window step for window \'ORDER BY n ASC ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW\')
-│  Aggregate tree threshold: disabled
 └──GatherExchange (sorted by (n ASC))
 GatherExchange (sorted by (p ASC, n ASC))
 └──Window (Window step for window \'PARTITION BY p ORDER BY n ASC ROWS BETWEEN 2999 PRECEDING AND CURRENT ROW\')
-   │  Aggregate tree threshold: disabled
