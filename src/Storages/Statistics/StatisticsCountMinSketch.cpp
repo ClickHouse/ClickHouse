@@ -1,9 +1,13 @@
 #include <Storages/Statistics/StatisticsCountMinSketch.h>
+#include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Common/HashTable/HashMap.h>
+#include <Common/assert_cast.h>
 
 #if USE_DATASKETCHES
 
@@ -22,6 +26,95 @@ namespace ErrorCodes
 /// And sketch the size is 152kb.
 static constexpr auto num_hashes = 7uz;
 static constexpr auto num_buckets = 2718uz;
+/// Aggregation has a measured benefit when at most one in ten rows is distinct.
+static constexpr auto min_low_cardinality_value_reuse = 10uz;
+
+namespace
+{
+
+using DictionaryCounts = ColumnUInt64::Container;
+
+void updateSketchFromDictionaryCounts(
+    datasketches::count_min_sketch<UInt64> & sketch,
+    const IColumnUnique & dictionary,
+    const DictionaryCounts & counts)
+{
+    for (size_t dictionary_row = 0, size = counts.size(); dictionary_row < size; ++dictionary_row)
+    {
+        UInt64 frequency = counts[dictionary_row];
+        if (frequency == 0 || dictionary.isNullAt(dictionary_row))
+            continue;
+
+        auto data = dictionary.getDataAt(dictionary_row);
+        sketch.update(data.data(), data.size(), frequency);
+    }
+}
+
+using DictionaryIndexCounts = HashMap<UInt64, UInt64>;
+
+template <typename Sketch>
+void updateSketchRowWise(Sketch & sketch, const IColumn & column, size_t begin_row = 0)
+{
+    for (size_t row = begin_row; row < column.size(); ++row)
+    {
+        if (column.isNullAt(row))
+            continue;
+
+        auto data = column.getDataAt(row);
+        sketch.update(data.data(), data.size(), 1);
+    }
+}
+
+template <typename IndexColumn>
+size_t countTouchedDictionaryIndexes(const IColumn & indexes_column, DictionaryIndexCounts & counts, size_t max_distinct_values)
+{
+    const auto & indexes = assert_cast<const IndexColumn &>(indexes_column).getData();
+    size_t rows_counted = 0;
+    for (auto index : indexes)
+    {
+        ++counts[index];
+        ++rows_counted;
+        if (counts.size() > max_distinct_values)
+            break;
+    }
+    return rows_counted;
+}
+
+template <typename Sketch>
+void updateSketchFromTouchedDictionaryIndexes(Sketch & sketch, const ColumnLowCardinality & column, size_t max_distinct_values)
+{
+    DictionaryIndexCounts counts;
+    const IColumn & indexes = column.getIndexes();
+    size_t rows_counted = 0;
+
+    switch (column.getSizeOfIndexType())
+    {
+        case sizeof(UInt8): rows_counted = countTouchedDictionaryIndexes<ColumnUInt8>(indexes, counts, max_distinct_values); break;
+        case sizeof(UInt16): rows_counted = countTouchedDictionaryIndexes<ColumnUInt16>(indexes, counts, max_distinct_values); break;
+        case sizeof(UInt32): rows_counted = countTouchedDictionaryIndexes<ColumnUInt32>(indexes, counts, max_distinct_values); break;
+        case sizeof(UInt64): rows_counted = countTouchedDictionaryIndexes<ColumnUInt64>(indexes, counts, max_distinct_values); break;
+        default: throwUnexpectedLowCardinalityIndexType(column.getSizeOfIndexType());
+    }
+
+    const auto & dictionary = column.getDictionary();
+    for (const auto & count : counts)
+    {
+        UInt64 dictionary_row = count.getKey();
+        UInt64 frequency = count.getMapped();
+        if (dictionary.isNullAt(dictionary_row))
+            continue;
+
+        auto data = dictionary.getDataAt(dictionary_row);
+        sketch.update(data.data(), data.size(), frequency);
+    }
+
+    /// If the prefix has too many distinct values, avoid growing the temporary
+    /// map further and process the remaining rows without aggregation.
+    if (rows_counted < column.size())
+        updateSketchRowWise(sketch, column, rows_counted);
+}
+
+}
 
 StatisticsCountMinSketch::StatisticsCountMinSketch(const SingleStatisticsDescription & description, const DataTypePtr & data_type_)
     : IStatistics(description)
@@ -60,13 +153,32 @@ std::optional<Float64> StatisticsCountMinSketch::estimateEqual(const Field & val
 
 void StatisticsCountMinSketch::build(const ColumnPtr & column)
 {
-    for (size_t row = 0; row < column->size(); ++row)
+    if (const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(column.get()))
     {
-        if (column->isNullAt(row))
-            continue;
-        auto data = column->getDataAt(row);
-        sketch.update(data.data(), data.size(), 1);
+        const size_t max_distinct_values = column_low_cardinality->size() / min_low_cardinality_value_reuse;
+        const auto & dictionary = column_low_cardinality->getDictionary();
+        /// LowCardinality dictionaries always contain a default value and nullable
+        /// dictionaries contain one additional special value.
+        const size_t dictionary_special_values = dictionary.canContainNulls() ? 2 : 1;
+        if (dictionary.size() <= max_distinct_values + dictionary_special_values)
+        {
+            /// Every referenced value belongs to the dictionary, so a small
+            /// dictionary guarantees enough reuse to make dense counting useful.
+            const auto counts_column = column_low_cardinality->countKeys();
+            const auto & counts = assert_cast<const ColumnUInt64 &>(*counts_column).getData();
+            updateSketchFromDictionaryCounts(sketch, dictionary, counts);
+        }
+        else
+        {
+            /// A filtered column may retain a large dictionary while referencing
+            /// only a few entries, so count indexes up to the same reuse cutoff.
+            updateSketchFromTouchedDictionaryIndexes(sketch, *column_low_cardinality, max_distinct_values);
+        }
+
+        return;
     }
+
+    updateSketchRowWise(sketch, *column);
 }
 
 void StatisticsCountMinSketch::merge(const StatisticsPtr & other_stats)
