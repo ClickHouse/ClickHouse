@@ -12,6 +12,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # value of `format_display_secrets_in_show_and_select` it sets (the stateless test server
 # does not enable the `display_secrets_in_show_and_select` server setting, so the full
 # gate always hides secrets here).
+#
+# `where_const_view` hides rows, so it is also a `SQL SECURITY` optimization barrier: the
+# `Convert VIEW subquery result to VIEW table structure` step that seals it is not merged
+# into the steps above it, and its plan is printed as two `Expression` steps rather than one.
 
 user="user_05055_${CLICKHOUSE_DATABASE}_$RANDOM"
 db=${CLICKHOUSE_DATABASE}
