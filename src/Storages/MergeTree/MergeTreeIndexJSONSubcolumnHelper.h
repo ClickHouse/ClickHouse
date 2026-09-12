@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include <optional>
 
 #include <Core/Block.h>
@@ -8,6 +9,10 @@
 
 namespace DB
 {
+
+class ColumnsDescription;
+struct StorageInMemoryMetadata;
+using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
 
 /// Information extracted from a column name that references a JSON subcolumn
 /// matched against a JSONAllPaths(...) index column.
@@ -18,6 +23,10 @@ struct JSONSubcolumnIndexInfo
     size_t header_position;        /// position of JSONAllPaths column in the index header
 };
 
+/// The columns a candidate name is resolved against. Without a metadata snapshot there is nothing
+/// to resolve against, and an empty list refuses every match, which cannot drop rows.
+const ColumnsDescription & getColumnsToMatchJSONSubcolumn(const StorageMetadataPtr & metadata_snapshot);
+
 /// Try to match a column name from the filter DAG to a JSON index column in the header.
 /// Scans the index columns, not the dot positions of `column_name`, so cost is independent of the
 /// name's length. JSON columns whose own names contain dots are handled (e.g., `my.json` JSON or
@@ -26,19 +35,27 @@ struct JSONSubcolumnIndexInfo
 /// The `json_function_name` parameter specifies which index function to look for (e.g. "JSONAllPaths",
 /// "JSONAllValues").
 ///
+/// A name is accepted only if `columns` resolves it to a subcolumn of the same storage column as the
+/// index's JSON column, reached from it by JSON path steps and then by descents that still read the
+/// value stored at that path. A column may legally be named `` `j.a` `` beside a `JSON` column `j`,
+/// so the rendered name does not say whose name it is; the path itself is read off the rendered name.
+///
 /// Returns nullopt if:
 ///   - No matching index column is found in the header
 ///   - The subcolumn is a sub-object access (^ prefix) or a combined literal+sub-object access (@ prefix)
+///   - The name does not resolve to a JSON path of the index's JSON column
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Block & header,
-    const String & json_function_name);
+    const String & json_function_name,
+    const ColumnsDescription & columns);
 
 /// Overload that works with a list of index column names instead of a Block.
 std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     const String & column_name,
     const Names & index_columns,
-    const String & json_function_name);
+    const String & json_function_name,
+    const ColumnsDescription & columns);
 
 class RPNBuilderTreeNode; /// forward declaration to avoid heavy include
 
@@ -48,13 +65,15 @@ class RPNBuilderTreeNode; /// forward declaration to avoid heavy include
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Block & header,
-    const String & json_function_name);
+    const String & json_function_name,
+    const ColumnsDescription & columns);
 
 /// Overload that works with a list of index column names instead of a Block.
 std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
     const RPNBuilderTreeNode & node,
     const Names & index_columns,
-    const String & json_function_name);
+    const String & json_function_name,
+    const ColumnsDescription & columns);
 
 /// Check if a JSON path filter is safe to use for index skipping.
 /// When a JSON path is absent in a granule, the expression evaluates to:
