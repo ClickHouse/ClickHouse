@@ -11,3 +11,5 @@ x	UInt64
 42
 -- 3. a Remote table built from a named collection blocks DROP NAMED COLLECTION
 1
+-- 3. the dependent table is gone before the collection is dropped
+0
