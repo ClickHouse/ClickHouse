@@ -609,6 +609,7 @@ struct ContextSharedPart : boost::noncopyable
     bool show_license_expiration_warnings TSA_GUARDED_BY(mutex) = true; /// Whether to show the license expiration warning in system.warnings
     bool throw_on_unknown_workload TSA_GUARDED_BY(mutex) = false;
     bool cpu_slot_preemption TSA_GUARDED_BY(mutex) = false;
+    bool use_ddl_workload TSA_GUARDED_BY(mutex) = false;      /// Route DDL queries through the `ddl_workload` setting instead of `workload`
     UInt64 cpu_slot_quantum_ns TSA_GUARDED_BY(mutex) = 10'000'000;
     UInt64 cpu_slot_preemption_timeout_ms TSA_GUARDED_BY(mutex) = 1000;
     UInt64 concurrent_threads_soft_limit_num TSA_GUARDED_BY(mutex) = 0;
@@ -2699,6 +2700,18 @@ void Context::setCPUSlotPreemption(bool cpu_slot_preemption, UInt64 cpu_slot_qua
     shared->cpu_slot_preemption = cpu_slot_preemption;
     shared->cpu_slot_quantum_ns = cpu_slot_quantum_ns;
     shared->cpu_slot_preemption_timeout_ms = cpu_slot_preemption_timeout_ms;
+}
+
+bool Context::getUseDdlWorkload() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->use_ddl_workload;
+}
+
+void Context::setUseDdlWorkload(bool use_ddl_workload)
+{
+    std::lock_guard lock(shared->mutex);
+    shared->use_ddl_workload = use_ddl_workload;
 }
 
 UInt64 Context::getConcurrentThreadsSoftLimitNum() const

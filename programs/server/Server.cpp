@@ -409,6 +409,7 @@ namespace ServerSetting
     extern const ServerSettingsDouble total_memory_tracker_sample_probability;
     extern const ServerSettingsBool throw_on_unknown_workload;
     extern const ServerSettingsBool cpu_slot_preemption;
+    extern const ServerSettingsBool use_ddl_workload;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
     extern const ServerSettingsString uncompressed_cache_policy;
@@ -2807,6 +2808,7 @@ try
                 new_server_settings[ServerSetting::cpu_slot_preemption],
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
+            global_context->setUseDdlWorkload(new_server_settings[ServerSetting::use_ddl_workload]);
 
             /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
             /// the shared thresholds, so every monitor adopts them on its next sample,

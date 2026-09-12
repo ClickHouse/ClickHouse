@@ -168,6 +168,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString ddl_workload;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
@@ -2850,8 +2851,26 @@ static BlockIO executeQueryImpl(
         /// Put query to process list. But don't put SHOW PROCESSLIST query itself.
         if (!(out_ast && out_ast->as<ASTShowProcesslistQuery>()))
         {
+            /// Read the hot-reloadable use_ddl_workload once and derive both decisions from it here, so a
+            /// config reload cannot mix modes mid-query. When enabled, route DDL under `ddl_workload` (via
+            /// the settings-constraints path, so a pinned `workload` is honored) before the workload
+            /// classifier is acquired in insert; when disabled, DDL skips workload admission (but still
+            /// counts against the server-wide max_concurrent_queries* limits — see ProcessList::insert).
+            const bool is_ddl_query = isDDLQuery(out_ast.get());
+            const bool ddl_workload_enabled = context->getUseDdlWorkload();
+            if (is_ddl_query && ddl_workload_enabled)
+            {
+                /// Route DDL under `ddl_workload` instead of `workload`. `ddl_workload` is a separate
+                /// setting with its own constraints (configurable via a user profile) and is
+                /// intentionally NOT validated against `workload`'s constraints: administrators control
+                /// DDL scheduling by constraining `ddl_workload`, not `workload`. See the setting docs.
+                const String & ddl_workload = settings[Setting::ddl_workload];
+                context->setSetting("workload", ddl_workload.empty() ? String("default") : ddl_workload);
+            }
             /// processlist also has query masked now, to avoid secrets leaks though SHOW PROCESSLIST by other users.
-            process_list_entry = context->getProcessList().insert(query_for_logging, normalized_query_hash, out_ast.get(), context, start_watch.getStart(), internal);
+            process_list_entry = context->getProcessList().insert(
+                query_for_logging, normalized_query_hash, out_ast.get(), context,
+                start_watch.getStart(), internal, /*skip_workload_admission=*/ is_ddl_query && !ddl_workload_enabled);
             context->setProcessListElement(process_list_entry->getQueryStatus());
         }
 
