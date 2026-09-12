@@ -1496,18 +1496,37 @@ namespace
 ExpressionActionsPtr getCombinedIndicesExpression(
     const KeyDescription & key,
     const MergeTreeIndices & indices,
-    const ColumnsDescription & columns,
-    const VirtualColumnsDescription & virtuals,
     ContextPtr context)
 {
-    ASTPtr combined_expr_list = key.expression_list_ast->clone();
+    if (indices.empty())
+        return key.expression;
 
+    /// Key and index expressions are already analyzed in the metadata snapshot. Combine their
+    /// prepared actions instead of analyzing the same syntax again for every inserted part.
+    auto dag = key.expression->getActionsDAG().clone();
     for (const auto & index : indices)
-        for (const auto & index_expr : index->index.expression_list_ast->children)
-            combined_expr_list->children.push_back(index_expr->clone());
+    {
+        /// Keep source inputs available to each index instead of adding duplicate input nodes.
+        for (const auto * input : dag.getInputs())
+            if (!dag.tryFindInOutputs(input->result_name))
+                dag.addOrReplaceInOutputs(*input);
 
-    auto syntax_result = TreeRewriter(context).analyze(combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
-    return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+        /// Lambda capture nodes can share names without representing the same function.
+        dag.mergeInplace(index->index.expression->getActionsDAG().clone());
+    }
+
+    /// Several indexes can have the same expression; expose each result only once.
+    ActionsDAG::NodeRawConstPtrs outputs;
+    outputs.swap(dag.getOutputs());
+    for (const auto * output : outputs)
+        dag.addOrReplaceInOutputs(*output);
+
+    /// Index actions project away their inputs. The writer must keep those columns to store them.
+    for (const auto * input : dag.getInputs())
+        if (!dag.tryFindInOutputs(input->result_name))
+            dag.addOrReplaceInOutputs(*input);
+
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context));
 }
 
 }
@@ -1548,13 +1567,13 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
 ExpressionActionsPtr
 MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, getContext());
 }
 
 ExpressionActionsPtr
 MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
+    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, getContext());
 }
 
 void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
