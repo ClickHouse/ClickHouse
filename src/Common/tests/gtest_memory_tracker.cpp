@@ -354,15 +354,19 @@ ProfileEvents::Count tracedLargeAllocations()
     return ProfileEvents::global_counters[ProfileEvents::MemoryLargeAllocationTraced];
 }
 
-/// Charges the *global* tracker with exactly `size`: this thread has no ThreadStatus, so
-/// CurrentMemoryTracker skips untracked-memory batching and calls total_memory_tracker directly.
+/// Charges the *global* tracker with exactly `size`, which the threshold cases depend on. A
+/// ThreadStatus (this thread has one or not depending on the other tests in the binary) batches
+/// charges and flushes a whole batch as one add, so no remainder may be pending around a charge.
 void chargeAndRelease(Int64 size, size_t times = 1)
 {
     for (size_t i = 0; i < times; ++i)
     {
+        DB::CurrentThread::flushUntrackedMemory();
         std::ignore = CurrentMemoryTracker::alloc(size);
         std::ignore = CurrentMemoryTracker::free(size);
     }
+
+    DB::CurrentThread::flushUntrackedMemory();
 }
 
 /// A live collector is required twice over: the setter refuses a threshold without one, and its
