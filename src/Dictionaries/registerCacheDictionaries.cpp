@@ -277,7 +277,7 @@ The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
 
-That applies to looking a key **up** - `dictGet` and the other dictionary functions. Reading the dictionary **as a table** with `SELECT ... FROM <dictionary>` is different: because a cache keeps no record of which keys exist, the read enumerates only the cells that happen to be resident in the cache at that moment, and a `WHERE` on the key is an ordinary filter over those resident cells, not a list of keys to fetch. A key that is not in the cache cannot be discovered this way, no matter what the `WHERE` says. Resident cells are not free of the source either: an expired cell is read through the same path as `dictGet`, so it is re-requested from the source - synchronously, or asynchronously if `allow_read_expired_keys` is enabled.
+That applies to looking a key **up** - `dictGet` and the other dictionary functions. Reading the dictionary **as a table** with `SELECT ... FROM <dictionary>` is different: because a cache keeps no record of which keys exist, the read enumerates only the cells that happen to be resident in the cache at that moment and that hold a value, and a `WHERE` on the key is an ordinary filter over those cells, not a list of keys to fetch. A key that is not in the cache cannot be discovered this way, no matter what the `WHERE` says. A key that *was* looked up but was not found at the source is not visible either: the cache remembers the miss as a default cell, and a table read skips default cells. Resident cells are not free of the source either: an expired cell is read through the same path as `dictGet`, so it is re-requested from the source - synchronously, or asynchronously if `allow_read_expired_keys` is enabled.
 
 ```sql
 CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
@@ -371,7 +371,8 @@ ClickHouse is not recommended as a source for this layout. Dictionary lookups re
 
     factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true, true, Documentation{
         .description = "Like `cache`, but supports composite keys. Reading it as a table returns only the cells "
-                       "currently held in the cache and cannot discover keys absent from it; see `cache`.",
+                       "currently held in the cache that hold a value - it cannot discover keys absent from the cache, "
+                       "and it skips the default cells that record keys which were looked up but not found at the source; see `cache`.",
         .syntax = "LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS n))",
         .related = {"cache"}});
 
@@ -396,7 +397,7 @@ ClickHouse is not recommended as a source for this layout. Dictionary lookups re
 
 Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
 
-Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held and cannot discover keys absent from the cache; resident cells that have expired are still re-requested from the source. See [cache](/sql-reference/statements/create/dictionary/layouts/cache).
+Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held that hold a value: it cannot discover keys absent from the cache, and it skips the default cells that record keys which were looked up but not found at the source. Resident cells that have expired are still re-requested from the source. See [cache](/sql-reference/statements/create/dictionary/layouts/cache).
 
 The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
 
