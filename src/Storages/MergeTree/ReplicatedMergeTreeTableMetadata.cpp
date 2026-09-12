@@ -3,16 +3,23 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/IndicesDescription.h>
+#include <Storages/extractKeyExpressionList.h>
 #include <DataTypes/IDataType.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Parsers/ASTOrderByElement.h>
+#include <Parsers/ASTColumnsTransformers.h>
+#include <Parsers/ASTTTLElement.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ExpressionListParsers.h>
+#include <Parsers/ParserCreateQuery.h>
 #include <IO/Operators.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Common/SipHash.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/WriteHelpers.h>
+
 
 #include <fmt/ranges.h>
 
@@ -32,20 +39,122 @@ namespace ErrorCodes
     extern const int METADATA_MISMATCH;
 }
 
-static String formattedAST(const ASTPtr & ast)
+/// Strip the purely cosmetic `parenthesized` flag everywhere in the tree, so that a key expression
+/// this replica stores locally is the canonical one, whatever an older leader wrote to Keeper.
+/// For the text written to Keeper, `formatIgnoringRedundantParentheses` does the same at format
+/// time, without touching the AST.
+static void stripArtificialParens(IAST & ast)
 {
-    if (!ast)
-        return "";
-    return ast->formatIgnoringRedundantParentheses();
+    ast.setParenthesized(false);
+
+    for (const auto & child : ast.children)
+        if (child)
+            stripArtificialParens(*child);
+
+    /// `group_by_key`, `group_by_assignments` and `recompression_codec` of a TTL element are not
+    /// stored in `children`, so the walk above does not reach them.
+    if (auto * ttl_element = ast.as<ASTTTLElement>())
+    {
+        for (const auto & expr : ttl_element->group_by_key)
+            if (expr)
+                stripArtificialParens(*expr);
+        for (const auto & expr : ttl_element->group_by_assignments)
+            if (expr)
+                stripArtificialParens(*expr);
+        if (ttl_element->recompression_codec)
+            stripArtificialParens(*ttl_element->recompression_codec);
+    }
+
+    /// Same for the `parameters` and `lambda` of a projection's `APPLY` transformer.
+    if (auto * apply_transformer = ast.as<ASTColumnsApplyTransformer>())
+    {
+        if (apply_transformer->parameters)
+            stripArtificialParens(*apply_transformer->parameters);
+        if (apply_transformer->lambda)
+            stripArtificialParens(*apply_transformer->lambda);
+    }
 }
 
-static String formattedASTNormalized(const ASTPtr & ast)
+String ReplicatedMergeTreeTableMetadata::formatDefinition(const ASTPtr & ast)
 {
     if (!ast)
         return "";
     auto ast_normalized = ast->clone();
     FunctionNameNormalizer::visit(ast_normalized.get());
     return ast_normalized->formatIgnoringRedundantParentheses();
+}
+
+/// Same as `formatDefinition`, but for the comma-separated lists of declarations
+/// (skip indices, projections, constraints). Function names are intentionally not normalized
+/// here: unlike the key fields, these were never normalized before, and the canonical form of an
+/// older version is the definition as written.
+String ReplicatedMergeTreeTableMetadata::formatDefinitionList(const ASTs & definitions)
+{
+    if (definitions.empty())
+        return "";
+
+    ASTExpressionList list;
+    for (const auto & definition : definitions)
+        list.children.push_back(definition->clone());
+
+    return list.formatIgnoringRedundantParentheses();
+}
+
+namespace
+{
+
+/// The serialized metadata fields below are compared as ASTs, not as text, because the field in
+/// ZooKeeper may have been written by a server version whose formatting differs.
+/// The parsing is purely syntactic (expressions are not resolved against table columns), so
+/// metadata belonging to a different column set is compared safely.
+
+ASTPtr parseForComparison(IParser & parser, const String & str)
+{
+    ASTPtr ast = parseQuery(parser, str, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+    /// Tolerate metadata written before function name normalization (`SUM(x)` vs `sum(x)`).
+    /// The comparison-only variant also reaches the function name of a projection's `APPLY`
+    /// transformer, which is never normalized in the stored text.
+    FunctionNameNormalizer::visitForComparison(ast.get());
+    return ast;
+}
+
+/// Keys: `primary key`, `sorting key`, `partition key`, `sampling expression`.
+/// `extractKeyExpressionList` unwraps the optional `tuple(...)`, so `a`, `(a)` and `tuple(a)` are
+/// the same single-column key, while an explicit direction (`b DESC`) stays significant.
+bool sameSerializedKey(const String & lhs, const String & rhs, bool allow_order)
+{
+    if (lhs == rhs)
+        return true;
+
+    auto parse = [&](const String & str) -> ASTPtr
+    {
+        if (str.empty())
+            return nullptr;
+        ParserStorageOrderByClause parser(allow_order);
+        return extractKeyExpressionList(parseForComparison(parser, "(" + str + ")"));
+    };
+
+    return sameAST(parse(lhs), parse(rhs));
+}
+
+/// TTLs, indices, projections, constraints: lists of declarations.
+template <typename Parser>
+bool sameSerializedExpressions(const String & lhs, const String & rhs)
+{
+    if (lhs == rhs)
+        return true;
+
+    auto parse = [](const String & str) -> ASTPtr
+    {
+        if (str.empty())
+            return nullptr;
+        Parser parser;
+        return parseForComparison(parser, str);
+    };
+
+    return sameAST(parse(lhs), parse(rhs));
+}
+
 }
 
 ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTreeData & data, const StorageMetadataPtr & metadata_snapshot)
@@ -57,7 +166,7 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     }
 
     const auto data_settings = data.getSettings();
-    sampling_expression = formattedASTNormalized(metadata_snapshot->getSamplingKeyAST());
+    sampling_expression = formatDefinition(metadata_snapshot->getSamplingKeyAST());
     index_granularity = (*data_settings)[MergeTreeSetting::index_granularity];
     merging_params_mode = static_cast<int>(data.merging_params.mode);
     sign_column = data.merging_params.sign_column;
@@ -81,38 +190,49 @@ ReplicatedMergeTreeTableMetadata::ReplicatedMergeTreeTableMetadata(const MergeTr
     /// - When we have both, than store PRIMARY KEY in "primary key:" row and ORDER BY in "sorting key:" row of /metadata
     if (metadata_snapshot->isPrimaryKeyDefined())
     {
-        primary_key = formattedASTNormalized(metadata_snapshot->getPrimaryKey().expression_list_ast);
+        primary_key = formatDefinition(metadata_snapshot->getPrimaryKey().expression_list_ast);
         /// We don't use preparsed AST `sorting_key.expression_list_ast` because
         /// it contain version column for VersionedCollapsingMergeTree, which
         /// is not stored in ZooKeeper for compatibility reasons. So the best
         /// compatible way is just to convert definition_ast to list and
         /// serialize it. In all other places key.expression_list_ast should be
         /// used.
-        sorting_key = formattedASTNormalized(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
+        sorting_key = formatDefinition(extractKeyExpressionList(metadata_snapshot->getSortingKey().definition_ast));
     }
     else
     {
-        primary_key = formattedASTNormalized(metadata_snapshot->getPrimaryKey().getOriginalExpressionList());
+        primary_key = formatDefinition(metadata_snapshot->getPrimaryKey().getOriginalExpressionList());
     }
 
     data_format_version = data.format_version;
 
     if (data.format_version >= MERGE_TREE_DATA_MIN_FORMAT_VERSION_WITH_CUSTOM_PARTITIONING)
-        partition_key = formattedASTNormalized(metadata_snapshot->getPartitionKey().expression_list_ast);
+        partition_key = formatDefinition(metadata_snapshot->getPartitionKey().expression_list_ast);
 
-    ttl_table = formattedASTNormalized(metadata_snapshot->getTableTTLs().definition_ast);
+    ttl_table = formatDefinition(metadata_snapshot->getTableTTLs().definition_ast);
 
     /// We only store skip indices that are explicitly defined by user
-    skip_indices = metadata_snapshot->getSecondaryIndices().explicitToString();
+    {
+        ASTs explicit_indices;
+        for (const auto & index : metadata_snapshot->getSecondaryIndices())
+            if (!index.isImplicitlyCreated())
+                explicit_indices.push_back(index.definition_ast);
+        skip_indices = formatDefinitionList(explicit_indices);
+    }
 
-    projections = metadata_snapshot->getProjections().toString();
+    {
+        ASTs projection_definitions;
+        for (const auto & projection : metadata_snapshot->getProjections())
+            projection_definitions.push_back(projection.definition_ast);
+        projections = formatDefinitionList(projection_definitions);
+    }
 
     if (data.canUseAdaptiveGranularity())
         index_granularity_bytes = (*data_settings)[MergeTreeSetting::index_granularity_bytes];
     else
         index_granularity_bytes = 0;
 
-    constraints = metadata_snapshot->getConstraints().toString();
+    constraints = formatDefinitionList(metadata_snapshot->getConstraints().getConstraints());
 }
 
 void ReplicatedMergeTreeTableMetadata::write(WriteBuffer & out) const
@@ -268,6 +388,9 @@ ReplicatedMergeTreeTableMetadata ReplicatedMergeTreeTableMetadata::parseAndNorma
     /// Backward compatibility: older replicas (before 25.12) stored implicit indices in Keeper
     /// metadata. Newer replicas only store explicit indices. Strip implicit indices from the
     /// parsed metadata so that all downstream comparisons work against the new format.
+    /// An explicitly declared index with the reserved `auto_minmax_index_` prefix is legal exactly
+    /// while both settings are disabled, and then nothing is stripped, so it stays visible to the
+    /// metadata comparison even when the Keeper entry is newer than the local snapshot.
     if (result.skip_indices.empty()
         || (!add_minmax_index_for_numeric_columns && !add_minmax_index_for_string_columns))
         return result;
@@ -333,10 +456,7 @@ static void handleTableMetadataMismatch(
 
 void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
     const ReplicatedMergeTreeTableMetadata & from_zk,
-    const ColumnsDescription & columns,
-    const VirtualColumnsDescription & virtuals,
     const std::string & table_name_for_error_message,
-    ContextPtr context,
     bool check_index_granularity) const
 {
 
@@ -374,78 +494,61 @@ void ReplicatedMergeTreeTableMetadata::checkImmutableFieldsEquals(
             handleTableMetadataMismatch(table_name_for_error_message, "graphite params", from_zk.graphite_params_hash, "", graphite_params_hash);
     }
 
-    String parsed_zk_primary_key = formattedAST(KeyDescription::parse(from_zk.primary_key, columns, virtuals, context, true).getOriginalExpressionList());
-    String parsed_local_primary_key = formattedAST(KeyDescription::parse(primary_key, columns, virtuals, context, true).getOriginalExpressionList());
-    if (parsed_local_primary_key != parsed_zk_primary_key)
-        handleTableMetadataMismatch(table_name_for_error_message, "primary key", from_zk.primary_key, parsed_zk_primary_key, primary_key);
+    if (!sameSerializedKey(primary_key, from_zk.primary_key, /*allow_order=*/ true))
+        handleTableMetadataMismatch(table_name_for_error_message, "primary key", from_zk.primary_key, "", primary_key);
 
     if (data_format_version != from_zk.data_format_version)
         handleTableMetadataMismatch(table_name_for_error_message, "data format version", DB::toString(from_zk.data_format_version.toUnderType()), "", DB::toString(data_format_version.toUnderType()));
 
-    String parsed_zk_partition_key = formattedAST(KeyDescription::parse(from_zk.partition_key, columns, virtuals, context, false).expression_list_ast);
-    String parsed_local_partition_key = formattedAST(KeyDescription::parse(partition_key, columns, virtuals, context, false).expression_list_ast);
-    if (parsed_local_partition_key != parsed_zk_partition_key)
-        handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, parsed_zk_partition_key, partition_key);
+    if (!sameSerializedKey(partition_key, from_zk.partition_key, /*allow_order=*/ false))
+        handleTableMetadataMismatch(table_name_for_error_message, "partition key expression", from_zk.partition_key, "", partition_key);
 }
 
 bool ReplicatedMergeTreeTableMetadata::checkEquals(
     const ReplicatedMergeTreeTableMetadata & from_zk,
-    const ColumnsDescription & columns,
-    const VirtualColumnsDescription & virtuals,
     const std::string & table_name_for_error_message,
-    ContextPtr context,
     bool check_index_granularity,
     bool strict_check,
     LoggerPtr logger) const
 {
     bool is_equal = true;
-    checkImmutableFieldsEquals(from_zk, columns, virtuals, table_name_for_error_message, context, check_index_granularity);
+    checkImmutableFieldsEquals(from_zk, table_name_for_error_message, check_index_granularity);
 
-    String parsed_zk_sampling_expression = formattedAST(KeyDescription::parse(from_zk.sampling_expression, columns, virtuals, context, false).definition_ast);
-    if (sampling_expression != parsed_zk_sampling_expression)
+    if (!sameSerializedKey(sampling_expression, from_zk.sampling_expression, /*allow_order=*/ false))
     {
-        handleTableMetadataMismatch(table_name_for_error_message, "sampling expression", from_zk.sampling_expression, parsed_zk_sampling_expression, sampling_expression, strict_check, logger);
+        handleTableMetadataMismatch(table_name_for_error_message, "sampling expression", from_zk.sampling_expression, "", sampling_expression, strict_check, logger);
         is_equal = false;
     }
 
-    String parsed_zk_sorting_key = formattedAST(extractKeyExpressionList(KeyDescription::parse(from_zk.sorting_key, columns, virtuals, context, true).definition_ast));
-    if (sorting_key != parsed_zk_sorting_key)
+    if (!sameSerializedKey(sorting_key, from_zk.sorting_key, /*allow_order=*/ true))
     {
-        handleTableMetadataMismatch(table_name_for_error_message, "sorting key expression", from_zk.sorting_key, parsed_zk_sorting_key, sorting_key, strict_check, logger);
+        handleTableMetadataMismatch(table_name_for_error_message, "sorting key expression", from_zk.sorting_key, "", sorting_key, strict_check, logger);
         is_equal = false;
     }
 
-    auto parsed_primary_key = KeyDescription::parse(primary_key, columns, virtuals, context, true);
-    // Strict checking of suspicious TTL is not needed here
-    String parsed_zk_ttl_table = formattedAST(
-        TTLTableDescription::parse(from_zk.ttl_table, columns, context, parsed_primary_key, TTLValidationMode::Attach).definition_ast);
-    if (ttl_table != parsed_zk_ttl_table)
+    if (!sameSerializedExpressions<ParserTTLExpressionList>(ttl_table, from_zk.ttl_table))
     {
-        handleTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, parsed_zk_ttl_table, ttl_table, strict_check, logger);
+        handleTableMetadataMismatch(table_name_for_error_message, "TTL", from_zk.ttl_table, "", ttl_table, strict_check, logger);
         is_equal = false;
     }
 
     /// Implicit indices are stripped from Keeper metadata during `parseAndNormalize`,
     /// so at this point `from_zk.skip_indices` only contains explicit indices.
-    constexpr bool escape_index_filenames = true; /// It doesn't matter here, as we compare parsed strings
-    String parsed_zk_skip_indices = IndicesDescription::parse(from_zk.skip_indices, columns, escape_index_filenames, context).allToString();
-    if (skip_indices != parsed_zk_skip_indices)
+    if (!sameSerializedExpressions<ParserIndexDeclarationList>(skip_indices, from_zk.skip_indices))
     {
-        handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, parsed_zk_skip_indices, skip_indices, strict_check, logger);
+        handleTableMetadataMismatch(table_name_for_error_message, "skip indexes", from_zk.skip_indices, "", skip_indices, strict_check, logger);
         is_equal = false;
     }
 
-    String parsed_zk_projections = ProjectionsDescription::parse(from_zk.projections, columns, nullptr, context).toString();
-    if (projections != parsed_zk_projections)
+    if (!sameSerializedExpressions<ParserProjectionDeclarationList>(projections, from_zk.projections))
     {
-        handleTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, parsed_zk_projections, projections, strict_check, logger);
+        handleTableMetadataMismatch(table_name_for_error_message, "projections", from_zk.projections, "", projections, strict_check, logger);
         is_equal = false;
     }
 
-    String parsed_zk_constraints = ConstraintsDescription::parse(from_zk.constraints).toString();
-    if (constraints != parsed_zk_constraints)
+    if (!sameSerializedExpressions<ParserConstraintDeclarationList>(constraints, from_zk.constraints))
     {
-        handleTableMetadataMismatch(table_name_for_error_message, "constraints", from_zk.constraints, parsed_zk_constraints, constraints, strict_check, logger);
+        handleTableMetadataMismatch(table_name_for_error_message, "constraints", from_zk.constraints, "", constraints, strict_check, logger);
         is_equal = false;
     }
 
@@ -461,47 +564,47 @@ bool ReplicatedMergeTreeTableMetadata::checkEquals(
 ReplicatedMergeTreeTableMetadata::Diff
 ReplicatedMergeTreeTableMetadata::checkAndFindDiff(
     const ReplicatedMergeTreeTableMetadata & from_zk,
-    const ColumnsDescription & columns,
-    const VirtualColumnsDescription & virtuals,
     const std::string & table_name_for_error_message,
-    ContextPtr context,
     bool check_index_granularity) const
 {
-    checkImmutableFieldsEquals(from_zk, columns, virtuals, table_name_for_error_message, context, check_index_granularity);
+    checkImmutableFieldsEquals(from_zk, table_name_for_error_message, check_index_granularity);
 
+    /// The fields are compared as ASTs, so a formatting-only difference (e.g. redundant
+    /// parentheses kept by a version with #92340 in the metadata stored in ZooKeeper) is not
+    /// reported as a change and does not replace the local metadata.
     Diff diff;
 
-    if (sorting_key != from_zk.sorting_key)
+    if (!sameSerializedKey(sorting_key, from_zk.sorting_key, /*allow_order=*/ true))
     {
         diff.sorting_key_changed = true;
         diff.new_sorting_key = from_zk.sorting_key;
     }
 
-    if (sampling_expression != from_zk.sampling_expression)
+    if (!sameSerializedKey(sampling_expression, from_zk.sampling_expression, /*allow_order=*/ false))
     {
         diff.sampling_expression_changed = true;
         diff.new_sampling_expression = from_zk.sampling_expression;
     }
 
-    if (ttl_table != from_zk.ttl_table)
+    if (!sameSerializedExpressions<ParserTTLExpressionList>(ttl_table, from_zk.ttl_table))
     {
         diff.ttl_table_changed = true;
         diff.new_ttl_table = from_zk.ttl_table;
     }
 
-    if (skip_indices != from_zk.skip_indices)
+    if (!sameSerializedExpressions<ParserIndexDeclarationList>(skip_indices, from_zk.skip_indices))
     {
         diff.skip_indices_changed = true;
         diff.new_skip_indices = from_zk.skip_indices;
     }
 
-    if (projections != from_zk.projections)
+    if (!sameSerializedExpressions<ParserProjectionDeclarationList>(projections, from_zk.projections))
     {
         diff.projections_changed = true;
         diff.new_projections = from_zk.projections;
     }
 
-    if (constraints != from_zk.constraints)
+    if (!sameSerializedExpressions<ParserConstraintDeclarationList>(constraints, from_zk.constraints))
     {
         diff.constraints_changed = true;
         diff.new_constraints = from_zk.constraints;
@@ -517,26 +620,25 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
 
     if (!empty())
     {
-        auto parse_key_expr = [] (const String & key_expr)
+        /// Symmetric with `sameSerializedKey` above and with `KeyDescription::parse`: the sorting
+        /// key stored in ZooKeeper may contain an explicit direction (`a DESC`) that a plain
+        /// expression parser would reject.
+        auto parse_key_expr = [] (const String & key_expr, bool allow_order)
         {
-            ParserNotEmptyExpressionList parser(false);
-            auto new_sorting_key_expr_list = parseQuery(parser, key_expr, 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-
-            ASTPtr order_by_ast;
-            if (new_sorting_key_expr_list->children.size() == 1)
-                order_by_ast = new_sorting_key_expr_list->children[0];
-            else
-            {
-                auto tuple = makeASTOperator("tuple");
-                tuple->arguments->children = new_sorting_key_expr_list->children;
-                order_by_ast = tuple;
-            }
-            return order_by_ast;
+            ParserStorageOrderByClause parser(allow_order);
+            ASTPtr ast = parseQuery(parser, "(" + key_expr + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
+            /// Both the artificial "(" + str + ")" wrapping and any parentheses an older leader
+            /// wrote into the key text (`(a) DESC`) are cosmetic. Strip them with the same
+            /// recursive walk the publishing side uses, so the key this replica stores locally is
+            /// the canonical one and `SHOW CREATE` cannot diverge between replicas.
+            if (ast)
+                stripArtificialParens(*ast);
+            return ast;
         };
 
         if (sorting_key_changed)
         {
-            auto order_by_ast = parse_key_expr(new_sorting_key);
+            auto order_by_ast = parse_key_expr(new_sorting_key, /*allow_order=*/ true);
 
             new_metadata.sorting_key.recalculateWithNewAST(order_by_ast, new_metadata.columns, virtuals, context);
 
@@ -552,7 +654,7 @@ StorageInMemoryMetadata ReplicatedMergeTreeTableMetadata::Diff::getNewMetadata(c
         {
             if (!new_sampling_expression.empty())
             {
-                auto sample_by_ast = parse_key_expr(new_sampling_expression);
+                auto sample_by_ast = parse_key_expr(new_sampling_expression, /*allow_order=*/ false);
                 new_metadata.sampling_key.recalculateWithNewAST(sample_by_ast, new_metadata.columns, virtuals, context);
             }
             else /// SAMPLE BY was removed

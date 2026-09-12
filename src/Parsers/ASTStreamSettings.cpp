@@ -241,6 +241,9 @@ void ASTStreamSettings::readJSON(const Poco::JSON::Object & json)
             if (value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() > static_cast<UInt64>(std::numeric_limits<Int64>::max()))
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "`StreamSettings` 'cursor_tree' value is out of Int64 range during AST JSON deserialization");
+            if (value.getType() == Field::Types::Int64 && value.safeGet<Int64>() < 0)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "`StreamSettings` 'cursor_tree' value must be non-negative during AST JSON deserialization");
         }
 
         setCursor(buildCursorTree(map));

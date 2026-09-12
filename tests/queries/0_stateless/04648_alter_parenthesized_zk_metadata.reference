@@ -1,0 +1,2 @@
+ttl: d + toIntervalYear(10) GROUP BY a SET c = max(c)	indices: ix b * c TYPE minmax GRANULARITY 1	projections: p (WITH b + 1 AS y SELECT a AS x, sum(y) GROUP BY a)	constraints: cc CHECK a > 0
+sorting key: a, e	primary key: a	sampling expression: a

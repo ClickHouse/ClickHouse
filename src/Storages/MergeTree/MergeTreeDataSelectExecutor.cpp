@@ -1470,9 +1470,9 @@ UInt64 MergeTreeDataSelectExecutor::getSkipIndexProfiledConditionHash(UInt64 con
     /// any change to the running set (a different ignore list, an index dropped/added/redefined, skip
     /// indexes off) changes the key, and a query that did not run an index never reads a verdict
     /// produced by it. Each index contributes a stable identity: its name, its granularity, and the
-    /// tree hash of its definition AST (type, expression, arguments). name and granularity are plain
-    /// members of ASTIndexDeclaration and are not part of its tree hash, so they are folded in
-    /// separately; otherwise two indexes with the same expression and type but a different name or
+    /// tree hash of its definition AST (type, expression, arguments). name and granularity are also
+    /// folded in separately, so that the key stays correct regardless of what the tree hash covers:
+    /// otherwise two indexes with the same expression and type but a different name or
     /// granularity would share a key (the partially-materialized case: a verdict produced while one
     /// index ran could be served to a query running only the other). The name is length-prefixed so
     /// distinct (name, granularity) pairs cannot collide by concatenation. Index names are unique
