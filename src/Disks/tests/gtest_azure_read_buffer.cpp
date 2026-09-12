@@ -26,6 +26,9 @@
 #include <Interpreters/FileCache/FileCacheSettings.h>
 #include <Core/ServerUUID.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/MetadataStorageFromPlainRewritableObjectStorageOperations.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableMetrics.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueuePostProcessor.h>
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSource.h>
@@ -157,7 +160,8 @@ public:
         std::optional<size_t> blob_size_after_first_ = {},
         bool refuse_range_past_the_data_ = false,
         bool blob_missing_ = false,
-        bool a_blob_is_at_the_key_a_write_creates_ = false)
+        bool a_blob_is_at_the_key_a_write_creates_ = false,
+        bool no_etag_on_head_after_a_copy_ = false)
         : max_response_size(max_response_size_)
         , served_size(served_size_)
         , blob_size(blob_size_)
@@ -169,6 +173,7 @@ public:
         , refuse_range_past_the_data(refuse_range_past_the_data_)
         , blob_missing(blob_missing_)
         , a_blob_is_at_the_key_a_write_creates(a_blob_is_at_the_key_a_write_creates_)
+        , no_etag_on_head_after_a_copy(no_etag_on_head_after_a_copy_)
     {
     }
 
@@ -202,6 +207,7 @@ public:
                 source_if_match_headers.emplace_back();
 
             natively_copied_generations.push_back(current_etag);
+            a_copy_was_served = true;
 
             auto accepted = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Accepted, "Accepted");
             accepted->SetHeader("Content-Length", "0");
@@ -244,7 +250,7 @@ public:
                 return notFound();
             auto properties = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Ok, "OK");
             properties->SetHeader("Content-Length", std::to_string(blob_size));
-            if (send_etag)
+            if (send_etag && !(no_etag_on_head_after_a_copy && a_copy_was_served))
                 properties->SetHeader("ETag", current_etag);
             properties->SetHeader("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT");
             properties->SetHeader("x-ms-creation-time", "Wed, 21 Oct 2015 07:28:00 GMT");
@@ -284,6 +290,8 @@ public:
                     uploaded.append(reinterpret_cast<const char *>(bytes.data()), bytes.size());
                 }
             }
+
+            a_copy_was_served = true;
 
             auto created = std::make_unique<Azure::Core::Http::RawResponse>(1, 1, Azure::Core::Http::HttpStatusCode::Created, "Created");
             created->SetHeader("Content-Length", "0");
@@ -437,6 +445,10 @@ private:
     bool refuse_range_past_the_data;
     bool blob_missing;
     bool a_blob_is_at_the_key_a_write_creates;
+    /// An endpoint that answers `Get Properties` of a blob a write has just put there without an
+    /// `ETag`: the generation of that blob cannot be named, however well the write itself went.
+    bool no_etag_on_head_after_a_copy;
+    bool a_copy_was_served = false;
     size_t responses_sent = 0;
     bool saw_create_if_absent = false;
     std::string uploaded;
@@ -3225,6 +3237,108 @@ TEST(AzurePlainRewritableMove, AMissingSourceIsRefused)
     ASSERT_EQ(*outcome.error_code, DB::ErrorCodes::FILE_DOESNT_EXIST);
     ASSERT_TRUE(outcome.copied.empty());
     ASSERT_TRUE(outcome.deleted_generations.empty());
+}
+
+namespace
+{
+
+/// The state a `plain_rewritable` metadata storage keeps for a disk that holds one file, `from`, in
+/// its root directory, so that the hard-link operation of production can be driven against the fake
+/// endpoint. The blob of a root file lives at `__root/<name>`, which is what the layout builds.
+struct PlainRewritableHardLinkFixture
+{
+    std::shared_ptr<DB::FsSnapshot> fs_tree = std::make_shared<DB::FsSnapshot>();
+    std::shared_ptr<DB::PlainRewritableLayout> layout = std::make_shared<DB::PlainRewritableLayout>("");
+    std::shared_ptr<DB::PlainRewritableMetrics> metrics
+        = DB::createPlainRewritableMetrics(DB::ObjectStorageType::Azure);
+
+    PlainRewritableHardLinkFixture()
+    {
+        fs_tree->recordDirectoryPath(
+            "",
+            DB::DirectoryRemoteInfo{
+                .remote_path = DB::PlainRewritableLayout::ROOT_DIRECTORY_TOKEN,
+                .etag = {},
+                .last_modified = 0,
+                .files = {}});
+        fs_tree->recordFile("from", DB::FileRemoteInfo{.bytes_size = 100, .last_modified = 0});
+    }
+};
+
+}
+
+/// A hard link is a copy of the blob of the source to the key of the target, and a rollback of the
+/// transaction it belongs to has to take that blob back out - a blob left at the key of the target
+/// comes back as a file of the disk on restart, because the directory is rebuilt from the blobs in
+/// the bucket. The delete of the rollback is pinned to the generation the copy wrote, so an endpoint
+/// that names no generation leaves the rollback with nothing but a delete by path, which is the
+/// cross-generation loss the pinning exists to prevent. The hard link is refused there, before the
+/// file is recorded, exactly as the move is.
+TEST(AzurePlainRewritableHardLink, ADestinationWhoseGenerationCannotBeNamedIsRefused)
+{
+    /// The copy itself goes through - the source is named and the endpoint honours the precondition -
+    /// and only the `HEAD` of the blob the copy wrote comes back without an `ETag`.
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
+        /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false,
+        /* blob_missing */ false, /* a_blob_is_at_the_key_a_write_creates */ false,
+        /* no_etag_on_head_after_a_copy */ true);
+    std::shared_ptr<DB::IObjectStorage> object_storage = objectStorageOver(transport);
+
+    PlainRewritableHardLinkFixture fixture;
+    DB::MetadataStorageFromPlainObjectStorageCopyFileOperation operation(
+        "from", "to", fixture.fs_tree, object_storage, fixture.layout, fixture.metrics);
+
+    std::optional<int> error_code;
+    try
+    {
+        operation.execute();
+    }
+    catch (const DB::Exception & e)
+    {
+        error_code = e.code();
+    }
+
+    ASSERT_TRUE(error_code.has_value());
+    ASSERT_EQ(*error_code, DB::ErrorCodes::AZURE_BLOB_STORAGE_ERROR);
+    /// The aborted hard link is not a file of the disk: `load` would otherwise find the blob the
+    /// copy wrote and the metadata would agree with it.
+    ASSERT_FALSE(fixture.fs_tree->existsFile("to"));
+}
+
+/// The same hard link against an endpoint that names the generation of the blob the copy wrote:
+/// it goes through and the file is recorded. This keeps the test above from passing by refusing
+/// every hard link.
+TEST(AzurePlainRewritableHardLink, ADestinationWhoseGenerationIsNamedIsRecorded)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    std::shared_ptr<DB::IObjectStorage> object_storage = objectStorageOver(transport);
+
+    PlainRewritableHardLinkFixture fixture;
+    DB::MetadataStorageFromPlainObjectStorageCopyFileOperation operation(
+        "from", "to", fixture.fs_tree, object_storage, fixture.layout, fixture.metrics);
+
+    operation.execute();
+
+    ASSERT_TRUE(fixture.fs_tree->existsFile("to"));
+}
+
+/// The blobs an operation writes aside to be able to roll itself back are not files of the disk:
+/// a rollback that cannot put one back deliberately leaves it in the bucket, and `load` rebuilds the
+/// root directory from every blob under the key of the root files. The scratch blobs therefore live
+/// under a prefix of their own, which `load` never looks into.
+TEST(PlainRewritableLayoutScratch, ScratchBlobsAreNotUnderTheRootFiles)
+{
+    DB::PlainRewritableLayout layout("prefix");
+
+    const std::string scratch = layout.constructScratchFileObjectKey("0123456789abcdef");
+    const std::string root_files = layout.constructRootFilesDirectoryKey() + "/";
+
+    ASSERT_FALSE(scratch.starts_with(root_files));
+    ASSERT_TRUE(scratch.starts_with("prefix/"));
 }
 
 #endif

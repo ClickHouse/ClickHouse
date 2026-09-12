@@ -337,7 +337,8 @@ void BackupImpl::openArchive()
         /// archive: a blob replaced in place by another archive of the same size would be read as
         /// the first archive for one file and as the second for the next. The generation of the
         /// archive is therefore named once here, and every reopen is pinned to it: an archive
-        /// replaced under the open backup is refused with `FILE_CHANGED_DURING_READ`.
+        /// replaced under the open backup is refused (`FILE_CHANGED_DURING_READ` on Azure,
+        /// `S3_OBJECT_CHANGED_DURING_READ` on S3) instead of being read as two archives.
         String archive_generation = reader->getFileGeneration(archive_name);
         archive_reader = createArchiveReader(
             archive_name,

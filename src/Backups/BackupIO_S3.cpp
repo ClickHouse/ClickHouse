@@ -431,10 +431,42 @@ UInt64 BackupReaderS3::getFileSize(const String & file_name)
     return S3::getObjectSize(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id);
 }
 
-std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name, std::optional<size_t> /*expected_file_size*/)
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFile(const String & file_name, std::optional<size_t> expected_file_size)
 {
+    return readFilePinnedToGeneration(file_name, expected_file_size, /*generation=*/ {});
+}
+
+String BackupReaderS3::getFileGeneration(const String & file_name)
+{
+    /// A read of a versioned URI is already pinned to the version the whole backup is read at, and
+    /// the `ETag` of the current version is not the one of that version, so nothing is named here.
+    if (!s3_uri.version_id.empty())
+        return {};
+
+    return S3::getObjectInfo(*client, s3_uri.bucket, getS3BackupObjectKey(s3_uri, file_name), s3_uri.version_id).etag;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderS3::readFilePinnedToGeneration(
+    const String & file_name, std::optional<size_t> /*expected_file_size*/, const String & generation)
+{
+    /// `generation` is an `ETag`: the `GET` carries it as `If-Match`, so an object replaced in place
+    /// since it was named is refused with `S3_OBJECT_CHANGED_DURING_READ` rather than read. An empty
+    /// token pins nothing, which is what a versioned URI needs (it is pinned by its version).
     return std::make_unique<ReadBufferFromS3>(
-        client, s3_uri.bucket, fs::path(s3_uri.key) / file_name, s3_uri.version_id, s3_settings.request_settings, read_settings);
+        client,
+        s3_uri.bucket,
+        fs::path(s3_uri.key) / file_name,
+        s3_uri.version_id,
+        s3_settings.request_settings,
+        read_settings,
+        /*use_external_buffer=*/ false,
+        /*offset=*/ 0,
+        /*read_until_position=*/ 0,
+        /*restricted_seek=*/ false,
+        /*file_size=*/ std::nullopt,
+        /*credentials_refresh_callback=*/ [] { return nullptr; },
+        /*blob_storage_log=*/ nullptr,
+        /*expected_etag=*/ generation);
 }
 
 void BackupReaderS3::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,

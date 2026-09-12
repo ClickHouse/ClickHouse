@@ -506,7 +506,7 @@ void MetadataStorageFromPlainObjectStorageUnlinkMetadataFileOperation::execute()
     const auto normalized_path_from = normalizePath(path);
     const auto directory_remote_path_from = fs_tree->getDirectoryRemoteInfo(normalized_path_from.parent_path())->remote_path;
     remote_source_path = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
-    remote_tmp_path = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    remote_tmp_path = layout->constructScratchFileObjectKey(getRandomASCIIString(16));
 
     /// The blob is copied aside and then deleted: both requests must be about the same generation
     /// of it, or the delete would take away content that was never copied.
@@ -622,6 +622,16 @@ void MetadataStorageFromPlainObjectStorageCopyFileOperation::execute()
         destination = std::move(*named);
         destination_generation_is_named = true;
     }
+    else
+        throw Exception(
+            ErrorCodes::AZURE_BLOB_STORAGE_ERROR,
+            "Cannot copy '{}' to '{}': the generation of the blob at {} that the copy has just "
+            "written cannot be named, so a rollback of this copy could only delete that key "
+            "blindly. The copy is refused here, before the file is recorded, and the blob the copy "
+            "wrote is left in the bucket",
+            path_from.string(),
+            path_to.string(),
+            remote_path_to.string());
 
     fs_tree->recordFile(path_to, fs_tree->getFileRemoteInfo(path_from).value());
 }
@@ -719,8 +729,8 @@ void MetadataStorageFromPlainObjectStorageMoveFileOperation::execute()
 
     remote_path_from = layout->constructFileObjectKey(directory_remote_path_from, normalized_path_from.filename());
     remote_path_to = layout->constructFileObjectKey(directory_remote_path_to, normalized_path_to.filename());
-    tmp_remote_path_from = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
-    tmp_remote_path_to = layout->constructFileObjectKey(PlainRewritableLayout::ROOT_DIRECTORY_TOKEN, getRandomASCIIString(16));
+    tmp_remote_path_from = layout->constructScratchFileObjectKey(getRandomASCIIString(16));
+    tmp_remote_path_to = layout->constructScratchFileObjectKey(getRandomASCIIString(16));
     file_from_remote_info = fs_tree->getFileRemoteInfo(path_from).value();
     const auto read_settings = getReadSettingsForMetadata();
     const auto write_settings = getWriteSettingsForMetadata();
