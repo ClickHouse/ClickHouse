@@ -768,7 +768,7 @@ std::optional<ColumnWithTypeAndName> NestedColumnExtractHelper::extractColumn(co
     return ColumnWithTypeAndName{subcolumn_data.column, subcolumn_data.type, column_name};
 }
 
-DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
+DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements, size_t & num_consumed_tuple_elements)
 {
     auto it = tuple_elements.begin();
 
@@ -839,6 +839,7 @@ DataTypePtr getBaseTypeOfArray(DataTypePtr type, const Names & tuple_elements)
     while (const auto * type_array = typeid_cast<const DataTypeArray *>(type.get()))
         type = type_array->getNestedType();
 
+    num_consumed_tuple_elements = it - tuple_elements.begin();
     return type;
 }
 
