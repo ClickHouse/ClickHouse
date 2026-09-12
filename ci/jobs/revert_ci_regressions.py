@@ -98,6 +98,8 @@ SYNTHETIC_TEST_NAMES = frozenset(
         "Parse failure error",
         "Job error",
         "Timeout",
+        # Names a dmesg line the host wrote, not the test that was running.
+        "OOM in dmesg",
     }
 )
 
