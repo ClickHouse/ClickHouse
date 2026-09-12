@@ -763,7 +763,14 @@ Container restoreContainerFromDump(std::string_view & tail, char closing, std::s
     }
     while (true)
     {
-        container.push_back(restoreElementFromDump(tail, whole_dump));
+        Field element = restoreElementFromDump(tail, whole_dump);
+        if constexpr (std::is_same_v<Container, Map>)
+        {
+            /// A Map element is a key-value pair: every consumer indexes it as a two element tuple.
+            if (element.getType() != Field::Types::Tuple || element.safeGet<Tuple>().size() != 2)
+                cannotRestoreFromDump(whole_dump);
+        }
+        container.push_back(std::move(element));
         trimLeft(tail);
         if (tail.empty())
             cannotRestoreFromDump(whole_dump);

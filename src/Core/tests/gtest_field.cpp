@@ -267,6 +267,11 @@ GTEST_TEST(Field, RestoreFromDumpRoundTripsNestedAndQuotedContainers)
     /// hand written users.xml value of Map_('k':'v') must not restore as Map(String 'k').
     ASSERT_THROW(Field::restoreFromDump("Map_('k':'v')"), DB::Exception);
 
+    /// A Map element is a key-value pair, so a dump that says otherwise must not restore: consumers
+    /// index the element as a two element tuple.
+    ASSERT_THROW(Field::restoreFromDump("Map_('k')"), DB::Exception);
+    ASSERT_THROW(Field::restoreFromDump("Map_(Tuple_('k'))"), DB::Exception);
+
     /// A dump nests as deep as its text says, so the depth has to be bounded. Built as text
     /// directly: dumping a Field this deep would recurse before the parser is reached.
     {
