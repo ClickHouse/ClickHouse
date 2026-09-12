@@ -239,19 +239,23 @@ static WindowFrame deserializeWindowFrame(ReadBuffer & in)
     return frame;
 }
 
-static void serializeWindowFunctions(const std::vector<WindowFunctionDescription> & window_functions, WriteBuffer & out)
+static void serializeWindowFunctions(
+    const std::vector<WindowFunctionDescription> & window_functions, const IQueryPlanStep::Serialization & ctx)
 {
+    WriteBuffer & out = ctx.out;
     writeVarUInt(window_functions.size(), out);
     for (const auto & func : window_functions)
     {
-        writeStringBinary(func.column_name, out);
+        /// The window function's own name and its argument names are composed by the planner from the
+        /// analyzer's table qualifiers, so they are plan-build-local; see `Serialization::writeColumnName`.
+        ctx.writeColumnName(func.column_name);
 
         /// Argument types are not serialized: they are derived from the input columns on deserialize
         /// (see `deserializeWindowFunctions`), which both avoids trusting client-supplied types and
         /// rebuilds the aggregate exactly as the planner does.
         writeVarUInt(func.argument_names.size(), out);
         for (const auto & argument_name : func.argument_names)
-            writeStringBinary(argument_name, out);
+            ctx.writeColumnName(argument_name);
 
         writeStringBinary(func.aggregate_function->getName(), out);
 
@@ -337,14 +341,16 @@ void WindowStep::serialize(Serialization & ctx) const
         flags |= 1;
     writeIntBinary(flags, ctx.out);
 
-    writeStringBinary(window_description.window_name, ctx.out);
+    /// `window_name` is the rendered window definition (`calculateWindowNodeActionName`), so it embeds
+    /// the same qualified column names as the descriptions below.
+    ctx.writeColumnName(window_description.window_name);
 
-    serializeSortDescription(window_description.partition_by, ctx.out);
-    serializeSortDescription(window_description.order_by, ctx.out);
+    serializeSortDescription(window_description.partition_by, ctx.out, ctx.for_cache_key, ctx.input_header);
+    serializeSortDescription(window_description.order_by, ctx.out, ctx.for_cache_key, ctx.input_header);
 
     serializeWindowFrame(window_description.frame, ctx.out);
 
-    serializeWindowFunctions(window_functions, ctx.out);
+    serializeWindowFunctions(window_functions, ctx);
 }
 
 QueryPlanStepPtr WindowStep::deserialize(Deserialization & ctx)
