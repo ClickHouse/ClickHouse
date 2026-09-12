@@ -1600,11 +1600,26 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         String as_database_name = getContext()->resolveDatabase(create.as_database);
         String as_table_name = create.as_table;
 
+        /// Reading the definition of the source table is what `SHOW COLUMNS` allows. Check it before
+        /// reading it, so that a user who may not see the table at all cannot tell from the error
+        /// whether its definition holds credentials.
+        getContext()->checkAccess(AccessType::SHOW_COLUMNS, as_database_name, as_table_name);
+
         ASTPtr as_create_ptr = DatabaseCatalog::instance().getDatabase(as_database_name)->getCreateTableQuery(as_table_name, getContext());
 
         const auto & as_create = as_create_ptr->as<ASTCreateQuery &>();
 
         const String qualified_name = backQuoteIfNeed(as_database_name) + "." + backQuoteIfNeed(as_table_name);
+
+        /// Credentials are masked in `SHOW CREATE TABLE`, whether they sit in the engine arguments or in
+        /// the settings, so copying a definition that has them would give away the data of the source
+        /// table to someone who cannot `SELECT` from it. The rest is already visible with `SHOW COLUMNS`
+        /// and can just be typed again.
+        auto check_access_to_inherited_definition = [&](const IAST & definition)
+        {
+            if (definition.hasSecretParts())
+                getContext()->checkAccess(AccessType::SELECT, as_database_name, as_table_name);
+        };
 
         if (as_create.is_ordinary_view)
             throw Exception(ErrorCodes::INCORRECT_QUERY, "Cannot CREATE a table AS {}, it is a View", qualified_name);
@@ -1631,6 +1646,7 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
             /// clauses were specified for the new table; otherwise keep the explicit storage definition.
             if (!create.storage)
             {
+                check_access_to_inherited_definition(*as_create.as_table_function);
                 create.set(create.as_table_function, as_create.as_table_function->ptr());
                 return;
             }
@@ -1649,6 +1665,18 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
         else
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set engine, it's a bug.");
+        }
+
+        if (storage_def)
+        {
+            /// The settings written in the new query are kept as they are and only the missing ones are
+            /// taken from the source, so a masked setting the query overrides is not inherited at all.
+            auto inherited = boost::static_pointer_cast<ASTStorage>(storage_def->clone());
+            if (inherited->settings && create.storage && create.storage->settings)
+                for (const auto & change : create.storage->settings->changes)
+                    inherited->settings->changes.removeSetting(change.name);
+
+            check_access_to_inherited_definition(*inherited);
         }
     }
 
@@ -3681,6 +3709,13 @@ BlockIO InterpreterCreateQuery::execute()
             if (is_create_database && create.storage && create.storage->engine
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
                 DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+
+            /// The definition of `AS src` is materialized on the worker, and this node does not
+            /// necessarily have the source table to tell whether it holds credentials, so ask for the
+            /// strongest grant the local path can ask for.
+            if (!create.as_table.empty())
+                getContext()->checkAccess(
+                    AccessType::SELECT, getContext()->resolveDatabase(create.as_database), create.as_table);
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
             /// so a worker there would resolve `toTime` with its own default.
