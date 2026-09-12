@@ -11,12 +11,9 @@ namespace DB
 class CursorTreeNode;
 using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
-/// Reads the incremental refreshable-MV cursor for a refresh. Two backings exist:
-///  - the Keeper coordination znode (default): the cursor is persisted separately from the appended
-///    data, so a crash between the append and the cursor write replays the round -> at-least-once;
-///  - a transactional target table (e.g. Iceberg on a REST/filesystem catalog): the write path commits
-///    the cursor atomically with the data files in one catalog compare-and-swap -> exactly-once, and
-///    the refresh keeps the cursor out of Keeper entirely and reads it back from the target here.
+/// Reads the incremental refreshable-MV cursor for a refresh. A transactional target (e.g. Iceberg) commits
+/// the cursor atomically with the data in one all-or-nothing commit (exactly-once, so the refresh uses a single
+/// writer); otherwise the cursor is kept separately in the Keeper coordination znode (at-least-once).
 class RefreshCursorStore
 {
 public:

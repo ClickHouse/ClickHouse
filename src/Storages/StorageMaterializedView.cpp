@@ -790,6 +790,8 @@ StorageMaterializedView::prepareRefresh(RefreshMode mode, ContextMutablePtr refr
         refresh_context->setSetting("enable_parallel_replicas", Field(UInt64{0}));
         refresh_context->setSetting("parallel_replicas_for_non_replicated_merge_tree", Field(UInt64{0}));
         refresh_context->setSetting("allow_insert_into_iceberg", Field(UInt64{1}));
+        /// A transactional target commits the whole round in one snapshot with the cursor, so it must be a single writer.
+        refresh_context->setSetting("max_insert_threads", Field(UInt64{1}));
     }
 
     if (!append)
