@@ -1,6 +1,10 @@
 #include <Common/SeccompFilter.h>
 
-#if defined(OS_LINUX)
+/// A policy is a list of system call numbers, and those are specific to an architecture, so only
+/// x86-64 and AArch64 are covered. The condition also keeps the kernel headers below out of the
+/// build on the architectures that do not need them: not every sysroot ClickHouse builds against
+/// ships them.
+#if defined(OS_LINUX) && (defined(__x86_64__) || defined(__aarch64__))
 
 #include <Common/ErrnoException.h>
 #include <Common/Exception.h>
@@ -35,8 +39,6 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int SYSTEM_ERROR;
 }
-
-#if defined(__x86_64__) || defined(__aarch64__)
 
 /// The system calls that `clickhouse-server` - and every process it forks, which inherits the
 /// filter - is allowed to make. Anything not named here gets the action configured by the
@@ -642,17 +644,19 @@ size_t installSeccompFilter(SeccompMode mode)
     return allowed.size();
 }
 
-#else
+}
+
+#elif defined(OS_LINUX)
+
+namespace DB
+{
 
 size_t installSeccompFilter(SeccompMode)
 {
-    /// A policy is a list of system call numbers, and those differ from one architecture to
-    /// another; only x86-64 and AArch64 are covered. Returning zero is not an error - the caller
-    /// reports that the server is running without a filter.
+    /// Returning zero is not an error - the caller reports that the server is running without a
+    /// filter, because the policy is not implemented for this architecture.
     return 0;
 }
-
-#endif
 
 }
 
