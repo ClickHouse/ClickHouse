@@ -29,7 +29,7 @@ namespace
 {
 
 /// A name is looked up in an enclosing scope only while `enable_global_with_statement` holds in the
-/// subquery's own context, so a `WITH` element that a subquery does not see is a table name there.
+/// subquery's own context, so a CTE name that a subquery does not see is a table name there.
 /// The clause is clamped rather than rejected, so a subquery cannot widen the reader's constraints,
 /// and it is applied to a copy, so the AST keeps the clause as written.
 ContextPtr getSubqueryContext(const ASTSelectQuery & select, const ContextPtr & context)
@@ -66,7 +66,7 @@ void ApplyWithSubqueryVisitor::visit(ASTPtr & ast, const Data & data)
 
 void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
 {
-    /// The elements this select declares itself are registered below either way: only the inherited
+    /// The CTEs this select declares itself are registered below either way: only the inherited
     /// ones are out of scope here.
     std::optional<Data> scope_data;
     if (data.context)

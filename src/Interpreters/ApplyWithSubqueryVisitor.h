@@ -21,8 +21,9 @@ public:
     {
         std::map<String, ASTPtr> subqueries;
         std::map<String, ASTPtr> literals;
-        /// When set, each subquery's own settings are applied while descending, so that a `WITH`
-        /// element is not substituted into a subquery whose settings hide it.
+        /// When set, each subquery's own settings are applied while descending, so that an inherited
+        /// `subqueries` element is not substituted into a subquery whose settings hide it. Inherited
+        /// `literals` are substituted either way.
         ContextPtr context;
     };
 

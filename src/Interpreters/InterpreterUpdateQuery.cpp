@@ -185,8 +185,8 @@ BlockIO InterpreterUpdateQuery::execute()
     }
 
     /// Expand CTEs before filling the default database, otherwise a CTE alias is qualified as if it
-    /// were a table. The context makes the expansion respect `enable_global_with_statement`: an alias
-    /// a subquery does not see is a table name there, and has to be qualified.
+    /// were a table. The context makes CTE expansion respect `enable_global_with_statement`: a CTE
+    /// name a subquery does not see is a table name there, and has to be qualified.
     if (update_query.predicate)
     {
         ASTPtr predicate = update_query.predicate->ptr();
