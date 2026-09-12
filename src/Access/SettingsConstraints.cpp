@@ -63,9 +63,8 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
 }
 
 /// Settings that are always allowed to change in readonly mode, regardless of the user profile's
-/// `<constraints>` block. These are per-request HTTP routing, query-construction, and output
-/// shaping settings (formerly special URL parameters like `?database=` and `?default_format=`)
-/// that any client must be able to set on a GET request, even when `users.xml` does not declare
+/// `<constraints>` block. These are client protocol, per-request HTTP routing, query-construction,
+/// and output shaping settings that clients must be able to set even when `users.xml` does not declare
 /// them as `<changeable_in_readonly/>`. Hard-coding the carve-out here (rather than shipping a
 /// new `<constraints>` block in the default `users.xml`) keeps the new server compatible with
 /// older `users.xml` files - and, importantly, lets older server versions continue to start up
@@ -75,7 +74,7 @@ SettingSourceRestrictions getSettingSourceRestrictions(std::string_view name)
 bool isAlwaysChangeableInReadonly(std::string_view name)
 {
     /// HTTP routing / session.
-    if (name == "database" || name == "default_format")
+    if (name == "database" || name == "default_format" || name == "sync_request_timeout")
         return true;
     /// Output format selection and response compression.
     if (name == "format" || name == "input_format" || name == "output_format" || name == "compression")

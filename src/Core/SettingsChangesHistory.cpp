@@ -98,6 +98,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"statistics_max_set_size_for_exact_selectivity_estimation", 10000, 10000, "The bound on the cost of estimating the selectivity of `IN` with a large set is kept under `compatibility` with an earlier version: the previous value is deliberately equal to the new one, so that the uncapped estimation, which could add hundreds of milliseconds to the planning of a single query, is not restored."},
             {"type_json_skip_null_typed_paths", false, false, "New setting to treat NULL values in typed JSON paths as absent"},
             {"use_iceberg_manifest_list_partition_pruning", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."},
+            {"sync_request_timeout", DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, DBMS_DEFAULT_SYNC_REQUEST_TIMEOUT_SEC, "Make sync_request_timeout configurable."},
             {"enable_time_series_table", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."},
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
         });
@@ -475,7 +476,6 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"deduplicate_insert", "backward_compatible_choice", "enable", "Enable deduplication for all sync and async inserts by default."},
             {"enable_join_runtime_filters", false, true, "Enabled this optimization"},
             {"parallel_replicas_filter_pushdown", false, false, "New setting"},
-
             {"optimize_dry_run_check_part", true, true, "New setting"},
             {"parallel_non_joined_rows_processing", true, true, "New setting to enable parallel processing of non-joined rows in RIGHT/FULL parallel_hash joins."},
             {"enable_automatic_decision_for_merging_across_partitions_for_final", true, true, "New setting"},

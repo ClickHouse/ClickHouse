@@ -171,6 +171,7 @@ namespace Setting
     extern const SettingsSnappyMode snappy_mode;
     extern const SettingsBool use_client_time_zone;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsSeconds sync_request_timeout;
 }
 
 namespace ErrorCodes
@@ -2938,6 +2939,7 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
+            updateConnectionSyncRequestTimeout();
             connection->setFormatSettings(getFormatSettings(client_context));
         });
         /// Capture whether this query was parsed via the `clickhouse_json` dialect *before* applying any
@@ -2945,6 +2947,7 @@ void ClientBase::processParsedSingleQuery(
         /// transport dialect is pinned to match the outbound text in `pinOutboundDialectForJSONDialect`.
         current_query_parsed_as_json_dialect = client_context->getSettingsRef()[Setting::dialect] == Dialect::clickhouse_json;
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
+        updateConnectionSyncRequestTimeout();
         connection->setFormatSettings(getFormatSettings(client_context));
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
@@ -2957,6 +2960,7 @@ void ClientBase::processParsedSingleQuery(
             connect();
 
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
+        updateConnectionSyncRequestTimeout();
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
         /// zone. The client parses synchronous INSERT literals itself, but literals interpreted server-side
@@ -3043,6 +3047,8 @@ void ClientBase::processParsedSingleQuery(
             /// Resolve query parameters used as setting values, e.g. `SET max_threads = {threads:UInt64}`.
             SettingsChanges changes = set_query->changes;
             replaceQueryParametersInSettingsChanges(changes, client_context->getQueryParameters());
+            const bool sync_request_timeout_changed = changes.tryGet("sync_request_timeout")
+                || std::ranges::find(set_query->default_settings, "sync_request_timeout") != set_query->default_settings.end();
 
             /// Save all changes in settings to avoid losing them if the connection is lost.
             for (const auto & change : changes)
@@ -3051,6 +3057,10 @@ void ClientBase::processParsedSingleQuery(
                     client_context->applySettingChange(change);
             }
             client_context->resetSettingsToDefaultValue(set_query->default_settings);
+            updateConnectionSyncRequestTimeout();
+            if (sync_request_timeout_changed)
+                getClientConfiguration().setString(
+                    "sync_request_timeout", client_context->getSettingsRef()[Setting::sync_request_timeout].toString());
 
             /// Query parameters inside SET queries should be also saved on the client side
             ///  to override their previous definitions set with --param_* arguments
@@ -3958,6 +3968,21 @@ bool ClientBase::addMergeTreeSettings(ASTCreateQuery & ast_create)
     }
 
     return added_new_setting;
+}
+
+void ClientBase::updateConnectionSyncRequestTimeout()
+{
+    const Settings & settings = client_context->getSettingsRef();
+    if (settings[Setting::apply_settings_from_server] && !settings.isChanged("sync_request_timeout"))
+    {
+        if (const auto * value = settings_from_server.tryGet("sync_request_timeout"))
+        {
+            connection_parameters.timeouts.withSyncRequestTimeout(SettingFieldSeconds{*value});
+            return;
+        }
+    }
+
+    connection_parameters.timeouts.withSyncRequestTimeout(settings[Setting::sync_request_timeout]);
 }
 
 void ClientBase::applySettingsFromServerIfNeeded()

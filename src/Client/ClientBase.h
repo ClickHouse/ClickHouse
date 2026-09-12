@@ -317,6 +317,7 @@ private:
     bool addMergeTreeSettings(ASTCreateQuery & ast_create);
 
     void applySettingsFromServerIfNeeded();
+    void updateConnectionSyncRequestTimeout();
 
     void startKeystrokeInterceptorIfExists();
     void stopKeystrokeInterceptorIfExists();
