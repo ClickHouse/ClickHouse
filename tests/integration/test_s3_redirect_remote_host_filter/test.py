@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Regression test for the AWS-SDK 301 redirect SSRF: a malicious/compromised
 # S3-compatible endpoint returns 301 Moved Permanently with a Location header (or
-# <Endpoint> XML) pointing at an arbitrary host. Client::getURIFromError must validate
+# <Endpoint> XML) pointing at an arbitrary host. Client::doRequest must validate
 # that target against RemoteHostFilter (like the Poco 307 path already does) instead of
 # blindly following it. Without the fix the s3() query reaches the disallowed host
 # (SSRF to internal services / cloud metadata); with the fix it fails with UNACCEPTABLE_URL.
@@ -59,6 +59,18 @@ def cluster():
         cluster.start()
         logging.info("Cluster started")
 
+        cluster.instances["node"].append_hosts(
+            "redirected", cluster.get_instance_ip("resolver")
+        )
+        cluster.instances["node"].append_hosts(
+            "unreachable", cluster.get_instance_ip("resolver")
+        )
+        cluster.instances["node"].append_hosts(
+            "bucket.s3.resolver", cluster.get_instance_ip("resolver")
+        )
+        cluster.instances["node"].append_hosts(
+            "virtual.s3.resolver", cluster.get_instance_ip("resolver")
+        )
         run_endpoint(cluster)
 
         yield cluster
@@ -74,15 +86,25 @@ def _followed(cluster):
     )
 
 
-def test_301_redirect_target_is_host_filtered(cluster):
+def _initial_requests(cluster, bucket):
+    return cluster.exec_in_container(
+        cluster.get_container_id("resolver"),
+        ["curl", "-s", f"http://resolver:8080/initial_requests/{bucket}"],
+        nothrow=True,
+    )
+
+
+@pytest.mark.parametrize("bucket", ["bucket", "virtual"])
+def test_301_redirect_target_is_host_filtered(cluster, bucket):
     node = cluster.instances["node"]
 
-    # The s3() endpoint (resolver:8080) is allow-listed, but it 301-redirects to its own
-    # raw IP, which is NOT allow-listed. The redirect target must be rejected.
+    # The endpoint is allow-listed, but the host used by the retry is not. For the
+    # virtual-hosted case, the attacker-controlled redirect host is allow-listed while
+    # the AWS SDK rebuilds the actual retry host from the original request bucket.
     # NOSIGN keeps the request anonymous so it reaches the redirect rather than being refused by the
     # server-managed S3 credential restriction (this test is about the host filter, not credentials).
     error = node.query_and_get_error(
-        "SELECT * FROM s3('http://resolver:8080/bucket/key', NOSIGN, 'TSV', 'x String') "
+        f"SELECT * FROM s3('http://resolver:8080/{bucket}/key', NOSIGN, 'TSV', 'x String') "
         "SETTINGS s3_max_redirects=5"
     )
     assert "not allowed in configuration file" in error, (
@@ -91,3 +113,54 @@ def test_301_redirect_target_is_host_filtered(cluster):
 
     # And the server must not have sent a single request to the disallowed target.
     assert _followed(cluster) == "NO", "ClickHouse followed the 301 to a disallowed host (SSRF)"
+
+
+def test_redirect_is_cached_after_access_denied(cluster):
+    node = cluster.instances["node"]
+    table = "s3_redirect_cache"
+    node.query(f"DROP TABLE IF EXISTS {table}")
+    node.query(
+        f"CREATE TABLE {table} (x UInt8) "
+        "ENGINE = S3('http://resolver:8080/cache/key.csv', NOSIGN, 'CSV')"
+    )
+    try:
+        for max_redirects in (5, 0):
+            error = node.query_and_get_error(
+                f"INSERT INTO {table} SELECT 1 SETTINGS s3_truncate_on_insert=1, s3_max_redirects={max_redirects}"
+            )
+            assert "AccessDenied" in error
+        assert _initial_requests(cluster, "cache") == "1"
+    finally:
+        node.query(f"DROP TABLE {table}")
+
+
+def test_head_redirect_is_cached_after_list_access_denied(cluster):
+    node = cluster.instances["node"]
+    table = "s3_head_redirect_cache"
+    node.query(f"DROP TABLE IF EXISTS {table}")
+    node.query(
+        f"CREATE TABLE {table} (x UInt8) "
+        "ENGINE = S3('http://resolver:8080/head/key.csv', NOSIGN, 'CSV')"
+    )
+    try:
+        error = node.query_and_get_error(f"SELECT * FROM {table}")
+        assert "AccessDenied" in error
+        assert node.query(f"SELECT * FROM {table}") == "1\n"
+    finally:
+        node.query(f"DROP TABLE {table}")
+
+
+def test_head_redirect_is_not_cached_after_network_error(cluster):
+    node = cluster.instances["node"]
+    table = "s3_head_redirect_network_error"
+    node.query(f"DROP TABLE IF EXISTS {table}")
+    node.query(
+        f"CREATE TABLE {table} (x UInt8) "
+        "ENGINE = S3('http://resolver:8080/network/key.csv', NOSIGN, 'CSV')"
+    )
+    try:
+        for _ in range(2):
+            assert node.query_and_get_error(f"SELECT * FROM {table}")
+        assert _initial_requests(cluster, "network") == "4"
+    finally:
+        node.query(f"DROP TABLE {table}")
