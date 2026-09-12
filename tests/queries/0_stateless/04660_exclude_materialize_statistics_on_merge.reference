@@ -1,0 +1,16 @@
+After INSERT with materialize_statistics_on_insert=0, no part has statistics yet
+a	0
+b	0
+c,ol	0
+After OPTIMIZE FINAL, column b is excluded from merge materialization
+a	1
+b	0
+c,ol	1
+After explicit MATERIALIZE STATISTICS b, all columns have statistics
+a	1
+b	1
+c,ol	1
+Both b and `c,ol` are excluded from merge materialization
+a	1
+b	0
+c,ol	0
