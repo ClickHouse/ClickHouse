@@ -173,31 +173,6 @@ bool queryRequiresMutatingMethod(const IAST & query)
         [](const IAST * statement) { return statementRequiresMutatingMethod(*statement); });
 }
 
-/// Whether the query itself reads the HTTP request body as its data.
-///
-/// A plain `INSERT` takes the body as the data to insert. `INSERT ... SELECT` does not: it gets its data from the
-/// `SELECT`, and `executeQuery` explicitly drops the request tail for it (see `executeQuery.cpp`, the
-/// `insert_query->tail.reset()` branch). The exception to that exception is the `input` table function: an
-/// `INSERT ... SELECT ... FROM input(...)` is fed from the request body, and `executeQuery` builds its source
-/// pipe from the tail before dropping it.
-///
-/// This deliberately does not look through the composite `PARALLEL WITH` / `EXECUTE AS` wrappers: both re-format
-/// their wrapped statements and execute them through a fresh `executeQuery` call with no request tail, so a
-/// wrapped `INSERT` never receives the request body.
-bool queryConsumesRequestBody(const IAST & query)
-{
-    const auto * insert = query.as<ASTInsertQuery>();
-    if (!insert || insert->getQueryKind() != IAST::QueryKind::Insert)
-        return false;
-
-    if (!insert->select)
-        return true;
-
-    ASTPtr input_function;
-    insert->tryFindInputFunction(input_function);
-    return input_function != nullptr;
-}
-
 /// Whether the query wraps - inside `EXECUTE AS` or `PARALLEL WITH` - a statement that takes the HTTP request
 /// body as its data. Such a handler can never work: both wrappers re-format their statements and run them
 /// through `executeQuery(String, ...)` (see `InterpreterExecuteAsQuery::execute` and
@@ -391,6 +366,31 @@ bool isMutatingHTTPMethod(const String & method)
     return method == "POST" || method == "PUT" || method == "DELETE";
 }
 
+}
+
+/// Whether the query itself reads the HTTP request body as its data.
+///
+/// A plain `INSERT` takes the body as the data to insert. `INSERT ... SELECT` does not: it gets its data from the
+/// `SELECT`, and `executeQuery` explicitly drops the request tail for it (see `executeQuery.cpp`, the
+/// `insert_query->tail.reset()` branch). The exception to that exception is the `input` table function: an
+/// `INSERT ... SELECT ... FROM input(...)` is fed from the request body, and `executeQuery` builds its source
+/// pipe from the tail before dropping it.
+///
+/// This deliberately does not look through the composite `PARALLEL WITH` / `EXECUTE AS` wrappers: both re-format
+/// their wrapped statements and execute them through a fresh `executeQuery` call with no request tail, so a
+/// wrapped `INSERT` never receives the request body.
+bool queryConsumesRequestBody(const IAST & query)
+{
+    const auto * insert = query.as<ASTInsertQuery>();
+    if (!insert || insert->getQueryKind() != IAST::QueryKind::Insert)
+        return false;
+
+    if (!insert->select)
+        return true;
+
+    ASTPtr input_function;
+    insert->tryFindInputFunction(input_function);
+    return input_function != nullptr;
 }
 
 SQLDefinedHandlerPtr makeSQLDefinedHandler(const ASTCreateHandlerQuery & create)
