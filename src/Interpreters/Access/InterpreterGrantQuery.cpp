@@ -395,15 +395,52 @@ namespace
             grantCurrentGrantsTemplate(*role, new_rights, elements_to_revoke);
     }
 
+    /// Whether an element requests every privilege grantable on its level, i.e. whether it originates from `ALL ON ...`.
+    bool requestsAllGrantablePrivileges(const AccessRightsElement & element)
+    {
+        AccessRightsElement element_with_all_privileges = element;
+        element_with_all_privileges.access_flags = AccessFlags::allFlags();
+        return element.access_flags == element_with_all_privileges.getGrantableFlags();
+    }
+
     /// Calculates all available rights to grant with current user intersection.
     void calculateCurrentGrantRightsWithIntersection(
         AccessRights & rights,
         std::shared_ptr<const ContextAccessWrapper> current_user_access,
         const AccessRightsElements & elements_to_grant)
     {
-        auto current_user_grantable_rights = current_user_access->getAccessRights()->getGrantableRights();
-        rights.grant(elements_to_grant);
-        rights.makeIntersection(current_user_grantable_rights);
+        /// When privileges are named explicitly, e.g. `GRANT CURRENT GRANTS(CREATE VIEW ON db.*)`, the request is
+        /// intersected with the implicit rights of the current user. This way a privilege that the current user holds
+        /// only through implicit expansion - `CREATE VIEW` is implied by `CREATE TABLE` - can be granted, instead of
+        /// being silently dropped from the request.
+        /// The copy-all form, `GRANT CURRENT GRANTS ON db.*` (and its explicit equivalent `CURRENT GRANTS(ALL ON db.*)`),
+        /// is intersected with the stored rights instead, so that it copies the grants of the current user as they are.
+        /// Using the implicit closure there would materialize derived privileges as separate explicit grants on the
+        /// grantee: a user holding only `CREATE TABLE` would give the grantee an explicit `CREATE VIEW` that stays
+        /// behind once `CREATE TABLE` is revoked, so the grantee would diverge from the source of the copy.
+        AccessRightsElements elements_with_all_privileges;
+        AccessRightsElements elements_with_named_privileges;
+        for (const auto & element : elements_to_grant)
+        {
+            if (requestsAllGrantablePrivileges(element))
+                elements_with_all_privileges.push_back(element);
+            else
+                elements_with_named_privileges.push_back(element);
+        }
+
+        if (!elements_with_all_privileges.empty())
+        {
+            rights.grant(elements_with_all_privileges);
+            rights.makeIntersection(current_user_access->getAccessRights()->getGrantableRights());
+        }
+
+        if (!elements_with_named_privileges.empty())
+        {
+            AccessRights rights_for_named_privileges;
+            rights_for_named_privileges.grant(elements_with_named_privileges);
+            rights_for_named_privileges.makeIntersection(current_user_access->getAccessRightsWithImplicit()->getGrantableRights());
+            rights.makeUnion(rights_for_named_privileges);
+        }
     }
 
     /// Updates grants of a specified user or role.

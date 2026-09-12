@@ -190,9 +190,18 @@ You can check the version your service is running with:
 SELECT version()
 ```
 
-When `restore_access_entities_with_current_grants` is enabled, restored users and roles have their grants limited to what the restoring user is allowed to grant
-(the same semantics as [`GRANT CURRENT GRANTS`](/reference/statements/grant)), instead of the `RESTORE`
-failing with `ACCESS_DENIED` when the backup contains more permissions than the restoring user can grant.
+When `restore_access_entities_with_current_grants` is enabled, restored users and roles have their grants limited to what the restoring user is allowed to grant,
+instead of the `RESTORE` failing with `ACCESS_DENIED` when the backup contains more permissions than the restoring user can grant.
+
+This is analogous to the named form [`GRANT CURRENT GRANTS(privilege, ...) ON ...`](/reference/statements/grant#grant-current-grants-syntax),
+not to the copy-all form `GRANT CURRENT GRANTS ON ...`: the backup already spells out which grants to create, and the restoring
+user's own privileges act only as a limit on them. The copy-all form instead reproduces the grantor's stored grants as they are
+written, so it is not the right analogy here.
+
+Being the named form, the limit is the set of privileges the restoring user can actually grant, which includes privileges held only
+through implicit expansion. For example, a restoring user holding `CREATE TABLE ... WITH GRANT OPTION` can restore a
+`CREATE VIEW` grant, and a restoring user holding `SELECT ... WITH GRANT OPTION` can restore a `SHOW TABLES` grant,
+because both could also be granted by hand by that user. Such grants are kept rather than silently dropped.
 
 On versions earlier than 26.4, omit the setting.
 </Tab>
