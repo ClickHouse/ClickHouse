@@ -918,7 +918,13 @@ inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_nod
 
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    return AggregateFunctionFactory::instance().get(function_name, action, argument_types, parameters, properties);
+    /// A window function may have an implementation of its own, so a node that carries a window
+    /// definition must be resolved through the same state variant as primary resolution uses.
+    auto state_variant = function_node.hasWindow()
+        ? AggregateFunctionStateVariant::Window
+        : AggregateFunctionStateVariant::Aggregation;
+    return AggregateFunctionFactory::instance().get(
+        function_name, action, argument_types, parameters, properties, state_variant);
 }
 
 }
@@ -1119,7 +1125,12 @@ void resolveOrdinaryFunctionNodeByName(FunctionNode & function_node, const Strin
 void resolveAggregateFunctionNodeByName(FunctionNode & function_node, const String & function_name)
 {
     auto aggregate_function = resolveAggregateFunction(function_node, function_name);
-    function_node.resolveAsAggregateFunction(std::move(aggregate_function));
+    /// A node that keeps its window definition must stay a window function: one that reports both
+    /// aggregate and window is collected by both the aggregation and the window analysis.
+    if (function_node.hasWindow())
+        function_node.resolveAsWindowFunction(std::move(aggregate_function));
+    else
+        function_node.resolveAsAggregateFunction(std::move(aggregate_function));
 }
 
 std::pair<TableExpressionNodePtr, bool> getExpressionSource(const QueryTreeNodePtr & node)
