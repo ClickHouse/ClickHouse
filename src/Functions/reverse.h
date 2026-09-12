@@ -9,12 +9,6 @@ namespace DB
   */
 struct ReverseImpl
 {
-    static void reverseBytes(const UInt8 * __restrict src, UInt8 * __restrict dst, size_t size)
-    {
-        for (size_t i = 0; i < size; ++i)
-            dst[i] = src[size - i - 1];
-    }
-
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -25,13 +19,15 @@ struct ReverseImpl
         res_data.resize_exact(data.size());
         res_offsets.assign(offsets);
 
+        const UInt8 * __restrict src = data.data();
+        UInt8 * __restrict dst = res_data.data();
+
         ColumnString::Offset prev_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
             ColumnString::Offset next_offset = offsets[i];
-            const size_t size = next_offset - prev_offset;
-            if (size)
-                reverseBytes(data.data() + prev_offset, res_data.data() + prev_offset, size);
+            for (size_t j = prev_offset; j < next_offset; ++j)
+                dst[j] = src[next_offset + prev_offset - j - 1];
             prev_offset = next_offset;
         }
     }
@@ -44,11 +40,12 @@ struct ReverseImpl
     {
         res_data.resize_exact(data.size());
 
+        const UInt8 * __restrict src = data.data();
+        UInt8 * __restrict dst = res_data.data();
+
         for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            const size_t offset = i * n;
-            reverseBytes(data.data() + offset, res_data.data() + offset, n);
-        }
+            for (size_t j = i * n; j < (i + 1) * n; ++j)
+                dst[j] = src[(i * 2 + 1) * n - j - 1];
     }
 };
 
