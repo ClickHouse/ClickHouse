@@ -1,0 +1,48 @@
+<clickhouse>
+    <!-- Short period so the disk checker marks a vanished disk broken quickly. -->
+    <local_disk_check_period_ms>1000</local_disk_check_period_ms>
+    <storage_configuration>
+        <disks>
+            <cold>
+                <type>local</type>
+                <path>/var/lib/clickhouse/cold/</path>
+            </cold>
+            <!-- Nested encryption with non-empty wrapper paths on both levels.
+                 Such a disk reports its delegate's already-wrapped path from
+                 iterateDirectory, so the recovery scan must address entries by
+                 the disk's own logical namespace instead. -->
+            <enc_base>
+                <type>local</type>
+                <path>/var/lib/clickhouse/enc_base/</path>
+            </enc_base>
+            <enc_inner>
+                <type>encrypted</type>
+                <disk>enc_base</disk>
+                <path>inner/</path>
+                <key>1234567890123456</key>
+            </enc_inner>
+            <enc_outer>
+                <type>encrypted</type>
+                <disk>enc_inner</disk>
+                <path>outer/</path>
+                <key>6543210987654321</key>
+            </enc_outer>
+        </disks>
+        <policies>
+            <cold_policy>
+                <volumes>
+                    <main>
+                        <disk>cold</disk>
+                    </main>
+                </volumes>
+            </cold_policy>
+            <enc_policy>
+                <volumes>
+                    <main>
+                        <disk>enc_outer</disk>
+                    </main>
+                </volumes>
+            </enc_policy>
+        </policies>
+    </storage_configuration>
+</clickhouse>
