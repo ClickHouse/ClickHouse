@@ -6,12 +6,12 @@
 #include <Common/Scheduler/Debug.h>
 #include <Common/Stopwatch.h>
 #include <Common/Exception.h>
+#include <Common/BitHelpers.h>
 
 #include <boost/intrusive/set.hpp>
 
 #include <algorithm>
 #include <atomic>
-#include <cmath>
 #include <iterator>
 #include <limits>
 #include <memory>
@@ -302,7 +302,7 @@ public:
             auto & state = *request->scheduling.state;
             // Real service = attained_cost + pending correction (peeked, as `fair` does), so a badly
             // under-estimated finished request doesn't key the query too low and jump a lighter one.
-            double real_level = levelOf(state.attained_cost + state.cost_correction.load(std::memory_order_relaxed));
+            UInt32 real_level = levelOf(state.attained_cost + state.cost_correction.load(std::memory_order_relaxed));
             if (real_level > request->scheduling.key.first)
             {
                 requests.erase(it);
@@ -364,11 +364,15 @@ private:
         return 1;
     }
 
-    double levelOf(Int64 attained) const
+    UInt32 levelOf(Int64 attained) const
     {
         if (attained <= 0)
-            return 0.0;
-        return std::floor(std::log2(1.0 + static_cast<double>(attained) / static_cast<double>(base)));
+            return 0;
+        // MLFQ level = floor(log2(1 + attained/base)). Since 1 + attained/base = (attained + base)/base
+        // and floor(log2(floor(r))) == floor(log2(r)) for r >= 1, the level is the index of the highest
+        // set bit of the integer quotient — a single bit-scan, avoiding FP log2/floor on the hot path.
+        UInt64 quotient = (static_cast<UInt64>(attained) + static_cast<UInt64>(base)) / static_cast<UInt64>(base);
+        return bitScanReverse(quotient);
     }
 
     struct ByKey
@@ -395,11 +399,9 @@ class PriorityAlgorithm final : public ISchedulingAlgorithm
 public:
     void push(ResourceRequest * request) override
     {
-        // `workload_priority` (Int64, lower value = higher precedence, negatives allowed) maps
-        // directly onto the `Priority` key — no transform. The default `0` is the neutral baseline;
-        // a negative value sorts ahead of it, a positive value behind it. An integer key (not the
-        // `double` half of `scheduling.key`) keeps priorities that differ above 2^53 distinct. FIFO
-        // within equal priority via the sequence number.
+        // Order by the query's `workload_priority` (Int64): lower value = higher precedence, so a
+        // negative value sorts ahead of the default `0` and a positive value behind it. Ties break
+        // FIFO by arrival sequence.
         request->scheduling.priority = Priority{request->scheduling.context->priority};
         request->scheduling.key = {0.0, next_seq++};
         requests.insert(*request);

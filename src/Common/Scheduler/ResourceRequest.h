@@ -99,9 +99,8 @@ public:
         /// sequence number for a stable FIFO tie-break (also used by `priority`).
         std::pair<double, UInt64> key{0.0, 0};
 
-        /// Primary ordering key for the `priority` scheduler (lower value first, then `key.second`).
-        /// The `workload_priority` query setting (`Int64`, negatives allowed) is copied in at enqueue;
-        /// an integer key avoids the precision loss of routing it through the `double` half of `key`.
+        /// Ordering key for the `priority` scheduler (lower value first, then `key.second` for FIFO).
+        /// Set at enqueue from the query's `workload_priority` setting (`Int64`, negatives allowed).
         Priority priority;
 
         /// Set at enqueue iff the leaf's scheduler tracks per-query service (`fair`/`las`); gates the
