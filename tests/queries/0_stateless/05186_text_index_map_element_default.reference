@@ -1,0 +1,77 @@
+-- absent key reads as the IPv6 default, arrayElement spelling
+1
+1
+-- the same through the map subcolumn spelling
+1
+1
+-- a constant the default cannot satisfy still prunes
+1
+1
+1
+-- a negating predicate needs the mirrored condition
+1
+0
+-- evaluating the predicate raises what the scan raises
+-- an error only the substituted default raises declines the index instead
+1
+-- the whole predicate decides, not equality with the default
+1
+1
+-- equality with the String default keeps working
+1
+1
+-- a pattern the default does not satisfy still prunes
+0
+-- notLike declines on the mirrored condition
+0
+1
+-- an array needle cannot be served by a mapKeys probe
+0
+0
+1
+1
+1
+-- a set inside the subscript is prepared, not executed unready
+1
+-- a map key is a literal, not a pattern
+1
+1
+1
+1
+-- and the same key under a pattern the value satisfies
+1
+1
+-- hasAny and hasAll reach the same substitution
+1
+1
+0
+-- a NULL default is not a match, so the index stays usable
+0
+0
+0
+1
+-- a mapKeys index over a non-String key cannot serve the probe
+1
+1
+1
+-- so it is declined for either spelling and for an absent key
+-- a FixedString key is that representation, so it stays indexed
+1
+1
+-- the mapValues carrier reads the same default
+1
+1
+-- and a set inside the subscript on that carrier too, whether or not its elements are stored
+1
+1
+-- a subscript analysis may not evaluate declines the carrier
+1
+-- the mapValues carrier over a non-String domain, arrayElement spelling
+1
+1
+-- and the same through the map subcolumn spelling
+1
+1
+-- tokenbf_v1 shares the condition class
+1
+1

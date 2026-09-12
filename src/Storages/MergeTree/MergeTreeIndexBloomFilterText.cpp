@@ -1,6 +1,7 @@
 #include <Storages/MergeTree/MergeTreeIndexBloomFilterText.h>
 
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnSet.h>
 #include <Common/StringUtils.h>
 #include <Common/OptimizedRegularExpression.h>
 #include <Common/likePatternToRegexp.h>
@@ -14,11 +15,16 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/IFunction.h>
 #include <Interpreters/Set.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ExpressionAnalyzer.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/ProcessList.h>
 #include <Interpreters/misc.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Storages/MergeTree/MergeTreeData.h>
@@ -412,7 +418,7 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
 
                 Field rewritten_field(likePatternWithCustomEscapeToLikePattern(
                     pattern_field.safeGet<String>(), escape_str[0]));
-                if (traverseTreeEquals(function_name, lhs_argument, pattern_type, rewritten_field, out))
+                if (traverseTreeEquals(function_name, lhs_argument, pattern_type, rewritten_field, out, function_node.getDAGNode()))
                     return true;
             }
             return false;
@@ -463,13 +469,13 @@ bool MergeTreeConditionBloomFilterText::extractAtomFromTree(const RPNBuilderTree
 
             if (right_argument.tryGetConstant(const_value, const_type))
             {
-                if (traverseTreeEquals(function_name, left_argument, const_type, const_value, out))
+                if (traverseTreeEquals(function_name, left_argument, const_type, const_value, out, function_node.getDAGNode()))
                     return true;
             }
             else if (left_argument.tryGetConstant(const_value, const_type) &&
                 (function_name == "equals" || function_name == "has" || function_name == "hasAny" || function_name == "notEquals"))
             {
-                if (traverseTreeEquals(function_name, right_argument, const_type, const_value, out))
+                if (traverseTreeEquals(function_name, right_argument, const_type, const_value, out, function_node.getDAGNode()))
                     return true;
             }
         }
@@ -521,6 +527,90 @@ bool functionIgnoresFixedStringPadding(const String & function_name)
     return function_name == "equals" || function_name == "notEquals" || function_name == "hasAny" || function_name == "hasAll";
 }
 
+/// A key the row does not have reads as the map value type's default. A matching atom (`equals`, `like`, ...) builds a
+/// granule mask claiming "nothing here matches" when the key term is absent, so it must not be used when the default
+/// matches; a negating atom builds the mirrored mask, claiming "everything here matches", so it must not be used when
+/// the default does not match. A shape this cannot evaluate declines the index, which only costs pruning.
+bool mapElementDefaultBreaksIndex(const String & function_name, const ActionsDAG::Node * predicate_node, const ContextPtr & context)
+{
+    const bool negating = function_name == "notEquals" || function_name == "notLike";
+
+    if (!predicate_node || !predicate_node->function_base || !predicate_node->isDeterministic()
+        || !WhichDataType(removeNullable(predicate_node->result_type)).isUInt8())
+        return true;
+
+    auto subdag = ActionsDAG::cloneSubDAG({predicate_node}, /* remove_aliases = */ true);
+    const auto required_columns = subdag.getRequiredColumns();
+    const auto & outputs = subdag.getOutputs();
+    if (required_columns.size() != 1 || outputs.size() != 1)
+        return true;
+
+    const auto & required_column = required_columns.front();
+    const auto output_name = outputs.front()->result_name;
+
+    /// The evaluation below runs the predicate's own functions, so a predicate holding one that analysis
+    /// may not run is declined instead; `sleep` refuses constant folding for exactly that reason.
+    /// A Set the predicate reads is built later during execution, so it must be prepared before the evaluation below.
+    /// Readiness is all the evaluation needs; the elements the build stores are for range analysis and may be dropped.
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION)
+        {
+            if (!node.function_base->isDeterministic() || !node.function_base->isSuitableForConstantFolding())
+                return true;
+            continue;
+        }
+
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return true;
+
+        future_set->buildOrderedSetInplace(context);
+        if (!future_set->get())
+            return true;
+    }
+
+    Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
+
+    /// A function reading the map can throw on the substituted default although no stored row reaches
+    /// that input, such as a division by a length that is zero only for an empty map. Analysis must
+    /// raise nothing the scan itself would not.
+    try
+    {
+        ExpressionActions(std::move(subdag)).execute(block);
+    }
+    catch (const Exception &)
+    {
+        /// A killed or timed-out query must report that, not an index it could not use. The check throws
+        /// for a killed one, and returns false once the deadline passed under `break`, which the
+        /// cancellation check inside a function reports by throwing too.
+        if (auto process_list_element = context->getProcessListElementSafe())
+            if (!process_list_element->checkTimeLimit())
+                throw;
+        return true;
+    }
+
+    const bool default_matches = block.getByName(output_name).column->getBool(0);
+    return negating ? !default_matches : default_matches;
+}
+
+bool indexedKeyIsTextComparable(const DataTypePtr & index_data_type)
+{
+    DataTypePtr key_type = index_data_type;
+    if (const auto * array_type = typeid_cast<const DataTypeArray *>(key_type.get()))
+        key_type = array_type->getNestedType();
+    if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(key_type.get()))
+        key_type = low_cardinality_type->getDictionaryType();
+    return WhichDataType(key_type).isStringOrFixedString();
+}
+
 }
 
 bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
@@ -528,7 +618,8 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     const RPNBuilderTreeNode & key_node,
     const DataTypePtr & value_type,
     const Field & value_field,
-    RPNElement & out)
+    RPNElement & out,
+    const ActionsDAG::Node * predicate_node)
 {
     /// Try JSON subcolumn detection early, before the string-type check.
     /// JSON path comparison values may not be strings (e.g., json.a.b = 1 where value is UInt8),
@@ -573,6 +664,7 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
     const auto column_name = key_node.getColumnName();
     auto key_index = getKeyIndex(column_name);
+    bool substituted_map_key = false;
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
     const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
 
@@ -583,48 +675,43 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
 
         if (key_function_node_function_name == "arrayElement")
         {
-            /** Try to parse arrayElement for mapKeys index.
-              * It is important to ignore keys like column_map['Key'] = '' because if key does not exist in the map
-              * we return default the value for arrayElement.
-              *
-              * We cannot skip keys that does not exist in map if comparison is with default type value because
-              * that way we skip necessary granules where map key does not exist.
-              */
-            /// Unwrapped default: LC(Nullable(String)) default is NULL, but arrayElement returns '' for a missing key.
-            if (value_field == unwrapped_value_type->getDefault())
-                return false;
-
             auto first_argument = key_function_node.getArgumentAt(0);
             const auto map_column_name = first_argument.getColumnName();
-            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
+            const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name));
+            const auto map_values_index = getKeyIndex(fmt::format("mapValues({})", map_column_name));
+            if (!map_keys_index && !map_values_index)
+                return false;
+
+            /// A `mapKeys` probe searches for the key, so it replaces the needle below; the array-consuming
+            /// atoms (`has` with an array, `hasAny`, `hasAll`, `multiSearchAny`) would read that key as an `Array`.
+            if (map_keys_index && value_data_type.isArray())
+                return false;
+
+            /// `arrayElement` returns the map value type's default for a key the row does not have.
+            if (mapElementDefaultBreaksIndex(function_name, predicate_node, key_node.getTreeContext().getQueryContext()))
+                return false;
+
+            if (map_keys_index)
             {
                 auto second_argument = key_function_node.getArgumentAt(1);
                 DataTypePtr const_type;
-
-                if (second_argument.tryGetConstant(const_value, const_type))
-                {
-                    key_index = map_keys_index;
-
-                    auto unwrapped_const_type = removeLowCardinality(const_type);
-                    if (!const_value.isNull())
-                        unwrapped_const_type = removeNullable(unwrapped_const_type);
-
-                    auto const_data_type = WhichDataType(unwrapped_const_type);
-                    if (const_value.isNull() || (!const_data_type.isStringOrFixedString() && !const_data_type.isArray()))
-                        return false;
-                }
-                else
-                {
+                if (!second_argument.tryGetConstant(const_value, const_type))
                     return false;
-                }
-            }
-            else if (const auto map_values_exists = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
-            {
-                key_index = map_values_exists;
+
+                key_index = map_keys_index;
+                substituted_map_key = true;
+
+                auto unwrapped_const_type = removeLowCardinality(const_type);
+                if (!const_value.isNull())
+                    unwrapped_const_type = removeNullable(unwrapped_const_type);
+
+                auto const_data_type = WhichDataType(unwrapped_const_type);
+                if (const_value.isNull() || (!const_data_type.isStringOrFixedString() && !const_data_type.isArray()))
+                    return false;
             }
             else
             {
-                return false;
+                key_index = map_values_index;
             }
         }
     }
@@ -635,25 +722,33 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
         if (auto parsed = tryParseMapSubcolumnName(column_name, columns_shadowing_map_subcolumns))
         {
             auto & [map_column_name, serialized_key] = *parsed;
-
-            /// Same as arrayElement: skip when comparing with default value because
-            /// the subcolumn returns default for keys that don't exist in the map.
-            /// Unwrapped default: LC(Nullable(String)) default is NULL, but the subcolumn returns '' for a missing key.
-            if (value_field == unwrapped_value_type->getDefault())
+            const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name));
+            const auto map_values_index = getKeyIndex(fmt::format("mapValues({})", map_column_name));
+            if (!map_keys_index && !map_values_index)
                 return false;
 
-            if (const auto map_keys_index = getKeyIndex(fmt::format("mapKeys({})", map_column_name)))
+            /// Same restriction as the `arrayElement` branch: the substituted key is not an `Array`.
+            if (map_keys_index && value_data_type.isArray())
+                return false;
+
+            /// The substituted probe is the key serialized as text, while the index tokenizes the key column's
+            /// raw bytes. Those differ for any key type that is not a string, so the probe cannot match.
+            if (map_keys_index && !indexedKeyIsTextComparable(index_data_types[*map_keys_index]))
+                return false;
+
+            /// The subcolumn reads the map value type's default for an absent key, as `arrayElement` does.
+            if (mapElementDefaultBreaksIndex(function_name, predicate_node, key_node.getTreeContext().getQueryContext()))
+                return false;
+
+            if (map_keys_index)
             {
                 key_index = map_keys_index;
                 const_value = serialized_key;
-            }
-            else if (const auto map_values_idx = getKeyIndex(fmt::format("mapValues({})", map_column_name)))
-            {
-                key_index = map_values_idx;
+                substituted_map_key = true;
             }
             else
             {
-                return false;
+                key_index = map_values_index;
             }
         }
     }
@@ -778,6 +873,17 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
             return false;
         out.key_column = *key_index;
         out.function = RPNElement::FUNCTION_EQUALS;
+        out.bloom_filter = std::make_unique<BloomFilter>(params);
+        const auto & value = const_value.safeGet<String>();
+        tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
+        return true;
+    }
+    /// The `mapKeys` probe is the map key, a literal. A pattern tokenizer would consume its escape
+    /// characters and build a probe the index cannot hold, pruning the granule that has the key.
+    if (substituted_map_key && (function_name == "like" || function_name == "notLike" || function_name == "match"))
+    {
+        out.key_column = *key_index;
+        out.function = function_name == "notLike" ? RPNElement::FUNCTION_NOT_EQUALS : RPNElement::FUNCTION_EQUALS;
         out.bloom_filter = std::make_unique<BloomFilter>(params);
         const auto & value = const_value.safeGet<String>();
         tokenizer->stringToBloomFilter(value.data(), value.size(), *out.bloom_filter);
