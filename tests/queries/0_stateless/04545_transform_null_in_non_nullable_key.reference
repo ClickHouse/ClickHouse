@@ -1,0 +1,236 @@
+String key IN
+a
+b
+c
+FixedString key IN
+ab
+cd
+Int64 key IN
+1
+2
+3
+LowCardinality(String) key IN
+a
+b
+Date key IN
+2020-01-01
+2020-01-02
+String key IN, transform_null_in=0
+a
+b
+c
+Non-PK String column IN
+a
+b
+c
+String key NOT IN, partition pruning
+a
+b
+1
+1
+
+b
+1
+1
+Int64 key NOT IN, partition pruning
+5
+7
+1
+1
+5
+7
+1
+1
+Cross-type UInt64 key NOT IN Nullable(String), relaxed
+2
+3
+1
+1
+1
+2
+3
+1
+1
+String key, numeric source, declined
+01
+1
+2
+1
+1
+Decimal key, coarser-scale source, declined
+1.23
+1.2345
+2
+1
+1
+DateTime64 key, coarser-scale source, declined
+2020-01-01 00:00:01.2300
+2020-01-01 00:00:01.2345
+2020-01-01 00:00:02.0000
+1
+1
+String key, FixedString source, declined
+61
+6100
+62
+1
+1
+FixedString key, narrower FixedString source, declined
+6100
+6162
+6200
+1
+1
+FixedString key, wider FixedString source, declined
+61
+1
+1
+Same-width FixedString source stays exact
+6162
+1
+1
+1
+Tuple key, collapsing element type, declined
+61
+6100
+1
+1
+62
+1
+1
+1
+Decimal key, integer source, declined
+1
+1.2345
+2
+1
+1
+1
+1.2345
+1
+Decimal key, float source, declined
+16777216
+16777217
+99
+1
+1
+Decimal key, Float64 source, declined
+9007199254740992
+9007199254740993
+1
+Time64 key, integer source, declined
+00:00:01.0000
+00:00:01.5000
+00:00:02.0000
+1
+1
+Finer-scale Decimal source stays live, relaxed
+1
+1
+1
+1
+1
+Scale-zero Decimal key, integer source, stays live, relaxed
+16777216
+1
+1
+1
+1
+Injective numeric narrowing stays exact
+50000
+10
+90000
+1
+1
+1
+DateTime key, Date source, declined
+2020-01-01 00:00:00
+2020-01-01 12:34:56
+2020-01-02 00:00:00
+1
+1
+DateTime key, Time source, declined
+2020-01-01 00:00:00
+2020-01-02 00:00:00
+1
+1
+DateTime64 key, Time64 source, declined
+2020-01-01 00:00:00.0000
+2020-01-02 00:00:00.0000
+1
+1
+Tuple key, collapsing temporal element, declined
+('2020-01-01 00:00:00',1)
+('2020-01-01 12:34:56',1)
+1
+1
+Component-equal temporal pair stays exact
+2020-01-01 00:00:00
+1
+1
+1
+Widening temporal pair stays live, relaxed
+2020-01-01 00:00:00
+1
+1
+String key NOT has, partition pruning
+a
+b
+1
+1
+Cross-type UInt8 key NOT has Nullable(Int64), relaxed
+2
+3
+1
+1
+LowCardinality(Nullable(String)) source NOT IN, partition pruning
+a
+b
+1
+1
+Multi-column set NOT IN, one component NULL
+	0
+y	2
+1
+1
+Multi-column set, final set empty after the shared filter
+0	0
+1	2
+3	4
+1
+1
+1
+1
+All-NULL source set NOT IN
+
+a
+b
+1
+String key IN, partition pruning
+
+1
+1
+Tuple(Nullable, Nullable) key unchanged
+(1,2)
+(3,NULL)
+(NULL,NULL)
+(NULL,NULL)
+1
+1
+Duplicate key mapping stays relaxed
+1
+2
+3
+1
+1
+Nullable(String) key IN
+a
+b
+c
+\N
+1
+LowCardinality(Nullable(String)) array, Nullable(String) key has
+a
+1
+1
+Column count mismatch still rejected
