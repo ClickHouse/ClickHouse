@@ -114,8 +114,11 @@ ${CLICKHOUSE_CLIENT} --query \
 # structure of this function is a fixed constant and nothing on that path consults the catalog, so the answer is
 # the same whether the source table is readable, hidden, or missing. Pinned below, one arm per entrypoint.
 
+# `EXPLAIN QUERY TREE` exists only with the analyzer, and a configuration that turns it off rejects the
+# statement with a message that names the source table - which is what the arm below compares. The setting
+# is pinned so that the comparison stays about the disclosure and not about which rejection arrived.
 explain_as_user() {
-    ${CLICKHOUSE_CLIENT} --user="${username}" --query \
+    ${CLICKHOUSE_CLIENT} --user="${username}" --enable_analyzer 1 --query \
         "EXPLAIN $1 SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), $2);" 2>&1 | sed "s/$2/SOURCE/g"
 }
 
