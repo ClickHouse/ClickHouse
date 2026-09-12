@@ -140,6 +140,7 @@ struct QueryPlanOptimizationSettings
     bool make_distributed_plan = false;
     bool serialize_query_plan = false;
     bool distributed_plan_execute_locally = false;  /// Run all distributed plan tasks locally (debugging)
+    UInt64 distributed_plan_workers_num = 0;  /// Worker count this plan requested; 0 means unset
     bool distributed_plan_single_stage = false;  /// For debugging purposes: force distributed plan to be single-stage
     bool distributed_plan_fallback_to_local_execution
         = true; /// Fall back to local execution instead of throwing when the plan cannot be distributed
