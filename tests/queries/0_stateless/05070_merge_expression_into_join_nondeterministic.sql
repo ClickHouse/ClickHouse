@@ -60,6 +60,17 @@ SELECT
     (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, length(ifNull(toString(t_merge_expr_1.a), '')) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 1))
  != (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, length(ifNull(toString(t_merge_expr_1.a), '')) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 0)) AS stateless_analogue_merged;
 
+-- `sleep` is deterministic in the scope of the query and returns the same value for every row, but how
+-- much time it spends, whether it throws `TOO_SLOW` and what it accounts depend on how many times and on
+-- how many rows it runs, so it must not be merged either. Paired with `materialize`, which has the same
+-- shape - a function that is not constant-folded either - and is still merged.
+SELECT 'sleep';
+SELECT
+    (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, (t_merge_expr_1.a + sleep(0)) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 1))
+ != (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, (t_merge_expr_1.a + sleep(0)) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 0)) AS sleep_merged,
+    (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, (t_merge_expr_1.a + materialize(toUInt8(0))) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 1))
+ != (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, (t_merge_expr_1.a + materialize(toUInt8(0))) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 0)) AS materialize_analogue_merged;
+
 DROP TABLE t_merge_expr_1;
 DROP TABLE t_merge_expr_2;
 DROP TABLE t_merge_expr_3;
