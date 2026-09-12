@@ -387,14 +387,27 @@ private:
         {
             auto * in_or_join_node_to_modify = in_function_or_join_stack.back().query_node.get();
 
+            /** A single `IN` function or `JOIN` is reached once per distributed table inside of it.
+              * For example, the right argument of an `IN` function can be a `UNION` of several
+              * distributed tables. Only the first of them rewrites the node, and the node has to be
+              * collected only once, otherwise the same subquery is prepared twice.
+              * A node on the stack is `GLOBAL` only if we made it `GLOBAL` ourselves, because
+              * `enterImpl` puts a node on the stack only while it is local.
+              */
             if (auto * in_function_to_modify = in_or_join_node_to_modify->as<FunctionNode>())
             {
+                if (isNameOfGlobalInFunction(in_function_to_modify->getFunctionName()))
+                    return;
+
                 auto global_in_function_name = getGlobalInFunctionNameForLocalInFunctionName(in_function_to_modify->getFunctionName());
                 auto global_in_function_resolver = FunctionFactory::instance().get(global_in_function_name, getContext());
                 in_function_to_modify->resolveAsFunction(global_in_function_resolver->build(in_function_to_modify->getArgumentColumns()));
             }
             else if (auto * join_node_to_modify = in_or_join_node_to_modify->as<JoinNode>())
             {
+                if (join_node_to_modify->getLocality() == JoinLocality::Global)
+                    return;
+
                 join_node_to_modify->setLocality(JoinLocality::Global);
             }
 

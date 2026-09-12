@@ -12,6 +12,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -867,6 +868,14 @@ static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
     return true;
 }
 
+/// An outer join pads an unmatched row with a top-level NULL only for a type its nullability
+/// conversion can wrap. `Array`/`Map` are padded with the type default (`[]`, `map()`) instead, and
+/// `Variant`/`Dynamic` with an internal NULL: both match another such key rather than rejecting it.
+static bool nullExtensionIsNull(const DataTypePtr & type)
+{
+    return isNullableOrLowCardinalityNullable(type) || JoinCommon::canBecomeNullable(type);
+}
+
 /// Relations R such that `node` evaluates to NULL when all of R's columns are NULL ("strict" on R).
 /// Recurses only through null-propagating functions; any other node is opaque and contributes {}.
 static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
@@ -875,6 +884,8 @@ static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpress
     {
         case ActionsDAG::ActionType::INPUT:
         case ActionsDAG::ActionType::PLACEHOLDER:
+            if (!nullExtensionIsNull(node->result_type))
+                return {};
             /// A leaf column reference is null exactly on its own relation.
             return JoinActionRef(node, actions).getSourceRelations();
         case ActionsDAG::ActionType::ALIAS:
