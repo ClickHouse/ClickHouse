@@ -564,7 +564,8 @@ void considerEnablingParallelReplicas(
         || optimization_settings.automatic_parallel_replicas_mode == 2 // automatic_parallel_replicas_mode == 2 enforces statistics recollection
     )
     {
-        auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(single_replica_plan_node_hash, rows_to_read);
+        auto updater = std::make_shared<RuntimeDataflowStatisticsCacheUpdater>(
+            single_replica_plan_node_hash, rows_to_read, optimization_settings.network_compression_codec);
         source_reading_step->setRuntimeDataflowStatisticsCacheUpdater(updater);
         corresponding_node_in_single_replica_plan->step->setRuntimeDataflowStatisticsCacheUpdater(updater);
     }
