@@ -429,13 +429,18 @@ StorageObjectStorageQueue::StorageObjectStorageQueue(
     storage_metadata.setVirtuals(VirtualColumnUtils::getVirtualsForFileLikeStorage(storage_metadata.columns, context_));
     setInMemoryMetadata(storage_metadata);
 
+    Macros::MacroExpansionInfo macro_info;
     zk_path = chooseZooKeeperPath(
         getContext(),
         table_id_,
         context_->getSettingsRef(),
         *queue_settings_,
         UUIDHelpers::Nil,
-        &zookeeper_name);
+        &zookeeper_name,
+        &macro_info);
+    keeper_path_expands_table_name = macro_info.expanded_table;
+    keeper_path_expands_database_name = macro_info.expanded_database;
+    keeper_path_expands_uuid = macro_info.expanded_uuid;
     LOG_INFO(log, "Using zookeeper path: {}", zk_path.string());
 
     auto table_metadata = ObjectStorageQueueMetadata::syncWithKeeper(
@@ -626,6 +631,12 @@ void StorageObjectStorageQueue::renameInMemory(const StorageID & new_table_id)
     const auto prev_storage_id = getStorageID();
     IStorage::renameInMemory(new_table_id);
     StreamingStorageRegistry::instance().renameTable(prev_storage_id, getStorageID());
+}
+
+void StorageObjectStorageQueue::rename(const String & /*new_path_to_table_data*/, const StorageID & new_table_id)
+{
+    checkTableCanBeRenamed(new_table_id);
+    renameInMemory(new_table_id);
 }
 
 bool StorageObjectStorageQueue::supportsSubsetOfColumns(const ContextPtr & context_) const
@@ -1984,7 +1995,40 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
 
 void StorageObjectStorageQueue::checkTableCanBeRenamed(const StorageID & new_name) const
 {
-    const bool move_between_databases = getStorageID().database_name != new_name.database_name;
+    const auto old_name = getStorageID();
+    const bool move_between_databases = old_name.database_name != new_name.database_name;
+
+    if ((keeper_path_expands_table_name && old_name.table_name != new_name.table_name)
+        || (keeper_path_expands_database_name && move_between_databases))
+    {
+        /// Converting an Ordinary database to Atomic renames every table through a temporary database
+        /// and back, so the path the table ends up with is the one it already uses.
+        auto global_context = Context::getGlobalContextInstance();
+        const bool is_server_startup = global_context->getApplicationType() == Context::ApplicationType::SERVER
+            && !global_context->isServerCompletelyStarted();
+        const bool move_to_atomic = old_name.uuid == UUIDHelpers::Nil && new_name.uuid != UUIDHelpers::Nil;
+
+        if (!is_server_startup || !move_to_atomic)
+        {
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Cannot rename Storage{}Queue table, because its `keeper_path` setting expands the "
+                "{{database}} or {{table}} macro (possibly nested in another macro). The Keeper path "
+                "would change and the table would process every file again. "
+                "To rename it, edit the metadata file to hold the resolved path without these macros and "
+                "reattach the table",
+                configuration->getEngineName());
+        }
+    }
+
+    if (keeper_path_expands_uuid && !new_name.hasUUID() && old_name.hasUUID())
+    {
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot move Storage{}Queue table to a database without UUIDs, because its `keeper_path` "
+            "setting expands the {{uuid}} macro. The table would not be loadable again. Edit the "
+            "metadata file to hold the resolved path instead and reattach the table",
+            configuration->getEngineName());
+    }
+
     if (move_between_databases && !can_be_moved_between_databases)
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
@@ -2000,7 +2044,8 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
     const Settings & settings,
     const ObjectStorageQueueSettings & queue_settings,
     UUID database_uuid,
-    String * result_zookeeper_name)
+    String * result_zookeeper_name,
+    Macros::MacroExpansionInfo * result_macro_info)
 {
     /// keeper_path setting can be set explicitly by the user in the CREATE query, or filled in registerQueueStorage.cpp.
     /// We also use keeper_path to determine whether we move it between databases, since the default path contains UUID of the database.
@@ -2054,6 +2099,8 @@ String StorageObjectStorageQueue::chooseZooKeeperPath(
         Macros::MacroExpansionInfo info;
         info.table_id = table_id;
         result_zk_path = context_->getMacros()->expand(result_zk_path, info);
+        if (result_macro_info)
+            *result_macro_info = info;
     }
 
     if (result_zookeeper_name)

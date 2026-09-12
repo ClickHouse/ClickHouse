@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <optional>
+#include <Common/Macros.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <Common/logger_useful.h>
 #include <Core/BackgroundSchedulePoolTaskHolder.h>
@@ -117,11 +118,13 @@ public:
         const Settings & settings,
         const ObjectStorageQueueSettings & queue_settings,
         UUID database_uuid = UUIDHelpers::Nil,
-        String * result_zookeeper_name = nullptr);
+        String * result_zookeeper_name = nullptr,
+        Macros::MacroExpansionInfo * result_macro_info = nullptr);
 
     static constexpr auto engine_names = {"S3Queue", "AzureQueue"};
 
     void checkTableCanBeRenamed(const StorageID & new_name) const override;
+    void rename(const String & new_path_to_table_data, const StorageID & new_table_id) override;
 
 private:
     friend class ReadFromObjectStorageQueue;
@@ -229,6 +232,11 @@ private:
         int error_code = 0) const;
 
     const bool can_be_moved_between_databases;
+    /// The persisted `keeper_path` re-expands its macros on every load, so the Keeper path is a
+    /// function of the current name: renaming would silently bind the table to a different node.
+    bool keeper_path_expands_table_name = false;
+    bool keeper_path_expands_database_name = false;
+    bool keeper_path_expands_uuid = false;
     const bool keep_data_in_keeper;
 
     const bool use_hive_partitioning;
