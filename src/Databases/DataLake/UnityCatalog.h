@@ -58,7 +58,7 @@ private:
     const std::string bearer_token;
 
     std::pair<Poco::Dynamic::Var, std::string> getJSONRequest(const std::string & route, const Poco::URI::QueryParameters & params = {}) const;
-    std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(std::ostream &)> out_stream_callaback) const;
+    std::pair<Poco::Dynamic::Var, std::string> postJSONRequest(const std::string & route, std::function<void(DB::WriteBuffer &)> out_stream_callaback) const;
 
     DataLake::ICatalog::Namespaces getSchemas(const std::string & base_prefix, size_t limit = 0) const;
 

@@ -47,7 +47,8 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/SSLManager.h>
-#include <Poco/StreamCopier.h>
+#include <IO/ReadHelpers.h>
+#include <IO/WriteHelpers.h>
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -785,9 +786,9 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
             body += "&client_id=" + encoded_client_id;
         }
         body_size = body.size();
-        out_stream_callback = [&](std::ostream & os)
+        out_stream_callback = [&](DB::WriteBuffer & out)
         {
-            os << body;
+            DB::writeString(body, out);
         };
 
         if (oauth_server_uri.empty())
@@ -807,16 +808,17 @@ AccessToken RestCatalog::retrieveAccessToken(const std::string & client_id, cons
     request.setContentLength(body_size);
     request.set("Accept", "application/json");
 
-    std::ostream & os = session->sendRequest(request);
+    auto request_body = DB::sendHTTPRequest(*session, request);
     /// The query-parameters flavor of the request has no body.
     if (out_stream_callback)
-        out_stream_callback(os);
+        out_stream_callback(*request_body);
+    request_body->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
+    auto response_body = DB::receiveHTTPResponse(*session, response);
 
     std::string json_str;
-    Poco::StreamCopier::copyToString(rs, json_str);
+    DB::readStringUntilEOF(json_str, *response_body);
 
     /// The body of a failed response is an OAuth error object, safe to show.
     /// The URL is omitted: its query string can carry `client_secret`.
@@ -901,14 +903,15 @@ AccessToken OneLakeCatalog::retrieveAccessTokenViaRefreshToken(const CatalogStat
     request.setContentLength(body.size());
     request.set("Accept", "application/json");
 
-    std::ostream & os = session->sendRequest(request);
-    os << body;
+    auto request_body = DB::sendHTTPRequest(*session, request);
+    DB::writeString(body, *request_body);
+    request_body->finalize();
 
     Poco::Net::HTTPResponse response;
-    std::istream & rs = session->receiveResponse(response);
+    auto response_body = DB::receiveHTTPResponse(*session, response);
 
     std::string json_str;
-    Poco::StreamCopier::copyToString(rs, json_str);
+    DB::readStringUntilEOF(json_str, *response_body);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
     {
@@ -1110,10 +1113,10 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
 
     if (!session)
         throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Can not create HTTP session");
-    session->sendRequest(request);
+    DB::sendHTTPRequest(*session, request)->finalize();
 
     Poco::Net::HTTPResponse response;
-    auto & in = session->receiveResponse(response);
+    auto in = DB::receiveHTTPResponse(*session, response);
 
     if (response.getStatus() != Poco::Net::HTTPResponse::HTTP_OK)
     {
@@ -1125,7 +1128,7 @@ AccessToken BigLakeCatalog::retrieveGoogleCloudAccessToken() const
     }
 
     String token_json_raw;
-    Poco::StreamCopier::copyToString(in, token_json_raw);
+    DB::readStringUntilEOF(token_json_raw, *in);
 
     LOG_DEBUG(log, "Received Google Cloud token response from metadata service");
 
@@ -1772,9 +1775,9 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
     DB::ReadWriteBufferFromHTTP::OutStreamCallback out_stream_callback;
     if (!body_str.empty())
     {
-        out_stream_callback = [body_str](std::ostream & os)
+        out_stream_callback = [body_str](DB::WriteBuffer & out)
         {
-            os << body_str;
+            DB::writeString(body_str, out);
         };
     }
 

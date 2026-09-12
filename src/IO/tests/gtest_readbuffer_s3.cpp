@@ -10,7 +10,7 @@
 
 #include <Core/ServerUUID.h>
 #include <IO/ReadBufferFromS3.h>
-#include <Poco/Net/HTTPBasicStreamBuf.h>
+#include <IO/StdStreamFromReadBuffer.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/ObjectStorageIterator.h>
@@ -94,21 +94,37 @@ int CountedSession::total = 0;
 using CountedSessionPtr = std::shared_ptr<CountedSession>;
 
 
-class StringHTTPBasicStreamBuf : public Poco::Net::HTTPBasicStreamBuf
+/// Stands in for the body of a response: hands the data out through the memory of the caller,
+/// the way the buffer of a real response reads from a socket, and holds the session while it is
+/// alive.
+class FakeResponseBody : public DB::ReadBuffer
 {
 public:
-    explicit StringHTTPBasicStreamBuf(std::string body) : BasicBufferedStreamBuf(body.size(), IOS::in), bodyStream(std::stringstream(body))
+    FakeResponseBody(std::string data_, CountedSessionPtr session_)
+        : DB::ReadBuffer(nullptr, 0), data(std::move(data_)), session(std::move(session_))
     {
     }
+
+    bool supportsExternalBufferMode() const override { return true; }
 
 private:
-    std::stringstream bodyStream;
-
-    int readFromDevice(char_type * buf, std::streamsize n) override
+    bool nextImpl() override
     {
-        bodyStream.read(buf, n);
-        return static_cast<int>(bodyStream.gcount());
+        if (position_in_data >= data.size() || internal_buffer.empty())
+            return false;
+
+        const size_t size = std::min(internal_buffer.size(), data.size() - position_in_data);
+        memcpy(internal_buffer.begin(), data.data() + position_in_data, size);
+        position_in_data += size;
+
+        working_buffer = internal_buffer;
+        working_buffer.resize(size);
+        return true;
     }
+
+    std::string data;
+    CountedSessionPtr session;
+    size_t position_in_data = 0;
 };
 
 using GetObjectFn = std::function<Aws::S3::Model::GetObjectOutcome(const Aws::S3::Model::GetObjectRequest & request)>;
@@ -149,15 +165,18 @@ struct ClientFake : DB::S3::Client
     };
     mutable std::vector<ListRequest> list_requests;
 
-    void setGetObjectSuccess(const std::shared_ptr<CountedSession> & session, std::streambuf * sb)
+    void setGetObjectSuccess(const std::shared_ptr<CountedSession> & session, std::string body)
     {
         std::weak_ptr weak_session_ptr = session;
         getObjectImpl
-            = [weak_session_ptr, sb]([[maybe_unused]] const Aws::S3::Model::GetObjectRequest & request) -> Aws::S3::Model::GetObjectOutcome
+            = [weak_session_ptr, body]([[maybe_unused]] const Aws::S3::Model::GetObjectRequest & request) -> Aws::S3::Model::GetObjectOutcome
         {
-            auto response_stream = Aws::Utils::Stream::ResponseStream(
-                Aws::New<DB::SessionAwareIOStream<CountedSessionPtr>>("test response stream", weak_session_ptr.lock(), sb));
-            Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(std::move(response_stream), Aws::Http::HeaderValueCollection());
+            auto response_stream = Aws::Utils::Stream::ResponseStream(Aws::New<DB::StdStreamFromReadBuffer>(
+                "test response stream",
+                std::make_unique<FakeResponseBody>(body, weak_session_ptr.lock()),
+                body.size()));
+            Aws::AmazonWebServiceResult<Aws::Utils::Stream::ResponseStream> aws_result(
+                std::move(response_stream), Aws::Http::HeaderValueCollection{{"content-length", std::to_string(body.size())}});
             DB::S3::Model::GetObjectResult result(std::move(aws_result));
             return DB::S3::Model::GetObjectOutcome(std::move(result));
         };
@@ -202,8 +221,7 @@ TEST_F(ReadBufferFromS3Test, RetainsSessionWhenPending)
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
-    auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("123456789");
-    client->setGetObjectSuccess(session, stream_buf.get());
+    client->setGetObjectSuccess(session, "123456789");
 
     readAndAssert(subject, "123");
 
@@ -222,8 +240,7 @@ TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenStreamEof)
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
-    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("1234");
-    client->setGetObjectSuccess(session, stream_buf.get());
+    client->setGetObjectSuccess(session, "1234");
 
     readAndAssert(subject, "1234");
 
@@ -242,8 +259,7 @@ TEST_F(ReadBufferFromS3Test, ReleaseSessionWhenReadUntilPosition)
     auto subject = DB::ReadBufferFromS3(client, "test_bucket", "test_key", "test_version_id", DB::S3::S3RequestSettings(), read_settings);
 
     auto session = std::make_shared<CountedSession>();
-    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("123456");
-    client->setGetObjectSuccess(session, stream_buf.get());
+    client->setGetObjectSuccess(session, "123456");
 
     subject.setReadUntilPosition(4);
     readAndAssert(subject, "1234");
@@ -281,9 +297,8 @@ TEST_F(ReadBufferFromS3Test, MissingResponseETagIsNotRejected)
         /*expected_etag_=*/"expected-tag-1");
 
     auto session = std::make_shared<CountedSession>();
-    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>("1234");
-    /// setGetObjectSuccess builds the GetObjectResult with an empty header collection, i.e. no ETag.
-    client->setGetObjectSuccess(session, stream_buf.get());
+    /// setGetObjectSuccess builds the GetObjectResult without an ETag header.
+    client->setGetObjectSuccess(session, "1234");
 
     readAndAssert(subject, "1234");
     ASSERT_TRUE(subject.eof());
@@ -408,9 +423,9 @@ TEST_F(ReadBufferFromS3Test, HavingZeroBytes)
     /// initial prefetch eagerly (also over the filesystem cache), so the data must already be
     /// servable when that background read runs.
     auto session = std::make_shared<CountedSession>();
-    const auto stream_buf = std::make_shared<StringHTTPBasicStreamBuf>(data);
+
     auto storage_client = object_storage->getS3StorageClient();
-    dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()))->setGetObjectSuccess(session, stream_buf.get());
+    dynamic_cast<ClientFake *>(const_cast<DB::S3::Client *>(storage_client.get()))->setGetObjectSuccess(session, data);
 
     auto buf = DB::createReadBuffer(relative_path_with_metadata, object_storage, query_context, log);
 

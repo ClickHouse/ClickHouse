@@ -5,6 +5,7 @@
 #if USE_AWS_S3
 
 #include <IO/ReadBufferFromS3.h>
+#include <IO/StdStreamBufFromReadBuffer.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <IO/WriteHelpers.h>
 #include <IO/S3/getObjectInfo.h>
@@ -311,10 +312,17 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
         try
         {
             result = sendRequest(attempt, range_begin, range_begin + n - 1);
-            std::istream & istr = result->GetBody();
+
+            /// The body of the response is a ReadBuffer wrapped into a stream, because the AWS
+            /// SDK accepts nothing else; read from the buffer, so that the data goes into `to`
+            /// without a copy in between.
+            auto * stream_buf = dynamic_cast<StdStreamBufFromReadBuffer *>(result->GetBody().rdbuf());
+            if (!stream_buf)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The body of a GetObject response is not a ReadBuffer");
+            ReadBuffer & body = stream_buf->getReadBuffer();
 
             bool cancelled = false;
-            copyFromIStreamWithProgressCallback(istr, to, n, progress_callback, &bytes_copied, &cancelled);
+            copyFromReadBufferWithProgressCallback(body, to, n, progress_callback, &bytes_copied, &cancelled);
 
             ProfileEvents::increment(ProfileEvents::ReadBufferFromS3Bytes, bytes_copied);
 
@@ -325,7 +333,7 @@ size_t ReadBufferFromS3::readBigAt(char * to, size_t n, size_t range_begin, cons
             }
 
             /// Read remaining bytes after the end of the payload
-            istr.ignore(INT64_MAX);
+            body.tryIgnore(std::numeric_limits<size_t>::max());
         }
         catch (...)
         {
