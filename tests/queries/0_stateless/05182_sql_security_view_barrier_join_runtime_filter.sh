@@ -11,9 +11,14 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # the other side is read by parallel replicas, so the filter is built from the coordinated side's own
 # share of the ranges only and drops every row whose key was assigned to another replica.
 #
-# The oracle is the number of `Apply runtime join filter` steps of the optimized plan plus the rows
+# The oracle is whether the optimized plan carries an `Apply runtime join filter` step, plus the rows
 # themselves. `query_plan_join_swap_table = true` puts the view on the probe side, which is where the
-# filter would be planted.
+# filter would be planted. The join order pass is pinned off as well (`query_plan_optimize_join_order_limit`,
+# `query_plan_optimize_join_order_randomize`, `use_hash_table_stats_for_join_reordering`): with the
+# settings randomizer it otherwise swaps the sides back and the positive control - the `SQL SECURITY
+# INVOKER` twin, which must still get its filter - loses it. The oracle is a yes/no rather than a count
+# because the number of steps is not stable either: with `query_plan_optimize_prewhere = 0` the same
+# filter is applied by two steps instead of one.
 
 db=${CLICKHOUSE_DATABASE}
 
@@ -37,13 +42,15 @@ PR_SETTINGS="--enable_analyzer 1 --enable_parallel_replicas 1 --max_parallel_rep
     --parallel_replicas_local_plan 1 --parallel_replicas_min_number_of_rows_per_replica 0 \
     --automatic_parallel_replicas_mode 0 --max_threads 1 \
     --enable_join_runtime_filters 1 --join_runtime_filter_min_probe_rows 0 \
-    --query_plan_join_swap_table true"
+    --query_plan_join_swap_table true \
+    --query_plan_optimize_join_order_randomize 0 --query_plan_optimize_join_order_limit 1 \
+    --use_hash_table_stats_for_join_reordering 0"
 
 for view in rf_none_view rf_invoker_view; do
     echo "--- $view ---"
     # shellcheck disable=SC2086
-    echo "runtime filters applied: $(${CLICKHOUSE_CLIENT} $PR_SETTINGS --query "
-        SELECT countIf(explain LIKE '%Apply runtime join filter%')
+    echo "runtime filter applied: $(${CLICKHOUSE_CLIENT} $PR_SETTINGS --query "
+        SELECT hasAny(groupArray(explain LIKE '%Apply runtime join filter%'), [true]) ? 'yes' : 'no'
         FROM (EXPLAIN optimize = 1 SELECT p.v, x.secret FROM $db.rf_plain AS p LEFT JOIN $db.$view AS x ON p.k = x.k)")"
     # shellcheck disable=SC2086
     ${CLICKHOUSE_CLIENT} $PR_SETTINGS --query \
