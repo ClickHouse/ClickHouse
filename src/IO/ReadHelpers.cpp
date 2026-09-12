@@ -2073,10 +2073,7 @@ bool trySkipJSONField(ReadBuffer & buf, std::string_view name_of_field, const Fo
 }
 
 
-/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
-/// to the declared size first, so that a size declared by the peer cannot become an allocation on
-/// its own when the payload never follows.
-static void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE)
+void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size)
 {
     size_t size = 0;
     readVarUInt(size, buf);
