@@ -236,10 +236,10 @@ REGISTER_FUNCTION(DetectLanguage)
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 Detects the language of the UTF8-encoded input string.
 The function uses the [CLD2 library](https://github.com/CLD2Owners/cld2) for detection and returns the 2-letter ISO language code.
@@ -264,10 +264,10 @@ The longer the input, the more precise the language detection will be.
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 Similar to the [`detectLanguage`](#detectLanguage) function, but `detectLanguageMixed` returns a `Map` of 2-letter language codes that are mapped to the percentage of the certain language in the text.
 )";
