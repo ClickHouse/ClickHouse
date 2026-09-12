@@ -1032,7 +1032,7 @@ SAMPLES INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1))
 )
-SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 512, index_granularity_bytes = 524288
+SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 256, index_granularity_bytes = 524288
 RECENT SAMPLES INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)),
@@ -1041,7 +1041,7 @@ RECENT SAMPLES INNER COLUMNS
     `min_time` SimpleAggregateFunction(min, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1)),
     `max_time` SimpleAggregateFunction(max, DateTime64(3)) CODEC(DoubleDelta, ZSTD(1))
 )
-RECENT SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toStartOfInterval(bucket, toIntervalHour(5)) ORDER BY (id, bucket) TTL bucket + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 262144, ttl_only_drop_parts = 1
+RECENT SAMPLES INNER ENGINE = AggregatingMergeTree PARTITION BY toStartOfInterval(bucket, toIntervalHour(5)) ORDER BY (id, bucket) TTL bucket + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 131072, ttl_only_drop_parts = 1
 TAGS INNER COLUMNS
 (
     `id` Tuple(UInt64, LowCardinality(UUID)) DEFAULT tuple(sipHash64(metric_name), toLowCardinality(reinterpretAsUUID(sipHash128(tags)))),
@@ -1084,7 +1084,7 @@ CREATE TABLE default.`.inner_id.samples.xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
 ENGINE = AggregatingMergeTree
 PARTITION BY toYYYYMM(bucket)
 ORDER BY (id, bucket)
-SETTINGS index_granularity = 512, index_granularity_bytes = 524288
+SETTINGS index_granularity = 256, index_granularity_bytes = 524288
 ```
 
 ```sql
@@ -1100,7 +1100,7 @@ ENGINE = AggregatingMergeTree
 PARTITION BY toStartOfInterval(bucket, toIntervalHour(5))
 ORDER BY (id, bucket)
 TTL bucket + toIntervalSecond(346500)
-SETTINGS index_granularity = 256, index_granularity_bytes = 262144, ttl_only_drop_parts = 1
+SETTINGS index_granularity = 256, index_granularity_bytes = 131072, ttl_only_drop_parts = 1
 ```
 
 ```sql
@@ -1327,13 +1327,13 @@ Here is a list of settings which can be specified while defining a `TimeSeries` 
 | `filter_by_min_time_and_max_time` | Bool | true | If set to true then the table will use the `min_time` and `max_time` columns for filtering time series |
 | `samples_bucket_step_seconds` | UInt64 | 3600 | The length in seconds of the time buckets of the [samples](#samples-table) table: a row of the table contains the samples of one time series with timestamps in one bucket, and the `bucket` column contains the start of the bucket, i.e. the timestamp rounded down to a multiple of this setting. The default is 1 hour; the effective value is pinned into the table definition at CREATE time |
 | `samples_partition_by` | Expression | `toYYYYMM(bucket)` | Partition key of the inner [samples](#samples-table) table, for example `toStartOfWeek(bucket)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per month is used. Ignored for an external samples table |
-| `samples_index_granularity` | UInt64 | 512 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
+| `samples_index_granularity` | UInt64 | 256 | Sets `index_granularity` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `samples_index_granularity_bytes` | UInt64 | 524288 | Sets `index_granularity_bytes` of the inner [samples](#samples-table) table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for an external samples table and a non-MergeTree engine |
 | `recent_samples_ttl_seconds` | UInt64 | 345600 | Retention of the additional `recent samples` target table, which every inserted sample is written to as well. An inner recent samples table always gets `TTL bucket + toIntervalSecond(recent_samples_ttl_seconds + recent_samples_bucket_step_seconds)` derived from this setting (overriding any TTL from the engine declaration); an external recent samples table must retain at least this many seconds of data. Queries whose time range fits in the TTL window prefer the recent samples table to the main samples table (see the query-level setting `time_series_prefer_recent_samples_table`). The default is 4 days; the effective value is pinned into the table definition at CREATE time. Set to 0 to disable the recent samples table |
 | `recent_samples_bucket_step_seconds` | UInt64 | 900 | The length in seconds of the time buckets of the [recent samples](#recent-samples-table) table, see `samples_bucket_step_seconds`. The default is 15 minutes; the effective value is pinned into the table definition at CREATE time. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_partition_by` | Expression | `toStartOfInterval(bucket, toIntervalHour(5))` | Partition key of the inner `recent samples` table, for example `toStartOfHour(bucket)`. When set explicitly, it overrides the partition key from the engine declaration; if neither is set, one partition per 5 hours is used. Ignored for an external recent samples table. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `recent_samples_index_granularity` | UInt64 | 256 | Sets `index_granularity` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
-| `recent_samples_index_granularity_bytes` | UInt64 | 262144 | Sets `index_granularity_bytes` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
+| `recent_samples_index_granularity_bytes` | UInt64 | 131072 | Sets `index_granularity_bytes` of the inner `recent samples` table. When set explicitly, it overrides `index_granularity_bytes` from the engine declaration. Ignored for an external recent samples table and a non-MergeTree engine. Requires `recent_samples_ttl_seconds` to be non-zero |
 | `tags_index_granularity` | UInt64 | 8192 | Sets `index_granularity` of the inner [tags](#tags-table) table. When set explicitly, it overrides `index_granularity` from the engine declaration. Ignored for an external tags table and a non-MergeTree engine |
 | `version` | UInt64 | 2 | The version of the table: it identifies the set of the target tables and their structure. The version is pinned automatically when a table is created and can't be changed afterwards, normally it should be omitted in the `CREATE TABLE` query (see [Schema versioning](#schema-versioning)) |
 

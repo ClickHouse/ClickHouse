@@ -1,7 +1,7 @@
 -- the other table must be a TimeSeries table
 -- declared engines without keys get the generated keys
-AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 512, index_granularity_bytes = 524288
-AggregatingMergeTree PARTITION BY toStartOfInterval(bucket, toIntervalHour(5)) ORDER BY (id, bucket) TTL bucket + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 262144, ttl_only_drop_parts = 1
+AggregatingMergeTree PARTITION BY toYYYYMM(bucket) ORDER BY (id, bucket) SETTINGS index_granularity = 256, index_granularity_bytes = 524288
+AggregatingMergeTree PARTITION BY toStartOfInterval(bucket, toIntervalHour(5)) ORDER BY (id, bucket) TTL bucket + toIntervalSecond(346500) SETTINGS index_granularity = 256, index_granularity_bytes = 131072, ttl_only_drop_parts = 1
 AggregatingMergeTree PRIMARY KEY metric_name ORDER BY (metric_name, id) SETTINGS index_granularity = 8192, allow_dimensions_outside_sorting_key = 1
 ReplacingMergeTree ORDER BY metric_family_name
 -- a customized `min_time` column is not copied if the new table does not store `min_time`/`max_time`
