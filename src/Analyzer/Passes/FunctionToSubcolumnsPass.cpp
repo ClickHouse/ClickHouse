@@ -1,4 +1,5 @@
 #include <Analyzer/Passes/FunctionToSubcolumnsPass.h>
+#include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
@@ -490,6 +491,49 @@ void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnCo
     node = std::move(function_array_sort_node);
 }
 
+bool optimizeMapFunctionToKeys(FunctionNode & function_node, ColumnContext & ctx)
+{
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+
+    NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationMap::isKeysSubcolumn, column.type))
+        return false;
+
+    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return false;
+
+    function_arguments_nodes[0] = std::make_shared<ColumnNode>(column, ctx.column_source);
+    return true;
+}
+
+void optimizeFunctionMapContainsKey(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`.
+    if (optimizeMapFunctionToKeys(function_node, ctx))
+        resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
+}
+
+void optimizeFunctionHasForMap(QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
+{
+    /// Replace `has(map_argument, argument)` and `notHas(map_argument, argument)` with the same
+    /// function over `map_argument.keys`.
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+
+    /// The Map implementation removes LowCardinality before comparing keys. Rewriting to the
+    /// keys subcolumn would use the Array(LowCardinality) path and can change comparisons for
+    /// values such as a FixedString needle wider than the Map key type.
+    if (WhichDataType(data_type_map.getKeyType()).isLowCardinality())
+        return;
+
+    if (optimizeMapFunctionToKeys(function_node, ctx))
+    {
+        const auto function_name = function_node.getFunctionName();
+        resolveOrdinaryFunctionNodeByName(function_node, function_name, ctx.context);
+    }
+}
+
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
     {
@@ -550,23 +594,13 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         },
     },
     {
-        {TypeIndex::Map, "mapContainsKey"},
-        [](QueryTreeNodePtr &, FunctionNode & function_node, ColumnContext & ctx)
-        {
-            /// Replace `mapContainsKey(map_argument, argument)` with `has(map_argument.keys, argument)`
-            const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
-
-            NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
-            if (sourceHasColumn(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationMap::isKeysSubcolumn, column.type))
-                return;
-            auto & function_arguments_nodes = function_node.getArguments().getNodes();
-
-            auto has_function_argument = std::make_shared<ColumnNode>(column, ctx.column_source);
-            function_arguments_nodes[0] = std::move(has_function_argument);
-
-            resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
-        },
+        {TypeIndex::Map, "mapContainsKey"}, optimizeFunctionMapContainsKey,
+    },
+    {
+        {TypeIndex::Map, "has"}, optimizeFunctionHasForMap,
+    },
+    {
+        {TypeIndex::Map, "notHas"}, optimizeFunctionHasForMap,
     },
     {
         {TypeIndex::Nullable, "count"},
@@ -661,6 +695,9 @@ std::set<std::pair<TypeIndex, String>> transformers_safe_with_indexes =
 std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full_column =
 {
     {TypeIndex::Map, "arrayElement"},
+    {TypeIndex::Map, "mapContainsKey"},
+    {TypeIndex::Map, "has"},
+    {TypeIndex::Map, "notHas"},
     {TypeIndex::Tuple, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
     {TypeIndex::QBit, "tupleElement"},
