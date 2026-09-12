@@ -2615,7 +2615,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
                     auto type_from_dynamic_path = dynamic_paths_ptrs.find(path)->second->getTypeAt(i);
                     throw Exception(
                         ErrorCodes::LOGICAL_ERROR,
-                        "Path {} is present both in dynamic paths and shared data and has two non-null values at the row {}."
+                        "Path {} is present both in dynamic paths and shared data and has two non-null values at the row {}. "
                         "Value type in dynamic paths: {}. Value type in shared data: {}",
                         path,
                         i,

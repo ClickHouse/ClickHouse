@@ -150,6 +150,23 @@ namespace ErrorCodes
 namespace
 {
 
+/// A `MATERIALIZED` CTE is materialized once, so its body cannot be correlated.
+/// Must run for every reference: clones of one body can resolve differently.
+void checkMaterializedCTESubqueryIsNotCorrelated(
+    const QueryTreeNodePtr & subquery,
+    const std::string & cte_name,
+    const QueryTreeNodePtr & scope_node)
+{
+    const bool is_correlated = subquery->as<QueryNode>()
+        ? subquery->as<QueryNode>()->isCorrelated()
+        : subquery->as<UnionNode>()->isCorrelated();
+    if (is_correlated)
+        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
+            "Materialized CTE '{}' cannot be correlated. In scope {}",
+            cte_name,
+            scope_node->formatASTForErrorMessage());
+}
+
 /// Recursively clears aliases from `node` and all of its descendants, stopping at
 /// nested-scope boundaries (`QUERY`, `UNION`, `LAMBDA`).
 ///
@@ -2634,6 +2651,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
                 {
+                    /// A lambda body can only learn a matched column's name from this map; the FUNCTION branch below also reads its alias.
+                    node_to_projection_name.emplace(node, result_projection_names.back());
+
                     auto lambda_expression_to_resolve = expression_node->clone();
                     auto & lambda_scope = createIdentifierResolveScope(lambda_expression_to_resolve, /*parent_scope=*/&scope);
                     node_projection_names = resolveLambda(expression_node, lambda_expression_to_resolve, {node}, lambda_scope);
@@ -3377,14 +3397,7 @@ ProjectionNames QueryAnalyzer::resolveExpressionNode(
 
                             ctes_in_resolve_process.erase(resolved_identifier_node);
 
-                            const bool mat_subquery_is_correlated = mat_subquery->as<QueryNode>()
-                                ? mat_subquery->as<QueryNode>()->isCorrelated()
-                                : mat_subquery->as<UnionNode>()->isCorrelated();
-                            if (mat_subquery_is_correlated)
-                                throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                                    "Materialized CTE '{}' cannot be correlated. In scope {}",
-                                    materialized_cte_ptr->cte_name,
-                                    scope.scope_node->formatASTForErrorMessage());
+                            checkMaterializedCTESubqueryIsNotCorrelated(mat_subquery, materialized_cte_ptr->cte_name, scope.scope_node);
                         }
 
                         /// Create temp table only if no other clone has done it yet.
@@ -6119,14 +6132,7 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     if (cte_map_node)
                         ctes_in_resolve_process.erase(cte_map_node);
 
-                    bool is_correlated = subquery->as<QueryNode>()
-                        ? subquery->as<QueryNode>()->isCorrelated()
-                        : subquery->as<UnionNode>()->isCorrelated();
-                    if (is_correlated)
-                        throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
-                            "Materialized CTE '{}' cannot be correlated. In scope {}",
-                            cte_name,
-                            scope.scope_node->formatASTForErrorMessage());
+                    checkMaterializedCTESubqueryIsNotCorrelated(subquery, cte_name, scope.scope_node);
 
                     const auto & projection_columns = subquery->as<QueryNode>()
                         ? subquery->as<QueryNode>()->getProjectionColumns()
@@ -6153,6 +6159,11 @@ void QueryAnalyzer::resolveQueryJoinTreeNode(QueryTreeNodePtr & join_tree_node, 
                     /// then reuse the existing storage.
                     auto & subquery = table_node->getMaterializedCTESubquery();
                     resolveExpressionNode(subquery, scope, false /*allow_lambda_expression*/, true /*allow_table_expression*/, true /*ignore_alias=*/);
+
+                    /// A clone can resolve correlated even when the storage-initializing clone did not
+                    /// (identifiers may bind to outer scope here). The first-reference branch above
+                    /// already rejects correlation; this branch must do the same.
+                    checkMaterializedCTESubqueryIsNotCorrelated(subquery, materialized_cte_ptr->cte_name, scope.scope_node);
 
                     table_node->updateStorage(materialized_cte_ptr->storage, scope.context);
                     verifyMaterializedCTESubqueryMatchesStorage(
