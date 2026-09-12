@@ -177,6 +177,19 @@ public:
 
     void updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_);
 
+    /// True when `transformPipeline` will attach the per-stream `LIMIT BY` pre-filter for the
+    /// order this step currently has. A `FinishSorting` that still has to sort a suffix skips the
+    /// pre-filter, because applying `LIMIT BY` before the final order is known could drop the
+    /// wrong rows. See `addPerStreamLimitByIfNeeded` and `transformPipeline`.
+    bool willAddPerStreamLimitBy() const
+    {
+        if (limit_by_columns.empty())
+            return false;
+        if (type == Type::FinishSorting)
+            return prefix_description.size() >= result_description.size();
+        return true;
+    }
+
     std::vector<size_t> getStepGroups() const override;
     String getStepGroupName(size_t group) const override;
 

@@ -1,0 +1,12 @@
+has_prefetching_concat_no_join
+1
+is_filled_join
+1
+no_prefetching_concat_through_filled_join
+0
+join_probe_multi_stream
+1
+no_full_sort_through_filled_join
+0
+correctness
+1000000	0
