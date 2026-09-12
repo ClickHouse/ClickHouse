@@ -3721,6 +3721,15 @@ TEST(SchedulerSpaceShared, ZeroReconciledSuctionRetriesHiddenRequests)
         << "Cancelling suction through reconciliation did not republish hidden requests";
     EXPECT_EQ(blocked->size(), 3000);
     EXPECT_EQ(heavy.killCount(), 0u);
+
+    /// Cancellation ends the pressure episode. A later conflicting growth must get a fresh
+    /// suspension/spill chance instead of going directly to eviction with stale attempt state.
+    heavy.waitDecreaseSynced();
+    heavy.reconcilePendingIncreaseTo(2000);
+    heavy.increaseAsync(2000);
+    ASSERT_TRUE(heavy.waitPressureCountFor(2, std::chrono::seconds(5)))
+        << "A canceled increase retained stale suspension-attempt state";
+    EXPECT_EQ(heavy.killCount(), 0u);
 }
 
 

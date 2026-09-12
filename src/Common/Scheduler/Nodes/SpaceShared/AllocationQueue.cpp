@@ -258,6 +258,7 @@ void AllocationQueue::consumeSuctionClaim(ResourceAllocation & recovering)
             recovering.memory_growth_suction_priority = false;
             suction_growth = nullptr;
             recovering.onGrowthPressureResolved();
+            recovering.memory_growth_suspension_attempted = false;
             recovering.increaseCancelled();
 
             /// This owner no longer needs memory. Re-open every request hidden while it owned the
@@ -921,6 +922,7 @@ void AllocationQueue::clearMemoryGrowthSuspension() // TSA_REQUIRES(mutex)
     {
         suspended_growth->onGrowthPressureResolved();
         suspended_growth->memory_growth_suspended = false;
+        suspended_growth->memory_growth_suspension_attempted = false;
         suspended_growth->memory_growth_eviction_order = 0;
         suspended_growth->memory_growth_recovery_pending = false;
         suspended_growth->memory_growth_suction_priority = false;
