@@ -11,6 +11,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -71,6 +72,14 @@ static QueryTreeNodePtr findEqualsFunction(const QueryTreeNodes & nodes)
         }
     }
     return nullptr;
+}
+
+/// Whether the join's null-key map excludes every value of `type` that `isNotNull` reports as NULL.
+/// `extractNestedColumnsAndNullMap` reads a top-level `ColumnNullable` only, so a `Variant`/`Dynamic`
+/// NULL stays an ordinary key value and matches another such NULL, while `isNotNull` sees it as NULL.
+static bool joinExcludesNullKeysOf(const DataTypePtr & type)
+{
+    return !canContainNull(*type) || isNullableOrLowCardinalityNullable(type);
 }
 
 /// Checks if the node is combination of isNull and notEquals functions of two the same arguments:
@@ -1605,10 +1614,15 @@ private:
                 if (const auto & equals_function = findEqualsFunction(and_arguments))
                 {
                     const auto & equals_arguments = equals_function->as<FunctionNode>()->getArguments().getNodes();
-                    /// Expected isNotNull arguments
+                    /// Expected isNotNull arguments. Left empty when the join's null-key map does not
+                    /// exclude a key's NULLs, which keeps such a guard while still dropping true constants.
                     QueryTreeNodePtrWithHashSet allowed_arguments;
-                    allowed_arguments.insert(QueryTreeNodePtrWithHash(std::make_shared<ListNode>(QueryTreeNodes{equals_arguments[0]})));
-                    allowed_arguments.insert(QueryTreeNodePtrWithHash(std::make_shared<ListNode>(QueryTreeNodes{equals_arguments[1]})));
+                    if (joinExcludesNullKeysOf(equals_arguments[0]->getResultType())
+                        && joinExcludesNullKeysOf(equals_arguments[1]->getResultType()))
+                    {
+                        allowed_arguments.insert(QueryTreeNodePtrWithHash(std::make_shared<ListNode>(QueryTreeNodes{equals_arguments[0]})));
+                        allowed_arguments.insert(QueryTreeNodePtrWithHash(std::make_shared<ListNode>(QueryTreeNodes{equals_arguments[1]})));
+                    }
 
                     bool can_be_optimized = true;
                     for (const auto & and_argument : and_arguments)
