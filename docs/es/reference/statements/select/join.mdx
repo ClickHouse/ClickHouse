@@ -224,6 +224,8 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
+Con el algoritmo `ie_join`, una condición evaluada durante el join no puede contener `arrayJoin`, ya que debe conservar el número de filas; cuando la expansión depende de un solo lado, muévala a un `ARRAY JOIN` en una subconsulta antes del join.
+
 ## Valores `NULL` y `NaN` en las claves de `JOIN` {#null-values-in-join-keys}
 
 `NULL` no es igual a ningún valor, incluido él mismo. Esto significa que, si una clave de `JOIN` tiene un valor `NULL` en una tabla, no coincidirá con un valor `NULL` de la otra tabla.

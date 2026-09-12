@@ -224,6 +224,8 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
+在使用 `ie_join` 算法时，JOIN 过程中求值的条件不能包含 `arrayJoin`，因为此类条件必须保持行数不变；如果展开操作仅依赖于一侧，请在 JOIN 前将其移至子查询中的 `ARRAY JOIN`。
+
 ## JOIN 连接键中的 NULL 和 NaN 值 {#null-values-in-join-keys}
 
 `NULL` 不等于任何值，包括其自身。这意味着，如果某个 `JOIN` 连接键在一个表中的值为 `NULL`，它就不会与另一个表中的 `NULL` 值匹配。

@@ -224,6 +224,8 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
+Com o algoritmo `ie_join`, uma condição avaliada durante a junção não pode conter `arrayJoin`, pois deve preservar o número de linhas; quando a expansão depende de apenas um lado, mova-a para um `ARRAY JOIN` em uma subconsulta antes da junção.
+
 ## Valores NULL e NaN nas chaves de junção {#null-values-in-join-keys}
 
 `NULL` não é igual a nenhum valor, nem a si mesmo. Isso significa que, se uma chave de junção tiver um valor `NULL` em uma tabela, ela não corresponderá a um valor `NULL` na outra tabela.

@@ -224,6 +224,8 @@ key2    a2    1    1    1            0    0    \N
 key4    f    2    3    4            0    0    \N
 ```
 
+`ie_join` 알고리즘에서는 조인 중 평가되는 조건에 행 수를 유지해야 하므로 `arrayJoin`을 포함할 수 없습니다. 확장이 한쪽에만 의존하는 경우 조인 전에 서브쿼리의 `ARRAY JOIN`으로 이동하십시오.
+
 ## JOIN 키의 NULL 및 NaN 값 {#null-values-in-join-keys}
 
 `NULL`은 자기 자신을 포함해 어떤 값과도 같지 않습니다. 즉, 한 테이블에서 `JOIN` 키의 값이 `NULL`이면 다른 테이블의 `NULL` 값과 일치하지 않습니다.
