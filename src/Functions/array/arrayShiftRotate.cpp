@@ -82,7 +82,11 @@ public:
         const DataTypePtr & elem_type = static_cast<const DataTypeArray &>(*first_arg).getNestedType();
         if (arguments.size() == 3)
         {
-            auto ret = tryGetLeastSupertype(DataTypes{elem_type, arguments[2]});
+            auto default_type = arguments[2];
+            if (!elem_type->isNullable())
+                default_type = removeNullable(default_type);
+
+            auto ret = tryGetLeastSupertype(DataTypes{elem_type, default_type});
             // Note that this will fail if the default value does not fit into the array element type (e.g. UInt64 and Array(UInt8)).
             // In this case array should be converted to Array(UInt64) explicitly.
             if (!ret || !ret->equals(*elem_type))
@@ -131,7 +135,20 @@ public:
             const auto elem_type = static_cast<const DataTypeArray &>(*result_type).getNestedType();
 
             if (arguments.size() == 3)
-                default_column = castColumn(arguments[2], elem_type);
+            {
+                auto default_argument = arguments[2];
+                if (!elem_type->isNullable() && default_argument.type->isNullable())
+                {
+                    auto materialized_default_column = default_argument.column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                    if (const auto * nullable_default_column = checkAndGetColumn<ColumnNullable>(materialized_default_column.get()))
+                        materialized_default_column = nullable_default_column->getNestedColumnWithDefaultOnNull();
+
+                    default_argument.column = std::move(materialized_default_column);
+                    default_argument.type = removeNullable(default_argument.type);
+                }
+
+                default_column = castColumn(default_argument, elem_type);
+            }
             else
                 default_column = elem_type->createColumnConstWithDefaultValue(input_rows_count);
 
