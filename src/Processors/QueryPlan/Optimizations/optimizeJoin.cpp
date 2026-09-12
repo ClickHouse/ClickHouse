@@ -7,6 +7,8 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <Functions/FunctionsMiscellaneous.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -733,11 +735,43 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
     return false;
 }
 
+/// Merging puts the expression into the join graph, where reordering can leave it computed twice from the
+/// raw inputs - once for the join key that decides matching and once for the output column - and can also
+/// evaluate it on rows the original join order would have discarded. An expression whose result or whose
+/// side effects depend on how many times and on which rows it runs is therefore not safe to merge: a
+/// non-deterministic function draws independently in the two places, so the returned rows can violate the
+/// query's own `JOIN ON` condition, a stateful function (`aiEmbed`, `timeSeriesStoreTags`, ...) makes
+/// extra external calls or mutates per-query state, and a function with observable side effects (`sleep`)
+/// spends a different amount of time and accounts different profile events. A lambda without captures is
+/// constant-folded into a `COLUMN` node holding a `ColumnFunction`, which hides the functions of its body
+/// from a plain scan over the function nodes, so the check descends into it with `allNodeFunctions`.
+static bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
+{
+    auto is_insensitive = [](const IFunctionBase & function)
+    {
+        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
+    };
+
+    for (const auto & node : dag.getNodes())
+    {
+        if (!allNodeFunctions(node, is_insensitive))
+            return true;
+    }
+
+    return false;
+}
+
 /// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
 /// allows it and the expression cannot be applied twice by the name-based merge.
 static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
 {
-    return merge_expression_into_join && !hasOutputShadowingInputName(dag);
+    if (!merge_expression_into_join)
+        return false;
+
+    if (isSensitiveToEvaluationCount(dag))
+        return false;
+
+    return !hasOutputShadowingInputName(dag);
 }
 
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
