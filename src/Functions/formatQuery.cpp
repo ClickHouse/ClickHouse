@@ -85,7 +85,9 @@ public:
         if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
         {
             auto col_res = ColumnString::create();
-            formatVector(col_query_string->getChars(), col_query_string->getOffsets(), col_res->getChars(), col_res->getOffsets(), col_null_map, input_rows_count);
+            formatVector(
+                col_query_string->getChars(), col_query_string->getOffsets(), col_res->getChars(), col_res->getOffsets(),
+                col_null_map, input_rows_count, getQueryStatusOfExecutingQuery());
 
             if (error_handling == ErrorHandling::Null)
                 return ColumnNullable::create(std::move(col_res), std::move(col_null_map));
@@ -101,16 +103,22 @@ private:
         ColumnString::Chars & res_data,
         ColumnString::Offsets & res_offsets,
         ColumnUInt8::MutablePtr & res_null_map,
-        size_t input_rows_count) const
+        size_t input_rows_count,
+        const QueryStatusPtr & query_status) const
     {
         res_offsets.resize(input_rows_count);
         res_data.resize(data.size());
 
         size_t prev_offset = 0;
         size_t res_data_size = 0;
+        size_t bytes_since_check = 0;
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            /// Outside the `try` below on purpose: for ErrorHandling::Null that handler swallows every
+            /// exception into a NULL and continues, which would turn cancellation into wrong results.
+            checkQueryCancellationThrottled(query_status, name, offsets[i] - prev_offset, bytes_since_check);
+
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = begin + offsets[i] - prev_offset;
 

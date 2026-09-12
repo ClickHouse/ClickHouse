@@ -69,6 +69,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr col_query = arguments[0].column;
+        const QueryStatusPtr query_status = getQueryStatusOfExecutingQuery();
 
         if (const ColumnString * col_query_string = checkAndGetColumn<ColumnString>(col_query.get()))
         {
@@ -76,7 +77,7 @@ public:
             fuzzVector(
                 col_query_string->getChars(), col_query_string->getOffsets(),
                 *col_res,
-                input_rows_count);
+                input_rows_count, query_status);
             return col_res;
         }
 
@@ -90,8 +91,13 @@ public:
             ParserQuery parser(end, false, implicit_select);
             ASTPtr ast = parseQuery(parser, begin, end, "fuzzQuery", max_query_size, max_parser_depth, max_parser_backtracks);
 
+            size_t bytes_since_check = 0;
             for (size_t i = 0; i < input_rows_count; ++i)
             {
+                /// Every row fuzzes and re-formats the same parsed query, so each one costs the same
+                /// as parsing that text once.
+                checkQueryCancellationThrottled(query_status, name, data.size(), bytes_since_check);
+
                 ASTPtr fuzzed_ast = ast->clone();
                 {
                     auto [fuzzer, lock] = getGlobalASTFuzzer();
@@ -114,11 +120,15 @@ private:
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
         ColumnString & col_res,
-        size_t input_rows_count) const
+        size_t input_rows_count,
+        const QueryStatusPtr & query_status) const
     {
         size_t prev_offset = 0;
+        size_t bytes_since_check = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
+            checkQueryCancellationThrottled(query_status, name, offsets[i] - prev_offset, bytes_since_check);
+
             const char * begin = reinterpret_cast<const char *>(&data[prev_offset]);
             const char * end = reinterpret_cast<const char *>(&data[offsets[i]]);
 
