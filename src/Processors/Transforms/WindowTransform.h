@@ -89,6 +89,9 @@ public:
     void advancePartitionEnd();
 
     bool arePeers(const RowNumber & x, const RowNumber & y) const;
+    bool areOrderByPeers(const RowNumber & x, const RowNumber & y) const;
+    RowNumber peerGroupStartWithinFrame() const;
+    RowNumber peerGroupEndWithinFrame() const;
 
     void advanceFrameStartRowsOffset();
     void advanceFrameStartRangeOffset();

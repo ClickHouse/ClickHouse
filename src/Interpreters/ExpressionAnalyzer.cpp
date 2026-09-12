@@ -753,6 +753,7 @@ void ExpressionAnalyzer::makeWindowDescriptionFromAST(const Context & context_,
     desc.frame.begin_preceding = definition.frame_begin_preceding;
     desc.frame.end_type = definition.frame_end_type;
     desc.frame.end_preceding = definition.frame_end_preceding;
+    desc.frame.exclusion = definition.frame_exclusion;
 
     if (definition.frame_end_type == WindowFrame::BoundaryType::Offset)
     {

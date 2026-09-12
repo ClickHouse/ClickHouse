@@ -42,6 +42,7 @@ ASTPtr ASTWindowDefinition::clone() const
     result->frame_begin_preceding = frame_begin_preceding;
     result->frame_end_type = frame_end_type;
     result->frame_end_preceding = frame_end_preceding;
+    result->frame_exclusion = frame_exclusion;
 
     if (frame_begin_offset)
     {
@@ -77,6 +78,7 @@ void ASTWindowDefinition::updateTreeHashImpl(SipHash & hash_state, bool ignore_a
     hash_state.update(frame_begin_preceding);
     hash_state.update(frame_end_type);
     hash_state.update(frame_end_preceding);
+    hash_state.update(frame_exclusion);
     IAST::updateTreeHashImpl(hash_state, ignore_aliases);
 }
 
@@ -161,6 +163,21 @@ void ASTWindowDefinition::formatImpl(WriteBuffer & ostr, const FormatSettings & 
             frame_end_offset->format(ostr, settings, state, offset_frame);
             ostr << " "
                 << (!frame_end_preceding ? "FOLLOWING" : "PRECEDING");
+        }
+
+        switch (frame_exclusion)
+        {
+            case WindowFrame::Exclusion::NoOthers:
+                break;
+            case WindowFrame::Exclusion::CurrentRow:
+                ostr << " EXCLUDE CURRENT ROW";
+                break;
+            case WindowFrame::Exclusion::Group:
+                ostr << " EXCLUDE GROUP";
+                break;
+            case WindowFrame::Exclusion::Ties:
+                ostr << " EXCLUDE TIES";
+                break;
         }
     }
 }
@@ -263,6 +280,21 @@ void ASTWindowDefinition::writeJSON(WriteBuffer & out) const
         }
         w.writeChild("frame_end_offset", frame_end_offset);
         w.writeBool("frame_end_preceding", frame_end_preceding);
+        switch (frame_exclusion)
+        {
+            case WindowFrame::Exclusion::NoOthers:
+                w.writeString("frame_exclusion", "NoOthers");
+                break;
+            case WindowFrame::Exclusion::CurrentRow:
+                w.writeString("frame_exclusion", "CurrentRow");
+                break;
+            case WindowFrame::Exclusion::Group:
+                w.writeString("frame_exclusion", "Group");
+                break;
+            case WindowFrame::Exclusion::Ties:
+                w.writeString("frame_exclusion", "Ties");
+                break;
+        }
     }
 }
 
@@ -332,6 +364,7 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
         "frame_end_type",
         "frame_end_offset",
         "frame_end_preceding",
+        "frame_exclusion",
     };
 
     if (frame_is_default)
@@ -391,6 +424,19 @@ void ASTWindowDefinition::readJSON(const Poco::JSON::Object & json)
         if (frame_end_type != WindowFrame::BoundaryType::Offset && frame_end_preceding)
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
                 "'frame_end_preceding' must be false for a non-Offset frame boundary during AST JSON deserialization");
+
+        const auto exclusion = r.getString("frame_exclusion");
+        if (exclusion == "NoOthers")
+            frame_exclusion = WindowFrame::Exclusion::NoOthers;
+        else if (exclusion == "CurrentRow")
+            frame_exclusion = WindowFrame::Exclusion::CurrentRow;
+        else if (exclusion == "Group")
+            frame_exclusion = WindowFrame::Exclusion::Group;
+        else if (exclusion == "Ties")
+            frame_exclusion = WindowFrame::Exclusion::Ties;
+        else
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Unknown 'frame_exclusion' value '{}' during AST JSON deserialization", exclusion);
     }
 }
 
