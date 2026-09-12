@@ -22,3 +22,12 @@
 2	12
 -- control: the minimal-signed-number guard fires on the same inputs as before
 0	0
+-- regression: a same-width unsigned operand near the signed maximum overflowed the first fix
+37528
+-9000000000000000000
+18446744073709551614
+9999999999999999999
+-- regression: the wide-pair pruning in FunctionBinaryArithmetic.h had the same overflow
+6
+-2
+-2

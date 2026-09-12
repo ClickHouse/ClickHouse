@@ -3257,11 +3257,16 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
                 else
                 {
-                    /// `ModuloImpl` casts both operands to the signed type of the wider operand
-                    /// size when either operand is signed, and computes in the wider type
-                    /// otherwise - the same rule as `DivideIntegralImpl` above.
-                    using WiderType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
-                    using CommonType = std::conditional_t<is_signed_v<T0> || is_signed_v<T1>, make_signed_t<WiderType>, WiderType>;
+                    /// `ModuloImpl` widens an unsigned operand to a signed type twice its width before
+                    /// computing in whichever safe-signed type is wider (`DivisionUtils.h`), rather than
+                    /// casting either operand to the OTHER operand's width, which can overflow when that
+                    /// width's unsigned range does not fit the same-width signed type. Mirror the same
+                    /// per-operand widening here so a pruned pair is never narrower than a direct one.
+                    using SafeSignedT0 = typename NumberTraits::Construct<true, false,
+                        is_signed_v<T0> ? sizeof(T0) : NumberTraits::nextSize(sizeof(T0))>::Type;
+                    using SafeSignedT1 = typename NumberTraits::Construct<true, false,
+                        is_signed_v<T1> ? sizeof(T1) : NumberTraits::nextSize(sizeof(T1))>::Type;
+                    using CommonType = std::conditional_t<(sizeof(SafeSignedT0) >= sizeof(SafeSignedT1)), SafeSignedT0, SafeSignedT1>;
                     return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
                 }
             }

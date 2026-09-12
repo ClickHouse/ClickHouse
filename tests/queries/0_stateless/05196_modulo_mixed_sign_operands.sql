@@ -41,3 +41,14 @@ SELECT modulo(toInt32(-2147483648), toInt64(-1)); -- { serverError ILLEGAL_DIVIS
 SELECT modulo(toInt64(-9223372036854775808), toInt32(-1)); -- { serverError ILLEGAL_DIVISION }
 SELECT positiveModulo(toInt32(-2147483648), toInt32(-1)); -- { serverError ILLEGAL_DIVISION }
 SELECT modulo(toInt32(-2147483648), toUInt64(1)), modulo(toInt128(-1), toInt128(-1));
+
+SELECT '-- regression: a same-width unsigned operand near the signed maximum overflowed the first fix';
+SELECT modulo(toUInt16(37528), toInt32(167682982));
+SELECT modulo(toInt64(-9000000000000000000), toUInt64(10000000000000000000));
+SELECT positiveModulo(toInt64(-1), toUInt64(18446744073709551615));
+SELECT positiveModulo(toInt8(-1), toUInt64(10000000000000000000));
+
+SELECT '-- regression: the wide-pair pruning in FunctionBinaryArithmetic.h had the same overflow';
+SELECT modulo(toUInt128(1000), toInt8(-7));
+SELECT modulo(toInt8(-100), toUInt128(7));
+SELECT modulo(toInt256(-100), toInt8(-7));

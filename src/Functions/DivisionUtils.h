@@ -233,18 +233,46 @@ struct ModuloImpl
             /// `%` is evaluated after the usual arithmetic conversions, which make it unsigned as soon
             /// as the unsigned operand is at least as wide as the signed one (`Int32 % UInt32`,
             /// `UInt64 % Int64`, `Int128 % UInt128`), so a negative operand wraps to a large positive
-            /// value before the remainder is taken. Compute in a signed type instead, the same way
-            /// `DivideIntegralImpl::apply` above does; that is why `intDiv` was correct on operand
-            /// types where this was not. The declared `ResultType` is wide enough to hold the signed
-            /// result. NOTE: an unsigned operand above the signed maximum still wraps, exactly as it does
-            /// for `intDiv`.
+            /// value before the remainder is taken.
+            ///
+            /// Casting an operand to a wider (or same-width) SIGNED type, the way
+            /// `DivideIntegralImpl::apply` above does for the quotient, is not safe for the remainder:
+            /// `DivideIntegralImpl`'s own comment accepts that overflow there "is less harmful", because
+            /// the quotient is still right as long as the wrapped value's magnitude stays smaller than
+            /// the divisor - a remainder's own magnitude is not exempt from that, since it IS the
+            /// value being produced. Measured: `modulo(toUInt16(37528), toInt32(167682982))` cast
+            /// `UInt16(37528)` to `Int16` first, overflowing to -28008; and separately,
+            /// `modulo(toInt64(-9e18), toUInt64(1e19))` cast the `UInt64` divisor to `Int64`,
+            /// overflowing it, and returned the wrong remainder for an input the un-fixed code had
+            /// answered correctly by an unrelated pair of wraps that happened to cancel out.
+            ///
+            /// Work in UNSIGNED magnitudes instead, which never overflows at any width: casting any
+            /// value - signed or unsigned, including the minimal signed number - to an unsigned type
+            /// at least as wide as its own is exact (mod 2^width, which recovers the true value for a
+            /// non-negative one); negating that exact unsigned value with unsigned subtraction is
+            /// exact too, since it is well-defined modulo 2^width and it recovers the exact magnitude
+            /// for a negative one (`0u - (Unsigned)a == |a|`, including `|INT_MIN|`, which does not fit
+            /// the signed type of that width but does fit the unsigned one). `|a| mod |b|`, both in the
+            /// wider of the two operands' unsigned widths, is then an ordinary unsigned remainder with
+            /// no way to overflow; the sign of the final result follows the dividend, per C semantics,
+            /// and `ResultType` is sized to hold it (`NumberTraits::ResultOfModulo`).
             if constexpr (is_integer<IntegerAType> && is_integer<IntegerBType>
                 && (is_signed_v<IntegerAType> || is_signed_v<IntegerBType>))
             {
-                using SignedCastA = make_signed_t<CastA>;
-                using SignedCastB = std::conditional_t<sizeof(IntegerAType) <= sizeof(IntegerBType), make_signed_t<CastB>, SignedCastA>;
+                using CommonUnsigned = typename NumberTraits::Construct<false, false,
+                    std::max(sizeof(CastA), sizeof(CastB))>::Type;
 
-                return static_cast<Result>(static_cast<SignedCastA>(IntegerAType(a)) % static_cast<SignedCastB>(IntegerBType(b)));
+                const bool a_negative = is_signed_v<CastA> && (IntegerAType(a) < 0);
+                const CommonUnsigned ua = static_cast<CommonUnsigned>(IntegerAType(a));
+                const CommonUnsigned magnitude_a = a_negative ? (CommonUnsigned(0) - ua) : ua;
+
+                const bool b_negative = is_signed_v<CastB> && (IntegerBType(b) < 0);
+                const CommonUnsigned ub = static_cast<CommonUnsigned>(IntegerBType(b));
+                const CommonUnsigned magnitude_b = b_negative ? (CommonUnsigned(0) - ub) : ub;
+
+                const CommonUnsigned magnitude_result = magnitude_a % magnitude_b;
+                return a_negative ? static_cast<Result>(-static_cast<Result>(magnitude_result))
+                                  : static_cast<Result>(magnitude_result);
             }
             else if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
             {
