@@ -28,7 +28,7 @@ public:
     /// steady_clock deadline shared with the query's memory reservation so the whole admission phase is
     /// bounded by one budget; on expiry the still-enqueued request is canceled and a
     /// `QUERY_SLOT_ACQUISITION_TIMEOUT` exception is thrown. `time_point::max()` means no timeout.
-    QuerySlot(ResourceLink link_, std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max());
+    explicit QuerySlot(ResourceLink link_, std::chrono::steady_clock::time_point admission_deadline_ = std::chrono::steady_clock::time_point::max());
     ~QuerySlot() override;
 
 private:
