@@ -1,6 +1,6 @@
 -- Tags: long
--- ^ Reliably reproducing the boundary violation needs several unmerged parts with many small
--- granules, so a single run can exceed the 180s flaky-check limit under sanitizer builds.
+-- ^ Every fixture reads multiple parts at `index_granularity = 8`, so the file is dominated by
+-- mark reads and still costs tens of seconds in the heaviest sanitizer lanes.
 
 -- Regression test for the "Virtual row boundary violated in MergingSortedAlgorithm" logical error
 -- (STID 2651-3359). ORDER BY builds a read-in-order virtual row for the sort-key prefix it needs
@@ -20,12 +20,12 @@ SETTINGS index_granularity = 8;
 SYSTEM STOP MERGES t_virtual_row_distinct;
 
 -- Several unmerged parts with small granules so an in-order merge across parts is used.
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(20000);
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(20000, 20000);
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(40000, 20000);
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(60000, 20000);
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(80000, 20000);
-INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 1000), toString(number) FROM numbers(100000, 20000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 100), toString(number) FROM numbers(2000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 100), toString(number) FROM numbers(2000, 2000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 100), toString(number) FROM numbers(4000, 2000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 100), toString(number) FROM numbers(6000, 2000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 100), toString(number) FROM numbers(8000, 2000);
+INSERT INTO t_virtual_row_distinct SELECT number % 5, 16000 + (number % 100), toString(number) FROM numbers(10000, 2000);
 
 SET optimize_read_in_order = 1, read_in_order_use_virtual_row = 1, optimize_distinct_in_order = 1,
     read_in_order_two_level_merge_threshold = 3, max_threads = 2, max_block_size = 64;
@@ -39,6 +39,21 @@ SELECT count() FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_dis
 SELECT
     (SELECT groupArray((CounterID, EventDate)) FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC, EventDate))
   = (SELECT groupArray((CounterID, EventDate)) FROM (SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC, EventDate SETTINGS optimize_read_in_order = 0, read_in_order_use_virtual_row = 0));
+
+-- The result assertions above stay correct whenever read-in-order never runs, so pin the plan as a
+-- pair: the widened `DISTINCT` read must keep reverse in-order reading with the stale conversion
+-- dropped, while the same read without widening must still build one. The label prints as
+-- `Read type: ` or `ReadType: ` depending on `pretty`, so it is matched whitespace-insensitively.
+SELECT countIf(replaceAll(explain, ' ', '') ILIKE '%ReadType:InReverseOrder%') > 0
+   AND countIf(explain ILIKE '%Virtual row conversions%') = 0
+FROM (EXPLAIN actions = 1
+      SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC);
+
+SELECT countIf(replaceAll(explain, ' ', '') ILIKE '%ReadType:InReverseOrder%') > 0
+   AND countIf(explain ILIKE '%Virtual row conversions%') > 0
+FROM (EXPLAIN actions = 1
+      SELECT DISTINCT CounterID, EventDate FROM t_virtual_row_distinct ORDER BY CounterID DESC
+      SETTINGS optimize_distinct_in_order = 0);
 
 DROP TABLE t_virtual_row_distinct;
 
