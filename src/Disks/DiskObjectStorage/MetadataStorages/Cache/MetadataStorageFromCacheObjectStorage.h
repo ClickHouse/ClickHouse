@@ -22,6 +22,7 @@ public:
 
     const std::string & getPath() const override;
     MetadataStorageType getType() const override;
+    void syncMetadataFile(const std::string & path) override;
     std::string getZooKeeperName() const override;
     std::string getZooKeeperPath() const override;
 
@@ -102,6 +103,8 @@ public:
 
     void commit(const TransactionCommitOptionsVariant & options) override;
     TransactionCommitOutcomeVariant tryCommit(const TransactionCommitOptionsVariant & options) override;
+
+    void setSyncMetadata(bool sync) override;
 
     void writeStringToFile(const std::string & path, const std::string & data) override;
     void writeInlineDataToFile(const std::string & path, const std::string & data) override;
