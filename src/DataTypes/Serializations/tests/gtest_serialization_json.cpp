@@ -45,10 +45,13 @@ class CountingSerialization : public NonPoolableSerialization
 {
 public:
     mutable size_t enumerations = 0;
+    mutable size_t subcolumn_enumerations = 0;
 
     void enumerateStreams(EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const override
     {
         ++enumerations;
+        if (settings.subcolumn_name)
+            ++subcolumn_enumerations;
         SerializationNumber<UInt64>::enumerateStreams(settings, callback, data);
     }
 };
@@ -67,13 +70,14 @@ TEST(SerializationJSON, SubcolumnLookupSkipsUnrelatedTypedPaths)
              {object, ""}, {std::make_shared<DataTypeArray>(object), ""},
              {std::make_shared<DataTypeTuple>(DataTypes{object}, Names{"j"}), "j."}})
     {
-        serialization->enumerations = 0;
+        /// Debug and sanitizer builds also enumerate every path to verify the pruned lookup.
+        serialization->subcolumn_enumerations = 0;
         EXPECT_NE(type->getSubcolumnType(prefix + "a.b"), nullptr);
-        EXPECT_EQ(serialization->enumerations, 2);
+        EXPECT_EQ(serialization->subcolumn_enumerations, 2);
 
-        serialization->enumerations = 0;
+        serialization->subcolumn_enumerations = 0;
         EXPECT_NE(type->getSubcolumnType(prefix + "dynamic"), nullptr);
-        EXPECT_EQ(serialization->enumerations, 0);
+        EXPECT_EQ(serialization->subcolumn_enumerations, 0);
 
         serialization->enumerations = 0;
         EXPECT_FALSE(type->getSubcolumnNames().empty());
