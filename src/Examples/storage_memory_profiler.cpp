@@ -451,10 +451,8 @@ void StorageMemoryProfiler::executeQueriesFromFile(const std::string & filepath)
     if (!parsed_all)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot split all queries in SQL file: {}", filepath);
 
-    for (size_t query_index = 0; query_index < queries.size(); ++query_index)
+    for (const auto & query_text : queries)
     {
-        const auto & query_text = queries[query_index];
-        fmt::print(stderr, "  Executing query {}/{}: {}\n", query_index + 1, queries.size(), query_text);
         auto context = Context::createCopy(session_context);
         context->makeQueryContext();
         context->setCurrentQueryId("");
