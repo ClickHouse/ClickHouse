@@ -16,19 +16,26 @@ namespace DB
 /// [-pi/4, pi/4] (Cephes Math Library, Stephen L. Moshier, `sin.c`). Both polynomials are
 /// evaluated for every element and the quadrant selects between them, keeping the loop branch-free.
 ///
-/// The reduction constant pi/2 is split into three parts, the first two having only 24 significant
-/// bits, so that `q * part` is exact for |q| < 2^29. Inputs beyond `fast_trig_limit` (and NaN/Inf)
-/// are recomputed with libm in a second, scalar pass. Inside the limit the result is accurate to
-/// ~1 ulp for sin/cos and ~2 ulp for tan (measured against libm over the whole range).
+/// The reduction constant pi/2 is split into four parts, the first three having at most 27 significant
+/// bits, so that `q * part` is exact for |q| < 2^26, and each subtraction in the chain is exact until
+/// it reaches the scale of the reduced argument. The reduced argument is therefore accurate to ~1 ulp
+/// of its own magnitude even when it cancels almost completely, i.e. near the zeros of sin/cos and the
+/// poles of tan for large |x|, where a shorter split leaves an absolute error of ~1e-30 * q that
+/// dominates the result. Inputs beyond `fast_trig_limit` (and NaN/Inf) are recomputed with libm in a
+/// second, scalar pass. Inside the limit the result is accurate to ~2 ulp for sin/cos and ~4 ulp for
+/// tan (measured against libm over the whole range, including inputs within a few ulp of multiples
+/// of pi/2).
 namespace FastTrig
 {
 
 inline constexpr double fast_trig_limit = 1e8;
 
-/// pi/2 = dp1 + dp2 + dp3 (Cephes DP1..DP3 for pi/4, doubled exactly).
-inline constexpr double dp1 = 2 * 7.85398125648498535156E-1;
-inline constexpr double dp2 = 2 * 3.77489470793079817668E-8;
-inline constexpr double dp3 = 2 * 2.69515142907905952645E-15;
+/// pi/2 = dp1 + dp2 + dp3 + dp4 to ~142 bits (glibc `sysdeps/ieee754/dbl-64/usncs.h`: `mp1`, `mp2`, `pp3`, `pp4`).
+/// `fast_trig_limit` keeps the quadrant number below 2^26, which the exactness of the first three products relies on.
+inline constexpr double dp1 = 0x1.921FB58p0;
+inline constexpr double dp2 = -0x1.DDE973Cp-27;
+inline constexpr double dp3 = -0x1.CB3B398p-55;
+inline constexpr double dp4 = -0x1.d747f23e32ed7p-83;
 inline constexpr double two_over_pi = 6.36619772367581343076E-1;
 
 /// 1.5 * 2^52: adding it rounds to the nearest integer and leaves that integer in the low mantissa
@@ -52,6 +59,7 @@ inline SinCos reduceAndEvaluate(double x)
     double r = x - qd * dp1;
     r -= qd * dp2;
     r -= qd * dp3;
+    r -= qd * dp4;
 
     double r2 = r * r;
 

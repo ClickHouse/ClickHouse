@@ -79,6 +79,24 @@ INSERT INTO t04508_trig VALUES
 -- Accurate to ~1 ulp (relative for large results, absolute near zero).
 SELECT max(abs(sin(x) - s) / greatest(abs(s), 1)) < 3e-16, max(abs(cos(x) - c) / greatest(abs(c), 1)) < 3e-16, max(abs(tan(x) - t) / greatest(abs(t), 1)) < 6e-16
 FROM t04508_trig;
+-- Inputs within a few ulp of a multiple of pi/2, where the reduced argument cancels almost completely: the result
+-- (tiny for sin/cos near their zeros, huge for tan near its poles) must be accurate relative to its own magnitude.
+-- Reference values are correctly rounded (computed in 150-digit arithmetic); a 3-part reduction is off by up to ~1e6 ulp here.
+CREATE TEMPORARY TABLE t04508_trig_cancel (x Float64, s Float64, c Float64, t Float64);
+INSERT INTO t04508_trig_cancel VALUES
+    (39.269908169872416, 1.0, -2.45548340466059e-16, -4072517851686419.0),
+    (5830.795965062656, 7.922952148330979e-17, 1.0, 7.922952148330979e-17),
+    (505574.93494587863, -1.0, 4.994268073815922e-16, -2002295401888468.8),
+    (642615.9188844458, 8.859201669192259e-17, -1.0, -8.859201669192259e-17),
+    (3141592.653589793, -2.231912181360871e-10, 1.0, -2.231912181360871e-10),
+    (4179321.968127247, -1.0, 1.4157737632408629e-15, -706327540433359.4),
+    (7666483.53042661, -1.0, -2.032239683657796e-16, 4920679425962767.0),
+    (8538273.921001451, 6.079734012674402e-16, -1.0, -6.079734012674402e-16),
+    (31415926.535897933, 5.620555424855643e-10, 1.0, 5.620555424855643e-10),
+    (50870383.55651479, 3.2312014478936904e-15, 1.0, 3.2312014478936904e-15),
+    (-75191662.39838518, 1.0, 2.7049771397049974e-13, 3696888913852.5557);
+SELECT max(abs(sin(x) - s) / abs(s)) < 1e-15, max(abs(cos(x) - c) / abs(c)) < 1e-15, max(abs(tan(x) - t) / abs(t)) < 2e-15
+FROM t04508_trig_cancel;
 -- Same over a dense range, using the identities that hold for exact values.
 SELECT max(abs(sin(x) * sin(x) + cos(x) * cos(x) - 1)) < 5e-16, max(abs(tan(x) - sin(x) / cos(x)) / greatest(abs(tan(x)), 1)) < 5e-16
 FROM (SELECT (number - 50000) * 0.9973 AS x FROM numbers(100000) UNION ALL SELECT (number - 500) * 1e4 FROM numbers(1000));
