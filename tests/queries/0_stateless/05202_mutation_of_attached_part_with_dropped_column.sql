@@ -1,3 +1,9 @@
+-- Tags: no-shared-merge-tree
+-- no-shared-merge-tree: the fix below is for a table that has no metadata version to reason
+--   with, so it is reached only when the storage does not support replication. An engine
+--   substituted for `MergeTree` does, and keeps throwing the logical error the check above it
+--   deliberately throws.
+
 -- A partition detached before `DROP COLUMN` and re-attached after it comes back with a part that still
 -- carries the dropped column on disk. Reads and merges ignore such a column, but a mutation of a
 -- Compact part read it as a `READ_COLUMN` command, whose identifier does not resolve against the table
