@@ -444,6 +444,45 @@ TEST_F(MemoryTrackerLargeAllocationTrace, FiresAtExactlyTheThresholdOnTheBlocked
     EXPECT_EQ(tracedLargeAllocations(), before + 1);
 }
 
+TEST_F(MemoryTrackerLargeAllocationTrace, SilentBelowTheThresholdOnTheBlockedGlobalPath)
+{
+    const auto before = tracedLargeAllocations();
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        chargeAndRelease(TRACE_THRESHOLD - 1);
+    }
+
+    /// That copy needs its own negative too: the unblocked one leaves it unconstrained.
+    EXPECT_EQ(tracedLargeAllocations(), before);
+}
+
+/// The two cases below turn the threshold off inside the fixture rather than relying on the default,
+/// because the budget is what a spent one hides: nothing traces once it is gone, so a disabled-path
+/// assertion is only alive while the fixture's collector has just refilled it.
+
+TEST_F(MemoryTrackerLargeAllocationTrace, SilentWhenDisabled)
+{
+    MemoryTracker::setMinAllocationSizeToLogStackTrace(0);
+
+    const auto before = tracedLargeAllocations();
+    chargeAndRelease(QUALIFYING_ALLOCATION);
+
+    EXPECT_EQ(tracedLargeAllocations(), before);
+}
+
+TEST_F(MemoryTrackerLargeAllocationTrace, SilentWhenDisabledOnTheBlockedGlobalPath)
+{
+    MemoryTracker::setMinAllocationSizeToLogStackTrace(0);
+
+    const auto before = tracedLargeAllocations();
+    {
+        MemoryTrackerBlockerInThread blocker(VariableContext::Global);
+        chargeAndRelease(QUALIFYING_ALLOCATION);
+    }
+
+    EXPECT_EQ(tracedLargeAllocations(), before);
+}
+
 TEST_F(MemoryTrackerLargeAllocationTrace, TracedUnderTheUntrackedAllocationsBlocker)
 {
     const auto before = tracedLargeAllocations();
