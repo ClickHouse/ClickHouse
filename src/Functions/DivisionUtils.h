@@ -271,8 +271,21 @@ struct ModuloImpl
                 const CommonUnsigned magnitude_b = b_negative ? (CommonUnsigned(0) - ub) : ub;
 
                 const CommonUnsigned magnitude_result = magnitude_a % magnitude_b;
-                return a_negative ? static_cast<Result>(-static_cast<Result>(magnitude_result))
-                                  : static_cast<Result>(magnitude_result);
+                if (!a_negative)
+                    return static_cast<Result>(magnitude_result);
+
+                /// Negating a `Result` value directly can itself overflow: when `magnitude_result`
+                /// equals `|Result::min()|` (reachable whenever `Result` is no wider than
+                /// `CommonUnsigned`, e.g. `modulo(toInt64(-9223372036854775808),
+                /// toUInt64(18446744073709551615))`, where the correctly-computed magnitude is
+                /// exactly 2^63), `static_cast<Result>(magnitude_result)` is already
+                /// `Result::min()`, and `-Result::min()` is undefined behaviour - caught by UBSan
+                /// as "negation of ... cannot be represented". Negate in `Result`'s own unsigned
+                /// type instead: `magnitude_result` always fits it (`Result` is sized to hold every
+                /// representable outcome, per `NumberTraits::ResultOfModulo`), and unsigned
+                /// subtraction is exact and well-defined even at this exact boundary.
+                using UnsignedResult = make_unsigned_t<Result>;
+                return static_cast<Result>(UnsignedResult(0) - static_cast<UnsignedResult>(magnitude_result));
             }
             else if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
             {

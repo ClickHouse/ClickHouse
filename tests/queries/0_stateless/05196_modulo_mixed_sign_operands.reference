@@ -31,3 +31,8 @@
 6
 -2
 -2
+-- regression: negating the boundary magnitude itself overflowed a same-width signed Result
+-9223372036854775808
+-170141183460469231731687303715884105728
+-- regression: a UInt128 value above Int128::max was silently corrupted before reaching the kernel
+3

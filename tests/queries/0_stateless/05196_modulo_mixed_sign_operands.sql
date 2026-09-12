@@ -52,3 +52,10 @@ SELECT '-- regression: the wide-pair pruning in FunctionBinaryArithmetic.h had t
 SELECT modulo(toUInt128(1000), toInt8(-7));
 SELECT modulo(toInt8(-100), toUInt128(7));
 SELECT modulo(toInt256(-100), toInt8(-7));
+
+SELECT '-- regression: negating the boundary magnitude itself overflowed a same-width signed Result';
+SELECT modulo(toInt64(-9223372036854775808), toUInt64(18446744073709551615));
+SELECT modulo(toInt128('-170141183460469231731687303715884105728'), toUInt128('340282366920938463463374607431768211455'));
+
+SELECT '-- regression: a UInt128 value above Int128::max was silently corrupted before reaching the kernel';
+SELECT modulo(toUInt128('170141183460469231731687303715884105729'), toInt8(-7));

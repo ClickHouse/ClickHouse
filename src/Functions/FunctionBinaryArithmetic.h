@@ -3257,15 +3257,19 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
                 else
                 {
-                    /// `ModuloImpl` widens an unsigned operand to a signed type twice its width before
-                    /// computing in whichever safe-signed type is wider (`DivisionUtils.h`), rather than
-                    /// casting either operand to the OTHER operand's width, which can overflow when that
-                    /// width's unsigned range does not fit the same-width signed type. Mirror the same
-                    /// per-operand widening here so a pruned pair is never narrower than a direct one.
+                    /// `ModuloImpl` widens an unsigned operand to a signed type wide enough to hold every
+                    /// value of its own width exactly, then computes in whichever safe-signed type is
+                    /// wider (`DivisionUtils.h`). `NumberTraits::nextSize` is not wide enough here: it is
+                    /// capped at 8 bytes for its other, unrelated callers, so it leaves `UInt128` mapped
+                    /// to same-width `Int128`, which cannot hold a `UInt128` value above `Int128::max()` -
+                    /// `castColumn` below would then silently reinterpret it as negative before `%` ever
+                    /// runs, changing what the value MEANS, not just how it is stored. `Int256` exists and
+                    /// holds the full `UInt128` range, so widen up to it specifically for this pruning.
+                    constexpr auto next_integer_size = [](size_t size) { return size < 32 ? size * 2 : size; };
                     using SafeSignedT0 = typename NumberTraits::Construct<true, false,
-                        is_signed_v<T0> ? sizeof(T0) : NumberTraits::nextSize(sizeof(T0))>::Type;
+                        is_signed_v<T0> ? sizeof(T0) : next_integer_size(sizeof(T0))>::Type;
                     using SafeSignedT1 = typename NumberTraits::Construct<true, false,
-                        is_signed_v<T1> ? sizeof(T1) : NumberTraits::nextSize(sizeof(T1))>::Type;
+                        is_signed_v<T1> ? sizeof(T1) : next_integer_size(sizeof(T1))>::Type;
                     using CommonType = std::conditional_t<(sizeof(SafeSignedT0) >= sizeof(SafeSignedT1)), SafeSignedT0, SafeSignedT1>;
                     return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
                 }
