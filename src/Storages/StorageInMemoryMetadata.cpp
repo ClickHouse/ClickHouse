@@ -364,7 +364,7 @@ bool StorageInMemoryMetadata::hasOnlyRowsTTL() const
     return hasRowsTTL() && !has_any_other_ttl;
 }
 
-TTLColumnsDescription StorageInMemoryMetadata::getColumnTTLs() const
+const TTLColumnsDescription & StorageInMemoryMetadata::getColumnTTLs() const
 {
     return column_ttls_by_name;
 }
