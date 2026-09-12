@@ -60,7 +60,7 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
         return Status::Finished;
     }
 
-    /// `work` runs without the executor's graph lock, so every port access lives here.
+    /// work() runs without the executor's graph lock, so it must not change port state; that happens here.
     if (has_output_chunks && !pushOutputChunks())
         return Status::PortFull;
 

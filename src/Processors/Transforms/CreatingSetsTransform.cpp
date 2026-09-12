@@ -80,8 +80,8 @@ CreatingSetsTransform::CreatingSetsTransform(
 
 IProcessor::Status CreatingSetsTransform::prepare()
 {
-    /// `work` runs without the executor's graph lock, so every port access lives here. The base
-    /// class closes the input only on the path that still expects to generate output.
+    /// work() runs without the executor's graph lock, so it must not change port state; that happens here.
+    /// The base class closes the input only on the path that still expects to generate output.
     if (finished_input)
         input.close();
 
