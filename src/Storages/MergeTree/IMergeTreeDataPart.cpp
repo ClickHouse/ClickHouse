@@ -1542,7 +1542,14 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         if (!(*storage.getSettings())[MergeTreeSetting::columns_and_secondary_indices_sizes_lazy_calculation])
             calculateColumnsAndSecondaryIndicesSizesOnDisk();
 
-        if (check_consistency && !has_broken_projections)
+        /// A broken projection does not break its part on purpose, and this check tolerates one by
+        /// itself: `loadProjections` above marks such a projection broken instead of failing, and the
+        /// file-size loop of `checkConsistencyBase` does the same for the `.proj` entry of the part's
+        /// checksums. Skipping the check entirely instead used to take the part's own crash-corruption
+        /// protection away with it: a marks file left empty by a power loss loads as an empty
+        /// `index_granularity`, `loadRowsCount` then reports zero rows, and the part's acknowledged
+        /// rows disappear from every query - with nothing detached to recover them from.
+        if (check_consistency)
             checkConsistency(require_columns_checksums);
 
         loadDefaultCompressionCodec();
