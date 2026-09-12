@@ -206,9 +206,12 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
                         auto tmp_subpath = subpath;
                         if (tmp_subpath[i].creator)
                         {
+                            /// Build the serialization before the type is wrapped, so that a creator
+                            /// inspecting its prev_type argument sees the type the serialization
+                            /// actually serializes. Same order as in ISerialization::createFromPath.
+                            dynamic_subcolumn_info->data.serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
                             dynamic_subcolumn_info->data.type = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.type);
                             dynamic_subcolumn_info->data.column = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.column);
-                            dynamic_subcolumn_info->data.serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
                         }
 
                         tmp_subpath[i].data = dynamic_subcolumn_info->data;

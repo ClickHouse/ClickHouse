@@ -998,16 +998,22 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
             res->substreams_path.end(), nested_info->substreams_path.begin(), nested_info->substreams_path.end());
     }
 
+    /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
+    bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
+    auto subcolumn_type_before_wrap = res->data.type;
+    if (!is_null_map_subcolumn && make_subcolumn_nullable)
+        res->data.type = makeNullableOrLowCardinalityNullableSafe(res->data.type);
+    /// res->data.serialization serializes the type before the wrap above, so it must know whether the
+    /// nullability it will be handed at read time is that wrapper or the requested type's own.
+    bool nullable_added_by_extraction
+        = !isNullableOrLowCardinalityNullable(subcolumn_type_before_wrap) && isNullableOrLowCardinalityNullable(res->data.type);
     res->data.serialization = SerializationDynamicElement::create(
         res->data.serialization,
         dynamic_serialization.createSerializationForType(ColumnDynamic::getSharedVariantDataType()),
         subcolumn_type->getName(),
         String(subcolumn_nested_name),
-        is_null_map_subcolumn);
-    /// Make resulting subcolumn Nullable only if type subcolumn can be inside Nullable or can be LowCardinality(Nullable()).
-    bool make_subcolumn_nullable = canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(subcolumn_type);
-    if (!is_null_map_subcolumn && make_subcolumn_nullable)
-        res->data.type = makeNullableOrLowCardinalityNullableSafe(res->data.type);
+        is_null_map_subcolumn,
+        nullable_added_by_extraction);
 
     if (data.column)
     {
