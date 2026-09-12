@@ -317,6 +317,11 @@ bool DataPartStorageOnDiskBase::supportZeroCopyReplication() const
     return volume->getDisk()->supportZeroCopyReplication();
 }
 
+bool DataPartStorageOnDiskBase::supportsHardLinks() const
+{
+    return volume->getDisk()->supportsHardLinks();
+}
+
 bool DataPartStorageOnDiskBase::supportParallelWrite() const
 {
     return volume->getDisk()->supportParallelWrite();
@@ -574,7 +579,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freeze(
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, *disk, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
     else
     {
@@ -652,7 +657,7 @@ MutableDataPartStoragePtr DataPartStorageOnDiskBase::freezeRemote(
         params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / VersionMetadata::TXN_VERSION_METADATA_FILE_NAME);
         if (!params.keep_metadata_version)
             params.external_transaction->removeFileIfExists(fs::path(to) / dir_path / IMergeTreeDataPart::METADATA_VERSION_FILE_NAME);
-        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
+        IMergeTreeDataPart::writeInvalidatedSystemColumnsFile(*params.external_transaction, *dst_disk, fs::path(to) / dir_path, params.invalidated_columns_to_write, write_settings);
     }
     else
     {

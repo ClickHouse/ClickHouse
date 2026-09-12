@@ -3,6 +3,7 @@
 #include <Core/Types.h>
 #include <Storages/MergeTree/MergeTreePartInfo.h>
 #include <Disks/IDisk.h>
+#include <functional>
 #include <map>
 #include <list>
 #include <mutex>
@@ -134,11 +135,21 @@ public:
 class MergeTreeDeduplicationLog
 {
 public:
+    /// `may_write_shared_state_`, when set, is consulted immediately before every write to the
+    /// shared on-disk state: appending records and rotating / dropping outdated logs, both
+    /// during `load` and in the steady-state `addPart` / `dropPart` paths. Used under
+    /// `leader_election`, where the log directory is shared between server processes and only
+    /// a node whose lease is still fresh may rewrite it: the caller's entry-point lease check
+    /// can go stale by the time the log mutation runs (a reload can outlast the lease, a
+    /// heartbeat can stall mid-INSERT), and on object storage without append support every
+    /// append finalizes and rotates whole log files, so a stale writer would clobber the log
+    /// files the next leader is writing.
     MergeTreeDeduplicationLog(
         const std::string & logs_dir_,
         size_t deduplication_window_,
         const MergeTreeDataFormatVersion & format_version_,
-        DiskPtr disk_);
+        DiskPtr disk_,
+        std::function<bool()> may_write_shared_state_ = {});
 
     struct AddPartResult
     {
@@ -150,7 +161,20 @@ public:
     /// Otherwise, in case of duplicate, return block_id with the collision and previous part name with same hash (useful for logging)
     std::vector<AddPartResult> addPart(const std::vector<std::string> & block_id, const MergeTreePartInfo & part);
 
-    /// Remove all covered parts from in memory table and add DROP records to the disk
+    /// The read-only half of `addPart`: return the conflicts an `addPart` with these block ids
+    /// would return, without writing anything. Under `leader_election` the insert path checks
+    /// for duplicates with this before publishing the part and calls `addPart` only after the
+    /// fenced commit succeeded, so a publish rejected by the leader fence cannot leave durable
+    /// block ids of a failed `INSERT` behind for the next leader to deduplicate retries against.
+    std::vector<AddPartResult> getDuplicates(const std::vector<std::string> & block_ids);
+
+    /// Remove all covered parts from in memory table and add DROP records to the disk.
+    /// Under `leader_election` this is also the reconciliation primitive: right after `load`,
+    /// the new leader calls it with the range of every active *empty* covering part — such a
+    /// part means all data in its range was dropped, so any surviving block id in it belongs
+    /// to a `DROP`/`DETACH`/`TRUNCATE`/`REPLACE PARTITION` whose deduplication-log `DROP`
+    /// records were never written (the previous leader died, or its lease went stale, between
+    /// retiring the partition and updating the log).
     void dropPart(const MergeTreePartInfo & drop_part_info);
 
     /// Load history from disk. Ignores broken logs.
@@ -160,11 +184,22 @@ public:
 
     void shutdown();
 
+    /// Stop the log and cancel the open writer WITHOUT finalizing it. Called on leadership
+    /// loss under `leader_election`: on object storage without append support the writer
+    /// points at the next numbered log file in `WriteMode::Rewrite`, so finalizing it later
+    /// (from `shutdown`, the destructor, or when the reload on a future leadership
+    /// reacquisition replaces this object) would overwrite a log file the intervening leader
+    /// already owns, losing deduplication history. Idempotent, like `shutdown`.
+    void discard();
+
     ~MergeTreeDeduplicationLog();
 private:
     const std::string logs_dir;
     /// Size of deduplication window
     size_t deduplication_window;
+
+    /// See the constructor comment. Empty for tables that own their data outright.
+    const std::function<bool()> may_write_shared_state;
 
     /// How often we create new logs. Not very important,
     /// default value equals deduplication_window * 2
@@ -206,6 +241,28 @@ private:
 
     /// Load single log from disk. In case of corruption throws exceptions
     size_t loadSingleLog(const std::string & path);
+
+    /// Which mutation of the shared on-disk state the lease check in front of it guards. Only
+    /// selects which test failpoints are armed — the lease check itself is the same everywhere.
+    enum class WriteStage : uint8_t
+    {
+        /// Nothing has been written by the current call yet.
+        FirstRecordOfBatch,
+        /// Appending another record of a batch whose earlier records are already written.
+        NextRecordOfBatch,
+        /// Rotating / dropping whole log files after a record of this batch was written. On
+        /// object storage without append support this finalizes the current numbered log file
+        /// and opens the next one with `WriteMode::Rewrite`, so it is a separate window in which
+        /// a stale writer could clobber the log sequence the next leader already owns.
+        RotationAfterRecord,
+    };
+
+    /// Throw `TABLE_IS_READ_ONLY` if `may_write_shared_state` is set and reports the lease as
+    /// no longer fresh. Called immediately before every mutation of the shared on-disk state —
+    /// per record inside `addPart`/`dropPart` and again before every rotation, not only once per
+    /// batch, because each record can rotate whole shared log files on object storage without
+    /// append support.
+    void assertMayWriteSharedState(WriteStage stage = WriteStage::FirstRecordOfBatch) const;
 };
 
 }

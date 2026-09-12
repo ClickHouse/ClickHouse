@@ -47,6 +47,7 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int UNFINISHED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 
@@ -763,6 +764,43 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
             DatabaseCatalog::instance().checkTableCanBeRemovedOrRenamed({database_name, table.first}, check_ref_deps, check_loading_deps);
     }
 
+    /// `renameDatabase` changes each table's `StorageID` via `renameInMemory` below without going
+    /// through any rename guard. Enforce a database-rename-specific guard here so storages whose
+    /// shared path is fixed at startup (e.g. `MergeTree` with `leader_election = 1`) are not
+    /// silently renamed by a database-level rename.
+    ///
+    /// Note: this must NOT reuse `checkTableCanBeRenamed`. That check encodes table-rename
+    /// semantics (UUID transitions, moving a table between databases) and would reject a
+    /// `ReplicatedMergeTree` with implicit macros / `KeeperMap` / `ObjectStorageQueue` carried by
+    /// the rename — including the final `RENAME DATABASE` of the Ordinary-to-Atomic startup
+    /// conversion, which a previous version of this code broke. See
+    /// `IStorage::checkTableCanBeRenamedByDatabaseRename`.
+    for (auto & table : tables)
+        table.second->checkTableCanBeRenamedByDatabaseRename();
+
+    /// The same guard for the tables that are currently detached. `DETACH TABLE` moves a table out
+    /// of `tables` into `snapshot_detached_tables` and keeps its metadata file, which this method
+    /// renames along with the rest of the database, so a later `ATTACH TABLE` would bring the table
+    /// back under the new database name — precisely the rename the loop above rejects. Both flavours
+    /// of detach are covered: a permanently detached table is in the same map.
+    ///
+    /// There is no storage object to ask, so the answer comes from the table's own metadata,
+    /// resolved by the same predicate the lazy-table proxy uses. Unreadable metadata propagates as
+    /// an error and fails the rename: the guard must not be skipped because the answer is unknown.
+    for (const auto & [detached_table_name, snapshot] : snapshot_detached_tables)
+    {
+        auto ast = parseQueryFromMetadata(log, getContext(), getDisk(), snapshot.metadata_path);
+        const auto & create = ast->as<const ASTCreateQuery &>();
+        if (!DatabaseRenameGuardHint::fromCreateQuery(create).mayNeedGuard(getContext()))
+            continue;
+
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "RENAME DATABASE is not supported for a database with the detached `leader_election` table {}: "
+            "the data path of such a table is shared between nodes and its lease path is fixed at startup, "
+            "so attaching it back under a new database name would diverge from the peers that still track the "
+            "old one. Drop the table instead of detaching it, or recreate it under the desired name.",
+            backQuote(detached_table_name));
+    }
 
     try
     {

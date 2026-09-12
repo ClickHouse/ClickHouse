@@ -835,7 +835,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
         part_name = new_part_info.getPartNameV1();
 
     std::string temp_prefix = "tmp_insert_";
-    const auto & temp_postfix = data.getPostfixForTempInsertName();
+    const auto & temp_postfix = data.getPostfixForTempPartName();
     if (!temp_postfix.empty())
         temp_prefix += temp_postfix + "_";
 

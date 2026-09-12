@@ -73,7 +73,7 @@ public:
     /// IMergeTreeDataPart called. If replacing part doesn't exists or not active (committed) than
     /// cloned part will be removed and log message will be reported. It may happen in case of concurrent
     /// merge or mutation.
-    void swapClonedPart(TemporaryClonedPart & cloned_part) const;
+    void swapClonedPart(TemporaryClonedPart & cloned_part, std::optional<UInt64> admission_epoch = {}) const;
 
     /// Rename cloned part from `moving/` directory to the actual part storage
     void renameClonedPart(IMergeTreeDataPart & part) const;

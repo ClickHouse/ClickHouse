@@ -16,12 +16,14 @@ MergeTreeSinkPatch::MergeTreeSinkPatch(
     StorageMergeTree & storage_,
     PatchPartMetadata patch_metadata_,
     PlainLightweightUpdateHolder update_holder_,
-    ContextPtr context_)
+    ContextPtr context_,
+    UInt64 commit_epoch_)
     : MergeTreeSink(
         storage_,
         patch_metadata_.metadata,
         /*max_parts_per_block=*/ 0,
-        std::move(context_))
+        std::move(context_),
+        commit_epoch_)
     , update_holder(std::move(update_holder_))
     , patch_metadata(std::move(patch_metadata_))
 {

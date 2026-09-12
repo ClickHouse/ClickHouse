@@ -202,6 +202,9 @@ public:
     virtual std::optional<String> getCacheName() const { return std::nullopt; }
     virtual bool supportZeroCopyReplication() const { return false; }
     virtual bool supportParallelWrite() const = 0;
+    /// Whether files of this storage can be hardlinked (see `IDisk::supportsHardLinks`). False for
+    /// metadata layouts with deterministic object keys (`plain`, `plain_rewritable`) and write-once disks.
+    virtual bool supportsHardLinks() const = 0;
     virtual bool isBroken() const = 0;
     virtual bool isReadonly() const = 0;
 

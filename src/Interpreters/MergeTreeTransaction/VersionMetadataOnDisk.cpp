@@ -56,7 +56,11 @@ VersionInfo VersionMetadataOnDisk::loadMetadata()
         std::lock_guard lock_persisted_metadata{persisted_info_mutex};
         loading_info = readMetadataUnlocked();
         has_tmp_metadata_file = data_part_storage.existsFile(TMP_TXN_VERSION_METADATA_FILE_NAME);
-        if (has_tmp_metadata_file)
+        /// Under `leader_election`, a follower (or a node that has not acquired the lease yet)
+        /// loads parts read-only: deleting a leftover `txn_version.txt.tmp` would mutate shared
+        /// object storage owned by the current leader. The in-memory rollback handling below is
+        /// unaffected; the on-disk cleanup is left to the lease-holding leader.
+        if (has_tmp_metadata_file && merge_tree_data_part->storage.mayMutateSharedStorage())
             removeTmpMetadataFile();
     }
 
@@ -202,6 +206,15 @@ std::expected<Int32, StaleVersion> VersionMetadataOnDisk::storeInfoUnlocked(Vers
 
         return VersionInfo::UNSTORED_VERSION;
     }
+
+    /// Same rationale, but dynamic: under `leader_election` only the lease-holding leader may
+    /// persist version metadata to shared storage; a follower (or a node loading parts before it
+    /// has acquired the lease) keeps the resolved info in memory only and leaves the on-disk
+    /// repair to the leader. Today this is also implied by `can_write_metadata` — the disks that
+    /// `leader_election` accepts do not support writing with append, so the storage does not
+    /// support transactions — but the write must stay fail-closed on its own.
+    if (!involved_in_transaction && !merge_tree_data_part->storage.mayMutateSharedStorage())
+        return VersionInfo::UNSTORED_VERSION;
 
     if (!involved_in_transaction && is_persist_deferrable)
     {

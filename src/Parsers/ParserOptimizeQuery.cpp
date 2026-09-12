@@ -186,6 +186,8 @@ This is useful for:
 
 `DRY RUN` is incompatible with `FINAL` and `PARTITION`. It can be combined with `DEDUPLICATE` (with optional column specification) and `CLEANUP` (for `ReplacingMergeTree` tables).
 
+`DRY RUN` is rejected for tables with the `leader_election` setting enabled: the merge it performs writes and commits a temporary part on the table's shared object storage without the leadership fence that a regular `OPTIMIZE` holds.
+
 **Syntax**
 
 ```sql
