@@ -171,11 +171,8 @@ bool FunctionArrayDistinct::executeNumber(
             if (nullable_col && (*src_null_map)[j])
                 continue;
 
-            if (!set.find(values[j]))
-            {
+            if (set.insert(values[j]).second)
                 res_data.emplace_back(values[j]);
-                set.insert(values[j]);
-            }
         }
 
         res_offset += set.size();
@@ -224,11 +221,8 @@ bool FunctionArrayDistinct::executeString(
 
             std::string_view str_ref = src_data_concrete->getDataAt(j);
 
-            if (!set.find(str_ref))
-            {
-                set.insert(str_ref);
+            if (set.insert(str_ref).second)
                 res_data_column_string.insertData(str_ref.data(), str_ref.size());
-            }
         }
 
         res_offset += set.size();
@@ -272,11 +266,8 @@ void FunctionArrayDistinct::executeHashed(
             src_data.updateHashWithValue(j, hash_function);
             const auto hash = hash_function.get128();
 
-            if (!set.find(hash))
-            {
-                set.insert(hash);
+            if (set.insert(hash).second)
                 res_data_col.insertFrom(src_data, j);
-            }
         }
 
         res_offset += set.size();
