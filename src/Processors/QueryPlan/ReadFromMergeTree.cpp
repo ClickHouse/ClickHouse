@@ -6038,8 +6038,9 @@ RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const
     if (analyzed_result_ptr || !indexes)
         return getParts();
 
-    /// Reuse the execution filter's min-max-before-partition order. Do not run primary
-    /// key analysis or retain its result while the optimizer can still change filters.
+    /// Share partition filtering with `selectRangesToReadImpl`, including min-max pruning.
+    /// Keep this snapshot temporary: `PREWHERE` optimization can still change filters,
+    /// so execution must filter again with the final conditions.
     IndexStats unused_stats;
     return MergeTreeDataSelectExecutor::filterPartsByPartition(
         getParts(), indexes->partition_pruner, indexes->minmax_idx_condition,
