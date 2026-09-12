@@ -157,6 +157,12 @@ private:
 
         Function function = FUNCTION_UNKNOWN;
         std::vector<TextSearchQueryPtr> text_search_queries;
+
+        /// Additional queries that must be registered in `all_search_queries` (so the direct-read
+        /// optimization can look them up) but do NOT participate in granule pruning. Used by the
+        /// positive-boolean-wrapper handling to keep the wrapper query in `None` mode while still
+        /// preserving the bare child atom's original-mode query for its independent optimization.
+        std::vector<TextSearchQueryPtr> extra_search_queries;
     };
 
     using RPN = std::vector<RPNElement>;
@@ -175,6 +181,11 @@ private:
         RPNElement & out) const;
 
     TextIndexDirectReadMode getHintOrNoneMode() const;
+
+    /// Looks through a semantically-equivalent positive boolean wrapper around a supported atom
+    /// (`atom = true`, `atom != false`, `isNotDistinctFrom(atom, true)`, `atom IN (only-truthy-consts)`)
+    /// by recursing into the atom, so pruning is not lost. Returns true if a wrapper was handled.
+    bool traversePositiveBooleanWrapper(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
 
     bool traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const;
     bool traverseMapElementValueNode(const RPNBuilderTreeNode & index_column_node, const Field & const_value) const;
