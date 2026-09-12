@@ -1852,7 +1852,8 @@ static ActionsDAG createProjection(const Block & header)
 static MarkRanges splitRangesToAvoidLargeReads(const MarkRanges & ranges, int direction, size_t rows_granularity, size_t max_block_size)
 {
     MarkRanges new_ranges;
-    const size_t max_marks_in_range = (max_block_size + rows_granularity - 1) / rows_granularity;
+    /// Rounds up without forming the sum, which wraps when the granularity is close to the maximum of size_t.
+    const size_t max_marks_in_range = max_block_size / rows_granularity + (max_block_size % rows_granularity != 0);
     size_t marks_in_range = 1;
 
     if (direction == 1)
