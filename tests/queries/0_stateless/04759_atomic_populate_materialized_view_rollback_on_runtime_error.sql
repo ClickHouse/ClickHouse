@@ -9,6 +9,9 @@
 -- the just-created view: otherwise the failed CREATE would leave behind a subscribed view with partial
 -- data, and a retry would fail with `TABLE_ALREADY_EXISTS`.
 
+-- the rollback under test only exists on the atomic path
+SET materialized_views_populate_atomically = 1;
+
 DROP TABLE IF EXISTS src_04759;
 DROP TABLE IF EXISTS mv_04759;
 

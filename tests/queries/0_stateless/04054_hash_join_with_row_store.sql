@@ -18,6 +18,9 @@ SET join_algorithm = 'hash';
 SELECT '--- Row store planner decision test ---';
 
  -- Pin planner settings
+-- The row store is the feature under test and CI randomizes it off, which would make every
+-- "Initialized Row store" assertion below read 0.
+SET enable_hash_join_row_store = 1;
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;
 SET query_plan_optimize_join_order_limit = 10;

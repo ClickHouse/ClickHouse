@@ -36,6 +36,9 @@ SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
+-- Pin (randomized in CI): the pinned EXPLAIN output below is one join order, and a DP algorithm
+-- ahead of 'greedy' picks another, moving the subtree the pushdown is supposed to land on.
+SET query_plan_optimize_join_order_algorithm = 'greedy';
 SET param__internal_cascades_cluster_node_count = 4;
 -- `t_corr_left` huge with few distinct `k`, both right tables small, so the join reorderer
 -- keeps the huge join subtree as an input of the top join and the pushdown pays off on it.
