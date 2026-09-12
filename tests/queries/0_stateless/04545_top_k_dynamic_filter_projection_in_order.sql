@@ -169,8 +169,10 @@ ALTER TABLE t_topk_mixed ADD PROJECTION p_score (SELECT id, k, score, payload OR
 ALTER TABLE t_topk_mixed MATERIALIZE PROJECTION p_score IN PARTITION 0 SETTINGS mutations_sync = 2;
 
 -- Exactly one union child keeps the filter (the base-table child) and exactly one child reads in
--- order (the projection child): the drop is per-branch, not all-or-nothing.
-SELECT countIf(explain ILIKE '%Prewhere filter column%' AND explain ILIKE '%__topKFilter%') AS filtered_children
+-- order (the projection child): the drop is per-branch, not all-or-nothing. This query carries no
+-- WHERE, PREWHERE or row policy, so the only prewhere either child can hold is the injected top-k
+-- one, and counting the per-step lines counts filtered children in every EXPLAIN format.
+SELECT countIf(explain ILIKE '%Prewhere filter column%') AS filtered_children
 FROM (
     EXPLAIN projections = 1, actions = 1
     SELECT id, cityHash64(payload) FROM t_topk_mixed ORDER BY score, id LIMIT 10
