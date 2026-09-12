@@ -1,0 +1,70 @@
+Float64 smallest-positive intDiv -1 is 0, not an error
+0
+0
+0
+0
+Float32 smallest-positive intDiv -1 is 0, not an error
+0
+0
+0
+0
+Integer and mixed-width divisor spellings
+0
+0
+0
+0
+0
+0
+Type wrappers and non-scalar contexts
+0
+0
+0
+[0]
+intDivOrNull returns 0, not NULL
+0
+0
+0
+0
+intDivOrZero stays 0
+0
+0
+BFloat16 smallest-positive (bit pattern 256)
+256
+0
+0
+0
+0
+0
+Neighbouring float values were always fine and stay 0
+0
+0
+0
+0
+0
+0
+0
+384
+0
+0
+A minimal signed integer dividend with a float divisor is still suppressed
+0
+\N
+\N
+0
+\N
+\N
+0
+The real integer minimal-value overflow still throws
+Division by zero and out-of-range floats are unaffected
+0
+\N
+Floating modulo keeps its own null condition
+0
+0
+1
+1
+Result types are unchanged
+Int64
+Int32
+Int16
+Nullable(Int64)
