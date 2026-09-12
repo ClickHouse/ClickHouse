@@ -407,11 +407,29 @@ std::pair<String, String> IMergeTreeReader::getStorageAndSubcolumnNameInPart(con
     return {name_in_storage, subcolumn_name};
 }
 
+std::optional<NameAndTypePair> IMergeTreeReader::tryGetColumnInPart(const String & name_in_part, bool subcolumn_requested) const
+{
+    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+
+    /// The lookup goes through subcolumns because for a wide part the flattened columns of a `Nested`
+    /// column are collected back into one column, whose subcolumns they become. A column that the table
+    /// declares in its own right must not be answered that way: a column named like a subcolumn of
+    /// another column (`a.size0` next to an `Array` column `a`) is missing from every part written
+    /// before `ALTER TABLE ... ADD COLUMN` added it, and the generated subcolumn of the other column
+    /// would answer with the array's sizes where the column's own default belongs. A column the part
+    /// really stores - under its own name, flattened or not - is unaffected.
+    if (column_in_part && !subcolumn_requested
+        && !data_part_info_for_read->getColumnsDescription().hasPhysical(name_in_part))
+        return {};
+
+    return column_in_part;
+}
+
 NameAndTypePair IMergeTreeReader::getColumnInPart(const NameAndTypePair & required_column) const
 {
     auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
     auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
-    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    auto column_in_part = tryGetColumnInPart(name_in_part, !name_pair.second.empty());
 
     if (!column_in_part)
     {
@@ -436,7 +454,7 @@ SerializationPtr IMergeTreeReader::getSerializationInPart(const NameAndTypePair 
 {
     auto name_pair = getStorageAndSubcolumnNameInPart(required_column);
     auto name_in_part = Nested::concatenateName(name_pair.first, name_pair.second);
-    auto column_in_part = part_columns.tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, name_in_part);
+    auto column_in_part = tryGetColumnInPart(name_in_part, !name_pair.second.empty());
 
     if (!column_in_part)
     {
