@@ -1,0 +1,8 @@
+inner limit does not cover the outer offset
+1
+inner limit covers the outer offset
+4
+5
+inner limit above a pure offset
+1
+2

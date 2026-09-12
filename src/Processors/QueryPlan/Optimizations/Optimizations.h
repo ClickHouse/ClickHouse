@@ -288,6 +288,8 @@ using Stack = std::vector<Frame>;
 
 /// Second pass optimizations
 void optimizePrimaryKeyConditionAndLimit(const Stack & stack);
+/// Skip reading the leading granules consumed by an OFFSET when reading in primary key order.
+void optimizeSkipOffsetForReadInOrder(const Stack & stack);
 void processAndOptimizeTextIndexFunctions(
     const Stack & stack, QueryPlan::Nodes & nodes, bool direct_read_from_text_index, const Optimization::ExtraSettings & settings);
 void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
