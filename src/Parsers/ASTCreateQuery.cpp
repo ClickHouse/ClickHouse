@@ -910,6 +910,33 @@ void ASTCreateQuery::readJSON(const Poco::JSON::Object & json)
             "`CreateQuery` declares 'is_populate' or 'is_create_empty' without a source to fill from "
             "during AST JSON deserialization");
 
+    /// `CLONE` is owned by `ParserCreateTableQuery` alone: it is set only there, and only after an
+    /// `AS` that must be followed by a source. `formatQueryImpl` prints ` CLONE` for every shape that
+    /// carries a source, so a `clickhouse_json` payload that puts the flag on a view / dictionary form,
+    /// or on a source-less table, would format into SQL that no SQL parser can read back. The
+    /// interpreter also branches on the flag (`InterpreterCreateQuery` attaches the source partitions),
+    /// so reject the impossible combinations at the JSON boundary.
+    ///
+    /// The parser sets at most one of `EMPTY` / `CLONE` (an `if`/`else if` over the two keywords, and it
+    /// bails out entirely once either is set).
+    if (is_clone_as && is_create_empty)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` sets both 'is_clone_as' and 'is_create_empty' during AST JSON deserialization, "
+            "but they are mutually exclusive");
+
+    /// Views and dictionaries have their own parsers, which never accept `CLONE`.
+    if (is_clone_as && (is_ordinary_view || is_materialized_view || is_dictionary))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` has 'is_clone_as' set on a view or a dictionary during AST JSON "
+            "deserialization, but the parser accepts `CLONE` only for tables");
+
+    /// `CLONE` requires an `AS` clause, so one of `AS SELECT` / `AS table` / `AS table function` is
+    /// always present. Without one, formatting emits a trailing ` CLONE` that cannot be reparsed.
+    if (is_clone_as && !select && !as_table_function && as_table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "`CreateQuery` declares 'is_clone_as' without a source to clone from during AST JSON "
+            "deserialization");
+
     readOutputOptionsJSON(r);
 }
 
@@ -1171,6 +1198,8 @@ void ASTCreateQuery::formatQueryImpl(WriteBuffer & ostr, const FormatSettings & 
 
     if (select)
     {
+        /// Emit CLONE for `CLONE AS SELECT`; the other CLONE shapes are handled in the branches above.
+        add_clone_if_needed();
         ostr << settings.nl_or_ws;
         ostr << "AS ";
 
