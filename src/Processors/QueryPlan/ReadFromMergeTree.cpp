@@ -66,6 +66,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolParallelReplicasInOrder.h>
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
@@ -2238,6 +2239,11 @@ static NameSet getColumnsRequiredForMergingFinal(
             [[fallthrough]];
         case MergeTreeData::MergingParams::Summing:
             break;
+        case MergeTreeData::MergingParams::VersionedCoalescing: {
+            required_columns.insert(merging_params.version_column);
+            required_columns.insert(ColumnVersionsColumn::name);
+            break;
+        }
         case MergeTreeData::MergingParams::VersionedCollapsing:
             [[fallthrough]];
         case MergeTreeData::MergingParams::Collapsing: {
@@ -4293,6 +4299,9 @@ Pipe ReadFromMergeTree::spreadMarkRanges(
             column_names_to_read.push_back(data.merging_params.sign_column);
         if (!data.merging_params.version_column.empty() && names.emplace(data.merging_params.version_column).second)
             column_names_to_read.push_back(data.merging_params.version_column);
+        if (data.merging_params.mode == MergeTreeData::MergingParams::VersionedCoalescing
+            && names.emplace(ColumnVersionsColumn::name).second)
+            column_names_to_read.push_back(ColumnVersionsColumn::name);
 
         return spreadMarkRangesAmongStreamsFinal(
             std::move(parts_with_ranges),

@@ -1,0 +1,15 @@
+Array
+1	2	[3,4]
+2	2	[]
+Map
+1	2	{'b':2}
+Tuple
+1	2	(NULL,'x2')
+Tuple with element aggregation
+1	2	(5,[9])
+LowCardinality
+1	2	lc1
+2	2	lc2
+Dynamic
+1	2	42	Int64
+2	2	str	String
