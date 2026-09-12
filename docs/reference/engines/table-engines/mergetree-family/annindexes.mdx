@@ -130,7 +130,7 @@ We recommend changing the index granularity only for advanced users who understa
 
 Vector similarity indexes are generic in the sense that they can accommodate different approximate search method.
 The actually used method is specified by parameter `<type>`.
-As of now, the only available method is HNSW ([academic paper](https://arxiv.org/abs/1603.09320)), a popular and state-of-the-art technique for approximate vector search based on hierarchical proximity graphs.
+The available methods are HNSW ([academic paper](https://arxiv.org/abs/1603.09320)), a popular technique for approximate vector search based on hierarchical proximity graphs, and the experimental [ScaNN](#scann) backend.
 If HNSW is used as type, users may optionally specify further HNSW-specific parameters:
 
 ```sql
@@ -179,8 +179,10 @@ Storage consumption = 1 million * 1536 * 4 (for Float32) = 6.1 GB
 
 The vector similarity index must be fully loaded from disk into main memory to perform searches.
 Similarly, the vector index is also constructed fully in memory and then saved to disk.
+The memory layout depends on the selected approximate search method.
+The following estimate applies specifically to HNSW indexes.
 
-Memory consumption required to load a vector index:
+Memory consumption required to load an HNSW vector index:
 
 ```text
 Memory for vectors in the index (mv) = Number of vectors * Dimension * Size of quantized data type
@@ -198,7 +200,7 @@ Memory for in-memory graph (mg) = 1 million * 64 * 2 * 4 = 512 MB
 Memory consumption = 3072 + 512 = 3584 MB
 ```
 
-Above formula does not account for additional memory required by vector similarity indexes to allocate runtime data structures like pre-allocated buffers and caches.
+The HNSW-specific formula above does not account for additional memory required to allocate runtime data structures like pre-allocated buffers and caches.
 
 #### Using a Vector Similarity Index {#using-a-vector-similarity-index}
 
@@ -822,6 +824,72 @@ The performance benefit of `QBit` comes from reduced I/O operations, as less dat
 
 - **Higher precision** (closer to the original data width): More accurate results, slower queries
 - **Lower precision**: Faster queries with approximate results, reduced memory usage
+
+### ScaNN (experimental) {#scann}
+
+<ExperimentalBadge/>
+
+[ScaNN](https://github.com/google-research/google-research/tree/master/scann) is Google's Scalable Nearest Neighbors library.
+It combines IVF (Inverted File Index) partitioning with asymmetric hashing for approximate nearest-neighbor search on large, high-dimensional datasets.
+
+<Note>
+The ScaNN backend is experimental. Enable setting `allow_experimental_scann_index` before creating a ScaNN index:
+
+```sql
+SET allow_experimental_scann_index = 1;
+```
+
+On x86-64, the ScaNN backend requires SSE4.1 and AVX support.
+ClickHouse returns a `SUPPORT_IS_DISABLED` exception when a ScaNN index is created or used on a CPU without either instruction set.
+</Note>
+
+A ScaNN index accepts either three or five arguments. The optional `<precision>` and `<num_leaves>` arguments must be specified together:
+
+```sql
+CREATE TABLE table
+(
+    [...],
+    vectors Array(Float32),
+    INDEX index_name vectors TYPE vector_similarity('scann', <distance_function>, <dimensions>[, <precision>, <num_leaves>]) [GRANULARITY N]
+)
+ENGINE = MergeTree
+ORDER BY [...]
+```
+
+The current ClickHouse ScaNN integration supports distance functions `L2Distance`, `cosineDistance`, and `dotProduct` on columns of type `Array(Float32)` or `Array(Float64)`.
+Support for `Array(BFloat16)` input columns has not been implemented yet.
+
+The HNSW memory estimate described above does not apply to ScaNN because ScaNN does not maintain an in-memory HNSW graph.
+Its memory consumption instead consists primarily of IVF partitioning data, asymmetric-hashing codes, and the exact-reordering vectors stored using the selected precision.
+It also depends on the number and size of index granules, the vector dimensions, and the number of IVF leaves.
+
+The ScaNN-specific build arguments are:
+
+- `<precision>` controls the persisted precision of the exact-reordering vectors. Supported values are `f32`, `bf16`, and `i8`; the default is `f32`. Training continues to use full Float32 precision.
+- `<num_leaves>` controls the number of IVF partitions in each index granule. It must be a positive integer. If both optional arguments are omitted, ClickHouse selects the number of leaves automatically from the number of vectors in the granule.
+
+For example, the following index uses `bf16` reordering vectors and `1024` IVF partitions per index granule:
+
+```sql
+INDEX index_name vectors TYPE vector_similarity('scann', 'cosineDistance', 768, 'bf16', 1024)
+```
+
+The recall and latency trade-off can be adjusted per query with these settings:
+
+- `scann_num_leaves_to_search` controls the number of IVF partitions searched. Value `0` selects a balanced default from the number of leaves in the index granule. ClickHouse uses `0.75 * floor(1 + num_leaves * exp(2.0 * 0.8) * 0.015)`, clamped to the range from `1` to `num_leaves`. If the index definition does not specify `num_leaves`, it is selected automatically as approximately the square root of the number of vectors in the granule.
+- `scann_candidate_pool_size` controls the size of the asymmetric-hashing candidate pool passed to exact reranking. Value `0` selects a balanced default based primarily on the query `LIMIT`, using `20 * floor(LIMIT^0.65 * sqrt(2.0)) * 2.5`. ClickHouse also adjusts this value for granules containing more than 10 million vectors and for vector dimensions of `1024` or greater (with the dimensional adjustment capped at `1536`), then clamps it between the requested result count and the number of vectors in the granule.
+
+```sql
+WITH [0.0, 1.0, ...] AS reference_vec
+SELECT id, cosineDistance(vectors, reference_vec) AS dist
+FROM table
+ORDER BY dist ASC
+LIMIT 10
+SETTINGS scann_num_leaves_to_search = 80, scann_candidate_pool_size = 5000;
+```
+
+ScaNN requires at least `1000` vectors in an index granule. For smaller granules, ClickHouse does not build the ScaNN index and uses an exact scan instead. The index is built automatically after parts merge into a sufficiently large granule; `OPTIMIZE TABLE ... FINAL` can be used to force such a merge.
+
 
 ### References {#references}
 

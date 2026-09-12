@@ -272,6 +272,11 @@ public:
 
     /// Check if commands have any vector similarity index
     static bool hasVectorSimilarityIndex(const StorageInMemoryMetadata & metadata);
+
+    /// Check if new metadata introduces a `vector_similarity('scann', ...)` index.
+    static bool hasNewScannVectorSimilarityIndex(
+        const StorageInMemoryMetadata & new_metadata,
+        const StorageInMemoryMetadata & old_metadata);
 };
 
 }
