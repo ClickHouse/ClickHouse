@@ -2399,20 +2399,16 @@ static bool applyDeterministicDagToColumn(
     const String & input_name,
     const DeterministicKeyTransformDag & dag,
     ColumnPtr & out_column,
-    DataTypePtr & out_type)
+    DataTypePtr & out_type,
+    bool & out_cast_is_exact)
 {
     ColumnPtr transform_input_column;
     DataTypePtr transform_input_type;
     bool transform_applied = false;
-    bool cast_is_exact = true;
 
     if (!convertColumnForDeterministicDag(
-            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied, cast_is_exact))
-        return false;
-
-    /// A set atom has no relaxed form here - `notIn` would exclude a key point that has more than one
-    /// preimage - so a normalization that lost information declines index analysis altogether.
-    if (!cast_is_exact)
+            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied,
+            out_cast_is_exact))
         return false;
 
     if (transform_applied)
@@ -2670,8 +2666,11 @@ static bool tryPrepareSetColumnsForIndex(
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count)
+    size_t args_count,
+    bool & out_is_exact)
 {
+    out_is_exact = true;
+
     Columns new_columns;
     DataTypes new_types;
     while (set_columns.size() < args_count) /// If we have a packed tuple inside, we unpack it
@@ -2724,14 +2723,19 @@ static bool tryPrepareSetColumnsForIndex(
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
             const auto & set_transforming_dag = *set_transforming_dags[indexes_mapping_index];
+            bool dag_cast_is_exact = true;
             if (!applyDeterministicDagToColumn(
                     set_column,
                     set_element_type,
                     set_transforming_dag.input_name,
                     set_transforming_dag,
                     transformed_set_column,
-                    transformed_set_type))
+                    transformed_set_type,
+                    dag_cast_is_exact))
                 return false;
+
+            if (!dag_cast_is_exact)
+                out_is_exact = false;
 
             set_column = transformed_set_column;
             set_element_type = transformed_set_type;
@@ -2792,6 +2796,19 @@ static bool tryPrepareSetColumnsForIndex(
             if ((!key_is_nullable && null_in_source) || (cast_failure_null_map[i] && !source_is_nothing))
                 filter[i] = 0;
         }
+
+        /// An element that fits the key type can still lose information on the way - a `DateTime64(6)`
+        /// element truncated to a `DateTime64(3)` key - which no NULL marks. The element then names a key
+        /// point the predicate does not, so the set is reported as inexact and the atom is relaxed: both
+        /// `notIn` excluding that point and `in` reading the atom as certainly true over a single-point
+        /// range are then wrong. The element itself stays - a relaxed atom is a superset of the predicate,
+        /// so the points it does exclude still prune for `in`. An all-NULL element (`Nothing`) names no
+        /// value and loses nothing.
+        if (!source_is_nothing
+            && !castKeptEveryValue(
+                set_column, set_element_type, cast_nullable_column->getNestedColumnPtr(),
+                removeNullable(key_column_type), &filter))
+            out_is_exact = false;
 
         if (key_is_nullable && (source_null_map || source_is_nothing))
         {
@@ -3077,8 +3094,9 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         }
     }
 
+    bool set_is_exact = true;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count, set_is_exact))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -3103,7 +3121,12 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     ///    For partition pruning we may transform set elements via functions from the key expression,
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `ts NOT IN ('2026-02-03 19:00:00')` into `toDate(ts) NOT IN ('2026-02-03')`, which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size())
+    ///
+    /// -  if normalizing an element into the key type lost information, `tryPrepareSetColumnsForIndex()`
+    ///    reports the set as inexact. The element names a key point the predicate does not, so neither
+    ///    `NOT IN` excluding that point nor `IN` being certainly true over it can be relied on. `IN` keeps
+    ///    the pruning it gets from the points the set does not hold.
+    if (adjusted_indexes_mapping.size() < set_types.size() || !set_is_exact)
         out.relaxed = true;
 
     return true;
@@ -3254,8 +3277,9 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
+    bool set_is_exact = true;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count, set_is_exact))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -3281,7 +3305,12 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `has([toDateTime('2026-02-03 19:00:00')], ts)` into `has([toDate('2026-02-03')], toDate(ts))`,
     ///    which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size())
+    ///
+    /// -  if normalizing an element into the key type lost information, `tryPrepareSetColumnsForIndex()`
+    ///    reports the set as inexact. The element names a key point the predicate does not, so neither
+    ///    `NOT has` excluding that point nor `has` being certainly true over it can be relied on. `has`
+    ///    keeps the pruning it gets from the points the set does not hold.
+    if (adjusted_indexes_mapping.size() < set_types.size() || !set_is_exact)
         out.relaxed = true;
 
     return true;
