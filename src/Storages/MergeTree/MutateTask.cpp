@@ -2317,6 +2317,7 @@ void PartMergerWriter::writeTempProjectionPart(size_t projection_idx, Chunk chun
         ctx->new_data_part.get(),
         ctx->compression_codec,
         ++projection_block_num,
+        ctx->need_sync,
         /*use_selected_codec=*/ ctx->source_part->default_codec_is_approximate,
         ctx->is_explicit_recompression,
         ctx->context);
@@ -2367,7 +2368,8 @@ void PartMergerWriter::finalizeTempProjectionsAndIndexes()
             ctx->time_of_mutation,
             ctx->new_data_part,
             ctx->space_reservation,
-            (*ctx->mutate_entry)->ptr()
+            (*ctx->mutate_entry)->ptr(),
+            ctx->need_sync
         );
 
         merge_subtasks.push_back(std::move(merge_task));

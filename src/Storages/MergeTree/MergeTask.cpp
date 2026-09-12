@@ -135,6 +135,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsBool enable_block_number_column;
     extern const MergeTreeSettingsBool enable_block_offset_column;
     extern const MergeTreeSettingsUInt64 enable_vertical_merge_algorithm;
+    extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsBool materialize_projections_on_merge;
     extern const MergeTreeSettingsUInt64 merge_max_block_size_bytes;
     extern const MergeTreeSettingsNonZeroUInt64 merge_max_block_size;
@@ -1051,6 +1052,12 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     ctx->sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
     ctx->sum_uncompressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_uncompressed;
 
+    /// Computed here (before the horizontal phase) because projection temp parts are written
+    /// while streaming rows in executeImpl, so `need_sync` must already hold its final value.
+    /// force_sync: a projection sub-merge inherits the parent operation's sync decision.
+    ctx->need_sync = global_ctx->force_sync
+        || global_ctx->data_settings->needSyncPart(ctx->sum_input_rows_upper_bound, ctx->sum_compressed_bytes_upper_bound);
+
     global_ctx->chosen_merge_algorithm = chooseMergeAlgorithm();
     global_ctx->merge_list_element_ptr->merge_algorithm.store(global_ctx->chosen_merge_algorithm, std::memory_order_relaxed);
 
@@ -1661,7 +1668,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::calculateProjectionForBlock(
         auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
         auto tmp_part = MergeTreeDataWriter::writeTempProjectionPart(
             *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
-            global_ctx->compression_codec, ++ctx->projection_block_num,
+            global_ctx->compression_codec, ++ctx->projection_block_num, ctx->need_sync,
             /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
 
         tmp_part->finalize();
@@ -1705,7 +1712,7 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalizeProjections() const
             auto result = projection_squash_plan.getHeader()->cloneWithColumns(squashed_chunk.detachColumns());
             auto temp_part = MergeTreeDataWriter::writeTempProjectionPart(
                 *global_ctx->data, result, projection, global_ctx->new_data_part.get(),
-                global_ctx->compression_codec, ++ctx->projection_block_num,
+                global_ctx->compression_codec, ++ctx->projection_block_num, ctx->need_sync,
                 /*use_selected_codec=*/ false, global_ctx->is_explicit_recompression, global_ctx->context);
 
             temp_part->finalize();
@@ -1752,7 +1759,8 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::constructTaskForProjectionPart
         global_ctx->time_of_merge,
         global_ctx->new_data_part,
         global_ctx->space_reservation,
-        !global_ctx->projection ? (*global_ctx->merge_entry)->ptr() : nullptr
+        !global_ctx->projection ? (*global_ctx->merge_entry)->ptr() : nullptr,
+        ctx->need_sync
     );
 }
 
@@ -1921,9 +1929,6 @@ void MergeTask::ExecuteAndFinalizeHorizontalPart::finalize() const
 
     if (ctx->need_remove_expired_values && global_ctx->ttl_merges_blocker->isCancelled())
         throw Exception(ErrorCodes::ABORTED, "Cancelled merging parts with expired TTL");
-
-    const size_t sum_compressed_bytes_upper_bound = global_ctx->merge_list_element_ptr->total_size_bytes_compressed;
-    ctx->need_sync = global_ctx->data_settings->needSyncPart(ctx->sum_input_rows_upper_bound, sum_compressed_bytes_upper_bound);
 }
 
 bool MergeTask::VerticalMergeStage::prepareVerticalMergeForAllColumns() const
@@ -2371,7 +2376,8 @@ bool MergeTask::MergeProjectionsStage::prepareProjections() const
             global_ctx->data,
             global_ctx->mutator,
             global_ctx->merges_blocker,
-            global_ctx->ttl_merges_blocker));
+            global_ctx->ttl_merges_blocker,
+            /* force_sync */ ctx->need_sync));
     }
 
     /// merge projections with _part_offset first so that we can release offset mapping earlier.
@@ -2459,10 +2465,19 @@ bool MergeTask::MergeProjectionsStage::executeProjections() const
 
 bool MergeTask::MergeProjectionsStage::finalizeProjectionsAndWholeMerge() const
 {
+    /// Syncing the part directory does not persist the entries inside `<projection>.proj`, and a
+    /// merged projection is written in place, so there is no rename to sync it. It must stay below
+    /// commitTransaction: that is where `Packed` storage finalizes `data.packed`.
+    const bool fsync_projection_directory = (*global_ctx->data_settings)[MergeTreeSetting::fsync_part_directory];
+
     for (const auto & task : ctx->tasks_for_projections)
     {
         auto part = task->getFuture().get();
         part->getDataPartStorage().commitTransaction();
+
+        if (fsync_projection_directory)
+            { SyncGuardPtr projection_sync_guard = part->getDataPartStorage().getDirectorySyncGuard(); }
+
         global_ctx->new_data_part->addProjectionPart(part->name, std::move(part));
     }
 
