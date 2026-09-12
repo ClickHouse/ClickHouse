@@ -61,6 +61,7 @@ namespace Setting
     extern const SettingsUInt64 max_hyperscan_regexp_length;
     extern const SettingsUInt64 max_hyperscan_regexp_total_length;
     extern const SettingsBool reject_expensive_hyperscan_regexps;
+    extern const SettingsBool use_index_for_in_with_subqueries;
 }
 
 TextSearchQuery::TextSearchQuery(
@@ -140,10 +141,12 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     TokenizerPtr tokenizer_,
     MergeTreeIndexTextPreprocessorPtr preprocessor_,
     MergeTreeIndexTextPostprocessorPtr postprocessor_,
-    bool has_positions_)
+    bool has_positions_,
+    NameSet columns_shadowing_map_subcolumns_)
     : WithContext(context_)
     , header(index_sample_block)
     , normalized_index_column_name(normalized_index_column_name_)
+    , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
     , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
     , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
     , preprocessor(preprocessor_)
@@ -878,17 +881,60 @@ bool isInfixPattern(const String & pattern)
     return pattern.starts_with('%') && pattern.ends_with('%');
 }
 
+/// Escapes the LIKE metacharacters so that `needle` is matched literally.
+String escapeForLikePattern(std::string_view needle)
+{
+    String pattern;
+    pattern.reserve(needle.size());
+
+    for (char c : needle)
+    {
+        if (c == '%' || c == '_' || c == '\\')
+            pattern += '\\';
+        pattern += c;
+    }
+
+    return pattern;
 }
 
-std::vector<OptimizedRegularExpression>
-MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive) const
-{
-    /// Handles '%value%', 'value%' and '%value' with an alphanumeric needle; rejects anything more complex.
+}
 
+/// Returns one pattern, or nothing when the pattern is not eligible for a dictionary scan.
+std::vector<OptimizedRegularExpression>
+MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns) const
+{
     const String value = preprocessor->processConstant(field.safeGet<String>());
     if (value.empty())
         return {};
 
+    const size_t min_pattern_length = getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length];
+
+    auto compile_pattern = [&](const String & pattern)
+    {
+        std::vector<OptimizedRegularExpression> patterns;
+        if (case_insensitive)
+            patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
+        else
+            patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
+        return patterns;
+    };
+
+    /// Special case: the array tokenizer does not split a value, so a token is the whole value.
+    if (allow_arbitrary_patterns && tokenizer->getType() == ITokenizer::Type::Array)
+    {
+        /// A non-ASCII needle is unsafe: `match` folds case for ASCII only, `ilike` for the whole of UTF-8.
+        if (case_insensitive && !isAllASCII(reinterpret_cast<const UInt8 *>(value.data()), value.size()))
+            return {};
+
+        /// Wildcards do not count, and one literal character is required: the empty string has no token.
+        const auto literal_length = std::ranges::count_if(value, [](char c) { return c != '%' && c != '_'; });
+        if (static_cast<size_t>(literal_length) < std::max<size_t>(1, min_pattern_length))
+            return {};
+
+        return compile_pattern(value);
+    }
+
+    /// A splitting tokenizer needs an alphanumeric needle, which cannot span a token boundary.
     const char * data = value.data();
     const size_t length = value.size();
     size_t pos = 0;
@@ -922,7 +968,7 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
         return {};
 
     /// Reject short needles: they might match too many dictionary tokens.
-    if (end - start < getContext()->getSettingsRef()[Setting::text_index_like_min_pattern_length])
+    if (end - start < min_pattern_length)
         return {};
 
     String pattern;
@@ -932,12 +978,7 @@ MergeTreeIndexConditionText::stringLikeToPatterns(const Field & field, bool case
     if (has_trailing_wildcard)
         pattern += '%';
 
-    std::vector<OptimizedRegularExpression> patterns;
-    if (case_insensitive)
-        patterns.emplace_back(Regexps::createRegexp<true, true, true>(pattern));
-    else
-        patterns.emplace_back(Regexps::createRegexp<true, true, false>(pattern));
-    return patterns;
+    return compile_pattern(pattern);
 }
 
 /// Converts a Field value to its text representation using `serializeText`,
@@ -1080,7 +1121,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     /// Try to parse map subcolumn reference like `map.key_<serialized_key>` for `mapValues` index.
     if (!has_index_column && !has_map_keys_column && !has_map_values_column)
     {
-        if (auto parsed = tryParseMapSubcolumnName(index_column_name))
+        if (auto parsed = tryParseMapSubcolumnName(index_column_name, columns_shadowing_map_subcolumns))
         {
             auto & [map_column_name, _] = *parsed;
             if (header.has(fmt::format("mapValues({})", map_column_name))
@@ -1428,13 +1469,13 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         const bool is_prefix = (function_name == "startsWith");
 
         /// A needle inside a single token yields no complete token below, so evaluate it as `LIKE 'needle%'`.
-        /// Safe for a literal needle: one that would need LIKE escaping is not alphanumeric and is rejected.
+        /// The needle is a literal, so escape it: any pattern is accepted below for the array tokenizer.
         if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor
             && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
             const auto & needle = value_field.safeGet<String>();
-            const auto affix_pattern = is_prefix ? needle + "%" : "%" + needle;
-            auto patterns = stringLikeToPatterns(affix_pattern, /*case_insensitive=*/ false);
+            const auto affix_pattern = is_prefix ? escapeForLikePattern(needle) + "%" : "%" + escapeForLikePattern(needle);
+            auto patterns = stringLikeToPatterns(affix_pattern, /*case_insensitive=*/ false, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
             if (patterns.size() == 1 && affix_patterns_allowed)
             {
                 const auto is_exact = is_array_tokenizer && candidate_for_exact_mode;
@@ -1465,7 +1506,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
         if (like_optimization_supported_tokenizers.contains(tokenizer->getType()) && !has_preprocessor && !has_postprocessor
             && settings[Setting::use_text_index_like_evaluation_by_dictionary_scan])
         {
-            /// TODO(ahmadov): Only the '%foo%', 'foo%' and '%foo' patterns are eligible for a dictionary scan.
+            /// TODO(ahmadov): With a splitting tokenizer, only '%foo%', 'foo%' and '%foo' are eligible.
             /// Add support for multiple patterns later with hint mode:
             /// 1. Handle multiple patterns e.g. %foo bar% -> postings_pattern(%foo) && postings_pattern(bar%) && regex(%foo bar%)
             /// 2. Handle exact tokens and patterns e.g. %foo bar baz% -> postings_exact(bar) && postings_pattern(%foo) && postings_pattern(bar%)
@@ -1476,7 +1517,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             /// 2. Seek the sorted dictionary to the matching range of 'foo%' instead of scanning every block.
             /// 3. Bypass a non-selective hint: it prunes nothing and still costs a dictionary scan.
             const auto & like_pattern = value_field.safeGet<String>();
-            auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ false);
+            auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ false, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
             const bool is_infix = isInfixPattern(like_pattern);
             if (patterns.size() == 1 && (is_infix || affix_patterns_allowed))
             {
@@ -1511,7 +1552,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return false;
 
         const auto & like_pattern = value_field.safeGet<String>();
-        auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true);
+        auto patterns = stringLikeToPatterns(value_field, /*case_insensitive=*/ true, /*allow_arbitrary_patterns=*/ affix_patterns_allowed);
         const bool is_infix = isInfixPattern(like_pattern);
         if (patterns.size() == 1 && (is_infix || affix_patterns_allowed))
         {
@@ -1653,6 +1694,56 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     return false;
 }
 
+/// Whether the sub-DAG may be evaluated on a default value to decide if a missing map key or JSON path
+/// makes the predicate false. That evaluation runs `FunctionIn`, which needs every `IN` set in the
+/// sub-DAG to exist, so build them here - but only sets index analysis is allowed to consult at all.
+static bool prepareSetsForDefaultValueEvaluation(const ActionsDAG & subdag, const ContextPtr & context)
+{
+    for (const auto & node : subdag.getNodes())
+    {
+        if (node.type != ActionsDAG::ActionType::COLUMN)
+            continue;
+
+        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
+        if (!column_set)
+            continue;
+
+        auto future_set = column_set->getData();
+        if (!future_set)
+            return false;
+
+        /// The decision is made once, at analysis time, so a set that keeps changing under the query
+        /// cannot be trusted: a concurrent `INSERT` of the default value would make the predicate true
+        /// for a missing key after those rows' granules were pruned.
+        if (future_set->isMutableDuringQuery())
+            return false;
+
+        /// `use_index_for_in_with_subqueries = 0` forbids using an index for a subquery set at all.
+        /// The ordered build enforces that by refusing to build, but refusing to build is not the same
+        /// as refusing to use: `ReadFromMergeTree::applyFilters` builds PREWHERE sets unordered when the
+        /// setting is off, and a read step analyzed after that finds the set ready. Ask the setting.
+        ///
+        /// This does not reach a `make_distributed_plan` worker task, where the set arrives as shipped
+        /// values (`SetSerializationKind::TupleValues`) and is rebuilt as a `FutureSetFromTuple`, losing
+        /// the fact that it came from a subquery. That gap is older and wider than this check: every
+        /// index consumer takes the same set through `buildOrderedSetInplace`, which never consults the
+        /// setting for a tuple carrier, so a worker also uses the primary key index for `pk IN (SELECT ...)`
+        /// with the setting off. Closing it means carrying the origin through set serialization.
+        if (!context->getSettingsRef()[Setting::use_index_for_in_with_subqueries]
+            && typeid_cast<const FutureSetFromSubquery *>(future_set.get()))
+            return false;
+
+        /// Only the existence of the set matters: the evaluation needs `FunctionIn` to find a ready set,
+        /// but never reads its elements. Requiring `hasExplicitSetElements` on top of that gave up on a
+        /// set that exceeded `use_index_for_in_with_subqueries_max_values`.
+        future_set->buildOrderedSetInplace(context);
+        if (!future_set->get())
+            return false;
+    }
+
+    return true;
+}
+
 bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunctionTreeNode & function_node, RPNElement & out) const
 {
     /// Here we check whether we can use index defined for `mapKeys(m)` for functions like `func(arrayElement(m, 'const_key'), ...)`.
@@ -1724,7 +1815,7 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     else
     {
         /// Try to parse map subcolumn reference like `map.key_<serialized_key>`.
-        auto parsed = tryParseMapSubcolumnName(required_column.name);
+        auto parsed = tryParseMapSubcolumnName(required_column.name, columns_shadowing_map_subcolumns);
         if (!parsed)
             return false;
 
@@ -1738,25 +1829,8 @@ bool MergeTreeIndexConditionText::traverseMapElementKeyNode(const RPNBuilderFunc
     if (!key_const_value.has_value())
         return false;
 
-    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
-    /// The Set may not be ready yet because it is built later during query execution.
-    for (const auto & node : subdag.getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::COLUMN)
-            continue;
-
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-        if (!column_set)
-            continue;
-
-        auto future_set = column_set->getData();
-        if (!future_set)
-            return false;
-
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
-            return false;
-    }
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
+        return false;
 
     /// Evaluate function on the empty map. Empty map will return default value for any key.
     Block block{{required_column.type->createColumnConstWithDefaultValue(1), required_column.type, required_column.name}};
@@ -1789,7 +1863,7 @@ bool MergeTreeIndexConditionText::hasIndexForMapElementValue(const RPNBuilderTre
     }
 
     /// Handle `map.key_<serialized_key>` subcolumn form.
-    auto parsed = tryParseMapSubcolumnName(node.getColumnName());
+    auto parsed = tryParseMapSubcolumnName(node.getColumnName(), columns_shadowing_map_subcolumns);
     if (!parsed)
         return false;
     auto & [map_column_name, serialized_key] = *parsed;
@@ -1835,25 +1909,8 @@ bool MergeTreeIndexConditionText::traverseJSONSubcolumnKeyNode(
     if (!json_info)
         return false;
 
-    /// If the DAG contains a Set (e.g. from an IN subquery), try to build it before execution.
-    /// The Set may not be ready yet because it is built later during query execution.
-    for (const auto & node : subdag.getNodes())
-    {
-        if (node.type != ActionsDAG::ActionType::COLUMN)
-            continue;
-
-        const auto * column_set = checkAndGetColumn<const ColumnSet>(&node.column->getDataColumn());
-        if (!column_set)
-            continue;
-
-        auto future_set = column_set->getData();
-        if (!future_set)
-            return false;
-
-        auto prepared_set = future_set->buildOrderedSetInplace(getContext());
-        if (!prepared_set || !prepared_set->hasExplicitSetElements())
-            return false;
-    }
+    if (!prepareSetsForDefaultValueEvaluation(subdag, getContext()))
+        return false;
 
     /// Evaluate the function on a default column value.
     /// If the function returns true for the default value (what we'd get when the path is missing),
