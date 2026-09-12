@@ -1,7 +1,9 @@
 #pragma once
 
+#include <algorithm>
 #include <functional>
 #include <optional>
+#include <string_view>
 
 #include <base/types.h>
 
@@ -105,6 +107,18 @@ struct ParallelReadResponse
     void deserialize(ReadBuffer & in, UInt64 replica_pr_protocol_version);
 };
 
+
+/// Suffix appended to a parallel-replicas stream id when one table is read as several independent
+/// streams (`<full table name>#split_{i}`, see `ReadFromMergeTree::spreadMarkRangesAmongStreams`).
+/// Everything before it is the full name of the table the stream reads.
+inline constexpr std::string_view PARALLEL_REPLICAS_STREAM_SPLIT_SUFFIX = "#split_";
+
+/// Returns the full table name a parallel-replicas stream id refers to, i.e. the stream id with the
+/// `#split_{i}` suffix stripped.
+inline std::string_view tableNameOfParallelReplicasStream(std::string_view stream_id)
+{
+    return stream_id.substr(0, std::min(stream_id.size(), stream_id.find(PARALLEL_REPLICAS_STREAM_SPLIT_SUFFIX)));
+}
 
 /// The set of parts (their names) along with ranges to read which is sent back
 /// to the initiator by remote replicas during parallel reading.
