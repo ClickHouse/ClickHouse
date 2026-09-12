@@ -65,11 +65,6 @@ namespace DB::ErrorCodes
     extern const int ACCESS_DENIED;
 }
 
-namespace DB::Setting
-{
-    extern const SettingsBool allow_experimental_geo_types_in_iceberg;
-}
-
 namespace DB::FailPoints
 {
     extern const char check_database_datalake_negative[];
@@ -1719,9 +1714,7 @@ bool RestCatalog::getTableMetadataImpl(
 
     if (result.requiresSchema())
     {
-        const bool allow_geo_parser
-            = getContext()->getSettingsRef()[DB::Setting::allow_experimental_geo_types_in_iceberg].value;
-        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor(allow_geo_parser);
+        auto schema_processor = DB::Iceberg::IcebergSchemaProcessor();
         auto id = DB::IcebergMetadata::parseTableSchema(metadata_object, schema_processor, log);
         auto schema = schema_processor.getClickHouseTableSchemaById(id);
         result.setSchema(*schema);

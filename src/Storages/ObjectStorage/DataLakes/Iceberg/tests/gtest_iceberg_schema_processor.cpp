@@ -223,13 +223,12 @@ TEST(IcebergSchemaProcessor, MapKeyValueDecimalWhitespaceIsInsensitive)
 
 /// The Iceberg geography/geometry primitives carry parameters too, e.g.
 /// "geography(crs, algorithm)", so their serialization can also differ by whitespace
-/// across metadata files. With the geo parser enabled, re-adding the same schema-id with
-/// different spacing must not be rejected.
+/// across metadata files. Re-adding the same schema-id with different spacing must not be rejected.
 TEST(IcebergSchemaProcessor, GeographyTypeWhitespaceIsInsensitive)
 {
     auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C,A)"}]})json");
     auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C, A)"}]})json");
-    IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
+    IcebergSchemaProcessor processor;
     processor.addIcebergTableSchema(first);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
 }
@@ -242,7 +241,7 @@ TEST(IcebergSchemaProcessor, GeographyTypeEdgeWhitespaceIsInsensitive)
 {
     auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":" geography(C,A) "}]})json");
     auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C, A)"}]})json");
-    IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
+    IcebergSchemaProcessor processor;
     processor.addIcebergTableSchema(first);
     EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
 }
@@ -255,7 +254,7 @@ TEST(IcebergSchemaProcessor, RenameGeoFieldAcrossSchemaIdsWithWhitespaceIsRename
 {
     auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"geography(C,A)"}]})json");
     auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"b","required":false,"type":"geography(C, A)"}]})json");
-    IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
+    IcebergSchemaProcessor processor;
     processor.addIcebergTableSchema(old_schema);
     processor.addIcebergTableSchema(new_schema);
 
