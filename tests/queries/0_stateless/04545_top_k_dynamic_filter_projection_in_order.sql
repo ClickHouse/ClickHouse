@@ -170,7 +170,7 @@ ALTER TABLE t_topk_mixed MATERIALIZE PROJECTION p_score IN PARTITION 0 SETTINGS 
 
 -- Exactly one union child keeps the filter (the base-table child) and exactly one child reads in
 -- order (the projection child): the drop is per-branch, not all-or-nothing.
-SELECT countIf(explain ILIKE '%__topKFilter%') AS filtered_children
+SELECT countIf(explain ILIKE '%Prewhere filter column%' AND explain ILIKE '%__topKFilter%') AS filtered_children
 FROM (
     EXPLAIN projections = 1, actions = 1
     SELECT id, cityHash64(payload) FROM t_topk_mixed ORDER BY score, id LIMIT 10
