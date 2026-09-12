@@ -198,10 +198,9 @@ private:
 namespace detail
 {
 
-/// Bit `i` of the result is set iff byte `i` of the `block_length` (<= `BLOCK_SIZE`) bytes at `block` is in
-/// `separators`. The whole block is read even past the end of the data, which is fine because the data
-/// passed to `forEachToken` is padded from the right with at least 15 bytes (as our Columns provide);
-/// the bits of the padding bytes are masked out.
+/// Bit `i` of the result is set iff byte `i` of the `block_length` bytes at `block` is in `separators`.
+/// The whole block is read even past the end of the data, which is fine because
+/// the data passed to `forEachToken` must be padded from the right with at least 15 bytes.
 inline ALWAYS_INLINE UInt32 separatorBits(const ByteSetLookup & separators, const char * block, size_t block_length)
 {
 #if !defined(MEMORY_SANITIZER) /// MSan cannot see that the bits of the uninitialized padding bytes are discarded
@@ -211,13 +210,10 @@ inline ALWAYS_INLINE UInt32 separatorBits(const ByteSetLookup & separators, cons
     for (size_t i = 0; i < block_length; ++i)
         bits |= static_cast<UInt32>(separators.contains(block[i])) << i;
 #endif
-    /// For a full block the mask is 0xFFFF and keeps every bit.
     return bits & ((1u << block_length) - 1);
 }
 
-/// Calls `callback` for every maximal run of bytes outside `separators`; stops if it returns true.
-/// Walks the data in blocks and emits a token before every separator bit, so the work per block is
-/// proportional to the number of separators in it. Requires padded data, see `separatorBits`.
+/// Calls `callback` for every token split by bytes in `separators`.
 template <typename Callback>
 void forEachTokenSplitByBytes(const ByteSetLookup & separators, const char * __restrict data, size_t length, Callback && callback)
 {
@@ -263,14 +259,14 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
 
     bool supportsStringLike() const override { return true; }
 
-    /// Non-alphanumeric ASCII bytes separate tokens; every other byte, including all bytes of
-    /// UTF-8 sequences, belongs to a token.
+    /// Non-alphanumeric ASCII bytes separate tokens.
+    /// Every other byte, including all bytes of UTF-8 sequences, belongs to a token.
     static constexpr ByteSetLookup separator_chars = ByteSetLookup::fromPredicate([](char c)
     {
         return isASCII(c) && !isAlphaNumericASCII(c);
     });
 
-    /// Hot-path tokenizer used by the free `forEachToken` (index build, search, the `tokens` function).
+    /// Hot-path tokenizer used by the free `forEachToken`.
     /// Assumes data is padded from the right with at least 15 bytes (as our Columns provide).
     template <Fn<bool(const char *, size_t)> Callback>
     void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
@@ -297,10 +293,6 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     /// Hot-path tokenizer used by the free `forEachToken` (index build, search, the `tokens` function).
-    /// Unlike a per-token `nextInString` call, the scan state stays in registers across tokens, and every
-    /// 16-byte block is classified once, so with multi-byte separators `matchSeparator` runs only at the
-    /// bytes that can start a separator. Assumes data is padded from the right with at least 15 bytes
-    /// (as our Columns provide).
     template <Fn<bool(const char *, size_t)> Callback>
     void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
     {
@@ -373,8 +365,7 @@ private:
     std::vector<String> separators;
     /// The first bytes of all separators. Only positions holding one of them can start a separator.
     ByteSetLookup separator_first_bytes;
-    /// If every separator is a single byte, `separator_first_bytes` is exactly the set of separators
-    /// and the tokens are the maximal runs of bytes outside it.
+    /// If every separator is a single byte, `separator_first_bytes` is exactly the set of separators.
     bool all_separators_single_byte = false;
 };
 

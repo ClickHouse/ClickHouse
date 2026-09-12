@@ -254,8 +254,10 @@ SplitByStringTokenizer::SplitByStringTokenizer(const std::vector<String> & separ
     , separators(separators_)
 {
     for (const auto & separator : separators)
+    {
         if (!separator.empty())
             separator_first_bytes.add(separator.front());
+    }
 
     all_separators_single_byte = std::ranges::all_of(separators, [](const auto & separator) { return separator.size() == 1; });
 }
@@ -286,8 +288,9 @@ bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size
         return false;
     }
 
-    /// Read token until next separator, jumping over the bytes that cannot start one
+    /// Read token until next separator.
     size_t start = i;
+
     if (all_separators_single_byte)
     {
         i = separator_first_bytes.find<true>(data + i, data + length) - data;

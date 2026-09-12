@@ -17,22 +17,17 @@
 namespace DB
 {
 
-/// A set of bytes with an O(1) membership test and a vectorized search for the first byte that
-/// is (or is not) in the set. Building a set is cheap and works in constant expressions, so it fits
-/// both character classes fixed in the code (declare them `constexpr`, then the dispatch on the
-/// set's properties below folds away) and delimiter sets coming from user input.
+/// A set of bytes with an O(1) membership test with for the first byte that is (or is not) in the set.
 ///
-/// The vectorized search classifies 16 bytes at once with two nibble lookups (`pshufb` / `tbl`):
+/// Supports vectorized search for long sequences of bytes.
+/// The vectorized search classifies 16 bytes at once with two nibble lookups (`pshufb` / `tbl`).
+/// Each byte is split into its high nibble (the upper 4 bits) and its low nibble (the lower 4 bits).
+/// Each nibble indexes a 16-entry table.
+/// Think of all 256 bytes as a 16x16 grid: the high nibble picks the row, the low nibble picks the column.
+/// A byte is in the set iff its row is among the rows that have a member in its column, that is, iff the two lookups share a bit.
 ///
-/// - Every high nibble that occurs in the set gets its own bit (`high_nibble_bit`).
-/// - `high_nibble_table[high]` is that bit, or 0 if no member has this high nibble.
-/// - `low_nibble_table[low]` is the union of the bits of all high nibbles that are
-///   combined with this low nibble in some member.
-/// - A byte is in the set iff the two lookups share a bit:
-///   `low_nibble_table[low] & high_nibble_table[high] != 0`.
-///
-/// The bits fit in one byte, so at most 8 distinct high nibbles are supported. That is enough
-/// for any set of ASCII characters; a set that needs more is searched by the scalar loop only.
+/// The bits fit in one byte, so at most 8 non-empty rows (distinct high nibbles) are supported.
+/// That is enough for any set of ASCII characters. A set that needs more is searched by the scalar loop only.
 class ByteSetLookup
 {
 public:
@@ -46,8 +41,10 @@ public:
     {
         ByteSetLookup set;
         for (int c = 0; c < 256; ++c)
+        {
             if (predicate(static_cast<char>(c)))
                 set.add(static_cast<char>(c));
+        }
         return set;
     }
 
@@ -58,10 +55,12 @@ public:
             return;
 
         table[byte] = true;
-
         UInt8 high = byte >> 4;
         UInt8 low = byte & 0x0F;
 
+        /// Each distinct high nibble gets its own bit, so that `low_nibble_table[low]` can hold the set of high nibbles
+        /// paired with `low` as a bitmask, and `high_nibble_table[high] & low_nibble_table[low]` tests membership.
+        /// A lane holds 8 bits, not 16, so the bits are assigned on first use rather than as `1 << high`.
         if (!high_nibble_bit[high])
         {
             if (num_high_nibbles == 8)
@@ -99,6 +98,7 @@ public:
                 if (contains(pos[i]) == positive)
                     return pos + i;
             }
+
             pos += SCALAR_PREFIX;
 
 #if defined(__SSSE3__) || defined(__aarch64__)
@@ -116,7 +116,8 @@ public:
         return end;
     }
 
-    /// Classifies the `BLOCK_SIZE` bytes at `pos`: bit `i` of the result is set iff byte `i` is in the set.
+    /// Classifies the `BLOCK_SIZE` bytes at `pos`:
+    /// bit `i` of the result is set iff byte `i` is in the set.
     /// All `BLOCK_SIZE` bytes must be readable.
     ALWAYS_INLINE UInt32 matchBlock(const char * pos) const
     {
@@ -138,8 +139,8 @@ private:
     static constexpr ptrdiff_t SCALAR_PREFIX = 16;
 
 #if defined(__SSSE3__) || defined(__aarch64__)
-    /// GCC/Clang vector extensions lower each lane operation to one SSE/NEON instruction;
-    /// only the byte permutation has no portable spelling.
+    /// GCC/Clang vector extensions lower each lane operation to one SSE/NEON instruction.
+    /// Only the byte permutation has no portable spelling.
     using UInt8x16 = UInt8 __attribute__((vector_size(16)));
     using Int8x16 = Int8 __attribute__((vector_size(16)));
     using UInt64x2 = UInt64 __attribute__((vector_size(16)));
@@ -154,17 +155,6 @@ private:
 #endif
     }
 
-    /// 0xFF in the lanes of the bytes that are in the set, 0x00 in the others.
-    ALWAYS_INLINE Int8x16 classify(UInt8x16 bytes) const
-    {
-        const auto low_table = std::bit_cast<UInt8x16>(low_nibble_table);
-        const auto high_table = std::bit_cast<UInt8x16>(high_nibble_table);
-
-        UInt8x16 low = lookupBytes(low_table, bytes & 0x0F);
-        UInt8x16 high = lookupBytes(high_table, bytes >> 4);
-        return (low & high) != UInt8x16{};
-    }
-
     /// Compresses a 0x00/0xFF lane vector into a bit per lane.
     static ALWAYS_INLINE UInt32 blockMask(Int8x16 lanes)
     {
@@ -177,6 +167,17 @@ private:
         uint64x2_t halves = vpaddlq_u32(vpaddlq_u16(vpaddlq_u8(bits)));
         return static_cast<UInt32>(vgetq_lane_u64(halves, 0) | (vgetq_lane_u64(halves, 1) << 8));
 #endif
+    }
+
+    /// 0xFF in the lanes of the bytes that are in the set, 0x00 in the others.
+    ALWAYS_INLINE Int8x16 classify(UInt8x16 bytes) const
+    {
+        const auto low_table = std::bit_cast<UInt8x16>(low_nibble_table);
+        const auto high_table = std::bit_cast<UInt8x16>(high_nibble_table);
+
+        UInt8x16 low = lookupBytes(low_table, bytes & 0x0F);
+        UInt8x16 high = lookupBytes(high_table, bytes >> 4);
+        return (low & high) != UInt8x16{};
     }
 
     /// Scans whole blocks. Returns the position of the first byte matching the search,
