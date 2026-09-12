@@ -1,4 +1,5 @@
 #include <Core/Defines.h>
+#include <IO/ReadHelpers.h>
 #include <base/hex.h>
 #include <Common/PODArray.h>
 #include <Common/StringUtils.h>
@@ -1701,36 +1702,94 @@ ReturnType readDateTimeTextFallback(
 
         if constexpr (throw_exception)
         {
-            if (unlikely(year == 0))
-                datetime = 0;
-            else
-                datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
-        }
-        else
-        {
-            if (saturate_on_overflow)
+            if constexpr (dt64_mode)
             {
-                /// Use saturating version - makeDateTime saturates out-of-range years
-                if (unlikely(year == 0))
+                /// Calendar year 0 is valid for DateTime64 only with non-zero month and day,
+                /// 0000-00-00 (and missing month/day) still maps to the Unix epoch.
+                if (unlikely(year == 0 && (month == 0 || day == 0)))
                     datetime = 0;
                 else
                     datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
             }
             else
             {
-                /// Use non-saturating version - return false for out-of-range values
-                auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
-                if (!datetime_maybe)
-                    return false;
-
-                if constexpr (!dt64_mode)
-                {
-                    if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
-                        return false;
-                }
-
-                datetime = *datetime_maybe;
+                /// DateTime can't represent calendar year 0. Zero-date placeholders
+                /// still map to the Unix epoch and real year-0 dates are rejected.
+                if (unlikely(year == 0 && (month == 0 || day == 0)))
+                    datetime = 0;
+                else if (unlikely(year == 0))
+                    throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Cannot parse DateTime: year 0 is out of supported range");
+                else
+                    datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
             }
+        }
+        else
+        {
+            if (saturate_on_overflow)
+            {
+                /// Use saturating version - makeDateTime saturates out-of-range years
+                if constexpr (dt64_mode)
+                {
+                    if (unlikely(year == 0 && (month == 0 || day == 0)))
+                        datetime = 0;
+                    else
+                        datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+                }
+                else
+                {
+                    /// Zero-date placeholders map to the Unix epoch.
+                    /// Real year-0 dates are not representable by DateTime.
+                    if (unlikely(year == 0 && (month == 0 || day == 0)))
+                        datetime = 0;
+                    else if (unlikely(year == 0))
+                        return ReturnType(false);
+                    else
+                        datetime = makeDateTime(date_lut, year, month, day, hour, minute, second);
+                }
+            }
+            else
+            {
+                /// Use non-saturating version - return false for out-of-range values
+                if constexpr (dt64_mode)
+                {
+                    if (unlikely(year == 0 && (month == 0 || day == 0)))
+                    {
+                        datetime = 0;
+                    }
+                    else
+                    {
+                        auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                        if (!datetime_maybe)
+                            return false;
+                        datetime = *datetime_maybe;
+                    }
+                }
+                else
+                {
+                    /// Placeholders still map to the epoch, real year-0 dates are out of DateTime range.
+                    if (unlikely(year == 0 && (month == 0 || day == 0)))
+                    {
+                        datetime = 0;
+                    }
+                    else
+                    {
+                        auto datetime_maybe = tryToMakeDateTime(date_lut, year, month, day, hour, minute, second);
+                        if (!datetime_maybe)
+                            return false;
+
+                        if (*datetime_maybe < 0 || *datetime_maybe > static_cast<Int64>(UINT32_MAX))
+                            return false;
+
+                        datetime = *datetime_maybe;
+                    }
+                }
+            }
+        }
+
+        if constexpr (dt64_mode)
+        {
+            if (year == 0 && (month == 0 || day == 0))
+                skipDateTimeSubseconds(buf);
         }
     }
     else
