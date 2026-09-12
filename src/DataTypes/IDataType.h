@@ -584,6 +584,13 @@ inline bool isNullableOrLowCardinalityNullable(const DataTypePtr & data_type)
     return data_type->isNullable() || data_type->isLowCardinalityNullable();
 }
 
+/// A type that holds no value other than NULL. onlyNull() alone is not enough:
+/// it is true for Nullable(Nothing) but false for bare Nothing.
+inline bool isNothingOrNullableNothing(const DataTypePtr & data_type)
+{
+    return isNothing(data_type) || data_type->onlyNull();
+}
+
 template <typename DataType> constexpr bool IsDataTypeDecimal = false;
 template <typename DataType> constexpr bool IsDataTypeNumber = false;
 template <typename DataType> constexpr bool IsDataTypeDateOrDateTime = false;
