@@ -3417,20 +3417,17 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
     size_t parts_before_pk = 0;
     bool add_index_stat_row_for_pk_expand = false;
 
-    res_parts = MergeTreeDataSelectExecutor::filterPartsByPartition(
+    res_parts = MergeTreeDataSelectExecutor::filterParts(
         parts,
-        indexes->partition_pruner,
-        indexes->minmax_idx_condition,
-        indexes->part_values,
+        *indexes,
         metadata_snapshot,
         data,
+        query_info_,
+        mutations_snapshot,
         context_,
         max_block_numbers_to_read.get(),
         log,
         result.index_stats);
-
-    res_parts = MergeTreeDataSelectExecutor::filterPartsByStatistics(
-        res_parts, metadata_snapshot, query_info_, mutations_snapshot, context_, log, result.index_stats);
 
     result.sampling = MergeTreeDataSelectExecutor::getSampling(
         query_info_,
@@ -6038,14 +6035,13 @@ RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const
     if (analyzed_result_ptr || !indexes)
         return getParts();
 
-    /// Share partition filtering with `selectRangesToReadImpl`, including min-max pruning.
+    /// Share all part filters with `selectRangesToRead`, including the snapshot boundary and statistics.
     /// Keep this snapshot temporary: `PREWHERE` optimization can still change filters,
     /// so execution must filter again with the final conditions.
     IndexStats unused_stats;
-    return MergeTreeDataSelectExecutor::filterPartsByPartition(
-        getParts(), indexes->partition_pruner, indexes->minmax_idx_condition,
-        indexes->part_values, getStorageMetadata(), data, getContext(),
-        nullptr, getLogger("ReadFromMergeTree"), unused_stats);
+    return MergeTreeDataSelectExecutor::filterParts(
+        getParts(), *indexes, getStorageMetadata(), data, query_info, mutations_snapshot, getContext(),
+        max_block_numbers_to_read.get(), log, unused_stats);
 }
 
 IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
