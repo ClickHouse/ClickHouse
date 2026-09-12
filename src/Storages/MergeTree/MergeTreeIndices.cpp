@@ -12,6 +12,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Storages/MergeTree/DataPartStorageOnDiskBase.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Common/escapeForFileName.h>
@@ -34,7 +35,8 @@ bool indexFileExistsInChecksums(
     const MergeTreeDataPartChecksums & checksums,
     const std::string & path_prefix,
     const std::string & extension,
-    const IDataPartStorage * storage)
+    const IDataPartStorage * storage,
+    IndexFilePresence presence)
 {
     if (checksums.files.contains(path_prefix + extension))
         return true;
@@ -44,14 +46,18 @@ bool indexFileExistsInChecksums(
     if (checksums.files.contains(hash + extension))
         return true;
 
-    /// Packed substreams: not listed in checksums.txt as individual entries, but the
-    /// storage overlay reports their existence via the skp_idx.packed index.
+    /// A substream inside skp_idx.packed has no checksums entry of its own, so the archive index is
+    /// the only record of it. Members are stored under the logical name.
     if (storage && checksums.files.contains(String(SKIP_INDICES_PACKED_FILENAME)))
     {
-        if (storage->existsFile(path_prefix + extension))
-            return true;
-        if (storage->existsFile(hash + extension))
-            return true;
+        if (const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(storage))
+            if (disk_storage->isFileInPackedSkipIndicesArchive(path_prefix + extension))
+                return true;
+
+        /// Neither checksums.txt nor the archive accounts for the name, so a file still present
+        /// under it is an orphan.
+        if (presence == IndexFilePresence::OrDanglingOnDisk)
+            return storage->existsFile(path_prefix + extension) || storage->existsFile(hash + extension);
     }
 
     return false;
@@ -445,7 +451,9 @@ MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
     /// still has to be skipped/stripped here. (minmax overrides to add its legacy `.idx`.)
     MergeTreeIndexSubstreams substreams;
     for (const auto & substream : getSubstreams())
-        if (indexFileExistsInChecksums(checksums, relative_path_prefix + substream.suffix, substream.extension, storage))
+        if (indexFileExistsInChecksums(
+                checksums, relative_path_prefix + substream.suffix, substream.extension, storage,
+                IndexFilePresence::OrDanglingOnDisk))
             substreams.push_back(substream);
 
     return substreams;
