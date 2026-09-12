@@ -11,6 +11,11 @@ void AnalysisTableExpressionData::ensureColumnMembershipSetsArePopulated() const
     column_identifier_first_parts.reserve(column_names_and_types.size());
     for (const auto & column_name_and_type : column_names_and_types)
     {
+        /// A generated internal name of a disambiguated duplicate subquery column (e.g. `7_1`) is
+        /// not user-addressable: keep it out of the membership sets so a direct identifier reference
+        /// behaves like an unknown name. It stays in the column-node map for the planner.
+        if (isHiddenColumnName(column_name_and_type.name))
+            continue;
         column_names.insert(column_name_and_type.name);
         Identifier column_name_identifier(column_name_and_type.name);
         column_identifier_first_parts.insert(column_name_identifier.at(0));
