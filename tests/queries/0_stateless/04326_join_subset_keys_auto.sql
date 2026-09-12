@@ -16,6 +16,10 @@ SET query_plan_optimize_join_order_limit = 10;
 -- Key demotion operates on the build (right) side and `EXPLAIN` prints the join clauses with a
 -- fixed table order, so pin the swap to keep the printed plan stable.
 SET query_plan_join_swap_table = 'false';
+-- `query_plan_hash_join_subset_keys_min_saving_bytes` defaults to one arena chunk, which a 5000-row
+-- build side can never reach. Drop the floor so the remaining gates are the ones deciding each case;
+-- the probe cost ceiling stays at its default, so the plans below are the ones it admits.
+SET query_plan_hash_join_subset_keys_min_saving_bytes = 0;
 
 DROP TABLE IF EXISTS jks_left;
 DROP TABLE IF EXISTS jks_right;
@@ -48,8 +52,9 @@ SELECT 'off' AS label, trimLeft(explain) FROM
 )
 WHERE explain ILIKE '%Clauses%' OR explain ILIKE '%Residual filter%' OR explain ILIKE '%Mixed condition%';
 
--- target_ndv = 5000 * 0.001 = 5. `request_id` (NDV = 10) is the smallest single key that reaches
--- it, so `user_id` (NDV = 500) is demoted to a probe-time condition.
+-- target_ndv = 5000 * 0.001 = 5, which both single keys reach. The cheapest of them wins: keeping
+-- `user_id` (NDV = 500) leaves a 10-row bucket for the probe, keeping `request_id` (NDV = 10) would
+-- leave a 500-row one, so `request_id` is demoted to a probe-time condition.
 SELECT 'on' AS label, trimLeft(explain) FROM
 (
     EXPLAIN actions = 1, pretty = 0

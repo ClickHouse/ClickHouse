@@ -1,5 +1,5 @@
--- `query_plan_hash_join_subset_keys_auto` demotes a high-NDV equality key out of the hash table key
--- set into `JoinOperator::probe_conditions`, where it is evaluated during the probe. The join runtime
+-- `query_plan_hash_join_subset_keys_auto` moves an equality key out of the hash table key set into
+-- `JoinOperator::probe_conditions`, where it is evaluated during the probe. The join runtime
 -- filter pass only inspects the equalities left in `JoinOperator::expression`, so for `LEFT ANTI` it
 -- would build its exact `NOT IN` set on the kept keys alone and exclude left rows whose kept keys
 -- appear on the right even though the full key tuple has no match - those rows must survive.
@@ -13,11 +13,13 @@ DROP TABLE IF EXISTS jsk_anti_right;
 CREATE TABLE jsk_anti_left (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
 CREATE TABLE jsk_anti_right (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY tuple();
 
--- `a` is near-unique on the build side and gets demoted, `b` has only 10 distinct values and is kept.
+-- `a` is near-unique on the build side and is kept, `b` has only 10 distinct values and gets demoted:
+-- keeping `a` leaves a one-row bucket for the probe, keeping `b` would leave a 500-row one.
 INSERT INTO jsk_anti_right SELECT number, number % 10 FROM numbers(5000);
 
--- `b = 1` occurs on the right (as `(1, 1)`, `(11, 1)`, ...) but never paired with `a = 2`, so this row
--- has no match on the full key tuple and belongs in the `LEFT ANTI` result.
+-- `a = 2` occurs on the right (as `(2, 2)`) but never paired with `b = 1`, so this row has no match on
+-- the full key tuple and belongs in the `LEFT ANTI` result - while its kept key alone does appear on
+-- the right, which is what a runtime filter built on the kept keys would wrongly exclude it for.
 INSERT INTO jsk_anti_left VALUES (2, 1);
 
 SET enable_analyzer = 1;
@@ -30,6 +32,10 @@ SET query_plan_optimize_join_order_limit = 10; -- Demotion runs from the join-or
 SET query_plan_join_swap_table = 'false';
 SET query_plan_hash_join_subset_keys_min_rows = 0;
 SET query_plan_hash_join_subset_keys_min_kept_selectivity = 0.001;
+-- `query_plan_hash_join_subset_keys_min_saving_bytes` defaults to one arena chunk, which this
+-- 5000-row build side can never reach. Drop the floor so the demotion under test happens; the probe
+-- cost ceiling stays at its default.
+SET query_plan_hash_join_subset_keys_min_saving_bytes = 0;
 SET join_runtime_filter_min_probe_rows = 0;
 
 SET param__internal_join_table_stat_hints = '
@@ -63,7 +69,7 @@ ORDER BY l.a
 SETTINGS query_plan_hash_join_subset_keys_auto = 1, enable_join_runtime_filters = 1;
 
 -- The demotion still happens with the runtime filter enabled; only the filter is skipped. The kept
--- clause is `b` alone, the demoted `a` equality is evaluated during the probe, and no
+-- clause is `a` alone, the demoted `b` equality is evaluated during the probe, and no
 -- `BuildRuntimeFilter` step is planned for this join.
 SELECT 'plan of the demoted anti join with runtime filters enabled';
 SELECT trimLeft(explain) FROM
