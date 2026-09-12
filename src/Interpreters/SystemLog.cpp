@@ -392,44 +392,55 @@ SystemLogs::SystemLogs(ContextPtr global_context, const Poco::Util::AbstractConf
         throw;
     }
 
-    if (metric_log)
+    try
     {
-        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
-                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        metric_log->startCollect(ThreadName::METRIC_LOG, collect_interval_milliseconds);
-    }
+        if (metric_log)
+        {
+            size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
+                                                                    DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+            metric_log->startCollect(ThreadName::METRIC_LOG, collect_interval_milliseconds);
+        }
 
-    if (transposed_metric_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
-                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        transposed_metric_log->startCollect(ThreadName::TRANSPOSED_METRIC_LOG, collect_interval_milliseconds);
-    }
+        if (transposed_metric_log)
+        {
+            size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
+                                                                    DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+            transposed_metric_log->startCollect(ThreadName::TRANSPOSED_METRIC_LOG, collect_interval_milliseconds);
+        }
 
-    if (bucketed_metric_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
-                                                                DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        bucketed_metric_log->startCollect(ThreadName::BUCKETED_METRIC_LOG, collect_interval_milliseconds);
-    }
+        if (bucketed_metric_log)
+        {
+            size_t collect_interval_milliseconds = config.getUInt64("metric_log.collect_interval_milliseconds",
+                                                                    DEFAULT_METRIC_LOG_COLLECT_INTERVAL_MILLISECONDS);
+            bucketed_metric_log->startCollect(ThreadName::BUCKETED_METRIC_LOG, collect_interval_milliseconds);
+        }
 
-    if (error_log)
+        if (error_log)
+        {
+            size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
+                                                                    DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
+            error_log->startCollect(ThreadName::ERROR_LOG, collect_interval_milliseconds);
+        }
+
+        if (aggregated_zookeeper_log)
+        {
+            size_t collect_interval_milliseconds = config.getUInt64("aggregated_zookeeper_log.collect_interval_milliseconds",
+                                                                    DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
+            aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
+        }
+    }
+    catch (...)
     {
-        size_t collect_interval_milliseconds = config.getUInt64("error_log.collect_interval_milliseconds",
-                                                                DEFAULT_ERROR_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        error_log->startCollect(ThreadName::ERROR_LOG, collect_interval_milliseconds);
+        /// If starting a collecting thread throws (e.g. CANNOT_SCHEDULE_TASK), join the already
+        /// started ones before unwinding: the implicit `PeriodicLog` destructor does not join
+        /// `collecting_thread` and would terminate on a joinable thread.
+        shutdown();
+        throw;
     }
 
     if (crash_log)
     {
         CrashLog::initialize(crash_log);
-    }
-
-    if (aggregated_zookeeper_log)
-    {
-        size_t collect_interval_milliseconds = config.getUInt64("aggregated_zookeeper_log.collect_interval_milliseconds",
-                                                                DEFAULT_AGGREGATED_ZOOKEEPER_LOG_COLLECT_INTERVAL_MILLISECONDS);
-        aggregated_zookeeper_log->startCollect(ThreadName::AGGREGATED_ZOOKEEPER_LOG, collect_interval_milliseconds);
     }
 
     if (background_schedule_pool_log)

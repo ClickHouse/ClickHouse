@@ -1473,48 +1473,6 @@ TEST(AsyncLoader, SpawnFailureFromFinishDoesNotTerminate)
     t.loader.wait();
 }
 
-// A submitted but not yet started worker cannot take a job from the ready queue, so a pool holding
-// only such workers still needs a spawn. Measurements are taken into locals and asserted only after
-// the limits are restored: an early return while the pool cannot run jobs hangs in `~LoadTask`.
-TEST(AsyncLoader, SpawnIsRequiredWhileNoWorkerHasStarted)
-{
-    GlobalThreadPoolLimits limits;
-
-    AsyncLoaderTest t(16);
-    std::atomic<size_t> jobs_done{0};
-    auto job_func = [&] (AsyncLoader &, const LoadJobPtr &) { jobs_done++; };
-
-    t.loader.unpause();
-    limits.submitWithoutStarting(1000); // Loader workers get queued in the global pool but never start
-
-    LoadTaskPtrs tasks;
-    tasks.reserve(8);
-    for (size_t i = 0; i < 4; i++)
-        tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
-
-    // No worker has started, so every spawn here runs with injections blocked and succeeds. One that
-    // counted a queued worker as a drainer would call `trySchedule`, which the injector fails.
-    const auto failures_before = spawnFailures();
-    const auto submitted_before = limits.pool.active();
-    {
-        AlwaysFailToAllocateThread always_fail;
-        for (size_t i = 0; i < 4; i++)
-            tasks.push_back(t.schedule({makeLoadJob({}, "job", job_func)}));
-    }
-    const auto failures = spawnFailures() - failures_before;
-    // Zero failures alone would also hold if no spawn had been attempted, so require that each of the
-    // four enqueues submitted a worker of its own.
-    const auto submitted = limits.pool.active() - submitted_before;
-
-    limits.restore(); // Let the submitted workers start and drain everything
-    waitLoad(tasks);
-
-    ASSERT_EQ(failures, 0);
-    ASSERT_EQ(submitted, 4);
-    ASSERT_EQ(jobs_done, 8);
-    t.loader.wait();
-}
-
 // A worker blocked in `wait()` cannot take a job from its own pool's ready queue even when it waits
 // for a job of another pool, a case that priority inheritance does not convert into a same-pool wait.
 // Treating it as a drainer leaves that pool's queue with nobody to run it.

@@ -112,8 +112,30 @@ KeeperRequestDispatcherOld::KeeperRequestDispatcherOld(KeeperServer * server_, K
         throw Exception(DB::ErrorCodes::LOGICAL_ERROR, "KeeperRequestDispatcherOld requires a special response router");
 
     requests_queue = std::make_unique<RequestsQueue>(keeper_context->getCoordinationSettings()[CoordinationSetting::max_request_queue_size]);
-    request_thread = ThreadFromGlobalPool([this] { requestThread(); });
-    responses_thread = ThreadFromGlobalPool([this] { responseThread(); });
+    try
+    {
+        request_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { requestThread(); });
+        responses_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { responseThread(); });
+    }
+    catch (...)
+    {
+        /// Starting a thread may throw (e.g. `CANNOT_SCHEDULE_TASK` when the global thread pool has no
+        /// free slot for a long-running job). The destructor is not called for an object whose constructor
+        /// threw, and destroying a still joinable `ThreadFromGlobalPool` aborts the process, so the
+        /// workers started so far have to be stopped and joined before the exception leaves the constructor.
+        /// The worker loops exit when their queue is finished. Note that the context-wide shutdown flag
+        /// must not be consumed here: `KeeperDispatcher::shutdown` joins its own threads only on the
+        /// first transition of that flag, so setting it during this unwind would leave the threads
+        /// `KeeperDispatcher::initialize` started earlier (e.g. `snapshot_thread`) never joined,
+        /// aborting on their still joinable destructors.
+        requests_queue->finish();
+        responses_queue.finish();
+        if (request_thread.joinable())
+            request_thread.join();
+        if (responses_thread.joinable())
+            responses_thread.join();
+        throw;
+    }
 }
 
 void KeeperRequestDispatcherOld::onResponse(KeeperResponseForSession response) noexcept
@@ -292,6 +314,11 @@ void KeeperRequestDispatcherOld::requestThread()
             }
             else
             {
+                /// The queue is finished when the dispatcher is shutting down, in particular when its
+                /// constructor failed to start a worker thread and joins the ones already started
+                /// (the context-wide shutdown flag is not set on that path).
+                if (requests_queue->isFinished())
+                    break;
                 continue;
             }
 
@@ -642,6 +669,13 @@ void KeeperRequestDispatcherOld::responseThread()
                     "",
                     dequeue_time_us);
             }
+        }
+        else if (responses_queue.isFinished())
+        {
+            /// The queue is finished when the dispatcher is shutting down, in particular when its
+            /// constructor failed to start a worker thread and joins the ones already started
+            /// (the context-wide shutdown flag is not set on that path).
+            break;
         }
     }
 }

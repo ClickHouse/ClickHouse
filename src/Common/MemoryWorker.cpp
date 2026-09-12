@@ -514,10 +514,12 @@ void MemoryWorker::start()
         sourceToString(source),
         purge_dirty_pages_info);
 
-    update_resident_memory_thread = ThreadFromGlobalPool([this] { updateResidentMemoryThread(); });
+    update_resident_memory_thread = ThreadFromGlobalPool(
+        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { updateResidentMemoryThread(); });
 
 #if USE_JEMALLOC
-    purge_dirty_pages_thread = ThreadFromGlobalPool([this] { purgeDirtyPagesThread(); });
+    purge_dirty_pages_thread = ThreadFromGlobalPool(
+        ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { purgeDirtyPagesThread(); });
 #endif
 }
 

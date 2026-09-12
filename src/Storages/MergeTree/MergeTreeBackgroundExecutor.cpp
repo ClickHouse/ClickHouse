@@ -87,8 +87,27 @@ MergeTreeBackgroundExecutor<Queue>::MergeTreeBackgroundExecutor(
     pool->setMaxFreeThreads(std::max(1UL, threads_count));
     pool->setQueueSize(std::max(1UL, threads_count));
 
-    for (size_t number = 0; number < threads_count; ++number)
-        pool->scheduleOrThrowOnError([this] { threadFunction(); });
+    try
+    {
+        for (size_t number = 0; number < threads_count; ++number)
+            pool->scheduleOrThrowOnError([this] { threadFunction(); });
+    }
+    catch (...)
+    {
+        /// The workers scheduled so far are already running `threadFunction`, which returns only once
+        /// `shutdown` is set. The destructor is not called for an object whose constructor threw, so
+        /// nothing would ever set it, and the destructor of `pool` would block forever joining them.
+        try
+        {
+            wait();
+        }
+        catch (...)
+        {
+            /// Must not replace the exception that is being propagated.
+            tryLogCurrentException(log, "Failed to stop the workers of a partially created executor");
+        }
+        throw;
+    }
 }
 
 template <class Queue>
@@ -139,12 +158,25 @@ void MergeTreeBackgroundExecutor<Queue>::increaseThreadsAndMaxTasksCount(size_t 
     pool->setMaxFreeThreads(std::max(1UL, new_threads_count));
     pool->setQueueSize(std::max(1UL, new_threads_count));
 
-    for (size_t number = threads_count; number < new_threads_count; ++number)
-        pool->scheduleOrThrowOnError([this] { threadFunction(); });
+    /// Starting the workers is best-effort: the global thread pool may have no thread left for them.
+    /// Keep the executor running with the workers it did get instead of failing the config reload, and
+    /// leave `threads_count` at the number that actually started, so that a later reload retries.
+    size_t started_threads_count = threads_count;
+    try
+    {
+        for (; started_threads_count < new_threads_count; ++started_threads_count)
+            pool->scheduleOrThrowOnError([this] { threadFunction(); });
+    }
+    catch (...)
+    {
+        tryLogCurrentException(
+            log,
+            fmt::format("Failed to start all the workers of {}Executor, continuing with {}", toString(name), started_threads_count));
+    }
 
     max_tasks_metric.changeTo(new_max_tasks_count);
     max_tasks_count.store(new_max_tasks_count, std::memory_order_relaxed);
-    threads_count = new_threads_count;
+    threads_count = started_threads_count;
 }
 
 template <class Queue>
