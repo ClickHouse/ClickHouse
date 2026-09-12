@@ -81,15 +81,19 @@ struct Fixture
     }
 
     /// Simulate `ResourceGuard::Request::finish()` feeding the real-vs-estimate error back for this
-    /// query on this leaf (single leaf → slot 0, as the classifier pre-resolves).
+    /// query on this leaf (single leaf → slot 0, as the classifier pre-resolves). finish() adds the
+    /// delta to attained service (every accounting algorithm) and to the fair-only vruntime
+    /// correction, independently; a `las` query never reads the latter, so feeding both is faithful.
     void addCorrection(ResourceSchedulingContext * ctx, ResourceCost real, ResourceCost estimate)
     {
-        ctx->resourceState(0)->cost_correction.fetch_add(
-            static_cast<Int64>(real) - static_cast<Int64>(estimate), std::memory_order_relaxed);
+        const Int64 delta = static_cast<Int64>(real) - static_cast<Int64>(estimate);
+        auto * s = ctx->resourceState(0);
+        s->attained_cost.fetch_add(delta, std::memory_order_relaxed);
+        s->vruntime_correction.fetch_add(delta, std::memory_order_relaxed);
     }
 
     double vruntimeOf(ResourceSchedulingContext * ctx) { return ctx->resourceState(0)->vruntime; }
-    Int64 attainedOf(ResourceSchedulingContext * ctx) { return ctx->resourceState(0)->attained_cost; }
+    Int64 attainedOf(ResourceSchedulingContext * ctx) { return ctx->resourceState(0)->attained_cost.load(); }
 };
 
 }
@@ -132,23 +136,24 @@ TEST(RequestQueue, FairSingleQueryFifo)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3}));
 }
 
-/// The real-vs-estimate cost correction: clamps to a non-negative charge (never moving a key
-/// backward) and carries any unspent refund forward so it converges to real cost long-term.
-TEST(RequestQueue, ConsumeCorrectedCostClampsAndCarries)
+/// The fair-only vruntime correction drain: folds the pending real-vs-estimate delta into the charge,
+/// clamps to a non-negative charge (vruntime never moves backward) and carries any unspent negative
+/// remainder forward so the charge converges to real cost long-term.
+TEST(RequestQueue, DrainVruntimeCorrectionClampsAndCarries)
 {
     ResourceQueryState s;
-    EXPECT_EQ(s.consumeCorrectedCost(100), 100);          // no correction → identity
-    s.cost_correction.fetch_add(50);
-    EXPECT_EQ(s.consumeCorrectedCost(100), 150);          // under-estimate → charge extra
-    EXPECT_EQ(s.cost_correction.load(), 0);
-    s.cost_correction.fetch_add(-30);
-    EXPECT_EQ(s.consumeCorrectedCost(100), 70);           // over-estimate → charge less
-    EXPECT_EQ(s.cost_correction.load(), 0);
-    s.cost_correction.fetch_add(-150);
-    EXPECT_EQ(s.consumeCorrectedCost(100), 0);            // big refund → clamp to 0 (never negative)
-    EXPECT_EQ(s.cost_correction.load(), -50);             // carry the unspent -50 forward
-    EXPECT_EQ(s.consumeCorrectedCost(100), 50);           // applied to the next request
-    EXPECT_EQ(s.cost_correction.load(), 0);
+    EXPECT_EQ(s.drainVruntimeCorrection(100), 100);       // no correction → identity
+    s.vruntime_correction.fetch_add(50);
+    EXPECT_EQ(s.drainVruntimeCorrection(100), 150);       // under-estimate → charge extra
+    EXPECT_EQ(s.vruntime_correction.load(), 0);
+    s.vruntime_correction.fetch_add(-30);
+    EXPECT_EQ(s.drainVruntimeCorrection(100), 70);        // over-estimate → charge less
+    EXPECT_EQ(s.vruntime_correction.load(), 0);
+    s.vruntime_correction.fetch_add(-150);
+    EXPECT_EQ(s.drainVruntimeCorrection(100), 0);         // big refund → clamp to 0 (never negative)
+    EXPECT_EQ(s.vruntime_correction.load(), -50);         // carry the unspent -50 forward
+    EXPECT_EQ(s.drainVruntimeCorrection(100), 50);        // applied to the next request
+    EXPECT_EQ(s.vruntime_correction.load(), 0);
 }
 
 /// fair: a query whose first request under-estimated its cost has the shortfall folded into its
@@ -185,9 +190,9 @@ TEST(RequestQueue, LasAppliesCostCorrection)
     EXPECT_EQ(att2 - att1, 100);                          // attained advanced by the corrected cost
 }
 
-/// The weight-lowering threshold reads the query's real service (attained + pending correction) with
-/// no one-request lag: a correction that pushes real service over the threshold lowers the weight on
-/// the very next request, not the one after.
+/// The weight-lowering threshold reads the query's attained service, into which finish() folds a
+/// correction immediately: a correction that pushes real service over the threshold lowers the weight
+/// on the very next request, with no one-request lag.
 TEST(RequestQueue, FairThresholdSeesPendingCorrectionImmediately)
 {
     Fixture f(SchedulerAlgorithm::Fair);
@@ -196,8 +201,8 @@ TEST(RequestQueue, FairThresholdSeesPendingCorrectionImmediately)
     f.enqueue(1, a, 10);
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));
     double vr1 = f.vruntimeOf(a);                         // 10: full weight, not yet over threshold
-    // Request 1 really moved 100 bytes: its real service (10 + 90) now exceeds 50, so request 2's
-    // effective weight must already be lowered (0.5) — the pending correction is peeked, not lagged.
+    // Request 1 really moved 100 bytes: attained service (10 + 90) now exceeds 50, so request 2's
+    // effective weight must already be lowered (0.5) — finish() folded the delta into attained.
     f.addCorrection(a, /*real=*/100, /*estimate=*/10);
     f.enqueue(2, a, 10);
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2}));
@@ -401,27 +406,25 @@ TEST(RequestQueue, FairSwapRoundTripNoVruntimeDoubleCount)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 3, 2}));
 }
 
-/// A correction consumed by `fair::push` (folded into `scheduling.charge`) must survive a live swap
-/// to `las`. `fair` charges at push and stores the corrected cost on the request; `las` charges at
-/// pop and re-derives it from `scheduling.cost` + the shared `cost_correction`, ignoring
-/// `scheduling.charge`. `setScheduler` returns the consumed delta to `cost_correction` before
-/// re-pushing, so the migrated request's real cost still lands in attained under `las` — not just
-/// the estimate. Regression for the swap silently dropping the correction.
+/// A finish() correction lands in `attained_cost`, which is persistent per-query service independent
+/// of the active algorithm, so it must survive a live `fair` → `las` swap. The migrated request is
+/// charged its estimate at pop under `las` on top of the preserved correction, so attained reflects
+/// real service (100), not just the estimate (10). Regression for a swap dropping accumulated service.
 TEST(RequestQueue, FairToLasSwapPreservesCorrection)
 {
     Fixture f(SchedulerAlgorithm::Fair);
     auto * a = f.makeQuery();
-    f.addCorrection(a, /*real=*/100, /*estimate=*/10);   // +90 pending on the shared state
-    f.enqueue(1, a, 10);                                 // fair::push consumes it into scheduling.charge (=100)
+    f.addCorrection(a, /*real=*/100, /*estimate=*/10);   // finish() folds +90 into attained (=90)
+    f.enqueue(1, a, 10);                                 // fair charges vruntime; attained untouched at push
     f.queue->setScheduler(SchedulerAlgorithm::Las);      // migrate the pending request to las
-    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));    // popped under las
-    EXPECT_EQ(f.attainedOf(a), 100);                     // corrected cost preserved across the swap, not 10
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1}));    // popped under las (+10 estimate → attained 100)
+    EXPECT_EQ(f.attainedOf(a), 100);                     // real service preserved across the swap, not 10
 }
 
-/// las: the lazy pop-time re-key must see a query's REAL service (attained + pending correction), not
-/// just attained_cost. A query that badly under-estimated a finished request has a large pending
-/// correction; its next request must be re-keyed to its true (higher) level and deferred behind a
-/// genuinely lighter query, not run ahead of it. Regression for the re-key ignoring cost_correction.
+/// las: the lazy pop-time re-key must see a query's real attained service, not the level it was keyed
+/// at when enqueued. A query that badly under-estimated a finished request has had the shortfall
+/// folded into `attained_cost` by finish(); its next request must re-key to its true (higher) level
+/// and defer behind a genuinely lighter query. Regression for the re-key using the stale enqueue key.
 TEST(RequestQueue, LasRekeySeesPendingCorrection)
 {
     Fixture f(SchedulerAlgorithm::Las);
@@ -429,10 +432,10 @@ TEST(RequestQueue, LasRekeySeesPendingCorrection)
     auto * c = f.makeQuery();
     f.enqueue(1, a, 10);   // A: enqueued first, keyed at level(attained=0)
     f.enqueue(2, c, 10);   // C: keyed at level(attained=0); ties with A → A sorts first by seq
-    // A's finished request really cost far more than estimated → big pending correction on A.
+    // A's finished request really cost far more than estimated → finish() folds it into A's attained.
     f.addCorrection(a, /*real=*/64 * 1024 * 1024, /*estimate=*/10);
-    // With the fix A's front request re-keys to its true (high) level and defers, so C (truly
-    // least-attained) is served first; without it A would pop first on the level-0 seq tie.
+    // A's front request re-keys to its true (high) level and defers, so C (truly least-attained) is
+    // served first; keyed on the stale enqueue level A would pop first on the level-0 seq tie.
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{2, 1}));
 }
 
@@ -592,35 +595,29 @@ TEST(RequestQueue, FairUsesSchedulingCostNotBudgetAdjustedCost)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{11, 21, 12, 22}));
 }
 
-/// A `fair` request charges its corrected cost at push(), consuming the shared cost_correction. If it
-/// is cancelled before it pops, that consumed correction must return to the context — otherwise the
-/// query re-enters lighter than the resource it actually ran.
-TEST(RequestQueue, FairCancelReturnsConsumedCorrection)
+/// Request tagging at enqueue: accounting algorithms (`fair`/`las`) mark a request `tracks_attained`
+/// so its real service accumulates; `fair` additionally marks `tracks_vruntime` for its private
+/// vruntime correction. `fifo`/`priority` set neither, so ResourceGuard::finish() feeds them nothing.
+TEST(RequestQueue, CostTrackingFlagsPerScheduler)
 {
-    Fixture f(SchedulerAlgorithm::Fair);
-    auto * a = f.makeQuery(1.0);
-    f.addCorrection(a, /*real=*/100, /*estimate=*/0);   // seed cost_correction = 100
-    auto * r = f.enqueue(1, a, /*cost=*/1);             // push folds the correction into r's charge
-    EXPECT_TRUE(f.queue->cancelRequest(r));             // cancel before pop must return the 100
-    f.enqueue(2, a, /*cost=*/1);
-    auto [req, _] = f.queue->dequeueRequest();
-    ASSERT_NE(req, nullptr);
-    EXPECT_EQ(f.attainedOf(a), 101);                    // 1 (cost) + 100 (returned correction)
-}
-
-/// Only accounting schedulers (`fair`/`las`) tag their requests as cost-tracking at enqueue;
-/// `fifo`/`priority` do not, so ResourceGuard::finish() never feeds them a cost-correction they
-/// would never drain (and would dump on a later scheduler swap).
-TEST(RequestQueue, CostCorrectionTrackedOnlyByAccountingSchedulers)
-{
-    auto tags_cost = [](SchedulerAlgorithm algo)
+    auto attained = [](SchedulerAlgorithm algo)
     {
         Fixture f(algo);
         auto * q = f.makeQuery();
-        return f.enqueue(1, q)->scheduling.tracks_cost;
+        return f.enqueue(1, q)->scheduling.tracks_attained;
     };
-    EXPECT_FALSE(tags_cost(SchedulerAlgorithm::Fifo));
-    EXPECT_FALSE(tags_cost(SchedulerAlgorithm::Priority));
-    EXPECT_TRUE(tags_cost(SchedulerAlgorithm::Fair));
-    EXPECT_TRUE(tags_cost(SchedulerAlgorithm::Las));
+    auto vruntime = [](SchedulerAlgorithm algo)
+    {
+        Fixture f(algo);
+        auto * q = f.makeQuery();
+        return f.enqueue(1, q)->scheduling.tracks_vruntime;
+    };
+    EXPECT_FALSE(attained(SchedulerAlgorithm::Fifo));
+    EXPECT_FALSE(attained(SchedulerAlgorithm::Priority));
+    EXPECT_TRUE(attained(SchedulerAlgorithm::Fair));
+    EXPECT_TRUE(attained(SchedulerAlgorithm::Las));
+    EXPECT_FALSE(vruntime(SchedulerAlgorithm::Fifo));
+    EXPECT_FALSE(vruntime(SchedulerAlgorithm::Priority));
+    EXPECT_TRUE(vruntime(SchedulerAlgorithm::Fair));
+    EXPECT_FALSE(vruntime(SchedulerAlgorithm::Las));
 }

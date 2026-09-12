@@ -146,11 +146,12 @@ public:
     {
         auto & state = *request->scheduling.state;
         double effective_weight = updateEffectiveWeight(*request->scheduling.context, state);
-        // Corrected cost (see consumeCorrectedCost), stored on the request so pop() charges the same
-        // amount; never negative, so vruntime only moves forward.
-        request->scheduling.charge = state.consumeCorrectedCost(request->scheduling.cost);
+        // Charge the declared cost plus any pending real-vs-estimate correction — folded here from
+        // fair's own accumulator, independent of attained_cost; never negative, so vruntime only
+        // moves forward.
+        ResourceCost charge = state.drainVruntimeCorrection(request->scheduling.cost);
         double vstart = std::max(system_vruntime, state.vruntime);
-        state.vruntime = vstart + static_cast<double>(request->scheduling.charge) / effective_weight;
+        state.vruntime = vstart + static_cast<double>(charge) / effective_weight;
         request->scheduling.key = {vstart, next_seq++};
         requests.insert(*request);
     }
@@ -163,11 +164,8 @@ public:
         ResourceRequest * request = &*it;
         requests.erase(it);
         // System virtual time advances to the start tag of the served request (monotonic).
+        // attained_cost + last_activity_ns are charged generically in RequestQueue::dequeueRequest.
         system_vruntime = std::max(system_vruntime, request->scheduling.key.first);
-        auto & state = *request->scheduling.state;
-        // Same corrected charge that advanced vruntime at push(), so attained tracks real cost.
-        state.attained_cost += request->scheduling.charge;
-        state.last_activity_ns = clock_gettime_ns();
         return request;
     }
 
@@ -227,11 +225,9 @@ private:
         return state.effective_weight;
     }
 
-    /// True once the query's real cumulative service crosses a `weight_lowering_*` threshold. Real
-    /// service is `attained_cost` (charged at pop) plus the pending real-vs-estimate correction,
-    /// peeked so the attained thresholds react on the first request after a finish without folding it
-    /// into `attained_cost`. For CPU, `attained_cost` is granted service and leads spent CPU by at
-    /// most one quantum.
+    /// True once the query's real cumulative service crosses a `weight_lowering_*` threshold.
+    /// `attained_cost` already tracks real service (finish folds its correction straight in). For CPU
+    /// it is granted service and leads spent CPU by at most one quantum.
     bool weightLoweringThresholdCrossed(const ResourceSchedulingContext & ctx, const ResourceQueryState & state) const
     {
         if (ctx.weight_lowering_age_seconds > 0)
@@ -241,7 +237,7 @@ private:
             if (age_seconds >= ctx.weight_lowering_age_seconds)
                 return true;
         }
-        const Int64 attained_service = state.attained_cost + state.cost_correction.load(std::memory_order_relaxed);
+        const Int64 attained_service = state.attained_cost.load(std::memory_order_relaxed);
         if (unit == CostUnit::CPUNanosecond && ctx.weight_lowering_cpu_seconds > 0
             && static_cast<double>(attained_service) / 1e9 >= ctx.weight_lowering_cpu_seconds)
             return true;
@@ -283,7 +279,7 @@ public:
 
     void push(ResourceRequest * request) override
     {
-        Int64 attained = request->scheduling.state->attained_cost;
+        Int64 attained = request->scheduling.state->attained_cost.load(std::memory_order_relaxed);
         request->scheduling.key = {levelOf(attained), next_seq++};
         requests.insert(*request);
     }
@@ -299,10 +295,10 @@ public:
         {
             auto it = requests.begin();
             ResourceRequest * request = &*it;
-            auto & state = *request->scheduling.state;
-            // Real service = attained_cost + pending correction (peeked, as `fair` does), so a badly
-            // under-estimated finished request doesn't key the query too low and jump a lighter one.
-            UInt32 real_level = levelOf(state.attained_cost + state.cost_correction.load(std::memory_order_relaxed));
+            // `attained_cost` already tracks real service (finish folds its correction straight in),
+            // so re-key from its current value: if the query's accrued service has pushed the true
+            // level past this request's stored key, re-key and defer it; otherwise serve it.
+            UInt32 real_level = levelOf(request->scheduling.state->attained_cost.load(std::memory_order_relaxed));
             if (real_level > request->scheduling.key.first)
             {
                 requests.erase(it);
@@ -311,10 +307,7 @@ public:
                 continue;
             }
             requests.erase(it);
-            // Charge the corrected cost (see consumeCorrectedCost) so attained (the level key) tracks
-            // real bytes/CPU; never negative, so the level never drops.
-            state.attained_cost += state.consumeCorrectedCost(request->scheduling.cost);
-            state.last_activity_ns = clock_gettime_ns();
+            // attained_cost + last_activity_ns are charged generically in RequestQueue::dequeueRequest.
             return request;
         }
         return nullptr;
@@ -517,9 +510,10 @@ public:
                 "Workload limit `max_waiting_queries` has been reached: {} of {}", total_requests, max_queued);
         }
 
-        // Tag whether this leaf's scheduler tracks per-query service, so ResourceGuard::finish()
-        // only feeds a cost-correction that `fair`/`las` will actually drain.
-        request->scheduling.tracks_cost = algorithm == SchedulerAlgorithm::Fair || algorithm == SchedulerAlgorithm::Las;
+        // Tag the accounting this leaf's algorithm needs, so dequeueRequest()/finish() act without
+        // consulting the leaf: `fair`/`las` accrue attained service; only `fair` also corrects vruntime.
+        request->scheduling.tracks_attained = algorithm == SchedulerAlgorithm::Fair || algorithm == SchedulerAlgorithm::Las;
+        request->scheduling.tracks_vruntime = algorithm == SchedulerAlgorithm::Fair;
         algo->push(request);
         queue_cost += request->cost;
         bool was_empty = total_requests == 0;
@@ -535,6 +529,13 @@ public:
         ResourceRequest * request = algo->pop();
         if (!request)
             return {nullptr, false};
+        // Charge attained service generically (algorithm-independent): the declared cost is the
+        // estimate now that the request is served; `finish()` corrects it to real cost later.
+        if (request->scheduling.tracks_attained)
+        {
+            request->scheduling.state->attained_cost.fetch_add(request->scheduling.cost, std::memory_order_relaxed);
+            request->scheduling.state->last_activity_ns = clock_gettime_ns();
+        }
         queue_cost -= request->cost;
         total_requests--;
         if (total_requests == 0)
@@ -554,7 +555,6 @@ public:
             return false; // Any request should already be failed or executed
         if (!algo->erase(request))
             return false;
-        returnConsumedCorrection(request);
         queue_cost -= request->cost;
         total_requests--;
         canceled_requests++;
@@ -600,7 +600,6 @@ public:
             {
                 ResourceRequest * request = algo->popWorst();
                 chassert(request);
-                returnConsumedCorrection(request);
                 queue_cost -= request->cost;
                 total_requests--;
                 rejected_requests++;
@@ -631,13 +630,9 @@ public:
         algo->pullAll(pending);
         algo = makeAlgorithm(new_algorithm, unit);
         algorithm = new_algorithm;
-        // Migrate the backlog to the new algorithm. First return each request's consumed
-        // cost-correction (the previous algorithm may have taken it at push, and the request is being
-        // re-pushed rather than served). Then, switching to `fair`, reset each migrated query's
-        // vruntime: the fresh instance restarts system virtual time at 0, so the stale projection
-        // would otherwise be double-counted. attained_cost is real accrued service and is kept.
-        for (ResourceRequest * request : pending)
-            returnConsumedCorrection(request);
+        // Migrate the backlog to the new algorithm. When switching to `fair`, reset each migrated
+        // query's vruntime: the fresh instance restarts system virtual time at 0, so the stale
+        // projection would otherwise be double-counted. attained_cost is real accrued service, kept.
         if (new_algorithm == SchedulerAlgorithm::Fair)
             for (ResourceRequest * request : pending)
                 request->scheduling.state->vruntime = 0.0;
@@ -680,19 +675,6 @@ public:
     }
 
 private:
-    /// `fair` folds the shared `cost_correction` into `scheduling.charge` at push(); when such a
-    /// request is removed without pop() applying it (cancel, reject, live scheduler swap), return the
-    /// consumed delta so the query's real-vs-estimate correction is not dropped. No-op for pop-charging
-    /// algorithms, where reset() leaves `scheduling.charge == scheduling.cost`.
-    void returnConsumedCorrection(ResourceRequest * request)
-    {
-        Int64 consumed = static_cast<Int64>(request->scheduling.charge) - static_cast<Int64>(request->scheduling.cost);
-        if (consumed == 0)
-            return;
-        request->scheduling.state->cost_correction.fetch_add(consumed, std::memory_order_relaxed);
-        request->scheduling.charge = request->scheduling.cost;
-    }
-
     static std::unique_ptr<ISchedulingAlgorithm> makeAlgorithm(SchedulerAlgorithm algorithm_, CostUnit unit_)
     {
         switch (algorithm_)

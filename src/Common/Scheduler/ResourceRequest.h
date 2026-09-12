@@ -76,12 +76,6 @@ public:
         /// own declared cost.
         ResourceCost cost{};
 
-        /// Effective per-query charge `fair` applies to `vruntime` and `attained_cost`: the declared
-        /// `scheduling.cost` adjusted by the query's accumulated real-vs-estimate correction, computed
-        /// at enqueue by `FairAlgorithm::push` (`las` folds the correction in at pop). Defaults to
-        /// `scheduling.cost` so it is never stale for schedulers that ignore it.
-        ResourceCost charge{};
-
         /// Non-owning pointer to the query's scheduling context (query-global config: weight,
         /// priority, …), stamped onto the link by the classifier and copied here just before
         /// `enqueueRequest()` (cleared by `reset()`). The classifier owns it for the query's
@@ -103,10 +97,12 @@ public:
         /// Set at enqueue from the query's `workload_priority` setting (`Int64`, negatives allowed).
         Priority priority;
 
-        /// Set at enqueue iff the leaf's scheduler tracks per-query service (`fair`/`las`); gates the
-        /// cost-correction feed in `ResourceGuard::finish()`, so a non-accounting leaf (`fifo`/
-        /// `priority`) never accumulates a correction it would never drain.
-        bool tracks_cost = false;
+        /// Set at enqueue from the leaf's algorithm so `dequeueRequest`/`finish()` know what to
+        /// account without consulting the leaf: `tracks_attained` on `fair`/`las` (charge attained
+        /// service on serve + apply the finish correction to it); `tracks_vruntime` on `fair` only
+        /// (feed the independent vruntime correction). `fifo`/`priority` set neither.
+        bool tracks_attained = false;
+        bool tracks_vruntime = false;
     } scheduling;
 
     /// Scheduler nodes to be notified on consumption finish
@@ -127,7 +123,6 @@ public:
         // Capture the declared cost for per-query scheduling BEFORE any `ResourceBudget` adjustment
         // (which later rewrites `cost` only). For queues without a budget the two stay equal.
         scheduling.cost = cost_;
-        scheduling.charge = cost_;
         for (auto & constraint : constraints)
             constraint = nullptr;
         // Clear per-request query identity and ordering key so a reused request (e.g. the
@@ -136,7 +131,8 @@ public:
         scheduling.state = nullptr;
         scheduling.key = {0.0, 0};
         scheduling.priority = {};
-        scheduling.tracks_cost = false;
+        scheduling.tracks_attained = false;
+        scheduling.tracks_vruntime = false;
         // Note that the intrusive hooks are reset independently (by their intrusive containers)
     }
 

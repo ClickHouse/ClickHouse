@@ -11,51 +11,54 @@
 namespace DB
 {
 
-/// Per-query, per-resource mutable scheduling state, used by the `fair` and `las` schedulers.
+/// Per-query, per-resource mutable scheduling state.
 ///
-/// There is one instance per (query, scheduler leaf): a query uses several resources (CPU, IO
-/// read, IO write, …) and each has its own leaf, hence its own state. Each instance is read and
-/// written only by its owning leaf, under that leaf's mutex — the one exception is the
-/// cross-thread `cost_correction` feed from `ResourceGuard::finish()`, hence the atomic.
+/// `attained_cost` is the query's real service in this resource, common to the query-aware
+/// algorithms; `vruntime` (and its own correction) is `fair`'s alone. The two are tracked
+/// independently — attained is charged generically when a request is served, vruntime only by
+/// `fair`.
 ///
-/// Owned by the query's `ResourceSchedulingContext` in a store sized once when the classifier is
-/// built and never resized, so the address of a slot is stable for the context's lifetime. The
-/// classifier stamps a non-owning pointer to the right slot onto every `ResourceLink` it hands
-/// out, and request tagging copies it onto `ResourceRequest::scheduling.state`, so a scheduler
-/// reaches this state with a single dereference — no map, no lookup.
+/// One instance per (query, leaf), owned by the query's `ResourceSchedulingContext` in a store
+/// sized once when the classifier is built (never resized, so a slot's address is stable). The
+/// classifier stamps a pointer to it onto every `ResourceLink`, and request tagging copies it onto
+/// `ResourceRequest::scheduling.state`, so a scheduler reaches it with a single dereference — no
+/// map, no lookup, no allocation on the hot path.
 struct ResourceQueryState
 {
-    Int64 attained_cost = 0; /// Total dequeued cost for this query in this resource
-    double vruntime = 0.0; /// SFQ virtual runtime for this query in this resource (`fair`)
-    UInt64 last_activity_ns = 0; /// Monotonic time of the last dequeue (introspection)
+    /// The query's accumulated service in this resource, tracking real cost. `RequestQueue::
+    /// dequeueRequest` adds a request's declared cost when it is served (the estimate — real cost
+    /// is not known yet), and `ResourceGuard::finish()` adds the real-minus-estimate delta once it
+    /// is; so it converges to real service, counting an in-flight request at its estimate. Atomic
+    /// (relaxed) because `finish()` runs on the consumer thread while the leaf reads/writes it on
+    /// the scheduler thread. Read by `las` (level) and `fair` (weight-lowering thresholds).
+    std::atomic<Int64> attained_cost{0};
 
-    /// `fair`: cached effective weight plus a one-way "already lowered" latch. The effective
-    /// weight is recomputed at push() only while `weight_lowered` is false; once a
-    /// `weight_lowering_*` threshold trips, the lowered value is stored here and reused, so the
-    /// threshold checks stop running. `effective_weight` is 0 until the first push() sets it.
+    UInt64 last_activity_ns = 0; /// Monotonic time of the last dequeue (introspection); leaf thread only.
+
+    /// `fair` only, leaf thread only. SFQ virtual runtime, plus a cached effective weight and a
+    /// one-way "already lowered" latch: the weight is recomputed at push() until a
+    /// `weight_lowering_*` threshold trips, then frozen (`effective_weight` is 0 until first set).
+    double vruntime = 0.0;
     double effective_weight = 0.0;
     bool weight_lowered = false;
 
-    /// Accumulated `real_cost - scheduling.cost` for this query's finished requests on this
-    /// resource, not yet applied to a scheduling key. `ResourceGuard::Request::finish()` adds to
-    /// it from the consumer thread (hence atomic; the other fields are touched only by the leaf
-    /// thread). `fair`/`las` fold it into the NEXT request's charge in `consumeCorrectedCost()`,
-    /// so per-query service tracks real cost long-term without ever rewriting an assigned key.
-    std::atomic<Int64> cost_correction{0};
+    /// `fair` only: pending `real_cost - scheduling.cost` correction for `vruntime`, independent of
+    /// `attained_cost`. `finish()` adds the delta from the consumer thread (hence atomic); `fair`
+    /// folds it into the next request's vruntime charge at push (`drainVruntimeCorrection`) and
+    /// drains it. Kept separate from `attained_cost` so vruntime and attained service are computed
+    /// independently.
+    std::atomic<Int64> vruntime_correction{0};
 
-    /// Fold the accumulated correction into `base_cost` (the request's declared `scheduling.cost`)
-    /// to get the charge to apply to `vruntime`/`attained_cost` for the next request. The charge
-    /// is never negative — a refund (over-estimate/failed op) is realized by charging LESS on
-    /// subsequent requests, never by moving `vruntime`/`attained_cost` backward (which would break
-    /// SFQ/LAS fairness). Any unspent negative remainder is carried forward, so long-term the
-    /// cumulative charge converges to the cumulative real cost. `fetch_sub` composes correctly
-    /// with a concurrent `finish()` `fetch_add`.
-    ResourceCost consumeCorrectedCost(ResourceCost base_cost)
+    /// Fold the pending correction into `base_cost` to get the charge `fair` applies to `vruntime`.
+    /// Never negative — vruntime is monotonic, so an over-estimate is realized by charging LESS on
+    /// later requests, carrying any negative remainder forward until the charge converges to real
+    /// cost. `fetch_sub` composes with a concurrent `finish()` `fetch_add`.
+    ResourceCost drainVruntimeCorrection(ResourceCost base_cost)
     {
-        Int64 corr = cost_correction.load(std::memory_order_relaxed);
+        Int64 corr = vruntime_correction.load(std::memory_order_relaxed);
         Int64 effective = static_cast<Int64>(base_cost) + corr;
         Int64 remainder = effective < 0 ? effective : 0; // negative part carried to the future
-        cost_correction.fetch_sub(corr - remainder, std::memory_order_relaxed);
+        vruntime_correction.fetch_sub(corr - remainder, std::memory_order_relaxed);
         return static_cast<ResourceCost>(effective - remainder); // >= 0
     }
 };
