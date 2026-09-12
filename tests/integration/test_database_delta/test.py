@@ -34,9 +34,7 @@ def start_unity_catalog(node):
     except Exception as e:
         print("UC health check failed:", str(e))
         try:
-            logs = node.exec_in_container(
-                ["tail", "-n", "50", UC_LOG]
-            )
+            logs = node.exec_in_container(["tail", "-n", "50", UC_LOG])
             print("Last 50 lines of UC log:\n", logs)
         except Exception as log_e:
             print(f"Cannot read UC log: {str(log_e)}")
@@ -59,10 +57,17 @@ def started_cluster():
         logging.info("Starting cluster...")
         cluster.start()
 
-        if int(cluster.instances["node1"].query("SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'").strip()) == 0:
-            pytest.skip(
-                "DeltaLake engine is not available"
+        if (
+            int(
+                cluster.instances["node1"]
+                .query(
+                    "SELECT count() FROM system.table_engines WHERE name = 'DeltaLake'"
+                )
+                .strip()
             )
+            == 0
+        ):
+            pytest.skip("DeltaLake engine is not available")
 
         start_unity_catalog(cluster.instances["node1"])
 
@@ -130,8 +135,7 @@ def _capture_spark_hang_diagnostics(node):
                     [
                         "bash",
                         "-c",
-                        f"(jstack {pid} 2>&1 || jstack -F {pid} 2>&1)"
-                        f" | head -500",
+                        f"(jstack {pid} 2>&1 || jstack -F {pid} 2>&1)" f" | head -500",
                     ],
                     nothrow=True,
                     timeout=30,
@@ -180,11 +184,11 @@ def _capture_spark_hang_diagnostics(node):
             [
                 "bash",
                 "-c",
-                'if ss_output=$(ss -tnp 2>&1); then '
+                "if ss_output=$(ss -tnp 2>&1); then "
                 'echo "$ss_output" | { grep -E ":8080|java" || true; } | head -50; '
-                'else '
+                "else "
                 "echo ' no_matching_sockets'; "
-                'fi',
+                "fi",
             ],
             nothrow=True,
             timeout=15,
@@ -298,9 +302,7 @@ def execute_spark_query(node, query_text, retry_on_timeout=False):
                 print("Command failed with exception:", str(e))
 
             try:
-                logs = node.exec_in_container(
-                    ["tail", "-n", "50", UC_LOG]
-                )
+                logs = node.exec_in_container(["tail", "-n", "50", UC_LOG])
                 print("Last 50 lines of UC log:\n", logs)
             except Exception as log_e:
                 print(f"Cannot read log file: {str(log_e)}")
@@ -330,14 +332,25 @@ def execute_multiple_spark_queries(node, queries_list, retry_on_timeout=False):
     )
 
 
+# The new Unity implementation must match the legacy one on an all-Delta
+# catalog, so every test runs with both. The session flag is persisted into
+# the database on CREATE.
+USE_V2_VALUES = ["0", "1"]
+
+
+def unity_settings(use_v2):
+    return {"allow_database_unity_catalog": "1", "use_unity_catalog_v2": use_v2}
+
+
+@pytest.mark.parametrize("use_v2", USE_V2_VALUES)
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
+def test_embedded_database_and_tables(started_cluster, use_delta_kernel, use_v2):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
     node1.query(f"drop database if exists unity_test_{test_uuid}")
     node1.query(
         f"create database unity_test_{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}",
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings=unity_settings(use_v2),
     )
     default_tables = list(
         sorted(
@@ -379,7 +392,8 @@ def test_embedded_database_and_tables(started_cluster, use_delta_kernel):
             assert data_clickhouse == data_spark
 
 
-def test_check_database_unity(started_cluster):
+@pytest.mark.parametrize("use_v2", USE_V2_VALUES)
+def test_check_database_unity(started_cluster, use_v2):
     """
     Test CHECK DATABASE query on Unity Catalog with a single schema.
     Creates one schema with multiple tables and verifies CHECK DATABASE works correctly.
@@ -408,15 +422,13 @@ def test_check_database_unity(started_cluster):
             f"CREATE TABLE IF NOT EXISTS {schema_name}.{table_name} ({table_schema}) using Delta location '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
         )
         values = ", ".join(str(row) for row in data_rows)
-        queries.append(
-            f"INSERT OVERWRITE {schema_name}.{table_name} VALUES {values}"
-        )
+        queries.append(f"INSERT OVERWRITE {schema_name}.{table_name} VALUES {values}")
     execute_multiple_spark_queries(node1, queries, retry_on_timeout=True)
 
     # Create ClickHouse database pointing to Unity Catalog
     node1.query(
         f"create database {db_name} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
-        settings={"allow_database_unity_catalog": "1"},
+        settings=unity_settings(use_v2),
     )
 
     # Verify tables are visible
@@ -432,41 +444,43 @@ def test_check_database_unity(started_cluster):
     )
 
     print(f"Found tables: {tables}")
-    assert len(tables) == len(table_configs), f"Expected {len(table_configs)} tables, got {len(tables)}"
+    assert len(tables) == len(
+        table_configs
+    ), f"Expected {len(table_configs)} tables, got {len(tables)}"
 
     # Run CHECK DATABASE - should succeed without errors
     node1.query(f"CHECK DATABASE {db_name}")
 
     try:
-        node1.query(
-            "SYSTEM ENABLE FAILPOINT check_database_datalake_negative"
-        )
-        
+        node1.query("SYSTEM ENABLE FAILPOINT check_database_datalake_negative")
+
         assert "fault when checking database" in node1.query_and_get_error(
             f"CHECK DATABASE {db_name}"
         )
     finally:
-        node1.query(
-            "SYSTEM DISABLE FAILPOINT check_database_datalake_negative"
-        )
+        node1.query("SYSTEM DISABLE FAILPOINT check_database_datalake_negative")
 
-def test_multiple_schemes_tables(started_cluster):
+
+@pytest.mark.parametrize("use_v2", USE_V2_VALUES)
+def test_multiple_schemes_tables(started_cluster, use_v2):
     test_uuid = str(uuid.uuid4()).replace("-", "_")
     node1 = started_cluster.instances["node1"]
     # Combine schema creation, table creation and inserts into a single
     # Spark invocation to avoid multiple slow JVM startups.
     queries = []
     for i in range(10):
-        queries.extend([
-            f"CREATE SCHEMA test_schema{test_uuid}{i}",
-            f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'",
-            f"INSERT INTO test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)",
-        ])
+        queries.extend(
+            [
+                f"CREATE SCHEMA test_schema{test_uuid}{i}",
+                f"CREATE TABLE test_schema{test_uuid}{i}.test_table{test_uuid}{i} (col1 int, col2 double) using Delta location '/var/lib/clickhouse/user_files/tmp/test_schema{test_uuid}{i}/test_table{test_uuid}{i}'",
+                f"INSERT INTO test_schema{test_uuid}{i}.test_table{test_uuid}{i} VALUES ({i}, {i}.0)",
+            ]
+        )
     execute_multiple_spark_queries(node1, queries)
 
     node1.query(
         f"create database multi_schema_test{test_uuid} engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog') settings warehouse = 'unity', catalog_type='unity', vended_credentials=false",
-        settings={"allow_database_unity_catalog": "1"},
+        settings=unity_settings(use_v2),
     )
     multi_schema_tables = list(
         sorted(
@@ -494,8 +508,9 @@ def test_multiple_schemes_tables(started_cluster):
         )
 
 
+@pytest.mark.parametrize("use_v2", USE_V2_VALUES)
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_complex_table_schema(started_cluster, use_delta_kernel):
+def test_complex_table_schema(started_cluster, use_delta_kernel, use_v2):
     node1 = started_cluster.instances["node1"]
     schema_name = (
         f"schema_with_complex_tables_{use_delta_kernel}_{uuid.uuid4()}".replace(
@@ -518,7 +533,7 @@ create database complex_schema
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_database_unity_catalog": "1"},
+        settings=unity_settings(use_v2),
     )
 
     complex_schema_tables = list(
@@ -538,9 +553,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     complex_data = (
         node1.query(
             f"SELECT * FROM complex_schema.`{schema_name}.{table_name}`",
-            settings={
-                "allow_experimental_delta_kernel_rs": use_delta_kernel
-            },
+            settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
         )
         .strip()
         .split("\t")
@@ -556,8 +569,9 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
         assert node1.contains_in_log("DeltaLakeMetadata: Initializing snapshot")
 
 
+@pytest.mark.parametrize("use_v2", USE_V2_VALUES)
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_timestamp_ntz(started_cluster, use_delta_kernel):
+def test_timestamp_ntz(started_cluster, use_delta_kernel, use_v2):
     table_name_src = f"ntz_schema_{uuid.uuid4()}".replace("-", "_")
     node1 = started_cluster.instances["node1"]
     node1.query(f"drop database if exists {table_name_src}")
@@ -585,7 +599,7 @@ create database {table_name_src}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, allow_experimental_delta_kernel_rs={use_delta_kernel}
         """,
-        settings={"allow_database_unity_catalog": "1"},
+        settings=unity_settings(use_v2),
     )
 
     ntz_tables = list(
@@ -662,6 +676,7 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=True
     # This query will fail if bug exists
     print(node1.query(f"SHOW TABLES FROM {schema_name}"))
 
+
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
 def test_view_with_void(started_cluster, use_delta_kernel):
     # 25/08/20 16:45:23 WARN ObjectStore: Version information not found in metastore. hive.metastore.schema.verification is not enabled so recording the schema version 2.3.0
@@ -720,7 +735,8 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false, al
     assert schema_name in get_schemas()
 
 
-def test_used_storages_in_query_log(started_cluster):
+@pytest.mark.parametrize("use_v2", USE_V2_VALUES)
+def test_used_storages_in_query_log(started_cluster, use_v2):
     node1 = started_cluster.instances["node1"]
     db_name = f"db_query_log_{uuid.uuid4()}".replace("-", "_")
 
@@ -731,7 +747,7 @@ create database {db_name}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
         """,
-        settings={"allow_database_unity_catalog": "1"},
+        settings=unity_settings(use_v2),
     )
 
     query_id = str(uuid.uuid4()).replace("-", "")
@@ -749,7 +765,8 @@ settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
     assert "DeltaLake" in result, f"Expected DeltaLake in used_storages, got {result}"
 
 
-def test_snapshot_version(started_cluster):
+@pytest.mark.parametrize("use_v2", USE_V2_VALUES)
+def test_snapshot_version(started_cluster, use_v2):
     """
     Test table in delta lake catalog with CDF settings
     (delta_lake_snapshot_start_version, delta_lake_snapshot_end_version).
@@ -810,7 +827,7 @@ create database {db_name}
 engine DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 settings warehouse = 'unity', catalog_type='unity', vended_credentials=false
         """,
-        settings={"allow_database_unity_catalog": "1"},
+        settings=unity_settings(use_v2),
     )
 
     # Validate data at version 1
@@ -958,8 +975,11 @@ FROM {db_name}.`{schema_name}.{table_name}`
     )
 
 
+@pytest.mark.parametrize("use_v2", USE_V2_VALUES)
 @pytest.mark.parametrize("use_delta_kernel", ["1", "0"])
-def test_varchar_char_types_via_unity_catalog(started_cluster, use_delta_kernel):
+def test_varchar_char_types_via_unity_catalog(
+    started_cluster, use_delta_kernel, use_v2
+):
     """
     Regression test for: Unsupported DeltaLake type: varchar(n)
 
@@ -984,9 +1004,7 @@ def test_varchar_char_types_via_unity_catalog(started_cluster, use_delta_kernel)
         f"(id INT, name VARCHAR(256), code CHAR(10)) "
         f"USING DELTA LOCATION '/var/lib/clickhouse/user_files/tmp/{schema_name}/{table_name}'"
     )
-    insert_query = (
-        f"INSERT INTO {schema_name}.{table_name} VALUES (1, 'hello varchar', 'hello char')"
-    )
+    insert_query = f"INSERT INTO {schema_name}.{table_name} VALUES (1, 'hello varchar', 'hello char')"
     execute_multiple_spark_queries(
         node1,
         [f"CREATE SCHEMA {schema_name}", create_query, insert_query],
@@ -1000,7 +1018,7 @@ ENGINE DataLakeCatalog('http://localhost:8080/api/2.1/unity-catalog')
 SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false,
          allow_experimental_delta_kernel_rs = {use_delta_kernel}
         """,
-        settings={"allow_experimental_database_unity_catalog": "1"},
+        settings=unity_settings(use_v2),
     )
 
     tables = (
@@ -1023,11 +1041,8 @@ SETTINGS warehouse = 'unity', catalog_type = 'unity', vended_credentials = false
     assert "name\tNullable(String)" in describe_result
     assert "code\tNullable(String)" in describe_result
 
-    row = (
-        node1.query(
-            f"SELECT id, name, code FROM {db_name}.`{schema_name}.{table_name}`",
-            settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
-        )
-        .strip()
-    )
+    row = node1.query(
+        f"SELECT id, name, code FROM {db_name}.`{schema_name}.{table_name}`",
+        settings={"allow_experimental_delta_kernel_rs": use_delta_kernel},
+    ).strip()
     assert row == "1\thello varchar\thello char"
