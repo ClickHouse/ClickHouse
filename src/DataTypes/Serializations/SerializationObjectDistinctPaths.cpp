@@ -46,6 +46,13 @@ SerializationPtr SerializationObjectDistinctPaths::create(const std::vector<Stri
     return ISerialization::pooled(getHash(typed_paths_), [&] { return new SerializationObjectDistinctPaths(typed_paths_); });
 }
 
+/// A JSON typed path may be spelled exactly like the special subcolumn, and then the flat name resolves
+/// to that path (`ObjectTypedPath`) instead of to the distinct-paths substream.
+bool SerializationObjectDistinctPaths::isDistinctPathsSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && path.back().type == Substream::ObjectDistinctPaths;
+}
+
 struct DeserializeBinaryBulkStateObjectDistinctPaths : public ISerialization::DeserializeBinaryBulkState
 {
     /// State of the whole Object column structure.

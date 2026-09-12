@@ -13,6 +13,7 @@
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationObjectDistinctPaths.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
@@ -226,13 +227,12 @@ using SubcolumnPredicate = std::function<bool(const ISerialization::SubstreamPat
 /// `expected_type` is passed only by the rewrites that hardcode it. The element rewrites take it
 /// from the type definition, where an enclosing Nullable legitimately wraps it in storage.
 bool canOptimizeToExpectedSubcolumn(
-    const QueryTreeNodePtr & column_source,
-    const String & source_column_name,
+    const ColumnContext & ctx,
     const String & subcolumn_name,
     const SubcolumnPredicate & is_expected_subcolumn,
     const DataTypePtr & expected_type = nullptr)
 {
-    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+    auto storage_snapshot = getStorageSnapshotForColumnSource(ctx.column_source);
     if (!storage_snapshot)
         return false;
 
@@ -247,7 +247,7 @@ bool canOptimizeToExpectedSubcolumn(
     if (!info || !is_expected_subcolumn(info->substreams_path))
         return false;
 
-    return subcolumnDescendsFromColumn(storage_snapshot, source_column_name, *resolved, info->substreams_path);
+    return subcolumnDescendsFromColumn(storage_snapshot, ctx.column.name, *resolved, info->substreams_path);
 }
 
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
@@ -257,7 +257,7 @@ void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, Colum
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
     if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationString::isStringSizesSubcolumn, column.type))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
@@ -271,7 +271,7 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
     if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationString::isStringSizesSubcolumn, column.type))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -290,7 +290,7 @@ void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnConte
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
     if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationArray::isArraySizesSubcolumn, column.type))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationArray::isArraySizesSubcolumn, column.type))
         return;
 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -305,7 +305,7 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
     if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationArray::isArraySizesSubcolumn, column.type))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationArray::isArraySizesSubcolumn, column.type))
         return;
 
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
@@ -357,7 +357,7 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
     /// The resulting subcolumn has the map's value type, e.g. `m.key_foo : V` for `Map(K, V)`.
     NameAndTypePair column{ctx.column.name + "." + subcolumn_name, data_type_map.getValueType()};
     if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationMap::isKeyValueSubcolumn, column.type))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeyValueSubcolumn, column.type))
         return;
 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -506,7 +506,7 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         is_expected_subcolumn = [&](const auto & path) { return SerializationTuple::isElementSubcolumn(path, subcolumn->name); };
 
     if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, is_expected_subcolumn))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, is_expected_subcolumn))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
@@ -516,13 +516,8 @@ void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnCo
     /// Replace distinctJSONPaths(json) to arraySort(groupArrayDistinct(arrayJoin(json.__special_subcolumn_name_for_distinct_paths_calculation)))
     NameAndTypePair column{ctx.column.name + "." + DataTypeObject::SPECIAL_SUBCOLUMN_NAME_FOR_DISTINCT_PATHS_CALCULATION, std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>())};
 
-    /// A JSON typed path may be spelled exactly like the special subcolumn, and then the name resolves
-    /// to that path (`ObjectTypedPath`) instead of to the distinct-paths substream.
-    static const SubcolumnPredicate is_distinct_paths_subcolumn = [](const auto & path)
-    { return !path.empty() && path.back().type == ISerialization::Substream::ObjectDistinctPaths; };
-
     if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, is_distinct_paths_subcolumn, column.type))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationObjectDistinctPaths::isDistinctPathsSubcolumn, column.type))
         return;
 
     auto new_column_node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -580,7 +575,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 
             NameAndTypePair column{ctx.column.name + ".keys", key_type};
             if (sourceHasColumn(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationMap::isKeysSubcolumn, column.type))
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
                 return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
@@ -595,7 +590,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 
             NameAndTypePair column{ctx.column.name + ".values", value_type};
             if (sourceHasColumn(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationMap::isValuesSubcolumn, column.type))
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isValuesSubcolumn, column.type))
                 return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
@@ -609,7 +604,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
             if (sourceHasColumn(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationMap::isKeysSubcolumn, column.type))
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationMap::isKeysSubcolumn, column.type))
                 return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -626,7 +621,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
 
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
@@ -649,7 +644,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
 
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -662,7 +657,7 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
             if (sourceHasColumn(ctx.column_source, column.name)
-                || !canOptimizeToExpectedSubcolumn(ctx.column_source, ctx.column.name, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
+                || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
 
             auto & function_arguments_nodes = function_node.getArguments().getNodes();

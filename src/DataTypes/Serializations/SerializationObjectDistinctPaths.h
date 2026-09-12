@@ -26,6 +26,8 @@ public:
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return shared_data_paths_serialization->supportsPooling(); }
 
+    static bool isDistinctPathsSubcolumn(const SubstreamPath & path);
+
     void enumerateStreams(
         EnumerateStreamsSettings & settings,
         const StreamCallback & callback,
