@@ -366,13 +366,13 @@ class TestGeneratorProducesAUsableDictionary:
 
 
 class TestFuzzersBuildDigestCoversItsOwnInputs:
-    """`Build (arm_fuzzers)` stages inputs the shared build digest does not cover.
+    """`Build (amd_fuzzers)` stages inputs the shared build digest does not cover.
 
     Its POST_BUILD step runs tests/fuzz/build.sh, which packs the .options files,
     the dictionary and seed corpora repacked from tests/queries/0_stateless into
     the artifact. Without those paths in the digest, a commit changing the
     dictionary wiring or the corpus takes a cache hit and every consumer -
-    NightlyFuzzers included - reuses a stale ARM_FUZZERS artifact.
+    NightlyFuzzers included - reuses a stale AMD_FUZZERS artifact.
     """
 
     _REQUIRED = ["./tests/fuzz/", "./tests/queries/0_stateless/"]
@@ -385,7 +385,7 @@ class TestFuzzersBuildDigestCoversItsOwnInputs:
         return next(
             j
             for j in JobConfigs.special_build_jobs
-            if j.parameter == BuildTypes.ARM_FUZZERS
+            if j.parameter == BuildTypes.AMD_FUZZERS
         )
 
     def test_staged_inputs_are_in_the_digest(self):
@@ -393,7 +393,7 @@ class TestFuzzersBuildDigestCoversItsOwnInputs:
         missing = [p for p in self._REQUIRED if p not in include_paths]
         assert (
             missing == []
-        ), f"Build (arm_fuzzers) stages these but does not hash them: {missing}"
+        ), f"Build (amd_fuzzers) stages these but does not hash them: {missing}"
 
     def test_the_shared_build_digest_does_not_already_cover_them(self):
         # Negative control: the assertion above holds trivially if the shared
@@ -422,4 +422,4 @@ class TestFuzzersBuildDigestCoversItsOwnInputs:
             for j in JobConfigs.special_build_jobs
             if any(p in j.digest_config.include_paths for p in self._REQUIRED)
         ]
-        assert widened == [BuildTypes.ARM_FUZZERS], widened
+        assert widened == [BuildTypes.AMD_FUZZERS], widened

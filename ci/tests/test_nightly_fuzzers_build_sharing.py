@@ -1,5 +1,5 @@
 """
-Regression tests for NightlyFuzzers sharing MasterCI's ARM release build.
+Regression tests for NightlyFuzzers sharing MasterCI's AMD release build.
 
 NightlyFuzzers needs the release binary to generate the fuzzer dictionary, and
 gets it by reusing the build MasterCI already ran for the same commit. Three
@@ -10,7 +10,9 @@ things have to line up for that, and all three were wrong:
     allow_failure/force_success/digest_config). MasterCI takes
     release_build_jobs_with_examples, which appends --build-examples and
     CLICKHOUSE_EXAMPLES to the ARM release job, so a workflow taking the plain
-    release_build_jobs variant hashes differently and rebuilds from scratch.
+    release_build_jobs variant hashes differently for that job. The shared build
+    is the AMD one, where the two lists still agree, so the arms below pin that
+    agreement rather than assume it.
 
   - The long-retention tags are part of those artifact configs, and the upload
     path is keyed by branch and commit. An untagged upload therefore both misses
@@ -62,7 +64,7 @@ from ci.workflows.weekly_fuzzers_corpus import (  # noqa: E402
     workflow as corpus_workflow,
 )
 
-_SHARED_BUILD = "Build (arm_release)"
+_SHARED_BUILD = "Build (amd_release)"
 
 # ci/praktika/digest.py's drop list, mirrored so a change there surfaces here.
 _DROPPED_FROM_DIGEST = [
@@ -158,34 +160,43 @@ class TestBuildIsSharedWithMasterCI:
             len({w.set_latest_for_docker_merged_manifest for w in sharing}) == 1
         ), "workflows sharing the manifest job must agree on tagging `latest`"
 
-    def test_plain_release_variant_would_not_match(self):
-        # Mutation arm: the variant NightlyFuzzers used to take. Without this,
-        # the equality above could hold for reasons unrelated to the fix.
-        stale_job = next(
-            j for j in JobConfigs.release_build_jobs if "arm_release" in j.name
-        )
-        stale_workflow = dataclasses.replace(
+    def test_an_untagged_upload_would_not_match(self):
+        # Mutation arm for the tags: without it the equality above could hold for
+        # reasons unrelated to them. Both sides are derived from this workflow's
+        # own artifact configs, so the tagging is the only difference between them.
+        job = _job(nightly_workflow, _SHARED_BUILD)
+        assert any(
+            _tags(a) for a in nightly_workflow.artifacts
+        ), "nothing is tagged: this arm is vacuous"
+        untagged = dataclasses.replace(
             nightly_workflow,
             artifacts=[
-                *ArtifactConfigs.clickhouse_binaries,
-                *ArtifactConfigs.clickhouse_debians,
-                *ArtifactConfigs.clickhouse_rpms,
-                *ArtifactConfigs.clickhouse_tgzs,
+                dataclasses.replace(
+                    a, ext={k: v for k, v in a.ext.items() if k != "tags"}
+                )
+                for a in nightly_workflow.artifacts
             ],
         )
-        assert _config_digest(stale_job, stale_workflow) != _config_digest(
-            _job(master_workflow, _SHARED_BUILD), master_workflow
-        )
+        assert _config_digest(job, untagged) != _config_digest(job, nightly_workflow)
 
-    def test_shared_job_takes_the_with_examples_variant(self):
-        job = _job(nightly_workflow, _SHARED_BUILD)
-        assert "--build-examples" in job.command
-        assert "CLICKHOUSE_EXAMPLES" in job.provides
+    def test_the_examples_wiring_does_not_reach_the_shared_build(self):
+        # It is appended to the ARM release job only, which is why the plain and
+        # the with-examples list agree on the AMD job the two workflows share.
+        with_examples = [
+            j.name
+            for j in JobConfigs.release_build_jobs_with_examples
+            if "--build-examples" in j.command
+        ]
+        assert with_examples, "no job takes the examples: this arm is vacuous"
+        assert _SHARED_BUILD not in with_examples
 
-    def test_examples_artifact_is_declared(self):
-        # The job provides it, so the workflow has to declare it or the upload
-        # has nowhere to go.
-        assert "CLICKHOUSE_EXAMPLES" in {a.name for a in nightly_workflow.artifacts}
+    def test_what_the_shared_build_provides_is_declared(self):
+        # An artifact a job provides but the workflow does not declare has
+        # nowhere to be uploaded.
+        provided = set(_job(nightly_workflow, _SHARED_BUILD).provides)
+        assert provided, "the shared build provides nothing: this arm is vacuous"
+        declared = {a.name for a in nightly_workflow.artifacts}
+        assert provided <= declared, sorted(provided - declared)
 
 
 class TestLatestTagIsBaseBranchOnly:
@@ -303,13 +314,13 @@ class TestConsumerRequiresTheReleaseBinary:
     _CONSUMER = "libFuzzer tests"
 
     def test_job_config_requires_the_release_binary(self):
-        assert ArtifactNames.CH_ARM_RELEASE in JobConfigs.libfuzzer_job.requires
+        assert ArtifactNames.CH_AMD_RELEASE in JobConfigs.libfuzzer_job.requires
 
     def test_the_workflow_job_requires_it_too(self):
         # The workflow takes the shared config, but a workflow is free to
         # substitute a job, so assert the instance the workflow will run.
         assert (
-            ArtifactNames.CH_ARM_RELEASE
+            ArtifactNames.CH_AMD_RELEASE
             in _job(nightly_workflow, self._CONSUMER).requires
         )
 
@@ -318,7 +329,7 @@ class TestConsumerRequiresTheReleaseBinary:
         # never resolve.
         provided = {a for job in nightly_workflow.jobs for a in job.provides}
         required = set(_job(nightly_workflow, self._CONSUMER).requires)
-        assert ArtifactNames.CH_ARM_RELEASE in provided
+        assert ArtifactNames.CH_AMD_RELEASE in provided
         assert required <= provided, sorted(required - provided)
 
     def test_dictionary_inputs_are_in_the_consumer_digest(self):
@@ -373,7 +384,7 @@ class TestOnlyTheGeneratingJobNeedsTheBinary:
             job.name
             for job in self._script_jobs()
             if ("--minimize-only" in job.command)
-            == (ArtifactNames.CH_ARM_RELEASE in job.requires)
+            == (ArtifactNames.CH_AMD_RELEASE in job.requires)
         ]
         assert mismatched == [], mismatched
 
@@ -387,7 +398,7 @@ class TestOnlyTheGeneratingJobNeedsTheBinary:
         # The other half: a job cannot be given an artifact its workflow never
         # produces, so this is what makes the requirement above unsatisfiable.
         provided = {a for job in corpus_workflow.jobs for a in job.provides}
-        assert ArtifactNames.CH_ARM_RELEASE not in provided
+        assert ArtifactNames.CH_AMD_RELEASE not in provided
 
 
 class TestLongRetentionTags:
