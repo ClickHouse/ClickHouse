@@ -34,6 +34,10 @@ protected:
     /// produced locally: the virtual columns materialized by the query plan and the `MATERIALIZED` / `ALIAS`
     /// columns computed from the storage's own expressions. They belong to this storage - a predicate over
     /// them is a filter on this table, not on another one - but cannot be pushed down to the data source.
+    ///
+    /// A `MATERIALIZED` column without an expression is not one of them: external storages use that
+    /// classification to mark a column the data source generates itself, which is read remotely like any
+    /// other physical column and stays pushdown-eligible.
     static NameSet getLocalOnlyColumnNames(const StorageMetadataPtr & metadata);
 
     virtual void readImpl(
