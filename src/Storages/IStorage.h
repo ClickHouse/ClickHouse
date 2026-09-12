@@ -264,6 +264,13 @@ public:
         metadata.set(std::make_unique<StorageInMemoryMetadata>(metadata_));
     }
 
+    /// Same as above, but publishes an already built object instead of deep-copying it.
+    /// Lets a caller do the (allocating) clone outside a lock and keep only the store inside.
+    void setInMemoryMetadata(std::unique_ptr<const StorageInMemoryMetadata> && metadata_)
+    {
+        metadata.set(std::move(metadata_));
+    }
+
     void setInMemoryMetadataComment(const String & comment)
     {
         auto updated = std::make_unique<StorageInMemoryMetadata>(*metadata.get());
