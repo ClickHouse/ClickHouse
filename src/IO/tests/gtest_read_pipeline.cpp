@@ -327,8 +327,8 @@ catch (...)
 TEST(ReadPipeline, GatherRejectsUnknownSizeObjectWhenAnotherFollows)
 try
 {
-    /// An object of an unknown size must be the last one of its file: the offsets of the objects after
-    /// it could not be computed, so neither the right bound nor a seek could be translated into their
+    /// An object of an unknown size must be the only one of its file: the offsets of the other objects
+    /// could not be computed, so neither the right bound nor a seek could be translated into their
     /// coordinates. Reject such a layout explicitly instead of reading it at wrong offsets - the same
     /// invariant `OffsetMap::build` enforces.
     ReadPipeline pipeline;
@@ -338,6 +338,30 @@ try
             {"obj/b", "XYZ"},
         }),
         StoredObjects{testObject("obj/a", StoredObject::UnknownSize), testObject("obj/b", 3)},
+        ReadSettings{});
+    pipeline.needGather();
+
+    EXPECT_THROW(pipeline.build(), Exception);
+}
+catch (...)
+{
+    FAIL() << getCurrentExceptionMessage(true);
+}
+
+
+TEST(ReadPipeline, GatherRejectsUnknownSizeObjectAfterAnother)
+try
+{
+    /// The same layout with the object of an unknown size at the end. It is rejected as well: the size
+    /// is `UINT64_MAX`, so `initialize` wraps `start_offset` around when it walks past it, and a `seek`
+    /// to the start of that object reports EOF instead of reading it.
+    ReadPipeline pipeline;
+    pipeline.setSource(
+        perObjectCreator({
+            {"obj/a", "ABC"},
+            {"obj/b", "XYZ"},
+        }),
+        StoredObjects{testObject("obj/a", 3), testObject("obj/b", StoredObject::UnknownSize)},
         ReadSettings{});
     pipeline.needGather();
 

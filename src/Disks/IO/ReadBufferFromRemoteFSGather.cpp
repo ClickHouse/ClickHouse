@@ -61,19 +61,24 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , use_external_buffer(use_external_buffer_)
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
-    /// The offsets of the objects that follow an object of an unknown size cannot be computed, so such
-    /// an object is only supported as the last one of a file. The same invariant is enforced in
-    /// `OffsetMap::build`. In practice the only sources of an unknown size are an HTTP server that
-    /// answers without `Content-Length` (a `web` disk, S3) and a failed `stat` on a local disk, and all
-    /// of them produce single-object files.
-    for (size_t i = 0; i + 1 < blobs_to_read.size(); ++i)
+    /// An object of an unknown size is only supported as the only object of a file, the same invariant
+    /// `OffsetMap::build` enforces. The offsets of the objects that follow it cannot be computed, and
+    /// the offsets of the objects before it cannot be translated either: every place that walks the
+    /// objects (`initialize`, `isContentCached`) accumulates `bytes_size`, and `UnknownSize` is
+    /// `UINT64_MAX`, so the sum wraps around and places the object at a garbage offset. In practice the
+    /// only sources of an unknown size are an HTTP server that answers without `Content-Length` (a
+    /// `web` disk, S3) and a failed `stat` on a local disk, and all of them produce single-object files.
+    if (blobs_to_read.size() != 1)
     {
-        if (blobs_to_read[i].bytes_size == StoredObject::UnknownSize)
-            throw Exception(
-                ErrorCodes::BAD_ARGUMENTS,
-                "An object of an unknown size ({}) is only supported as the last object of a file, "
-                "but it is the object number {} out of {}",
-                blobs_to_read[i].remote_path, i + 1, blobs_to_read.size());
+        for (size_t i = 0; i < blobs_to_read.size(); ++i)
+        {
+            if (blobs_to_read[i].bytes_size == StoredObject::UnknownSize)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "An object of an unknown size ({}) is only supported as the only object of a file, "
+                    "but it is the object number {} out of {}",
+                    blobs_to_read[i].remote_path, i + 1, blobs_to_read.size());
+        }
     }
 
     if (!blobs_to_read.empty())
@@ -104,9 +109,9 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     ///
     /// The end of an object bounds the position only if its size is known. The size is unknown when an
     /// HTTP server answers without `Content-Length`, which happens on a `web` disk and in S3. Such an
-    /// object extends to the end of the file - the constructor rejects any other layout, because the
-    /// offsets of the objects after it could not be computed - so the bound, which is inside the file,
-    /// is inside the object as well, and it is forwarded unconditionally.
+    /// object is the only object of its file - the constructor rejects any other layout, because the
+    /// offsets of the other objects could not be computed - so the bound, which is inside the file, is
+    /// inside the object as well, and it is forwarded unconditionally.
     bool pass_bound = read_until_position.has_value() && *read_until_position > start_offset;
     if (object.bytes_size != StoredObject::UnknownSize)
         pass_bound = pass_bound && *read_until_position <= start_offset + object.bytes_size;
