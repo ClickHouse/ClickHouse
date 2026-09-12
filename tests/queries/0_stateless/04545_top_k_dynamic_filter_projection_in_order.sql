@@ -42,6 +42,21 @@ FROM (
 )
 WHERE explain ILIKE '%InOrder%';
 
+-- Dropping the prewhere reorders the columns the read must return, and a projection read is fed from
+-- an analysis made before that: an order carried only on the plan side is repaired by a converting
+-- transform inserted between the read step and its source, so the source must follow the step
+-- directly (expected 1).
+WITH p AS (
+    SELECT rowNumberInAllBlocks() AS n, explain
+    FROM (
+        EXPLAIN PIPELINE
+        SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
+        SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+    )
+)
+SELECT (SELECT min(n) FROM p WHERE explain ILIKE '%MergeTreeSelect%')
+     - (SELECT max(n) FROM p WHERE explain ILIKE '%(ReadFromMergeTree)%') AS steps_to_projection_source;
+
 -- Sanity: with no projection able to serve the order (ORDER BY score without a matching
 -- projection covering all read columns), dynamic filtering must STILL be applied so the
 -- fix does not over-disable the optimization (expected 1).

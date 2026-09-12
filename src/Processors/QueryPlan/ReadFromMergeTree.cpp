@@ -3929,6 +3929,10 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
             {
                 all_column_names = std::move(reordered_column_names);
                 updatePrewhereInfo(nullptr);
+
+                /// A projection read arrives already analyzed, and the read is fed from the analysis.
+                if (analyzed_result_ptr)
+                    analyzed_result_ptr->column_names_to_read = all_column_names;
             }
         }
     }
