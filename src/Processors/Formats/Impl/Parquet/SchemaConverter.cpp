@@ -61,6 +61,7 @@ SchemaConverter::SchemaConverter(
 
     /// Fails open for other producers on purpose: pyarrow, Spark and the rest encode a null group at
     /// the group's own definition level, so a marker only ClickHouse writes must not exclude them.
+    /// The older `ClickHouse v...` spelling needs no match: no writer that emitted it had OPTIONAL groups.
     if (std::string_view(file_metadata.created_by).starts_with("ClickHouse version "))
     {
         nullable_group_levels_trusted = false;

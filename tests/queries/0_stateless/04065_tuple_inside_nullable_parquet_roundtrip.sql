@@ -339,10 +339,9 @@ INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_between.parquet', '
 
 SELECT c0, c0 IS NULL FROM file(currentDatabase() || '_04065_between.parquet', 'Parquet', 'c0 Nullable(Tuple(b Array(Nullable(Tuple(c UInt32)))))');
 
--- Multiple row groups and pages, with the nested element PRESENT at most struct-NULL rows, which is
--- exactly what a group null and an element null are confused for when either side gets it wrong.
--- A group null map is accumulated page by page, so the batch and page sizes are set small enough to
--- put several pages in each column chunk; the row group size alone leaves one page per chunk.
+-- Multiple row groups and pages, with struct NULLs and element NULLs interleaved: a group null map
+-- is accumulated page by page, so the batch and page sizes are set small enough to put several pages
+-- in each column chunk; the row group size alone leaves one page per chunk.
 -- 334 = multiples of 3 in [0, 1000); 133 = multiples of 5 that are not multiples of 15.
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_mrg.parquet', 'Parquet', 'c0 Nullable(Tuple(a Nullable(Int32), b Int32))')
     SELECT if(number % 3 = 0, NULL, tuple(if(number % 5 = 0, NULL, toInt32(number)), toInt32(number))) FROM numbers(1000)
