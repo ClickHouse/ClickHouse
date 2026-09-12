@@ -1,0 +1,29 @@
+before	3
+engine	ReplacingMergeTree
+replacing final	2
+summing	1	30
+summing	2	100
+collapsing	CollapsingMergeTree
+required column existing parts	1	20	20
+tuple-key replacing	ReplacingMergeTree
+dimension escape hatch	AggregatingMergeTree
+dimension in sorting key	AggregatingMergeTree
+no measures	AggregatingMergeTree
+pending dimension guard	AggregatingMergeTree
+pending setting guard	SummingMergeTree
+pending drop guard	SummingMergeTree
+pending reset guard	SummingMergeTree
+reset same stmt guard	MergeTree
+pending unrelated alter	SummingMergeTree
+projection guard	MergeTree
+pending projection guard	ReplacingMergeTree
+projection rebuild	ReplacingMergeTree
+nested offsets engine	ReplacingMergeTree
+nested offsets columns	['key','n.a','n']
+implicit statistics engine	ReplacingMergeTree
+implicit statistics column	basic
+ALTER TABLE t (MODIFY ENGINE ReplacingMergeTree)
+ALTER TABLE t (MODIFY ENGINE ReplacingMergeTree(v))
+ALTER TABLE t (MODIFY ENGINE SummingMergeTree((x, y)))
+ALTER TABLE t (MODIFY ENGINE GraphiteMergeTree(\'graphite_rollup\'))
+ALTER TABLE t (ADD COLUMN `sign` Int8), (MODIFY ENGINE CollapsingMergeTree(sign))

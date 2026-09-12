@@ -1,0 +1,57 @@
+---
+description: 'Documentation for changing the engine of a MergeTree-family table'
+sidebarTitle: 'ENGINE'
+slug: /sql-reference/statements/alter/engine
+title: 'Changing the Table Engine'
+doc_type: 'reference'
+---
+
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge/>
+
+## MODIFY ENGINE {#modify-engine}
+
+```sql
+ALTER TABLE [db].name [ON CLUSTER cluster] MODIFY ENGINE = new_engine
+```
+
+Changes the engine of a [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree)-family table, for example a plain `MergeTree` table into a [`ReplacingMergeTree`](/reference/engines/table-engines/mergetree-family/replacingmergetree), [`SummingMergeTree`](/reference/engines/table-engines/mergetree-family/summingmergetree), [`AggregatingMergeTree`](/reference/engines/table-engines/mergetree-family/aggregatingmergetree), [`CollapsingMergeTree`](/reference/engines/table-engines/mergetree-family/collapsingmergetree), [`VersionedCollapsingMergeTree`](/reference/engines/table-engines/mergetree-family/versionedcollapsingmergetree), [`CoalescingMergeTree`](/reference/engines/table-engines/mergetree-family/coalescingmergetree) or [`GraphiteMergeTree`](/reference/engines/table-engines/mergetree-family/graphitemergetree).
+
+Only the merge semantics change. The columns, `ORDER BY`, `PARTITION BY`, `PRIMARY KEY`, `SAMPLE BY` and table settings are kept. Existing data is not rewritten.
+
+<Note>
+Existing parts keep their merge level, and `FINAL` and the merge algorithms treat a part above level zero as already merged by the current engine. Rows with equal sorting keys that an ordinary `MergeTree` merge had already placed in one such part are therefore not collapsed after the change, neither by a background merge nor by `OPTIMIZE TABLE ... FINAL`. This applies to `ReplacingMergeTree`, `SummingMergeTree`, `AggregatingMergeTree`, `CoalescingMergeTree` and `CollapsingMergeTree`. To collapse such rows, rewrite the data, for example with `INSERT INTO ... SELECT` into a table created with the new engine.
+</Note>
+
+```sql
+-- Turn a MergeTree table into a ReplacingMergeTree
+ALTER TABLE my_table MODIFY ENGINE = ReplacingMergeTree;
+
+-- With a version column
+ALTER TABLE my_table MODIFY ENGINE = ReplacingMergeTree(version);
+```
+
+If the target engine requires a column that does not exist yet (the sign column for `CollapsingMergeTree` / `VersionedCollapsingMergeTree`, or the version column for `VersionedCollapsingMergeTree`), it can be added in the same statement, in a command placed before `MODIFY ENGINE`:
+
+```sql
+ALTER TABLE my_table
+    ADD COLUMN sign Int8 DEFAULT 1,
+    MODIFY ENGINE = CollapsingMergeTree(sign);
+```
+
+The new engine must use the same arguments that engine accepts in `CREATE TABLE` (for example, the sign column for `CollapsingMergeTree`, the optional version and `is_deleted` columns for `ReplacingMergeTree`, the columns to sum for `SummingMergeTree`). The required columns must exist after applying any column commands in the same `ALTER`, and have the types the engine expects.
+
+Because existing data is not rewritten, some targets that `CREATE TABLE` accepts are refused here, so that existing parts cannot be left unmergeable:
+
+- `GraphiteMergeTree` when the path or time column is nullable, when the path column is a `Tuple`, `Map`, `Variant`, `Dynamic`, `JSON`, `QBit` or an `Array` of variable-width elements, or when the time column is not an integer, `Enum`, `Date`, `Date32`, `DateTime` or `Time`. The rollup reads those columns with `getDataAt` and `getUInt`, which throw on a `NULL` or on an unsupported type.
+- `VersionedCollapsingMergeTree` when the version column is not already part of the sorting key, because the reload would append it to the key and existing parts are sorted by the narrower one.
+- Tables created with the old positional `MergeTree(date, [sample], key, granularity)` syntax, whose keys are engine arguments rather than separate clauses.
+
+<Note>
+This feature is experimental. Enable it with the `allow_experimental_alter_modify_engine` [session setting](/reference/settings/session-settings/allow-experimental).
+
+It is only supported for non-replicated [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree)-family tables. The engine family is fixed: a non-replicated table cannot be turned into a `Replicated*MergeTree` (or vice versa) with this command.
+
+The new engine is written to the table's metadata and takes effect after the table is reloaded (for example with `DETACH TABLE` / `ATTACH TABLE`, or on the next server start).
+</Note>
