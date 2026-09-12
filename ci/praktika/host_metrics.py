@@ -32,9 +32,12 @@ class HostMetricsCollector:
 
     Spike handling. Inputs are read at a fine cadence
     (``HOST_METRICS_FINE_INTERVAL_SEC``) but the timeline emits one aggregated
-    point per reporting window (``HOST_METRICS_SAMPLE_INTERVAL_SEC``) carrying
-    both the window average and its peak, so a short CPU burst or a transient
-    RAM allocation shows up as the window's peak instead of being averaged away.
+    point per reporting window carrying both the window average and its peak, so
+    a short CPU burst or a transient RAM allocation shows up as the window's peak
+    instead of being averaged away. The window is not fixed: it starts short
+    (~1s) and grows with elapsed time toward ``HOST_METRICS_SAMPLE_INTERVAL_SEC``,
+    so a short job renders a curve from ~1s rather than a single point at the
+    first full window, while long jobs still settle to full-interval windows.
     Two signals are peak-exact and independent of the sampling rate:
 
     * ``peaks`` - the maximum CPU%/iowait%/RAM%/disk% seen across every fine
@@ -173,12 +176,31 @@ class HostMetricsCollector:
             return None
         return self._compact(self._samples)
 
+    @staticmethod
+    def _next_window_target(elapsed, first_window, report_interval):
+        """Size of the next reporting window, given how long the run has gone.
+
+        Grows with elapsed time (a quarter of it) so the timeline is dense early
+        (~``first_window`` windows for the first several seconds, giving short
+        jobs a curve from ~1s) and settles to full ``report_interval`` windows on
+        long runs so the point count stays bounded.
+        """
+        return min(report_interval, max(first_window, elapsed * 0.25))
+
     def _run(self):
         # The first /proc/stat read only establishes a baseline; CPU% needs a
         # delta between two reads, so no sample is emitted for it.
         prev_cpu = self._read_cpu_times()
         start = self._t0
         window_start = start
+        # Densify the timeline early. Instead of a fixed report_interval window
+        # (which makes a ~5s job show a single point at t≈5s), emit a short first
+        # window (~1s) and then grow the window toward the full report_interval as
+        # the run gets longer. Short jobs render a curve starting at ~1s; long
+        # jobs still settle to report_interval-sized windows so the point count
+        # stays bounded.
+        first_window = min(self._report_interval, max(self._fine_interval, 1.0))
+        window_target = first_window
         last_time = start
         # Each entry is (value, dt) so the window average can be time-weighted:
         # the forced tail sample after stop() may cover only a few ms and must
@@ -266,9 +288,12 @@ class HostMetricsCollector:
                     self._disk_peak = max(self._disk_peak, disk_pct)
                     self._disk_area += disk_pct * dt
                     self._disk_dt_total += dt
-            if now - window_start >= self._report_interval:
+            if now - window_start >= window_target:
                 flush_window(now)
                 window_start = now
+                window_target = self._next_window_target(
+                    now - start, first_window, self._report_interval
+                )
             if stopped:
                 break
 
