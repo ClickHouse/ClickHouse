@@ -5,9 +5,8 @@
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 
-#include <Common/UnorderedMapWithMemoryTracking.h>
-
 #include <expected>
+#include <unordered_map>
 
 namespace DB
 {
@@ -28,7 +27,7 @@ void filterProjectionCandidates(std::vector<const ProjectionDescription *> & pro
 
 /// Records `reason` in `reject_reasons` for every projection of `projections` that is not in `kept`, keeping a reason that is already there.
 void rejectProjections(
-    UnorderedMapWithMemoryTracking<String, String> & reject_reasons,
+    std::unordered_map<String, String> & reject_reasons,
     const std::vector<const ProjectionDescription *> & projections,
     const std::vector<const ProjectionDescription *> & kept,
     const String & reason);

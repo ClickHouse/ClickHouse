@@ -117,7 +117,7 @@ std::expected<void, std::string> canUseProjectionForReadingStep(ReadFromMergeTre
 }
 
 void rejectProjections(
-    UnorderedMapWithMemoryTracking<String, String> & reject_reasons,
+    std::unordered_map<String, String> & reject_reasons,
     const std::vector<const ProjectionDescription *> & projections,
     const std::vector<const ProjectionDescription *> & kept,
     const String & reason)
