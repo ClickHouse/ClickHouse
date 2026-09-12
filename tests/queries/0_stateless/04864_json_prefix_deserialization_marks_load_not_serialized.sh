@@ -62,7 +62,7 @@ SELECT number,
 FROM numbers(20000);
 "
 
-${CLICKHOUSE_LOCAL} --config-file "$TD/config.xml" -q "
+MEASURED=$(${CLICKHOUSE_LOCAL} --config-file "$TD/config.xml" -q "
 $FIXTURE
 
 SELECT if(part_type = 'Wide', 'part is Wide', 'UNEXPECTED part type: ' || part_type)
@@ -126,4 +126,79 @@ SELECT log_comment || ': ' || if(ProfileEvents['WaitMarksLoadMicroseconds'] / (q
 FROM system.query_log
 WHERE type = 'QueryFinish' AND current_database = currentDatabase()
       AND log_comment IN ('sync', 'async', 'prefetch') ORDER BY log_comment;
-"
+")
+
+# Overlap is a capability: one measurement above the threshold proves it, and a build that holds a
+# lock across marks loading cannot produce one at any attempt, because non-overlapping waits cannot
+# sum to more than the query they happened in. The denominator, though, also counts time that is not
+# marks loading (reading the column data), and the flaky check runs a copy of this test on all but
+# one of the runner's cores, so a co-scheduled machine can inflate that term while the numerator
+# stays put. That is a measurement artifact, so re-measure just the arm that missed the threshold.
+# Do not replace this with a threshold that normalizes by a second measurement: contention landing
+# on the baseline alone would then report a serialized build as concurrent, which turns a false
+# alarm into a missed regression.
+MAX_RETRIES=2
+THRESHOLD_MILLI=1150
+
+# The arms as above, minus enable_filesystem_read_prefetches_log: a retry does not read that log,
+# and flushing a log the process never wrote to blocks until the flush timeout.
+arm_settings() {
+    case "$1" in
+        async)    echo ", load_marks_asynchronously = 1" ;;
+        prefetch) echo ", load_marks_asynchronously = 1, local_filesystem_read_prefetch = 1" ;;
+        *)        echo "" ;;
+    esac
+}
+
+# A process that did not create $TD has no system.query_log, so a retry reads the process-wide
+# counters instead. They describe the arm alone as long as it is the only other query in the
+# process, which the SelectQuery count below asserts rather than assumes: SelectQuery is counted
+# when a query starts, so the expected value is 2, the arm plus the reporting query itself.
+# SelectQueryTimeMicroseconds is counted when a query finishes, so it holds the arm's duration and
+# not this query's.
+EXPECTED_SELECTS=2
+
+retry_arm() {
+    local arm="$1" verdict="$2" measurement selects wait_ms ratio_milli
+
+    for _retry in $(seq 1 "$MAX_RETRIES"); do
+        # Command substitution, not process substitution: it waits for the process to exit, so the
+        # next attempt cannot collide on the data directory's lock, and it does not close the pipe
+        # early and cut the measurement off mid-write.
+        measurement=$(${CLICKHOUSE_LOCAL} --config-file "$TD/config.xml" -q "
+        SYSTEM ENABLE FAILPOINT merge_tree_marks_load_sync_sleep;
+
+        SELECT count() FROM (SELECT j FROM t LIMIT 1)
+        SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1$(arm_settings "$arm")
+        FORMAT Null;
+
+        SYSTEM DISABLE FAILPOINT merge_tree_marks_load_sync_sleep;
+
+        SELECT sumIf(value, event = 'SelectQuery'),
+               intDiv(sumIf(value, event = 'WaitMarksLoadMicroseconds'), 1000),
+               toUInt64(round(1000 * sumIf(value, event = 'WaitMarksLoadMicroseconds')
+                   / greatest(sumIf(value, event = 'SelectQueryTimeMicroseconds'), 1)))
+        FROM system.events;
+        ")
+        read -r selects wait_ms ratio_milli <<< "$measurement"
+
+        # Same preconditions as the first measurement: the counters must describe this arm, and the
+        # injected sleep must have run, or the ratio below would not mean anything.
+        [ "${selects:-0}" = "$EXPECTED_SELECTS" ] || break
+        [ "${wait_ms:-0}" -gt 1000 ] || break
+
+        if [ "${ratio_milli:-0}" -gt "$THRESHOLD_MILLI" ]; then
+            echo "$arm: marks loading overlaps across prefix tasks"
+            return
+        fi
+    done
+
+    echo "$verdict"
+}
+
+while IFS= read -r line; do
+    case "$line" in
+        *": REGRESSION: marks loading is serialized"*) retry_arm "${line%%:*}" "$line" ;;
+        *) echo "$line" ;;
+    esac
+done <<< "$MEASURED"
