@@ -2905,21 +2905,27 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
         sleepForMilliseconds(200);
     } while (true);
 
-    LOG_INFO(log, "Remove {} parts by covering them with empty {} parts. With txn {}.",
-             covered_parts.size(), new_parts.size(), transaction.getTID());
-
     transaction.renameParts();
-    transaction.commit();
+
+    /// `covered_parts` above is only the precommit selection: `commit` reacquires the parts lock and
+    /// recomputes the covered set, so it is the only authoritative answer to "what was removed".
+    /// Everything below -- and the clone to `detached/` made by the callers -- must use that answer,
+    /// otherwise a concurrently appearing covering part makes us report, undelay and detach a part
+    /// that is still active.
+    DataPartsVector removed_parts = transaction.commit();
+
+    LOG_INFO(log, "Removed {} parts out of the {} selected by covering them with empty {} parts. With txn {}.",
+             removed_parts.size(), covered_parts.size(), new_parts.size(), transaction.getTID());
 
     /// Remove covered parts without waiting for old_parts_lifetime seconds.
-    for (auto & part: covered_parts)
+    for (auto & part : removed_parts)
         part->remove_time.store(0, std::memory_order_relaxed);
 
     if (deduplication_log)
-        for (const auto & part : covered_parts)
+        for (const auto & part : removed_parts)
             deduplication_log->dropPart(part->info);
 
-    return covered_parts;
+    return removed_parts;
 }
 
 void StorageMergeTree::clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context)
