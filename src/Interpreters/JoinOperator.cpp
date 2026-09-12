@@ -1,5 +1,6 @@
 #include <vector>
 #include <Interpreters/JoinOperator.h>
+#include <Core/ProtocolDefines.h>
 
 #include <Columns/IColumn.h>
 #include <Common/MemoryTrackerUtils.h>
@@ -25,6 +26,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -70,6 +72,7 @@ namespace Setting
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
+    extern const SettingsBool legacy_join_size_limits_trigger_spilling;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
@@ -126,6 +129,7 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
     extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
     extern const QueryPlanSerializationSettingsBool enable_software_prefetch_in_join;
+    extern const QueryPlanSerializationSettingsBool legacy_join_size_limits_trigger_spilling;
     extern const QueryPlanSerializationSettingsBool use_hash_table_stats_for_join_reordering;
 
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
@@ -186,6 +190,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
     enable_software_prefetch_in_join = query_settings[Setting::enable_software_prefetch_in_join];
+    legacy_join_size_limits_trigger_spilling = query_settings[Setting::legacy_join_size_limits_trigger_spilling];
 
     use_hash_table_stats_for_join_reordering = query_settings[Setting::use_hash_table_stats_for_join_reordering];
 
@@ -196,7 +201,7 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     min_rows_ratio_for_hash_join_row_store = query_settings[Setting::min_rows_ratio_for_hash_join_row_store];
 }
 
-JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
+JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version)
 {
     join_algorithms = settings[QueryPlanSerializationSetting::join_algorithm];
     max_block_size = settings[QueryPlanSerializationSetting::max_block_size];
@@ -245,6 +250,9 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
     enable_software_prefetch_in_join = settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join];
+    /// A plan from before the name existed was built where the size limits still drove spilling.
+    legacy_join_size_limits_trigger_spilling = version < DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS
+        || settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling];
     use_hash_table_stats_for_join_reordering = settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering];
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
@@ -254,7 +262,49 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
 }
 
-void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings) const
+/// `join_algorithm` is an ordered preference list, and these entries always produce a join for any step that
+/// reaches them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` / `ConcurrentHashJoin` /
+/// `SpillingHashJoin` (`src/Interpreters/ExpressionAnalyzer.cpp`, `src/Planner/PlannerJoins.cpp`). Whatever follows
+/// such an entry in the list is never consulted, on this side or on an older peer, which walks the same list with
+/// the same order.
+static bool alwaysProducesJoin(JoinAlgorithm algorithm)
+{
+    return algorithm == JoinAlgorithm::HASH
+        || algorithm == JoinAlgorithm::PARALLEL_HASH
+        || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
+        || algorithm == JoinAlgorithm::DEFAULT
+        || algorithm == JoinAlgorithm::AUTO;
+}
+
+bool JoinSettings::spillBehaviorDiffersFromLegacy() const
+{
+    /// The receiver was asked for the old contract anyway, which is what a peer that predates the name does.
+    if (legacy_join_size_limits_trigger_spilling)
+        return false;
+
+    /// Hard caps here, a spill trigger there.
+    if (max_rows_in_join != 0 || max_bytes_in_join != 0)
+        return true;
+
+    /// `grace_hash` diverges either way here. With a spill threshold it spills at
+    /// `max_bytes_before_external_join` here, and ignores it there. Without one it is not a runnable algorithm
+    /// here at all - the join demotes it to the next entry of the preference list, or refuses the query when it
+    /// is listed alone - while there it still builds a standalone `GraceHashJoin` whose only spill trigger is the
+    /// (unset) size limits.
+    ///
+    /// Only a `grace_hash` that a step can actually reach counts: behind an entry that always produces a join it
+    /// is dead weight in the list, and both sides run the very same hash join instead.
+    for (auto algorithm : join_algorithms)
+    {
+        if (algorithm == JoinAlgorithm::GRACE_HASH)
+            return true;
+        if (alwaysProducesJoin(algorithm))
+            return false;
+    }
+    return false;
+}
+
+void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
     settings[QueryPlanSerializationSetting::max_block_size] = max_block_size;
@@ -303,6 +353,21 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
     settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join] = enable_software_prefetch_in_join;
+    /// `QueryPlanSerializationSettings` is a strict named schema, so this name may go on the wire only
+    /// towards a peer whose version knows it. Dropping it is not enough to make a downgraded plan safe:
+    /// a peer below that version keeps the old contract for the settings it does know, so a plan that
+    /// depends on the unified spill trigger has to be refused rather than executed with the old meaning.
+    if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS)
+        settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling] = legacy_join_size_limits_trigger_spilling;
+    else if (spillBehaviorDiffersFromLegacy())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot serialize a join step whose spilling depends on `max_rows_in_join` / `max_bytes_in_join` being hard caps "
+            "or on `grace_hash` spilling at the threshold of `hash` rather than at the size limits, for serialization version {}; "
+            "version {} or newer is required. Set `legacy_join_size_limits_trigger_spilling = 1` to run the whole query with "
+            "the old spill contract instead",
+            version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS);
     settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering] = use_hash_table_stats_for_join_reordering;
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;

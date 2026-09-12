@@ -119,6 +119,7 @@ struct JoinSettings
     bool use_join_disjunctions_push_down;
     bool enable_lazy_columns_replication;
     bool enable_software_prefetch_in_join;
+    bool legacy_join_size_limits_trigger_spilling;
     bool use_hash_table_stats_for_join_reordering;
     bool enable_hash_join_row_store;
     Float64 min_rows_ratio_for_hash_join_row_store;
@@ -131,9 +132,16 @@ struct JoinSettings
     JoinAnalyzeMode join_analyze_mode = JoinAnalyzeMode::None;
 
     explicit JoinSettings(const Settings & query_settings, JoinAnalyzeMode join_analyze_mode_ = JoinAnalyzeMode::None);
-    explicit JoinSettings(const QueryPlanSerializationSettings & settings);
+    JoinSettings(const QueryPlanSerializationSettings & settings, UInt64 version);
 
-    void updatePlanSettings(QueryPlanSerializationSettings & settings) const;
+    void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
+
+    /// Whether these settings make the join behave differently from a peer that still treats
+    /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger, and still runs `grace_hash`
+    /// without a spill threshold. Such a plan must not be serialized for a peer that predates
+    /// `legacy_join_size_limits_trigger_spilling`. A `grace_hash` that no step can reach - one listed
+    /// behind an algorithm that always produces a join - does not count, both sides run the same join.
+    bool spillBehaviorDiffersFromLegacy() const;
 
     /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),
     /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`
