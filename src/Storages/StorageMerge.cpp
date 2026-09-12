@@ -138,6 +138,10 @@ extern const int INCOMPATIBLE_COLUMNS;
 namespace
 {
 
+/// An `Alias` can point at another `Alias`. Where the chain is followed explicitly, this bound
+/// keeps a cycle of `Alias` tables from looping.
+constexpr size_t max_alias_chain_hops = 64;
+
 bool queryHasOrderBy(const SelectQueryInfo & query_info)
 {
     if (query_info.query_tree)
@@ -1125,22 +1129,39 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             RowPolicyDataOpt row_policy_data_opt;
             auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
-            /// An `Alias` reports its target's metadata, so the columns belong to the target.
-            const auto * alias = storage->as<StorageAlias>();
-            const StoragePtr alias_target = alias ? alias->tryGetTargetTable() : nullptr;
-            const IStorage * columns_owner = alias ? alias_target.get() : storage.get();
+            /// An `Alias` reports its target's metadata, so the columns belong to the target, and an
+            /// `Alias` may point at another one, so follow the whole chain down to the storage that
+            /// actually owns the columns.
+            bool alias_target_missing = false;
+            StoragePtr columns_owner = storage;
+            /// Bounded, so that a cycle of `Alias` tables cannot loop here.
+            for (size_t hop = 0; hop < max_alias_chain_hops; ++hop)
+            {
+                const auto * alias = columns_owner->as<StorageAlias>();
+                if (!alias)
+                    break;
+
+                StoragePtr alias_target = alias->tryGetTargetTable();
+                if (!alias_target)
+                {
+                    alias_target_missing = true;
+                    break;
+                }
+
+                columns_owner = std::move(alias_target);
+            }
 
             /// A parameterized view cannot be read through a `Merge` table at all, because there is
             /// no way to supply the parameter values. Do not infer that from an empty column list:
             /// a parameterized view whose definition declares an explicit column list does report
             /// columns, so ask the view itself.
-            const auto * view = columns_owner ? columns_owner->as<StorageView>() : nullptr;
+            const auto * view = alias_target_missing ? nullptr : columns_owner->as<StorageView>();
             if (view && view->isParameterizedView())
                 throw Exception(ErrorCodes::STORAGE_REQUIRES_PARAMETER, "Parameterized view can't be queried through a Merge table.");
 
             if (storage_metadata_snapshot->getColumns().empty())
             {
-                if (alias && !alias_target)
+                if (alias_target_missing)
                     throw Exception(
                         ErrorCodes::UNKNOWN_TABLE,
                         "Table {} matched by the regexp of {} is an `Alias` whose target table is missing",

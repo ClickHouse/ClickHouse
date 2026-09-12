@@ -31,6 +31,33 @@ SELECT n FROM 05055_merge SETTINGS use_declared_schema_for_parameterized_views =
 
 -- { echoOff }
 
+-- An `Alias` reports the metadata of its target, so a parameterized view reached through one must
+-- be rejected just the same. This is where a declared schema differs from a schemaless view: the
+-- `Alias` forwards the declared columns, so the matched child does report columns.
+CREATE TABLE 05055_ma_inner ENGINE = Alias(currentDatabase(), '05055_pv_declared');
+CREATE TABLE 05055_merge_one_hop (n UInt64) ENGINE = Merge(currentDatabase(), '05055_ma_inner');
+
+-- An `Alias` may also point at another one: creating the outer one first is the only way to build
+-- such a chain, because an `Alias` refuses an existing `Alias` as its target. The chain is used by
+-- the read below only, and the outer alias is dropped right after it.
+CREATE TABLE 05055_ma_outer ENGINE = Alias(currentDatabase(), '05055_ma_chained');
+CREATE TABLE 05055_ma_chained ENGINE = Alias(currentDatabase(), '05055_pv_declared');
+CREATE TABLE 05055_merge_two_hops (n UInt64) ENGINE = Merge(currentDatabase(), '05055_ma_outer');
+
+-- { echoOn }
+
+SELECT n FROM 05055_merge_one_hop ORDER BY n; -- { serverError STORAGE_REQUIRES_PARAMETER }
+
+SELECT n FROM 05055_merge_two_hops ORDER BY n; -- { serverError STORAGE_REQUIRES_PARAMETER }
+
+-- { echoOff }
+
+DROP TABLE 05055_merge_two_hops;
+DROP TABLE 05055_merge_one_hop;
+DROP TABLE 05055_ma_outer;
+DROP TABLE 05055_ma_chained;
+DROP TABLE 05055_ma_inner;
+
 DROP VIEW 05055_pv_declared;
 
 -- { echoOn }

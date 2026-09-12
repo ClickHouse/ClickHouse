@@ -8,6 +8,10 @@ SELECT n FROM 05055_merge ORDER BY n; -- { serverError STORAGE_REQUIRES_PARAMETE
 SELECT n FROM 05055_merge SETTINGS use_declared_schema_for_parameterized_views = 0; -- { serverError STORAGE_REQUIRES_PARAMETER }
 -- { echoOn }
 
+SELECT n FROM 05055_merge_one_hop ORDER BY n; -- { serverError STORAGE_REQUIRES_PARAMETER }
+SELECT n FROM 05055_merge_two_hops ORDER BY n; -- { serverError STORAGE_REQUIRES_PARAMETER }
+-- { echoOn }
+
 -- The view without a declared schema is rejected the same way.
 SELECT n FROM 05055_merge ORDER BY n; -- { serverError STORAGE_REQUIRES_PARAMETER }
 -- { echoOn }
