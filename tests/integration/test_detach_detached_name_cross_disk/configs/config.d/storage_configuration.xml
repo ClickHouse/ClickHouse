@@ -1,0 +1,61 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <jbod1>
+                <path>/jbod1/</path>
+            </jbod1>
+            <jbod2>
+                <path>/jbod2/</path>
+            </jbod2>
+            <!-- A rewritable-metadata disk, so a directory move can be made to fail with a
+                 DB::Exception other than DIRECTORY_ALREADY_EXISTS (a local disk only ever
+                 raises fs::filesystem_error there). Backed by the local filesystem, so no
+                 object storage service is needed. -->
+            <plain_rewritable_local>
+                <type>object_storage</type>
+                <object_storage_type>local_blob_storage</object_storage_type>
+                <metadata_type>plain_rewritable</metadata_type>
+                <path>/plain_rewritable_local/</path>
+            </plain_rewritable_local>
+            <!-- A read-only disk whose metadata type still allows partition commands on the
+                 policy, so a detach can actually reach the name allocator while
+                 system.detached_parts skips this disk. -->
+            <readonly_local>
+                <type>object_storage</type>
+                <object_storage_type>local_blob_storage</object_storage_type>
+                <metadata_type>local</metadata_type>
+                <path>/readonly_local/</path>
+                <read_only>true</read_only>
+            </readonly_local>
+        </disks>
+        <policies>
+            <two_disks>
+                <volumes>
+                    <v1>
+                        <disk>jbod1</disk>
+                    </v1>
+                    <v2>
+                        <disk>jbod2</disk>
+                    </v2>
+                </volumes>
+            </two_disks>
+            <rewritable_only>
+                <volumes>
+                    <v1>
+                        <disk>plain_rewritable_local</disk>
+                    </v1>
+                </volumes>
+            </rewritable_only>
+            <writable_and_readonly>
+                <volumes>
+                    <v1>
+                        <disk>jbod1</disk>
+                    </v1>
+                    <v2>
+                        <disk>readonly_local</disk>
+                    </v2>
+                </volumes>
+            </writable_and_readonly>
+        </policies>
+    </storage_configuration>
+</clickhouse>

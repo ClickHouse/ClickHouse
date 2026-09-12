@@ -186,10 +186,15 @@ public:
         bool is_temp,
         LoggerPtr log) = 0;
 
+    /// Answers "is this directory name already taken?". The part storage can only see its own
+    /// disk, so a caller that owns a storage policy passes a predicate covering all of its disks.
+    using NameTakenChecker = std::function<bool(const String & /*dir_name*/)>;
+
     /// Get a name like 'prefix_partdir_tryN' which does not exist in a root dir.
     /// TODO: remove it.
     virtual std::optional<String> getRelativePathForPrefix(
-        LoggerPtr log, const String & prefix, bool detached, bool broken) const = 0;
+        LoggerPtr log, const String & prefix, bool detached, bool broken,
+        const NameTakenChecker & name_taken_anywhere) const = 0;
 
     /// Reset part directory, used for in-memory parts.
     /// TODO: remove it.
