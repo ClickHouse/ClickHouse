@@ -1,0 +1,6 @@
+<clickhouse>
+    <cluster_metadata>
+        <type>local</type>
+        <path>/var/lib/clickhouse/sql_clusters_metadata_local</path>
+    </cluster_metadata>
+</clickhouse>

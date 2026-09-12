@@ -26,7 +26,12 @@ protected:
     using NameAndCluster = std::pair<String, std::shared_ptr<Cluster>>;
 
     void fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const override;
-    static void writeCluster(MutableColumns & res_columns, const std::vector<UInt8> & columns_mask, const NameAndCluster & name_and_cluster, std::function<ReplicasInfo()> && replicas_info_getter);
+    static void writeCluster(
+        MutableColumns & res_columns,
+        const std::vector<UInt8> & columns_mask,
+        const NameAndCluster & name_and_cluster,
+        std::function<ReplicasInfo()> && replicas_info_getter,
+        bool access_secrets);
     bool supportsColumnsMask() const override { return true; }
 };
 

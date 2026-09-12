@@ -1,5 +1,9 @@
 #include <Columns/IColumn.h>
 #include <Storages/System/SystemTableSourceRegistry.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
+#include <base/EnumReflection.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -18,6 +22,11 @@
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool format_display_secrets_in_show_and_select;
+}
 
 ColumnsDescription StorageSystemClusters::getColumnsDescription()
 {
@@ -40,6 +49,8 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
         {"estimated_recovery_time", std::make_shared<DataTypeUInt32>(), "Seconds remaining until the replica error count is zeroed and it is considered to be back to normal."},
         {"database_shard_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database shard (for clusters that belong to a `Replicated` database)."},
         {"database_replica_name", std::make_shared<DataTypeString>(), "The name of the `Replicated` database replica (for clusters that belong to a `Replicated` database)."},
+        {"source", std::make_shared<DataTypeString>(), "The cluster source: `CONFIG` for clusters defined in the configuration file, or `SQL` for clusters created by DDL."},
+        {"create_query", std::make_shared<DataTypeString>(), "The `CREATE CLUSTER` query for SQL-managed clusters. Empty for clusters defined in the configuration file."},
         {"is_shared_catalog_cluster", std::make_shared<DataTypeUInt8>(), "Bool indicating if the cluster belongs to shared catalog."},
         {"is_active", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "The status of the Replicated database replica (for clusters that belong to a Replicated database): 1 means 'replica is online', 0 means 'replica is offline', NULL means 'unknown'."},
            {"unsynced_after_recovery", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt8>()), "Indicates if a Replicated database replica has replication lag more than max_replication_lag_to_enqueue after creating or recovering the replica."},
@@ -57,8 +68,14 @@ ColumnsDescription StorageSystemClusters::getColumnsDescription()
 void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node *, std::vector<UInt8> columns_mask) const
 {
     auto component_guard = Coordination::setCurrentComponent("StorageSystemClusters::fillData");
+
+    const auto & access = context->getAccess();
+    bool access_secrets = access->isGranted(AccessType::displaySecretsInShowAndSelect);
+    access_secrets &= context->getSettingsRef()[Setting::format_display_secrets_in_show_and_select];
+    access_secrets &= context->displaySecretsInShowAndSelect();
+
     for (const auto & name_and_cluster : context->getClusters())
-        writeCluster(res_columns, columns_mask, name_and_cluster, /* replicas_info_getter= */ {});
+        writeCluster(res_columns, columns_mask, name_and_cluster, /* replicas_info_getter= */ {}, access_secrets);
 
     const auto databases = DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false});
     for (const auto & name_and_database : databases)
@@ -68,11 +85,13 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
 
             if (auto database_cluster = replicated->tryGetCluster())
                 writeCluster(res_columns, columns_mask, {name_and_database.first, database_cluster},
-                    [replicated, database_cluster]() -> ReplicasInfo { return replicated->tryGetReplicasInfo(database_cluster); });
+                    [replicated, database_cluster]() -> ReplicasInfo { return replicated->tryGetReplicasInfo(database_cluster); },
+                    access_secrets);
 
             if (auto database_cluster = replicated->tryGetAllGroupsCluster())
                 writeCluster(res_columns, columns_mask, {DatabaseReplicated::ALL_GROUPS_CLUSTER_PREFIX + name_and_database.first, database_cluster},
-                    [replicated, database_cluster]() -> ReplicasInfo { return replicated->tryGetReplicasInfo(database_cluster); });
+                    [replicated, database_cluster]() -> ReplicasInfo { return replicated->tryGetReplicasInfo(database_cluster); },
+                    access_secrets);
         }
     }
 
@@ -82,20 +101,29 @@ void StorageSystemClusters::fillData(MutableColumns & res_columns, ContextPtr co
         auto cluster_name = SharedDatabaseCatalog::instance().getClusterName();
         if (auto catalog_cluster = SharedDatabaseCatalog::instance().getCluster(cluster_name))
             writeCluster(res_columns, columns_mask, {cluster_name, catalog_cluster},
-                         [catalog_cluster]() -> ReplicasInfo { return SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster); });
+                         [catalog_cluster]() -> ReplicasInfo { return SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster); },
+                         access_secrets);
 
         auto all_groups_cluster_name = SharedDatabaseCatalog::ALL_GROUPS_CLUSTER_PREFIX + cluster_name;
         if (auto catalog_cluster = SharedDatabaseCatalog::instance().getCluster(all_groups_cluster_name))
             writeCluster(res_columns, columns_mask, {all_groups_cluster_name, catalog_cluster},
-                         [catalog_cluster]() -> ReplicasInfo { return SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster); });
+                         [catalog_cluster]() -> ReplicasInfo { return SharedDatabaseCatalog::instance().tryGetReplicasInfo(catalog_cluster); },
+                         access_secrets);
     }
 #endif
 }
 
-void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std::vector<UInt8> & columns_mask, const NameAndCluster & name_and_cluster, std::function<ReplicasInfo()> && replicas_info_getter)
+void StorageSystemClusters::writeCluster(
+    MutableColumns & res_columns,
+    const std::vector<UInt8> & columns_mask,
+    const NameAndCluster & name_and_cluster,
+    std::function<ReplicasInfo()> && replicas_info_getter,
+    bool access_secrets)
 {
     const String & cluster_name = name_and_cluster.first;
     const ClusterPtr & cluster = name_and_cluster.second;
+    const String source = String(magic_enum::enum_name(cluster->getSourceId()));
+    const String create_query = cluster->getCreateStatement(access_secrets);
     const auto & shards_info = cluster->getShardsInfo();
     const auto & addresses_with_failover = cluster->getShardsAddresses();
 
@@ -103,7 +131,7 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
     const size_t replication_lag_column_idx = columns_mask.size() - 2;
     const size_t is_unsynced_column_idx = columns_mask.size() - 3;
     const size_t is_active_column_idx = columns_mask.size() - 4;
-    const size_t is_shared_catalog_cluster_idx = columns_mask.size() - 5;
+    const size_t is_shared_catalog_cluster_idx = columns_mask.size() - 7;
     std::vector<ReplicaInfo> replicas;
     bool replicas_belong_to_shared_catalog = false;
     if (replicas_info_getter && (columns_mask[recovery_time_column_idx] || columns_mask[replication_lag_column_idx] || columns_mask[is_unsynced_column_idx] || columns_mask[is_active_column_idx] || columns_mask[is_shared_catalog_cluster_idx]))
@@ -163,6 +191,10 @@ void StorageSystemClusters::writeCluster(MutableColumns & res_columns, const std
                 res_columns[res_index++]->insert(address.database_shard_name);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(address.database_replica_name);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(source);
+            if (columns_mask[src_index++])
+                res_columns[res_index++]->insert(create_query);
 
             /// make sure these five columns remain the last ones, see is_active_column_idx, etc
             if (columns_mask[src_index++])

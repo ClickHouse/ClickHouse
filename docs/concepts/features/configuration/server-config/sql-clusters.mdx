@@ -1,0 +1,184 @@
+---
+description: 'Documentation for SQL-managed clusters'
+sidebarTitle: 'SQL-managed clusters'
+slug: /operations/sql-clusters
+title: 'SQL-managed clusters'
+doc_type: 'reference'
+---
+
+SQL-managed clusters let you define cluster topologies with SQL instead of editing the server configuration file. They can be used anywhere config-defined clusters are used: [`Distributed`](/reference/engines/table-engines/special/distributed) tables, [`remote`](/reference/functions/table-functions/remote) and [`cluster`](/reference/functions/table-functions/cluster) table functions, `ON CLUSTER` DDL, and other features that reference a cluster name.
+
+SQL-managed clusters coexist with clusters defined in `<remote_servers>`. Both appear in [`system.clusters`](/reference/system-tables/clusters); SQL-managed clusters have `source = 'SQL'`.
+
+## Syntax overview {#syntax-overview}
+
+```sql
+CREATE CLUSTER [IF NOT EXISTS] name [ON CLUSTER clickhouse_cluster] (
+    user = 'default',
+    password = 'secret',
+    SHARD (
+        weight = 1,
+        internal_replication = true,
+        REPLICA (host = 'host1', port = 9000),
+        REPLICA (host = 'host2', port = 9000, user = 'replica_user', password = 'secret')
+    ),
+    SHARD (
+        host = 'host3', port = 9000
+    )
+);
+
+ALTER CLUSTER [IF EXISTS] name [ON CLUSTER clickhouse_cluster] (
+    user = 'default',
+    SHARD (
+        REPLICA (host = 'host1', port = 9000),
+        REPLICA (host = 'host2', port = 9000)
+    )
+);
+
+DROP CLUSTER [IF EXISTS] name [ON CLUSTER clickhouse_cluster];
+```
+
+`ALTER CLUSTER` replaces the entire cluster definition. It does not support incremental updates: you cannot add or remove individual shards or replicas, or change only part of the topology. Every `ALTER CLUSTER` statement must specify the complete target definition, using the same syntax as `CREATE CLUSTER`.
+
+Each `SHARD` block describes one shard. A shard can contain:
+
+- one or more `REPLICA (...)` blocks, or
+- replica connection properties (`host`, `port`, and so on) directly inside the `SHARD` block for a single-replica shard.
+
+Cluster-level properties in the server configuration (`secret`, `allow_distributed_ddl_queries`) apply to the whole cluster. In SQL syntax, `user` and `password` can also be written at the cluster level as default credentials for all shards and replicas.
+
+Supported replica properties: `host`, `port`, `user`, `password`, `secure`, `compression`, `priority`, `bind_host`, `default_database`.
+
+Supported shard properties: `weight`, `internal_replication`.
+
+### `user` and `password` inheritance {#user-and-password-inheritance}
+
+`user` and `password` can be specified at the cluster, shard, or replica level. For each replica (or single-replica `SHARD` without `REPLICA` blocks), the value closest to that replica is used:
+
+1. If the replica defines `user` or `password`, that value is used.
+2. Otherwise, if the parent `SHARD` defines it, the shard value is used.
+3. Otherwise, if the cluster definition defines it, the cluster value is used.
+4. If it is not defined at any level, the same defaults as in [`<remote_servers>`](/reference/engines/table-engines/special/distributed#distributed-clusters) apply: `user = 'default'`, `password = ''` (empty string).
+
+`user` and `password` are optional at every level. You do not need to repeat them on each replica when a cluster- or shard-level default is sufficient.
+
+Example:
+
+```sql
+CREATE CLUSTER my_cluster (
+    user = 'cluster_user',
+    password = 'cluster_password',
+    SHARD (
+        user = 'shard_user',  -- overrides cluster defaults for replicas in this shard
+        REPLICA (host = 'host1', port = 9000),  -- uses shard_user, cluster_password
+        REPLICA (host = 'host2', port = 9000, password = 'replica_password')  -- uses shard_user, replica_password
+    ),
+    SHARD (
+        REPLICA (host = 'host3', port = 9000)  -- uses cluster_user, cluster_password
+    )
+);
+```
+
+See also:
+
+- [CREATE CLUSTER](/reference/statements/create/cluster)
+- [ALTER CLUSTER](/reference/statements/alter/cluster)
+- [DROP CLUSTER](/reference/statements/drop#drop-cluster)
+
+## Storing SQL cluster metadata {#storing-sql-cluster-metadata}
+
+SQL cluster definitions are stored as one `CREATE CLUSTER ...` statement per cluster. Metadata storage is configured in the `<cluster_metadata>` section of the server configuration file, similar to [`named_collections_storage`](/concepts/features/configuration/server-config/named-collections#storage-for-named-collections).
+
+Supported storage types:
+
+| `type` | Description |
+|--------|-------------|
+| `local` (default) | Metadata stored as `.sql` files under `{data_path}/sql_clusters_metadata` on each node |
+| `local_encrypted` | Same as `local`, with encryption (`key_hex`, `algorithm`) |
+| `keeper` / `zookeeper` | Metadata stored in ClickHouse Keeper; other nodes reload changes in the background |
+| `keeper_encrypted` / `zookeeper_encrypted` | Same as `keeper`, with encryption |
+
+### Local storage example {#local-storage-example}
+
+```xml
+<clickhouse>
+  <cluster_metadata>
+    <type>local</type>
+    <path>/var/lib/clickhouse/sql_clusters_metadata</path>
+  </cluster_metadata>
+</clickhouse>
+```
+
+If `path` is omitted, the default is `{data_path}/sql_clusters_metadata`.
+
+With local storage, metadata exists independently on each server. Use `ON CLUSTER` when creating, altering, or dropping SQL clusters so the DDL runs on every node and each node writes its own metadata file.
+
+### Keeper storage example {#keeper-storage-example}
+
+```xml
+<clickhouse>
+  <cluster_metadata>
+    <type>keeper</type>
+    <path>/clickhouse/sql_cluster_metadata</path>
+    <update_timeout_ms>5000</update_timeout_ms>
+  </cluster_metadata>
+</clickhouse>
+```
+
+For Keeper storage, `path` is required. Metadata is shared through Keeper, and other nodes reload changes automatically in the background. In this case, running the DDL on a single node is enough; `ON CLUSTER` is optional.
+
+An optional `update_timeout_ms` parameter controls how long the background sync waits for Keeper changes. It defaults to `5000`.
+
+### Encrypted storage example {#encrypted-storage-example}
+
+```xml
+<clickhouse>
+  <cluster_metadata>
+    <type>keeper_encrypted</type>
+    <key_hex>bebec0cabebec0cabebec0cabebec0ca</key_hex>
+    <algorithm>aes_128_ctr</algorithm>
+    <path>/clickhouse/sql_cluster_metadata</path>
+    <update_timeout_ms>5000</update_timeout_ms>
+  </cluster_metadata>
+</clickhouse>
+```
+
+Encryption uses the same algorithms as [disk encryption](/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system). `aes_128_ctr` is the default algorithm.
+
+Changing the storage type requires a server restart; `SYSTEM RELOAD CONFIG` does not switch the active backend.
+
+## Permissions {#permissions}
+
+To manage SQL clusters with DDL, a user needs:
+
+- `CREATE SQL CLUSTER` for [`CREATE CLUSTER`](/reference/statements/create/cluster)
+- `ALTER SQL CLUSTER` for [`ALTER CLUSTER`](/reference/statements/alter/cluster)
+- `DROP SQL CLUSTER` for [`DROP CLUSTER`](/reference/statements/drop#drop-cluster)
+
+These privileges can be granted globally or for a specific cluster name.
+
+Secrets in the stored `create_query` are hidden in [`system.clusters`](/reference/system-tables/clusters) unless the user is allowed to see secrets (the same rules as [`system.named_collections`](/reference/system-tables/named_collections)).
+
+## Introspection {#introspection}
+
+SQL-managed clusters appear in [`system.clusters`](/reference/system-tables/clusters) like config-defined clusters. Additional columns:
+
+- `source` — `CONFIG` for clusters from the configuration file, `SQL` for SQL-managed clusters
+- `create_query` — the stored `CREATE CLUSTER` statement for SQL-managed clusters; empty for config-defined clusters
+
+Example:
+
+```sql
+SELECT cluster, shard_num, replica_num, host_name, port, source
+FROM system.clusters
+WHERE cluster = 'my_cluster'
+ORDER BY shard_num, replica_num;
+```
+
+Cluster names are also listed by [`SHOW CLUSTERS`](/reference/statements/show#show-clusters).
+
+## XML-defined clusters {#xml-defined-clusters}
+
+Clusters can still be defined in the server configuration under `<remote_servers>`. See [Clusters](/reference/engines/table-engines/special/distributed#distributed-clusters) in the `Distributed` table engine documentation.
+
+SQL-managed and config-defined clusters can coexist. If the same cluster name exists in both places, the SQL-managed definition takes precedence for queries using that name.

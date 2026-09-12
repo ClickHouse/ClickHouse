@@ -2460,7 +2460,9 @@ Instead of the database name, you can use a constant expression that returns a s
 
 ## Clusters {#distributed-clusters}
 
-Clusters are configured in the [server configuration file](/concepts/features/configuration/server-config/configuration-files):
+Clusters can be defined in the [server configuration file](/concepts/features/configuration/server-config/configuration-files) or with SQL using [`CREATE CLUSTER`](/reference/statements/create/cluster). SQL-managed clusters are stored in [SQL cluster metadata storage](/concepts/features/configuration/server-config/sql-clusters) and appear in [`system.clusters`](/reference/system-tables/clusters) with `source = 'SQL'`.
+
+The XML format below is still supported:
 
 ```xml
 <remote_servers>
@@ -2540,7 +2542,7 @@ You can specify as many clusters as you wish in the configuration.
 
 To view your clusters, use the `system.clusters` table.
 
-The `Distributed` engine allows working with a cluster like a local server. However, the cluster's configuration cannot be specified dynamically, it has to be configured in the server config file. Usually, all servers in a cluster will have the same cluster config (though this is not required). Clusters from the config file are updated on the fly, without restarting the server.
+The `Distributed` engine allows working with a cluster like a local server. Config-defined clusters are updated on the fly, without restarting the server. SQL-managed clusters are loaded at startup and updated immediately when created, altered, or dropped with DDL. Usually, all servers in a cluster will have the same cluster config (though this is not required).
 
 If you need to send a query to an unknown set of shards and replicas each time, you do not need to create a `Distributed` table – use the `remote` table function instead. See the section [Table functions](/reference/functions/table-functions/index).
 
