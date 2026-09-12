@@ -3548,7 +3548,9 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
             storage_snapshot_->getSampleBlockForColumns(
                 query_info_.prewhere_info->prewhere_actions.getRequiredColumnsNames()));
         const auto & filter_column = header.getByName(query_info_.prewhere_info->prewhere_column_name).column;
-        if (filter_column && ConstantFilterDescription(*filter_column).always_false)
+        if ((filter_column && ConstantFilterDescription(*filter_column).always_false)
+            || FilterTransform::isAlwaysFalseByEmptySet(
+                query_info_.prewhere_info->prewhere_actions, query_info_.prewhere_info->prewhere_column_name))
         {
             result.has_exact_ranges = true;
             return std::make_shared<AnalysisResult>(std::move(result));

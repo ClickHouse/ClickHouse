@@ -72,7 +72,7 @@ static Block checkAndRemoveFilterColumn(Block result, const String & filter_colu
 }
 
 /// constant folding in prepare misses an empty set behind a Nullable argument - no constness at 0 rows
-static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
+static bool isAlwaysFalseByEmptySetImpl(const ActionsDAG::Node * node)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.at(0);
@@ -83,7 +83,7 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
     const auto & function_name = node->function_base->getName();
 
     if (function_name == "and")
-        return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
+        return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySetImpl);
 
     /// notIn over an empty set is always true, and the -IgnoreSet variants must not fold
     if (function_name != "in" && function_name != "globalIn")
@@ -106,6 +106,11 @@ static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
 
     auto set = future_set->get();
     return set && set->getTotalRowCount() == 0;
+}
+
+bool FilterTransform::isAlwaysFalseByEmptySet(const ActionsDAG & dag, const String & filter_column_name)
+{
+    return isAlwaysFalseByEmptySetImpl(&dag.findInOutputs(filter_column_name));
 }
 
 Block FilterTransform::transformHeader(
@@ -198,7 +203,7 @@ IProcessor::Status FilterTransform::prepare()
         if (!always_false && expression && !on_totals)
         {
             const auto & actions_dag = expression->getActionsDAG();
-            always_false = isAlwaysFalseByEmptySet(&actions_dag.findInOutputs(filter_column_name));
+            always_false = isAlwaysFalseByEmptySet(actions_dag, filter_column_name);
 
             if (!always_false)
             {
