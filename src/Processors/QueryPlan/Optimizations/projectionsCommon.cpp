@@ -75,6 +75,12 @@ bool canUseProjectionForReadingStep(ReadFromMergeTree * reading)
     if (reading->getDistributedReadBucketCount() > 0)
         return false;
 
+    /// A streaming read resolves which rows it returns at runtime, from the subscription bounds and
+    /// the cursor; plan-time part selection is skipped for it. A projection describes the whole
+    /// table, so an answer derived from one ignores those bounds.
+    if (reading->getQueryInfo().isStream())
+        return false;
+
     if (reading->isQueryWithFinal())
         return false;
 
