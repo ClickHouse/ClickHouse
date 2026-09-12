@@ -266,6 +266,13 @@ std::optional<ActionsDAG> createExpressionsAnalyzer(
     auto actions = buildActionsDAGFromExpressionNode(expression, header.getColumnsWithTypeAndName(), planner_context, {}).first;
     chassert(expression->getChildren().size() == actions.getOutputs().size());
 
+    /// The actions are executed as a standalone `ExpressionActions` over a block, with no query plan
+    /// to carry a `CreatingSet` step, so a column default containing `IN <table>` has to have its set
+    /// filled here. This must come after the actions are built: planning a set subquery renames the
+    /// table expressions it reads, and the renamed node is the very `IN` right-hand side the actions
+    /// look the set up by, so building first would make the lookup miss.
+    buildPreparedSetsInplace(planner_context, execution_context);
+
     NamesWithAliases result_columns;
     for (size_t i = 0; i < expression->getChildren().size(); ++i)
         result_columns.emplace_back(actions.getOutputs()[i]->result_name, expr_list->children[i]->getAliasOrColumnName());
