@@ -1398,6 +1398,10 @@ The opaque-state encoding is used on input only under the default [`aggregate_fu
 
 The server deserializes the received values and aggregates them with `func` to build the state. The setting does not affect output: `SELECT` always writes the opaque state described below. In the `RowBinaryWithNamesAndTypes` header the column type is still reported as `AggregateFunction(...)` regardless of the setting.
 
+<Note>
+The `value` and `array` forms are read for an `AggregateFunction` cell that the format reads as a column, including one nested inside `Array`, `Tuple`, `Map`, `Nullable`, `Variant`, or a `Dynamic` or `JSON` path that has its own subcolumn. They are not supported for a value that a carrier keeps in the generic nested representation: a `JSON` path that goes to the shared data — because the object already reached `max_dynamic_paths`, for example — always expects the length-prefixed opaque state, independently of `aggregate_function_input_format`. The shared data keeps the consumed bytes as they are and reads them back with the same representation, so it can only accept the form that it writes.
+</Note>
+
 The internal format varies by function. Some simple examples:
 
 **`countState`** — stores the count as a VarUInt (LEB128):
