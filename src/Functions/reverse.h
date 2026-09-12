@@ -9,6 +9,33 @@ namespace DB
   */
 struct ReverseImpl
 {
+    static NO_INLINE void reverseBytes(
+        const UInt8 * __restrict__ src,
+        const ColumnString::Offset * __restrict__ offsets,
+        UInt8 * __restrict__ dst,
+        size_t input_rows_count)
+    {
+        ColumnString::Offset prev_offset = 0;
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const ColumnString::Offset next_offset = offsets[i];
+            for (size_t j = prev_offset; j < next_offset; ++j)
+                dst[j] = src[next_offset + prev_offset - j - 1];
+            prev_offset = next_offset;
+        }
+    }
+
+    static NO_INLINE void reverseBytesFixed(
+        const UInt8 * __restrict__ src, UInt8 * __restrict__ dst, size_t n, size_t input_rows_count)
+    {
+        for (size_t i = 0; i < input_rows_count; ++i)
+        {
+            const size_t offset = i * n;
+            for (size_t j = 0; j < n; ++j)
+                dst[offset + j] = src[offset + n - j - 1];
+        }
+    }
+
     static void vector(
         const ColumnString::Chars & data,
         const ColumnString::Offsets & offsets,
@@ -19,17 +46,7 @@ struct ReverseImpl
         res_data.resize_exact(data.size());
         res_offsets.assign(offsets);
 
-        const UInt8 * __restrict src = data.data();
-        UInt8 * __restrict dst = res_data.data();
-
-        ColumnString::Offset prev_offset = 0;
-        for (size_t i = 0; i < input_rows_count; ++i)
-        {
-            ColumnString::Offset next_offset = offsets[i];
-            for (size_t j = prev_offset; j < next_offset; ++j)
-                dst[j] = src[next_offset + prev_offset - j - 1];
-            prev_offset = next_offset;
-        }
+        reverseBytes(data.data(), offsets.data(), res_data.data(), input_rows_count);
     }
 
     static void vectorFixed(
@@ -40,12 +57,7 @@ struct ReverseImpl
     {
         res_data.resize_exact(data.size());
 
-        const UInt8 * __restrict src = data.data();
-        UInt8 * __restrict dst = res_data.data();
-
-        for (size_t i = 0; i < input_rows_count; ++i)
-            for (size_t j = i * n; j < (i + 1) * n; ++j)
-                dst[j] = src[(i * 2 + 1) * n - j - 1];
+        reverseBytesFixed(data.data(), res_data.data(), n, input_rows_count);
     }
 };
 
