@@ -478,6 +478,31 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
 {
     chassert(!arguments.empty());
 
+    /// Descend through transparent combinators (e.g. -State) to find a null adapter,
+    /// but stop if a combinator transforms argument types (e.g. -Array, -Map) to avoid
+    /// feeding mismatched column shapes to the inner function.
+    auto same_arguments = [](const DataTypes & lhs, const DataTypes & rhs)
+    {
+        if (lhs.size() != rhs.size())
+            return false;
+        for (size_t i = 0; i < lhs.size(); ++i)
+            if (!lhs[i]->equals(*rhs[i]))
+                return false;
+        return true;
+    };
+
+    AggregateFunctionPtr probe = nested_func;
+    while (probe)
+    {
+        if (auto adapter = probe->getOwnNullAdapterIf(nested_func, arguments, params, properties))
+            return adapter;
+
+        AggregateFunctionPtr next = probe->getNestedFunction();
+        if (!next || !same_arguments(probe->getArgumentTypes(), next->getArgumentTypes()))
+            break;
+        probe = next;
+    }
+
     /// Nullability of the last argument (condition) does not affect the nullability of the result (NULL is processed as false).
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
     bool return_type_is_nullable = !properties.returns_default_when_only_null && getResultType()->canBeInsideNullable()

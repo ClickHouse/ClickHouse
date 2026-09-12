@@ -402,14 +402,16 @@ public:
         const AggregateFunctionPtr & nested_function_,
         const DataTypes & arguments,
         const Array & params,
-        const AggregateFunctionProperties & /*properties*/) const override
+        const AggregateFunctionProperties & properties) const override
     {
         if constexpr (!UseNull) /// OrDefault only
         {
             if (nested_function->getName() == "sumCount")
                 return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function_, arguments, params);
         }
-        return nullptr;
+
+        return nested_function->getOwnNullAdapter(nested_function_, arguments, params, properties);
+
     }
 };
 

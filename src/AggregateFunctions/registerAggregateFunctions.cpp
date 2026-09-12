@@ -101,7 +101,7 @@ void registerAggregateFunctionLargestTriangleThreeBuckets(AggregateFunctionFacto
 void registerAggregateFunctionDistinctDynamicTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionDistinctJSONPathsAndTypes(AggregateFunctionFactory & factory);
 void registerAggregateFunctionMergedJSONPatch(AggregateFunctionFactory & factory);
-
+void registerAggregateFunctionHistogramExplicit(AggregateFunctionFactory & factory);
 void registerAggregateFunctionLast2Samples(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseries(AggregateFunctionFactory & factory);
 void registerAggregateFunctionTimeseriesGroupArray(AggregateFunctionFactory & factory);
@@ -225,6 +225,7 @@ void registerAggregateFunctions()
         registerAggregateFunctionTimeseries(factory);
         registerAggregateFunctionTimeseriesGroupArray(factory);
         registerAggregateFunctionTimeSeriesTopKMasks(factory);
+        registerAggregateFunctionHistogramExplicit(factory);
 
         registerWindowFunctions(factory);
     }
