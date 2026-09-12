@@ -34,6 +34,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableChanges.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/TableSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLakeMetadataDeltaKernel.h>
+#include <Storages/ObjectStorage/DataLakes/DataLakeRefreshCursorStore.h>
 #include <Interpreters/StorageID.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -465,6 +466,17 @@ std::shared_ptr<IDataLakeMetadata> StorageObjectStorage::getExternalMetadata(Con
 configuration->update(object_storage, query_context);
 
     return configuration->getExternalMetadata();
+}
+
+RefreshCursorStorePtr StorageObjectStorage::getRefreshCursorStore()
+{
+    /// Only Iceberg, and only on a compare-and-swap catalog (REST, or no catalog / `if-none-match`); Glue's overwrite commit is excluded and keeps the Keeper cursor.
+    if (!isIcebergStorage())
+        return nullptr;
+    if (catalog && !catalog->isTransactional())
+        return nullptr;
+    return std::make_shared<DataLakeRefreshCursorStore>(
+        std::static_pointer_cast<StorageObjectStorage>(shared_from_this()));
 }
 
 void StorageObjectStorage::resolveHivePartitioningSamplePathIfDeferred(const ContextPtr & query_context)

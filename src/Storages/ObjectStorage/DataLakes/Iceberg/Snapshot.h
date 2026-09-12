@@ -24,6 +24,8 @@ struct IcebergDataSnapshot
     std::optional<size_t> total_rows;
     std::optional<size_t> total_bytes;
     std::optional<size_t> total_position_delete_rows;
+    /// Opaque incremental refreshable-MV cursor from the snapshot summary (`clickhouse.refresh_cursor`), as stored.
+    std::optional<String> refresh_cursor;
     Poco::JSON::Array::Ptr partition_specs;
 
     std::optional<size_t> getTotalRows() const

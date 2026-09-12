@@ -26,6 +26,7 @@
 #include <Core/Block.h>
 #include <Core/Streaming/Settings.h>
 #include <Core/Streaming/StreamingVirtualColumns.h>
+#include <Core/Streaming/CursorTree.h>
 
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/Exception.h>
@@ -256,11 +257,23 @@ IProcessor::Status MergeTreeCommitOrderSource::handleBoundedReconfiguration(cons
     // Finish after the first completed read round, or once the first enrichment shows nothing (more) to read.
     if (subscription_updated && (finished_rounds > 0 || result == Status::Async))
     {
+        surfaceFinalCursor();
         outputs.front().finish();
         return Status::Finished;
     }
 
     return result;
+}
+
+void MergeTreeCommitOrderSource::surfaceFinalCursor()
+{
+    auto cursor = reading_context.context->getStreamingCursor();
+    if (!cursor)
+        return;
+
+    auto local = mergeTreeCursorToCursorTree(read_state.getPartitionCursors());
+    std::lock_guard lock(cursor->mutex);
+    mergeCursors(cursor->tree, local);
 }
 
 bool MergeTreeCommitOrderSource::needToEmitGlobalIdle(const ClassifiedPartitions & partitions, bool subscription_updated)

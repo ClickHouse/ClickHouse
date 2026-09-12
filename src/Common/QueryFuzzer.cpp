@@ -1646,9 +1646,9 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
         strategy.set(strategy.spread, std::move(spread));
     }
 
-    /// Toggle APPEND
+    /// Fuzz the refresh mode
     if (fuzz_rand() % 10 == 0)
-        strategy.append = !strategy.append;
+        strategy.mode = static_cast<RefreshMode>(fuzz_rand() % 3);
 
     /// Toggle schedule kind between EVERY and AFTER
     if (strategy.schedule_kind != RefreshScheduleKind::UNKNOWN && fuzz_rand() % 10 == 0)
