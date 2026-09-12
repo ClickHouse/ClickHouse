@@ -95,7 +95,6 @@
 #include <Databases/DatabaseOverlay.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/TablesLoader.h>
-#include <Databases/LoadingStrictnessLevel.h>
 #include <Databases/DDLDependencyVisitor.h>
 #include <Databases/NormalizeAndEvaluateConstantsVisitor.h>
 
