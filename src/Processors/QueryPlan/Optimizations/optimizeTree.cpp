@@ -95,7 +95,7 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.enable_lazy_columns_replication,
     };
 }
-  
+
 static String describeProjectionRejections(const std::unordered_map<String, String> & reject_reasons)
 {
     if (reject_reasons.empty())
