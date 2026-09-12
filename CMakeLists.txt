@@ -376,6 +376,14 @@ if (ARCH_AMD64)
     set(COMPILER_FLAGS "${COMPILER_FLAGS} ${BRANCHES_WITHIN_32B_BOUNDARIES}")
 endif()
 
+# Emit a stack-protector canary for every function that has a local array, a local whose address
+# is taken, or a variable-length allocation. An overflow of such a local then aborts in
+# `__stack_chk_fail` instead of silently corrupting the frame and, further out, the saved return
+# address. `-strong` rather than the plain `-fstack-protector`, which covers only character arrays
+# of at least eight bytes and so misses, for instance, a `memcpy` into an integer local whose
+# address was taken.
+set (COMPILER_FLAGS "${COMPILER_FLAGS} -fstack-protector-strong")
+
 # Disable floating-point expression contraction in order to get consistent floating point calculation results across platforms
 set (COMPILER_FLAGS "${COMPILER_FLAGS} -ffp-contract=off")
 
