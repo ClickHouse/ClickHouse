@@ -1455,6 +1455,10 @@ Print a readable number tip on the right side of the table if the block consists
     DECLARE(Bool, output_format_pretty_highlight_trailing_spaces, true, R"(
 If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
 )", 0) \
+    DECLARE(Bool, output_format_pretty_highlight_json, true, R"(
+If enabled and if output is a terminal, highlight JSON syntax (keys, string values, and punctuation) with color, in the `Pretty` and `Vertical` output formats.
+Applies to columns of the `JSON` data type.
+)", 0) \
     DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
 If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.
 If not, they will be rendered as is, potentially deforming the table (one upside of keeping it off is that copy-pasting multi-line values will be easier).

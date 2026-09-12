@@ -11,7 +11,8 @@ static constexpr const char * GRAY_COLOR = "\033[90m";
 static constexpr const char * RED_COLOR = "\033[31m";
 static constexpr const char * UNDERSCORE = "\033[4m";
 static constexpr const char * RESET_COLOR = "\033[0m";
-
+static constexpr const char * JSON_KEY_COLOR = "\033[36m"; /// cyan
+static constexpr const char * JSON_STRING_COLOR = "\033[32m"; /// green
 
 namespace DB
 {
@@ -126,6 +127,71 @@ String highlightTrailingSpaces(String source)
     }
 
     return source.substr(0, highlight_start_pos) + RED_COLOR + UNDERSCORE + source.substr(highlight_start_pos, std::string::npos) + RESET_COLOR;
+}
+
+String highlightJSON(String source)
+{
+    if (source.empty())
+        return source;
+
+    String result;
+    result.reserve(source.size() * 2);
+
+    size_t size = source.size();
+    size_t i = 0;
+
+    auto skip_whitespace = [&](size_t pos) -> size_t
+    {
+        while (pos < size && (source[pos] == ' ' || source[pos] == '\t' || source[pos] == '\n' || source[pos] == '\r'))
+            ++pos;
+        return pos;
+    };
+
+    while (i < size)
+    {
+        char c = source[i];
+
+        if (c == '"')
+        {
+            size_t start = i;
+            size_t j = i + 1;
+            while (j < size)
+            {
+                if (source[j] == '\\' && j + 1 < size)
+                    j += 2;
+                else if (source[j] == '"')
+                {
+                    ++j;
+                    break;
+                }
+                else
+                    ++j;
+            }
+
+            size_t next = skip_whitespace(j);
+            bool is_key = next < size && source[next] == ':';
+
+            result += (is_key ? JSON_KEY_COLOR : JSON_STRING_COLOR);
+            result.append(source, start, j - start);
+            result += RESET_COLOR;
+
+            i = j;
+        }
+        else if (c == '{' || c == '}' || c == '[' || c == ']' || c == ':' || c == ',')
+        {
+            result += GRAY_COLOR;
+            result += c;
+            result += RESET_COLOR;
+            ++i;
+        }
+        else
+        {
+            result += c;
+            ++i;
+        }
+    }
+
+    return result;
 }
 
 

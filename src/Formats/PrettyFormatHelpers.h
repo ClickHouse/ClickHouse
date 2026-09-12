@@ -20,6 +20,9 @@ String highlightDigitGroups(String source);
 /// Highlights and underscores trailing spaces using ANSI escape sequences.
 String highlightTrailingSpaces(String source);
 
+/// Highlights JSON syntax (keys, string values, punctuation) using ANSI escape sequences.
+String highlightJSON(String source);
+
 /// If the visible width of the name is longer than `cut_to` + `hysteresis`,
 /// and it isn't a proper identifier, truncate it to `cut_to`
 /// by cutting it in the middle and replacing with a single filler character (ascii or unicode).
