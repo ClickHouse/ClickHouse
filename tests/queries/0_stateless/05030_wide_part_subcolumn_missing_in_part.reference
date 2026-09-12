@@ -1,0 +1,15 @@
+Wide
+1
+String	LowCardinality(String)
+1	1
+2	2
+3
+1
+1	1	a
+2	2	bb
+Compact
+1	1
+2	2
+6000000
+1
+1

@@ -105,6 +105,11 @@ private:
     using StreamCallbackGetter = std::function<ISerialization::StreamCallback(const NameAndTypePair &)>;
     void deserializePrefixForAllColumnsImpl(size_t num_columns, size_t from_mark, StreamCallbackGetter prefixes_prefetch_callback_getter);
 
+    /// Positions in `columns_to_read` that must not be read from this part. Computed in the constructor
+    /// before any stream is created, so that no loop opens, prefixes or enumerates a stream that the
+    /// read loop then skips.
+    std::vector<bool> columns_skipped_from_part;
+
     std::unordered_map<String, ISerialization::SubstreamsCache> caches;
     std::unordered_map<String, ISerialization::SubstreamsDeserializeStatesCache> deserialize_states_caches;
     DeserializationPrefixesCache * deserialization_prefixes_cache;
