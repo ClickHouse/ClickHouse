@@ -11,6 +11,8 @@ namespace DB
 
 class UncompressedCache;
 using UncompressedCachePtr = std::shared_ptr<UncompressedCache>;
+class ColumnsCache;
+using ColumnsCachePtr = std::shared_ptr<ColumnsCache>;
 
 class MergeTreeReadPoolBase : public IMergeTreeReadPool, protected WithContext
 {
@@ -25,6 +27,7 @@ public:
         size_t preferred_block_size_bytes = 0;
 
         bool use_uncompressed_cache = false;
+        bool use_columns_cache = false;
         bool do_not_steal_tasks = false;
         bool use_const_size_tasks_for_remote_reading = false;
 
@@ -87,10 +90,24 @@ protected:
     const MergeTreeReadTask::BlockSizeParams block_size_params;
     const MarkCachePtr owned_mark_cache;
     const UncompressedCachePtr owned_uncompressed_cache;
+    const ColumnsCachePtr owned_columns_cache;
     const PatchJoinCachePtr patch_join_cache;
     const Block header;
 
     MergeTreeReadTaskInfo buildReadTaskInfo(const RangesInDataPart & part_with_ranges, const Settings & settings) const;
+
+    /// Compute the compressed bytes per mark this part contributes to the query-wide columns
+    /// cache write estimate. Called per part after the read task info is built, so the
+    /// estimate covers all columns the readers will actually read (result, prewhere, mutation
+    /// and patch-part columns). The bytes themselves are charged per task in
+    /// `chargeColumnsCacheWriteEstimate`.
+    void prepareColumnsCacheWriteEstimate(
+        const RangesInDataPart & part_with_ranges, MergeTreeReadTaskInfo & read_task_info, const Settings & settings) const;
+
+    /// Charge the marks of one read task against the query-wide columns cache write estimate
+    /// budget and disable further cache writes for the query once it is exceeded. Called when
+    /// the ranges of the task are final, that is after `refineReadRanges`.
+    void chargeColumnsCacheWriteEstimate(const MergeTreeReadTaskInfo & read_info, const MarkRanges & ranges) const;
 
     void fillPerPartInfos(const Settings & settings);
     std::vector<size_t> getPerPartSumMarks() const;

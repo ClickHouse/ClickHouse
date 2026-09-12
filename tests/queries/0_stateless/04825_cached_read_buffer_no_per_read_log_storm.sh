@@ -30,6 +30,10 @@ $CLICKHOUSE_CLIENT -q "
 #   enable_filesystem_cache=1                                   -- 0 never builds the cache buffer
 #   read_from_filesystem_cache_if_exists_otherwise_bypass_cache=0 -- 1 takes the bypass branch
 #   use_uncompressed_cache=0                                    -- 1 routes through another class
+#   use_columns_cache=0                                         -- 1 serves the measured queries
+#                                                                  from the columns cache, which
+#                                                                  the warm-up query populated, so
+#                                                                  no cached read buffer is used
 #   max_read_buffer_size                                        -- small buffer => many refills
 #   filesystem_cache_segments_batch_size=1                      -- makes the batch hold one segment,
 #                                                                  so the per-refill resize log fires
@@ -42,7 +46,7 @@ $CLICKHOUSE_CLIENT -q "
 # refill count the test depends on: max_read_buffer_size_local_fs,
 # filesystem_cache_prefer_bigger_buffer_size.
 read_settings="enable_filesystem_cache = 1, max_read_buffer_size = 4096,
-    max_read_buffer_size_local_fs = 4096, use_uncompressed_cache = 0,
+    max_read_buffer_size_local_fs = 4096, use_uncompressed_cache = 0, use_columns_cache = 0,
     read_from_filesystem_cache_if_exists_otherwise_bypass_cache = 0,
     min_bytes_to_use_direct_io = 0, min_bytes_to_use_mmap_io = 0,
     local_filesystem_read_method = 'pread', local_filesystem_read_prefetch = 0,

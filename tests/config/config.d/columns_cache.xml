@@ -1,0 +1,7 @@
+<?xml version="1.0"?>
+<clickhouse>
+    <!-- Columns cache configuration for testing -->
+    <columns_cache_size>104857600</columns_cache_size>  <!-- 100MB for testing -->
+    <columns_cache_size_ratio>0.5</columns_cache_size_ratio>
+    <columns_cache_policy>SLRU</columns_cache_policy>
+</clickhouse>

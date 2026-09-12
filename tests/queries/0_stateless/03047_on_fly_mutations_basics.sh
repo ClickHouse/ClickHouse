@@ -12,6 +12,7 @@ ${CLICKHOUSE_CLIENT} -n --query "
 DROP TABLE IF EXISTS t_lightweight_mut_1;
 
 SET apply_mutations_on_fly = 1;
+SET use_columns_cache = 0;
 
 CREATE TABLE t_lightweight_mut_1 (id UInt64, v String, s String)
 ENGINE = MergeTree ORDER BY id

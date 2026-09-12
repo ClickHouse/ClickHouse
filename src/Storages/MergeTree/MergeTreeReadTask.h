@@ -18,6 +18,7 @@ namespace DB
 {
 
 class UncompressedCache;
+class ColumnsCache;
 class MarkCache;
 
 struct MergeTreeBlockSizePredictor;
@@ -133,6 +134,15 @@ struct MergeTreeReadTaskInfo
     DeserializationPrefixesCachePtr deserialization_prefixes_cache;
     /// Extra info for optimizations - exact row processing, calculated virtual columns.
     RangesInDataPartReadHints read_hints;
+    /// Compressed bytes this part is expected to feed into the columns cache per mark read:
+    /// the size of the columns the readers of this part (and of its patch parts) can write to
+    /// the cache, divided by the number of marks in the part. Zero when nothing this part is
+    /// read for can reach the cache. `MergeTreeReadPoolBase::createTask` charges it against the
+    /// query-wide estimate budget (`columns_cache_max_estimated_compressed_bytes_to_write_to_cache`)
+    /// for the marks of each task, so only the marks that really become read tasks are counted:
+    /// a read ranges refiner can drop marks after the pool was built, and the budget latches
+    /// writes off for the rest of the query once it is exceeded.
+    double columns_cache_write_estimate_bytes_per_mark = 0;
 };
 
 using MergeTreeReadTaskInfoPtr = std::shared_ptr<const MergeTreeReadTaskInfo>;
@@ -145,6 +155,7 @@ public:
     struct Extras
     {
         UncompressedCache * uncompressed_cache = nullptr;
+        ColumnsCache * columns_cache = nullptr;
         MarkCache * mark_cache = nullptr;
         PatchJoinCache * patch_join_cache = nullptr;
         MergeTreeReaderSettings reader_settings;

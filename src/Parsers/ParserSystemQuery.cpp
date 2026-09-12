@@ -310,6 +310,7 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
             {"DROP TEXT INDEX HEADER CACHE", Type::CLEAR_TEXT_INDEX_HEADER_CACHE},
             {"DROP TEXT INDEX POSTINGS CACHE", Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE},
             {"DROP TEXT INDEX CACHES", Type::CLEAR_TEXT_INDEX_CACHES},
+            {"DROP COLUMNS CACHE", Type::CLEAR_COLUMNS_CACHE},
             {"DROP MMAP CACHE", Type::CLEAR_MMAP_CACHE},
             {"DROP QUERY CONDITION CACHE", Type::CLEAR_QUERY_CONDITION_CACHE},
             {"DROP ENCRYPTION HEADERS CACHE", Type::CLEAR_ENCRYPTION_HEADERS_CACHE},
@@ -1358,6 +1359,14 @@ Similar to `SYSTEM DROP REPLICA`, but removes the `Replicated` database replica 
 Clears the uncompressed data cache.
 The uncompressed data cache is enabled/disabled with the query/user/profile-level setting [`use_uncompressed_cache`](/reference/settings/session-settings/use#use_uncompressed_cache).
 Its size can be configured using the server-level setting [`uncompressed_cache_size`](/reference/settings/server-settings/settings/uncompressed-cache#uncompressed_cache_size).
+
+## SYSTEM CLEAR|DROP COLUMNS CACHE {#drop-columns-cache}
+
+Clears the columns cache (deserialized columns kept in memory).
+Queries that started before the clear cannot put their data back into the cache, so the cache stays cleared even under load.
+The columns cache is enabled/disabled with the query/user/profile-level setting `use_columns_cache`.
+Its size can be configured using the server-level setting `columns_cache_size`.
+Use [`system.columns_cache`](/reference/system-tables/columns_cache) to introspect cache contents.
 
 ## SYSTEM CLEAR|DROP COMPILED EXPRESSION CACHE {#drop-compiled-expression-cache}
 
