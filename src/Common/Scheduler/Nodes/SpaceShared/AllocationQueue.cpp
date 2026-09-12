@@ -1,3 +1,4 @@
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
 #include <Common/Scheduler/IWorkloadNode.h>
 #include <Common/Scheduler/Debug.h>
@@ -6,6 +7,9 @@
 #include <Common/ErrorCodes.h>
 
 #include <fmt/format.h>
+
+#include <algorithm>
+#include <utility>
 
 namespace DB
 {
@@ -85,7 +89,6 @@ void AllocationQueue::increaseAllocation(ResourceAllocation & allocation, Resour
 
     chassert(!allocation.increasing_hook.is_linked());
 
-    // Update the key of running allocation
     running_allocations.erase(running_allocations.iterator_to(allocation));
     allocation.fair_key = allocation.allocated + increase_size;
     running_allocations.insert(allocation);
@@ -115,6 +118,83 @@ void AllocationQueue::decreaseAllocation(ResourceAllocation & allocation, Resour
         scheduleActivation();
 }
 
+void AllocationQueue::applyReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total) // TSA_REQUIRES(mutex)
+{
+    // Reclaimable memory is a portion of what is currently allocated, so clamp to `[0, allocated]`.
+    // A pending (not yet admitted) allocation has `allocated == 0` and thus reports nothing reclaimable.
+    ResourceCost new_reclaimable = std::clamp<ResourceCost>(reclaimable_total, 0, allocation.allocated);
+    pending_reclaimable_delta += new_reclaimable - allocation.reclaimable;
+    allocation.reclaimable = new_reclaimable;
+
+    ResourceCost new_key = std::max<ResourceCost>(0, new_reclaimable - allocation.spill_outstanding);
+    if (new_key == allocation.spill_key)
+        return;
+    if (allocation.reclaimable_hook.is_linked())
+        reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
+    pending_available_reclaimable_delta += new_key - allocation.spill_key;
+    allocation.spill_key = new_key;
+    if (new_key > 0)
+        reclaimable_allocations.insert(allocation);
+}
+
+void AllocationQueue::setReclaimable(ResourceAllocation & allocation, ResourceCost reclaimable_total)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
+    if (allocation.removing_hook.is_linked())
+        return;
+
+    ResourceCost old_delta = pending_reclaimable_delta;
+    applyReclaimable(allocation, reclaimable_total);
+    if (pending_reclaimable_delta == old_delta)
+        return; // Nothing changed — avoid a needless activation (advisory value tolerates staleness).
+    scheduleActivation();
+}
+
+ResourceCost AllocationQueue::requestSpill(ResourceAllocation & allocation, ResourceCost max_bytes)
+{
+    chassert(max_bytes >= 0);
+    ResourceCost request = 0;
+    Update update;
+    {
+        std::lock_guard lock(mutex);
+        if (is_not_usable)
+            return 0;
+
+        request = std::min(max_bytes, allocation.spill_key);
+        allocation.spill_outstanding += request;
+        applyReclaimable(allocation, allocation.reclaimable);
+
+        // Publish pending estimates with the new key before another selection can use this subtree.
+        // Settlements stay pending until activation also publishes their reservation decreases.
+        update.setReclaimableDelta(std::exchange(pending_reclaimable_delta, 0))
+            .setAvailableReclaimableDelta(std::exchange(pending_available_reclaimable_delta, 0))
+            .setSpillOutstandingDelta(request);
+        apply(update);
+    }
+
+    if (parent && update)
+        propagate(std::move(update));
+    if (request > 0)
+        allocation.spillAllocation(request);
+    return request;
+}
+
+void AllocationQueue::finishSpill(ResourceAllocation & allocation, ResourceCost settled_bytes, ResourceCost reclaimable_total)
+{
+    std::lock_guard lock(mutex);
+    if (is_not_usable)
+        return; // Queue has been purged — `allocationFailed` has already notified the owner.
+
+    chassert(settled_bytes >= 0 && settled_bytes <= allocation.spill_outstanding);
+    allocation.spill_outstanding -= settled_bytes;
+    applyReclaimable(allocation, allocation.removing_hook.is_linked() ? 0 : reclaimable_total);
+    pending_spilled_settled_bytes += settled_bytes;
+
+    scheduleActivation();
+}
+
 void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
 {
     std::lock_guard lock(mutex);
@@ -128,6 +208,7 @@ void AllocationQueue::removeAllocation(ResourceAllocation & allocation)
     // freed object.
     if (!allocation.pending_hook.is_linked() && !allocation.running_hook.is_linked())
         return;
+    applyReclaimable(allocation, 0);
     removing_allocations.push_back(allocation);
     if (&allocation == &*removing_allocations.begin())
         scheduleActivation();
@@ -159,6 +240,8 @@ void AllocationQueue::purgeQueue()
     {
         ResourceAllocation & allocation = *running_allocations.begin();
         running_allocations.erase(running_allocations.iterator_to(allocation));
+        if (allocation.reclaimable_hook.is_linked())
+            reclaimable_allocations.erase(reclaimable_allocations.iterator_to(allocation));
         if (allocation.increasing_hook.is_linked())
             increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
         if (allocation.decreasing_hook.is_linked())
@@ -166,6 +249,9 @@ void AllocationQueue::purgeQueue()
         if (allocation.removing_hook.is_linked())
             removing_allocations.erase(removing_allocations.iterator_to(allocation));
         allocation.allocated = 0;
+        allocation.reclaimable = 0;
+        allocation.spill_key = 0;
+        allocation.spill_outstanding = 0;
         allocation.allocationFailed(reason);
     }
 
@@ -174,12 +260,19 @@ void AllocationQueue::purgeQueue()
     chassert(increasing_allocations.empty());
     chassert(decreasing_allocations.empty());
     chassert(removing_allocations.empty());
+    chassert(reclaimable_allocations.empty());
 
     // All further calls to this queue will throw exceptions
     increase = nullptr;
     decrease = nullptr;
     allocated = 0;
     allocations = 0;
+    reclaimable = 0;
+    available_reclaimable = 0;
+    spill_outstanding = 0;
+    pending_reclaimable_delta = 0;
+    pending_available_reclaimable_delta = 0;
+    pending_spilled_settled_bytes = 0;
     is_not_usable = true;
 }
 
@@ -266,11 +359,16 @@ void AllocationQueue::approveDecrease()
     bool is_increasing = allocation.increasing_hook.is_linked();
     if (is_increasing)
         increasing_allocations.erase(increasing_allocations.iterator_to(allocation));
-
     // Update the key and other fields
     apply(*decrease);
     allocation.allocated -= decrease->size;
     allocation.fair_key -= decrease->size;
+
+    if (allocation.reclaimable > allocation.allocated)
+    {
+        applyReclaimable(allocation, allocation.allocated);
+        scheduleActivation();
+    }
 
     // Reinsert into the appropriate data structures unless this is a removal
     if (!decrease->removing_allocation)
@@ -320,6 +418,18 @@ ResourceAllocation * AllocationQueue::selectAllocationToKill(IncreaseRequest & k
     return &victim;
 }
 
+ResourceAllocation * AllocationQueue::selectAllocationToSpill(ResourceCost at_least, String & details)
+{
+    std::lock_guard lock(mutex);
+    if (reclaimable_allocations.empty())
+        return nullptr; // Nothing reclaimable here — fail-close.
+
+    ResourceAllocation & victim = *reclaimable_allocations.rbegin();
+    details = fmt::format("Asking an allocation of size {} (available reclaimable {}) in workload '{}' to reclaim at least {}.",
+        formatReadableCost(victim.allocated), formatReadableCost(victim.spill_key), getWorkloadName(), formatReadableCost(at_least));
+    return &victim;
+}
+
 void AllocationQueue::processActivation()
 {
     if (!parent)
@@ -333,6 +443,10 @@ void AllocationQueue::processActivation()
         {
             ResourceAllocation & allocation = removing_allocations.front();
             removing_allocations.pop_front(); // Unlink before calling allocationFailed() to avoid use-after-free race
+
+            applyReclaimable(allocation, 0);
+            pending_spilled_settled_bytes += std::exchange(allocation.spill_outstanding, 0);
+
             if (allocation.pending_hook.is_linked()) // Allocation is still pending - cancel it
             {
                 pending_allocations.erase(pending_allocations.iterator_to(allocation));
@@ -380,6 +494,11 @@ void AllocationQueue::processActivation()
             update.setIncrease(increase);
         if (setDecrease())
             update.setDecrease(decrease);
+
+        update.setReclaimableDelta(std::exchange(pending_reclaimable_delta, 0))
+            .setAvailableReclaimableDelta(std::exchange(pending_available_reclaimable_delta, 0))
+            .setSpillOutstandingDelta(-std::exchange(pending_spilled_settled_bytes, 0));
+        apply(update);
     }
 
     // Propagate update to parent

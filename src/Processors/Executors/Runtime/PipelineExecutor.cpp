@@ -1,5 +1,6 @@
 #include <memory>
 #include <IO/WriteBufferFromString.h>
+#include <Common/Scheduler/CostUnit.h>
 #include <Common/Scheduler/MemoryReservation.h>
 #include <Common/ISlotControl.h>
 #include <Common/ThreadPool.h>
@@ -13,9 +14,11 @@
 #include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/ThreadGroupSwitcher.h>
+#include <Common/ThreadStatus.h>
 #include <Common/logger_useful.h>
 #include <Processors/Executors/Runtime/PipelineExecutor.h>
 #include <Processors/Executors/Runtime/ExecutingGraph.h>
+#include <Common/MemorySpillScheduler.h>
 #include <QueryPipeline/printPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Processors/ISource.h>
@@ -123,7 +126,8 @@ PipelineExecutor::PipelineExecutor(std::shared_ptr<Processors> & processors, Que
     }
     try
     {
-        graph = std::make_unique<ExecutingGraph>(processors, profile_processors);
+        graph = std::make_unique<ExecutingGraph>(
+            processors, profile_processors, process_list_element ? process_list_element->getMemoryReservation() : nullptr);
     }
     catch (Exception & exception)
     {

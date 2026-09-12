@@ -454,7 +454,7 @@ bool WorkloadEntityStorageBase::storeEntity(
             if (!workload->hasParent())
             {
                 if (!root_name.empty() && root_name != workload->getWorkloadName())
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'PARENT {}' clause.", root_name);
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The second root is not allowed. You should probably add 'IN {}' clause.", root_name);
             }
 
             // Check the settings values and throw if something is wrong

@@ -4127,6 +4127,11 @@ If not enough memory is available to the workload, a query is prevented from sta
 A value of `0` means no reservation.
 This setting takes effect only if MEMORY RESERVATION resource is created.
 )", EXPERIMENTAL) \
+    DECLARE(UInt64, min_bytes_to_spill, 64_MiB, R"(
+Used in workload scheduling.
+The minimum amount of bytes to spill.
+This setting takes effect only if MEMORY RESERVATION resource is created.
+)", EXPERIMENTAL) \
     DECLARE(UInt64, max_network_bandwidth, 0, R"(
 Limits the speed of the data exchange over the network in bytes per second. This setting applies to every query.
 

@@ -23,6 +23,18 @@ StagedChunk::AggregatePayload & StagedChunk::AggregatePayload::operator=(Aggrega
     = default;
 StagedChunk::AggregatePayload::~AggregatePayload() = default;
 
+size_t StagedChunk::allocatedBytes() const
+{
+    size_t bytes = keys.routing_hashes.allocated_bytes() + keys.key_bytes.allocated_bytes() + keys.key_offsets.allocated_bytes();
+    if (const auto * counts = std::get_if<CountPayload>(&payload))
+        bytes += counts->multiplicities.allocated_bytes();
+    else
+        for (const auto & column : std::get<AggregatePayload>(payload).argument_columns)
+            if (column)
+                bytes += column->allocatedBytes();
+    return bytes;
+}
+
 void Aggregator::prepareStagedChunk(StagedChunk & block) const
 {
     auto & payload = std::get<StagedChunk::AggregatePayload>(block.payload);
@@ -108,6 +120,7 @@ void AdaptiveAggregationSession::StagedBacklog::publish(const StagedChunkPtr & c
 void AdaptiveAggregationSession::StagedBacklog::registerChunk(const StagedChunkPtr & chunk)
 {
     std::shared_lock registry_lock(registry_mutex);
+    enqueued_bytes.fetch_add(chunk->allocatedBytes(), std::memory_order_relaxed);
     for (size_t b = 0; b < ADAPTIVE_AGGREGATION_NUM_BUCKETS; ++b)
     {
         if (!chunk->keys.recordsForBucket(b))
@@ -145,6 +158,10 @@ std::vector<StagedChunkPtr> AdaptiveAggregationSession::StagedBacklog::takeAllFo
             if (seen.insert(chunk.get()).second)
                 chunks.push_back(std::move(chunk));
     }
+    size_t claimed_bytes = 0;
+    for (const auto & chunk : chunks)
+        claimed_bytes += chunk->allocatedBytes();
+    enqueued_bytes.fetch_sub(claimed_bytes, std::memory_order_relaxed);
     return chunks;
 }
 
@@ -353,7 +370,7 @@ void Aggregator::sealPendingChunks(AdaptiveAggregationProducer & adaptive) const
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSealedChunks);
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedRecordsMerged, batch_records - keys.size());
 
-    LOG_TRACE(
+    LOG_TEST(
         log,
         "Adaptive aggregation: sealed {} staged batches into one chunk of {} records",
         num_minis,

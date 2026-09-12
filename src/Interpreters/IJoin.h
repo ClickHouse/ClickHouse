@@ -24,6 +24,8 @@ using IBlocksStreamPtr = std::shared_ptr<IBlocksStream>;
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+class ISpillable;
+
 enum class JoinPipelineType : uint8_t
 {
     /*
@@ -142,6 +144,7 @@ public:
     virtual size_t getTotalRowCount() const = 0;
     virtual size_t getTotalByteCount() const = 0;
     virtual StepAnalysisReport getAnalysisReport() const = 0;
+    virtual ISpillable * getSpillable() { return nullptr; }
 
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;

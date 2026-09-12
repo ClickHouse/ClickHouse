@@ -78,6 +78,7 @@ struct QueryStatusInfo
     size_t written_bytes;
     Int64 memory_usage;
     Int64 peak_memory_usage;
+    Int64 spillable_memory_bytes;
     ClientInfo client_info;
     bool is_cancelled;
     CancelReason cancel_reason;

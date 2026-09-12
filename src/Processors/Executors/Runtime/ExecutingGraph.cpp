@@ -11,6 +11,7 @@
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/MemorySpillScheduler.h>
+#include <Common/Scheduler/MemoryReservation.h>
 
 #include <algorithm>
 #include <memory>
@@ -41,8 +42,9 @@ String describeProcessor(const IProcessor * processor)
 
 }
 
-ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_)
+ExecutingGraph::ExecutingGraph(std::shared_ptr<Processors> processors_, bool profile_processors_, MemoryReservation * memory_reservation_)
     : processors(std::move(processors_))
+    , memory_reservation(memory_reservation_)
     , profile_processors(profile_processors_)
 {
     /// Create nodes for every processor.
@@ -382,8 +384,16 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                 const auto last_status = node.last_processor_status;
                 IProcessor::Status status = processor.prepare(node.updated_input_ports, node.updated_output_ports);
                 node.last_processor_status = status;
-                if (status == IProcessor::Status::Finished && CurrentThread::getGroup())
-                    CurrentThread::getGroup()->memory_spill_scheduler->remove(&processor);
+                if (status == IProcessor::Status::Finished)
+                {
+                    if (auto * spillable = processor.getSpillable())
+                    {
+                        if (memory_reservation)
+                            memory_reservation->removeReclaimable(spillable);
+                        if (CurrentThread::getGroup())
+                            CurrentThread::getGroup()->memory_spill_scheduler->remove(spillable);
+                    }
+                }
 
                 if (profile_processors)
                 {

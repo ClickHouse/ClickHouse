@@ -716,13 +716,9 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
           CurrentMetrics::AggregatorThreadsScheduled,
           params.max_threads))
 {
-    /// The execute path measures memory usage via a dedicated Thread-level tracker created under the
-    /// current query tracker.
-    // The merge path can't use this because it recieves pre-allocated state that can not be covered by
-    // the memory tracker, so it falls back to the delta in query memory.
+    /// The merge path receives pre-allocated state that no tracker can cover, so it falls back to
+    /// the delta in query memory.
     memory_usage_before_aggregation = getCurrentQueryMemoryUsage();
-    if (!params.only_merge)
-        memory_tracker = tryCreateMemoryTrackerUnderCurrentQuery();
 
     aggregate_functions.resize(params.aggregates_size);
     for (size_t i = 0; i < params.aggregates_size; ++i)
@@ -2219,13 +2215,17 @@ bool Aggregator::executeOnBlock(Columns columns,
     bool & no_more_keys,
     AdaptiveAggregationProducer * adaptive) const
 {
-    /// When tracking the aggregation memory, the aggregator memory tracker is inserted between the thread
-    /// and query memory trackers, and accounts for the aggregation state across all threads.
-    const bool use_own_tracker = memory_tracker && CurrentThread::getMemoryTracker()
-        && CurrentThread::getMemoryTracker()->getParent() == memory_tracker->getParent();
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
-    if (use_own_tracker)
-        memory_tracker_switcher.emplace(memory_tracker.get());
+    MemoryTracker * own_tracker = switchToOwnTracker(result, memory_tracker_switcher);
+
+    /// Staged records and the shared drain table belong to the session, not to this table:
+    /// the local tracker is what a spill of this table can release, so the shared work runs
+    /// under the aggregator's tracker instead.
+    const auto session_scope = [&](std::optional<MemoryTrackerSwitcher> & scope)
+    {
+        if (own_tracker)
+            scope.emplace(own_tracker);
+    };
 
     /// `result` will destroy the states of aggregate functions in the destructor
     result.aggregator = this;
@@ -2307,6 +2307,8 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         /// The frozen adaptive path: hits update the local table in place, misses become delayed
         /// records of the shared table.
+        std::optional<MemoryTrackerSwitcher> scope;
+        session_scope(scope);
         executeFrozen(
             columns, row_begin, row_end, result, key_columns, aggregate_functions_instructions.data(), *adaptive, all_keys_are_const);
     }
@@ -2345,6 +2347,8 @@ bool Aggregator::executeOnBlock(Columns columns,
             else
             {
                 freezeAdaptive(result, *adaptive);
+                std::optional<MemoryTrackerSwitcher> scope;
+                session_scope(scope);
                 executeFrozen(
                     columns,
                     split,
@@ -2368,7 +2372,7 @@ bool Aggregator::executeOnBlock(Columns columns,
     Int64 current_memory_usage = getCurrentQueryMemoryUsage();
 
     /// Here all the results in the sum are taken into account, from different threads.
-    Int64 result_size_bytes = use_own_tracker ? memory_tracker->get() : current_memory_usage - memory_usage_before_aggregation;
+    Int64 result_size_bytes = own_tracker ? own_tracker->get() : current_memory_usage - memory_usage_before_aggregation;
 
     if (adaptive && !adaptive->isBaseline())
     {
@@ -2415,6 +2419,8 @@ bool Aggregator::executeOnBlock(Columns columns,
                 if (params.max_bytes_before_external_group_by
                     && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
                 {
+                    std::optional<MemoryTrackerSwitcher> scope;
+                    session_scope(scope);
                     flushPendingChunks(*adaptive);
                     drainStagedChunksUnderMemoryPressure(*adaptive->session);
                 }
@@ -2450,7 +2456,7 @@ bool Aggregator::executeOnBlock(Columns columns,
             {
                 if (adaptive->isLearning())
                     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPressureStandDowns);
-                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::TooFewDistinctKeys);
+                adaptive->standDown(AdaptiveAggregationProducer::BaselineState::Reason::MemoryPressure);
             }
 
             if (!adaptive->isBaseline())
@@ -2513,6 +2519,8 @@ bool Aggregator::executeOnBlock(Columns columns,
     {
         /// The backlog itself was already shed above, under the same trigger; what is left here
         /// is the residue below the sweeps' part bound, which no sweep writes.
+        std::optional<MemoryTrackerSwitcher> scope;
+        session_scope(scope);
         if (auto sampled = releaseAdaptiveDrainResidue(*adaptive->session))
             spill_decision_memory = *sampled;
     }
@@ -2532,9 +2540,55 @@ bool Aggregator::executeOnBlock(Columns columns,
     return true;
 }
 
+MemoryTracker * Aggregator::switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const
+{
+    if (params.only_merge || !CurrentThread::getMemoryTracker())
+        return nullptr;
+
+    /// The aggregator tracker is inserted between the thread and query trackers and accounts for the
+    /// aggregation state across all threads; the per-table tracker under it accounts for one table only.
+    /// It is created by an executing thread: the pipeline may be built under another thread group
+    /// (EXPLAIN ANALYZE), whose query tracker is not the one the executor threads report to.
+    MemoryTracker * tracker = nullptr;
+    {
+        std::lock_guard lock(memory_tracker_mutex);
+        if (!memory_tracker)
+            memory_tracker = tryCreateMemoryTrackerUnderCurrentQuery();
+        tracker = memory_tracker.get();
+    }
+    if (!tracker || CurrentThread::getMemoryTracker()->getParent() != tracker->getParent())
+        return nullptr;
+
+    if (!result.memory_tracker || result.memory_tracker->getParent() != tracker)
+        result.memory_tracker = std::make_unique<MemoryTracker>(tracker, VariableContext::Thread);
+    switcher.emplace(result.memory_tracker.get());
+    return tracker;
+}
+
 void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size) const
 {
     flushToTemporaryFile(data_variants, max_temp_file_size, /*reinitialize=*/true);
+}
+
+std::optional<UInt64> Aggregator::getPeakMemoryUsage() const
+{
+    std::lock_guard lock(memory_tracker_mutex);
+    if (!memory_tracker)
+        return std::nullopt;
+    return std::max<Int64>(memory_tracker->getPeak(), 0);
+}
+
+size_t Aggregator::spill(AggregatedDataVariants & data_variants) const
+{
+    std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
+    switchToOwnTracker(data_variants, memory_tracker_switcher);
+
+    size_t before = data_variants.memoryUsage();
+    if (!data_variants.isTwoLevel())
+        data_variants.convertToTwoLevel();
+    writeToTemporaryFile(data_variants);
+    size_t after = data_variants.memoryUsage();
+    return before > after ? before - after : 0;
 }
 
 void Aggregator::consumeToTemporaryFile(AggregatedDataVariants & data_variants) const

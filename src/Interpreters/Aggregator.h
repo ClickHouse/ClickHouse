@@ -44,6 +44,7 @@ using ColumnsHashing::HashMethodContextPtr;
 using ColumnsHashing::LastElementCacheStats;
 
 class CompiledAggregateFunctionsHolder;
+struct MemoryTrackerSwitcher;
 class NativeWriter;
 struct OutputBlockColumns;
 
@@ -345,7 +346,14 @@ public:
     bool drainStagedChunksBatchUnderMemoryPressure(
         AdaptiveAggregationSession & shared,
         PaddedPODArray<AggregateDataPtr> & places_scratch,
-        size_t & drained_records_out) const;
+        size_t & drained_records_out,
+        size_t & drained_bytes_out,
+        bool only_over_trigger) const;
+
+    /// The same valve driven by an explicit spill request instead of the external threshold:
+    /// drains batch after batch until at least this many staged bytes are released or the
+    /// backlogs are empty. Returns the staged bytes released.
+    size_t drainStagedChunksForSpill(AdaptiveAggregationSession & shared, size_t at_least_bytes) const;
 
     /// The finish drain: converts everything still enqueued into disk-mergeable form when the
     /// merge goes external, spilling at the part bound as it goes, and throws if anything
@@ -517,12 +525,20 @@ public:
     /// For external aggregation.
     void writeToTemporaryFile(AggregatedDataVariants & data_variants, size_t max_temp_file_size = 0) const;
 
+    /// Flushes the table on request of the memory scheduler; returns the released bytes.
+    /// Requires a two-level or convertible table and temporary data storage.
+    size_t spill(AggregatedDataVariants & data_variants) const;
+
     /// Flushes the variants like `writeToTemporaryFile` and consumes them: the table comes back
     /// invalidated and stripped of its arenas instead of re-armed for further aggregation, for
     /// callers that destroy it next.
     void consumeToTemporaryFile(AggregatedDataVariants & data_variants) const;
 
     bool hasTemporaryData() const;
+
+    /// Peak memory of the aggregation state across all threads. Unavailable when the states
+    /// arrive pre-allocated (merge-only aggregation) and cannot be tracked.
+    std::optional<UInt64> getPeakMemoryUsage() const;
 
     std::list<TemporaryBlockStreamHolder> detachTemporaryData();
 
@@ -588,8 +604,13 @@ private:
 
     /// How many RAM were used to process the query before processing the first block. Use for merge_only mode.
     Int64 memory_usage_before_aggregation = 0;
-    /// Track memory held by the aggreagation state during execution.
-    std::unique_ptr<MemoryTracker> memory_tracker;
+    /// Track memory held by the aggreagation state during execution. Absent for merge-only aggregation.
+    mutable std::mutex memory_tracker_mutex;
+    mutable std::unique_ptr<MemoryTracker> memory_tracker TSA_GUARDED_BY(memory_tracker_mutex);
+
+    /// Redirects the thread's accounting to the per-table tracker (created on demand under the
+    /// aggregator tracker). Returns the aggregator tracker, nullptr when there is none to switch to.
+    MemoryTracker * switchToOwnTracker(AggregatedDataVariants & result, std::optional<MemoryTrackerSwitcher> & switcher) const;
 
     /// Indicates whether the aggregation is a simple `count()` / `count(*)` / `count(non-nullable_column)`
     ///

@@ -2082,12 +2082,51 @@ public:
         ASSERT_EQ(increase_enqueued, true);
     }
 
+    /// Reports the absolute reclaimable total to the scheduler (advisory). Called outside `mutex` to
+    /// respect lock ordering with AllocationQueue::mutex.
+    void reportReclaimable(ResourceCost total)
+    {
+        queue.setReclaimable(*this, total);
+    }
+
+    void finishSpill(ResourceCost settled_bytes, ResourceCost total)
+    {
+        queue.finishSpill(*this, settled_bytes, total);
+    }
+
+    void waitSpilled(size_t n = 1)
+    {
+        std::unique_lock lock(mutex);
+        cv.wait(lock, [&] { return spills >= n; });
+    }
+
+    size_t spillCount()
+    {
+        std::unique_lock lock(mutex);
+        return spills;
+    }
+
+    ResourceCost lastSpillAtLeast()
+    {
+        std::unique_lock lock(mutex);
+        return last_spill_at_least;
+    }
+
 private: // interaction with the scheduler thread
     void killAllocation(const std::exception_ptr & reason) override
     {
         std::unique_lock lock(mutex);
         DBG_PRINT("{}: Kill allocation at size = {}", id, allocated_size);
         kill_reason = reason;
+        cv.notify_all();
+    }
+
+    void spillAllocation(ResourceCost additional_bytes) override
+    {
+        std::unique_lock lock(mutex);
+        EXPECT_GT(additional_bytes, 0);
+        ++spills;
+        last_spill_at_least = additional_bytes;
         cv.notify_all();
     }
 
@@ -2138,6 +2177,8 @@ private: // interaction with the scheduler thread
     bool increase_enqueued = false;
     bool decrease_enqueued = false;
     bool removed = false;
+    size_t spills = 0; // number of spillAllocation() signals received
+    ResourceCost last_spill_at_least = 0; // argument of the last spillAllocation() signal
     ResourceCost allocated_size = 0; // equals ResourceAllocation::allocated, which is private and controlled by the scheduler
     ResourceCost real_size = 0; // real size of the resource used by the allocation
 };
@@ -2443,6 +2484,195 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationSelfKilled)
     }
 }
 
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimit)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Hard limit 200, soft (spill) limit 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_before_spill = 100");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(150); // above the soft limit (100), below the hard limit (200)
+    a.waitSync();
+    EXPECT_EQ(a.spillCount(), 0); // nothing reclaimable reported yet -> fail-close, no spill
+
+    a.reportReclaimable(120); // now the scheduler can ask it to spill
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 50); // need = allocated(150) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillRatioSetting)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Soft limit derived as a fraction of the hard limit: 0.5 * 200 = 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_to_spill_ratio = 0.5");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(160); // above soft (100), below hard (200)
+    a.waitSync();
+    a.reportReclaimable(100);
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 60); // need = allocated(160) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillSmallerSettingWins)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    // Both soft-limit settings set: the smaller resulting threshold wins.
+    // Effective soft limit = min(max_memory_before_spill = 150, 0.5 * max_memory = 100) = 100.
+    t.query("CREATE WORKLOAD all SETTINGS max_memory = 200, max_memory_before_spill = 150, max_memory_to_spill_ratio = 0.5");
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 50);
+    a.setSize(120); // above the smaller threshold (100), below the larger one (150)
+    a.waitSync();
+    a.reportReclaimable(100);
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 20); // need = allocated(120) - min(150, 100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillOnSoftLimitEnableTransition)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD all"); // no limits: the workload has no `AllocationLimit` node at all
+
+    ClassifierPtr c = t.manager->acquire("all");
+    ResourceLink link = c->get("memory");
+
+    TestAllocation a(link, "spiller", 150);
+    a.waitSync();
+    a.reportReclaimable(120); // reported before any soft limit exists — nothing can spill yet
+    EXPECT_EQ(a.spillCount(), 0);
+
+    // Enable transition: this inserts a fresh soft-only `AllocationLimit` above the existing branch
+    // (the Add path of `updateSchedulingSettings`, not the Update path taken when a limit already
+    // exists). The subtree is already over the new threshold with reclaimable memory, so the spill
+    // must fire right away — no later resize or `setReclaimable` happens in this test to trigger it.
+    t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory_before_spill = 100");
+
+    a.waitSpilled();
+    EXPECT_EQ(a.spillCount(), 1);
+    EXPECT_EQ(a.lastSpillAtLeast(), 50); // need = allocated(150) - soft(100)
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillAvailableWorkloadOrder)
+{
+    for (bool precedence : {false, true})
+    {
+        SCOPED_TRACE(precedence);
+        ResourceTest t;
+        t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+        t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+        t.query(fmt::format("CREATE WORKLOAD A IN all SETTINGS weight = {}, precedence = 1", precedence ? 1 : 4));
+        t.query(fmt::format("CREATE WORKLOAD B IN all SETTINGS precedence = {}", precedence ? 2 : 1));
+
+        auto ca = t.manager->acquire("A");
+        auto cb = t.manager->acquire("B");
+        TestAllocation a(ca->get("memory"), "a", 300);
+        TestAllocation b(cb->get("memory"), "b", 200);
+        a.waitSync();
+        b.waitSync();
+        a.reportReclaimable(200);
+        b.reportReclaimable(50);
+        t.executeFromScheduler("memory", [] {});
+
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 1000, max_memory_before_spill = 475");
+        EXPECT_EQ(a.spillCount(), 0);
+        EXPECT_EQ(b.spillCount(), 1);
+        EXPECT_EQ(b.lastSpillAtLeast(), 25);
+
+        t.query("CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = 1000, max_memory_before_spill = 400");
+        EXPECT_EQ(a.spillCount(), 1);
+        EXPECT_EQ(a.lastSpillAtLeast(), 50);
+        EXPECT_EQ(b.spillCount(), 2);
+        EXPECT_EQ(b.lastSpillAtLeast(), 25);
+        t.executeFromScheduler("memory", [&]
+        {
+            EXPECT_EQ(a.queue.reclaimable, 200);
+            EXPECT_EQ(a.queue.available_reclaimable, 150);
+            EXPECT_EQ(a.queue.spill_outstanding, 50);
+            EXPECT_EQ(b.queue.reclaimable, 50);
+            EXPECT_EQ(b.queue.available_reclaimable, 0);
+            EXPECT_EQ(b.queue.spill_outstanding, 50);
+        });
+    }
+}
+
+TEST(SchedulerWorkloadResourceManager, MemoryReservationSpillCreditsSurviveRestructuring)
+{
+    for (bool precedence : {false, true})
+    {
+        SCOPED_TRACE(precedence);
+        ResourceTest t;
+        t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+        t.query("CREATE WORKLOAD all SETTINGS max_memory = 1000");
+        t.query("CREATE WORKLOAD parent_a IN all");
+        t.query("CREATE WORKLOAD parent_b IN all");
+        t.query("CREATE WORKLOAD leaf1 IN parent_a SETTINGS precedence = 1");
+        t.query(fmt::format("CREATE WORKLOAD leaf2 IN parent_a SETTINGS precedence = {}", precedence ? 2 : 1));
+        t.query(fmt::format("CREATE WORKLOAD leaf3 IN parent_b SETTINGS precedence = {}", precedence ? 2 : 1));
+
+        auto expect_state = [&](ResourceCost reclaimable, ResourceCost available, ResourceCost outstanding)
+        {
+            t.manager->forEachNode([&](const String &, const String & path, ISchedulerNode * node)
+            {
+                if (auto * ss = dynamic_cast<ISpaceSharedNode *>(node))
+                {
+                    SCOPED_TRACE(path);
+                    EXPECT_EQ(ss->reclaimable, ss->allocated ? reclaimable : 0);
+                    EXPECT_EQ(ss->available_reclaimable, ss->allocated ? available : 0);
+                    EXPECT_EQ(ss->spill_outstanding, ss->allocated ? outstanding : 0);
+                }
+            });
+        };
+
+        auto c = t.manager->acquire("leaf1");
+        {
+            TestAllocation a(c->get("memory"), "a", 150);
+            a.waitSync();
+            a.reportReclaimable(120);
+            t.executeFromScheduler("memory", [] {});
+            t.query("CREATE OR REPLACE WORKLOAD parent_a IN all SETTINGS max_memory_before_spill = 100");
+            EXPECT_EQ(a.spillCount(), 1);
+            EXPECT_EQ(a.lastSpillAtLeast(), 50);
+            expect_state(120, 70, 50);
+
+            t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_b SETTINGS precedence = 1");
+            expect_state(120, 70, 50);
+            t.query("CREATE OR REPLACE WORKLOAD parent_b IN all SETTINGS max_memory_before_spill = 100");
+            expect_state(120, 70, 50);
+            t.query("CREATE OR REPLACE WORKLOAD leaf1 IN parent_b SETTINGS precedence = 3, weight = 2");
+            expect_state(120, 70, 50);
+            EXPECT_EQ(a.spillCount(), 1);
+
+            a.setSize(100);
+            a.waitSync();
+            a.finishSpill(50, 100);
+            expect_state(100, 100, 0);
+            EXPECT_EQ(a.spillCount(), 1);
+        }
+        expect_state(0, 0, 0);
+    }
+}
+
 TEST(SchedulerWorkloadResourceManager, MemoryReservationKillsOther)
 {
     ResourceTest t;
@@ -2663,7 +2893,7 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationDropQueueWhilePending)
         {
             try
             {
-                MemoryReservation r(link_victim, "pending", 50);
+                MemoryReservation r(link_victim, "pending", 50, 1);
                 ADD_FAILURE() << "MemoryReservation should have failed";
             }
             catch (const Exception &)

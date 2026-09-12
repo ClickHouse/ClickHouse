@@ -64,6 +64,7 @@ namespace Setting
     extern const SettingsString trace_profile_events_list;
     extern const SettingsMilliseconds low_priority_query_wait_time_ms;
     extern const SettingsUInt64 reserve_memory;
+    extern const SettingsUInt64 min_bytes_to_spill;
 }
 
 namespace ErrorCodes
@@ -160,7 +161,7 @@ ProcessList::EntryPtr ProcessList::insert(
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "Resource '{}' configured for memory reservation is not a `MEMORY RESERVATION` resource",
                         memory_reservation_resource_name);
-                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory]);
+                memory_reservation = std::make_unique<MemoryReservation>(link, client_info.current_query_id, settings[Setting::reserve_memory], settings[Setting::min_bytes_to_spill]);
             }
         }
     }
@@ -946,6 +947,8 @@ QueryStatusInfo QueryStatus::getInfo(bool get_thread_list, bool get_profile_even
         if (get_profile_events)
             res.profile_counters = std::make_shared<ProfileEvents::Counters::Snapshot>(thread_group->performance_counters.getPartiallyAtomicSnapshot());
     }
+    if (auto * reservation = memory_reservation.get())
+        res.spillable_memory_bytes = reservation->getTotalReclaimable();
 
     if (get_settings)
     {

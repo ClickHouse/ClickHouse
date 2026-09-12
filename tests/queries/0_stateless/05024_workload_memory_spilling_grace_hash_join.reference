@@ -1,0 +1,9 @@
+-- { echo }
+CREATE WORKLOAD w_05024_workload_memory_spilling_grace_hash_join_default IN all SETTINGS max_memory = '1Gi', max_memory_before_spill = '500Mi';
+SELECT count() FROM numbers(100e6) l INNER JOIN numbers(100e6) r USING (number) SETTINGS max_memory_usage='1Gi';
+100000000
+CREATE OR REPLACE WORKLOAD w_05024_workload_memory_spilling_grace_hash_join_default IN all SETTINGS max_memory = '1Gi', max_memory_before_spill = '500Mi';
+SELECT * FROM numbers(100e6) l LEFT JOIN numbers(100e6) r USING (number) FORMAT Null SETTINGS max_memory_usage='500Mi'; -- { serverError MEMORY_LIMIT_EXCEEDED }
+CREATE OR REPLACE WORKLOAD w_05024_workload_memory_spilling_grace_hash_join_default IN all SETTINGS max_memory = '1Gi', max_memory_before_spill = '300Mi';
+SELECT count() FROM numbers(100e6) l INNER JOIN numbers(100e6) r USING (number) SETTINGS max_memory_usage='500Mi';
+100000000

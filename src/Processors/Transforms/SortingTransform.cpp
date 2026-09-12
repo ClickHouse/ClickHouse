@@ -19,7 +19,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int NOT_IMPLEMENTED;
     extern const int LOGICAL_ERROR;
 }
 
@@ -240,18 +239,6 @@ SortingTransform::~SortingTransform() = default;
 
 IProcessor::Status SortingTransform::prepare()
 {
-    if (stage == Stage::Serialize)
-    {
-        if (!processors.empty())
-            return Status::UpdatePipeline;
-
-        auto status = prepareSerialize();
-        if (status != Status::Finished)
-            return status;
-
-        stage = Stage::Consume;
-    }
-
     if (stage == Stage::Consume)
     {
         auto status = prepareConsume();
@@ -313,26 +300,6 @@ IProcessor::Status SortingTransform::prepareConsume()
     return Status::Ready;
 }
 
-IProcessor::Status SortingTransform::prepareSerialize()
-{
-    auto & output = outputs.back();
-
-    if (output.isFinished())
-        return Status::Finished;
-
-    if (!output.canPush())
-        return Status::PortFull;
-
-    if (current_chunk)
-        output.push(std::move(current_chunk));
-
-    if (merge_sorter)
-        return Status::Ready;
-
-    output.finish();
-    return Status::Finished;
-}
-
 IProcessor::Status SortingTransform::prepareGenerate()
 {
     auto & output = outputs.front();
@@ -383,9 +350,6 @@ void SortingTransform::work()
 {
     if (stage == Stage::Consume)
         consume(std::move(current_chunk));
-
-    if (stage == Stage::Serialize)
-        serialize();
 
     if (stage == Stage::Generate)
         generate();
@@ -440,11 +404,6 @@ void SortingTransform::enrichChunkWithConstants(Chunk & chunk)
     }
 
     chunk.setColumns(std::move(column_with_constants), num_rows);
-}
-
-void SortingTransform::serialize()
-{
-    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'serialize' is not implemented for {} processor", getName());
 }
 
 }

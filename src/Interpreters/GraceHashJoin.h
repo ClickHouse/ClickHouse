@@ -3,6 +3,7 @@
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/ISpillable.h>
 #include <Processors/QueryPlan/StepAnalyzeInfo.h>
 
 #include <Core/Block.h>
@@ -10,6 +11,7 @@
 
 #include <Common/MultiVersion.h>
 #include <Common/SharedMutex.h>
+#include <base/defines.h>
 
 #include <mutex>
 
@@ -42,7 +44,7 @@ class HashJoin;
  * After joining the left table blocks, we can load non-joined rows from the right table for RIGHT/FULL JOINs.
  * Note that non-joined rows are processed in multiple threads, unlike HashJoin/ConcurrentHashJoin/MergeJoin.
  */
-class GraceHashJoin final : public IJoin
+class GraceHashJoin final : public IJoin, public ISpillable
 {
     class FileBucket;
     class DelayedBlocks;
@@ -120,7 +122,9 @@ public:
 
     static bool isSupported(const std::shared_ptr<TableJoin> & table_join);
 
-    void forceSpill() { force_spill = true; }
+    ISpillable * getSpillable() override { return this; }
+    ProcessorMemoryStats getMemoryStats() const override;
+    size_t spill(size_t at_least_bytes) override;
 
 private:
     void initBuckets();
@@ -129,6 +133,10 @@ private:
 
     /// Add right table block to the @join. Calls @rehash on overflow.
     void addBlockToJoinImpl(Block block);
+    /// Doubles the buckets and rebuilds the in-memory join from the rows that stay in the current
+    /// bucket, the rest goes to disk.
+    void spillInMemoryJoin(Block extra_block) TSA_REQUIRES(hash_join_mutex);
+    bool canRehash() const;
 
     /// Check that join satisfies limits on rows/bytes in table_join.
     bool hasMemoryOverflow(size_t total_rows, size_t total_bytes) const;
@@ -182,7 +190,6 @@ private:
     InMemoryJoinPtr hash_join;
     Block hash_join_sample_block;
     mutable std::mutex hash_join_mutex;
-    std::atomic<bool> force_spill = false;
 
     GraceHashJoinStats stats;
 

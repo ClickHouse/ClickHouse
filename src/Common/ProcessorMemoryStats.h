@@ -10,6 +10,8 @@ struct ProcessorMemoryStats
     Int64 spillable_memory_bytes = 0;
     // To avoid this processor cause OOM, at least `reserved_memory_bytes` should be reserved.
     // including auxiliary memory to finish the spilling process.
+    //
+    // TODO: use for spilling from scheduler/workloads
     Int64 need_reserved_memory_bytes = 0;
 };
 }

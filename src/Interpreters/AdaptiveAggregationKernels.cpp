@@ -40,6 +40,7 @@ namespace ProfileEvents
     extern const Event AdaptiveAggregationDrainedRecords;
     extern const Event AdaptiveAggregationPressureSweeps;
     extern const Event AdaptiveAggregationPressureDrainedRecords;
+    extern const Event AdaptiveAggregationSpillDrains;
     extern const Event AdaptiveAggregationResidueReleases;
     extern const Event AdaptiveAggregationSharedTableSpills;
 }
@@ -1960,7 +1961,9 @@ size_t Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSessi
     {
         /// The claim that ends the sweep drains the tail, so its records count too.
         size_t batch_records = 0;
-        const bool claim_again = drainStagedChunksBatchUnderMemoryPressure(shared, places_scratch, batch_records);
+        size_t batch_bytes = 0;
+        const bool claim_again = drainStagedChunksBatchUnderMemoryPressure(
+            shared, places_scratch, batch_records, batch_bytes, /*only_over_trigger=*/ true);
         drained_records += batch_records;
         if (!claim_again)
             break;
@@ -1968,10 +1971,35 @@ size_t Aggregator::drainStagedChunksUnderMemoryPressure(AdaptiveAggregationSessi
     return drained_records;
 }
 
+size_t Aggregator::drainStagedChunksForSpill(AdaptiveAggregationSession & shared, size_t at_least_bytes) const
+{
+    PaddedPODArray<AggregateDataPtr> places_scratch;
+
+    size_t released = 0;
+    while (released < at_least_bytes)
+    {
+        size_t batch_records = 0;
+        size_t batch_bytes = 0;
+        const bool claim_again = drainStagedChunksBatchUnderMemoryPressure(
+            shared, places_scratch, batch_records, batch_bytes, /*only_over_trigger=*/ false);
+        released += batch_bytes;
+        if (!claim_again)
+            break;
+    }
+    if (released)
+        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationSpillDrains);
+    return released;
+}
+
 bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
-    AdaptiveAggregationSession & shared, PaddedPODArray<AggregateDataPtr> & places_scratch, size_t & drained_records_out) const
+    AdaptiveAggregationSession & shared,
+    PaddedPODArray<AggregateDataPtr> & places_scratch,
+    size_t & drained_records_out,
+    size_t & drained_bytes_out,
+    bool only_over_trigger) const
 {
     drained_records_out = 0;
+    drained_bytes_out = 0;
     const size_t part_bytes = adaptivePressurePartBytes();
 
     /// The coordinator lock is held only to claim work: a batch of chunks carrying about one
@@ -1986,7 +2014,7 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
     AggregatedDataVariants::Type routing_type = AggregatedDataVariants::Type::EMPTY;
     {
         std::unique_lock sweep_lock(shared.pressure_sweep_mutex);
-        if (getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
+        if (only_over_trigger && getCurrentQueryMemoryUsage() < static_cast<Int64>(params.max_bytes_before_external_group_by))
             return false;
 
         auto chunks = shared.backlog.takeAllForPressureDrain();
@@ -2010,6 +2038,7 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
         const size_t batch_staged_bytes = claim.staged_bytes;
         const size_t split = claim.end;
         batch_records = claim.records;
+        drained_bytes_out = claim.staged_bytes;
         batch.assign(std::make_move_iterator(chunks.begin()), std::make_move_iterator(chunks.begin() + split));
         for (size_t i = split; i < chunks.size(); ++i)
             shared.backlog.requeue(chunks[i]);
@@ -2071,6 +2100,7 @@ bool Aggregator::drainStagedChunksBatchUnderMemoryPressure(
     {
         for (auto & chunk : batch)
             shared.backlog.requeue(chunk);
+        drained_bytes_out = 0;
         return false;
     }
 

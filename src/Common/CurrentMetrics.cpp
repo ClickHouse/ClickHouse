@@ -524,6 +524,7 @@
     \
     M(MemoryReservationApproved, "Total number of currently allocated (approved) bytes for memory reservations") \
     M(MemoryReservationDemand, "Total number of outstanding increase request bytes for memory reservations") \
+    M(MemoryReservationReclaimable, "Total number of reclaimable memory") \
     \
     M(DiskS3NoSuchKeyErrors, "The number of `NoSuchKey` errors that occur when reading data from S3 cloud storage through ClickHouse disks.") \
     \

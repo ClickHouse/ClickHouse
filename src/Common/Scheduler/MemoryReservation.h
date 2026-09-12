@@ -6,11 +6,16 @@
 
 #include <memory>
 #include <mutex>
+#include <unordered_map>
+#include <unordered_set>
+#include <base/defines.h>
 
 class MemoryTracker;
 
 namespace DB
 {
+
+class ISpillable;
 
 /// `MemoryReservation` bridges a running query and the memory scheduler: the scheduler caps each
 /// workload's memory while the query's `MemoryTracker` stays the source of truth. It backs:
@@ -49,14 +54,24 @@ struct MemoryReservation : public ResourceAllocation
 {
 public:
     // Blocks until reservation is admitted iff reserved_size > 0
-    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size);
+    MemoryReservation(ResourceLink link, const String & id_, ResourceCost reserved_size, ResourceCost min_bytes_to_spill_);
     ~MemoryReservation() override;
 
     // Sync actual size with MemoryTracker, issues and waits increase/decrease requests as needed.
     void syncWithMemoryTracker(const MemoryTracker * memory_tracker);
 
+    ResourceCost getTotalReclaimable();
+    /// Reclaimable memory of the query's spillable processors, keyed by the object that owns the
+    /// state so that processors sharing it are counted once.
+    void updateReclaimable(const ISpillable * spillable, ResourceCost total_bytes);
+    void removeReclaimable(const ISpillable * spillable);
+
+    [[nodiscard]] ResourceCost takeSpillRequest(const ISpillable * spillable, ResourceCost spillable_bytes);
+    void finishSpill(const ISpillable * spillable, ResourceCost settled_bytes, ResourceCost new_spillable_memory_bytes, const MemoryTracker * memory_tracker);
+
 private:
     void throwIfNeeded();
+    void reportReclaimable(ResourceCost total);
 
     // Unlinks this allocation from the scheduler and waits until removal completes.
     // Used both by the destructor and by the constructor when admission fails, so a throwing
@@ -65,11 +80,13 @@ private:
 
     // Interaction with the scheduler thread
     void killAllocation(const std::exception_ptr & reason) override;
+    void spillAllocation(ResourceCost additional_bytes) override;
     void increaseApproved(const IncreaseRequest & increase) override;
     void decreaseApproved(const DecreaseRequest & decrease) override;
     void allocationFailed(const std::exception_ptr & reason) override;
 
-    const ResourceCost reserved_size; // value of `reserve_memory` query setting
+    const ResourceCost reserved_size;
+    const ResourceCost min_bytes_to_spill;
 
     /// Protects all the fields in this allocation that may be accessed from the scheduler thread.
     /// Lock ordering: AllocationQueue::mutex -> MemoryReservation::mutex (scheduler thread acquires
@@ -96,9 +113,24 @@ private:
         void apply();
     } metrics;
 
+    /// Scheduler requested spilling
+    ResourceCost enqueued_spill = 0;
+    /// Number of processors that do spilling in parallel
+    size_t spills_in_flight = 0;
+
+    /// Reclaimable bytes per spillable object
+    std::unordered_map<const ISpillable *, ResourceCost> reclaimable;
+    /// Map of in progress objects, to avoid spilling them again (since multiple processors can share the same spilling object)
+    std::unordered_set<const ISpillable *> reclaimable_in_progress;
+    /// Sum of the map values
+    ResourceCost reclaimable_total = 0;
+    /// Last total sent to the scheduler (small updates are not sent)
+    ResourceCost reported_reclaimable = 0;
+
     /// Introspection
     CurrentMetrics::Increment approved_increment;
     CurrentMetrics::Increment demand_increment;
+    CurrentMetrics::Increment reclaimable_increment;
 };
 
 using MemoryReservationPtr = std::unique_ptr<MemoryReservation>;

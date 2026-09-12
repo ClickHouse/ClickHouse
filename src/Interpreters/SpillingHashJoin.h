@@ -9,6 +9,7 @@
 #include <Interpreters/IJoin.h>
 #include <Interpreters/TableJoin.h>
 #include <Interpreters/TemporaryDataOnDisk.h>
+#include <Processors/ISpillable.h>
 #include <Common/SharedMutex.h>
 
 
@@ -43,7 +44,7 @@ class ConcurrentHashJoin;
 /// Because hasDelayedBlocks returns true, the read-in-order-through-join optimisation
 /// in optimizeReadInOrder.cpp will NOT propagate through SpillingHashJoin (same as
 /// GraceHashJoin), since spilling may reorder rows.
-class SpillingHashJoin final : public IJoin
+class SpillingHashJoin final : public IJoin, public ISpillable
 {
 public:
     /// Single-thread mode: wraps a HashJoin.
@@ -88,6 +89,12 @@ public:
     bool alwaysReturnsEmptySet() const override;
 
     StepAnalysisReport getAnalysisReport() const override;
+
+    ISpillable * getSpillable() override { return this; }
+    /// While collecting: the whole right side, spilled by switching to the grace join.
+    /// After the switch: whatever the grace join reports. Nothing once the build ended in memory.
+    ProcessorMemoryStats getMemoryStats() const override;
+    size_t spill(size_t at_least_bytes) override;
 
     bool supportParallelJoin() const override { return concurrent_join != nullptr; }
     bool supportParallelNonJoinedBlocksProcessing() const override;

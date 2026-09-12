@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+
+function workload_ensure_root()
+{
+    local parent_workload=$($CLICKHOUSE_CLIENT -nm -q "SELECT name FROM system.workloads WHERE parent = ''")
+    if [[ -z $parent_workload ]]; then
+        $CLICKHOUSE_CLIENT -nm -q "CREATE OR REPLACE WORKLOAD all"
+        echo "all"
+        return
+    fi
+    echo "$parent_workload"
+}
