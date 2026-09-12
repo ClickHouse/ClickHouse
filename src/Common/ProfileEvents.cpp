@@ -849,6 +849,7 @@ The server successfully detected this situation and will download merged part fr
     M(GlobalMemoryLimitExceeded, "Number of times the global memory limit was exceeded.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheck, "Number of times memory has been allocated without checking for memory constraints.", ValueType::Number) \
     M(MemoryAllocatedWithoutCheckBytes, "Amount of bytes that has been allocated without checking for memory constraints.", ValueType::Number) \
+    M(MemoryLargeAllocationTraced, "Number of times a stack trace was captured for a single charge to the global memory tracker at or above `min_allocation_size_to_log_stack_trace`.", ValueType::Number) \
     \
     M(AzureGetObject, "Number of Azure API GetObject calls.", ValueType::Number) \
     M(AzureUpload, "Number of Azure blob storage API Upload calls", ValueType::Number) \

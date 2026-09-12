@@ -438,6 +438,19 @@ A value of `0` (default) preserves the legacy behaviour: implicit `operator new`
 
 Note, to avoid side effects it is recommended to set value greater then `max_untracked_memory`.
 )", 0) \
+    DECLARE(UInt64, min_allocation_size_to_log_stack_trace, 0, R"(
+Minimum size, in bytes, of a single charge to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/operations/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
+
+The size compared against the threshold, and reported, is what one tracker call charges, which is not necessarily one allocation: a thread defers its small allocations and flushes them as a single charge, so the reported size can exceed the allocation at the top of the reported stack by up to `max_untracked_memory`. Keeping the threshold well above `max_untracked_memory` keeps that difference immaterial.
+
+This is a diagnostic for a global tracked total that has grown far beyond the process's real memory usage. In that state the server refuses every allocation, down to zero-byte ones, while using a fraction of its limit, and ordinary telemetry cannot attribute the step: allocations charged under a `MemoryTrackerBlockerInThread` skip the limit check and the traces that accompany it, and the `system.trace_log` inserts that would carry the rest fail once the server is wedged. The server log keeps being written, so the stack trace reaches it.
+
+At most 10 traces are captured per server run, because capturing and symbolizing a stack is expensive and the trigger tends to repeat. Changing this setting at runtime, in either direction, does not raise that bound.
+
+Requires `trace_log` to be configured. Without a running trace collector the value is ignored and reported as `0` in [`system.server_settings`](/operations/system-tables/server_settings), since the trace could only be captured and discarded. A trace the collector processes before that table is attached, which happens late in startup, reaches the server log only.
+
+A value of `0` (default) disables the diagnostic. Set it well above the largest allocation the server legitimately makes, otherwise ordinary large allocations are logged too and startup can spend the whole budget.
+)", 0) \
     DECLARE(Double, max_server_memory_usage_to_ram_ratio, 0.9, R"(
 The maximum amount of memory the server is allowed to use, expressed as a ratio to all available memory.
 
@@ -3565,6 +3578,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
         = {
             {"max_server_memory_usage", {std::to_string(total_memory_tracker.getHardLimit()), ChangeableWithoutRestart::Yes}},
             {"min_allocation_size_to_throw_on_memory_limit", {std::to_string(CurrentMemoryTracker::getMinAllocationSizeBytesToThrow()), ChangeableWithoutRestart::Yes}},
+            {"min_allocation_size_to_log_stack_trace", {std::to_string(MemoryTracker::getMinAllocationSizeToLogStackTrace()), ChangeableWithoutRestart::Yes}},
             {"max_per_cpu_untracked_memory", {std::to_string(per_cpu_memory.budgetCapacity()), ChangeableWithoutRestart::Yes}},
             {"per_cpu_untracked_memory_thread_buffer", {std::to_string(per_cpu_memory.threadBuffer()), ChangeableWithoutRestart::Yes}},
 
