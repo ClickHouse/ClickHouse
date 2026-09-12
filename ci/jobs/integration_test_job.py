@@ -636,6 +636,16 @@ TIMEOUT_ERROR_PATTERNS = [
     "TimeoutExpired",
 ]
 
+# Emitted by `ClickHouseInstance.describe_lost_network_interface` in
+# `tests/integration/helpers/cluster.py`, and only after the harness has confirmed both
+# halves of the state it names: docker removed a running container's network interface (a
+# `veth` name collision in moby, present at least up to 28.3.3), so the server is unreachable
+# for the rest of the module through no fault of its own. Unlike the substrings below it
+# already carries its own proof, which is why the FAIL path trusts it without further
+# context. Must stay in step with the constant of the same name in the harness - pinned by
+# `tests/integration/test_cluster_waiters/test_lost_network_interface.py`.
+LOST_NETWORK_INTERFACE_ERROR = "Docker removed the network interface of the container"
+
 INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "Cannot connect to the Docker daemon",
     "Error response from daemon",
@@ -649,6 +659,7 @@ INFRASTRUCTURE_ERROR_PATTERNS = TIMEOUT_ERROR_PATTERNS + [
     "toomanyrequests",
     "pull access denied",
     "Got exception pulling images:",  # docker pull failure during cluster.start()
+    LOST_NETWORK_INTERFACE_ERROR,
 ]
 
 # compose options that consume the token after them, so the subcommand is not the
@@ -783,6 +794,12 @@ def _is_infrastructure_error(result: Result) -> bool:
     # Require both docker context and an infrastructure pattern to avoid
     # false positives on genuine test failures.
     if result.status == Result.Status.FAIL:
+        # The harness only emits this after checking the container from both sides, so the
+        # evidence the docker-context requirement below stands in for is already in hand.
+        # It has to be honoured here: the state surfaces mid-module as an ordinary failing
+        # query, which carries no docker argv at all.
+        if LOST_NETWORK_INTERFACE_ERROR in result.info:
+            return True
         has_docker_context = (
             "'docker'" in result.info or "images_pull_cmd" in result.info
         )
