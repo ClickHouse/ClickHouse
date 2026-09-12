@@ -117,6 +117,8 @@ To customize workload the following settings could be used:
 * `max_cpu_share` - the same as `max_cpus`, but normalized to the number of available CPU cores.
 * `max_burst_cpu_seconds` - the maximum number of CPU seconds that could be consumed by the workload without being throttled due to `max_cpus`.
 * `max_memory` - the limit on the total memory reserved for this workload.
+* `max_memory_before_spill` - the soft memory limit above which the workload's queries are asked to spill reclaimable memory to disk, before the hard `max_memory` limit forces eviction. Experimental, see [Spilling reclaimable memory](#spilling-reclaimable-memory).
+* `max_memory_to_spill_ratio` - the same soft limit as `max_memory_before_spill`, but normalized to this workload's `max_memory`. When both are set, the smaller resulting threshold wins.
 
 All limits specified through workload settings are independent for every resource. For example workload with `max_bytes_per_second = '10Mi'` will have 10 MB/s bandwidth limit for every read and write resource independently. If common limit for reading and writing is required, consider using the same resource for READ and WRITE access.
 
@@ -315,6 +317,26 @@ In this example, the total memory reserved by all queries and background activit
 If memory pressure arises, testing workload allocations will be evicted first. Then, if more memory needs to be freed, staging workload allocations will be evicted before production workload allocations if they exceed their guarantees. Note that pending queries in production and staging can evict running allocations in testing workload to free memory, but they cannot evict each other because they have the same precedence. In case of memory pressure, they will wait in queues, which allows the system to avoid MEMORY_LIMIT_EXCEEDED errors due to too many concurrently executing queries.
 
 Note that system workload has precedence 0 (default), which is higher than production, staging and testing workloads, but they are not sibling workloads. The least common ancestor is workload all, both children of which have equal precedence. So pending system workload cannot evict any of them, and vice versa. This ensures that system activities cannot easily be evicted.
+
+### Spilling reclaimable memory {#spilling-reclaimable-memory}
+
+In addition to the hard `max_memory` limit, a workload can define a lower *soft* memory limit that triggers spilling of reclaimable memory to disk before the hard limit forces an eviction. Reclaimable memory is the part of a query's allocation that its operators can serialize to disk and reload on demand (for example, sorted runs of an external sort or intermediate aggregation states), as opposed to unreclaimable memory that must stay in RAM.
+
+The soft limit is configured with two workload settings; when both are set, the smaller resulting threshold applies:
+
+```sql
+CREATE RESOURCE memory (MEMORY RESERVATION)
+-- Absolute soft limit:
+CREATE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_before_spill = '7Gi'
+-- Or as a fraction of this workload's own max_memory:
+CREATE OR REPLACE WORKLOAD all SETTINGS max_memory = '10Gi', max_memory_to_spill_ratio = 0.7
+```
+
+When the memory allocated in a workload's subtree rises above its soft limit, the scheduler asks the largest reclaimable allocation to reclaim memory, matching the eviction order used at the hard limit (highest normalized memory usage and lowest precedence first). Unlike hitting the hard limit, crossing the soft limit neither blocks nor kills the query: it keeps running while it spills, and the gap between the soft and hard limits is the headroom that lets spilling proceed. If nothing under the workload is reclaimable, no spill is requested and the hard `max_memory` limit stays the sole backstop. Set the soft limit on the `all` workload for a global spill threshold, or on nested workloads for per-workload thresholds.
+
+:::note
+Spilling of reclaimable memory is experimental and builds on memory reservation scheduling (which is itself experimental). The scheduler issues spill requests once memory rises above the soft limit; how much a query can actually reclaim depends on which of its operators support serializing their state to disk. When no reclaimable memory is reported, the soft limit has no effect and behavior is identical to using only the hard `max_memory` limit; currently no operators report reclaimable memory.
+:::
 
 ## Query slot scheduling {#query_scheduling}
 

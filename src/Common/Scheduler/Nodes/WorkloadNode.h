@@ -206,7 +206,8 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
         NodePtr result = std::make_shared<AllocationLimit>(
             event_queue_,
             SchedulerNodeInfo{},
-            settings_.getAllocationLimit(unit));
+            settings_.getAllocationLimit(unit),
+            settings_.getSoftAllocationLimit(unit));
         result->basename = "limit";
         result->workload = workload;
         return result;
@@ -215,6 +216,7 @@ struct WorkloadNodeTraits<ISpaceSharedNode>
     static void updateSemaphore(const NodePtr & node, const WorkloadSettings & settings_, CostUnit unit)
     {
         static_cast<AllocationLimit &>(*node).updateLimit(settings_.getAllocationLimit(unit));
+        static_cast<AllocationLimit &>(*node).updateSoftLimit(settings_.getSoftAllocationLimit(unit));
     }
 
     static bool hasThrottler(const WorkloadSettings &, CostUnit)
@@ -928,6 +930,13 @@ private:
     {
         chassert(child);
         return child->selectAllocationToKill(killer, limit, details);
+    }
+
+    ResourceAllocation * selectAllocationToSpill(ResourceCost at_least, String & details) override
+    {
+        chassert(child);
+        // Single-child passthrough: the child returns nullptr if nothing in its subtree is reclaimable.
+        return child->selectAllocationToSpill(at_least, details);
     }
 
     void propagateUpdateSchedulingSettings() override

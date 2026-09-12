@@ -44,6 +44,18 @@ public:
     /// just triggering procedure, not doing the kill itself.
     virtual void killAllocation(const std::exception_ptr & reason) = 0;
 
+    /// Scheduler asks this allocation to reclaim at least `at_least_bytes` of its size soon
+    /// (by spilling reclaimable data to disk or discarding it). Mirrors `killAllocation`:
+    /// IMPORTANT: it is called from the scheduler thread and must be fast — just record the request;
+    /// the query reacts on its own threads: it spills, issues decreases for the freed memory, and then
+    /// replies with `IAllocationQueue::finishSpill` (also used to decline when nothing can be reclaimed).
+    /// The scheduler signals no further victim in this subtree until the reply arrives, so a request
+    /// that is never finished leaves the soft limit inert (the hard limit still applies). May be called
+    /// repeatedly with the same or a different `at_least_bytes` (each carries the scheduler's then-current
+    /// need, and nested workload limits may ask independently); implementations must coalesce: keep the
+    /// maximum outstanding amount, never accumulate, and reply once when done.
+    virtual void spillAllocation(ResourceCost at_least_bytes) = 0;
+
     IAllocationQueue & queue; /// Queue that manages this allocation.
     String const id; /// ID of this allocation for introspection purposes.
 
@@ -52,6 +64,7 @@ private:
 
     ResourceCost allocated = 0; /// Currently allocated.
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
+    ResourceCost reclaimable = 0; /// Portion of `allocated` that can be spilled/discarded on request (advisory). Updated via `IAllocationQueue::setReclaimable`.
 
     IncreaseRequest increase;
     DecreaseRequest decrease;
@@ -62,11 +75,13 @@ private:
     boost::intrusive::set_member_hook<> increasing_hook;
     boost::intrusive::list_member_hook<> decreasing_hook;
     boost::intrusive::list_member_hook<> removing_hook;
+    boost::intrusive::set_member_hook<> reclaimable_hook; /// Membership in the queue's reclaimable set (linked iff `reclaimable > 0`).
     using PendingHook    = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::pending_hook>;
     using RunningHook    = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::set_member_hook<>, &ResourceAllocation::running_hook>;
     using IncreasingHook = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::set_member_hook<>, &ResourceAllocation::increasing_hook>;
     using DecreasingHook = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::decreasing_hook>;
     using RemovingHook   = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::list_member_hook<>, &ResourceAllocation::removing_hook>;
+    using ReclaimableHook = boost::intrusive::member_hook<ResourceAllocation, boost::intrusive::set_member_hook<>, &ResourceAllocation::reclaimable_hook>;
 
     /// Keys for intrusive sets
     /// NOTE: Can only be accessed under queue.mutex as it is used in ordering, allocation.mutex is not needed.
@@ -85,6 +100,9 @@ private:
     using IncreasingSet  = boost::intrusive::set<ResourceAllocation, IncreasingHook, boost::intrusive::compare<ByFairKey>>;
     using DecreasingList = boost::intrusive::list<ResourceAllocation, DecreasingHook>;
     using RemovingList   = boost::intrusive::list<ResourceAllocation, RemovingHook>;
+    /// Reclaimable-filtered set: same `ByFairKey` order as `RunningSet`, holding only allocations with
+    /// `reclaimable > 0`. The spill victim is its largest element (`rbegin`), matching the kill order.
+    using ReclaimableSet = boost::intrusive::set<ResourceAllocation, ReclaimableHook, boost::intrusive::compare<ByFairKey>>;
 };
 
 }
