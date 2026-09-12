@@ -122,6 +122,7 @@ namespace Setting
     extern const SettingsBool enable_reads_from_query_cache;
     extern const SettingsBool query_cache_for_subqueries;
     extern const SettingsBool enable_writes_to_query_cache;
+    extern const SettingsBool use_query_cache;
     extern const SettingsBool empty_result_for_aggregation_by_constant_keys_on_empty_set;
     extern const SettingsBool empty_result_for_aggregation_by_empty_set;
     extern const SettingsBool enable_group_by_top_k_optimization;
@@ -2480,7 +2481,7 @@ void Planner::buildPlanForUnionNode()
 }
 
 /// Returns true if the Planner-level query result cache (with `is_subquery = true` key) should be used.
-/// For actual subqueries (is_subquery=true): explicit SETTINGS `use_query_cache` on the node wins.
+/// For actual subqueries (is_subquery=true): explicit `SETTINGS use_query_cache` on the node wins.
 /// For all Planner invocations: `query_cache_for_subqueries` propagation from outer query.
 /// By default, `use_query_cache` does NOT propagate.
 ///
@@ -2500,14 +2501,10 @@ static bool shouldUseQueryCacheForSubquery(
 
     /// Only check explicit per-node `use_query_cache` for actual subqueries.
     /// For the top-level query, this setting is handled by `executeQuery` (with `is_subquery = false` key).
-    if (is_subquery && query_node.hasSettingsChanges())
-    {
-        for (const auto & change : query_node.getSettingsChanges())
-        {
-            if (change.name == "use_query_cache")
-                return change.value.safeGet<bool>();
-        }
-    }
+    /// `settings` is the node's own context (`buildPlannerContext` takes `query_node->getMutableContext()`),
+    /// so it holds the clause value clamped by the settings constraints; the clause `Field` may be a `String`.
+    if (is_subquery && query_node.getSettingsChanges().tryGet("use_query_cache"))
+        return settings[Setting::use_query_cache];
 
     /// `query_cache_for_subqueries` enables the Planner-level (`is_subquery = true`) cache
     /// only for actual subqueries. The top-level query is cached separately by `executeQuery`

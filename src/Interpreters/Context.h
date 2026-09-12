@@ -1274,6 +1274,7 @@ public:
     void checkSettingsConstraints(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsForSettingsReset(const std::vector<String> & names, SettingSource source);
     void clampToSettingsConstraints(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChanges(SettingsChanges & changes, SettingSource source);
     void checkMergeTreeSettingsConstraints(const MergeTreeSettings & merge_tree_settings, const SettingsChanges & changes) const;
 
     /// Reset settings to default value
@@ -2123,6 +2124,7 @@ private:
     void checkSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source);
+    void clampToSettingsConstraintsRejectingInvalidChangesWithLock(SettingsChanges & changes, SettingSource source);
     void checkSettingsConstraintsWithLock(const AlterSettingsProfileElements & profile_elements, SettingSource source) const;
 
     void clampToSettingsConstraintsWithLock(SettingsChanges & changes, SettingSource source) const;

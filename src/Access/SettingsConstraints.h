@@ -80,6 +80,7 @@ public:
     void merge(const SettingsConstraints & other);
 
     /// Checks whether `change` violates these constraints and throws an exception if so.
+    /// The non-const `SettingsChanges &` overload also drops a change equal to the current value from `changes` (unless `compatibility` is present).
     void check(const Settings & current_settings, const SettingChange & change, SettingSource source) const;
     void check(const Settings & current_settings, const SettingsChanges & changes, SettingSource source) const;
     void check(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
@@ -95,7 +96,12 @@ public:
     void check(const MergeTreeSettings & current_settings, const SettingsChanges & changes) const;
 
     /// Checks whether `change` violates these and clamps the `change` if so.
+    /// A change equal to the current value is dropped from `changes` (unless `compatibility` is present).
     void clamp(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
+
+    /// Same as `clamp`, but an unknown or disallowed setting name and an uncastable value throw, as in `check`,
+    /// and a change equal to the current value is kept in `changes`.
+    void clampRejectingInvalidChanges(const Settings & current_settings, SettingsChanges & changes, SettingSource source) const;
 
 
     friend bool operator ==(const SettingsConstraints & left, const SettingsConstraints & right);
@@ -104,8 +110,12 @@ public:
 private:
     enum ReactionOnViolation
     {
+        /// Any violation, an unknown name or an uncastable value throws.
         THROW_ON_VIOLATION,
+        /// Violations are clamped or dropped; an unknown name or an uncastable value is dropped.
         CLAMP_ON_VIOLATION,
+        /// Violations are clamped or dropped; an unknown name or an uncastable value throws.
+        CLAMP_ON_VIOLATION_THROW_ON_INVALID,
     };
 
     struct Constraint
@@ -162,8 +172,8 @@ private:
         }
     };
 
-    /// Common logic for `check(Settings, SettingsChanges&)` and `clamp`. Both filter out unchanged settings
-    /// (unless `compatibility` is present) and differ only in whether violations throw or get clamped to the nearest bound.
+    /// Common logic for `check`, `clamp` and `clampRejectingInvalidChanges`. The modes differ in whether violations throw or get clamped
+    /// to the nearest bound and whether an invalid change throws or is dropped.
     void
     checkOrClamp(const Settings & current_settings, SettingsChanges & changes, ReactionOnViolation reaction, SettingSource source) const;
 
