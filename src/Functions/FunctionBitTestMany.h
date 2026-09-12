@@ -70,10 +70,14 @@ public:
             || (res = execute<UInt16>(arguments, result_type, value_col, input_rows_count))
             || (res = execute<UInt32>(arguments, result_type, value_col, input_rows_count))
             || (res = execute<UInt64>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<UInt128>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<UInt256>(arguments, result_type, value_col, input_rows_count))
             || (res = execute<Int8>(arguments, result_type, value_col, input_rows_count))
             || (res = execute<Int16>(arguments, result_type, value_col, input_rows_count))
             || (res = execute<Int32>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<Int64>(arguments, result_type, value_col, input_rows_count))))
+            || (res = execute<Int64>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<Int128>(arguments, result_type, value_col, input_rows_count))
+            || (res = execute<Int256>(arguments, result_type, value_col, input_rows_count))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", value_col->getName(), getName());
 
         return res;
@@ -143,23 +147,36 @@ private:
 
         for (size_t i = 1; i < arguments.size(); ++i)
         {
-            if (auto pos_col_const = checkAndGetColumnConst<ColumnVector<ValueType>>(arguments[i].column.get()))
-            {
-                const auto pos = pos_col_const->getUInt(0);
-                if (pos < 8 * sizeof(ValueType))
-                    mask = static_cast<ValueType>(mask | (static_cast<ValueType>(1) << pos));
-                else
-                    throw Exception(ErrorCodes::PARAMETER_OUT_OF_BOUND,
-                                   "The bit position argument {} is out of bounds for number", static_cast<UInt64>(pos));
-            }
-            else
-            {
-                out_is_const = false;
-                return {};
-            }
+            if (addToConstMaskImpl<UInt8>(mask, arguments[i].column.get())
+                || addToConstMaskImpl<UInt16>(mask, arguments[i].column.get())
+                || addToConstMaskImpl<UInt32>(mask, arguments[i].column.get())
+                || addToConstMaskImpl<UInt64>(mask, arguments[i].column.get()))
+                continue;
+
+            out_is_const = false;
+            return {};
         }
 
         return mask;
+    }
+
+    template <typename PosType, typename ValueType>
+    bool addToConstMaskImpl(ValueType & mask, const IColumn * const pos_col_untyped) const
+    {
+        if (const auto pos_col_const = checkAndGetColumnConst<ColumnVector<PosType>>(pos_col_untyped))
+        {
+            const auto pos = pos_col_const->template getValue<PosType>();
+            if (pos >= 8 * sizeof(ValueType))
+                throw Exception(
+                    ErrorCodes::PARAMETER_OUT_OF_BOUND,
+                    "The bit position argument {} is out of bounds for number",
+                    static_cast<UInt64>(pos));
+
+            mask = static_cast<ValueType>(mask | (static_cast<ValueType>(1) << pos));
+            return true;
+        }
+
+        return false;
     }
 
     template <typename ValueType>
