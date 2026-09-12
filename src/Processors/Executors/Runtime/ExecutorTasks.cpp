@@ -1,7 +1,7 @@
 #include <Processors/Executors/Runtime/ExecutorTasks.h>
+#include <Processors/IProcessor.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
-#include <Processors/StepWallClockRegistry.h>
 #include <Common/Exception.h>
 
 namespace DB
@@ -66,7 +66,7 @@ void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasks(ExecutionThreadContext & se
     }
 }
 
-void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<ExecutingGraph::Node> & queue, std::unique_lock<std::mutex> & lock)
+void ExecutorTasks::tryWakeUpAnyOtherThreadWithTasksInQueue(ExecutionThreadContext & self, TaskQueue<IProcessor> & queue, std::unique_lock<std::mutex> & lock)
 {
     size_t next_thread = self.thread_number + 1 >= use_threads ? 0 : (self.thread_number + 1);
     auto thread_to_wake = queue.getAnyThreadWithTasks(next_thread);
@@ -93,7 +93,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
         {
             if (auto res = async_task_queue.tryGetReadyTask(lock))
             {
-                context.setTask(static_cast<ExecutingGraph::Node *>(res.data));
+                context.setTask(static_cast<IProcessor *>(res.data));
                 return;
             }
         }
@@ -142,7 +142,7 @@ void ExecutorTasks::tryGetTask(ExecutionThreadContext & context)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty task was returned from async task queue");
             }
 
-            context.setTask(static_cast<ExecutingGraph::Node *>(res.data));
+            context.setTask(static_cast<IProcessor *>(res.data));
             return;
         }
     #endif
@@ -182,7 +182,7 @@ size_t ExecutorTasks::pushTasks(Queue & queue, Queue & async_queue, ExecutionThr
 #if defined(OS_LINUX) || defined(OS_DARWIN)
         while (!async_queue.empty() && !finished)
         {
-            auto [fd, events, timeout_ms] = async_queue.front()->processor()->scheduleForEvent();
+            auto [fd, events, timeout_ms] = async_queue.front()->scheduleForEvent();
             async_task_queue.addTask(context.thread_number, async_queue.front(), fd, events, timeout_ms);
             async_queue.pop();
         }
@@ -249,7 +249,7 @@ size_t ExecutorTasks::fill(Queue & queue, [[maybe_unused]] Queue & async_queue)
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     while (!async_queue.empty())
     {
-        auto [fd, events, timeout_ms] = async_queue.front()->processor()->scheduleForEvent();
+        auto [fd, events, timeout_ms] = async_queue.front()->scheduleForEvent();
         async_task_queue.addTask(next_thread, async_queue.front(), fd, events, timeout_ms);
         async_queue.pop();
 
@@ -352,12 +352,12 @@ void ExecutorTasks::processAsyncTasks()
         std::unique_lock lock(mutex);
         while (auto task = async_task_queue.wait(lock))
         {
-            auto * node = static_cast<ExecutingGraph::Node *>(task.data);
-            node->processor()->onAsyncJobReady();
+            auto * processor = static_cast<IProcessor *>(task.data);
+            processor->onAsyncJobReady();
 
             if (fast_task_queue.empty())
                 has_fast_tasks = true;
-            fast_task_queue.push(node, task.thread_num);
+            fast_task_queue.push(processor, task.thread_num);
 
             /// Wake up a thread to process the task, preferably thread that should process this task
             if (!threads_queue.empty() && !finished)

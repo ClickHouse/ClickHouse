@@ -1259,22 +1259,6 @@ const std::unordered_map<String, Rewriter> & getRewriters()
                 "mapFromArrays",
                 {makeFunctionWithArguments("groupArray", {arguments[0]}), makeFunctionWithArguments("groupArray", {arguments[1]})});
         }},
-        {"regr_slope", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
-        {
-            requireNotWindow(function);
-            requireArguments(function, arguments, 2, 2, "(y, x)");
-            node = makeFunctionWithArguments(
-                "tupleElement",
-                {makeFunctionWithArguments("simpleLinearRegression", {arguments[1], arguments[0]}), make_intrusive<ASTLiteral>(UInt64(1))});
-        }},
-        {"regr_intercept", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
-        {
-            requireNotWindow(function);
-            requireArguments(function, arguments, 2, 2, "(y, x)");
-            node = makeFunctionWithArguments(
-                "tupleElement",
-                {makeFunctionWithArguments("simpleLinearRegression", {arguments[1], arguments[0]}), make_intrusive<ASTLiteral>(UInt64(2))});
-        }},
         {"min", [](ASTPtr &, ASTFunction & function, ASTs & arguments)
         {
             /// Trino min(x, n) returns the n smallest values as an array.
