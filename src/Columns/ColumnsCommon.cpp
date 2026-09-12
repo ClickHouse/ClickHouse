@@ -36,8 +36,11 @@ static UInt64 toBits64(const Int8 * bytes64)
 
 size_t countBytesInFilter(const UInt8 * filt, size_t start, size_t end)
 {
-    if (!filt || start >= end)
+    if (start == end)
         return 0;
+
+    chassert(start <= end);
+    chassert(filt != nullptr);
 
     size_t count = 0;
 
@@ -127,11 +130,12 @@ size_t countBytesInFilter(const IColumn::Filter & filt)
 
 size_t countBytesInFilterWithNull(const IColumn::Filter & filt, const UInt8 * null_map, size_t start, size_t end)
 {
-    if (filt.empty() || start >= end)
+    if (start == end)
         return 0;
 
-    if (!null_map)
-        return countBytesInFilter(filt.data(), start, end);
+    chassert(start <= end);
+    chassert(filt.data() != nullptr);
+    chassert(null_map != nullptr);
 
     size_t count = 0;
 
