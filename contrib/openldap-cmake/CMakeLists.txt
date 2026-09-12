@@ -34,7 +34,7 @@ set(OPENLDAP_SOURCE_DIR "${ClickHouse_SOURCE_DIR}/contrib/openldap")
 # How these lists were generated?
 # I compiled the original OpenLDAP with it's original build system and copied the list of source files from build commands.
 
-set(OPENLDAP_VERSION_STRING "2.6.14")
+set(OPENLDAP_VERSION_STRING "2.6.15")
 
 macro(mkversion _lib_name)
     add_custom_command(
