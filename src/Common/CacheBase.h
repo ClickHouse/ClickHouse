@@ -197,11 +197,14 @@ public:
 
         /// Insert the new value only if the token is still in present in insert_tokens.
         /// (The token may be absent because of a concurrent clear() call).
+        /// A null value is never inserted: get() treats it as a miss, so the cell would only
+        /// occupy a zero-weight slot that size-based eviction never reclaims.
         bool result = false;
         auto token_it = insert_tokens.find(key);
         if (token_it != insert_tokens.end() && token_it->second.get() == token)
         {
-            cache_policy->set(key, token->value);
+            if (token->value)
+                cache_policy->set(key, token->value);
             result = true;
         }
 
