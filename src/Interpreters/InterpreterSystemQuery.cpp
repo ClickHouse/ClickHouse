@@ -2439,9 +2439,13 @@ void InterpreterSystemQuery::clearStatisticsCaches(const ContextPtr & system_con
     /// not consult the shared caches once they are set, so those are dropped too. The shared caches
     /// go first: a query racing with this command then re-memoizes estimates read from disk rather
     /// than from a cache entry that is about to be dropped.
-    for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false}))
+    /// The walk must not block or fail on a database unrelated to the caches: remote databases
+    /// (which cannot hold `MergeTree` tables and may refresh metadata over the network in the
+    /// iterator) are excluded, and tables still being loaded (which have no parts in memory yet)
+    /// are skipped instead of waiting for them.
+    for (auto & database : DatabaseCatalog::instance().getDatabases(GetDatabasesOptions{.with_datalake_catalogs = false, .with_remote_databases = false}))
     {
-        for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
+        for (auto it = database.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
         {
             if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
                 merge_tree->resetPartEstimates();
