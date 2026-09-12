@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Tags: no-fasttest
+# no-fasttest -- compiled w/o datasketches
 
 # `compact_theta_sketch_parser::parse` verifies that the buffer holds 8 bytes and then reads header
 # fields beyond them - `num_entries` at offset 8, `theta` at offset 16 - before it checks the size
