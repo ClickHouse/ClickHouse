@@ -69,19 +69,29 @@ __attribute__((__weak__)) extern bool inside_main;
 
 bool DateLUTImpl::isSupportedTimeZoneName(std::string_view time_zone_name)
 {
-    /// `cctz` synthesizes a zone for every name of the form `Fixed/UTC±HH:MM:SS` without consulting the
-    /// time zone database, and it accepts any offset up to 24 hours, which is 172801 distinct names.
-    /// Every name that gets loaded permanently costs ~4.6 MiB in the `DateLUT` cache, and that cache
-    /// never evicts anything because callers keep bare references into it. Accepting the whole family
-    /// therefore lets untrusted input - `toDateTime(x, '<name>')`, the `session_timezone` setting,
-    /// binary type decoding, the time zone of an Arrow or ORC timestamp column - make the server
-    /// allocate memory that it never gives back.
-    ///
-    /// So accept only the offsets a time zone can actually have: a whole number of quarters of an hour,
-    /// no further from UTC than 14 hours. That covers every offset in the time zone database - the last
-    /// one that was not a multiple of 15 minutes ended in 1972 - and leaves 113 such names, which bounds
-    /// the cache. `Values::OffsetChangeFactor` already assumes the same granularity for the offset
-    /// changes within a zone.
+    /// `cctz` accepts two families of names that it synthesizes itself, without consulting the time zone
+    /// database, and both of them are far larger than the database. Every name that gets loaded
+    /// permanently costs ~4.6 MiB in the `DateLUT` cache, and that cache never evicts anything because
+    /// callers keep bare references into it. Accepting a family whole therefore lets untrusted input -
+    /// `toDateTime(x, '<name>')`, the `session_timezone` setting, binary type decoding, the time zone of
+    /// an Arrow or ORC timestamp column - make the server allocate memory that it never gives back.
+
+    /// `libc:<suffix>` is resolved through the C library: `libc:localtime` and `libc:UTC` are `cctz`'s
+    /// own internal, test-only interfaces, and any other suffix is accepted just as well and silently
+    /// behaves as UTC. The suffix is unrestricted, so this family has no bound at all. Reject all of it:
+    /// these names are absent from `system.time_zones`, `cctz` documents them as subject to change or
+    /// removal without notice, and answering with a UTC value hides a bad name instead of reporting it.
+    if (time_zone_name.starts_with("libc:"))
+        return false;
+
+    /// `Fixed/UTC±HH:MM:SS` covers any offset up to 24 hours, which is 172801 distinct names. This
+    /// family cannot be rejected outright, because reading an Arrow or ORC timestamp column with a
+    /// fixed-offset time zone deliberately produces such a name. So accept only the offsets a time zone
+    /// can actually have: a whole number of quarters of an hour, no further from UTC than 14 hours. That
+    /// covers every offset in the time zone database - the last one that was not a multiple of 15
+    /// minutes ended in 1972 - and leaves 113 such names, which bounds the cache.
+    /// `Values::OffsetChangeFactor` already assumes the same granularity for the offset changes within
+    /// a zone.
     static constexpr std::string_view fixed_zone_prefix = "Fixed/";
     if (!time_zone_name.starts_with(fixed_zone_prefix))
         return true;
@@ -120,8 +130,9 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     if (!isSupportedTimeZoneName(time_zone))
         throw DB::Exception(
             DB::ErrorCodes::BAD_ARGUMENTS,
-            "Time zone {} is not supported: a fixed UTC offset is spelled `Fixed/UTC±HH:MM:SS` and "
-            "has to be a whole number of quarters of an hour, no further from UTC than 14 hours",
+            "Time zone {} is not supported. Use a name from `system.time_zones`, or a fixed UTC offset "
+            "spelled `Fixed/UTC±HH:MM:SS`, which has to be a whole number of quarters of an hour, no "
+            "further from UTC than 14 hours",
             time_zone_);
 
     /// The loaded time zone is kept as a member, so the out-of-range escape paths can use cctz directly.
