@@ -1,5 +1,6 @@
 #pragma once
 
+#include <limits>
 #include <type_traits>
 #include <Core/AccurateComparison.h>
 
@@ -85,13 +86,17 @@ struct DecimalOpHelpers
         return result;
     }
 
-    static VectorWithMemoryTracking<UInt8> divide(const VectorWithMemoryTracking<UInt8> & number, const Int256 & divisor)
+    /* `temp` is the running remainder scaled by ten plus the next digit, so it reaches
+     * `divisor * 10 + 9` and `DivisorType` has to leave room for that.
+     */
+    template <typename DivisorType>
+    static VectorWithMemoryTracking<UInt8> divideImpl(const VectorWithMemoryTracking<UInt8> & number, const DivisorType & divisor)
     {
         VectorWithMemoryTracking<UInt8> result;
         const auto max_index = number.size() - 1;
 
         UInt16 idx = 0;
-        Int256 temp = 0;
+        DivisorType temp = 0;
 
         while (temp < divisor && max_index >= idx)
         {
@@ -111,6 +116,28 @@ struct DecimalOpHelpers
         result.push_back(static_cast<UInt8>(temp / divisor));
 
         return result;
+    }
+
+    /* Divides by the magnitude of `divisor`; the caller applies the sign.
+     *
+     * `Int256` is too narrow to run the division in, because the running value reaches
+     * `divisor * 10 + 9` while `Int256` stops at about `5.8 * 10^76`. `UInt256` reaches past
+     * `10^77` and so covers every value the `Decimal256` type can hold, which is at most 76
+     * digits. Decimal addition does not enforce that precision, though, so a field value can be
+     * wider than the type declares - `toDecimal256(repeat('9', 76), 0) * 2` already is - and for
+     * those the division needs 512 bits.
+     */
+    static VectorWithMemoryTracking<UInt8> divide(const VectorWithMemoryTracking<UInt8> & number, const Int256 & divisor)
+    {
+        using WideDivisor = wide::integer<512, unsigned>;
+
+        /// `Int256` cannot hold the magnitude of its own minimum, so the widening comes first.
+        const WideDivisor magnitude = divisor >= 0 ? WideDivisor(divisor) : WideDivisor(0) - WideDivisor(divisor);
+
+        if (likely(magnitude * 10 + 9 <= WideDivisor(std::numeric_limits<UInt256>::max())))
+            return divideImpl(number, UInt256(magnitude));
+
+        return divideImpl(number, magnitude);
     }
 
     static VectorWithMemoryTracking<UInt8> toDigits(Int256 x)
