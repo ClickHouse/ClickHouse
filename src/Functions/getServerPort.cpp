@@ -1,3 +1,4 @@
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -111,12 +112,15 @@ public:
 
     FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
     {
-        if (!isString(arguments[0].type))
+        /// `getReturnTypeImpl` is called on a `LowCardinality`-stripped type, so strip it here too:
+        /// otherwise `getServerPort(toLowCardinality('tcp_port'))` is rejected.
+        if (!isStringOrFixedString(recursiveRemoveLowCardinality(arguments[0].type)))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "The argument of function {} should be a constant string with the name of a setting",
                 getName());
-        const auto * column = arguments[0].column.get();
+        const auto full_column = arguments[0].column ? recursiveRemoveLowCardinality(arguments[0].column) : nullptr;
+        const auto * column = full_column.get();
         if (!column || !checkAndGetColumnConstStringOrFixedString(column))
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,

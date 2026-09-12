@@ -1,5 +1,6 @@
 #pragma once
 
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/NumberTraits.h>
 #include <Interpreters/Context.h>
@@ -134,10 +135,20 @@ public:
             argument_types.push_back(argument.type);
 
         /// More efficient specialization for two numeric arguments.
+        /// `getReturnTypeImpl` is called on `LowCardinality`-stripped types, so strip them here too:
+        /// otherwise a `LowCardinality` argument sends the build down the generic implementation while
+        /// the declared result type is the specialized, sign-aware one. The generic implementation then
+        /// casts every argument to that type, and a sign-mixed cast wraps around
+        /// (`greatest(toUInt64(1), toInt64(-1))` returned `18446744073709551615`).
         if (arguments.size() == 2)
         {
-            auto arg_0_type = legacy_null_behavior ? removeNullable(arguments[0].type) : arguments[0].type;
-            auto arg_1_type = legacy_null_behavior ? removeNullable(arguments[1].type) : arguments[1].type;
+            auto arg_0_type = recursiveRemoveLowCardinality(arguments[0].type);
+            auto arg_1_type = recursiveRemoveLowCardinality(arguments[1].type);
+            if (legacy_null_behavior)
+            {
+                arg_0_type = removeNullable(arg_0_type);
+                arg_1_type = removeNullable(arg_1_type);
+            }
             if (isNumber(arg_0_type) && isNumber(arg_1_type))
                 return std::make_unique<FunctionToFunctionBaseAdaptor>(SpecializedFunction::create(context), argument_types, return_type);
         }

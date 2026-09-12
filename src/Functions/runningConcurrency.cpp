@@ -1,5 +1,6 @@
 #include <Columns/ColumnVector.h>
 #include <Core/callOnTypeIndex.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/DataTypeDate.h>
@@ -170,15 +171,20 @@ namespace DB
 
         FunctionBasePtr buildImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & return_type) const override
         {
+            /// `getReturnTypeImpl` is called on `LowCardinality`-stripped types, so strip them here too:
+            /// otherwise the checks below reject a `LowCardinality(DateTime)` pair the function handles.
+            const auto begin_type = recursiveRemoveLowCardinality(arguments[0].type);
+            const auto end_type = recursiveRemoveLowCardinality(arguments[1].type);
+
             // The type of the second argument must match with that of the first one.
-            if (unlikely(!arguments[1].type->equals(*(arguments[0].type))))
+            if (unlikely(!end_type->equals(*begin_type)))
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Function {} must be called with two arguments having the same type.", getName());
             }
 
             // Validate the argument type early so that unsupported types
             // (e.g. NULL literals) are rejected before execution.
-            WhichDataType which(arguments[0].type);
+            WhichDataType which(begin_type);
             if (!which.isDate() && !which.isDateTime() && !which.isDateTime64())
             {
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
