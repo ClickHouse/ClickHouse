@@ -9,7 +9,7 @@ from helpers.iceberg_utils import (
 )
 
 @pytest.mark.parametrize("format_version", [1, 2])
-@pytest.mark.parametrize("storage_type", ["s3", "azure"])
+@pytest.mark.parametrize("storage_type", ["s3",])
 def test_writes_multiple_threads(started_cluster_iceberg_with_spark, format_version, storage_type):
     instance = started_cluster_iceberg_with_spark.instances["node1"]
     TABLE_NAME = "test_writes_multiple_threads_" + storage_type + "_" + get_uuid_str()

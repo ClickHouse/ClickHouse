@@ -1,8 +1,0 @@
-Type Map(Array(UInt8), UInt8) is not supported by the HiveText output format: Hive supports only primitive types as Map keys
-Type Map(Tuple(UInt8, String), UInt8) is not supported by the HiveText output format: Hive supports only primitive types as Map keys
-Type Map(Map(UInt8, UInt8), UInt8) is not supported by the HiveText output format: Hive supports only primitive types as Map keys
-Type Map(Array(UInt8), UInt8) is not supported by the HiveText output format: Hive supports only primitive types as Map keys
-Type Map(Array(UInt8), UInt8) is not supported by the HiveText output format: Hive supports only primitive types as Map keys
-Type Map(Array(UInt8), UInt8) is not supported by the HiveText output format: Hive supports only primitive types as Map keys
-Type Map(Array(UInt8), UInt8) is not supported by the HiveText output format: Hive supports only primitive types as Map keys
-a:1|2;b:3

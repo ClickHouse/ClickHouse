@@ -1,11 +1,7 @@
-#include <map>
-#include <mutex>
-#include <optional>
 #include <string_view>
 #include <Access/Common/OneTimePassword.h>
 #include <Common/Exception.h>
 #include <Common/ErrorCodes.h>
-#include <Common/SipHash.h>
 #include <Common/logger_useful.h>
 #include <fmt/format.h>
 #include <Poco/String.h>
@@ -34,7 +30,7 @@ namespace ErrorCodes
 
 /// Checks if the secret contains only valid base32 characters.
 /// The secret may contain spaces, which are ignored and lower-case characters, which are converted to upper-case.
-static String normalizeOneTimePasswordSecret(const String & secret)
+String normalizeOneTimePasswordSecret(const String & secret)
 {
     static const UInt8 b32_alphabet[] = u8"ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
     static const UInt8 b32_lower_alphabet[] = u8"abcdefghijklmnopqrstuvwxyz";
@@ -126,14 +122,14 @@ String getOneTimePasswordSecretLink(const OneTimePasswordSecret & secret)
 
 struct CStringDeleter { void operator()(char * ptr) const { std::free(ptr); } };
 
-static String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
+String getOneTimePassword(const String & secret [[ maybe_unused ]], const OneTimePasswordParams & config [[ maybe_unused ]], UInt64 current_time [[ maybe_unused ]])
 {
 #if USE_SSL && USE_LIBCOTP
     int sha_algo = config.algorithm == OneTimePasswordParams::Algorithm::SHA512 ? TOTP_SHA512
                  : config.algorithm == OneTimePasswordParams::Algorithm::SHA256 ? TOTP_SHA256
                  : TOTP_SHA1;
 
-    cotp_error_t error = {};
+    cotp_error_t error;
     auto result = std::unique_ptr<char, CStringDeleter>(get_totp_at(secret.c_str(), current_time, config.num_digits, config.period, sha_algo, &error));
 
     if (result == nullptr || (error != NO_ERROR && error != VALID))
@@ -146,82 +142,19 @@ static String getOneTimePassword(const String & secret [[ maybe_unused ]], const
 }
 
 
-/// Returns the time step ("window" of RFC 6238) the code belongs to,
-/// accepting the steps adjacent to the current one to tolerate clock skew and typing delay.
-static std::optional<Int64> findMatchingTimeStep(std::string_view password, const OneTimePasswordSecret & secret, UInt64 current_time)
+bool checkOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret)
 {
     if (password.size() != static_cast<size_t>(secret.params.num_digits)
      || !std::all_of(password.begin(), password.end(), ::isdigit))
-        return {};
+        return false;
 
+    auto current_time = static_cast<UInt64>(std::time(nullptr));
     for (int delta : {0, -1, 1})
     {
         if (password == getOneTimePassword(secret.key, secret.params, current_time + delta * secret.params.period))
-            return static_cast<Int64>(current_time / secret.params.period) + delta;
+            return true;
     }
-    return {};
-}
-
-bool checkOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret)
-{
-    return findMatchingTimeStep(password, secret, static_cast<UInt64>(std::time(nullptr))).has_value();
-}
-
-namespace
-{
-
-/// The highest accepted time step per secret, used to enforce single use of a code (RFC 6238, Section 5.2).
-/// An entry is dropped once no code at or before the stored time step can pass the time tolerance check.
-class AcceptedOneTimePasswordTimeSteps
-{
-public:
-    bool tryConsume(const OneTimePasswordSecret & secret, Int64 time_step, UInt64 current_time)
-    {
-        SipHash hash;
-        hash.update(secret.key.size());
-        hash.update(secret.key);
-        hash.update(secret.params.num_digits);
-        hash.update(secret.params.period);
-        hash.update(secret.params.algorithm);
-        const UInt128 key = hash.get128();
-
-        const UInt64 expires_at = static_cast<UInt64>(time_step + 2) * secret.params.period;
-
-        std::lock_guard lock(mutex);
-        std::erase_if(last_accepted, [current_time](const auto & entry) { return entry.second.expires_at <= current_time; });
-
-        auto [it, inserted] = last_accepted.try_emplace(key, Entry{time_step, expires_at});
-        if (!inserted)
-        {
-            if (time_step <= it->second.time_step)
-                return false;
-            it->second = Entry{time_step, expires_at};
-        }
-        return true;
-    }
-
-private:
-    struct Entry
-    {
-        Int64 time_step;
-        UInt64 expires_at;
-    };
-
-    std::mutex mutex;
-    std::map<UInt128, Entry> last_accepted;
-};
-
-}
-
-bool checkAndConsumeOneTimePassword(std::string_view password, const OneTimePasswordSecret & secret)
-{
-    auto current_time = static_cast<UInt64>(std::time(nullptr));
-    auto time_step = findMatchingTimeStep(password, secret, current_time);
-    if (!time_step.has_value())
-        return false;
-
-    static AcceptedOneTimePasswordTimeSteps accepted_time_steps;
-    return accepted_time_steps.tryConsume(secret, *time_step, current_time);
+    return false;
 }
 
 }

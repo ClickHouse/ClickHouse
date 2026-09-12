@@ -1,9 +1,11 @@
 #pragma once
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
+#include <Common/typeid_cast.h>
 #include <base/IPv4andIPv6.h>
 #include <Interpreters/Context_fwd.h>
 
@@ -18,7 +20,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionConsistentHashImpl final : public IFunction
+class FunctionConsistentHashImpl : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -50,10 +52,9 @@ public:
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Function {} accepts {}-bit integers at most, got {}",
                     getName(), sizeof(HashType) * 8, arguments[0]->getName());
 
-        if (!isNativeInteger(arguments[1]))
-            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
-                "The second argument of function {} (number of buckets) must be a native integer (up to 64-bit), got {}",
-                getName(), arguments[1]->getName());
+        if (!isInteger(arguments[1]))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of the second argument of function {}",
+                arguments[1]->getName(), getName());
 
         return std::make_shared<DataTypeNumber<ResultType>>();
     }
@@ -104,11 +105,17 @@ private:
 
     ColumnPtr executeConstBuckets(const ColumnsWithTypeAndName & arguments) const
     {
-        /// `getReturnTypeImpl` already verified `arguments[1]` is an integer; read it directly to avoid an intermediate `Field`.
-        const IColumn & buckets_col = *arguments[1].column;
-        BucketsType num_buckets = WhichDataType(arguments[1].type).isUInt()
-            ? checkBucketsRange(buckets_col.getUInt(0))
-            : checkBucketsRange(buckets_col.getInt(0));
+        Field buckets_field = (*arguments[1].column)[0];
+        BucketsType num_buckets;
+
+        if (buckets_field.getType() == Field::Types::Int64)
+            num_buckets = checkBucketsRange(buckets_field.safeGet<Int64>());
+        else if (buckets_field.getType() == Field::Types::UInt64)
+            num_buckets = checkBucketsRange(buckets_field.safeGet<UInt64>());
+        else
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Illegal type {} of the second argument of function {}",
+                buckets_field.getTypeName(), getName());
 
         const auto & hash_col = arguments[0].column;
         const IDataType * hash_type = arguments[0].type.get();
