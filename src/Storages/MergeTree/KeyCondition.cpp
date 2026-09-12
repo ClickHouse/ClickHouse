@@ -2153,9 +2153,60 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 }
 
 
-/// Cast column to target_type and fail if the cast introduces NULLs.
-static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type)
+/// Reports whether a cast into `cast_type` kept every value of `column`. A value that fits the target
+/// can still lose information on the way - `DateTime64(6)` truncated to `DateTime64(3)` - and no NULL
+/// marks that, so the only way to see it is to cast back and compare. `cast_column` is the result of
+/// that cast, already computed by the caller. A source type the reverse cast cannot represent answers
+/// `false`, the same as a value that does not come back unchanged. Positions where `kept` is zero hold
+/// values that have already left the set and are not examined.
+static bool castKeptEveryValue(
+    const ColumnPtr & column,
+    const DataTypePtr & type,
+    const ColumnPtr & cast_column,
+    const DataTypePtr & cast_type,
+    const IColumn::Filter * kept = nullptr)
 {
+    const DataTypePtr source_type = removeLowCardinality(type);
+
+    /// The reverse cast has to be able to say that a value did not come back, which `accurateOrNull`
+    /// does by wrapping its target in `Nullable`; a target it cannot wrap (an `Array`, or a `Tuple`
+    /// holding one) leaves the question unanswered. A `Dynamic` cannot be wrapped either, because it
+    /// carries its own NULLs, but it also cannot refuse a value: every value fits a `Dynamic`, so there
+    /// the plain accurate cast is total and its result answers the question directly.
+    ColumnPtr back_column;
+    if (WhichDataType(*source_type).isDynamic())
+        back_column = castColumnAccurate({cast_column, cast_type, ""}, source_type);
+    else if (canBeAccurateCastOrNullTarget(source_type))
+        back_column = castColumnAccurateOrNull({cast_column, cast_type, ""}, source_type);
+    else
+        return false;
+
+    for (size_t i = 0, size = column->size(); i < size; ++i)
+    {
+        if (kept && !(*kept)[i])
+            continue;
+
+        if ((*back_column)[i] != (*column)[i])
+            return false;
+    }
+
+    return true;
+}
+
+
+/// Cast column to target_type and fail if the cast introduces NULLs.
+///
+/// `out_is_exact` reports whether every value also survived the cast unchanged. A value that fits the
+/// target but loses information on the way - `DateTime64(6)` truncated to `DateTime64(3)` - is not a
+/// NULL, so the probe below cannot see it, and a constant normalized that way stands for a different
+/// value than the query asked for. Whoever relies on the cast for an equality atom has to treat such
+/// an atom as relaxed: the key point it names has more than one preimage, so `notEquals` must not
+/// exclude it.
+static bool castColumnWithoutNulls(
+    ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type, bool & out_is_exact)
+{
+    out_is_exact = true;
+
     if (canBeSafelyCast(type, target_type))
     {
         column = castColumnAccurate({column, type, ""}, target_type);
@@ -2188,6 +2239,12 @@ static bool castColumnWithoutNulls(ColumnPtr & column, DataTypePtr & type, const
         if (b)
             return false;
 
+    /// Every value fits, so ask the reverse cast whether anything was lost on the way. The probe above
+    /// is the forward cast, so it is read back instead of being computed again - as its nested column,
+    /// whose type is the probe target with the `Nullable` that carried the failures removed. An inexact
+    /// cast costs only the `can_be_false` half of the analysis.
+    out_is_exact = castKeptEveryValue(column, type, n.getNestedColumnPtr(), removeNullable(probe_type));
+
     /// No NULLs were introduced, so the cast is accurate for every value. Produce the requested
     /// target_type (which may be LowCardinality and/or Nullable); the accurate cast cannot throw
     /// here because the probe above already proved every value fits.
@@ -2211,9 +2268,11 @@ static bool convertColumnForDeterministicDag(
     const DeterministicKeyTransformDag & dag,
     ColumnPtr & out_column,
     DataTypePtr & out_type,
-    bool & out_transform_applied)
+    bool & out_transform_applied,
+    bool & out_cast_is_exact)
 {
     out_transform_applied = false;
+    out_cast_is_exact = true;
 
     ColumnPtr input_column = in_column->convertToFullIfWrapped()->convertToFullColumnIfLowCardinality();
     DataTypePtr input_type = removeLowCardinality(in_type);
@@ -2272,7 +2331,8 @@ static bool convertColumnForDeterministicDag(
             out_column = input_column;
             out_type = input_type;
 
-            if (!input_type->equals(*cast_result_type) && !castColumnWithoutNulls(out_column, out_type, cast_result_type))
+            if (!input_type->equals(*cast_result_type)
+                && !castColumnWithoutNulls(out_column, out_type, cast_result_type, out_cast_is_exact))
                 return false;
 
             return finalizeTransformedColumn(out_column, out_type);
@@ -2284,7 +2344,7 @@ static bool convertColumnForDeterministicDag(
             return true;
         }
 
-        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type))
+        if (!castColumnWithoutNulls(input_column, input_type, dag.input_type, out_cast_is_exact))
             return false;
     }
 
@@ -2357,14 +2417,16 @@ static bool applyDeterministicDagToColumn(
     const String & input_name,
     const DeterministicKeyTransformDag & dag,
     ColumnPtr & out_column,
-    DataTypePtr & out_type)
+    DataTypePtr & out_type,
+    bool & out_cast_is_exact)
 {
     ColumnPtr transform_input_column;
     DataTypePtr transform_input_type;
     bool transform_applied = false;
 
     if (!convertColumnForDeterministicDag(
-            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied))
+            in_column, in_type, input_name, dag, transform_input_column, transform_input_type, transform_applied,
+            out_cast_is_exact))
         return false;
 
     if (transform_applied)
@@ -2515,14 +2577,35 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     ColumnPtr transform_input_column;
     DataTypePtr transform_input_type;
     bool transform_applied = false;
+    bool cast_is_exact = true;
     if (!convertColumnForDeterministicDag(
-            const_column, out_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied))
+            const_column, out_type, expr_name, dag, transform_input_column, transform_input_type, transform_applied, cast_is_exact))
         return false;
 
     /// The direct-CAST fast path converts and transforms in one step, so it produces no intermediate value
     /// to check; a CAST is not injective, so an atom over it is not exact either way.
     const bool transform_input_has_nan
         = !transform_applied && anyFieldSatisfies((*transform_input_column)[0], isNaNField);
+
+    /// A `String` constant does not name a value in its own domain: the comparison converts the spelling
+    /// into the type of the other side and compares there (`executeWithConstString` in
+    /// `FunctionsComparison.h`), so it is that conversion, not the spelling, that the predicate is about.
+    /// Rendering the normalized constant back into a string judges the spelling instead - `'2023-02-01
+    /// 12:00:00'` comes back as `'2023-02-01 12:00:00.000'` while naming exactly the same key point - so
+    /// ask the conversion the comparison itself uses whether the normalization is the value the predicate
+    /// names. A string-ish key column is left to the round trip: two string-ish types are compared as
+    /// bytes (`executeString`), where the padding a `FixedString` adds really does change the compared
+    /// value.
+    if (!cast_is_exact && !transform_applied)
+    {
+        const DataTypePtr comparison_type = removeLowCardinalityAndNullable(dag.input_type);
+
+        if (isStringOrFixedString(removeLowCardinalityAndNullable(out_type)) && !isStringOrFixedString(comparison_type))
+        {
+            const Field compared_value = tryConvertFieldToType(out_value, *comparison_type, out_type.get(), {});
+            cast_is_exact = !compared_value.isNull() && compared_value == (*transform_input_column)[0];
+        }
+    }
 
     ColumnPtr transformed_const_column = transform_input_column;
     DataTypePtr transformed_const_type = transform_input_type;
@@ -2535,8 +2618,11 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     /// The comparison reads the constant in the domain of the column the key expression consumes, where a
     /// NaN equals no value, not even itself. The transform maps it to an ordinary key value that the index
     /// compares as equal, so the atom is stricter than the predicate and its `can_be_false` is not usable.
+    /// A normalization that lost information leaves the key point with more than one preimage, so the
+    /// atom is stricter than the predicate for the same reason a non-injective transform is.
     out_atom_is_exact = isDeterministicTransformInjective(dag.actions->getActionsDAG(), expr_name, dag.output_name)
-        && !transform_input_has_nan;
+        && !transform_input_has_nan
+        && cast_is_exact;
 
     Field transformed_value = (*transformed_const_column)[0];
 
@@ -2618,8 +2704,11 @@ static bool tryPrepareSetColumnsForIndex(
     const std::vector<std::optional<DeterministicKeyTransformDag>> & set_transforming_dags,
     const DataTypes & data_types,
     const std::vector<MergeTreeSetIndex::KeyTuplePositionMapping> & indexes_mapping,
-    size_t args_count)
+    size_t args_count,
+    bool & out_is_exact)
 {
+    out_is_exact = true;
+
     Columns new_columns;
     DataTypes new_types;
     while (set_columns.size() < args_count) /// If we have a packed tuple inside, we unpack it
@@ -2672,14 +2761,19 @@ static bool tryPrepareSetColumnsForIndex(
             ColumnPtr transformed_set_column;
             DataTypePtr transformed_set_type;
             const auto & set_transforming_dag = *set_transforming_dags[indexes_mapping_index];
+            bool dag_cast_is_exact = true;
             if (!applyDeterministicDagToColumn(
                     set_column,
                     set_element_type,
                     set_transforming_dag.input_name,
                     set_transforming_dag,
                     transformed_set_column,
-                    transformed_set_type))
+                    transformed_set_type,
+                    dag_cast_is_exact))
                 return false;
+
+            if (!dag_cast_is_exact)
+                out_is_exact = false;
 
             set_column = transformed_set_column;
             set_element_type = transformed_set_type;
@@ -2740,6 +2834,19 @@ static bool tryPrepareSetColumnsForIndex(
             if ((!key_is_nullable && null_in_source) || (cast_failure_null_map[i] && !source_is_nothing))
                 filter[i] = 0;
         }
+
+        /// An element that fits the key type can still lose information on the way - a `DateTime64(6)`
+        /// element truncated to a `DateTime64(3)` key - which no NULL marks. The element then names a key
+        /// point the predicate does not, so the set is reported as inexact and the atom is relaxed: both
+        /// `notIn` excluding that point and `in` reading the atom as certainly true over a single-point
+        /// range are then wrong. The element itself stays - a relaxed atom is a superset of the predicate,
+        /// so the points it does exclude still prune for `in`. An all-NULL element (`Nothing`) names no
+        /// value and loses nothing.
+        if (!source_is_nothing
+            && !castKeptEveryValue(
+                set_column, set_element_type, cast_nullable_column->getNestedColumnPtr(),
+                removeNullable(key_column_type), &filter))
+            out_is_exact = false;
 
         if (key_is_nullable && (source_null_map || source_is_nothing))
         {
@@ -3025,8 +3132,9 @@ bool KeyCondition::tryPrepareSetIndexForIn(
         }
     }
 
+    bool set_is_exact = true;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, left_args_count, set_is_exact))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -3051,7 +3159,12 @@ bool KeyCondition::tryPrepareSetIndexForIn(
     ///    For partition pruning we may transform set elements via functions from the key expression,
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `ts NOT IN ('2026-02-03 19:00:00')` into `toDate(ts) NOT IN ('2026-02-03')`, which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size())
+    ///
+    /// -  if normalizing an element into the key type lost information, `tryPrepareSetColumnsForIndex()`
+    ///    reports the set as inexact. The element names a key point the predicate does not, so neither
+    ///    `NOT IN` excluding that point nor `IN` being certainly true over it can be relied on. `IN` keeps
+    ///    the pruning it gets from the points the set does not hold.
+    if (adjusted_indexes_mapping.size() < set_types.size() || !set_is_exact)
         out.relaxed = true;
 
     return true;
@@ -3202,8 +3315,9 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     Columns set_columns = {array_elements};
     DataTypes set_types = {array_nested_type};
 
+    bool set_is_exact = true;
     if (!tryPrepareSetColumnsForIndex(
-            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count))
+            set_columns, set_types, set_transforming_dags, data_types, indexes_mapping, key_args_count, set_is_exact))
         return false;
 
     out.set_index = std::make_shared<MergeTreeSetIndex>(set_columns, std::move(indexes_mapping));
@@ -3229,7 +3343,12 @@ bool KeyCondition::tryPrepareSetIndexForHas(
     ///    which relaxes the predicate. Example: `PARTITION BY toDate(ts)` allows turning
     ///    `has([toDateTime('2026-02-03 19:00:00')], ts)` into `has([toDate('2026-02-03')], toDate(ts))`,
     ///    which is not equivalent.
-    if (adjusted_indexes_mapping.size() < set_types.size())
+    ///
+    /// -  if normalizing an element into the key type lost information, `tryPrepareSetColumnsForIndex()`
+    ///    reports the set as inexact. The element names a key point the predicate does not, so neither
+    ///    `NOT has` excluding that point nor `has` being certainly true over it can be relied on. `has`
+    ///    keeps the pruning it gets from the points the set does not hold.
+    if (adjusted_indexes_mapping.size() < set_types.size() || !set_is_exact)
         out.relaxed = true;
 
     return true;
