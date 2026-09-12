@@ -4,6 +4,7 @@
 #include <Access/Credentials.h>
 #include <Access/User.h>
 #include <Access/AccessBackup.h>
+#include <Access/AccessControl.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/IBackupCoordination.h>
 #include <Backups/IRestoreCoordination.h>
@@ -909,8 +910,14 @@ void IAccessStorage::restoreFromBackup(RestorerFromBackup & restorer, const Stri
         [this, &restorer, data_path_in_backup]
         {
             auto entities_to_restore = restorer.getAccessEntitiesToRestore(data_path_in_backup);
+            if (entities_to_restore.new_entities.empty())
+                return; /// Only one data path of a restore carries its access entities.
+
             const auto & restore_settings = restorer.getRestoreSettings();
             restoreAccessEntitiesFromBackup(*this, entities_to_restore, restore_settings);
+
+            /// The entities went straight into this storage, so no subscriber knows about them yet.
+            restorer.getContext()->getAccessControl().getChangesNotifier().sendNotifications();
         });
 }
 
