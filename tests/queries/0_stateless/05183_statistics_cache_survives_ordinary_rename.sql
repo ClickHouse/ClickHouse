@@ -12,15 +12,19 @@ SET send_logs_level = 'fatal';
 SET allow_deprecated_database_ordinary = 1;
 CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE = Ordinary;
 
-CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_stats_cache_rename (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+-- A table without a UUID shares its cache entries with every other table whose parts have the
+-- same contents, so another run of this test on the same server (concurrent, or an earlier one
+-- that already warmed the caches) would turn the misses checked below into hits. The `run`
+-- column, filled with the name of the run's database, makes the parts unique per run.
+CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t_stats_cache_rename (a UInt64, b UInt64, run String) ENGINE = MergeTree ORDER BY a
 SETTINGS auto_statistics_types = 'basic, uniq_v2', refresh_statistics_interval = 0;
 
 SYSTEM STOP MERGES {CLICKHOUSE_DATABASE_1:Identifier}.t_stats_cache_rename;
 
 SET materialize_statistics_on_insert = 1;
 
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_stats_cache_rename SELECT number, number % 7 FROM numbers(1000);
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_stats_cache_rename SELECT number + 1000, number % 11 FROM numbers(1000);
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_stats_cache_rename SELECT number, number % 7, {CLICKHOUSE_DATABASE:String} FROM numbers(1000);
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.t_stats_cache_rename SELECT number + 1000, number % 11, {CLICKHOUSE_DATABASE:String} FROM numbers(1000);
 
 -- Writing a part memoizes its estimates, so a pruning query would not touch the part statistics
 -- cache; reload the parts so that the first pruning query populates the cache for every part.
