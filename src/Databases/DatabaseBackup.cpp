@@ -464,8 +464,11 @@ ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
     const auto & settings = getContext()->getSettingsRef();
 
+    /// The locator is emitted as the function it is, not as a string literal holding its text: this
+    /// definition is what `ALTER DATABASE ... MODIFY COMMENT` writes back into the metadata file, and
+    /// the load path parses the second argument with `BackupInfo::fromAST`, which takes a function.
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
-        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
+        backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info.toString());
 
     ParserCreateQuery parser;
     ASTPtr ast = parseQuery(parser,
@@ -493,7 +496,7 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseBackup::getTablesForBackup(co
 namespace
 {
 
-DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
+DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr, bool allow_locator_in_string_literal)
 {
     if (engine_args.size() != 2)
         throw Exception::createRuntime(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -502,6 +505,24 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
     DatabaseBackup::Configuration result;
 
     result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
+
+    /** A locator held in a string literal (`Backup('db', 'File(\'backup.zip\')')`) is the form that
+      * metadata rewritten by an older server carries, so it has to keep loading - a server that cannot
+      * parse its own metadata does not start at all.
+      *
+      * Only there: in a statement a user writes the locator must be the function it is, because that is
+      * the form `FunctionSecretArgumentsFinder` knows how to redact, and a quoted one would carry its
+      * credentials verbatim into `query_log`, `SHOW PROCESSLIST` and the distributed DDL payload.
+      */
+    if (allow_locator_in_string_literal)
+    {
+        if (const auto * locator = engine_args[1]->as<ASTLiteral>(); locator && locator->value.getType() == Field::Types::String)
+        {
+            result.backup_info = BackupInfo::fromString(locator->value.safeGet<String>());
+            return result;
+        }
+    }
+
     result.backup_info = BackupInfo::fromAST(*engine_args[1]);
 
     return result;
@@ -515,7 +536,7 @@ void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextP
     if (engine_args.size() == 2 && !engine_args[1]->as<ASTFunction>())
         return;
 
-    auto config = parseArguments(engine_args, query_context);
+    auto config = parseArguments(engine_args, query_context, /*allow_locator_in_string_literal=*/ false);
     BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
 }
 
@@ -531,13 +552,13 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         if (engine->arguments)
             engine_args = engine->arguments->children;
 
-        auto config = parseArguments(engine_args, args.context);
-
         /// Authorize only a newly introduced definition: one read back from this server's metadata was
         /// already validated, and a context with no user cannot be checked per user.
         const bool has_real_user = args.context->getAccess()->getUserID().has_value();
         const bool from_existing_metadata
             = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax;
+
+        auto config = parseArguments(engine_args, args.context, /*allow_locator_in_string_literal=*/ from_existing_metadata);
         if (has_real_user && !from_existing_metadata)
             BackupFactory::instance().checkSourceAccess(config.backup_info, args.context, IBackup::OpenMode::READ);
 
