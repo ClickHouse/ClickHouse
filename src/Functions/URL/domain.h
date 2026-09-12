@@ -81,7 +81,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
     bool has_open_bracket = false;
     bool has_end_bracket = false;
     bool has_dot_inside_brackets = false;
-    if (*pos == '[') /// IPv6 [2001:db8::1]:80
+    if (pos < end && *pos == '[') /// IPv6 [2001:db8::1]:80
     {
         has_open_bracket = true;
         ++pos;
