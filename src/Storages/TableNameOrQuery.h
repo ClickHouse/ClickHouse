@@ -55,6 +55,11 @@ private:
   * database, so it is formatted with the external database's identifier-quoting and string-literal-escaping
   * style (e.g. double quotes for PostgreSQL, backticks for MySQL/SQLite). Syntax that cannot be represented as
   * ClickHouse SQL must use the `query('...')` form instead, which is passed through verbatim.
+  *
+  * The round trip through the ClickHouse parser also loses the information of whether an identifier was
+  * quoted: `"Foo"` and `Foo` parse to the same identifier. For an external database that folds unquoted
+  * identifiers (PostgreSQL), a mixed-case name is therefore always emitted unquoted and ends up folded, so a
+  * source that has to address a case-sensitive mixed-case object must use the `query('...')` form too.
   */
 std::optional<String> tryGetExternalDatabaseQuery(
     const ASTPtr & argument,

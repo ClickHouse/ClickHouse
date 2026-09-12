@@ -31,6 +31,13 @@ enum class IdentifierQuotingRule : uint8_t
     /// is always safe and it makes reserved words such as `where` or `group` survive the re-serialization,
     /// while a name that contains upper-case characters is left unquoted and keeps being folded as before -
     /// `(SELECT Foo FROM t)` has to keep resolving to the column `foo`, not to a case-sensitive `Foo`.
+    ///
+    /// A name that the user wrote quoted solely to preserve a mixed-case spelling (`(SELECT "Foo" FROM t)`)
+    /// therefore comes out unquoted and is folded to `foo` as well. That is not a property of this rule:
+    /// `ParserIdentifier` does not record whether an identifier was quoted, so `"Foo"` and `Foo` are the very
+    /// same parsed identifier, and every rule that does not quote unconditionally - `WhenNecessary`, which
+    /// this one replaced, included - emits it the same way. Only the `query('...')` form, which is passed to
+    /// the external database verbatim, can express a case-sensitive mixed-case identifier.
     AlwaysUnlessUpperCase,
 };
 }

@@ -770,6 +770,29 @@ TEST(TransformQueryForExternalDatabase, QueryTableArgumentIdentifierQuotingForPo
             IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL,
             IdentifierQuotingRule::AlwaysUnlessUpperCase),
         R"(SELECT "field", Value FROM "test"."table")");
+
+    /// `ParserIdentifier` does not record whether an identifier was quoted, so a name the user quoted only
+    /// to preserve its mixed-case spelling is the very same parsed identifier as the bare one and is emitted
+    /// unquoted - PostgreSQL folds it to lower case. This is not a property of `AlwaysUnlessUpperCase`: the
+    /// `WhenNecessary` rule it replaced produces byte-identical output here, which is what this comparison
+    /// pins. A case-sensitive mixed-case object has to be addressed through the `query('...')` form, which is
+    /// passed to the external database verbatim.
+    const auto quoted_mixed_case = R"((SELECT "CamelCase" FROM "MixedCase"))";
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            quoted_mixed_case,
+            IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL,
+            IdentifierQuotingRule::AlwaysUnlessUpperCase),
+        formatQueryTableArgument(state,
+            quoted_mixed_case,
+            IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL,
+            IdentifierQuotingRule::WhenNecessary));
+    EXPECT_EQ(
+        formatQueryTableArgument(state,
+            quoted_mixed_case,
+            IdentifierQuotingStyle::DoubleQuotesStandard, LiteralEscapingStyle::PostgreSQL,
+            IdentifierQuotingRule::AlwaysUnlessUpperCase),
+        "SELECT CamelCase FROM MixedCase");
 }
 
 TEST(TransformQueryForExternalDatabase, QueryTableArgumentForMySQL)
