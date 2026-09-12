@@ -293,12 +293,14 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (node->column)
         {
             ASTPtr literal;
-            if (typeMayContainDecimal(*node->result_type))
-                /// Serialize decimal-backed constants (Decimal/DateTime64/Time64, incl. nested) exactly so
-                /// the shard does not re-parse them through Float64 or DateTime64 text heuristics.
-                literal = columnConstantToExactLiteralAST(node->column, 0, node->result_type);
+            if (typeNeedsExactLiteralSerialization(*node->result_type))
+                /// Serialize constants whose type or value a plain literal cannot carry exactly (decimal-backed
+                /// leaves, and the active member of a `Variant`, including nested ones) so the shard does not
+                /// re-parse them through `Float64`, `DateTime64` text heuristics, or a wrong `Variant` member.
+                literal = columnConstantToExactLiteralAST(
+                    node->column, 0, node->result_type, /*date_time_as_numbers=*/true);
             else
-                /// Other types keep their raw Field literal. In particular a DateTime serialized as local
+                /// Other types keep their raw `Field` literal. In particular a `DateTime` serialized as local
                 /// date-time text would be ambiguous across DST overlaps in non-UTC time zones (two instants
                 /// share one text, and parsing picks one side), whereas the raw Unix-timestamp literal is exact.
                 literal = make_intrusive<ASTLiteral>(node->column->getField());
