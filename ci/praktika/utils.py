@@ -351,15 +351,21 @@ class Shell:
         # Anchored at the first retryable failure rather than at command start: an
         # attempt may legitimately run for its whole per-attempt bound before failing.
         ladder_start = None
+        attempt_end = time.monotonic()
         pending_notice = None
         deadline_cancelled = False
+
+        def _wake_at(next_delay):
+            # The back-off runs from the end of the attempt, so what the ladder itself
+            # spends between attempts is inside it rather than added to it.
+            return max(time.monotonic(), attempt_end + next_delay)
 
         def _another_attempt_follows(next_delay):
             if retry >= retries - 1:
                 return False
             if retry_deadline is None or ladder_start is None:
                 return True
-            return time.monotonic() - ladder_start + next_delay < retry_deadline
+            return _wake_at(next_delay) - ladder_start < retry_deadline
 
         def _announce(matched, attempt):
             # A reporting failure must never fail the command the retry is rescuing.
@@ -381,7 +387,7 @@ class Shell:
                 delay = min(2 * delay, 60)
                 if verbose:
                     print(f"Retrying in {delay}s...")
-                time.sleep(delay)
+                time.sleep(max(0.0, _wake_at(delay) - time.monotonic()))
                 # Last thing before the attempt: `time.sleep` may return late.
                 if _deadline_passed():
                     if verbose:
@@ -458,6 +464,7 @@ class Shell:
                         # descendant it must still reach keeps this call blocked.
                         finished.set()
 
+                attempt_end = time.monotonic()
                 if pending_notice is not None:
                     # Only past here is a deadline-cancellable retry certain to have run,
                     # and the child is already reaped, so caller code cannot strand it.
@@ -519,6 +526,8 @@ class Shell:
                     else:
                         pending_notice = matched
             except Exception as e:
+                # A failed spawn ends an attempt too: the next back-off runs from here.
+                attempt_end = time.monotonic()
                 if retry_deadline is not None and ladder_start is None:
                     ladder_start = time.monotonic()
                 # An exception announces nothing.
