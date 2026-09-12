@@ -1058,16 +1058,24 @@ class Result(MetaClasses.Serializable):
     def do_not_block_pipeline_on_failure(self):
         return self.ext.get("do_not_block_pipeline_on_failure", False)
 
+    def do_not_cache(self):
+        return self.ext.get("do_not_cache", False)
+
     def complete_job(
         self,
         with_job_summary_in_info=True,
         do_not_block_pipeline_on_failure=False,
         disable_attached_files_sorting=False,
+        do_not_cache=False,
     ):
         if with_job_summary_in_info:
             self._add_job_summary_to_info()
         if do_not_block_pipeline_on_failure and not self.is_ok():
             self.ext["do_not_block_pipeline_on_failure"] = True
+        # A job sets this flag when its verdict depends on run-time state no digest input
+        # captures, so a later commit with the same digest must not reuse its success record.
+        if do_not_cache:
+            self.ext["do_not_cache"] = True
         if not disable_attached_files_sorting:
             try:
                 # Normalize to string and sort by filename case-insensitively
