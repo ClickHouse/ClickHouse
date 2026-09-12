@@ -312,7 +312,8 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
     /// Hot-path tokenizer used by the free `forEachToken` (index build, search, the `tokens` function).
     /// Unlike a per-token `nextInString` call, the scan state stays in registers across tokens, and with
     /// multi-byte separators every 16-byte block is classified once, so `matchSeparator` runs only at the
-    /// bytes that can start a separator. Reads exactly `length` bytes; no padding is required.
+    /// bytes that can start a separator. Like `SplitByNonAlphaTokenizer`, assumes that `data` is padded
+    /// from the right with at least 15 bytes (as our Columns provide).
     template <Fn<bool(const char *, size_t)> Callback>
     void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
     {
@@ -372,8 +373,18 @@ private:
 
         while (block < end)
         {
-            const char * block_end = std::min(end, block + ByteSetLookup::BLOCK_SIZE);
-            UInt32 candidates = separator_first_bytes.matchBytes(block, block_end - block);
+            const size_t block_length = std::min<size_t>(end - block, ByteSetLookup::BLOCK_SIZE);
+#if !defined(MEMORY_SANITIZER) /// We read the padding bytes past `end`; their bits are masked out below
+            UInt32 candidates = separator_first_bytes.matchBlock(block);
+#else
+            UInt32 candidates = 0;
+            for (size_t i = 0; i < block_length; ++i)
+                candidates |= static_cast<UInt32>(separator_first_bytes.contains(block[i])) << i;
+#endif
+            if (block_length < ByteSetLookup::BLOCK_SIZE)
+                candidates &= (1u << block_length) - 1;
+
+            const char * block_end = block + block_length;
             const char * resume = block;
 
             while (candidates != 0)
