@@ -138,6 +138,7 @@ static NO_INLINE size_t getStackSize(void ** out_address)
 
 void checkStackSize()
 {
+#if !defined(__FILC__)
     /// Not implemented for coroutines.
     if (StackfulCoroutine::getCurrentCoroutine())
         return;
@@ -177,4 +178,5 @@ void checkStackSize()
     /// Just check if we have eat more than a STACK_SIZE_FREE_RATIO of stack size already.
     if (unlikely(stack_size > max_stack_size_allowed))
         throwTooDeepRecursion(stack_bounds.address, frame_address, stack_size, stack_bounds.max_size);
+#endif
 }
