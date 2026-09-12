@@ -64,12 +64,6 @@ public:
     void setRawPath(const Path & p) override { path = p; }
     const String & getRawURI() const override { return url; }
 
-    const Paths & getPaths() const override { return paths; }
-    void setPaths(const Paths & paths_) override
-    {
-        paths = paths_;
-    }
-
     String getNamespace() const override { return ""; }
     String getDataSourceDescription() const override { return url; }
     StorageObjectStorageQuerySettings getQuerySettings(const ContextPtr &) const override;
@@ -80,6 +74,13 @@ public:
 
     void addStructureAndFormatToArgsIfNeeded(
         ASTs & args, const String & structure_, const String & format_, ContextPtr context, bool with_structure) override;
+
+protected:
+    const Paths & getPathsImpl() const override { return paths; }
+    void setPathsImpl(const Paths & paths_) override
+    {
+        paths = paths_;
+    }
 
 private:
     void initializeFromParsedArguments(const HDFSStorageParsedArguments & parsed_arguments);
