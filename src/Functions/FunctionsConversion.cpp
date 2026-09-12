@@ -2819,6 +2819,12 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
 
 FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
 {
+    /// A `Nothing` column carries no values, so it converts trivially to any target, which is what
+    /// `createNothingWrapper` does. `Variant` and `Dynamic` instead resolve the source against their
+    /// member list, which cannot name `Nothing`, so they need that path rather than the one below.
+    if (isNothing(from_type) && (isVariant(to_type) || isDynamic(to_type)))
+        return createNothingWrapper(to_type.get());
+
     /// Conversion from/to Variant/Dynamic data type is processed in a special way.
     /// We don't need to remove LowCardinality/Nullable.
     if (isDynamic(to_type) || isDynamic(from_type))
