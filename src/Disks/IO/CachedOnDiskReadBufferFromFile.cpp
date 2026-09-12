@@ -670,8 +670,13 @@ CachedOnDiskReadBufferFromFile::createReadFromFileSegmentState(
                     return create(ReadType::CACHED);
                 }
 
-                download_state = file_segment.wait(
-                    offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
+                {
+                    /// Waiting for another reader to download this segment is a non-CPU wait,
+                    /// so park the CPU lease to let the slot serve other work while we block.
+                    CPULeaseParkGuard cpu_park;
+                    download_state = file_segment.wait(
+                        offset, info_.cache_settings.wait_for_concurrent_download_timeout_milliseconds);
+                }
 
                 if (download_state == FileSegment::State::DOWNLOADING && !canStartFromCache(offset, file_segment))
                 {
