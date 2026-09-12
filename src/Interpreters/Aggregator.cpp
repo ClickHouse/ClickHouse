@@ -6,6 +6,7 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 
+#include <base/sort.h>
 #include <base/getL2CacheSize.h>
 
 #include <AggregateFunctions/AggregateFunctionCount.h>
@@ -2644,7 +2645,14 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
     }
 
     if (final && params.bucket_top_k && !method.data.impls[bucket].empty())
-        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, topk_full_key_bytes);
+    {
+        const bool arena_is_bucket_arena = !data_variants.adaptive_merge_bucket_arenas.empty()
+            && arena == data_variants.adaptive_merge_bucket_arenas[bucket].get();
+        AdaptiveBucketCountTopK * count_top_k = data_variants.adaptive_merge_bucket_topk.empty()
+            ? nullptr
+            : data_variants.adaptive_merge_bucket_topk[bucket].get();
+        return convertOneBucketToChunkTopK(method, arena, *pools_for_output, bucket, topk_full_key_bytes, arena_is_bucket_arena, count_top_k);
+    }
 
     auto result = convertToBlockImpl(
         method,
@@ -2664,7 +2672,7 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunk(
 /// is needed for the set instantiation to exist; it is never reached.
 template <typename Method>
 requires SetAggregationMethod<Method>
-Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Arena *, Arenas &, Int32, UInt64 *) const
+Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Arena *, Arenas &, Int32, UInt64 *, bool, AdaptiveBucketCountTopK *) const
 {
     throw Exception(ErrorCodes::LOGICAL_ERROR, "The bucket-local Top-K conversion does not support set methods");
 }
@@ -2672,7 +2680,8 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(Method &, Ar
 template <typename Method>
 requires MapAggregationMethod<Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
-    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const
+    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool arena_is_bucket_arena,
+    AdaptiveBucketCountTopK * count_top_k) const
 {
     auto & data = method.data.impls[bucket];
     chassert(params.bucket_top_k_count_index < params.aggregates_size);
@@ -2700,9 +2709,11 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     using TableKey = std::decay_t<decltype(std::declval<const typename std::decay_t<decltype(data)>::cell_type &>().getKey())>;
     struct Candidate
     {
-        UInt64 value;
-        TableKey key;
-        AggregateDataPtr mapped;
+        UInt64 value = 0;
+        TableKey key{};
+        AggregateDataPtr mapped = nullptr;
+        /// False for a candidate ranked from its state row before its cell was seen.
+        bool key_known = true;
     };
     /// The root is the worst kept candidate, so a new cell only pays the heap when it beats it.
     const auto worse_first = [&](const Candidate & a, const Candidate & b) { return better(a.value, b.value); };
@@ -2724,32 +2735,164 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
 
     std::vector<Candidate> top;
     top.reserve(std::min(params.bucket_top_k, data.size()));
-    data.forEachValue(
-        [&](const auto & key, auto & mapped)
+    const auto consider = [&](Candidate candidate)
+    {
+        if (top.size() < params.bucket_top_k)
         {
-            if (need_full_key_bytes)
+            top.push_back(std::move(candidate));
+            std::push_heap(top.begin(), top.end(), worse_first);
+        }
+        else if (better(candidate.value, top.front().value))
+        {
+            std::pop_heap(top.begin(), top.end(), worse_first);
+            top.back() = std::move(candidate);
+            std::push_heap(top.begin(), top.end(), worse_first);
+        }
+    };
+    const auto account_key_bytes = [&](const auto & key)
+    {
+        if (!need_full_key_bytes)
+            return;
+        method.insertKeyIntoColumns(key, key_size_columns.raw_key_columns, key_size_key_sizes, &key_size_serialization_settings);
+        for (auto * column : key_size_columns.raw_key_columns)
+        {
+            key_bytes += column->byteSizeAt(column->size() - 1);
+            column->popBack(1);
+        }
+    };
+    const auto select_by_cells = [&]
+    {
+        data.forEachValue(
+            [&](const auto & key, auto & mapped)
             {
-                method.insertKeyIntoColumns(
-                    key, key_size_columns.raw_key_columns, key_size_key_sizes, &key_size_serialization_settings);
-                for (auto * column : key_size_columns.raw_key_columns)
+                account_key_bytes(key);
+                consider({count_of(mapped), key, mapped});
+            });
+    };
+
+    /// The count lives in the state, and the table walk touches the states in hash order: a cache
+    /// line per group from a region far larger than the caches, with too little work per group
+    /// for the misses to overlap. When the bucket's states were drained into its own arena, they
+    /// are rows of one size and alignment there, in insertion order, and nothing else is in that
+    /// arena (a fixed-size key stages no bytes, and no aggregate allocates in the arena): the
+    /// ranking then reads the rows in memory order (sequential, prefetched by hardware) and only
+    /// the cells are walked once more to attach the keys of the few winners and to rank the
+    /// states that live elsewhere (groups merged in from the pre-freeze tables, whose states are
+    /// in their own pools).
+    constexpr bool fixed_size_key = !std::is_same_v<TableKey, std::string_view> && !std::is_same_v<TableKey, PackedStringRef>;
+    bool rank_by_arena_rows = arena_is_bucket_arena && arena && !is_simple_count && fixed_size_key;
+    if (rank_by_arena_rows)
+        for (const auto * function : aggregate_functions)
+            if (function->allocatesMemoryInArena())
+                rank_by_arena_rows = false;
+
+    bool ranked = false;
+
+    /// A plain count() whose merged bucket tracked its largest counts (see `AdaptiveBucketCountTopK`):
+    /// the winners are known, only their cells are looked up, and the table is not scanned.
+    if constexpr (requires { data.begin(); })
+    {
+        if (count_top_k && count_top_k->complete && is_simple_count)
+        {
+            for (const auto & entry : count_top_k->entries)
+            {
+                typename std::decay_t<decltype(data)>::LookupResult it;
+                bool inserted = false;
+                AdaptiveAggregationDetail::emplaceStagedKey<typename Method::Key, AdaptiveKeyStorage::BorrowFromChunk>(
+                    data, entry.key.data(), entry.key.size(), entry.hash, *arena, it, inserted);
+                if (inserted)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "A tracked Top-K group is missing from its bucket");
+                consider({count_of(it->getMapped()), it->getKey(), it->getMapped()});
+            }
+            ranked = true;
+
+            /// The statistic wants the materialized size of every key; estimate it from the winners.
+            if (need_full_key_bytes && !top.empty())
+            {
+                for (const auto & candidate : top)
+                    account_key_bytes(candidate.key);
+                key_bytes = key_bytes * data.size() / top.size();
+            }
+        }
+    }
+
+    if (!ranked && rank_by_arena_rows)
+    {
+        struct Range
+        {
+            uintptr_t begin;
+            uintptr_t end;
+        };
+        std::vector<Range> ranges;
+        arena->forEachChunk([&](const char * begin, const char * pos)
+            { ranges.push_back({reinterpret_cast<uintptr_t>(begin), reinterpret_cast<uintptr_t>(pos)}); });
+        ::sort(ranges.begin(), ranges.end(), [](const Range & a, const Range & b) { return a.begin < b.begin; });
+
+        const size_t row_size = total_size_of_aggregate_states;
+        const size_t row_alignment = align_aggregate_states;
+        const auto align_up = [row_alignment](uintptr_t p) { return (p + row_alignment - 1) / row_alignment * row_alignment; };
+
+        /// Rows exactly as `Arena::alignedAlloc` placed them: aligned, back to back, none across chunks.
+        /// Once the heap is full, a row only pays the heap when it beats the current worst.
+        for (const auto & range : ranges)
+            for (uintptr_t p = align_up(range.begin); p + row_size <= range.end; p = align_up(p + row_size))
+            {
+                auto * mapped = reinterpret_cast<AggregateDataPtr>(p);
+                const UInt64 value = count_of(mapped);
+                if (top.size() == params.bucket_top_k && !better(value, top.front().value))
+                    continue;
+                consider({value, TableKey{}, mapped, /*key_known=*/false});
+            }
+
+        /// The cell walk needs two cheap tests per cell. Winners: the heap's row pointers, sorted, with
+        /// their address envelope as a prefilter (almost every cell fails it). Arena membership: the
+        /// chunks' envelope first, the sorted chunk ranges only for the addresses inside it.
+        std::vector<uintptr_t> winners;
+        for (const auto & candidate : top)
+            winners.push_back(reinterpret_cast<uintptr_t>(candidate.mapped));
+        ::sort(winners.begin(), winners.end());
+        const uintptr_t winners_min = winners.empty() ? 0 : winners.front();
+        const uintptr_t winners_max = winners.empty() ? 0 : winners.back();
+        const uintptr_t arena_min = ranges.empty() ? 0 : ranges.front().begin;
+        const uintptr_t arena_max = ranges.empty() ? 0 : ranges.back().end;
+
+        const auto in_arena = [&](uintptr_t p)
+        {
+            if (p < arena_min || p >= arena_max)
+                return false;
+            auto it = std::upper_bound(ranges.begin(), ranges.end(), p, [](uintptr_t value, const Range & r) { return value < r.begin; });
+            return p < std::prev(it)->end;
+        };
+
+        data.forEachValue(
+            [&](const auto & key, auto & mapped)
+            {
+                account_key_bytes(key);
+                const auto p = reinterpret_cast<uintptr_t>(mapped);
+                if (p >= winners_min && p <= winners_max && std::binary_search(winners.begin(), winners.end(), p))
                 {
-                    key_bytes += column->byteSizeAt(column->size() - 1);
-                    column->popBack(1);
+                    for (auto & candidate : top)
+                        if (candidate.mapped == mapped)
+                        {
+                            candidate.key = key;
+                            candidate.key_known = true;
+                        }
                 }
-            }
-            const UInt64 value = count_of(mapped);
-            if (top.size() < params.bucket_top_k)
-            {
-                top.push_back({value, key, mapped});
-                std::push_heap(top.begin(), top.end(), worse_first);
-            }
-            else if (better(value, top.front().value))
-            {
-                std::pop_heap(top.begin(), top.end(), worse_first);
-                top.back() = {value, key, mapped};
-                std::push_heap(top.begin(), top.end(), worse_first);
-            }
-        });
+                else if (!in_arena(p))
+                    consider({count_of(mapped), key, mapped});
+            });
+
+        /// Every kept row must have met its cell; if the arena held anything else, rank the plain way.
+        ranked = std::all_of(top.begin(), top.end(), [](const Candidate & c) { return c.key_known; });
+        if (!ranked)
+        {
+            top.clear();
+            key_bytes = 0;
+        }
+    }
+
+    if (!ranked)
+        select_by_cells();
 
     if (full_key_bytes)
         *full_key_bytes = key_bytes;
@@ -4203,7 +4346,8 @@ static void NO_INLINE mergeDataNullKeySimpleCount(Table & table_dst, Table & tab
 template <typename Method, typename Table>
 requires SetAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataImpl(
-    Table & table_dst, Table & table_src, Arena * arena, bool, bool prefetch, std::atomic<bool> &, const ParallelMergeWorker *)
+    Table & table_dst, Table & table_src, Arena * arena, bool, bool prefetch, std::atomic<bool> &, const ParallelMergeWorker *,
+    AdaptiveBucketCountTopK *)
     const
 {
     if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
@@ -4220,12 +4364,44 @@ template <typename Method, typename Table>
 requires MapAggregationMethod<Method>
 void NO_INLINE Aggregator::mergeDataImpl(
     Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions [[maybe_unused]],
-    bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker) const
+    bool prefetch, std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker,
+    AdaptiveBucketCountTopK * count_top_k) const
 {
     if (is_simple_count)
     {
         if constexpr (Method::low_cardinality_optimization || Method::one_key_nullable_optimization)
             mergeDataNullKeySimpleCount(table_dst, table_src);
+
+        if (count_top_k)
+        {
+            /// The tracked merge: the same emplace as `mergeToViaEmplace`, reporting every count.
+            /// The string hash map exposes no iteration over its cells, and the parallel merge reports
+            /// nothing; either leaves the tracker incomplete, so the conversion falls back to the scan.
+            if constexpr (requires(const typename Table::cell_type::value_type & v) { Table::cell_type::getKey(v); table_src.begin(); })
+            {
+                if (!parallel_worker)
+                {
+                    for (auto it = table_src.begin(), end = table_src.end(); it != end; ++it)
+                    {
+                        typename Table::LookupResult res_it;
+                        bool inserted = false;
+                        const auto & key = Table::cell_type::getKey(it->getValue());
+                        table_dst.emplace(key, res_it, inserted, it.getHash());
+                        if (inserted)
+                            getInlineCountState(res_it->getMapped()) = getInlineCountState(it->getMapped());
+                        else
+                            getInlineCountState(res_it->getMapped()) += getInlineCountState(it->getMapped());
+
+                        const UInt64 count = getInlineCountState(res_it->getMapped());
+                        if (count_top_k->above(count))
+                            count_top_k->consider(count, AdaptiveAggregationDetail::stagedKeyBytesOf<typename Method::Key>(key), it.getHash());
+                    }
+                    table_src.clearAndShrink();
+                    return;
+                }
+            }
+            count_top_k->complete = false;
+        }
 
         auto merge = [&](AggregateDataPtr & __restrict dst, AggregateDataPtr & __restrict src, bool inserted)
         {
@@ -4603,28 +4779,56 @@ void NO_INLINE Aggregator::mergeBucketImpl(
         && (Method::Data::NUM_BUCKETS * getDataVariant<Method>(*res).data.impls[bucket].getBufferSizeInBytes()
             > minBytesForPrefetch<typename Method::Data, Method::State::has_mapped>(min_bytes_for_prefetch));
 
+    auto & dst = getDataVariant<Method>(*res).data.impls[bucket];
+
+    /// The destination grows by doubling while the sources are merged in: every step reallocates
+    /// the buffer, zeroes the new half and rehashes the whole table. The final size is bounded by
+    /// the sum of the source sizes, but the keys overlap between the sources, so the sum alone
+    /// would over-reserve. Instead the first merged source measures the fraction of its keys
+    /// that were new, and that rate, extrapolated over the remaining sources, sizes the table
+    /// once (with the same headroom the adaptive drain uses). Tables without `reserve` (the
+    /// fixed-size ones) never resize and skip this.
+    constexpr bool can_reserve = requires { dst.reserve(size_t{}); };
+    size_t remaining_records = 0;
+    if constexpr (can_reserve)
+        for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
+            remaining_records += getDataVariant<Method>(*data[result_num]).data.impls[bucket].size();
+    const size_t dst_size_before = dst.size();
+    size_t processed_records = 0;
+    bool reserved = false;
+
     for (size_t result_num = 1, size = data.size(); result_num < size; ++result_num)
     {
         if (is_cancelled.load(std::memory_order_seq_cst))
             return;
 
         AggregatedDataVariants & current = *data[result_num];
+        auto & src = getDataVariant<Method>(current).data.impls[bucket];
+        const size_t src_size = src.size();
+        AdaptiveBucketCountTopK * count_top_k
+            = data[0]->adaptive_merge_bucket_topk.empty() ? nullptr : data[0]->adaptive_merge_bucket_topk[bucket].get();
 #if USE_EMBEDDED_COMPILER
         if (compiled_aggregate_functions_holder)
         {
-            mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data.impls[bucket], getDataVariant<Method>(current).data.impls[bucket], arena, true, prefetch, is_cancelled);
+            mergeDataImpl<Method>(dst, src, arena, true, prefetch, is_cancelled, nullptr, count_top_k);
         }
         else
 #endif
         {
-            mergeDataImpl<Method>(
-                getDataVariant<Method>(*res).data.impls[bucket],
-                getDataVariant<Method>(current).data.impls[bucket],
-                arena,
-                false,
-                prefetch,
-                is_cancelled);
+            mergeDataImpl<Method>(dst, src, arena, false, prefetch, is_cancelled, nullptr, count_top_k);
+        }
+
+        if constexpr (can_reserve)
+        {
+            processed_records += src_size;
+            if (!reserved && processed_records && processed_records < remaining_records)
+            {
+                reserved = true;
+                const double insert_rate = static_cast<double>(dst.size() - dst_size_before) / static_cast<double>(processed_records);
+                const auto expected = static_cast<size_t>(
+                    static_cast<double>(remaining_records - processed_records) * insert_rate * adaptive_reserve_headroom);
+                dst.reserve(dst.size() + expected);
+            }
         }
     }
 }

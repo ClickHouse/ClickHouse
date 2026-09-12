@@ -207,6 +207,16 @@ public:
         } while (true);
     }
 
+    /// Visits the used range `[begin, pos)` of every chunk, most recent chunk first. A caller that
+    /// knows what it allocated here (for instance, rows of one fixed size and alignment and nothing
+    /// else) can walk them in memory order instead of dereferencing pointers to them at random.
+    template <typename F>
+    void forEachChunk(F && f) const
+    {
+        for (const MemoryChunk * chunk = &head; chunk && !chunk->empty(); chunk = chunk->prev.get())
+            f(chunk->begin, chunk->pos);
+    }
+
     template <typename T>
     T * alloc()
     {

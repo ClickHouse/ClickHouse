@@ -210,6 +210,28 @@ ColumnPtr ColumnString::filter(const Filter & filt, ssize_t result_size_hint) co
     Chars & res_chars = res->chars;
     Offsets & res_offsets = res->offsets;
 
+    /// `filterArraysImpl` sizes the result chars in proportion to the expected share of rows, which is
+    /// far off when the filter correlates with the string length (`s <> ''` keeps every non-empty row,
+    /// so a quarter of the rows hold nearly all the bytes) and the buffer then doubles through
+    /// reallocations that copy everything written so far. One pass over the offsets gives the exact
+    /// size; it is a small fraction of the copy that follows.
+    if (result_size_hint > 0)
+    {
+        const size_t size = offsets.size();
+        if (size != filt.size())
+            throw Exception(ErrorCodes::SIZES_OF_COLUMNS_DOESNT_MATCH, "Size of filter ({}) doesn't match size of column ({})", filt.size(), size);
+        const UInt8 * filt_pos = filt.data();
+        UInt64 res_bytes = 0;
+        UInt64 prev_offset = 0;
+        for (size_t i = 0; i < size; ++i)
+        {
+            const UInt64 offset = offsets[i];
+            res_bytes += filt_pos[i] ? offset - prev_offset : 0;
+            prev_offset = offset;
+        }
+        res_chars.reserve_exact(res_bytes);
+    }
+
     filterArraysImpl<UInt8>(chars, offsets, res_chars, res_offsets, filt, result_size_hint);
 
     return res;
@@ -345,18 +367,30 @@ ALWAYS_INLINE char * ColumnString::serializeValueIntoMemory(size_t n, char * mem
 void ColumnString::batchSerializeValueIntoMemory(VectorWithMemoryTracking<char *> & memories, const IColumn::SerializationSettings * settings) const
 {
     chassert(memories.size() == size());
-    bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
-    for (size_t i = 0; i < memories.size(); ++i)
-    {
-        size_t string_size = sizeAt(i) + serialize_string_with_zero_byte;
-        size_t offset = offsetAt(i);
+    const bool serialize_string_with_zero_byte = settings && settings->serialize_string_with_zero_byte;
 
-        memcpy(memories[i], &string_size, sizeof(string_size));
-        memories[i] += sizeof(string_size);
-        memcpy(memories[i], &chars[offset], string_size - serialize_string_with_zero_byte);
+    /// The loop writes through `char *`, which may alias anything, so without the local copies the
+    /// compiler reloads the pointer array, its size and the column's arrays on every row.
+    const size_t rows = memories.size();
+    char ** __restrict memory = memories.data();
+    const Offset * __restrict offsets_data = offsets.data();
+    const UInt8 * __restrict chars_data = chars.data();
+
+    Offset prev_offset = 0;
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const Offset next_offset = offsets_data[i];
+        const size_t string_size = next_offset - prev_offset + serialize_string_with_zero_byte;
+
+        char * dst = memory[i];
+        memcpy(dst, &string_size, sizeof(string_size));
+        dst += sizeof(string_size);
+        memcpy(dst, chars_data + prev_offset, string_size - serialize_string_with_zero_byte);
         if (serialize_string_with_zero_byte)
-            *(memories[i] + string_size - 1) = 0;
-        memories[i] += string_size;
+            dst[string_size - 1] = 0;
+        memory[i] = dst + string_size;
+
+        prev_offset = next_offset;
     }
 }
 

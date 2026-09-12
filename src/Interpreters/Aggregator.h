@@ -873,7 +873,21 @@ private:
         size_t bucket_index,
         size_t total_records,
         PaddedPODArray<AggregateDataPtr> & places,
-        std::atomic<bool> & is_cancelled) const;
+        std::atomic<bool> & is_cancelled,
+        AdaptiveBucketCountTopK * count_top_k) const;
+
+public:
+    /// Whether the merged buckets track their largest counts for the Top-K conversion: a plain
+    /// `count()` (the count is the table value) ranked descending, with a k small enough for the
+    /// tracker's linear candidate search (a LIMIT with a large OFFSET is left to the scan).
+    static constexpr size_t max_tracked_bucket_top_k = 64;
+    bool tracksBucketCountTopK() const
+    {
+        return params.bucket_top_k && params.bucket_top_k <= max_tracked_bucket_top_k && !params.bucket_top_k_ascending && is_simple_count;
+    }
+    /// Records the groups the destination bucket holds before the drain and the merge add to it.
+    void seedBucketCountTopK(AggregatedDataVariants & dest, size_t bucket_index) const;
+private:
 
     /// Applies one staged chunk's slice [slice_begin, slice_end) to the bucket's table.
     template <AdaptiveKeyStorage key_storage, typename Method>
@@ -947,7 +961,8 @@ private:
     requires MapAggregationMethod<Method>
     void mergeDataImpl(
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
-        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr,
+        AdaptiveBucketCountTopK * count_top_k = nullptr)
         const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
@@ -973,7 +988,8 @@ private:
     requires SetAggregationMethod<Method>
     void mergeDataImpl(
         Table & table_dst, Table & table_src, Arena * arena, bool use_compiled_functions, bool prefetch,
-        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr)
+        std::atomic<bool> & is_cancelled, const ParallelMergeWorker * parallel_worker = nullptr,
+        AdaptiveBucketCountTopK * count_top_k = nullptr)
         const;
 
     /// Merge data from hash table `src` into `dst`, but only for keys that already exist in dst. In other cases, merge the data into `overflows`.
@@ -1098,17 +1114,22 @@ private:
     /// The bucket-local Top-K conversion (see `Params::bucket_top_k`): materializes only the
     /// bucket's n best cells by the plain count() state and destroys the rest, so the sorter
     /// upstream receives at most 256 * n candidate rows instead of every group.
+    /// `arena_is_bucket_arena`: `arena` is the adaptive merge's per-bucket arena, which holds the
+    /// bucket's drained states and nothing else (see `convertOneBucketToChunk`). The ranking can then
+    /// walk the state rows in memory order instead of dereferencing every cell's state at random.
     template <typename Method>
     requires MapAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool arena_is_bucket_arena,
+        AdaptiveBucketCountTopK * count_top_k) const;
 
     /// `bucket_top_k` ranks groups by a lone `count()`, so it is never set for a set method, which has no
     /// aggregate functions at all. This overload exists only because the call site tests it at run time.
     template <typename Method>
     requires SetAggregationMethod<Method>
     AggregatedChunk convertOneBucketToChunkTopK(
-        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes) const;
+        Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UInt64 * full_key_bytes, bool arena_is_bucket_arena,
+        AdaptiveBucketCountTopK * count_top_k) const;
 
     /// `full_group_count`, when non-null, receives the merged bucket's group count (see
     /// `convertOneBucketToChunk`).

@@ -151,7 +151,107 @@ bool RuntimeFilterEvaluationState::shouldSkip(size_t next_block_rows) const
     return true;
 }
 
-static void mergeBloomFilters(BloomFilter & destination, const BloomFilter & source)
+namespace
+{
+ALWAYS_INLINE UInt64 mix64(UInt64 h)
+{
+    h ^= h >> 33;
+    h *= 0xff51afd7ed558ccdULL;
+    h ^= h >> 33;
+    h *= 0xc4ceb9fe1a85ec53ULL;
+    h ^= h >> 33;
+    return h;
+}
+
+/// A block is one cache line: 512 bits, eight words. The block is selected by the first hash, the
+/// `k` bit positions inside it are nine bits each, taken from the most significant bits of the
+/// second hash down: for the fixed-size keys the second hash is a single multiplication of the
+/// first one, whose high bits depend on all bits of the multiplicand, while its low bits would
+/// repeat the block index. The second hash holds seven positions; the positions past the seventh
+/// (`join_runtime_bloom_filter_hash_functions` goes up to 10) come from one more mixing of it.
+constexpr size_t RUNTIME_BLOOM_BLOCK_WORDS = 8;
+constexpr size_t RUNTIME_BLOOM_BLOCK_BITS = RUNTIME_BLOOM_BLOCK_WORDS * 64;
+constexpr size_t RUNTIME_BLOOM_POSITION_BITS = 9;
+constexpr size_t RUNTIME_BLOOM_POSITIONS_PER_WORD = 64 / RUNTIME_BLOOM_POSITION_BITS;
+constexpr size_t RUNTIME_BLOOM_MAX_HASHES = 2 * RUNTIME_BLOOM_POSITIONS_PER_WORD;
+
+template <typename F>
+ALWAYS_INLINE void visitBlockBit(UInt64 word, size_t index, F && f)
+{
+    const size_t pos = (word >> (64 - RUNTIME_BLOOM_POSITION_BITS * (index + 1))) & (RUNTIME_BLOOM_BLOCK_BITS - 1);
+    f(pos / 64, 1ULL << (pos % 64));
+}
+
+template <size_t compile_time_hashes, typename F>
+ALWAYS_INLINE void forEachBlockBit(UInt64 hash2, size_t hashes, F && f)
+{
+    const size_t count = compile_time_hashes != 0 ? compile_time_hashes : hashes;
+    const size_t first_word_count = std::min(count, RUNTIME_BLOOM_POSITIONS_PER_WORD);
+    for (size_t i = 0; i < first_word_count; ++i)
+        visitBlockBit(hash2, i, f);
+    if (count > RUNTIME_BLOOM_POSITIONS_PER_WORD)
+    {
+        const UInt64 hash3 = mix64(hash2);
+        for (size_t i = RUNTIME_BLOOM_POSITIONS_PER_WORD; i < count; ++i)
+            visitBlockBit(hash3, i - RUNTIME_BLOOM_POSITIONS_PER_WORD, f);
+    }
+}
+}
+
+RuntimeBloomFilter::RuntimeBloomFilter(size_t bytes, size_t hashes_, UInt64 seed_)
+    : hashes(hashes_), seed(seed_)
+{
+    /// `BuildRuntimeFilterStep` validates the setting; anything else here is a programming error.
+    if (hashes == 0 || hashes > RUNTIME_BLOOM_MAX_HASHES)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Runtime bloom filter supports from 1 to {} hash functions, got {}", RUNTIME_BLOOM_MAX_HASHES, hashes);
+
+    /// A power of two number of blocks: the block is selected by masking the first hash. `bytes` is a
+    /// budget (`join_runtime_bloom_filter_bytes`, or the statistics-based size, which is already a
+    /// power of two), so it is rounded down, never exceeded.
+    const size_t requested_blocks = std::max<size_t>(1, bytes / (RUNTIME_BLOOM_BLOCK_WORDS * sizeof(UInt64)));
+    const size_t num_blocks = std::bit_floor(requested_blocks);
+    word_index_mask = num_blocks - 1; /// a block index mask, despite the name
+    words.assign(num_blocks * RUNTIME_BLOOM_BLOCK_WORDS, 0);
+}
+
+void RuntimeBloomFilter::addHashPairs(const BloomFilterHashPair * pairs, size_t count)
+{
+    auto add_all = [&]<size_t k>()
+    {
+        for (size_t i = 0; i < count; ++i)
+        {
+            UInt64 * block = words.data() + (pairs[i].hash1 & word_index_mask) * RUNTIME_BLOOM_BLOCK_WORDS;
+            forEachBlockBit<k>(pairs[i].hash2, hashes, [&](size_t word, UInt64 bit) { block[word] |= bit; });
+        }
+    };
+    if (hashes == 3)
+        add_all.template operator()<3>();
+    else
+        add_all.template operator()<0>();
+}
+
+size_t RuntimeBloomFilter::findHashPairs(const BloomFilterHashPair * pairs, size_t count, UInt8 * out_mask) const
+{
+    auto find_all = [&]<size_t k>()
+    {
+        size_t found_count = 0;
+        for (size_t i = 0; i < count; ++i)
+        {
+            const UInt64 * block = words.data() + (pairs[i].hash1 & word_index_mask) * RUNTIME_BLOOM_BLOCK_WORDS;
+            bool found = true;
+            forEachBlockBit<k>(pairs[i].hash2, hashes, [&](size_t word, UInt64 bit) { found &= (block[word] & bit) != 0; });
+            out_mask[i] = found;
+            found_count += found;
+        }
+        return found_count;
+    };
+    if (hashes == 3)
+        return find_all.template operator()<3>();
+    return find_all.template operator()<0>();
+}
+
+static void mergeBloomFilters(RuntimeBloomFilter & destination, const RuntimeBloomFilter & source)
 {
     auto & destination_words = destination.getFilter();
     const auto & source_words = source.getFilter();
@@ -200,8 +300,50 @@ void extendRange(bool & has_range, Field & range_min, Field & range_max, const F
         range_max = new_max;
 }
 
+/// The runtime filter lives for one query, so its hash need not match the persisted bloom filter
+/// indexes. Keys of 1, 2, 4 or 8 bytes (the usual join keys) take a 64-bit mixer instead of two
+/// CityHash calls over the bytes: a few multiplications per key rather than a full hash. The second
+/// hash is one more multiplication of the first: the blocked filter reads its bit positions from the
+/// high bits of the product, which mix all bits of the first hash. Longer keys keep CityHash. The
+/// choice depends only on the byte length, so the build and the probe side of a filter always agree.
+template <size_t value_size>
+ALWAYS_INLINE BloomFilterHashPair hashFixedKey(const char * data, UInt64 seed)
+{
+    UInt64 value = 0;
+    memcpy(&value, data, value_size);
+    const UInt64 hash1 = mix64(value ^ seed);
+    return {hash1, hash1 * 0x9E3779B97F4A7C15ULL};
+}
+
+ALWAYS_INLINE BloomFilterHashPair computeRuntimeHashPair(const char * data, size_t len, UInt64 seed)
+{
+    switch (len)
+    {
+        case 1: return hashFixedKey<1>(data, seed);
+        case 2: return hashFixedKey<2>(data, seed);
+        case 4: return hashFixedKey<4>(data, seed);
+        case 8: return hashFixedKey<8>(data, seed);
+        default: return BloomFilter::computeHashPair(data, len, seed);
+    }
+}
+
+template <size_t value_size>
+void hashFixedSizeColumnImpl(const char * raw_data, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
+{
+    for (size_t row = 0; row < row_count; ++row)
+        out_hashes[row] = hashFixedKey<value_size>(raw_data + row * value_size, seed);
+}
+
 void hashFixedSizeColumn(const char * raw_data, size_t value_size, size_t row_count, UInt64 seed, BloomFilterHashPair * out_hashes)
 {
+    switch (value_size)
+    {
+        case 1: hashFixedSizeColumnImpl<1>(raw_data, row_count, seed, out_hashes); return;
+        case 2: hashFixedSizeColumnImpl<2>(raw_data, row_count, seed, out_hashes); return;
+        case 4: hashFixedSizeColumnImpl<4>(raw_data, row_count, seed, out_hashes); return;
+        case 8: hashFixedSizeColumnImpl<8>(raw_data, row_count, seed, out_hashes); return;
+        default: break;
+    }
     const char * position = raw_data;
     for (size_t row = 0; row < row_count; ++row)
     {
@@ -245,7 +387,7 @@ void forEachColumnHashBatch(const IColumn & column, UInt64 seed, ProcessBatch &&
         for (size_t index = 0; index < batch_size; ++index)
         {
             const auto value = column.getDataAt(start_row + index);
-            hash_pairs[index] = BloomFilter::computeHashPair(value.data(), value.size(), seed);
+            hash_pairs[index] = computeRuntimeHashPair(value.data(), value.size(), seed);
         }
         process_batch(hash_pairs.data(), batch_size, start_row);
         start_row += batch_size;
@@ -276,7 +418,11 @@ UInt64 growBloomFilterBytes(UInt64 distinct_keys, UInt64 hash_functions, UInt64 
     const Float64 target_fill_rate = std::min(RUNTIME_BLOOM_FILTER_TARGET_FILL_RATE, max_ratio_of_set_bits);
     const double ideal_bloom_filter_bytes = std::ceil(-static_cast<double>(hash_functions) * static_cast<double>(distinct_keys) / std::log1p(-target_fill_rate) / 8.0);
     const double clamped_bloom_filter_bytes = std::clamp(ideal_bloom_filter_bytes, 0.0, static_cast<double>(MAX_STATS_SIZED_BLOOM_FILTER_BYTES));
-    return std::max(static_cast<UInt64>(clamped_bloom_filter_bytes), default_bloom_filter_bytes);
+    /// `RuntimeBloomFilter` rounds its byte budget down to a power of two, so round the ideal size up
+    /// to one first (the maximum is a power of two, so the clamp holds); a default that is not a
+    /// power of two is a user-set budget and is left as it is.
+    const UInt64 pow2_bloom_filter_bytes = std::bit_ceil(static_cast<UInt64>(clamped_bloom_filter_bytes));
+    return std::max(pow2_bloom_filter_bytes, default_bloom_filter_bytes);
 }
 }
 

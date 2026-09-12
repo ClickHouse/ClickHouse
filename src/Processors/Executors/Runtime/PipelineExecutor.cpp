@@ -369,14 +369,15 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
             /// Try to execute neighbour processor.
             size_t spawn_count = 0;
             {
-                Queue queue;
-                Queue async_queue;
+                Queue & queue = context.update_node_queue;
+                Queue & async_queue = context.update_node_async_queue;
 
                 /// Prepare processor after execution.
                 bool updated = false;
                 try
                 {
-                    updated = graph->updateNode(context.getTask(), queue, async_queue) == ExecutingGraph::UpdateNodeStatus::Done;
+                    updated = graph->updateNode(context.getTask(), queue, async_queue, context.update_node_scratch)
+                        == ExecutingGraph::UpdateNodeStatus::Done;
                 }
                 catch (...)
                 {
@@ -384,9 +385,27 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     cancel(ExecutionStatus::Exception);
                 }
 
+                const size_t burst = queue.size() + async_queue.size();
+
                 /// Push other tasks to global queue.
                 if (updated)
                     spawn_count = tasks.pushTasks(queue, async_queue, context);
+
+                /// The queues are reused by the next step; `pushTasks` drains them unless the executor
+                /// is finishing (and nothing is pushed at all after an exception), so drop leftovers.
+                while (!queue.empty())
+                    queue.pop();
+                while (!async_queue.empty())
+                    async_queue.pop();
+
+                /// Popping keeps the capacity. A typical update readies a handful of processors, and
+                /// keeping that much saves an allocation per step; a wide fan-out is not kept, so a
+                /// single burst never pins its peak allocation on this thread for the rest of the query.
+                if (burst > ExecutionThreadContext::max_retained_update_node_queue_size)
+                {
+                    queue = Queue{};
+                    async_queue = Queue{};
+                }
             }
 
 #ifndef NDEBUG

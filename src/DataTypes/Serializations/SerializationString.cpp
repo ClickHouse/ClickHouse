@@ -672,19 +672,27 @@ void appendStringSizesToColumnStringOffsets(ColumnString & column_string, const 
 {
     auto & offsets = column_string.getOffsets();
 
-    offsets.reserve(offsets.size() + rows);
+    const size_t old_size = offsets.size();
+    offsets.resize(old_size + rows);
+    IColumn::Offset * __restrict out = offsets.data() + old_size;
+    const UInt64 * __restrict in = sizes + start;
 
     /// The sizes come from a separate stream, so nothing bounds them by the data that follows them and
-    /// their sum can overflow the offsets. A 128-bit accumulator cannot overflow, so one check of the
-    /// total is enough: below it every offset is exact.
-    unsigned __int128 offset = offsets.empty() ? 0 : offsets.back();
+    /// their sum can overflow the offsets. The prefix sum runs in 64 bits and accumulates the carry of
+    /// every addition into `overflow`: any carry means the total exceeds 2^64, which is above the
+    /// limit checked below, so one check of the total after the loop is enough. This keeps the loop
+    /// free of the 128-bit arithmetic and the per-element growth check of `push_back`.
+    UInt64 offset = old_size ? offsets[old_size - 1] : 0;
+    UInt64 overflow = 0;
     for (size_t i = 0; i < rows; ++i)
     {
-        offset += sizes[start + i];
-        offsets.push_back(static_cast<IColumn::Offset>(offset));
+        const UInt64 size = in[i];
+        offset += size;
+        overflow |= (offset < size);
+        out[i] = offset;
     }
 
-    if (unlikely(offset > MAX_TOTAL_STRING_SIZE))
+    if (unlikely(overflow || offset > MAX_TOTAL_STRING_SIZE))
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Total size of String column is too large: the sizes stream declares more than {} bytes, "

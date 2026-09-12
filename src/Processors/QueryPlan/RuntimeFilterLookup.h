@@ -167,6 +167,32 @@ private:
 extern template class ExactSetRuntimeFilter<false>;
 extern template class ExactSetRuntimeFilter<true>;
 
+/// The bloom filter of a join runtime filter. It lives for one query, so it need not share the layout of the
+/// persisted bloom filter indexes (`BloomFilter`), and it is probed for every row of the probe side, so the
+/// probe is the cost that matters: all `k` bits of a key live in one cache-line block (512 bits) selected by
+/// the first hash, with the bit positions inside the block taken from the second hash. A probe touches one
+/// cache line and needs no division, against `k` independent random cache lines in the classic layout; the
+/// false positive rate is close to the classic one at the same size.
+class RuntimeBloomFilter
+{
+public:
+    RuntimeBloomFilter(size_t bytes, size_t hashes_, UInt64 seed_);
+
+    void addHashPairs(const BloomFilterHashPair * pairs, size_t count);
+    /// Writes 1 for the keys that may be present, 0 for the ones that are certainly absent; returns the count of 1-s.
+    size_t findHashPairs(const BloomFilterHashPair * pairs, size_t count, UInt8 * out_mask) const;
+
+    const std::vector<UInt64> & getFilter() const { return words; }
+    std::vector<UInt64> & getFilter() { return words; }
+    UInt64 getSeed() const { return seed; }
+
+private:
+    size_t hashes;
+    UInt64 seed;
+    size_t word_index_mask;
+    std::vector<UInt64> words;
+};
+
 /// Bloom-backed runtime filter for approximate set membership checks.
 class ApproximateSetRuntimeFilter
 {
@@ -187,7 +213,7 @@ public:
 private:
     void insertIntoBloomFilter(const ColumnPtr & values);
 
-    BloomFilter bloom_filter;
+    RuntimeBloomFilter bloom_filter;
 };
 
 /// Starts with an exact set and switches to an approximate set once the exact set becomes too large.

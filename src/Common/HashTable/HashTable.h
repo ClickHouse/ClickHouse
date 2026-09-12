@@ -267,17 +267,21 @@ struct HashTableGrower
 /** Determines the size of the hash table, and when and how much it should be resized.
   * This structure is aligned to cache line boundary and also occupies it all.
   * Precalculates some values to speed up lookups and insertion into the HashTable (and thus has bigger memory footprint than HashTableGrower).
-  * This grower assume 0.5 load factor
+  * The load factor is `max_fill_eighths / 8` (0.5 by default).
   */
-template <size_t initial_size_degree = 8>
+template <size_t initial_size_degree = 8, size_t max_fill_eighths = 4>
 class alignas(DB::CH_CACHE_LINE_SIZE) HashTableGrowerWithPrecalculation
 {
+    static_assert(max_fill_eighths >= 1 && max_fill_eighths <= 7);
+
     /// The state of this structure is enough to get the buffer size of the hash table.
 
     UInt8 size_degree = initial_size_degree;
     size_t precalculated_mask = (1ULL << initial_size_degree) - 1;
-    size_t precalculated_max_fill = 1ULL << (initial_size_degree - 1);
+    size_t precalculated_max_fill = maxFillFor(initial_size_degree);
     static constexpr size_t max_size_degree = 23;
+
+    static constexpr size_t maxFillFor(size_t degree) { return ((1ULL << degree) * max_fill_eighths) >> 3; }
 
 public:
     UInt8 sizeDegree() const { return size_degree; }
@@ -286,7 +290,7 @@ public:
     {
         size_degree += delta;
         precalculated_mask = (1ULL << size_degree) - 1;
-        precalculated_max_fill = 1ULL << (size_degree - 1);
+        precalculated_max_fill = maxFillFor(size_degree);
     }
 
     static constexpr auto initial_count = 1ULL << initial_size_degree;
@@ -312,12 +316,11 @@ public:
     /// Set the buffer size by the number of elements in the hash table. Used when deserializing a hash table.
     void set(size_t num_elems)
     {
-        if (num_elems <= 1)
-            size_degree = initial_size_degree;
-        else if (initial_size_degree > static_cast<size_t>(log2(num_elems - 1)) + 2)
-            size_degree = initial_size_degree;
-        else
-            size_degree = static_cast<UInt8>(log2(num_elems - 1)) + 2;
+        /// The smallest size whose maximum fill holds `num_elems` (for a 0.5 load factor this is
+        /// the first power of two >= 2 * num_elems).
+        size_degree = initial_size_degree;
+        while (maxFillFor(size_degree) < num_elems)
+            ++size_degree;
         increaseSizeDegree(0);
     }
 
@@ -329,6 +332,7 @@ public:
 };
 
 static_assert(sizeof(HashTableGrowerWithPrecalculation<>) == DB::CH_CACHE_LINE_SIZE);
+static_assert(sizeof(HashTableGrowerWithPrecalculation<8, 5>) == DB::CH_CACHE_LINE_SIZE);
 
 /** When used as a Grower, it turns a hash table into something like a lookup table.
   * It remains non-optimal - the cells store the keys.
