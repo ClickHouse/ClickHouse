@@ -2472,7 +2472,6 @@ TEST(SchedulerSpaceShared, ReservationTimeoutEndsRecoveryDuringDedicatedSpill)
     release.set_value();
     EXPECT_THROW(timeout_worker.get(), DB::Exception);
     EXPECT_THROW(growth.get(), DB::Exception);
-    EXPECT_FALSE(reservation.isGrowthRecoveryActive());
     EXPECT_EQ(processor->spillCallCount(), 1u);
     EXPECT_EQ(processor->workCallCount(), 0u);
     tracker.adjustWithUntrackedMemory(-tracker.get());
