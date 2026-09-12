@@ -778,15 +778,12 @@ Compatibility: when enabled, folds pre-signed URL query parameters (e.g. X-Amz-*
 so '?' acts as a wildcard in the path. When disabled (default), pre-signed URL query parameters are kept in the URL query
 to avoid interpreting '?' as a wildcard.
 )", 0) \
-    DECLARE(Bool, s3_disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, R"(
-Do not calculate a checksum when sending a file to S3. This speeds up writes by avoiding excessive processing passes on a file. It is mostly safe as the data of MergeTree tables is checksummed by ClickHouse anyway, and when S3 is accessed with HTTPS, the TLS layer already provides integrity while transferring through the network. While additional checksums on S3 give defense in depth.
-)", 0) \
     DECLARE(String, s3_upload_checksum_algorithm, "", R"(
 The checksum algorithm used when ClickHouse uploads data to `S3`. `CRC32` and `SHA256` are sent as flexible `x-amz-checksum-*` headers, while `MD5` is sent as a `Content-MD5` header.
 
 By default the value is empty and ClickHouse lets the AWS SDK compute `Content-MD5`. In FIPS mode `MD5` is unavailable, so the SDK silently omits it and the upload carries no checksum at all: set `CRC32` or `SHA256` to attach a flexible checksum instead. Where this setting applies, an explicit `MD5` is then rejected.
 
-For non-`S3Express` buckets, `s3_disable_checksum` suppresses this setting. It takes effect when the `S3` client is created, so it applies to query-scoped uses such as the `s3` table function and `BACKUP ... TO S3`; a later per-query `SET` does not reconfigure an already-created long-lived client such as an `S3` disk.
+It takes effect when the `S3` client is created, so it applies to query-scoped uses such as the `s3` table function and `BACKUP ... TO S3`; a later per-query `SET` does not reconfigure an already-created long-lived client such as an `S3` disk.
 
 `S3Express` buckets require a flexible checksum and do not accept `Content-MD5`: an explicit `CRC32` or `SHA256` is honored, an empty value uses `CRC32`, and an explicit `MD5` is rejected.
 
@@ -2321,6 +2318,17 @@ Possible values:
 - Positive floating-point number in the range [0..1]. For example, if the setting value is `0.5`, about half of the queries are logged in the system tables.
 - 1 — All queries are logged in the system tables.
 )", 0) \
+    DECLARE(UInt64, session_query_ids_history_size, 1000, R"(
+The maximum number of query ids kept in the session-local history exposed through the [`system.session_query_ids`](/operations/system-tables/session_query_ids) system table.
+The query id of every non-internal query executed in the session is recorded there at query start; when the history exceeds this size, the oldest entries are evicted first.
+
+The value is read at query start, before the query is parsed, so a `SETTINGS` clause of the query itself does not affect whether that query is recorded; use `SET`, an HTTP URL parameter, or a settings profile instead.
+
+Possible values:
+
+- Positive integer.
+- 0 — Recording is disabled; entries recorded earlier stay in the table.
+)", 0) \
     \
     DECLARE(Bool, log_processors_profiles, true, R"(
 Write time that processor spent during execution/waiting for data to `system.processors_profile_log` table.
@@ -3173,6 +3181,22 @@ Possible values:
 
 - 0 — The column name is substituted with the alias.
 - 1 — The column name is not substituted with the alias.
+
+If the column name is ambiguous between joined tables and an alias with the same name exists, the alias is used:
+
+```sql
+SET prefer_column_name_to_alias = 1;
+SELECT t1.id + 10 AS id, id AS x
+FROM (SELECT 1 AS id) AS t1, (SELECT 1 AS k) AS t2, (SELECT 2 AS id) AS t3;
+```
+
+```text
+┌─id─┬──x─┐
+│ 11 │ 11 │
+└────┴────┘
+```
+
+Here `id` in `id AS x` is a column of both `t1` and `t3`, so it resolves to the alias `t1.id + 10`.
 
 **Example**
 
@@ -8840,21 +8864,6 @@ Enable transforming the payload of a hash join into a row-major layout.
     DECLARE(Double, min_rows_ratio_for_hash_join_row_store, 5.0, R"(
 Minimum estimated ratio of join output rows to build-side rows to enable transforming hash join payload to row-major. 0 means the transformation is always allowed.
 )", 0) \
-    DECLARE(Bool, query_plan_derive_not_null_filters_from_joins, true, R"(
-Derive `IS NOT NULL` filters for join inputs from null-rejecting join conditions.
-
-Only conditions of the form `expr1` <op> `expr2` are considered, where <op> is one of `=`, `<`, `<=`, `>`, `>=`. Each side can be a column or an expression that propagates NULLs, such as `col1` + 1, in which case a filter is derived for every column the expression propagates NULLs from.
-
-The derived filters allow converting `OUTER JOIN` to `INNER JOIN`. This setting is only applicable when `query_plan_convert_outer_join_to_inner_join` is enabled.
-
-The derived filters are not executed unless `query_plan_allow_derived_not_null_filters_execution` is enabled.
-)", 0) \
-    DECLARE(Bool, query_plan_allow_derived_not_null_filters_execution, true, R"(
-Allow `col IS NOT NULL` filters derived from joins by the planner when `query_plan_derive_not_null_filters_from_joins` is enabled to be executed.
-)", 0) \
-    DECLARE(Double, query_plan_max_selectivity_for_not_null_filters_execution, 0.7, R"(
-The maximum estimated selectivity a planner-derived `col IS NOT NULL` filter may have to be promoted to an executable filter.
-)", 0) \
     \
     /* ####################################################### */ \
     /* AI function settings */ \
@@ -9363,6 +9372,7 @@ Enable experimental table function `eval`.
 #define OBSOLETE_SETTINGS(M, ALIAS) \
     /** Obsolete settings which are kept around for compatibility reasons. They have no effect anymore. */ \
     MAKE_OBSOLETE(M, Bool, enable_sharding_aggregator, false) \
+    MAKE_OBSOLETE(M, Bool, s3_disable_checksum, false) \
     MAKE_OBSOLETE(M, Bool, distributed_cache_use_clients_cache_for_write, false) \
     MAKE_OBSOLETE(M, String, function_implementation, "") \
     MAKE_OBSOLETE(M, Bool, allow_experimental_query_deduplication, false) \
