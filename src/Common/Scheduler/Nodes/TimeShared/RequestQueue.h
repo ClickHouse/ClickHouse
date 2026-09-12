@@ -630,12 +630,20 @@ public:
         algo->pullAll(pending);
         algo = makeAlgorithm(new_algorithm, unit);
         algorithm = new_algorithm;
-        // Migrate the backlog to the new algorithm. When switching to `fair`, reset each migrated
-        // query's vruntime: the fresh instance restarts system virtual time at 0, so the stale
-        // projection would otherwise be double-counted. attained_cost is real accrued service, kept.
-        if (new_algorithm == SchedulerAlgorithm::Fair)
-            for (ResourceRequest * request : pending)
+        // Re-tag the migrated backlog for the new algorithm: enqueueRequest() sets these flags only on
+        // the normal path, but dequeueRequest()/finish() trust them, so a request pushed straight into
+        // the new algorithm here would keep the old algorithm's tags. When switching to `fair`, also
+        // reset each migrated query's vruntime — the fresh instance restarts system virtual time at 0,
+        // so a stale projection would be double-counted. attained_cost is real accrued service, kept.
+        const bool tracks_attained = new_algorithm == SchedulerAlgorithm::Fair || new_algorithm == SchedulerAlgorithm::Las;
+        const bool tracks_vruntime = new_algorithm == SchedulerAlgorithm::Fair;
+        for (ResourceRequest * request : pending)
+        {
+            request->scheduling.tracks_attained = tracks_attained;
+            request->scheduling.tracks_vruntime = tracks_vruntime;
+            if (new_algorithm == SchedulerAlgorithm::Fair)
                 request->scheduling.state->vruntime = 0.0;
+        }
         for (ResourceRequest * request : pending)
             algo->push(request);
     }

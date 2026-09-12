@@ -621,3 +621,22 @@ TEST(RequestQueue, CostTrackingFlagsPerScheduler)
     EXPECT_TRUE(vruntime(SchedulerAlgorithm::Fair));
     EXPECT_FALSE(vruntime(SchedulerAlgorithm::Las));
 }
+
+/// A live `setScheduler` swap must re-tag the migrated backlog for the new algorithm's accounting:
+/// enqueueRequest() tags a request only on the normal path, so a request enqueued under `fifo`
+/// (no tags) and migrated to `las`/`fair` must gain `tracks_attained` (and `tracks_vruntime` under
+/// fair) — otherwise dequeue/finish would never charge its service under the new algorithm.
+TEST(RequestQueue, SetSchedulerRetagsMigratedRequests)
+{
+    Fixture f(SchedulerAlgorithm::Fifo);
+    auto * a = f.makeQuery(1.0);
+    auto * r = f.enqueue(1, a, 10);
+    EXPECT_FALSE(r->scheduling.tracks_attained);   // fifo tags nothing
+    EXPECT_FALSE(r->scheduling.tracks_vruntime);
+    f.queue->setScheduler(SchedulerAlgorithm::Las);
+    EXPECT_TRUE(r->scheduling.tracks_attained);    // las tracks attained
+    EXPECT_FALSE(r->scheduling.tracks_vruntime);
+    f.queue->setScheduler(SchedulerAlgorithm::Fair);
+    EXPECT_TRUE(r->scheduling.tracks_attained);    // fair tracks both
+    EXPECT_TRUE(r->scheduling.tracks_vruntime);
+}

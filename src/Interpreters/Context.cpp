@@ -4009,6 +4009,14 @@ void Context::makeQueryContext()
     query_privileges_info = std::make_shared<QueryPrivilegesInfo>();
     async_read_counters = std::make_shared<AsyncReadCounters>();
     runtime_filter_lookup = createRuntimeFilterLookup();
+    /// A new query must classify under its own workload and scheduling settings. The ContextData
+    /// copy-ctor copies `classifier`, which now carries this query's scheduling identity (weight,
+    /// priority, and its per-query `ResourceSchedulingContext`), so a query context created from
+    /// another query context (e.g. parallel sub-queries) would otherwise reuse the parent's scheduler
+    /// state. Drop it so `getWorkloadClassifier()` lazily rebuilds one from this context's settings.
+    /// (Assumes no active query is already running on this context's classifier, which holds at query
+    /// start — the classifier is built lazily on first use, after this point.)
+    classifier.reset();
 
     /// A context that becomes a query context without going through a client-facing handshake -
     /// server-initiated queries such as background flushes of `Buffer` tables, streaming consumers
@@ -4028,15 +4036,13 @@ void Context::makeQueryContext()
 
 void Context::makeQueryContextForMerge(const MergeTreeSettings & merge_tree_settings)
 {
-    makeQueryContext();
-    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the merge workload set below
     (*settings)[Setting::workload] = merge_tree_settings[MergeTreeSetting::merge_workload].value.empty() ? getMergeWorkload() : merge_tree_settings[MergeTreeSetting::merge_workload];
 }
 
 void Context::makeQueryContextForMutate(const MergeTreeSettings & merge_tree_settings)
 {
-    makeQueryContext();
-    classifier.reset(); // It is assumed that there are no active queries running using this classifier, otherwise this will lead to crashes
+    makeQueryContext(); // resets the classifier (see makeQueryContext); rebuilt lazily under the mutation workload set below
     (*settings)[Setting::workload]
         = merge_tree_settings[MergeTreeSetting::mutation_workload].value.empty() ? getMutationWorkload() : merge_tree_settings[MergeTreeSetting::mutation_workload];
 }
