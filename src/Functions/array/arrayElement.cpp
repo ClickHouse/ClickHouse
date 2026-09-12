@@ -1835,6 +1835,17 @@ struct MatcherString
     {
         auto data_ref = data.getDataAt(row_data);
         auto index_ref = index.getDataAt(row_index);
+
+        if constexpr (std::is_same_v<DataColumn, ColumnFixedString>)
+        {
+            /// A `FixedString(N)` key is stored zero-padded to N bytes, so a shorter subscript names that
+            /// same key once padded, which is how equality compares the two. A longer subscript is no key
+            /// the column can hold, and zero-padding is symmetric, so it must be rejected by width first.
+            if (index_ref.size() > data_ref.size())
+                return false;
+            return memequalSmallLikeZeroPaddedAllowOverflow15(index_ref.data(), index_ref.size(), data_ref.data(), data_ref.size());
+        }
+
         return memequalSmallAllowOverflow15(index_ref.data(), index_ref.size(), data_ref.data(), data_ref.size());
     }
 };
@@ -1955,7 +1966,16 @@ bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
     if (low_cardinality_data
         && isStringOrFixedStringColumn(*low_cardinality_data->getDictionary().getNestedNotNullableColumn()))
     {
-        const auto & requested_key = index.safeGet<String>();
+        String requested_key = index.safeGet<String>();
+
+        /// A `FixedString(N)` dictionary stores every value at exactly N bytes, so a shorter subscript
+        /// names the one entry it pads to. A longer subscript equals no entry, so the lookup below misses,
+        /// which is the answer for it.
+        const auto * fixed_string_dictionary = typeid_cast<const ColumnFixedString *>(
+            low_cardinality_data->getDictionary().getNestedNotNullableColumn().get());
+        if (fixed_string_dictionary && requested_key.size() < fixed_string_dictionary->getN())
+            requested_key.resize(fixed_string_dictionary->getN(), '\0');
+
         auto dictionary_index = low_cardinality_data->getDictionary().getOrFindValueIndex(requested_key);
         matched_idxs.reserve(offsets.size());
 
@@ -1986,8 +2006,25 @@ bool FunctionArrayElement<mode>::matchKeyToIndexStringConst(
         [&](const auto & data_column)
         {
             using DataColumn = std::decay_t<decltype(data_column)>;
-            MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<String>()};
-            executeMatchKeyToIndex(offsets, matched_idxs, matcher);
+
+            if constexpr (std::is_same_v<DataColumn, ColumnFixedString>)
+            {
+                /// A `FixedString(N)` key is stored zero-padded to N bytes, so a shorter subscript names that
+                /// same key once padded. A longer subscript is no key the column can hold, and the equal-width
+                /// comparison in the matcher already finds nothing for it.
+                String padded_key = index.safeGet<String>();
+                if (padded_key.size() < data_column.getN())
+                    padded_key.resize(data_column.getN(), '\0');
+
+                MatcherStringConst<DataColumn> matcher{data_column, padded_key};
+                executeMatchKeyToIndex(offsets, matched_idxs, matcher);
+            }
+            else
+            {
+                MatcherStringConst<DataColumn> matcher{data_column, index.safeGet<String>()};
+                executeMatchKeyToIndex(offsets, matched_idxs, matcher);
+            }
+
             return true;
         });
 }

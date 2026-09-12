@@ -1,0 +1,37 @@
+S1 key column, zero-tailed subscript	7	7
+S2 constant subscript, no subcolumn rewrite	7	7
+S3 control, exact width	7	7
+S4 control, non-zero tail	0	0
+S5 control, wider than N, constant	0
+S5 control, wider than N, non-constant	0
+S6 control, subcolumn rewrite still fires	1
+S21 arrayElementOrNull, key column	7
+S23 control, arrayElementOrNull over-wide subscript is still NULL	\N
+S7 LowCardinality key column	7	7
+S8 LowCardinality dictionary lookup	7	7
+S22 arrayElementOrNull, LowCardinality key, constant subscript	7
+S9 control, String key stays exact-length	0	0
+S10 bloom_filter, indexed count matches unindexed	8	8
+S11 control, bloom_filter still prunes an absent key	0
+S12 control, bloom_filter used for an exact-width key	8
+S19 bloom_filter IN path, indexed count matches unindexed	8	8
+S20 control, bloom_filter used for the IN path	8
+S26 control, bloom_filter used for a paddable key	8
+S13 text index, indexed count matches unindexed	8	8
+S14 control, text index still prunes an absent key	0
+S15 control, text index used for a paddable key	8
+S16 bloom_filter over LowCardinality key, indexed matches unindexed	8	8
+S27 control, bloom_filter over LowCardinality key used for a paddable key	8
+S17 text index over LowCardinality key, indexed matches unindexed	8	8
+S18 control, text index over LowCardinality key still prunes an absent key	0
+S28 control, text index over LowCardinality key used for a paddable key	8
+S24 bloom_filter, mixed keys, indexed count matches unindexed	4	4
+S25 text index, mixed keys, indexed count matches unindexed	4	4
+S29 bloom_filter prunes granules for a paddable key	1
+S30 text index prunes granules for a paddable key	1
+S31 control, text index prunes every granule for an over-wide subscript	1
+S32 control, bloom_filter prunes every granule for an over-wide subscript	1
+S33 text index, explicit key subcolumn, indexed count matches unindexed	8	8
+S34 control, bloom_filter explicit key subcolumn already matched unindexed	8	8
+S35 control, text index forced for the explicit key subcolumn	4
+S36 text index prunes granules for the explicit key subcolumn	1
