@@ -1608,11 +1608,13 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
         size_t granules_dropped = 0;
     };
 
+    const UInt64 settings_salt = queryConditionCacheSettingsSalt(context->getSettingsRef());
+
     auto drop_mark_ranges = [&](const ActionsDAG::Node * dag, bool apply_top_k_salt)
     {
         /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
         /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is `unsigned long long`).
-        size_t condition_hash = dag->getHash();
+        size_t condition_hash = queryConditionCacheHash(dag->getHash(), settings_salt);
         size_t topk_reuse_predicate_only_hash = 0;
         bool has_topk_reuse_predicate_only_hash = false;
         if (apply_top_k_salt && top_k_filter_info && top_k_filter_info->where_clause)
@@ -1622,7 +1624,7 @@ void MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             /// TopK entry), so probing it would just be wasted cache lookups per part.
             if (auto stripped = getTopKReusePredicateOnlyConditionHash(dag))
             {
-                topk_reuse_predicate_only_hash = *stripped;
+                topk_reuse_predicate_only_hash = queryConditionCacheHash(*stripped, settings_salt);
                 has_topk_reuse_predicate_only_hash = true;
             }
         }

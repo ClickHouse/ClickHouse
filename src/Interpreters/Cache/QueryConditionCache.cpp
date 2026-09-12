@@ -3,6 +3,8 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/SipHash.h>
 #include <Common/logger_useful.h>
+#include <Core/FormatFactorySettings.h>
+#include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <IO/WriteHelpers.h>
 
@@ -20,6 +22,117 @@ namespace CurrentMetrics
 
 namespace DB
 {
+
+namespace Setting
+{
+    /// There are way too many format settings to handle extern declarations manually.
+#define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    extern Settings ## TYPE NAME;
+FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
+#undef DECLARE_FORMAT_EXTERN
+
+    extern const SettingsBool formatdatetime_f_prints_single_zero;
+    extern const SettingsBool formatdatetime_f_prints_scale_number_of_digits;
+    extern const SettingsBool formatdatetime_parsedatetime_m_is_month_name;
+    extern const SettingsBool formatdatetime_format_without_leading_zeros;
+    extern const SettingsBool formatdatetime_e_with_space_padding;
+    extern const SettingsBool parsedatetime_parse_without_leading_zeros;
+    extern const SettingsBool parsedatetime_e_requires_space_padding;
+    extern const SettingsBool function_locate_has_mysql_compatible_argument_order;
+    extern const SettingsBool least_greatest_legacy_null_behavior;
+    extern const SettingsBool h3togeo_lon_lat_result_order;
+    extern const SettingsGeoToH3ArgumentOrder geotoh3_argument_order;
+    extern const SettingsBool splitby_max_substrings_includes_remaining_string;
+    extern const SettingsBool count_matches_stop_at_empty_match;
+    extern const SettingsUInt64 function_visible_width_behavior;
+    extern const SettingsBool function_json_value_return_type_allow_complex;
+    extern const SettingsBool functions_h3_default_if_invalid;
+    extern const SettingsBool cast_ipv4_ipv6_default_on_conversion_error;
+    extern const SettingsBool decimal_check_overflow;
+    extern const SettingsBool validate_enum_literals_in_operators;
+    extern const SettingsBool use_variant_default_implementation_for_comparisons;
+    extern const SettingsDateTimeInputFormat cast_string_to_date_time_mode;
+    extern const SettingsBool variant_throw_on_type_mismatch;
+    extern const SettingsBool dynamic_throw_on_type_mismatch;
+    extern const SettingsBool allow_simdjson;
+}
+
+UInt64 queryConditionCacheSettingsSalt(const Settings & settings)
+{
+    /// Registration rule: a setting belongs here when a function captures it at build time (in its constructor
+    /// or `build`), it changes the value the function returns, and nothing about it reaches
+    /// `ActionsDAG::Node::updateHash` (which sees only the function name, the result type name, the children and
+    /// the constant values). A setting that changes the result *type* is already covered by the type name in the
+    /// hash and does not need an entry.
+    SipHash hash;
+    /// `formatDateTime` / `parseDateTime`.
+    hash.update(settings[Setting::formatdatetime_f_prints_single_zero].value);
+    hash.update(settings[Setting::formatdatetime_f_prints_scale_number_of_digits].value);
+    hash.update(settings[Setting::formatdatetime_parsedatetime_m_is_month_name].value);
+    hash.update(settings[Setting::formatdatetime_format_without_leading_zeros].value);
+    hash.update(settings[Setting::formatdatetime_e_with_space_padding].value);
+    hash.update(settings[Setting::parsedatetime_parse_without_leading_zeros].value);
+    hash.update(settings[Setting::parsedatetime_e_requires_space_padding].value);
+    /// `locate` swaps its haystack and needle arguments.
+    hash.update(settings[Setting::function_locate_has_mysql_compatible_argument_order].value);
+    /// `least` / `greatest` propagate or skip NULL arguments.
+    hash.update(settings[Setting::least_greatest_legacy_null_behavior].value);
+    /// `h3ToGeo` swaps the tuple elements, `geoToH3` swaps the arguments.
+    hash.update(settings[Setting::h3togeo_lon_lat_result_order].value);
+    hash.update(static_cast<UInt64>(settings[Setting::geotoh3_argument_order].value));
+    /// `splitBy*` with `max_substrings`, `countMatches`, `visibleWidth`, `JSON_VALUE`.
+    hash.update(settings[Setting::splitby_max_substrings_includes_remaining_string].value);
+    hash.update(settings[Setting::count_matches_stop_at_empty_match].value);
+    hash.update(settings[Setting::function_visible_width_behavior].value);
+    hash.update(settings[Setting::function_json_value_return_type_allow_complex].value);
+    /// Return a default instead of throwing: a verdict written by the lenient session must not be served to a
+    /// session that is supposed to see the exception.
+    hash.update(settings[Setting::functions_h3_default_if_invalid].value);
+    hash.update(settings[Setting::cast_ipv4_ipv6_default_on_conversion_error].value);
+    /// The comparison functions freeze this state in `ComparisonParams` when they are built: it decides how a
+    /// string literal compared to a `DateTime` / `Enum` / `Decimal` column is parsed and whether an
+    /// out-of-range or invalid literal compares or throws.
+    hash.update(settings[Setting::decimal_check_overflow].value);
+    hash.update(settings[Setting::validate_enum_literals_in_operators].value);
+    hash.update(settings[Setting::use_variant_default_implementation_for_comparisons].value);
+    hash.update(static_cast<UInt64>(settings[Setting::cast_string_to_date_time_mode].value));
+    /// The `Variant` / `Dynamic` function adaptors freeze this strictness when the function is built and then
+    /// decide per alternative whether an incompatible type throws or evaluates to `NULL`. The result type is
+    /// the same either way, so a lenient session must not prime a "no marks match" verdict for a strict one,
+    /// which is supposed to see the exception.
+    hash.update(settings[Setting::variant_throw_on_type_mismatch].value);
+    hash.update(settings[Setting::dynamic_throw_on_type_mismatch].value);
+    /// The `JSON*` functions snapshot a whole `FormatSettings` in `JSONOverloadResolver`, and `JSON_VALUE` /
+    /// `JSON_QUERY` / `JSON_EXISTS` snapshot the parser choice in the `FunctionSQLJSON` constructor. Those decide
+    /// how a JSON scalar is parsed into the result type and whether a duplicated or null typed path is skipped or
+    /// throws, without changing the function name or the result type, so the DAG hash cannot tell two such
+    /// predicates apart. (`cast_string_to_date_time_mode`, which `JSONOverloadResolver` latches into
+    /// `format_settings.date_time_input_format`, is already registered above. The JSONPath parser limits
+    /// `max_parser_depth` / `max_parser_backtracks` deliberately are *not* here: exceeding them raises
+    /// `TOO_DEEP_RECURSION` while the path expression is parsed, before any mark is read, so the restricted
+    /// session sees its exception whatever verdict a permissive one left behind, and registering them would
+    /// split the cache on a generic setting for no gain.)
+    hash.update(settings[Setting::precise_float_parsing].value);
+    hash.update(settings[Setting::input_format_read_datetime_number_as_raw_value].value);
+    hash.update(settings[Setting::input_format_json_try_infer_numbers_from_strings].value);
+    hash.update(settings[Setting::input_format_try_infer_dates].value);
+    hash.update(settings[Setting::input_format_try_infer_datetimes].value);
+    hash.update(settings[Setting::input_format_try_infer_datetimes_only_datetime64].value);
+    hash.update(settings[Setting::schema_inference_make_columns_nullable].valueOr(2));
+    hash.update(settings[Setting::type_json_skip_duplicated_paths].value);
+    hash.update(settings[Setting::type_json_skip_null_typed_paths].value);
+    hash.update(settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object].value);
+    hash.update(settings[Setting::allow_simdjson].value);
+    return hash.get64();
+}
+
+UInt64 queryConditionCacheHash(UInt64 condition_dag_hash, UInt64 settings_salt)
+{
+    SipHash hash;
+    hash.update(condition_dag_hash);
+    hash.update(settings_salt);
+    return hash.get64();
+}
 
 QueryConditionCache::Key QueryConditionCache::makeKey(const UUID & table_id, const String & part_name, UInt64 condition_hash)
 {

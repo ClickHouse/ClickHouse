@@ -1,0 +1,103 @@
+-- Tags: no-parallel
+-- Tag no-parallel: messes with the query condition cache
+
+-- The `formatdatetime_*` settings change how `formatDateTime` evaluates without leaving a trace in the
+-- condition's `ActionsDAG`, so two queries that differ only in them must not share a query condition
+-- cache entry: the first one's "no marks match" verdict is wrong for the second one.
+-- The same holds for `function_locate_has_mysql_compatible_argument_order`, which swaps the arguments of `locate`.
+
+-- The query condition cache is only used with the analyzer.
+SET enable_analyzer = 1;
+SET use_query_condition_cache = 1;
+-- Without a local plan the filter steps run as part of the remote queries, and this server's cache sees nothing.
+SET parallel_replicas_local_plan = 1;
+
+DROP TABLE IF EXISTS t_qcc_formatdatetime;
+
+-- The auto minmax indexes would answer before the cache, and the cache stores nothing for small parts.
+CREATE TABLE t_qcc_formatdatetime (k UInt64, d DateTime, s String) ENGINE = MergeTree ORDER BY k
+    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
+INSERT INTO t_qcc_formatdatetime SELECT number, toDateTime('2024-05-05 10:00:00') + number % 86400, 'abc' FROM numbers(1000000);
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- `formatDateTime(d, '%f')` renders '000000' by default and '0' with the setting enabled, so the
+-- condition matches no row under the first value and every row under the second one.
+SELECT count() FROM t_qcc_formatdatetime WHERE formatDateTime(d, '%f') = '0' SETTINGS formatdatetime_f_prints_single_zero = 0;
+SELECT count() FROM t_qcc_formatdatetime WHERE formatDateTime(d, '%f') = '0' SETTINGS formatdatetime_f_prints_single_zero = 1;
+SELECT count() FROM t_qcc_formatdatetime WHERE formatDateTime(d, '%f') = '0' SETTINGS use_query_condition_cache = 0, formatdatetime_f_prints_single_zero = 1;
+
+SYSTEM DROP QUERY CONDITION CACHE;
+
+-- `%M` is the month name by default and the minute with the setting disabled.
+SELECT count() FROM t_qcc_formatdatetime WHERE formatDateTime(d, '%M') = '00' SETTINGS formatdatetime_parsedatetime_m_is_month_name = 1;
+SELECT count() FROM t_qcc_formatdatetime WHERE formatDateTime(d, '%M') = '00' SETTINGS formatdatetime_parsedatetime_m_is_month_name = 0;
+SELECT count() FROM t_qcc_formatdatetime WHERE formatDateTime(d, '%M') = '00' SETTINGS use_query_condition_cache = 0, formatdatetime_parsedatetime_m_is_month_name = 0;
+
+-- `locate(s, 'b')` is `position(s IN 'b')` with the MySQL argument order (needle first) and `position('b' IN s)`
+-- without it, so it is 0 for every row under the first value and 2 under the second one.
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_formatdatetime WHERE locate(s, 'b') = 2 SETTINGS function_locate_has_mysql_compatible_argument_order = 1;
+SELECT count() FROM t_qcc_formatdatetime WHERE locate(s, 'b') = 2 SETTINGS function_locate_has_mysql_compatible_argument_order = 0;
+SELECT count() FROM t_qcc_formatdatetime WHERE locate(s, 'b') = 2 SETTINGS use_query_condition_cache = 0, function_locate_has_mysql_compatible_argument_order = 0;
+
+-- `cast_string_to_date_time_mode` is frozen in `ComparisonParams` when the comparison function is built and
+-- decides how a string literal compared to a `DateTime` column is parsed, which the condition's `ActionsDAG`
+-- does not see either. `'05/06/2024 00:00:00'` is 2024-06-05 with `best_effort` (day first, no row matches)
+-- and 2024-05-06 with `best_effort_us` (month first, 11 rows match).
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_formatdatetime WHERE d = '05/06/2024 00:00:00' SETTINGS cast_string_to_date_time_mode = 'best_effort';
+SELECT count() FROM t_qcc_formatdatetime WHERE d = '05/06/2024 00:00:00' SETTINGS cast_string_to_date_time_mode = 'best_effort_us';
+SELECT count() FROM t_qcc_formatdatetime WHERE d = '05/06/2024 00:00:00' SETTINGS use_query_condition_cache = 0, cast_string_to_date_time_mode = 'best_effort_us';
+
+-- A repeated query with the same settings still reads the cached verdict.
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_formatdatetime WHERE formatDateTime(d, '%f') = '0' FORMAT Null;
+SELECT count() FROM t_qcc_formatdatetime WHERE formatDateTime(d, '%f') = '0' FORMAT Null;
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['QueryConditionCacheHits'], read_rows
+FROM system.query_log
+WHERE current_database = currentDatabase() AND query LIKE '%formatDateTime(d, ''%f'') = ''0'' FORMAT Null%' AND type = 'QueryFinish'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
+-- `variant_throw_on_type_mismatch` / `dynamic_throw_on_type_mismatch` are frozen by the `Variant` / `Dynamic`
+-- function adaptors when the function is built and decide whether an alternative that is incompatible with the
+-- function throws or evaluates to `NULL`. The result type is the same either way, so the condition's
+-- `ActionsDAG` looks identical: a lenient session must not prime a "no marks match" verdict that is then served
+-- to a strict session instead of its exception.
+DROP TABLE IF EXISTS t_qcc_variant;
+CREATE TABLE t_qcc_variant (k UInt64, v Variant(UInt64, String), d Dynamic) ENGINE = MergeTree ORDER BY k
+    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
+INSERT INTO t_qcc_variant SELECT number, 'abc'::Variant(UInt64, String), 'abc'::Dynamic FROM numbers(1000000);
+
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_variant WHERE v + 1 = 2 SETTINGS variant_throw_on_type_mismatch = 0;
+SELECT count() FROM t_qcc_variant WHERE v + 1 = 2 SETTINGS variant_throw_on_type_mismatch = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_variant WHERE d + 1 = 2 SETTINGS dynamic_throw_on_type_mismatch = 0;
+SELECT count() FROM t_qcc_variant WHERE d + 1 = 2 SETTINGS dynamic_throw_on_type_mismatch = 1; -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+DROP TABLE t_qcc_variant;
+
+-- The `JSON*` functions snapshot a whole `FormatSettings` in `JSONOverloadResolver`, which decides how a JSON
+-- scalar is parsed into the result type. None of that reaches the condition's `ActionsDAG` either.
+DROP TABLE IF EXISTS t_qcc_json;
+CREATE TABLE t_qcc_json (k UInt64, j String) ENGINE = MergeTree ORDER BY k
+    SETTINGS add_minmax_index_for_numeric_columns = 0, add_minmax_index_for_temporal_columns = 0, add_minmax_index_for_string_columns = 0;
+INSERT INTO t_qcc_json SELECT number, '{"d":1000}' FROM numbers(1000000);
+
+-- An unquoted JSON number extracted into `DateTime64(3)` is a Unix timestamp in seconds by default (1000 seconds)
+-- and the raw scaled value with `input_format_read_datetime_number_as_raw_value` (1000 ticks = one second), so the
+-- condition matches no row under the first value and every row under the second one. The result type is
+-- `DateTime64(3)` either way. The literal is pinned to `UTC` because the test harness randomizes
+-- `session_timezone` over time zones that are deliberately ill-defined around 1970.
+SYSTEM DROP QUERY CONDITION CACHE;
+SELECT count() FROM t_qcc_json WHERE JSONExtract(j, 'd', 'DateTime64(3)') = toDateTime64('1970-01-01 00:00:01', 3, 'UTC') SETTINGS input_format_read_datetime_number_as_raw_value = 0;
+SELECT count() FROM t_qcc_json WHERE JSONExtract(j, 'd', 'DateTime64(3)') = toDateTime64('1970-01-01 00:00:01', 3, 'UTC') SETTINGS input_format_read_datetime_number_as_raw_value = 1;
+SELECT count() FROM t_qcc_json WHERE JSONExtract(j, 'd', 'DateTime64(3)') = toDateTime64('1970-01-01 00:00:01', 3, 'UTC') SETTINGS use_query_condition_cache = 0, input_format_read_datetime_number_as_raw_value = 1;
+
+DROP TABLE t_qcc_json;
+
+DROP TABLE t_qcc_formatdatetime;
