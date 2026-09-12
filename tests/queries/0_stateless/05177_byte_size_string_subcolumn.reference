@@ -21,3 +21,5 @@ id	Default
 s	Sparse
 optimized	2018
 unoptimized	2018
+optimized_single_stream	2018
+unoptimized_single_stream	2018
