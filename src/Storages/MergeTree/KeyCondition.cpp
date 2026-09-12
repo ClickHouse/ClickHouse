@@ -2143,14 +2143,48 @@ static bool finalizeTransformedColumn(ColumnPtr & column, DataTypePtr & type)
 }
 
 
+/// Reports whether a cast into `cast_type` kept every value of `column`. A value that fits the target
+/// can still lose information on the way - `DateTime64(6)` truncated to `DateTime64(3)` - and no NULL
+/// marks that, so the only way to see it is to cast back and compare. `cast_column` is the result of
+/// that cast, already computed by the caller. A source type the reverse cast cannot represent answers
+/// `false`, the same as a value that does not come back unchanged. Positions where `kept` is zero hold
+/// values that have already left the set and are not examined.
+static bool castKeptEveryValue(
+    const ColumnPtr & column,
+    const DataTypePtr & type,
+    const ColumnPtr & cast_column,
+    const DataTypePtr & cast_type,
+    const IColumn::Filter * kept = nullptr)
+{
+    /// `castColumnAccurateOrNull` needs a target that can represent NULLs, and `canBeInsideNullable`
+    /// answers for the outer type only, so a `Tuple` holding an `Array` passes it and then throws.
+    const DataTypePtr source_type = removeLowCardinality(type);
+    if ((!source_type->isNullable() && !source_type->canBeInsideNullable()) || !canBeAccurateCastOrNullTarget(source_type))
+        return false;
+
+    ColumnPtr back_column = castColumnAccurateOrNull({cast_column, cast_type, ""}, source_type);
+
+    for (size_t i = 0, size = column->size(); i < size; ++i)
+    {
+        if (kept && !(*kept)[i])
+            continue;
+
+        if ((*back_column)[i] != (*column)[i])
+            return false;
+    }
+
+    return true;
+}
+
+
 /// Cast column to target_type and fail if the cast introduces NULLs.
 ///
 /// `out_is_exact` reports whether every value also survived the cast unchanged. A value that fits the
-/// target but loses information on the way - `DateTime64(6)` truncated to `DateTime64(3)`, `'007'`
-/// read as `7` - is not a NULL, so the probe below cannot see it, and a constant normalized that way
-/// stands for a different value than the query asked for. Whoever relies on the cast for an equality
-/// atom has to treat such an atom as relaxed: the key point it names has more than one preimage, so
-/// `notEquals` must not exclude it.
+/// target but loses information on the way - `DateTime64(6)` truncated to `DateTime64(3)` - is not a
+/// NULL, so the probe below cannot see it, and a constant normalized that way stands for a different
+/// value than the query asked for. Whoever relies on the cast for an equality atom has to treat such
+/// an atom as relaxed: the key point it names has more than one preimage, so `notEquals` must not
+/// exclude it.
 static bool castColumnWithoutNulls(
     ColumnPtr & column, DataTypePtr & type, const DataTypePtr & target_type, bool & out_is_exact)
 {
@@ -2188,22 +2222,10 @@ static bool castColumnWithoutNulls(
         if (b)
             return false;
 
-    /// Every value fits, so ask the reverse cast whether anything was lost on the way. A target the
-    /// reverse cast cannot represent, a value that does not come back, or a value that comes back
-    /// different all leave the cast inexact, which costs only the `can_be_false` half of the analysis.
-    const DataTypePtr source_probe_type = removeLowCardinality(type);
-    if ((!source_probe_type->isNullable() && !source_probe_type->canBeInsideNullable())
-        || !canBeAccurateCastOrNullTarget(source_probe_type))
-    {
-        out_is_exact = false;
-    }
-    else
-    {
-        ColumnPtr forward_column = castColumnAccurate({column, type, ""}, probe_type);
-        ColumnPtr back_column = castColumnAccurateOrNull({forward_column, probe_type, ""}, source_probe_type);
-        for (size_t i = 0, size = column->size(); i < size && out_is_exact; ++i)
-            out_is_exact = (*back_column)[i] == (*column)[i];
-    }
+    /// Every value fits, so ask the reverse cast whether anything was lost on the way. The probe above
+    /// is the forward cast, so it is read back instead of being computed again. An inexact cast costs
+    /// only the `can_be_false` half of the analysis.
+    out_is_exact = castKeptEveryValue(column, type, n.getNestedColumnPtr(), probe_type);
 
     /// No NULLs were introduced, so the cast is accurate for every value. Produce the requested
     /// target_type (which may be LowCardinality and/or Nullable); the accurate cast cannot throw
