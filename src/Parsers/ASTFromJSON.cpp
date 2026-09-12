@@ -61,6 +61,7 @@
 #include <Parsers/ASTShowIndexesQuery.h>
 #include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
+#include <Parsers/ASTReadFromProjectionSettings.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTSystemQuery.h>
@@ -219,6 +220,7 @@ const std::unordered_map<String, ASTCreator> & getASTFactory()
         {"SQLSecurity", [] { return make_intrusive<ASTSQLSecurity>(); }},
         {"UserNameWithHost", [] { return make_intrusive<ASTUserNameWithHost>(); }},
         {"UserNamesWithHost", [] { return make_intrusive<ASTUserNamesWithHost>(); }},
+        {"ReadFromProjectionSettings", [] { return make_intrusive<ASTReadFromProjectionSettings>(); }},
         {"StreamSettings", [] { return make_intrusive<ASTStreamSettings>(); }},
         {"RefreshStrategy", [] { return make_intrusive<ASTRefreshStrategy>(); }},
         {"TimeInterval", [] { return make_intrusive<ASTTimeInterval>(); }},

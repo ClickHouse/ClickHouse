@@ -1,0 +1,2 @@
+but not used: Projection p_by_other is usable but requires reading N marks, which is less efficient than projection p_by_value with N marks
+force_optimize_projection = 1: projection p_by_other is rejected because the projection does not contain all columns required by the query; projection p_by_value is rejected because the projection does not contain all columns required by the query

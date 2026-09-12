@@ -5,6 +5,7 @@
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTReadFromProjectionSettings.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTFunction.h>
@@ -521,6 +522,16 @@ static ASTPtr convertIntoTableExpressionAST(
         const auto & sample_offset_ratio = table_expression_modifiers->getSampleOffsetRatio();
         if (sample_offset_ratio.has_value())
             result_table_expression->sample_offset = make_intrusive<ASTSampleRatio>(*sample_offset_ratio);
+
+        const auto & read_from_projection_settings = table_expression_modifiers->getReadFromProjectionSettings();
+        if (read_from_projection_settings.has_value())
+        {
+            auto ast_read_from_projection_settings = make_intrusive<ASTReadFromProjectionSettings>();
+            ast_read_from_projection_settings->setName(make_intrusive<ASTIdentifier>(read_from_projection_settings->name));
+
+            result_table_expression->read_from_projection_settings = std::move(ast_read_from_projection_settings);
+            result_table_expression->children.push_back(result_table_expression->read_from_projection_settings);
+        }
 
         const auto & stream_settings = table_expression_modifiers->getStreamSettings();
         if (stream_settings.has_value())

@@ -6,6 +6,7 @@
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
+#include <Parsers/ASTReadFromProjectionSettings.h>
 #include <Parsers/ASTStreamSettings.h>
 #include <Common/SipHash.h>
 #include <IO/Operators.h>
@@ -49,6 +50,7 @@ ASTPtr ASTTableExpression::clone() const
     CLONE(sample_size);
     CLONE(sample_offset);
     CLONE(column_aliases);
+    CLONE(read_from_projection_settings);
     CLONE(stream_settings);
 
     return res;
@@ -171,6 +173,12 @@ void ASTTableExpression::formatImpl(WriteBuffer & ostr, const FormatSettings & s
                 << "OFFSET ";
             sample_offset->format(ostr, settings, state, frame);
         }
+    }
+
+    if (read_from_projection_settings)
+    {
+        ostr << settings.nl_or_ws << indent_str << "PROJECTION ";
+        read_from_projection_settings->format(ostr, settings, state, frame);
     }
 
     if (stream_settings)
@@ -363,6 +371,7 @@ void ASTTableExpression::writeJSON(WriteBuffer & out) const
     w.writeChild("sample_size", sample_size);
     w.writeChild("sample_offset", sample_offset);
     w.writeChild("column_aliases", column_aliases);
+    w.writeChild("read_from_projection_settings", read_from_projection_settings);
     w.writeChild("stream_settings", stream_settings);
 }
 
@@ -538,6 +547,14 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
         children.push_back(column_aliases);
     }
 
+    /// `read_from_projection_settings` is parser-owned as an `ASTReadFromProjectionSettings`, so reject any other node type here.
+    child = r.readChildOfType<ASTReadFromProjectionSettings>("read_from_projection_settings");
+    if (child)
+    {
+        read_from_projection_settings = child;
+        children.push_back(read_from_projection_settings);
+    }
+
     /// `stream_settings` is parser-owned as an `ASTStreamSettings`; `formatImpl` downcasts it
     /// with `stream_settings->as<ASTStreamSettings &>()`, so reject any other node type here.
     child = r.readChildOfType<ASTStreamSettings>("stream_settings");
@@ -548,7 +565,7 @@ void ASTTableExpression::readJSON(const Poco::JSON::Object & json)
     }
 
     /// The formatter chooses exactly one source: `database_and_table_name`, else `table_function`, else `subquery`.
-    /// A table expression with no source (carrying only FINAL/SAMPLE/stream_settings) is invalid, as are multiple sources.
+    /// A table expression with no source (carrying only FINAL/SAMPLE/read_from_projection_settings/stream_settings) is invalid, as are multiple sources.
     size_t num_sources = static_cast<size_t>(database_and_table_name != nullptr)
         + static_cast<size_t>(table_function != nullptr)
         + static_cast<size_t>(subquery != nullptr);

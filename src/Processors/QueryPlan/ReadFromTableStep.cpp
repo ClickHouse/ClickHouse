@@ -42,6 +42,8 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
         flags |= 4;
     if (use_parallel_replicas)
         flags |= 8;
+    if (table_expression_modifiers.hasProjection())
+        flags |= 16;
 
     writeIntBinary(flags, ctx.out);
     if (table_expression_modifiers.hasSampleSizeRatio())
@@ -52,6 +54,9 @@ void ReadFromTableStep::serialize(Serialization & ctx) const
 
     if (use_parallel_replicas)
         writeIntBinary(use_parallel_replicas, ctx.out);
+
+    if (table_expression_modifiers.hasProjection())
+        writeStringBinary(table_expression_modifiers.getReadFromProjectionSettings()->name, ctx.out);
 }
 
 QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
@@ -79,7 +84,14 @@ QueryPlanStepPtr ReadFromTableStep::deserialize(Deserialization & ctx)
     if (flags & 8)
         readIntBinary(use_parallel_replicas, ctx.in);
 
-    TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio);
+    std::optional<ReadFromProjectionSettings> read_from_projection_settings;
+    if (flags & 16)
+    {
+        read_from_projection_settings.emplace();
+        readStringBinary(read_from_projection_settings->name, ctx.in);
+    }
+
+    TableExpressionModifiers table_expression_modifiers(has_final, sample_size_ratio, sample_offset_ratio, std::move(read_from_projection_settings));
     return std::make_unique<ReadFromTableStep>(ctx.output_header, table_name, table_expression_modifiers, use_parallel_replicas);
 }
 

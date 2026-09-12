@@ -1,0 +1,122 @@
+-- { echoOn }
+
+-- Each side of a join carries its own projection.
+EXPLAIN indexes = 1, projections = 1
+SELECT count()
+FROM (SELECT key FROM t_join_normal PROJECTION p_other WHERE key < 10) AS a
+INNER JOIN (SELECT key, count() AS c FROM t_join_agg PROJECTION p_other_key WHERE key < 10 GROUP BY key) AS b USING (key);
+Output: count()
+
+Aggregating
+│  Keys:
+│  Aggregates: count()
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  a ⋈ b
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(ConcurrentHashJoin)
+   │  Cost: estimated no stats
+   │  Selectivity: estimated (NDV) no stats
+   │  Output rows: estimated no stats
+   │  Left: rows estimated no stats
+   │  Right: rows estimated no stats
+   │  Join conditions: key = key
+   │  Input (left): key, __join_result_dummy
+   │  Input (right): key
+   ├──ReadFromMergeTree (p_other)
+   │     Read type: Default
+   │     Parts: 1 | Granules: 13
+   │     Output: key
+   │     Prewhere filter
+   │     Prewhere filter column:  key < 10
+   │     Indexes:
+   │       PrimaryKey
+   │         Condition: true
+   │         Parts: 1/1
+   │         Granules: 13/13
+   │       Ranges: 1
+   └──Aggregating
+      │  Keys: key
+      │  Skip merging: 0
+      └──Filter
+         │  Filter column:  key < 10
+         └──ReadFromMergeTree (p_other_key)
+               Read type: Default
+               Parts: 1 | Granules: 13
+               Output: key
+               Indexes:
+                 PrimaryKey
+                   Keys:
+                     key
+                   Condition: (key in (-Inf, 9])
+                   Parts: 1/1
+                   Granules: 13/13
+                   Search Algorithm: generic exclusion search
+                 Ranges: 1
+SELECT count()
+FROM (SELECT key FROM t_join_normal PROJECTION p_other WHERE key < 10) AS a
+INNER JOIN (SELECT key, count() AS c FROM t_join_agg PROJECTION p_other_key WHERE key < 10 GROUP BY key) AS b USING (key)
+SETTINGS force_optimize_projection_name = 'p_other_key';
+10
+-- A self join reads the same table through two different projections.
+EXPLAIN indexes = 1, projections = 1
+SELECT count()
+FROM t_join_normal AS a PROJECTION p_other
+INNER JOIN t_join_normal AS b PROJECTION p_value ON a.key = b.key
+WHERE a.other < 5 AND b.value < 100;
+Output: count()
+
+Aggregating
+│  Keys:
+│  Aggregates: count()
+│  Skip merging: 0
+└──Join (JOIN FillRightFirst)
+   │  a ⋈ b
+   │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(ConcurrentHashJoin)
+   │  Cost: estimated no stats
+   │  Selectivity: estimated (NDV) no stats
+   │  Output rows: estimated no stats
+   │  Left: rows estimated no stats
+   │  Right: rows estimated no stats
+   │  Join conditions: key = key
+   │  Input (left): key, __join_result_dummy
+   │  Input (right): key
+   ├──ReadFromMergeTree (p_other)
+   │     Read type: Default
+   │     Parts: 1 | Granules: 1
+   │     Output: other, key
+   │     Prewhere filter
+   │     Prewhere filter column:  other < 5
+   │     Indexes:
+   │       PrimaryKey
+   │         Keys:
+   │           other
+   │         Condition: (other in (-Inf, 4])
+   │         Parts: 1/1
+   │         Granules: 1/13
+   │         Search Algorithm: binary search
+   │       Ranges: 1
+   └──ReadFromMergeTree (p_value)
+         Read type: Default
+         Parts: 1 | Granules: 1
+         Output: value, key
+         Prewhere filter
+         Prewhere filter column:  other < 5
+         Indexes:
+           PrimaryKey
+             Keys:
+               value
+             Condition: (value in (-Inf, 99])
+             Parts: 1/1
+             Granules: 1/13
+             Search Algorithm: binary search
+           Ranges: 1
+SELECT count()
+FROM t_join_normal AS a PROJECTION p_other
+INNER JOIN t_join_normal AS b PROJECTION p_value ON a.key = b.key
+WHERE a.other < 5 AND b.value < 100
+SETTINGS log_comment = '05182_projection_modifier_self_join';
+5
+SYSTEM FLUSH LOGS query_log;
+SELECT arraySort(projections) FROM system.query_log
+WHERE current_database = currentDatabase() AND log_comment = '05182_projection_modifier_self_join' AND type = 'QueryFinish';
+['default.t_join_normal.p_other','default.t_join_normal.p_value']

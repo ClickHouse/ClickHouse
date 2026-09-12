@@ -1894,7 +1894,7 @@ For example:
 Projections are like [materialized views](/reference/statements/create/view) but defined in part-level. It provides consistency guarantees along with automatic usage in queries.
 
 <Note>
-When you are implementing projections you should also consider the [force_optimize_projection](/reference/settings/session-settings/force-optimize#force_optimize_projection) setting.
+When you are implementing projections you should also consider the [force_optimize_projection](/reference/settings/session-settings/force-optimize#force_optimize_projection) setting. To make a query read one table through a chosen projection regardless of the cost estimate, use the [`PROJECTION` modifier](/reference/statements/select/from#projection-modifier) of the `FROM` clause.
 </Note>
 
 Projections are not supported in the `SELECT` statements with the [FINAL](/reference/statements/select/from#final-modifier) modifier.

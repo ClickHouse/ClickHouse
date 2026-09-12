@@ -1,0 +1,43 @@
+-- { echoOn }
+
+-- Formatting keeps the modifier after the table.
+EXPLAIN SYNTAX SELECT value FROM t_syntax PROJECTION p_value WHERE key < 10;
+SELECT value\nFROM t_syntax\nPROJECTION p_value\nWHERE less(key, 10)
+-- The AST holds a dedicated node under the table expression.
+EXPLAIN AST SELECT value FROM t_syntax AS t PROJECTION p_value WHERE key < 10;
+SelectWithUnionQuery (children 1)
+ ExpressionList (children 1)
+  SelectQuery (children 3)
+   ExpressionList (children 1)
+    Identifier value
+   TablesInSelectQuery (children 1)
+    TablesInSelectQueryElement (children 1)
+     TableExpression (children 2)
+      TableIdentifier t_syntax (alias t)
+      ReadFromProjectionSettings (children 1)
+       Identifier p_value
+   Function less (children 1)
+    ExpressionList (children 2)
+     Identifier key
+     Literal UInt64_10
+-- The query tree carries it in the table expression modifiers.
+EXPLAIN QUERY TREE SELECT value FROM t_syntax PROJECTION p_value WHERE key < 10;
+QUERY id: 0
+  PROJECTION COLUMNS
+    value UInt64
+  PROJECTION
+    LIST id: 1, nodes: 1
+      COLUMN id: 2, column_name: value, result_type: UInt64, source_id: 3
+  JOIN TREE
+    TABLE id: 3, alias: __table1, table_name: default.t_syntax, final: 0, projection: p_value
+  WHERE
+    FUNCTION id: 4, function_name: less, function_type: ordinary, result_type: UInt8
+      ARGUMENTS
+        LIST id: 5, nodes: 2
+          COLUMN id: 6, column_name: key, result_type: UInt64, source_id: 3
+          CONSTANT id: 7, constant_value: UInt64_10, constant_value_type: UInt8
+-- The keyword is reserved as a bare alias only; with AS it still works.
+SELECT 1 AS projection;
+1
+SELECT projection FROM (SELECT 1 AS projection);
+1

@@ -1798,6 +1798,7 @@ const char * ParserAlias::restricted_keywords[] =
     "ORDER",
     "PARALLEL",
     "PREWHERE",
+    "PROJECTION",
     "RIGHT",
     "SAMPLE",
     "SEMI",

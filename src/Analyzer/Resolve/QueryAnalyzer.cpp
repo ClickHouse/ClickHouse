@@ -64,6 +64,7 @@
 #include <Interpreters/JoinUtils.h>
 #include <Interpreters/convertColumnToType.h>
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/ProjectionsDescription.h>
 #include <Storages/IStorage.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageView.h>
@@ -88,6 +89,8 @@ namespace Setting
     extern const SettingsBool aggregate_functions_null_for_empty;
     extern const SettingsBool analyzer_compatibility_allow_non_aggregate_in_having;
     extern const SettingsBool enable_streaming_queries;
+    extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool optimize_use_projections;
     extern const SettingsBool analyzer_compatibility_join_using_top_level_identifier;
     extern const SettingsBool analyzer_compatibility_multiple_joins_qualify_column_names;
     extern const SettingsBool analyzer_inline_views;
@@ -133,6 +136,8 @@ namespace ErrorCodes
     extern const int EMPTY_LIST_OF_COLUMNS_QUERIED;
     extern const int TOO_DEEP_SUBQUERIES;
     extern const int ILLEGAL_FINAL;
+    extern const int ILLEGAL_PROJECTION;
+    extern const int NO_SUCH_PROJECTION_IN_TABLE;
     extern const int ILLEGAL_STREAM;
     extern const int SAMPLING_NOT_SUPPORTED;
     extern const int SUPPORT_IS_DISABLED;
@@ -884,6 +889,32 @@ void QueryAnalyzer::validateTableExpressionModifiers(const QueryTreeNodePtr & ta
                 throw Exception(ErrorCodes::SAMPLING_NOT_SUPPORTED,
                     "Storage {} doesn't support sampling",
                     storage->getStorageID().getFullNameNotQuoted());
+
+            if (table_expression_modifiers->hasProjection())
+            {
+                if (table_expression_modifiers->hasFinal() || table_expression_modifiers->hasSampleSizeRatio()
+                    || table_expression_modifiers->hasSampleOffsetRatio() || table_expression_modifiers->hasStream())
+                    throw Exception(ErrorCodes::ILLEGAL_PROJECTION,
+                        "PROJECTION is not compatible with other table expression modifiers (FINAL, SAMPLE or STREAM)");
+
+                if (scope.context && !scope.context->getSettingsRef()[Setting::optimize_use_projections])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "PROJECTION requires the setting `optimize_use_projections = 1`");
+
+                if (scope.context && scope.context->getSettingsRef()[Setting::make_distributed_plan])
+                    throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "PROJECTION is not supported with the setting `make_distributed_plan`");
+
+                if (!storage->isMergeTree())
+                    throw Exception(ErrorCodes::ILLEGAL_PROJECTION, "Storage {} doesn't support PROJECTION", storage->getName());
+
+                const auto & projection_name = table_expression_modifiers->getReadFromProjectionSettings()->name;
+                const auto & storage_snapshot = table_node ? table_node->getStorageSnapshot() : table_function_node->getStorageSnapshot();
+                if (projection_name != ProjectionDescription::MINMAX_COUNT_PROJECTION_NAME)
+                    if (!storage_snapshot->metadata->projections.has(projection_name))
+                        throw Exception(ErrorCodes::NO_SUCH_PROJECTION_IN_TABLE,
+                            "There is no projection {} in table {}",
+                            backQuoteIfNeed(projection_name),
+                            storage->getStorageID().getFullNameNotQuoted());
+            }
 
             if (table_expression_modifiers->hasStream())
             {

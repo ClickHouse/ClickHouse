@@ -569,6 +569,20 @@ ReadFromMergeTree::ReadFromMergeTree(
         && data.merging_params.mode == MergeTreeData::MergingParams::Replacing;
 }
 
+String ReadFromMergeTree::getForcedProjectionName() const
+{
+    if (!query_info.isProjectionRead())
+        return {};
+
+    return query_info.table_expression_modifiers->getReadFromProjectionSettings()->name;
+}
+
+void ReadFromMergeTree::dropForcedProjection()
+{
+    if (query_info.table_expression_modifiers)
+        query_info.table_expression_modifiers->setReadFromProjectionSettings({});
+}
+
 std::unique_ptr<ReadFromMergeTree> ReadFromMergeTree::createLocalParallelReplicasReadingStep(
     ContextPtr & context_,
     AnalysisResultPtr analyzed_result_ptr_,
