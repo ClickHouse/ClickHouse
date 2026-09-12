@@ -18,6 +18,10 @@
 (1,2)
 \N
 (2,3)
+-- affected file, the non-clean element read as non-Nullable at null_as_default = 0: still recovered
+(1,2)
+\N
+(2,3)
 -- affected file, only the non-clean element read: refused, not answered with a present struct
 TYPE_MISMATCH
 -- affected file with no clean element at all: refused

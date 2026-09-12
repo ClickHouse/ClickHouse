@@ -168,13 +168,13 @@ struct Reader
         /// See OutputColumnInfo::nullable_group_def.
         std::vector<UInt8> nullable_group_defs;
         /// Levels of the groups whose null maps this leaf derives, one per consumer (an output's
-        /// nullable_group_map_idx or element_null_check_group_map_idx below), so entries may repeat.
+        /// nullable_group_map_idx below), so entries may repeat.
         /// ColumnSubchunk::group_null_maps is parallel to this.
         std::vector<UInt8> derive_group_defs;
-        /// Index in `derive_group_defs` of the innermost enclosing group's map, which tells a null
-        /// this leaf sees because that group is NULL from one the element itself carries; npos if
-        /// there is none.
-        size_t element_null_check_group_map_idx = size_t(-1);
+        /// Whether an enclosing group tells apart the nulls of this leaf that are the group's from
+        /// the ones the element itself carries (OutputColumnInfo::element_null_check_leaves). If not,
+        /// a null in this leaf is rejected as soon as it is decoded.
+        bool element_nulls_checked_by_group = false;
         /// TODO [parquet]: Consider also adding output_low_cardinality to allow producing LowCardinality
         ///       column directly from parquet dictionary+indices. This is not straightforward
         ///       because ColumnLowCardinality requires values to be unique and the first value to
@@ -259,6 +259,11 @@ struct Reader
         /// Index in that leaf's derive_group_defs, hence in ColumnSubchunk::group_null_maps, of this
         /// group's map. One entry per consumer: forming the output moves the map out.
         size_t nullable_group_map_idx = 0;
+        /// Leaves inside this group read as non-Nullable, whose nulls this group's null map tells
+        /// apart: a null where the group is NULL is the group's, any other is the element's own and
+        /// cannot go into a non-Nullable column. Checked here, not on the leaf, because the map comes
+        /// from nullable_group_source, whose levels may disagree with the leaf that saw the null.
+        std::vector<size_t> element_null_check_leaves;
 
         /// If type is Array, this is the repetition level of that array.
         /// `rep - 1` is index in ColumnChunk::arrays_offsets.
@@ -639,6 +644,11 @@ struct Reader
     /// is not called again for the moved-out columns.
     MutableColumnPtr formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows);
     ColumnPtr & getOrFormOutputColumn(RowSubgroup & row_subgroup, size_t idx_in_output_block);
+
+    /// Throws CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN for a null that `group_null_map` does not
+    /// attribute to the group being NULL (see OutputColumnInfo::element_null_check_leaves).
+    void checkElementNullsUnderNullableGroup(
+        const RowSubgroup & row_subgroup, const OutputColumnInfo & output_info, const IColumn & group_null_map) const;
 
     void applyPrewhere(RowSubgroup & row_subgroup, const RowGroup & row_group, size_t step_idx);
 

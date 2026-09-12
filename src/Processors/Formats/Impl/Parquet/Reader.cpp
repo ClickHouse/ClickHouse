@@ -2427,11 +2427,13 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
         res += (column_info.levels.back().rep - 1) * 8. * static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
 
     /// One byte per instance of each Nullable(Tuple(...)) group this leaf derives a null map for.
-    /// A group below an array has one instance per element of it rather than one per row.
-    for (UInt8 group_def : column_info.derive_group_defs)
-        res += column_info.levels[group_def].rep == 0
-            ? 1.
-            : static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
+    /// A group below an array has one instance per element of it rather than one per row. The maps
+    /// are allocated under the same condition, so a leaf whose statistics ruled them out costs zero.
+    if (column.need_group_null_map)
+        for (UInt8 group_def : column_info.derive_group_defs)
+            res += column_info.levels[group_def].rep == 0
+                ? 1.
+                : static_cast<double>(column.meta->meta_data.num_values) / static_cast<double>(row_group.meta->num_rows);
 
     return res;
 }
@@ -2583,46 +2585,16 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
             throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition/definition levels for arrays in column {}", column_info.name);
     }
 
-    if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default)
+    if (subchunk.null_map && !column_info.output_nullable && !options.format.null_as_default
+        && !column_info.element_nulls_checked_by_group)
     {
+        /// No enclosing group can account for a null here (see
+        /// OutputColumnInfo::element_null_check_leaves), so each one is the element's own NULL going
+        /// into a non-Nullable column. null_map convention: 1 = NULL, 0 = NOT NULL.
         const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
-
-        /// A null here means one of two different things: an enclosing Nullable(Tuple(...)) group is
-        /// NULL, or this element is NULL. The first is represented by that group's ColumnNullable, so
-        /// it is default-filled below rather than rejected; only the second is a NULL being inserted
-        /// into a non-Nullable column. The innermost group's map answers which one it is, and it is
-        /// aligned with these values only while no array level sits below that group; with an array
-        /// below, a NULL group produces no value here at all, so every null seen is an element null.
-        const ColumnUInt8::Container * group_null_map = nullptr;
-        if (!column_info.nullable_group_defs.empty() && column_info.max_array_def <= column_info.nullable_group_defs.back())
-        {
-            const size_t idx = column_info.element_null_check_group_map_idx;
-            if (idx < subchunk.group_null_maps.size() && subchunk.group_null_maps[idx])
-            {
-                const auto & map = assert_cast<const ColumnUInt8 &>(*subchunk.group_null_maps[idx]).getData();
-                /// Aligned by the guard above; without assertions, reject the null rather than read
-                /// out of bounds.
-                chassert(map.size() == null_map.size());
-                if (map.size() == null_map.size())
-                    group_null_map = &map;
-            }
-        }
-
-        /// null_map uses standard ClickHouse convention: 1 = NULL, 0 = NOT NULL.
-        bool has_element_null;
-        if (group_null_map)
-        {
-            has_element_null = false;
-            for (size_t i = 0; i < null_map.size() && !has_element_null; ++i)
-                has_element_null = null_map[i] && !(*group_null_map)[i];
-        }
-        else
-            has_element_null = memchr(null_map.data(), 1, null_map.size()) != nullptr;
-
-        if (has_element_null)
+        if (memchr(null_map.data(), 1, null_map.size()) != nullptr)
             throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN, "Cannot convert NULL value to non-Nullable type for column {}", column_info.name);
-        if (!group_null_map)
-            subchunk.null_map = nullptr;
+        subchunk.null_map = nullptr;
     }
 
     if (subchunk.null_map)
@@ -3350,6 +3322,27 @@ void Reader::decompressPageIfCompressed(PageState & page)
     page.codec = parq::CompressionCodec::UNCOMPRESSED;
 }
 
+void Reader::checkElementNullsUnderNullableGroup(
+    const RowSubgroup & row_subgroup, const OutputColumnInfo & output_info, const IColumn & group_null_map) const
+{
+    const auto & group_nulls = assert_cast<const ColumnUInt8 &>(group_null_map).getData();
+    for (size_t primitive_idx : output_info.element_null_check_leaves)
+    {
+        const ColumnSubchunk & subchunk = row_subgroup.columns.at(primitive_idx);
+        if (!subchunk.null_map)
+            continue; // no null was decoded for this leaf
+        const auto & null_map = assert_cast<const ColumnUInt8 &>(*subchunk.null_map).getData();
+        /// One entry per instance of the group in both maps, since no array sits between the group
+        /// and the leaf; without assertions, reject the null rather than read out of bounds.
+        chassert(null_map.size() == group_nulls.size());
+        for (size_t i = 0; i < null_map.size(); ++i)
+            if (null_map[i] && (i >= group_nulls.size() || !group_nulls[i]))
+                throw Exception(ErrorCodes::CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
+                    "Cannot convert NULL value to non-Nullable type for column {}",
+                    primitive_columns.at(primitive_idx).name);
+    }
+}
+
 MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t output_column_idx, size_t num_rows)
 {
     /// Recurses over the nested output column tree, whose depth is bounded by SchemaConverter's
@@ -3391,6 +3384,8 @@ MutableColumnPtr Reader::formOutputColumn(RowSubgroup & row_subgroup, size_t out
         else
             /// need_group_null_map was false: the statistics proved no instance of this group is null.
             nullable_group_null_map = ColumnUInt8::create(num_rows, UInt8(0));
+
+        checkElementNullsUnderNullableGroup(row_subgroup, output_info, *nullable_group_null_map);
     }
 
     TypeIndex kind = output_info.nullable_group_def != 0

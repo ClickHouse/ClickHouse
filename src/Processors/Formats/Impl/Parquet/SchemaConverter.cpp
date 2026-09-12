@@ -958,21 +958,31 @@ void SchemaConverter::planGroupNullMapDerivation()
         derive_group_defs.push_back(output.nullable_group_def);
     }
 
-    for (PrimitiveColumnInfo & primitive : primitive_columns)
+    if (options.format.null_as_default)
+        return;
+
+    /// Plus, per leaf read as non-Nullable, the group that tells the leaf's own nulls from its
+    /// enclosing group's: the innermost one, since definition levels increase inward. Inner groups'
+    /// outputs come first, so the first output to claim a leaf is the innermost group around it.
+    for (OutputColumnInfo & output : output_columns)
     {
-        /// Plus, per leaf, its innermost enclosing group, whose map tells a null this leaf sees
-        /// because the group is NULL from one the element itself is. Definition levels increase
-        /// inward, so a null any enclosing group explains is explained by the innermost one, and the
-        /// outer maps answer nothing extra. Only the CANNOT_INSERT_NULL check reads it, so an entry
-        /// already derived for that level can be shared.
-        if (primitive.nullable_group_defs.empty() || primitive.output_nullable || options.format.null_as_default)
+        if (output.nullable_group_def == 0)
             continue;
-        const UInt8 group_def = primitive.nullable_group_defs.back();
-        auto & derive_group_defs = primitive.derive_group_defs;
-        auto it = std::find(derive_group_defs.begin(), derive_group_defs.end(), group_def);
-        primitive.element_null_check_group_map_idx = size_t(it - derive_group_defs.begin());
-        if (it == derive_group_defs.end())
-            derive_group_defs.push_back(group_def);
+        for (size_t i = output.primitive_start; i < output.primitive_end; ++i)
+        {
+            PrimitiveColumnInfo & primitive = primitive_columns[i];
+            if (primitive.output_nullable || primitive.element_nulls_checked_by_group
+                || primitive.nullable_group_defs.empty()
+                || primitive.nullable_group_defs.back() != output.nullable_group_def)
+                continue;
+            /// With an array between the group and the leaf, a NULL group produces no value in the
+            /// leaf at all, so the group's map is not aligned with the leaf's values and answers
+            /// nothing: every null the leaf sees there is the element's own.
+            if (primitive.max_array_def > output.nullable_group_def)
+                continue;
+            primitive.element_nulls_checked_by_group = true;
+            output.element_null_check_leaves.push_back(i);
+        }
     }
 }
 

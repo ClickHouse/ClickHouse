@@ -61,6 +61,12 @@ $CLICKHOUSE_LOCAL $opts -q "SELECT count() FROM file('$DATA/04065_optional_struc
 echo "-- affected file, a clean element is among those read: struct NULL recovered through it"
 $CLICKHOUSE_LOCAL $opts -q "SELECT p FROM file('$DATA/04065_clickhouse_written_ambiguous_nullable_tuple_levels.parquet', 'Parquet', 'p Nullable(Tuple(a Nullable(Int32), b Int32))')"
 
+# Same file with the non-clean element hinted non-Nullable, where a null must be told from the group's
+# own: leaf a's levels call the null group's row "a is NULL", so only the map taken from clean leaf b
+# recovers it, and a check keyed on the leaf that saw the null refuses the row instead.
+echo "-- affected file, the non-clean element read as non-Nullable at null_as_default = 0: still recovered"
+$CLICKHOUSE_LOCAL $opts --input_format_null_as_default=0 -q "SELECT p FROM file('$DATA/04065_clickhouse_written_ambiguous_nullable_tuple_levels.parquet', 'Parquet', 'p Nullable(Tuple(a Int32, b Int32))')"
+
 echo "-- affected file, only the non-clean element read: refused, not answered with a present struct"
 $CLICKHOUSE_LOCAL $opts -q "SELECT p FROM file('$DATA/04065_clickhouse_written_ambiguous_nullable_tuple_levels.parquet', 'Parquet', 'p Nullable(Tuple(a Nullable(Int32)))')" 2>&1 | grep -o "TYPE_MISMATCH" | head -1
 

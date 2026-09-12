@@ -34,8 +34,8 @@ SELECT c0 IS NULL FROM file(currentDatabase() || '_04065_both.parquet', 'Parquet
 DROP TABLE test_nullable_tuple_both;
 
 -- Physically-nullable struct (all-REQUIRED leaves) read as Nullable(Tuple) with a leaf hint that
--- materializes the first leaf as Nullable. decodePrimitiveColumn moves the shared group null map
--- into the leaf's ColumnNullable, so the group null map must be preserved separately or the middle
+-- materializes the first leaf as Nullable. That leaf's own null map becomes its ColumnNullable, so
+-- the group's null map has to be derived at the group's own definition level or the middle
 -- (struct-level NULL) row would be silently returned as a non-null tuple. Middle row must stay NULL.
 DROP TABLE IF EXISTS test_nullable_tuple_leaf_nullable;
 CREATE TABLE test_nullable_tuple_leaf_nullable (c0 Nullable(Tuple(UInt32, String))) ENGINE = Memory;
@@ -293,11 +293,15 @@ INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_arr_only.parquet', 
 
 SELECT c0 FROM file(currentDatabase() || '_04065_arr_only.parquet', 'Parquet', 'c0 Nullable(Tuple(b Array(UInt32)))');
 
--- Map element: the key_value group is repeated, so the group null map skips its continuations.
+-- Map element: the key_value group is repeated, so the group null map skips its continuations. Two
+-- entries per map to have continuations at all, nullIf to keep the map non-empty where the struct is
+-- NULL (an empty one adds no level, which hides the difference), and a second read without the clean
+-- scalar element, which is otherwise preferred as the leaf the group null map is derived from.
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_map.parquet', 'Parquet', 'c0 Nullable(Tuple(a UInt32, m Map(String, UInt32)))')
-    SELECT if(number = 1, NULL, tuple(toUInt32(number), map('k', toUInt32(number)))) FROM numbers(3);
+    SELECT nullIf(tuple(toUInt32(number), map('k', toUInt32(number), 'j', toUInt32(number + 10))), tuple(toUInt32(1), map('k', toUInt32(1), 'j', toUInt32(11)))) FROM numbers(3);
 
 SELECT c0 FROM file(currentDatabase() || '_04065_map.parquet', 'Parquet', 'c0 Nullable(Tuple(a UInt32, m Map(String, UInt32)))');
+SELECT c0 FROM file(currentDatabase() || '_04065_map.parquet', 'Parquet', 'c0 Nullable(Tuple(m Map(String, UInt32)))');
 
 -- Requested subset of a group with one REQUIRED and one OPTIONAL element. The null map has to come
 -- from a leaf that is actually materialized, so both halves of the subset must read the struct NULL.
@@ -337,10 +341,13 @@ SELECT c0, c0 IS NULL FROM file(currentDatabase() || '_04065_between.parquet', '
 
 -- Multiple row groups and pages, with the nested element PRESENT at most struct-NULL rows, which is
 -- exactly what a group null and an element null are confused for when either side gets it wrong.
+-- A group null map is accumulated page by page, so the batch and page sizes are set small enough to
+-- put several pages in each column chunk; the row group size alone leaves one page per chunk.
 -- 334 = multiples of 3 in [0, 1000); 133 = multiples of 5 that are not multiples of 15.
 INSERT INTO TABLE FUNCTION file(currentDatabase() || '_04065_mrg.parquet', 'Parquet', 'c0 Nullable(Tuple(a Nullable(Int32), b Int32))')
     SELECT if(number % 3 = 0, NULL, tuple(if(number % 5 = 0, NULL, toInt32(number)), toInt32(number))) FROM numbers(1000)
-    SETTINGS output_format_parquet_row_group_size = 100;
+    SETTINGS output_format_parquet_row_group_size = 100, output_format_parquet_batch_size = 16,
+             output_format_parquet_data_page_size = 64;
 
 SELECT count(), countIf(c0 IS NULL), countIf(c0 IS NOT NULL AND c0.a IS NULL) FROM file(currentDatabase() || '_04065_mrg.parquet', 'Parquet', 'c0 Nullable(Tuple(a Nullable(Int32), b Int32))');
 
