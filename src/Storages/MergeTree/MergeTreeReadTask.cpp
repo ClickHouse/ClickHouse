@@ -248,7 +248,7 @@ void MergeTreeReadTaskInfo::fillConvertedColumns(const MergeTreeSettings & stora
 /// See `MergeTreeReadTaskInfo::converted_columns`: an empty converted list stands for the original one.
 static const NamesAndTypesList & convertedOrOriginal(const NamesAndTypesList & converted, const NamesAndTypesList & original)
 {
-    return converted.empty() ? original : converted;
+    return converted.empty() ? original : converted; /// NOLINT(bugprone-return-const-ref-from-parameter)
 }
 
 MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
