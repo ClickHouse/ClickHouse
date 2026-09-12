@@ -1616,7 +1616,8 @@ StorageURL::StorageURL(
     const HTTPHeaderEntries & headers_,
     const String & http_method_,
     ASTPtr partition_by_,
-    bool distributed_processing_)
+    bool distributed_processing_,
+    bool validate_headers_)
     : IStorageURLBase(
         uri_,
         context_,
@@ -1633,7 +1634,12 @@ StorageURL::StorageURL(
         distributed_processing_)
 {
     context_->getRemoteHostFilter().checkURL(Poco::URI(uri));
-    context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
+    /// Only validate/normalize freshly supplied headers (CREATE / url()); skip on ATTACH replay of
+    /// existing metadata so a table persisted by an older release keeps attaching. The injection-char
+    /// and forbidden-header rejections still apply to every fresh request (including the url() table
+    /// function); a query against a pre-existing table sends its stored headers unchanged.
+    if (validate_headers_)
+        context_->getHTTPHeaderFilter().checkAndNormalizeHeaders(headers);
 }
 
 
@@ -2630,7 +2636,8 @@ void registerStorageURL(StorageFactory & factory)
                     config.headers,
                     config.http_method,
                     partition_by,
-                    /* distributed_processing */ false);
+                    /* distributed_processing */ false,
+                    /* validate_headers */ isFreshTableDefinition(args.mode, args.query.attach_short_syntax));
             }
 
             if (args.mode <= LoadingStrictnessLevel::CREATE)

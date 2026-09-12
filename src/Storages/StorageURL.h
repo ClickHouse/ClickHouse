@@ -357,7 +357,11 @@ public:
         const HTTPHeaderEntries & headers_ = {},
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr,
-        bool distributed_processing_ = false);
+        bool distributed_processing_ = false,
+        /// Validate/normalize headers in the ctor. Pass false when replaying existing metadata
+        /// (server-startup ATTACH) so a table persisted by an older release keeps attaching;
+        /// fresh CREATE / url() keep validating (see the URL storage factory).
+        bool validate_headers_ = true);
 
     String getName() const override
     {
