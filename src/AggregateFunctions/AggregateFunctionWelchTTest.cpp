@@ -11,6 +11,7 @@ struct Settings;
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
     extern const int TOO_MANY_ARGUMENTS_FOR_FUNCTION;
 }
 
@@ -83,7 +84,7 @@ AggregateFunctionPtr createAggregateFunctionWelchTTest(
         throw Exception(ErrorCodes::TOO_MANY_ARGUMENTS_FOR_FUNCTION, "Aggregate function {} requires zero or one parameter.", name);
 
     if (!isNumber(argument_types[0]) || !isNumber(argument_types[1]))
-        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Aggregate function {} only supports numerical types", name);
+        throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Aggregate function {} only supports numerical types", name);
 
     return std::make_shared<AggregateFunctionTTest<WelchTTestData>>(argument_types, parameters);
 }
@@ -146,7 +147,7 @@ SELECT welchTTest(0.95)(sample_data, sample_index) FROM welch_ttest;
     FunctionDocumentation::Category category_welchTTest = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_welchTTest = {description_welchTTest, syntax_welchTTest, arguments_welchTTest, parameters_welchTTest, returned_value_welchTTest, examples_welchTTest, introduced_in_welchTTest, category_welchTTest};
 
-    factory.registerFunction("welchTTest", {createAggregateFunctionWelchTTest, documentation_welchTTest});
+    factory.registerFunction("welchTTest", {createAggregateFunctionWelchTTest, documentation_welchTTest, {.is_float_promoting = true}});
 }
 
 }

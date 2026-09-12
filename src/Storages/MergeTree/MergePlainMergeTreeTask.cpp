@@ -220,7 +220,7 @@ void MergePlainMergeTreeTask::cancel() noexcept
 
 ContextMutablePtr MergePlainMergeTreeTask::createTaskContext() const
 {
-    auto context = Context::createCopy(storage.getContext()->getBackgroundContext());
+    auto context = Context::createCopy(query_context ? query_context : storage.getContext()->getBackgroundContext());
     context->makeQueryContextForMerge(*storage.getSettings());
     auto query_id = getQueryId();
     context->setCurrentQueryId(query_id);

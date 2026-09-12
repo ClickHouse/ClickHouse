@@ -45,6 +45,16 @@ public:
      */
     virtual bool supportsNesting() const { return false; }
 
+    /** Does this combinator make the result of the combined function depend on which of its input values are
+      * distinct from each other (-Distinct), even when the nested function's result does not?
+      * Propagated into AggregateFunctionProperties::is_distinctness_sensitive by
+      * AggregateFunctionFactory::tryGetProperties, so that e.g. sumDistinct over a Variant argument is kept out
+      * of AggregateFunctionVariantAdapter just like singleValueOrNull: the adapter's cast to Nullable(supertype)
+      * collapses Variant values that are distinct only by their alternative type (1::UInt8 vs 1::UInt64) and
+      * would silently change what -Distinct deduplicates.
+      */
+    virtual bool isDistinctnessSensitive() const { return false; }
+
     /** Does this combinator transform argument types (like Merge, Array) rather than just adding logic?
       *
       * If true, the combinator expects arguments to be of specific types (e.g., Merge expects AggregateFunction type)

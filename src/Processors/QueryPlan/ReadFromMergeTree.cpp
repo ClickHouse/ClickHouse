@@ -2629,6 +2629,7 @@ Pipe ReadFromMergeTree::spreadMarkRangesAmongStreamsFinal(
                 storage_snapshot->metadata,
                 block_size.max_block_size_rows,
                 enable_vertical_final,
+                settings,
                 read_in_reverse);
 
         merging_pipes.emplace_back(Pipe::unitePipes(std::move(pipes)));
