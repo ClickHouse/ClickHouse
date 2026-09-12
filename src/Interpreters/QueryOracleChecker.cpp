@@ -1464,6 +1464,22 @@ QueryOracleChecker::executeWithSettings(
 }
 
 
+/// An oracle compares one reference read against a rewrite required to be equivalent to it,
+/// over sorted row-sets, so ordering is already normalized out - but the comparison only means
+/// anything while both sides read the same relation. A read whose row-set is a function of
+/// physical state rather than of contents breaks that premise: a merge-collapsing engine read
+/// without `FINAL` (`SummingMergeTree`/`AggregatingMergeTree`/`ReplacingMergeTree`/
+/// `CollapsingMergeTree`), an `AggregateFunction` state column whose serialized bytes are not
+/// canonical, a concurrent `INSERT`. Callers re-read the reference on the mismatch path only,
+/// so this costs nothing when the oracle passes. `std::nullopt` (overflow, or a re-read that
+/// failed) counts as not reproduced: a read never proven stable must not license a mismatch.
+bool QueryOracleChecker::referenceReproduces(
+    const std::optional<std::vector<String>> & again, const std::vector<String> & previous)
+{
+    return again.has_value() && *again == previous;
+}
+
+
 bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const ContextMutablePtr & context)
 {
     if (!select.where())
@@ -1514,6 +1530,9 @@ bool QueryOracleChecker::checkTLPWhere(const ASTSelectQuery & select, const Cont
 
     if (ref_rows != part_rows)
     {
+        if (!referenceReproduces(executeAndCollectSortedRows(ref_sql, context), ref_rows))
+            return false;
+
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
         String message = fmt::format(
@@ -1632,6 +1651,9 @@ bool QueryOracleChecker::checkNoREC(const ASTSelectQuery & select, const Context
 
     if (opt_count != unopt_count)
     {
+        if (executeScalar(opt_sql, context) != opt_count)
+            return false;
+
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
@@ -1720,6 +1742,9 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
 
     if (ref_rows != part_rows)
     {
+        if (!referenceReproduces(executeAndCollectSortedRows(ref_sql, context), ref_rows))
+            return false;
+
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP DISTINCT oracle mismatch!\n"
@@ -1802,6 +1827,9 @@ bool QueryOracleChecker::checkTLPGroupBy(const ASTSelectQuery & select, const Co
 
     if (ref_rows != part_rows)
     {
+        if (!referenceReproduces(executeAndCollectSortedUniqueRows(ref_sql, context), ref_rows))
+            return false;
+
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP GROUP BY oracle mismatch!\n"
@@ -1870,6 +1898,9 @@ bool QueryOracleChecker::checkTLPHaving(const ASTSelectQuery & select, const Con
 
     if (ref_rows != part_rows)
     {
+        if (!referenceReproduces(executeAndCollectSortedRows(ref_sql, context), ref_rows))
+            return false;
+
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
             "TLP HAVING oracle mismatch!\n"
@@ -1953,6 +1984,9 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
 
         if (default_rows != variant_rows)
         {
+            if (!referenceReproduces(executeAndCollectSortedRows(query_sql, context), default_rows))
+                return false;
+
             ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
             throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
                 "DQP oracle mismatch! Setting: {}\n"
@@ -2263,6 +2297,9 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
 
     if (ref_rows != meta_rows)
     {
+        if (!referenceReproduces(executeAndCollectSortedRows(ref_sql, context), ref_rows))
+            return false;
+
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
 
         throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
@@ -2403,10 +2440,14 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     auto & v2_rows = *v2_rows_opt;
     auto & v3_rows = *v3_rows_opt;
 
+    /// The three variants share one reference read, so an unreproducible reference disqualifies all three.
     auto check_variant = [&](const String & name, const String & sql, const std::vector<String> & rows)
     {
         if (ref_rows != rows)
         {
+            if (!referenceReproduces(executeAndCollectSortedRows(ref_sql, context), ref_rows))
+                return false;
+
             ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
             throw Exception(ErrorCodes::AST_FUZZER_ORACLE_MISMATCH,
                 "Identity WHERE ({}) oracle mismatch!\n"
@@ -2414,11 +2455,13 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
                 "Variant query ({} rows): {}",
                 name, ref_rows.size(), ref_sql, rows.size(), sql);
         }
+        return true;
     };
 
-    check_variant("NOT(NOT p)", v1_sql, v1_rows);
-    check_variant("p AND 1", v2_sql, v2_rows);
-    check_variant("p OR 0", v3_sql, v3_rows);
+    if (!check_variant("NOT(NOT p)", v1_sql, v1_rows)
+        || !check_variant("p AND 1", v2_sql, v2_rows)
+        || !check_variant("p OR 0", v3_sql, v3_rows))
+        return false;
 
     LOG_TRACE(logger, "Identity WHERE oracle passed ({} rows, 3 variants)", ref_rows.size());
     return true;
@@ -2498,19 +2541,7 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
 
     if (ref_rows != wrapped_rows)
     {
-        /// Both sides read the very same relation (`T` vs `SELECT * FROM (T)`) and
-        /// the comparison is over sorted row-sets, so ordering is already
-        /// normalized out. A difference can therefore only come from a
-        /// non-deterministic read of the base query itself — e.g. a
-        /// merge-collapsing engine read without `FINAL`
-        /// (`SummingMergeTree`/`AggregatingMergeTree`/`ReplacingMergeTree`/
-        /// `CollapsingMergeTree`), an `AggregateFunction` state column whose
-        /// serialized bytes are not canonical, or a non-deterministic function.
-        /// Re-execute the reference once more: if it is not stable across two
-        /// consecutive runs the query is non-deterministic, so this is an oracle
-        /// false positive rather than a subquery-wrapping bug — skip it.
-        auto ref_rows_again_opt = executeAndCollectSortedRows(ref_sql, context);
-        if (!ref_rows_again_opt || *ref_rows_again_opt != ref_rows)
+        if (!referenceReproduces(executeAndCollectSortedRows(ref_sql, context), ref_rows))
             return false;
 
         ProfileEvents::increment(ProfileEvents::ASTFuzzerOracleMismatches);
