@@ -1,3 +1,7 @@
+-- Tags: no-shared-merge-tree
+-- no-shared-merge-tree: the checks under test are `ReplicatedMergeTree`'s own; an engine
+--   substituted for it accepts `table_readonly` and the refusals below do not happen.
+
 -- `table_readonly` is not supported for `ReplicatedMergeTree`, and the checks that say so used to
 -- trap a table whose metadata carries it anyway (a table converted to replicated by the
 -- `convert_to_replicated` flag): a backup of that working table could not be restored, a detached
