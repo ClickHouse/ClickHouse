@@ -464,7 +464,8 @@ void updateConfigurationFromConfig(
     }
 
 #if USE_KRB5
-    if (kafka_config.has_property("sasl.kerberos.kinit.cmd"))
+    static const String default_kinit_cmd = cppkafka::Configuration{}.get("sasl.kerberos.kinit.cmd");
+    if (kafka_config.get("sasl.kerberos.kinit.cmd") != default_kinit_cmd)
         LOG_WARNING(params.log, "sasl.kerberos.kinit.cmd configuration parameter is ignored.");
 
     kafka_config.set("sasl.kerberos.kinit.cmd", "");
@@ -511,7 +512,10 @@ void updateConfigurationFromConfig(
                 if (auto sink_shared_ptr = sink.lock())
                 {
                     ProfileEvents::increment(ProfileEvents::KafkaConsumerErrors);
-                    sink_shared_ptr->setExceptionInfo(message, /* with_stacktrace = */ true);
+                    // librdkafka-originated errors (auth failures, broker disconnects) have no
+                    // useful ClickHouse stack trace - the trace only shows poll->log_callback.
+                    // Skip stack trace to reduce noise in system.kafka_consumers.exceptions.
+                    sink_shared_ptr->setExceptionInfo(message, /* with_stacktrace = */ false);
                 }
             }
         });
@@ -580,7 +584,7 @@ cppkafka::Configuration KafkaConfigLoader::getConsumerConfiguration(TKafkaStorag
 
     for (auto & property : conf.get_all())
     {
-        if (property.first.find("password") != std::string::npos)
+        if (property.first.contains("password"))
             continue;
         LOG_TRACE(params.log, "Consumer set property {}:{}", property.first, property.second);
     }

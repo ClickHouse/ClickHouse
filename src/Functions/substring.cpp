@@ -231,7 +231,7 @@ Byte counting starts from 1 with the following logic:
 
 An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 
-See also the [`digits`](/sql-reference/functions/other-functions#digits) function, which performs the analogous operation on the digits of a number.
+See also the [`digits`](/reference/functions/regular-functions/other-functions#digits) function, which performs the analogous operation on the digits of a number.
 )";
     FunctionDocumentation::Syntax syntax = "substring(s, offset[, length])";
     FunctionDocumentation::Arguments arguments = {
@@ -245,9 +245,9 @@ See also the [`digits`](/sql-reference/functions/other-functions#digits) functio
         "Basic usage",
         "SELECT 'database' AS db, substr(db, 5), substr(db, 5, 1)",
         R"(
-┌─db───────┬─substring('database', 5)─┬─substring('database', 5, 1)─┐
-│ database │ base                     │ b                           │
-└──────────┴──────────────────────────┴─────────────────────────────┘
+┌─db───────┬─substr(db, 5)─┬─substr(db, 5, 1)─┐
+│ database │ base          │ b                │
+└──────────┴───────────────┴──────────────────┘
         )"
     }
     };
@@ -263,10 +263,10 @@ Code point counting starts from `1` with the following logic:
 
 An optional argument `length` specifies the maximum number of code points the returned substring may have.
 
-:::note
+<Note>
 This function assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
-:::
+</Note>
 )";
     FunctionDocumentation::Syntax syntax_utf8 = "substringUTF8(s, offset[, length])";
     FunctionDocumentation::Arguments arguments_utf8 = {
@@ -279,7 +279,7 @@ If this assumption is violated, no exception is thrown and the result is undefin
     {
         "Usage example",
         "SELECT 'Täglich grüßt das Murmeltier.' AS str, substringUTF8(str, 9), substringUTF8(str, 9, 5)",
-        "Täglich grüßt das Murmeltier.    grüßt das Murmeltier.    grüßt"
+        "Täglich grüßt das Murmeltier.\tgrüßt das Murmeltier.\tgrüßt"
     }
     };
     FunctionDocumentation documentation_utf8 = {description_utf8, syntax_utf8, arguments_utf8, {}, returned_value_utf8, examples_utf8, introduced_in, category};

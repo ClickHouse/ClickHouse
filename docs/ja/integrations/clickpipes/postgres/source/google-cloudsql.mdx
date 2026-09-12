@@ -82,9 +82,9 @@ Postgres 12 以降
     CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
     ```
 
-`clickpipes` publication には、指定したテーブルから生成された変更イベントのセットが含まれ、後でレプリケーションストリームを取り込む際に使用されます。
+`clickpipes` publication は、変更イベントが ClickPipes にストリーミングされる対象テーブルの集合を定義します。すべてのテーブルをレプリケーションするつもりでない限り、`FOR ALL TABLES` の使用は推奨しません。不要なテーブルを含めると、Postgres から ClickPipes への WAL トラフィックが増加し、レプリケーション全体の効率が低下するためです。
 
-[//]: # "TODO Add SSH Tunneling"
+[//]: # "TODO SSH トンネリングを追加"
 
 <div id="add-clickpipes-ips-to-firewall">
   ## ClickPipes の IP アドレスをファイアウォールに追加する
@@ -93,7 +93,7 @@ Postgres 12 以降
 以下の手順に従って、ClickPipes の IP アドレスをネットワークに追加してください。
 
 <Note>
-  SSH トンネリングを使用している場合は、ジャンプサーバー/踏み台サーバーのファイアウォールルールに [ClickPipes の IP アドレス](/ja/integrations/clickpipes/home#list-of-static-ips) を追加する必要があります。
+  SSH トンネリングを使用している場合は、ジャンプサーバー/踏み台サーバーのファイアウォールルールに [ClickPipes の IP アドレス](/ja/integrations/clickpipes/networking/static-ips) を追加する必要があります。
 </Note>
 
 1. **Connections** セクションに移動します
@@ -104,7 +104,7 @@ Postgres 12 以降
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp" alt="Cloud SQL の Networking サブセクション" size="lg" border />
 
-3. [ClickPipes のパブリック IP アドレス](/ja/integrations/clickpipes/home#list-of-static-ips) を追加します
+3. [ClickPipes のパブリック IP アドレス](/ja/integrations/clickpipes/networking/static-ips) を追加します
 
 <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp" alt="ClickPipes のネットワークをファイアウォールに追加" size="lg" border />
 

@@ -6,6 +6,7 @@
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/quoteString.h>
 #include <Common/WeightedRandomSampling.h>
+#include <Common/formatReadable.h>
 
 #include <Interpreters/Context.h>
 
@@ -445,7 +446,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
     bool cleanup,
     MergeTreeData::MergingParams merging_params,
     MergeTreeTransactionPtr txn,
-    bool need_prefix,
     ProjectionDescriptionRawPtr projection,
     IMergeTreeDataPart * parent_part,
     const String & suffix)
@@ -469,7 +469,6 @@ MergeTaskPtr MergeTreeDataMergerMutator::mergePartsToTemporaryPart(
         deduplicate_by_columns,
         cleanup,
         std::move(merging_params),
-        need_prefix,
         projection,
         parent_part,
         nullptr,
@@ -490,8 +489,7 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     ContextMutablePtr context,
     const MergeTreeTransactionPtr & txn,
     ReservationSharedPtr space_reservation,
-    TableLockHolder & holder,
-    bool need_prefix)
+    TableLockHolder & holder)
 {
     /// Building the mutation pipeline can run nested blocking pipelines via `CompletedPipelineExecutor` -
     /// most notably `KeyCondition::buildOrderedSetInplace` materializing the right side of `x IN (subquery)`
@@ -499,11 +497,15 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
     /// query context's interactive-cancel callback, so without one it blocks server shutdown and
     /// `KILL MUTATION` until the subquery finishes (issue #51586). `context` is this mutation's query context
     /// (`makeQueryContextForMutate`), which the reading context resolves via `getQueryContext`.
+    /// A nested pipeline that is only stopped returns without an exception, so its caller cannot
+    /// distinguish a cancelled build from a completed one.
     const String partition_id = future_part->part_info.getPartitionId();
     context->setInteractiveCancelCallback(
         [&blocker = merges_blocker, merge_entry, partition_id]()
         {
-            return blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled;
+            if (blocker.isCancelledForPartition(partition_id) || (*merge_entry)->is_cancelled)
+                throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
+            return false;
         });
 
     return std::make_shared<MutateTask>(
@@ -518,8 +520,7 @@ MutateTaskPtr MergeTreeDataMergerMutator::mutatePartToTemporaryPart(
         txn,
         data,
         *this,
-        merges_blocker,
-        need_prefix);
+        merges_blocker);
 }
 
 MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart(
@@ -531,7 +532,7 @@ MergeTreeData::DataPartPtr MergeTreeDataMergerMutator::renameMergedTemporaryPart
     /// Some of source parts was possibly created in transaction, so non-transactional merge may break isolation.
     if (data.transactions_enabled.load(std::memory_order_relaxed) && !txn)
         throw Exception(ErrorCodes::ABORTED,
-            "Cancelling merge, because it was done without starting transaction,"
+            "Cancelling merge, because it was done without starting transaction, "
             "but transactions were enabled for this table");
 
     /// Rename new part, add to the set and remove original parts.

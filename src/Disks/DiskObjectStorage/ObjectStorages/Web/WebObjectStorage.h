@@ -53,6 +53,10 @@ public:
 
     std::string getDescription() const override { return getBaseURL(); }
 
+    /// A valid web origin may omit `ETag`, `Content-Length`, and `Last-Modified` altogether,
+    /// leaving the metadata with no token to compare object generations by.
+    bool supportsObjectGenerationComparison() const override { return false; }
+
     const String & getBaseURL() const { return url_shards.front().front().base_url; }
     const String & getQueryFragment() const { return url_shards.front().front().query_fragment; }
     const URLShards & getURLShards() const { return url_shards; }
@@ -81,7 +85,9 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist(const StoredObjects & objects) override;
+    void removeObjectsIfExist( /// NOLINT
+        const StoredObjects & objects,
+        StoredObjects * successful_objects = nullptr) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
     std::optional<ObjectMetadata> tryGetObjectMetadata(const std::string & path, bool with_tags) const override;

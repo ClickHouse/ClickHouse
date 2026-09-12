@@ -63,7 +63,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 
 ## Data Type Detection {#data-type-detection}
 
-When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/reference/settings/formats#input_format_null_as_default), the interfered type is [Nullable](/reference/data-types/nullable).
+When creating tuples on the fly, ClickHouse interferes the type of the tuples arguments as the smallest types which can hold the provided argument value. If the value is [NULL](/reference/settings/formats/input-format#input_format_null_as_default), the interfered type is [Nullable](/reference/data-types/nullable).
 
 Example of automatic data type detection:
 
@@ -181,12 +181,10 @@ ORDER BY key ASC;
 
 ## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-<Info>
-**Beta Feature**
-
+<Note title="Beta Feature">
 Requires `SET enable_nullable_tuple_type = 1`
 This is a Beta feature.
-</Info>
+</Note>
 
 Allows the entire tuple to be `NULL`, as opposed to `Tuple(Nullable(T1), Nullable(T2), ...)` where only individual elements can be `NULL`.
 

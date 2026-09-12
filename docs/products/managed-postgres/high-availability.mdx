@@ -7,12 +7,12 @@ keywords: ['high availability', 'ha', 'standby', 'replication', 'failover', 'pos
 doc_type: 'guide'
 ---
 
-import BetaBadge from "/snippets/components/BetaBadge/BetaBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { Image } from "/snippets/components/Image.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.high-availability-beta" />
 
-Managed Postgres offers different levels of high availability to match your durability and performance requirements. You can add one or two standby replicas when provisioning your database, or adjust this configuration later from the **Settings** page as needed.
+ClickHouse Managed Postgres offers different levels of high availability to match your durability and performance requirements. You can add one or two standby replicas when provisioning your database, or adjust this configuration later from the **Settings** page as needed.
 
 {/* TODO(kaushik-ubi): Screenshot of high availability configuration view
     Path: /images/cloud/managed-postgres/high-availability-config.png */}
@@ -37,7 +37,7 @@ With this option, only a primary node is provisioned in your selected size. No s
 
 ## Standbys vs read replicas {#standbys-vs-read-replicas}
 
-Standbys and read replicas serve different purposes in Managed Postgres and are configured separately.
+Standbys and read replicas serve different purposes in ClickHouse Managed Postgres and are configured separately.
 
 **Standbys** are dedicated exclusively to high availability and automatic failover. They replicate data from the primary using streaming replication and are always ready to be promoted if the primary fails. Standbys aren't exposed for read queries.
 
@@ -45,7 +45,7 @@ Standbys and read replicas serve different purposes in Managed Postgres and are 
 
 ### Why standbys don't serve read queries {#why-standbys-dont-serve-read-queries}
 
-While some database providers expose hot standbys for read-only queries, Managed Postgres intentionally doesn't. Allowing read queries on standbys can compromise their primary purpose: being ready to take over instantly when the primary fails.
+While some database providers expose hot standbys for read-only queries, ClickHouse Managed Postgres intentionally doesn't. Allowing read queries on standbys can compromise their primary purpose: being ready to take over instantly when the primary fails.
 
 There are two main concerns:
 
@@ -53,10 +53,10 @@ There are two main concerns:
 
 2. **VACUUM interference**: Long-running read queries on a standby can prevent `VACUUM` (and `AUTOVACUUM`) from cleaning up dead tuples on the primary. PostgreSQL can't remove rows that an active query on any replica might still need to access. This can lead to table bloat and degraded performance over time.
 
-By keeping standbys dedicated to failover, Managed Postgres ensures they're always synchronized and ready to take over with minimal data loss and downtime. For read scaling, use [read replicas](/products/managed-postgres/read-replicas) instead.
+By keeping standbys dedicated to failover, ClickHouse Managed Postgres ensures they're always synchronized and ready to take over with minimal data loss and downtime. For read scaling, use [read replicas](/products/managed-postgres/read-replicas) instead.
 
 ## Handling failures {#handling-failures}
 
-All Managed Postgres instances are continuously monitored for failures, regardless of whether high availability is enabled. In all cases, the system attempts to heal from failures automatically.
+All ClickHouse Managed Postgres instances are continuously monitored for failures, regardless of whether high availability is enabled. In all cases, the system attempts to heal from failures automatically.
 
 When standbys are available, automatic healing is faster and more straightforward. The system typically recovers within minutes by promoting a standby to primary. Without standbys, recovery may require manual intervention, significantly increasing the duration of any outage.

@@ -1,6 +1,6 @@
 ---
 slug: /use-cases/observability/clickstack/getting-started/managed
-title: 'Getting started with managed ClickStack'
+title: 'Getting started with Managed ClickStack'
 sidebarTitle: 'Managed'
 description: 'Getting started with Managed ClickStack'
 doc_type: 'guide'
@@ -9,47 +9,415 @@ keywords: ['Managed ClickStack', 'getting started', 'ClickHouse Cloud']
 
 import { Image } from "/snippets/components/Image.jsx";
 
-import SetupManagedIngestion from '/snippets/clickstack/_setup_managed_ingestion.mdx';
-import ProviderSelection from '/snippets/clickstack/_select_provider.mdx';
-import NavigateClickStackUI from '/snippets/clickstack/_navigate_managed.mdx';
+import ExampleOTelConfig from '/snippets/clickstack/_config_example_otel.mdx';
 
-The easiest way to get started is by deploying **Managed ClickStack** on **ClickHouse Cloud**, which provides a fully managed, secure backend while retaining complete control over ingestion, schema, and observability workflows. This removes the need to operate ClickHouse yourself and delivers a range of benefits: 
+Deploy Managed ClickStack on ClickHouse Cloud, send a test event through your ingestion pipeline, and confirm that the event is available in the ClickStack UI.
+
+ClickHouse Cloud operates the ClickHouse backend while you retain control over the ingestion pipeline and schema. Managed ClickStack provides:
 
 - Automatic scaling of compute, independent of storage
 - Low-cost and effectively unlimited retention based on object storage
-- The ability to independently isolate read and write workloads with warehouses.
+- Independent isolation of read and write workloads with [warehouses](/products/cloud/features/infrastructure/warehouses)
 - Integrated authentication
 - Automated backups
 - Security and compliance features
 - Seamless upgrades
 
-<Steps>
-<Step title="Signup to ClickHouse Cloud" id="signup-to-clickhouse-cloud">
+## Before you begin {#before-you-begin}
 
-To create a Managed ClickStack service in [ClickHouse Cloud](https://console.clickhouse.cloud) first complete the **first step** of the [ClickHouse Cloud quickstart guide](/get-started/setup/cloud).
+You can also send data directly to ClickHouse using a [supported integration](/integrations/home) and your own schema.
 
-<ProviderSelection/>
+### Create a ClickHouse Cloud service {#create-a-managed-clickstack-service}
+
+Complete [Create a ClickHouse service](/get-started/setup/cloud#1-create-a-clickhouse-service) in the ClickHouse Cloud quickstart. Before continuing, confirm that the service is running.
+
+<View title="OpenTelemetry">
+
+<Tip>
+This page is showing the **OpenTelemetry** path. Use the guide selector near the top of the guide to switch between **OpenTelemetry** (recommended) and **Vector**.
+</Tip>
+
+### Prepare your ingestion environment {#prepare-your-ingestion-environment}
+
+- To start a new [OpenTelemetry Collector](/clickstack/ingesting-data/collector), install [Docker](https://docs.docker.com/get-docker/). For Kubernetes, deploy the collector with [Helm](/clickstack/ingesting-data/collector#configuring-the-collector).
+- To use an existing collector, run it in the [gateway role](/clickstack/ingesting-data/collector#collector-roles) and ensure that its distribution includes the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter). You will add the required configuration in this guide.
+
+## Set up Managed ClickStack {#set-up-managed-clickstack}
+
+<Steps titleSize="h3">
+<Step title="Choose an ingestion source and collector setup" id="choose-an-ingestion-source">
+From your ClickHouse Cloud service, launch ClickStack. On the ClickStack **Getting Started** page, select **Start ingestion**.
+
+<Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="Start ingestion" border/>
+
+On the **Choose an ingestion source** page, select [OpenTelemetry](https://opentelemetry.io/).
+
+<Info>
+**OpenTelemetry recommended**
+
+OpenTelemetry provides preconfigured schemas for logs, traces, metrics, and sessions.
+</Info>
+
+<Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="Select OpenTelemetry as the ingestion source" border/>
+
+<Tabs>
+
+<Tab title="Start a new collector">
+
+ClickStack generates the collector command with the `default` administrator credentials. We recommend dedicated ingestion credentials to keep ingestion access separate from administration and avoid relying on the administrator password.
+
+<Accordion title="Create dedicated ingestion credentials (recommended)">
+In ClickHouse Cloud, open your service's SQL console and run:
+
+```sql
+CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+GRANT SELECT, INSERT, CREATE DATABASE, CREATE TABLE, CREATE VIEW ON default.* TO `clickstack-ingest`;
+```
+
+In the generated command, replace `CLICKHOUSE_USER="default"` with `CLICKHOUSE_USER="clickstack-ingest"` and set `CLICKHOUSE_PASSWORD` to the dedicated user's password.
+
+</Accordion>
+
+To continue with the `default` administrator credentials, copy the command from the **Start Collector** tab. ClickStack pre-populates the service endpoint. Replace the password placeholder with your service password. If you no longer have it, [gather or reset your connection details](/products/cloud/guides/sql-console/connection-details).
+
+The command follows this format:
+
+```shell
+docker run -e CLICKHOUSE_ENDPOINT="https://<host>:8443" \
+    -e CLICKHOUSE_USER="default" \
+    -e CLICKHOUSE_PASSWORD="<your_password_here>" \
+    -p 4317:4317 -p 4318:4318 \
+    clickhouse/clickstack-otel-collector:latest
+```
+
+Replace `<host>` and `<your_password_here>` with the values for your ClickHouse Cloud service, then run the command.
+
+The collector runs in the foreground. Leave this terminal open and use a second terminal for the remaining commands in this guide.
+
+<Note>
+This command exposes the OTLP ports without authentication and is intended for local evaluation. Before sending production traffic, [secure the collector](/clickstack/ingesting-data/collector#securing-the-collector).
+</Note>
+
+</Tab>
+
+<Tab title="Use an existing collector">
+
+Select **Configure existing collector**, then adapt your collector configuration.
+
+Run the collector as a gateway between your applications and ClickHouse Cloud. The configuration below adds the required ClickHouse exporters and signal pipelines.
+
+The example uses the `default` credentials generated by ClickStack. To use dedicated ingestion credentials, follow the optional setup on the **Start a new collector** tab. In both ClickHouse exporter blocks, replace `username: default` with `username: clickstack-ingest` and set `password` to the dedicated user's password.
+
+Merge the following components into your existing configuration rather than replacing unrelated receivers, processors, exporters, or extensions.
+
+<Info>
+**Collector components required**
+
+Your collector distribution must include the [ClickHouse exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/exporter/clickhouseexporter) and [routing connector](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/connector/routingconnector). The OpenTelemetry Collector Contrib distribution includes both components.
+</Info>
+
+The example adds OTLP receivers, batching and memory limiting, Session Replay routing, and ClickHouse exporters.
+
+<ExampleOTelConfig/>
+
+Reuse your existing OTLP receiver and preserve its authentication and TLS settings. If your configuration already uses the component or pipeline IDs in the example, merge or rename them instead of creating duplicate IDs. Running two receivers on ports `4317` and `4318` causes a port conflict.
+
+After merging the configuration, reload or restart the collector using your existing deployment process.
+
+For further details on configuring OpenTelemetry collectors, see [Ingesting with OpenTelemetry](/clickstack/ingesting-data/opentelemetry).
+
+</Tab>
+
+</Tabs>
+
 </Step>
-<Step title="Setup ingestion" id="setup-ingestion">
 
-Once your service has been provisioned, ensure the the service is selected and click "ClickStack" from the left menu.
+<Step title="Send test data" id="send-test-data">
+Send a test log with the current timestamp:
 
-<SetupManagedIngestion/>
+```shell
+NOW_NANO="$(date +%s)000000000"
+
+curl -i "http://localhost:4318/v1/logs" \
+  -H "Content-Type: application/json" \
+  --data-binary @- <<EOF
+{
+  "resourceLogs": [{
+    "resource": {
+      "attributes": [{
+        "key": "service.name",
+        "value": {"stringValue": "clickstack-docs-test"}
+      }]
+    },
+    "scopeLogs": [{
+      "scope": {"name": "clickstack-docs-test"},
+      "logRecords": [{
+        "timeUnixNano": "${NOW_NANO}",
+        "severityText": "INFO",
+        "body": {"stringValue": "ClickStack ingestion test"}
+      }]
+    }]
+  }]
+}
+EOF
+```
+
+If you use an existing collector, replace `http://localhost:4318` with its OTLP HTTP endpoint. If the receiver requires authentication, add the required header to the `curl` command.
+
+A successful request returns `HTTP/1.1 200 OK`.
+
 </Step>
-<Step title="Navigate to the ClickStack UI" id="navigate-to-clickstack-ui-cloud">
 
-<NavigateClickStackUI/>
-</Step>
-<Step title="Next Steps" id="next-steps">
+<Step title="Start exploring and confirm ingestion" id="open-clickstack-and-confirm-ingestion">
+After ClickStack detects the OpenTelemetry data sources, select **Start exploring** to open the **Search** view. Search for `ClickStack ingestion test`.
 
-<Warning>
-**Record default credentials**
+The result should include the test event with the `clickstack-docs-test` service name.
 
-If you haven't recorded your default credentials during the above steps, navigate to the service and select `Connect`, recording the password and HTTP/native endpoints. Store these admin credentials securely, which can be reused in further guides.
-</Warning>
+<Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="ClickStack logs view showing the ClickStack ingestion test event" border/>
 
-<Image img="/images/_snippets/service_connect.webp" size="lg" alt='Service Connect' border/>
-
-To perform tasks such as provisioning new users or adding further data sources, see the [deployment guide for Managed ClickStack](/clickstack/deployment/managed#additional-tasks).
 </Step>
 </Steps>
+
+</View>
+
+<View title="Vector">
+
+### Prepare your ingestion environment {#prepare-your-ingestion-environment-vector}
+
+Start with an [existing Vector pipeline](/clickstack/ingesting-data/vector) that can send data to ClickHouse.
+
+## Set up Managed ClickStack {#set-up-managed-clickstack-vector}
+
+<Steps titleSize="h3">
+<Step title="Choose Vector and configure ingestion" id="choose-an-ingestion-source-vector">
+From your ClickHouse Cloud service, launch ClickStack. On the ClickStack **Getting Started** page, select **Start ingestion**.
+
+<Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="Start ingestion" border/>
+
+On the **Choose an ingestion source** page, select [Vector](https://vector.dev/).
+
+<Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="Select Vector as the ingestion source" border/>
+
+[Vector](https://vector.dev) is a high-performance, vendor-neutral observability data pipeline, especially popular for log ingestion due to its flexibility and low resource footprint.
+
+When using Vector with ClickStack, you define the schema. It can follow OpenTelemetry conventions or use fields specific to your events.
+
+<Info>
+**Existing Vector pipeline required**
+
+Continue with this guide if you already run Vector with an input pipeline. The data sent through the pipeline must include a **timestamp column** or equivalent time field, which you select when configuring the data source in the ClickStack UI.
+
+The steps below add a ClickHouse sink to your existing pipeline.
+</Info>
+
+#### Create a database and table {#create-a-vector-database-and-table}
+
+Create a database and table before configuring the Vector sink.
+
+In ClickHouse Cloud, open your service's SQL console and create a database:
+
+For example, create a database for logs:
+
+```sql
+CREATE DATABASE IF NOT EXISTS logs
+```
+
+Then create a table whose schema matches the structure of your log data. The example below assumes a classic Nginx access log format:
+
+```sql
+CREATE TABLE logs.nginx_logs
+(
+    `time_local` DateTime,
+    `remote_addr` IPv4,
+    `remote_user` LowCardinality(String),
+    `request` String,
+    `status` UInt16,
+    `body_bytes_sent` UInt64,
+    `http_referer` String,
+    `http_user_agent` String,
+    `http_x_forwarded_for` LowCardinality(String),
+    `request_time` Float32,
+    `upstream_response_time` Float32,
+    `http_host` String
+)
+ENGINE = MergeTree
+ORDER BY (toStartOfMinute(time_local), status, remote_addr);
+```
+
+Your table must align with the output schema produced by Vector. Adjust the schema as needed for your data, following the recommended [schema best practices](/concepts/best-practices/select-data-type).
+
+We strongly recommend understanding how [Primary keys](/concepts/core-concepts/primary-indexes) work in ClickHouse and choosing an ordering key based on your access patterns. See the [ClickStack-specific](/clickstack/managing/performance-tuning#choosing-a-primary-key) guidance on choosing a primary key.
+
+#### Configure the ClickHouse sink {#configure-the-vector-clickhouse-sink}
+
+Once the table exists, add a ClickHouse sink to your Vector configuration:
+
+```yaml
+sinks:
+  clickhouse:
+    type: clickhouse
+    inputs:
+      - your_input
+    endpoint: "https://<host>:8443"
+    database: logs
+    table: nginx_logs
+    format: json_each_row
+    skip_unknown_fields: true
+    auth:
+      strategy: basic
+      user: default
+      password: "<your_password_here>"
+```
+
+Replace `your_input` with the input from your existing pipeline. Replace `<host>` and `<your_password_here>` with the values for your ClickHouse Cloud service. If required, change the target database or table.
+
+<Accordion title="Use dedicated ingestion credentials (recommended)">
+
+For production, create a dedicated user and grant it access to the Vector target table. In ClickHouse Cloud, open your service's SQL console and run:
+
+```sql
+CREATE USER `clickstack-ingest` IDENTIFIED WITH sha256_password BY '<password>';
+GRANT SELECT, INSERT ON logs.nginx_logs TO `clickstack-ingest`;
+```
+
+Replace `default` with `clickstack-ingest` in the Vector sink and set `password` to the dedicated user's password.
+
+</Accordion>
+
+Save the updated configuration, then reload or restart Vector using your existing deployment process.
+
+For more examples of ingesting data with Vector, see [Ingesting with Vector](/clickstack/ingesting-data/vector) or the [Vector ClickHouse sink documentation](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) for advanced options.
+
+#### Create a ClickStack data source {#create-a-vector-data-source}
+
+Create a data source for the table populated by your Vector pipeline. ClickStack prompts you to create one on your first login.
+
+The form pre-populates expressions for the default OpenTelemetry schema. For the Nginx table created in this guide, configure the source with these values:
+
+| Setting | Value |
+|---|---|
+| **Name** | `Nginx logs` |
+| **Source Data Type** | Log |
+| **Server Connection** | `Default` |
+| **Database** | `logs` |
+| **Table** | `nginx_logs` |
+| **Timestamp Column** | `time_local` |
+| **Default SELECT** | `time_local, remote_addr, status, request` |
+| **Service Name Expression** | `'nginx'` |
+| **Log Level Expression** | `multiIf(status >= 500, 'ERROR', status >= 400, 'WARN', 'INFO')` |
+| **Log Attributes Expression** | `map('http.remote_addr', toString(remote_addr), 'http.status_code', toString(status), 'http.request', request)` |
+| **Resource Attributes Expression** | `map('service.name', 'nginx')` |
+| **Displayed Timestamp Column** | `time_local` |
+| **Trace ID Expression** | `''` |
+| **Span ID Expression** | `''` |
+| **Implicit Column Expression** | `request` |
+
+The Nginx table doesn't contain a `Body` column. Set **Body Expression** to:
+
+```sql
+concat(
+  remote_addr, ' ',
+  remote_user, ' ',
+  '[', formatDateTime(time_local, '%d/%b/%Y:%H:%i:%S %z'), '] ',
+  '"', request, '" ',
+  toString(status), ' ',
+  toString(body_bytes_sent), ' ',
+  '"', http_referer, '" ',
+  '"', http_user_agent, '" ',
+  '"', http_x_forwarded_for, '" ',
+  toString(request_time), ' ',
+  toString(upstream_response_time), ' ',
+  '"', http_host, '"'
+)
+```
+
+For other source settings, see the [ClickStack configuration reference](/clickstack/managing/config).
+
+</Step>
+
+<Step title="Send test data" id="send-test-data-vector">
+Send a representative event through the input of your existing Vector pipeline.
+
+For more Vector source and transformation examples, see [Ingesting with Vector](/clickstack/ingesting-data/vector).
+
+</Step>
+
+<Step title="Start exploring and confirm ingestion" id="open-clickstack-and-confirm-ingestion-vector">
+After creating the data source, select **Start exploring** to open the **Search** view. Select the data source for your table and confirm that it contains the event you sent.
+
+<Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="Logs in the ClickStack UI"/>
+
+</Step>
+</Steps>
+
+</View>
+
+You now have a Managed ClickStack service, a working ingestion path, and a test event that you can inspect in ClickStack.
+
+## Next steps {#next-steps}
+
+If another guide requires your ClickHouse Cloud endpoint or password, [gather or reset your connection details](/products/cloud/guides/sql-console/connection-details) before continuing.
+
+### Send application and infrastructure data {#send-application-and-infrastructure-data}
+
+Choose a guide for the data that you want to send to ClickStack:
+
+<CardGroup cols={2}>
+  <Card title="Instrument an application" icon="code" href="/clickstack/ingesting-data/sdks/index">
+    Send application traces and logs with a supported OpenTelemetry SDK.
+  </Card>
+  <Card title="Collect host logs" icon="server" href="/clickstack/integration-examples/host-logs">
+    Forward host logs from an OpenTelemetry Collector running in the agent role.
+  </Card>
+  <Card title="Monitor Kubernetes" icon="cubes" href="/clickstack/integration-examples/kubernetes">
+    Collect logs, metrics, and traces from a Kubernetes cluster.
+  </Card>
+  <Card title="Explore other integrations" icon="plug" href="/clickstack/integration-examples/index">
+    Find guides for additional applications and telemetry sources.
+  </Card>
+</CardGroup>
+
+### Explore sample data {#explore-sample-data}
+
+Use a sample dataset to explore ClickStack with richer telemetry:
+
+<CardGroup cols={2}>
+  <Card title="Sample logs, traces, and metrics" href="/clickstack/example-datasets/sample-data">
+    <img src="/images/clickstack/example-trace-dashboard.webp" alt="" />
+    Load data from the public demo and diagnose an issue. This guide assumes that you started a new local OpenTelemetry Collector. If you configured an existing collector, adapt the endpoint and authentication settings to your deployment.
+  </Card>
+  <Card title="Local logs and metrics" href="/clickstack/example-datasets/local-data">
+    <img src="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="" />
+    Collect local files and system metrics on macOS or Linux.
+  </Card>
+</CardGroup>
+
+### Generate synthetic data {#generate-synthetic-data}
+
+Use a generator to test ingestion without an existing application or dataset:
+
+<CardGroup cols={2}>
+  <Card title="Generate data with otelgen" icon="terminal" href="/clickstack/example-datasets/otelgen">
+    Send a short burst of synthetic OTLP logs, traces, and metrics.
+  </Card>
+  <Card title="Generate data with telemetrygen" icon="terminal" href="/clickstack/example-datasets/telemetrygen">
+    Generate configurable OpenTelemetry signals across several services.
+  </Card>
+</CardGroup>
+
+See [all ClickStack sample data and demos](/clickstack/example-datasets/index).
+
+### Prepare for production {#prepare-for-production}
+
+Review production and sizing guidance before using ClickStack for sustained workloads:
+
+<CardGroup cols={2}>
+  <Card title="Going to production" icon="shield" href="/clickstack/managing/production">
+    Review ingestion credentials, security, retention, and operational guidance.
+  </Card>
+  <Card title="Estimate resources" icon="chart-line" href="/clickstack/managing/estimating-resources">
+    Size compute for your expected ingest volume.
+  </Card>
+</CardGroup>
+
+For deployment tasks, see the [Managed ClickStack deployment guide](/clickstack/deployment/managed#additional-tasks).

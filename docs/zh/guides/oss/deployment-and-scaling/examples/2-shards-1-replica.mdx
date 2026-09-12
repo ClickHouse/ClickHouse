@@ -38,9 +38,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
 * 你的机器上已安装 Docker
 
 <Steps>
-  <Step>
-    ## 设置目录结构和测试环境
-
+  <Step title="设置目录结构和测试环境" id="set-up">
     <ExampleFiles />
 
     在本教程中，您将使用 [Docker compose](https://docs.docker.com/compose/) 搭建 ClickHouse 集群。该配置同样可以修改后用于独立的本地机器、虚拟机或云实例。
@@ -51,12 +49,12 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     mkdir cluster_2S_1R
     cd cluster_2S_1R
 
-    # 创建 clickhouse-keeper 目录
+    # Create clickhouse-keeper directories
     for i in {01..03}; do
       mkdir -p fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper
     done
 
-    # 创建 clickhouse-server 目录
+    # Create clickhouse-server directories
     for i in {01..02}; do
       mkdir -p fs/volumes/clickhouse-${i}/etc/clickhouse-server
     done
@@ -162,9 +160,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     <ConfigExplanation />
   </Step>
 
-  <Step>
-    ## 配置 ClickHouse 节点
-
+  <Step title="配置 ClickHouse 节点" id="configure-clickhouse-servers">
     ### 服务器配置
 
     现在修改位于 `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d` 的每个空配置文件 `config.xml`。下方高亮显示的行需要根据各节点进行相应修改：
@@ -386,9 +382,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     </Note>
   </Step>
 
-  <Step>
-    ## 配置 ClickHouse Keeper
-
+  <Step title="配置 ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
     ### Keeper 配置
 
     <KeeperConfig />
@@ -404,9 +398,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     <CloudTip />
   </Step>
 
-  <Step>
-    ## 测试配置
-
+  <Step title="测试配置" id="test-the-setup">
     确保你的机器上已运行 Docker。
     在 `cluster_2S_1R` 目录的根目录中，使用 `docker-compose up` 命令启动集群：
 
@@ -431,7 +423,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     以下查询。下面显示的是连接到第一个节点的命令：
 
     ```bash
-    # 连接到任意节点
+    # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
@@ -485,9 +477,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     下一步，你将在该集群中创建一个表。
   </Step>
 
-  <Step>
-    ## 创建数据库
-
+  <Step title="创建数据库" id="creating-a-database">
     现在，你已经验证 cluster 已正确设置并正在运行，接下来你将重新创建与[英国房产价格](/zh/get-started/sample-datasets/uk-price-paid)
     示例数据集教程中所用相同的表。该数据集包含自 1995 年以来英格兰和威尔士约 3000 万行
     房地产成交价格数据。
@@ -542,9 +532,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 在集群上创建表
-
+  <Step title="在集群上创建表" id="creating-a-table">
     现在数据库已创建完成，接下来创建一个表。
     在任意主机客户端上运行以下查询：
 
@@ -620,13 +608,13 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     现在在 `clickhouse-01` 或 `clickhouse-02` 上执行以下查询：
 
     ```sql
-    -- 来自 clickhouse-01
+    -- from clickhouse-01
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Clicky McClickface │
     --   └────┴────────────────────┘
 
-    -- 来自 clickhouse-02
+    --from clickhouse-02
     SELECT * FROM test.test_table;
     --   ┌─id─┬─name───────────────┐
     -- 1.│  1 │ Alexey Milovidov   │
@@ -644,9 +632,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     [`Distributed`](/zh/reference/engines/table-engines/special/distributed) 表引擎来创建它。下面来看看它的工作方式。
   </Step>
 
-  <Step>
-    ## 创建分布式表
-
+  <Step title="创建分布式表" id="create-distributed-table">
     使用以下查询创建一个分布式表：
 
     ```sql
@@ -682,9 +668,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
   </Step>
 
-  <Step>
-    ## 向分布式表插入数据
-
+  <Step title="向分布式表插入数据" id="inserting-data-into-distributed-table">
     现在连接到任意一台主机并插入数据：
 
     ```sql
@@ -726,7 +710,7 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ) SETTINGS max_http_get_redirects=10;
     ```
 
-    数据插入后，您可以使用 Distributed 表查询行数：
+    数据插入后，您可以使用分布式表查询行数：
 
     ```sql title="Query"
     SELECT count(*)
@@ -734,26 +718,26 @@ import CloudTip from '/snippets/zh/_cloud_tip.mdx';
     ```
 
     ```response title="Response"
-    ┌──count()─┐
-    1. │ 30212555 │ -- 3021万
+       ┌──count()─┐
+    1. │ 30212555 │ -- 30.21 million
        └──────────┘
     ```
 
     在任意一台主机上运行以下查询，您将看到数据已大致均匀地分布在各个分片上 (请注意，写入哪个分片是由 `rand()` 决定的，因此您的结果可能与此不同) ：
 
     ```sql
-    -- 来自 clickhouse-01
+    -- from clickhouse-01
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15107353 │ -- 1511 万
+    -- 1. │ 15107353 │ -- 15.11 million
     --    └──────────┘
 
-    -- 来自 clickhouse-02
+    --from clickhouse-02
     SELECT count(*)
     FROM uk.uk_price_paid_local
     --    ┌──count()─┐
-    -- 1. │ 15105202 │ -- 1511 万
+    -- 1. │ 15105202 │ -- 15.11 million
     --    └──────────┘
     ```
 

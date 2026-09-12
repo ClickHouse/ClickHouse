@@ -1,9 +1,4 @@
---- date32 -> Int32 numeric target: raw day numbers, native == library ---
-0
-19000
--25567
-3000000
--3000000
+--- date32 -> Int32 numeric target: raw day numbers ---
 0
 19000
 -25567

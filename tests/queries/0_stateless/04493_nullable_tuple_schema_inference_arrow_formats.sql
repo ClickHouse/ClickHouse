@@ -5,6 +5,9 @@
 -- unless the Nullable(Tuple) type is allowed by allow_experimental_nullable_tuple_type, because otherwise
 -- DESCRIBE would return a type that CREATE TABLE rejects. The struct null map is propagated
 -- into the tuple elements instead, as it worked before Nullable(Tuple) was supported.
+-- Dropping the struct null map turns a NULL row into a visible one, whose element values the Arrow spec
+-- leaves undefined; the Arrow readers therefore show the type defaults there (ORC, whose null map does
+-- reach the elements, shows NULLs) rather than whatever the producer left under the null slot.
 -- The Parquet queries with input_format_parquet_use_native_reader_v3 = 0 exercise the legacy
 -- Arrow-based Parquet reader in releases that still have it; in newer releases the setting is
 -- obsolete and they run on the native reader.
@@ -44,12 +47,6 @@ CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() 
 SELECT count() FROM test_04493;
 DROP TABLE test_04493;
 
--- ORC (legacy Arrow-based reader)
-DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
-SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') ORDER BY id SETTINGS input_format_orc_use_fast_decoder = 0;
-CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
-SELECT count() FROM test_04493;
-DROP TABLE test_04493;
 
 -- Parquet (native reader)
 DESCRIBE file(currentDatabase() || '_04493.parquet', 'Parquet');
@@ -69,7 +66,7 @@ DROP TABLE test_04493;
 SET allow_experimental_nullable_tuple_type = 1;
 DESCRIBE file(currentDatabase() || '_04493.arrow', 'Arrow');
 DESCRIBE file(currentDatabase() || '_04493.arrowstream', 'ArrowStream');
-DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
+DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC');
 SELECT * FROM file(currentDatabase() || '_04493.arrow', 'Arrow') ORDER BY id;
 
 -- Reading into an explicitly requested Nullable(Tuple) structure still works.

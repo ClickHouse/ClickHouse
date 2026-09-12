@@ -5,14 +5,21 @@
 #include <Core/SortCursor.h>
 #include <Columns/ColumnAggregateFunction.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/logger_useful.h>
 #include <Common/formatReadable.h>
 #include <Common/MemoryTracker.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/sortBlock.h>
 #include <base/range.h>
 
 namespace DB
 {
+
+namespace FailPoints
+{
+extern const char aggregating_in_order_transform_cancel_mid_loop[];
+}
 
 AggregatingInOrderTransform::AggregatingInOrderTransform(
     SharedHeader header,
@@ -125,7 +132,10 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         for (size_t i = 0; i < params->params.keys_size; ++i)
             res_key_columns[i] = res_header.safeGetByPosition(i).type->createColumn();
 
-        params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
+        if (group_by_key)
+            params->aggregator.fillKeyColumnsWithSingleKey(key_columns, key_begin, res_key_columns);
+        else
+            params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_begin, res_key_columns);
 
         if (!group_by_key)
         {
@@ -151,9 +161,31 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
         }
     }
 
+    size_t interval_index = 0;
+
     /// Will split block into segments with the same key
     while (key_end != rows)
     {
+        /// Cancellation is only checked between work() calls, but one consume() over a chunk with many
+        /// keys can run for a long time; check per key interval so a cancelled query stops promptly.
+        if (isCancelled())
+        {
+            LOG_TEST(log, "Cancelled between key intervals");
+            return;
+        }
+
+        if (interval_index == 5)
+        {
+            /// This runs inside `IProcessor::work()`, which must only use CPU and never wait, so the
+            /// hook cancels the query the same way `KILL QUERY` does instead of blocking: the
+            /// check above then observes the cancellation on the next interval.
+            fiu_do_on(FailPoints::aggregating_in_order_transform_cancel_mid_loop, {
+                if (auto query_context = CurrentThread::tryGetQueryContext())
+                    query_context->killCurrentQuery();
+            });
+        }
+        ++interval_index;
+
         /// Find the first position of new (not current) key in current chunk
         auto indices = collections::range(key_begin, rows);
         auto it = std::upper_bound(indices.begin(), indices.end(), cur_block_size - 1,
@@ -220,8 +252,11 @@ void AggregatingInOrderTransform::consume(Chunk chunk)
                 return;
             }
 
-            /// We create a new state for the new key and update res_key_columns
-            params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_end, res_key_columns);
+            /// Record the new key in res_key_columns; only full-key mode also creates its state
+            if (group_by_key)
+                params->aggregator.fillKeyColumnsWithSingleKey(key_columns, key_end, res_key_columns);
+            else
+                params->aggregator.createStatesAndFillKeyColumnsWithSingleKey(variants, key_columns, key_end, res_key_columns);
             ++cur_block_size;
         }
 
