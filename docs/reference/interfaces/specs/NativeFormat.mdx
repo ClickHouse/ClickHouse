@@ -827,6 +827,8 @@ A `Nullable(String)` with three rows `["hello", NULL, "world"]` (15 bytes total)
 
 Type string: `Array(InnerType)`. Examples: `Array(UInt32)`, `Array(String)`, `Array(Nullable(UInt32))`, `Array(Array(UInt8))`.
 
+Sparse array elements are materialized before writing because `Array` has no recursive serialization-info payload in the `Native` format. This applies to all element types, including arrays without `JSON` descendants.
+
 The wire layout is the inner [prefix phase](#composite-types) (empty unless the inner type is versioned) followed by two concatenated streams, offsets first:
 
 ```text
