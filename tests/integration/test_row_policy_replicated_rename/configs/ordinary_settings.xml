@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_database_replicated>1</allow_experimental_database_replicated>
+            <!-- The startup conversion of an Ordinary database to Atomic is a chain of renames, so
+                 it drives the preflight from inside the server's startup sequence. -->
+            <allow_deprecated_database_ordinary>1</allow_deprecated_database_ordinary>
+        </default>
+    </profiles>
+</clickhouse>

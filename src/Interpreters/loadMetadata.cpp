@@ -1,3 +1,4 @@
+#include <base/scope_guard.h>
 #include <Common/PoolId.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/thread_local_rng.h>
@@ -528,7 +529,13 @@ static void maybeConvertOrdinaryDatabaseToAtomic(ContextMutablePtr context, cons
 
         local_context->setSetting("check_table_dependencies", false);
         local_context->setSetting("check_referential_table_dependencies", false);
-        convertOrdinaryDatabaseToAtomic(log, local_context, database, database_name, tmp_name);
+        {
+            /// Every table moves through a temporary database that is then renamed back, so each
+            /// table's final (database, table) is unchanged. Mark it so a rename can tell them apart.
+            context->setConvertingDatabaseEngine(true);
+            SCOPE_EXIT({ context->setConvertingDatabaseEngine(false); });
+            convertOrdinaryDatabaseToAtomic(log, local_context, database, database_name, tmp_name);
+        }
 
         LOG_INFO(log, "Will start background operations after renaming tables in database {}", database_name);
         for (const auto & action : actions_to_stop)

@@ -1,0 +1,23 @@
+<clickhouse>
+    <users>
+        <!-- A row policy declared in users.xml lives in a READ-ONLY access storage, so it can never be
+             re-keyed. It names an OUTER (plain) table of an Ordinary database, whose name is preserved
+             by the startup conversion to Atomic: the conversion moves the table into a staging database
+             and renames that database back, so the table ends up under its original (database, table).
+             `conversion_keeps_table_name` in InterpreterRenameQuery exists exactly for those outer
+             moves. Without it the read-only rejection fires during the conversion and aborts server
+             startup. This is the only arm that pins that exemption. -->
+        <ro_user>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <databases>
+                <rodb>
+                    <outer>
+                        <filter>dept = 'eng'</filter>
+                    </outer>
+                </rodb>
+            </databases>
+        </ro_user>
+    </users>
+</clickhouse>

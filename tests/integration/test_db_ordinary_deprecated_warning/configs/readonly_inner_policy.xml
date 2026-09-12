@@ -1,0 +1,22 @@
+<clickhouse>
+    <users>
+        <!-- A read-only (users.xml) row policy naming the INNER table of a materialized view in an
+             Ordinary database. The startup conversion assigns the view a fresh UUID, so the inner
+             name changes from `.inner.<view>` to `.inner_id.<uuid>` and the policy would have to
+             move, which a read-only storage cannot do. Refusing there would abort startup, so the
+             move is declined instead. See
+             test_conversion_with_a_readonly_policy_on_a_view_inner_table. -->
+        <ro_inner_user>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <databases>
+                <roinner>
+                    <table name=".inner.mv">
+                        <filter>dept = 'eng'</filter>
+                    </table>
+                </roinner>
+            </databases>
+        </ro_inner_user>
+    </users>
+</clickhouse>

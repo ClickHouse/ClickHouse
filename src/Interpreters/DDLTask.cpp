@@ -717,6 +717,11 @@ ContextMutablePtr DatabaseReplicatedTask::makeQueryContext(ContextPtr from_conte
     query_context->setQueryKindReplicatedDatabaseInternal();
     query_context->setCurrentDatabase(database->getDatabaseName());
 
+    /// The entry is re-parsed from its SQL text, so AST fields absent from that text are lost. The
+    /// parent table UUID survives as an entry field, so re-publish it for the executing interpreter.
+    if (entry.parent_table_uuid.has_value() && !query_context->getParentTable().has_value())
+        query_context->setParentTable(*entry.parent_table_uuid);
+
     auto txn = std::make_shared<ZooKeeperMetadataTransaction>(zookeeper, database->zookeeper_path, is_initial_query, entry_path);
     query_context->initZooKeeperMetadataTransaction(txn);
 

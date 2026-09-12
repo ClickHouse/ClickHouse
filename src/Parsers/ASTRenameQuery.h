@@ -53,6 +53,11 @@ public:
     /// Special flag for CREATE OR REPLACE. Do not throw if the second table does not exist.
     bool rename_if_cannot_exchange{false};
 
+    /// Set for a synthetic rename or exchange that replaces the storage behind a name while keeping
+    /// that name, so the access entities keyed to it stay put: the other side of the swap is a
+    /// transient table. Not formatted into SQL text, so it always arrives false over a DDL queue.
+    bool replaces_storage_keeping_name{false};
+
     explicit ASTRenameQuery(Elements elements_ = {})
         : elements(std::move(elements_))
     {

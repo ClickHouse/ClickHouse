@@ -122,6 +122,12 @@ public:
 
     static String generateInnerTableName(const StorageID & view_id);
 
+    /// Name of the temporary table a non-append refresh builds before swapping it into the target.
+    /// For a view with a UUID it is determined by that UUID alone, so a caller holding only the UUID
+    /// can reconstruct it; a view without one falls back to its table name.
+    static String generateRefreshTempTableName(const StorageID & view_id);
+    static String generateRefreshTempTableName(const UUID & view_uuid);
+
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytesUncompressed(const Settings & settings) const override;

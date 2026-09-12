@@ -1,0 +1,24 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <allow_experimental_database_replicated>1</allow_experimental_database_replicated>
+        </default>
+    </profiles>
+    <users>
+        <ro_user>
+            <password></password>
+            <profile>default</profile>
+            <quota>default</quota>
+            <!-- A row policy defined in users.xml lives in a read-only access storage, so it can
+                 never be re-keyed. Renaming its table must be rejected even on a server that also
+                 has a replicated storage, where re-keys are otherwise declined silently. -->
+            <databases>
+                <rp_readonly>
+                    <rt>
+                        <filter>dept = 'eng'</filter>
+                    </rt>
+                </rp_readonly>
+            </databases>
+        </ro_user>
+    </users>
+</clickhouse>
