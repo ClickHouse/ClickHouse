@@ -213,14 +213,6 @@ static void xrayHandler(int32_t func_id, XRayEntryType type)
 
 #endif // CLICKHOUSE_XRAY_INSTRUMENT_COVERAGE
 
-/// Stubs for -finstrument-functions (kept for link compatibility with builds that
-/// add the flag without XRay).
-extern "C" void __cyg_profile_func_enter(void *, void *) __attribute__((no_instrument_function));
-void __cyg_profile_func_enter(void *, void *) {}
-
-extern "C" void __cyg_profile_func_exit(void *, void *) __attribute__((no_instrument_function));
-void __cyg_profile_func_exit(void *, void *) {}
-
 
 std::vector<CovCounter> getCurrentCoveredNameRefs()
 {
