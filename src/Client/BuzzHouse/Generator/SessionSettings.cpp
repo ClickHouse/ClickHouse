@@ -1675,7 +1675,6 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"s3_allow_server_credentials_in_user_queries", trueOrFalseSettingNoOracle},
     {"s3_check_objects_after_upload", trueOrFalseSettingNoOracle},
     {"s3_create_new_file_on_insert", trueOrFalseSettingNoOracle},
-    {"s3_disable_checksum", trueOrFalseSettingNoOracle},
     {"s3_ignore_file_doesnt_exist", trueOrFalseSettingNoOracle},
     {"s3_skip_empty_files", trueOrFalseSettingNoOracle},
     {"s3_slow_all_threads_after_network_error", trueOrFalseSettingNoOracle},
