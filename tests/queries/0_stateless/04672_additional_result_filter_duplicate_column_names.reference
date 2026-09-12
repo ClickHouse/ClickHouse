@@ -1,0 +1,19 @@
+number	number
+UInt64	UInt64
+1	1
+2	2
+number	number	number
+UInt64	UInt64	UInt64
+1	1	1
+2	2	2
+b	a	number
+UInt64	UInt64	UInt64
+1	1	1
+2	2	2
+m	number	number
+UInt64	UInt64	UInt64
+10	1	1
+20	2	2
+x	x
+UInt8	UInt8
+1	1

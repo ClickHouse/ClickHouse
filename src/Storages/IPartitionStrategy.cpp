@@ -1,8 +1,8 @@
 #include <Storages/IPartitionStrategy.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
-#include <Interpreters/TreeRewriter.h>
-#include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/ActionsDAG.h>
+#include <Planner/AnalyzeExpression.h>
 #include <Storages/PartitionedSink.h>
 #include <Functions/generateSnowflakeID.h>
 #include <Interpreters/Context.h>
@@ -230,8 +230,7 @@ const KeyDescription & IPartitionStrategy::getPartitionKeyDescription() const
 IPartitionStrategy::PartitionExpressionActionsAndColumnName
 IPartitionStrategy::getPartitionExpressionActions(ASTPtr & expression_ast) const
 {
-    auto syntax_result = TreeRewriter(context).analyze(expression_ast, sample_block.getNamesAndTypesList());
-    auto actions_dag = ExpressionAnalyzer(expression_ast, syntax_result, context).getActionsDAG(false);
+    auto actions_dag = analyzeExpressionToActionsDAG(expression_ast, sample_block.getNamesAndTypesList(), context);
 
     PartitionExpressionActionsAndColumnName result;
     result.actions = std::make_shared<ExpressionActions>(

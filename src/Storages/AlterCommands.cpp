@@ -19,8 +19,8 @@
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/ExpressionAnalyzer.h>
+#include <Interpreters/addTypeConversionToAST.h>
 #include <Interpreters/FunctionNameNormalizer.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/RenameColumnVisitor.h>
@@ -977,7 +977,8 @@ void AlterCommand::apply(
         metadata.secondary_indices.emplace(
             insert_it,
             IndexDescription::getIndexFromAST(
-                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context));
+                index_decl, metadata.columns, /* is_implicitly_created */ false, metadata.escape_index_filenames, context,
+                /* validate_expressions = */ true));
     }
     else if (type == DROP_INDEX)
     {
@@ -1826,8 +1827,11 @@ void AlterCommands::apply(StorageInMemoryMetadata & metadata, ContextPtr context
     {
         try
         {
+            /// Existing indices are rebuilt because the column layout changed, not because the user
+            /// redefined them, so an unrelated `ALTER` must not start failing on grandfathered metadata.
             index = IndexDescription::getIndexFromAST(
-                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context);
+                index.definition_ast, columns_with_virtuals, index.isImplicitlyCreated(), index.escape_filenames, context,
+                /* validate_expressions = */ false);
         }
         catch (const Exception & exception)
         {
@@ -2102,12 +2106,17 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
 
-        /// A `CHECK` constraint whose expression changes the number of rows cannot be checked at insert
-        /// time - see `ConstraintsDescription::assertConstraintPreservesRowCount`. `CREATE TABLE` enforces
-        /// the same invariant in `InterpreterCreateQuery::getTableProperties`, so an alter must not be a
-        /// way around it.
         if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+        {
+            /// Reject a `CHECK` constraint that can never be evaluated before it gets into the metadata.
+            ConstraintsDescription::validateNoSubqueries({command.constraint_decl}, context);
+
+            /// A `CHECK` constraint whose expression changes the number of rows cannot be checked at insert
+            /// time - see `ConstraintsDescription::assertConstraintPreservesRowCount`. `CREATE TABLE` enforces
+            /// the same invariant in `InterpreterCreateQuery::getTableProperties`, so an alter must not be a
+            /// way around it.
             ConstraintsDescription::assertConstraintPreservesRowCount(command.constraint_decl);
+        }
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)

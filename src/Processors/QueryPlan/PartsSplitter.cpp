@@ -10,8 +10,7 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/ExpressionAnalyzer.h>
-#include <Interpreters/TreeRewriter.h>
+#include <Planner/AnalyzeExpression.h>
 #include <IO/Operators.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
@@ -1244,8 +1243,7 @@ static void applyRangeFilterFromAST(Pipe & pipe, ASTPtr & filter_function, const
     if (!filter_function || pipe.empty())
         return;
 
-    auto syntax_result = TreeRewriter(context).analyze(filter_function, primary_key.expression->getRequiredColumnsWithTypes());
-    auto actions = ExpressionAnalyzer(filter_function, syntax_result, context).getActionsDAG(false);
+    auto actions = analyzeExpressionToActionsDAG(filter_function, primary_key.expression->getRequiredColumnsWithTypes(), context);
     reorderColumns(actions, pipe.getHeader(), filter_function->getColumnName());
     ExpressionActionsPtr expression_actions = std::make_shared<ExpressionActions>(std::move(actions));
     pipe.addSimpleTransform(

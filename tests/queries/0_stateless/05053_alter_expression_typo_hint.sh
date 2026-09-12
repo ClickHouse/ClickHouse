@@ -9,9 +9,17 @@ ${CLICKHOUSE_CLIENT} -q "
     CREATE TABLE t (id UInt32, x UInt32, s String, d Date, tp Tuple(a UInt32, b String)) ENGINE = MergeTree ORDER BY id
 "
 
-# `SELECT ix FROM t` has always suggested `id`. The key, index and TTL expressions of ALTER are validated
-# through a path that is given no storage to ask for hints, so they only listed the available columns -
-# which for a MergeTree table starts with a dozen virtual columns and is cut off before the real ones.
+# `SELECT ix FROM t` has always suggested `id`. The key, index and TTL expressions of ALTER used to be
+# validated through a path that is given no storage to ask for hints, so they only listed the available
+# columns - which for a MergeTree table starts with a dozen virtual columns and is cut off before the
+# real ones.
+#
+# Key and skip-index expressions are now compiled by the Analyzer, so they report `Unknown expression
+# identifier`; TTL still uses `TreeRewriter` (its WHERE clause may contain subqueries, which must stay
+# lazy) and keeps the `Missing columns` wording. Where the caller narrows the candidates down to the
+# columns it actually accepts, the hint lists up to two of them (`NamePrompter<2>`, as before); where
+# the Analyzer collects the candidates itself - `CREATE TABLE`, which accepts every column - it lists
+# one, the same as any `SELECT` would.
 run()
 {
     echo "--- $1"

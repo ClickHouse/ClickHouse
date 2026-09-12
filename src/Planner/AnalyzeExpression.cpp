@@ -1,0 +1,622 @@
+#include <Planner/AnalyzeExpression.h>
+
+#include <Interpreters/ActionsDAG.h>
+#include <Interpreters/ExpressionActions.h>
+
+#include <Analyzer/ColumnNode.h>
+#include <Analyzer/createUniqueAliasesIfNecessary.h>
+#include <Analyzer/QueryNode.h>
+#include <Analyzer/QueryTreeBuilder.h>
+#include <Analyzer/Resolve/QueryAnalyzer.h>
+#include <Analyzer/TableNode.h>
+#include <Columns/IColumn.h>
+#include <Columns/ColumnConst.h>
+#include <Common/FieldVisitorToString.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionVisitor.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/Context.h>
+#include <Interpreters/ExecuteScalarSubqueriesVisitor.h>
+#include <Interpreters/PreparedSets.h>
+#include <Parsers/ASTExpressionList.h>
+#include <Planner/CollectSets.h>
+#include <Planner/CollectTableExpressionData.h>
+#include <Planner/Planner.h>
+#include <Planner/PlannerContext.h>
+#include <Planner/Utils.h>
+#include <DataTypes/DataTypesNumber.h>
+#include <Storages/ColumnsDescription.h>
+#include <Storages/StorageDummy.h>
+
+#include <algorithm>
+#include <unordered_map>
+
+
+namespace DB
+{
+
+namespace ErrorCodes
+{
+    extern const int UNKNOWN_IDENTIFIER;
+}
+
+
+/// Build the analyzer DAG up to (and including) `buildSetInplace`, set-determinism
+/// marking, and `indexHint` input promotion.  Output column names are NOT yet
+/// rewritten to AST conventions (no projection, no aliasing, no source-column
+/// appending).  This is the costly part — it runs `QueryAnalyzer::resolve` and
+/// executes any `IN (subquery)` sets — and is shared by helpers that need the
+/// resulting DAG in different post-processed shapes.
+struct CoreAnalysisResult
+{
+    ActionsDAG actions;
+    /// AST column names using `getColumnName()` (no aliases applied).  Length
+    /// matches the original AST children before wildcard expansion.
+    std::vector<String> ast_column_names_no_aliases;
+    /// AST column names using `getAliasOrColumnName()`.  Length matches the
+    /// original AST children before wildcard expansion.
+    std::vector<String> ast_column_names_with_aliases;
+};
+
+static CoreAnalysisResult buildExpressionCoreDAG(
+    const ASTPtr & expression_ast,
+    const NamesAndTypesList & available_columns,
+    const ContextPtr & context,
+    bool build_subquery_sets,
+    const std::optional<Names> & identifier_typo_hint_columns = {})
+{
+    /// Ensure the AST is an expression list, because QueryNode projection expects a ListNode.
+    ASTPtr expr_list_ast = expression_ast;
+    if (!expr_list_ast->as<ASTExpressionList>())
+    {
+        auto wrapper = make_intrusive<ASTExpressionList>();
+        wrapper->children.push_back(expr_list_ast);
+        expr_list_ast = wrapper;
+    }
+
+    const auto & ast_children = expr_list_ast->as<ASTExpressionList &>().children;
+
+    /// Handle empty expression list (e.g., ORDER BY tuple() produces no key columns,
+    /// or missing PARTITION BY produces an empty partition key).
+    /// Return an empty DAG with no inputs — callers like getRequiredColumns()
+    /// must see an empty list, not all table columns.
+    if (ast_children.empty())
+        return {ActionsDAG(), {}, {}};
+
+    /// Collect AST column names in both conventions so that any post-processing
+    /// branch (alias-projecting or AST-name override) can pick the right one
+    /// without re-running the analyzer.
+    /// NOTE: these names are preliminary; if the Analyzer rewrites the projection
+    /// (e.g. IN → has/equals), the count may change. The caller re-derives names
+    /// from the resolved projection if needed.
+    std::vector<String> ast_column_names_no_aliases;
+    std::vector<String> ast_column_names_with_aliases;
+    ast_column_names_no_aliases.reserve(ast_children.size());
+    ast_column_names_with_aliases.reserve(ast_children.size());
+    for (const auto & child : ast_children)
+    {
+        ast_column_names_no_aliases.push_back(child->getColumnName());
+        ast_column_names_with_aliases.push_back(child->getAliasOrColumnName());
+    }
+
+    auto execution_context = Context::createCopy(context);
+
+    /// The Analyzer keeps scalar subqueries in the query tree, while the legacy
+    /// `TreeRewriter` executes them before compiling a standalone expression.
+    /// Do the same on a private AST copy: standalone actions have no surrounding
+    /// query plan that would otherwise evaluate a scalar subquery at execution
+    /// time.  In particular, row-policy actions used below a `Merge` read must
+    /// receive the scalar value rather than a set placeholder.
+    ASTPtr expression_ast_for_analysis = expr_list_ast->clone();
+
+    /// Inline SQL UDFs before that, mirroring `TreeRewriter::normalize`, which expands them ahead of
+    /// `executeScalarSubqueries`.  The Analyzer inlines a SQL UDF only later, in
+    /// `QueryAnalyzer::resolveFunction`, so a scalar subquery hidden inside a UDF body would survive
+    /// the visitor below and reach the DAG as a plain `QueryNode`.  A row policy such as
+    /// `USING udf(x)` with `CREATE FUNCTION udf AS x -> x <= (SELECT max(v) FROM limits)` then filters
+    /// against an unevaluated subquery and silently returns too few rows when the table is read
+    /// through `Merge`.  Callers that store the expanded AST in table metadata (`IndexDescription`,
+    /// `ConstraintsDescription`) inline the UDFs themselves before calling here; the pass is
+    /// idempotent, and callers that receive the expression outside DDL have no other chance.
+    if (!UserDefinedSQLFunctionFactory::instance().empty())
+        UserDefinedSQLFunctionVisitor::visit(expression_ast_for_analysis, execution_context);
+
+    Scalars scalars;
+    Scalars local_scalars;
+    ExecuteScalarSubqueriesMatcher::Data scalar_subquery_data{
+        WithContext{execution_context},
+        0,
+        scalars,
+        local_scalars,
+        false,
+        false,
+        false,
+        std::nullopt};
+    ExecuteScalarSubqueriesVisitor(scalar_subquery_data).visit(expression_ast_for_analysis);
+
+    if (execution_context->hasQueryContext())
+    {
+        for (const auto & scalar : scalars)
+            execution_context->getQueryContext()->addScalar(scalar.first, scalar.second);
+    }
+
+    /// StorageDummy requires at least one column.  When the expression is constant
+    /// (e.g. a constant TTL like '2000-10-10'::DateTime), available_columns may be empty.
+    auto columns_for_dummy = available_columns;
+    if (columns_for_dummy.empty())
+        columns_for_dummy.emplace_back("_dummy", std::make_shared<DataTypeUInt8>());
+
+    /// `available_columns` may contain duplicate names: a flattened Tuple sub-column
+    /// (e.g. `n.a` from `n Tuple(a)`) can coincide with a separate physical column
+    /// literally named `n.a`.  `ColumnsDescription::add` rejects such a duplicate with
+    /// `ILLEGAL_COLUMN`, which would mask the storage-level validation that reports this
+    /// collision with a clearer error.  Keep only the first occurrence of each name here
+    /// (it is irrelevant for analysis which one we keep — the schema is rejected anyway),
+    /// preserving the legacy behaviour of `TreeRewriter`, which tolerated such lists.
+    {
+        NameSet seen_names;
+        std::erase_if(columns_for_dummy, [&](const auto & elem) { return !seen_names.insert(elem.name).second; });
+    }
+
+    ColumnsDescription columns_description(columns_for_dummy);
+    auto storage = std::make_shared<StorageDummy>(StorageID{"_analyze_expression_db", "_analyze_expression_table"}, columns_description);
+    QueryTreeNodePtr fake_table_expression = std::make_shared<TableNode>(storage, execution_context);
+
+    auto global_planner_context = std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{});
+    auto planner_context = std::make_shared<PlannerContext>(execution_context, global_planner_context, SelectQueryOptions{});
+
+    QueryAnalyzer analyzer(/* only_analyze */ true, identifier_typo_hint_columns);
+
+    auto query_node = std::make_shared<QueryNode>(execution_context);
+
+    /// Analyzer error messages end with `In scope {}`, formatting the scope node - which here is the
+    /// synthetic `SELECT ... FROM _analyze_expression_db._analyze_expression_table` wrapper built
+    /// above. Reporting it would expose an internal name in a user-facing DDL error such as
+    /// `ALTER TABLE t ADD INDEX i ix TYPE minmax GRANULARITY 1`. The scope of a standalone
+    /// expression is the expression itself, so make `formatASTForErrorMessage` print that instead
+    /// (it prefers the original AST when one is set). Use the AST as the user wrote it, before UDF
+    /// inlining and scalar subquery substitution above rewrote a private copy of it.
+    query_node->setOriginalAST(expr_list_ast);
+
+    auto expression_list = buildQueryTree(expression_ast_for_analysis, execution_context);
+
+    query_node->getProjectionNode() = expression_list;
+    query_node->getJoinTreeNode() = fake_table_expression;
+
+    QueryTreeNodePtr query_tree = query_node;
+    analyzer.resolve(query_tree, nullptr, execution_context);
+
+    query_node = std::static_pointer_cast<QueryNode>(query_tree);
+    expression_list = query_node->getProjectionNode();
+
+    collectSourceColumns(expression_list, planner_context, false);
+    collectSets(expression_list, *planner_context);
+
+    ColumnNodePtrWithHashSet empty_correlated_columns_set;
+    auto [actions, _] = buildActionsDAGFromExpressionNode(
+        expression_list,
+        {},
+        planner_context,
+        empty_correlated_columns_set,
+        false /* use_column_identifier_as_action_node_name */);
+
+    /// Convert each subquery set's query tree into a query plan so the set becomes
+    /// buildable (a `FutureSetFromSubquery` created by `collectSets` only carries a
+    /// query tree; `buildSetInplace` needs a query plan as its `source`).  This must
+    /// always run so the set can be built later, whether eagerly here or lazily by the
+    /// caller.
+    for (auto & subquery_set : planner_context->getPreparedSets().getSubqueries())
+    {
+        auto subquery_tree = subquery_set->detachQueryTree();
+        if (subquery_tree)
+        {
+            /// The expression is resolved by running `QueryAnalyzer` directly rather than the whole
+            /// `QueryAnalysisPass`, so the unique `__tableN` table aliases that pass appends at the
+            /// end were never created.  Without them `GlobalPlannerContext::createColumnIdentifier`
+            /// derives the identifier from the bare column name, and a set subquery reading the same
+            /// column name from two sources (e.g. `x IN (SELECT id FROM (SELECT id FROM t))`) makes
+            /// the planner throw "Column identifier id is already registered".  Assign the aliases
+            /// here, exactly like the other places that plan a detached set subquery.
+            createUniqueAliasesIfNecessary(subquery_tree, execution_context);
+
+            auto subquery_options = SelectQueryOptions{}.subquery();
+            /// Mirror `Planner::addBuildSubqueriesForSetsStepIfNeeded`: the set is built
+            /// here (via `buildSetInplace`) before the surrounding query materializes its
+            /// CTEs, so the set subquery must materialize any `WITH ... AS MATERIALIZED`
+            /// CTEs it references itself.  Without this, the set could read an
+            /// unmaterialized CTE.
+            subquery_options.forceMaterializeCTE();
+            subquery_options.ignore_limits = false;
+            Planner subquery_planner(
+                subquery_tree,
+                subquery_options,
+                std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
+            subquery_planner.buildQueryPlanIfNeeded();
+            auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
+            subquery_set->setQueryPlan(std::make_unique<QueryPlan>(std::move(subquery_plan)));
+        }
+    }
+
+    /// Build subquery sets in place AFTER constructing the DAG.  Building before
+    /// DAG construction would make the sets "ready", causing PlannerActionsVisitor
+    /// to constant-fold expressions like exists((SELECT 1)) — which then fails the
+    /// "key cannot contain constants" check for partition/sorting keys.
+    /// By building after, the DAG sees unready sets and keeps them as function calls.
+    /// The sets are still ready by the time the expression is actually evaluated
+    /// (e.g. during TTL checks, constraint validation, or INSERT).
+    ///
+    /// Skipped when `build_subquery_sets` is false: some callers build the sets
+    /// themselves at the correct time (e.g. constraint checks at insert time via
+    /// `VirtualColumnUtils::buildSetsForDAG`).  Executing the subquery here would run
+    /// a nested pipeline that reports progress on the outer query's context, breaking
+    /// the INSERT protocol handshake (a stray `Progress` packet before the sample block).
+    if (build_subquery_sets)
+    {
+        for (auto & subquery_set : planner_context->getPreparedSets().getSubqueries())
+            subquery_set->buildSetInplace(execution_context);
+
+        /// After building subquery sets in place, mark the corresponding DAG column
+        /// nodes as deterministic constants.  The sets have been evaluated and are now
+        /// fixed values, so assertDeterministic() should not reject them (e.g. when
+        /// used in partition key expressions like PARTITION BY exists((SELECT 1))).
+        /// Identify set columns by their data type (`DataTypeSet`), not by name prefix
+        /// alone — a user may legally have a column named `__set_x`, and we must not
+        /// flip its `is_deterministic_constant` flag based on the name.
+        for (const auto & node : actions.getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::COLUMN
+                && node.result_type
+                && node.result_type->getTypeId() == TypeIndex::Set
+                && !node.is_deterministic_constant)
+            {
+                const_cast<ActionsDAG::Node &>(node).is_deterministic_constant = true;
+            }
+        }
+    }
+
+    /// FunctionIndexHint hides its column arguments in an internal ActionsDAG,
+    /// making them invisible as inputs of the main DAG.  For key expression
+    /// analysis (e.g. partition key minmax index), those columns must be visible
+    /// so that getRequiredColumnsWithTypes() reports them.
+    std::vector<std::pair<String, DataTypePtr>> index_hint_columns;
+    for (const auto & node : actions.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
+            {
+                if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
+                {
+                    for (const auto * input : index_hint->getActions().getInputs())
+                        index_hint_columns.emplace_back(input->result_name, input->result_type);
+                }
+            }
+        }
+    }
+    for (const auto & [name, type] : index_hint_columns)
+    {
+        bool found = false;
+        for (const auto * existing : actions.getInputs())
+        {
+            if (existing->result_name == name)
+            {
+                found = true;
+                break;
+            }
+        }
+        if (!found)
+            actions.addInput(name, type);
+    }
+
+    /// The synthetic `_dummy` column (added above when `available_columns` was empty, so
+    /// that `StorageDummy` stays constructible) must remain internal: it exists only to let
+    /// a genuinely constant expression be analyzed, not to expand the set of identifiers a
+    /// user expression may reference.  If the original column list was empty but analysis
+    /// still required an input, the expression resolved a name (e.g. a zero-column table
+    /// key like `ORDER BY _dummy`) that is not a real column.  Reject it here — fail-close —
+    /// instead of producing an `ExpressionActions` that requires a column absent from the
+    /// table metadata and only fails later when executed against a real block.
+    if (available_columns.empty() && !actions.getInputs().empty())
+        throw Exception(
+            ErrorCodes::UNKNOWN_IDENTIFIER,
+            "Unknown column '{}': the expression is analyzed over an empty set of columns and must be constant",
+            actions.getInputs().front()->result_name);
+
+    return {std::move(actions), std::move(ast_column_names_no_aliases), std::move(ast_column_names_with_aliases)};
+}
+
+/// Sort DAG nodes by their position in `available_columns` (table/header order).
+/// `PlannerActionsVisitor` registers inputs in expression first-use order, while the
+/// legacy `ExpressionAnalyzer` kept source columns in header order; the relative order
+/// is observable through `ActionsDAG::updateHeader` (and thus `FilterStep` headers).
+static void sortNodesByAvailableColumnsOrder(
+    std::vector<const ActionsDAG::Node *> & nodes, const NamesAndTypesList & available_columns)
+{
+    std::unordered_map<std::string_view, size_t> available_positions;
+    available_positions.reserve(available_columns.size());
+    size_t position = 0;
+    for (const auto & column : available_columns)
+        available_positions.emplace(column.name, position++);
+
+    std::stable_sort(nodes.begin(), nodes.end(),
+        [&](const ActionsDAG::Node * lhs, const ActionsDAG::Node * rhs)
+        {
+            const auto lhs_it = available_positions.find(lhs->result_name);
+            const auto rhs_it = available_positions.find(rhs->result_name);
+            const size_t lhs_pos = lhs_it == available_positions.end() ? available_positions.size() : lhs_it->second;
+            const size_t rhs_pos = rhs_it == available_positions.end() ? available_positions.size() : rhs_it->second;
+            return lhs_pos < rhs_pos;
+        });
+}
+
+/// Apply the `add_aliases=false` post-processing branch in place: rebuild constant
+/// and function `result_name`s in AST style (so KeyCondition can match subexpression
+/// names against WHERE clause names), override top-level output names from
+/// `ast_column_names`, and append source columns to outputs (matching the old
+/// `ExpressionAnalyzer::getActions(false, false)` behavior).
+static void applyAstNamingAndAppendSourceColumns(
+    ActionsDAG & actions, const std::vector<String> & ast_column_names, const NamesAndTypesList & available_columns)
+{
+    auto & outputs = actions.getOutputs();
+
+    /// Rename constant and function nodes to match AST naming conventions.
+    /// PlannerActionsVisitor names constants with type suffixes (e.g. "1_UInt8")
+    /// while the old ExpressionAnalyzer used AST-based names (e.g. "1").
+    /// KeyCondition matches key subexpression names against WHERE clause names
+    /// derived from ASTs, so intermediate nodes must use AST-compatible naming.
+    /// Process in topological order (getNodes() returns leaves first) so that
+    /// function node names are rebuilt from already-renamed children.
+    for (const auto & node : actions.getNodes())
+    {
+        if (node.type == ActionsDAG::ActionType::COLUMN
+            && node.column && isColumnConst(*node.column)
+            && (!node.result_type || node.result_type->getTypeId() != TypeIndex::Set))
+        {
+            const auto & constant = assert_cast<const ColumnConst &>(*node.column);
+            const_cast<ActionsDAG::Node &>(node).result_name
+                = applyVisitor(FieldVisitorToString(), constant.getField());
+        }
+        else if (node.type == ActionsDAG::ActionType::FUNCTION && node.function_base)
+        {
+            WriteBufferFromOwnString buf;
+            buf << node.function_base->getName() << '(';
+            for (size_t i = 0; i < node.children.size(); ++i)
+            {
+                if (i > 0)
+                    buf << ", ";
+                buf << node.children[i]->result_name;
+            }
+            buf << ')';
+            const_cast<ActionsDAG::Node &>(node).result_name = buf.str();
+        }
+    }
+
+    /// Rename outputs to match AST column names (overrides the above for
+    /// top-level expressions where AST formatting may differ from the
+    /// recursive function-name rebuild).
+    for (size_t i = 0; i < outputs.size(); ++i)
+    {
+        if (outputs[i]->result_name != ast_column_names[i])
+            const_cast<ActionsDAG::Node *>(outputs[i])->result_name = ast_column_names[i];
+    }
+
+    /// Add source columns to outputs to match ExpressionAnalyzer::getActions(false) behavior.
+    /// The old code included all source columns in the output; buildActionsDAGFromExpressionNode
+    /// only outputs the expression results.
+    ///
+    /// The legacy DAG listed the source columns in `available_columns` (table/header)
+    /// order, while `PlannerActionsVisitor` registers inputs in first-use order.  The
+    /// relative order of these appended columns is observable: `ActionsDAG::updateHeader`
+    /// (and thus `FilterStep`/`ExpressionStep` headers) materializes outputs in output
+    /// order, so e.g. a row-policy filter `b > a` over header `[a, b, c]` would otherwise
+    /// produce header `[b, a, c]` after the filter column is removed.  Sort the appended
+    /// inputs by their position in `available_columns` to preserve the legacy order.
+    std::vector<const ActionsDAG::Node *> inputs_to_add;
+    for (const auto * input : actions.getInputs())
+    {
+        bool already_in_outputs = false;
+        for (const auto * output : outputs)
+        {
+            if (output == input)
+            {
+                already_in_outputs = true;
+                break;
+            }
+        }
+        if (!already_in_outputs)
+            inputs_to_add.push_back(input);
+    }
+
+    sortNodesByAvailableColumnsOrder(inputs_to_add, available_columns);
+
+    for (const auto * input : inputs_to_add)
+        outputs.push_back(input);
+}
+
+ActionsDAG analyzeExpressionToActionsDAG(
+    const ASTPtr & expression_ast,
+    const NamesAndTypesList & available_columns,
+    const ContextPtr & context,
+    bool add_aliases,
+    bool project_result,
+    bool build_subquery_sets)
+{
+    auto core = buildExpressionCoreDAG(expression_ast, available_columns, context, build_subquery_sets);
+    auto & actions = core.actions;
+    auto & ast_column_names = add_aliases ? core.ast_column_names_with_aliases : core.ast_column_names_no_aliases;
+
+    /// Empty AST → empty DAG (preserves the early-return behavior of the old code path).
+    if (ast_column_names.empty() && actions.getOutputs().empty())
+        return std::move(actions);
+
+    auto & outputs = actions.getOutputs();
+
+    /// The Analyzer may rewrite the projection (e.g. `IN column` → `has()`/`equals()`),
+    /// changing the number of output columns.  When that happens, fall back to using
+    /// the DAG's own output names — callers that need specific AST-based names will
+    /// still work because the Analyzer preserves semantics.
+    if (outputs.size() != ast_column_names.size())
+    {
+        ast_column_names.clear();
+        ast_column_names.reserve(outputs.size());
+        for (const auto * output : outputs)
+            ast_column_names.push_back(output->result_name);
+    }
+
+    if (add_aliases && project_result)
+    {
+        /// Project to only the expression columns, renamed to match AST column names.
+        NamesWithAliases rename_pairs;
+        rename_pairs.reserve(outputs.size());
+
+        for (size_t i = 0; i != outputs.size(); ++i)
+            rename_pairs.emplace_back(outputs[i]->result_name, ast_column_names[i]);
+
+        actions.project(rename_pairs);
+    }
+    else if (add_aliases && !project_result)
+    {
+        /// Mirror `ExpressionAnalyzer::getActionsDAG(true, false)`: add aliases
+        /// for the projection outputs, append all source columns to outputs,
+        /// then prune outputs to (alias names ∪ source-column names).  Without
+        /// the pruning step the DAG keeps the original non-aliased expression
+        /// output alongside the alias, which diverges from the legacy header
+        /// shape (e.g. `expr AS x` would expose both `expr` and `x`).
+        /// Source columns must be appended to outputs before `removeUnusedActions`
+        /// because the `NameSet` overload looks only at outputs — inputs are not
+        /// reachable by name there.
+        NamesWithAliases rename_pairs;
+        rename_pairs.reserve(outputs.size());
+        NameSet required_names;
+        required_names.reserve(outputs.size() + actions.getInputs().size());
+
+        for (size_t i = 0; i != outputs.size(); ++i)
+        {
+            rename_pairs.emplace_back(outputs[i]->result_name, ast_column_names[i]);
+            required_names.insert(ast_column_names[i]);
+        }
+
+        actions.addAliases(rename_pairs);
+
+        /// Rebuild outputs as source columns (inputs) first, then the expression
+        /// aliases — matching the legacy `ExpressionAnalyzer::getActionsDAG(true, false)`
+        /// output order.  The legacy DAG seeded its outputs with all source columns
+        /// (in source order) and only afterwards appended the expression results, so
+        /// the header was `[source columns..., expression aliases...]`.
+        /// `FilterStep`/`ActionsDAG::updateHeader` materialize the result block in
+        /// output order, and the sole caller of this mode
+        /// (`ReadFinalForExternalReplicaStorage`, which keeps the filter column) relies
+        /// on the source-columns-first shape — appending the inputs after the aliases
+        /// would reorder the storage read header.
+        std::vector<const ActionsDAG::Node *> inputs = actions.getInputs();
+        sortNodesByAvailableColumnsOrder(inputs, available_columns);
+        std::vector<const ActionsDAG::Node *> ordered_outputs;
+        ordered_outputs.reserve(inputs.size() + outputs.size());
+        for (const auto * input : inputs)
+        {
+            ordered_outputs.push_back(input);
+            required_names.insert(input->result_name);
+        }
+        for (const auto * output : outputs)
+        {
+            /// Skip outputs that are themselves source-column inputs: they are already
+            /// added above and must not be duplicated (e.g. a bare-column expression).
+            if (std::find(inputs.begin(), inputs.end(), output) == inputs.end())
+                ordered_outputs.push_back(output);
+        }
+        outputs = std::move(ordered_outputs);
+
+        actions.removeUnusedActions(required_names);
+    }
+    else
+    {
+        applyAstNamingAndAppendSourceColumns(actions, ast_column_names, available_columns);
+    }
+
+    return std::move(actions);
+}
+
+ExpressionActionsPtr analyzeExpressionToActions(
+    const ASTPtr & expression_ast,
+    const NamesAndTypesList & available_columns,
+    const ContextPtr & context,
+    bool add_aliases,
+    CompileExpressions compile_expressions,
+    bool build_subquery_sets)
+{
+    auto dag = analyzeExpressionToActionsDAG(
+        expression_ast, available_columns, context, add_aliases, /* project_result */ true, build_subquery_sets);
+    /// Match ExpressionAnalyzer::getActions(add_aliases, remove_unused_result=true) which constructs
+    /// ExpressionActions with project_inputs = add_aliases && remove_unused_result. With the default
+    /// project_result=true in the DAG, remove_unused_result is effectively true here.
+    return std::make_shared<ExpressionActions>(std::move(dag), ExpressionActionsSettings(context, compile_expressions), add_aliases);
+}
+
+AnalyzedExpressionWithSampleBlock analyzeExpressionToActionsAndSampleBlock(
+    const ASTPtr & expression_ast,
+    const NamesAndTypesList & available_columns,
+    const ContextPtr & context,
+    CompileExpressions compile_expressions,
+    const std::optional<Names> & identifier_typo_hint_columns)
+{
+    auto core = buildExpressionCoreDAG(
+        expression_ast, available_columns, context, /* build_subquery_sets */ true, identifier_typo_hint_columns);
+    auto & actions = core.actions;
+
+    if (actions.getOutputs().empty() && core.ast_column_names_no_aliases.empty())
+    {
+        AnalyzedExpressionWithSampleBlock result;
+        result.expression = std::make_shared<ExpressionActions>(std::move(actions), ExpressionActionsSettings(context, compile_expressions));
+        return result;
+    }
+
+    auto & outputs = actions.getOutputs();
+
+    auto & names_no_aliases = core.ast_column_names_no_aliases;
+    auto & names_with_aliases = core.ast_column_names_with_aliases;
+
+    /// Wildcard / matcher expansion changes the number of resolved outputs.
+    /// Fall back to DAG-generated names in that case so that downstream
+    /// consistency checks (e.g. `column_names.size() != sample_block.columns()`)
+    /// fire on the projected sample block.
+    if (outputs.size() != names_no_aliases.size())
+    {
+        names_no_aliases.clear();
+        names_with_aliases.clear();
+        names_no_aliases.reserve(outputs.size());
+        names_with_aliases.reserve(outputs.size());
+        for (const auto * output : outputs)
+        {
+            names_no_aliases.push_back(output->result_name);
+            names_with_aliases.push_back(output->result_name);
+        }
+    }
+
+    /// Build the projected sample block from a clone of the DAG, before any
+    /// AST-style renaming or source-column appending is applied to the original.
+    Block sample_block;
+    {
+        auto sample_dag = actions.clone();
+        NamesWithAliases rename_pairs;
+        rename_pairs.reserve(outputs.size());
+        const auto & sample_outputs = sample_dag.getOutputs();
+        for (size_t i = 0; i != sample_outputs.size(); ++i)
+            rename_pairs.emplace_back(sample_outputs[i]->result_name, names_with_aliases[i]);
+        sample_dag.project(rename_pairs);
+        sample_block = ExpressionActions(std::move(sample_dag), ExpressionActionsSettings(context)).getSampleBlock();
+    }
+
+    /// Apply AST-style intermediate renaming and append source columns to outputs
+    /// so the resulting `ExpressionActions` matches the legacy
+    /// `ExpressionAnalyzer::getActions(false, false)` shape.
+    applyAstNamingAndAppendSourceColumns(actions, names_no_aliases, available_columns);
+
+    AnalyzedExpressionWithSampleBlock result;
+    result.expression = std::make_shared<ExpressionActions>(std::move(actions), ExpressionActionsSettings(context, compile_expressions));
+    result.sample_block = std::move(sample_block);
+    return result;
+}
+
+}
