@@ -69,7 +69,7 @@ private:
 class CPUSlotsAllocation final : public ISlotAllocation
 {
 public:
-    CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_, ResourceSchedulingContext * scheduling_context_ = nullptr);
+    CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker_slots_, ResourceLink master_link_, ResourceLink worker_link_);
     ~CPUSlotsAllocation() override;
 
     // Take one already granted slot if available. Lock-free iff there is no granted slot.
@@ -90,7 +90,8 @@ private:
     // Grant a slot and enqueue another resource request if necessary
     void grant();
 
-    // Returns the queue for the current request
+    // Returns the link (and its queue) for the current request: master while `allocated < master_slots`, else worker.
+    const ResourceLink & getCurrentLink(const std::unique_lock<std::mutex> &) const;
     ISchedulerQueue * getCurrentQueue(const std::unique_lock<std::mutex> &) const;
 
     const SlotCount master_slots; // Max number of slots to allocate using master link

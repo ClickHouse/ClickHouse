@@ -546,8 +546,6 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
         {
             if (master_thread_link || worker_thread_link) // Only use resource scheduler if at least one resource link is specified, otherwise unlimited
             {
-                // Both links come from the same classifier, so either one carries the query's scheduling context.
-                auto * scheduling_context = master_thread_link ? master_thread_link.scheduling_context : worker_thread_link.scheduling_context;
                 /// Allocate CPU slots through resource scheduler
                 if (query_context->getCPUSlotPreemption())
                 {
@@ -568,12 +566,11 @@ SlotAllocationPtr PipelineExecutor::allocateCPU(size_t num_threads, bool concurr
                             .workload = query_context->getSettingsRef()[Setting::workload],
                             .trace_cpu_scheduling = trace_cpu_scheduling,
                         },
-                        initial_max,
-                        scheduling_context);
+                        initial_max);
                 }
                 else
                 {
-                    return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link, scheduling_context);
+                    return std::make_shared<CPUSlotsAllocation>(master_threads, worker_threads, master_thread_link, worker_thread_link);
                 }
             }
         }

@@ -113,10 +113,9 @@ void CPULeaseAllocation::Lease::reset()
     parent.reset();
 }
 
-CPULeaseAllocation::RequestChain::RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_, ResourceSchedulingContext * scheduling_context_)
+CPULeaseAllocation::RequestChain::RequestChain(CPULeaseAllocation * lease, size_t max_threads_, ResourceLink master_link_, ResourceLink worker_link_)
     : master_link(master_link_)
     , worker_link(worker_link_)
-    , scheduling_context(scheduling_context_)
     , requests(max_threads_) // NOTE: it should not be reallocated after initialization because we use raw pointers and iterators
     , head(requests.begin())
     , tail(requests.begin())
@@ -148,12 +147,17 @@ bool CPULeaseAllocation::RequestChain::enqueue(ResourceCost cost, ResourceCost r
     chassert(!enqueued);
 
     head->reset(cost);
-    // Requests are reused across renewals and `reset()` clears the context, so re-stamp here.
-    head->scheduling.context = scheduling_context;
     head->is_master_slot = std::exchange(request_master_slot, false);
     head->max_consumed = requested_ns_;  // Lease expires if we consume what we requested
 
-    if (auto * queue = head->is_master_slot ? master_link.queue : worker_link.queue)
+    // Requests are reused across renewals and `reset()` clears the scheduling pointers, so re-stamp
+    // from the leaf this request enqueues to — master and worker are distinct resources, each with
+    // its own per-query scheduling state.
+    const ResourceLink & link = head->is_master_slot ? master_link : worker_link;
+    head->scheduling.context = link.scheduling_context;
+    head->scheduling.state = link.scheduling_state;
+
+    if (auto * queue = link.queue)
     {
         head->is_noncompeting = false;
         // We do not use enqueueRequestUsingBudget() because it redistributes resource between requests in the queue (which might be from different queries).
@@ -197,12 +201,12 @@ void CPULeaseAllocation::RequestChain::scheduled()
         cancel_cv.notify_one();
 }
 
-CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_, ResourceSchedulingContext * scheduling_context_)
+CPULeaseAllocation::CPULeaseAllocation(SlotCount max_threads_, ResourceLink master_link_, ResourceLink worker_link_, CPULeaseSettings settings_, SlotCount initial_max_slots_)
     : max_threads(max_threads_)
     , settings(std::move(settings_))
     , log(getLogger("CPULeaseAllocation"))
     , threads(max_threads)
-    , requests(this, max_threads, master_link_, worker_link_, scheduling_context_)
+    , requests(this, max_threads, master_link_, worker_link_)
     , acquired_increment(CurrentMetrics::ConcurrencyControlAcquired, 0)
     , scheduled_increment(CurrentMetrics::ConcurrencyControlScheduled, 0)
     , lease_id(lease_counter.fetch_add(1, std::memory_order_relaxed))
