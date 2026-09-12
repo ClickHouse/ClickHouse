@@ -1062,6 +1062,10 @@ def main():
                         build_types[0] if is_bugfix_validation else args.options
                     ),
                     step_timeout=stateful_prep_step_timeout(info),
+                    # Of the lanes this job runs, only the flaky check arms
+                    # `ThreadFuzzer`, and the stateful fixture load is setup, not a
+                    # test: no assertion depends on how its statements interleave.
+                    stop_thread_fuzzer=is_flaky_check,
                 ):
                     print(
                         "SETUP FAILURE: "
