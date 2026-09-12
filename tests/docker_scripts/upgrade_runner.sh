@@ -145,9 +145,12 @@ mkdir tmp_stress_output
 # are ignored and incompatible tests run on an unsupported backend: --s3-storage (object storage is the
 # default MergeTree policy above) covers no-object-storage/no-s3-storage; --encrypted-storage mirrors the
 # coin flip above and covers no-encrypted-storage (stress.py forwards it to clickhouse-test).
-stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200 \
-    && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
-    || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
+run_capturing_output /tmp/stress_script.log \
+    stress --test-cmd="/usr/bin/clickhouse-test --queries=\"previous_release_repository/tests/queries\" --s3-storage" --encrypted-storage "$use_encrypted_storage" --upgrade-check --output-folder tmp_stress_output --global-time-limit=1200
+stress_script_exit_code=$?
+set -e
+append_script_result_row /test_output/test_results.tsv "$stress_script_exit_code" \
+    /tmp/stress_script.log
 
 # The full server stacktrace dumps must survive the removal of the phase
 # output folder below.

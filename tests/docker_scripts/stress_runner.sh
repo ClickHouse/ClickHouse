@@ -335,9 +335,13 @@ elif [[ "$USE_AZURE_STORAGE_FOR_MERGE_TREE" == "1" ]]; then
 fi
 
 cd /repo/tests/ || exit 1  # clickhouse-test can find queries dir from there
-python3 /repo/ci/jobs/scripts/stress/stress.py --test-cmd="/usr/bin/clickhouse-test${test_cmd_opts}" --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE" \
-    && echo -e "Test script exit code$OK" >> /test_output/test_results.tsv \
-    || echo -e "Test script failed$FAIL script exit code: $?" >> /test_output/test_results.tsv
+# The capture path stays outside /test_output, which is uploaded wholesale.
+run_capturing_output /tmp/stress_script.log \
+    python3 /repo/ci/jobs/scripts/stress/stress.py --test-cmd="/usr/bin/clickhouse-test${test_cmd_opts}" --hung-check --drop-databases --output-folder /test_output --skip-func-tests "$SKIP_TESTS_OPTION" --global-time-limit "${STRESS_GLOBAL_TIME_LIMIT:-1200}" --encrypted-storage "$USE_ENCRYPTED_STORAGE"
+stress_script_exit_code=$?
+set -e
+append_script_result_row /test_output/test_results.tsv "$stress_script_exit_code" \
+    /tmp/stress_script.log
 
 stop_server
 mv /var/log/clickhouse-server/clickhouse-server.log /var/log/clickhouse-server/clickhouse-server.stress.log
