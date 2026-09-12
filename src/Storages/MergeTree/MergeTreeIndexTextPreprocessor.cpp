@@ -163,6 +163,15 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
                 is_lower_or_upper = arg->getColumnName() == index_description.column_names.front();
             }
         }
+
+        /// Detect the form CAST(<index column>, '<type>'), for any target type.
+        if (func && func->arguments && func->arguments->children.size() == 2
+            && getFunctionCanonicalNameIfAny(func->name) == "CAST")
+        {
+            const auto * target = func->arguments->children[1]->as<ASTLiteral>();
+            is_cast_of_index_column = target != nullptr && target->value.getType() == Field::Types::String
+                && func->arguments->children[0]->getColumnName() == index_description.column_names.front();
+        }
     }
 }
 
