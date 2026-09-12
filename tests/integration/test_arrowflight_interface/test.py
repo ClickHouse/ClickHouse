@@ -697,6 +697,32 @@ def test_doget_aggregate_state_is_binary_in_text_mode():
     assert actual.column("s").to_pylist() == [b"\x80\x00\x00\x00\x00\x00\x00\x00"]
 
 
+# A type whose text form can carry arbitrary bytes still has to fit an Arrow `utf8` column, which the
+# specification requires to hold valid UTF-8. Arrow Flight pins `output_format_arrow_string_as_string`, so
+# `text` here always means `utf8` and there is no byte-exact variant of it to fall back to: the invalid
+# sequence is replaced by U+FFFD. `binary` mode is the byte-exact one and keeps the original byte.
+def test_doget_text_mode_replaces_invalid_utf8():
+    node.query("CREATE TABLE mytable (id Int64, d Dynamic) ORDER BY id")
+    node.query("INSERT INTO mytable SELECT 10, unhex('FF')::Dynamic")
+
+    client, options = get_client()
+
+    def fetch(mode):
+        descriptor = flight.FlightDescriptor.for_command(
+            f"SELECT d FROM mytable SETTINGS output_format_arrow_unsupported_types = '{mode}'"
+        )
+        flight_info = client.get_flight_info(descriptor, options)
+        return client.do_get(flight_info.endpoints[0].ticket, options).read_all()
+
+    as_text = fetch("text")
+    assert as_text.schema.field("d").type == pa.string()
+    assert as_text.column("d").to_pylist() == ["\ufffd"]
+
+    as_binary = fetch("binary")
+    assert as_binary.schema.field("d").type == pa.binary()
+    assert b"\xff" in as_binary.column("d").to_pylist()[0]
+
+
 # The opaque payload is produced by the query's own format settings, so a setting that changes how a value
 # serializes is honored and the bytes are the ones `FORMAT Arrow` would write for the same query. Here
 # `output_format_binary_write_json_as_string` turns the binary encoding of `JSON` into a length-prefixed
