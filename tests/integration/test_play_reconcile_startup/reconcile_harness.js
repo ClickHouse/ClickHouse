@@ -207,6 +207,7 @@ function makeElement(tag) {
         /// were numbered from); the stub never paginates, so it is the unpaginated first page.
         _rowNumberOffset() { return 0; },
         start() {},
+        startProfileTraces() {},
         finish() {},
         updateProgress() {},
         updateText() {},

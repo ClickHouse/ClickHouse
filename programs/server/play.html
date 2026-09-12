@@ -1473,6 +1473,18 @@
             flex: 1;
         }
 
+        #profile-traces-control
+        {
+            white-space: nowrap;
+        }
+
+        @media (max-width: 600px)
+        {
+            #run_div { flex-wrap: wrap; }
+            #hint { display: none; }
+            query-progress { flex-basis: 100%; order: 1; }
+        }
+
         #run, #run-all
         {
             grid-area: run;
@@ -1851,6 +1863,7 @@
             <div id="run_div">
                 <button type="submit" class="shadow" id="run">Run</button>
                 <button type="button" class="shadow" id="run-all">Run all</button>
+                <label id="profile-traces-control" title="Collect sampling-profiler stacks during the next query in this tab"><input type="checkbox" id="profile-traces"> Flame graph</label>
                 <div id="hint">&nbsp;(<span id="hint-modifier">Ctrl/Cmd</span>+Enter<span id="hint-run-all" style="display: none">, +Shift to run all</span>)</div>
                 <query-progress id="query-progress"></query-progress>
                 <div id="copy-div" class="shadow" title="Copy raw result to clipboard">
@@ -2002,8 +2015,8 @@ class QueryProgressElement extends HTMLElement
                     background-color: var(--button-color);
                 }
 
-                /* Keep the two toggles close together, tightening the :host row gap between them. */
-                #logs-toggle + #metrics-toggle { margin-left: -0.75rem; }
+                /* Keep the toggles close together, tightening the :host row gap between them. */
+                #logs-toggle + #metrics-toggle, #metrics-toggle + #flame-toggle { margin-left: -0.75rem; }
 
                 #hourglass
                 {
@@ -2118,6 +2131,7 @@ class QueryProgressElement extends HTMLElement
             <span id="check-mark">&#10004;</span>
             <span id="logs-toggle" class="progress-toggle">Logs</span>
             <span id="metrics-toggle" class="progress-toggle">Metrics</span>
+            <span id="flame-toggle" class="progress-toggle">Flame</span>
             <div id="progress"><span id="progress-text"></span><span id="stats"></span></div>
         `;
         this._hourglass = this.shadowRoot.getElementById('hourglass');
@@ -2127,26 +2141,39 @@ class QueryProgressElement extends HTMLElement
         this._progressText = this.shadowRoot.getElementById('progress-text');
         this._stats = this.shadowRoot.getElementById('stats');
 
-        /// The Logs and Metrics toggles switch the result view between the query result and one of
-        /// the streamed extras (server logs, or the extended profile-event metrics). The progress
-        /// element only tracks which view is selected and announces changes via a `set-view` event;
-        /// the page listener applies the view to the result element(s).
+        /// The Logs, Metrics and Flame toggles switch the result view between the query result and
+        /// one of the extras: the streamed server logs, the extended profile-event metrics, or the
+        /// flame graph built from the query's streamed profiler samples. The progress element only
+        /// tracks which view is selected and announces changes via a `set-view` event; the page
+        /// listener applies the view to the result element(s).
         this._logsToggle = this.shadowRoot.getElementById('logs-toggle');
         this._metricsToggle = this.shadowRoot.getElementById('metrics-toggle');
+        this._flameToggle = this.shadowRoot.getElementById('flame-toggle');
         this._view = 'result';
         this._logsToggle.addEventListener('click', () => this._toggleView('logs'));
         this._metricsToggle.addEventListener('click', () => this._toggleView('metrics'));
+        this._flameToggle.addEventListener('click', () => this._toggleView('flame'));
 
         this.resetResources();
     }
 
-    /// Toggle the given view: activate it (deactivating the other toggle), or return to the result
+    _viewToggles()
+    {
+        return [['logs', this._logsToggle], ['metrics', this._metricsToggle], ['flame', this._flameToggle]];
+    }
+
+    _paintActiveToggle()
+    {
+        for (const [view, toggle] of this._viewToggles())
+            toggle.classList.toggle('active', this._view === view);
+    }
+
+    /// Toggle the given view: activate it (deactivating the other toggles), or return to the result
     /// view if it is already active. Announces the new view via a `set-view` event.
     _toggleView(target)
     {
         this._view = (this._view === target) ? 'result' : target;
-        this._logsToggle.classList.toggle('active', this._view === 'logs');
-        this._metricsToggle.classList.toggle('active', this._view === 'metrics');
+        this._paintActiveToggle();
         this.dispatchEvent(new CustomEvent('set-view', { detail: { view: this._view } }));
     }
 
@@ -2164,11 +2191,17 @@ class QueryProgressElement extends HTMLElement
         this._metricsToggle.style.display = 'inline-block';
     }
 
-    /// Hide both view toggles and return to the result view (used when a new query starts).
+    /// Reveal the Flame toggle when profiling is requested or samples arrive. Idempotent.
+    showFlameToggle()
+    {
+        this._flameToggle.style.display = 'inline-block';
+    }
+
+    /// Hide all view toggles and return to the result view (used when a new query starts).
     resetViewToggles()
     {
         this._view = 'result';
-        for (const t of [this._logsToggle, this._metricsToggle])
+        for (const [, t] of this._viewToggles())
         {
             t.classList.remove('active');
             t.style.display = 'none';
@@ -2176,16 +2209,17 @@ class QueryProgressElement extends HTMLElement
     }
 
     /// Restore the shared view toggles from a tab's own state (see `syncActiveTabChrome`): reveal
-    /// each toggle only if that tab produced logs / metrics, and mark the tab's selected view active.
-    /// The view and toggle visibility are tab-owned, so switching tabs does not carry one tab's
-    /// selection or toggle visibility onto another (see the `set-view` handler and `_markLogsAvailable`).
-    setViewState(view, logsAvailable, metricsAvailable)
+    /// each toggle only if that tab produced logs / metrics / a profilable query, and mark the tab's
+    /// selected view active. The view and toggle visibility are tab-owned, so switching tabs does not
+    /// carry one tab's selection or toggle visibility onto another (see the `set-view` handler and
+    /// `_markLogsAvailable`).
+    setViewState(view, logsAvailable, metricsAvailable, flameAvailable)
     {
         this._view = view;
         this._logsToggle.style.display = logsAvailable ? 'inline-block' : 'none';
         this._metricsToggle.style.display = metricsAvailable ? 'inline-block' : 'none';
-        this._logsToggle.classList.toggle('active', view === 'logs');
-        this._metricsToggle.classList.toggle('active', view === 'metrics');
+        this._flameToggle.style.display = flameAvailable ? 'inline-block' : 'none';
+        this._paintActiveToggle();
     }
 
     clear()
@@ -3944,6 +3978,78 @@ class QueryResultElement extends HTMLElement
                     filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
                 }
 
+                /* The flame graph of the query's sampling-profiler stacks (the Flame toggle). The
+                   controls line picks the trace type and the profiler period; the graph below is a
+                   classic flame graph (the root at the bottom), with a frame per stack entry. */
+                #flame_div
+                {
+                    display: none;
+                    margin-top: 1rem;
+                    padding: 0.5rem;
+                    background-color: var(--element-background-color);
+                    filter: drop-shadow(.2rem .2rem .2rem var(--shadow-color));
+                }
+
+                #flame-controls
+                {
+                    display: flex;
+                    flex-wrap: wrap;
+                    align-items: center;
+                    gap: 0.5rem 1rem;
+                    font-size: 10pt;
+                    color: var(--misc-text-color);
+                    margin-bottom: 0.5rem;
+                }
+
+                #flame-controls select
+                {
+                    font-size: 10pt;
+                    color: var(--text-color);
+                    background-color: var(--element-background-color);
+                    border: 1px solid var(--border-color);
+                    padding: 0.1rem 0.3rem;
+                    cursor: pointer;
+                }
+
+                #flame-status
+                {
+                    white-space: pre-wrap;
+                    color: var(--text-color);
+                    font-size: 90%;
+                }
+
+                #flame-host { max-width: min(20rem, 50vw); }
+
+                #flame-graph
+                {
+                    position: relative;
+                    width: 100%;
+                    overflow: hidden;
+                }
+
+                /* Frame geometry is set from JS in percent of the graph width (so the graph follows
+                   the page width) and in pixels of the row height. */
+                .flame-frame
+                {
+                    position: absolute;
+                    box-sizing: border-box;
+                    height: 16px;
+                    line-height: 16px;
+                    font-size: 11px;
+                    padding: 0 2px;
+                    overflow: hidden;
+                    white-space: nowrap;
+                    text-overflow: ellipsis;
+                    color: #000;
+                    border: 1px solid var(--element-background-color);
+                    cursor: pointer;
+                }
+
+                .flame-frame:hover { filter: brightness(1.15); }
+
+                /* Frames outside the zoomed subtree (ancestors of the zoom root) are dimmed. */
+                .flame-frame.dimmed { opacity: 0.35; }
+
                 #metrics-table
                 {
                     border-collapse: collapse;
@@ -4029,6 +4135,24 @@ class QueryResultElement extends HTMLElement
             </div>
             <div id="logs_div"><div id="logs-content" class="monospace"></div></div>
             <div id="metrics_div"><table id="metrics-table" class="monospace"><tbody id="metrics-body"></tbody></table></div>
+            <div id="flame_div">
+                <div id="flame-controls">
+                    <label>Node <select id="flame-host"><option value="">All nodes</option></select></label>
+                    <label>Trace <select id="flame-type">
+                        <option value="CPU">CPU</option>
+                        <option value="Real">Real time</option>
+                        <option value="MemorySample">Memory</option>
+                    </select></label>
+                    <label>Profiler period for the next runs <select id="flame-period">
+                        <option value="">server default</option>
+                        <option value="100000000">100 ms</option>
+                        <option value="10000000">10 ms</option>
+                        <option value="1000000">1 ms</option>
+                    </select></label>
+                    <span id="flame-status"></span>
+                </div>
+                <div id="flame-graph" class="monospace"></div>
+            </div>
         `;
 
         this._resultGroup = this.shadowRoot.getElementById('result-group');
@@ -4040,6 +4164,18 @@ class QueryResultElement extends HTMLElement
         this._metricsDiv = this.shadowRoot.getElementById('metrics_div');
         this._metricsTable = this.shadowRoot.getElementById('metrics-table');
         this._metricsBody = this.shadowRoot.getElementById('metrics-body');
+        this._flameDiv = this.shadowRoot.getElementById('flame_div');
+        this._flameHost = this.shadowRoot.getElementById('flame-host');
+        this._flameType = this.shadowRoot.getElementById('flame-type');
+        this._flamePeriod = this.shadowRoot.getElementById('flame-period');
+        this._flameStatus = this.shadowRoot.getElementById('flame-status');
+        this._flameGraph = this.shadowRoot.getElementById('flame-graph');
+        this._flame_data = freshFlameGraphState();
+        this._flame_timer = null;
+        this._flame_requested = false;
+        this._flamePeriod.addEventListener('change', () => selectProfilerPeriod(this, this._flamePeriod.value));
+        this._flameHost.addEventListener('change', () => this._showFlameGraph());
+        this._flameType.addEventListener('change', () => this._showFlameGraph());
         /// The extended profile-event metrics model (the Metrics view). Each metric name maps to
         /// its per-host aggregation; `_metrics_final` switches the rate column from the recent rate
         /// to the query-average once the query finishes. See `updateMetrics`/`renderMetricsTable`.
@@ -4283,6 +4419,14 @@ class QueryResultElement extends HTMLElement
         this._clearElement(this._dataUnparsed);
         this._clearElement(this._error);
         this._clearImage();
+        this._flameGraph.replaceChildren();
+        this._flameGraph.style.height = '';
+        this._flameStatus.textContent = '';
+        this._flame_data = freshFlameGraphState();
+        updateFlameHostSelector(this._flameHost, this._flame_data);
+        this._flame_requested = false;
+        clearTimeout(this._flame_timer);
+        this._flame_timer = null;
 
         this._dataTable.classList.remove('fixed');
         this._dataTable.classList.remove('single-value');
@@ -4346,6 +4490,7 @@ class QueryResultElement extends HTMLElement
         this._resultGroup.style.display = '';
         this._logsDiv.style.display = 'none';
         this._metricsDiv.style.display = 'none';
+        this._flameDiv.style.display = 'none';
         this._viewToggle.style.display = 'none';
         this._btnLogs.textContent = 'Logs';
         this._btnResult.classList.add('active');
@@ -6499,7 +6644,12 @@ class QueryResultElement extends HTMLElement
 
     renderError(message)
     {
-        this._error.innerText = message ? message : "No response.";
+        let text = message ? message : "No response.";
+        if (profilerPeriodNs(this._ownerTab) && String(message).includes('query_profiler_'))
+            text += '\n\nReset the profiler period to the server default in the Flame view, or uncheck Flame graph before running again.';
+        if (String(message).includes('send_profile_traces'))
+            text += '\n\nThis server did not accept live profiling. Uncheck Flame graph before running again.';
+        this._error.innerText = text;
         this._error.style.display = 'block';
     }
 
@@ -6540,6 +6690,58 @@ class QueryResultElement extends HTMLElement
             if (tab.id !== activeTabId) return;
         }
         progressEl.showMetricsToggle();
+    }
+
+    _markFlameAvailable()
+    {
+        const tab = this._ownerTab;
+        if (tab)
+        {
+            tab.flameAvailable = true;
+            if (tab.id !== activeTabId) return;
+        }
+        progressEl.showFlameToggle();
+    }
+
+    startProfileTraces(requested)
+    {
+        this._flame_requested = requested;
+        if (requested) this._markFlameAvailable();
+    }
+
+    appendProfileTraces(traces)
+    {
+        this._flame_requested = true;
+        accumulateProfileTraces(this._flame_data, traces);
+        this._markFlameAvailable();
+        /// Hidden views keep only the aggregate. Paint at most four times a second, including when
+        /// many batches arrive in a single network read; the next activation paints immediately.
+        if (this._view === 'flame' && (!this._ownerTab || this._ownerTab.id === activeTabId) && this._flame_timer === null)
+        {
+            this._flame_timer = setTimeout(() =>
+            {
+                this._flame_timer = null;
+                if (this.isConnected && this._view === 'flame' && (!this._ownerTab || this._ownerTab.id === activeTabId))
+                    this._showFlameGraph();
+            }, 250);
+        }
+    }
+
+    _showFlameGraph()
+    {
+        const trace_type = this._flameType.value;
+        this._flamePeriod.value = profilerPeriodNs(this._ownerTab);
+        updateFlameHostSelector(this._flameHost, this._flame_data);
+        const host = this._flameHost.value === '' ? null : this._flameHost.value.slice(1);
+        const tree = selectFlameTree(this._flame_data, trace_type, host);
+        this._flameStatus.textContent = flameGraphStatus(this._flame_data, trace_type, host, this._flame_requested);
+        if (!tree || tree.root.value === 0)
+        {
+            this._flameGraph.replaceChildren();
+            this._flameGraph.style.height = '';
+            return;
+        }
+        renderFlameGraph(this._flameGraph, tree, trace_type === 'MemorySample' ? 'bytes' : 'samples');
     }
 
     /// Queue a server log entry (from a framing `log` packet) for the logs view. Lines are buffered
@@ -6672,17 +6874,21 @@ class QueryResultElement extends HTMLElement
         return line;
     }
 
-    /// Switch between the query result, the server logs, and the extended metrics table.
+    /// Switch between the query result, the server logs, the extended metrics table and the flame graph.
     showView(view)
     {
         this._view = view;
         this._resultGroup.style.display = view === 'result' ? '' : 'none';
         this._logsDiv.style.display = view === 'logs' ? 'block' : 'none';
         this._metricsDiv.style.display = view === 'metrics' ? 'block' : 'none';
+        this._flameDiv.style.display = view === 'flame' ? 'block' : 'none';
         /// The metrics table is rendered lazily - only while its view is visible, plus once more on
         /// finish - so switching to it must render the current snapshot.
         if (view === 'metrics')
             this.renderMetricsTable();
+        /// Render the samples already received when switching to the flame graph.
+        if (view === 'flame')
+            this._showFlameGraph();
         /// If the fixed table layout was deferred because the table was hidden (see
         /// _changeTableLayout), run it now that the result group is visible again.
         if (view === 'result' && this._table_layout_pending)
@@ -8018,6 +8224,261 @@ async function auxiliaryQuery(server_address, user, password, query, url_params 
         logoEl.style.display = 'block';
     }
     return await response.json();
+}
+
+/// Profiler controls belong to the tab and are not persisted across page loads or copied to other
+/// tabs. A selected period is sent only when the user has also enabled Flame graph for that run.
+function profilerPeriodNs(tab)
+{
+    return tab?.profilerPeriodNs || '';
+}
+
+function selectProfilerPeriod(result_el, value)
+{
+    const tab = result_el._ownerTab;
+    if (!tab) return;
+    tab.profilerPeriodNs = value;
+    for (const el of tab.panel.querySelectorAll('query-result'))
+        el._flamePeriod.value = value;
+}
+
+const MAX_FLAME_NODES = 20000;
+const MAX_FLAME_LABEL_CHARS = 2 * 1024 * 1024;
+const MAX_FLAME_HOSTS = 256;
+const MAX_FLAME_DEPTH = 256;
+const MAX_FLAME_DOM_FRAMES = 2000;
+const MAX_FLAME_SERVER_DROPS = 9223372036854775807n;
+
+function freshFlameGraphState()
+{
+    return { types: new Map(), hosts: new Map(), nodes: 0, labelChars: 0, dropped: 0, serverDropped: 0n, incomplete: false };
+}
+
+function freshFlameTree()
+{
+    const root = { name: 'all', value: 0, children: new Map(), parent: null, depth: 0 };
+    return { root, zoom: root, maxDepth: 0, samples: 0 };
+}
+
+function selectFlameTree(state, type, host = null)
+{
+    return (host === null ? state.types : state.hosts.get(host)?.types)?.get(type);
+}
+
+function updateFlameHostSelector(select, state)
+{
+    if (select._flameState === state && select._flameHostCount === state.hosts.size) return;
+    const previous = select._flameState === state ? select.value : '';
+    select.replaceChildren();
+    const option = (value, label) =>
+    {
+        const item = document.createElement('option');
+        item.value = value;
+        item.textContent = label;
+        select.appendChild(item);
+    };
+    option('', 'All nodes');
+    for (const host of [...state.hosts.keys()].sort())
+        option(':' + host, host || '(unknown node)');
+    select.value = previous && state.hosts.has(previous.slice(1)) ? previous : '';
+    select._flameState = state;
+    select._flameHostCount = state.hosts.size;
+}
+
+function flameStackCost(tree, frames)
+{
+    let node = tree?.root;
+    let nodes = 0;
+    let chars = 0;
+    for (const frame of frames)
+    {
+        node = node?.children.get(frame.key);
+        if (!node) { ++nodes; chars += frame.key.length + frame.name.length; }
+    }
+    return { nodes, chars };
+}
+
+function appendFlameStack(tree, frames, weight)
+{
+    let node = tree.root;
+    node.value += weight;
+    for (const frame of frames)
+    {
+        let child = node.children.get(frame.key);
+        if (!child)
+        {
+            child = { name: frame.name, value: 0, children: new Map(), parent: node, depth: node.depth + 1 };
+            node.children.set(frame.key, child);
+        }
+        child.value += weight;
+        node = child;
+    }
+    tree.maxDepth = Math.max(tree.maxDepth, node.depth);
+    ++tree.samples;
+}
+
+/// Fold leaf-first samples directly into stable trees, so zoom references survive new batches.
+/// Account for both the all-node and per-node trees before inserting either representation.
+/// Existing stacks can still accumulate after the shared memory budget is exhausted.
+function accumulateProfileTraces(state, traces)
+{
+    for (const sample of traces)
+    {
+        const type = sample.trace_type;
+        if (type === 'Incomplete') { state.incomplete = true; continue; }
+        if (type === 'Dropped')
+        {
+            const value = sample.size;
+            const count = typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? String(value) : value;
+            if (typeof count !== 'string' || !/^[0-9]{1,19}$/.test(count)) { state.incomplete = true; continue; }
+            const delta = BigInt(count);
+            state.serverDropped = state.serverDropped + delta < MAX_FLAME_SERVER_DROPS
+                ? state.serverDropped + delta : MAX_FLAME_SERVER_DROPS;
+            continue;
+        }
+        if (type !== 'CPU' && type !== 'Real' && type !== 'MemorySample') continue;
+        const weight = type === 'MemorySample' ? Number(sample.size) : 1;
+        if (!Number.isFinite(weight) || weight <= 0 || !Array.isArray(sample.trace) || sample.trace.length === 0) continue;
+        if (sample.trace.length > MAX_FLAME_DEPTH) { ++state.dropped; continue; }
+        const host = typeof sample.host_name === 'string' ? sample.host_name : '';
+        let hostState = state.hosts.get(host);
+        if (!hostState && state.hosts.size >= MAX_FLAME_HOSTS) { ++state.dropped; continue; }
+        const frames = [];
+        for (let i = sample.trace.length - 1; i >= 0; --i)
+        {
+            /// Addresses arrive as decimal strings: converting them to `Number` would merge distinct
+            /// unresolved frames above 2^53. Typed keys also separate symbols from address labels.
+            const symbol = sample.symbols?.[i];
+            const address = String(sample.trace[i]);
+            frames.push(typeof symbol === 'string' && symbol.length
+                ? { key: 's' + symbol, name: symbol }
+                : { key: 'a' + JSON.stringify([host, address]), name: `${host || '(unknown node)'}: ${address}` });
+        }
+        const allCost = flameStackCost(state.types.get(type), frames);
+        const hostCost = flameStackCost(hostState?.types.get(type), frames);
+        const new_nodes = allCost.nodes + hostCost.nodes;
+        const new_chars = allCost.chars + hostCost.chars + (hostState ? 0 : host.length);
+        if (state.nodes + new_nodes > MAX_FLAME_NODES || state.labelChars + new_chars > MAX_FLAME_LABEL_CHARS)
+        {
+            ++state.dropped;
+            continue;
+        }
+        state.nodes += new_nodes;
+        state.labelChars += new_chars;
+        if (!hostState)
+        {
+            hostState = { types: new Map() };
+            state.hosts.set(host, hostState);
+        }
+        for (const types of [state.types, hostState.types])
+        {
+            if (!types.has(type)) types.set(type, freshFlameTree());
+            appendFlameStack(types.get(type), frames, weight);
+        }
+    }
+}
+
+function flameGraphStatus(state, type, host, requested)
+{
+    const tree = selectFlameTree(state, type, host);
+    let text = tree?.root.value ? `${tree.samples.toLocaleString('en-US')} samples received.`
+        : requested ? flameGraphEmptyHint(type)
+        : 'Check Flame graph next to Run to collect samples on the next query.';
+    if (state.serverDropped)
+        text += ` ${state.serverDropped === MAX_FLAME_SERVER_DROPS ? 'At least ' : ''}${state.serverDropped.toLocaleString('en-US')} samples lost in server queues (all nodes).`;
+    if (state.incomplete)
+        text += ' Server sample collection is incomplete; additional losses are unknown.';
+    if (state.dropped)
+        text += ` ${state.dropped.toLocaleString('en-US')} samples omitted at the browser memory limit.`;
+    return text;
+}
+
+function flameGraphEmptyHint(trace_type)
+{
+    const where = `No ${trace_type} samples received.`;
+    if (trace_type === 'MemorySample')
+        return where + '\nTo sample allocations, add SETTINGS memory_profiler_sample_probability = 0.01 and run the query again.';
+    return where + '\nShort queries may finish before the profiler takes a sample. Pick a shorter profiler period above and run again.';
+}
+
+function formatFlameValue(value, unit)
+{
+    if (unit !== 'bytes')
+        return value.toLocaleString('en-US') + ' ' + unit;
+    const units = ['B', 'KiB', 'MiB', 'GiB', 'TiB'];
+    let i = 0;
+    let v = value;
+    while (v >= 1024 && i + 1 < units.length) { v /= 1024; ++i; }
+    return (i === 0 ? v.toString() : v.toFixed(2)) + ' ' + units[i];
+}
+
+/// Render an interactive flame graph from the aggregated tree into `container`: one frame per stack
+/// entry, the root at the bottom, frame widths proportional to the sample counts. A click zooms
+/// into that frame's subtree (its ancestors stay visible, dimmed, and a click on one zooms back out).
+function renderFlameGraph(container, tree, unit)
+{
+    const root = tree.root;
+    if (root.value === 0) return;
+
+    const row_height = 17;
+    const min_width_pct = 0.05;
+
+    const frame_color = name =>
+    {
+        const h = _logHash(name);
+        return `hsl(${h % 55}, ${65 + (h >> 8) % 20}%, ${58 + (h >> 16) % 10}%)`;
+    };
+
+    const draw = zoom =>
+    {
+        tree.zoom = zoom;
+        container.replaceChildren();
+        container.style.height = ((tree.maxDepth + 1) * row_height) + 'px';
+        const fragment = document.createDocumentFragment();
+        let frame_count = 0;
+        const add_frame = (node, left_pct, width_pct, dimmed) =>
+        {
+            ++frame_count;
+            const frame = document.createElement('div');
+            frame.className = 'flame-frame' + (dimmed ? ' dimmed' : '');
+            frame.style.left = left_pct + '%';
+            frame.style.width = width_pct + '%';
+            frame.style.bottom = (node.depth * row_height) + 'px';
+            frame.style.backgroundColor = frame_color(node.name);
+            frame.textContent = node.name;
+            const share = (100 * node.value / root.value).toFixed(2);
+            frame.title = `${node.name}\n${formatFlameValue(node.value, unit)} (${share}%)`;
+            frame.addEventListener('click', () => draw(node === zoom && node.parent ? node.parent : node));
+            fragment.appendChild(frame);
+        };
+        for (let node = zoom.parent; node; node = node.parent)
+            add_frame(node, 0, 100, true);
+        const layout = (node, left_pct) =>
+        {
+            const width_pct = 100 * node.value / zoom.value;
+            if (width_pct < min_width_pct || frame_count >= MAX_FLAME_DOM_FRAMES) return;
+            add_frame(node, left_pct, width_pct, false);
+            /// Children in descending order of weight, the heaviest to the left.
+            const children = [...node.children.values()].sort((a, b) => b.value - a.value);
+            let child_left = left_pct;
+            for (const child of children)
+            {
+                if (frame_count >= MAX_FLAME_DOM_FRAMES) break;
+                layout(child, child_left);
+                child_left += 100 * child.value / zoom.value;
+            }
+        };
+        layout(zoom, 0);
+        container.appendChild(fragment);
+        if (frame_count >= MAX_FLAME_DOM_FRAMES)
+        {
+            const note = document.createElement('div');
+            note.textContent = 'Frame display limit reached. Click a frame to explore its subtree.';
+            container.style.height = ((tree.maxDepth + 2) * row_height) + 'px';
+            container.appendChild(note);
+        }
+    };
+    draw(tree.zoom);
 }
 
 async function getServerStatus(server_address, user, password) {
@@ -10016,6 +10477,10 @@ function makeEventStreamHandler(targetResultEl, options = {})
                 if (options.resourceMeter) options.resourceMeter(events);
             }
         }
+        else if (name === 'profile_traces')
+        {
+            targetResultEl.appendProfileTraces(JSON.parse(dataLines.join('\n')));
+        }
         else if (name === 'exception')
         {
             /// The payload is `{"exception": "..."}`, handled by `update` as an error.
@@ -10619,6 +11084,14 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// We will put the result in the query cache, so it can be used when download is initiated later.
     /// But we don't use cached results, so the results that we get here, are always fresh.
     url += '&use_query_cache=1&enable_reads_from_query_cache=0&enable_writes_to_query_cache=1&query_cache_ttl=600&query_cache_nondeterministic_function_handling=save&query_cache_system_table_handling=ignore';
+    const requested_profile_traces = !!tab.profileTraces;
+    const profiler_period_ns = profilerPeriodNs(tab);
+    const connection_params = new URLSearchParams(server_address.split('#', 1)[0].split('?').slice(1).join('?'));
+    const framing_settings = await detectFramingSetting(query, paramValuesSnapshot, connection_params);
+    const profile_traces = requested_profile_traces && !framing_settings.user_disables_profile_traces;
+    if (profile_traces) url += '&send_profile_traces=1';
+    if (profile_traces && profiler_period_ns)
+        url += `&query_profiler_real_time_period_ns=${profiler_period_ns}&query_profiler_cpu_time_period_ns=${profiler_period_ns}`;
 
     /// If the user selected a database in the panel, use it as the default database.
     if (query_database) url += '&database=' + encodeURIComponent(query_database);
@@ -10680,7 +11153,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// `framing_output_format` mention inside a string literal or a comment - e.g.
     /// `SELECT 'framing_output_format = None'` - is not mistaken for a real setting and does not
     /// change how the request is framed.
-    const { user_framing, user_disables_framing, user_sets_session_framing, has_ambiguous_post_format_settings } = await detectFramingSetting(query);
+    const { user_framing, user_event_stream, user_disables_framing, user_sets_session_framing, has_ambiguous_post_format_settings } = framing_settings;
     let use_framing = !user_framing && !(explicit_format && explicit_format.toLowerCase() === 'jsoncompactcolumns');
     /// The framed and the plain request ask for different default formats: the server rejects the
     /// in-band-progress `default_format` under framing (progress arrives as separate `progress`
@@ -10696,6 +11169,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     /// stream instead. A query-level `SETTINGS framing_output_format = ...` clause is applied after
     /// the URL parameters, so a query that intentionally chooses a framing still overrides this.
     url += '&framing_output_format=None&default_format=' + (user_framing ? framed_default_format : default_format);
+    if (user_event_stream) url += '&send_logs_level=trace';
 
     targetResultEl.queryText = query;
 
@@ -10744,6 +11218,11 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
     let plain_http_each_row_error = false;
     reply = '';
     try {
+        targetResultEl.startProfileTraces(profile_traces);
+        if (profile_traces && ((!use_framing && !user_event_stream) || explicit_format?.toLowerCase() === 'jsoncompactcolumns'))
+        {
+            throw new Error('Live flame graphs require EventStream framing. Uncheck Flame graph to use JSONCompactColumns or another framing_output_format.');
+        }
         if (user_sets_session_framing)
         {
             throw new Error("This page sets framing_output_format on every request, so it cannot change it for the whole session with a standalone SET. To use a specific framing for one query, put it in that query's SETTINGS clause, e.g. SELECT 1 SETTINGS framing_output_format = 'JSONEachPacketString'.");
@@ -10776,7 +11255,9 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
         /// Only read-only queries are retried: framing is not created for a non-pulling pipeline
         /// (`INSERT`, DDL) on such a server, so the statement may already have run before returning
         /// a plain-HTTP error, and blindly resubmitting the whole request could duplicate its effect.
-        if (use_framing && !response.ok && !content_type.startsWith('text/event-stream') && await queryIsReadOnly(query)) {
+        /// An unsupported `send_profile_traces` is a profiling error, not a framing rejection.
+        /// Keep it visible so the user can disable profiling without resubmitting the query here.
+        if (use_framing && !profile_traces && !response.ok && !content_type.startsWith('text/event-stream') && await queryIsReadOnly(query)) {
             use_framing = false;
             response = await fetch(url, fetch_options);
             content_type = response.headers.get('Content-Type') ?? '';
@@ -10801,7 +11282,7 @@ async function postImpl(tab, posted_request_num, query, targetResultEl, abortCon
             framed_error_stream = await response.text();
             if (posted_request_num != tab.reqNum) { return { cancelled: true }; }
             const framed_error_message = framedFailureMessage(framed_error_stream, 'event_stream', null);
-            if (use_framing && framed_error_message !== null
+            if (use_framing && !profile_traces && framed_error_message !== null
                 && framed_error_message.includes('is not compatible with framing formats')
                 && await queryIsReadOnly(query)) {
                 framed_error_stream = null;
@@ -13110,9 +13591,12 @@ function tabRuntimeDefaults() {
         progressPhase: 'idle',  /// 'idle' | 'running' | 'done' | 'error' — drives the shared bar on activation
         finalStats: null,       /// { rowCount, elapsedNs, incomplete } shown when a run finishes
         logoVisible: true,      /// whether the shared logo shows for this tab (hidden by errors / multi)
-        view: 'result',         /// this tab's selected view ('result' | 'logs' | 'metrics'), replayed by syncActiveTabChrome
+        view: 'result',         /// this tab's selected view ('result' | 'logs' | 'metrics' | 'flame'), replayed by syncActiveTabChrome
         logsAvailable: false,   /// this tab produced server logs (its Logs toggle can be offered)
         metricsAvailable: false,/// this tab produced profile-event metrics (its Metrics toggle can be offered)
+        flameAvailable: false,  /// this tab requested or received profiler samples
+        profileTraces: false,   /// explicit opt-in for the next run, independent of other tabs
+        profilerPeriodNs: '',   /// empty preserves the server's sampling period
         resources: null,        /// tab-owned resource-meter state (see `freshResourceState` / `readEventStream`)
         colorModes: {},         /// per-column color modes for this tab's result (shared with its element)
         pinnedColumns: {},      /// pinned columns for this tab's result (shared with its element)
@@ -13250,6 +13734,7 @@ function clearPanel(tab) {
     tab.view = 'result';
     tab.logsAvailable = false;
     tab.metricsAvailable = false;
+    tab.flameAvailable = false;
     /// Drop the tab-owned resource-meter state too, so a stale meter from a previous run is not
     /// re-adopted by `syncActiveTabChrome`; the next framed run creates a fresh one.
     tab.resources = null;
@@ -13280,6 +13765,7 @@ function syncActiveTabChrome() {
     const tab = getActiveTab();
     if (!tab) return;
     tab.completed = false;   /// opening a tab clears its "finished while away" check-mark
+    document.getElementById('profile-traces').checked = !!tab.profileTraces;
 
     if (tab.inFlight) {
         document.getElementById('run').innerText = 'Stop';
@@ -13322,7 +13808,7 @@ function syncActiveTabChrome() {
     /// for what this tab produced, and switch its result element(s) to its own view. The view and
     /// toggles are tab-owned (see the `set-view` handler and `_markLogsAvailable`), so opening a tab
     /// never inherits the previously active tab's selection or leaves a result hidden with no toggle.
-    progressEl.setViewState(tab.view || 'result', !!tab.logsAvailable, !!tab.metricsAvailable);
+    progressEl.setViewState(tab.view || 'result', !!tab.logsAvailable, !!tab.metricsAvailable, !!tab.flameAvailable);
     if (tab.panel)
         for (const el of tab.panel.querySelectorAll('query-result'))
             el.showView(tab.view || 'result');
@@ -15061,6 +15547,13 @@ document.getElementById('controls').addEventListener('submit', e =>
     }
 });
 
+document.getElementById('profile-traces').addEventListener('change', e =>
+{
+    markBootstrapDirty(e);
+    const tab = getActiveTab();
+    if (tab) tab.profileTraces = e.target.checked;
+});
+
 /// The "Run all" button.
 document.getElementById('run-all').addEventListener('click', e =>
 {
@@ -15767,6 +16260,24 @@ function tokensBeforeInlineInsertPayload(tokens)
     return tokens;
 }
 
+/// Decode string settings as `parseEscapeSequence` and the quoted-string reader do on the server.
+function sqlSettingTokenValue(token)
+{
+    if (token.type === TT.StringLiteral)
+    {
+        const escapes = { '0': '\0', a: '\x07', b: '\b', e: '\x1b', f: '\f', n: '\n', r: '\r', t: '\t', v: '\v' };
+        return token.token.slice(1, -1).replace(/''|\\(?:x[\da-fA-F]{2}|[\s\S])/g, escaped =>
+            escaped === "''" ? "'" : escaped.startsWith('\\x') && escaped.length === 4
+                ? String.fromCharCode(parseInt(escaped.slice(2), 16)) : escapes[escaped[1]] ?? escaped[1]);
+    }
+    if (token.type === TT.HereDoc)
+    {
+        const delimiter = token.token.match(/^\$[\w]*\$/)?.[0];
+        return delimiter ? token.token.slice(delimiter.length, -delimiter.length) : undefined;
+    }
+    return token.token;
+}
+
 /// Decide whether the query carries its own `framing_output_format` setting and, if so, whether that
 /// setting is a query-level choice (an inline `SETTINGS` clause), disables framing (`= 'None'`), or is
 /// a standalone `SET` statement that changes the setting for the whole session. Values the page cannot
@@ -15802,8 +16313,10 @@ function tokensBeforeInlineInsertPayload(tokens)
 /// former persists in the session (when the connection uses a `session_id`), which this page cannot
 /// honor. When the lexer cannot produce a token list - WebAssembly is unavailable, or tokenization
 /// failed - the same walk runs over `fallbackTokenize`'s tokens, so the classification (and every
-/// context rule above) is identical in both paths.
-async function detectFramingSetting(query)
+/// context rule above) is identical in both paths. The same walk detects explicit profiler opt-outs
+/// so the page does not add profiling overrides to them. A standalone `SET` still changes only
+/// session settings; this classification affects the UI additions to that request, not later runs.
+async function detectFramingSetting(query, param_values = {}, url_settings = [])
 {
     const raw_tokens = await tokenizeWithFallback(query);
     const tokens = tokensBeforeInlineInsertPayload(raw_tokens.filter(t => t.significant));
@@ -15823,11 +16336,24 @@ async function detectFramingSetting(query)
     /// recognized per statement.
     let at_statement_start = true;
     /// The server keeps duplicate `SETTINGS` entries and applies them in order, so the last
-    /// assignment wins: `SETTINGS framing_output_format = 'None', framing_output_format =
+    /// ordinary assignment wins: `SETTINGS framing_output_format = 'None', framing_output_format =
     /// 'EventStream'` leaves framing enabled. The walk therefore records every assignment
     /// (each overwriting the previous) and classifies after it, instead of exiting on the first.
+    /// `DEFAULT` resets are applied after all ordinary assignments regardless of their text order.
     let saw_query_setting = false;
     let query_setting_disables = false;
+    let query_setting_value;
+    let query_resets_framing = false;
+    let query_disables_profile_traces;
+    let query_resets_profile_traces = false;
+    let session_resets_profile_traces = false;
+    const is_analyzer_setting = name => name === 'enable_analyzer' || name === 'allow_experimental_analyzer';
+    const is_false_value = value => ['0', 'false'].includes(String(value).toLowerCase());
+    let analyzer_disabled;
+    let query_resets_analyzer = false;
+    /// Conflicting URL aliases can lose no-op values against an unknown inherited setting.
+    for (const [name, value] of new Map(url_settings))
+        if (is_analyzer_setting(name)) analyzer_disabled = (analyzer_disabled ?? true) && is_false_value(value);
     for (let i = 0; i < tokens.length; ++i) {
         const t = tokens[i];
         const is_top_level_semicolon = depth === 0 && t.type === TT.Semicolon;
@@ -15875,6 +16401,13 @@ async function detectFramingSetting(query)
                 const opened_by_shorthand = tokens[i + 2].type !== TT.Equals;
                 const saved_saw_query_setting = saw_query_setting;
                 const saved_query_setting_disables = query_setting_disables;
+                const saved_query_setting_value = query_setting_value;
+                const saved_query_resets_framing = query_resets_framing;
+                const saved_query_disables_profile_traces = query_disables_profile_traces;
+                const saved_query_resets_profile_traces = query_resets_profile_traces;
+                const saved_session_resets_profile_traces = session_resets_profile_traces;
+                const saved_analyzer_disabled = analyzer_disabled;
+                const saved_query_resets_analyzer = query_resets_analyzer;
                 let j = i + 1;
                 while (settingName(tokens[j]) !== null) {
                     const name = settingName(tokens[j]);
@@ -15898,7 +16431,10 @@ async function detectFramingSetting(query)
                             }
                             saw_query_setting = true;
                             query_setting_disables = false;
+                            query_setting_value = undefined;
                         }
+                        if (name === 'send_profile_traces') query_disables_profile_traces = false;
+                        if (is_settings && is_analyzer_setting(name)) analyzer_disabled = false;
                         ++j;
                         if (continues) { ++j; continue; }
                         break;
@@ -15912,6 +16448,25 @@ async function detectFramingSetting(query)
                     }
                     const value_token = tokens[j];
                     if (!value_token) break;
+                    const is_default = value_token.type === TT.BareWord && value_token.token.toLowerCase() === 'default';
+                    const value = value_token.type === TT.OpeningCurlyBrace
+                        ? param_values[tokens[j + 1]?.token] : sqlSettingTokenValue(value_token);
+                    const is_false = is_false_value(value) || (value_token.type === TT.Number && Number(value) === 0);
+                    if (name === 'send_profile_traces')
+                    {
+                        if (is_default)
+                        {
+                            query_resets_profile_traces = true;
+                            if (is_set) session_resets_profile_traces = true;
+                        }
+                        else
+                            query_disables_profile_traces = is_false;
+                    }
+                    if (is_settings && is_analyzer_setting(name))
+                    {
+                        if (is_default) query_resets_analyzer = true;
+                        else analyzer_disabled = is_false;
+                    }
                     if (name === 'framing_output_format') {
                         /// A standalone `SET framing_output_format = ...` changes the setting for the
                         /// whole session; this page overrides `framing_output_format` on every request,
@@ -15921,6 +16476,7 @@ async function detectFramingSetting(query)
                             return { user_framing: false, user_disables_framing: false, user_sets_session_framing: true };
                         }
                         saw_query_setting = true;
+                        query_setting_value = undefined;
                         if (value_token.type === TT.OpeningCurlyBrace) {
                             /// A query-parameter placeholder (`= {fmt:String}`): the page cannot know
                             /// what it resolves to (it may well be `None`), so classify it
@@ -15928,16 +16484,13 @@ async function detectFramingSetting(query)
                             /// request shape the response might not match.
                             query_setting_disables = true;
                         } else {
-                            /// A string-literal value carries its surrounding quotes.
-                            let value = value_token.token;
-                            if (value_token.type === TT.StringLiteral) {
-                                value = value.slice(1, -1);
-                            }
-                            value = value.toLowerCase();
+                            const value = String(sqlSettingTokenValue(value_token)).toLowerCase();
+                            query_setting_value = value;
                             /// `ParserSetQuery` also accepts `= DEFAULT` - a reset to the session/server
                             /// default, which the page cannot know (and which is `None` out of the box) -
                             /// so it is classified as disabling too.
                             query_setting_disables = value === 'none' || value === 'default';
+                            if (value_token.type === TT.BareWord && value === 'default') query_resets_framing = true;
                         }
                     }
                     /// A query-parameter placeholder value (`{name:Type}`) spans several tokens
@@ -15964,6 +16517,13 @@ async function detectFramingSetting(query)
                 if (opened_by_shorthand && !list_ends_properly) {
                     saw_query_setting = saved_saw_query_setting;
                     query_setting_disables = saved_query_setting_disables;
+                    query_setting_value = saved_query_setting_value;
+                    query_resets_framing = saved_query_resets_framing;
+                    query_disables_profile_traces = saved_query_disables_profile_traces;
+                    query_resets_profile_traces = saved_query_resets_profile_traces;
+                    session_resets_profile_traces = saved_session_resets_profile_traces;
+                    analyzer_disabled = saved_analyzer_disabled;
+                    query_resets_analyzer = saved_query_resets_analyzer;
                 } else {
                     /// Resume the main walk right after the settings list (the loop's `++i` steps past
                     /// the last consumed token).
@@ -15977,13 +16537,21 @@ async function detectFramingSetting(query)
     if (has_ambiguous_post_format_settings) {
         return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false, has_ambiguous_post_format_settings: true };
     }
-    if (saw_query_setting) {
-        if (query_setting_disables) {
-            return { user_framing: false, user_disables_framing: true, user_sets_session_framing: false, has_ambiguous_post_format_settings: false };
-        }
-        return { user_framing: true, user_disables_framing: false, user_sets_session_framing: false, has_ambiguous_post_format_settings: false };
-    }
-    return { user_framing: false, user_disables_framing: false, user_sets_session_framing: false, has_ambiguous_post_format_settings: false };
+    const disables_framing = query_setting_disables || query_resets_framing;
+    /// The analyzer reapplies ordinary query settings after `DEFAULT` resets. A mixed reset and
+    /// opt-in can therefore enable delivery, unless the request explicitly selects the legacy
+    /// analyzer. Unknown session/profile settings stay unknown: retain the checked Flame option's
+    /// sampling periods and let SQL decide delivery. Standalone `SET` always resets last.
+    const profile_reset_disables = query_resets_profile_traces && (session_resets_profile_traces
+        || query_disables_profile_traces === undefined || (analyzer_disabled && !query_resets_analyzer));
+    return {
+        user_framing: saw_query_setting && !disables_framing,
+        user_disables_framing: saw_query_setting && disables_framing,
+        user_sets_session_framing: false,
+        has_ambiguous_post_format_settings: false,
+        user_event_stream: saw_query_setting && !disables_framing && query_setting_value === 'eventstream',
+        user_disables_profile_traces: query_disables_profile_traces === true || profile_reset_disables,
+    };
 }
 
 /// Detect a real `FORMAT` clause in the query and return `{ name, start, end }` - the format name

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <atomic>
+#include <chrono>
 
 #include <Common/PipeFDs.h>
 #include <Common/ProfileEvents.h>
@@ -49,6 +50,17 @@ public:
     /// Collect a stack trace. This method is signal safe.
     /// Precondition: the TraceCollector object must be created.
     static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept;
+
+    enum class ProfileTracesFlushResult
+    {
+        NotRunning,
+        MarkerSent,
+        TimedOut,
+    };
+
+    /// Send an ordering marker from a regular thread, waiting for pipe space until the deadline.
+    /// Not signal-safe. A timeout stops trace delivery without failing the query.
+    static ProfileTracesFlushResult flushProfileTraces(UInt64 subscription_id, std::chrono::steady_clock::time_point deadline);
 
 private:
     friend class TraceCollector;

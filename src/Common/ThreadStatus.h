@@ -37,6 +37,7 @@ class TasksStatsCounters;
 struct RUsageCounters;
 struct PerfEventsCounters;
 class InternalTextLogsQueue;
+class InternalProfileTracesQueue;
 struct ViewRuntimeData;
 class QueryViewsLog;
 struct Settings;
@@ -54,6 +55,7 @@ using InternalTextLogsQueueWeakPtr = std::weak_ptr<InternalTextLogsQueue>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
 using InternalProfileEventsQueuePtr = std::shared_ptr<InternalProfileEventsQueue>;
 using InternalProfileEventsQueueWeakPtr = std::weak_ptr<InternalProfileEventsQueue>;
+using InternalProfileTracesQueuePtr = std::shared_ptr<InternalProfileTracesQueue>;
 
 using QueryIsCanceledPredicate = std::function<bool()>;
 /// Throws the real cancellation cause if the query has been cancelled and its process-list element is available.
@@ -107,6 +109,8 @@ public:
     struct SharedData
     {
         InternalProfileEventsQueueWeakPtr profile_queue_ptr;
+        std::weak_ptr<InternalProfileTracesQueue> profile_traces_queue;
+        UInt64 profile_traces_id = 0;
 
         InternalTextLogsQueueWeakPtr logs_queue_ptr;
         LogsLevel client_logs_level = LogsLevel::none;
@@ -134,6 +138,7 @@ public:
     void attachInternalTextLogsQueue(const InternalTextLogsQueuePtr & logs_queue, LogsLevel logs_level);
     void attachQueryForLog(const String & query_, UInt64 normalized_hash = 0);
     void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue);
+    void attachInternalProfileTracesQueue(const InternalProfileTracesQueuePtr & queue);
 
     /// When new query starts, new thread group is created for it, current thread becomes master thread of the query
     static ThreadGroupPtr createForQuery(ContextPtr query_context_, FatalErrorCallback fatal_error_callback_ = {});
@@ -231,6 +236,10 @@ protected:
 
     ThreadGroup::SharedData local_data;
 
+    /// Read by profiler signal handlers without touching mutable shared pointers.
+    std::atomic<UInt64> profile_traces_id{0};
+    static_assert(std::atomic<UInt64>::is_always_lock_free);
+
     bool performance_counters_finalized = false;
 
     String query_id;
@@ -311,6 +320,10 @@ public:
 
     void attachInternalProfileEventsQueue(const InternalProfileEventsQueuePtr & profile_queue);
     InternalProfileEventsQueuePtr getInternalProfileEventsQueue() const;
+
+    void attachInternalProfileTracesQueue(const InternalProfileTracesQueuePtr & queue);
+    InternalProfileTracesQueuePtr getInternalProfileTracesQueue() const;
+    UInt64 getProfileTracesId() const { return profile_traces_id.load(std::memory_order_relaxed); }
 
     void attachQueryForLog(const String & query_);
     const String & getQueryForLog() const;

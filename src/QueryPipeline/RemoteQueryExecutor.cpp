@@ -24,6 +24,8 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/ProfileTraces.h>
+#include <Common/ProfileTracesBlocker.h>
 #include <IO/ConnectionTimeouts.h>
 #include <Client/ConnectionEstablisher.h>
 #include <Client/MultiplexedConnections.h>
@@ -849,6 +851,15 @@ RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet
         case Protocol::Server::TimezoneUpdate:
             break;
 
+        case Protocol::Server::ProfileTraces:
+        {
+            ProfileTracesBlocker blocker;
+            if (auto profile_traces_queue = CurrentThread::getInternalProfileTracesQueue())
+                profile_traces_queue->pushBlock(packet.block);
+            packet.block = {};
+            break;
+        }
+
         default:
             got_unknown_packet_from_replica = true;
             throw Exception(
@@ -1053,6 +1064,15 @@ void RemoteQueryExecutor::finish()
                 if (profile_info_callback)
                     profile_info_callback(packet.profile_info);
                 break;
+
+            case Protocol::Server::ProfileTraces:
+            {
+                ProfileTracesBlocker blocker;
+                if (auto profile_traces_queue = CurrentThread::getInternalProfileTracesQueue())
+                    profile_traces_queue->pushBlock(packet.block);
+                packet.block = {};
+                break;
+            }
 
             case Protocol::Server::Progress:
                 if (progress_callback)

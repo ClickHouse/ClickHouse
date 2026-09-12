@@ -408,6 +408,11 @@ void LocalServer::initialize(Poco::Util::Application & self)
     /// throw from a lazy read at the use site).
     validateClientConfiguration();
 
+    if (getClientConfiguration().getBool("print-profile-traces", false))
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "The print-profile-traces option is not supported by clickhouse-local. "
+            "Use clickhouse-client to receive profile traces from a server.");
+
     server_settings.loadSettingsFromConfig(config());
 
 #if USE_JEMALLOC
