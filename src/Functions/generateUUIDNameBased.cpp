@@ -112,7 +112,7 @@ public:
             unalignedStoreBigEndian<uint64_t>(namespace_bytes, UUIDHelpers::getHighBytes(namespaces[i]));
             unalignedStoreBigEndian<uint64_t>(namespace_bytes + 8, UUIDHelpers::getLowBytes(namespaces[i]));
 
-            std::string_view name_view = col_name.getDataAt(i).toView();
+            std::string_view name_view = col_name.getDataAt(i);
 
             if (EVP_MD_CTX_copy_ex(ctx.get(), ctx_template.get()) != 1)
                 throw Exception(ErrorCodes::OPENSSL_ERROR, "EVP_MD_CTX_copy_ex failed: {}", getOpenSSLErrors());
