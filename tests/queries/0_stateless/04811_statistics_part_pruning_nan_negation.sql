@@ -8,7 +8,8 @@ DROP TABLE IF EXISTS t;
 -- The implicit min-max index on `f` hits the pre-existing NaN defect of the minmax skip index
 -- (https://github.com/ClickHouse/ClickHouse/issues/106948): it would prune the NaN granules for the
 -- negated predicates below regardless of the statistics-based part pruning under test, so opt out.
-CREATE TABLE t (k UInt64, f Float64) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0;
+-- `basic` statistics hold the column min/max the pruner reads; pin it because `auto_statistics_types` is randomized by clickhouse-test.
+CREATE TABLE t (k UInt64, f Float64) ENGINE = MergeTree ORDER BY k SETTINGS add_minmax_index_for_numeric_columns = 0, auto_statistics_types = 'basic';
 INSERT INTO t SELECT number, if(number < 13, nan, 1.5) FROM numbers(100000);
 OPTIMIZE TABLE t FINAL; -- builds the column statistics for the merged part
 
@@ -31,5 +32,21 @@ SELECT count() FROM t WHERE NOT (f = 1.5 OR f > 2) SETTINGS use_statistics_for_p
 -- Non-negated predicate over the float column: NaN can never match, so pruning stays sound.
 SELECT count() FROM t WHERE f > 1000000 SETTINGS use_statistics_for_part_pruning = 0;
 SELECT count() FROM t WHERE f > 1000000 SETTINGS use_statistics_for_part_pruning = 1;
+
+SET parallel_replicas_local_plan = 1;
+SET explain_query_plan_default = 'legacy';
+
+-- The float column is also referenced outside the negation.
+SELECT count() FROM t WHERE f = 5.0 OR NOT (f < 101.5) SETTINGS use_statistics_for_part_pruning = 0;
+SELECT count() FROM t WHERE f = 5.0 OR NOT (f < 101.5) SETTINGS use_statistics_for_part_pruning = 1;
+
+-- transform_null_in rewrites NOT IN into notNullIn.
+SELECT count() FROM t WHERE f NOT IN (1.5) SETTINGS use_statistics_for_part_pruning = 0, transform_null_in = 1;
+SELECT count() FROM t WHERE f NOT IN (1.5) SETTINGS use_statistics_for_part_pruning = 1, transform_null_in = 1;
+
+-- Statistics pruning is active on f without a negation, and switched off under one.
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t WHERE f > 1000000) WHERE explain LIKE '%Statistics%' SETTINGS use_statistics_for_part_pruning = 1;
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t WHERE f = 5.0 OR NOT (f < 101.5)) WHERE explain LIKE '%Statistics%' SETTINGS use_statistics_for_part_pruning = 1;
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t WHERE f NOT IN (1.5)) WHERE explain LIKE '%Statistics%' SETTINGS use_statistics_for_part_pruning = 1, transform_null_in = 1;
 
 DROP TABLE t;
