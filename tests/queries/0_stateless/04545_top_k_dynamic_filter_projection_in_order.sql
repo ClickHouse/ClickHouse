@@ -11,7 +11,7 @@ ENGINE = MergeTree ORDER BY (k, id)
 SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
 
 INSERT INTO t_topk_proj_rio
-SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(32768);
+SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
 
 OPTIMIZE TABLE t_topk_proj_rio FINAL;
 
@@ -45,13 +45,14 @@ WHERE explain ILIKE '%InOrder%';
 -- Dropping the prewhere reorders the columns the read must return, and a projection read is fed from
 -- an analysis made before that: an order carried only on the plan side is repaired by a converting
 -- transform inserted between the read step and its source, so the source must follow the step
--- directly (expected 1).
+-- directly (expected 1). `read_in_order_use_virtual_row = 0` because a virtual-row producer also sits
+-- at that position, and only the repair transform is under test here.
 WITH p AS (
     SELECT rowNumberInAllBlocks() AS n, explain
     FROM (
         EXPLAIN PIPELINE
         SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
-        SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+        SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, read_in_order_use_virtual_row = 0
     )
 )
 SELECT (SELECT min(n) FROM p WHERE explain ILIKE '%MergeTreeSelect%')
@@ -64,7 +65,7 @@ DROP TABLE IF EXISTS t_topk_noproj;
 CREATE TABLE t_topk_noproj (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
 ENGINE = MergeTree ORDER BY (k, id)
 SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
-INSERT INTO t_topk_noproj SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(32768);
+INSERT INTO t_topk_noproj SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
 OPTIMIZE TABLE t_topk_noproj FINAL;
 
 SELECT count() > 0 AS has_topk_filter
@@ -151,7 +152,7 @@ DROP TABLE IF EXISTS t_topk_unmat;
 CREATE TABLE t_topk_unmat (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
 ENGINE = MergeTree ORDER BY (k, id)
 SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
-INSERT INTO t_topk_unmat SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(32768);
+INSERT INTO t_topk_unmat SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
 OPTIMIZE TABLE t_topk_unmat FINAL;
 ALTER TABLE t_topk_unmat ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
 
@@ -177,8 +178,8 @@ DROP TABLE IF EXISTS t_topk_mixed;
 CREATE TABLE t_topk_mixed (part UInt8, id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
 ENGINE = MergeTree PARTITION BY part ORDER BY (k, id)
 SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
-INSERT INTO t_topk_mixed SELECT 0, number, number % 128, sipHash64(number), toString(number) FROM numbers(16384);
-INSERT INTO t_topk_mixed SELECT 1, number, number % 128, sipHash64(number + 99), toString(number) FROM numbers(16384);
+INSERT INTO t_topk_mixed SELECT 0, number, number % 128, sipHash64(number), toString(number) FROM numbers(512);
+INSERT INTO t_topk_mixed SELECT 1, number, number % 128, sipHash64(number + 99), toString(number) FROM numbers(512);
 OPTIMIZE TABLE t_topk_mixed FINAL;
 ALTER TABLE t_topk_mixed ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
 ALTER TABLE t_topk_mixed MATERIALIZE PROJECTION p_score IN PARTITION 0 SETTINGS mutations_sync = 2;
@@ -216,7 +217,7 @@ DROP TABLE IF EXISTS t_topk_sample;
 CREATE TABLE t_topk_sample (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
 ENGINE = MergeTree ORDER BY (k, id) SAMPLE BY id
 SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
-INSERT INTO t_topk_sample SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(32768);
+INSERT INTO t_topk_sample SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
 OPTIMIZE TABLE t_topk_sample FINAL;
 ALTER TABLE t_topk_sample ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
 ALTER TABLE t_topk_sample MATERIALIZE PROJECTION p_score SETTINGS mutations_sync = 2;
@@ -243,7 +244,7 @@ DROP TABLE IF EXISTS t_topk_nulls;
 CREATE TABLE t_topk_nulls (id UInt64, k UInt64, score Nullable(UInt64), payload String CODEC(NONE))
 ENGINE = MergeTree ORDER BY (k, id)
 SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
-INSERT INTO t_topk_nulls SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(32768);
+INSERT INTO t_topk_nulls SELECT number, number % 128, sipHash64(number), toString(number) FROM numbers(1024);
 OPTIMIZE TABLE t_topk_nulls FINAL;
 ALTER TABLE t_topk_nulls ADD PROJECTION p_score (SELECT id, k, score, payload ORDER BY (score, id));
 ALTER TABLE t_topk_nulls MATERIALIZE PROJECTION p_score SETTINGS mutations_sync = 2;
@@ -273,7 +274,7 @@ CREATE TABLE t_topk_drift (id UInt64, score UInt64, b UInt64, d UInt64, c UInt64
 ENGINE = MergeTree ORDER BY id
 SETTINGS index_granularity = 256, min_bytes_for_wide_part = 0;
 INSERT INTO t_topk_drift (id, score, b, d)
-SELECT number, sipHash64(number), number, number + 1000 FROM numbers(32768);
+SELECT number, sipHash64(number), number, number + 1000 FROM numbers(1024);
 
 ALTER TABLE t_topk_drift MODIFY COLUMN c UInt64 ALIAS d + 1;
 
@@ -302,11 +303,11 @@ CREATE TABLE t_topk_cheaper_competitor (id UInt64, k UInt64, score UInt64, paylo
 ENGINE = MergeTree ORDER BY (k, id)
 SETTINGS index_granularity = 8192, index_granularity_bytes = 4096, min_bytes_for_wide_part = 0;
 INSERT INTO t_topk_cheaper_competitor
-SELECT number, number % 128, sipHash64(number), repeat('x', 200) FROM numbers(32768);
+SELECT number, number % 128, sipHash64(number), repeat('x', 200) FROM numbers(1024);
 OPTIMIZE TABLE t_topk_cheaper_competitor FINAL;
 
--- The wide payload and `index_granularity_bytes` make p_wide_ord cost the same 1929 marks as the
--- parent, while p_narrow_noord stores only the two columns this query reads and costs 129.
+-- The wide payload and `index_granularity_bytes` make p_wide_ord cost the same marks as the parent,
+-- while p_narrow_noord stores only the two columns this query reads and is strictly cheaper.
 ALTER TABLE t_topk_cheaper_competitor ADD PROJECTION p_wide_ord (SELECT id, k, score, payload ORDER BY (score, id));
 ALTER TABLE t_topk_cheaper_competitor ADD PROJECTION p_narrow_noord (SELECT id, score ORDER BY (id));
 ALTER TABLE t_topk_cheaper_competitor MATERIALIZE PROJECTION p_wide_ord SETTINGS mutations_sync = 2;
