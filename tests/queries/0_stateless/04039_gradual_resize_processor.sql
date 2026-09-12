@@ -2,6 +2,13 @@
 
 SET enable_analyzer = 1;
 
+-- The assertions below are about the shape of, and the number of rows pushed through, the *local*
+-- pre-aggregation pipeline. With parallel replicas the same rows are spread over several replicas,
+-- so a single `GradualResizeProcessor` (or split group) sees only a fraction of the fixture and the
+-- row thresholds picked below no longer describe what any one of them observes. The CI lane with
+-- parallel replicas enabled therefore made the per-group threshold-scaling case below fail.
+SET enable_parallel_replicas = 0;
+
 -- Verify correct GROUP BY results with GradualResize enabled (rows threshold)
 SET min_rows_per_stream_for_gradual_resize = 1000;
 
