@@ -5,19 +5,36 @@
 #include <Backups/BackupIO_Default.h>
 #include <Disks/DiskType.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/AzureBlobStorage/AzureObjectStorage.h>
+#include <IO/ReadBufferFromFileBase.h>
 
 
 namespace DB
 {
 
 /// The generation (`ETag`) of the blob `blob_path` of `src_object_storage`, which is about to be copied
-/// whole into a backup as a file of `expected_size` bytes. The size and the generation are taken with one
-/// `HEAD`, so they describe the same generation of the blob: the size the disk reported was measured
+/// into a backup, whole or in part, as a file whose blob is `expected_size` bytes long. The size and
+/// the generation are taken with one `HEAD`, so they describe the same generation of the blob: the size the disk reported was measured
 /// earlier, and a blob replaced in between could be of another size, which a copy pinned to the new
 /// generation would then copy in full under the old size. A blob of another size is refused with
 /// `FILE_CHANGED_DURING_READ`, and a blob whose generation the endpoint does not report with
 /// `AZURE_BLOB_STORAGE_ERROR`: a copy that cannot be pinned to a generation is not made.
-String headSourceBlobOfWholeCopy(const IObjectStorage & src_object_storage, const String & blob_path, size_t expected_size);
+String headSourceBlobOfBackupCopy(const IObjectStorage & src_object_storage, const String & blob_path, size_t expected_size);
+
+/// A read buffer over the blob `blob_path` of `container`, pinned to the generation `etag` that
+/// `headSourceBlobOfBackupCopy` selected and bounded by the size `source_size` the same `HEAD`
+/// measured. A copy of a part of a single Azure blob into a backup cannot be made by the
+/// Azure-to-Azure copy and is read through a buffer; that read goes to the blob itself rather than
+/// through the generic disk read, because the `StoredObject`s of a `plain` or `plain_rewritable`
+/// disk carry no `ETag`, so a generic read takes whatever generation each request happens to be
+/// answered with, and an incremental backup could copy the bytes of two generations of one key.
+std::unique_ptr<ReadBufferFromFileBase> readSourceBlobOfBackupCopy(
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> client,
+    const String & container,
+    const String & blob_path,
+    size_t source_size,
+    const String & etag,
+    const ReadSettings & read_settings,
+    const AzureBlobStorage::RequestSettings & request_settings);
 
 /// Represents a backup stored to Azure
 class BackupReaderAzureBlobStorage : public BackupReaderDefault

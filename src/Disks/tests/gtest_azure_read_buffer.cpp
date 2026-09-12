@@ -2359,7 +2359,7 @@ TEST(AzureBackupWriter, WholeCopySourceMeasuredByTheHeadThatPinsIt)
         ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
     auto object_storage = objectStorageOver(transport);
 
-    ASSERT_EQ(DB::headSourceBlobOfWholeCopy(*object_storage, "blob", /* expected_size */ 100), ETagBehaviour::first_generation);
+    ASSERT_EQ(DB::headSourceBlobOfBackupCopy(*object_storage, "blob", /* expected_size */ 100), ETagBehaviour::first_generation);
 }
 
 /// The source blob was replaced by one of another size after the disk reported the size of the file.
@@ -2374,7 +2374,7 @@ TEST(AzureBackupWriter, WholeCopyOfSourceReplacedByAnotherSizeIsRefused)
 
     try
     {
-        DB::headSourceBlobOfWholeCopy(*object_storage, "blob", /* expected_size */ 100);
+        DB::headSourceBlobOfBackupCopy(*object_storage, "blob", /* expected_size */ 100);
         FAIL() << "Expected an exception on a source blob whose size differs from the one the disk reported";
     }
     catch (const DB::Exception & e)
@@ -2383,6 +2383,63 @@ TEST(AzureBackupWriter, WholeCopyOfSourceReplacedByAnotherSizeIsRefused)
     }
     ASSERT_TRUE(transport->nativelyCopiedGenerations().empty());
     ASSERT_TRUE(transport->uploadedData().empty());
+}
+
+/// A copy of a part of a file of an Azure disk into the backup - what an incremental backup of a
+/// part that grew makes - cannot be made by the Azure-to-Azure copy, so it is read through a buffer.
+/// That read is pinned as well: the source blob replaced between the `HEAD` that selected it and the
+/// response that carries its bytes is refused, rather than contributing the bytes of a second
+/// generation to the backup.
+TEST(AzureBackupWriter, RangedCopyOfSourceReplacedUnderTheReadIsRefused)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        /* max_response_size */ 40, /* served_size */ 100, /* blob_size */ 100, /* send_etag */ true,
+        /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation,
+                      .honour_if_match = false});
+    auto object_storage = objectStorageOver(transport);
+
+    const std::string etag = DB::headSourceBlobOfBackupCopy(*object_storage, "blob", /* expected_size */ 100);
+    auto buffer = DB::readSourceBlobOfBackupCopy(
+        object_storage->getAzureBlobStorageClient(), /* container */ "container", /* blob_path */ "blob",
+        /* source_size */ 100, etag, DB::ReadSettings{}, *object_storage->getSettings());
+
+    std::string data;
+    buffer->seek(30, SEEK_SET);
+    try
+    {
+        data.resize(70);
+        buffer->readStrict(data.data(), data.size());
+        FAIL() << "Expected an exception on a source blob whose generation changed after it was selected";
+    }
+    catch (const DB::Exception & e)
+    {
+        ASSERT_EQ(e.code(), DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+    }
+}
+
+/// The same ranged read of a source blob that is not replaced: it yields exactly the bytes of the
+/// requested range. This keeps the test above from passing for the wrong reason - by refusing every
+/// ranged read of a source blob.
+TEST(AzureBackupWriter, RangedCopyOfUnchangedSourceReadsTheRange)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        /* max_response_size */ 40, /* served_size */ 100, /* blob_size */ 100, /* send_etag */ true,
+        /* reported_length */ std::nullopt, /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto object_storage = objectStorageOver(transport);
+
+    const std::string etag = DB::headSourceBlobOfBackupCopy(*object_storage, "blob", /* expected_size */ 100);
+    auto buffer = DB::readSourceBlobOfBackupCopy(
+        object_storage->getAzureBlobStorageClient(), /* container */ "container", /* blob_path */ "blob",
+        /* source_size */ 100, etag, DB::ReadSettings{}, *object_storage->getSettings());
+
+    std::string data;
+    data.resize(40);
+    buffer->seek(30, SEEK_SET);
+    ASSERT_NO_THROW(buffer->readStrict(data.data(), data.size()));
+    for (size_t i = 0; i < data.size(); ++i)
+        ASSERT_EQ(static_cast<uint8_t>(data[i]), static_cast<uint8_t>(30 + i)) << "at position " << i;
 }
 
 /// The endpoint reports no `ETag` for the blobs of the backup: a read cannot be pinned to one
@@ -2435,7 +2492,7 @@ TEST(AzureBackupWriter, WholeCopyRefusedWithoutETag)
 
     try
     {
-        DB::headSourceBlobOfWholeCopy(*object_storage, "blob", /* expected_size */ 100);
+        DB::headSourceBlobOfBackupCopy(*object_storage, "blob", /* expected_size */ 100);
         FAIL() << "Expected an exception on a source blob whose generation the endpoint does not report";
     }
     catch (const DB::Exception & e)

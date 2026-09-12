@@ -49,7 +49,7 @@ namespace
     }
 }
 
-String headSourceBlobOfWholeCopy(const IObjectStorage & src_object_storage, const String & blob_path, size_t expected_size)
+String headSourceBlobOfBackupCopy(const IObjectStorage & src_object_storage, const String & blob_path, size_t expected_size)
 {
     const ObjectMetadata metadata = src_object_storage.getObjectMetadata(blob_path, /*with_tags=*/ false);
     if (metadata.size_bytes != expected_size)
@@ -59,6 +59,28 @@ String headSourceBlobOfWholeCopy(const IObjectStorage & src_object_storage, cons
             blob_path, metadata.size_bytes, expected_size);
     requireBlobGeneration(blob_path, metadata);
     return metadata.etag;
+}
+
+std::unique_ptr<ReadBufferFromFileBase> readSourceBlobOfBackupCopy(
+    std::shared_ptr<const AzureBlobStorage::ContainerClient> client,
+    const String & container,
+    const String & blob_path,
+    size_t source_size,
+    const String & etag,
+    const ReadSettings & read_settings,
+    const AzureBlobStorage::RequestSettings & request_settings)
+{
+    return std::make_unique<ReadBufferFromAzureBlobStorage>(
+        std::move(client), blob_path, read_settings,
+        request_settings.max_single_read_retries,
+        request_settings.max_single_download_retries,
+        /* use_external_buffer */ false,
+        /* restricted_seek */ false,
+        /* read_until_position */ 0,
+        /* blob_storage_log */ nullptr,
+        container,
+        /* known_object_size */ source_size,
+        /* expected_etag */ etag);
 }
 
 namespace
@@ -299,7 +321,7 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
                 /// `HEAD` measures the blob: a blob of another size than the disk reported is already
                 /// another generation, whose copy would not be `length` bytes long.
                 const auto src_object_storage = src_disk->getObjectStorage();
-                const String src_etag = headSourceBlobOfWholeCopy(*src_object_storage, src_blob_path[0], length);
+                const String src_etag = headSourceBlobOfBackupCopy(*src_object_storage, src_blob_path[0], length);
                 copyAzureBlobStorageFile(
                     src_object_storage->getAzureBlobStorageClient(),
                     client,
@@ -316,11 +338,35 @@ void BackupWriterAzureBlobStorage::copyFileFromDisk(
                 return; /// copied!
             }
 
+            /// An Azure-to-Azure copy transfers a whole blob, so a part of one is read and written
+            /// through buffers. The read is still pinned to a single generation of the source blob:
+            /// it goes to the blob itself rather than through `src_disk->readFile`, which on a
+            /// `plain` or `plain_rewritable` disk is unpinned (see `readSourceBlobOfBackupCopy`).
+            /// The `HEAD` is taken once, so every buffer the copy makes - the first one and the ones
+            /// of its retries - reads the same generation.
             LOG_TRACE(
                 log,
-                "Copying the range [{}, {}) of file {} of size {} from disk {} through buffers: "
-                "an Azure-to-Azure copy cannot copy a part of a blob",
+                "Copying the range [{}, {}) of file {} of size {} from disk {} through a pinned read "
+                "of the source blob: an Azure-to-Azure copy cannot copy a part of a blob",
                 start_pos, start_pos + length, src_path, source_size, src_disk->getName());
+
+            const auto src_object_storage = src_disk->getObjectStorage();
+            const String src_etag = headSourceBlobOfBackupCopy(*src_object_storage, src_blob_path[0], source_size);
+
+            /// The request settings of the backup, not of the source disk: the only fields the read
+            /// consumes are the retry counts, and `IObjectStorage` does not expose the settings of
+            /// the source in a way that would let them be taken from it.
+            auto create_read_buffer
+                = [src_client = src_object_storage->getAzureBlobStorageClient(), src_container = src_blob_path[1],
+                   src_key = src_blob_path[0], source_size, src_etag, request_settings = settings,
+                   buffer_settings = read_settings.adjustBufferSize(start_pos + length)]
+            {
+                return readSourceBlobOfBackupCopy(
+                    src_client, src_container, src_key, source_size, src_etag, buffer_settings, *request_settings);
+            };
+
+            copyDataToFile(path_in_backup, create_read_buffer, start_pos, length);
+            return; /// copied!
         }
     }
 
