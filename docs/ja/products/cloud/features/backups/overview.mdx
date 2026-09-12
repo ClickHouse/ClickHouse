@@ -13,12 +13,10 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 データベースのバックアップは、最後に成功したバックアップからサービスを以前の状態に復元できるように設計されています。
 
 <div id="backups">
-  ## バックアップ
+  ## バックアップ {#backups}
 </div>
 
-<div id="how-backups-work-in-clickhouse-cloud">
-  ### ClickHouse Cloud におけるバックアップの仕組み
-</div>
+### ClickHouse Cloud におけるバックアップの仕組み {#how-backups-work-in-clickhouse-cloud}
 
 ClickHouse Cloud のバックアップは、フルバックアップと増分バックアップを組み合わせたもので、これらがバックアップチェーンを構成します。チェーンはフルバックアップから始まり、その後、以降のいくつかのスケジュールされた期間にわたって増分バックアップが取得され、バックアップの連続した系列が作られます。バックアップチェーンが一定の長さに達すると、新しいチェーンが開始されます。必要に応じて、このバックアップチェーン全体を使用してデータを新しいサービスに復元できます。特定のチェーンに含まれるすべてのバックアップが、そのサービスに設定された保持期間 (保持については後述) を過ぎると、そのチェーンは破棄されます。
 
@@ -28,18 +26,14 @@ ClickHouse Cloud のバックアップは、フルバックアップと増分バ
 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloudにおけるバックアップチェーンの例" />
 
-<div id="default-backup-policy">
-  ### デフォルトのバックアップポリシー
-</div>
+### デフォルトのバックアップポリシー {#default-backup-policy}
 
 バックアップは、Basic、Scale、Enterprise ティアでは、ストレージとは別に計測・課金されます。
 現在、各サービスには、保持期間が24時間の1日1回のバックアップがデフォルトで設定されています。バックアップ設定は、サービスおよび契約によって異なる場合があります。
 
 詳細については、[&quot;バックアップの確認と復元&quot;](/ja/products/cloud/guides/backups/review-and-restore-backups)を参照してください。
 
-<div id="configurable-backups">
-  ## 設定可能なバックアップ
-</div>
+## 設定可能なバックアップ {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
 
@@ -57,12 +51,11 @@ ClickHouse Cloud では、**Scale** および **Enterprise** ティアのサー�
 
 バックアップの設定手順については、[&quot;バックアップスケジュールを設定する&quot;](/ja/products/cloud/guides/backups/configurable-backups) を参照してください。
 
-<div id="byob">
-  ## Bring Your Own Bucket (BYOB) バックアップ
-</div>
+## Bring Your Own Bucket (BYOB) バックアップ {#byob}
 
 ClickHouse Cloud では、バックアップをお使いのクラウドサービスプロバイダー (CSP) アカウントのストレージ (AWS S3、Google Cloud Storage、または Azure Blob Storage) にエクスポートできます。
 独自のバケットへのバックアップを設定した場合でも、ClickHouse Cloud はデフォルトで引き続き独自のバックアップを取得します。
+バックアップ保持期間の設定は、お使いのバケットに書き込まれるバックアップに適用されます。ClickHouse Cloud が管理するバックアップにはデフォルトの保持ポリシーが適用されます。
 
 ClickHouse Cloud のバックアップの仕組みについて詳しくは、[バックアップ](/ja/products/cloud/guides/backups/review-and-restore-backups)のドキュメントを参照してください。
 
@@ -81,9 +74,7 @@ ClickHouse Cloud のバックアップの仕組みについて詳しくは、[�
 
 AWS、GCP、Azure のオブジェクトストレージに対してフルバックアップおよび増分バックアップを取得する方法と、それらのバックアップから復元する方法の例については、[&quot;Export backups to your own Cloud account&quot;](/ja/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account) を参照してください。
 
-<div id="backup-options">
-  ### バックアップオプション
-</div>
+### バックアップオプション {#backup-options}
 
 バックアップをお客様ご自身のクラウドアカウントにエクスポートする方法は、2 つあります。
 
@@ -101,7 +92,7 @@ AWS、GCP、Azure のオブジェクトストレージに対してフルバッ�
 </Steps>
 
 <Warning>
-  ClickHouse Cloud は、お客様のバケット内のバックアップのライフサイクルを管理しません。
-  バケット内のバックアップについては、コンプライアンス要件への準拠とコスト管理の観点から、お客様の責任で適切に管理する必要があります。
+  ClickHouse Cloud は、SQL コマンドを使用してエクスポートされたバックアップのライフサイクルを管理しません。
+  これらのバックアップについては、コンプライアンス要件への準拠とコスト管理の観点から、お客様の責任で適切に管理する必要があります。
   バックアップが破損している場合は、復元できません。
 </Warning>
