@@ -7035,6 +7035,11 @@ included. `hash` / `parallel_hash` still go to disk on the spill threshold and s
 in-memory phase keeps treating the two as a hard cap, as it did before.
 
 For queries written against the earlier meaning of these two settings; `compatibility` enables it automatically.
+
+A server that predates this setting applies the old meaning, and cannot be told otherwise, so with
+`serialize_query_plan = 1` a join whose spilling depends on the new meaning is not sent to such a server at all:
+the query fails instead of quietly running with the other contract. Turning this setting on makes those queries
+work across the two versions, with the old meaning on both sides.
 )", 0) \
     DECLARE(Bool, serialize_query_plan, false, R"(
 Serialize query plan for distributed processing
