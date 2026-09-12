@@ -44,7 +44,9 @@ public:
     /// per row (the stored value where the path is present, a default where it is absent), sorted by path.
     /// IMPORTANT: returned string_views reference path data inside the shared data column, which must
     /// stay alive while the result is used.
-    std::vector<std::pair<std::string_view, ColumnPtr>> flattenBucket(size_t bucket, const DataTypePtr & dynamic_type) const;
+    /// If default_path_type is set (JSON with DEFAULT PATH TYPE T), values are decoded into dense
+    /// T columns (default = path missing) instead of Dynamic columns.
+    std::vector<std::pair<std::string_view, ColumnPtr>> flattenBucket(size_t bucket, const DataTypePtr & dynamic_type, const DataTypePtr & default_path_type = nullptr) const;
 
 private:
     const IColumn & shared_data_column;

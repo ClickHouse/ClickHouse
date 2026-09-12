@@ -12,6 +12,7 @@
 #include <Common/SipHash.h>
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/logger_useful.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -2315,6 +2316,61 @@ void ColumnObject::fillPathColumnFromSharedData(IColumn & path_column, std::stri
             auto value_data = shared_data_values.getDataAt(lower_bound_path_index);
             ReadBufferFromMemory buf(value_data);
             dynamic_serialization->deserializeBinary(path_column, buf, getFormatSettings());
+        }
+        else
+        {
+            path_column.insertDefault();
+        }
+    }
+}
+
+/// Fill a T column with values of the given path from shared data (JSON with DEFAULT PATH TYPE T).
+/// The blob for each value is self-describing (encoded type name + value); in the common case the
+/// encoded type is exactly T, so the value is deserialized directly as T. A row where the path is
+/// missing gets a default value (read back as missing/NULL).
+void ColumnObject::fillPathColumnFromSharedDataT(IColumn & path_column, std::string_view path, const ColumnPtr & shared_data_column, size_t start, size_t end, const DataTypePtr & default_path_type)
+{
+    const auto & shared_data_array = assert_cast<const ColumnArray &>(*shared_data_column);
+    const auto & shared_data_offsets = shared_data_array.getOffsets();
+    size_t first_offset = shared_data_offsets[static_cast<ssize_t>(start) - 1];
+    size_t last_offset = shared_data_offsets[static_cast<ssize_t>(end) - 1];
+    if (first_offset == last_offset)
+    {
+        path_column.insertManyDefaults(end - start);
+        return;
+    }
+
+    const auto & shared_data_tuple = assert_cast<const ColumnTuple &>(shared_data_array.getData());
+    const auto & shared_data_paths = assert_cast<const ColumnString &>(shared_data_tuple.getColumn(0));
+    const auto & shared_data_values = assert_cast<const ColumnString &>(shared_data_tuple.getColumn(1));
+    const auto & value_serialization = default_path_type->getDefaultSerialization();
+    const auto & dynamic_serialization = getDynamicSerialization();
+    for (size_t i = start; i != end; ++i)
+    {
+        size_t paths_start = shared_data_offsets[static_cast<ssize_t>(i) - 1];
+        size_t paths_end = shared_data_offsets[static_cast<ssize_t>(i)];
+        auto lower_bound_path_index = ColumnObject::findPathLowerBoundInSharedData(path, shared_data_paths, paths_start, paths_end);
+        if (lower_bound_path_index != paths_end && shared_data_paths.getDataAt(lower_bound_path_index) == path)
+        {
+            auto value_data = shared_data_values.getDataAt(lower_bound_path_index);
+            ReadBufferFromMemory buf(value_data);
+            auto decoded_type = decodeDataType(buf);
+            if (decoded_type->equals(*default_path_type))
+            {
+                value_serialization->deserializeBinary(path_column, buf, getFormatSettings());
+            }
+            else
+            {
+                /// Slow path: the value has a different type. Recreate the buffer from the start of the
+                /// blob (decodeDataType consumed the type tag) and decode it as Dynamic, then convert to T.
+                auto dynamic_column = ColumnDynamic::create();
+                ReadBufferFromMemory full_buf(value_data);
+                dynamic_serialization->deserializeBinary(*dynamic_column, full_buf, getFormatSettings());
+                if (dynamic_column->empty() || dynamic_column->isNullAt(0))
+                    path_column.insertDefault();
+                else
+                    path_column.insert(convertFieldToTypeOrThrow((*dynamic_column)[0], *default_path_type, decoded_type.get(), FormatSettings{}, /*convert_inexact_floats=*/true));
+            }
         }
         else
         {

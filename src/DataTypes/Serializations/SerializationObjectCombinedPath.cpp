@@ -1,9 +1,11 @@
 #include <Columns/ColumnObject.h>
+#include <Columns/ColumnDynamic.h>
 #include <Common/SipHash.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeDynamic.h>
 #include <DataTypes/Serializations/SerializationObjectCombinedPath.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/convertFieldToType.h>
 
 namespace DB
 {
@@ -17,11 +19,13 @@ SerializationObjectCombinedPath::SerializationObjectCombinedPath(
     const SerializationPtr & literal_serialization_,
     const SerializationPtr & sub_object_serialization_,
     const DataTypePtr & dynamic_type_,
-    const DataTypePtr & sub_object_type_)
+    const DataTypePtr & sub_object_type_,
+    const DataTypePtr & default_path_type_)
     : literal_serialization(literal_serialization_)
     , sub_object_serialization(sub_object_serialization_)
     , dynamic_type(dynamic_type_)
     , sub_object_type(sub_object_type_)
+    , default_path_type(default_path_type_)
 {
 }
 
@@ -29,7 +33,8 @@ UInt128 SerializationObjectCombinedPath::getHash(
     const SerializationPtr & literal_serialization_,
     const SerializationPtr & sub_object_serialization_,
     const DataTypePtr & dynamic_type_,
-    const DataTypePtr & sub_object_type_)
+    const DataTypePtr & sub_object_type_,
+    const DataTypePtr & default_path_type_)
 {
     SipHash hash;
     hash.update("ObjectCombinedPath");
@@ -41,6 +46,9 @@ UInt128 SerializationObjectCombinedPath::getHash(
     auto sub_object_type_name = sub_object_type_->getName();
     hash.update(sub_object_type_name.size());
     hash.update(sub_object_type_name);
+    auto default_path_type_name = default_path_type_ ? default_path_type_->getName() : "";
+    hash.update(default_path_type_name.size());
+    hash.update(default_path_type_name);
     return hash.get128();
 }
 
@@ -48,13 +56,14 @@ SerializationPtr SerializationObjectCombinedPath::create(
     const SerializationPtr & literal_serialization_,
     const SerializationPtr & sub_object_serialization_,
     const DataTypePtr & dynamic_type_,
-    const DataTypePtr & sub_object_type_)
+    const DataTypePtr & sub_object_type_,
+    const DataTypePtr & default_path_type_)
 {
     if (!literal_serialization_->supportsPooling() || !sub_object_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationObjectCombinedPath(literal_serialization_, sub_object_serialization_, dynamic_type_, sub_object_type_));
+        return std::shared_ptr<ISerialization>(new SerializationObjectCombinedPath(literal_serialization_, sub_object_serialization_, dynamic_type_, sub_object_type_, default_path_type_));
     return ISerialization::pooled(
-        getHash(literal_serialization_, sub_object_serialization_, dynamic_type_, sub_object_type_),
-        [&] { return new SerializationObjectCombinedPath(literal_serialization_, sub_object_serialization_, dynamic_type_, sub_object_type_); });
+        getHash(literal_serialization_, sub_object_serialization_, dynamic_type_, sub_object_type_, default_path_type_),
+        [&] { return new SerializationObjectCombinedPath(literal_serialization_, sub_object_serialization_, dynamic_type_, sub_object_type_, default_path_type_); });
 }
 
 size_t SerializationObjectCombinedPath::allocatedBytes() const
@@ -148,10 +157,31 @@ void SerializationObjectCombinedPath::deserializeBinaryBulkWithMultipleStreams(
 
     auto * combined_state = checkAndGetState<DeserializeBinaryBulkStateObjectCombinedPath>(state);
 
-    /// Deserialize literal path into a temporary column.
-    auto literal_column = dynamic_type->createColumn();
-    literal_serialization->deserializeBinaryBulkWithMultipleStreams(
-        *literal_column, limit, settings, combined_state->literal_state, cache);
+    /// Deserialize literal path into a temporary column. With DEFAULT PATH TYPE the literal
+    /// subcolumn has type T, but the merged result is Dynamic, so convert T to Dynamic.
+    MutableColumnPtr literal_column;
+    if (default_path_type)
+    {
+        auto t_column = default_path_type->createColumn();
+        literal_serialization->deserializeBinaryBulkWithMultipleStreams(
+            *t_column, limit, settings, combined_state->literal_state, cache);
+        auto dynamic_literal = ColumnDynamic::create();
+        dynamic_literal->reserve(t_column->size());
+        for (size_t i = 0; i < t_column->size(); ++i)
+        {
+            if (t_column->isDefaultAt(i))
+                dynamic_literal->insertDefault();
+            else
+                dynamic_literal->insert(convertFieldToTypeOrThrow((*t_column)[i], *dynamic_type, default_path_type.get(), FormatSettings{}, /*convert_inexact_floats=*/true));
+        }
+        literal_column = std::move(dynamic_literal);
+    }
+    else
+    {
+        literal_column = dynamic_type->createColumn();
+        literal_serialization->deserializeBinaryBulkWithMultipleStreams(
+            *literal_column, limit, settings, combined_state->literal_state, cache);
+    }
 
     /// Deserialize sub-object into a temporary column, then keep it as an immutable pointer (we only read it below).
     auto mutable_sub_object_column = sub_object_type->createColumn();

@@ -5,10 +5,12 @@
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/getSubcolumnsDeserializationOrder.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnDynamic.h>
 #include <Core/Defines.h>
 #include <Core/NamesAndTypes.h>
 #include <IO/ReadHelpers.h>
@@ -50,16 +52,17 @@ void reserveOrThrowTooMany(Container & container, size_t count, const char * wha
 
 }
 
-SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
+SerializationObjectSharedData::SerializationObjectSharedData(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_, const DataTypePtr & default_path_type_)
     : serialization_version(serialization_version_)
     , dynamic_type(dynamic_type_)
     , dynamic_serialization(dynamic_serialization_)
+    , default_path_type(default_path_type_)
     , buckets(buckets_)
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
 }
 
-UInt128 SerializationObjectSharedData::getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
+UInt128 SerializationObjectSharedData::getHash(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_, const DataTypePtr & default_path_type_)
 {
     SipHash hash;
     hash.update("ObjectSharedData");
@@ -69,14 +72,17 @@ UInt128 SerializationObjectSharedData::getHash(SerializationVersion serializatio
     hash.update(dynamic_type_name);
     hash.update(dynamic_serialization_->getHash());
     hash.update(buckets_);
+    auto default_path_type_name = default_path_type_ ? default_path_type_->getName() : "";
+    hash.update(default_path_type_name.size());
+    hash.update(default_path_type_name);
     return hash.get128();
 }
 
-SerializationPtr SerializationObjectSharedData::create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_)
+SerializationPtr SerializationObjectSharedData::create(SerializationVersion serialization_version_, const DataTypePtr & dynamic_type_, const SerializationPtr & dynamic_serialization_, size_t buckets_, const DataTypePtr & default_path_type_)
 {
     if (!dynamic_serialization_->supportsPooling())
-        return std::shared_ptr<ISerialization>(new SerializationObjectSharedData(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_));
-    return ISerialization::pooled(getHash(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_), [&] { return new SerializationObjectSharedData(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_); });
+        return std::shared_ptr<ISerialization>(new SerializationObjectSharedData(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_, default_path_type_));
+    return ISerialization::pooled(getHash(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_, default_path_type_), [&] { return new SerializationObjectSharedData(serialization_version_, dynamic_type_, dynamic_serialization_, buckets_, default_path_type_); });
 }
 
 SerializationObjectSharedData::SerializationVersion::SerializationVersion(UInt64 version) : value(static_cast<Value>(version))
@@ -275,6 +281,16 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
     }
     else if (serialization_version.value == SerializationVersion::ADVANCED)
     {
+        /// When the type has DEFAULT PATH TYPE T, path values are serialized as T instead
+        /// of Dynamic (dense columns, default = path missing).
+        DataTypePtr path_data_type = dynamic_type;
+        SerializationPtr path_data_serialization = dynamic_serialization;
+        if (default_path_type)
+        {
+            path_data_type = default_path_type;
+            path_data_serialization = path_data_type->getDefaultSerialization();
+        }
+
         size_t end = limit && offset + limit < column.size() ? offset + limit : column.size();
         /// Flatten and bucket the shared data paths one bucket at a time (building/serializing/freeing
         /// each bucket's flattened columns before the next) to reduce peak memory, instead of
@@ -285,7 +301,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
         std::vector<std::string_view> all_flattened_paths;
         for (size_t bucket = 0; bucket != buckets; ++bucket)
         {
-            auto flattened_paths = buckets_splitter.flattenBucket(bucket, dynamic_type);
+            auto flattened_paths = buckets_splitter.flattenBucket(bucket, dynamic_type, default_path_type);
             for (const auto & [path, _] : flattened_paths)
                 all_flattened_paths.push_back(path);
             settings.path.push_back(Substream::Bucket);
@@ -362,7 +378,7 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                     /// subcolumn of a path) doesn't decompress blocks shared with the path's other substreams.
                     data_stream->next();
                     /// Add new substream and its mark for current path.
-                    paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings));
+                    paths_substreams.back().push_back(ISerialization::getFileNameForStream(NameAndTypePair("", path_data_type), substream_path, stream_file_name_settings));
                     paths_substreams_marks.back().push_back(settings.stream_mark_getter(settings.path));
                     return data_stream;
                 };
@@ -372,9 +388,9 @@ void SerializationObjectSharedData::serializeBinaryBulkWithMultipleStreams(
                 data_stream->next();
                 /// Remember the mark of ObjectSharedDataData stream for this path before writing any data.
                 paths_marks.push_back(settings.stream_mark_getter(settings.path));
-                dynamic_serialization->serializeBinaryBulkStatePrefix(*path_column, data_serialization_settings, path_state);
-                dynamic_serialization->serializeBinaryBulkWithMultipleStreams(*path_column, 0, 0, data_serialization_settings, path_state);
-                dynamic_serialization->serializeBinaryBulkStateSuffix(data_serialization_settings, path_state);
+                path_data_serialization->serializeBinaryBulkStatePrefix(*path_column, data_serialization_settings, path_state);
+                path_data_serialization->serializeBinaryBulkWithMultipleStreams(*path_column, 0, 0, data_serialization_settings, path_state);
+                path_data_serialization->serializeBinaryBulkStateSuffix(data_serialization_settings, path_state);
             }
 
             /// Close the last path's block so it isn't merged with the following metadata streams (in
@@ -963,6 +979,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
     ISerialization::DeserializeBinaryBulkSettings & settings,
     const DataTypePtr & dynamic_type,
     const SerializationPtr & dynamic_serialization,
+    const DataTypePtr & default_path_type,
     ISerialization::SubstreamsCache * cache)
 {
     settings.path.push_back(Substream::ObjectSharedDataData);
@@ -997,6 +1014,17 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
     StreamFileNameSettings stream_file_name_settings;
     stream_file_name_settings.escape_variant_substreams = false;
 
+    /// When the type has DEFAULT PATH TYPE T, path values are serialized as T instead of
+    /// Dynamic. Read them back with the matching serialization and convert to Dynamic (the in-memory
+    /// representation of a non-typed path) below.
+    DataTypePtr path_data_type = dynamic_type;
+    SerializationPtr path_data_serialization = dynamic_serialization;
+    if (default_path_type)
+    {
+        path_data_type = default_path_type;
+        path_data_serialization = path_data_type->getDefaultSerialization();
+    }
+
     for (size_t granule = 0; granule != structure_granules.size(); ++granule)
     {
         const auto & structure_granule = structure_granules[granule];
@@ -1030,7 +1058,7 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
 
                 deserialization_settings.seek_stream_to_current_mark_callback = [&](const SubstreamPath & substream_path)
                 {
-                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", dynamic_type), substream_path, stream_file_name_settings);
+                    auto stream_name = ISerialization::getFileNameForStream(NameAndTypePair("", path_data_type), substream_path, stream_file_name_settings);
 
                     auto it = path_info.substream_to_mark.find(stream_name);
                     if (it == path_info.substream_to_mark.end())
@@ -1081,10 +1109,11 @@ std::shared_ptr<SerializationObjectSharedData::PathsDataGranules> SerializationO
                 deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
                 settings.seek_stream_to_mark_callback(settings.path, path_info.data_mark);
                 DeserializeBinaryBulkStatePtr path_state;
-                auto dynamic_column = dynamic_type->createColumn();
-                dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
-                dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*dynamic_column, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
-                paths_data_granule.paths_data[requested_path] = std::move(dynamic_column);
+                auto path_column = path_data_type->createColumn();
+                path_data_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
+                path_data_serialization->deserializeBinaryBulkWithMultipleStreams(*path_column, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
+                /// With DEFAULT PATH TYPE the path column is already T, the type of the subcolumn.
+                paths_data_granule.paths_data[requested_path] = std::move(path_column);
             }
         }
     }
@@ -1139,6 +1168,15 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             return;
 
         size_t prev_size = column.size();
+
+        /// When the type has DEFAULT PATH TYPE T, flattened path values are serialized as T.
+        DataTypePtr path_data_type = dynamic_type;
+        SerializationPtr path_data_serialization = dynamic_serialization;
+        if (default_path_type)
+        {
+            path_data_type = default_path_type;
+            path_data_serialization = path_data_type->getDefaultSerialization();
+        }
 
         /// In Compact part we always read one whole granule, so we don't need to worry about reading data from multiple granules.
         if (settings.data_part_type == MergeTreeDataPartType::Compact)
@@ -1195,13 +1233,15 @@ void SerializationObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
                 deserialization_settings.use_specialized_prefixes_and_suffixes_substreams = true;
                 deserialization_settings.data_part_type = MergeTreeDataPartType::Compact;
                 deserialization_settings.getter = [&](const SubstreamPath &) -> ReadBuffer * { return data_stream; };
+                /// With DEFAULT PATH TYPE the flattened path values are serialized as T, so consume
+                /// them with the T serialization (the column is only used to advance the stream).
                 for (size_t i = 0; i != structure_granule.num_paths; ++i)
                 {
-                    auto path_column = dynamic_type->createColumn();
+                    auto path_column = path_data_type->createColumn();
                     DeserializeBinaryBulkStatePtr path_state;
-                    dynamic_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
+                    path_data_serialization->deserializeBinaryBulkStatePrefix(deserialization_settings, path_state, nullptr);
                     /// We only need to consume this path's data from the stream to advance to the next path; the column is discarded.
-                    dynamic_serialization->deserializeBinaryBulkWithMultipleStreams(*path_column, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
+                    path_data_serialization->deserializeBinaryBulkWithMultipleStreams(*path_column, structure_granule.num_rows, deserialization_settings, path_state, nullptr);
                 }
 
                 settings.path.push_back(Substream::ObjectSharedDataPathsMarks);

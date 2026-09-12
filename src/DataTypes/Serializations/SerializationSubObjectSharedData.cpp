@@ -19,12 +19,14 @@ SerializationSubObjectSharedData::SerializationSubObjectSharedData(
     size_t buckets_,
     const String & paths_prefix_,
     const DataTypePtr & dynamic_type_,
-    const SerializationPtr & dynamic_serialization_)
+    const SerializationPtr & dynamic_serialization_,
+    const DataTypePtr & default_path_type_)
     : serialization_version(serialization_version_)
     , buckets(buckets_)
     , paths_prefix(paths_prefix_)
     , dynamic_type(dynamic_type_)
     , dynamic_serialization(dynamic_serialization_)
+    , default_path_type(default_path_type_)
     , serialization_map(DataTypeObject::getTypeOfSharedData()->getDefaultSerialization())
 {
 }
@@ -34,7 +36,8 @@ UInt128 SerializationSubObjectSharedData::getHash(
     size_t buckets_,
     const String & paths_prefix_,
     const DataTypePtr & dynamic_type_,
-    const SerializationPtr & dynamic_serialization_)
+    const SerializationPtr & dynamic_serialization_,
+    const DataTypePtr & default_path_type_)
 {
     SipHash hash;
     hash.update("SubObjectSharedData");
@@ -46,6 +49,9 @@ UInt128 SerializationSubObjectSharedData::getHash(
     hash.update(dynamic_type_name.size());
     hash.update(dynamic_type_name);
     hash.update(dynamic_serialization_->getHash());
+    auto default_path_type_name = default_path_type_ ? default_path_type_->getName() : "";
+    hash.update(default_path_type_name.size());
+    hash.update(default_path_type_name);
     return hash.get128();
 }
 
@@ -54,11 +60,12 @@ SerializationPtr SerializationSubObjectSharedData::create(
     size_t buckets_,
     const String & paths_prefix_,
     const DataTypePtr & dynamic_type_,
-    const SerializationPtr & dynamic_serialization_)
+    const SerializationPtr & dynamic_serialization_,
+    const DataTypePtr & default_path_type_)
 {
     if (!dynamic_serialization_->supportsPooling())
-        return std::shared_ptr<SerializationSubObjectSharedData>(new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_, dynamic_serialization_));
-    return ISerialization::pooled(getHash(serialization_version_, buckets_, paths_prefix_, dynamic_type_, dynamic_serialization_), [&] { return new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_, dynamic_serialization_); });
+        return std::shared_ptr<SerializationSubObjectSharedData>(new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_, dynamic_serialization_, default_path_type_));
+    return ISerialization::pooled(getHash(serialization_version_, buckets_, paths_prefix_, dynamic_type_, dynamic_serialization_, default_path_type_), [&] { return new SerializationSubObjectSharedData(serialization_version_, buckets_, paths_prefix_, dynamic_type_, dynamic_serialization_, default_path_type_); });
 }
 
 struct DeserializeBinaryBulkStateSubObjectSharedData : public ISerialization::DeserializeBinaryBulkState
@@ -318,7 +325,7 @@ void SerializationSubObjectSharedData::deserializeBinaryBulkWithMultipleStreams(
             auto * shared_data_structure_state = checkAndGetState<SerializationObjectSharedData::DeserializeBinaryBulkStateObjectSharedDataStructure>(sub_object_shared_data_state->bucket_structure_states[bucket]);
             auto structure_granules = SerializationObjectSharedData::deserializeStructure(limit, settings, *shared_data_structure_state, cache);
             auto paths_infos_granules = SerializationObjectSharedData::deserializePathsInfos(*structure_granules, *shared_data_structure_state, settings, cache);
-            bucket_paths_data_granules[bucket] = SerializationObjectSharedData::deserializePathsData(*structure_granules, *paths_infos_granules, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, cache);
+            bucket_paths_data_granules[bucket] = SerializationObjectSharedData::deserializePathsData(*structure_granules, *paths_infos_granules, *shared_data_structure_state, settings, dynamic_type, dynamic_serialization, default_path_type, cache);
 
             /// Init offset and limit for each granule
             if (bucket == 0)
