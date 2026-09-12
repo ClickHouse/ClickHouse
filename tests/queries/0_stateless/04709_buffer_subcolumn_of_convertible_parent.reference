@@ -1,0 +1,51 @@
+rows	2
+explicit	1	[1,2,3]	3	3
+explicit	2	[9,9,9,9]	4	4
+folded	1	[1,2,3]	3
+folded	2	[9,9,9,9]	4
+aggregates	7	0
+prewhere_ordinary	[1,2,3]	3
+prewhere_consumes_parent	1	3
+prewhere_consumes_parent_element	1	3
+prewhere_consumes_parent_old_analyzer	1	3
+prewhere_consumes_parent_selected	1	[1,2,3]	3
+prewhere_consumes_parent_other_expression	1	3	3
+where_consumes_parent	1	3
+where_on_subcolumn	1	3
+row_policy_parent_effective	2
+row_policy_parent_effective	1
+row_policy_parent	3
+row_policy_effective	2
+row_policy_effective	1
+row_policy	1	[1,2,3]	3
+two_filters_parent_policy_effective	1
+two_filters_parent_policy_selected	1	[1,2,3]	3
+two_filters_parent_policy_subcolumn	3
+two_filters_parent_policy_no_prewhere	3
+two_filters_both_consume_parent	1	3
+two_filters_ordinary_policy_effective	1
+two_filters_ordinary_policy	1	3
+two_filters_ordinary_policy_selected	1	[1,2,3]	3
+two_filters_prewhere_consumes_parent	1	3
+nullable_null	1	x	0
+nullable_null_rows	1
+tuple_element	1	(1,2)	1	2
+nested_array	1	[[1,2],[3]]	2
+map	1	{'k':7}	['k']	[7]
+map_prewhere_consumes_parent	['k']	[7]
+map_two_filters_effective	1
+map_two_filters	['k']	[7]
+lowcardinality	1	['x','y']	2
+dynamic_prewhere	5	3
+missing_column	0	[]	0
+missing_column_rows	0
+same_structure	1	[1,2,3]	3
+same_structure_prewhere	3
+same_structure_two_filters_effective	1
+same_structure_two_filters	1	[1,2,3]	3
+same_structure_two_filters_consume	1	[1,2,3]	3
+ordinary_mismatch	1	42
+ordinary_mismatch_two_filters_effective	1
+ordinary_mismatch_two_filters	1	42
+[1,2,3,4,5,6]
+[1,2,3]	3

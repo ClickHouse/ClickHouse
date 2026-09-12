@@ -12,6 +12,7 @@
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/castColumn.h>
+#include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getColumnFromBlock.h>
 #include <Interpreters/ExpressionActions.h>
@@ -103,6 +104,58 @@ namespace ErrorCodes
     extern const int INFINITE_LOOP;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int ALTER_OF_COLUMN_IS_FORBIDDEN;
+}
+
+namespace
+{
+
+/// A requested subcolumn (e.g. `arr.size0`) that the destination table cannot resolve, but whose
+/// parent column (`arr`) it does have under a type the Buffer converts anyway. Such a subcolumn
+/// must be derived from the converted parent rather than filled with a type default.
+struct DerivableSubcolumn
+{
+    String name;                       /// "arr.size0" as requested
+    String parent_name;                /// "arr"
+    DataTypePtr parent_type_in_destination;
+};
+
+/// Returns nullopt for a name the destination resolves, a non-subcolumn, or a genuinely absent
+/// parent - that last case must keep its default-value behaviour, which is what makes a Buffer
+/// over a destination with a different column set work.
+std::optional<DerivableSubcolumn> tryGetDerivableSubcolumn(
+    const StorageSnapshotPtr & destination_snapshot,
+    const StorageSnapshotPtr & our_snapshot,
+    const GetColumnsOptions & options,
+    const String & column_name)
+{
+    if (destination_snapshot->tryGetColumn(options, column_name))
+        return {};
+
+    auto our_column = our_snapshot->tryGetColumn(options, column_name);
+    if (!our_column || !our_column->isSubcolumn())
+        return {};
+
+    auto parent_name = our_column->getNameInStorage();
+
+    /// The parent must be in the destination's physical read list: an `EPHEMERAL` parent has no
+    /// data and an `ALIAS` one is reachable only through alias expansion, so neither is derived.
+    auto parent_options = options;
+    parent_options.kind = GetColumnsOptions::AllPhysical;
+    auto destination_parent = destination_snapshot->tryGetColumn(parent_options, parent_name);
+    if (!destination_parent)
+        return {};
+
+    /// The parent must be physical in the Buffer too - that is what puts it in the sample block
+    /// used as the conversion target below.
+    if (!our_snapshot->tryGetColumn(parent_options, parent_name))
+        return {};
+
+    return DerivableSubcolumn{
+        .name = column_name,
+        .parent_name = parent_name,
+        .parent_type_in_destination = destination_parent->type};
+}
+
 }
 
 std::unique_lock<std::mutex> StorageBuffer::Buffer::lockForReading() const
@@ -394,14 +447,47 @@ void StorageBuffer::read(
                     header.insert(ColumnWithTypeAndName(our_column->type, column_name));
             }
 
+            std::vector<DerivableSubcolumn> derivable_subcolumns;
+            NameSet derivable_names;
+            /// Several subcolumns can share one parent, so keep the parents deduplicated.
+            Names derivable_parent_names;
+            NameSet seen_parent_names;
+            for (const String & column_name : column_names)
+            {
+                if (auto derivation = tryGetDerivableSubcolumn(destination_snapshot, storage_snapshot, get_columns_options, column_name))
+                {
+                    derivable_names.insert(derivation->name);
+                    if (seen_parent_names.insert(derivation->parent_name).second)
+                        derivable_parent_names.push_back(derivation->parent_name);
+                    derivable_subcolumns.push_back(std::move(*derivation));
+                }
+            }
+
+            /// Above FetchColumns both halves run the whole query before the final union, so the
+            /// destination analyses the subcolumn against its own unconverted type.
+            if (!derivable_subcolumns.empty() && processed_stage > QueryProcessingStage::FetchColumns)
+                throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                    "StorageBuffer cannot read subcolumn {} of a destination column with a different type "
+                    "at query processing stage {}", backQuoteIfNeed(derivable_subcolumns.front().name),
+                    QueryProcessingStage::toString(processed_stage));
+
+            /// The destination cannot read a derivable subcolumn, so it must be absent from every
+            /// block negotiated with it: the defaults list would zero it and a conversion target
+            /// would find no matching input. It is derived from the converted parent below.
+            Block header_without_derivable;
+            for (const auto & column : header)
+                if (!derivable_names.contains(column.name))
+                    header_without_derivable.insert(column);
+
             Names columns_intersection = column_names;
-            Block header_after_adding_defaults = header;
+            Block header_after_adding_defaults = header_without_derivable;
             for (const String & column_name : column_names)
             {
                 auto dest_column = get_destination_column(column_name);
                 if (!dest_column)
                 {
-                    LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
+                    if (!derivable_names.contains(column_name))
+                        LOG_WARNING(log, "Destination table {} doesn't have column {}. The default values are used.", destination_id.getNameForLogs(), backQuoteIfNeed(column_name));
                     std::erase(columns_intersection, column_name);
                     continue;
                 }
@@ -413,6 +499,17 @@ void StorageBuffer::read(
                 }
             }
 
+            /// Read the parent even when only the subcolumn was requested, otherwise the
+            /// intersection can be empty and the destination is not read at all.
+            for (const auto & derivation : derivable_subcolumns)
+            {
+                if (std::find(columns_intersection.begin(), columns_intersection.end(), derivation.parent_name) == columns_intersection.end())
+                    columns_intersection.push_back(derivation.parent_name);
+
+                header_after_adding_defaults.getByName(derivation.parent_name)
+                    = ColumnWithTypeAndName(derivation.parent_type_in_destination, derivation.parent_name);
+            }
+
             if (columns_intersection.empty())
             {
                 LOG_WARNING(log, "Destination table {} has no common columns with block in buffer. Block of data is skipped.", destination_id.getNameForLogs());
@@ -420,27 +517,51 @@ void StorageBuffer::read(
             else
             {
                 auto src_table_query_info = query_info;
-                ActionsDAG converting_dag;
-                if (src_table_query_info.prewhere_info || src_table_query_info.row_level_filter)
-                {
-                    converting_dag = ActionsDAG::makeConvertingActions(
-                        header_after_adding_defaults.getColumnsWithTypeAndName(),
-                        header.getColumnsWithTypeAndName(),
-                        ActionsDAG::MatchColumnsMode::Name,
-                        local_context);
-                }
+
+                /// The forwarded filters run as consecutive steps over one block, so a parent kept
+                /// alive by an earlier step already carries this table's type in the next one.
+                NameSet parents_converted_by_previous_filter;
 
                 /// The prefix converts the whole sample block, but the filter runs inside the
                 /// destination read, where only its own columns are known to have the declared
                 /// types. Keep just the filter's outputs; the rest converts after the read as usual.
                 auto merge_converting_prefix = [&](ActionsDAG filter_dag)
                 {
+                    auto source_columns = header_after_adding_defaults.getColumnsWithTypeAndName();
+                    for (auto & source_column : source_columns)
+                        if (parents_converted_by_previous_filter.contains(source_column.name))
+                            source_column.type = header_without_derivable.getByName(source_column.name).type;
+
+                    auto converting_dag = ActionsDAG::makeConvertingActions(
+                        source_columns,
+                        header_without_derivable.getColumnsWithTypeAndName(),
+                        ActionsDAG::MatchColumnsMode::Name,
+                        local_context);
+
                     Names filter_outputs;
                     filter_outputs.reserve(filter_dag.getOutputs().size());
                     for (const auto * output : filter_dag.getOutputs())
                         filter_outputs.push_back(output->result_name);
 
-                    auto merged = ActionsDAG::merge(converting_dag.clone(), std::move(filter_dag));
+                    auto merged = ActionsDAG::merge(std::move(converting_dag), std::move(filter_dag));
+
+                    /// A column the filter consumes is dropped from the read's output unless it is
+                    /// also an output of the filter's actions. The parents below must survive, or
+                    /// the subcolumns derived after the read see a fabricated default instead.
+                    NameSet filter_output_names(filter_outputs.begin(), filter_outputs.end());
+                    for (const auto & parent_name : derivable_parent_names)
+                    {
+                        if (!merged.tryRestoreColumn(parent_name))
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Cannot preserve column {} required to derive a subcolumn of Buffer table",
+                                backQuoteIfNeed(parent_name));
+
+                        if (filter_output_names.insert(parent_name).second)
+                            filter_outputs.push_back(parent_name);
+
+                        parents_converted_by_previous_filter.insert(parent_name);
+                    }
+
                     merged.removeUnusedActions(filter_outputs);
                     return merged;
                 };
@@ -487,9 +608,30 @@ void StorageBuffer::read(
 
                     auto actions_dag = ActionsDAG::makeConvertingActions(
                             query_plan.getCurrentHeader()->getColumnsWithTypeAndName(),
-                            header.getColumnsWithTypeAndName(),
+                            header_without_derivable.getColumnsWithTypeAndName(),
                             ActionsDAG::MatchColumnsMode::Name,
                             local_context);
+
+                    /// Derive the subcolumns in the same step: the extraction is built against the
+                    /// converted block, where the parent already has the Buffer's type and thus
+                    /// exposes the subcolumn, and it executes after the conversion it binds to.
+                    if (!derivable_subcolumns.empty())
+                    {
+                        Names derivable_names_list;
+                        for (const auto & derivation : derivable_subcolumns)
+                            derivable_names_list.push_back(derivation.name);
+
+                        auto extraction_dag = createSubcolumnsExtractionActions(
+                            header_without_derivable, derivable_names_list, local_context);
+
+                        if (extraction_dag.getOutputs().empty())
+                            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                                "Cannot derive subcolumn {} from column {} of Buffer table",
+                                backQuoteIfNeed(derivable_subcolumns.front().name),
+                                backQuoteIfNeed(derivable_subcolumns.front().parent_name));
+
+                        actions_dag = ActionsDAG::merge(std::move(actions_dag), std::move(extraction_dag));
+                    }
 
                     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(actions_dag));
 
