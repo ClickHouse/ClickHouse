@@ -3,6 +3,7 @@
 
 SET allow_experimental_time_series_table = 1;
 SET session_timezone = 'UTC';
+SET join_algorithm = 'hash';
 -- The fix must make the samples read in-order on its own, without the caller enabling it, so pin
 -- the caller-visible setting off and keep plan optimizations on (defend against CI randomization).
 SET optimize_aggregation_in_order = 0;

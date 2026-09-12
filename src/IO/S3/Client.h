@@ -98,8 +98,6 @@ bool isS3ExpressEndpoint(const std::string & endpoint);
 struct ClientSettings
 {
     bool use_virtual_addressing = false;
-    /// Disable checksum to avoid extra read of the input stream
-    bool disable_checksum = false;
     /// Should client send ComposeObject request after upload to GCS.
     ///
     /// Previously ComposeObject request was required to make Copy possible,
@@ -240,6 +238,8 @@ public:
     }
 
     ProviderType getProviderType() const { return provider_type; }
+
+    bool isClientForGCS() const { return provider_type == ProviderType::GCS; }
 
     std::string getGCSOAuthToken() const;
 

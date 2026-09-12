@@ -80,6 +80,48 @@ the total storage volume of all the data to be merged. If the volume exceeds
 data to the storage disk using the direct I/O interface (`O_DIRECT` option).
 If `min_merge_bytes_to_use_direct_io = 0`, then direct I/O is disabled.
 
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+<SettingsInfoBlock type="UInt64" default_value="0" />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to force merging of parts in partitions that no longer receive inserts"}]}]}/>
+
+Merge parts in a partition if every part in it is older than this value, i.e.
+the partition no longer receives inserts. Unlike
+`min_age_to_force_merge_seconds` with `min_age_to_force_merge_on_partition_only`,
+the partition does not have to fit into a single merge: each merge still
+respects `max_bytes_to_merge_at_max_space_in_pool`. Works for Simple and
+StochasticSimple merge selectors.
+
+The age compared here is the age of the youngest part in the partition
+(`now - modification_time`, minimised over its parts), so the rule arms only
+once every part has aged past this value. Any new part resets it: an insert, a
+mutation, and also each merge this setting itself assigns, because the merged
+part is new. Forcing therefore disarms as soon as a forced merge lands and
+re-arms only after this value elapses again with no new parts, so a partition
+that needs several merges is compacted over successive rounds spaced by this
+interval rather than in one continuous pass.
+
+Forcing works exactly like `min_age_to_force_merge_seconds`: it waives the
+size-ratio requirement that normally keeps an unbalanced merge from being
+assigned, and it also waives the `min_parts_to_merge_at_once` floor, so a
+forced merge can cover fewer parts than that floor asks for. No other
+heuristic is turned off: `merge_selector_window_size` still bounds which parts
+are examined, and `merge_selector_enable_heuristic_to_remove_small_parts_at_right`
+still trims a trailing small part from a selected range of three parts or more.
+Either of those that a workload needs off must be turned off explicitly through
+its own setting.
+
+Under the Simple and StochasticSimple merge selectors, cannot be combined with
+`min_age_to_force_merge_seconds` together with
+`min_age_to_force_merge_on_partition_only`. That pair merges a whole partition
+at once, and only such a merge is marked final, which is what lets a
+`ReplacingMergeTree` run `CLEANUP`; forcing regular merges by partition age
+would pre-empt it. Use the pair for partitions that fit into a single merge and
+this setting for the ones that do not. Other selectors ignore this setting, so
+the combination is accepted with them.
+
+Possible values:
+- Positive integer.
+
 ## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
