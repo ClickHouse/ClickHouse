@@ -5,9 +5,12 @@
 #if USE_AVRO
 
 #include <unordered_set>
+#include <utility>
+#include <vector>
 
 #include <Common/Logger_fwd.h>
 #include <Core/Types.h>
+#include <Databases/DataLake/ICatalog.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Poco/JSON/Array.h>
@@ -15,6 +18,8 @@
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PersistentTableComponents.h>
+#include <Storages/ObjectStorage/Utils.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 
 namespace DB::Iceberg
 {
@@ -35,26 +40,52 @@ SnapshotReferencedFiles collectSnapshotReferencedFiles(
     const PersistentTableComponents & persistent_table_components,
     ContextPtr context,
     LoggerPtr log,
-    Int32 current_schema_id);
+    Int32 current_schema_id,
+    ExternalStorageCache & external_storages);
 
 struct ReachableFilesResult
 {
+    /// Base-storage keys of reachable files inside `table_path`, for matching against a base-storage listing.
     std::unordered_set<String> files;
     Int32 metadata_version;
+    /// Reachable files a base-storage listing of `table_path` cannot see: on a secondary storage, or on
+    /// the base storage but outside `table_path`. Deduplicated and paired with their storage. With
+    /// `scan_metadata_log_history` this also includes external references found only in historical
+    /// metadata versions from `metadata-log` (those never extend `files`).
+    std::vector<std::pair<ObjectStoragePtr, String>> external_files;
 };
 
-/// Collect all files reachable through the metadata graph.
+/// Collect all files reachable through the current metadata graph.
 ///
+/// The graph is rooted at the metadata file `catalog` currently points at; without a catalog
+/// (`catalog` is null) it is rooted at the explicitly configured `iceberg_metadata_file_path` when
+/// `ignore_explicit_metadata_file_path` is false, and at the latest metadata file visible in storage
+/// otherwise. A caller that deletes what the graph does *not* reach (`remove_orphan_files`) must use
+/// the latest version, or a configured older head would make every later file look unreachable; a
+/// caller that deletes what the graph *does* reach (`drop`) must use the configured head, which is
+/// where the table itself reads from.
 /// Traverses: metadata JSON files (from metadata-log), manifest lists (from snapshots),
 /// manifest files (from manifest lists), data/delete files (from manifest files),
-/// and statistics files. All returned paths are resolved storage paths.
-/// Also returns the metadata version used, for TOCTOU detection.
+/// and statistics files. Base-storage files inside `table_path` go to `files` (as keys); everything
+/// else goes to `external_files` (as resolved (storage, key) pairs). Also returns the metadata version
+/// used, for TOCTOU detection.
+/// With `scan_metadata_log_history` the historical metadata versions from `metadata-log` are walked
+/// too (recursively), but solely to report external references into `external_files` -- so callers
+/// that must fail closed on files a base-directory scan cannot see (e.g. `remove_orphan_files`) also
+/// catch references that only exist in table history. History never extends `files`. Historical
+/// metadata, manifest lists, or manifests already deleted from storage are skipped with a warning
+/// (their content is unrecoverable); any other failure while inspecting them propagates.
 ReachableFilesResult collectReachableFiles(
     ObjectStoragePtr object_storage,
     const PersistentTableComponents & persistent_table_components,
     const DataLakeStorageSettings & data_lake_settings,
     ContextPtr context,
-    LoggerPtr log);
+    LoggerPtr log,
+    ExternalStorageCache & external_storages,
+    const std::shared_ptr<DataLake::ICatalog> & catalog,
+    const String & table_identifier,
+    bool scan_metadata_log_history,
+    bool ignore_explicit_metadata_file_path);
 
 }
 

@@ -189,7 +189,10 @@ def test_expire_snapshots_basic(started_cluster_iceberg_with_spark, storage_type
 
     result = expire_snapshots(instance, TABLE_NAME, expire_timestamp)
     counts = parse_expire_result(result)
-    assert len(counts) == 7, f"Expected 7 metrics, got {counts}"
+    # 8, not 7: `failed_deletions_count` is reported as well, so that a deletion this command could
+    # not carry out is visible instead of being silently reported as a success.
+    assert len(counts) == 8, f"Expected 8 metrics, got {counts}"
+    assert counts["failed_deletions_count"] == 0, f"Nothing should have failed to delete, got {counts}"
     assert all(v >= 0 for v in counts.values()), f"All counts should be non-negative, got {counts}"
     assert_data_intact(instance, TABLE_NAME, 4)
 
@@ -216,7 +219,10 @@ def test_expire_snapshots_positional_timestamp(started_cluster_iceberg_with_spar
         settings=ICEBERG_SETTINGS,
     )
     counts = parse_expire_result(result)
-    assert len(counts) == 7, f"Expected 7 metrics, got {counts}"
+    # 8, not 7: `failed_deletions_count` is reported as well, so that a deletion this command could
+    # not carry out is visible instead of being silently reported as a success.
+    assert len(counts) == 8, f"Expected 8 metrics, got {counts}"
+    assert counts["failed_deletions_count"] == 0, f"Nothing should have failed to delete, got {counts}"
     assert all(v >= 0 for v in counts.values()), f"All counts should be non-negative, got {counts}"
     assert_data_intact(instance, TABLE_NAME, 4)
 
@@ -937,6 +943,81 @@ def test_expire_snapshots_shared_manifest_no_double_count(started_cluster_iceber
     )
     assert counts["deleted_manifest_lists_count"] >= 1, \
         "Expected at least one manifest list deleted (ML1 shared by S1 and S2)"
+
+
+# ---------------------------------------------------------------------------
+# Regression test: a failed deletion keeps the metadata that names the file
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("storage_type", ["local"])
+def test_expire_snapshots_keeps_anchors_of_failed_deletion(started_cluster_iceberg_with_spark, storage_type):
+    """A data file whose deletion fails keeps its manifest and its manifest list, which after the
+    commit are all that still name it, and both count as failed deletions.
+    https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3959097003
+    """
+    instance = started_cluster_iceberg_with_spark.instances["node1"]
+    TABLE_NAME = make_table_name("test_expire_keeps_anchors", storage_type)
+
+    create_and_populate(
+        started_cluster_iceberg_with_spark, instance, storage_type, TABLE_NAME, 3
+    )
+
+    snap_ids = get_snapshot_ids(instance, TABLE_NAME)
+    assert len(snap_ids) == 3, f"Expected 3 snapshots, got {snap_ids}"
+    s1_id = snap_ids[0]
+
+    # Rewinding the branch head to S1 makes S2 and S3 non-ancestors, so expiring them drops manifests
+    # and data files rather than just manifest lists.
+    def rewind_to_first_snapshot(m):
+        m["current-snapshot-id"] = s1_id
+        for ref in m.get("refs", {}).values():
+            ref["snapshot-id"] = s1_id
+        m.setdefault("properties", {}).update(AGGRESSIVE_RETENTION)
+
+    update_iceberg_metadata(instance, TABLE_NAME, rewind_to_first_snapshot)
+
+    meta_before = read_iceberg_metadata(instance, TABLE_NAME)
+    expired_manifest_lists = [
+        os.path.basename(s["manifest-list"]) for s in meta_before["snapshots"] if s["snapshot-id"] != s1_id
+    ]
+    assert len(expired_manifest_lists) == 2, f"Expected 2 expired manifest lists, got {expired_manifest_lists}"
+
+    metadata_dir = f"/var/lib/clickhouse/user_files/iceberg_data/default/{TABLE_NAME}/metadata"
+
+    def list_avro():
+        return set(instance.exec_in_container(
+            ["bash", "-c", f"ls {metadata_dir}/*.avro 2>/dev/null || true"]
+        ).split())
+
+    avro_before = list_avro()
+
+    # Fails the first removal of the run, which is a data file: the deletion walks each subtree leaf-first.
+    instance.query("SYSTEM ENABLE FAILPOINT local_object_storage_network_error_during_remove")
+    try:
+        counts = parse_expire_result(expire_snapshots(instance, TABLE_NAME, FAR_FUTURE))
+    finally:
+        instance.query("SYSTEM DISABLE FAILPOINT local_object_storage_network_error_during_remove")
+
+    # The shape the assertions below rely on: the first file touched is a leaf with both anchors above it.
+    assert counts["deleted_data_files_count"] >= 1, f"Expected expired data files, got {counts}"
+    assert counts["deleted_manifest_files_count"] >= 1, f"Expected expired manifests, got {counts}"
+
+    # The data file that failed, plus the manifest and the manifest list kept for its sake.
+    assert counts["failed_deletions_count"] == 3, f"Expected the leaf and its two anchors, got {counts}"
+
+    # The counts report what was really removed, so the kept manifest and manifest list are not
+    # among them: the reported .avro deletions match the .avro files that disappeared.
+    reported_avro = counts["deleted_manifest_files_count"] + counts["deleted_manifest_lists_count"]
+    deleted_avro = avro_before - list_avro()
+    assert len(deleted_avro) == reported_avro, (
+        f"Reported {reported_avro} deleted .avro files, but {len(deleted_avro)} disappeared"
+    )
+
+    kept = [ml for ml in expired_manifest_lists if any(ml in f for f in list_avro())]
+    assert len(kept) == 1, f"Exactly one expired manifest list should have survived, kept {kept}"
+
+    # The rewound table now holds only the row of the retained snapshot.
+    assert instance.query(f"SELECT * FROM {TABLE_NAME} ORDER BY x") == "1\n"
 
 
 # ---------------------------------------------------------------------------

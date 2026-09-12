@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ExternalPathResolver.h>
 #include <unordered_set>
 #include <Core/Range.h>
 #include <Core/SortDescription.h>
@@ -42,6 +43,8 @@
 
 namespace DB
 {
+
+struct ExternalStorageCache;
 
 String removeEscapedSlashes(const String & json_str);
 
@@ -124,6 +127,7 @@ void generateManifestList(
     const Iceberg::IcebergPathResolver & path_resolver,
     Poco::JSON::Object::Ptr metadata,
     ObjectStoragePtr object_storage,
+    ExternalStorageCache & external_storages,
     ContextPtr context,
     const std::vector<Iceberg::IcebergPathFromMetadata> & manifest_entry_names,
     Poco::JSON::Object::Ptr new_snapshot,
@@ -149,7 +153,8 @@ public:
         ContextPtr context_,
         std::shared_ptr<DataLake::ICatalog> catalog_,
         const Iceberg::PersistentTableComponents & persistent_table_components_,
-        const StorageID & table_id_);
+        const StorageID & table_id_,
+        std::shared_ptr<ExternalStorageCache> external_storages_);
 
     ~IcebergStorageSink() override;
 
@@ -193,6 +198,7 @@ private:
     Iceberg::PersistentTableComponents persistent_table_components;
     const DataLakeStorageSettings & data_lake_settings;
     const String write_format;
+    std::shared_ptr<ExternalStorageCache> external_storages;
 
 };
 
