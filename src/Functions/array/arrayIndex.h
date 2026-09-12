@@ -380,6 +380,152 @@ struct Null
     }
 };
 
+/** One search over string-like array elements, for any combination of element and needle layout.
+  *
+  * `ColumnString` and `ColumnFixedString` differ only in how the bytes of element `k` are located,
+  * so that is the only thing these accessors abstract. Both are backed by a `PaddedPODArray`, which
+  * is what lets the comparison use the `AllowOverflow15` primitives directly — the same ones
+  * `equals` uses — with no cast to a common type and no intermediate column.
+  */
+struct StringElements
+{
+    const ColumnString::Chars & chars;
+    const ColumnString::Offsets & offsets;
+
+    explicit StringElements(const ColumnString & column) : chars(column.getChars()), offsets(column.getOffsets()) {}
+
+    std::string_view operator[](size_t k) const
+    {
+        const size_t pos = offsets[static_cast<ssize_t>(k) - 1];
+        return {reinterpret_cast<const char *>(&chars[pos]), offsets[k] - pos};
+    }
+};
+
+struct FixedStringElements
+{
+    const ColumnFixedString::Chars & chars;
+    const size_t n;
+
+    explicit FixedStringElements(const ColumnFixedString & column) : chars(column.getChars()), n(column.getN()) {}
+
+    std::string_view operator[](size_t k) const { return {reinterpret_cast<const char *>(&chars[k * n]), n}; }
+};
+
+/// The needle is the same for every row, so ignore the row index.
+template <typename Elements>
+struct ConstNeedle
+{
+    Elements elements;
+    std::string_view operator[](size_t) const { return elements[0]; }
+};
+
+/// `equals` semantics: trailing zero bytes are padding when a `FixedString` is involved, and data
+/// otherwise. See `zeroPaddedStringComparison`.
+template <bool ZeroPadded>
+inline bool stringsEqual(std::string_view left, std::string_view right)
+{
+    if constexpr (ZeroPadded)
+        return 0
+            == memcmpSmallLikeZeroPaddedAllowOverflow15(
+                   reinterpret_cast<const UInt8 *>(left.data()),
+                   left.size(),
+                   reinterpret_cast<const UInt8 *>(right.data()),
+                   right.size());
+    else
+        return left.size() == right.size()
+            && 0 == memcmpSmallAllowOverflow15(
+                   reinterpret_cast<const UInt8 *>(left.data()),
+                   left.size(),
+                   reinterpret_cast<const UInt8 *>(right.data()),
+                   right.size());
+}
+
+template <typename ConcreteAction>
+struct StringSearch
+{
+    using ResultType = typename ConcreteAction::ResultType;
+
+    template <bool ZeroPadded, bool HasNullMapData, bool HasNullMapItem, typename Elements, typename Needles>
+    static void processImpl(
+        const Elements & elements,
+        const ColumnArray::Offsets & offsets,
+        const Needles & needles,
+        PaddedPODArray<ResultType> & result,
+        [[maybe_unused]] const NullMap * data_map,
+        [[maybe_unused]] const NullMap * item_map)
+    {
+        const size_t size = offsets.size();
+        result.resize(size);
+
+        ColumnArray::Offset current_offset = 0;
+
+        for (size_t i = 0; i < size; ++i)
+        {
+            const size_t array_size = offsets[i] - current_offset;
+            const std::string_view needle = needles[i];
+            [[maybe_unused]] const bool needle_is_null = HasNullMapItem && (*item_map)[i];
+
+            ResultType current = 0;
+
+            for (size_t j = 0; j < array_size; ++j)
+            {
+                const size_t element = current_offset + j;
+
+                if constexpr (HasNullMapData)
+                {
+                    /// NULL is a findable value here, so it matches a NULL needle and nothing else.
+                    if ((*data_map)[element])
+                    {
+                        if (!needle_is_null)
+                            continue;
+                    }
+                    else if (needle_is_null || !stringsEqual<ZeroPadded>(elements[element], needle))
+                        continue;
+                }
+                else if (needle_is_null || !stringsEqual<ZeroPadded>(elements[element], needle))
+                    continue;
+
+                ConcreteAction::apply(current, j);
+
+                if constexpr (!ConcreteAction::resume_execution)
+                    break;
+            }
+
+            result[i] = current;
+            current_offset = offsets[i];
+        }
+    }
+
+    /// Expand the null-map and zero-padding flags into template arguments.
+    template <typename Elements, typename Needles>
+    static void process(
+        const Elements & elements,
+        const ColumnArray::Offsets & offsets,
+        const Needles & needles,
+        PaddedPODArray<ResultType> & result,
+        const NullMap * data_map,
+        const NullMap * item_map,
+        bool zero_padded)
+    {
+        auto dispatch = [&]<bool ZeroPadded>()
+        {
+            if (data_map && item_map)
+                processImpl<ZeroPadded, true, true>(elements, offsets, needles, result, data_map, item_map);
+            else if (data_map)
+                processImpl<ZeroPadded, true, false>(elements, offsets, needles, result, data_map, item_map);
+            else if (item_map)
+                processImpl<ZeroPadded, false, true>(elements, offsets, needles, result, data_map, item_map);
+            else
+                processImpl<ZeroPadded, false, false>(elements, offsets, needles, result, data_map, item_map);
+        };
+
+        if (zero_padded)
+            dispatch.template operator()<true>();
+        else
+            dispatch.template operator()<false>();
+    }
+};
+
 template <typename ConcreteAction>
 struct String
 {
@@ -1214,66 +1360,46 @@ private:
         if (!array)
             return nullptr;
 
-        const auto * left = checkAndGetColumn<ColumnString>(&array->getData());
-        if (!left)
-            return nullptr;
-
-        /// This path compares exact byte ranges. A zero-padded comparison needs both operands
-        /// canonicalised first, which `executeGeneric` does.
-        if (zeroPaddedComparison(arguments))
-            return nullptr;
-
         const auto & right = *arguments[1].column;
         const auto [null_map_data, null_map_item] = getNullMaps(arguments);
+        const bool zero_padded = zeroPaddedComparison(arguments);
 
-        auto result = ResultColumnType::create();
-
-        if (const auto * item_arg_const = checkAndGetColumnConstStringOrFixedString(&right))
+        /// Both operands may be laid out as either `ColumnString` or `ColumnFixedString`, and a
+        /// needle may be constant or per-row. Resolve each side to an accessor and run one search.
+        auto search = [&]<typename Elements, typename Needles>(const Elements & elements, const Needles & needles)
         {
-            const auto * item_const_string = checkAndGetColumn<ColumnString>(&item_arg_const->getDataColumn());
-            const auto * item_const_fixedstring = checkAndGetColumn<ColumnFixedString>(&item_arg_const->getDataColumn());
+            auto result = ResultColumnType::create();
+            Impl::StringSearch<ConcreteAction>::process(
+                elements, array->getOffsets(), needles, result->getData(), null_map_data, null_map_item, zero_padded);
+            return result;
+        };
 
-            if (item_const_string)
-                Impl::String<ConcreteAction>::process(
-                    left->getChars(),
-                    array->getOffsets(),
-                    left->getOffsets(),
-                    item_const_string->getChars(),
-                    item_const_string->getDataAt(0).size(),
-                    result->getData(),
-                    null_map_data,
-                    null_map_item);
-            else if (item_const_fixedstring)
-                Impl::String<ConcreteAction>::process(
-                    left->getChars(),
-                    array->getOffsets(),
-                    left->getOffsets(),
-                    item_const_fixedstring->getChars(),
-                    item_const_fixedstring->getN(),
-                    result->getData(),
-                    null_map_data,
-                    null_map_item);
-            else
+        auto with_needle = [&]<typename Elements>(const Elements & elements) -> ColumnPtr
+        {
+            if (const auto * needle_const = checkAndGetColumnConstStringOrFixedString(&right))
+            {
+                const IColumn & needle_data = needle_const->getDataColumn();
+                if (const auto * needle_string = checkAndGetColumn<ColumnString>(&needle_data))
+                    return search(elements, Impl::ConstNeedle<Impl::StringElements>{Impl::StringElements(*needle_string)});
+                if (const auto * needle_fixed = checkAndGetColumn<ColumnFixedString>(&needle_data))
+                    return search(elements, Impl::ConstNeedle<Impl::FixedStringElements>{Impl::FixedStringElements(*needle_fixed)});
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "ColumnConst contains not String nor FixedString column");
-        }
-        else if (const auto * item_arg_vector = checkAndGetColumn<ColumnString>(&right))
-        {
-            Impl::String<ConcreteAction>::process(
-                left->getChars(),
-                array->getOffsets(),
-                left->getOffsets(),
-                item_arg_vector->getChars(),
-                item_arg_vector->getOffsets(),
-                result->getData(),
-                null_map_data,
-                null_map_item);
-        }
-        else
-        {
-            return nullptr;
-        }
+            }
 
-        return result;
+            if (const auto * needle_string = checkAndGetColumn<ColumnString>(&right))
+                return search(elements, Impl::StringElements(*needle_string));
+            if (const auto * needle_fixed = checkAndGetColumn<ColumnFixedString>(&right))
+                return search(elements, Impl::FixedStringElements(*needle_fixed));
+
+            return nullptr;
+        };
+
+        if (const auto * left_string = checkAndGetColumn<ColumnString>(&array->getData()))
+            return with_needle(Impl::StringElements(*left_string));
+        if (const auto * left_fixed = checkAndGetColumn<ColumnFixedString>(&array->getData()))
+            return with_needle(Impl::FixedStringElements(*left_fixed));
+
+        return nullptr;
     }
 
     static ColumnPtr executeConst(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type)
