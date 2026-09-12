@@ -22,6 +22,9 @@ namespace Setting
 }
 }
 
+/// Embedded timezones.
+std::string_view getTimeZone(const char * name);  /// NOLINT(misc-use-internal-linkage)
+
 namespace
 {
 
@@ -56,7 +59,8 @@ std::string determineDefaultTimeZone()
 
     if (tz_env_var)
     {
-        error_prefix = std::string("Could not determine time zone from TZ variable value: '") + tz_env_var + "': ";
+        error_prefix = std::string("Could not determine time zone from TZ variable value: '") + tz_env_var + "'"
+            " and tz database path: '" + tz_database_path.string() + "': ";
 
         if (*tz_env_var == ':')
             ++tz_env_var;
@@ -77,7 +81,7 @@ std::string determineDefaultTimeZone()
     }
     else
     {
-        error_prefix = "Could not determine local time zone: ";
+        error_prefix = "Could not determine local time zone and tz database path: '" + tz_database_path.string() + "' : ";
         tz_file_path = "/etc/localtime";
 
         /// No TZ variable and no tzdata installed (e.g. Docker)
@@ -111,6 +115,7 @@ std::string determineDefaultTimeZone()
                 return tz_name.empty() ? relative_path.string() : tz_name;
         }
 
+        const bool tz_file_path_was_absolute = tz_file_path.is_absolute();
         /// Try the same with full symlinks resolution
         {
             if (!tz_file_path.is_absolute())
@@ -121,6 +126,37 @@ std::string determineDefaultTimeZone()
             fs::path relative_path = tz_file_path.lexically_relative(tz_database_path);
             if (!relative_path.empty() && *relative_path.begin() != ".." && *relative_path.begin() != ".")
                 return tz_name.empty() ? relative_path.string() : tz_name;
+        }
+
+        /// Try to find the timezone by name in the embedded tz database.
+        /// Try only if tz_file_path was an absolute path set by TZ or TZ was not set.
+        /// tz_file_path is fully symlink resolved by this step.
+        if (tz_file_path_was_absolute)
+        {
+            fs::path suffix_path = tz_file_path.relative_path();
+            bool parent_dir_is_right = false;
+            while (!suffix_path.empty() && suffix_path != ".")
+            {
+                if (auto tz = getTimeZone(suffix_path.c_str()); !tz.empty())
+                {
+                    /// Consider the .../right/<tz_id> file as a file with leap seconds, which are not supported.
+                    /// This check is stricter than necessary, e.g. it'll reject the `/home/right/UTC` path, even
+                    /// if UTC tzdata hold no info about the leap seconds. Though it's arguably better than
+                    /// silently using the tzdata without leap seconds, while user explicitly requested the file with
+                    /// leap seconds.
+                    if (parent_dir_is_right)
+                    {
+                        throw Poco::Exception("tzdata files with leap seconds are not supported");
+                    }
+                    /// We do this check only if the initial tz_file_path was absolute, so tz_name
+                    /// should not be populated.
+                    return suffix_path.string();
+                }
+
+                parent_dir_is_right = *suffix_path.begin() == "right";
+
+                suffix_path = suffix_path.lexically_relative(*suffix_path.begin());
+            }
         }
 
         /// The file is not inside the tz_database_dir, so we hope that it was copied (not symlinked)
