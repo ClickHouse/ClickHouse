@@ -21,6 +21,7 @@
 #include <Common/logger_useful.h>
 #include <Common/AsyncLoader.h>
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Interpreters/ProcessList.h>
 
 
@@ -47,8 +48,13 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int LOGICAL_ERROR;
     extern const int UNFINISHED;
+    extern const int SYSTEM_ERROR;
 }
 
+namespace FailPoints
+{
+    extern const char database_atomic_commit_create_table_failure[];
+}
 
 namespace DatabaseMetadataDiskSetting
 {
@@ -430,6 +436,11 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
         assertDetachedTableNotInUse(query.uuid);
         chassert(DatabaseCatalog::instance().hasUUIDMapping(query.uuid));
 
+        fiu_do_on(FailPoints::database_atomic_commit_create_table_failure,
+        {
+            throw Exception(ErrorCodes::SYSTEM_ERROR, "Injecting failure in Atomic Database commit create table.");
+        });
+
         auto txn = query_context->getZooKeeperMetadataTransaction();
         if (txn && !query_context->isInternalSubquery())
             txn->commit();     /// Commit point (a sort of) for Replicated database
@@ -445,6 +456,7 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     catch (...)
     {
         db_disk->removeFileIfExists(table_metadata_tmp_path);
+        DatabaseCatalog::instance().removeTableDataFromDisk(table->getStorageID(), table);
         throw;
     }
     if (table->storesDataOnDisk())
