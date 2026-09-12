@@ -152,7 +152,16 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
 
         stack.pop();
 
-        writeStringBinary(node->step->getSerializationName(), out);
+        auto step_name = node->step->getSerializationName();
+        writeStringBinary(step_name, out);
+
+        UInt64 step_version = 0;
+        if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS)
+        {
+            step_version = QueryPlanStepRegistry::instance().writeStepVersion(step_name, flags.version);
+            writeVarUInt(step_version, out);
+        }
+
         writeStringBinary(node->step->getStepDescription(), out);
 
         if (node->step->hasOutputHeader())
@@ -167,6 +176,7 @@ void QueryPlan::serialize(WriteBuffer & out, const SerializationFlags & flags) c
 
         IQueryPlanStep::Serialization ctx{out, registry};
         ctx.version = flags.version;
+        ctx.step_version = step_version;
         node->step->serialize(ctx);
     }
 
@@ -254,8 +264,16 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
         }
 
         std::string step_name;
-        std::string step_description;
         readStringBinary(step_name, in);
+
+        UInt64 step_version = 0;
+        if (flags.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_VERSIONS)
+        {
+            readVarUInt(step_version, in);
+            step_registry.checkStepVersionReadable(step_name, step_version);
+        }
+
+        std::string step_description;
         readStringBinary(step_description, in);
 
         auto output_header  = std::make_shared<const Block>(deserializeHeader(in, max_type_complexity));
@@ -269,7 +287,8 @@ QueryPlanAndSets QueryPlan::deserialize(ReadBuffer & in, const ContextPtr & cont
             input_headers.push_back(child->step->getOutputHeader());
 
         IQueryPlanStep::Deserialization ctx{
-            in, sets_registry, {}, context, input_headers, output_header, settings, max_type_complexity, flags.version, flags.skip_data};
+            in, sets_registry, {}, context, input_headers, output_header, settings,
+            max_type_complexity, flags.version, step_version, flags.skip_data};
         auto step = step_registry.createStep(step_name, ctx);
 
         if (step->hasOutputHeader())

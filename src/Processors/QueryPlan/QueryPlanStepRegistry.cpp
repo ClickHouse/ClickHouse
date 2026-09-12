@@ -1,6 +1,8 @@
 #include <Common/Exception.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -8,6 +10,7 @@ namespace ErrorCodes
 {
     extern const int UNKNOWN_IDENTIFIER;
     extern const int LOGICAL_ERROR;
+    extern const int INCORRECT_DATA;
 }
 
 QueryPlanStepRegistry & QueryPlanStepRegistry::instance()
@@ -18,23 +21,64 @@ QueryPlanStepRegistry & QueryPlanStepRegistry::instance()
 
 void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function)
 {
+    registerStep(name, std::move(create_function), Versions{});
+}
+
+void QueryPlanStepRegistry::registerStep(const std::string & name, StepCreateFunction && create_function, Versions versions)
+{
     if (steps.contains(name))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Query plan step '{}' is already registered", name);
-    steps[name] = std::move(create_function);
+
+    /// The writer scans `write` for the highest plan version not above the one it serializes with, so
+    /// keep the entries ordered by plan version regardless of how they were declared.
+    std::sort(versions.write.begin(), versions.write.end());
+
+    steps[name] = Entry{std::move(create_function), std::move(versions)};
+}
+
+const QueryPlanStepRegistry::Entry & QueryPlanStepRegistry::getEntry(const std::string & name) const
+{
+    auto it = steps.find(name);
+    if (it == steps.end())
+        throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown query plan step: {}", name);
+    return it->second;
 }
 
 QueryPlanStepPtr QueryPlanStepRegistry::createStep(
     const std::string & name,
     IQueryPlanStep::Deserialization & ctx) const
 {
-    StepCreateFunction create_function;
+    return getEntry(name).create_function(ctx);
+}
+
+UInt64 QueryPlanStepRegistry::writeStepVersion(const std::string & name, UInt64 plan_version) const
+{
+    const Versions & versions = getEntry(name).versions;
+
+    UInt64 step_version = 0;
+    bool found = false;
+    for (const auto & [at_plan_version, at_step_version] : versions.write)
     {
-        auto it = steps.find(name);
-        if (it == steps.end())
-            throw Exception(ErrorCodes::UNKNOWN_IDENTIFIER, "Unknown query plan step: {}", name);
-        create_function = it->second;
+        if (at_plan_version > plan_version)
+            break;
+        step_version = at_step_version;
+        found = true;
     }
-    return create_function(ctx);
+
+    if (!found)
+        throw Exception(ErrorCodes::LOGICAL_ERROR,
+            "Query plan step '{}' has no serialization version for plan version {}", name, plan_version);
+
+    return step_version;
+}
+
+void QueryPlanStepRegistry::checkStepVersionReadable(const std::string & name, UInt64 step_version) const
+{
+    const Versions & versions = getEntry(name).versions;
+    if (std::find(versions.readable.begin(), versions.readable.end(), step_version) == versions.readable.end())
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "Query plan step '{}' cannot be read at serialization version {}; this server does not know it",
+            name, step_version);
 }
 
 void registerExpressionStep(QueryPlanStepRegistry & registry);
