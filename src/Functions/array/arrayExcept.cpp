@@ -263,6 +263,15 @@ public:
                 arguments[1].type->getName());
         }
 
+        const auto is_supported_type = [](const DataTypePtr & type)
+        {
+            const WhichDataType column_type(type->getColumnType());
+            return column_type.isInteger() || column_type.isFloat() || column_type.isStringOrFixedString();
+        };
+
+        if (!is_supported_type(source_nested))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}. Consider arrayFilter(x -> NOT has (exclude), source)", arguments[0].type->getName());
+
         return arguments[0].type;
     }
 
@@ -271,16 +280,25 @@ public:
         if (return_type->onlyNull())
             return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto source_full_col = arguments[0].column->convertToFullColumnIfConst();
         const bool exclude_is_const = isColumnConst(*arguments[1].column);
 
         // We expect some form of arrays for both params
-        const ColumnArray * source_col = checkAndGetColumn<ColumnArray>(source_full_col.get());
         const ColumnArray * exclude_col = exclude_is_const
             ? typeid_cast<const ColumnArray *>(&typeid_cast<const ColumnConst *>(arguments[1].column.get())->getDataColumn())
             : checkAndGetColumn<ColumnArray>(arguments[1].column.get());
 
-        if (!source_col || !exclude_col)
+        if (!exclude_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be arrays");
+
+        if (exclude_col->getData().empty())
+        {
+            return exclude_is_const ? arguments[0].column : arguments[0].column->convertToFullColumnIfConst();
+        }
+
+        auto source_full_col = arguments[0].column->convertToFullColumnIfConst();
+        const ColumnArray * source_col = checkAndGetColumn<ColumnArray>(source_full_col.get());
+
+        if (!source_col)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be arrays");
 
         // With a little twist that they might be nullable...
