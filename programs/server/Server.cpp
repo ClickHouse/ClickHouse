@@ -32,6 +32,7 @@
 #include <base/argsToConfig.h>
 #include <Common/PoolId.h>
 #include <Common/CurrentMemoryTracker.h>
+#include <Common/MemoryPressureMonitor.h>
 #include <Common/MemoryTracker.h>
 #include <Common/PerCPUMemory.h>
 #include <Common/MemoryWorker.h>
@@ -350,6 +351,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_remote_read_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_write_network_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_remote_read_connections;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_elevated_level_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_high_level_pct;
+    extern const ServerSettingsUInt64 reader_executor_memory_pressure_critical_level_pct;
     extern const ServerSettingsUInt64 max_local_read_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_local_write_bandwidth_for_server;
     extern const ServerSettingsUInt64 max_server_memory_usage;
@@ -425,6 +429,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_size;
     extern const ServerSettingsUInt64 max_format_parsing_thread_pool_free_size;
     extern const ServerSettingsUInt64 format_parsing_thread_pool_queue_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_size;
+    extern const ServerSettingsUInt64 max_iceberg_manifest_decode_thread_pool_free_size;
+    extern const ServerSettingsUInt64 iceberg_manifest_decode_thread_pool_queue_size;
     extern const ServerSettingsUInt64 page_cache_history_window_ms;
     extern const ServerSettingsString page_cache_policy;
     extern const ServerSettingsDouble page_cache_size_ratio;
@@ -1333,6 +1340,14 @@ try
             " 'dl_iterate_phdr' is not lock free and not async-signal safe).");
 #endif
 
+#if defined(MEMORY_SANITIZER)
+    /// The TraceCollector itself stays enabled: the memory profiler, `trace_profile_events` and
+    /// `SYSTEM INSTRUMENT` all feed it from ordinary code rather than from a signal handler.
+    LOG_INFO(log, "The sampling Query Profiler is disabled under Memory Sanitizer, because a profiler signal"
+        " delivered to a thread that is printing a sanitizer report aborts the process and truncates the"
+        " report. See QUERY_PROFILER_SUPPORTED in Common/QueryProfiler.h.");
+#endif
+
     // Settings validation for page cache. Ensure that page_cache_max_size is > page_cache_min_size.
     // Otherwise, crash might happen during cache resizing in src/Common/PageCache.cpp::autoResize
     size_t page_cache_min_size = server_settings[ServerSetting::page_cache_min_size];
@@ -1508,6 +1523,22 @@ try
         );
     }
 
+    auto begin_keeper_tcp_connection_drain = [&]
+    {
+#if USE_NURAFT
+        if (auto dispatcher = global_context->tryGetKeeperDispatcher())
+            dispatcher->beginTCPConnectionDrain();
+
+        KeeperTCPHandler::closeAllConnections();
+#endif
+    };
+
+    auto is_keeper_tcp_server = [](const ProtocolServerAdapter & server)
+    {
+        const auto & port_name = server.getPortName();
+        return port_name == "keeper_server.tcp_port" || port_name == "keeper_server.tcp_port_secure";
+    };
+
     /// NOTE: global context should be destroyed *before* GlobalThreadPool::shutdown()
     /// Otherwise GlobalThreadPool::shutdown() will hang, since Context holds some threads.
     SCOPE_EXIT_SAFE({
@@ -1537,12 +1568,8 @@ try
         global_context->shutdown();
 
         LOG_DEBUG(log, "Shut down storages.");
-
-        /// Signal Keeper TCP handlers to close before waiting for connections,
-        /// otherwise they keep running indefinitely and block shutdown.
-        global_context->signalKeeperDispatcherShutdown();
-
-        size_t current_connections = 0;
+        size_t keeper_tcp_connections = 0;
+        size_t non_keeper_tcp_connections = 0;
         if (!servers_to_start_before_tables.empty())
         {
             LOG_DEBUG(log, "Waiting for current connections to servers for tables to finish.");
@@ -1551,25 +1578,64 @@ try
                 for (auto & server : servers_to_start_before_tables)
                 {
                     server.stop();
-                    current_connections += server.currentConnections();
+                    if (is_keeper_tcp_server(server))
+                        keeper_tcp_connections += server.currentConnections();
+                    else
+                        non_keeper_tcp_connections += server.currentConnections();
                 }
             }
-
-            if (current_connections)
-                LOG_INFO(log, "Closed all listening sockets. Waiting for {} outstanding connections.", current_connections);
-            else
-                LOG_INFO(log, "Closed all listening sockets.");
-
-            if (current_connections > 0)
-                current_connections = waitServersToFinish(servers_to_start_before_tables, servers_lock, server_settings[ServerSetting::shutdown_wait_unfinished]);
-
-            if (current_connections)
-                LOG_INFO(log, "Closed connections to servers for tables. But {} remain. Probably some tables of other users cannot finish their connections after context shutdown.", current_connections);
-            else
-                LOG_INFO(log, "Closed connections to servers for tables.");
         }
 
-        global_context->shutdownKeeperDispatcher(current_connections == 0);
+        /// Stop Keeper TCP handlers before draining the remaining pre-table protocol handlers.
+        /// Those handlers include HTTP control, interserver HTTP/HTTPS, and Prometheus; they need
+        /// the embedded Keeper and RAFT to remain live until they finish.
+        begin_keeper_tcp_connection_drain();
+
+        if (non_keeper_tcp_connections)
+        {
+            LOG_INFO(log, "Closed all non-Keeper-TCP listening sockets. Waiting for {} outstanding connections.", non_keeper_tcp_connections);
+            non_keeper_tcp_connections = waitServersToFinish(
+                servers_to_start_before_tables,
+                servers_lock,
+                server_settings[ServerSetting::shutdown_wait_unfinished],
+                [&](const auto & server) { return !is_keeper_tcp_server(server); });
+        }
+
+        global_context->signalKeeperDispatcherShutdown();
+        global_context->shutdownKeeperDispatcherBeforeConnectionsFinish();
+
+        if (non_keeper_tcp_connections)
+        {
+            global_context->shutdownKeeperDispatcherAfterConnectionsFinish(false);
+            dumpCoverageReportIfPossible();
+            LOG_WARNING(
+                log,
+                "Closed connections to non-Keeper-TCP servers. But {} remain. Will shutdown forcefully.",
+                non_keeper_tcp_connections);
+            safeExit(0, LeakCheck::SkipAndReport);
+        }
+
+        if (!servers_to_start_before_tables.empty())
+        {
+            if (keeper_tcp_connections)
+                LOG_INFO(log, "Closed all Keeper TCP listening sockets. Waiting for {} outstanding connections.", keeper_tcp_connections);
+            else
+                LOG_INFO(log, "Closed all Keeper listening sockets.");
+
+            if (keeper_tcp_connections > 0)
+                keeper_tcp_connections = waitServersToFinish(
+                    servers_to_start_before_tables,
+                    servers_lock,
+                    server_settings[ServerSetting::shutdown_wait_unfinished],
+                    is_keeper_tcp_server);
+
+            if (keeper_tcp_connections)
+                LOG_INFO(log, "Closed Keeper TCP connections. But {} remain.", keeper_tcp_connections);
+            else
+                LOG_INFO(log, "Closed Keeper TCP connections.");
+        }
+
+        global_context->shutdownKeeperDispatcherAfterConnectionsFinish(keeper_tcp_connections == 0);
 
         /// Wait server pool to avoid use-after-free of destroyed context in the handlers
         server_pool.joinAll();
@@ -1673,6 +1739,11 @@ try
         server_settings[ServerSetting::max_format_parsing_thread_pool_size],
         server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
         server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
+
+    getIcebergManifestDecodeThreadPool().initialize(
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+        server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+        server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
 
     std::string path_str = getCanonicalPath(String(server_settings[ServerSetting::path]), original_working_directory);
     fs::path path = path_str;
@@ -2420,7 +2491,8 @@ try
             /// view, so CLI-injected and Poco-internal top-level keys do not need an allowlist.
             ServerSettings::checkUnknownSettings(*loaded_config, config_path, skip_check);
 
-            /// Fail closed on a legacy insert_deduplication_version arriving via a runtime reload.
+            /// Fail closed on a legacy insert_deduplication_version, or on a memory-pressure threshold
+            /// triple that is out of range or out of order, arriving via a runtime reload.
             /// Validate the incoming config BEFORE config().replace below: validating after would mutate
             /// the live config even for a rejected reload (ConfigReloader has no rollback hook), leaving
             /// system.server_settings reporting an unsupported value. Reject first, then replace.
@@ -2428,6 +2500,10 @@ try
                 ServerSettings incoming_server_settings;
                 incoming_server_settings.loadSettingsFromConfig(*loaded_config);
                 validate_insert_deduplication_version(incoming_server_settings);
+                validateMemoryPressureThresholds(
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                    incoming_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
             }
 
             /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
@@ -2445,6 +2521,14 @@ try
 
             ServerSettings new_server_settings;
             new_server_settings.loadSettingsFromConfig(config());
+
+            /// The check above sees the incoming file alone. A triple split across the file and the
+            /// command-line layer can have each source valid and the merge out of order, so check the
+            /// merged view too - here, before the first live setting below is touched.
+            validateMemoryPressureThresholds(
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
 
             DB::abort_on_logical_error.store(new_server_settings[ServerSetting::abort_on_logical_error], std::memory_order_relaxed);
 
@@ -2712,6 +2796,11 @@ try
                 new_server_settings[ServerSetting::max_format_parsing_thread_pool_free_size],
                 new_server_settings[ServerSetting::format_parsing_thread_pool_queue_size]);
 
+            getIcebergManifestDecodeThreadPool().reloadConfiguration(
+                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_size],
+                new_server_settings[ServerSetting::max_iceberg_manifest_decode_thread_pool_free_size],
+                new_server_settings[ServerSetting::iceberg_manifest_decode_thread_pool_queue_size]);
+
             global_context->setMergeWorkload(new_server_settings[ServerSetting::merge_workload]);
             global_context->setMutationWorkload(new_server_settings[ServerSetting::mutation_workload]);
             global_context->setThrowOnUnknownWorkload(new_server_settings[ServerSetting::throw_on_unknown_workload]);
@@ -2720,6 +2809,14 @@ try
                 new_server_settings[ServerSetting::cpu_slot_quantum_ns],
                 new_server_settings[ServerSetting::cpu_slot_preemption_timeout_ms]);
             global_context->setCPUSlotParking(new_server_settings[ServerSetting::cpu_slot_parking]);
+
+            /// The thresholds were validated above, so a rejected reload never reaches here. Sets and stamps
+            /// the shared thresholds, so every monitor adopts them on its next sample,
+            /// bypassing the sticky cooldown.
+            setMemoryPressureThresholds(
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_elevated_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_high_level_pct],
+                new_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
 
             if (config().has("resources") || config().has("workload_classifiers"))
             {
