@@ -552,32 +552,109 @@ std::optional<std::unordered_map<const ActionsDAG::Node *, const ActionsDAG::Nod
     return new_inputs;
 }
 
-std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node)
+static bool canInheritConstnessFromChildren(const ActionsDAG::Node & node)
+{
+    if (node.type == ActionsDAG::ActionType::ALIAS)
+        return node.children.size() == 1;
+
+    /// Server constants may differ between shards of the same query.
+    return node.type == ActionsDAG::ActionType::FUNCTION && node.function_base && node.function_base->isDeterministicInScopeOfQuery()
+        && !node.function_base->isServerConstant();
+}
+
+static bool isConstantExpression(const ActionsDAG::Node * root, NodeMap & constant_expressions)
+{
+    if (auto it = constant_expressions.find(root); it != constant_expressions.end())
+        return it->second;
+
+    struct Frame
+    {
+        const ActionsDAG::Node * node;
+        size_t next_child = 0;
+    };
+
+    std::stack<Frame> nodes;
+    nodes.push({root});
+    auto finish = [&](bool is_constant)
+    {
+        constant_expressions[nodes.top().node] = is_constant;
+        nodes.pop();
+    };
+
+    while (!nodes.empty())
+    {
+        auto & frame = nodes.top();
+        const auto * node = frame.node;
+
+        if (node->column)
+            finish(true);
+        else if (!canInheritConstnessFromChildren(*node))
+            finish(false);
+        else if (frame.next_child == node->children.size())
+            finish(true);
+        else
+        {
+            const auto * child = node->children[frame.next_child];
+            if (auto it = constant_expressions.find(child); it == constant_expressions.end())
+                nodes.push({child});
+            else if (!it->second)
+                finish(false);
+            else
+                ++frame.next_child;
+        }
+    }
+
+    return constant_expressions.at(root);
+}
+
+std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDAG::Node & node, NodeMap & constant_expressions)
 {
     if (node.type == ActionsDAG::ActionType::ALIAS && node.children.size() == 1)
-        return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0, true};
+        return ActionsDAGLineageHop{ActionsDAGLineageKind::Identity, 0, true, 0};
 
     if (node.type != ActionsDAG::ActionType::FUNCTION || !node.function_base || node.children.empty())
         return {};
 
     const auto function_name = node.function_base->getName();
     ActionsDAGLineageKind kind{};
-    if ((function_name == "materialize" || function_name == "toNullable") && node.children.size() == 1)
+    size_t source_child_index = 0;
+    if ((function_name == "materialize" || function_name == "toNullable" || function_name == "identity") && node.children.size() == 1)
         kind = ActionsDAGLineageKind::ValuePreserving;
     else if (function_name == "_CAST" || function_name == "CAST")
         kind = ActionsDAGLineageKind::DistinctValuesBound;
-    else if (node.children.size() == 1 && node.function_base->isDeterministic())
-        kind = ActionsDAGLineageKind::DistinctValuesBound;
     else
-        return {};
+    {
+        if (!node.function_base->isDeterministicInScopeOfQuery())
+            return {};
 
-    /// NDV counts only non-null values. A hop turning a Nullable first argument into a
+        /// Constant arguments do not increase NDV; follow the only non-const argument.
+        std::optional<size_t> non_constant_child;
+        for (size_t i = 0; i < node.children.size(); ++i)
+        {
+            if (isConstantExpression(node.children[i], constant_expressions))
+                continue;
+
+            if (non_constant_child)
+                return {};
+            non_constant_child = i;
+        }
+
+        if (!non_constant_child)
+            return {};
+        source_child_index = *non_constant_child;
+        kind = ActionsDAGLineageKind::DistinctValuesBound;
+    }
+
+    /// NDV counts only non-null values. A hop turning a Nullable source argument into a
     /// non-Nullable result can map NULL to one additional counted value.
     const bool collapses_null
-        = isNullableOrLowCardinalityNullable(node.children[0]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
+        = isNullableOrLowCardinalityNullable(node.children[source_child_index]->result_type) && !isNullableOrLowCardinalityNullable(node.result_type);
     const bool preserves_width = removeLowCardinalityAndNullable(node.result_type)
-        ->equals(*removeLowCardinalityAndNullable(node.children[0]->result_type));
-    return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width};
+                                     ->equals(*removeLowCardinalityAndNullable(node.children[source_child_index]->result_type))
+        && (kind == ActionsDAGLineageKind::ValuePreserving || function_name == "_CAST" || function_name == "CAST"
+            || function_name == "assumeNotNull"
+            || removeLowCardinalityAndNullable(node.result_type)->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion());
+    return ActionsDAGLineageHop{kind, collapses_null ? 1u : 0u, preserves_width, source_child_index};
 }
 
 std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & actions)
@@ -590,6 +667,7 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
         input_positions[inputs[input_position]] = input_position;
 
     std::unordered_map<const ActionsDAG::Node *, TraceState> traced;
+    NodeMap constant_expressions;
     const auto & outputs = actions.getOutputs();
     for (const auto * output : outputs)
     {
@@ -611,18 +689,18 @@ std::vector<ActionsDAGOutputLineage> traceActionsDAGLineage(const ActionsDAG & a
                 continue;
             }
 
-            const auto hop = describeActionsDAGLineageHop(*node);
+            const auto hop = describeActionsDAGLineageHop(*node, constant_expressions);
             if (hop && !child_pushed)
             {
                 nodes_to_process.top().second = true;
-                nodes_to_process.push({node->children[0], false});
+                nodes_to_process.push({node->children[hop->source_child_index], false});
                 continue;
             }
 
             TraceState result;
             if (hop)
             {
-                const auto & child = traced.at(node->children[0]);
+                const auto & child = traced.at(node->children[hop->source_child_index]);
                 if (child)
                 {
                     ActionsDAGLineageKind kind = ActionsDAGLineageKind::Identity;
