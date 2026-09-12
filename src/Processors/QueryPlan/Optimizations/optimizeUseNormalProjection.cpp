@@ -387,18 +387,7 @@ std::optional<String> optimizeUseNormalProjections(
         return {};
 
     ContextPtr context = reading->getContext();
-    auto it = std::find_if(
-        normal_projections.begin(),
-        normal_projections.end(),
-        [&](const auto * projection)
-        { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
-
-    if (it != normal_projections.end())
-    {
-        const ProjectionDescription * preferred_projection = *it;
-        normal_projections.clear();
-        normal_projections.push_back(preferred_projection);
-    }
+    filterProjectionCandidates(normal_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
 
     Names required_columns = reading->getAllColumnNames();
 

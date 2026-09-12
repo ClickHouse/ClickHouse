@@ -823,18 +823,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
 
     if (!candidates.minmax_projection)
     {
-        auto it = std::find_if(
-            agg_projections.begin(),
-            agg_projections.end(),
-            [&](const auto * projection)
-            { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
-
-        if (it != agg_projections.end())
-        {
-            const ProjectionDescription * preferred_projection = *it;
-            agg_projections.clear();
-            agg_projections.push_back(preferred_projection);
-        }
+        filterProjectionCandidates(agg_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
 
         candidates.real.reserve(agg_projections.size());
         for (const auto * projection : agg_projections)
@@ -909,18 +898,7 @@ static AggregateProjectionCandidates getAggregateProjectionCandidates(
     const Names keys = distinct.getOutputHeader()->getNames();
 
     /// Prefer the user specified projection if any.
-    auto it = std::find_if(
-        agg_projections.begin(),
-        agg_projections.end(),
-        [&](const auto * projection)
-        { return projection->name == context->getSettingsRef()[Setting::preferred_optimize_projection_name].value; });
-
-    if (it != agg_projections.end())
-    {
-        const ProjectionDescription * preferred_projection = *it;
-        agg_projections.clear();
-        agg_projections.push_back(preferred_projection);
-    }
+    filterProjectionCandidates(agg_projections, context->getSettingsRef()[Setting::preferred_optimize_projection_name].value);
 
     AggregateDescriptions aggregates; // Empty for DISTINCT
     candidates.real.reserve(agg_projections.size());
