@@ -1494,16 +1494,26 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
         removeExpressionsThatDoNotDependOnTableIdentifiers(query_node->getWhere(), replacement_table_expression, context);
 
     query_node->getGroupBy().getNodes().clear();
+    /// A GROUP BY modifier must not outlive its clause: with no GROUP BY keys and no aggregate
+    /// functions in the replaced projection, the child query is aggregation-free, and the ALL forms
+    /// would re-expand over that replaced projection instead of the original one.
+    query_node->setIsGroupByAll(false);
+    query_node->setIsGroupByWithTotals(false);
+    query_node->setIsGroupByWithRollup(false);
+    query_node->setIsGroupByWithCube(false);
+    query_node->setIsGroupByWithGroupingSets(false);
     query_node->getHaving() = {};
     query_node->getWindow().getNodes().clear();
     query_node->getQualify() = {};
     query_node->getOrderBy().getNodes().clear();
+    query_node->setIsOrderByAll(false);
     query_node->getInterpolate() = {};
     if (query_node->hasLimitByLimit())
         query_node->getLimitByLimit() = {};
     if (query_node->hasLimitByOffset())
         query_node->getLimitByOffset() = {};
     query_node->getLimitBy().getNodes().clear();
+    query_node->setIsLimitByAll(false);
     /// LIMIT selects rows relative to the ORDER BY cleared just above, so it is stale here.
     query_node->setIsLimitWithTies(false);
     if (query_node->hasLimit())
