@@ -824,10 +824,10 @@ void StorageMaterializedView::alter(
         /// this ALTER sets, so that every comment alter this storage accepts is honoured.
         for (const auto & column : view_metadata->columns)
             if (new_metadata.columns.has(column.name))
-                new_metadata.columns.modify(column.name, [&](ColumnDescription & c) { c.comment = column.comment; });
+                new_metadata.columns.setComment(column.name, column.comment);
         for (const auto & command : params)
-            if (!command.ignore && command.isCommentAlter())
-                command.apply(new_metadata, mv_db_context);
+            if (!command.ignore && command.isCommentAlter() && new_metadata.columns.has(command.column_name))
+                new_metadata.columns.setComment(command.column_name, *command.comment);
     }
     else
     {
