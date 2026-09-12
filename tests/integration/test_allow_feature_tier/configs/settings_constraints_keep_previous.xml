@@ -1,0 +1,5 @@
+<clickhouse>
+    <access_control_improvements>
+        <settings_constraints_replace_previous>false</settings_constraints_replace_previous>
+    </access_control_improvements>
+</clickhouse>

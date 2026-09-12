@@ -19,5 +19,9 @@
             <show_named_collections>1</show_named_collections>
             <show_named_collections_secrets>1</show_named_collections_secrets>
         </default>
+        <tier_config_user>
+            <no_password/>
+            <profile>default</profile>
+        </tier_config_user>
     </users>
 </clickhouse>

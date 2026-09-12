@@ -195,23 +195,25 @@ void SettingsConstraints::check(const Settings & current_settings, const Setting
         if (SettingsProfileElements::isAllowBackupSetting(element.setting_name))
             continue;
 
-        if (element.value)
+        /// Everything but the feature tier: what a statement writes into a user, a role or a settings
+        /// profile is compared here against the session of the administrator running it, which says
+        /// nothing about whether the target's value changes. `allow_feature_tier` is decided instead by
+        /// `checkFeatureTierForPendingAccessEntities`, from the settings every user ends up with.
+        auto check_element_value = [&](const Field & value)
         {
-            SettingChange value(element.setting_name, *element.value);
-            check(current_settings, value, source);
-        }
+            SettingChange change(element.setting_name, value);
+            checkImpl(current_settings, change, THROW_ON_VIOLATION, source, /* ignore_unchanged_settings= */ false,
+                      /* check_feature_tier= */ false);
+        };
+
+        if (element.value)
+            check_element_value(*element.value);
 
         if (element.min_value)
-        {
-            SettingChange value(element.setting_name, *element.min_value);
-            check(current_settings, value, source);
-        }
+            check_element_value(*element.min_value);
 
         if (element.max_value)
-        {
-            SettingChange value(element.setting_name, *element.max_value);
-            check(current_settings, value, source);
-        }
+            check_element_value(*element.max_value);
 
         /// Don't check disallowed_values here in the profile elements because they make constrains more restrictive
         /// and don't allow to bypass constraints from config by creating a user with custom constraints. The check
@@ -404,7 +406,8 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
                                     SettingChange & change,
                                     ReactionOnViolation reaction,
                                     SettingSource source,
-                                    bool ignore_unchanged_settings) const
+                                    bool ignore_unchanged_settings,
+                                    bool check_feature_tier) const
 {
     std::string_view setting_name = Settings::resolveName(change.name);
 
@@ -447,7 +450,7 @@ bool SettingsConstraints::checkImpl(const Settings & current_settings,
             return true;
     }
 
-    return getChecker(current_settings, setting_name).check(change, new_value, reaction, source);
+    return getChecker(current_settings, setting_name, check_feature_tier).check(change, new_value, reaction, source);
 }
 
 bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, SettingChange & change, ReactionOnViolation reaction) const
@@ -461,7 +464,7 @@ bool SettingsConstraints::checkImpl(const MergeTreeSettings & current_settings, 
     if (new_value.isNull())
         return false;
 
-    if (isAnyTierRestricted())
+    if (access_control && isAnyFeatureTierRestricted(*access_control))
     {
         if (auto tier_checker = getTierChecker(setting_name, MergeTreeSettings::tryGetTierOfBuiltin(setting_name).value_or(SettingsTierType::PRODUCTION)))
             return tier_checker->check(change, new_value, reaction, SettingSource::QUERY);
@@ -595,7 +598,7 @@ std::string_view SettingsConstraints::resolveSettingNameWithCache(std::string_vi
     return name;
 }
 
-SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name) const
+SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & current_settings, std::string_view setting_name, bool check_feature_tier) const
 {
     /// The cache only knows the names constraints were declared with, which need not be the name a query
     /// uses. The caller has applied `Settings::resolveName` already, and that leaves a `merge_tree_`-prefixed
@@ -621,7 +624,7 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
         return Checker(PreformattedMessage::create("Cannot modify 'readonly' setting in readonly mode"), ErrorCodes::READONLY);
 
     /// Not `current_settings.getTier`: a `merge_tree_`-prefixed name is a `MergeTreeSettings` setting.
-    if (isAnyTierRestricted())
+    if (check_feature_tier && access_control && isAnyFeatureTierRestricted(*access_control))
     {
         if (auto tier_checker = getTierChecker(setting_name, settingGetTier(resolved_name)))
             return *tier_checker;
@@ -642,38 +645,41 @@ SettingsConstraints::Checker SettingsConstraints::getChecker(const Settings & cu
     return Checker(it->second, Settings::resolveName);
 }
 
-/// Whether `allow_feature_tier` restricts anything at all. It usually does not, so this is checked before
-/// looking up which tier a setting belongs to.
-bool SettingsConstraints::isAnyTierRestricted() const
+bool isAnyFeatureTierRestricted(const AccessControl & access_control)
 {
-    return access_control
-        && (!access_control->getAllowExperimentalTierSettings() || !access_control->getAllowPrivatePreviewTierSettings()
-            || !access_control->getAllowBetaTierSettings());
+    return !access_control.getAllowExperimentalTierSettings() || !access_control.getAllowPrivatePreviewTierSettings()
+        || !access_control.getAllowBetaTierSettings();
 }
 
-/// The one place that enforces `allow_feature_tier`, for every kind of setting. Callers reach it only for
-/// a setting a query really changes, so a value the server itself set is never refused.
+std::optional<PreformattedMessage> getFeatureTierRestriction(
+    const AccessControl & access_control, std::string_view setting_name, SettingsTierType tier)
+{
+    auto refuse = [&](std::string_view tier_name)
+    {
+        return PreformattedMessage::create(
+            "Cannot modify setting '{}'. Changes to {} settings are disabled in the server config ('allow_feature_tier')",
+            setting_name,
+            tier_name);
+    };
+
+    if (tier == SettingsTierType::EXPERIMENTAL && !access_control.getAllowExperimentalTierSettings())
+        return refuse("EXPERIMENTAL");
+    if (tier == SettingsTierType::PRIVATE_PREVIEW && !access_control.getAllowPrivatePreviewTierSettings())
+        return refuse("PRIVATE PREVIEW");
+    if (tier == SettingsTierType::BETA && !access_control.getAllowBetaTierSettings())
+        return refuse("BETA");
+    return {};
+}
+
+/// Callers reach this only for a setting a query really changes, so a value the server itself set is
+/// never refused.
 std::optional<SettingsConstraints::Checker> SettingsConstraints::getTierChecker(std::string_view setting_name, SettingsTierType tier) const
 {
     if (!access_control)
         return {};
 
-    auto refuse = [&](std::string_view tier_name)
-    {
-        return Checker(
-            PreformattedMessage::create(
-                "Cannot modify setting '{}'. Changes to {} settings are disabled in the server config ('allow_feature_tier')",
-                setting_name,
-                tier_name),
-            ErrorCodes::READONLY);
-    };
-
-    if (tier == SettingsTierType::EXPERIMENTAL && !access_control->getAllowExperimentalTierSettings())
-        return refuse("EXPERIMENTAL");
-    if (tier == SettingsTierType::PRIVATE_PREVIEW && !access_control->getAllowPrivatePreviewTierSettings())
-        return refuse("PRIVATE PREVIEW");
-    if (tier == SettingsTierType::BETA && !access_control->getAllowBetaTierSettings())
-        return refuse("BETA");
+    if (auto reason = getFeatureTierRestriction(*access_control, setting_name, tier))
+        return Checker(*reason, ErrorCodes::READONLY);
     return {};
 }
 
