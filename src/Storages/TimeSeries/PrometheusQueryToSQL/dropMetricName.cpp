@@ -19,7 +19,10 @@ namespace DB::PrometheusQueryToSQL
 SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & context)
 {
     if (query_piece.metric_name_dropped)
+    {
+        query_piece.metric_name_is_constant = false;
         return std::move(query_piece);
+    }
 
     switch (query_piece.store_method)
     {
@@ -31,11 +34,54 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
         {
             /// No metric name.
             query_piece.metric_name_dropped = true;
+            query_piece.metric_name_is_constant = false;
             return std::move(query_piece);
         }
 
         case StoreMethod::VECTOR_GRID:
         {
+            if (query_piece.metric_name_is_constant)
+            {
+                /// All input series have the same metric name. Removing that tag is therefore an injective
+                /// transformation of the already unique groups, so no duplicate-series aggregation is needed.
+                ASTPtr metric_name_removing_query;
+                {
+                    SelectQueryBuilder builder;
+
+                    builder.select_list.push_back(makeASTFunction(
+                        "timeSeriesRemoveTag", make_intrusive<ASTIdentifier>(ColumnNames::Group), make_intrusive<ASTLiteral>(kMetricName)));
+                    builder.select_list.back()->setAlias(ColumnNames::NewGroup);
+
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+                    context.subqueries.emplace_back(
+                        SQLSubquery{context.subqueries.size(), std::move(query_piece.select_query), SQLSubqueryType::TABLE});
+                    builder.from_table = context.subqueries.back().name;
+
+                    metric_name_removing_query = builder.getSelectQuery();
+                }
+
+                {
+                    SelectQueryBuilder builder;
+
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::NewGroup));
+                    builder.select_list.back()->setAlias(ColumnNames::Group);
+
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+
+                    context.subqueries.emplace_back(
+                        SQLSubquery{context.subqueries.size(), std::move(metric_name_removing_query), SQLSubqueryType::TABLE});
+                    builder.from_table = context.subqueries.back().name;
+
+                    query_piece.select_query = builder.getSelectQuery();
+                }
+
+                query_piece.metric_name_dropped = true;
+                query_piece.metric_name_is_constant = false;
+
+                return std::move(query_piece);
+            }
+
             /// When we remove the metric name `__name__` it's possible that we get the same set of tags (i.e. the same `group`)
             /// on time series which were different before we removed the metric name.
             /// This is not allowed, we can't have multiple time series with the same set of tags in the same resultset.
@@ -105,6 +151,7 @@ SQLQueryPiece dropMetricName(SQLQueryPiece && query_piece, ConverterContext & co
 
             query_piece.select_query = std::move(column_renaming_query);
             query_piece.metric_name_dropped = true;
+            query_piece.metric_name_is_constant = false;
 
             return std::move(query_piece);
         }
