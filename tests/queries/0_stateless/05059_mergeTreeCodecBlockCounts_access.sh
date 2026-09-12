@@ -91,8 +91,8 @@ ${CLICKHOUSE_CLIENT} --query \
     "DESCRIBE mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_missing);" 2>&1 |
     grep -o "ACCESS_DENIED\|UNKNOWN_TABLE" | uniq
 
-# The same for an ordinary read: the check on the name runs in `executeImpl` as well, not only when the
-# structure is resolved, so a plain `SELECT` is not an existence oracle either.
+# The same for an ordinary read: the check on the name runs in `StorageMergeTreeCodecBlockCounts::read` as
+# well, not only when the structure is resolved, so a plain `SELECT` is not an existence oracle either.
 
 echo "Hidden source table, before it is resolved, on the read path"
 ${CLICKHOUSE_CLIENT} --user="${username}" --query \
@@ -108,6 +108,39 @@ echo "Missing source table, on the read path, for a user who can see the databas
 ${CLICKHOUSE_CLIENT} --query \
     "SELECT count() FROM mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_missing);" 2>&1 |
     grep -o "ACCESS_DENIED\|UNKNOWN_TABLE" | uniq
+
+# Analysis-only entrypoints (`EXPLAIN QUERY TREE`, `EXPLAIN SYNTAX`) resolve the table function without reading
+# it, so the source table is not resolved on that path and no check runs there. That discloses nothing: the
+# structure of this function is a fixed constant and nothing on that path consults the catalog, so the answer is
+# the same whether the source table is readable, hidden, or missing. Pinned below, one arm per entrypoint.
+
+explain_as_user() {
+    ${CLICKHOUSE_CLIENT} --user="${username}" --query \
+        "EXPLAIN $1 SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), $2);" 2>&1 | sed "s/$2/SOURCE/g"
+}
+
+for kind in "QUERY TREE" "SYNTAX"; do
+    readable=$(explain_as_user "${kind}" t_codec_access)
+    hidden=$(explain_as_user "${kind}" t_codec_access_hidden)
+    missing=$(explain_as_user "${kind}" t_codec_access_missing)
+    if [ "${readable}" = "${hidden}" ] && [ "${hidden}" = "${missing}" ]; then
+        echo "EXPLAIN ${kind} is the same for a readable, a hidden and a missing source table"
+    else
+        echo "EXPLAIN ${kind} tells a readable, a hidden and a missing source table apart"
+    fi
+done
+
+# `EXPLAIN PLAN` and `EXPLAIN PIPELINE` do build the read plan, so they go through the checks.
+
+echo "EXPLAIN PLAN of a hidden source table"
+${CLICKHOUSE_CLIENT} --user="${username}" --query \
+    "EXPLAIN PLAN SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_hidden);" 2>&1 |
+    grep -o "ACCESS_DENIED\|UNKNOWN_TABLE" | uniq
+
+echo "EXPLAIN PIPELINE of a non-MergeTree source table"
+${CLICKHOUSE_CLIENT} --user="${username}" --query \
+    "EXPLAIN PIPELINE SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_log);" 2>&1 |
+    grep -o "ACCESS_DENIED\|BAD_ARGUMENTS" | uniq
 
 # `CREATE TABLE ... AS mergeTreeCodecBlockCounts(...)` stores the function and materialises it under the global
 # context, lazily, on the first read of the created table. The checks therefore have to run when the created table

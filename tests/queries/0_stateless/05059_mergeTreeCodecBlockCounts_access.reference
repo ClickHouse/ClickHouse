@@ -30,6 +30,12 @@ Missing source table, on the read path
 ACCESS_DENIED
 Missing source table, on the read path, for a user who can see the database
 UNKNOWN_TABLE
+EXPLAIN QUERY TREE is the same for a readable, a hidden and a missing source table
+EXPLAIN SYNTAX is the same for a readable, a hidden and a missing source table
+EXPLAIN PLAN of a hidden source table
+ACCESS_DENIED
+EXPLAIN PIPELINE of a non-MergeTree source table
+BAD_ARGUMENTS
 Through a table created from the function, hidden source table
 ACCESS_DENIED
 Through a table created from the function, missing source table
