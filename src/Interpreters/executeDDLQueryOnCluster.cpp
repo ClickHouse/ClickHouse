@@ -6,6 +6,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/DatabaseReplicated.h>
+#include <Databases/IDatabase.h>
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Context.h>
@@ -17,6 +18,7 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithOutput.h>
+#include <Parsers/ASTRenameQuery.h>
 #include <Parsers/ASTSystemQuery.h>
 #include <Processors/Sinks/EmptySink.h>
 #include <base/sort.h>
@@ -47,6 +49,35 @@ namespace ErrorCodes
 extern const int NOT_IMPLEMENTED;
 extern const int QUERY_IS_PROHIBITED;
 extern const int LOGICAL_ERROR;
+}
+
+
+void checkQueryDatabasesSupportOnClusterDDL(const ASTPtr & query_ptr, ContextPtr context)
+{
+    /// `RENAME` / `EXCHANGE TABLE` is `ASTRenameQuery`, which does not derive from `ASTQueryWithTableAndOutput`;
+    /// queries with no target table (`CREATE DATABASE`, `SYSTEM`, ...) contribute none.
+    std::vector<String> target_databases;
+    const auto add_target_database = [&](String name)
+    {
+        target_databases.push_back(name.empty() ? context->getCurrentDatabase() : std::move(name));
+    };
+
+    if (const auto * with_table = dynamic_cast<const ASTQueryWithTableAndOutput *>(query_ptr.get());
+        with_table && with_table->table)
+    {
+        add_target_database(with_table->getDatabase());
+    }
+    else if (const auto * rename = dynamic_cast<const ASTRenameQuery *>(query_ptr.get()); rename && !rename->database)
+    {
+        for (const auto & elem : rename->getElements())
+        {
+            add_target_database(elem.from.getDatabase());
+            add_target_database(elem.to.getDatabase());
+        }
+    }
+
+    for (const auto & database_name : target_databases)
+        checkDatabaseSupportsOnClusterDDL(DatabaseCatalog::instance().tryGetDatabase(database_name));
 }
 
 
@@ -83,6 +114,9 @@ BlockIO executeDDLQueryOnCluster(const ASTPtr & query_ptr_, ContextPtr context, 
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Distributed execution is not supported for such DDL queries");
     }
+
+    /// Initiator-side guard; workers re-check in `DDLWorker::tryExecuteQuery`.
+    checkQueryDatabasesSupportOnClusterDDL(query_ptr, context);
 
     if (!context->getSettingsRef()[Setting::allow_distributed_ddl])
         throw Exception(ErrorCodes::QUERY_IS_PROHIBITED, "Distributed DDL queries are prohibited for the user");
@@ -226,6 +260,14 @@ BlockIO getDDLOnClusterStatus(const String & node_path, const String & replicas_
         io.pipeline.complete(std::make_shared<EmptySink>(io.pipeline.getSharedHeader()));
 
     return io;
+}
+
+void checkDatabaseSupportsOnClusterDDL(const DatabasePtr & database)
+{
+    if (database && database->isDatalakeCatalog())
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "ON CLUSTER is not supported for DataLakeCatalog databases: "
+            "the catalog is shared, run the query without ON CLUSTER");
 }
 
 bool maybeRemoveOnCluster(const ASTPtr & query_ptr, ContextPtr context)

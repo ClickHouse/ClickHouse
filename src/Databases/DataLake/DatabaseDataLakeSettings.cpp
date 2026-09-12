@@ -33,6 +33,7 @@ namespace ErrorCodes
     DECLARE(String, aws_role_session_name, "", "Session name used for the AWS STS `AssumeRole` call. Optional; defaults to `ClickHouseSession`", 0) \
     DECLARE(String, aws_external_id, "", "External ID passed to AWS STS `AssumeRole`, matching the `sts:ExternalId` condition on the role's trust policy. Use this when the role is owned by a third party, such as ClickHouse Cloud", 0) \
     DECLARE(String, storage_endpoint, "", "Object storage endpoint", 0) \
+    DECLARE(String, default_base_location, "", "Base URI under which CREATE TABLE places new tables. Used only when the catalog does not report `default-base-location`", 0) \
     DECLARE(S3UriStyle, storage_uri_style, S3UriStyle::AUTO, "URL style used when constructing object storage URLs from catalog-provided table locations. Use 'virtual_hosted' when the object storage server requires the bucket in the hostname (e.g. https://bucket.endpoint.com/path/)", 0) \
     DECLARE(String, onelake_tenant_id, "", "Tenant id from azure", 0) \
     DECLARE(String, onelake_client_id, "", "Client id from azure", 0) \
