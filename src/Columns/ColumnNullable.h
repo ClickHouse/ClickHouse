@@ -254,7 +254,7 @@ public:
     void fixDynamicStructure() override { nested_column->fixDynamicStructure(); }
     bool dynamicStructureEquals(const IColumn & rhs) const override;
     bool hasStatistics() const override { return nested_column->hasStatistics(); }
-    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns) override;
+    void takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns, const CheckCancellationCallback & check_cancellation) override;
 
     void fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> * null_map) override;
     void fillFromRowStorePtrs(const DataTypePtr & type, const RowStorePointers & row_store_ptrs, size_t field_offset, size_t field_size, size_t begin, size_t count, PaddedPODArray<UInt8> * null_map) override;
