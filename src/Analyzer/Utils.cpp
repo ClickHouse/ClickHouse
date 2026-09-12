@@ -918,7 +918,13 @@ inline AggregateFunctionPtr resolveAggregateFunction(FunctionNode & function_nod
 
     AggregateFunctionProperties properties;
     auto action = NullsAction::EMPTY;
-    return AggregateFunctionFactory::instance().get(function_name, action, argument_types, parameters, properties);
+    /// A window function may have an implementation of its own, so a node that carries a window
+    /// definition must be resolved through the same state variant as primary resolution uses.
+    auto state_variant = function_node.hasWindow()
+        ? AggregateFunctionStateVariant::Window
+        : AggregateFunctionStateVariant::Aggregation;
+    return AggregateFunctionFactory::instance().get(
+        function_name, action, argument_types, parameters, properties, state_variant);
 }
 
 }
