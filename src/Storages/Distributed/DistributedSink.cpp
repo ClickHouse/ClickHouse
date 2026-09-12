@@ -20,6 +20,8 @@
 #include <Processors/Sinks/RemoteSink.h>
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InsertDependenciesBuilder.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
@@ -70,6 +72,8 @@ namespace Setting
     extern const SettingsBool distributed_insert_skip_read_only_replicas;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsBool insert_distributed_one_random_shard;
+    extern const SettingsUInt64Auto insert_quorum;
+    extern const SettingsBool insert_quorum_parallel;
     extern const SettingsUInt64 insert_shard_id;
     extern const SettingsUInt64 max_distributed_connections;
     extern const SettingsUInt64 max_distributed_depth;
@@ -135,6 +139,12 @@ bool shouldSkipShardOnInsert(const Settings & settings, int exception_code)
         case SkipUnavailableShardsMode::UNAVAILABLE_OR_EXCEPTION_BEFORE_PROCESSING:
             return true;
     }
+}
+
+bool isSequentialQuorumInsert(const Settings & settings)
+{
+    return !settings[Setting::insert_quorum_parallel]
+        && (settings[Setting::insert_quorum].is_auto || settings[Setting::insert_quorum].valueOr(0) >= 2);
 }
 
 }
@@ -550,6 +560,11 @@ DistributedSink::runWritingJob(JobReplica & job, const Block & current_block, si
                     /* no_squash= */ false,
                     /* no_destination= */ false,
                     /* async_insert_= */ false);
+                /// Every local replica job runs its own nested INSERT, and the outer query may also
+                /// fan out into several `DistributedSink`s. Share the outer query's gates with the
+                /// nested INSERT, so its `Too many parts` check does not count the parts a sibling
+                /// job or sink of the same query has already committed on the local target.
+                interp.setInsertStartGates(insert_start_gates);
                 auto block_io = interp.execute();
 
                 job.pipeline = std::move(block_io.pipeline);
@@ -637,11 +652,32 @@ void DistributedSink::writeSync(const Block & block)
 
     try
     {
-        /// Run jobs in parallel for each block and wait them
+        /// Run remote jobs in parallel for each block. For a non-parallel quorum
+        /// insert, local jobs can target the same ReplicatedMergeTree table through
+        /// different shards. Complete each of those jobs before starting the next:
+        /// a later block can commit from `consume`, before `onFinish` serializes
+        /// the final pipeline flushes.
+        const bool sequential_local_jobs = localJobsRequireSequentialQuorum();
         finished_jobs_count = 0;
         for (size_t shard_index : collections::range(start, end))
             for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
-                pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
+            {
+                if (!job.is_local_job || !sequential_local_jobs)
+                    pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
+            }
+
+        if (sequential_local_jobs)
+        {
+            for (size_t shard_index : collections::range(start, end))
+                for (JobReplica & job : per_shard_jobs[shard_index].replicas_jobs)
+                {
+                    if (job.is_local_job)
+                    {
+                        pool->scheduleOrThrowOnError(runWritingJob(job, block_to_send, num_shards));
+                        pool->wait();
+                    }
+                }
+        }
     }
     catch (...)
     {
@@ -662,6 +698,29 @@ void DistributedSink::writeSync(const Block & block)
 
     inserted_blocks += 1;
     inserted_rows += block.rows();
+}
+
+
+bool DistributedSink::localJobsRequireSequentialQuorum()
+{
+    if (!isSequentialQuorumInsert(context->getSettingsRef()))
+        return false;
+
+    if (!local_jobs_require_sequential_quorum)
+    {
+        /// All local jobs write the same underlying table, so two of them conflict only when a
+        /// write into that table may create a quorum part - in the table itself or in a
+        /// `ReplicatedMergeTree` reachable through its dependent-view graph, which the nested
+        /// `INSERT` of each job expands. Fail closed when the local target cannot be resolved.
+        /// `remote_storage` is never empty here: a table-function target is rejected by
+        /// `StorageDistributed::write` before a sink is created.
+        auto target = DatabaseCatalog::instance().tryGetTable(storage.remote_storage, context);
+        local_jobs_require_sequential_quorum = !target
+            || InsertDependenciesBuilder::storageMayWriteToReplicatedTable(target, context)
+            || InsertDependenciesBuilder::dependentViewMayWriteToReplicatedTable(target, context);
+    }
+
+    return *local_jobs_require_sequential_quorum;
 }
 
 
@@ -696,6 +755,14 @@ void DistributedSink::onFinish()
 
                             job.executor->finish();
                         });
+
+                        /// `writeSync` only pushes blocks into the local nested pipelines; the
+                        /// quorum part is committed by `finish`. Therefore the local jobs must be
+                        /// completed sequentially here for a non-parallel quorum insert. Remote
+                        /// jobs remain parallel, while a local job that follows another local job
+                        /// sees its predecessor's quorum status node already removed.
+                        if (job.is_local_job && localJobsRequireSequentialQuorum())
+                            pool->wait();
                     }
                 }
             }
@@ -875,6 +942,10 @@ void DistributedSink::writeToLocal(const Cluster::ShardInfo & shard_info, const 
             /* no_squash= */ false,
             /* no_destination= */ false,
             /* async_insert_= */ false);
+        /// This nested INSERT runs once per incoming block of the outer query. Share the outer
+        /// query's gates with it, so its `Too many parts` check does not count the parts the
+        /// earlier blocks of the same query have already committed on the local target.
+        interp.setInsertStartGates(insert_start_gates);
 
         auto block_io = interp.execute();
         PushingPipelineExecutor executor(block_io.pipeline);
