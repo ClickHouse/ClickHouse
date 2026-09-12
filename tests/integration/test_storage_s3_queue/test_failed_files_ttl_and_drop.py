@@ -955,6 +955,152 @@ def test_failed_files_ttl_does_not_reset_retry_counter(started_cluster):
     node.query(f"DROP TABLE {dst_table_name}")
 
 
+def test_lowering_loading_retries_is_honored_after_restart(started_cluster):
+    """Test that lowering `s3queue_loading_retries` mid-retry is honored immediately
+    after a restart, even though the in-memory retry cache is cold.
+
+    Regression for: getPathState() only probed the terminal failed node, so a file
+    whose in-memory FileStatus was fresh (state=None, e.g. right after a restart or
+    on a different replica) skipped Keeper revalidation entirely in
+    trySetProcessing()/prepareSetProcessingRequests(). If Keeper already held a live
+    `.retriable` marker whose stored retry count met or exceeded a *newly lowered*
+    `s3queue_loading_retries`, the file would still be granted one extra processing
+    attempt instead of being immediately treated as exhausted.
+
+    Steps:
+    1. A file fails repeatedly with `s3queue_loading_retries` set high, so it does not
+       reach the terminal state on its own; wait until Keeper's `.retriable` marker
+       shows retries == 2.
+    2. Lower `s3queue_loading_retries` to 2 via ALTER TABLE ... MODIFY SETTING, while
+       the live `.retriable` marker (retries=2) is still present in Keeper.
+    3. Restart the ClickHouse instance - this wipes the in-memory FileStatus cache,
+       reproducing the cold-cache/cross-replica scenario.
+    4. After the restart, the file must not be granted another processing attempt:
+       the retry count must not exceed 2, and the file must end up in the terminal
+       Failed state without incrementing past the newly lowered limit.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_lower_retries_restart_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            # High enough that the file does not reach terminal failure on its own
+            # before we lower the limit below.
+            "s3queue_loading_retries": 100,
+            "failed_files_ttl_sec": 0,  # Disabled: avoid a TTL sweep racing with this test.
+            "polling_min_timeout_ms": 3000,
+            "polling_max_timeout_ms": 3000,
+        },
+    )
+
+    invalid_csv = b"not,valid,data\n"
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad_lower_retries.csv", invalid_csv
+    )
+
+    create_mv(node, table_name, dst_table_name)
+
+    def get_retry_count_from_keeper():
+        """Parse the retriable node's stored retry count from Keeper, if present."""
+        failed_path = f"{keeper_path}/failed"
+        result = node.query(
+            f"SELECT name, value FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+
+        if not result:
+            return None, False
+
+        import re
+
+        for line in result.split("\n"):
+            parts = line.split("\t")
+            if len(parts) != 2:
+                continue
+            node_name, node_value = parts
+            file_path_match = re.search(r'"file_path"\s*:\s*"([^"]*)"', node_value)
+            if not file_path_match or "bad_lower_retries.csv" not in file_path_match.group(1):
+                continue
+            is_terminal = not node_name.endswith(".retriable")
+            match = re.search(r'"retries"\s*:\s*(\d+)', node_value)
+            if match:
+                return int(match.group(1)), is_terminal
+        return None, False
+
+    logging.info("Waiting for the live .retriable marker to reach retries == 2...")
+    timeout = 60
+    for elapsed in range(timeout):
+        time.sleep(1)
+        retries, is_terminal = get_retry_count_from_keeper()
+        if retries is not None:
+            logging.info(f"[{elapsed}s] Retry count: {retries}, terminal: {is_terminal}")
+            if not is_terminal and retries >= 2:
+                break
+    else:
+        pytest.fail(
+            f"TIMEOUT: .retriable marker did not reach retries >= 2 within {timeout}s "
+            f"(last observed: {get_retry_count_from_keeper()})"
+        )
+
+    retries_before_lowering, terminal_before_lowering = get_retry_count_from_keeper()
+    assert not terminal_before_lowering, (
+        "Precondition failed: file already reached terminal state before the "
+        "setting was lowered - the test did not exercise the intended race."
+    )
+    logging.info(
+        f"Live .retriable marker observed with retries={retries_before_lowering}. "
+        f"Lowering s3queue_loading_retries to 2 and restarting..."
+    )
+
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING s3queue_loading_retries=2")
+
+    # Restart wipes the in-memory FileStatus cache for every file, reproducing the
+    # cold-cache scenario: on the next scheduling pass, the file's FileStatus starts
+    # as state=None with retries=0, so the fix must revalidate against Keeper's live
+    # retry count rather than trusting (or ignoring) the reset-to-zero local cache.
+    node.restart_clickhouse()
+
+    # Give the scheduler a few polling cycles to re-evaluate the file after restart.
+    logging.info("Waiting after restart to confirm no extra processing attempt is granted...")
+    max_retries_seen_after_restart = retries_before_lowering
+    observed_terminal = False
+    for elapsed in range(30):
+        time.sleep(1)
+        retries, is_terminal = get_retry_count_from_keeper()
+        if retries is not None:
+            if retries > max_retries_seen_after_restart:
+                max_retries_seen_after_restart = retries
+            if is_terminal:
+                observed_terminal = True
+                break
+
+    final_retries, final_is_terminal = get_retry_count_from_keeper()
+    logging.info(
+        f"After restart: retries={final_retries}, terminal={final_is_terminal}, "
+        f"max_retries_seen_after_restart={max_retries_seen_after_restart}"
+    )
+
+    assert max_retries_seen_after_restart <= 2, (
+        f"BUG: file was granted an extra processing attempt after restart - retry "
+        f"count increased from {retries_before_lowering} to {max_retries_seen_after_restart} "
+        f"even though s3queue_loading_retries was lowered to 2 before the restart. "
+        f"This means the cold in-memory cache (state=None after restart) was not "
+        f"revalidated against Keeper's live retry count."
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
 def test_drop_failed_files_privilege(started_cluster):
     """`SYSTEM DROP S3QUEUE FAILED FILES` must be gated on the table-scoped
     `SYSTEM_DROP_S3QUEUE_FAILED_FILES` privilege.
@@ -1217,45 +1363,69 @@ def test_drop_failed_files_on_cluster_concurrent(started_cluster):
         cached_failed(node2),
     )
 
-    # Both replicas issue the ON CLUSTER drop at the same time. The barrier makes
-    # the overlap deterministic without depending on sleep timing.
-    query = f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name} ON CLUSTER cluster"
-    barrier = threading.Barrier(2)
+    # Freeze the background scan/claim loop on both replicas before dropping.
+    # Without this, a file whose content is still invalid (as it is here) can be
+    # legitimately re-claimed and re-failed by the normal streaming loop within
+    # milliseconds of the drop completing, recreating a /failed znode and a
+    # cached Failed entry as an unrelated race, not a regression in the drop
+    # path itself. The drop command's own correctness (idempotent concurrent
+    # execution, cache reconciliation on the loser) is what this test verifies,
+    # so new-file claiming must be held off until that has been observed.
+    PAUSE_BEFORE_NEW_FILE_CLAIM_FAILPOINT = "object_storage_queue_pause_before_new_file_claim"
+    for node in (node1, node2):
+        node.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_NEW_FILE_CLAIM_FAILPOINT}")
 
-    def run(node):
-        # Bounded: if the other thread never arrives, the barrier breaks and this
-        # raises instead of blocking the pool's shutdown forever.
-        barrier.wait(timeout=60)
-        return node.query(query)
+    try:
+        # Both replicas issue the ON CLUSTER drop at the same time. The barrier makes
+        # the overlap deterministic without depending on sleep timing.
+        query = f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name} ON CLUSTER cluster"
+        barrier = threading.Barrier(2)
 
-    errors = []
-    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
-        futures = {
-            pool.submit(run, node1): "instance",
-            pool.submit(run, node2): "instance2",
-        }
-        for future, origin in futures.items():
-            try:
-                future.result(timeout=180)
-            except Exception as e:
-                errors.append(f"{origin}: {e}")
+        def run(node):
+            # Bounded: if the other thread never arrives, the barrier breaks and this
+            # raises instead of blocking the pool's shutdown forever.
+            barrier.wait(timeout=60)
+            return node.query(query)
 
-    # Neither invocation may raise: concurrent ON CLUSTER drops are idempotent.
-    assert not errors, f"concurrent ON CLUSTER drop raised: {errors}"
+        errors = []
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
+            futures = {
+                pool.submit(run, node1): "instance",
+                pool.submit(run, node2): "instance2",
+            }
+            for future, origin in futures.items():
+                try:
+                    future.result(timeout=180)
+                except Exception as e:
+                    errors.append(f"{origin}: {e}")
 
-    # No failed znodes left in Keeper.
-    assert wait_for(
-        lambda: failed_znodes() == 0
-    ), f"failed znodes remain after drop: {failed_znodes()}"
+        # Neither invocation may raise: concurrent ON CLUSTER drops are idempotent.
+        assert not errors, f"concurrent ON CLUSTER drop raised: {errors}"
 
-    # And no stale Failed entries in either replica's in-memory cache, including
-    # on whichever replica lost the cleanup_lock race.
-    assert wait_for(
-        lambda: cached_failed(node1) == 0
-    ), f"instance still caches Failed entries: {cached_failed(node1)}"
-    assert wait_for(
-        lambda: cached_failed(node2) == 0
-    ), f"instance2 still caches Failed entries: {cached_failed(node2)}"
+        # No failed znodes left in Keeper, and no stale Failed entries in either
+        # replica's in-memory cache, including on whichever replica lost the
+        # cleanup_lock race.
+        #
+        # These are checked with a single direct read, not a wait_for poll loop.
+        # `SYSTEM DROP S3QUEUE FAILED FILES ... ON CLUSTER` is synchronous: by the
+        # time `node.query(query)` above returned on both threads, the winner has
+        # already deleted the /failed znodes and every replica has already run
+        # `reconcileFailedFilesCache`. Polling here would leave a window in which
+        # the background scan thread can legitimately reprocess one of these
+        # files (its content is still invalid, so a fresh failure is expected
+        # behavior, not a bug) and re-create a /failed znode - a 0.5s poll can
+        # then observe that recreated znode as if the drop had never happened,
+        # producing a false failure that has nothing to do with the drop itself.
+        assert failed_znodes() == 0, f"failed znodes remain after drop: {failed_znodes()}"
+        assert cached_failed(node1) == 0, (
+            f"instance still caches Failed entries: {cached_failed(node1)}"
+        )
+        assert cached_failed(node2) == 0, (
+            f"instance2 still caches Failed entries: {cached_failed(node2)}"
+        )
+    finally:
+        for node in (node1, node2):
+            node.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_NEW_FILE_CLAIM_FAILPOINT}")
 
     # Cleanup
     for node in (node1, node2):

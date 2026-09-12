@@ -33,7 +33,7 @@ namespace ErrorCodes
     DECLARE(Bool, parallel_inserts, false, "By default processing_threads_num will produce one INSERT, but this limits the parallel execution, so better scalability enable this setting (note this will create not one INSERT per file, but one per max_process*_before_commit)", 0) \
     DECLARE(UInt32, enable_logging_to_queue_log, 1, "Enable logging to system table system.(s3/azure_)queue_log", 0) \
     DECLARE(String, last_processed_path, "", "For Ordered mode. Files that have lexicographically smaller file name are considered already processed", 0) \
-    DECLARE(UInt64, tracked_files_limit, 1000, "For unordered mode. Max set size for tracking processed files in ZooKeeper", 0) \
+    DECLARE(UInt64, tracked_files_limit, 1000, "Max set size for tracking processed files in ZooKeeper. Also caps the failed-files set by count, in both ordered and unordered mode, independently of `failed_files_ttl_sec`/`tracked_file_ttl_sec`.", 0) \
     DECLARE(UInt64, tracked_file_ttl_sec, 0, "Maximum number of seconds to store processed files in ZooKeeper node (no time-based expiry by default). Not for exclusive mode", 0) \
     DECLARE(UInt64, failed_files_ttl_sec, 0, "Maximum number of seconds to store terminal failed files in ZooKeeper node (no time-based expiry by default). Only applies to files that have exhausted all retries; actively retrying files are preserved to maintain retry state. Note that `tracked_files_limit` still caps the failed set by count regardless of this setting.", 0) \
     DECLARE(UInt64, metadata_cache_size_bytes, 1_GiB, "Size in bytes for the in-memory cache for metadata received from ZooKeeper", 0) \

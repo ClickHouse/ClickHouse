@@ -179,7 +179,7 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueUnorderedFileMetadata::getPathState(
-    std::string & failure_message) const
+    std::string & failure_message, UInt64 * retries_out) const
 {
     /// Check the terminal failed node and the retriable failed-marker together.
     /// A live `.retriable` node still holds retry state (the retry count), so its
@@ -212,7 +212,12 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueUnorderedFileMetada
     if (responses[1].error == Coordination::Error::ZOK)
     {
         if (!responses[1].data.empty())
-            failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+        {
+            const auto metadata = NodeMetadata::fromString(responses[1].data);
+            failure_message = metadata.last_exception;
+            if (retries_out)
+                *retries_out = metadata.retries;
+        }
         return PathState::Failed;
     }
 
@@ -223,7 +228,12 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueUnorderedFileMetada
         /// Keeper, so this must be reported as Failed, not Unknown - otherwise the caller
         /// would treat it as "cleaned up externally" and grant an extra processing attempt.
         if (!responses[2].data.empty())
-            failure_message = NodeMetadata::fromString(responses[2].data).last_exception;
+        {
+            const auto metadata = NodeMetadata::fromString(responses[2].data);
+            failure_message = metadata.last_exception;
+            if (retries_out)
+                *retries_out = metadata.retries;
+        }
         return PathState::Failed;
     }
 

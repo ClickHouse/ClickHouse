@@ -49,7 +49,7 @@ public:
     bool useBucketsForProcessing() const override;
     size_t getBucket() const override { chassert(useBucketsForProcessing() && bucket_info); return bucket_info->bucket; }
 
-    PathState getPathState(std::string & failure_message) const override;
+    PathState getPathState(std::string & failure_message, UInt64 * retries_out = nullptr) const override;
 
     static BucketHolderPtr tryAcquireBucket(
         const std::filesystem::path & zk_path,
@@ -92,6 +92,8 @@ public:
         bool is_processed = false;
         /// Populated from the failed node data when `is_failed` is true.
         std::string failure_message;
+        /// Retry count stored in the failed node data when `is_failed` is true.
+        UInt64 retries = 0;
         /// Version of the bucket-level processed pointer node (`processed_bucket_path`).
         std::optional<int32_t> processed_bucket_version;
     };

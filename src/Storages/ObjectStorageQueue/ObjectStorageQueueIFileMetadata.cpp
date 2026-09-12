@@ -321,26 +321,38 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
         return false;
     }
 
-    if (state == FileStatus::State::Failed
-        && file_status->retries
-        && file_status->retries >= max_loading_retries)
+    if (state == FileStatus::State::None || state == FileStatus::State::Failed)
     {
-        /// The cached state shows this file has permanently failed.
-        /// However, another replica may have cleaned it up (via TTL or SYSTEM DROP).
-        /// Re-check Keeper to see if the failed node still exists.
+        /// Revalidate against Keeper whenever the local cache is not positively
+        /// Processing/Processed. This covers both:
+        ///  - the cache already thinks this file Failed and locally-tracked retries
+        ///    are exhausted (possibly stale: another replica may have cleaned it up
+        ///    via TTL or SYSTEM DROP), and
+        ///  - a cold cache (state == None, e.g. after a restart or on a different
+        ///    replica) where Keeper may already hold a terminal failure or a live
+        ///    `.retriable` marker whose stored retry count already meets or exceeds
+        ///    the *current* `loading_retries` limit - a case the local cache cannot
+        ///    know about at all.
+        /// We always compare against Keeper's live retry count, not the local cache,
+        /// so a lowered `loading_retries` is honored immediately.
         std::string failure_message;
-        auto path_state = getPathState(failure_message);
+        UInt64 keeper_retries = 0;
+        auto path_state = getPathState(failure_message, &keeper_retries);
 
         if (path_state == PathState::Failed)
         {
-            /// Failure is confirmed in Keeper - stay failed.
-            LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
-                     path, file_status->retries.load(), max_loading_retries);
-            return false;
+            if (keeper_retries >= max_loading_retries)
+            {
+                LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
+                         path, keeper_retries, max_loading_retries);
+                return false;
+            }
+            /// Keeper's live retry count is under the current limit: allow processing
+            /// to proceed below (covers e.g. a cold cache observing an in-progress retry).
         }
         else if (path_state == PathState::Unknown)
         {
-            /// The failed node was cleaned up - reset cache and allow processing.
+            /// No failed state left in Keeper - reset cache and allow processing.
             LOG_TRACE(log, "File {} failed node was cleaned up externally, resetting cache state", path);
             (*file_status).reset();
         }
@@ -393,26 +405,38 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         return std::nullopt;
     }
 
-    if (state == FileStatus::State::Failed
-        && file_status->retries
-        && file_status->retries >= max_loading_retries)
+    if (state == FileStatus::State::None || state == FileStatus::State::Failed)
     {
-        /// The cached state shows this file has permanently failed.
-        /// However, another replica may have cleaned it up (via TTL or SYSTEM DROP).
-        /// Re-check Keeper to see if the failed node still exists.
+        /// Revalidate against Keeper whenever the local cache is not positively
+        /// Processing/Processed. This covers both:
+        ///  - the cache already thinks this file Failed and locally-tracked retries
+        ///    are exhausted (possibly stale: another replica may have cleaned it up
+        ///    via TTL or SYSTEM DROP), and
+        ///  - a cold cache (state == None, e.g. after a restart or on a different
+        ///    replica) where Keeper may already hold a terminal failure or a live
+        ///    `.retriable` marker whose stored retry count already meets or exceeds
+        ///    the *current* `loading_retries` limit - a case the local cache cannot
+        ///    know about at all.
+        /// We always compare against Keeper's live retry count, not the local cache,
+        /// so a lowered `loading_retries` is honored immediately.
         std::string failure_message;
-        auto path_state = getPathState(failure_message);
+        UInt64 keeper_retries = 0;
+        auto path_state = getPathState(failure_message, &keeper_retries);
 
         if (path_state == PathState::Failed)
         {
-            /// Failure is confirmed in Keeper - stay failed.
-            LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
-                     path, file_status->retries.load(), max_loading_retries);
-            return std::nullopt;
+            if (keeper_retries >= max_loading_retries)
+            {
+                LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
+                         path, keeper_retries, max_loading_retries);
+                return std::nullopt;
+            }
+            /// Keeper's live retry count is under the current limit: allow processing
+            /// to proceed below (covers e.g. a cold cache observing an in-progress retry).
         }
         else if (path_state == PathState::Unknown)
         {
-            /// The failed node was cleaned up - reset cache and allow processing.
+            /// No failed state left in Keeper - reset cache and allow processing.
             LOG_TRACE(log, "File {} failed node was cleaned up externally, resetting cache state", path);
             (*file_status).reset();
         }

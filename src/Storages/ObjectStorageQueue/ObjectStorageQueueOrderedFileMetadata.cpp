@@ -450,12 +450,14 @@ bool ObjectStorageQueueOrderedFileMetadata::useBucketsForProcessing() const
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueOrderedFileMetadata::getPathState(
-    std::string & failure_message) const
+    std::string & failure_message, UInt64 * retries_out) const
 {
     auto state = getProcessingStateFromKeeper(/*check_failed=*/true, log);
     if (state.is_failed)
     {
         failure_message = state.failure_message;
+        if (retries_out)
+            *retries_out = state.retries;
         return PathState::Failed;
     }
     if (state.is_processed)
@@ -477,7 +479,12 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueOrderedFileMetadata
     if (retriable_exists)
     {
         if (!retriable_data.empty())
-            failure_message = NodeMetadata::fromString(retriable_data).last_exception;
+        {
+            const auto metadata = NodeMetadata::fromString(retriable_data);
+            failure_message = metadata.last_exception;
+            if (retries_out)
+                *retries_out = metadata.retries;
+        }
         return PathState::Failed;
     }
 
@@ -589,7 +596,11 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
     {
         ProcessingStateFromKeeper state(is_failed);
         if (is_failed && !responses[1].data.empty())
-            state.failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+        {
+            const auto failed_metadata = NodeMetadata::fromString(responses[1].data);
+            state.failure_message = failed_metadata.last_exception;
+            state.retries = failed_metadata.retries;
+        }
         return state;
     }
 
@@ -603,7 +614,11 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
     ProcessingStateFromKeeper state(file_path, last_processed_path, is_failed);
     state.processed_bucket_version = responses[0].stat.version;
     if (is_failed && !responses[1].data.empty())
-        state.failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+    {
+        const auto failed_metadata = NodeMetadata::fromString(responses[1].data);
+        state.failure_message = failed_metadata.last_exception;
+        state.retries = failed_metadata.retries;
+    }
     return state;
 }
 

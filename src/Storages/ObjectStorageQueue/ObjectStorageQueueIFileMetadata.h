@@ -134,7 +134,11 @@ public:
 
     /// Check Keeper to determine whether this file has already been processed or failed.
     /// Sets `failure_message` when the result is `Failed`.
-    virtual PathState getPathState(std::string & failure_message) const = 0;
+    /// If `retries_out` is non-null and the result is `Failed`, it is set to the retry
+    /// count stored in Keeper (from either the terminal failed node or a live `.retriable`
+    /// marker) so callers can revalidate a lowered `loading_retries` limit even when their
+    /// own in-memory cache is cold (e.g. after a restart or on a different replica).
+    virtual PathState getPathState(std::string & failure_message, UInt64 * retries_out = nullptr) const = 0;
 
     const std::string & getFailedNodePath() const { return failed_node_path; }
     const std::string & getProcessedNodePath() const { return processed_node_path; }
