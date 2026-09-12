@@ -317,6 +317,8 @@ WindowTransform::WindowTransform(SharedHeader input_header_,
         /// Currently we have slightly wrong mixup of the interfaces of Window and Aggregate functions.
         workspace.window_function_impl = dynamic_cast<IWindowFunction *>(const_cast<IAggregateFunction *>(aggregate_function.get()));
 
+        needs_order_by_peer_group |= workspace.window_function_impl && workspace.window_function_impl->needsOrderByPeerGroup();
+
         /// Some functions may have non-standard default frame.
         /// Use it if it's the only function over the current window.
         if (window_description.frame.is_default && functions.size() == 1 && workspace.window_function_impl)
@@ -812,6 +814,12 @@ bool WindowTransform::arePeers(const RowNumber & x, const RowNumber & y) const
             break;
     }
 
+    return haveEqualOrderByValues(x, y);
+}
+
+bool WindowTransform::haveEqualOrderByValues(const RowNumber & x, const RowNumber & y) const
+{
+    // Unlike arePeers, this does not depend on the frame type.
     const size_t n = order_by_indices.size();
     if (n == 0)
     {
@@ -1467,6 +1475,25 @@ void WindowTransform::appendChunk(Chunk & chunk)
                 peer_group_start = current_row;
                 peer_group_start_row_number = current_row_number;
                 ++peer_group_number;
+
+                // For RANGE and GROUPS this transition is exactly the ORDER BY peer group boundary.
+                if (window_description.frame.type != WindowFrame::FrameType::ROWS)
+                {
+                    order_by_peer_group_start_row_number = current_row_number;
+                    ++order_by_peer_group_number;
+                }
+            }
+
+            // Under ROWS the check above compares nothing, so find the boundary here: equal
+            // ORDER BY rows are contiguous, the input being sorted by PARTITION BY + ORDER BY.
+            // The row number guard keeps this idempotent: the loop below can re-run this row.
+            if (needs_order_by_peer_group
+                && window_description.frame.type == WindowFrame::FrameType::ROWS
+                && current_row_number > order_by_peer_group_start_row_number
+                && !haveEqualOrderByValues(prevRowNumber(current_row), current_row))
+            {
+                order_by_peer_group_start_row_number = current_row_number;
+                ++order_by_peer_group_number;
             }
 
             // Advance the frame start.
@@ -1578,6 +1605,8 @@ void WindowTransform::appendChunk(Chunk & chunk)
         peer_group_start = partition_start;
         peer_group_start_row_number = 1;
         peer_group_number = 1;
+        order_by_peer_group_start_row_number = 1;
+        order_by_peer_group_number = 1;
         frame_start_group_number = 1;
         frame_end_group_number = 1;
 
@@ -1764,7 +1793,15 @@ void WindowTransform::work()
     // frame pointers ahead of the current row, so peer_group_start can be the
     // trailing pointer.
     chassert(prev_frame_start <= frame_start);
-    const auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block, peer_group_start.block});
+    auto first_used_block = std::min({next_output_block_number, prev_frame_start.block, current_row.block, peer_group_start.block});
+    if (needs_order_by_peer_group)
+    {
+        // The ORDER BY peer group boundary check reads the row before the current one, so its
+        // block must stay alive. Derived arithmetically, since retreatRowNumber asserts liveness.
+        const auto prev_row_block = (current_row.row > 0 || current_row.block == 0)
+            ? current_row.block : current_row.block - 1;
+        first_used_block = std::min(first_used_block, prev_row_block);
+    }
     if (first_block_number < first_used_block)
     {
         blocks.erase(blocks.begin(),
@@ -1787,13 +1824,15 @@ struct WindowFunctionRank final : public StatelessWindowFunction
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool needsOrderByPeerGroup() const override { return true; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
         IColumn & to = *transform->blockAt(transform->current_row)
             .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
-            transform->peer_group_start_row_number);
+            transform->order_by_peer_group_start_row_number);
     }
 };
 
@@ -1805,13 +1844,15 @@ struct WindowFunctionDenseRank final : public StatelessWindowFunction
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    bool needsOrderByPeerGroup() const override { return true; }
+
     void windowInsertResultInto(const WindowTransform * transform,
         size_t function_index) const override
     {
         IColumn & to = *transform->blockAt(transform->current_row)
             .output_columns[function_index];
         assert_cast<ColumnUInt64 &>(to).getData().push_back(
-            transform->peer_group_number);
+            transform->order_by_peer_group_number);
     }
 };
 
