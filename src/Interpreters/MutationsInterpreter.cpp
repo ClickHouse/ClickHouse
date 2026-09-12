@@ -56,6 +56,7 @@
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
 #include <Planner/CollectTableExpressionData.h>
+#include <Planner/CollectMaterializedCTE.h>
 #include <Planner/Utils.h>
 #include <Interpreters/Context.h>
 #include <Parsers/makeASTForLogicalFunction.h>
@@ -2268,6 +2269,9 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
     if (subqueries.empty())
         return;
 
+    /// Materialized CTEs referenced by each planned set subquery.
+    std::vector<OrderedMaterializedCTEs> materialized_ctes_per_subquery;
+
     for (auto & subquery : subqueries)
     {
         if (subquery->get())
@@ -2298,6 +2302,10 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
             std::make_shared<GlobalPlannerContext>(nullptr, nullptr, nullptr, FiltersForTableExpressionMap{}));
         subquery_planner.buildQueryPlanIfNeeded();
 
+        /// The subquery planner has built the plans of the CTEs it references, so the collector
+        /// admits them here (`hasPlanOrBuilt`). They are planted below, after the sets step.
+        materialized_ctes_per_subquery.push_back(collectMaterializedCTEs(query_tree, SelectQueryOptions{}));
+
         auto subquery_plan = std::move(subquery_planner).extractQueryPlan();
         for (const auto & ctx : subquery_plan.getInterpretersContexts())
             query_plan.addInterpreterContext(ctx);
@@ -2317,6 +2325,12 @@ static void buildSubqueryPlansForSetsAndAdd(QueryPlan & query_plan, const Prepar
         network_transfer_limits,
         prepared_sets_cache);
     query_plan.addStep(std::move(step));
+
+    /// `DelayedCreatingSetsStep::makePlansForSets` strips the safety-net `DelayedMaterializingCTEsStep`
+    /// from a set plan built at run time and relies on the outer plan to gate the CTE readers, which
+    /// the `Planner` provides for a `SELECT`. This plan is assembled here, so plant that step here.
+    for (const auto & materialized_ctes : materialized_ctes_per_subquery)
+        addBuildSubqueriesForMaterializedCTEsIfNeeded(query_plan, SelectQueryOptions{}, materialized_ctes);
 }
 
 std::optional<ActionsDAG> MutationsInterpreter::createFilterDAGForStage(const Stage & stage)
