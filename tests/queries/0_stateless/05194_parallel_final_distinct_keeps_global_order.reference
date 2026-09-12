@@ -1,0 +1,12 @@
+  (Distinct)
+  DistinctTransform
+    (Sorting)
+    MergeSortingTransform
+        PartialSortingTransform
+            (Distinct)
+            DistinctTransform
+                  (Sorting)
+                  MergingSortedTransform 4 → 1
+                    MergeSortingTransform × 4
+                        PartialSortingTransform × 4
+1

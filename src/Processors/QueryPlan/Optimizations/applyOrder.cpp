@@ -77,7 +77,10 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
 
         /// Distinct never breaks global order
         if (properties->sort_scope == SortingProperty::SortScope::Global)
+        {
+            distinct_step->keepGlobalOrder();
             return *properties;
+        }
 
         /// Preliminary Distinct also does not break stream order
         if (distinct_step->isPreliminary() && properties->sort_scope == SortingProperty::SortScope::Stream)

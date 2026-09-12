@@ -86,12 +86,13 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
     {
         /// Instead of the merge, the streams can be hash-partitioned by the DISTINCT columns: equal rows land
         /// in the same stream, so every stream is still deduplicated completely and all threads stay busy.
-        /// A sorted input relies on its stream order (`DistinctSortedStreamTransform`), and the size limits
-        /// are global, so both keep the merge.
+        /// A sorted input relies on its stream order (`DistinctSortedStreamTransform`), a global order that
+        /// the steps above rely on would not survive the partitions, and the size limits are global, so all
+        /// three keep the merge.
         const size_t num_streams = pipeline.getNumStreams();
         const size_t num_partitions = clampScatterPartitions(pipeline.getNumThreads(), num_streams);
         if (settings.allow_parallel_final_distinct && num_streams > 1 && num_partitions > 1
-            && distinct_sort_desc.empty() && !set_size_limits.hasLimits())
+            && distinct_sort_desc.empty() && !keep_global_order && !set_size_limits.hasLimits())
         {
             const auto & header = pipeline.getHeader();
             const size_t num_keys = columns.empty() ? header.columns() : columns.size();
