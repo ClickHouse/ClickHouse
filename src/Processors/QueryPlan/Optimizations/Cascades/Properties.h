@@ -29,10 +29,25 @@ struct DistributionDescription
     String dump() const;
 };
 
+/// How one node's streams relate to each other. `sorting` always describes each single
+/// stream; the layout says what crossing a stream boundary means.
+enum class StreamLayout : uint8_t
+{
+    Unknown,    /// several streams with no relation (reads, joins, exchange receive sides)
+    Single,     /// one stream per node
+    Disjoint,   /// streams disjoint on `stream_disjoint_columns`: rows equal on them share a stream
+};
+
 struct ExpressionProperties
 {
     SortDescription sorting;
     DistributionDescription distribution;
+    StreamLayout stream_layout = StreamLayout::Unknown;
+    DistributionColumns stream_disjoint_columns;    /// Nonempty exactly for `Disjoint`; set via `setDisjointStreams`
+
+    /// Marks the streams disjoint on the columns (must be nonempty sets). Orders the column
+    /// sets canonically, so equal layouts compare and hash equal (disjointness has no key order).
+    void setDisjointStreams(DistributionColumns columns);
 
     bool operator==(const ExpressionProperties & other) const = default;
 
@@ -40,6 +55,7 @@ struct ExpressionProperties
 
     static bool isSortingSatisfiedBy(const SortDescription & required, const SortDescription & existing);
     static bool isDistributionSatisfiedBy(const DistributionDescription & required, const DistributionDescription & existing);
+    static bool isStreamLayoutSatisfiedBy(const ExpressionProperties & required, const ExpressionProperties & existing);
 
     void dump(WriteBuffer & out) const;
     String dump() const;
@@ -61,6 +77,15 @@ struct ExpressionPropertiesHash
         }
         for (const auto & type_name : props.distribution.hash_type_names)
             boost::hash_combine(h, type_name);
+        boost::hash_combine(h, static_cast<UInt8>(props.stream_layout));
+        for (const auto & col_set : props.stream_disjoint_columns)
+        {
+            /// Equal sets must hash equally regardless of insertion order.
+            size_t set_hash = 0;
+            for (const auto & name : col_set)
+                set_hash += std::hash<String>()(name);
+            boost::hash_combine(h, set_hash);
+        }
         /// Hash exactly the fields SortColumnDescription::operator== compares, so the hash is
         /// consistent with equality (`ORDER BY k ASC` and k DESC must hash differently).
         for (const auto & col : props.sorting)
