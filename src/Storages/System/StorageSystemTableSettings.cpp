@@ -1,5 +1,6 @@
 #include <Storages/System/StorageSystemTableSettings.h>
 #include <Storages/System/extractTableNameFilter.h>
+#include <Storages/System/SettingsTableColumns.h>
 
 #include <Access/ContextAccess.h>
 #include <Access/SettingsConstraintsAndProfileIDs.h>
@@ -53,61 +54,11 @@ DataTypePtr originEnum()
     });
 }
 
-}
-
-StorageSystemTableSettings::StorageSystemTableSettings(const StorageID & table_id_)
-    : StorageWithCommonVirtualColumns(table_id_)
+/// Long enough to be worth naming, and it is the one column with no counterpart in the other two
+/// settings tables.
+String sourceColumnComment()
 {
-    StorageInMemoryMetadata storage_metadata;
-    storage_metadata.setColumns(getColumnsDescription());
-    storage_metadata.setVirtuals(createVirtuals());
-    setInMemoryMetadata(storage_metadata);
-}
-
-ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
-{
-    return ColumnsDescription
-    {
-        /// Which table this row is about.
-        {"database", std::make_shared<DataTypeString>(), "Database of the table."},
-        {"table", std::make_shared<DataTypeString>(), "Name of the table."},
-        {"engine", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
-            "Engine of the table. Setting names are engine-specific, so the same name can mean different things for different engines."},
-
-        /// The same columns as `system.merge_tree_settings`, in the same order and with the same
-        /// meanings, so that what a reader knows about that table carries over to this one.
-        {"name", std::make_shared<DataTypeString>(), "Setting name."},
-        {"value", std::make_shared<DataTypeString>(),
-            "Value the table uses. Unlike `SHOW CREATE TABLE`, this is the value in effect, which may come from a named collection, "
-            "from replicated metadata, or from the engine adjusting it while running, and so need not be the value the `CREATE` query states."},
-        {"default", std::make_shared<DataTypeString>(),
-            "Value the setting has when nothing sets it. Empty for a setting known only from the table's `SETTINGS` clause, "
-            "because an engine that keeps no settings struct has no default to report."},
-        {"changed", std::make_shared<DataTypeUInt8>(), "1 if `source` is anything other than `default`."},
-        {"description", std::make_shared<DataTypeString>(), "Setting description. Empty when the engine keeps no settings struct to describe it."},
-        {"min", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
-            "Minimum the current user's settings constraints allow, or NULL if none is set. Only `MergeTree` settings can be constrained."},
-        {"max", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()),
-            "Maximum the current user's settings constraints allow, or NULL if none is set. Only `MergeTree` settings can be constrained."},
-        {"disallowed_values", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
-            "Values the current user's settings constraints forbid. Empty when none are."},
-        {"readonly", std::make_shared<DataTypeUInt8>(),
-            "1 if a constraint, or the engine itself, makes the setting read-only; 0 if nothing does. Says nothing about whether the "
-            "engine accepts `ALTER TABLE ... MODIFY SETTING` at all, nor about the user's `ALTER` privileges."},
-        {"type", std::make_shared<DataTypeString>(), "Setting type. Empty when the engine keeps no settings struct."},
-        {"is_obsolete", std::make_shared<DataTypeUInt8>(), "1 if the setting is obsolete."},
-        {"tier", getSettingsTierEnum(),
-            "Support level of the setting. Reported as `Production` for a setting known only from the table's `SETTINGS` clause, "
-            "where the engine keeps no settings struct to say otherwise - such rows have an empty `default`, `type` and `description` too."},
-
-        /// As in `system.settings`.
-        {"alias_for", std::make_shared<DataTypeString>(),
-            "Empty on a setting's own row. A setting writable under more than one name also gets a row per other name, "
-            "carrying the same values, with this naming the one it is declared under."},
-
-        /// Particular to this table.
-        {"source", originEnum(),
-            "Where the value came from. "
+    return "Where the value came from. "
             "`default` - the engine's compiled-in default. "
             "`config` - a server config section, such as `<merge_tree>` or `<distributed>`. "
             "`compatibility` - rolled back to an older release's default by the `compatibility` setting. "
@@ -121,11 +72,59 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
             "`other` - something assigned the setting, but the engine does not say what. "
             "Which of these an engine can report depends on the engine: only `MergeTree` family tables report `config` "
             "and `compatibility`, only `S3Queue` and `AzureQueue` report `shared_metadata`, and an engine that keeps no "
-            "settings struct reports only `definition`."},
-        {"is_masked", std::make_shared<DataTypeUInt8>(),
-            "1 if `value` is a placeholder rather than the real value, because the setting holds a secret and the current user may not see it. "
-            "Grant `displaySecretsInShowAndSelect` and enable `format_display_secrets_in_show_and_select` to see it."},
+            "settings struct reports only `definition`.";
+}
+
+}
+
+StorageSystemTableSettings::StorageSystemTableSettings(const StorageID & table_id_)
+    : StorageWithCommonVirtualColumns(table_id_)
+{
+    StorageInMemoryMetadata storage_metadata;
+    storage_metadata.setColumns(getColumnsDescription());
+    storage_metadata.setVirtuals(createVirtuals());
+    setInMemoryMetadata(storage_metadata);
+}
+
+ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
+{
+    ColumnsDescription description
+    {
+        /// Which table this row is about.
+        {"database", std::make_shared<DataTypeString>(), "Database of the table."},
+        {"table", std::make_shared<DataTypeString>(), "Name of the table."},
+        {"engine", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()),
+            "Engine of the table. Setting names are engine-specific, so the same name can mean different things for different engines."},
     };
+
+    /// The same columns, in the same order, that `system.engine_settings` and
+    /// `system.merge_tree_settings` carry, so what a reader knows about those carries over here.
+    for (const auto & column : sharedSettingColumns())
+        description.add(column);
+
+    /// Two of them say more here than they can say of an engine, because only a table has a
+    /// `SETTINGS` clause and only a table's values can hold a secret.
+    description.modify("value", [](ColumnDescription & column)
+    {
+        column.comment = "Value the table uses. Unlike `SHOW CREATE TABLE`, this is the value in effect, which may come "
+            "from a named collection, from replicated metadata, or from the engine adjusting it while running, and so "
+            "need not be the value the `CREATE` query states. A placeholder when `is_masked` is 1.";
+    });
+    description.modify("tier", [](ColumnDescription & column)
+    {
+        column.comment = "Support level of the setting. Reported as `Production` for a setting known only from the "
+            "table's `SETTINGS` clause, where the engine keeps no settings struct to say otherwise - such rows have an "
+            "empty `default`, `type` and `description` too.";
+    });
+
+    /// Particular to this table.
+    description.add({"source", originEnum(), sourceColumnComment()});
+    description.add({"is_masked", std::make_shared<DataTypeUInt8>(),
+        "1 if `value` is a placeholder rather than the real value, because the setting holds a secret and the current "
+        "user may not see it. Grant `displaySecretsInShowAndSelect` and enable "
+        "`format_display_secrets_in_show_and_select` to see it."});
+
+    return description;
 }
 
 VirtualColumnsDescription StorageSystemTableSettings::createVirtuals()
@@ -207,38 +206,11 @@ protected:
                         res_columns[res_index++]->insert(tbl_name);
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(engine_name);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(name);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(value);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.default_value);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.origin != SettingOrigin::Default);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.comment);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.min_value ? Field(*setting.min_value) : Field());
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.max_value ? Field(*setting.max_value) : Field());
-                    if (column_mask[src_index++])
-                    {
-                        Array disallowed;
-                        disallowed.reserve(setting.disallowed_values.size());
-                        for (const auto & disallowed_value : setting.disallowed_values)
-                            disallowed.emplace_back(disallowed_value);
-                        res_columns[res_index++]->insert(disallowed);
-                    }
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.readonly);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.type);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.tier == SettingsTierType::OBSOLETE);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.tier);
-                    if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(alias_for);
+
+                    insertSharedSettingColumns(
+                        res_columns, column_mask, src_index, res_index, name, value, setting, alias_for);
+
+                    /// Particular to this table, and so written after the shared columns.
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(static_cast<Int8>(setting.origin));
                     if (column_mask[src_index++])
