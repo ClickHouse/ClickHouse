@@ -96,15 +96,18 @@ FORMAT Null;
 SYSTEM DISABLE FAILPOINT merge_tree_marks_load_sync_sleep;
 SYSTEM FLUSH LOGS query_log, filesystem_read_prefetches_log;
 
--- Load-bearing preconditions: without a measurable wait, or without a background load in the
--- asynchronous arms, the ratio below would be vacuous. The same query without the failpoint waits
--- under 15 ms, so one second is unreachable unless the injected sleep ran.
+-- Load-bearing preconditions: without the injected sleep, or without a background load in the
+-- asynchronous arms, the ratio below would be vacuous. Only 'sync' can attest the sleep: it loads
+-- marks on the thread that waits for them, so its measured wait contains the sleep itself and a
+-- co-scheduled machine can only lengthen it (24 s here against 10 ms with the failpoint off). An
+-- asynchronous arm measures only what is left of a background load once its consumer reaches it, so
+-- a starved consumer sees no wait even though every load slept. One attestation covers all three
+-- arms, because the failpoint is process-global and stays enabled across them.
 SELECT log_comment || ': ' || if(ProfileEvents['WaitMarksLoadMicroseconds'] > 1000000,
           'marks-load wait is measurable',
           'UNEXPECTED: no marks-load wait, failpoint did not fire')
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase()
-      AND log_comment IN ('sync', 'async', 'prefetch') ORDER BY log_comment;
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'sync';
 
 SELECT log_comment || ': ' || if(ProfileEvents['BackgroundLoadingMarksTasks'] > 0,
           'scheduled background marks loads',
@@ -153,7 +156,7 @@ THRESHOLD_MILLI=1150
 EXPECTED_SELECTS=2
 
 retry_async_arm() {
-    local verdict="$1" measurement selects wait_ms ratio_milli
+    local verdict="$1" measurement selects bg_tasks ratio_milli
 
     for _retry in $(seq 1 "$MAX_RETRIES"); do
         # Command substitution, not process substitution: it waits for the process to exit, so the
@@ -169,17 +172,19 @@ retry_async_arm() {
         SYSTEM DISABLE FAILPOINT merge_tree_marks_load_sync_sleep;
 
         SELECT sumIf(value, event = 'SelectQuery'),
-               intDiv(sumIf(value, event = 'WaitMarksLoadMicroseconds'), 1000),
+               sumIf(value, event = 'BackgroundLoadingMarksTasks'),
                toUInt64(round(1000 * sumIf(value, event = 'WaitMarksLoadMicroseconds')
                    / greatest(sumIf(value, event = 'SelectQueryTimeMicroseconds'), 1)))
         FROM system.events;
         ")
-        read -r selects wait_ms ratio_milli <<< "$measurement"
+        read -r selects bg_tasks ratio_milli <<< "$measurement"
 
-        # Same preconditions as the first measurement: the counters must describe this arm, and the
-        # injected sleep must have run, or the ratio below would not mean anything.
+        # Same preconditions as the first measurement: the counters must describe this arm, and it
+        # must have loaded marks in the background, or the ratio below would not mean anything. Both
+        # are properties of a correct build rather than of the machine, unlike a floor on the wait
+        # itself, which is only the part of a background load that outlives its consumer's arrival.
         [ "${selects:-0}" = "$EXPECTED_SELECTS" ] || break
-        [ "${wait_ms:-0}" -gt 1000 ] || break
+        [ "${bg_tasks:-0}" -gt 0 ] || break
 
         if [ "${ratio_milli:-0}" -gt "$THRESHOLD_MILLI" ]; then
             echo "async: marks loading overlaps across prefix tasks"

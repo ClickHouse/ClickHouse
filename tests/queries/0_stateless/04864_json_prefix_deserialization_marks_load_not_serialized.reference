@@ -1,7 +1,5 @@
 part is Wide
 typed path is LowCardinality
-async: marks-load wait is measurable
-prefetch: marks-load wait is measurable
 sync: marks-load wait is measurable
 async: scheduled background marks loads
 prefetch: scheduled background marks loads
