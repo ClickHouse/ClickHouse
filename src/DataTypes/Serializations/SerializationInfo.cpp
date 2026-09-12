@@ -389,8 +389,8 @@ SerializationInfoByName::SerializationInfoByName(const NamesAndTypesList & colum
                 return column.type->hasSparseSerializationSubcolumns(settings);
             })))
     {
-        settings.version = MergeTreeSerializationInfoVersion::WITH_TYPES;
-        settings.tryDowngradeToBasic();
+        /// The writer can still add `missing_columns` after choosing the serialization kinds.
+        settings.version = MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS;
     }
 
     if (settings.isAlwaysDefault())
