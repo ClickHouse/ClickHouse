@@ -40,7 +40,7 @@ private:
         return "";
     }
 
-    StoragePrometheusQuery::Configuration config;
+    StoragePrometheusQuery::Arguments parsed_args;
 };
 
 }
