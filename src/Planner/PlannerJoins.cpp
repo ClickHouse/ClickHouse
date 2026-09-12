@@ -1422,10 +1422,12 @@ std::shared_ptr<IJoin> chooseJoinAlgorithm(
     if (table_join->getMixedJoinExpression()
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::HASH)
         && !table_join->isEnabledAlgorithm(JoinAlgorithm::PARALLEL_HASH)
-        && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH))
+        && !table_join->isEnabledAlgorithm(JoinAlgorithm::GRACE_HASH)
+        && !table_join->isEnabledAlgorithm(JoinAlgorithm::PARTIAL_MERGE)
+        && !table_join->isEnabledAlgorithm(JoinAlgorithm::PREFER_PARTIAL_MERGE))
     {
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "JOIN with mixed conditions supports only hash join or grace hash join");
+            "JOIN with mixed conditions supports only hash join, grace hash join or partial merge join");
     }
 
     /// JOIN with Join engine.

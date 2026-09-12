@@ -1,0 +1,79 @@
+-- ANY/SEMI strictness and Nullable/LowCardinality columns for mixed (cross-side non-equi)
+-- JOIN ON conditions in the partial merge join.
+-- The `hash` algorithm output is the reference: for every query the two algorithms must
+-- produce identical results.
+-- The companion tests (same data, split to keep every file within the flaky-check time limit):
+--   04838_join_on_mixed_conditions_partial_merge_matrix.sql.j2 (the condition matrix),
+--   04838_join_on_mixed_conditions_partial_merge_splits.sql.j2 (block splitting and spilling),
+--   04838_join_on_mixed_conditions_partial_merge.sql.j2 (randomized differential check).
+
+DROP TABLE IF EXISTS t1;
+DROP TABLE IF EXISTS t2;
+
+CREATE TABLE t1 (
+    key UInt32,
+    a UInt32,
+    attr String
+) ENGINE = MergeTree ORDER BY key;
+
+CREATE TABLE t2 (
+    key UInt32,
+    a UInt32,
+    attr String
+) ENGINE = MergeTree ORDER BY key;
+
+-- Duplicate keys on both sides to get cross products, plus keys with no pair on the other side.
+INSERT INTO t1 (key, a, attr) VALUES (1, 10, 'alpha'), (2, 15, 'beta'), (2, 2, 'beta2'), (3, 20, 'gamma'), (5, 5, 'epsilon');
+INSERT INTO t2 (key, a, attr) VALUES (1, 5, 'ALPHA'), (2, 10, 'BETA'), (2, 14, 'BETA2'), (2, 16, 'BETA3'), (4, 25, 'DELTA');
+
+SET enable_analyzer = 1;
+SET join_use_nulls = 0;
+-- Swapping the join sides changes which side ANY/SEMI deduplicates, and the CI harness
+-- randomizes the setting: pin it so that both algorithms run the same plan.
+SET query_plan_join_swap_table = 'false';
+
+-- { echoOn }
+-- ANY and SEMI: the matched right row is chosen by the algorithm, so select only columns that
+-- do not depend on the choice.
+{% for extra_settings in ['', ', partial_merge_join_rows_in_right_blocks = 2, max_rows_in_join = 2'] -%}
+{% for join_type in ['ANY LEFT', 'ANY INNER', 'SEMI LEFT'] -%}
+{% for algorithm in ['hash', 'partial_merge'] -%}
+{% set settings = "SETTINGS join_algorithm = '" ~ algorithm ~ "'" ~ (extra_settings if algorithm == 'partial_merge' else '') -%}
+SELECT t1.*, t2.key FROM t1 {{ join_type }} JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL {{ settings }};
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+
+-- ANY with a unique passing candidate per key: right values are deterministic.
+{% for algorithm in ['hash', 'partial_merge'] -%}
+SELECT t1.*, t2.* FROM t1 ANY LEFT JOIN t2 ON t1.key = t2.key AND t1.a + 1 = t2.a ORDER BY ALL SETTINGS join_algorithm = '{{ algorithm }}';
+{% endfor -%}
+-- { echoOff }
+
+DROP TABLE t1;
+DROP TABLE t2;
+
+-- Nullable and LowCardinality columns in the mixed condition.
+DROP TABLE IF EXISTS t3;
+DROP TABLE IF EXISTS t4;
+
+CREATE TABLE t3 (key UInt32, val Nullable(UInt32), s LowCardinality(String)) ENGINE = MergeTree ORDER BY key;
+CREATE TABLE t4 (key UInt32, val Nullable(UInt32), s LowCardinality(String)) ENGINE = MergeTree ORDER BY key;
+
+INSERT INTO t3 VALUES (1, 1, 'x'), (1, NULL, 'y'), (2, 5, 'z'), (3, 3, 'w');
+INSERT INTO t4 VALUES (1, 2, 'x'), (1, 0, 'y'), (2, NULL, 'z'), (4, 4, 'v');
+
+-- { echoOn }
+{% for join_use_nulls in [0, 1] -%}
+SET join_use_nulls = {{ join_use_nulls }};
+{% for join_type in ['LEFT', 'RIGHT', 'FULL'] -%}
+{% for algorithm in ['hash', 'partial_merge'] -%}
+SELECT t3.*, t4.* FROM t3 {{ join_type }} JOIN t4 ON t3.key = t4.key AND t3.val < t4.val ORDER BY ALL SETTINGS join_algorithm = '{{ algorithm }}';
+SELECT t3.*, t4.* FROM t3 {{ join_type }} JOIN t4 ON t3.key = t4.key AND t3.s = t4.s AND t3.val < t4.val ORDER BY ALL SETTINGS join_algorithm = '{{ algorithm }}';
+{% endfor -%}
+{% endfor -%}
+{% endfor -%}
+-- { echoOff }
+
+DROP TABLE t3;
+DROP TABLE t4;
