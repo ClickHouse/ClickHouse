@@ -108,4 +108,9 @@ void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type);
 /// Checks type of any nested type is DataTypeAggregateFunction.
 bool hasAggregateFunctionType(const DataTypePtr & type);
 
+/// True when `from` and `to` differ only in the state representation of an aggregate function they
+/// contain (Aggregation vs Window). All variants of one function share the serialization format, so
+/// neither the type name nor the binary type encoding carries the variant.
+bool differsOnlyByAggregateStateVariant(const DataTypePtr & from, const DataTypePtr & to);
+
 }

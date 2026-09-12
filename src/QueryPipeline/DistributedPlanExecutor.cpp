@@ -47,6 +47,8 @@
 #include <Poco/URI.h>
 #include <Server/StatelessWorker/StatelessWorkerClient.h>
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
+#include <DataTypes/DataTypeAggregateFunction.h>
+#include <Interpreters/castColumn.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ProcessList.h>
@@ -222,6 +224,20 @@ public:
     {
     }
 
+    /// The header the producer announces for the chunks it queues; a `Chunk` itself carries columns
+    /// only. Set before the sink is constructed, so it is in place before any chunk can be queued.
+    void setProducerHeader(SharedHeader header)
+    {
+        std::lock_guard lock(mutex);
+        producer_header = std::move(header);
+    }
+
+    SharedHeader getProducerHeader()
+    {
+        std::lock_guard lock(mutex);
+        return producer_header;
+    }
+
     /// Appends a data chunk. Throws if the exchange is cancelled, so the producer stops early.
     /// Drops the chunk if the reader is detached.
     void appendChunk(Chunk chunk)
@@ -317,6 +333,7 @@ private:
     std::mutex mutex;
     std::condition_variable has_data;
     DequeWithMemoryTracking<Chunk> chunks;
+    SharedHeader producer_header TSA_GUARDED_BY(mutex);
     bool cancelled = false;
     bool reader_detached = false;
     /// The first failure passed to `cancel`.
@@ -398,6 +415,7 @@ public:
     {
         auto file_name = exchange_stream_id.toString();
         auto exchange = InMemoryExchanges::instance()->getExchange(query_id, file_name);
+        exchange->setProducerHeader(input_header);
         return std::make_shared<SinkFromInMemoryExchange>(input_header, exchange);
     }
 
@@ -491,6 +509,8 @@ private:
                 return Chunk(getPort().getHeader().cloneEmptyColumns(), 0);
             if (chunk->empty())
                 return std::nullopt;   /// End-of-data marker.
+
+            convertAggregateStateVariants(*chunk);
             return chunk;
         }
 
@@ -508,7 +528,57 @@ private:
             return getPort().getHeader().empty() ? std::chrono::milliseconds(1) : std::chrono::milliseconds(10);
         }
 
+        /// An aggregate state's representation (Aggregation vs Window) survives in neither header, and the
+        /// producer's header is built independently of this source's, so the two can disagree on it. Bring
+        /// the columns to the representation this source announces, or a consumer reads one layout as the other.
+        void convertAggregateStateVariants(Chunk & chunk)
+        {
+            if (!positions_to_convert)
+                resolvePositionsToConvert();
+
+            if (positions_to_convert->empty())
+                return;
+
+            const auto & header = getPort().getHeader();
+            /// `detachColumns` resets the row count, so read it before detaching. The chunk infos are
+            /// a separate member and are left untouched.
+            const size_t num_rows = chunk.getNumRows();
+            auto columns = chunk.detachColumns();
+            for (size_t position : *positions_to_convert)
+            {
+                const auto & target = header.getByPosition(position);
+                ColumnWithTypeAndName source{
+                    columns[position], producer_header->getByPosition(position).type, target.name};
+                columns[position] = castColumn(source, target.type);
+            }
+            chunk.setColumns(std::move(columns), num_rows);
+        }
+
+        /// Both headers are fixed for the lifetime of the exchange, so the set is resolved once. It is
+        /// empty for every stream whose announced types already agree.
+        void resolvePositionsToConvert()
+        {
+            positions_to_convert.emplace();
+
+            producer_header = exchange->getProducerHeader();
+            if (!producer_header)
+                throw Exception(
+                    ErrorCodes::LOGICAL_ERROR,
+                    "In-memory exchange produced a chunk before its producer header was recorded");
+
+            const auto & header = getPort().getHeader();
+            if (producer_header->columns() != header.columns())
+                return;
+
+            for (size_t position = 0; position < header.columns(); ++position)
+                if (differsOnlyByAggregateStateVariant(
+                        producer_header->getByPosition(position).type, header.getByPosition(position).type))
+                    positions_to_convert->push_back(position);
+        }
+
         InMemoryExchangePtr exchange;
+        SharedHeader producer_header;
+        std::optional<VectorWithMemoryTracking<size_t>> positions_to_convert;
         bool detach_notified = false;
     };
 
