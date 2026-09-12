@@ -450,6 +450,19 @@ public:
       */
     virtual AggregateFunctionPtr getNestedFunction() const { return {}; }
 
+    /** True if this resolves to the only-null placeholder the factory substitutes for a function
+      * whose arguments are all only-null (the nothing* family), possibly wrapped in combinators.
+      * The placeholder base carries no nulls-action variant, so such a function must not contribute
+      * its name to a composed type name (see AggregateFunctionTuple). Combinators propagate the
+      * wrapped answer; -Tuple overrides this to be a placeholder only when all its elements are.
+      */
+    virtual bool isOnlyNullPlaceholder() const
+    {
+        if (auto nested = getNestedFunction())
+            return nested->isOnlyNullPlaceholder();
+        return false;
+    }
+
     const DataTypePtr & getResultType() const override { return result_type; }
     const DataTypes & getArgumentTypes() const override { return argument_types; }
 
