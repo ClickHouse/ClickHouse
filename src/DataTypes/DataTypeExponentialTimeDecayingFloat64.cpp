@@ -4,6 +4,7 @@
 #include <Columns/ColumnMap.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
@@ -16,6 +17,7 @@
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/Serializations/SerializationWrapper.h>
 #include <Parsers/ASTLiteral.h>
@@ -387,6 +389,17 @@ void assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
             return;
         }
     }
+    else if (const auto * left_variant = typeid_cast<const DataTypeVariant *>(left_type.get()))
+    {
+        const auto * right_variant = typeid_cast<const DataTypeVariant *>(right_type.get());
+        if (right_variant && left_variant->getVariants().size() == right_variant->getVariants().size())
+        {
+            for (size_t i = 0; i < left_variant->getVariants().size(); ++i)
+                assertExponentialTimeDecayingFloat64TypesCompatibleImpl(
+                    left_variant->getVariant(i), right_variant->getVariant(i), operation);
+            return;
+        }
+    }
 
     throw Exception(
         ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -502,6 +515,15 @@ void validateExponentialTimeDecayingFloat64ColumnImpl(
         const auto & map_column = assert_cast<const ColumnMap &>(*full_column);
         validateExponentialTimeDecayingFloat64ColumnImpl(
             map_column.getNestedColumn(), map_type->getNestedType(), operation);
+        return;
+    }
+
+    if (const auto * variant_type = typeid_cast<const DataTypeVariant *>(type.get()))
+    {
+        const auto & variant_column = assert_cast<const ColumnVariant &>(*full_column);
+        for (size_t i = 0; i < variant_type->getVariants().size(); ++i)
+            validateExponentialTimeDecayingFloat64ColumnImpl(
+                variant_column.getVariantByGlobalDiscriminator(i), variant_type->getVariant(i), operation);
     }
 }
 
