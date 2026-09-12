@@ -8698,7 +8698,7 @@ All servers participating in a distributed query must agree on this value: with 
 Parallelize the final merge of the per-thread single-level aggregation hash tables. The key space is split into disjoint partitions by key hash, and each partition is merged independently: the merging thread enumerates all per-thread tables and combines the keys that belong to its partition, so no two threads ever touch the same key. If the setting is turned off, the single-level tables are merged serially on one thread. Aggregation by 8- and 16-bit keys keeps its own range-partitioned parallel merge regardless of this setting.
 )", 0) \
     DECLARE(UInt64, min_outstreams_per_resize_after_split, 24, R"(
-Specifies the minimum number of output streams of a `Resize` or `StrictResize` processor after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
+Specifies the minimum number of output streams of a pre-aggregation resize processor (`Resize`, `StrictResize` or `GradualResize`) after the split is performed during pipeline generation. If the resulting number of streams is less than this value, the split operation will not occur.
 
 ### What is a Resize Node
 A `Resize` node is a processor in the query pipeline that adjusts the number of data streams flowing through the pipeline. It can either increase or decrease the number of streams to balance the workload across multiple threads or processors. For example, if a query requires more parallelism, the `Resize` node can split a single stream into multiple streams. Conversely, it can merge multiple streams into fewer streams to consolidate data processing.
@@ -8722,8 +8722,10 @@ In some cases, where the inputs/outputs are indivisible by the number of split `
 ### Purpose of the Setting
 The `min_outstreams_per_resize_after_split` setting ensures that the splitting of `Resize` nodes is meaningful and avoids creating too few streams, which could lead to inefficient parallel processing. By enforcing a minimum number of output streams, this setting helps maintain a balance between parallelism and overhead, optimizing query execution in scenarios involving stream splitting and merging.
 
+The same split path is used by the `GradualResize` processor built for the `GROUP BY` pre-aggregation stage when `min_rows_per_stream_for_gradual_resize` or `min_bytes_per_stream_for_gradual_resize` is non-zero: the stage is then divided into the same number of groups, and the activation threshold is divided among them.
+
 ### Disabling the Setting
-To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
+To disable the split of `Resize` nodes, set this setting to 0. This will prevent the splitting of `Resize`, `StrictResize` and `GradualResize` nodes during pipeline generation, allowing them to retain their original structure without division into smaller nodes.
 )", 0) \
     DECLARE(UInt64, min_rows_per_stream_for_gradual_resize, 0, R"(
 Total number of rows that must be pushed through the `GROUP BY` pre-aggregation resize stage before all aggregation streams in this stage are activated. When non-zero, the pipeline starts `GROUP BY` aggregation with one active stream (or one stream per split group, see below); once the cumulative row count crosses this threshold, all aggregation streams in the pre-aggregation stage are activated at once. This avoids the merge overhead of many nearly-empty partial hash tables when the input data is small. The setting is disabled by default. Setting this to 0 disables only the row threshold; if `min_bytes_per_stream_for_gradual_resize` is non-zero, gradual resize still applies, activating on the byte threshold instead. Only when both thresholds are 0 are all aggregation streams used from the start.
