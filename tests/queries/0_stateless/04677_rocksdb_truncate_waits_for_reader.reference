@@ -1,0 +1,26 @@
+buffer_reader_alias_truncate scans reached target	3
+buffer_reader_alias_truncate truncate succeeded	1
+buffer_reader_alias_truncate rows after truncate	0
+buffer_reader_alias_truncate readers finished	3
+buffer_reader_alias_truncate readers read all rows	3
+direct scans reached target	3
+direct truncate succeeded	1
+direct rows after truncate	0
+direct readers finished	3
+direct readers read all rows	3
+reader started	1
+truncate timed out on reader	1
+rows kept after timeout	300000
+truncate after reader	1
+zero timeout reader started	1
+zero timeout truncate timed out	0
+zero timeout truncate succeeded	1
+zero timeout truncate waited	1
+zero timeout reader finished	1
+zero timeout reader read all rows	1
+mutation pulling	1
+truncate completed beside mutation	1
+mutation completed beside truncate	1
+rows after truncate	0
+direct	1
+through alias	1
