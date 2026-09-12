@@ -273,10 +273,12 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy() const
     if (max_rows_in_join != 0 || max_bytes_in_join != 0)
         return true;
 
-    /// Standalone `grace_hash` spills at `max_bytes_before_external_join` here, and ignores it there.
-    const bool grace_hash_requested
-        = std::find(join_algorithms.begin(), join_algorithms.end(), JoinAlgorithm::GRACE_HASH) != join_algorithms.end();
-    return grace_hash_requested && (max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0);
+    /// `grace_hash` diverges either way here. With a spill threshold it spills at
+    /// `max_bytes_before_external_join` here, and ignores it there. Without one it is not a runnable algorithm
+    /// here at all - the join demotes it to the next entry of the preference list, or refuses the query when it
+    /// is listed alone - while there it still builds a standalone `GraceHashJoin` whose only spill trigger is the
+    /// (unset) size limits.
+    return std::find(join_algorithms.begin(), join_algorithms.end(), JoinAlgorithm::GRACE_HASH) != join_algorithms.end();
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
@@ -338,7 +340,7 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
             "Cannot serialize a join step whose spilling depends on `max_rows_in_join` / `max_bytes_in_join` being hard caps "
-            "or on `grace_hash` taking its spill threshold from `max_bytes_before_external_join` for serialization version {}; "
+            "or on `grace_hash` spilling at the threshold of `hash` rather than at the size limits, for serialization version {}; "
             "version {} or newer is required. Set `legacy_join_size_limits_trigger_spilling = 1` to run the whole query with "
             "the old spill contract instead",
             version,

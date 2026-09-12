@@ -102,6 +102,21 @@ TEST(JoinSpillTriggerPlanSetting, RefusedTowardsOldPeersWhenTheContractsDiverge)
             makeJoinSettings({{"join_algorithm", "hash,grace_hash"}, {"max_bytes_before_external_join", 1000000u}}),
             pre_setting_version),
         Exception);
+
+    /// `grace_hash` without a spill threshold is not a runnable algorithm here - listed alone the query is
+    /// refused, in a preference list it is demoted to the next entry - while an old peer runs it as a standalone
+    /// `GraceHashJoin` that never spills. `max_bytes_ratio_before_external_join` is non-zero by default, so both
+    /// thresholds have to be cleared to reach this case.
+    EXPECT_THROW(
+        serializeAt(
+            makeJoinSettings({{"join_algorithm", "grace_hash"}, {"max_bytes_ratio_before_external_join", 0.0}}),
+            pre_setting_version),
+        Exception);
+    EXPECT_THROW(
+        serializeAt(
+            makeJoinSettings({{"join_algorithm", "grace_hash,hash"}, {"max_bytes_ratio_before_external_join", 0.0}}),
+            pre_setting_version),
+        Exception);
 }
 
 TEST(JoinSpillTriggerPlanSetting, AllowedTowardsOldPeersWhenBothContractsAgree)
@@ -117,11 +132,12 @@ TEST(JoinSpillTriggerPlanSetting, AllowedTowardsOldPeersWhenBothContractsAgree)
         EXPECT_TRUE(JoinSettings(settings, pre_setting_version).legacy_join_size_limits_trigger_spilling);
     }
 
-    /// `grace_hash` without a spill threshold - `max_bytes_ratio_before_external_join` is non-zero by default, so
-    /// both have to be cleared: neither side spills, the size limits are unset, so there is nothing the two
-    /// contracts can disagree about.
+    /// `grace_hash` in legacy mode is what an old peer runs anyway: the size limits are its spill trigger on both
+    /// sides, and the threshold that only this side would apply is ignored here too.
     EXPECT_NO_THROW(serializeAt(
-        makeJoinSettings({{"join_algorithm", "grace_hash"}, {"max_bytes_ratio_before_external_join", 0.0}}),
+        makeJoinSettings({{"legacy_join_size_limits_trigger_spilling", true},
+                          {"join_algorithm", "grace_hash"},
+                          {"max_bytes_before_external_join", 1000000u}}),
         pre_setting_version));
 
     /// A spill threshold without `grace_hash`: `hash` spills at `max_bytes_before_external_join` on both sides.
