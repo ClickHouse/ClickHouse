@@ -281,6 +281,14 @@ struct JoinAlgorithmParams
         std::chrono::milliseconds lock_acquire_timeout_);
 };
 
+/// Can any enabled algorithm execute this kind/strictness? Mirrors tryCreateJoin.
+/// `direct_join_possible`: may the right side be key-value? Not visible here.
+bool anyEnabledAlgorithmSupports(
+    const std::vector<JoinAlgorithm> & join_algorithms,
+    JoinKind kind,
+    JoinStrictness strictness,
+    bool direct_join_possible);
+
 /** Choose JOIN algorithm for table join, right table expression, right table expression header and planner context.
   * Table join structure can be modified during JOIN algorithm choosing for special JOIN algorithms.
   * For example JOIN with Dictionary engine, or JOIN with JOIN engine.

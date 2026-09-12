@@ -1048,6 +1048,18 @@ void trySetStorageInTableJoin(const QueryTreeNodePtr & table_expression, std::sh
         table_join->setStorageJoin(storage_key_value);
 }
 
+static bool directKeyValueJoinSupportsKindAndStrictness(JoinKind kind, JoinStrictness strictness)
+{
+    if (isInner(kind))
+        return strictness == JoinStrictness::All;
+    if (isLeft(kind))
+        return strictness == JoinStrictness::Any
+            || strictness == JoinStrictness::All
+            || strictness == JoinStrictness::Semi
+            || strictness == JoinStrictness::Anti;
+    return false;
+}
+
 static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<TableJoin> & table_join,
     const PreparedJoinStorage & right_table_expression,
     SharedHeader & right_table_expression_header)
@@ -1059,12 +1071,7 @@ static std::shared_ptr<DirectKeyValueJoin> tryDirectJoin(const std::shared_ptr<T
     if (!storage)
         return {};
 
-    bool allowed_inner = isInner(table_join->kind()) && table_join->strictness() == JoinStrictness::All;
-    bool allowed_left = isLeft(table_join->kind()) && (table_join->strictness() == JoinStrictness::Any ||
-                                                          table_join->strictness() == JoinStrictness::All ||
-                                                          table_join->strictness() == JoinStrictness::Semi ||
-                                                          table_join->strictness() == JoinStrictness::Anti);
-    if (!allowed_inner && !allowed_left)
+    if (!directKeyValueJoinSupportsKindAndStrictness(table_join->kind(), table_join->strictness()))
         return {};
 
     /// `DirectKeyValueJoin` looks rows up by the equality key only and never evaluates a mixed
@@ -1174,6 +1181,39 @@ QueryTreeNodePtr getJoinExpressionFromNode(const JoinNode & join_node)
     if (constant_join_expression && constant_join_expression->hasSourceExpression())
         return constant_join_expression->getSourceExpression();
     return join_expression;
+}
+
+bool anyEnabledAlgorithmSupports(
+    const std::vector<JoinAlgorithm> & join_algorithms, JoinKind kind, JoinStrictness strictness, bool direct_join_possible)
+{
+    for (auto algorithm : join_algorithms)
+    {
+        switch (algorithm)
+        {
+            /// Hash family runs anything.
+            case JoinAlgorithm::HASH:
+            case JoinAlgorithm::PARALLEL_HASH:
+            case JoinAlgorithm::PREFER_PARTIAL_MERGE: /// falls back to hash
+            case JoinAlgorithm::GRACE_HASH:
+            case JoinAlgorithm::AUTO:
+            case JoinAlgorithm::DEFAULT:
+                return true;
+            /// No hash fallback below.
+            case JoinAlgorithm::PARTIAL_MERGE:
+                if (MergeJoin::isSupported(kind, strictness))
+                    return true;
+                break;
+            case JoinAlgorithm::FULL_SORTING_MERGE:
+                if (FullSortingMergeJoin::isMergeAlgorithmStrictnessAndKindSupported(kind, strictness))
+                    return true;
+                break;
+            case JoinAlgorithm::DIRECT:
+                if (direct_join_possible && directKeyValueJoinSupportsKindAndStrictness(kind, strictness))
+                    return true;
+                break;
+        }
+    }
+    return false;
 }
 
 static std::shared_ptr<IJoin> tryCreateJoin(
