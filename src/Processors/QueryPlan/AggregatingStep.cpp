@@ -1127,7 +1127,8 @@ void AggregatingStep::serialize(Serialization & ctx) const
     ///             128=only_merge.
     /// A second flags byte follows since query plan serialization version
     /// `DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SEMANTICALLY_CONSTANT_GROUP_BY_KEYS`:
-    ///             1=group_by_keys_semantically_constant, 2=gradual_resize_enabled.
+    ///             1=group_by_keys_semantically_constant, 2=gradual_resize_enabled (the latter is
+    ///             written only when the step would take the resize branch at all, see below).
     UInt8 flags = 0;
     if (final && !ctx.for_cache_key)
         flags |= 1;
@@ -1198,7 +1199,15 @@ void AggregatingStep::serialize(Serialization & ctx) const
         UInt8 extra_flags = 0;
         if (group_by_keys_semantically_constant && !ctx.for_cache_key)
             extra_flags |= 1;
-        if (gradual_resize_enabled && !ctx.for_cache_key)
+        /// A storage with an evenly distributed read makes the planner skip the pre-aggregation
+        /// resize altogether, so the gradual/strict choice never arises for such a step locally.
+        /// `deserialize` cannot restore that property - it reconstructs every step with
+        /// `storage_has_evenly_distributed_read = false` (see the `TODO` there) - so a shipped
+        /// fragment does reach the resize branch, and a set bit would make it build a
+        /// `GradualResize` that the same query never builds when it is planned locally. Leave the
+        /// bit off the wire in that case: the shipped plan then keeps the strict resize that is
+        /// built there today, and the processor choice does not depend on the transport.
+        if (gradual_resize_enabled && !storage_has_evenly_distributed_read && !ctx.for_cache_key)
             extra_flags |= 2;
         writeIntBinary(extra_flags, ctx.out);
     }
