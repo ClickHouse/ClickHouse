@@ -1,0 +1,44 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>
+        SELECT arrayIntersect(
+            range(16 + number % 2),
+            range(256 + number % 2),
+            range(256 + number % 2))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT arrayIntersect(
+            range(256 + number % 2),
+            if(number % 2 = 0, emptyArrayUInt64(), range(16 + number % 2)),
+            range(256 + number % 2))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT arrayIntersect(
+            range(256 + number % 2),
+            if(number % 10 = 0, range(16 + number % 2), emptyArrayUInt64()),
+            range(256 + number % 2))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+
+    <query>
+        SELECT arrayIntersect(
+            arrayMap(x -> (x, x + 1), range(128 + number % 2)),
+            if(
+                number % 2 = 0,
+                CAST([], 'Array(Tuple(UInt64, UInt64))'),
+                arrayMap(x -> (x, x + 1), range(16 + number % 2))),
+            arrayMap(x -> (x, x + 1), range(128 + number % 2)))
+        FROM numbers(100000)
+        FORMAT Null
+    </query>
+</test>
