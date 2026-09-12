@@ -329,3 +329,180 @@ SELECT id, m['key0'] FROM t_map_idx_correct WHERE m['key0'] > 0 ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 0;
 
 DROP TABLE t_map_idx_correct;
+
+-- ==========================================
+-- Section 8: `<map>.key_<key>` names that belong to something else must not select the index
+-- ==========================================
+-- Index analysis used to split such a name at `.key_` and probe the map's index, while identifier
+-- resolution binds the name to the shortest matching column prefix. When those disagree the index
+-- prunes the granule the predicate actually matches, so each arm prints the indexed count next to
+-- the `use_skip_indexes = 0` oracle: they must be equal, and equal to 1.
+
+SELECT '-- Section 8';
+
+DROP TABLE IF EXISTS t_shadow_dynamic;
+
+-- A `JSON` column `j` captures `j.m.key_nokey` as a dynamic path, so the physical map `j.m` is
+-- never read by this predicate.
+CREATE TABLE t_shadow_dynamic
+(
+    j JSON,
+    `j.m` Map(String, String),
+    INDEX idx mapKeys(`j.m`) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_shadow_dynamic VALUES ('{"m.key_nokey":"hello"}', {'abc':'x'});
+
+SELECT '-- dynamic JSON path shadowing a Map column: indexed count, oracle';
+SELECT count(), (SELECT count() FROM t_shadow_dynamic WHERE j.m.key_nokey = 'hello' SETTINGS use_skip_indexes = 0)
+FROM t_shadow_dynamic WHERE j.m.key_nokey = 'hello' SETTINGS use_skip_indexes = 1;
+
+SELECT '-- same, with optimize_functions_to_subcolumns = 0';
+SELECT count(), (SELECT count() FROM t_shadow_dynamic WHERE j.m.key_nokey = 'hello' SETTINGS use_skip_indexes = 0)
+FROM t_shadow_dynamic WHERE j.m.key_nokey = 'hello' SETTINGS use_skip_indexes = 1, optimize_functions_to_subcolumns = 0;
+
+DROP TABLE t_shadow_dynamic;
+
+DROP TABLE IF EXISTS t_shadow_dynamic_bf;
+
+-- The same shape reaching the `bloom_filter` condition instead of the text bloom filter.
+CREATE TABLE t_shadow_dynamic_bf
+(
+    j JSON,
+    `j.m` Map(String, String),
+    INDEX idx mapKeys(`j.m`) TYPE bloom_filter GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_shadow_dynamic_bf VALUES ('{"m.key_nokey":"hello"}', {'abc':'x'});
+
+SELECT '-- bloom_filter condition: indexed count, oracle';
+SELECT count(), (SELECT count() FROM t_shadow_dynamic_bf WHERE j.m.key_nokey = 'hello' SETTINGS use_skip_indexes = 0)
+FROM t_shadow_dynamic_bf WHERE j.m.key_nokey = 'hello' SETTINGS use_skip_indexes = 1;
+
+DROP TABLE t_shadow_dynamic_bf;
+
+DROP TABLE IF EXISTS t_shadow_dynamic_text;
+
+-- And the `text` index on `mapValues`.
+CREATE TABLE t_shadow_dynamic_text
+(
+    j JSON,
+    `j.m` Map(String, String),
+    INDEX idx mapValues(`j.m`) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_shadow_dynamic_text VALUES ('{"m.key_nokey":"hello"}', {'abc':'zzz'});
+
+SELECT '-- text index on mapValues: indexed count, oracle';
+SELECT count(), (SELECT count() FROM t_shadow_dynamic_text WHERE hasToken(j.m.key_nokey, 'hello') SETTINGS use_skip_indexes = 0)
+FROM t_shadow_dynamic_text WHERE hasToken(j.m.key_nokey, 'hello') SETTINGS use_skip_indexes = 1;
+
+DROP TABLE t_shadow_dynamic_text;
+
+DROP TABLE IF EXISTS t_shadow_physical;
+
+-- A physical column can carry the name too.
+CREATE TABLE t_shadow_physical
+(
+    m Map(String, String),
+    `m.key_nokey` String,
+    INDEX idx mapKeys(m) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_shadow_physical VALUES ({'abc':'x'}, 'hello');
+
+SELECT '-- physical column named m.key_nokey: indexed count, oracle';
+SELECT count(), (SELECT count() FROM t_shadow_physical WHERE `m.key_nokey` = 'hello' SETTINGS use_skip_indexes = 0)
+FROM t_shadow_physical WHERE `m.key_nokey` = 'hello' SETTINGS use_skip_indexes = 1;
+
+DROP TABLE t_shadow_physical;
+
+DROP TABLE IF EXISTS t_shadow_physical_text;
+
+-- Same name collision reaching the `text` index's mapKeys path, which validates the name separately.
+CREATE TABLE t_shadow_physical_text
+(
+    m Map(String, String),
+    `m.key_nokey` String,
+    INDEX idx mapKeys(m) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_shadow_physical_text VALUES ({'abc':'x'}, 'hello');
+
+SELECT '-- physical column named m.key_nokey, text index on mapKeys: indexed count, oracle';
+SELECT count(), (SELECT count() FROM t_shadow_physical_text WHERE hasToken(`m.key_nokey`, 'hello') SETTINGS use_skip_indexes = 0)
+FROM t_shadow_physical_text WHERE hasToken(`m.key_nokey`, 'hello') SETTINGS use_skip_indexes = 1;
+
+DROP TABLE t_shadow_physical_text;
+
+DROP TABLE IF EXISTS t_shadow_other_map;
+
+-- Two maps in one name space: the key belongs to the JSON's map, the index covers the physical one.
+CREATE TABLE t_shadow_other_map
+(
+    j JSON(m Map(String, String)),
+    `j.m` Map(String, String),
+    INDEX idx mapKeys(`j.m`) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_shadow_other_map VALUES ('{"m":{"nokey":"hello"}}', {'abc':'x'});
+
+SELECT '-- key of a different map under the same name space: indexed count, oracle';
+SELECT count(), (SELECT count() FROM t_shadow_other_map WHERE j.m.key_nokey = 'hello' SETTINGS use_skip_indexes = 0)
+FROM t_shadow_other_map WHERE j.m.key_nokey = 'hello' SETTINGS use_skip_indexes = 1;
+
+DROP TABLE t_shadow_other_map;
+
+DROP TABLE IF EXISTS t_shadow_same_rendered_name;
+
+-- Two maps whose parents render to the same subcolumn name under the same storage column: the
+-- direct Tuple element `x.Map(String, String)` and the `Map(String, String)` variant of element `x`.
+-- Only the substream paths differ, so a name comparison cannot separate them.
+SET enable_variant_type = 1;
+
+CREATE TABLE t_shadow_same_rendered_name
+(
+    c Tuple(`x.Map(String, String)` Map(String, String), x Variant(Map(String, String), UInt64)),
+    INDEX idx mapKeys(c.`x.Map(String, String)`) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_shadow_same_rendered_name VALUES ((map('abc', 'x'), map('nokey', 'hello')));
+
+SELECT '-- parents rendering to the same name: indexed count, oracle';
+SELECT count(), (SELECT count() FROM t_shadow_same_rendered_name WHERE c.`x.Map(String, String)`.key_nokey = 'hello' SETTINGS use_skip_indexes = 0)
+FROM t_shadow_same_rendered_name WHERE c.`x.Map(String, String)`.key_nokey = 'hello' SETTINGS use_skip_indexes = 1;
+
+DROP TABLE t_shadow_same_rendered_name;
+
+DROP TABLE IF EXISTS t_json_typed_map;
+
+-- In-range control: a genuine key subcolumn reached through a JSON typed path must stay indexable,
+-- so the missing key still prunes and the present key is still found.
+CREATE TABLE t_json_typed_map
+(
+    j JSON(m Map(String, String)),
+    INDEX idx mapKeys(j.m) TYPE ngrambf_v1(3, 512, 3, 0) GRANULARITY 1
+)
+ENGINE = MergeTree ORDER BY tuple();
+
+INSERT INTO t_json_typed_map VALUES ('{"m":{"abc":"x"}}');
+
+SELECT '-- JSON typed path key subcolumn: index still prunes the missing key';
+SELECT trim(explain) FROM (
+    EXPLAIN indexes = 1
+    SELECT count() FROM t_json_typed_map WHERE j.m.key_zzz = 'x'
+) WHERE explain LIKE '%Granules:%';
+
+SELECT '-- JSON typed path key subcolumn: missing key, present key';
+SELECT
+    (SELECT count() FROM t_json_typed_map WHERE j.m.key_zzz = 'x'),
+    (SELECT count() FROM t_json_typed_map WHERE j.m.key_abc = 'x');
+
+DROP TABLE t_json_typed_map;

@@ -97,7 +97,8 @@ public:
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
-        bool has_positions_);
+        bool has_positions_,
+        StorageMetadataPtr metadata_snapshot_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -206,6 +207,7 @@ private:
     static bool requiresReadingAllTokens(const RPNElement & element);
 
     Block header;
+    StorageMetadataPtr metadata_snapshot;
     std::optional<String> normalized_index_column_name;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
