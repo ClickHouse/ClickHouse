@@ -48,6 +48,7 @@ namespace ErrorCodes
 extern const int BAD_ARGUMENTS;
 extern const int LOGICAL_ERROR;
 extern const int NO_ZOOKEEPER;
+extern const int NOT_IMPLEMENTED;
 extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
@@ -57,6 +58,7 @@ extern const SettingsBool use_paimon_partition_pruning;
 extern const SettingsBool use_paimon_metadata_files_cache;
 extern const SettingsInt64 paimon_target_snapshot_id;
 extern const SettingsUInt64 max_consume_snapshots;
+extern const SettingsBool paimon_allow_unmerged_primary_key_reads;
 }
 
 namespace FailPoints
@@ -572,6 +574,21 @@ ObjectIterator PaimonMetadata::iterate(
     auto schema = persistent_components.schema_processor->getSchemaById(state->schema_id);
     if (!schema)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Schema with id {} not found", state->schema_id);
+
+    /// The read path below returns the raw union of the snapshot's data files: row versions
+    /// superseded by later upserts are not eliminated. Refuse rather than return wrong results.
+    if (!query_context->getSettingsRef()[Setting::paimon_allow_unmerged_primary_key_reads])
+    {
+        auto primary_keys = persistent_components.schema_processor->getPrimaryKeys(state->schema_id);
+        if (!primary_keys.empty())
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Reading Paimon primary-key table (primary keys: {}) is not supported: "
+                "merge-on-read is not implemented, so the result would contain row versions "
+                "superseded by later writes. Set `paimon_allow_unmerged_primary_key_reads = 1` "
+                "to read the data files unmerged and accept incorrect results.",
+                fmt::join(primary_keys, ", "));
+    }
 
     /// 3. Build partition pruner if needed
     std::optional<PartitionPruner> partition_pruner;
