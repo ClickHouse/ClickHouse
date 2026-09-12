@@ -35,9 +35,6 @@ struct RangesInDataParts;
 /// Estimates the selectivity of a condition and cardinality of columns.
 class ConditionSelectivityEstimator : public WithContext
 {
-    struct ColumnEstimator;
-    using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
-
     /// Selectivity of a SQL boolean predicate under three-valued logic (TRUE / NULL / FALSE).
     /// `true_sel` is the fraction of rows where the predicate is TRUE (the usual "selectivity").
     /// `null_sel` is the fraction of rows where the predicate is NULL (input column is NULL).
@@ -55,9 +52,30 @@ class ConditionSelectivityEstimator : public WithContext
         Selectivity applyAnd(const Selectivity & other) const;
     };
 
+    struct ColumnEstimator
+    {
+        ColumnStatisticsPtr stats;
+
+        Selectivity estimateRanges(const PlainRanges & ranges) const;
+        UInt64 estimateCardinality() const;
+    };
+    using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
+
+    /// Merged statistics of one ordered part sequence, read-only during estimation, so one instance
+    /// can back estimators bound to different query contexts. Immutable once published: the merge
+    /// mutates the first part's statistics object in place, so merging into it again double-counts.
+    struct Payload
+    {
+        UInt64 total_rows = 0;
+        ColumnEstimators column_estimators;
+        Strings parts_names;
+    };
+
     friend class ConditionSelectivityEstimatorBuilder;
 public:
-    explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
+    using PayloadPtr = std::shared_ptr<const Payload>;
+
+    ConditionSelectivityEstimator(PayloadPtr payload_, ContextPtr context_);
 
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
@@ -109,18 +127,10 @@ public:
     using AtomMap = std::unordered_map<std::string, void(*)(RPNElement & out, const String & column, const Field & value)>;
     static const AtomMap atom_map;
 
-    UInt64 getTotalRows() const { return total_rows; }
+    UInt64 getTotalRows() const { return payload->total_rows; }
 
 private:
     friend class ColumnStatistics;
-
-    struct ColumnEstimator
-    {
-        ColumnStatisticsPtr stats;
-
-        Selectivity estimateRanges(const PlainRanges & ranges) const;
-        UInt64 estimateCardinality() const;
-    };
 
     RelationProfile estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const;
     bool extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const;
@@ -140,12 +150,11 @@ private:
     static constexpr Float64 default_like_factor = 0.1;
     static constexpr Float64 default_cardinality_ratio = 0.1;
 
-    UInt64 total_rows = 0;
-    ColumnEstimators column_estimators;
-    Strings parts_names;
+    PayloadPtr payload;
 };
 
 using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
+using ConditionSelectivityPayloadPtr = ConditionSelectivityEstimator::PayloadPtr;
 
 class ConditionSelectivityEstimatorBuilder
 {
@@ -155,10 +164,14 @@ public:
     void incrementRowCount(UInt64 rows);
     void markDataPart(const DataPartPtr & data_part);
     ConditionSelectivityEstimatorPtr getEstimator() const;
+    /// The merged statistics alone, for callers that reuse them across estimators. Returns null
+    /// when no part contributed statistics, matching `getEstimator`.
+    ConditionSelectivityPayloadPtr getPayload() const;
 
 private:
     bool has_data = false;
-    ConditionSelectivityEstimatorPtr estimator;
+    ContextPtr context;
+    std::shared_ptr<ConditionSelectivityEstimator::Payload> payload;
 };
 
 }

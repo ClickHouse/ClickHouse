@@ -1,0 +1,245 @@
+<test>
+    <!-- Plan-time cost of a query that reads one table many times: each branch asks
+         `MergeTreeData::getConditionSelectivityEstimator` for an estimator over the same
+         part set, and until the background refresh publishes the table-wide cache the
+         statistics were re-read from disk for every one of them. The keys match no row
+         and the queries are `EXPLAIN`, so this measures planning only. Twelve parts make one load
+         large enough that repeating it dominates. -->
+
+    <settings>
+        <allow_statistics>1</allow_statistics>
+        <use_statistics>1</use_statistics>
+        <use_statistics_cache>1</use_statistics_cache>
+        <materialize_statistics_on_insert>1</materialize_statistics_on_insert>
+        <max_query_size>10000000</max_query_size>
+        <max_ast_elements>1000000</max_ast_elements>
+        <max_expanded_ast_elements>4000000</max_expanded_ast_elements>
+    </settings>
+
+    <create_query>
+        CREATE TABLE many_reads_stats (k UInt64, v UInt64)
+        ENGINE = MergeTree ORDER BY k
+        SETTINGS refresh_statistics_interval = 0, auto_statistics_types = 'basic, uniq_v2'
+    </create_query>
+
+    <fill_query>SYSTEM STOP MERGES many_reads_stats</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+    <fill_query>INSERT INTO many_reads_stats SELECT number, number FROM numbers(10000)</fill_query>
+
+    <query>
+        EXPLAIN SELECT count() FROM (
+            SELECT k FROM many_reads_stats WHERE k = 900000000 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000001 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000002 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000003 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000004 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000005 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000006 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000007 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000008 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000009 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000010 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000011 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000012 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000013 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000014 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000015 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000016 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000017 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000018 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000019 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000020 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000021 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000022 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000023 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000024 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000025 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000026 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000027 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000028 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000029 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000030 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000031 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000032 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000033 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000034 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000035 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000036 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000037 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000038 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000039 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000040 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000041 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000042 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000043 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000044 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000045 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000046 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000047 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000048 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000049 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000050 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000051 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000052 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000053 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000054 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000055 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000056 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000057 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000058 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000059 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000060 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000061 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000062 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000063 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000064 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000065 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000066 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000067 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000068 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000069 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000070 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000071 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000072 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000073 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000074 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000075 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000076 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000077 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000078 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000079 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000080 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000081 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000082 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000083 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000084 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000085 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000086 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000087 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000088 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000089 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000090 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000091 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000092 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000093 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000094 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000095 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000096 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000097 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000098 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000099 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000100 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000101 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000102 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000103 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000104 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000105 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000106 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000107 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000108 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000109 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000110 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000111 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000112 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000113 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000114 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000115 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000116 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000117 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000118 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000119 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000120 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000121 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000122 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000123 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000124 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000125 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000126 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000127 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000128 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000129 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000130 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000131 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000132 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000133 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000134 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000135 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000136 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000137 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000138 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000139 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000140 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000141 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000142 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000143 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000144 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000145 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000146 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000147 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000148 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000149 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000150 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000151 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000152 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000153 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000154 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000155 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000156 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000157 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000158 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000159 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000160 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000161 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000162 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000163 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000164 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000165 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000166 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000167 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000168 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000169 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000170 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000171 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000172 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000173 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000174 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000175 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000176 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000177 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000178 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000179 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000180 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000181 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000182 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000183 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000184 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000185 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000186 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000187 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000188 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000189 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000190 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000191 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000192 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000193 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000194 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000195 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000196 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000197 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000198 AND v &gt;= 0 AND v &lt; 100000
+            UNION ALL SELECT k FROM many_reads_stats WHERE k = 900000199 AND v &gt;= 0 AND v &lt; 100000
+        ) FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS many_reads_stats</drop_query>
+</test>
