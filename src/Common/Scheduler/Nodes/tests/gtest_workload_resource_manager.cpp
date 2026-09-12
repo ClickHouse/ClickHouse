@@ -3596,28 +3596,18 @@ TEST(SchedulerWorkloadResourceManager, WorkloadSettingsPerResourceScheduler)
     }
 }
 
-TEST(SchedulerWorkloadResourceManager, CpuFallsBackToFifoWithoutPreemption)
+TEST(SchedulerWorkloadResourceManager, CpuLeafUsesConfiguredSchedulerLikeIO)
 {
-    // Non-preemptive CPU slots (`cpu_slot_preemption = false`) carry no meaningful per-query CPU
-    // signal, so a CPU leaf ignores the workload `scheduler` setting and runs `fifo`. With
-    // preemption on, the configured algorithm applies. IO is unaffected by preemption.
+    // The `scheduler` setting applies to a CPU leaf exactly as to an IO leaf: it is NOT gated on
+    // `cpu_slot_preemption`, which is a runtime-only server property affecting slot cost, no longer
+    // captured in the node. Other time-shared leaves (e.g. QuerySlot admission) always run fifo.
     using Traits = WorkloadNodeTraits<ITimeSharedNode>;
 
-    WorkloadSettings cpu_preempt;
-    cpu_preempt.scheduler = "fair";
-    cpu_preempt.cpu_slot_preemption = true;
-    EXPECT_EQ(Traits::schedulerFor(cpu_preempt, CostUnit::CPUNanosecond), SchedulerAlgorithm::Fair);
-
-    WorkloadSettings cpu_no_preempt;
-    cpu_no_preempt.scheduler = "fair";
-    cpu_no_preempt.cpu_slot_preemption = false;
-    EXPECT_EQ(Traits::schedulerFor(cpu_no_preempt, CostUnit::CPUNanosecond), SchedulerAlgorithm::Fifo);
-
-    // IO leaves are unaffected by CPU slot preemption.
-    WorkloadSettings io_no_preempt;
-    io_no_preempt.scheduler = "fair";
-    io_no_preempt.cpu_slot_preemption = false;
-    EXPECT_EQ(Traits::schedulerFor(io_no_preempt, CostUnit::IOByte), SchedulerAlgorithm::Fair);
+    WorkloadSettings ws;
+    ws.scheduler = "fair";
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::CPUNanosecond), SchedulerAlgorithm::Fair);
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::IOByte), SchedulerAlgorithm::Fair);
+    EXPECT_EQ(Traits::schedulerFor(ws, CostUnit::QuerySlot), SchedulerAlgorithm::Fifo);
 }
 
 TEST(SchedulerWorkloadResourceManager, WorkloadSettingsMaxConcurrentThreadsRatioToCores)
