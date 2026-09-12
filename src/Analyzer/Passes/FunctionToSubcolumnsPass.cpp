@@ -13,6 +13,7 @@
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationObjectCombinedPath.h>
 #include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <DataTypes/Serializations/SerializationVariant.h>
@@ -858,7 +859,11 @@ void optimizeJSONArrayElementChain(
 
     String full_name = ctx.column.name + "." + subcolumn_name;
 
-    if (sourceHasColumn(ctx.column_source, full_name) || !canOptimizeToSubcolumn(ctx.column_source, full_name, false))
+    /// The rewrite means the JSON combined (`@`) subcolumn for this path. A Tuple element or a
+    /// typed path can claim the same flat name, so check the substreams path, not just existence.
+    if (sourceHasColumn(ctx.column_source, full_name)
+        || !canOptimizeToExpectedSubcolumn(
+            ctx.column_source, full_name, SerializationObjectCombinedPath::isCombinedPathSubcolumn))
         return;
 
     /// For a single key, use the actual subcolumn type (may be a typed path, not Dynamic).
