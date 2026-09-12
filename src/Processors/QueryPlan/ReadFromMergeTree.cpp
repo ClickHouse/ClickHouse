@@ -3804,8 +3804,10 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// The conversion only produces its own leading sort columns; the extra merge columns of a
     /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
     /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
+    /// Coverage is the number of primary key columns the conversion reads, not the number of
+    /// columns it outputs: constant ORDER BY columns are outputs backed by no key column.
     if (widened_over_previous_request && virtual_row_conversion
-        && virtual_row_conversion->getSampleBlock().columns() < prefix_size)
+        && virtual_row_conversion->getRequiredColumnsWithTypes().size() < prefix_size)
         resetVirtualRowConversions();
 
     /// In case of read-in-order, don't create too many reading streams.
