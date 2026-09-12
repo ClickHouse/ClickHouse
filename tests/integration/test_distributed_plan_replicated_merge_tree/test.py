@@ -752,10 +752,14 @@ def test_legacy_read_in_order_is_rejected(started_cluster):
     and builds a FinishSorting up front. optimizeReadInOrder only converts a Type::Full sorting, so the
     exchange-safety check never sees that one, and the scatter placed under it can survive and feed it rows
     that are no longer sorted - which returned rows from the wrong part of the table on 8 of 16 runs. Such a
-    plan has to be rejected rather than silently reordered."""
+    plan has to be rejected rather than silently reordered.
+
+    With the default distributed_plan_fallback_to_local_execution = 1 the same rejection makes the query run
+    on the initiator instead, which is safe because nothing is reordered; the strict setting keeps this test
+    pinning the rejection itself."""
     legacy = ("make_distributed_plan = 1, enable_parallel_replicas = 0, "
               "enable_analyzer = 0, query_plan_read_in_order = 0, optimize_read_in_order = 1, "
-              "distributed_plan_read_in_order = 1")
+              "distributed_plan_read_in_order = 1, distributed_plan_fallback_to_local_execution = 0")
     bucket_counts = [
         # Mismatched, so the exchange the pair fuses into survives - the shape that reproduced.
         "distributed_plan_default_reader_bucket_count = 2, distributed_plan_default_shuffle_join_bucket_count = 3",
