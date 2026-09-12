@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel
+# Tags: zookeeper, no-parallel, no-shared-merge-tree
 # no-parallel: the log entry below is written into ZooKeeper by hand, which needs the table's queue
 #   to itself while it is processed.
+# no-shared-merge-tree: the part's node under `replicas/<r>/parts/` that the test removes by hand
+#   is a `ReplicatedMergeTree` structure, and the entry it then watches is a `ReplicatedMergeTree`
+#   queue entry; neither exists when the engine is substituted.
 
 # A part that is active locally while its node under `replicas/<r>/parts/` is gone - a state crash
 # recovery can leave behind - wedged the replication queue: the `GET_PART` entry for it fetched the
