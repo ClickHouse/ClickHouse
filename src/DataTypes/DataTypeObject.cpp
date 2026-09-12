@@ -1166,6 +1166,15 @@ SELECT json['a']['b'], json['c'], json['d'] FROM test;
 └────────────────────────────────────────────┴─────────────────────────┴─────────────────────────┘
 ```
 
+The bracket syntax works for `Nullable(JSON)` as well, and returns the same value and type as the
+equivalent dot syntax; a `NULL` row gives a `NULL` path value.
+
+Chained bracket access is flattened into a single JSON path when `optimize_functions_to_subcolumns`
+is enabled, so `json['a']['b']` reads the path `a.b` just like `json.a.b` does: a row where `a` holds
+a scalar instead of an object has no `a.b` and yields `NULL`. Without that optimization the outer
+access is applied to the `Dynamic` value of `json['a']` instead, and such a row follows the
+`dynamic_throw_on_type_mismatch` setting.
+
 If the requested path wasn't found in the data, it will be filled with `NULL` values:
 
 ```sql title="Query"

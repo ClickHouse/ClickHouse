@@ -17,6 +17,7 @@
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/NullableUtils.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -283,6 +284,14 @@ private:
 
     /// Escape dots in JSON key if json_type_escape_dots_in_keys setting is enabled.
     String escapeJSONKeyIfNeeded(const String & key) const;
+
+    /// True for `Nullable(JSON)`, which supports the bracket syntax exactly like bare `JSON`.
+    static bool isNullableJSON(const DataTypePtr & type);
+
+    /// Fold the null map of a `Nullable(JSON)` first argument into the path extracted from its nested
+    /// column, so that the outer NULLs are visible in the result.
+    static ColumnPtr applyOuterNullMap(
+        const ColumnPtr & element_column, const DataTypePtr & element_type, const ColumnPtr & null_map_column);
 
     bool escape_dots_in_json_keys = false;
 };
@@ -2158,21 +2167,71 @@ ColumnPtr FunctionArrayElement<mode>::executeJSON(
     /// Use the generic IDataType subcolumn API.
     /// This calls DataTypeObject::getDynamicSubcolumnData internally,
     /// handling typed paths, literal+sub-object merging, etc.
-    const auto & object_type = arguments[0].type;
+    DataTypePtr object_type = arguments[0].type;
     ColumnPtr col = arguments[0].column;
 
     /// Unwrap ColumnConst - getSubcolumn works on the inner column.
-    bool is_const = checkAndGetColumnConst<ColumnObject>(col.get()) != nullptr;
+    bool is_const = isColumnConst(*col);
     if (is_const)
         col = assert_cast<const ColumnConst &>(*col).getDataColumnPtr();
 
+    /// Unwrap a `Nullable(JSON)` carrier and keep its null map to fold into the extracted path below.
+    ColumnPtr null_map_column;
+    if (const auto * nullable_col = checkAndGetColumn<ColumnNullable>(col.get()))
+    {
+        null_map_column = nullable_col->getNullMapColumnPtr();
+        col = nullable_col->getNestedColumnPtr();
+        object_type = assert_cast<const DataTypeNullable &>(*object_type).getNestedType();
+    }
+
+    auto element_type = object_type->getSubcolumnType(subcolumn_name);
     auto result_column = object_type->getSubcolumn(subcolumn_name, col);
+
+    if (null_map_column)
+        result_column = applyOuterNullMap(result_column, element_type, null_map_column);
 
     /// Re-wrap in ColumnConst if the input was const.
     if (is_const)
         result_column = ColumnConst::create(std::move(result_column), input_rows_count);
 
     return result_column;
+}
+
+template <ArrayElementExceptionMode mode>
+bool FunctionArrayElement<mode>::isNullableJSON(const DataTypePtr & type)
+{
+    const auto * nullable_type = checkAndGetDataType<DataTypeNullable>(type.get());
+    return nullable_type && checkAndGetDataType<DataTypeObject>(nullable_type->getNestedType().get());
+}
+
+template <ArrayElementExceptionMode mode>
+ColumnPtr FunctionArrayElement<mode>::applyOuterNullMap(
+    const ColumnPtr & element_column, const DataTypePtr & element_type, const ColumnPtr & null_map_column)
+{
+    /// The same logic as in `tupleElement`: a path that can represent NULL -- `Dynamic`, `Variant`,
+    /// `Nullable`, `LowCardinality(Nullable)` or a type wrappable into `Nullable` -- gets the outer mask
+    /// OR-ed in, which keeps the (type, column) pair consistent with `getReturnTypeImpl` and with reading
+    /// the subcolumn directly.
+    if (canExtractedSubcolumnsBeInsideNullableOrLowCardinalityNullable(element_type) || canContainNull(*element_type))
+        return NullableSubcolumnCreator(null_map_column).create(element_column);
+
+    /// A typed path that has no NULL representation at all (e.g. `Array`, `Map`) is default-filled for the
+    /// outer-NULL rows, matching the stored subcolumn, instead of leaking the payload hidden under the mask.
+    const auto & null_map = assert_cast<const ColumnUInt8 &>(*null_map_column).getData();
+
+    auto result_column = element_type->createColumn();
+    result_column->reserve(element_column->size());
+
+    Field default_field = element_type->getDefault();
+    for (size_t i = 0; i < element_column->size(); ++i)
+    {
+        if (null_map[i])
+            result_column->insert(default_field);
+        else
+            result_column->insertFrom(*element_column, i);
+    }
+
+    return std::move(result_column);
 }
 
 template <ArrayElementExceptionMode mode>
@@ -3044,7 +3103,14 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const DataTypes & argu
 template <ArrayElementExceptionMode mode>
 DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const
 {
-    if (const auto * object_type = checkAndGetDataType<DataTypeObject>(arguments[0].type.get()))
+    /// `Nullable(JSON)` supports the same path access as bare `JSON` (`json.a`, `tupleElement(json, 'a')`),
+    /// so the bracket syntax accepts it too. The outer null map is folded into the extracted path below.
+    const IDataType * source_type = arguments[0].type.get();
+    const bool source_is_nullable = isNullableJSON(arguments[0].type);
+    if (source_is_nullable)
+        source_type = assert_cast<const DataTypeNullable &>(*source_type).getNestedType().get();
+
+    if (const auto * object_type = checkAndGetDataType<DataTypeObject>(source_type))
     {
         if constexpr (is_null_mode)
             throw Exception(
@@ -3068,7 +3134,15 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeA
         /// getSubcolumnType resolves through getDynamicSubcolumnData:
         /// - typed path "a UInt32" -> returns UInt32
         /// - non-typed path -> returns Dynamic
-        return object_type->getSubcolumnType(combined_name);
+        auto element_type = object_type->getSubcolumnType(combined_name);
+
+        /// For a `Nullable(JSON)` source, promote the path so it can represent the outer NULLs, using the
+        /// same rule as the subcolumn path (`json.a`) and `tupleElement`: a `Dynamic` path stays `Dynamic`
+        /// and carries them itself, a wrappable typed path becomes `Nullable(T)`.
+        if (source_is_nullable)
+            element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
+
+        return element_type;
     }
 
     /// Fall through to existing DataTypes-only logic for Array/Map.
@@ -3187,7 +3261,12 @@ ColumnPtr FunctionArrayElement<mode>::executeImpl(
     const auto * col_object = checkAndGetColumn<ColumnObject>(arguments[0].column.get());
     const auto * col_const_object = checkAndGetColumnConst<ColumnObject>(arguments[0].column.get());
 
-    if (col_object || col_const_object)
+    /// `Nullable(JSON)` is routed to the same path, which unwraps the null map and folds it into the
+    /// extracted JSON path. The carrier is recognized by its type, because the column can be
+    /// `ColumnNullable(ColumnObject)` or a `ColumnConst` over it.
+    const bool is_nullable_json = isNullableJSON(arguments[0].type);
+
+    if (col_object || col_const_object || is_nullable_json)
     {
         if constexpr (is_null_mode)
             throw Exception(
@@ -3530,11 +3609,11 @@ The first argument may also be:
 
 - a [`Map`](/sql-reference/data-types/map): `m['key']` returns the value stored for `key`, or the default value of the value type when the key is absent.
 - a [`QBit`](/sql-reference/data-types/qbit): `q[n]` reconstructs the n-th vector element at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
-- a [`JSON`](/sql-reference/data-types/newjson): `json['key']` returns the value stored at the path `key`, which must be a constant string. Nested access can be chained: `json['a']['b']`.
+- a [`JSON`](/sql-reference/data-types/newjson) or a `Nullable(JSON)`: `json['key']` returns the value stored at the path `key`, which must be a constant string, exactly as the dot syntax `json.key` does. For a `Nullable(JSON)` the outer `NULL` rows give a `NULL` path value. Nested access can be chained: `json['a']['b']`.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
-        {"arr", "The value to read an element from. [`Array(T)`](/reference/data-types/array), [`Map(K, V)`](/reference/data-types/map), [`QBit`](/reference/data-types/qbit) or [`JSON`](/reference/data-types/newjson)."},
+        {"arr", "The value to read an element from. [`Array(T)`](/reference/data-types/array), [`Map(K, V)`](/reference/data-types/map), [`QBit`](/reference/data-types/qbit), [`JSON`](/reference/data-types/newjson) or `Nullable(JSON)`."},
         {"n", "Position of the element to get, or an array of positions. The positions may be nullable. [`(U)Int*`](/reference/data-types/int-uint) or [`Array((U)Int*)`](/reference/data-types/array). For a `Map` argument, a key of type `K`; for a `JSON` argument, a constant [`String`](/reference/data-types/string) path."}
     };
     FunctionDocumentation::ReturnedValue returned_value = {"When `n` is a scalar, returns the element of type `T`. When `n` is an array, returns `Array(Nullable(T))` if the index elements are nullable and `T` can be wrapped in `Nullable`, otherwise `Array(T)`. For a `Map` returns the value of type `V`, for a `JSON` the value stored at the path.", {"Any", "Array(T)", "Array(Nullable(T))"}};
