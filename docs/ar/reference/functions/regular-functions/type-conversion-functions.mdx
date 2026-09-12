@@ -3283,7 +3283,7 @@ SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName
 
 أُضيف في: v20.1.0
 
-يحوّل قيمة إدخال إلى قيمة من النوع [`DateTime64`](/ar/reference/data-types/datetime64).
+يحوّل قيمة الإدخال إلى قيمة من النوع [`DateTime64`](/ar/reference/data-types/datetime64).
 
 **الصيغة**
 
@@ -3294,7 +3294,7 @@ toDateTime64(expr, scale[, timezone])
 **الوسيطات**
 
 * `expr` — تعبير يُرجع رقمًا أو تمثيلًا نصيًا لرقم. [`تعبير`](/ar/reference/data-types/special-data-types/expression)
-* `scale` — مقدار النبضة (الدقة): 10^(-scale) ثانية. [`UInt8`](/ar/reference/data-types/int-uint)
+* `scale` — حجم الـ tick (الدقة): 10^(-scale) ثانية. [`UInt8`](/ar/reference/data-types/int-uint)
 * `timezone` — اختياري. المنطقة الزمنية لكائن `DateTime64` المحدد. [`String`](/ar/reference/data-types/string)
 
 **القيمة المُعادة**
@@ -3328,7 +3328,7 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 │ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
 └─────────────────────────┴───────────────────┘
 ┌───────────────────value─┬─toTypeName(value)─┐
-│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+│ 9999-12-31 23:59:59.999 │ DateTime64(3)     │
 └─────────────────────────┴───────────────────┘
 ```
 

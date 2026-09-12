@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.merge&#95;tree&#95;settings](/es/reference/system-tables/merge_tree_settings) y se autogeneran a partir del código fuente de ClickHouse.
 
-<div id="min_absolute_delay_to_close">
-  ## min_absolute_delay_to_close
-</div>
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Retraso absoluto mínimo para cerrar, dejar de atender solicitudes y no
 devolver Ok durante la comprobación de estado.
 
-<div id="min_columns_to_activate_adaptive_write_buffer">
-  ## min_columns_to_activate_adaptive_write_buffer
-</div>
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -41,9 +37,7 @@ Valores posibles:
 * 0 - deshabilitado
 * 1 - siempre habilitado
 
-<div id="min_compress_block_size">
-  ## min_compress_block_size
-</div>
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -54,9 +48,7 @@ escribir la siguiente marca. También puede especificar esta configuración en l
 El valor especificado cuando se crea la tabla sobrescribe el valor global
 de esta configuración.
 
-<div id="min_index_granularity_bytes">
-  ## min_index_granularity_bytes
-</div>
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -65,9 +57,7 @@ Tamaño mínimo permitido de los gránulos de datos en bytes.
 Sirve como protección para evitar crear accidentalmente tablas con un
 `index_granularity_bytes` demasiado bajo.
 
-<div id="min_marks_to_honor_max_concurrent_queries">
-  ## min_marks_to_honor_max_concurrent_queries
-</div>
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -88,9 +78,7 @@ Valores posibles:
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-<div id="min_merge_bytes_to_use_direct_io">
-  ## min_merge_bytes_to_use_direct_io
-</div>
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -101,9 +89,55 @@ los `min_merge_bytes_to_use_direct_io` bytes, ClickHouse lee y escribe los
 datos en el disco de almacenamiento mediante la interfaz de E/S directa (opción `O_DIRECT`).
 Si `min_merge_bytes_to_use_direct_io = 0`, la E/S directa se deshabilita.
 
-<div id="min_parts_to_merge_at_once">
-  ## min_parts_to_merge_at_once
-</div>
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "New setting to force merging of parts in partitions that no longer receive inserts"}]}]} />
+
+Fusiona las partes de una partición si todas ellas son más antiguas que este
+valor, es decir, si la partición ya no recibe inserciones. A diferencia de
+`min_age_to_force_merge_seconds` combinado con `min_age_to_force_merge_on_partition_only`,
+la partición no tiene que caber en una única fusión: cada fusión sigue
+respetando `max_bytes_to_merge_at_max_space_in_pool`. Funciona con los selectores de merge
+Simple y StochasticSimple.
+
+La antigüedad que se compara aquí es la de la parte más reciente de la partición
+(`now - modification_time`, minimizado sobre sus partes), de modo que la regla
+solo se activa cuando todas las partes han superado ese valor. Cualquier parte
+nueva la reinicia: una inserción, una mutación y también cada fusión que asigna
+esta misma configuración, ya que la parte fusionada es nueva. Por tanto, el
+forzado se desactiva en cuanto se completa una fusión forzada y vuelve a
+activarse solo después de que transcurra de nuevo ese valor sin partes nuevas,
+de manera que una partición que necesita varias fusiones se compacta en rondas
+sucesivas separadas por este intervalo, y no en una única pasada continua.
+
+El forzado funciona exactamente igual que en `min_age_to_force_merge_seconds`:
+suspende el requisito de proporción de tamaño que normalmente impide asignar una
+fusión desequilibrada, y también suspende el mínimo impuesto por
+`min_parts_to_merge_at_once`, por lo que una fusión forzada puede abarcar menos
+partes de las que exige ese mínimo. No se desactiva ninguna otra heurística:
+`merge_selector_window_size` sigue delimitando qué partes se examinan y
+`merge_selector_enable_heuristic_to_remove_small_parts_at_right` sigue
+recortando una parte pequeña al final de un rango seleccionado de tres partes o
+más. Si una carga de trabajo necesita desactivar alguna de ellas, debe hacerlo
+explícitamente mediante su propia configuración.
+
+Con los selectores de merge Simple y StochasticSimple, no puede combinarse con
+`min_age_to_force_merge_seconds` junto con
+`min_age_to_force_merge_on_partition_only`. Ese par fusiona una partición
+entera de una sola vez, y solo una fusión así se marca como final, que es lo que
+permite a un `ReplacingMergeTree` ejecutar `CLEANUP`; forzar fusiones regulares
+por antigüedad de partición se anticiparía a ello. Utilice ese par para las
+particiones que caben en una única fusión y esta configuración para las que no.
+Los demás selectores ignoran esta configuración, por lo que con ellos la
+combinación sí se acepta.
+
+Valores posibles:
+
+* Entero positivo.
+
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -111,9 +145,7 @@ Cantidad mínima de partes de datos que el selector de merge puede elegir para f
 (configuración de nivel experto; no la cambie si no entiende lo que hace).
 0 - deshabilitado. Funciona con los selectores de merge Simple y StochasticSimple.
 
-<div id="min_replicated_logs_to_keep">
-  ## min_replicated_logs_to_keep
-</div>
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

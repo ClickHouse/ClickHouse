@@ -3282,7 +3282,7 @@ SELECT toDateTime32('2025-01-01 00:00:00', 'Asia/Istanbul') AS value, toTypeName
 
 ## toDateTime64 {#toDateTime64}
 
-Introduit dans : v20.1.0
+Introduit dans : v20.1.0
 
 Convertit une valeur d’entrée en une valeur de type [`DateTime64`](/fr/reference/data-types/datetime64).
 
@@ -3295,12 +3295,12 @@ toDateTime64(expr, scale[, timezone])
 **Arguments**
 
 * `expr` — Expression renvoyant un nombre ou une représentation sous forme de chaîne d’un nombre. [`Expression`](/fr/reference/data-types/special-data-types/expression)
-* `scale` — Taille du tick (précision) : 10^(-scale) secondes. [`UInt8`](/fr/reference/data-types/int-uint)
+* `scale` — Taille du tick (précision) : 10^(-scale) secondes. [`UInt8`](/fr/reference/data-types/int-uint)
 * `timezone` — Facultatif. Fuseau horaire de l’objet `DateTime64` spécifié. [`String`](/fr/reference/data-types/string)
 
 **Valeur renvoyée**
 
-Renvoie une date calendaire et une heure de la journée, avec une précision inférieure à la seconde. [`DateTime64`](/fr/reference/data-types/datetime64)
+Renvoie une date calendaire et une heure de la journée, avec une précision sous-seconde. [`DateTime64`](/fr/reference/data-types/datetime64)
 
 **Exemples**
 
@@ -3329,7 +3329,7 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 │ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
 └─────────────────────────┴───────────────────┘
 ┌───────────────────value─┬─toTypeName(value)─┐
-│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+│ 9999-12-31 23:59:59.999 │ DateTime64(3)     │
 └─────────────────────────┴───────────────────┘
 ```
 

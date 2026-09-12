@@ -109,7 +109,7 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 * `initial_query_start_time` ([DateTime](/zh/reference/data-types/datetime)) — 同一查询链中初始查询的开始时间。
 * `initial_query_start_time_microseconds` ([DateTime64(6)](/zh/reference/data-types/datetime64)) — 同一查询链中初始查询的开始时间，精确到微秒。
 * `authenticated_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 该会话中已通过身份验证的用户名。
-* `interface` ([UInt8](/zh/reference/data-types/int-uint)) — 发起查询所使用的接口。可能的值：1 — TCP，2 — HTTP。
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10)](/zh/reference/data-types/enum)) — 客户端上报的、发起该查询所使用的接口。如果上报的接口不是该服务器能够识别的接口，则为 `Unknown`。
 * `is_secure` ([UInt8](/zh/reference/data-types/int-uint)) — 表示查询是否通过安全接口执行的标志
 * `os_user` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 运行 clickhouse-client 的操作系统用户名。
 * `client_hostname` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — 运行 clickhouse-client 或其他 TCP 客户端的客户端主机的主机名。
@@ -121,7 +121,7 @@ ClickHouse 不会自动从该表中删除数据。更多详细信息，请参见
 * `client_version_patch` ([UInt32](/zh/reference/data-types/int-uint)) — clickhouse-client 或其他 TCP 客户端版本的补丁版本号部分。
 * `script_query_number` ([UInt32](/zh/reference/data-types/int-uint)) — 在 clickhouse-client 中，多查询脚本中的查询编号。
 * `script_line_number` ([UInt32](/zh/reference/data-types/int-uint)) — 在包含多个查询的脚本中，clickhouse-client 使用的查询起始行号。
-* `http_method` ([UInt8](/zh/reference/data-types/int-uint)) — 发起该查询的 HTTP 方法。可能的值：0 - 查询通过 TCP 接口发起，1 - 使用了 GET 方法，2 - 使用了 POST 方法，4 - 使用了 PUT 方法，5 - 使用了 DELETE 方法，6 - 使用了 HEAD 方法。
+* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/zh/reference/data-types/enum)) — 发起该查询的 HTTP 方法。如果该查询并非通过 HTTP 到达，或上报的方法不是该服务器能够识别的方法，则为 `UNKNOWN`。
 * `http_user_agent` ([LowCardinality(String)](/zh/reference/data-types/lowcardinality)) — HTTP 查询中传递的 HTTP 请求头 UserAgent。
 * `http_referer` ([String](/zh/reference/data-types/string)) — 在 HTTP 查询中传递的 HTTP 请求头 Referer (包含发出该查询的页面的完整或部分地址) 。
 * `forwarded_for` ([String](/zh/reference/data-types/string)) — 在 HTTP 查询里传递的 HTTP 请求头 X-Forwarded-For。

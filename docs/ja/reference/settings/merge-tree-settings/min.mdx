@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で確認でき、ClickHouse のソースコードから自動生成されています。
 
-<div id="min_absolute_delay_to_close">
-  ## min_absolute_delay_to_close
-</div>
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 クローズしてリクエストの処理を停止し、ステータスチェックで OK を返さなくなるまでの最小の絶対遅延。
 
-<div id="min_columns_to_activate_adaptive_write_buffer">
-  ## min_columns_to_activate_adaptive_write_buffer
-</div>
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -40,9 +36,7 @@ wide パーツが書き込むストリーム数と比較されます。この数
 * 0 - 無効
 * 1 - 常に有効
 
-<div id="min_compress_block_size">
-  ## min_compress_block_size
-</div>
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -50,9 +44,7 @@ wide パーツが書き込むストリーム数と比較されます。この数
 ([min&#95;compress&#95;block&#95;size](/ja/reference/settings/merge-tree-settings/min#min_compress_block_size)
 設定を参照) 。テーブルの作成時に指定した値は、この設定のグローバル値を上書きします。
 
-<div id="min_index_granularity_bytes">
-  ## min_index_granularity_bytes
-</div>
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -60,9 +52,7 @@ wide パーツが書き込むストリーム数と比較されます。この数
 
 `index_granularity_bytes` が極端に小さいテーブルを誤って作成しないようにするための安全策です。
 
-<div id="min_marks_to_honor_max_concurrent_queries">
-  ## min_marks_to_honor_max_concurrent_queries
-</div>
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -84,9 +74,7 @@ wide パーツが書き込むストリーム数と比較されます。この数
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-<div id="min_merge_bytes_to_use_direct_io">
-  ## min_merge_bytes_to_use_direct_io
-</div>
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -97,9 +85,55 @@ I/O アクセスを使用するために必要な、マージ操作の最小デ�
 direct I/O インターフェイス (`O_DIRECT` オプション) を使用して、ストレージディスクに対するデータの読み取りと書き込みを行います。
 `min_merge_bytes_to_use_direct_io = 0` の場合、direct I/O は無効になります。
 
-<div id="min_parts_to_merge_at_once">
-  ## min_parts_to_merge_at_once
-</div>
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "insert を受け付けなくなったパーティション内のパーツの merge を強制するための新しい設定"}]}]} />
+
+パーティション内のすべてのパーツがこの値より古い場合、つまりそのパーティションが
+すでに insert を受け付けていない場合に、そのパーティション内のパーツを merge します。
+`min_age_to_force_merge_on_partition_only` と併用する
+`min_age_to_force_merge_seconds` とは異なり、パーティション全体が単一の merge に
+収まる必要はありません。各 merge は引き続き
+`max_bytes_to_merge_at_max_space_in_pool` に従います。Simple および
+StochasticSimple の merge selector で動作します。
+
+ここで比較される経過時間は、パーティション内で最も新しいパーツの経過時間
+(`now - modification_time` をパーツ間で最小化した値)です。したがって、この
+ルールはすべてのパーツがこの値を超えて古くなって初めて発動します。新しいパーツが
+作られるとこの経過時間はリセットされます。insert や mutation はもちろん、この設定自体が
+割り当てた各 merge も同様です。merge 後のパーツは新しいパーツだからです。そのため、
+強制 merge が実行されるとその時点で強制は解除され、新しいパーツが作られないまま
+この値が再び経過して初めて再び発動します。複数回の merge を必要とするパーティションは、
+1 回の連続した処理ではなく、この interval を空けた複数のラウンドにわたって
+compact 化されていきます。
+
+強制の動作は `min_age_to_force_merge_seconds` とまったく同じです。通常であれば
+不均衡な merge の割り当てを妨げるサイズ比の要件を免除し、さらに
+`min_parts_to_merge_at_once` の下限も免除します。そのため、強制 merge はその下限が
+求める数より少ないパーツを対象とすることがあります。それ以外の heuristic は無効化されません。
+`merge_selector_window_size` は引き続き検査対象のパーツを制限し、
+`merge_selector_enable_heuristic_to_remove_small_parts_at_right` も引き続き、
+3 つ以上のパーツからなる選択範囲の末尾にある小さなパーツを trim します。
+workload の都合でこれらを無効にする必要がある場合は、それぞれの設定で明示的に
+無効化してください。
+
+Simple および StochasticSimple の merge selector では、
+`min_age_to_force_merge_on_partition_only` と併用した
+`min_age_to_force_merge_seconds` とは組み合わせられません。この組み合わせは
+パーティション全体を一度に merge し、そのような merge のみが FINAL として
+マークされます。これにより `ReplacingMergeTree` で `CLEANUP` を実行できるようになります。
+パーティションの経過時間によって regular merges を強制すると、これを妨げてしまいます。
+単一の merge に収まるパーティションにはこの組み合わせを、収まらないパーティションには
+この設定を使用してください。その他の selector はこの設定を無視するため、それらとの
+組み合わせは許容されます。
+
+設定可能な値:
+
+* 正の整数。
+
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -107,9 +141,7 @@ merge selector が一度に選択して merge できる データパーツ の�
 (上級者向けの設定です。何をするものか理解していない場合は変更しないでください) 。
 0 - 無効。Simple および StochasticSimple merge selector で機能します。
 
-<div id="min_replicated_logs_to_keep">
-  ## min_replicated_logs_to_keep
-</div>
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

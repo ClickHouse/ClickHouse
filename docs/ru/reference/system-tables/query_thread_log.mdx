@@ -65,7 +65,7 @@ ClickHouse не удаляет данные из таблицы автомати
 * `initial_query_start_time` ([DateTime](/ru/reference/data-types/datetime)) — Время начала выполнения первоначального запроса в той же цепочке запросов.
 * `initial_query_start_time_microseconds` ([DateTime64(6)](/ru/reference/data-types/datetime64)) — Время начала выполнения первоначального запроса в той же цепочке запросов с точностью до микросекунд.
 * `authenticated_user` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Имя пользователя, прошедшего аутентификацию в этом сеансе.
-* `interface` ([UInt8](/ru/reference/data-types/int-uint)) — Интерфейс, через который был инициирован запрос. Возможные значения: 1 — TCP, 2 — HTTP.
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10)](/ru/reference/data-types/enum)) — Интерфейс, через который был инициирован запрос, согласно данным клиента. `Unknown`, если указанный интерфейс не распознаётся этим сервером.
 * `is_secure` ([UInt8](/ru/reference/data-types/int-uint)) — Флаг, указывающий, было ли соединение защищённым.
 * `os_user` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — имя пользователя ОС, от имени которого запущен clickhouse-client.
 * `client_hostname` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — имя хоста клиентской машины, на которой запущен clickhouse-client или другой клиент TCP.
@@ -77,7 +77,7 @@ ClickHouse не удаляет данные из таблицы автомати
 * `client_version_patch` ([UInt32](/ru/reference/data-types/int-uint)) — Номер патча в версии clickhouse-client или другого TCP-клиента.
 * `script_query_number` ([UInt32](/ru/reference/data-types/int-uint)) — Последовательный номер запроса в скрипте с несколькими запросами.
 * `script_line_number` ([UInt32](/ru/reference/data-types/int-uint)) — Номер строки в скрипте из нескольких запросов, с которой начинается текущий запрос.
-* `http_method` ([UInt8](/ru/reference/data-types/int-uint)) — HTTP-метод, которым был инициирован запрос. Возможные значения: 0 — запрос был выполнен через интерфейс TCP, 1 — использовался метод GET, 2 — использовался метод POST, 4 — использовался метод PUT, 5 — использовался метод DELETE, 6 — использовался метод HEAD.
+* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/ru/reference/data-types/enum)) — HTTP-метод, которым был инициирован запрос. `UNKNOWN`, если запрос поступил не по HTTP или если указанный метод не распознаётся этим сервером.
 * `http_user_agent` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — заголовок User-Agent, переданный в HTTP-запросе.
 * `http_referer` ([String](/ru/reference/data-types/string)) — HTTP-заголовок `Referer`, передаваемый в HTTP-запросе (содержит абсолютный или частичный адрес страницы, с которой выполняется запрос).
 * `forwarded_for` ([String](/ru/reference/data-types/string)) — HTTP-заголовок `X-Forwarded-For`, передаваемый в HTTP-запросе.

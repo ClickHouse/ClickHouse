@@ -499,7 +499,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_*",
-      count: 8,
+      count: 9,
       settings: [
         { name: "min_absolute_delay_to_close", path: "/min#min_absolute_delay_to_close", default: "0" },
         { name: "min_columns_to_activate_adaptive_write_buffer", path: "/min#min_columns_to_activate_adaptive_write_buffer", default: "500" },
@@ -507,6 +507,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "min_index_granularity_bytes", path: "/min#min_index_granularity_bytes", default: "1024" },
         { name: "min_marks_to_honor_max_concurrent_queries", path: "/min#min_marks_to_honor_max_concurrent_queries", default: "0" },
         { name: "min_merge_bytes_to_use_direct_io", path: "/min#min_merge_bytes_to_use_direct_io", default: "10737418240" },
+        { name: "min_partition_age_to_force_merge_seconds", path: "/min#min_partition_age_to_force_merge_seconds", default: "0" },
         { name: "min_parts_to_merge_at_once", path: "/min#min_parts_to_merge_at_once", default: "0" },
         { name: "min_replicated_logs_to_keep", path: "/min#min_replicated_logs_to_keep", default: "10" }
       ],
@@ -1099,7 +1100,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
                 </span>
                 {item.value.default !== undefined && (
                   <span title="Valeur par défaut" className="whitespace-nowrap text-gray-500 dark:text-gray-400">
-                    (par défaut : {item.value.default})
+                    (par défaut : {item.value.default})
                   </span>
                 )}
               </div>

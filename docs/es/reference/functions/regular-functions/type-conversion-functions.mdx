@@ -3294,7 +3294,7 @@ toDateTime64(expr, scale[, timezone])
 **Argumentos**
 
 * `expr` — Expresión que devuelve un número o su representación en cadena. [`Expresión`](/es/reference/data-types/special-data-types/expression)
-* `scale` — Tamaño de tick (precisión): 10^(-scale) segundos. [`UInt8`](/es/reference/data-types/int-uint)
+* `scale` — Tamaño del tick (precisión): 10^(-scale) segundos. [`UInt8`](/es/reference/data-types/int-uint)
 * `timezone` — Opcional. Zona horaria del objeto `DateTime64` especificado. [`String`](/es/reference/data-types/string)
 
 **Valor devuelto**
@@ -3328,7 +3328,7 @@ SELECT toDateTime64(1546300800000, 3) AS value, toTypeName(value);
 │ 2019-01-01 00:00:00.000 │ DateTime64(3)     │
 └─────────────────────────┴───────────────────┘
 ┌───────────────────value─┬─toTypeName(value)─┐
-│ 9999-12-31 23:59:59.000 │ DateTime64(3)     │
+│ 9999-12-31 23:59:59.999 │ DateTime64(3)     │
 └─────────────────────────┴───────────────────┘
 ```
 

@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정은 [system.merge&#95;tree&#95;settings](/ko/reference/system-tables/merge_tree_settings)에서 확인할 수 있으며 ClickHouse 소스 코드에서 자동 생성됩니다.
 
-<div id="min_absolute_delay_to_close">
-  ## min_absolute_delay_to_close
-</div>
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 종료하고, 요청 처리를 중단하며, status check에서
 Ok를 반환하지 않기까지의 최소 절대 지연 시간입니다.
 
-<div id="min_columns_to_activate_adaptive_write_buffer">
-  ## min_columns_to_activate_adaptive_write_buffer
-</div>
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -41,9 +37,7 @@ Ok를 반환하지 않기까지의 최소 절대 지연 시간입니다.
 * 0 - 비활성화
 * 1 - 항상 활성화
 
-<div id="min_compress_block_size">
-  ## min_compress_block_size
-</div>
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,9 +47,7 @@ Ok를 반환하지 않기까지의 최소 절대 지연 시간입니다.
 설정 참조). 테이블을 생성할 때 지정한 값은 이 설정의 전역 값을
 재정의합니다.
 
-<div id="min_index_granularity_bytes">
-  ## min_index_granularity_bytes
-</div>
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -63,9 +55,7 @@ Ok를 반환하지 않기까지의 최소 절대 지연 시간입니다.
 
 실수로 `index_granularity_bytes`가 매우 낮은 테이블을 생성하지 않도록 하는 보호 장치입니다.
 
-<div id="min_marks_to_honor_max_concurrent_queries">
-  ## min_marks_to_honor_max_concurrent_queries
-</div>
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -87,9 +77,7 @@ Ok를 반환하지 않기까지의 최소 절대 지연 시간입니다.
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-<div id="min_merge_bytes_to_use_direct_io">
-  ## min_merge_bytes_to_use_direct_io
-</div>
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -101,9 +89,51 @@ direct I/O 인터페이스(`O_DIRECT` 옵션)를 사용해 스토리지 디스�
 씁니다.
 `min_merge_bytes_to_use_direct_io = 0`이면 direct I/O가 비활성화됩니다.
 
-<div id="min_parts_to_merge_at_once">
-  ## min_parts_to_merge_at_once
-</div>
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "더 이상 삽입이 발생하지 않는 파티션의 파트 머지를 강제하는 새로운 설정"}]}]} />
+
+파티션 내 모든 파트가 이 값보다 오래된 경우, 즉 해당 파티션에 더 이상 삽입이 들어오지
+않는 경우 그 파티션의 파트를 머지합니다. `min_age_to_force_merge_on_partition_only`와
+함께 사용하는 `min_age_to_force_merge_seconds`와 달리, 파티션이 단일 머지에 모두 담길
+필요는 없습니다. 각 머지는 여전히
+`max_bytes_to_merge_at_max_space_in_pool`을 준수합니다. Simple 및
+StochasticSimple 머지 선택기에서 동작합니다.
+
+여기서 비교되는 수명은 파티션 내에서 가장 최근에 생성된 파트의 수명
+(`now - modification_time`을 파트들에 대해 최소화한 값)이므로, 모든 파트가 이 값을
+넘어설 만큼 오래되었을 때에만 규칙이 활성화됩니다. 새로운 파트가 생기면 이 값은
+초기화됩니다. 삽입, 뮤테이션은 물론 이 설정 자체가 할당하는 각 머지도 마찬가지인데,
+머지된 파트 역시 새로운 파트이기 때문입니다. 따라서 강제 머지가 수행되는 즉시 강제 동작은
+해제되며, 새로운 파트 없이 이 값만큼의 시간이 다시 경과한 후에야 재활성화됩니다. 그
+결과 여러 번의 머지가 필요한 파티션은 한 번에 연속으로 처리되지 않고, 이 인터벌만큼
+간격을 둔 여러 차례에 걸쳐 압축됩니다.
+
+강제 동작은 `min_age_to_force_merge_seconds`와 정확히 동일하게 작동합니다. 일반적으로
+불균형한 머지가 할당되지 않도록 막는 크기 비율 요건을 면제하며,
+`min_parts_to_merge_at_once` 하한도 면제합니다. 따라서 강제 머지는 그 하한이 요구하는
+것보다 적은 수의 파트를 대상으로 할 수 있습니다. 그 밖의 휴리스틱은 비활성화되지
+않습니다. `merge_selector_window_size`는 여전히 검토 대상 파트의 범위를 제한하며,
+`merge_selector_enable_heuristic_to_remove_small_parts_at_right`는 여전히 3개 이상의
+파트로 구성된 선택 범위에서 뒤쪽의 작은 파트를 잘라냅니다. 워크로드에 따라 이들 중
+비활성화가 필요한 항목은 해당 설정을 통해 명시적으로 비활성화해야 합니다.
+
+Simple 및 StochasticSimple 머지 선택기에서는
+`min_age_to_force_merge_on_partition_only`와 함께 사용하는
+`min_age_to_force_merge_seconds`와 조합할 수 없습니다. 해당 조합은 파티션 전체를 한
+번에 머지하며, 그러한 머지만이 final로 표시되는데, 바로 이 점이 `ReplacingMergeTree`가
+`CLEANUP`을 실행할 수 있게 해 줍니다. 파티션 수명에 따라 일반 머지를
+강제하면 이를 선점하게 됩니다. 단일 머지에 모두 담기는 파티션에는 해당 조합을, 그렇지
+않은 파티션에는 이 설정을 사용하십시오. 다른 선택기는 이 설정을 무시하므로, 이들과의
+조합은 허용됩니다.
+
+가능한 값:
+
+* 양의 정수.
+
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -111,9 +141,7 @@ direct I/O 인터페이스(`O_DIRECT` 옵션)를 사용해 스토리지 디스�
 (전문가 수준의 설정이므로, 어떤 동작을 하는지 이해하지 못했다면 변경하지 마십시오).
 0 - 비활성화됩니다. Simple 및 StochasticSimple 머지 선택기에 적용됩니다.
 
-<div id="min_replicated_logs_to_keep">
-  ## min_replicated_logs_to_keep
-</div>
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

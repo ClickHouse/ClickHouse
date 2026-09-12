@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/fr/components/VersionHistory/VersionHi
 
 Ces paramètres sont disponibles dans [system.merge&#95;tree&#95;settings](/fr/reference/system-tables/merge_tree_settings) et sont générés automatiquement à partir du code source de ClickHouse.
 
-<div id="min_absolute_delay_to_close">
-  ## min_absolute_delay_to_close
-</div>
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Délai absolu minimal avant la fermeture, l&#39;arrêt du traitement des requêtes et l&#39;absence de
 renvoi de Ok lors de la vérification de l&#39;état.
 
-<div id="min_columns_to_activate_adaptive_write_buffer">
-  ## min_columns_to_activate_adaptive_write_buffer
-</div>
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -41,9 +37,7 @@ Valeurs possibles :
 * 0 - désactivé
 * 1 - toujours activé
 
-<div id="min_compress_block_size">
-  ## min_compress_block_size
-</div>
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,9 +47,7 @@ l’écriture du mark suivant. Vous pouvez également spécifier ce paramètre d
 La valeur spécifiée lors de la création de la table remplace la valeur globale
 de ce paramètre.
 
-<div id="min_index_granularity_bytes">
-  ## min_index_granularity_bytes
-</div>
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -64,9 +56,7 @@ Taille minimale autorisée des granules de données, en octets.
 Fournit une protection contre la création accidentelle de tables avec une valeur très faible de
 `index_granularity_bytes`.
 
-<div id="min_marks_to_honor_max_concurrent_queries">
-  ## min_marks_to_honor_max_concurrent_queries
-</div>
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -87,9 +77,7 @@ Valeurs possibles :
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-<div id="min_merge_bytes_to_use_direct_io">
-  ## min_merge_bytes_to_use_direct_io
-</div>
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -100,9 +88,56 @@ le volume de stockage total de toutes les données à fusionner. Si ce volume d�
 données sur le disque de stockage à l’aide de l’interface d’E/S directes (option `O_DIRECT`).
 Si `min_merge_bytes_to_use_direct_io = 0`, les E/S directes sont désactivées.
 
-<div id="min_parts_to_merge_at_once">
-  ## min_parts_to_merge_at_once
-</div>
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Nouveau paramètre pour forcer la fusion des parties de données dans les partitions qui ne reçoivent plus d'inserts"}]}]} />
+
+Fusionne les parties de données d&#39;une partition si chacune d&#39;entre elles est plus ancienne que
+cette valeur, c&#39;est-à-dire que la partition ne reçoit plus d&#39;inserts.
+Contrairement à `min_age_to_force_merge_seconds` associé à
+`min_age_to_force_merge_on_partition_only`, la partition n&#39;a pas besoin de tenir
+dans une seule fusion : chaque fusion respecte toujours
+`max_bytes_to_merge_at_max_space_in_pool`. Fonctionne avec les sélecteurs de fusion
+Simple et StochasticSimple.
+
+L&#39;âge comparé ici est celui de la partie de données la plus récente de la partition
+(`now - modification_time`, minimisé sur ses parties de données), si bien que la règle ne
+s&#39;arme qu&#39;une fois que toutes les parties de données ont dépassé cette valeur. Toute nouvelle
+partie de données la réinitialise : un insert, une mutation, ainsi que chaque fusion que ce
+paramètre assigne lui-même, puisque la partie de données fusionnée est nouvelle. Le forçage se
+désarme donc dès qu&#39;une fusion forcée aboutit et ne se réarme qu&#39;après un nouvel
+écoulement de cette durée sans nouvelle partie de données ; une partition nécessitant
+plusieurs fusions est ainsi compactée au fil de rounds successifs espacés de cet
+interval plutôt qu&#39;en une passe continue.
+
+Le forçage fonctionne exactement comme `min_age_to_force_merge_seconds` : il
+lève l&#39;exigence de ratio de taille qui empêche normalement l&#39;assignation d&#39;une
+fusion déséquilibrée, ainsi que le plancher `min_parts_to_merge_at_once`, de sorte
+qu&#39;une fusion forcée peut porter sur moins de parties de données que ce plancher ne l&#39;exige.
+Aucune autre heuristic n&#39;est désactivée :
+`merge_selector_window_size` borne toujours les parties de données examinées, et
+`merge_selector_enable_heuristic_to_remove_small_parts_at_right` retire toujours
+une petite partie de données en fin d&#39;une plage sélectionnée de trois parties de données ou plus. Si un
+workload nécessite la désactivation de l&#39;une ou l&#39;autre, il faut le faire
+explicitement via son propre paramètre.
+
+Avec les sélecteurs de fusion Simple et StochasticSimple, ce paramètre ne peut pas
+être combiné à `min_age_to_force_merge_seconds` associé à
+`min_age_to_force_merge_on_partition_only`. Ce couple fusionne une partition
+entière d&#39;un seul coup, et seule une telle fusion est marquée final, ce qui permet à
+un `ReplacingMergeTree` d&#39;exécuter `CLEANUP` ; forcer des fusions régulières selon
+l&#39;âge de la partition prendrait le pas dessus. Utilisez ce couple pour les
+partitions qui tiennent dans une seule fusion, et ce paramètre pour celles qui n&#39;y
+tiennent pas. Les autres sélecteurs ignorent ce paramètre : la combinaison est
+donc acceptée avec eux.
+
+Possible values:
+
+* entier positif.
+
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -110,9 +145,7 @@ Nombre minimal de parties de données que le sélecteur de fusion peut retenir p
 (paramètre de niveau expert, ne le modifiez pas si vous ne comprenez pas ce qu&#39;il fait).
 0 - désactivé. Fonctionne avec les sélecteurs de fusion Simple et StochasticSimple.
 
-<div id="min_replicated_logs_to_keep">
-  ## min_replicated_logs_to_keep
-</div>
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

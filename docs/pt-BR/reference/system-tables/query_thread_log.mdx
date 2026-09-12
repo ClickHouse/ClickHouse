@@ -65,7 +65,7 @@ Você pode usar a configuração [log&#95;queries&#95;probability](/pt-BR/refere
 * `initial_query_start_time` ([DateTime](/pt-BR/reference/data-types/datetime)) — Horário de início da consulta inicial na mesma cadeia de consultas.
 * `initial_query_start_time_microseconds` ([DateTime64(6)](/pt-BR/reference/data-types/datetime64)) — Horário de início da consulta inicial na mesma cadeia de consultas, com precisão de microssegundos.
 * `authenticated_user` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Nome do usuário autenticado na sessão.
-* `interface` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Interface pela qual a consulta foi iniciada. Valores possíveis: 1 — TCP, 2 — HTTP.
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10)](/pt-BR/reference/data-types/enum)) — Interface pela qual a consulta foi iniciada, conforme informado pelo cliente. `Unknown` se a interface informada não for reconhecida por este servidor.
 * `is_secure` ([UInt8](/pt-BR/reference/data-types/int-uint)) — O sinalizador que indica se a conexão era segura.
 * `os_user` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — nome de usuário do sistema operacional que está executando o clickhouse-client.
 * `client_hostname` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — Hostname da máquina cliente na qual o `clickhouse-client` ou outro cliente TCP é executado.
@@ -77,7 +77,7 @@ Você pode usar a configuração [log&#95;queries&#95;probability](/pt-BR/refere
 * `client_version_patch` ([UInt32](/pt-BR/reference/data-types/int-uint)) — Componente de patch da versão do clickhouse-client ou de outro cliente TCP.
 * `script_query_number` ([UInt32](/pt-BR/reference/data-types/int-uint)) — Um número sequencial da consulta em um script com várias consultas.
 * `script_line_number` ([UInt32](/pt-BR/reference/data-types/int-uint)) — O número da linha em um script com várias consultas em que a consulta atual começa.
-* `http_method` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Método HTTP que iniciou a consulta. Valores possíveis: 0 - a consulta foi iniciada pela interface TCP, 1 - foi usado o método GET, 2 - foi usado o método POST, 4 - foi usado o método PUT, 5 - foi usado o método DELETE, 6 - foi usado o método HEAD.
+* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/pt-BR/reference/data-types/enum)) — Método HTTP que iniciou a consulta. `UNKNOWN` se a consulta não chegou por HTTP ou se o método informado não é reconhecido por este servidor.
 * `http_user_agent` ([LowCardinality(String)](/pt-BR/reference/data-types/lowcardinality)) — O cabeçalho UserAgent enviado na requisição HTTP.
 * `http_referer` ([String](/pt-BR/reference/data-types/string)) — cabeçalho HTTP `Referer` enviado na consulta HTTP (contém um endereço absoluto ou parcial da página que faz a consulta).
 * `forwarded_for` ([String](/pt-BR/reference/data-types/string)) — cabeçalho HTTP `X-Forwarded-For` enviado na consulta HTTP.

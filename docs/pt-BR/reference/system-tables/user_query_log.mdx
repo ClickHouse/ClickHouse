@@ -72,7 +72,7 @@ As condições nas colunas de partição e de chave do log de consultas (`event_
 * `initial_query_start_time` ([DateTime](/pt-BR/reference/data-types/datetime)) — Horário de início da consulta inicial na mesma cadeia de consultas.
 * `initial_query_start_time_microseconds` ([DateTime64(6)](/pt-BR/reference/data-types/datetime64)) — Horário de início da consulta inicial na mesma cadeia de consultas, com precisão de microssegundos.
 * `authenticated_user` ([String](/pt-BR/reference/data-types/string)) — Nome do usuário autenticado na sessão.
-* `interface` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Interface pela qual a consulta foi iniciada. Valores possíveis: 1 — TCP, 2 — HTTP.
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10)](/pt-BR/reference/data-types/enum)) — Interface pela qual a consulta foi iniciada, conforme informado pelo cliente. `Unknown` se a interface informada não for reconhecida por este servidor.
 * `is_secure` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Sinalizador que indica se uma consulta foi executada por meio de uma interface segura
 * `os_user` ([String](/pt-BR/reference/data-types/string)) — Nome de usuário do sistema operacional que executa o clickhouse-client.
 * `client_hostname` ([String](/pt-BR/reference/data-types/string)) — Nome do host da máquina cliente em que o clickhouse-client ou outro cliente TCP é executado.
@@ -84,7 +84,7 @@ As condições nas colunas de partição e de chave do log de consultas (`event_
 * `client_version_patch` ([UInt32](/pt-BR/reference/data-types/int-uint)) — Componente de patch da versão do clickhouse-client ou de outro cliente TCP.
 * `script_query_number` ([UInt32](/pt-BR/reference/data-types/int-uint)) — Número da consulta em um script com várias consultas para o clickhouse-client.
 * `script_line_number` ([UInt32](/pt-BR/reference/data-types/int-uint)) — Número da linha em que a consulta começa em um script com várias consultas para o clickhouse-client.
-* `http_method` ([UInt8](/pt-BR/reference/data-types/int-uint)) — Método HTTP que iniciou a consulta. Valores possíveis: 0 — a consulta foi iniciada pela interface TCP; 1 — foi usado o método GET; 2 — foi usado o método POST; 4 — foi usado o método PUT; 5 — foi usado o método DELETE; 6 — foi usado o método HEAD.
+* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/pt-BR/reference/data-types/enum)) — Método HTTP que iniciou a consulta. `UNKNOWN` se a consulta não chegou por HTTP ou se o método informado não for reconhecido por este servidor.
 * `http_user_agent` ([String](/pt-BR/reference/data-types/string)) — Cabeçalho HTTP UserAgent enviado na consulta HTTP.
 * `http_referer` ([String](/pt-BR/reference/data-types/string)) — Cabeçalho HTTP Referer enviado na consulta HTTP (contém o endereço absoluto ou parcial da página que faz a consulta).
 * `forwarded_for` ([String](/pt-BR/reference/data-types/string)) — Cabeçalho HTTP X-Forwarded-For enviado na consulta HTTP.

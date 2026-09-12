@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.merge&#95;tree&#95;settings](/zh/reference/system-tables/merge_tree_settings) 中查看，且由 ClickHouse 源代码自动生成。
 
-<div id="min_absolute_delay_to_close">
-  ## min_absolute_delay_to_close
-</div>
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 在关闭、停止处理请求并且状态检查不再返回 Ok 之前的最小绝对延迟。
 
-<div id="min_columns_to_activate_adaptive_write_buffer">
-  ## min_columns_to_activate_adaptive_write_buffer
-</div>
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -38,17 +34,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 - 禁用
 * 1 - 始终启用
 
-<div id="min_compress_block_size">
-  ## min_compress_block_size
-</div>
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 写入下一个标记时，触发压缩所需的未压缩数据块的最小大小。你也可以在全局设置中指定此设置 (参见 [min&#95;compress&#95;block&#95;size](/zh/reference/settings/merge-tree-settings/min#min_compress_block_size) 设置) 。创建表时指定的值会覆盖此设置的全局值。
 
-<div id="min_index_granularity_bytes">
-  ## min_index_granularity_bytes
-</div>
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -58,9 +50,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 `index_granularity_bytes`
 极低的表。
 
-<div id="min_marks_to_honor_max_concurrent_queries">
-  ## min_marks_to_honor_max_concurrent_queries
-</div>
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -82,9 +72,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-<div id="min_merge_bytes_to_use_direct_io">
-  ## min_merge_bytes_to_use_direct_io
-</div>
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -92,9 +80,44 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 `min_merge_bytes_to_use_direct_io` 字节，ClickHouse 就会通过直接 I/O
 接口 (`O_DIRECT` 选项) 从存储磁盘读取和写入数据。如果 `min_merge_bytes_to_use_direct_io = 0`，则会禁用直接 I/O。
 
-<div id="min_parts_to_merge_at_once">
-  ## min_parts_to_merge_at_once
-</div>
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "新增设置，用于强制合并不再接收插入的分区中的 分片"}]}]} />
+
+如果某个分区中的每个 分片 都比该值更旧 (即该分区不再接收插入) ，则合并该分区中的 分片。与
+`min_age_to_force_merge_seconds` 搭配 `min_age_to_force_merge_on_partition_only`
+不同的是，该分区无需能在单次合并中处理完：每次合并仍会遵循
+`max_bytes_to_merge_at_max_space_in_pool`。适用于 Simple 和
+StochasticSimple 合并选择器。
+
+此处比较的年龄是分区中最新 分片 的年龄
+(`now - modification_time`，在其各个 分片 中取最小值) ，因此只有当每个 分片 的年龄都超过该值后，该规则才会生效。任何新的 分片 都会将其重置：插入、
+变更，以及该设置本身所分配的每次合并，因为合并产生的
+分片 也是新的。因此，一旦某次强制合并完成，强制机制便会解除，只有在再次经过该值所指定的时长且期间没有产生新 分片 后才会重新生效；所以需要多次合并的分区会在以该
+时间间隔为间隔的若干轮次中逐步压缩，而不是在一次连续过程中完成。
+
+强制机制的工作方式与 `min_age_to_force_merge_seconds` 完全相同：它会免除通常用于阻止分配不均衡合并的
+大小比率要求，同时也会免除 `min_parts_to_merge_at_once` 下限，因此一次
+强制合并可以覆盖少于该下限所要求数量的 分片。其他
+启发式规则不会被关闭：`merge_selector_window_size` 仍会限定哪些 分片
+会被检查，而 `merge_selector_enable_heuristic_to_remove_small_parts_at_right`
+仍会从选定的包含三个或更多 分片 的范围中裁剪掉尾随的小 分片。
+如果某个 workload 需要关闭其中任意一项，必须通过其各自的设置显式关闭。
+
+在 Simple 和 StochasticSimple 合并选择器下，本设置不能与
+`min_age_to_force_merge_seconds` 及
+`min_age_to_force_merge_on_partition_only` 组合使用。该组合会一次性合并整个分区，
+并且只有这种合并才会被标记为 final，而这正是 `ReplacingMergeTree`
+得以执行 `CLEANUP` 的前提；按分区年龄强制执行常规合并会抢先将其打断。
+对于能在单次合并中处理完的分区请使用该组合，对于无法如此处理的分区请使用本设置。其他选择器会忽略本设置，因此与它们组合使用是允许的。
+
+可能的值：
+
+* 正整数。
+
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -102,9 +125,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 (属于专家级设置；如果你不了解其作用，请不要更改) 。
 0 - 已禁用。适用于 Simple 和 StochasticSimple 合并选择器。
 
-<div id="min_replicated_logs_to_keep">
-  ## min_replicated_logs_to_keep
-</div>
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

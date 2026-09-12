@@ -72,7 +72,7 @@ doc_type: 'reference'
 * `initial_query_start_time` ([DateTime](/ko/reference/data-types/datetime)) — 동일한 쿼리 체인에서 원본 쿼리의 시작 시간입니다.
 * `initial_query_start_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 동일한 쿼리 체인에서 마이크로초 정밀도의 원본 쿼리 시작 시간입니다.
 * `authenticated_user` ([String](/ko/reference/data-types/string)) — 세션에서 인증된 사용자 이름입니다.
-* `interface` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 시작된 인터페이스입니다. 가능한 값: 1 — TCP, 2 — HTTP입니다.
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10)](/ko/reference/data-types/enum)) — 클라이언트가 보고한, 쿼리가 시작된 인터페이스입니다. 보고된 인터페이스를 이 서버가 인식하지 못하는 경우 `Unknown`입니다.
 * `is_secure` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 보안 인터페이스를 통해 실행되었는지를 나타내는 플래그
 * `os_user` ([String](/ko/reference/data-types/string)) — clickhouse-client를 실행하는 운영 체제 사용자 이름입니다.
 * `client_hostname` ([String](/ko/reference/data-types/string)) — clickhouse-client 또는 다른 TCP 클라이언트가 실행되는 클라이언트 머신의 호스트명입니다.
@@ -84,7 +84,7 @@ doc_type: 'reference'
 * `client_version_patch` ([UInt32](/ko/reference/data-types/int-uint)) — clickhouse-client 또는 다른 TCP 클라이언트 버전의 패치 구성 요소입니다.
 * `script_query_number` ([UInt32](/ko/reference/data-types/int-uint)) — 여러 쿼리가 포함된 clickhouse-client 스크립트에서의 쿼리 번호입니다.
 * `script_line_number` ([UInt32](/ko/reference/data-types/int-uint)) — 여러 쿼리가 포함된 clickhouse-client 스크립트에서 쿼리가 시작되는 줄 번호입니다.
-* `http_method` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리를 시작한 HTTP 메서드입니다. 가능한 값: 0 - TCP 인터페이스에서 쿼리 시작, 1 - GET 메서드 사용, 2 - POST 메서드 사용, 4 - PUT 메서드 사용, 5 - DELETE 메서드 사용, 6 - HEAD 메서드 사용.
+* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/ko/reference/data-types/enum)) — 쿼리를 시작한 HTTP 메서드입니다. 쿼리가 HTTP를 통해 전달되지 않았거나 보고된 메서드를 이 서버가 인식하지 못하는 경우 `UNKNOWN`입니다.
 * `http_user_agent` ([String](/ko/reference/data-types/string)) — HTTP 쿼리에 전달된 UserAgent HTTP 헤더입니다.
 * `http_referer` ([String](/ko/reference/data-types/string)) — HTTP 쿼리에 전달된 Referer HTTP 헤더입니다(쿼리를 수행한 페이지의 전체 또는 일부 주소를 포함합니다).
 * `forwarded_for` ([String](/ko/reference/data-types/string)) — HTTP 쿼리에 전달된 X-Forwarded-For HTTP 헤더입니다.

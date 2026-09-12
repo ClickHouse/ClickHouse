@@ -6,24 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', 'логирование', 'интеграция', 'мониторинг приложений']
 ---
 
+import { ClickStackIntegrates } from '/snippets/ru/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack использует стандарт OpenTelemetry для сбора телеметрических данных (журналов, метрик,
-трейсов и исключений). Трейсы генерируются автоматически благодаря автоматической
-инструментализации, поэтому для получения пользы от трассировки ручная инструментализация не требуется.
+трассировок и исключений). Трассировки генерируются автоматически благодаря автоматическому
+инструментированию, поэтому для получения пользы от трассировки ручное инструментирование не требуется.
 
-В этом руководстве рассматривается интеграция:
+<ClickStackIntegrates signals={['logs', 'metrics', 'traces']} />
 
-* **Журналы**
-* **Метрики**
-* **Трейсы**
-* **Исключения**
+## Начало работы {#getting-started}
 
-<div id="getting-started">
-  ## Начало работы
-</div>
-
-<div id="install-hyperdx-opentelemetry-instrumentation-package">
-  ### Установите пакет для инструментирования HyperDX OpenTelemetry
-</div>
+### Установите пакет для инструментирования HyperDX OpenTelemetry {#install-hyperdx-opentelemetry-instrumentation-package}
 
 Используйте следующую команду, чтобы установить [пакет ClickStack OpenTelemetry](https://www.npmjs.com/package/@hyperdx/node-opentelemetry).
 
@@ -41,9 +34,7 @@ ClickStack использует стандарт OpenTelemetry для сбора
   </Tab>
 </Tabs>
 
-<div id="initializin-the-sdk">
-  ### Инициализация SDK
-</div>
+### Инициализация SDK {#initializin-the-sdk}
 
 Чтобы инициализировать SDK, вызовите функцию `init` в начале файла точки входа вашего приложения.
 
@@ -53,8 +44,8 @@ ClickStack использует стандарт OpenTelemetry для сбора
     const HyperDX = require('@hyperdx/node-opentelemetry');
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Не указывайте для Управляемого ClickStack
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Не указывайте для Управляемого ClickStack
         service: 'my-service'
     });
     ```
@@ -65,8 +56,8 @@ ClickStack использует стандарт OpenTelemetry для сбора
     import * as HyperDX from '@hyperdx/node-opentelemetry';
 
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Не указывайте для Управляемого ClickStack
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Не указывайте для Управляемого ClickStack
         service: 'my-service'
     });
     ```
@@ -75,9 +66,7 @@ ClickStack использует стандарт OpenTelemetry для сбора
 
 Это позволит автоматически собирать трассировку, метрики и журналы вашего приложения Node.js.
 
-<div id="setup-log-collection">
-  ### Настройка сбора журналов
-</div>
+### Настройка сбора журналов {#setup-log-collection}
 
 По умолчанию собираются журналы `console.*`. Если вы используете логгер,
 например `winston` или `pino`, вам потребуется добавить в него transport, чтобы
@@ -137,9 +126,7 @@ ClickStack использует стандарт OpenTelemetry для сбора
   </Tab>
 </Tabs>
 
-<div id="setup-error-collection">
-  ### Настройка сбора ошибок
-</div>
+### Настройка сбора ошибок {#setup-error-collection}
 
 SDK ClickStack может автоматически перехватывать необработанные исключения и ошибки в вашем приложении, включая полную трассировку стека и контекст кода.
 
@@ -150,8 +137,8 @@ SDK ClickStack может автоматически перехватывать 
     ```javascript
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Не указывайте для Управляемого ClickStack
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Не указывайте для Управляемого ClickStack
         service: 'my-service'
     });
     const app = express();
@@ -172,8 +159,8 @@ SDK ClickStack может автоматически перехватывать 
     const Router = require("@koa/router");
     const HyperDX = require('@hyperdx/node-opentelemetry');
     HyperDX.init({
-        url: 'http://your-otel-collector:4318',
-        apiKey: 'YOUR_INGESTION_API_KEY', // Не указывайте для Управляемого ClickStack
+        url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
+        apiKey: '<YOUR_INGESTION_API_KEY>', // Не указывайте для Управляемого ClickStack
         service: 'my-service'
     });
 
@@ -200,9 +187,7 @@ SDK ClickStack может автоматически перехватывать 
   </Tab>
 </Tabs>
 
-<div id="troubleshooting">
-  ## Устранение неполадок
-</div>
+## Устранение неполадок {#troubleshooting}
 
 Если у вас возникают проблемы с SDK, включите подробное логирование, установив
 для переменной окружения `OTEL_LOG_LEVEL` значение `debug`.
@@ -211,13 +196,9 @@ SDK ClickStack может автоматически перехватывать 
 export OTEL_LOG_LEVEL=debug
 ```
 
-<div id="advanced-instrumentation-configuration">
-  ## Расширенная настройка инструментирования
-</div>
+## Расширенная настройка инструментирования {#advanced-instrumentation-configuration}
 
-<div id="capture-console-logs">
-  ### Сбор логов консоли
-</div>
+### Сбор логов консоли {#capture-console-logs}
 
 По умолчанию SDK ClickStack собирает логи консоли. Это можно отключить,
 задав для переменной окружения `HDX_NODE_CONSOLE_CAPTURE` значение 0.
@@ -226,9 +207,7 @@ export OTEL_LOG_LEVEL=debug
 export HDX_NODE_CONSOLE_CAPTURE=0
 ```
 
-<div id="attach-user-information-or-metadata">
-  ### Добавление информации о пользователе или метаданных
-</div>
+### Добавление информации о пользователе или метаданных {#attach-user-information-or-metadata}
 
 Чтобы пометить все события, связанные с определённым атрибутом или идентификатором (например, ID пользователя
 или email), можно вызвать функцию `setTraceAttributes`, которая после вызова добавит указанные
@@ -267,9 +246,7 @@ app.use((req, res, next) => {
 export HDX_NODE_BETA_MODE=1
 ```
 
-<div id="google-cloud-run">
-  ### Google Cloud Run
-</div>
+### Google Cloud Run {#google-cloud-run}
 
 Если ваше приложение работает в Google Cloud Run, Cloud Trace
 автоматически добавляет заголовки сэмплирования во входящие запросы, что сейчас
@@ -286,9 +263,7 @@ export HDX_NODE_BETA_MODE=1
 Чтобы узнать больше и принудительно включить трассировку для определённых запросов, см.
 [документацию Google Cloud Run](https://cloud.google.com/run/docs/trace).
 
-<div id="auto-instrumented-libraries">
-  ### Автоматически инструментируемые библиотеки
-</div>
+### Автоматически инструментируемые библиотеки {#auto-instrumented-libraries}
 
 SDK будет автоматически инструментировать (трассировать) следующие библиотеки:
 
@@ -310,13 +285,9 @@ SDK будет автоматически инструментировать (т
 * [`redis`](https://www.npmjs.com/package/redis)
 * [`winston`](https://www.npmjs.com/package/winston)
 
-<div id="alternative-installation">
-  ## Альтернативный способ установки
-</div>
+## Альтернативный способ установки {#alternative-installation}
 
-<div id="run-the-application-with-cli">
-  ### Запуск приложения с помощью ClickStack OpenTelemetry CLI
-</div>
+### Запуск приложения с помощью ClickStack OpenTelemetry CLI {#run-the-application-with-cli}
 
 В качестве альтернативы можно включить автоинструментирование приложения без каких-либо изменений в коде — с помощью CLI `opentelemetry-instrument` или флага Node.js `--require`. Установка через CLI предоставляет более широкий набор автоматически инструментируемых библиотек и фреймворков.
 
@@ -329,7 +300,7 @@ SDK будет автоматически инструментировать (т
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' npx opentelemetry-instrument index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' npx opentelemetry-instrument index.js
     ```
   </Tab>
 
@@ -341,7 +312,7 @@ SDK будет автоматически инструментировать (т
     </Info>
 
     ```shell
-    HYPERDX_API_KEY='<YOUR_INGESTION_KEY>' OTEL_SERVICE_NAME='<YOUR_APP_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
+    HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>' ts-node -r '@hyperdx/node-opentelemetry/build/src/tracing' index.js
     ```
   </Tab>
 
@@ -361,9 +332,7 @@ SDK будет автоматически инструментировать (т
 
 *Переменная окружения `OTEL_SERVICE_NAME` используется для идентификации вашего сервиса в интерфейсе HyperDX; ей можно задать любое имя.*
 
-<div id="enabling-exception-capturing">
-  ### Включение перехвата исключений
-</div>
+### Включение перехвата исключений {#enabling-exception-capturing}
 
 Чтобы включить перехват необработанных исключений, установите переменную окружения `HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE` в значение 1.
 
@@ -373,9 +342,7 @@ HDX_NODE_EXPERIMENTAL_EXCEPTION_CAPTURE=1
 
 После этого, чтобы автоматически собирать исключения в Express и Koa или вручную перехватывать их, следуйте инструкциям в разделе [Настройка сбора ошибок](#setup-error-collection) выше.
 
-<div id="auto-instrumented-libraries">
-  ### Автоматически инструментируемые библиотеки
-</div>
+### Автоматически инструментируемые библиотеки {#auto-instrumented-libraries-2}
 
 Для следующих библиотек трассировка будет включена автоматически с помощью указанных выше методов установки:
 

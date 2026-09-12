@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.merge&#95;tree&#95;settings](/ru/reference/system-tables/merge_tree_settings) и автоматически генерируются на основе исходного кода ClickHouse.
 
-<div id="min_absolute_delay_to_close">
-  ## min_absolute_delay_to_close
-</div>
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 Минимальная абсолютная задержка перед закрытием, прекращением обработки запросов и
 возвратом не-Ok при проверке status.
 
-<div id="min_columns_to_activate_adaptive_write_buffer">
-  ## min_columns_to_activate_adaptive_write_buffer
-</div>
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -41,9 +37,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 * 0 - отключено
 * 1 - всегда включено
 
-<div id="min_compress_block_size">
-  ## min_compress_block_size
-</div>
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -53,9 +47,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Значение, указанное при создании table, переопределяет глобальное значение
 этого параметра.
 
-<div id="min_index_granularity_bytes">
-  ## min_index_granularity_bytes
-</div>
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -64,9 +56,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 Используется как защита от случайного создания таблиц с очень низким значением
 `index_granularity_bytes`.
 
-<div id="min_marks_to_honor_max_concurrent_queries">
-  ## min_marks_to_honor_max_concurrent_queries
-</div>
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -87,9 +77,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-<div id="min_merge_bytes_to_use_direct_io">
-  ## min_merge_bytes_to_use_direct_io
-</div>
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -100,9 +88,57 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 данные на диск хранилища через интерфейс прямого I/O (опция `O_DIRECT`).
 Если `min_merge_bytes_to_use_direct_io = 0`, прямой I/O отключается.
 
-<div id="min_parts_to_merge_at_once">
-  ## min_parts_to_merge_at_once
-</div>
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "Новая настройка для принудительного слияния частей в партициях, в которые больше не поступают вставки"}]}]} />
+
+Выполнять слияние частей в партиции, если каждая часть в ней старше этого
+значения, то есть в партицию больше не поступают вставки. В отличие от
+`min_age_to_force_merge_seconds` вместе с `min_age_to_force_merge_on_partition_only`,
+партиция не обязана укладываться в одно слияние: каждое слияние по-прежнему
+соблюдает `max_bytes_to_merge_at_max_space_in_pool`. Работает для селекторов
+слияний Simple и StochasticSimple.
+
+Здесь сравнивается возраст самой молодой части в партиции
+(`now - modification_time`, минимум по её частям), поэтому правило
+срабатывает только после того, как каждая часть станет старше этого значения.
+Любая новая часть сбрасывает его: вставка, мутация, а также каждое слияние,
+назначенное самой этой настройкой, поскольку слитая часть является новой.
+Таким образом, принудительное слияние отключается сразу после того, как
+очередное принудительное слияние завершено, и включается снова только после
+того, как это значение снова истечёт без появления новых частей; поэтому
+партиция, которой требуется несколько слияний, уплотняется за несколько
+последовательных раундов, разнесённых этим интервалом, а не за один непрерывный
+проход.
+
+Принудительное слияние работает точно так же, как `min_age_to_force_merge_seconds`:
+оно отменяет требование к соотношению размеров, которое обычно не даёт назначить
+несбалансированное слияние, а также отменяет нижнюю границу
+`min_parts_to_merge_at_once`, поэтому принудительное слияние может охватывать
+меньше частей, чем требует эта граница. Никакие другие эвристики не отключаются:
+`merge_selector_window_size` по-прежнему ограничивает набор рассматриваемых
+частей, а `merge_selector_enable_heuristic_to_remove_small_parts_at_right`
+по-прежнему отсекает замыкающую маленькую часть у выбранного диапазона из трёх
+и более частей. Любую из них, которую требуется отключить для конкретной
+рабочей нагрузки, необходимо отключать явно через её собственную настройку.
+
+При использовании селекторов слияний Simple и StochasticSimple эту настройку
+нельзя сочетать с `min_age_to_force_merge_seconds` вместе с
+`min_age_to_force_merge_on_partition_only`. Эта пара сливает всю партицию
+целиком, и только такое слияние помечается как финальное, что и позволяет
+`ReplacingMergeTree` выполнить `CLEANUP`; принудительные обычные слияния по
+возрасту партиции опередили бы его. Используйте эту пару для партиций,
+укладывающихся в одно слияние, а данную настройку — для тех, которые не
+укладываются. Другие селекторы игнорируют эту настройку, поэтому с ними такое
+сочетание допускается.
+
+Возможные значения:
+
+* Положительное целое число.
+
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -110,9 +146,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 (настройка экспертного уровня; не изменяйте её, если не понимаете, как она работает).
 0 — отключено. Работает для селекторов слияний Simple и StochasticSimple.
 
-<div id="min_replicated_logs_to_keep">
-  ## min_replicated_logs_to_keep
-</div>
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 

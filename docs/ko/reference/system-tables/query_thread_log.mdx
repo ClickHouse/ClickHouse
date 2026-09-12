@@ -65,7 +65,7 @@ ClickHouse는 테이블에서 데이터를 자동으로 삭제하지 않습니�
 * `initial_query_start_time` ([DateTime](/ko/reference/data-types/datetime)) — 동일한 쿼리 체인에서 초기 쿼리의 시작 시간입니다.
 * `initial_query_start_time_microseconds` ([DateTime64(6)](/ko/reference/data-types/datetime64)) — 동일한 쿼리 체인에서 초기 쿼리의 시작 시간이며, 마이크로초 정밀도를 지원합니다.
 * `authenticated_user` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — 세션에서 인증된 사용자의 이름입니다.
-* `interface` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리가 시작된 인터페이스입니다. 가능한 값: 1 — TCP, 2 — HTTP.
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10)](/ko/reference/data-types/enum)) — 클라이언트가 보고한, 쿼리가 시작된 인터페이스입니다. 보고된 인터페이스를 이 서버가 인식하지 못하는 경우 `Unknown`입니다.
 * `is_secure` ([UInt8](/ko/reference/data-types/int-uint)) — 연결이 보안되었는지 여부를 나타내는 플래그입니다.
 * `os_user` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — OS에서 clickhouse-client를 실행하는 사용자의 이름입니다.
 * `client_hostname` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — clickhouse-client 또는 다른 TCP 클라이언트가 실행되는 클라이언트 컴퓨터의 호스트명입니다.
@@ -75,9 +75,9 @@ ClickHouse는 테이블에서 데이터를 자동으로 삭제하지 않습니�
 * `client_version_major` ([UInt32](/ko/reference/data-types/int-uint)) — clickhouse-client 또는 다른 TCP 클라이언트의 주 버전입니다.
 * `client_version_minor` ([UInt32](/ko/reference/data-types/int-uint)) — clickhouse-client 또는 다른 TCP 클라이언트의 마이너 버전입니다.
 * `client_version_patch` ([UInt32](/ko/reference/data-types/int-uint)) — clickhouse-client 또는 다른 TCP 클라이언트 버전의 패치 버전입니다.
-* `script_query_number` ([UInt32](/ko/reference/data-types/int-uint)) — 다중 쿼리 스크립트에서의 순차적 쿌리 번호입니다.
+* `script_query_number` ([UInt32](/ko/reference/data-types/int-uint)) — 다중 쿼리 스크립트에서의 순차적 쿼리 번호입니다.
 * `script_line_number` ([UInt32](/ko/reference/data-types/int-uint)) — 여러 쿼리로 구성된 스크립트에서 현재 쿼리가 시작되는 줄 번호입니다.
-* `http_method` ([UInt8](/ko/reference/data-types/int-uint)) — 쿼리를 시작한 HTTP 메서드입니다. 가능한 값: 0 - 쿼리가 TCP 인터페이스에서 시작되었습니다, 1 - GET 메서드가 사용되었습니다, 2 - POST 메서드가 사용되었습니다, 4 - PUT 메서드가 사용되었습니다, 5 - DELETE 메서드가 사용되었습니다, 6 - HEAD 메서드가 사용되었습니다.
+* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/ko/reference/data-types/enum)) — 쿼리를 시작한 HTTP 메서드입니다. 쿼리가 HTTP를 통해 도착하지 않았거나, 보고된 메서드가 이 서버가 인식하는 메서드가 아닌 경우 `UNKNOWN`입니다.
 * `http_user_agent` ([LowCardinality(String)](/ko/reference/data-types/lowcardinality)) — HTTP 요청과 함께 전달되는 UserAgent 헤더입니다.
 * `http_referer` ([String](/ko/reference/data-types/string)) — HTTP 쿼리와 함께 전달되는 HTTP 헤더 `Referer`입니다(쿼리를 보내는 페이지의 전체 주소 또는 일부 주소를 포함합니다).
 * `forwarded_for` ([String](/ko/reference/data-types/string)) — HTTP 쿼리에서 전달되는 HTTP 헤더 `X-Forwarded-For`.

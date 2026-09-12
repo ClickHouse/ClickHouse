@@ -72,7 +72,7 @@ doc_type: 'reference'
 * `initial_query_start_time` ([DateTime](/ja/reference/data-types/datetime)) — 同じクエリチェーン内の初期クエリの開始時刻。
 * `initial_query_start_time_microseconds` ([DateTime64(6)](/ja/reference/data-types/datetime64)) — 同じクエリチェーン内の初期クエリのマイクロ秒精度の開始時刻。
 * `authenticated_user` ([String](/ja/reference/data-types/string)) — セッションで認証されたユーザー名。
-* `interface` ([UInt8](/ja/reference/data-types/int-uint)) — クエリの開始元インターフェイス。設定可能な値: 1 — TCP、2 — HTTP。
+* `interface` ([Enum8(&#39;Unknown&#39; = 0, &#39;TCP&#39; = 1, &#39;HTTP&#39; = 2, &#39;gRPC&#39; = 3, &#39;MySQL&#39; = 4, &#39;PostgreSQL&#39; = 5, &#39;Local&#39; = 6, &#39;TCP&#95;Interserver&#39; = 7, &#39;Prometheus&#39; = 8, &#39;Background&#39; = 9, &#39;ArrowFlight&#39; = 10)](/ja/reference/data-types/enum)) — クライアントから報告された、クエリの開始元インターフェイス。報告されたインターフェイスがこのサーバーで認識できないものである場合は `Unknown` です。
 * `is_secure` ([UInt8](/ja/reference/data-types/int-uint)) — クエリがセキュアなインターフェイス経由で実行されたかどうかを示すフラグ
 * `os_user` ([String](/ja/reference/data-types/string)) — clickhouse-client を実行しているオペレーティングシステムのユーザー名。
 * `client_hostname` ([String](/ja/reference/data-types/string)) — clickhouse-client または別の TCP クライアントを実行しているクライアントマシンのホスト名。
@@ -84,7 +84,7 @@ doc_type: 'reference'
 * `client_version_patch` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client または別の TCP クライアントのバージョンのパッチ番号。
 * `script_query_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client 用の、複数のクエリを含むスクリプト内のクエリ番号。
 * `script_line_number` ([UInt32](/ja/reference/data-types/int-uint)) — clickhouse-client 用の、複数のクエリを含むスクリプトでクエリが開始する行番号。
-* `http_method` ([UInt8](/ja/reference/data-types/int-uint)) — クエリを開始した HTTP メソッド。設定可能な値: 0 - TCP インターフェイスからクエリが開始された、1 - GET メソッドが使用された、2 - POST メソッドが使用された、4 - PUT メソッドが使用された、5 - DELETE メソッドが使用された、6 - HEAD メソッドが使用された。
+* `http_method` ([Enum8(&#39;UNKNOWN&#39; = 0, &#39;GET&#39; = 1, &#39;POST&#39; = 2, &#39;OPTIONS&#39; = 3, &#39;PUT&#39; = 4, &#39;DELETE&#39; = 5, &#39;HEAD&#39; = 6)](/ja/reference/data-types/enum)) — クエリを開始した HTTP メソッド。クエリが HTTP 経由で到達しなかった場合、または報告されたメソッドがこのサーバーで認識できないものである場合は `UNKNOWN` です。
 * `http_user_agent` ([String](/ja/reference/data-types/string)) — HTTP クエリで渡された UserAgent HTTP ヘッダー。
 * `http_referer` ([String](/ja/reference/data-types/string)) — HTTP クエリで渡された Referer HTTP ヘッダー (クエリを実行するページの絶対アドレスまたは一部のアドレスを含みます) 。
 * `forwarded_for` ([String](/ja/reference/data-types/string)) — HTTP クエリで渡された X-Forwarded-For HTTP ヘッダー。

@@ -2,46 +2,46 @@
 title: 'Roteamento com reconhecimento de réplicas'
 slug: /manage/replica-aware-routing
 description: 'Direcione requisições relacionadas à mesma réplica do ClickHouse Cloud para tabelas temporárias, sessões, reutilização de cache e consistência de leitura após gravação'
-keywords: ['cloud', 'endpoints sticky', 'sticky', 'endpoints', 'roteamento sticky', 'roteamento', 'roteamento com reconhecimento de réplicas', 'X-ClickHouse-Replica-Tag', 'afinidade de sessão', 'tabelas temporárias', 'consistência de leitura após gravação']
+keywords: ['cloud', 'endpoints sticky', 'sticky', 'endpoints', 'roteamento sticky', 'roteamento', 'roteamento com reconhecimento de réplicas', 'X-ClickHouse-Replica-Tag', 'afinidade de sessão', 'tabelas temporárias', 'consistência de leitura após gravação', 'sni', 'tls-sni-override']
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/pt-BR/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
-<EnterprisePlanFeatureBadge feature="Roteamento com reconhecimento de réplicas" support="true" />
+<EnterprisePlanFeatureBadge feature="Roteamento com reconhecimento de réplicas" />
 
 O roteamento com reconhecimento de réplicas (também conhecido como sessões persistentes, roteamento sticky ou afinidade de sessão) direciona requisições relacionadas para a mesma réplica do ClickHouse. Use-o quando precisar que [tabelas temporárias](/pt-BR/reference/statements/create/table/temporary-table) ou [estado de sessão nomeado](/pt-BR/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) permaneçam acessíveis entre consultas, quando quiser que consultas relacionadas reutilizem os caches locais da mesma réplica ou quando precisar de [consistência de leitura após gravação](#read-after-write-consistency) entre uma gravação e as leituras subsequentes.
 
 É uma abordagem de melhor esforço e não garante isolamento. O proxy mapeia cada valor de roteamento para uma réplica. O mapeamento permanece estável enquanto o número de réplicas não mudar; o escalonamento do serviço pode mapear o valor para outra réplica.
 
-<Warning>
-  **Requer a interface HTTP**
+O roteamento com reconhecimento de réplicas está disponível em ambas as interfaces:
 
-  O roteamento com reconhecimento de réplicas é aplicado na camada de proxy por meio da [interface HTTP/HTTPS](/pt-BR/concepts/features/interfaces/http) usando o cabeçalho `X-ClickHouse-Replica-Tag`.
+* Por [HTTP/HTTPS](#http-based-routing), usando o cabeçalho `X-ClickHouse-Replica-Tag`.
+* Pelo [protocolo nativo](#native-protocol-routing), usando um override de TLS Server Name Indication (SNI).
 
-  O roteamento com reconhecimento de réplicas está **indisponível atualmente no protocolo nativo** (porta nativa, por exemplo, o driver [clickhouse-go](/pt-BR/integrations/language-clients/go/index) em seu modo nativo padrão). Clientes do protocolo nativo devem mudar para HTTP e enviar o valor de roteamento em cada requisição.
-</Warning>
+Ambos são habilitados separadamente e usam o mesmo hash consistente por trás do proxy.
 
-<div id="prerequisites">
-  ## Pré-requisitos
-</div>
+## Pré-requisitos {#prerequisites}
 
 * Seu serviço precisa de **2 ou mais réplicas**. Em um serviço com apenas uma réplica, não há nada ao que se vincular.
-* Disponível no **Enterprise** por padrão quando o recurso estiver em GA.
+* Um serviço do tier **Enterprise**.
 * Compatível com os serviços padrão do ClickHouse Cloud. O [BYOC](/pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview) ainda não é compatível.
 
-<div id="configuring-replica-aware-routing">
-  ## Configurando o roteamento com reconhecimento de réplicas
-</div>
+## Configurando o roteamento com reconhecimento de réplicas {#configuring-replica-aware-routing}
 
-Abra um ticket de [suporte](https://clickhouse.com/support/program) e solicite a habilitação do roteamento sticky de réplicas via HTTP. Inclua o ID do seu serviço e o motivo da necessidade (tabelas temporárias, estado da sessão, reutilização de cache ou consistência de leitura após gravação). Não é necessário reiniciar.
+Clientes Enterprise habilitam o roteamento com reconhecimento de réplicas na página de configurações do service no ClickHouse Cloud console. Abra seu service, vá em **Settings** e ative o toggle da interface desejada:
 
-<div id="http-based-routing">
-  ## Roteamento baseado em HTTP
-</div>
+* Um toggle habilita o roteamento baseado em HTTP pelo cabeçalho `X-ClickHouse-Replica-Tag`.
+* Um toggle separado habilita o roteamento pelo protocolo nativo via override de SNI.
+
+Habilite um deles ou ambos. Não é necessário reiniciar, e o efeito pode levar menos de um minuto para ser aplicado.
+
+Os toggles estão sendo disponibilizados gradualmente nos planos do tier Enterprise. Se ainda não estiverem disponíveis no seu service, abra um ticket de [suporte](https://clickhouse.com/support/program) com o ID do seu service para que o recurso seja ativado antes.
+
+## Roteamento baseado em HTTP {#http-based-routing}
 
 Para direcionar uma carga de trabalho a uma réplica específica, envie o cabeçalho `X-ClickHouse-Replica-Tag` na [interface HTTPS](/pt-BR/concepts/features/interfaces/http). O proxy usa hash consistente do valor do cabeçalho; assim, as requisições que compartilham esse valor são direcionadas à mesma réplica enquanto o número de réplicas permanecer inalterado. Um valor diferente recebe um hash independente e pode ser direcionado à mesma réplica ou a outra, mas você não escolhe *a qual* réplica um valor é mapeado.
 
@@ -63,55 +63,96 @@ Para clickhouse-go (v2), defina `Protocol: clickhouse.HTTP` e passe o cabeçalho
   `X-ClickHouse-Replica-Tag` fornece afinidade com a réplica sem criar uma sessão HTTP do ClickHouse. Solicitações simultâneas podem reutilizar a mesma tag sem encontrar `SESSION_IS_LOCKED`.
 </Info>
 
-<div id="read-after-write-consistency">
-  ### Consistência de leitura após gravação
-</div>
+## Roteamento via protocolo nativo {#native-protocol-routing}
 
-Em um serviço com várias réplicas, uma gravação em uma réplica pode não ficar visível nas demais até que a replicação seja concluída. Envie a gravação com um cabeçalho `X-ClickHouse-Replica-Tag` e reutilize o mesmo valor do cabeçalho nas leituras subsequentes. O proxy encaminha ambas para a mesma réplica, para que você leia sua própria gravação mesmo enquanto as outras réplicas ainda estiverem atrasadas. Esse padrão é adequado para cargas de trabalho que gravam e, em seguida, leem imediatamente os mesmos dados, como aplicações interativas ou jobs de ETL que validam inserts antes de continuar.
+Pelo [protocolo nativo](/pt-BR/interfaces/tcp), passe o valor de roteamento como nome de servidor TLS no formato `<routing-value>.sticky.<host>`. Conecte-se normalmente ao hostname habitual do seu service. O [ClickHouse Client](/pt-BR/interfaces/client) recebe o valor de roteamento por meio de `--tls-sni-override`:
 
-Para obter garantias mais amplas em todas as réplicas, também é possível definir [`select_sequential_consistency`](/pt-BR/reference/settings/session-settings#select_sequential_consistency) como `1` no ClickHouse Cloud.
+```bash
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query 'SELECT hostName()'
+```
 
-<div id="check-which-replica">
-  ### Verifique qual réplica foi acessada
-</div>
+`--host` é o hostname normal do seu service, `--secure` ativa o TLS e `--tls-sni-override` carrega o valor de roteamento. O TLS é obrigatório. Não é necessário nenhum certificado adicional nem entrada de DNS.
 
-Execute novamente o exemplo `SELECT hostName()` com o mesmo valor de `X-ClickHouse-Replica-Tag`. Você deverá obter o mesmo hostname enquanto o número de réplicas permanecer inalterado. Um valor de cabeçalho diferente pode ser mapeado para outra réplica.
+## consistência de leitura após gravação {#read-after-write-consistency}
 
-<div id="limitations-of-replica-aware-routing">
-  ## Limitações do roteamento com reconhecimento de réplicas
-</div>
+Em um service com múltiplas réplicas, uma escrita feita em uma réplica pode não ficar visível nas demais até que a replicação se atualize. Envie sua escrita com um valor de roteamento e reutilize esse mesmo valor nas leituras seguintes. O proxy direciona ambas para a mesma réplica, de modo que você lê sua própria escrita mesmo enquanto as outras réplicas ainda estão defasadas. Esse padrão funciona para workloads que escrevem e logo em seguida releem os mesmos dados, como aplicações interativas ou jobs de ETL que validam inserts antes de prosseguir.
 
-<div id="replica-aware-routing-does-not-guarantee-isolation">
-  ### A afinidade muda quando a contagem de réplicas muda
-</div>
+Também ajuda após uma alteração de schema que ainda não foi replicada, já que reutilizar o valor de roteamento mantém os inserts em uma réplica que já possui o novo schema.
 
-O aumento ou a redução de escala altera o hash ring de roteamento. Requisições que compartilham o mesmo valor de roteamento podem, então, ser encaminhadas para uma réplica diferente. Se você depende de tabelas temporárias ou de configurações da sessão, esteja preparado para recriá-las após um remapeamento.
+Via HTTP, reutilize o valor do cabeçalho:
 
-<div id="not-workload-isolation">
-  ### O roteamento com reconhecimento de réplicas não é isolamento de workload
-</div>
+```bash
+# Write, tagged with a routing value
+echo "INSERT INTO events VALUES (now(), 'signup')" | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+
+# Read it back on the same replica, using the same value
+echo 'SELECT count() FROM events' | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+```
+
+No protocolo nativo, reutilize o override de SNI:
+
+```bash
+# Write with a routing value
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query "INSERT INTO events VALUES (now(), 'signup')"
+
+# Read it back on the same replica, using the same value
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query 'SELECT count() FROM events'
+```
+
+Para garantias mais amplas entre todas as réplicas, você também pode definir [`select_sequential_consistency`](/pt-BR/reference/settings/session-settings#select_sequential_consistency) como `1` no ClickHouse Cloud.
+
+## Verifique qual réplica foi acessada {#check-which-replica}
+
+Execute novamente um dos exemplos `SELECT hostName()` com o mesmo valor de roteamento. Você deverá obter o mesmo hostname enquanto o número de réplicas permanecer inalterado. Um valor de roteamento diferente pode ser mapeado para outra réplica.
+
+## Limitações do roteamento com reconhecimento de réplicas {#limitations-of-replica-aware-routing}
+
+### A afinidade muda quando a contagem de réplicas muda {#replica-aware-routing-does-not-guarantee-isolation}
+
+O aumento ou a redução de escala altera o hash ring de roteamento. Requisições que compartilham o mesmo valor de roteamento podem, então, ser encaminhadas para uma réplica diferente. Se você depende de tabelas temporárias ou de configurações da sessão, esteja preparado para recriá-las após um remapeamento. `SELECT hostName()` sempre informa em qual réplica você está.
+
+### O roteamento com reconhecimento de réplicas não é isolamento de workload {#not-workload-isolation}
 
 O roteamento sticky controla apenas *qual* réplica atende a uma solicitação. Essa réplica ainda pode atender outro tráfego. Para processamento dedicado, use [compute-compute separation](/pt-BR/products/cloud/features/infrastructure/warehouses).
 
-<div id="private-networking">
-  ### Rede privada
-</div>
+### Rede privada {#private-networking}
 
-O roteamento baseado em HTTP funciona com [rede privada](/pt-BR/products/cloud/guides/security/connectivity/private-networking) no hostname padrão do seu serviço. Nenhuma entrada DNS adicional é necessária.
+Tanto o roteamento baseado em HTTP quanto o do protocolo nativo funcionam com [rede privada](/pt-BR/products/cloud/guides/security/connectivity/private-networking) no hostname padrão do seu serviço. Nenhuma entrada DNS adicional é necessária.
 
-<div id="replica-aware-routing-requires-http">
-  ### O roteamento com reconhecimento de réplicas exige o protocolo HTTP
-</div>
+### O roteamento por protocolo nativo exige TLS {#native-protocol-routing-requires-tls}
 
-O roteamento sticky usa como chave o cabeçalho HTTP `X-ClickHouse-Replica-Tag`. O protocolo binário nativo não transporta esse valor para que o proxy HTTP possa aplicar hash e, por isso, o roteamento com reconhecimento de réplicas não está disponível no protocolo nativo. Clientes do protocolo nativo precisam mover a carga de trabalho relevante para a interface HTTP para usar esse recurso.
+O roteamento por protocolo nativo exige TLS, portanto passe `--secure`. Uma conexão nativa sem criptografia mantém o load balancing normal.
 
-<div id="troubleshooting">
-  ## Solução de problemas
-</div>
+## Solução de problemas {#troubleshooting}
 
 **As consultas continuam sendo direcionadas a réplicas diferentes com o mesmo valor de roteamento**
 
-* Confirme que cada solicitação inclui o cabeçalho `X-ClickHouse-Replica-Tag`.
-* Confirme que cada solicitação usa exatamente o mesmo valor de roteamento.
+* Confirme que o toggle da interface que você está usando está habilitado na página de configurações do serviço. Os métodos HTTP e protocolo nativo são habilitados separadamente.
+* Por HTTP, confirme que cada solicitação inclui o cabeçalho `X-ClickHouse-Replica-Tag` e que cada solicitação usa exatamente o mesmo valor.
+* Pelo protocolo nativo, confirme que `--secure` está definido e que `--tls-sni-override` tem a forma `<routing-value>.sticky.<host>`.
 * Aguarde um pouco após a ativação. Pode levar menos de um minuto para surtir efeito.
 * Verifique se o número de réplicas mudou recentemente; é esperado que haja remapeamento após o escalonamento. Use `SELECT hostName()` para descobrir o novo mapeamento.
+
+**Erros de certificado pelo protocolo nativo**
+
+* Confirme que `--host` é o hostname normal do seu serviço e que o valor de roteamento é passado por `--tls-sni-override`, e não por `--host`.

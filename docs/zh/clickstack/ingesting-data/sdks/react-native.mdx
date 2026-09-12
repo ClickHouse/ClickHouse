@@ -6,21 +6,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'sdk', '日志', '集成', '应用监控']
 ---
 
+import { ClickStackIntegrates } from '/snippets/zh/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
 ClickStack React Native SDK 让你能够为 React Native
 应用添加埋点，并将事件发送到 ClickStack。这样，你就可以在同一时间线中
 查看移动端网络请求、异常以及后端事件。
 
-本指南集成了：
+<ClickStackIntegrates signals={['traces']} />
 
-* **XHR/Fetch 请求**
+## 入门 {#getting-started}
 
-<div id="getting-started">
-  ## 入门
-</div>
-
-<div id="install-via-npm">
-  ### 通过 NPM 安装
-</div>
+### 通过 NPM 安装 {#install-via-npm}
 
 使用以下命令安装 [ClickStack React Native 软件包](https://www.npmjs.com/package/@hyperdx/otel-react-native)。
 
@@ -28,9 +24,7 @@ ClickStack React Native SDK 让你能够为 React Native
 npm install @hyperdx/otel-react-native
 ```
 
-<div id="initialize-clickstack">
-  ### 初始化 ClickStack
-</div>
+### 初始化 ClickStack {#initialize-clickstack}
 
 尽早在应用生命周期内初始化该库：
 
@@ -38,16 +32,14 @@ npm install @hyperdx/otel-react-native
 import { HyperDXRum } from '@hyperdx/otel-react-native';
 
 HyperDXRum.init({
-  url: 'http://your-otel-collector:4318',
+  url: '<YOUR_OTEL_COLLECTOR_HTTP_ENDPOINT>',
   service: 'my-rn-app',
-  apiKey: '<YOUR_INGESTION_API_KEY>', // 托管 ClickStack 可省略此项
-  tracePropagationTargets: [/api.myapp.domain/i], // 设置此项以将链路追踪从前端关联到后端请求
+  apiKey: '<YOUR_INGESTION_API_KEY>', // Omit for Managed ClickStack
+  tracePropagationTargets: [/api.myapp.domain/i], // Set to link traces from frontend to backend requests
 });
 ```
 
-<div id="attach-user-information-metadata">
-  ### 附加用户信息或元数据 (可选)
-</div>
+### 附加用户信息或元数据 (可选) {#attach-user-information-metadata} 
 
 附加用户信息后，您就可以在 HyperDX 中搜索/过滤会话和事件。
 这可以在客户端会话期间的任何时间点调用。当前客户端会话以及调用后发送的所有事件，
@@ -66,9 +58,7 @@ HyperDXRum.setGlobalAttributes({
 });
 ```
 
-<div id="instrument-lower-versions">
-  ### 为低版本埋点
-</div>
+### 为低版本埋点 {#instrument-lower-versions}
 
 要为运行在 0.68 以下版本 React Native 上的应用埋点，
 请编辑你的 `metro.config.js` 文件，强制 metro 使用浏览器专用
@@ -114,9 +104,7 @@ module.exports = {
 };
 ```
 
-<div id="view-navigation">
-  ## 视图导航
-</div>
+## 视图导航 {#view-navigation}
 
 支持 [react-navigation](https://github.com/react-navigation/react-navigation) 5 和 6 版本。
 

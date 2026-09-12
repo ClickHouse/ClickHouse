@@ -13,18 +13,14 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 هذه الإعدادات متاحة في [system.merge&#95;tree&#95;settings](/ar/reference/system-tables/merge_tree_settings)، وهي مُولَّدة تلقائيًا من الشفرة المصدرية لـ ClickHouse.
 
-<div id="min_absolute_delay_to_close">
-  ## min_absolute_delay_to_close
-</div>
+## min_absolute_delay_to_close {#min_absolute_delay_to_close}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 الحد الأدنى للتأخير المطلق قبل الإغلاق، والتوقف عن خدمة الطلبات، وعدم
 إرجاع Ok أثناء التحقق من status.
 
-<div id="min_columns_to_activate_adaptive_write_buffer">
-  ## min_columns_to_activate_adaptive_write_buffer
-</div>
+## min_columns_to_activate_adaptive_write_buffer {#min_columns_to_activate_adaptive_write_buffer}
 
 <SettingsInfoBlock type="UInt64" default_value="500" />
 
@@ -39,9 +35,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 * 0 - معطّل
 * 1 - ممكّن دائمًا
 
-<div id="min_compress_block_size">
-  ## min_compress_block_size
-</div>
+## min_compress_block_size {#min_compress_block_size}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -51,9 +45,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 تتجاوز القيمة المحددة عند إنشاء الجدول القيمة العامة
 لهذا الإعداد.
 
-<div id="min_index_granularity_bytes">
-  ## min_index_granularity_bytes
-</div>
+## min_index_granularity_bytes {#min_index_granularity_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1024" />
 
@@ -62,9 +54,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 لتوفير وسيلة حماية من إنشاء الجداول عن طريق الخطأ مع قيمة منخفضة جدًا لـ
 `index_granularity_bytes`.
 
-<div id="min_marks_to_honor_max_concurrent_queries">
-  ## min_marks_to_honor_max_concurrent_queries
-</div>
+## min_marks_to_honor_max_concurrent_queries {#min_marks_to_honor_max_concurrent_queries}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -85,9 +75,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 <min_marks_to_honor_max_concurrent_queries>10</min_marks_to_honor_max_concurrent_queries>
 ```
 
-<div id="min_merge_bytes_to_use_direct_io">
-  ## min_merge_bytes_to_use_direct_io
-</div>
+## min_merge_bytes_to_use_direct_io {#min_merge_bytes_to_use_direct_io}
 
 <SettingsInfoBlock type="UInt64" default_value="10737418240" />
 
@@ -98,9 +86,51 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 ويكتبها إلى قرص التخزين باستخدام واجهة I/O المباشر (الخيار `O_DIRECT`).
 إذا كانت قيمة `min_merge_bytes_to_use_direct_io = 0`، فسيتم تعطيل I/O المباشر.
 
-<div id="min_parts_to_merge_at_once">
-  ## min_parts_to_merge_at_once
-</div>
+## min_partition_age_to_force_merge_seconds {#min_partition_age_to_force_merge_seconds}
+
+<SettingsInfoBlock type="UInt64" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "إعداد جديد لفرض دمج الأجزاء في الأقسام التي لم تعد تستقبل عمليات إدراج"}]}]} />
+
+يدمج الأجزاء داخل القسم إذا كان كل جزء فيه أقدم من هذه القيمة، أي أن القسم لم
+يعد يستقبل عمليات إدراج. وعلى خلاف
+`min_age_to_force_merge_seconds` مع `min_age_to_force_merge_on_partition_only`،
+لا يلزم أن يتّسع القسم في عملية دمج واحدة: إذ تظل كل عملية دمج ملتزمة بقيمة
+`max_bytes_to_merge_at_max_space_in_pool`. ويعمل مع محدّدي الدمج Simple و
+StochasticSimple.
+
+والعمر الذي تجري مقارنته هنا هو عمر أحدث جزء في القسم
+(`now - modification_time`، مأخوذًا كأدنى قيمة عبر أجزائه)، ولذلك لا تُفعَّل القاعدة إلا
+بعد أن يتجاوز عمر كل جزء هذه القيمة. وأي جزء جديد يعيد ضبطها: عملية إدراج، أو
+عملية تعديل (mutation)، وكذلك كل عملية دمج يسندها هذا الإعداد نفسه، لأن الجزء
+المدموج يُعدّ جديدًا. وبناءً على ذلك يتوقف الفرض فور اكتمال عملية دمج مفروضة، ولا يُفعَّل
+مجددًا إلا بعد انقضاء هذه القيمة مرة أخرى دون ظهور أجزاء جديدة، بحيث يُضغط القسم
+الذي يحتاج إلى عدة عمليات دمج على جولات متعاقبة تفصل بينها هذه الفترة الزمنية، لا
+في تمريرة واحدة متصلة.
+
+ويعمل الفرض تمامًا مثل `min_age_to_force_merge_seconds`: فهو يتجاوز شرط نسبة
+الحجم الذي يمنع عادةً إسناد عملية دمج غير متوازنة، كما يتجاوز الحد الأدنى
+`min_parts_to_merge_at_once`، بحيث يمكن لعملية دمج مفروضة أن تشمل عددًا من الأجزاء
+أقل مما يتطلبه ذلك الحد. ولا تُعطَّل أي آلية استدلالية أخرى: إذ تظل
+`merge_selector_window_size` تحدّ من الأجزاء التي تُفحص، وتظل
+`merge_selector_enable_heuristic_to_remove_small_parts_at_right`
+تزيل الجزء الصغير الأخير من نطاق مختار يضم ثلاثة أجزاء أو أكثر. وأيٌّ من هاتين
+الآليتين يحتاج عبء العمل إلى تعطيلها فلا بد من تعطيلها صراحةً عبر إعدادها الخاص.
+
+وفي ظل محدّدي الدمج Simple و StochasticSimple، لا يمكن الجمع بينه وبين
+`min_age_to_force_merge_seconds` مقترنًا بـ
+`min_age_to_force_merge_on_partition_only`. فذلك الزوج يدمج القسم بأكمله دفعة
+واحدة، ومثل هذه العملية وحدها هي التي تُوسم بأنها نهائية، وهو ما يتيح لجدول
+`ReplacingMergeTree` تنفيذ `CLEANUP`؛ أما فرض عمليات الدمج المعتادة استنادًا إلى عمر
+القسم فسيستبق ذلك ويمنعه. استخدم الزوج للأقسام التي تتّسع في عملية دمج واحدة،
+واستخدم هذا الإعداد للأقسام التي لا تتّسع. أما المحدّدات الأخرى فتتجاهل هذا الإعداد،
+ولذلك يُقبل الجمع معها.
+
+القيم المحتملة:
+
+* عدد صحيح موجب.
+
+## min_parts_to_merge_at_once {#min_parts_to_merge_at_once}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -108,9 +138,7 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 (إعداد مخصّص لمستوى الخبراء، لا تغيّره إذا لم تكن تفهم ما الذي يفعله).
 0 - معطّل. يعمل مع محددات الدمج من النوعين Simple وStochasticSimple.
 
-<div id="min_replicated_logs_to_keep">
-  ## min_replicated_logs_to_keep
-</div>
+## min_replicated_logs_to_keep {#min_replicated_logs_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="10" />
 
