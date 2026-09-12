@@ -40,4 +40,20 @@ WHERE database = currentDatabase() AND table = 'mv_comment_alias' AND name = 'ar
 SELECT 'alias subcolumn again', arr.size0 FROM mv_comment_alias;
 
 DROP TABLE mv_comment_alias;
+
+-- MODIFY QUERY rebuilds the columns from the query's sample block, which carries no comments, and a
+-- TO-target view accepts it too.
+CREATE TABLE mv_comment_tgt (id UInt64) ENGINE = MergeTree ORDER BY id;
+CREATE MATERIALIZED VIEW mv_comment_to TO mv_comment_tgt (id UInt64 COMMENT 'initial')
+    AS SELECT id FROM mv_comment_src;
+
+ALTER TABLE mv_comment_to MODIFY QUERY SELECT id FROM mv_comment_src;
+-- Read the comment back after a reload, so that the stored CREATE query has to carry it too.
+DETACH TABLE mv_comment_to;
+ATTACH TABLE mv_comment_to;
+SELECT 'to target after modify query', comment FROM system.columns
+WHERE database = currentDatabase() AND table = 'mv_comment_to' AND name = 'id';
+
+DROP TABLE mv_comment_to;
+DROP TABLE mv_comment_tgt;
 DROP TABLE mv_comment_src;

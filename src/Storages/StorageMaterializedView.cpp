@@ -819,20 +819,21 @@ void StorageMaterializedView::alter(
         checkTargetTableHasQueryOutputColumns(target_table_metadata->columns, select_query_output_columns);
         /// We need to copy the target table's columns (after checkTargetTableHasQueryOutputColumns() they can be still different - e.g. the data types of those columns can differ).
         new_metadata.columns = target_table_metadata->columns;
-        /// A column comment belongs to the view, not to its inner table, and the copy above replaces
-        /// the view's column descriptions wholesale. Restore the view's comments, then apply the ones
-        /// this ALTER sets, so that every comment alter this storage accepts is honoured.
-        for (const auto & column : view_metadata->columns)
-            if (new_metadata.columns.has(column.name))
-                new_metadata.columns.setComment(column.name, column.comment);
-        for (const auto & command : params)
-            if (!command.ignore && command.isCommentAlter() && new_metadata.columns.has(command.column_name))
-                new_metadata.columns.setComment(command.column_name, *command.comment);
     }
     else
     {
         checkAllTypesAreAllowedInTable(new_metadata.getColumns().getAll());
     }
+
+    /// A column comment belongs to the view, not to its inner table and not to its query's sample
+    /// block, while the copy above and MODIFY QUERY both replace the view's column descriptions
+    /// wholesale. Restore the view's comments, then apply the ones this ALTER sets.
+    for (const auto & column : view_metadata->columns)
+        if (new_metadata.columns.has(column.name))
+            new_metadata.columns.setComment(column.name, column.comment);
+    for (const auto & command : params)
+        if (!command.ignore && command.isCommentAlter() && new_metadata.columns.has(command.column_name))
+            new_metadata.columns.setComment(command.column_name, *command.comment);
 
     DatabaseCatalog::instance().getDatabase(table_id.database_name)->alterTable(local_context, table_id, new_metadata, /*validate_new_create_query=*/true);
 
