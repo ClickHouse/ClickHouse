@@ -54,7 +54,9 @@ SET make_distributed_plan = 0;
 SYSTEM FLUSH LOGS query_log, processors_profile_log;
 
 -- The exchange processors of every task of the queries above. The query id of a task is the id of
--- the query followed by `::` and the stage; the query itself runs on the initiator.
+-- the query followed by `::` and the stage; the query itself runs on the initiator. The scan of the
+-- processor log starts at the first of the three queries: in a busy test run the log holds millions
+-- of rows per minute, and a wider scan would hit the read limit of the test profile.
 CREATE VIEW v_exchange_layout AS
 SELECT substring(roots.log_comment, length('05176_distributed_plan_exchange_layout_') + 1) AS run,
     p.query_id AS query_id,
@@ -76,6 +78,11 @@ INNER JOIN (
       AND log_comment IN ('05176_distributed_plan_exchange_layout_any', '05176_distributed_plan_exchange_layout_hash', '05176_distributed_plan_exchange_layout_broadcast')
       AND type = 'QueryFinish') AS roots ON p.initial_query_id = roots.query_id
 WHERE p.event_date >= yesterday() AND p.event_time >= now() - INTERVAL 10 MINUTE
+  AND p.event_time >= (
+    SELECT min(query_start_time) FROM system.query_log
+    WHERE event_date >= yesterday() AND event_time >= now() - INTERVAL 10 MINUTE AND current_database = currentDatabase()
+      AND log_comment IN ('05176_distributed_plan_exchange_layout_any', '05176_distributed_plan_exchange_layout_hash', '05176_distributed_plan_exchange_layout_broadcast')
+      AND type = 'QueryFinish')
 GROUP BY run, query_id;
 
 SELECT check, ok FROM (
