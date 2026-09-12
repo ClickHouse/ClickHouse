@@ -1,0 +1,4 @@
+--- a dense range below the preferred value of UInt16
+60001	1	5536	65535
+--- the same range in UInt32, where the free value is far from the preferred one
+100001	1	4294867296	4294967295

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings
+# Tags: no-fasttest, long, no-msan, no-azure-blob-storage, no-random-settings, no-flaky-check
 # no-azure-blob-storage: too slow
 # no-msan: it is too slow
 # no-random-settings: this test is already slow, and randomized settings make it slower
+# no-flaky-check: even without random settings, the flaky check runs several copies of the test concurrently, and on debug the serial loop over every I/O format then exceeds the 600s per-test timeout
 
 set -e
 

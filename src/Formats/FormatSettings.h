@@ -643,6 +643,12 @@ struct FormatSettings
         bool escape_special_characters = false;
     } markdown{};
 
+    struct
+    {
+        bool fill_value_as_null = false;
+        bool add_dimension_columns = false;
+    } netcdf{};
+
     enum class UnsupportedGeometryHandling { Throw, Null };
 
     struct

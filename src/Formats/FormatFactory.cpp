@@ -57,6 +57,8 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsBool allow_experimental_nullable_tuple_type;
 
     extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
+    extern SettingsBool input_format_netcdf_fill_value_as_null;
+    extern SettingsBool input_format_netcdf_add_dimension_columns;
     extern SettingsBool format_geojson_validate_geometry;
     extern SettingsBool input_format_parallel_parsing;
     extern SettingsBool output_format_parallel_formatting;
@@ -386,6 +388,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
     format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
     format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
+    format_settings.netcdf.fill_value_as_null = settings[Setting::input_format_netcdf_fill_value_as_null];
+    format_settings.netcdf.add_dimension_columns = settings[Setting::input_format_netcdf_add_dimension_columns];
     format_settings.geojson.unsupported_geometry_handling = settings[Setting::input_format_geojson_unsupported_geometry_handling];
     format_settings.geojson.validate_geometry = settings[Setting::format_geojson_validate_geometry];
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
