@@ -31,16 +31,14 @@ Expression ((Project names + Projection))
             Parts: 16/16
             Granules: 20/20
           Partition
-            Keys:
-              moduloLegacy(x, 16)
-            Condition: (moduloLegacy(x, 16) in [3, 3])
-            Parts: 1/16
-            Granules: 2/20
+            Condition: true
+            Parts: 16/16
+            Granules: 20/20
           PrimaryKey
             Condition: true
-            Parts: 1/1
-            Granules: 2/2
-          Ranges: 1
+            Parts: 16/16
+            Granules: 20/20
+          Ranges: 16
 SELECT arraySort(groupArray(x))
 FROM t_modulo_legacy_partition_key
 WHERE x % 16 IN [3, 2];
@@ -60,16 +58,14 @@ Expression ((Project names + Projection))
             Parts: 16/16
             Granules: 20/20
           Partition
-            Keys:
-              moduloLegacy(x, 16)
-            Condition: (moduloLegacy(x, 16) in 2-element set)
-            Parts: 2/16
-            Granules: 4/20
+            Condition: true
+            Parts: 16/16
+            Granules: 20/20
           PrimaryKey
             Condition: true
-            Parts: 2/2
-            Granules: 4/4
-          Ranges: 2
+            Parts: 16/16
+            Granules: 20/20
+          Ranges: 16
 DROP TABLE IF EXISTS t_modulo_legacy_primary_key;
 CREATE TABLE t_modulo_legacy_primary_key
 (
@@ -96,12 +92,9 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.t_modulo_legacy_primary_key)
         Indexes:
           PrimaryKey
-            Keys:
-              moduloLegacy(x, 16)
-            Condition: (moduloLegacy(x, 16) in [3, 3])
+            Condition: true
             Parts: 1/1
-            Granules: 3/20
-            Search Algorithm: binary search
+            Granules: 20/20
           Ranges: 1
 SELECT arraySort(groupArray(x))
 FROM t_modulo_legacy_primary_key
@@ -118,10 +111,36 @@ Expression ((Project names + Projection))
         ReadFromMergeTree (default.t_modulo_legacy_primary_key)
         Indexes:
           PrimaryKey
-            Keys:
-              moduloLegacy(x, 16)
-            Condition: (moduloLegacy(x, 16) in 2-element set)
+            Condition: true
             Parts: 1/1
-            Granules: 5/20
-            Search Algorithm: generic exclusion search
+            Granules: 20/20
           Ranges: 1
+-- Regression: `modulo` and `moduloLegacy` used to compute identically, so a query predicate on
+-- `modulo(...)` could safely be rewritten to `moduloLegacy(...)` to prune partitions. They no
+-- longer agree for a signed dividend with an equal-or-wider unsigned divisor (`moduloLegacy`
+-- keeps the historical, sometimes unsigned-computed remainder; see DivisionUtils.h), so that
+-- rewrite is unsound here: `moduloLegacy`'s range for this type pair never includes a negative
+-- value, and the rewrite used to conclude every partition was provably excluded, dropping the
+-- row that the (correct) `modulo(...) = -1` predicate actually matches.
+-- The divisor is a bare literal outside Int32's range (inferred as UInt32) rather than an
+-- explicit `toUInt32(...)` cast: the cast form does not reach the vulnerable code path at all
+-- (its AST does not match the partition key's own by name), so it would not exercise this bug.
+DROP TABLE IF EXISTS t_modulo_legacy_mixed_sign_partition_key;
+CREATE TABLE t_modulo_legacy_mixed_sign_partition_key
+(
+    c0 Int32
+)
+ENGINE = MergeTree
+PARTITION BY (c0 % 4000000000)
+ORDER BY c0;
+INSERT INTO t_modulo_legacy_mixed_sign_partition_key
+SELECT number - 15
+FROM numbers(30);
+SELECT count()
+FROM t_modulo_legacy_mixed_sign_partition_key
+WHERE c0 = -1;
+1
+SELECT count()
+FROM t_modulo_legacy_mixed_sign_partition_key
+WHERE modulo(c0, 4000000000) = -1;
+1
