@@ -25,7 +25,9 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/NetUtils.h>
+#include <IO/WriteBufferFromString.h>
 #include <IO/WriteBufferFromVector.h>
+#include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Core/UUID.h>
 #include <Common/assert_cast.h>
 #include <base/arithmeticOverflow.h>
@@ -524,7 +526,11 @@ void RecordBatchEncoder::encodeAsOpaque(
     /// `ISerialization`, so every type has a real per-value representation here.
     const NullMap * null_map
         = null_map_column ? &assert_cast<const ColumnUInt8 &>(*null_map_column).getData() : nullptr;
-    const bool as_text = settings.arrow.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT;
+    /// `SchemaConverter::buildField` types this column from the same two predicates, so what is written
+    /// here cannot disagree with what the reader has been told the column holds.
+    const bool as_text = arrowOpaqueValueIsText(settings.arrow.output_unsupported_types, type);
+    const bool as_utf8
+        = arrowOpaqueTypeIsUtf8(settings.arrow.output_unsupported_types, type, settings.arrow.output_string_as_string);
     const auto serialization = type->getDefaultSerialization();
 
     PODArray<Int32> arrow_offsets(num_rows + 1);
@@ -532,13 +538,24 @@ void RecordBatchEncoder::encodeAsOpaque(
     PODArray<char> data;
     {
         WriteBufferFromVector<PODArray<char>> buffer(data);
+        /// Used only on the `Utf8` path, where a value has to be inspected before it is written out.
+        /// Both are reused across rows.
+        WriteBufferFromOwnString value;
+        String valid_utf8_scratch;
         for (size_t i = 0; i < num_rows; ++i)
         {
             /// Skip the payload of a logically-NULL row (matching the Apache Arrow writer's `AppendNull`):
             /// emit a zero-length slot instead of the arbitrary bytes the null row may carry.
             if (!(null_map && (*null_map)[i]))
             {
-                if (as_text)
+                if (as_utf8)
+                {
+                    value.restart();
+                    serialization->serializeText(column, i, value, settings);
+                    const std::string_view valid = makeValidUTF8View(value.stringView(), valid_utf8_scratch);
+                    buffer.write(valid.data(), valid.size());
+                }
+                else if (as_text)
                     serialization->serializeText(column, i, buffer, settings);
                 else
                     serialization->serializeBinary(column, i, buffer, settings);

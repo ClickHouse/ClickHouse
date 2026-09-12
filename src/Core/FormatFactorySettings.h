@@ -1516,6 +1516,8 @@ What to write for a column whose type has no first-class Arrow mapping (for exam
 
 An `AggregateFunction` column is `Binary` in `text` mode as well, because its text form is the raw aggregate state rather than text, and an Arrow `Utf8` column must hold valid UTF-8. Use `finalizeAggregation` to get a readable value.
 
+A value written into a `Utf8` column is made to hold valid UTF-8, with each invalid sequence replaced by U+FFFD. This only affects text that a reader could not have interpreted as text anyway - for example a `JSON` value embedding a `String` field that holds arbitrary bytes. Set `output_format_arrow_string_as_string = 0` for a byte-exact text form in a `Binary` column, or use `binary` mode.
+
 In both `text` and `binary` the field is tagged in the Arrow schema with the `clickhouse.opaque` extension name and the original ClickHouse type name, so that a reader can tell it apart from a genuine string or binary column.
 
 Takes precedence over the older `output_format_arrow_unsupported_types_as_binary`, which is only consulted when this setting is left at its default.

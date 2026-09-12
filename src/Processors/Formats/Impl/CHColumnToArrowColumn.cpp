@@ -30,6 +30,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
+#include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Processors/Port.h>
 
 #include <arrow/api.h>
@@ -190,15 +191,6 @@ namespace DB
     /// `ColumnVariant` (hence `ColumnDynamic`) and `ColumnQBit` throw `NOT_IMPLEMENTED`, and
     /// `ColumnAggregateFunction` returns the `AggregateDataPtr` itself, so the export would carry heap
     /// addresses instead of aggregate states.
-    /// Whether an opaque column carries the value's text form. `text` mode asks for it, except for an
-    /// aggregate state: `SerializationAggregateFunction::serializeText` writes the raw state bytes, which
-    /// are not text, so it is serialized as binary in either mode.
-    static bool opaqueValueIsText(const CHColumnToArrowColumn::Settings & settings, const DataTypePtr & column_type)
-    {
-        return settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT
-            && !WhichDataType(column_type).isAggregateFunction();
-    }
-
     template <typename Builder>
     static void appendOpaqueColumnData(
         Builder & builder,
@@ -211,8 +203,16 @@ namespace DB
         size_t start,
         size_t end)
     {
+        /// `getArrowType` gives a text payload the `utf8` type only when a `String` column would get it too,
+        /// so the builder that was created tells whether this column is declared as text and therefore has
+        /// to hold valid UTF-8. A `utf8` builder implies `as_text`, both deriving from `arrowOpaqueTypeIsUtf8`.
+        static constexpr bool target_is_utf8 = std::is_same_v<Builder, arrow::StringBuilder>;
+
         const auto serialization = column_type->getDefaultSerialization();
         arrow::Status status;
+        /// Reused across rows: a value's serialized form is only needed until it has been appended.
+        WriteBufferFromOwnString value;
+        String valid_utf8_scratch;
 
         for (size_t value_i = start; value_i < end; ++value_i)
         {
@@ -222,12 +222,16 @@ namespace DB
             }
             else
             {
-                WriteBufferFromOwnString value;
+                value.restart();
                 if (as_text)
                     serialization->serializeText(*write_column, value_i, value, settings.format_settings);
                 else
                     serialization->serializeBinary(*write_column, value_i, value, settings.format_settings);
-                status = builder.Append(value.stringView());
+
+                if constexpr (target_is_utf8)
+                    status = builder.Append(makeValidUTF8View(value.stringView(), valid_utf8_scratch));
+                else
+                    status = builder.Append(value.stringView());
             }
             checkStatus(status, write_column->getName(), format_name);
         }
@@ -248,7 +252,7 @@ namespace DB
         /// Cast to the builder that was actually created: `arrow::StringBuilder` does derive from
         /// `arrow::BinaryBuilder`, but `assert_cast` compares typeid exactly, so casting one to the other
         /// aborts in a debug or sanitizer build.
-        const bool as_text = opaqueValueIsText(settings, column_type);
+        const bool as_text = arrowOpaqueValueIsText(settings.output_unsupported_types, column_type);
         if (array_builder->type()->id() == arrow::Type::STRING)
             appendOpaqueColumnData(
                 assert_cast<arrow::StringBuilder &>(*array_builder),
@@ -1865,12 +1869,9 @@ namespace DB
                 "The type '{}' of a column '{}' is not supported for conversion into {} data format.",
                 column_type->getName(), column_name, format_name);
         /// One serialized value per row, as `utf8` or `binary`; see `fillArrowArrayWithOpaqueColumnData`.
-        /// A text payload uses the Arrow type a `String` column uses, and follows the same setting, so that
-        /// `output_format_arrow_string_as_string = 0` keeps every column of this output free of unvalidated
-        /// UTF-8 rather than only the real `String` ones.
         if (out_opaque_type_name)
             *out_opaque_type_name = column_type->getName();
-        if (opaqueValueIsText(settings, column_type) && settings.output_string_as_string)
+        if (arrowOpaqueTypeIsUtf8(settings.output_unsupported_types, column_type, settings.output_string_as_string))
             return arrow::utf8();
         return arrow::binary();
     }

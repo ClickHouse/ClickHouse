@@ -19,24 +19,31 @@ FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}"
 COMMON="output_format_arrow_compression_method = 'none', engine_file_truncate_on_insert = 1"
 
 # 128 puts the high bit in the first byte of the aggregate state, so that payload is not valid UTF-8.
+# `b` is a `Dynamic` holding a single 0xFF byte, whose text form is therefore not valid UTF-8 either.
 ALL_TYPES="SELECT '{\"a\":1,\"b\":\"s\"}'::JSON AS j,
                   42::Dynamic AS d,
                   [1,2]::Array(Dynamic) AS a,
                   (SELECT sumState(toUInt64(128))) AS s,
-                  [1,2,3]::QBit(BFloat16, 3) AS q"
+                  [1,2,3]::QBit(BFloat16, 3) AS q,
+                  unhex('FF')::Dynamic AS b"
 MAP_TYPE="SELECT CAST(map('{\"a\":1}', 1), 'Map(JSON, UInt8)') AS m"
 
 insert() { echo "INSERT INTO FUNCTION file('$1', 'ArrowStream') $2 SETTINGS ${COMMON}, $3;"; }
 # Every value is printed hex-encoded: an aggregate state and the binary encodings contain NUL bytes.
 read_all() {
     echo "SELECT '$1' AS mode, hex(j) AS json, hex(d) AS dynamic, arrayMap(v -> hex(v), a) AS array_dynamic,
-                 hex(s) AS aggregate, hex(q) AS qbit,
+                 hex(s) AS aggregate, hex(q) AS qbit, hex(b) AS invalid_utf8,
                  finalizeAggregation(CAST(s AS AggregateFunction(sum, UInt64))) AS state
           FROM file('$2', 'ArrowStream') FORMAT Vertical;"
 }
 rejected() { ${CLICKHOUSE_LOCAL} --query "$1" 2>&1 | grep -oF 'NOT_IMPLEMENTED' | head -1; }
 
-echo "=== text and binary, all five types, with the aggregate state read back ==="
+# An Arrow `Utf8` column has to hold valid UTF-8, so a text payload written into one has its invalid
+# sequences replaced by U+FFFD (`EFBFBD`): that is `invalid_utf8` in the `text` rows. The byte-exact forms
+# stay byte-exact - `binary` mode, and `text` with `output_format_arrow_string_as_string = 0`, which puts the
+# text into a `Binary` column instead. An aggregate state is `Binary` in either mode, so `aggregate` keeps
+# its leading `80` throughout rather than being replaced.
+echo "=== text and binary, all six types, with the aggregate state read back ==="
 ${CLICKHOUSE_LOCAL} --multiquery --query "
     $(insert "${FILE}.text"     "${ALL_TYPES}" "output_format_arrow_unsupported_types = 'text'")
     $(insert "${FILE}.binary"   "${ALL_TYPES}" "output_format_arrow_unsupported_types = 'binary'")
@@ -44,7 +51,8 @@ ${CLICKHOUSE_LOCAL} --multiquery --query "
     $(insert "${FILE}.map_bin"  "${MAP_TYPE}"  "output_format_arrow_unsupported_types = 'binary'")
     $(insert "${FILE}.utf8_off" "${ALL_TYPES}" "output_format_arrow_unsupported_types = 'text', output_format_arrow_string_as_string = 0")
     $(read_all text "${FILE}.text")
-    $(read_all binary "${FILE}.binary")"
+    $(read_all binary "${FILE}.binary")
+    $(read_all 'text,string_as_string=0' "${FILE}.utf8_off")"
 
 echo "=== throw ==="
 rejected "$(insert "${FILE}.throw" "${ALL_TYPES}" "output_format_arrow_unsupported_types = 'throw'")"

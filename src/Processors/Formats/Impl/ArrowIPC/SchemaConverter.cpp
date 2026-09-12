@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/DateLUTImpl.h>
+#include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 #include <Common/PODArray.h>
@@ -747,8 +748,8 @@ buildField(
             }
             default:
                 /// A type with no first-class Arrow mapping, handled per `output_format_arrow_unsupported_types`:
-                /// rejected, or written as an opaque variable-width column holding one serialized value per row
-                /// (`Utf8` for `text`, `Binary` for `binary`). `RecordBatchEncoder::encodeAsOpaque` fills it.
+                /// rejected, or written as an opaque variable-width column holding one serialized value per row,
+                /// typed by `arrowOpaqueTypeIsUtf8` and filled by `RecordBatchEncoder::encodeAsOpaque`.
                 /// The decision is made here, before the schema message is written, so a rejected type cannot
                 /// abort a stream whose schema the reader has already accepted.
                 switch (settings.arrow.output_unsupported_types)
@@ -762,17 +763,8 @@ buildField(
                     case FormatSettings::ArrowUnsupportedTypes::TEXT:
                     case FormatSettings::ArrowUnsupportedTypes::BINARY:
                     {
-                        /// An aggregate state is written as `Binary` even in `text` mode:
-                        /// `SerializationAggregateFunction::serializeText` writes the raw state bytes, which
-                        /// are not text, and an Arrow `Utf8` column must hold valid UTF-8. A text payload
-                        /// otherwise uses the Arrow type a `String` column uses, and follows the same
-                        /// setting, so that `output_format_arrow_string_as_string = 0` keeps every column of
-                        /// this output free of unvalidated UTF-8 rather than only the real `String` ones.
-                        const bool as_utf8
-                            = settings.arrow.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::TEXT
-                            && !which.isAggregateFunction()
-                            && settings.arrow.output_string_as_string;
-                        if (as_utf8)
+                        if (arrowOpaqueTypeIsUtf8(
+                                settings.arrow.output_unsupported_types, t, settings.arrow.output_string_as_string))
                         {
                             type_type = flatbuf::Type_Utf8;
                             type_offset = flatbuf::CreateUtf8(b).Union();
