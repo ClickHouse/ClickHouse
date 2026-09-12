@@ -648,10 +648,10 @@ pub struct FFI_VortexScanOptions {
     pub row_range_end: u64,
 
     pub row_selection_begin: *const u64,
-    // 0 means the whole file
+    /// Zero means the whole file.
     pub row_selection_len: u64,
 
-    // If true, prepend a row_idx() column to output
+    /// Prepends a `row_idx` column to the output.
     pub row_index_column: bool,
 
     /// The number of splits that may be in flight at once: being read, being decoded, or already
@@ -2617,42 +2617,5 @@ mod tests {
             assert_eq!(consumer.rows(), 3);
             vortex_ffi_reader_free(reader);
         }
-    }
-    /// The header is generated from this file by `generate-header.sh`, so their signatures cannot
-    /// drift apart. What regeneration cannot catch on its own is forgetting to run it: this checks
-    /// that the committed header still declares exactly the functions this file exports.
-    #[test]
-    fn header_declares_every_exported_function() {
-        let crate_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
-        let source = std::fs::read_to_string(crate_dir.join("src/lib.rs")).unwrap();
-        let header = std::fs::read_to_string(crate_dir.join("include/vortex_ffi.h")).unwrap();
-
-        let exported: std::collections::BTreeSet<_> = source
-            .lines()
-            .filter_map(|line| line.trim().strip_prefix("pub unsafe extern \"C\" fn "))
-            .filter_map(|rest| rest.split('(').next())
-            .map(str::trim)
-            .collect();
-        // Only what is declared, so that a `vortex_ffi_*` mentioned in a comment does not count.
-        let declared: std::collections::BTreeSet<_> = header
-            .match_indices('(')
-            .filter_map(|(paren, _)| {
-                let before = &header[..paren];
-                let start = before
-                    .rfind(|c: char| !c.is_alphanumeric() && c != '_')
-                    .map_or(0, |boundary| boundary + 1);
-                Some(&before[start..]).filter(|name| name.starts_with("vortex_ffi_"))
-            })
-            .collect();
-
-        assert!(!exported.is_empty(), "found no exported functions to check");
-        let missing: Vec<_> = exported.difference(&declared).collect();
-        let extra: Vec<_> = declared.difference(&exported).collect();
-        assert!(
-            missing.is_empty() && extra.is_empty(),
-            "include/vortex_ffi.h is out of date: run generate-header.sh.\n  \
-             exported but not declared: {missing:?}\n  \
-             declared but not exported: {extra:?}"
-        );
     }
 }

@@ -1,18 +1,15 @@
-# Configuration for generating `include/vortex_ffi.h` from `src/lib.rs`.
+# Configuration for generating `include/vortex_ffi.h` from `src/lib.rs`; `build.rs` runs it.
 #
-# Run `./generate-header.sh` after changing anything the header exposes. CI regenerates the header
-# and fails if the committed one differs, so the two halves of the FFI cannot drift apart.
-#
-# Everything the generator cannot derive from Rust - the file comment and the Arrow C Data
-# Interface definitions - lives in `header` below rather than in the generated file, which stays
-# entirely machine-produced.
+# Everything that cannot be derived from Rust - the file comment and the Arrow C Data Interface
+# definitions - lives in `header` below, so that the generated file stays entirely machine-produced.
 
 language = "C++"
 # The preamble below carries its own `#pragma once`.
 pragma_once = false
 # And its own includes.
 no_includes = true
-# ClickHouse style: Allman braces, wide lines. `clang-format` finishes the job.
+# As close to ClickHouse style as the generator gets. Deliberately not run through `clang-format`:
+# the check compares bytes, so that tool's version would decide whether the build passes.
 braces = "NextLine"
 line_length = 140
 tab_width = 4
@@ -28,8 +25,9 @@ header = """
 /// crate; the other half lives in `rust/workspace/vortex/src/lib.rs`. Arrays cross the boundary as
 /// Arrow C Data Interface structs, and IO is delegated back through callbacks.
 ///
-/// THIS FILE IS GENERATED FROM `src/lib.rs` BY `generate-header.sh`. DO NOT EDIT IT BY HAND:
-/// change the Rust side, including its doc comments, and regenerate.
+/// THIS FILE IS GENERATED FROM `src/lib.rs` BY `build.rs`. DO NOT EDIT IT BY HAND: change the Rust
+/// side, including its doc comments, and regenerate with
+/// `VORTEX_FFI_HEADER_UPDATE=1 cargo check -p _ch_rust_vortex`.
 ///
 /// Ownership:
 ///   - an Arrow struct passed into a function is consumed by it;
@@ -89,11 +87,6 @@ struct ArrowArray
 
 #endif // ARROW_C_DATA_INTERFACE
 """
-
-[parse]
-# Every type the header exposes is defined in this crate; nothing has to be pulled out of `vortex`
-# or the Arrow crates.
-parse_deps = false
 
 [export]
 # The Arrow structs come from the preamble above, not from the Rust definitions the crate uses
