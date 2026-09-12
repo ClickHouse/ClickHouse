@@ -1,8 +1,11 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
+#include <IO/WriteBufferFromString.h>
+#include <Interpreters/ApplyWithGlobalVisitor.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/QueryConstructionSettings.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
@@ -25,8 +28,12 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_experimental_eval_table_function;
+    extern const SettingsBool enable_global_with_statement;
+    extern const SettingsBool enforce_strict_identifier_format;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
@@ -163,16 +170,27 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
 
+    /// A private copy, because the generated query's `SETTINGS` scope only itself. Resolved here,
+    /// ahead of the visitors below, which can move or drop the `SETTINGS` clause.
+    auto limits_context = Context::createCopy(context);
+    InterpreterSetQuery::applySettingsFromQuery(query, limits_context);
+    const auto & inner_settings = limits_context->getSettingsRef();
+
+    /// Expand global `WITH` aliases ahead of the prechecks below, same as `executeQueryImpl` does, so
+    /// they see the post-expansion AST that the analyzer will receive.
+    if (inner_settings[Setting::enable_global_with_statement])
+        ApplyWithGlobalVisitor::visit(query);
+
     /// The generated query does not go through `executeQuery`, so resolve the INTERSECT/EXCEPT
     /// operator precedence and the implicit UNION mode here, same as `executeQueryImpl` does
-    /// for a usual query.
+    /// for a usual query, from the generated query's own modes rather than the outer defaults.
     {
         SelectIntersectExceptQueryVisitor::Data data{
-            settings[Setting::intersect_default_mode], settings[Setting::except_default_mode]};
+            inner_settings[Setting::intersect_default_mode], inner_settings[Setting::except_default_mode]};
         SelectIntersectExceptQueryVisitor{data}.visit(query);
     }
     {
-        NormalizeSelectWithUnionQueryVisitor::Data data{settings[Setting::union_default_mode]};
+        NormalizeSelectWithUnionQueryVisitor::Data data{inner_settings[Setting::union_default_mode]};
         NormalizeSelectWithUnionQueryVisitor{data}.visit(query);
     }
 
@@ -189,6 +207,22 @@ void TableFunctionEval::parseArguments(const ASTPtr & ast_function, ContextPtr c
         settings[Setting::max_query_size],
         settings[Setting::max_parser_depth],
         settings[Setting::max_parser_backtracks]);
+
+    /// The remaining prechecks `executeQueryImpl` runs on a usual query, in its order: the identifier
+    /// format, then the AST size limits. Both read the generated query's own settings, and both run
+    /// after the wrapping above, so they see the AST that is stored and analyzed.
+    if (inner_settings[Setting::enforce_strict_identifier_format])
+    {
+        WriteBufferFromOwnString buf;
+        IAST::FormatSettings strict_identifier_format_settings(true);
+        strict_identifier_format_settings.enforce_strict_identifier_format = true;
+        query->format(buf, strict_identifier_format_settings);
+    }
+
+    if (inner_settings[Setting::max_ast_depth])
+        query->checkDepth(inner_settings[Setting::max_ast_depth]);
+    if (inner_settings[Setting::max_ast_elements])
+        query->checkSize(inner_settings[Setting::max_ast_elements]);
 
     create.set(create.select, query);
 }
