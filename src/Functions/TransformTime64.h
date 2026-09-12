@@ -23,6 +23,8 @@ namespace DB
  *     R execute(DecimalUtils::DecimalComponents<DateTime64> components, ... )
  *
  * Where R could be of arbitrary type, in case of (3) if R is DecimalUtils::DecimalComponents<DateTime64>, result is re-assembed back into DateTime64.
+ *
+ * In cases (1) and (3) the whole part is rounded towards negative infinity, see `DecimalUtils::splitFlooringNegative`.
 */
 template <typename Transform>
 class TransformTime64
@@ -64,14 +66,16 @@ public:
         }
         else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<Time64>, Args...>)
         {
-            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            const auto components = DecimalUtils::splitFlooringNegative(t, scale_multiplier);
 
             const auto result = wrapped_transform.execute(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;
 
             if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<Time64>, ResultType>)
             {
-                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(result, scale_multiplier);
+                /// `splitFlooringNegative` produced `whole * scale_multiplier + fractional` with a non-negative
+                /// `fractional`, so reassemble with the helper that follows the same convention.
+                return Time64(DecimalUtils::dateTimeFromComponentsWithMultiplier(result.whole, result.fractional, scale_multiplier));
             }
             else
             {
@@ -80,9 +84,7 @@ public:
         }
         else
         {
-            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
-            if (t.value < 0 && components.fractional)
-                --components.whole;
+            const auto components = DecimalUtils::splitFlooringNegative(t, scale_multiplier);
 
             return wrapped_transform.execute(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
@@ -108,14 +110,16 @@ public:
         }
         else if constexpr (TransformHasExecuteOverload_v<DecimalUtils::DecimalComponents<Time64>, Args...>)
         {
-            auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            const auto components = DecimalUtils::splitFlooringNegative(t, scale_multiplier);
 
             const auto result = wrapped_transform.executeExtendedResult(components, std::forward<Args>(args)...);
             using ResultType = std::decay_t<decltype(result)>;
 
             if constexpr (std::is_same_v<DecimalUtils::DecimalComponents<Time64>, ResultType>)
             {
-                return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(result, scale_multiplier);
+                /// `splitFlooringNegative` produced `whole * scale_multiplier + fractional` with a non-negative
+                /// `fractional`, so reassemble with the helper that follows the same convention.
+                return Time64(DecimalUtils::dateTimeFromComponentsWithMultiplier(result.whole, result.fractional, scale_multiplier));
             }
             else
             {
@@ -124,7 +128,8 @@ public:
         }
         else
         {
-            const auto components = DecimalUtils::splitWithScaleMultiplier(t, scale_multiplier);
+            const auto components = DecimalUtils::splitFlooringNegative(t, scale_multiplier);
+
             return wrapped_transform.executeExtendedResult(static_cast<Int64>(components.whole), std::forward<Args>(args)...);
         }
     }
