@@ -21,9 +21,13 @@ SETTINGS max_threads = 1, remote_filesystem_read_method = 'read', load_marks_asy
 
 SYSTEM FLUSH LOGS query_log;
 
+-- The connection pool is shared with everything else running on the server, so the query can lose a
+-- connection to a concurrent query and create another one. Assert that reuse dominates creation
+-- instead of pinning the number of created connections: before the fix every stream held its own
+-- connection to the end of the query, so there was nothing to reuse at all.
 SELECT
     ProfileEvents['S3GetObject'] >= 20 AS read_all_streams,
-    ProfileEvents['DiskConnectionsCreated'] <= 2 AS few_connections_created,
+    ProfileEvents['DiskConnectionsCreated'] < ProfileEvents['DiskConnectionsReused'] AS reuse_dominates,
     ProfileEvents['DiskConnectionsReused'] >= 18 AS connections_reused
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '05110_s3_connection_reuse_many_streams' AND type = 'QueryFinish' AND query_kind = 'Select';

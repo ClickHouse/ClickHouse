@@ -18,6 +18,7 @@ namespace DB
 {
 namespace ErrorCodes
 {
+    extern const int BAD_ARGUMENTS;
     extern const int CANNOT_SEEK_THROUGH_FILE;
     extern const int LOGICAL_ERROR;
 
@@ -60,6 +61,21 @@ ReadBufferFromRemoteFSGather::ReadBufferFromRemoteFSGather(
     , use_external_buffer(use_external_buffer_)
     , log(getLogger("ReadBufferFromRemoteFSGather"))
 {
+    /// The offsets of the objects that follow an object of an unknown size cannot be computed, so such
+    /// an object is only supported as the last one of a file. The same invariant is enforced in
+    /// `OffsetMap::build`. In practice the only sources of an unknown size are an HTTP server that
+    /// answers without `Content-Length` (a `web` disk, S3) and a failed `stat` on a local disk, and all
+    /// of them produce single-object files.
+    for (size_t i = 0; i + 1 < blobs_to_read.size(); ++i)
+    {
+        if (blobs_to_read[i].bytes_size == StoredObject::UnknownSize)
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "An object of an unknown size ({}) is only supported as the last object of a file, "
+                "but it is the object number {} out of {}",
+                blobs_to_read[i].remote_path, i + 1, blobs_to_read.size());
+    }
+
     if (!blobs_to_read.empty())
         current_object = blobs_to_read.front();
 }
@@ -88,21 +104,15 @@ SeekableReadBufferPtr ReadBufferFromRemoteFSGather::createImplementationBuffer(c
     ///
     /// The end of an object bounds the position only if its size is known. The size is unknown when an
     /// HTTP server answers without `Content-Length`, which happens on a `web` disk and in S3. Such an
-    /// object extends to the end of the file - the offsets of the objects after it could not be computed
-    /// - so the bound, which is inside the file, is inside the object as well. Do not take that for
-    /// granted though: require the object of an unknown size to be the last one, and leave the read
-    /// open-ended otherwise, because a bound applied to a wrong object would cut the data short.
-    const bool is_last_object = current_buf_idx + 1 == blobs_to_read.size();
-    const bool has_known_size = object.bytes_size != StoredObject::UnknownSize;
-
-    bool pass_bound = read_until_position > start_offset;
-    if (has_known_size)
-        pass_bound = pass_bound && read_until_position <= start_offset + object.bytes_size;
-    else
-        pass_bound = pass_bound && is_last_object;
+    /// object extends to the end of the file - the constructor rejects any other layout, because the
+    /// offsets of the objects after it could not be computed - so the bound, which is inside the file,
+    /// is inside the object as well, and it is forwarded unconditionally.
+    bool pass_bound = read_until_position.has_value() && *read_until_position > start_offset;
+    if (object.bytes_size != StoredObject::UnknownSize)
+        pass_bound = pass_bound && *read_until_position <= start_offset + object.bytes_size;
 
     if (pass_bound)
-        buf->setReadUntilPosition(read_until_position - start_offset);
+        buf->setReadUntilPosition(*read_until_position - start_offset);
 
     return buf;
 }
@@ -142,10 +152,11 @@ void ReadBufferFromRemoteFSGather::initialize()
 bool ReadBufferFromRemoteFSGather::nextImpl()
 {
     /// The requested range can be empty, e.g. a `seek` to the boundary between two objects followed by
-    /// `setReadUntilPosition` to the same offset. `initialize` picks the object that starts exactly
-    /// there, and reading from it would return data past the right bound. `moveToNextBuffer` already
-    /// stops on the same condition.
-    if (read_until_position && file_offset_of_buffer_end >= read_until_position)
+    /// `setReadUntilPosition` to the same offset - including the very start of the file, which is why
+    /// the bound is an `std::optional` rather than a `0` sentinel. `initialize` picks the object that
+    /// starts exactly there, and reading from it would return data past the right bound.
+    /// `moveToNextBuffer` already stops on the same condition.
+    if (read_until_position && file_offset_of_buffer_end >= *read_until_position)
         return false;
 
     /// Find first available buffer that fits to given offset.
@@ -167,7 +178,7 @@ bool ReadBufferFromRemoteFSGather::nextImpl()
 bool ReadBufferFromRemoteFSGather::moveToNextBuffer()
 {
     /// If there is no available buffers - nothing to read.
-    if (current_buf_idx + 1 >= blobs_to_read.size() || (read_until_position && file_offset_of_buffer_end >= read_until_position))
+    if (current_buf_idx + 1 >= blobs_to_read.size() || (read_until_position && file_offset_of_buffer_end >= *read_until_position))
         return false;
 
     ++current_buf_idx;
