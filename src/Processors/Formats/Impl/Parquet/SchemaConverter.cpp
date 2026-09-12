@@ -898,9 +898,10 @@ void SchemaConverter::processSubtreeTuple(TraversalNode & node)
     /// fabricate an all-non-null map that silently drops the struct nulls.
     if (nullable_group && primitive_start == primitive_columns.size())
         throw Exception(ErrorCodes::TYPE_MISMATCH,
-            "Requested type of column {} doesn't match parquet schema: physically nullable Tuple has no "
-            "physical elements to read (all requested elements are missing), so its null map cannot be "
-            "reconstructed; requested type is {}", node.getNameForLogging(), node.type_hint->getName());
+            "Requested type of column {} doesn't match parquet schema: a Tuple reported as Nullable takes "
+            "its null map from the definition levels of a physical element, and every requested element is "
+            "missing, so the null map cannot be reconstructed; requested type is {}",
+            node.getNameForLogging(), nullable_group_type_hint->getName());
     if (nullable_group)
         output_type = makeNullable(output_type);
 
