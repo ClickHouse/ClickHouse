@@ -156,4 +156,11 @@ private:
     CompressionCodecFactory();
 };
 
+/// Whether a codec AST resolves to a lossy codec (e.g. `SZ3`) on any of the data substreams of a
+/// column of type `column_type`, i.e. whether compressing the column with it loses information.
+/// The codec is resolved against the type of each data substream, the same way codec validation
+/// (`validateCodecAndGetPreprocessedAST`) and the part writers do: type-dependent codecs (e.g.
+/// `Delta` without arguments) cannot be constructed from the top-level composite type.
+bool codecResolvesToLossyCompression(const ASTPtr & codec_ast, const DataTypePtr & column_type);
+
 }
