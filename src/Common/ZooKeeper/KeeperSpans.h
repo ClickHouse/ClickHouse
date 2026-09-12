@@ -80,6 +80,10 @@ public:
         const OpenTelemetry::TracingContext * parent_context,
         UInt64 start_time_us = now());
 
+    /// Whether `maybeInitialize` has been called for this operation. For a span that only some
+    /// requests go through, this tells the finalizing side which ones to observe.
+    bool isStarted(KeeperSpan::Operation operation) const { return maybe_spans[operation].start_time_us != 0; }
+
     template <typename MakeAttributes>
     void maybeFinalize(
         KeeperSpan::Operation operation,
@@ -98,6 +102,27 @@ public:
             return;
 
         maybeFinalizeImpl(maybe_span, make_attributes(), status, error_message, finish_time_us);
+    }
+
+    /// Finalizes the trace span without observing the histogram. For a wait that was abandoned
+    /// rather than satisfied - e.g. a read dropped because the append stream broke before the write
+    /// it depends on committed - the elapsed time is not a sample of what the histogram measures, so
+    /// feeding it in would turn "waited for a write to finish" into "waited until something failed".
+    template <typename MakeAttributes>
+    void maybeAbandon(
+        KeeperSpan::Operation operation,
+        MakeAttributes && make_attributes,
+        const String & error_message = {},
+        UInt64 finish_time_us = now())
+    {
+        auto & maybe_span = maybe_spans[operation];
+
+        chassert(maybe_span.start_time_us != 0);
+
+        if (!maybe_span.span)
+            return;
+
+        maybeFinalizeImpl(maybe_span, make_attributes(), OpenTelemetry::SpanStatus::ERROR, error_message, finish_time_us);
     }
 
 private:
