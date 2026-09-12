@@ -1,4 +1,6 @@
 SET allow_experimental_nullable_tuple_type = 1;
+-- The output order of INTERSECT/EXCEPT depends on the number of threads.
+SET max_threads = 1;
 
 DROP TABLE IF EXISTS tuple_test;
 

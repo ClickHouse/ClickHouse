@@ -47,6 +47,10 @@ WHERE toUInt64(notNullIn(1, (SELECT x FROM t_subq_04340))) > 0
 ORDER BY a
 SETTINGS query_plan_filter_push_down = 0;
 
+-- The ORDER BY applies to the last arm only, so the output order of INTERSECT ALL
+-- depends on the number of threads.
+SET max_threads = 1;
+
 -- Case 4: same not-ready-set nullIn inside the right branch of INTERSECT ALL, matching
 -- the original fuzzer query shape (INTERSECT ALL generates the ANY JOIN). >= 0 keeps the
 -- filter always TRUE, so the intersection is the left branch unchanged.

@@ -1,4 +1,7 @@
 -- max_rows_to_read is the guard: a regressed short-circuit reads the unbounded side and trips it.
+-- The DISTINCT modes are executed as joins by default, which build the right side before reading
+-- the left one; this test covers the set-operation step.
+SET optimize_rewrite_intersect_except_to_join = 0;
 SELECT count()
 FROM
 (
