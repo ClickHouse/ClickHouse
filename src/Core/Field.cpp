@@ -3,6 +3,7 @@
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/FieldVisitorWriteBinary.h>
+#include <Common/checkStackSize.h>
 #include <Core/AccurateComparison.h>
 #include <Core/DecimalComparison.h>
 #include <Core/Field.h>
@@ -703,12 +704,116 @@ String Field::dump() const
     return applyVisitor(FieldVisitorDump(), *this);
 }
 
+namespace
+{
+
+[[noreturn]] void cannotRestoreFromDump(std::string_view dump)
+{
+    throw Exception(ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP, "Couldn't restore Field from dump: {}", String{dump});
+}
+
+/// Offset of the character that ends a leaf element of a container dump: a comma, or the
+/// container's own closing bracket. Quoted strings and bracketed payloads are skipped, so a
+/// separator inside them does not end the element. npos when the element is unterminated.
+size_t findEndOfLeafDump(std::string_view dump)
+{
+    size_t depth = 0;
+    bool in_string = false;
+    bool escaped = false;
+    for (size_t i = 0; i < dump.size(); ++i)
+    {
+        char c = dump[i];
+        if (in_string)
+        {
+            if (escaped)
+                escaped = false;
+            else if (c == '\\')
+                escaped = true;
+            else if (c == '\'')
+                in_string = false;
+        }
+        else if (c == '\'')
+            in_string = true;
+        else if (c == '[' || c == '(')
+            ++depth;
+        else if (c == ']' || c == ')')
+        {
+            if (depth == 0)
+                return i;
+            --depth;
+        }
+        else if (c == ',' && depth == 0)
+            return i;
+    }
+    return std::string_view::npos;
+}
+
+Field restoreElementFromDump(std::string_view & tail, std::string_view whole_dump);
+
+/// `tail` starts just after the container's opening bracket and is left just after `closing`.
+template <typename Container>
+Container restoreContainerFromDump(std::string_view & tail, char closing, std::string_view whole_dump)
+{
+    Container container;
+    trimLeft(tail);
+    if (tail.starts_with(closing))
+    {
+        tail.remove_prefix(1);
+        return container;
+    }
+    while (true)
+    {
+        container.push_back(restoreElementFromDump(tail, whole_dump));
+        trimLeft(tail);
+        if (tail.empty())
+            cannotRestoreFromDump(whole_dump);
+        char separator = tail.front();
+        tail.remove_prefix(1);
+        if (separator == closing)
+            return container;
+        if (separator != ',')
+            cannotRestoreFromDump(whole_dump);
+        trimLeft(tail);
+    }
+}
+
+/// Consumes one element from the front of `tail`. A nested container is consumed here rather than
+/// delimited and then parsed again, so each byte of the dump is examined a bounded number of times.
+Field restoreElementFromDump(std::string_view & tail, std::string_view whole_dump)
+{
+    /// The grammar nests without a bound and the dumps reaching this parser are user supplied.
+    checkStackSize();
+    trimLeft(tail);
+
+    if (tail.starts_with("Array_["))
+    {
+        tail.remove_prefix(std::string_view{"Array_["}.length());
+        return restoreContainerFromDump<Array>(tail, ']', whole_dump);
+    }
+
+    if (tail.starts_with("Tuple_("))
+    {
+        tail.remove_prefix(std::string_view{"Tuple_("}.length());
+        return restoreContainerFromDump<Tuple>(tail, ')', whole_dump);
+    }
+
+    if (tail.starts_with("Map_("))
+    {
+        tail.remove_prefix(std::string_view{"Map_("}.length());
+        return restoreContainerFromDump<Map>(tail, ')', whole_dump);
+    }
+
+    size_t end = findEndOfLeafDump(tail);
+    std::string_view element = tail.substr(0, end == std::string_view::npos ? tail.length() : end);
+    tail.remove_prefix(element.length());
+    return Field::restoreFromDump(element);
+}
+
+}
+
 Field Field::restoreFromDump(std::string_view dump_)
 {
-    auto show_error = [&dump_]
-    {
-        throw Exception(ErrorCodes::CANNOT_RESTORE_FROM_FIELD_DUMP, "Couldn't restore Field from dump: {}", String{dump_});
-    };
+    auto show_error = [&dump_] { cannotRestoreFromDump(dump_); };
 
     std::string_view dump = dump_;
     trim(dump);
@@ -771,6 +876,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         DecimalField<Decimal32> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
+        if (!buf.eof())
+            show_error();
         return decimal;
     }
 
@@ -780,6 +887,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         DecimalField<Decimal64> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
+        if (!buf.eof())
+            show_error();
         return decimal;
     }
 
@@ -789,6 +898,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         DecimalField<Decimal128> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
+        if (!buf.eof())
+            show_error();
         return decimal;
     }
 
@@ -798,6 +909,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         DecimalField<Decimal256> decimal;
         ReadBufferFromString buf{dump.substr(prefix.length())};
         readQuoted(decimal, buf);
+        if (!buf.eof())
+            show_error();
         return decimal;
     }
 
@@ -806,6 +919,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         String str;
         ReadBufferFromString buf{dump};
         readQuoted(str, buf);
+        if (!buf.eof())
+            show_error();
         return str;
     }
 
@@ -816,88 +931,29 @@ Field Field::restoreFromDump(std::string_view dump_)
         return value;
     }
 
-    prefix = std::string_view{"Array_["};
-    if (dump.starts_with(prefix))
+    if (dump.starts_with("Array_[") || dump.starts_with("Tuple_(") || dump.starts_with("Map_("))
     {
-        std::string_view tail = dump.substr(prefix.length());
+        std::string_view tail = dump;
+        Field result = restoreElementFromDump(tail, dump_);
         trimLeft(tail);
-        Array array;
-        while (tail != "]")
-        {
-            size_t separator = tail.find_first_of(",]");
-            if (separator == std::string_view::npos)
-                show_error();
-            bool comma = (tail[separator] == ',');
-            std::string_view element = tail.substr(0, separator);
-            tail.remove_prefix(separator);
-            if (comma)
-                tail.remove_prefix(1);
-            trimLeft(tail);
-            if (!comma && tail != "]")
-                show_error();
-            array.push_back(Field::restoreFromDump(element));
-        }
-        return array;
-    }
-
-    prefix = std::string_view{"Tuple_("};
-    if (dump.starts_with(prefix))
-    {
-        std::string_view tail = dump.substr(prefix.length());
-        trimLeft(tail);
-        Tuple tuple;
-        while (tail != ")")
-        {
-            size_t separator = tail.find_first_of(",)");
-            if (separator == std::string_view::npos)
-                show_error();
-            bool comma = (tail[separator] == ',');
-            std::string_view element = tail.substr(0, separator);
-            tail.remove_prefix(separator);
-            if (comma)
-                tail.remove_prefix(1);
-            trimLeft(tail);
-            if (!comma && tail != ")")
-                show_error();
-            tuple.push_back(Field::restoreFromDump(element));
-        }
-        return tuple;
-    }
-
-    prefix = std::string_view{"Map_("};
-    if (dump.starts_with(prefix))
-    {
-        std::string_view tail = dump.substr(prefix.length());
-        trimLeft(tail);
-        Map map;
-        while (tail != ")")
-        {
-            size_t separator = tail.find_first_of(",)");
-            if (separator == std::string_view::npos)
-                show_error();
-            bool comma = (tail[separator] == ',');
-            std::string_view element = tail.substr(0, separator);
-            tail.remove_prefix(separator);
-            if (comma)
-                tail.remove_prefix(1);
-            trimLeft(tail);
-            if (!comma && tail != ")")
-                show_error();
-            map.push_back(Field::restoreFromDump(element));
-        }
-        return map;
+        if (!tail.empty())
+            show_error();
+        return result;
     }
 
     prefix = std::string_view{"AggregateFunctionState_("};
     if (dump.starts_with(prefix))
     {
         std::string_view after_prefix = dump.substr(prefix.length());
-        size_t comma = after_prefix.find(',');
-        size_t end = after_prefix.find(')', comma + 1);
-        if ((comma == std::string_view::npos) || (end != after_prefix.length() - 1))
+        size_t comma = findEndOfLeafDump(after_prefix);
+        if (comma == std::string_view::npos || after_prefix[comma] != ',')
             show_error();
         std::string_view name_view = after_prefix.substr(0, comma);
-        std::string_view data_view = after_prefix.substr(comma + 1, end - comma - 1);
+        std::string_view rest = after_prefix.substr(comma + 1);
+        size_t end = findEndOfLeafDump(rest);
+        if (end == std::string_view::npos || rest[end] != ')' || end != rest.length() - 1)
+            show_error();
+        std::string_view data_view = rest.substr(0, end);
         trim(name_view);
         trim(data_view);
         ReadBufferFromString name_buf{name_view};
@@ -905,6 +961,8 @@ Field Field::restoreFromDump(std::string_view dump_)
         AggregateFunctionStateData res;
         readQuotedString(res.name, name_buf);
         readQuotedString(res.data, data_buf);
+        if (!name_buf.eof() || !data_buf.eof())
+            show_error();
         return res;
     }
 

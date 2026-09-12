@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include <Common/Exception.h>
 #include <Core/Field.h>
 
 #include <limits>
@@ -221,4 +222,61 @@ GTEST_TEST(Field, CompareUUID)
 
     ASSERT_TRUE(one == one_again);
     ASSERT_FALSE(one == two);
+}
+
+
+GTEST_TEST(Field, RestoreFromDumpRoundTripsNestedAndQuotedContainers)
+{
+    /// The value shapes below cannot be built from SQL: the SET grammar accepts only a literal or a
+    /// flat map of string literals, so a stateless test cannot reach a nested container, an array
+    /// element or an aggregate state.
+    auto round_trip = [](const Field & field) { return Field::restoreFromDump(field.dump()); };
+
+    /// Nested containers. A Map element is always dumped as a nested Tuple_(...), so any non-empty
+    /// map exercises this.
+    {
+        Array inner{Field{UInt64{1}}, Field{UInt64{2}}};
+        Field nested_array{Array{Field{std::move(inner)}, Field{Tuple{Field{String{"x"}}, Field{Int64{-3}}}}}};
+        ASSERT_EQ(round_trip(nested_array), nested_array);
+
+        Field nested_map{Map{Field{Tuple{Field{String{"k"}}, Field{Map{Field{Tuple{Field{String{"a"}}, Field{String{"b"}}}}}}}}}};
+        ASSERT_EQ(round_trip(nested_map), nested_map);
+    }
+
+    /// String elements holding the separators and the escape characters of the dump grammar.
+    {
+        Field hostile{Array{Field{String{"a,b]c)d'e\\f"}}, Field{String{"("}}, Field{String{"'"}}}};
+        ASSERT_EQ(round_trip(hostile), hostile);
+    }
+
+    /// An aggregate state: the name may be parameterised, and the data is quoted but its brackets
+    /// and commas are not escaped.
+    {
+        Field state{AggregateFunctionStateData{.name = "quantiles(0.5, 0.9)", .data = "a)b,c'd\\e"}};
+        ASSERT_EQ(round_trip(state), state);
+    }
+
+    /// Empty containers.
+    {
+        ASSERT_EQ(round_trip(Field{Array{}}), Field{Array{}});
+        ASSERT_EQ(round_trip(Field{Tuple{}}), Field{Tuple{}});
+        ASSERT_EQ(round_trip(Field{Map{}}), Field{Map{}});
+    }
+
+    /// An element that parses only partially is an error, not a silently truncated container: a
+    /// hand written users.xml value of Map_('k':'v') must not restore as Map(String 'k').
+    ASSERT_THROW(Field::restoreFromDump("Map_('k':'v')"), DB::Exception);
+
+    /// A dump nests as deep as its text says, so the depth has to be bounded. Built as text
+    /// directly: dumping a Field this deep would recurse before the parser is reached.
+    {
+        static constexpr size_t depth = 100000;
+        String deep;
+        deep.reserve(depth * 8 + 16);
+        for (size_t i = 0; i < depth; ++i)
+            deep += "Array_[";
+        deep += "UInt64_1";
+        deep.append(depth, ']');
+        ASSERT_THROW(Field::restoreFromDump(deep), DB::Exception);
+    }
 }
