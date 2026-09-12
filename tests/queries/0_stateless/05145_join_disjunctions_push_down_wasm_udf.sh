@@ -28,6 +28,9 @@ SET query_plan_optimize_join_order_randomize = 0;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
 SET use_join_disjunctions_push_down = 1;
+-- The plan assertions below sort the matched lines: the order in which the plan prints the filter
+-- above the join, the pre-filters below it and the `PREWHERE` steps depends on which side the join
+-- is read from, which the settings randomizer is free to flip.
 
 CREATE OR REPLACE FUNCTION wasm_disj_nondet
     LANGUAGE WASM FROM 'identity_disj_test' :: 'identity_msgpack_i32'
@@ -55,7 +58,7 @@ SELECT trimLeft(explain) FROM (
     SELECT count() FROM t_wasm_disj_left JOIN t_wasm_disj_right ON t_wasm_disj_left.k = t_wasm_disj_right.k
     WHERE (t_wasm_disj_left.a = 1 AND t_wasm_disj_right.x = 100 AND wasm_disj_nondet(t_wasm_disj_left.k) % 2 = 0)
        OR (t_wasm_disj_left.a = 2 AND t_wasm_disj_right.x = 200)
-) WHERE explain ILIKE '%Filter column:%' FORMAT TSV;
+) WHERE explain ILIKE '%Filter column:%' ORDER BY 1 FORMAT TSV;
 
 -- The `DETERMINISTIC` UDF is extracted together with the rest of its branch.
 SELECT 'deterministic plan';
@@ -64,7 +67,7 @@ SELECT trimLeft(explain) FROM (
     SELECT count() FROM t_wasm_disj_left JOIN t_wasm_disj_right ON t_wasm_disj_left.k = t_wasm_disj_right.k
     WHERE (t_wasm_disj_left.a = 1 AND t_wasm_disj_right.x = 100 AND wasm_disj_det(t_wasm_disj_left.k) % 2 = 0)
        OR (t_wasm_disj_left.a = 2 AND t_wasm_disj_right.x = 200)
-) WHERE explain ILIKE '%Filter column:%' FORMAT TSV;
+) WHERE explain ILIKE '%Filter column:%' ORDER BY 1 FORMAT TSV;
 
 -- Both give the same result, and the same as with the optimization disabled.
 SELECT 'results';

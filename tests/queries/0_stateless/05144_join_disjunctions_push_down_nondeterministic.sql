@@ -13,6 +13,9 @@ SET enable_join_runtime_filters = 0;
 SET query_plan_optimize_join_order_randomize = 0;
 SET optimize_move_to_prewhere = 1;
 SET query_plan_optimize_prewhere = 1;
+-- The plan assertions below sort the matched lines: the order in which the plan prints the filter
+-- above the join, the pre-filters below it and the `PREWHERE` steps depends on which side the join
+-- is read from, which the settings randomizer is free to flip.
 
 DROP TABLE IF EXISTS t_disj_left;
 DROP TABLE IF EXISTS t_disj_right;
@@ -44,7 +47,7 @@ SELECT trimLeft(explain) FROM (
     SELECT count() FROM t_disj_left JOIN t_disj_right ON t_disj_left.k = t_disj_right.k
     WHERE (t_disj_left.a = 1 AND t_disj_right.x = 100) OR (t_disj_left.a = 2 AND t_disj_right.x = 200)
     SETTINGS use_join_disjunctions_push_down = 1
-) WHERE explain ILIKE '%Filter column:%' FORMAT TSV;
+) WHERE explain ILIKE '%Filter column:%' ORDER BY 1 FORMAT TSV;
 
 SELECT 'deterministic plan (disabled)';
 SELECT trimLeft(explain) FROM (
@@ -52,7 +55,7 @@ SELECT trimLeft(explain) FROM (
     SELECT count() FROM t_disj_left JOIN t_disj_right ON t_disj_left.k = t_disj_right.k
     WHERE (t_disj_left.a = 1 AND t_disj_right.x = 100) OR (t_disj_left.a = 2 AND t_disj_right.x = 200)
     SETTINGS use_join_disjunctions_push_down = 0
-) WHERE explain ILIKE '%Filter column:%' FORMAT TSV;
+) WHERE explain ILIKE '%Filter column:%' ORDER BY 1 FORMAT TSV;
 
 -- The same predicate with a non-deterministic conjunct added: the deterministic parts are still
 -- extracted, but neither pre-filter mentions `rand`.
@@ -62,7 +65,7 @@ SELECT trimLeft(explain) FROM (
     SELECT count() FROM t_disj_left JOIN t_disj_right ON t_disj_left.k = t_disj_right.k
     WHERE (t_disj_left.a = 1 AND t_disj_right.x = 100 AND rand() % 2 = 0) OR (t_disj_left.a = 2 AND t_disj_right.x = 200)
     SETTINGS use_join_disjunctions_push_down = 1
-) WHERE explain ILIKE '%Filter column:%' FORMAT TSV;
+) WHERE explain ILIKE '%Filter column:%' ORDER BY 1 FORMAT TSV;
 
 -- A stateful predicate must not be cloned below the join either: `tryPushDownFilter` returns early
 -- for a filter whose expression `hasStatefulFunctions`, so nothing at all is extracted and the plan
@@ -73,7 +76,7 @@ SELECT trimLeft(explain) FROM (
     SELECT count() FROM t_disj_left JOIN t_disj_right ON t_disj_left.k = t_disj_right.k
     WHERE (t_disj_left.a = 1 AND t_disj_right.x = 100 AND timeSeriesTagsToGroup([('x', 'y')]) = 0) OR (t_disj_left.a = 2 AND t_disj_right.x = 200)
     SETTINGS use_join_disjunctions_push_down = 1
-) WHERE explain ILIKE '%Filter column:%' FORMAT TSV;
+) WHERE explain ILIKE '%Filter column:%' ORDER BY 1 FORMAT TSV;
 
 -- The extracted deterministic predicate does not change the result.
 SELECT 'deterministic';
