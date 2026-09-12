@@ -17,6 +17,7 @@
 #include <IO/Operators.h>
 #include <algorithm>
 #include <cstring> // memcpy
+#include <limits>
 
 
 namespace DB
@@ -422,6 +423,72 @@ void ColumnArray::doInsertFrom(const IColumn & src_, size_t n)
 
     getData().insertRangeFrom(src.getData(), offset, size);
     getOffsets().push_back(getOffsets().back() + size);
+}
+
+#if !defined(DEBUG_OR_SANITIZER_BUILD)
+void ColumnArray::insertManyFrom(const IColumn & src_, size_t position, size_t length)
+#else
+void ColumnArray::doInsertManyFrom(const IColumn & src_, size_t position, size_t length)
+#endif
+{
+    /// Keep the same no-op behavior as IColumn::insertManyFrom, including for an invalid position.
+    if (length == 0)
+        return;
+
+    /// A single insertion does not benefit from bulk setup.
+    if (length == 1)
+    {
+        insertFrom(src_, position);
+        return;
+    }
+
+    const ColumnArray & src = assert_cast<const ColumnArray &>(src_);
+    const size_t source_size = src.sizeAt(position);
+
+    auto & offsets_data = getOffsets();
+    const size_t old_rows = offsets_data.size();
+    if (length > std::numeric_limits<size_t>::max() - old_rows)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many rows in array column: {} + {}", old_rows, length);
+
+    const size_t new_rows = old_rows + length;
+    const size_t old_offset = offsets_data.back();
+
+    auto insert_scalar = [&]
+    {
+        for (size_t i = 0; i < length; ++i)
+            insertFrom(src_, position);
+    };
+
+    /// Nested insertManyFrom repeats one value, so it can represent a repeated Array row
+    /// directly only when source_size == 1.
+    /// Keep the existing scalar implementation outside the narrow fast path.
+    if (getDataPtr().get() == src.getDataPtr().get()
+        || source_size > 1
+        || getData().hasDynamicStructure())
+    {
+        insert_scalar();
+        return;
+    }
+
+    if (new_rows > offsets_data.capacity())
+        offsets_data.reserve(new_rows);
+
+    if (source_size == 0)
+    {
+        offsets_data.resize_assume_reserved(new_rows);
+        std::fill(offsets_data.begin() + old_rows, offsets_data.end(), old_offset);
+        return;
+    }
+
+    /// source_size == 1
+    if (length > std::numeric_limits<Offset>::max() - old_offset)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too many elements in array column: {} + {}", old_offset, length);
+
+    getData().insertManyFrom(src.getData(), src.offsetAt(position), length);
+
+    offsets_data.resize_assume_reserved(new_rows);
+    for (size_t i = 0; i < length; ++i)
+        offsets_data[old_rows + i] = old_offset + i + 1;
 }
 
 

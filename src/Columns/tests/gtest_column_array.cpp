@@ -1,5 +1,6 @@
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnLowCardinality.h>
+#include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Core/Field.h>
@@ -12,6 +13,7 @@
 #include <Common/ThreadStatus.h>
 #include <Common/scope_guard_safe.h>
 
+#include <limits>
 #include <thread>
 
 #include <gtest/gtest.h>
@@ -123,6 +125,180 @@ TEST(ColumnArray, OffsetsConsistentWithNestedColumn)
     EXPECT_EQ(column->getSize(0), 2);
     EXPECT_EQ(column->getSize(1), 0);
     EXPECT_EQ(column->getSize(2), 1);
+}
+
+TEST(ColumnArray, InsertManyFromRepeatedSmallArrays)
+{
+    auto source = createArray({42, 10, 20}, {0, 1, 3});
+    auto destination = createArray({7}, {1});
+
+    /// Repeating an empty array only appends the current offset.
+    destination->insertManyFrom(*source, 0, 3);
+    ASSERT_EQ(destination->size(), 4);
+    EXPECT_EQ(destination->getData().size(), 1);
+    EXPECT_EQ(destination->getSize(1), 0);
+    EXPECT_EQ(destination->getSize(2), 0);
+    EXPECT_EQ(destination->getSize(3), 0);
+
+    /// A single-element array uses the nested column's bulk insertion path.
+    destination->insertManyFrom(*source, 1, 3);
+    ASSERT_EQ(destination->size(), 7);
+    ASSERT_EQ(destination->getData().size(), 4);
+    EXPECT_EQ(destination->getSize(4), 1);
+    EXPECT_EQ(destination->getSize(5), 1);
+    EXPECT_EQ(destination->getSize(6), 1);
+    EXPECT_EQ(destination->getData().getUInt(1), 42);
+    EXPECT_EQ(destination->getData().getUInt(2), 42);
+    EXPECT_EQ(destination->getData().getUInt(3), 42);
+
+    /// Arrays with multiple elements keep nested values interleaved.
+    destination->insertManyFrom(*source, 2, 2);
+    ASSERT_EQ(destination->size(), 9);
+    ASSERT_EQ(destination->getData().size(), 8);
+    EXPECT_EQ(destination->getSize(7), 2);
+    EXPECT_EQ(destination->getSize(8), 2);
+    EXPECT_EQ(destination->getData().getUInt(4), 10);
+    EXPECT_EQ(destination->getData().getUInt(5), 20);
+    EXPECT_EQ(destination->getData().getUInt(6), 10);
+    EXPECT_EQ(destination->getData().getUInt(7), 20);
+
+    /// Zero length remains a no-op even when the source position is invalid.
+    destination->insertManyFrom(*source, 100, 0);
+    EXPECT_EQ(destination->size(), 9);
+    EXPECT_EQ(destination->getData().size(), 8);
+}
+
+TEST(ColumnArray, InsertManyFromRejectsRowCountOverflow)
+{
+    auto source = createArray({}, {0});
+    auto destination = createArray({}, {0});
+
+    EXPECT_THROW(destination->insertManyFrom(*source, 0, std::numeric_limits<size_t>::max()), Exception);
+    EXPECT_EQ(destination->size(), 1);
+    EXPECT_EQ(destination->getData().size(), 0);
+}
+
+TEST(ColumnArray, InsertManyFromRejectsRowCountOverflowForSelfAlias)
+{
+    auto column = createArray({42}, {1});
+
+    EXPECT_THROW(column->insertManyFrom(*column, 0, std::numeric_limits<size_t>::max()), Exception);
+    EXPECT_EQ(column->size(), 1);
+    EXPECT_EQ(column->getData().size(), 1);
+    EXPECT_EQ(column->getOffsets().back(), 1);
+    EXPECT_EQ(column->getData().getUInt(0), 42);
+}
+
+TEST(ColumnArray, InsertManyFromSelfString)
+{
+    auto data = ColumnString::create();
+    const String first_value(1 << 20, 'x');
+    const String second_value("y");
+    data->insert(first_value);
+    data->insert(second_value);
+
+    auto offsets = ColumnArray::ColumnOffsets::create();
+    offsets->getData().push_back(data->size());
+    auto column = ColumnArray::create(std::move(data), std::move(offsets));
+
+    column->insertManyFrom(*column, 0, 2);
+
+    ASSERT_EQ(column->size(), 3);
+    ASSERT_EQ(column->getData().size(), 6);
+    for (size_t i = 0; i < column->size(); ++i)
+    {
+        EXPECT_EQ(column->getData().getDataAt(2 * i), std::string_view(first_value));
+        EXPECT_EQ(column->getData().getDataAt(2 * i + 1), std::string_view(second_value));
+    }
+}
+
+TEST(ColumnArray, InsertManyFromPartiallyAliasedNullableString)
+{
+    auto shared_string = ColumnString::create();
+    const String value(1 << 20, 'x');
+    shared_string->insert(value);
+
+    MutableColumnPtr source_nested = shared_string->getPtr();
+    MutableColumnPtr destination_nested = shared_string->getPtr();
+
+    auto source_null_map = ColumnUInt8::create();
+    source_null_map->insertValue(0);
+    auto destination_null_map = ColumnUInt8::create();
+    destination_null_map->insertValue(0);
+
+    auto source_data = ColumnNullable::create(std::move(source_nested), std::move(source_null_map));
+    auto destination_data = ColumnNullable::create(std::move(destination_nested), std::move(destination_null_map));
+
+    auto source_offsets = ColumnArray::ColumnOffsets::create();
+    source_offsets->insertValue(1);
+    auto source = ColumnArray::create(std::move(source_data), std::move(source_offsets));
+
+    auto destination_offsets = ColumnArray::ColumnOffsets::create();
+    destination_offsets->insertValue(1);
+    auto destination = ColumnArray::create(std::move(destination_data), std::move(destination_offsets));
+
+    ASSERT_NE(destination->getDataPtr().get(), source->getDataPtr().get());
+
+    destination->insertManyFrom(*source, 0, 2);
+
+    ASSERT_EQ(destination->size(), 3);
+    const auto & destination_nullable = assert_cast<const ColumnNullable &>(destination->getData());
+    const auto & destination_string = assert_cast<const ColumnString &>(destination_nullable.getNestedColumn());
+    ASSERT_EQ(destination_string.size(), 3);
+    ASSERT_EQ(destination_nullable.getNullMapData().size(), 3);
+    for (size_t i = 0; i < destination->size(); ++i)
+    {
+        EXPECT_EQ(destination_string.getDataAt(i), std::string_view(value));
+        EXPECT_EQ(destination_nullable.getNullMapData()[i], 0);
+    }
+}
+
+TEST(ColumnArray, InsertManyFromNonAliasedString)
+{
+    auto source_data = ColumnString::create();
+    source_data->insert(Field(String("prefix")));
+    source_data->insert(Field(String("x\0y", 3)));
+    source_data->insert(Field(String{}));
+
+    auto source_offsets = ColumnArray::ColumnOffsets::create();
+    source_offsets->insertValue(1);
+    source_offsets->insertValue(2);
+    source_offsets->insertValue(3);
+    auto source = ColumnArray::create(std::move(source_data), std::move(source_offsets));
+
+    auto createDestination = []
+    {
+        auto data = ColumnString::create();
+        data->insert(Field(String("sentinel")));
+
+        auto offsets = ColumnArray::ColumnOffsets::create();
+        offsets->insertValue(1);
+        return ColumnArray::create(std::move(data), std::move(offsets));
+    };
+
+    auto bulk = createDestination();
+    auto scalar = createDestination();
+    ASSERT_NE(bulk->getDataPtr().get(), source->getDataPtr().get());
+
+    bulk->insertManyFrom(*source, 1, 3);
+    bulk->insertManyFrom(*source, 2, 2);
+    for (size_t i = 0; i < 3; ++i)
+        scalar->insertFrom(*source, 1);
+    for (size_t i = 0; i < 2; ++i)
+        scalar->insertFrom(*source, 2);
+
+    ASSERT_EQ(bulk->size(), 6);
+    ASSERT_EQ(bulk->getData().size(), 6);
+    ASSERT_EQ(bulk->getOffsets().back(), 6);
+    const auto & bulk_data = assert_cast<const ColumnString &>(bulk->getData());
+    const auto & scalar_data = assert_cast<const ColumnString &>(scalar->getData());
+    ASSERT_EQ(bulk_data.getChars().size(), 17);
+
+    for (size_t i = 0; i < bulk->size(); ++i)
+    {
+        EXPECT_EQ(bulk->getSize(i), 1);
+        EXPECT_EQ(bulk_data.getDataAt(i), scalar_data.getDataAt(i));
+    }
 }
 
 TEST(ColumnArray, CutPreservesSharedLowCardinalityDictionary)
