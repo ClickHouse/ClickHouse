@@ -420,7 +420,8 @@ BlockIO InterpreterCreateQuery::createDatabase(ASTCreateQuery & create)
     else if (create.uuid != UUIDHelpers::Nil && !DatabaseCatalog::instance().hasUUIDMapping(create.uuid))
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find UUID mapping for {}, it's a bug", create.uuid);
 
-    DatabasePtr database = DatabaseFactory::instance().get(create, metadata_path / "", getContext(), mode, internal);
+    DatabasePtr database = DatabaseFactory::instance().get(
+        create, metadata_path / "", getContext(), mode, internal, is_metadata_replay);
 
     if (create.uuid != UUIDHelpers::Nil)
         create.setDatabase(TABLE_WITH_UUID_NAME_PLACEHOLDER);
@@ -1827,7 +1828,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
 
     if (create.isTemporary() && !create.cluster.empty())
         throw Exception(ErrorCodes::INCORRECT_QUERY,
-            "Temporary objects (tables/views) cannot be created ON CLUSTER."
+            "Temporary objects (tables/views) cannot be created ON CLUSTER. "
             "You should not specify a cluster for a temporary objects.");
 
     String current_database = getContext()->getCurrentDatabase();
