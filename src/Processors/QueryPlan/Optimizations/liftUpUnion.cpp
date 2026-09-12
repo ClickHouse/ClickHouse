@@ -21,6 +21,14 @@ size_t tryLiftUpUnion(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, c
     if (!union_step)
         return 0;
 
+    /// Both rewrites below move the parent step below the union and clone it into every branch
+    /// as new steps. A parent that seals a `SQL SECURITY` view must not descend below the union,
+    /// and a sealed union must not be rebuilt as an unmarked copy — either way the clones would
+    /// not carry the flag and later passes could push invoker-controlled work into the branches.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (parent->isSecurityBarrier() || child->isSecurityBarrier())
+        return 0;
+
     /// Both rewrites below assume the union forwards each branch unchanged. Skip them when
     /// the union normalizes a branch (output differs from some input header), e.g. it drops
     /// a Const that diverged across branches.

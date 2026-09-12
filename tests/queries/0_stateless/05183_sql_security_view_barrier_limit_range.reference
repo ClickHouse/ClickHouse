@@ -1,0 +1,12 @@
+===== the view exposes only the rows of the range =====
+3 4 
+3 4 
+3 4 
+===== an invoker expression never runs on a row outside of the range =====
+not disclosed
+not disclosed
+not disclosed
+===== the invoker's WHERE never merges into the range view's subplan =====
+1/0 2/2 
+1/0 2/2 
+1/0 0/0 

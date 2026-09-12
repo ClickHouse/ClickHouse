@@ -1,0 +1,6 @@
+invoker view: length pushed below the policy filter:	1
+definer view: length pushed below the policy filter:	0
+none view: length pushed below the policy filter:	0
+definer view: notEmpty pushed below the policy filter:	0
+definer view results:	[7]
+invoker view results:	[7]

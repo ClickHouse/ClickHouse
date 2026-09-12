@@ -4,4 +4,6 @@ none:    5001
 invoker: ACCESS_DENIED
 --- parallel replicas ---
 definer pr: 5001
-parallel replicas used: 1
+plain pr:   10000
+parallel replicas used, row-hiding view: 0
+parallel replicas used, plain view:      1

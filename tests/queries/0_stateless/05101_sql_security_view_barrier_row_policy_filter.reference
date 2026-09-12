@@ -1,0 +1,15 @@
+===== the policy filter stays a separate step above a barrier view =====
+policy_view_definer	1
+policy_view_none	1
+policy_view_invoker	0
+policy_view_definer	1
+policy_view_none	1
+policy_view_invoker	0
+===== an outer predicate cannot observe the row the policy hides =====
+0
+0
+0
+0
+===== results through the policy are still correct =====
+visible
+visible

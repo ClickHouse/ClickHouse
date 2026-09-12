@@ -70,6 +70,18 @@ FilterResult getFilterResult(const ColumnWithTypeAndName & column)
     return column.column->getBool(0) ? FilterResult::TRUE : FilterResult::FALSE;
 }
 
+bool subtreeHasSecurityBarrier(const QueryPlan::Node * node)
+{
+    if (!node)
+        return false;
+    if (node->step->isSecurityBarrier())
+        return true;
+    for (const auto * child : node->children)
+        if (subtreeHasSecurityBarrier(child))
+            return true;
+    return false;
+}
+
 bool dagContainsNonReadySet(const ActionsDAG & dag)
 {
     for (const auto & node : dag.getNodes())

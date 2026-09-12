@@ -1,0 +1,23 @@
+===== a definer profile overflow limit of an operator the view does not use keeps it transparent: sho_group_view =====
+same
+same
+same
+===== a definer profile overflow limit of an operator the view does not use keeps it transparent: sho_distinct_view =====
+same
+same
+same
+===== a definer profile overflow limit of an operator the view does not use keeps it transparent: sho_sort_view =====
+same
+same
+same
+===== the same sort limit over a view that does sort fails closed =====
+different
+different
+different
+===== results through the transparent views are correct =====
+other
+visible
+other
+visible
+other
+visible

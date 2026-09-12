@@ -220,9 +220,20 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (parent_node->children.size() != 1)
         return 0;
 
+    /// Fail closed on `SQL SECURITY` barrier steps (see `IQueryPlanStep::isSecurityBarrier`).
+    /// A marked `Limit`/`Sorting` means the whole matched pattern belongs to a
+    /// `SQL SECURITY DEFINER` / `SQL SECURITY NONE` view's subplan; the grafted `Sort + Limit`
+    /// would be new unmarked steps inside the sealed region, which later passes could then
+    /// legally cross.
+    if (limit_step->isSecurityBarrier())
+        return 0;
+
     auto * sort_node = parent_node->children.front();
     auto * sort_step = typeid_cast<SortingStep *>(sort_node->step.get());
     if (!sort_step)
+        return 0;
+
+    if (sort_step->isSecurityBarrier())
         return 0;
 
     /// Only Full sort is meaningful here. PartialSorting/MergingSorted indicate
@@ -252,6 +263,14 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
         if (!expression_step)
             break;
         if (join_node->children.size() != 1)
+            return 0;
+
+        /// A sealed converting expression on top of a `SQL SECURITY DEFINER` / `NONE` view whose
+        /// inner query is a join: peeling through it would graft the invoker's `Sort + Limit`
+        /// below the seal, onto the view's own join input, and the immediate re-optimization of
+        /// that subtree would let the invoker's `ORDER BY ... LIMIT` retune the reading inside
+        /// the view (`read_rows` / progress oracle). Fail closed.
+        if (expression_step->isSecurityBarrier())
             return 0;
 
         const ActionsDAG & dag = expression_step->getExpression();
@@ -285,6 +304,15 @@ size_t tryTopKThroughJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!join_semantics_opt)
         return 0;
     if (join_node->children.size() != 2)
+        return 0;
+
+    /// A join is never row-preserving, so a join belonging to a barrier view's subplan is always
+    /// marked (see `markSecurityBarriers` in `StorageView.cpp`). Grafting onto its input would
+    /// place the invoker's `Sort + Limit` below the view's seal. Note the graft onto the input of
+    /// the invoker's own unmarked join stays allowed even when that input is a sealed view: the
+    /// inserted `Sort` consumes its whole input before emitting the top-n, and the re-run
+    /// optimization passes are individually fenced, so nothing crosses the seal.
+    if (join_node->step->isSecurityBarrier())
         return 0;
 
     const JoinKind join_kind = join_semantics_opt->kind;

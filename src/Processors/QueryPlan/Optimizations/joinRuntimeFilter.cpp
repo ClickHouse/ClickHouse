@@ -277,6 +277,17 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
     if (node.children.size() != 2)
         return false;
 
+    /// Fail closed on a `SQL SECURITY` barrier on either side (see `IQueryPlanStep::isSecurityBarrier`).
+    /// A runtime filter carries the join keys of one side into the read of the other: built from the
+    /// invoker's table and applied inside a `SQL SECURITY DEFINER` / `SQL SECURITY NONE` view, it makes
+    /// how many rows the view reads depend on the invoker's expressions; built from the view and applied
+    /// outside, it carries the keys of rows the view may be hiding out of the seal. It is also a
+    /// wrong-result hazard when the seal keeps one side local while the other side is read by parallel
+    /// replicas: the filter is then built from the coordinated side's local share of the ranges only,
+    /// and the rows whose keys went to the other replicas are dropped from the sealed side.
+    if (subtreeHasSecurityBarrier(node.children[0]) || subtreeHasSecurityBarrier(node.children[1]))
+        return false;
+
     /// If right table is already filled and will be used for lookups directly (e.g. StorageJoin) then runtime filter cannot be constructed
     if (typeid_cast<JoinStepLogicalLookup *>(node.children[1]->step.get()))
         return false;
@@ -654,6 +665,13 @@ void registerLeftSideIndexAnalysisSecondPass(QueryPlan::Node & node, const Query
     ReadFromMergeTree * read_step = nullptr;
     while (child)
     {
+        /// Fail closed on a `SQL SECURITY` barrier (see `IQueryPlanStep::isSecurityBarrier`):
+        /// registering index analysis on a read below the seal of a `SQL SECURITY DEFINER` /
+        /// `SQL SECURITY NONE` view would let build-side keys from outside the view prune the
+        /// view's granules, making `read_rows` / progress depend on rows the view hides. This
+        /// covers both a sealed pass-through step and the view's own marked reading step.
+        if (child->step->isSecurityBarrier())
+            return;
         if ((read_step = typeid_cast<ReadFromMergeTree *>(child->step.get())))
             break;
         const bool passthrough = child->children.size() == 1

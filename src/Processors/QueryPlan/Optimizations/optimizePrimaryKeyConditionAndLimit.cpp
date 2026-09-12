@@ -52,6 +52,13 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
 
     for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
     {
+        /// A step that decides which rows a `SQL SECURITY DEFINER` / `NONE` view exposes. Its own
+        /// condition belongs to the source — it is the definer's — but nothing above it may reach
+        /// the source: index analysis over an invoker-supplied predicate skips parts and granules
+        /// by the values of the rows the view hides, and the `read_rows` of the query then tells
+        /// the invoker whether such a row exists. Consume this step and stop walking up.
+        const bool security_barrier = iter->node->step->isSecurityBarrier();
+
         if (auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get()))
         {
             source_step_with_filter->addFilter(compose(filter_step->getExpression().clone()), filter_step->getFilterColumnName());
@@ -78,7 +85,6 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
             if (expression_step->getExpression().hasArrayJoin())
                 break;
             expression_dags.push_back(&expression_step->getExpression());
-            continue;
         }
         else if (auto * array_join_step = typeid_cast<ArrayJoinStep *>(iter->node->step.get()))
         {
@@ -110,6 +116,9 @@ void optimizePrimaryKeyConditionAndLimit(const Stack & stack)
         {
             break;
         }
+
+        if (security_barrier)
+            break;
     }
 
     source_step_with_filter->applyFilters();

@@ -1149,6 +1149,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
     if (filter->getExpression().hasStatefulFunctions())
         return 0;
 
+    /// The child selects which rows a `SQL SECURITY` view exposes, so the filter above it — which
+    /// the invoker of the view wrote — must not be evaluated on the rows it discards.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (child->isSecurityBarrier())
+        return 0;
+
     const auto * merging_aggregated = typeid_cast<MergingAggregatedStep *>(child.get());
     const auto * aggregating = typeid_cast<AggregatingStep *>(child.get());
 

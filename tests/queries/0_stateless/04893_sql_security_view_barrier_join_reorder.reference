@@ -1,0 +1,3 @@
+invoker view is flattened into the join graph:	1
+definer view stays sealed:	1
+results:	4	4

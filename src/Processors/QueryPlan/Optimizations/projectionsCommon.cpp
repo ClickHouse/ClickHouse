@@ -174,6 +174,15 @@ static const ActionsDAG::Node * findInOutputs(ActionsDAG & dag, const std::strin
 bool QueryDAG::buildImpl(QueryPlan::Node & node, ActionsDAG::NodeRawConstPtrs & filter_nodes)
 {
     IQueryPlanStep * step = node.step.get();
+
+    /// Refuse to build a DAG across the filtering of a `SQL SECURITY DEFINER` / `NONE` view: it would
+    /// mix the invoker's predicates with the view's own filtering, and projection candidate analysis
+    /// and part/mark pruning based on it would depend on the rows the view hides, observable through
+    /// `read_rows` and timing. Failing here makes the projection optimizations decline the read
+    /// entirely. See IQueryPlanStep::isSecurityBarrier.
+    if (step->isSecurityBarrier())
+        return false;
+
     if (auto * reading = typeid_cast<ReadFromMergeTree *>(step))
     {
         if (const auto & row_level_filter = reading->getRowLevelFilter())

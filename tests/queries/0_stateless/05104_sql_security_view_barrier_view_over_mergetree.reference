@@ -1,0 +1,14 @@
+--- vom_definer_view ---
+remote reads in the plan: 0
+leaked: 0
+visible_owner	visible_0
+visible_owner	visible_1
+visible_owner	visible_2
+--- vom_none_view ---
+remote reads in the plan: 0
+leaked: 0
+visible_owner	visible_0
+visible_owner	visible_1
+visible_owner	visible_2
+--- control: vom_invoker_view ---
+remote reads in the plan: 1

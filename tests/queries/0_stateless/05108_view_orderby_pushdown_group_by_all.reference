@@ -1,0 +1,8 @@
+plain view keeps pushdown:	1
+GROUP BY ALL: no per-shard Top-K:	0
+explicit GROUP BY: no per-shard Top-K:	0
+GROUP BY ALL WITH TOTALS: no per-shard Top-K:	0
+GROUP BY ALL counts stay global:	[20,20,20]
+plain view sorts per shard:	1
+LIMIT BY ALL sorts only once:	1
+explicit LIMIT BY sorts only once:	1

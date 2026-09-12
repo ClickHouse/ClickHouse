@@ -1,0 +1,16 @@
+--- rf_none_view ---
+runtime filter applied: no
+v0	visible_0
+v1	visible_1
+v2	visible_2
+v3	
+v4	
+v5	
+--- rf_invoker_view ---
+runtime filter applied: yes
+v0	visible_0
+v1	visible_1
+v2	visible_2
+v3	
+v4	
+v5	

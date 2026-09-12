@@ -1,4 +1,5 @@
 #include <Access/DefinerDependencies.h>
+#include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InterpreterSelectQuery.h>
@@ -8,16 +9,21 @@
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
+#include <Functions/UserDefined/UserDefinedSQLFunctionFactory.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCreateSQLFunctionQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSubquery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 
 #include <Storages/AlterCommands.h>
+#include <Storages/StorageAlias.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageFactory.h>
@@ -25,13 +31,12 @@
 
 #include <Common/CurrentThread.h>
 
-#include <AggregateFunctions/AggregateFunctionFactory.h>
-
 #include <Parsers/ASTAsterisk.h>
 #include <Parsers/ASTQualifiedAsterisk.h>
 #include <Parsers/ASTWindowDefinition.h>
 #include <Common/typeid_cast.h>
 
+#include <Core/ServerSettings.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
 
@@ -39,6 +44,8 @@
 #include <Processors/Transforms/MaterializingTransform.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/SortingStep.h>
+#include <Processors/QueryPlan/SourceStepWithFilter.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 
@@ -53,21 +60,50 @@
 #include <Analyzer/UnionNode.h>
 #include <Analyzer/WindowFunctionsUtils.h>
 #include <Planner/findQueryForParallelReplicas.h>
+#include <Poco/String.h>
 
 namespace DB
 {
 namespace Setting
 {
+    extern const SettingsString additional_result_filter;
+    extern const SettingsMap additional_table_filters;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsBool extremes;
     extern const SettingsSetOperationMode intersect_default_mode;
+    extern const SettingsDouble limit;
     extern const SettingsUInt64 max_result_rows;
     extern const SettingsUInt64 max_result_bytes;
+    extern const SettingsDouble offset;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsBool parallel_replicas_plan_based;
     extern const SettingsBool enable_positional_arguments;
+    extern const SettingsBool final;
+    extern const SettingsUInt64 max_rows_to_read;
+    extern const SettingsUInt64 max_bytes_to_read;
+    extern const SettingsOverflowMode read_overflow_mode;
+    extern const SettingsUInt64 max_rows_to_read_leaf;
+    extern const SettingsUInt64 max_bytes_to_read_leaf;
+    extern const SettingsOverflowMode read_overflow_mode_leaf;
+    extern const SettingsSeconds max_execution_time;
+    extern const SettingsOverflowMode timeout_overflow_mode;
+    extern const SettingsSeconds max_execution_time_leaf;
+    extern const SettingsOverflowMode timeout_overflow_mode_leaf;
+    extern const SettingsUInt64 max_rows_to_group_by;
+    extern const SettingsOverflowModeGroupBy group_by_overflow_mode;
+    extern const SettingsUInt64 max_rows_to_sort;
+    extern const SettingsUInt64 max_bytes_to_sort;
+    extern const SettingsOverflowMode sort_overflow_mode;
+    extern const SettingsUInt64 max_rows_in_distinct;
+    extern const SettingsUInt64 max_bytes_in_distinct;
+    extern const SettingsOverflowMode distinct_overflow_mode;
+}
+
+namespace ServerSetting
+{
+    extern const ServerSettingsBool sql_security_views_are_optimization_barriers;
 }
 
 namespace ErrorCodes
@@ -80,6 +116,121 @@ namespace ErrorCodes
 
 namespace
 {
+
+/// A step is row-preserving when it cannot drop rows, so an expression evaluated below it sees
+/// exactly the rows that reach the step above it. Only such steps may separate an outer predicate
+/// from the view's data without weakening what the view filters out.
+bool isRowPreservingStep(const IQueryPlanStep & step)
+{
+    if (typeid_cast<const ExpressionStep *>(&step))
+        return true;
+
+    /// Sorting keeps every row unless it also truncates to a top-N.
+    if (const auto * sorting = typeid_cast<const SortingStep *>(&step))
+        return sorting->getLimit() == 0;
+
+    /// Reading the source: PREWHERE written in the view drops rows, and an outer predicate must
+    /// not join that same PREWHERE chain. A row policy of the definer needs no barrier — the
+    /// reading step always applies it before PREWHERE and before any pushed-down filter.
+    ///
+    /// `typeid_cast` compares types exactly, so matching these two base classes needs
+    /// `dynamic_cast` — every reading step is a subclass of them, never one of them.
+    if (const auto * source_with_filter = dynamic_cast<const SourceStepWithFilter *>(&step))
+        return source_with_filter->getPrewhereInfo() == nullptr;
+
+    if (dynamic_cast<const ISourceStep *>(&step))
+        return true;
+
+    return false;
+}
+
+/// Mark every step of a view's subplan that decides which rows the view exposes, so that the
+/// optimizer will not evaluate anything from the outer query below it. See
+/// `IQueryPlanStep::isSecurityBarrier`. Returns whether the view can drop rows at all.
+///
+/// Nothing is marked when it cannot, which keeps a plain projection view exactly as optimizable
+/// as it is today.
+bool markSecurityBarriers(QueryPlan::Node * node)
+{
+    if (!node || !node->step)
+        return false;
+
+    bool marked = false;
+    if (!isRowPreservingStep(*node->step))
+    {
+        node->step->setSecurityBarrier();
+        marked = true;
+    }
+
+    for (auto * child : node->children)
+        marked |= markSecurityBarriers(child);
+
+    return marked;
+}
+
+/// The row-hiding carriers that live in expressions rather than in a clause of the `SELECT`:
+/// an aggregation without `GROUP BY` collapses all rows into one, and the `arrayJoin` function
+/// (with its case-insensitive alias `unnest`) is the expression-level twin of the `ARRAY JOIN`
+/// clause - it drops the rows whose array is empty and multiplies the rest, and it never shows
+/// up in `arrayJoinExpressionList`. For the purpose of `StorageView::canHideRows` both hide rows
+/// just like a filter does.
+///
+/// A SQL user-defined function may wrap either carrier: `CREATE FUNCTION f AS (a) -> arrayJoin(a)`.
+/// Both callers of `canHideRows` classify the stored view AST before SQL UDFs are expanded
+/// (`UserDefinedSQLFunctionVisitor` in `TreeRewriter`, `resolveFunction` on the analyzer path),
+/// so the bodies are inspected here, recursively, and any chain that cannot be followed - a
+/// recursive definition, an implausibly deep nesting, a body that is not a SQL lambda - fails
+/// closed. Subqueries have their own scope: a carrier inside one does not change the rows of the
+/// enclosing query, and `canHideRows` descends into `FROM` subqueries separately.
+bool hasRowHidingFunctionOutsideSubqueries(const IAST & ast, std::unordered_set<String> & udfs_in_progress, size_t depth)
+{
+    if (const auto * function = ast.as<ASTFunction>())
+    {
+        if (!function->isWindowFunction() && AggregateUtils::isAggregateFunction(*function))
+            return true;
+
+        const auto name = Poco::toLower(function->name);
+        if (name == "arrayjoin" || name == "unnest")
+            return true;
+
+        if (auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(function->name))
+        {
+            if (depth >= 16 || udfs_in_progress.contains(function->name))
+                return true;
+
+            const auto * create_function_query = user_defined_function->as<ASTCreateSQLFunctionQuery>();
+            if (!create_function_query || !create_function_query->function_core
+                || create_function_query->function_core->children.empty())
+                return true;
+
+            /// `function_core` is `lambda(tuple(args...), body)`; the body is the second element.
+            const auto & lambda_arguments = create_function_query->function_core->children.front()->children;
+            if (lambda_arguments.size() != 2 || !lambda_arguments[1])
+                return true;
+
+            udfs_in_progress.insert(function->name);
+            bool body_hides_rows = hasRowHidingFunctionOutsideSubqueries(*lambda_arguments[1], udfs_in_progress, depth + 1);
+            udfs_in_progress.erase(function->name);
+            if (body_hides_rows)
+                return true;
+        }
+    }
+
+    for (const auto & child : ast.children)
+    {
+        if (child->as<ASTSubquery>() || child->as<ASTSelectQuery>())
+            continue;
+        if (hasRowHidingFunctionOutsideSubqueries(*child, udfs_in_progress, depth))
+            return true;
+    }
+    return false;
+}
+
+bool hasRowHidingFunctionOutsideSubqueries(const IAST & ast)
+{
+    std::unordered_set<String> udfs_in_progress;
+    return hasRowHidingFunctionOutsideSubqueries(ast, udfs_in_progress, 0);
+}
 
 bool isNullableOrLcNullable(DataTypePtr type)
 {
@@ -331,7 +482,7 @@ StoragePtr tryGetTrivialViewUnderlyingStorage(const ASTPtr & inner_query, Contex
   * resolves positional arguments inside the view even on remote/secondary nodes
   * (views are expanded on remote nodes, unlike the outer query).
   */
-ContextPtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
+ContextMutablePtr getViewContext(ContextPtr context, const StorageSnapshotPtr & storage_snapshot, const StorageView * view)
 {
     auto view_context = storage_snapshot->metadata->getSQLSecurityOverriddenContext(context);
     Settings view_settings = view_context->getSettingsCopy();
@@ -419,6 +570,41 @@ StoragePtr StorageView::getUnderlyingMergeTreeStorageForParallelReplicas(const C
 
     auto metadata_snapshot = getInMemoryMetadataPtr(context, false);
     auto inner_query_ast = metadata_snapshot->getSelectQuery().inner_query;
+
+    /// Query-based parallel replicas over a view (`parallel_replicas_allow_view_over_mergetree`)
+    /// do not read the view: the callers of this function take the storage it returns and read
+    /// that storage with parallel replicas, under the *outer* query's context and identity. The
+    /// view's filtering - its own row policies, the definer's row policies on the inner table,
+    /// the definer profile's filters - is not part of that read, and the announcement and the
+    /// per-replica reads see every row of the inner table. For a security barrier view whose
+    /// filtering must be trusted this is the same disclosure the rest of the barrier closes, so
+    /// fail closed here as well: the view is then read through `readImpl`, which builds the
+    /// filtering subplan and seals it.
+    ///
+    /// A view that provably hides nothing keeps the optimization - there is nothing below it that
+    /// the invoker could not read directly.
+    if (isSecurityBarrier(*metadata_snapshot, context))
+    {
+        auto view_id = getStorageID();
+        auto view_row_policy_filter = context->getRowPolicyFilter(
+            view_id.getDatabaseName(), view_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        const bool has_row_policy = view_row_policy_filter && !view_row_policy_filter->isAlwaysTrue();
+        if (has_row_policy || canHideRows(inner_query_ast, metadata_snapshot->getSQLSecurityOverriddenContext(context)))
+            return nullptr;
+
+        /// The shortcut only decides that the query *can* use parallel replicas; the query the
+        /// replicas receive still reads the view. A replica plans it on its own, and when an
+        /// `additional_table_filters` entry of the invoker applies to the view, the barrier keeps
+        /// the view a table expression instead of inlining it, so the replica reads it through
+        /// `readImpl` - which switches parallel replicas off for the inner query, because a
+        /// shipped fragment would run under the connection's identity. Every replica then reads
+        /// the whole view with no coordination and the result is the union of all of them, so the
+        /// rows are returned once per replica. The alias the outer query gives the view is not
+        /// known here, so fail closed on any additional table filter rather than try to match the
+        /// entry to this view.
+        if (!context->getSettingsRef()[Setting::additional_table_filters].value.empty())
+            return nullptr;
+    }
 
     QueryTreeNodePtr inner_query_tree;
     try
@@ -537,7 +723,39 @@ StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & s
     {
         return nullptr;
     }
+
+    /// The pushdown replaces the view with its inner query and reads the `Distributed` table
+    /// directly, so `StorageView::readImpl` never runs and the plan carries no security-barrier
+    /// step: the outer predicate is merged with the view's own `WHERE` and evaluated on the
+    /// shards below it, which is exactly what the barrier forbids. Decline the rewrite for a
+    /// barrier view that can hide rows, the same fail-closed rule the other pre-plan decisions
+    /// use. (`DEFINER` is rejected above regardless of the setting.)
+    if (isSecurityBarrier(*snapshot->metadata, context))
+    {
+        auto storage_id = getStorageID();
+        auto row_policy_filter = context->getRowPolicyFilter(
+            storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+        const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+        if (has_row_policy || canHideRows(inner_query, getViewContext(context, snapshot, this), /*remote_source_is_read_identically=*/ true))
+            return nullptr;
+    }
+
     return underlying;
+}
+
+bool StorageView::hasAdditionalTableFilter(const StorageID & storage_id, const String & alias, const ContextPtr & context)
+{
+    const auto & additional_filters = context->getSettingsRef()[Setting::additional_table_filters].value;
+    for (const auto & additional_filter : additional_filters)
+    {
+        const auto & table = additional_filter.safeGet<Tuple>().at(0).safeGet<String>();
+        if (table == alias
+            || (table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
+            || table == storage_id.getFullNameNotQuoted())
+            return true;
+    }
+
+    return false;
 }
 
 void StorageView::readImpl(
@@ -561,17 +779,51 @@ void StorageView::readImpl(
 
     auto options = SelectQueryOptions(QueryProcessingStage::Complete, 0, false, query_info.settings_limit_offset_done);
 
+    const bool security_barrier = isSecurityBarrier(*storage_snapshot->metadata, context);
+
+    /// The outer filter is handed to the inner query so that a view over `Distributed` can still
+    /// skip unused shards. For a security barrier view it must stay outside: the analysis it feeds
+    /// reaches the inner tables' index analysis, which then skips parts and granules by the values
+    /// of the rows the view hides, and the `read_rows` of the query tells the invoker about them.
+    /// A view that provably hides no rows keeps it — there is nothing below it to observe.
+    ///
+    /// The decision looks at the view's definition and not at `current_inner_query`: with
+    /// `enable_analyzer = 0` the latter is the rewritten query, into which the outer predicate
+    /// has already been pushed, and the invoker's own predicate is not something to protect.
+    auto storage_id = getStorageID();
+    auto row_policy_filter = context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    const bool has_row_policy = row_policy_filter && !row_policy_filter->isAlwaysTrue();
+    const bool has_additional_filter = query_info.additional_filter_ast != nullptr;
+    auto view_context = getViewContext(context, storage_snapshot, this);
+    const bool hides_rows = security_barrier
+        && (has_row_policy || has_additional_filter || canHideRows(storage_snapshot->metadata->getSelectQuery().inner_query, view_context));
+    const ActionsDAG * post_filter = hides_rows ? nullptr : query_info.filter_actions_dag.get();
+
+    /// Task-based parallel replicas ship the inner query as SQL text to the other replicas, where
+    /// it is re-planned under the connection's own identity: the replica applies the row policies
+    /// of its connecting user and of the *initial* user (the invoker), but the definer is neither
+    /// of those, so the definer's row policies on the inner tables and the definer profile's
+    /// `additional_table_filters` are silently dropped and the rows they hide come back through
+    /// the union into the invoker's plan, above the barrier. Fail closed: a view whose filtering
+    /// must be trusted reads its inner query without parallel replicas.
+    ///
+    /// The setting is changed on the view context itself instead of on a copy of it: for a
+    /// `DEFINER`/`NONE` view that context is its own query context (`makeQueryContext`), and a copy
+    /// keeps a weak pointer to the original, so replacing the original with the copy destroys the
+    /// query context the inner query resolves against.
+    if (hides_rows && view_context->getSettingsRef()[Setting::allow_experimental_parallel_reading_from_replicas] != 0)
+        view_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field{0});
+
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
-        auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectQueryAnalyzer interpreter(
-            current_inner_query, view_context, options, column_names, query_info.filter_actions_dag.get());
+            current_inner_query, view_context, options, column_names, post_filter);
         interpreter.addStorageLimits(*query_info.storage_limits);
         query_plan = std::move(interpreter).extractQueryPlan();
     }
     else
     {
-        auto view_context = getViewContext(context, storage_snapshot, this);
         InterpreterSelectWithUnionQuery interpreter(current_inner_query, view_context, options, column_names);
         interpreter.addStorageLimits(*query_info.storage_limits);
         interpreter.buildQueryPlan(query_plan);
@@ -609,6 +861,35 @@ void StorageView::readImpl(
     auto converting = std::make_unique<ExpressionStep>(query_plan.getCurrentHeader(), std::move(convert_actions_dag));
     converting->setStepDescription("Convert VIEW subquery result to VIEW table structure");
     query_plan.addStep(std::move(converting));
+
+    /// A view with `SQL SECURITY DEFINER` or `SQL SECURITY NONE` runs its inner query as somebody
+    /// else, so whatever the inner query filters out is data the invoker has no right to observe.
+    /// The plan built above is about to be embedded into the invoker's plan, where merging and
+    /// pushdown would otherwise let an invoker-supplied expression run on the filtered-out rows.
+    /// Mark the steps that do the filtering so the optimizer keeps the outer query above them.
+    ///
+    /// `INVOKER` views need no barrier: their inner query runs with the invoker's own rights, so
+    /// there is nothing the invoker could learn that they are not already entitled to. Neither
+    /// does a view that provably hides no rows — and with `enable_analyzer = 0` its subplan may
+    /// contain the outer predicate already pushed into it, which must not be mistaken for the
+    /// view's own filtering.
+    if (hides_rows)
+    {
+        auto * root = query_plan.getRootNode();
+        /// Marking the individual filtering steps lets an outer predicate still sink through the
+        /// view's projections and sit right on top of them. Marking the converting step on top as
+        /// well seals the view: even if a later optimization rebuilds one of the inner steps and
+        /// drops its flag, nothing from outside can enter the subplan.
+        markSecurityBarriers(root);
+        /// The converting step is sealed unconditionally, not only when the local walk marked a
+        /// step. `hides_rows` already means `canHideRows` could not prove the view row-preserving,
+        /// which is the case for a wrapper source — `Merge`, a remote table, a table function, or a
+        /// nested view — whose row-dropping happens below the source interface or inside its child
+        /// plans, where `markSecurityBarriers` (it walks only `node->children`) sees nothing to
+        /// mark. Without this seal such a wrapper would execute as an ordinary subplan and later
+        /// passes could move invoker-controlled work into it, undoing the fail-closed decision.
+        root->step->setSecurityBarrier();
+    }
 }
 
 void StorageView::drop()
@@ -766,6 +1047,293 @@ Used for implementing views (for more information, see the `CREATE VIEW query`).
 )DOCS_MD",
         .syntax = "CREATE VIEW name AS SELECT ...",
         .related = {"MaterializedView"}});
+}
+
+bool StorageView::isSecurityBarrier(const StorageInMemoryMetadata & metadata, const ContextPtr & context)
+{
+    /// `INVOKER` needs no barrier: the inner query runs with the invoker's own rights, so there is
+    /// nothing they could learn that they are not already entitled to.
+    if (metadata.sql_security_type != SQLSecurityType::DEFINER && metadata.sql_security_type != SQLSecurityType::NONE)
+        return false;
+
+    return context->getServerSettings()[ServerSetting::sql_security_views_are_optimization_barriers];
+}
+
+/// A `SETTINGS` clause of the view's query is applied to the context the inner query runs in, so
+/// it can hide rows without any clause of the `SELECT` doing so: `limit` and `offset` truncate the
+/// result, `final` rewrites every table read as `FINAL`, `additional_table_filters` and
+/// `additional_result_filter` add predicates, `max_rows_to_read` under a `read_overflow_mode = 'break'`
+/// profile truncates the scan, `prefer_column_name_to_alias` or `enable_analyzer` change which
+/// column an identifier binds to, and so on. Rather than enumerate everything that can go wrong,
+/// only settings that tune execution and provably cannot change the rows or the names the query
+/// produces are accepted; any other change - including one that resets a setting to its default,
+/// which may undo a limit of the definer's profile - fails closed. Query parameters bind values
+/// into the query text, so a clause carrying them is not a pure tuning clause either.
+bool StorageView::settingsClauseCanHideRows(const ASTPtr & settings_ast)
+{
+    if (!settings_ast)
+        return false;
+
+    static const std::unordered_set<std::string_view> execution_only_settings
+    {
+        "max_threads",
+        "max_block_size",
+        "preferred_block_size_bytes",
+        "preferred_max_column_in_block_size_bytes",
+        "max_memory_usage",
+        "max_memory_usage_for_user",
+        "max_bytes_before_external_group_by",
+        "max_bytes_before_external_sort",
+        "max_bytes_ratio_before_external_group_by",
+        "max_bytes_ratio_before_external_sort",
+        "max_streams_to_max_threads_ratio",
+        "max_streams_for_merge_tree_reading",
+        "merge_tree_min_rows_for_concurrent_read",
+        "merge_tree_min_bytes_for_concurrent_read",
+        "merge_tree_max_rows_to_use_cache",
+        "merge_tree_max_bytes_to_use_cache",
+        "min_bytes_to_use_direct_io",
+        "min_bytes_to_use_mmap_io",
+        "max_read_buffer_size",
+        "use_uncompressed_cache",
+        "local_filesystem_read_method",
+        "remote_filesystem_read_method",
+        "enable_filesystem_cache",
+        "read_from_filesystem_cache_if_exists_otherwise_bypass_cache",
+        "optimize_move_to_prewhere",
+        "optimize_move_to_prewhere_if_final",
+        "optimize_read_in_order",
+        "optimize_aggregation_in_order",
+        "use_skip_indexes",
+        "priority",
+        "os_thread_priority",
+        "log_comment",
+        "log_queries",
+        "log_query_threads",
+        "log_processors_profiles",
+    };
+
+    const auto * set_query = settings_ast->as<ASTSetQuery>();
+    if (!set_query || !set_query->query_parameters.empty())
+        return true;
+
+    for (const auto & change : set_query->changes)
+        if (!execution_only_settings.contains(change.name))
+            return true;
+
+    for (const auto & name : set_query->default_settings)
+        if (!execution_only_settings.contains(name))
+            return true;
+
+    return false;
+}
+
+bool StorageView::effectiveContextCanHideRows(const ContextPtr & context)
+{
+    /// The view's inner query runs with its effective security context, so a setting inherited
+    /// through a `SQL SECURITY DEFINER` view's definer profile restricts the rows visible through
+    /// the view just like a clause of its AST. The AST side (`settingsClauseCanHideRows`) is an
+    /// allowlist of execution-only settings; here the whole settings set is always populated, so
+    /// the row-hiding settings that allowlist rejects are enumerated instead.
+    const auto & settings = context->getSettingsRef();
+
+    /// A profile-level limit or offset truncates the view's result.
+    if (settings[Setting::limit] != 0 || settings[Setting::offset] != 0)
+        return true;
+
+    /// `additional_result_filter` grows a filter step on top of the inner query's result
+    /// (the inner interpreter runs at subquery depth 0), and `additional_table_filters`
+    /// filter the tables it reads. Both hide rows just like clauses of the view's AST.
+    /// Fail closed without matching the filtered table names against the view's sources.
+    if (!settings[Setting::additional_result_filter].value.empty() || !settings[Setting::additional_table_filters].value.empty())
+        return true;
+
+    /// `final` makes every source read of the inner query a `FINAL` read, which hides the
+    /// overwritten and deleted versions of a row exactly like a `FINAL` clause in the AST.
+    if (settings[Setting::final])
+        return true;
+
+    /// A quota-like limit with a non-throwing overflow mode stops the query early and returns the
+    /// rows read so far, so the view exposes an arbitrary prefix of its rows instead of all of
+    /// them. Every such pair hides rows; with the default `throw` mode none of them do.
+    /// `max_result_rows` / `max_result_bytes` are deliberately absent: `getViewSubqueryContext`
+    /// resets them for the view's own subquery, so they never truncate the inner query's result.
+    const bool read_breaks = settings[Setting::read_overflow_mode] == OverflowMode::BREAK
+        && (settings[Setting::max_rows_to_read] != 0 || settings[Setting::max_bytes_to_read] != 0);
+    const bool read_leaf_breaks = settings[Setting::read_overflow_mode_leaf] == OverflowMode::BREAK
+        && (settings[Setting::max_rows_to_read_leaf] != 0 || settings[Setting::max_bytes_to_read_leaf] != 0);
+    const bool timeout_breaks = settings[Setting::timeout_overflow_mode] == OverflowMode::BREAK
+        && settings[Setting::max_execution_time].totalMilliseconds() != 0;
+    const bool timeout_leaf_breaks = settings[Setting::timeout_overflow_mode_leaf] == OverflowMode::BREAK
+        && settings[Setting::max_execution_time_leaf].totalMilliseconds() != 0;
+    /// The `GROUP BY` / sort / `DISTINCT` overflow settings are deliberately absent: they cannot
+    /// drop a row of a query that never aggregates, sorts or deduplicates, so they are checked by
+    /// `shapeDependentOverflowCanHideRows` once the shape of the query is known. Checking them
+    /// here would make every `SQL SECURITY DEFINER` view whose definer profile happens to carry
+    /// `group_by_overflow_mode` or `distinct_overflow_mode` a barrier for no semantic reason.
+    return read_breaks || read_leaf_breaks || timeout_breaks || timeout_leaf_breaks;
+}
+
+bool StorageView::shapeDependentOverflowCanHideRows(const ContextPtr & context, bool has_sort, bool has_grouping, bool has_distinct)
+{
+    const auto & settings = context->getSettingsRef();
+
+    /// Each of these limits stops one operator early and returns what it has produced so far, so
+    /// the query exposes an arbitrary subset of its rows - but only when the query contains that
+    /// operator at all. With the default `throw` mode none of them hide anything either.
+    const bool group_by_breaks = has_grouping
+        && settings[Setting::group_by_overflow_mode] != OverflowMode::THROW
+        && settings[Setting::max_rows_to_group_by] != 0;
+    const bool sort_breaks = has_sort
+        && settings[Setting::sort_overflow_mode] == OverflowMode::BREAK
+        && (settings[Setting::max_rows_to_sort] != 0 || settings[Setting::max_bytes_to_sort] != 0);
+    const bool distinct_breaks = has_distinct
+        && settings[Setting::distinct_overflow_mode] == OverflowMode::BREAK
+        && (settings[Setting::max_rows_in_distinct] != 0 || settings[Setting::max_bytes_in_distinct] != 0);
+
+    return group_by_breaks || sort_breaks || distinct_breaks;
+}
+
+bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & context, bool remote_source_is_read_identically)
+{
+    if (!inner_query)
+        return true;
+
+    /// The view is executed with its effective security context, which can hide rows on its own.
+    /// Callers pass the view context, so this also covers `SQL SECURITY DEFINER` profiles.
+    if (effectiveContextCanHideRows(context))
+        return true;
+
+    const auto * union_query = inner_query->as<ASTSelectWithUnionQuery>();
+    if (!union_query || !union_query->list_of_selects)
+        return true;
+
+    /// `UNION DISTINCT`, `INTERSECT` and `EXCEPT` drop rows. `UNION ALL` does not, but a view
+    /// made of several selects is not worth proving.
+    if (union_query->list_of_selects->children.size() != 1)
+        return true;
+
+    const auto * select = union_query->list_of_selects->children.front()->as<ASTSelectQuery>();
+    if (!select)
+        return true;
+
+    /// `GROUP BY ALL` uses a flag instead of a non-empty `groupBy` expression list, and a query
+    /// setting may introduce a limit or otherwise change which rows the view exposes. Both must
+    /// fail closed just like their explicit counterparts - but a clause of pure execution tuning
+    /// (`SETTINGS max_threads = 1`) must not turn a projection-only view into a barrier.
+    /// `LIMIT n AFTER expr UNTIL expr` selects a range of the sorted result, so it hides every row
+    /// outside that range exactly like `LIMIT` / `OFFSET` do.
+    if (select->distinct
+        || select->where() || select->prewhere() || select->having() || select->qualify()
+        || select->groupBy() || select->group_by_all
+        || select->limitLength() || select->limitOffset() || select->limitByLength() || select->limitByOffset()
+        || select->limitAfter() || select->limitUntil()
+        || settingsClauseCanHideRows(select->settings()))
+        return true;
+
+    /// `ARRAY JOIN` drops rows with an empty array (and `LEFT ARRAY JOIN` is not worth
+    /// distinguishing), an aggregation without `GROUP BY` collapses all rows into one, and the
+    /// `arrayJoin` function does what the clause does without appearing in the clause list -
+    /// possibly behind a SQL user-defined function that is expanded only later.
+    if (select->arrayJoinExpressionList().first || hasRowHidingFunctionOutsideSubqueries(*select))
+        return true;
+
+    /// Now that the shape of the query is known, the overflow-mode settings of the effective
+    /// context that depend on it can be checked as well. Everything that aggregates or
+    /// deduplicates has already failed closed above, so in practice only an inner `ORDER BY`
+    /// combined with a definer profile `sort_overflow_mode = 'break'` is left; the flags are
+    /// spelled out anyway so that the proof does not silently weaken if a check above is relaxed.
+    if (shapeDependentOverflowCanHideRows(
+            context,
+            /*has_sort=*/ select->orderBy() != nullptr || select->order_by_all,
+            /*has_grouping=*/ select->groupBy() != nullptr || select->group_by_all || select->having() != nullptr,
+            /*has_distinct=*/ select->distinct))
+        return true;
+
+    const auto & tables = select->tables();
+    if (!tables || tables->children.empty())
+        return false;   /// A `SELECT` without `FROM` reads nothing it could hide.
+
+    /// Any `JOIN` changes which rows are observable below the view.
+    if (tables->children.size() != 1)
+        return true;
+
+    const auto * element = tables->children.front()->as<ASTTablesInSelectQueryElement>();
+    if (!element || element->table_join || element->array_join || !element->table_expression)
+        return true;
+
+    const auto * table_expression = element->table_expression->as<ASTTableExpression>();
+    if (!table_expression)
+        return true;
+
+    /// `SAMPLE` drops rows, and `FINAL` hides the overwritten versions of a row.
+    if (table_expression->sample_size || table_expression->final)
+        return true;
+
+    if (table_expression->subquery)
+    {
+        const auto & subquery_children = table_expression->subquery->children;
+        return subquery_children.empty() || canHideRows(subquery_children.front(), context);
+    }
+
+    /// A table function may wrap another view (`view`, `viewIfPermitted`, `merge`, ...).
+    if (!table_expression->database_and_table_name)
+        return true;
+
+    const auto * identifier = table_expression->database_and_table_name->as<ASTTableIdentifier>();
+    if (!identifier)
+        return true;
+
+    /// `CREATE VIEW` qualifies the table names of the inner query, so an unqualified name is an
+    /// oddity not worth resolving against the right current database here.
+    auto table_id = identifier->getTableId();
+    if (table_id.database_name.empty())
+        return true;
+
+    auto table = DatabaseCatalog::instance().tryGetTable(table_id, context);
+    if (!table)
+        return true;
+
+    /// A proxy (a lazily loaded table of a database with `lazy_load_tables`, or a table created
+    /// from a table function) and an `Alias` table forward `read` to another storage while
+    /// reporting their own engine, so classify the storage that actually serves the read.
+    /// Fail closed on a chain that cannot be resolved.
+    for (size_t depth = 0;; ++depth)
+    {
+        if (depth >= 16)
+            return true;
+
+        if (const auto * proxy = dynamic_cast<const StorageProxy *>(table.get()))
+            table = proxy->getNested();
+        else if (const auto * alias = typeid_cast<const StorageAlias *>(table.get()))
+            table = alias->tryGetTargetTable();
+        else
+            break;
+
+        if (!table)
+            return true;
+    }
+
+    /// A view can hide rows of its own, and these engines read other tables, which may be views.
+    const auto & engine = table->getName();
+    if (table->isView() || (table->isRemote() && !remote_source_is_read_identically) || engine == "Merge" || engine == "Buffer")
+        return true;
+
+    /// `MaterializedPostgreSQL` rewrites every read of its data with `FINAL` and a `_sign = 1`
+    /// filter, so it hides the overwritten and deleted versions of a row just like a filtering
+    /// view does, and outer predicates must stay above it.
+    if (table->needRewriteQueryWithFinal({}))
+        return true;
+
+    /// Row policies are evaluated as part of the source read. They are not represented in the
+    /// stored view AST, so inspect them under the effective context that runs the inner query.
+    const auto & storage_id = table->getStorageID();
+    auto row_policy_filter = context->getRowPolicyFilter(
+        storage_id.getDatabaseName(), storage_id.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+    if (row_policy_filter && !row_policy_filter->isAlwaysTrue())
+        return true;
+
+    return false;
 }
 
 ContextPtr StorageView::getViewSubqueryContext(ContextPtr context, const StorageSnapshotPtr &storage_snapshot)

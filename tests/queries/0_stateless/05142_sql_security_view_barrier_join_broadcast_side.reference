@@ -1,0 +1,18 @@
+--- jb_none_view ---
+left, view on the broadcast side (shipped join / local join): 0	1
+right, view on the broadcast side (shipped join / local join): 0	1
+v0	visible_0
+v1	visible_1
+v2	visible_2
+v3	
+v4	
+v5	
+--- jb_invoker_view ---
+left, view on the broadcast side (shipped join / local join): 1	0
+right, view on the broadcast side (shipped join / local join): 1	0
+v0	visible_0
+v1	visible_1
+v2	visible_2
+v3	
+v4	
+v5	

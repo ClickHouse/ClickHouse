@@ -1,0 +1,6 @@
+=== view-keyed additional filter: pushdown declined, the view stays a subquery ===
+1
+=== no additional filter: pushdown still fires ===
+1
+=== the filter still applies to the result ===
+[1,3]

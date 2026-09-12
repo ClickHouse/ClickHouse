@@ -1,0 +1,7 @@
+no SETTINGS clause keeps pushdown:	1
+tuning-only SETTINGS clause keeps pushdown:	1
+view SETTINGS additional_result_filter disables pushdown:	1
+view SETTINGS additional_table_filters disables pushdown:	1
+view SETTINGS final disables pushdown:	1
+view SETTINGS max_rows_to_read with break disables pushdown:	1
+view SETTINGS reset to DEFAULT disables pushdown:	1

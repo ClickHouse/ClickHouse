@@ -58,6 +58,14 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     auto * expression_step = typeid_cast<ExpressionStep *>(node->step.get());
     if (expression_step)
     {
+        /// Never descend through a step that decides which rows a `SQL SECURITY DEFINER` /
+        /// `NONE` view exposes: both the `__topKFilter` prewhere and the minmax-based granule
+        /// skipping installed below act on the source by the invoker's `ORDER BY`, so
+        /// `read_rows` / timing would depend on the rows the view hides.
+        /// See IQueryPlanStep::isSecurityBarrier.
+        if (expression_step->isSecurityBarrier())
+            return 0;
+
         /// `arrayJoin` changes the number of rows. The dynamic top-K prewhere filter
         /// applies the threshold to source rows BEFORE the expansion, while the sort
         /// + limit operates on EXPANDED rows. Mixing the two breaks the assumption
@@ -74,6 +82,11 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
     auto * filter_step = typeid_cast<FilterStep *>(node->step.get());
     if (filter_step)
     {
+        /// See IQueryPlanStep::isSecurityBarrier: this is a view's own filtering,
+        /// nothing driven by the invoker's query may cross it towards the source.
+        if (filter_step->isSecurityBarrier())
+            return 0;
+
         /// Same reasoning as above: `arrayJoin` inside a `FilterStep` below the sort
         /// breaks the top-K source-row threshold assumption. See #82279.
         if (filter_step->getExpression().hasArrayJoin())
@@ -85,6 +98,13 @@ size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, 
 
     auto * read_from_mergetree_step = typeid_cast<ReadFromMergeTree *>(node->step.get());
     if (!read_from_mergetree_step)
+        return 0;
+
+    /// The reading step carries the barrier when `optimizePrewhere` has absorbed the view's
+    /// own filter into PREWHERE. The dynamic filter is already off then (there is a PREWHERE),
+    /// but the skip-index top-K path would still skip granules by the invoker's `ORDER BY`
+    /// over the rows the view hides. See IQueryPlanStep::isSecurityBarrier.
+    if (read_from_mergetree_step->isSecurityBarrier())
         return 0;
 
     /// FINAL queries deduplicate overlapping parts via merging sorted transforms
