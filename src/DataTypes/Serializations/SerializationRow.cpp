@@ -1,5 +1,6 @@
 #include <DataTypes/Serializations/SerializationRow.h>
 #include <DataTypes/Serializations/SerializationNamed.h>
+#include <DataTypes/Serializations/SerializationString.h>
 #include <DataTypes/Serializations/SerializationTuple.h>
 #include <base/scope_guard.h>
 #include <Columns/ColumnTuple.h>
@@ -124,6 +125,13 @@ namespace
                 "format_binary_max_string_size",
                 size,
                 settings.binary.max_binary_string_size);
+
+        if (size > SerializationString::MAX_STRING_SIZE)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_STRING_SIZE,
+                "Too large Row payload size: {}. The maximum is: {}.",
+                size,
+                SerializationString::MAX_STRING_SIZE);
 
         payload.resize(size);
         in.readStrict(payload.data(), size);
