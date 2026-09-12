@@ -377,7 +377,8 @@ static struct InitFiu
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \
-    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas)
+    PAUSEABLE_ONCE(patch_parts_lock_pause_before_cas) \
+    PAUSEABLE_ONCE(database_replicated_pause_before_commit_create_table)
 
 namespace FailPoints
 {
