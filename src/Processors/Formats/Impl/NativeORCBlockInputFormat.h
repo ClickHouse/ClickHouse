@@ -100,6 +100,9 @@ private:
 
     std::unique_ptr<orc::Reader> file_reader;
     std::unique_ptr<orc::RowReader> stripe_reader;
+    /// Row 0 of each column holds the value to synthesize a column the payload omits, so this keeps the block
+    /// as supplied. `ORCColumnToCHColumn` binds a reference to it, hence it is declared first and outlives it.
+    SharedHeader supplied_header;
     std::unique_ptr<ORCColumnToCHColumn> orc_column_to_ch_column;
 
     std::shared_ptr<orc::SearchArgument> sargs;
