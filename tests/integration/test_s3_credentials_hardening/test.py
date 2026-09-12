@@ -97,6 +97,34 @@ node_with_includes = cluster.add_instance(
     },
 )
 
+# A separate restartable instance for the definitions that are loaded back from stored metadata rather
+# than supplied by a query. Those routes are only reachable across a real server restart or a Replicated
+# database recovery, so this instance needs `stay_alive` and Keeper; the `S3Queue` engine needs Keeper too.
+node_replay = cluster.add_instance(
+    "node_replay",
+    with_minio=True,
+    with_zookeeper=True,
+    main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
+    stay_alive=True,
+    env_variables={
+        "AWS_EC2_METADATA_DISABLED": "true",
+    },
+)
+
+# The second replica of the Replicated database used below. It has to be a separate server: two replicas
+# of one Replicated database on one server collide on the table UUID they share.
+node_replay_second = cluster.add_instance(
+    "node_replay_second",
+    with_minio=True,
+    with_zookeeper=True,
+    main_configs=["configs/named_collections.xml"],
+    user_configs=["configs/users.xml"],
+    env_variables={
+        "AWS_EC2_METADATA_DISABLED": "true",
+    },
+)
+
 ALLOW = "SETTINGS s3_allow_server_credentials_in_user_queries = 1"
 
 
@@ -656,3 +684,96 @@ def test_server_data_disk_unaffected():
     node.query("INSERT INTO t_local SELECT 4")
     assert node.query("SELECT sum(x) FROM t_local").strip() == "4"
     node.query("DROP TABLE t_local SYNC")
+
+
+def test_stored_definition_replay_survives_restart_and_recovery():
+    # A definition that names a destination outside the origin its collection declares is refused when a
+    # query supplies it, and loaded with a warning when it is read back from stored metadata. The loading
+    # routes are unreachable from a stateless test: they need a server restart, or a Replicated database
+    # building a replica from Keeper metadata. Each is a separate predicate, and for a database loaded at
+    # startup a refusal is the server failing to start rather than one unreadable object.
+    #
+    # The fixture uses supported statements only -- create while the collection has no credentials, then add
+    # them -- so nothing writes metadata by hand.
+    own = "http://minio1:9001/root/replay_own"
+    node_replay.query(
+        f"INSERT INTO FUNCTION s3('{own}/data.csv', '{minio_access_key}', '{minio_secret_key}', "
+        "'CSV', 'a String') SELECT 'payload' SETTINGS s3_truncate_on_insert = 1"
+    )
+
+    node_replay.query("DROP DATABASE IF EXISTS replay_db SYNC")
+    node_replay.query("DROP DATABASE IF EXISTS replay_holder SYNC")
+    node_replay.query("DROP DATABASE IF EXISTS replay_r1 SYNC")
+    node_replay_second.query("DROP DATABASE IF EXISTS replay_r1 SYNC")
+    for instance in (node_replay, node_replay_second):
+        instance.query("DROP NAMED COLLECTION IF EXISTS nc_replay")
+        instance.query("CREATE NAMED COLLECTION nc_replay AS url = 'http://minio1:9002/root/replay_other/'")
+
+    node_replay.query("CREATE DATABASE replay_holder")
+    node_replay.query(f"CREATE DATABASE replay_db ENGINE = S3(nc_replay, url = '{own}/')")
+    node_replay.query(
+        "CREATE TABLE replay_holder.tbl (a String) "
+        f"ENGINE = S3(nc_replay, url = '{own}/data.csv', format = 'CSV')"
+    )
+    node_replay.query(
+        "CREATE TABLE replay_holder.queue (a String) "
+        f"ENGINE = S3Queue(nc_replay, url = '{own}/queue/*.csv', format = 'CSV') "
+        "SETTINGS mode = 'unordered', keeper_path = '/clickhouse/replay_queue'"
+    )
+    node_replay.query(
+        "CREATE DATABASE replay_r1 ENGINE = Replicated('/clickhouse/replay_rdb', 'shard1', 'replica1')"
+    )
+    node_replay.query(
+        "CREATE TABLE replay_r1.tbl (a String) "
+        f"ENGINE = S3(nc_replay, url = '{own}/data.csv', format = 'CSV')"
+    )
+
+    for instance in (node_replay, node_replay_second):
+        instance.query(
+            "ALTER NAMED COLLECTION nc_replay "
+            f"SET access_key_id = '{minio_access_key}', secret_access_key = '{minio_secret_key}'"
+        )
+
+    node_replay.restart_clickhouse()
+
+    # The restart completing at all is the assertion for the database seam: `loadMetadata` parses a stored
+    # `ENGINE = S3` database definition synchronously, so a refusal there aborts startup.
+    assert node_replay.query("SELECT 1").strip() == "1"
+    assert node_replay.query("SELECT name FROM system.databases WHERE name = 'replay_db'").strip() == "replay_db"
+    assert node_replay.query("SELECT * FROM replay_db.`data.csv`").strip() == "payload"
+    assert node_replay.query("SELECT * FROM replay_holder.tbl").strip() == "payload"
+    assert (
+        node_replay.query(
+            "SELECT count() FROM system.tables WHERE database = 'replay_holder' AND name = 'queue'"
+        ).strip()
+        == "1"
+    )
+    assert node_replay.contains_in_log("NamedCollectionDestinationBinding")
+
+    # A replica built from the Replicated database's Keeper metadata replays the stored CREATE at a
+    # strictness that is neither a FORCE_* nor a short ATTACH, so the recovery flag is what marks it.
+    node_replay_second.query(
+        "CREATE DATABASE replay_r1 ENGINE = Replicated('/clickhouse/replay_rdb', 'shard1', 'replica2')"
+    )
+    node_replay_second.query("SYSTEM SYNC DATABASE REPLICA replay_r1")
+    assert (
+        node_replay_second.query(
+            "SELECT count() FROM system.tables WHERE database = 'replay_r1' AND name = 'tbl'"
+        ).strip()
+        == "1"
+    )
+
+    # The exemption is scoped to replay: a fresh query against the same collection is still refused, so a
+    # mutation that widens any of the predicates above cannot pass by turning the rule off entirely.
+    for instance in (node_replay, node_replay_second):
+        error = instance.query_and_get_error(
+            f"SELECT * FROM s3(nc_replay, url = '{own}/data.csv', format = 'CSV', structure = 'a String')"
+        )
+        assert "Override not allowed" in error and "url" in error, error
+
+    node_replay_second.query("DROP DATABASE replay_r1 SYNC")
+    node_replay.query("DROP DATABASE replay_r1 SYNC")
+    node_replay.query("DROP DATABASE replay_db SYNC")
+    node_replay.query("DROP DATABASE replay_holder SYNC")
+    for instance in (node_replay, node_replay_second):
+        instance.query("DROP NAMED COLLECTION nc_replay")

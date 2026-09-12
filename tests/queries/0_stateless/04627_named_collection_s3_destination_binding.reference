@@ -1,0 +1,94 @@
+--- credentialed collection, url moved to another origin
+refused
+--- same origin, different path: still allowed
+payload
+--- each origin component alone is enough to refuse
+refused
+refused
+refused
+--- a url that writes no port compares against the scheme default
+reached-s3
+refused
+--- credential-free collection keeps full override freedom
+reached-s3
+--- explicit OVERRIDABLE wins over the credential binding
+payload
+--- query replaces the whole key pair: the collection supplies nothing, so no binding
+payload
+--- partial replacement: the stored secret_access_key still signs
+refused
+--- half a key pair is never sent, so it authorises nothing and binds nothing
+reached-s3
+reached-s3
+--- query-supplied role_arn: the collection keys are dropped, the query role authenticates
+passed-check
+--- gcp_oauth sends a bearer token, so its ADC secrets bind the destination too
+refused
+--- no_sign_request disables SigV4 only, the bearer token still goes out
+refused
+--- partial ADC replacement keeps the binding
+refused
+--- under gcp_oauth the stored AWS keys are inert, so a complete ADC replacement releases
+allowed
+--- a stored external_id with no role to assume is read by nothing, so it binds nothing
+payload
+--- control: alongside a surviving role_arn the same stored external_id is the STS secret and binds
+refused
+--- a complete query ADC triple mints the token, so the stored metadata fields bind nothing
+allowed
+--- control: an incomplete ADC triple leaves the metadata fields minting, so they still bind
+refused
+--- no_sign_request with static keys: nothing signs, so the destination is not bound
+no-key-on-the-wire
+--- control: the same listener does see the key once SigV4 is on, so the arm above can fail
+key-on-the-wire
+--- a collection that stores no url authorises no destination for its keys
+refused
+--- the same rule reaches DatabaseS3, where an absent url means every table name is a full url
+refused
+--- the replay exemption cannot hand that shape back: with no prefix to grandfather, load anonymously
+loaded
+no-key-on-the-wire
+--- control: a database whose collection does declare a url prefix still reads with its keys
+payload
+--- control: a grandfathered database whose stored prefix does name a destination keeps its keys
+loaded
+payload
+--- a fresh credentialed cross-origin CREATE is refused for both S3 engines
+refused
+refused
+--- a JSON-AST payload cannot claim the definition came from stored metadata
+flagset 1
+refused
+created 0
+--- PARALLEL WITH runs its children internally, which must not read as a stored definition
+refused
+wrapped 0
+--- filename cannot move the origin: an absolute value is rejected before any request
+no-host
+no-host
+--- backups: BackupInfo does not go through findOverrideForbiddingKey, so the seam is its own
+refused
+--- DatabaseS3: getTableImpl rebuilds positional s3() args, so provenance is gone downstream
+refused
+--- a relative stored url declares no origin, so a materialized s3_base replay still attaches
+1
+--- a definition persisted before this rule loads with a warning instead of aborting startup
+loaded
+payload
+--- the replay exemption is not reachable from a fresh query against the same collection
+refused
+--- RESTORE replays the stored definition too, so it loads rather than failing the restore
+passed-check
+payload
+--- and a fresh query against that same collection is still refused
+refused
+--- the replay warning names the destination without disclosing a url credential
+warning	1
+secret	0
+--- and the destination it names is masked too, not only the origin it compares against
+warning	1
+secret	0
+--- a presigned signature in the destination is masked as well as userinfo
+warning	1
+secret	0

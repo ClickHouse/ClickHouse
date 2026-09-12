@@ -287,6 +287,12 @@ void registerBackupEngineS3(BackupFactory & factory)
             auth[S3AuthSetting::google_adc_client_secret] = collection->getOrDefault<String>("google_adc_client_secret", "");
             auth[S3AuthSetting::google_adc_refresh_token] = collection->getOrDefault<String>("google_adc_refresh_token", "");
 
+            /// `BackupInfo::getNamedCollection` hand-copies the `NAMED_COLLECTION` check rather than going
+            /// through `findOverrideForbiddingKey`, so this seam is not covered by the table-function one.
+            /// Never a metadata replay: the destination is named by the `BACKUP`/`RESTORE` statement being run,
+            /// not read back from a definition persisted before this was checked.
+            validateS3CollectionDestinationBinding(
+                *collection, auth, s3_uri, params.context, /*is_metadata_replay=*/false);
         }
         else
         {
@@ -377,6 +383,12 @@ void registerBackupEngineS3(BackupFactory & factory)
             auto snapshot_reader_creator = [&](const String & s3_uri_, const String & s3_bucket_)
             {
                 String full_uri = std::filesystem::path(s3_uri_) / s3_bucket_;
+                /// `s3_uri_` comes from the backup file's own header, so it is untrusted input rather than a
+                /// definition this server checked earlier: the binding is enforced fail-closed here.
+                if (location.collection && named_collection_auth)
+                    validateS3CollectionDestinationBinding(
+                        *location.collection, *named_collection_auth, full_uri, params.context,
+                        /*is_metadata_replay=*/false);
                 auto uri_for_lightweight = S3::URI{full_uri};
                 /// We set the prefix to "" because in meta file, object key is absolute path.
                 uri_for_lightweight.key = "";

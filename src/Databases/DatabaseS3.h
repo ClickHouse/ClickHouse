@@ -60,7 +60,9 @@ public:
     std::vector<std::pair<ASTPtr, StoragePtr>> getTablesForBackup(const FilterByNameFunction &, const ContextPtr &) const override;
     DatabaseTablesIteratorPtr getTablesIterator(ContextPtr, const FilterByNameFunction &, bool) const override;
 
-    static Configuration parseArguments(ASTs engine_args, ContextPtr context);
+    /// `is_metadata_replay`: the definition comes from persisted metadata rather than a fresh query. See
+    /// `validateS3CollectionDestinationBinding`, which reports instead of refusing in that case.
+    static Configuration parseArguments(ASTs engine_args, ContextPtr context, bool is_metadata_replay = false);
 
 protected:
     ASTPtr getCreateDatabaseQueryImpl() const override TSA_REQUIRES(mutex);

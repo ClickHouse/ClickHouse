@@ -16,6 +16,30 @@
 namespace DB
 {
 
+/// A credential the collection itself supplied may only be sent to an origin (scheme/host/port) the collection
+/// itself declares. Throws `BAD_ARGUMENTS` when a query moved the origin with such a credential still attached,
+/// which would send it - and, for SigV4, a signature over an attacker-chosen request - to a user-chosen host.
+/// A collection that stores no `url` authorises no destination at all. One whose stored `url` is relative, or is
+/// a value no URL parser accepts, declares no origin to compare against and stays unbound.
+///
+/// Call once per seam, after the seam has finished resolving credentials and the destination URL, with the
+/// collection still in hand so that per-key override provenance is available. `effective_url` is the URL the
+/// request will actually be sent to.
+///
+/// `is_metadata_replay` marks a definition read back from persisted metadata rather than supplied by a fresh
+/// query. Such a definition is logged and allowed instead of refused, since whoever loads it did not choose it
+/// and a refusal at startup stops the server; the server setting
+/// `s3_load_table_anonymously_if_credentials_restricted` makes it a hard failure instead.
+///
+/// Returns true only in that logged-and-allowed case, which grandfathers the single destination the stored
+/// definition names. A seam that goes on to pick a destination per query must then drop the credentials.
+bool validateS3CollectionDestinationBinding(
+    const NamedCollection & collection,
+    const S3::S3AuthSettings & effective_auth,
+    const String & effective_url,
+    ContextPtr context,
+    bool is_metadata_replay);
+
 struct S3StorageParsedArguments : private StorageParsedArguments
 {
     friend class StorageS3Configuration;
@@ -83,7 +107,7 @@ struct S3StorageParsedArguments : private StorageParsedArguments
     String path_suffix;
 
 public:
-    void fromNamedCollection(const NamedCollection & collection, ContextPtr context);
+    void fromNamedCollection(const NamedCollection & collection, ContextPtr context, bool is_metadata_replay = false);
     void fromDisk(const DiskPtr & disk, ASTs & args, ContextPtr context, bool with_structure);
     void fromAST(ASTs & args, ContextPtr context, bool with_structure);
     S3StorageParsedArguments() = default;

@@ -356,6 +356,13 @@ public:
     /// startup (see `getClient` and the `s3_load_table_anonymously_if_credentials_restricted` server setting).
     bool is_loading_from_existing_metadata = false;
 
+    /// True when the definition being parsed was read back from persisted metadata rather than supplied by a
+    /// fresh query. Broader than `is_loading_from_existing_metadata`, which covers only startup and RESTORE: a
+    /// short `ATTACH` replays a stored statement verbatim too, so it is equally not a choice of whoever issued
+    /// it. Read during `initialize`, so it must be assigned before that call; false by default, so a seam that
+    /// does not set it is treated as a fresh query.
+    bool is_metadata_replay = false;
+
     /// False when the storage is instantiated from anything other than a user-issued `CREATE`
     /// (ATTACH, server startup, RESTORE, replicated-DDL replay). `initPartitionStrategy` must not
     /// apply the `file_like_engine_default_partition_strategy` default to such tables: a pre-26.6
