@@ -144,6 +144,7 @@
     M(TextIndexReadGranulesMicroseconds, "Total time spent reading and analyzing granules of the text index.", ValueType::Microseconds) \
     M(TextIndexPositionsDecodeMicroseconds, "Total time spent decoding text index position lists (.pos) for phrase search.", ValueType::Microseconds) \
     M(TextIndexPhraseMatchMicroseconds, "Total time spent matching phrase positions over candidate rows.", ValueType::Microseconds) \
+    M(TextIndexPhraseCandidatesMicroseconds, "Total time spent finding the candidate rows of a phrase search: reading and intersecting the phrase terms' posting lists.", ValueType::Microseconds) \
     M(TextIndexPositionsBlocksRead, "Number of position blocks read to match phrase queries over a text index. A block spanning two candidate windows is counted once per read.", ValueType::Number) \
     M(TextIndexPositionsBlocksTotal, "Number of total position blocks of the phrase tokens before selecting which ones to read.", ValueType::Number) \
     M(TextIndexPositionsBytesRead, "Bytes of position blocks read to match phrase queries over a text index.", ValueType::Bytes) \
