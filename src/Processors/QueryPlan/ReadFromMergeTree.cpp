@@ -2981,6 +2981,13 @@ void ReadFromMergeTree::buildIndexes(
     indexes->skip_indexes = std::move(skip_indexes);
 }
 
+String SkipIndexOrderCache::makeKey(const IMergeTreeDataPart & part)
+{
+    if (const auto * parent_part = part.getParentPart())
+        return parent_part->name + "/" + part.name;
+    return part.name;
+}
+
 bool ReadFromMergeTree::isRowPolicyDeferredAfterFinal() const
 {
     if (!isQueryWithFinal() || !query_info.row_level_filter)

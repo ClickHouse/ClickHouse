@@ -1002,18 +1002,34 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     std::vector<IndexStat> useful_indices_stat(stat_size);
 
     /// Part filtering precedes this stage. Compute costs only for the surviving parts,
-    /// and only when there is an index order to choose.
-    std::vector<std::vector<size_t>> per_part_index_orders;
+    /// and only when there is an index order to choose. The result is memoized per part, so
+    /// repeated analyses of the same read step (estimation, parallel replicas, then the executed
+    /// read) walk the skip-index metadata once.
+    std::vector<SkipIndexOrder> per_part_index_orders;
     if (skip_indexes.useful_indices.size() > 1)
     {
+        auto & order_cache = *filter_context.indexes.skip_index_orders;
+        per_part_index_orders.reserve(parts_with_ranges.size());
+
         std::vector<size_t> index_sizes;
         index_sizes.reserve(skip_indexes.useful_indices.size());
 
         for (const auto & part : parts_with_ranges)
         {
-            auto & index_order = per_part_index_orders.emplace_back();
-            index_order.resize(skip_indexes.useful_indices.size());
-            std::iota(index_order.begin(), index_order.end(), 0);
+            const auto cache_key = SkipIndexOrderCache::makeKey(*part.data_part);
+
+            {
+                std::lock_guard lock(order_cache.mutex);
+                auto it = order_cache.orders.find(cache_key);
+                if (it != order_cache.orders.end())
+                {
+                    per_part_index_orders.emplace_back(it->second);
+                    continue;
+                }
+            }
+
+            auto index_order = std::make_shared<std::vector<size_t>>(skip_indexes.useful_indices.size());
+            std::iota(index_order->begin(), index_order->end(), 0);
 
             index_sizes.clear();
 
@@ -1035,7 +1051,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
             }
 
             // Move minmax indices to first positions, so they will be applied first as cheapest ones
-            ::stableSort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
+            ::stableSort(index_order->begin(), index_order->end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
             {
                 const auto l_index = useful_indices[l].index;
                 const auto r_index = useful_indices[r].index;
@@ -1064,12 +1080,19 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
                 return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
             });
+
+            {
+                std::lock_guard lock(order_cache.mutex);
+                order_cache.orders.emplace(cache_key, index_order);
+            }
+
+            per_part_index_orders.emplace_back(std::move(index_order));
         }
     }
 
     auto index_order_at = [&per_part_index_orders](size_t part_index, size_t idx) -> size_t
     {
-        return per_part_index_orders.empty() ? idx : per_part_index_orders[part_index][idx];
+        return per_part_index_orders.empty() ? idx : (*per_part_index_orders[part_index])[idx];
     };
 
     std::atomic<size_t> sum_marks_pk = 0;

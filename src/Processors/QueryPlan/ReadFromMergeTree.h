@@ -13,6 +13,9 @@
 #include <Storages/MergeTree/PartitionPruner.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Parsers/ASTFunction.h>
+#include <base/defines.h>
+
+#include <mutex>
 
 namespace DB
 {
@@ -45,6 +48,25 @@ struct UsefulSkipIndexes
     MergeTreeIndexPtr skip_index_for_top_k_filtering{nullptr};
     TopKThresholdTrackerPtr threshold_tracker{nullptr};
 };
+
+/// The order in which the useful skip indexes are applied to a single part: cheapest and coarsest first.
+using SkipIndexOrder = std::shared_ptr<const std::vector<size_t>>;
+
+/// Memoizes `SkipIndexOrder` per part for one `ReadFromMergeTree::Indexes` object.
+/// The order is derived from the part's index formats and file sizes, so it is stable for a given part,
+/// and computing it walks that metadata. The walk is done lazily, for the parts that survive pruning
+/// (see `filterPartsByPrimaryKeyAndSkipIndexes`), and its result is reused when the same read step is
+/// analyzed again - estimation, parallel replicas and then the executed read all share one `Indexes`.
+struct SkipIndexOrderCache
+{
+    std::mutex mutex;
+    std::unordered_map<String, SkipIndexOrder> orders TSA_GUARDED_BY(mutex);
+
+    /// The key must be unique within the table: a projection part is named after the projection,
+    /// which repeats in every parent part, so it is qualified with the parent part name.
+    static String makeKey(const IMergeTreeDataPart & part);
+};
+using SkipIndexOrderCachePtr = std::shared_ptr<SkipIndexOrderCache>;
 
 /// Contains parts each from different projection index
 using ProjectionIndexReadRangesByIndex = std::unordered_map<size_t, RangesInDataParts>;
@@ -304,6 +326,8 @@ public:
         ConditionTemplate<KeyCondition>::Ptr total_offset_condition;
         std::optional<PartitionPruner> partition_pruner;
         UsefulSkipIndexes skip_indexes;
+        /// Shared by every index analysis of this step, see `SkipIndexOrderCache`.
+        SkipIndexOrderCachePtr skip_index_orders = std::make_shared<SkipIndexOrderCache>();
         bool use_skip_indexes;
         bool use_skip_indexes_for_disjunctions;
         bool use_skip_indexes_if_final_exact_mode;
