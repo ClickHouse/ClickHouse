@@ -88,23 +88,27 @@ public:
 
     /// Returns the first byte in [begin, end) whose membership in the set equals `positive`, or `end`.
     template <bool positive>
-    const char * find(const char * begin, const char * end) const
+    ALWAYS_INLINE const char * find(const char * begin, const char * end) const
     {
         const char * pos = begin;
 
-        /// Most tokens are short, so the first bytes are checked one by one
-        /// before paying for a vector iteration that would mostly look past the token.
-        const char * scalar_end = end - pos > SCALAR_PREFIX ? pos + SCALAR_PREFIX : end;
-        for (; pos < scalar_end; ++pos)
+        if (end - pos >= SCALAR_PREFIX)
         {
-            if (contains(*pos) == positive)
-                return pos;
-        }
+            /// Most tokens are short, so the first bytes are checked one by one before paying
+            /// for a vector iteration that would mostly look past the token. The constant trip
+            /// count lets the compiler unroll this loop into a straight sequence of table lookups.
+            for (ptrdiff_t i = 0; i < SCALAR_PREFIX; ++i)
+            {
+                if (contains(pos[i]) == positive)
+                    return pos + i;
+            }
+            pos += SCALAR_PREFIX;
 
 #if defined(__SSSE3__) || defined(__aarch64__)
-        if (vectorized)
-            pos = ascii_only ? findVectorized<positive, true>(pos, end) : findVectorized<positive, false>(pos, end);
+            if (vectorized)
+                pos = ascii_only ? findVectorized<positive, true>(pos, end) : findVectorized<positive, false>(pos, end);
 #endif
+        }
 
         for (; pos < end; ++pos)
         {
