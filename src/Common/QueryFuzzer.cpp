@@ -1429,9 +1429,9 @@ void QueryFuzzer::fuzzTableStorage(ASTStorage & storage)
         }
     }
 
-    /// Swap between MergeTree variants that require no mandatory extra columns.
-    /// CollapsingMergeTree/VersionedCollapsingMergeTree require a sign column and
-    /// GraphiteMergeTree requires a config name, so those are excluded.
+    /// Swap between MergeTree variants that need no mandatory extra columns. The Collapsing ones do,
+    /// so `swapEngineToCollapsing` handles them; GraphiteMergeTree additionally wants a server-config
+    /// rollup section and four specifically named columns, which a corpus table essentially never has.
     if (endsWith(engine_name, "MergeTree") && fuzz_rand() % 20 == 0)
     {
         static const Strings safe_mergetree_engines = {
@@ -1692,6 +1692,71 @@ void QueryFuzzer::fuzzRefreshStrategy(ASTRefreshStrategy & strategy)
     }
 }
 
+/// Swap a MergeTree-family engine for `CollapsingMergeTree(sign)` or
+/// `VersionedCollapsingMergeTree(sign, version)`. Both name columns of a specific type, so this
+/// lives here rather than in `fuzzTableStorage`, which never sees the column list.
+void QueryFuzzer::swapEngineToCollapsing(ASTStorage & storage, ASTExpressionList * columns_list)
+{
+    if (!storage.engine || !columns_list)
+        return;
+
+    auto & engine_name = storage.engine->name;
+    /// Plain MergeTree-family engines only: `Replicated` is already stripped by `fuzzTableStorage`,
+    /// and `Shared` is left alone - both are Keeper-backed and out of scope here.
+    if (!endsWith(engine_name, "MergeTree") || startsWith(engine_name, "Shared") || fuzz_rand() % 30 != 0)
+        return;
+
+    auto & columns = columns_list->children;
+    Strings sign_candidates;
+    Strings version_candidates;
+    for (const auto & column_ast : columns)
+    {
+        const auto * column = column_ast->as<ASTColumnDeclaration>();
+        if (!column)
+            continue;
+        const auto column_type = column->getType();
+        if (!column_type)
+            continue;
+        /// tryGet, not get: by now the column types have been through `fuzzColumnDeclarationList`.
+        const auto type = DataTypeFactory::instance().tryGet(column_type);
+        if (!type)
+            continue;
+        /// `MergeTreeData` requires the sign to be plain `Int8` - `Nullable(Int8)` and `UInt8` are both
+        /// rejected - so match the type exactly the way it does.
+        if (typeid_cast<const DataTypeInt8 *>(type.get()))
+            sign_candidates.push_back(column->name);
+        if (type->canBeUsedAsVersion())
+            version_candidates.push_back(column->name);
+    }
+
+    if (sign_candidates.empty())
+        return;
+
+    const String sign_column = pickRandomly(fuzz_rand, sign_candidates);
+    /// `Int8` can serve as a version too, so the chosen sign column is usually a version candidate
+    /// as well - but naming it twice is rejected outright ("The version and sign column cannot be
+    /// the same"), which would turn every such CREATE into a guaranteed no-op.
+    std::erase(version_candidates, sign_column);
+
+    auto arguments = make_intrusive<ASTExpressionList>();
+    arguments->children.push_back(make_intrusive<ASTIdentifier>(sign_column));
+    if (!version_candidates.empty() && fuzz_rand() % 2 == 0)
+    {
+        engine_name = "VersionedCollapsingMergeTree";
+        arguments->children.push_back(make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, version_candidates)));
+    }
+    else
+    {
+        engine_name = "CollapsingMergeTree";
+    }
+
+    auto * engine = storage.engine;
+    if (engine->arguments)
+        engine->replace(engine->arguments, std::move(arguments));
+    else
+        engine->set(engine->arguments, std::move(arguments));
+}
+
 void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
 {
     if (create.columns_list && create.columns_list->columns)
@@ -1717,6 +1782,7 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
     else if (create.storage)
     {
         fuzzTableStorage(*create.storage);
+        swapEngineToCollapsing(*create.storage, create.columns_list ? create.columns_list->columns : nullptr);
     }
 
     /// Fuzz the view targets: MV `TO`, window-view `INNER`, and TimeSeries `SAMPLES`/`TAGS`/`METRICS`.
@@ -1736,9 +1802,15 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
             create.targets->removeTarget(kind);
         }
 
-        for (auto * inner_storage : create.targets->getInnerEngines())
-            if (inner_storage)
+        /// Iterate kinds rather than `getInnerEngines`, which yields no kind: the Collapsing swap
+        /// needs each inner engine paired with that target's own column list to find a sign column.
+        for (auto kind : create.targets->getKinds())
+            if (auto * inner_storage = create.targets->getInnerEngine(kind))
+            {
                 fuzzTableStorage(*inner_storage);
+                auto * inner_cols = create.targets->getInnerColumns(kind);
+                swapEngineToCollapsing(*inner_storage, inner_cols ? inner_cols->columns : nullptr);
+            }
 
         for (auto kind : create.targets->getKinds())
             if (auto * inner_cols = create.targets->getInnerColumns(kind))
@@ -5110,7 +5182,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Array construction from a length and a value (n, value -> Array)
         {"arrayWithConstant", "range"},
         /// Array scalar reductions (array → scalar)
-        {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq", "arrayAutocorrelation"},
+        {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq", "arrayFlattenedLength", "arrayAutocorrelation"},
         /// Array transform functions (array → array, no lambda)
         {"arrayReverse",
          "arrayShuffle",
