@@ -12,10 +12,27 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int ILLEGAL_COLUMN;
+    extern const int CANNOT_PARSE_DATETIME;
 }
 
 namespace
 {
+
+/// The `timestamp` function accepts a single whole DateTime value in the documented format
+/// 'yyyy-mm-dd[ hh:mm:ss[.mmmmmm]]'. The DateTime parser stops at the first character that cannot
+/// continue the value (such as a field delimiter in row-based input), so a malformed argument like
+/// '2024 April 4' would otherwise be silently truncated to the Unix timestamp 2024. Reject any
+/// characters left after the value.
+void assertDateTimeFullyParsed(ReadBuffer & buf, bool skip_zero_padding)
+{
+    /// FixedString values are right-padded with zero bytes.
+    if (skip_zero_padding)
+        while (!buf.eof() && *buf.position() == 0)
+            ++buf.position();
+
+    if (!buf.eof())
+        throw Exception(ErrorCodes::CANNOT_PARSE_DATETIME, "Argument of function timestamp has trailing characters after the value");
+}
 
 /** timestamp(expr[, expr_time])
  *
@@ -76,6 +93,7 @@ public:
 
                 DateTime64 value = 0;
                 readDateTime64Text(value, col_result->getScale(), read_buffer, *local_time_zone);
+                assertDateTimeFullyParsed(read_buffer, /*skip_zero_padding=*/false);
                 vec_result[i] = value;
 
                 current_offset = next_offset;
@@ -96,6 +114,7 @@ public:
 
                 DateTime64 value = 0;
                 readDateTime64Text(value, col_result->getScale(), read_buffer, *local_time_zone);
+                assertDateTimeFullyParsed(read_buffer, /*skip_zero_padding=*/true);
                 vec_result[i] = value;
 
                 current_offset = next_offset;
@@ -130,6 +149,7 @@ public:
 
                 Decimal64 value = 0;
                 readTime64Text(value, col_result->getScale(), read_buffer);
+                assertDateTimeFullyParsed(read_buffer, /*skip_zero_padding=*/false);
                 vec_result[i].addOverflow(value);
 
                 current_offset = next_offset;
@@ -150,6 +170,7 @@ public:
 
                 Decimal64 value = 0;
                 readTime64Text(value, col_result->getScale(), read_buffer);
+                assertDateTimeFullyParsed(read_buffer, /*skip_zero_padding=*/true);
                 vec_result[i].addOverflow(value);
 
                 current_offset = next_offset;
