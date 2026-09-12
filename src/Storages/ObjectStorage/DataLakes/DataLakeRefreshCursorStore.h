@@ -18,15 +18,18 @@ public:
     explicit DataLakeRefreshCursorStore(std::shared_ptr<StorageObjectStorage> storage_);
 
     bool isTransactional() const override { return true; }
-    String load(ContextPtr context) override;
+    CursorTreeNodePtr load(ContextPtr context) override;
 
 private:
     std::shared_ptr<StorageObjectStorage> storage;
 };
 
-/// Encode/decode the opaque (binary) cursor from `serializeStreamingCursor` to a text form safe to
-/// store in a JSON string field (an Iceberg snapshot summary value); `to` for the write path, `from`
-/// for `load`. Hex keeps the round-trip byte-exact.
+/// Serialize/deserialize the cursor tree to the opaque binary form used by the Keeper coordination znode.
+String serializeCursorTree(const CursorTreeNodePtr & cursor);
+CursorTreeNodePtr deserializeCursorTree(const String & serialized);
+
+/// Encode/decode that binary form to a text form safe to store in a JSON string field (an Iceberg
+/// snapshot summary value); `to` for the write path, `from` for `load`. Hex keeps the round-trip byte-exact.
 String refreshCursorToStorage(const String & serialized_cursor);
 String refreshCursorFromStorage(const String & stored);
 

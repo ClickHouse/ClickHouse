@@ -1,7 +1,9 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
+#include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
+#include <Processors/QueryPlan/PartsSplitter.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -140,6 +142,16 @@ static JoinStep::PrimaryKeySharding findCommonPrimaryKeyPrefixByJoinKey(
     bool first = true;
     for (size_t pos = 0; pos < lhs_pk_colum_names.size() && pos < rhs_pk_colum_names.size(); ++pos)
     {
+        /// The layer split compares key values as `greater(tuple(pk), tuple(border))`, and an IEEE
+        /// comparison answers false for `NaN` against anything, so a row with a `NaN` key fails the
+        /// filter of every layer - including the last one, which only has a lower bound - and is
+        /// dropped at read time. `Null` and a `NaN` nested in a container compare inconsistently there
+        /// for the same reason, which is why every other consumer of
+        /// `splitIntersectingPartsRangesIntoLayers` gates on this predicate. Only the prefix the split
+        /// actually reads has to be safe, so an unsafe column just ends the prefix here.
+        if (!isSafePrimaryDataKeyType(*lhs_pk.data_types[pos]) || !isSafePrimaryDataKeyType(*rhs_pk.data_types[pos]))
+            break;
+
         bool ldesc = (pos < lhs_pk.reverse_flags.size()) ? lhs_pk.reverse_flags[pos] : false;
         bool rdesc = (pos < rhs_pk.reverse_flags.size()) ? rhs_pk.reverse_flags[pos] : false;
         if (ldesc != rdesc)
@@ -479,38 +491,6 @@ void optimizeJoinByShards(QueryPlan::Node & root)
 
     if (result)
         apply(result->joins);
-}
-
-/// The shard is picked by the hash of the key's byte representation (`ScatterByPartitionTransform` ->
-/// `IColumn::computeHashInto`), while `FullSortingMergeJoin` and `WindowTransform` match keys with
-/// `compareAt`. For some types the two disagree - values that compare equal can hash differently - so
-/// hash sharding would scatter such values into different shards: a per-shard merge join would lose the
-/// match, and a per-bucket window would split one logical partition. Known cases:
-///   - Floating-point: `-0.0` / `+0.0` (and NaNs) compare equal but have different bit patterns.
-///   - `Object('json')` / `JSON` and `Dynamic`: `compareAt` compares the logical value, the hash depends on
-///     the physical layout (typed/dynamic subcolumn vs `shared_data`, typed vs shared variant), and that
-///     layout can differ between blocks. `Dynamic` keys are rejected earlier by
-///     `TableJoin::inferJoinKeyCommonType` unless `allow_dynamic_type_in_join_keys` is enabled.
-/// Detected at the top level or nested inside `Nullable`/`LowCardinality`/`Array`/`Tuple`/`Map`/`Variant`.
-bool keyTypeBreaksHashSharding(const IDataType & type);
-bool keyTypeBreaksHashSharding(const IDataType & type)
-{
-    auto breaks_sharding = [](const IDataType & t)
-    {
-        WhichDataType which(t);
-        return which.isFloat() || which.isObject() || which.isDynamic();
-    };
-
-    if (breaks_sharding(type))
-        return true;
-
-    bool result = false;
-    type.forEachChild([&](const IDataType & child)
-    {
-        if (breaks_sharding(child))
-            result = true;
-    });
-    return result;
 }
 
 /// Shard a `parallel_full_sorting_merge` join into independent per-shard merge joins by the hash of the

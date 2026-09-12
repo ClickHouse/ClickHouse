@@ -79,3 +79,31 @@ doc_type: 'reference'
   * 用于对专用于此部署的 GCS 存储桶中的长期指标存储进行读写。
 * **ClickHouse 运行时管理身份**
   * 由 ClickHouse 的运行时数据平面管理控制器使用，该控制器负责处理第 2 天运维操作，例如 Private Service Connect 端点管理、存储桶生命周期调整以及服务账号轮换。
+
+<div id="azure-roles-and-identities">
+  ## Azure 角色与身份
+</div>
+
+<div id="onboarding-service-principal">
+  ### Onboarding 服务主体
+</div>
+
+使用 [Azure Terraform 模块](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) 进行 Onboarding 时，将遵循 Azure 的跨租户身份验证指南，在你的租户中将多租户应用程序预配为 Enterprise Application (服务主体) 。该服务主体会被授予作用域为目标订阅的最小权限自定义角色，包含以下权限：
+
+* **网络**：管理承载 BYOC 基础设施的 VNet、子网、公网 IP、NAT 网关、网络安全组和 DNS 区域。
+* **集群**：管理 AKS 集群和节点池。
+* **存储**：管理用于存储 ClickHouse 数据、备份和监控数据的存储账户及 Blob 容器。
+* **身份**：管理订阅中的用户分配托管标识及其联合身份凭据。
+* **授权**：管理自定义角色定义和角色分配。所有权限均限定在目标订阅范围内——该角色无法操作其他订阅或租户中的资源。
+
+<div id="additional-managed-identities-created-by-the-controller">
+  ### 控制器创建的其他托管标识
+</div>
+
+预配 BYOC 服务时，ClickHouse 控制平面会在您的订阅中创建用户分配的托管标识。每个标识都与特定的 Kubernetes 服务账号 (Workload Identity) 建立联合，并仅具有范围有限、用途单一的权限集：
+
+* **每服务标识**
+  * 每个 ClickHouse 服务使用此标识，通过作用域限定为该存储账户的自定义 Blob 存储角色，访问其自身存储账户中的表数据和备份。
+  * 从备份还原服务时，该服务还会获得对源服务备份容器的只读访问权限。
+* **共享基础设施标识**
+  * ClickHouse 运行时数据平面管理控制器将其用于 Private Link 服务管理等第 2 天运维操作。

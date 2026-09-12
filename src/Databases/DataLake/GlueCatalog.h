@@ -69,6 +69,8 @@ public:
 
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
+    void createNamespaceIfNotExists(const String & namespace_name, const String & location) const override;
+
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
 
     bool updateSchema(
@@ -95,8 +97,6 @@ public:
         const String & glue_column_type);
 
 private:
-    void createNamespaceIfNotExists(const String & namespace_name) const;
-
     std::unique_ptr<Aws::Glue::GlueClient> glue_client;
     const LoggerPtr log;
     std::shared_ptr<Aws::Auth::AWSCredentialsProvider> credentials_provider;

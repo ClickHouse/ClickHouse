@@ -110,6 +110,7 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
     "partition_columns_in_data_file",
     "storage_class_name",
     "storage_class", /// Interchangeable alias for `storage_class_name`, see issue #68551
+    "upload_checksum_algorithm",
     /// Private configuration options
     "role_arn", /// for extra_credentials
     "role_session_name", /// for extra_credentials
@@ -125,7 +126,12 @@ static const std::unordered_set<std::string_view> optional_configuration_keys =
 
 String StorageS3Configuration::getDataSourceDescription() const
 {
-    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / url.bucket;
+    return getDataSourceDescriptionForNamespace(url.bucket);
+}
+
+String StorageS3Configuration::getDataSourceDescriptionForNamespace(const String & object_namespace) const
+{
+    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / object_namespace;
 }
 
 std::string StorageS3Configuration::getPathInArchive() const
@@ -270,6 +276,7 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         }
 
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
     }
 
     if (collection.has("partition_columns_in_data_file"))
@@ -802,6 +809,7 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         }
 
         partition_strategy_type = partition_strategy_type_opt.value();
+        partition_strategy_was_set = true;
     }
 
     if (auto partition_columns_in_data_file_value = getFromPositionOrKeyValue<bool>("partition_columns_in_data_file", args, engine_args_to_idx, key_value_args);

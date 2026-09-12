@@ -21,7 +21,7 @@ CREATE TABLE alo_tgt (k UInt64) ENGINE = MergeTree ORDER BY k;
 
 -- refresh_retries = 0 so a failed refresh does not auto-retry; every refresh below is triggered manually.
 CREATE MATERIALIZED VIEW alo_mv
-    REFRESH EVERY 10 YEAR SETTINGS refresh_incremental = 1, refresh_retries = 0 APPEND
+    REFRESH EVERY 10 YEAR SETTINGS refresh_retries = 0 APPEND INCREMENTAL
     TO alo_tgt EMPTY
     AS SELECT k FROM alo_src;
 

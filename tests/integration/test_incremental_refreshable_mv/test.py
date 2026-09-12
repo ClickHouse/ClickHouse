@@ -45,7 +45,7 @@ def test_incremental_rmv_cursor_survives_restart(started_cluster):
     node.query(
         """
         CREATE MATERIALIZED VIEW idb.mv
-            REFRESH EVERY 10 YEAR SETTINGS refresh_incremental = 1 APPEND
+            REFRESH EVERY 10 YEAR APPEND INCREMENTAL
             TO idb.tgt EMPTY
             AS SELECT k FROM idb.src
         """

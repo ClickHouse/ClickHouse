@@ -3,10 +3,32 @@
 #include <Storages/ObjectStorage/DataLakes/IDataLakeMetadata.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 
+#include <Core/Streaming/CursorTree.h>
+#include <Core/Field.h>
+#include <IO/ReadBufferFromString.h>
+#include <IO/WriteBufferFromString.h>
+
 #include <base/hex.h>
 
 namespace DB
 {
+
+String serializeCursorTree(const CursorTreeNodePtr & cursor)
+{
+    if (!cursor)
+        return {};
+    WriteBufferFromOwnString buf;
+    writeFieldBinary(Field(cursorTreeToMap(cursor)), buf);
+    return buf.str();
+}
+
+CursorTreeNodePtr deserializeCursorTree(const String & serialized)
+{
+    if (serialized.empty())
+        return nullptr;
+    ReadBufferFromString buf(serialized);
+    return buildCursorTree(readFieldBinary(buf).safeGet<Map>());
+}
 
 String refreshCursorToStorage(const String & serialized_cursor)
 {
@@ -27,15 +49,15 @@ DataLakeRefreshCursorStore::DataLakeRefreshCursorStore(std::shared_ptr<StorageOb
 {
 }
 
-String DataLakeRefreshCursorStore::load(ContextPtr context)
+CursorTreeNodePtr DataLakeRefreshCursorStore::load(ContextPtr context)
 {
-    auto * metadata = storage->getExternalMetadata(context);
+    auto metadata = storage->getExternalMetadata(context);
     if (!metadata)
-        return {};
+        return nullptr;
     auto stored = metadata->getRefreshCursor(context);
     if (!stored || stored->empty())
-        return {};
-    return refreshCursorFromStorage(*stored);
+        return nullptr;
+    return deserializeCursorTree(refreshCursorFromStorage(*stored));
 }
 
 }

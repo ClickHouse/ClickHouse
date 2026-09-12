@@ -8,6 +8,9 @@
 namespace DB
 {
 
+class CursorTreeNode;
+using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
+
 /// Reads the incremental refreshable-MV cursor for a refresh. Two backings exist:
 ///  - the Keeper coordination znode (default): the cursor is persisted separately from the appended
 ///    data, so a crash between the append and the cursor write replays the round -> at-least-once;
@@ -23,9 +26,8 @@ public:
     /// persist it in the Keeper coordination znode.
     virtual bool isTransactional() const = 0;
 
-    /// The serialized cursor persisted by the previous refresh (empty if none yet). Same opaque
-    /// encoding as `serializeStreamingCursor`, so the caller can `deserializeStreamingCursor` it.
-    virtual String load(ContextPtr context) = 0;
+    /// The cursor persisted by the previous refresh (null if none yet).
+    virtual CursorTreeNodePtr load(ContextPtr context) = 0;
 };
 
 using RefreshCursorStorePtr = std::shared_ptr<RefreshCursorStore>;

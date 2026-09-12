@@ -56,6 +56,7 @@
 #include <Formats/FormatFactory.h>
 #include <Functions/CastOverloadResolver.h>
 #include <Functions/DateTimeTransforms.h>
+#include <Functions/FieldInterval.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsCodingIP.h>
@@ -153,6 +154,8 @@ struct FunctionConvertSettings
     {
     }
 };
+
+using FunctionConvertSettingsPtr = std::shared_ptr<const FunctionConvertSettings>;
 
 namespace detail
 {
@@ -639,8 +642,9 @@ struct ToDateTime64TransformUnsigned
             /// `from` is unsigned: compare in the unsigned domain before any signed cast. Otherwise a value above
             /// `Int64::max` (e.g. `18446744073709551615`) is first converted to a negative `time_t` by `std::min<time_t>`
             /// and the clamp returns a pre-epoch value instead of saturating to `max_whole`.
-            const time_t clamped = static_cast<UInt64>(from) > static_cast<UInt64>(max_whole) ? max_whole : static_cast<time_t>(from);
-            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(clamped, 0, scale_multiplier);
+            if (accurate::greaterOp(from, max_whole))
+                return maxTicksForDateTime64(scale_multiplier);
+            return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
         }
     }
 };
@@ -666,10 +670,12 @@ struct ToDateTime64TransformSigned
             if (from < min_whole || from > max_whole) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
-        from = static_cast<FromType>(std::max<time_t>(from, min_whole));
-        from = static_cast<FromType>(std::min<time_t>(from, max_whole));
+        if (from > max_whole)
+            return maxTicksForDateTime64(scale_multiplier);
+        if (from < min_whole)
+            return minTicksForDateTime64(scale_multiplier);
 
-        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(from, 0, scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(static_cast<time_t>(from), 0, scale_multiplier);
     }
 };
 
@@ -686,21 +692,24 @@ struct ToDateTime64TransformFloat
 
     NO_SANITIZE_UNDEFINED DateTime64::NativeType execute(FromType from, const DateLUTImpl &) const
     {
-        /// The bounds are scale-dependent because ticks are stored in an Int64 (see maxWholeSecondsForDateTime64).
-        /// Clamping to the calendar-wide [MIN_DATETIME64_TIMESTAMP, MAX_DATETIME64_TIMESTAMP] window would still let
-        /// precision 8/9 inputs overflow the Int64 in convertToDecimal and surface DECIMAL_OVERFLOW instead of
-        /// saturating, so use the same scale-dependent bounds as the integer transforms.
         const Int64 scale_multiplier = DecimalUtils::scaleMultiplier<DateTime64::NativeType>(scale);
-        const time_t min_whole = minWholeSecondsForDateTime64(scale_multiplier);
-        const time_t max_whole = maxWholeSecondsForDateTime64(scale_multiplier);
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < min_whole || from > max_whole) [[unlikely]]
+            if (from < minWholeSecondsForDateTime64(scale_multiplier) || from > maxWholeSecondsForDateTime64(scale_multiplier)) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type DateTime64", from);
         }
 
-        from = std::max(from, static_cast<FromType>(min_whole));
-        from = std::min(from, static_cast<FromType>(max_whole));
+        /// The fractional part is kept, so the bounds have to be compared in ticks rather than whole seconds,
+        /// otherwise the whole last second saturates. `NaN` has no sign and still reports through convertToDecimal.
+        const Int64 min_ticks = minTicksForDateTime64(scale_multiplier);
+        const Int64 max_ticks = maxTicksForDateTime64(scale_multiplier);
+        DateTime64 result;
+        if (tryConvertToDecimal<FromDataType, DataTypeDateTime64>(from, scale, result) && result.value >= min_ticks && result.value <= max_ticks)
+            return result.value;
+        if (from > 0)
+            return max_ticks;
+        if (from < 0)
+            return min_ticks;
         return convertToDecimal<FromDataType, DataTypeDateTime64>(from, scale);
     }
 };
@@ -748,8 +757,10 @@ struct ToDateTime64Transform
                     ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE,
                     "Timestamp value {} is out of bounds of type DateTime64 with this precision", dt);
         }
-        dt = std::max<time_t>(dt, min_whole);
-        dt = std::min<time_t>(dt, max_whole);
+        if (dt > max_whole)
+            return maxTicksForDateTime64(scale_multiplier);
+        if (dt < min_whole)
+            return minTicksForDateTime64(scale_multiplier);
         return DecimalUtils::decimalFromComponentsWithMultiplier<DateTime64>(dt, 0, scale_multiplier);
     }
 
@@ -782,8 +793,9 @@ struct ToTime64TransformUnsigned
         }
 
         /// clamp in unsigned domain to avoid wrong when casting UInt64 above INT64_MAX to time_t
-        auto clamped = static_cast<time_t>(std::min<UInt64>(from, static_cast<UInt64>(MAX_TIME_TIMESTAMP)));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
+        if (accurate::greaterOp(from, MAX_TIME_TIMESTAMP))
+            return maxTicksForTime64(scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<time_t>(from), 0, scale_multiplier);
     }
 };
 
@@ -809,8 +821,12 @@ struct ToTime64TransformSigned
         /// For Saturate / Ignore overflow modes the value still has to be clamped to the representable
         /// Time64 range. Otherwise two casts can produce Time64 values that render identically as e.g.
         /// '999:59:59.000' but compare as different, because the underlying decimal stores the raw input.
-        const auto clamped = std::max<Int64>(std::min<Int64>(static_cast<Int64>(from), MAX_TIME_TIMESTAMP), -static_cast<Int64>(MAX_TIME_TIMESTAMP));
-        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(clamped, 0, scale_multiplier);
+        /// Compare in the source type: narrowing a wide integer first would flip the sign of a huge value
+        if (from > MAX_TIME_TIMESTAMP)
+            return maxTicksForTime64(scale_multiplier);
+        if (from < -MAX_TIME_TIMESTAMP)
+            return minTicksForTime64(scale_multiplier);
+        return DecimalUtils::decimalFromComponentsWithMultiplier<Time64>(static_cast<Int64>(from), 0, scale_multiplier);
     }
 };
 
@@ -829,16 +845,20 @@ struct ToTime64TransformFloat
     {
         if constexpr (date_time_overflow_behavior == FormatSettings::DateTimeOverflowBehavior::Throw)
         {
-            if (from < MIN_DATETIME64_TIMESTAMP || from > MAX_DATETIME64_TIMESTAMP) [[unlikely]]
+            if (from < -static_cast<Int64>(MAX_TIME_TIMESTAMP) || from > MAX_TIME_TIMESTAMP) [[unlikely]]
                 throw Exception(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Timestamp value {} is out of bounds of type Time64", from);
         }
 
-        /// Time64 has a much narrower representable range than DateTime64; clamping to the DateTime64
-        /// bounds would let casts pass values up to ~MAX_DATETIME64_TIMESTAMP through to the underlying
-        /// decimal, producing Time64 values that display correctly but compare as different from the
-        /// saturated maximum.
-        from = std::max(from, static_cast<FromType>(-static_cast<Int64>(MAX_TIME_TIMESTAMP)));
-        from = std::min(from, static_cast<FromType>(MAX_TIME_TIMESTAMP));
+        /// Time64 is much narrower than DateTime64, so the value needs its own range, compared in ticks so that
+        /// the fractional part survives. `NaN` has no sign and still reports through convertToDecimal.
+        const Int64 max_ticks = maxTicksForTime64(DecimalUtils::scaleMultiplier<Time64::NativeType>(scale));
+        Time64 result;
+        if (tryConvertToDecimal<FromDataType, DataTypeTime64>(from, scale, result) && result.value >= -max_ticks && result.value <= max_ticks)
+            return result.value;
+        if (from > 0)
+            return max_ticks;
+        if (from < 0)
+            return -max_ticks;
         return convertToDecimal<FromDataType, DataTypeTime64>(from, scale);
     }
 };
@@ -2183,7 +2203,9 @@ struct ConvertImpl
                 std::is_same_v<FromDataType, DataTypeInt8>
                 || std::is_same_v<FromDataType, DataTypeInt16>
                 || std::is_same_v<FromDataType, DataTypeInt32>
-                || std::is_same_v<FromDataType, DataTypeInt64>)
+                || std::is_same_v<FromDataType, DataTypeInt64>
+                || std::is_same_v<FromDataType, DataTypeInt128>
+                || std::is_same_v<FromDataType, DataTypeInt256>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
@@ -2193,14 +2215,23 @@ struct ConvertImpl
                 return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformSigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
         }
-        else if constexpr (std::is_same_v<FromDataType, DataTypeUInt64>
+        /// Without this UInt32 skips the saturating transform and stores an out-of-range value raw. UInt8 and
+        /// UInt16 cannot exceed MAX_TIME_TIMESTAMP, so they have nothing to saturate and keep the generic path.
+        else if constexpr (std::is_same_v<FromDataType, DataTypeUInt32> && std::is_same_v<ToDataType, DataTypeTime64>)
+        {
+            return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                arguments, result_type, input_rows_count, additions);
+        }
+        else if constexpr ((std::is_same_v<FromDataType, DataTypeUInt64>
+                || std::is_same_v<FromDataType, DataTypeUInt128>
+                || std::is_same_v<FromDataType, DataTypeUInt256>)
             && (std::is_same_v<ToDataType, DataTypeDateTime64> || std::is_same_v<ToDataType, DataTypeTime64>))
         {
             if constexpr (std::is_same_v<ToDataType, DataTypeDateTime64>)
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToDateTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
             else
-                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<UInt64, default_date_time_overflow_behavior>, false>::template execute<Additions>(
+                return DateTimeTransformImpl<FromDataType, ToDataType, ToTime64TransformUnsigned<typename FromDataType::FieldType, default_date_time_overflow_behavior>, false>::template execute<Additions>(
                     arguments, result_type, input_rows_count, additions);
         }
         else if constexpr ((
@@ -3483,6 +3514,19 @@ public:
         return Monotonic::get(type, left, right);
     }
 
+    bool hasInformationAboutPreimage() const override
+    {
+        return std::is_same_v<ToDataType, DataTypeDate>;
+    }
+
+    FieldIntervalPtr getPreimage(const IDataType & type, const Field & point) const override
+    {
+        if constexpr (std::is_same_v<ToDataType, DataTypeDate>)
+            return Monotonic::getPreimage(type, point);
+
+        return IFunction::getPreimage(type, point);
+    }
+
 private:
     const FunctionConvertSettings settings;
 
@@ -3796,9 +3840,16 @@ public:
             const auto timezone = extractTimeZoneNameFromFunctionArguments(arguments, 2, 0, false);
 
             if (isTime64<Name, ToDataType>(arguments))
-                res = scale == 0 ? res = std::make_shared<DataTypeTime>() : std::make_shared<DataTypeTime64>(scale);
+            {
+                if (to_time64 || scale != 0)
+                    res = std::make_shared<DataTypeTime64>(scale);
+                else
+                    res = std::make_shared<DataTypeTime>();
+            }
+            else if (to_datetime64 || scale != 0)
+                res = std::make_shared<DataTypeDateTime64>(scale, timezone);
             else
-                res = scale == 0 ? res = std::make_shared<DataTypeDateTime>(timezone) : std::make_shared<DataTypeDateTime64>(scale, timezone);
+                res = std::make_shared<DataTypeDateTime>(timezone);
         }
         else
         {
@@ -4013,7 +4064,7 @@ public:
                 if (arguments.size() > 1)
                     scale = extractToDecimalScale(arguments[1]);
 
-                if (scale == 0)
+                if (!to_datetime64 && scale == 0)
                 {
                     result_column = executeInternal<DataTypeDateTime>(arguments, result_type, input_rows_count, 0);
                 }
@@ -4036,7 +4087,7 @@ public:
                 if (arguments.size() > 1)
                     scale = extractToDecimalScale(arguments[1]);
 
-                if (scale == 0)
+                if (!to_time64 && scale == 0)
                 {
                     result_column = executeInternal<DataTypeTime>(arguments, result_type, input_rows_count, 0);
                 }
@@ -4136,26 +4187,23 @@ struct ToNumberMonotonicity
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
-        if (!type.isValueRepresentedByNumber())
+        const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
+        const IDataType * inner_type = low_cardinality ? low_cardinality->getDictionaryType().get() : &type;
+        if (const auto * nullable = typeid_cast<const DataTypeNullable *>(inner_type))
+            inner_type = nullable->getNestedType().get();
+
+        if (!inner_type->isValueRepresentedByNumber())
             return {};
 
         /// If type is same, the conversion is always monotonic.
         /// (Enum has separate case, because it is different data type)
-        if (checkAndGetDataType<DataTypeNumber<T>>(&type) ||
-            checkAndGetDataType<DataTypeEnum<T>>(&type))
+        if (checkAndGetDataType<DataTypeNumber<T>>(inner_type) ||
+            checkAndGetDataType<DataTypeEnum<T>>(inner_type))
             return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = true };
 
         /// Float cases.
 
-        const auto * low_cardinality = typeid_cast<const DataTypeLowCardinality *>(&type);
-        const IDataType * low_cardinality_dictionary_type = nullptr;
-        if (low_cardinality)
-            low_cardinality_dictionary_type = low_cardinality->getDictionaryType().get();
-
-        WhichDataType which_type(type);
-        WhichDataType which_inner_type = low_cardinality
-            ? WhichDataType(low_cardinality_dictionary_type)
-            : WhichDataType(type);
+        WhichDataType which_inner_type(*inner_type);
 
         /// When converting to Float, the conversion is always monotonic.
         if constexpr (is_floating_point<T>)
@@ -4193,10 +4241,40 @@ struct ToNumberMonotonicity
             return {};
         }
 
+        /// From DateTime64: it is represented by an Int64 number of ticks, 10^scale ticks per second.
+        /// The conversion to an integer (e.g. `toUnixTimestamp`) takes the whole number of seconds,
+        /// truncating the fractional part toward zero, and throws a `DECIMAL_OVERFLOW` exception when
+        /// the result does not fit into the target type - it never wraps around (see `DecimalUtils::convertTo`).
+        /// Truncation preserves order, so the conversion is monotonic everywhere it is defined.
+        if (which_inner_type.isDateTime64())
+        {
+            /// With zero scale the conversion is an identity mapping of the seconds, so it is strict.
+            const bool is_strict = assert_cast<const DataTypeDateTime64 &>(*inner_type).getScale() == 0;
+
+            /// A signed target of at least 64 bits fits the whole number of seconds of any DateTime64
+            /// (the ticks are Int64), so the conversion is total and monotonic on any range.
+            if constexpr (is_integer<T> && sizeof(T) >= sizeof(Int64) && !is_unsigned_v<T>)
+                return { .is_monotonic = true, .is_always_monotonic = true, .is_strict = is_strict };
+
+            /// Other targets cover only a part of the DateTime64 domain, and the conversion throws
+            /// an exception for the rest. Claiming monotonicity for a concrete range would make index
+            /// analysis execute the conversion over whole columns of index values, which may contain
+            /// out-of-range values next to the checked range (see `applyFunction` in `KeyCondition.cpp`),
+            /// and the batched conversion would throw. Claiming `is_always_monotonic` would additionally
+            /// let `KeyCondition` promise an exactly continuous key range that the per-range analysis
+            /// cannot confirm (see `matchesExactContinuousRange`). So only claim monotonicity on defined
+            /// values, which lets `KeyCondition` push a comparison of a raw `DateTime64` column with a
+            /// constant through the sorting key expression (e.g. `ORDER BY toUnixTimestamp(ts)` with
+            /// `WHERE ts >= c`): stored keys cannot correspond to out-of-range values, because computing
+            /// the sorting key at insert time would have thrown, and an unrepresentable constant is
+            /// rejected gracefully by the guards in `applyFunctionChainToColumn`.
+            return { .is_strict = is_strict, .is_always_monotonic_where_defined = true };
+        }
+
         /// Integer cases.
 
         /// Only support types represented by native integers.
-        /// It can be extended to big integers, decimals and DateTime64 later.
+        /// It can be extended to big integers and decimals later.
         /// By the way, NULLs are representing unbounded ranges.
         /// For null Field, check if the type is valid.
         /// See : https://github.com/ClickHouse/ClickHouse/issues/80742
@@ -4217,10 +4295,10 @@ struct ToNumberMonotonicity
             || !is_valid_uint64_or_int64_or_null(right))
             return {};
 
-        const bool from_is_unsigned = type.isValueRepresentedByUnsignedInteger();
+        const bool from_is_unsigned = inner_type->isValueRepresentedByUnsignedInteger();
         const bool to_is_unsigned = is_unsigned_v<T>;
 
-        const size_t size_of_from = type.getSizeOfValueInMemory();
+        const size_t size_of_from = inner_type->getSizeOfValueInMemory();
         const size_t size_of_to = sizeof(T);
 
         const bool left_in_first_half = left.isNull()
@@ -4307,6 +4385,13 @@ template <typename T>
 struct ToDateMonotonicity
 {
     static bool has() { return true; }
+
+    static FieldIntervalPtr getPreimage(const IDataType & type, const Field & point)
+    {
+        /// The helper only accepts `DateTime`: with `date_time_overflow_behavior=ignore` a
+        /// `DateTime64` or `Date32` source can wrap and have several disjoint preimages.
+        return getPreimageForDateRounding(type, point, DateRoundingInterval::Day);
+    }
 
     static IFunction::Monotonicity get(const IDataType & type, const Field & left, const Field & right)
     {
@@ -4909,15 +4994,14 @@ public:
     using MonotonicityForRange = std::function<Monotonicity(const IDataType &, const Field &, const Field &)>;
     using WrapperType = std::function<ColumnPtr(ColumnsWithTypeAndName &, const DataTypePtr &, const ColumnNullable *, size_t)>;
 
-    FunctionCast(ContextPtr context
+    FunctionCast(const FunctionConvertSettings & settings_
             , const char * cast_name_
             , MonotonicityForRange && monotonicity_for_range_
             , const DataTypes & argument_types_
             , const DataTypePtr & return_type_
             , std::optional<CastDiagnostic> diagnostic_
-            , CastType cast_type_
-            , FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
-        : settings(context, date_time_overflow_behavior)
+            , CastType cast_type_)
+        : settings(settings_)
         , cast_name(cast_name_)
         , monotonicity_for_range(std::move(monotonicity_for_range_))
         , argument_types(argument_types_)
@@ -5127,21 +5211,17 @@ private:
 }
 
 
+/// `context` may be nullptr.
+FunctionConvertSettingsPtr createFunctionConvertSettings(
+    const ContextPtr & context,
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
+
 FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context,
+    const FunctionConvertSettingsPtr & settings,
     const char * name,
     const ColumnsWithTypeAndName & arguments,
     const DataTypePtr & return_type,
     std::optional<CastDiagnostic> diagnostic,
     CastType cast_type);
-
-FunctionBasePtr createFunctionBaseCast(
-    ContextPtr context,
-    const char * name,
-    const ColumnsWithTypeAndName & arguments,
-    const DataTypePtr & return_type,
-    std::optional<CastDiagnostic> diagnostic,
-    CastType cast_type,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior);
 
 }

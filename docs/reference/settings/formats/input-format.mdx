@@ -83,7 +83,7 @@ For Avro/AvroConfluent format: when field is not found in schema use default val
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-For Avro/AvroConfluent format: insert default in case of null and non Nullable colum
+For Avro/AvroConfluent format: insert default in case of null and non Nullable column
 
 ## input_format_binary_decode_types_in_binary_format {#input_format_binary_decode_types_in_binary_format}
 
@@ -149,7 +149,7 @@ Enabling this option disables parallel parsing and makes deduplication impossibl
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-If it is set true, \\r will be allowed at end of line not followed by 
+If it is set true, \\r will be allowed at end of line not followed by \\n
 
 ## input_format_csv_allow_variable_number_of_columns {#input_format_csv_allow_variable_number_of_columns}
 
@@ -509,6 +509,14 @@ Disabled by default.
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "24.8"},{"label": "1000"},{"label": "It was unlimited in previous versions, but that was unsafe."}]}]}/>
 
 Maximum depth of a field in JSON. This is not a strict limit, it does not have to be applied precisely.
+
+## input_format_json_max_object_size {#input_format_json_max_object_size}
+
+<SettingsInfoBlock type="UInt64" default_value="536870912" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "536870912"},{"label": "New setting to limit the maximum size of a single JSON object in bytes"}]}]}/>
+
+Maximum allowed size of a single JSON object in bytes. Objects exceeding this limit are rejected as likely malformed. This protects against memory exhaustion when a malformed JSON document is parsed as a single object. The same limit is applied in both parallel and non-parallel parsing paths. Set to 0 to disable the check.
 
 ## input_format_json_max_string_column_growth_step {#input_format_json_max_string_column_growth_step}
 
@@ -994,7 +1002,7 @@ Enable Google wrappers for regular non-nested columns, e.g. google.protobuf.Stri
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "0"},{"label": "New setting"}]}]}/>
 
-Indicate which field of protobuf oneof was found by means of setting enum value in a special colum
+Indicate which field of protobuf oneof was found by means of setting enum value in a special column
 
 ## input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference {#input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference}
 

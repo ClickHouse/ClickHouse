@@ -84,7 +84,7 @@ void DataTypeArray::forEachChild(const ChildCallback & callback) const
     nested->forEachChild(callback);
 }
 
-std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolumnData(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
+std::unique_ptr<IDataType::SubcolumnInfo> DataTypeArray::getDynamicSubcolumnInfo(std::string_view subcolumn_name, const SubstreamData & data, size_t initial_array_level, bool throw_if_null) const
 {
     auto nested_type = assert_cast<const DataTypeArray &>(*data.type).nested;
     const auto & array_serialization = assert_cast<const SerializationArray &>(*removeNamedSerialization(data.serialization));
@@ -92,16 +92,20 @@ std::unique_ptr<ISerialization::SubstreamData> DataTypeArray::getDynamicSubcolum
     nested_data->type = nested_type;
     nested_data->column = data.column ? assert_cast<const ColumnArray &>(*data.column).getDataPtr() : nullptr;
 
-    auto nested_subcolumn_data = getSubcolumnData(subcolumn_name, *nested_data, initial_array_level + 1, throw_if_null);
-    if (!nested_subcolumn_data)
+    auto nested_subcolumn_info = getSubcolumnInfo(subcolumn_name, *nested_data, initial_array_level + 1, throw_if_null);
+    if (!nested_subcolumn_info)
         return nullptr;
 
     auto creator = SerializationArray::SubcolumnCreator(data.column ? assert_cast<const ColumnArray &>(*data.column).getOffsetsPtr() : nullptr);
-    auto res = std::make_unique<ISerialization::SubstreamData>();
-    res->serialization = creator.create(nested_subcolumn_data->serialization, nested_subcolumn_data->type);
-    res->type = creator.create(nested_subcolumn_data->type);
+    auto res = std::make_unique<SubcolumnInfo>();
+    res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
+    res->data.type = creator.create(nested_subcolumn_info->data.type);
     if (data.column)
-        res->column = creator.create(nested_subcolumn_data->column);
+        res->data.column = creator.create(nested_subcolumn_info->data.column);
+
+    /// Reached through the array elements, exactly as the static enumeration would reach it.
+    res->substreams_path.emplace_back(ISerialization::Substream::ArrayElements);
+    res->substreams_path.insert(res->substreams_path.end(), nested_subcolumn_info->substreams_path.begin(), nested_subcolumn_info->substreams_path.end());
 
     return res;
 }
@@ -159,7 +163,7 @@ SELECT [1, 2] AS x, toTypeName(x)
 
 ## Working with Data Types {#working-with-data-types}
 
-When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](/sql-reference/data-types/nullable) or literal [NULL](/reference/settings/formats/input-format#input_format_null_as_default) values, the type of an array element also becomes [Nullable](/reference/data-types/nullable).
+When creating an array on the fly, ClickHouse automatically defines the argument type as the narrowest data type that can store all the listed arguments. If there are any [Nullable](/reference/data-types/nullable) or literal [NULL](/reference/settings/formats/input-format#input_format_null_as_default) values, the type of an array element also becomes [Nullable](/reference/data-types/nullable).
 
 If ClickHouse couldn't determine the data type, it generates an exception. For instance, this happens when trying to create an array with strings and numbers simultaneously (`SELECT array(1, 'a')`).
 
