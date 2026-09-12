@@ -527,7 +527,7 @@ Only a small set of symbols are escaped. You can easily stumble onto a string va
 
 Arrays are written as a list of comma-separated values in `[]`. Number items in the array are formatted as normally. `Date` and `DateTime` types are written in single quotes. Strings are written in single quotes with the same escaping rules as above.
 
-[NULL](/sql-reference/syntax.md) is formatted according to setting [format_tsv_null_representation](/reference/settings/formats/format#format_tsv_null_representation) (default value is `\N`).
+[NULL](/reference/syntax) is formatted according to setting [format_tsv_null_representation](/reference/settings/formats/format#format_tsv_null_representation) (default value is `\N`).
 
 In input data, ENUM values can be represented as names or as ids. First, we try to match the input value to the ENUM name. If we fail and the input value is a number, we try to match this number to ENUM id.
 If input data contains only ENUM ids, it's recommended to enable the setting [input_format_tsv_enum_as_number](/reference/settings/formats/input-format#input_format_tsv_enum_as_number) to optimize ENUM parsing.
@@ -646,11 +646,11 @@ The output will be in tab separated format:
 
 ## Description {#description}
 
-Differs from the [`TabSeparated`](/interfaces/formats/TabSeparated) format in that rows are written without escaping.
+Differs from the [`TabSeparated`](/reference/formats/TabSeparated/TabSeparated) format in that rows are written without escaping.
 
-:::note
+<Note>
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-:::
+</Note>
 
 For a comparison of the `TabSeparatedRaw` format and the `RawBlob` format see: [Raw Formats Comparison](/reference/formats/RawBLOB#raw-formats-comparison)
 
@@ -732,9 +732,9 @@ The output will be in tab separated format:
 Differs from the [`TabSeparatedWithNames`](/reference/formats/TabSeparated/TabSeparatedWithNames) format,
 in that the rows are written without escaping.
 
-:::note
+<Note>
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 
@@ -816,9 +816,9 @@ date    season  home_team       away_team       home_team_goals away_team_goals
 Differs from the [`TabSeparatedWithNamesAndTypes`](/reference/formats/TabSeparated/TabSeparatedWithNamesAndTypes) format,
 in that the rows are written without escaping.
 
-:::note
+<Note>
 When parsing with this format, tabs or line-feeds are not allowed in each field.
-:::
+</Note>
 
 ## Example usage {#example-usage}
 

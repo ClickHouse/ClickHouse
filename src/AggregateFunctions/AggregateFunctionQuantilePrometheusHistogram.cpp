@@ -263,7 +263,7 @@ Quantile interpolation is then performed similarly to the PromQL [histogram_quan
 
 **See Also**
 
-- [median](/sql-reference/aggregate-functions/reference/median)
+- [median](/reference/functions/aggregate-functions/median)
 - [quantiles](/reference/functions/aggregate-functions/quantiles)
     )";
     FunctionDocumentation::Syntax syntax_quantilePrometheusHistogram = R"(
@@ -300,7 +300,7 @@ FROM VALUES('bucket_upper_bound Float64, cumulative_bucket_value UInt64', (0, 6)
     FunctionDocumentation::Description description_quantilesPrometheusHistogram = R"(
 Computes multiple [quantiles](https://en.wikipedia.org/wiki/Quantile) of a histogram using linear interpolation at different levels simultaneously, taking into account the cumulative value and upper bounds of each histogram bucket.
 
-This function is equivalent to [`quantilePrometheusHistogram`](/sql-reference/aggregate-functions/reference/quantilePrometheusHistogram) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
+This function is equivalent to [`quantilePrometheusHistogram`](/reference/functions/aggregate-functions/quantilePrometheusHistogram) but allows computing multiple quantile levels in a single pass, which is more efficient than calling individual quantile functions.
     )";
     FunctionDocumentation::Syntax syntax_quantilesPrometheusHistogram = R"(
 quantilesPrometheusHistogram(level1, level2, ...)(bucket_upper_bound, cumulative_bucket_value)

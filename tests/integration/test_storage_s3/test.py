@@ -60,7 +60,10 @@ def started_cluster():
         cluster = ClickHouseCluster(__file__)
         cluster.add_instance(
             "restricted_dummy",
-            main_configs=["configs/config_for_test_remote_host_filter.xml"],
+            main_configs=[
+                "configs/config_for_test_remote_host_filter.xml",
+                "configs/remote_servers.xml",
+            ],
             user_configs=["configs/allow_server_credentials.xml"],
             with_minio=True,
         )
@@ -788,21 +791,21 @@ def test_multipart(started_cluster, maybe_auth, positive):
 def test_remote_host_filter(started_cluster):
     instance = started_cluster.instances["restricted_dummy"]
     format = "column1 UInt32, column2 UInt32, column3 UInt32"
-
-    query = "select *, column1*column2*column3 from s3('http://{}:{}/{}/test.csv', 'CSV', '{}')".format(
-        "invalid_host", MINIO_INTERNAL_PORT, started_cluster.minio_bucket, format
-    )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
-
     other_values = "(1, 1, 1), (1, 1, 1), (11, 11, 11)"
-    query = "insert into table function s3('http://{}:{}/{}/test.csv', 'CSV', '{}') values {}".format(
-        "invalid_host",
-        MINIO_INTERNAL_PORT,
-        started_cluster.minio_bucket,
-        format,
-        other_values,
+    blocked_url = f"http://invalid_host:{MINIO_INTERNAL_PORT}/{started_cluster.minio_bucket}"
+    queries = (
+        f"DESCRIBE TABLE s3('{blocked_url}/test.csv', 'CSV')",
+        f"SELECT count() FROM s3Cluster('cluster', '{blocked_url}/test.csv', 'CSV')",
+        f"DESCRIBE TABLE icebergS3('{blocked_url}/')",
+        f"SELECT count() FROM icebergS3('{blocked_url}/')",
+        f"SELECT count() FROM icebergS3Cluster('cluster', '{blocked_url}/')",
+        f"CREATE TABLE remote_host_filter_iceberg (x UInt32) ENGINE = IcebergS3('{blocked_url}/')",
+        f"SELECT *, column1 * column2 * column3 FROM s3('{blocked_url}/test.csv', 'CSV', '{format}')",
+        f"INSERT INTO TABLE FUNCTION s3('{blocked_url}/test.csv', 'CSV', '{format}') VALUES {other_values}",
     )
-    assert "not allowed in configuration file" in instance.query_and_get_error(query)
+
+    for query in queries:
+        assert "UNACCEPTABLE_URL" in instance.query_and_get_error(query), query
 
 
 def test_wrong_s3_syntax(started_cluster):
@@ -3151,27 +3154,23 @@ def test_file_pruning_with_hive_style_partitioning(started_cluster):
         "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
         in node.query_and_get_error(
             f"""
-    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
+    CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet', partition_strategy = 'wildcard')
     PARTITION BY (b, c)
-    """,
-            settings={"file_like_engine_default_partition_strategy": "wildcard"},
+    """
         )
     )
 
     # `compatibility` older than `26.6` resolves
-    # `file_like_engine_default_partition_strategy` to `wildcard` via
-    # `SettingsChangesHistory`, so the same path must raise the same error
-    # without an explicit setting override.
-    assert (
-        "Partition strategy wildcard can not be used without a '_partition_id' wildcard"
-        in node.query_and_get_error(
-            f"""
+    # `file_like_engine_default_partition_strategy` to `wildcard`. Without an
+    # explicit strategy, preserve the old read-only behavior instead of failing.
+    node.query(
+        f"""
     CREATE TABLE {table_name} (a Int32, b Int32, c String) ENGINE = S3('{url}', format = 'Parquet')
     PARTITION BY (b, c)
     """,
-            settings={"compatibility": "26.5"},
-        )
+        settings={"compatibility": "26.5"},
     )
+    node.query(f"DROP TABLE {table_name}")
 
     # From `26.6` onwards the default flips to `hive`, so the same statement
     # under `compatibility = '26.6'` must succeed.
@@ -3761,3 +3760,38 @@ def test_query_condition_cache_overwrite_invalidation(started_cluster):
 
     instance.query(f"DROP TABLE {table_name}")
 
+
+def test_row_policy_over_csv(started_cluster):
+    bucket = started_cluster.minio_bucket
+    instance = started_cluster.instances["dummy"]
+    filename = "test_row_policy_over_csv.csv"
+    url = f"http://{started_cluster.minio_ip}:{MINIO_INTERNAL_PORT}/{bucket}/{filename}"
+
+    run_query(
+        instance,
+        f"INSERT INTO TABLE FUNCTION s3('{url}', 'CSV', 'id UInt64, region String') "
+        f"SELECT number, ['East', 'West'][number % 2 + 1] FROM numbers(6) "
+        f"SETTINGS s3_truncate_on_insert=1",
+    )
+    run_query(
+        instance,
+        f"CREATE TABLE test_row_policy_csv (id UInt64, region String) ENGINE = S3('{url}', 'CSV')",
+    )
+    run_query(
+        instance,
+        "CREATE ROW POLICY test_row_policy_csv_p ON test_row_policy_csv "
+        "USING region = 'East' TO ALL",
+    )
+    try:
+        assert (
+            run_query(instance, "SELECT id, region FROM test_row_policy_csv ORDER BY id")
+            == "0\tEast\n2\tEast\n4\tEast\n"
+        )
+        assert (
+            run_query(instance, "SELECT id FROM test_row_policy_csv ORDER BY id")
+            == "0\n2\n4\n"
+        )
+        assert run_query(instance, "SELECT count() FROM test_row_policy_csv") == "3\n"
+    finally:
+        run_query(instance, "DROP ROW POLICY test_row_policy_csv_p ON test_row_policy_csv")
+        run_query(instance, "DROP TABLE test_row_policy_csv")

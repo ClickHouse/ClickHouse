@@ -36,22 +36,35 @@ class _Environment(MetaClasses.Serializable):
     FORK_NAME: str
     COMMIT_MESSAGE: str = ""
     EVENT_ACTION: str = ""
+    # Unix timestamp resolved once by the config job (see
+    # native_jobs._config_workflow) and inherited by every other job with this
+    # environment, so all of them agree on when the run started.
+    WORKFLOW_START_TIME: float = 0.0
     # merged PR for "push" or "merge_group" workflow
     LINKED_PR_NUMBER: int = 0
     LOCAL_RUN: bool = False
+    PR_IS_DRAFT: bool = False
     PR_LABELS: List[str] = dataclasses.field(default_factory=list)
     REPORT_MESSAGES: List[Dict[str, str]] = dataclasses.field(default_factory=list)
     JOB_CONFIG: Optional[Job.Config] = None
     TRACEBACKS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_JOB_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
     JOB_KV_DATA: Dict[str, Any] = dataclasses.field(default_factory=dict)
-    # Keys present in JOB_KV_DATA when the job started, i.e. inherited from the
-    # initial (config) job. Used in Runner._post_run to emit only the KV data a
-    # job itself added as the job's `data` output, instead of re-emitting the
-    # whole inherited bucket into every job's output (toJson(needs)).
+    # Keys inherited from the initial job so downstream jobs can emit only
+    # their own additions in `data=` outputs.
     JOB_KV_DATA_BASE_KEYS: List[str] = dataclasses.field(default_factory=list)
     COMMIT_AUTHORS: List[str] = dataclasses.field(default_factory=list)
     WORKFLOW_CONFIG: Optional[Dict[str, Any]] = None
+    # How many times this job was manually re-run (0 = first attempt). Set
+    # per-job by the orchestrator; job code can read it via Info().
+    RERUN_COUNT: int = 0
+    # True when this run is driven by the native orchestrator, which is the SOLE
+    # writer of the workflow report summary. Job-side report writers
+    # (push_pending_ci_report / configure / pre_run / post_run's summary merge /
+    # Finish Workflow's NOT_FINALIZED loop) skip when this is set — see
+    # orchestrator/REPORT_OWNERSHIP.md. False for local runs and GitHub Actions,
+    # which keep the per-job writers.
+    ORCHESTRATOR_OWNS_REPORT: bool = False
     name = "environment"
 
     @classmethod
@@ -83,6 +96,7 @@ class _Environment(MetaClasses.Serializable):
         PR_BODY = ""
         PR_TITLE = ""
         PR_LABELS = []
+        PR_IS_DRAFT = False
         LINKED_PR_NUMBER = 0
         EVENT_TIME = ""
         EVENT_ACTION = ""
@@ -106,6 +120,7 @@ class _Environment(MetaClasses.Serializable):
                 PR_LABELS = [
                     label["name"] for label in github_event["pull_request"]["labels"]
                 ]
+                PR_IS_DRAFT = bool(github_event["pull_request"].get("draft", False))
                 USER_LOGIN = github_event["pull_request"]["user"]["login"]
                 EVENT_TIME = github_event.get("pull_request", {}).get(
                     "updated_at", None
@@ -170,7 +185,7 @@ class _Environment(MetaClasses.Serializable):
                         if LINKED_PR_NUMBER
                         else ""
                     )
-                except:
+                except Exception:
                     LINKED_PR_NUMBER = 0
                     CHANGE_URL = ""
 
@@ -234,6 +249,7 @@ class _Environment(MetaClasses.Serializable):
             FORK_NAME=FORK_NAME,
             COMMIT_MESSAGE=COMMIT_MESSAGE,
             PR_LABELS=PR_LABELS,
+            PR_IS_DRAFT=PR_IS_DRAFT,
             INSTANCE_LIFE_CYCLE=INSTANCE_LIFE_CYCLE,
             REPORT_MESSAGES=[],
             LINKED_PR_NUMBER=LINKED_PR_NUMBER,
@@ -255,7 +271,9 @@ class _Environment(MetaClasses.Serializable):
 
     @classmethod
     def from_dict(cls: Type[T], obj: Dict[str, Any]) -> T:
-        JOB_OUTPUT_STREAM = os.getenv("GITHUB_OUTPUT", "")
+        # Prefer the env var (GHA sets it), but fall back to the stored path so
+        # CI engine environments serialised by `_build_ci_environment` are not wiped.
+        JOB_OUTPUT_STREAM = os.getenv("GITHUB_OUTPUT", "") or obj.get("JOB_OUTPUT_STREAM", "")
         obj["JOB_OUTPUT_STREAM"] = JOB_OUTPUT_STREAM
         if "PARAMETER" in obj:
             obj["PARAMETER"] = _to_object(obj["PARAMETER"])
@@ -273,9 +291,6 @@ class _Environment(MetaClasses.Serializable):
         normalized_job_name = Utils.normalize_string(Settings.CI_CONFIG_JOB_NAME)
         config_job_data = workflow_status_data.get(normalized_job_name, {})
         data_str = config_job_data.get("outputs", {}).get("data", "")
-        # A suppressed output may surface either as a missing key or as a blank
-        # string - do not let json.loads choke on the latter before the
-        # explicit error below
         if isinstance(data_str, str):
             env_dict = json.loads(data_str) if data_str.strip() else None
         else:
@@ -283,25 +298,15 @@ class _Environment(MetaClasses.Serializable):
         if not env_dict or "SHA" not in env_dict:
             raise RuntimeError(
                 f"Job output [data] of the [{Settings.CI_CONFIG_JOB_NAME}] job is empty or missing. "
-                "If that job itself succeeded, the runner has likely suppressed the output: "
-                "it refuses to export a job output that matches a secret pattern "
-                "(look for a [##[warning]Skip output 'data' since it may contain secret] line "
-                f"at the very end of the [{Settings.CI_CONFIG_JOB_NAME}] job log)"
+                "The runner likely suppressed it because it matched a secret pattern."
             )
 
-        # JOB_KV_DATA is stored as opaque base64 in the initial job's output
-        # (see Runner.run) to keep user-authored strings such as changed file
-        # paths from matching a secret pattern and suppressing the output -
-        # decode it back into a dict here
         kv_data = env_dict.get("JOB_KV_DATA")
         if isinstance(kv_data, str):
             env_dict["JOB_KV_DATA"] = (
                 json.loads(Utils.from_base64(kv_data)) if kv_data else {}
             )
 
-        # User-authored free text is stripped from the initial job's output
-        # (see Runner.run: the runner drops outputs matching secret patterns) -
-        # restore it from the local event payload
         event_file_path = os.getenv("GITHUB_EVENT_PATH", "")
         if event_file_path and Path(event_file_path).is_file():
             with open(event_file_path, "r", encoding="utf-8") as f:
@@ -347,7 +352,7 @@ class _Environment(MetaClasses.Serializable):
         Messages are collected during job execution and later written to both
         the job and workflow ``Result.ext`` as ``{"message": str, "from": str}``
         entries.  Grouping of duplicate messages is done at the rendering level
-        in ``json.html``.
+        in ``praktika.html``.
         Prefer the typed wrappers ``add_workflow_warning/error/note``.
         """
         self.REPORT_MESSAGES.append(
@@ -418,11 +423,16 @@ class _Environment(MetaClasses.Serializable):
             raise RuntimeError()
 
     def get_s3_prefix(self, latest=False):
-        return self.get_s3_prefix_static(self.PR_NUMBER, self.BRANCH, self.SHA, latest)
+        return self.get_s3_prefix_static(
+            self.PR_NUMBER, self.BRANCH, self.SHA, self.WORKFLOW_NAME, latest
+        )
 
     @classmethod
-    def get_s3_prefix_static(cls, pr_number, branch, sha, latest=False):
+    def get_s3_prefix_static(cls, pr_number, branch, sha, workflow_name, latest=False):
+        from .utils import Utils
+
         assert pr_number > 0 or branch
+        assert workflow_name
         if pr_number:
             prefix = f"PRs/{pr_number}"
         else:
@@ -432,6 +442,7 @@ class _Environment(MetaClasses.Serializable):
             prefix += "/latest"
         elif sha:
             prefix += f"/{sha}"
+        prefix += f"/{Utils.normalize_string(workflow_name)}"
         return prefix
 
     def is_local_run(self):

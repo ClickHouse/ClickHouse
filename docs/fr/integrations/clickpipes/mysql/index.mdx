@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/fr/clickpipes/_changing_tls_settings.mdx';
+import SettingPartitionBy from '/snippets/fr/clickpipes/_target_ch_partition_by.mdx';
 
 <BetaBadge />
 
@@ -76,7 +77,7 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
 4. Renseignez les informations de connexion de votre base de données MySQL source, que vous avez configurée lors de l’étape des prérequis.
 
 <Info>
-  Avant de commencer à saisir vos informations de connexion, assurez-vous d’avoir autorisé les adresses IP de ClickPipes dans les règles de votre pare-feu. Sur la page suivante, vous trouverez une [liste des adresses IP de ClickPipes](/fr/integrations/clickpipes/home#list-of-static-ips).
+  Avant de commencer à saisir vos informations de connexion, assurez-vous d’avoir autorisé les adresses IP de ClickPipes dans les règles de votre pare-feu. Sur la page suivante, vous trouverez une [liste des adresses IP de ClickPipes](/fr/integrations/clickpipes/networking/static-ips).
   Pour plus d’informations, consultez les guides de configuration de la base de données MySQL source liés [en haut de cette page](#prerequisites).
 </Info>
 
@@ -92,7 +93,7 @@ Assurez-vous d’être connecté à votre compte ClickHouse Cloud. Si vous n’a
   #### (Facultatif) Configurer le tunnel SSH
 </div>
 
-Vous pouvez préciser les informations du tunnel SSH si votre base de données source MySQL n’est pas accessible publiquement.
+Vous pouvez préciser les informations du tunnel SSH si votre base de données MySQL source n’est pas accessible publiquement.
 
 1. Activez le bouton bascule « Use SSH Tunnelling ».
 
@@ -105,7 +106,7 @@ Vous pouvez préciser les informations du tunnel SSH si votre base de données s
 4. Cliquez sur « Verify Connection » pour vérifier la connexion.
 
 <Note>
-  Assurez-vous d’autoriser les [adresses IP de ClickPipes](/fr/integrations/clickpipes/home#list-of-static-ips) dans les règles de votre pare-feu pour l’hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
+  Assurez-vous d’autoriser les [adresses IP de ClickPipes](/fr/integrations/clickpipes/networking/static-ips) dans les règles de votre pare-feu pour l’hôte bastion SSH afin que ClickPipes puisse établir le tunnel SSH.
 </Note>
 
 Une fois les informations de connexion renseignées, cliquez sur `Next`.
@@ -133,11 +134,13 @@ Vous pouvez configurer les paramètres avancés si nécessaire. Une brève descr
 
 6. Vous pouvez sélectionner les tables que vous souhaitez répliquer depuis la base de données MySQL source. Lors de cette sélection, vous pouvez également renommer les tables dans la base de données ClickHouse de destination et exclure des colonnes spécifiques.
 
+7. <SettingPartitionBy />
+
 <div id="review-permissions-and-start-the-clickpipe">
   ### Vérifiez les permissions et démarrez le ClickPipe
 </div>
 
-7. Sélectionnez le rôle « Accès complet » dans le menu déroulant des permissions, puis cliquez sur « Terminer la configuration ».
+8. Sélectionnez le rôle « Accès complet » dans le menu déroulant des permissions, puis cliquez sur « Terminer la configuration ».
 
    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Vérifiez les permissions" size="lg" border />
 

@@ -6,6 +6,9 @@ set serialize_query_plan=0;
 set enable_analyzer=1;
 set max_threads=2;
 
+-- This test inspects the distributed pipeline shape, so pin the unrelated virtual row optimization off.
+set read_in_order_use_virtual_row=0;
+
 -- Basic distributed pipeline explain
 explain pipeline distributed=1 select sum(number) from remote('127.0.0.{1,2,3}', numbers(5)) group by bitAnd(number, 3);
 
@@ -34,6 +37,13 @@ INSERT INTO test_distributed_pipeline SELECT number, number * 2, number * 3 FROM
 SET automatic_parallel_replicas_mode = 0;
 SET enable_parallel_replicas=2, max_parallel_replicas=2, cluster_for_parallel_replicas='test_cluster_one_shard_two_replicas', parallel_replicas_for_non_replicated_merge_tree=1, parallel_replicas_local_plan=1;
 
+-- `EXPLAIN PIPELINE distributed=1` forwards an `EXPLAIN PIPELINE` query to the replicas, so it needs
+-- the query to be sent as text. The plan-based implementation sends a serialized plan instead and
+-- cannot describe their pipeline, exactly like `serialize_query_plan = 1` above.
+SET parallel_replicas_plan_based = 0;
+
 explain pipeline distributed=1 SELECT * FROM test_distributed_pipeline ORDER BY c;
+
+explain pipeline distributed=1 SELECT * FROM test_distributed_pipeline ORDER BY c SETTINGS parallel_replicas_plan_based = 1; -- { serverError NOT_IMPLEMENTED }
 
 DROP TABLE test_distributed_pipeline;

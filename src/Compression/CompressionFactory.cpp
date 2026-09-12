@@ -1,7 +1,8 @@
-#include <Compression/CompressionFactory.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionCodecNone.h>
+#include <Compression/CompressionFactory.h>
 #include <Compression/registerCompressionCodecs.h>
+#include <Core/Settings.h>
 #include <IO/ReadBuffer.h>
 #include <IO/WriteHelpers.h>
 #include <Parsers/ASTFunction.h>
@@ -11,8 +12,8 @@
 #include <Parsers/parseQuery.h>
 #include <Poco/String.h>
 
-#include <Columns/IColumn.h>
 #include <algorithm>
+#include <Columns/IColumn.h>
 
 #include <boost/algorithm/string/join.hpp>
 
@@ -105,13 +106,8 @@ CompressionCodecPtr CompressionCodecFactory::get(
             if (only_generic && !codec->isGenericCompression())
                 continue;
 
-            /// Lossy codecs (e.g. SZ3) reinterpret the raw bytes as floating-point values. When the data type
-            /// is unknown we can not verify the column is floating-point, so applying a lossy codec would
-            /// silently corrupt the data. This happens for the marks, primary key and default compression codec
-            /// settings, which build codecs with a null type. Non-generic lossy codecs are already filtered out
-            /// above for structural substreams (the `only_generic` path), so this rejects only codecs that would
-            /// actually be used. The decompression path (`get(uint8_t)`) builds codecs directly through the
-            /// creator and never reaches this point, so reading existing data is unaffected.
+            /// Lossy codecs (e.g. SZ3) reinterpret the raw bytes as floating-point values.
+            /// When the data type is unknown we can not verify the column is floating-point
             if (!column_type && codec->isLossyCompression())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,
                     "Codec {} is lossy and can only be applied to Float32/Float64 columns (or arrays/tuples/nullables "
@@ -145,6 +141,30 @@ CompressionCodecPtr CompressionCodecFactory::get(uint8_t byte_code) const
     return family_code_and_creator->second({}, nullptr);
 }
 
+String CompressionCodecFactory::getGateSettingName(const String & family_name)
+{
+    return fmt::format("enable_{}_codec", Poco::toLower(family_name));
+}
+
+std::optional<SettingsTierType> CompressionCodecFactory::getGateTier(const String & gate_setting_name)
+{
+    const std::optional<SettingsTierType> tier = Settings::tryGetTierOfBuiltin(gate_setting_name);
+    if (tier == SettingsTierType::OBSOLETE)
+        return std::nullopt;
+    return tier;
+}
+
+Strings CompressionCodecFactory::getGateSettingNames() const
+{
+    Strings result;
+    for (const auto & family : family_name_with_codec)
+    {
+        if (String gate_setting_name = getGateSettingName(family.first); getGateTier(gate_setting_name))
+            result.push_back(std::move(gate_setting_name));
+    }
+    return result;
+}
+
 void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns) const
 {
     std::for_each(
@@ -168,14 +188,17 @@ void CompressionCodecFactory::fillCodecDescriptions(MutableColumns & res_columns
                 throw;
             }
 
+            const SettingsTierType tier = getGateTier(getGateSettingName(name)).value_or(SettingsTierType::PRODUCTION);
+
             res_columns[0]->insert(name);
             res_columns[1]->insert(tmp->getMethodByte());
             res_columns[2]->insert(tmp->isCompression());
             res_columns[3]->insert(tmp->isGenericCompression());
             res_columns[4]->insert(tmp->isEncryption());
             res_columns[5]->insert(tmp->isFloatingPointTimeSeriesCodec());
-            res_columns[6]->insert(tmp->isExperimental());
-            res_columns[7]->insert(tmp->getDescription());
+            res_columns[6]->insert(tier == SettingsTierType::EXPERIMENTAL);
+            res_columns[7]->insert(tier);
+            res_columns[8]->insert(tmp->getDescription());
         }
     );
 }
@@ -304,7 +327,7 @@ CompressionCodecFactory::CompressionCodecFactory()
 #endif
     registerCodecZXC(*this);
 
-    default_codec = get("LZ4", {});
+    default_codec = get("ZSTD", 3);
 }
 
 CompressionCodecFactory & CompressionCodecFactory::instance()
