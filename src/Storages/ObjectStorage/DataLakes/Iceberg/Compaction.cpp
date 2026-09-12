@@ -721,11 +721,22 @@ static bool writeConsolidatedManifestFile(
         }
     }
 
-    /// Nothing to consolidate: either no live data files remain (empty table; writing an empty manifest list would also crash the Avro writer),
-    /// or the data manifests are already optimally consolidated (at most one per partition) so a rewrite cannot reduce the count.
-    if (partitions_map.empty() || partitions_map.size() >= num_data_manifests)
+    /// Not a single live data file was collected: every DATA manifest still listed by the current snapshot holds
+    /// only deleted entries (e.g. every row was deleted). There is nothing to consolidate, and a rewrite would ask
+    /// the Avro writer to close a manifest list that was never written to, dereferencing a null stream.
+    /// This is not the "unpartitioned table" case: `partition_key` always carries the source spec-id and schema-id,
+    /// so an unpartitioned table with live files still forms one group and is consolidated as before.
+    if (total_data_files == 0)
     {
-        LOG_INFO(log, "Nothing to consolidate ({} data manifests, {} unique partitions with live data); reporting success",
+        LOG_INFO(log, "No live data files in the current snapshot ({} data manifests hold only deleted entries); nothing to do",
+                 num_data_manifests);
+        return true;
+    }
+
+    /// Data manifests already optimally consolidated (at most one per partition): rewriting cannot reduce the count, so report success.
+    if (partitions_map.size() >= num_data_manifests)
+    {
+        LOG_INFO(log, "Manifests already optimally consolidated ({} data manifests, {} unique partitions); nothing to do",
                  num_data_manifests, partitions_map.size());
         return true;
     }
