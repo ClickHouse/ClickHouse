@@ -21,6 +21,7 @@
 
 #include <AggregateFunctions/IAggregateFunction.h>
 #include <AggregateFunctions/ThetaSketchData.h>
+#include <AggregateFunctions/UniqBatch.h>
 #include <AggregateFunctions/UniqExactSet.h>
 #include <AggregateFunctions/UniqVariadicHash.h>
 #include <AggregateFunctions/UniquesHashSet.h>
@@ -563,6 +564,21 @@ public:
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
         detail::Adder<T, ColumnType, Data>::add(this->data(place), columns, num_args, row_num);
+    }
+
+    void addBatch(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
+        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
+    {
+        if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>)
+        {
+            using Traits = detail::AggregateFunctionUniqTraits<T, ColumnType>;
+            addBatchUniq<&DataSet::insertHash>(row_begin, row_end, places, place_offset, columns, if_argument_pos,
+                [&](size_t row) { return DataSet::hash(Traits::hash(Traits::value(*columns[0], row))); },
+                [&](AggregateDataPtr place) { return &this->data(place).set; });
+        }
+        else
+            IAggregateFunctionDataHelper<Data, AggregateFunctionUniq<T, ColumnType, Data>>::addBatch(
+                row_begin, row_end, places, place_offset, columns, arena, if_argument_pos);
     }
 
     void ALWAYS_INLINE addBatchSinglePlace(
