@@ -1199,9 +1199,8 @@ static void addSortingForMergeJoin(
             node->step->getOutputHeader(), key_names, join_settings.max_rows_in_set_to_optimize_join, crosswise_connection, join_table_side);
         creating_set_step->setStepDescription(fmt::format("Create set and filter {} joined stream", join_table_side), max_step_description_length);
 
-        auto * step_raw_ptr = creating_set_step.get();
         node = &nodes.emplace_back(QueryPlan::Node{std::move(creating_set_step), {node}});
-        return step_raw_ptr;
+        return static_cast<CreateSetAndFilterOnTheFlyStep *>(node->step.get());
     };
 
     const auto & join_clause = join_ptr->getTableJoin().getOnlyClause();
