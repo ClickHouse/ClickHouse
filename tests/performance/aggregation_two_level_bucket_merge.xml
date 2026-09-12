@@ -1,0 +1,30 @@
+<test>
+    <!-- The bucket merge of two-level aggregation: every thread builds a large table over its own
+         part of the scan, so the tables mostly hold different keys and merging them into the first
+         one grows its buckets from a fraction of the result to the full result. The key columns are
+         fixed-width so that packing them selects the `keys128` and `keys256` methods. -->
+    <settings>
+        <max_threads>8</max_threads>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <create_query>
+        CREATE TABLE two_level_bucket_merge (a UInt32, b UInt64, c FixedString(8), d UInt32)
+        ENGINE = MergeTree ORDER BY tuple()
+    </create_query>
+
+    <fill_query>
+        INSERT INTO two_level_bucket_merge
+        SELECT number % 20000000, number % 20000000, toFixedString(toString(number % 100), 8), number % 4
+        FROM numbers_mt(50000000)
+    </fill_query>
+
+    <!-- keys128_two_level -->
+    <query>SELECT a, b, count() FROM two_level_bucket_merge GROUP BY a, b FORMAT Null</query>
+    <!-- keys256_two_level -->
+    <query>SELECT a, b, c, count() FROM two_level_bucket_merge GROUP BY a, b, c FORMAT Null</query>
+    <query>SELECT a, b, c, d, count() FROM two_level_bucket_merge GROUP BY a, b, c, d FORMAT Null</query>
+    <query>SELECT a, b, c, d, count() FROM two_level_bucket_merge GROUP BY a, b, c, d FORMAT Null SETTINGS enable_adaptive_aggregator = 0</query>
+
+    <drop_query>DROP TABLE IF EXISTS two_level_bucket_merge</drop_query>
+</test>
