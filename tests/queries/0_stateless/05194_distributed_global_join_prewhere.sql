@@ -29,6 +29,21 @@ ENGINE = Distributed('test_shard_localhost', currentDatabase(), left_local_05194
 INSERT INTO left_local_05194 VALUES (1, 'a'), (2, 'b');
 INSERT INTO right_local_05194 VALUES (1, 'A'), (2, 'B'), (3, 'C');
 
+SELECT 'without_prewhere';
+SELECT l.k1, l.v1, r.k2, r.v2, count()
+FROM left_distributed_05194 AS l
+GLOBAL RIGHT JOIN right_distributed_05194 AS r ON l.k1 = r.k2
+GROUP BY ALL
+ORDER BY ALL;
+
+SELECT 'issue_prewhere';
+SELECT l.k1, l.v1, r.k2, r.v2, count()
+FROM left_distributed_05194 AS l
+GLOBAL RIGHT JOIN right_distributed_05194 AS r ON l.k1 = r.k2
+PREWHERE l.v1 != ''
+GROUP BY ALL
+ORDER BY ALL;
+
 SELECT 'left_prewhere';
 SELECT l.k1, l.v1, r.k2, r.v2, count()
 FROM left_distributed_05194 AS l
@@ -83,6 +98,14 @@ SELECT l.k1, l.v1, r.k2, r.v2, count()
 FROM left_one_shard_05194 AS l
 GLOBAL RIGHT JOIN right_distributed_05194 AS r ON l.k1 = r.k2
 PREWHERE l.v1 = 'a'
+GROUP BY ALL
+ORDER BY ALL;
+
+SELECT 'remote_right_prewhere';
+SELECT l.k1, l.v1, r.k2, r.v2, count()
+FROM left_local_05194 AS l
+INNER JOIN right_distributed_05194 AS r ON l.k1 = r.k2
+PREWHERE r.v2 = 'A'
 GROUP BY ALL
 ORDER BY ALL;
 
