@@ -557,6 +557,45 @@
 * The stress option generator no longer sends `serialize_query_plan=1` to the upgrade check's pre-upgrade load, whose server is a frozen previous release that aborts on that path. [#119406](https://github.com/ClickHouse/ClickHouse/pull/119406) ([Groene AI](https://github.com/groeneai)).
 <!-- CHANGELOG-RAW-END -->
 
+<!-- CHANGELOG-RAW-BEGIN: auto-generated entries below are edited and removed by the NightlyChangelog CI job; do not edit them manually -->
+### ClickHouse release 30c98e714f85f24e60583935bbe38b5bbb65aa2d (30c98e714f8) FIXME as compared to 9f0ed75f33e018b46da9e379a168d70fe32d3a85 (9f0ed75f33e)
+
+#### Backward Incompatible Change
+* The `interface` and `http_method` columns of `system.query_log`, `system.query_thread_log` and `system.processes` are now `Enum8` instead of `UInt8`, over the value set `system.session_log.interface` already uses, plus `Unknown` for an unrecognized reported interface. Comparing to a number keeps working (`WHERE interface = 1`) and comparing to a name now works too (`WHERE interface = 'TCP'`), but a plain `SELECT` renders the name, and arithmetic on the column (`interface + 0`) is no longer accepted. The default-enabled `system.user_query_log` and the opt-in `all_` union tables copy these types, so they change with them. As with any system log schema change, the existing log tables are renamed with the first free suffix (`query_log_0`, `query_log_1`, ...) on upgrade; their rows read as names after `ALTER TABLE system.query_log_0 MODIFY COLUMN interface Enum8(...)`, and the same for `http_method`, which rewrites the column, preceded by `MODIFY SETTING table_readonly = 0` if that table was frozen. [#118136](https://github.com/ClickHouse/ClickHouse/pull/118136) ([Groene AI](https://github.com/groeneai)).
+
+#### Performance Improvement
+* Use the constant empty group for PromQL aggregations with an empty `by()` modifier. [#118132](https://github.com/ClickHouse/ClickHouse/pull/118132) ([Minh Vu](https://github.com/fallintoplace)).
+* Bound object storage requests for files inside packed parts to the file's slice, so that reading a packed part from object storage does not transfer the rest of the archive and reuses HTTP connections. [#118483](https://github.com/ClickHouse/ClickHouse/pull/118483) ([Alexey Milovidov](https://github.com/alexey-milovidov)).
+* Skip analyzing the implicit `minmax_count` projection during query planning when the query aggregates with a function that projection cannot provide. Previously every aggregating query over a `MergeTree` table interpreted the projection's definition while optimizing the plan, even for `sum`, `avg`, `uniq` and every other aggregate it can never serve, since projection aggregates are matched by exact function name. [#118723](https://github.com/ClickHouse/ClickHouse/pull/118723) ([Groene AI](https://github.com/groeneai)).
+
+#### Improvement
+* Added the `min_partition_age_to_force_merge_seconds` `MergeTree` setting: when every part in a partition is at least this old, the `Simple` and `StochasticSimple` merge selectors compact that partition's parts within the `max_bytes_to_merge_at_max_space_in_pool` limit. [#115547](https://github.com/ClickHouse/ClickHouse/pull/115547) ([Valery Petrov](https://github.com/valerypetrov)).
+* Show the progress percentage again for queries reading from the `file` table function and `INFILE`. [#119213](https://github.com/ClickHouse/ClickHouse/pull/119213) ([Raúl Marín](https://github.com/Algunenano)).
+
+#### Bug Fix (user-visible misbehavior in an official stable release)
+* Apply `remote_url_allow_hosts` before SQL-supplied S3 and Azure endpoints send schema, metadata, or container requests. [#114357](https://github.com/ClickHouse/ClickHouse/pull/114357) ([Rory Shanks](https://github.com/rorylshanks)).
+* Fixes a case where `date_time_overflow_behavior = 'saturate'`, an out-of-range value is clamped to the whole second and the sub-second component is discarded. Closes [#113152](https://github.com/ClickHouse/ClickHouse/issues/113152). [#116122](https://github.com/ClickHouse/ClickHouse/pull/116122) ([Yarik Briukhovetskyi](https://github.com/yariks5s)).
+* Each code for Time-based one-time password is now accepted at most once, as required by RFC 6238: reusing an already used code, or a code for an earlier time step, is rejected. A user with `time_based_one_time_password` can successfully authenticate at most once per `period`. [#117563](https://github.com/ClickHouse/ClickHouse/pull/117563) ([Vladimir Cherkasov](https://github.com/vdimir)).
+* Fixed a `LOGICAL_ERROR` (`Got read request from replica N for unknown stream <table>`) when `parallel_replicas_plan_based` is enabled and a join is distributed across replicas. A replica planned its part of the join differently from the initiator and read the coordinated table in a way the initiator had not registered. [#118084](https://github.com/ClickHouse/ClickHouse/pull/118084) ([Groene AI](https://github.com/groeneai)).
+* Fix `system.dictionaries.bytes_allocated` misreporting memory for `HASHED_ARRAY` dictionaries. The key containers contributed their element *count* instead of their buffer size in bytes, so the reported figure came out roughly 2-5x lower than the memory the dictionary actually held, depending on the ratio of key to attribute data. The per-attribute null masks are bit-packed and were also counted in elements, which over-reported that term by 8x. [#118641](https://github.com/ClickHouse/ClickHouse/pull/118641) ([George Viamontes](https://github.com/gviamont)).
+* Fixed a `Filesystem` database serving a table from its internal cache without the `READ ON FILE` grant. The grant was checked only while a table name was resolved for the first time, so once any user holding it had read a name, every user with `SELECT` on the database was served the contents of the file. `EXISTS TABLE`, which requires only `SHOW TABLES`, answered from that cache and probed the directory without the grant too. Both now require it, and a user without it is refused before the existence of the file is observed. [#119029](https://github.com/ClickHouse/ClickHouse/pull/119029) ([Groene AI](https://github.com/groeneai)).
+* Fixed three defects in index analysis of an `indexHint` argument. A bare key column whose type has no boolean reading (`UInt256`, `Int128`, `BFloat16`, or their `LowCardinality` forms) was read as `column != 0`, so primary-key, partition and `minmax` analysis silently skipped the granules holding zero, although `WHERE` rejects such a column. `NOT indexHint(x)` failed with `ILLEGAL_TYPE_OF_ARGUMENT` for an argument type that does not accept `not`. A negated `indexHint` in a disjunction kept its condition un-inverted, so `count()` could report rows that no row of the table matches. [#119209](https://github.com/ClickHouse/ClickHouse/pull/119209) ([Groene AI](https://github.com/groeneai)).
+
+#### Build/Testing/Packaging Improvement
+* Conditional writes for datalakes on top of azure tests. [#119185](https://github.com/ClickHouse/ClickHouse/pull/119185) ([Konstantin Vedernikov](https://github.com/scanhex12)).
+* Add regression coverage for invalid `IntervalKind` bytes in `Native` and `RowBinaryWithNamesAndTypes` input. [#119291](https://github.com/ClickHouse/ClickHouse/pull/119291) ([Raufs Dunamalijevs](https://github.com/rienath)).
+* Update `openldap` to 2.6.15. [#119359](https://github.com/ClickHouse/ClickHouse/pull/119359) ([Actuele AI](https://github.com/actueleai)).
+* Update `xz` to v5.8.4. [#119360](https://github.com/ClickHouse/ClickHouse/pull/119360) ([Actuele AI](https://github.com/actueleai)).
+
+#### NOT FOR CHANGELOG / INSIGNIFICANT
+
+* <!-- CI automatic block start :ci_links: -->. [#109235](https://github.com/ClickHouse/ClickHouse/pull/109235) ([Christoph Viebig](https://github.com/cv4g)).
+* Split the new-release-branch and patch release flows into separate jobs. [#114452](https://github.com/ClickHouse/ClickHouse/pull/114452) ([Alexei Fedotov](https://github.com/leshikus)).
+* illumos: add process memory metrics. [#117757](https://github.com/ClickHouse/ClickHouse/pull/117757) ([Joshua Carp](https://github.com/jmcarp)).
+* CI: Port praktika updates. [#119170](https://github.com/ClickHouse/ClickHouse/pull/119170) ([Max Kainov](https://github.com/maxknv)).
+* Test-only: `05019_parquet_lazy_materialization_file_change` no longer depends on winning a wall-clock race. A new `file_read_inject_version_token_mismatch` fail point drives the local reread guard directly, mirroring `s3_read_inject_etag_mismatch` for the object storage guard. [#119296](https://github.com/ClickHouse/ClickHouse/pull/119296) ([Groene AI](https://github.com/groeneai)).
+<!-- CHANGELOG-RAW-END -->
+
 ### <a id="269"></a> ClickHouse release 26.9, FIXME (in progress)
 
 #### Backward Incompatible Change
