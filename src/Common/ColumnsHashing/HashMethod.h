@@ -10,6 +10,7 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
 #include <Interpreters/AggregationCommon.h>
+#include <base/unaligned.h>
 #include <base/types.h>
 
 namespace DB
@@ -641,17 +642,34 @@ public:
                 return;
             }
         }
-        usable = true;
+        usable = !slices.empty();
     }
 
     bool isUsable() const { return usable; }
+
+    static ALWAYS_INLINE bool fixedSizeRowsEqual(const char * lhs, const char * rhs, size_t size)
+    {
+        switch (size)
+        {
+            case sizeof(UInt8):
+                return unalignedLoad<UInt8>(lhs) == unalignedLoad<UInt8>(rhs);
+            case sizeof(UInt16):
+                return unalignedLoad<UInt16>(lhs) == unalignedLoad<UInt16>(rhs);
+            case sizeof(UInt32):
+                return unalignedLoad<UInt32>(lhs) == unalignedLoad<UInt32>(rhs);
+            case sizeof(UInt64):
+                return unalignedLoad<UInt64>(lhs) == unalignedLoad<UInt64>(rhs);
+            default:
+                return memcmp(lhs, rhs, size) == 0;
+        }
+    }
 
     /// The comparator must be usable and both rows must be valid.
     ALWAYS_INLINE bool rowsEqual(size_t row, size_t other_row) const
     {
         for (const auto & [data, size] : slices)
         {
-            if (memcmp(data + row * size, data + other_row * size, size) != 0)
+            if (!fixedSizeRowsEqual(data + row * size, data + other_row * size, size))
                 return false;
         }
         return true;
