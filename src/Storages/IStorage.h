@@ -67,7 +67,7 @@ class BackupEntriesCollector;
 class RestorerFromBackup;
 
 class ConditionSelectivityEstimator;
-using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
+using ConditionSelectivityEstimatorPtr = std::shared_ptr<const ConditionSelectivityEstimator>;
 
 struct RangesInDataParts;
 

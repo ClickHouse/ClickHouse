@@ -2,9 +2,17 @@
 
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
+#include <Storages/MergeTree/PartStatisticsCache.h>
+#include <Interpreters/Context.h>
+#include <Core/Settings.h>
 
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool use_statistics_cache;
+}
 
 bool tryEstimateWithStatistics(
     WhatIfCandidateResult & result,
@@ -36,16 +44,17 @@ bool tryEstimateWithStatistics(
         if (!index_columns_set.contains(col))
             return false;
 
-    ConditionSelectivityEstimatorBuilder builder(context);
+    ConditionSelectivityEstimatorBuilder builder;
     bool has_any_stats = false;
 
+    auto stats_cache = context->getSettingsRef()[Setting::use_statistics_cache] ? context->getPartStatisticsCache() : nullptr;
     for (const auto & part : parts)
     {
-        auto stats = part.data_part->loadStatistics();
-        if (!stats.empty())
+        auto stats = part.data_part->loadStatisticsWithCache(stats_cache.get(), {});
+        if (!stats->empty())
         {
-            builder.markDataPart(part.data_part);
-            for (const auto & [column_name, stat] : stats)
+            builder.incrementRowCount(part.data_part->rows_count);
+            for (const auto & [column_name, stat] : *stats)
                 builder.addStatistics(column_name, stat);
             has_any_stats = true;
         }
@@ -58,7 +67,7 @@ bool tryEstimateWithStatistics(
     if (!estimator)
         return false;
 
-    auto profile = estimator->estimateRelationProfile(metadata, filter_node);
+    auto profile = estimator->estimateRelationProfile(context, metadata, filter_node);
     auto unfiltered = estimator->estimateRelationProfile();
     if (unfiltered.rows == 0)
         return false;

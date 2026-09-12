@@ -26,6 +26,8 @@ public:
 
     String getNameForLogs() const override { return "UniqV2 : " + std::to_string(estimateCardinality()); }
 
+    size_t memoryUsageBytes() const override;
+
 private:
     std::unique_ptr<Arena> arena;
     AggregateFunctionPtr collector;

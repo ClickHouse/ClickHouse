@@ -38,7 +38,7 @@ namespace Setting
     extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const ContextPtr & context, const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
     if (filter == nullptr && prewhere == nullptr)
     {
@@ -46,17 +46,17 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     }
     else if (filter == nullptr)
     {
-        return estimateRelationProfile(metadata, prewhere);
+        return estimateRelationProfile(context, metadata, prewhere);
     }
     else if (prewhere == nullptr)
     {
-        return estimateRelationProfile(metadata, filter);
+        return estimateRelationProfile(context, metadata, filter);
     }
-    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+    std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, context, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
         return extractAtomFromTree(metadata, node_, out);
     }).extractRPN();
-    std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
+    std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, context, [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
         return extractAtomFromTree(metadata, node_, out);
     }).extractRPN();
@@ -213,6 +213,18 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     return result;
 }
 
+size_t ConditionSelectivityEstimator::memoryUsageBytes() const
+{
+    size_t res = sizeof(*this);
+    for (const auto & [column_name, column_estimator] : column_estimators)
+    {
+        res += sizeof(String) + column_name.size() + sizeof(column_estimator);
+        if (column_estimator.stats)
+            res += column_estimator.stats->memoryUsageBytes();
+    }
+    return res;
+}
+
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
 {
     RelationProfile result;
@@ -224,36 +236,10 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const ContextPtr & context, const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const
 {
-    RPNBuilderTreeContext tree_context(getContext());
+    RPNBuilderTreeContext tree_context(context);
     return estimateRelationProfile(metadata, RPNBuilderTreeNode(node, tree_context));
-}
-
-bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
-{
-    if (data_parts.size() != parts_names.size())
-        return true;
-    size_t idx = 0;
-    for (const auto & data_part : data_parts)
-    {
-        if (parts_names[idx++] != data_part->name)
-            return true;
-    }
-    return false;
-}
-
-bool ConditionSelectivityEstimator::isStale(const RangesInDataParts & parts) const
-{
-    if (parts.size() != parts_names.size())
-        return true;
-    size_t idx = 0;
-    for (const auto & part : parts)
-    {
-        if (parts_names[idx++] != part.data_part->name)
-            return true;
-    }
-    return false;
 }
 
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
@@ -566,8 +552,8 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     return false;
 }
 
-ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_)
-    : estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
+ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder()
+    : estimator(std::make_shared<ConditionSelectivityEstimator>())
 {
 }
 
@@ -576,11 +562,6 @@ void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
     estimator->total_rows += rows;
 }
 
-void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data_part)
-{
-    estimator->parts_names.push_back(data_part->name);
-    estimator->total_rows += data_part->rows_count;
-}
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
 {
@@ -589,8 +570,12 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
         has_data = true;
         auto & column_estimator = estimator->column_estimators[column_name];
 
+        /// The accumulator must own its states: `column_stats` may come from the shared
+        /// `PartStatisticsCache` and must never be mutated by the merges below. A deep copy
+        /// (not `cloneEmpty`) preserves data-dependent state such as feature flags that
+        /// `structureEquals` compares for the remaining parts.
         if (column_estimator.stats == nullptr)
-            column_estimator.stats = column_stats;
+            column_estimator.stats = column_stats->clone();
         else if (column_estimator.stats->structureEquals(*column_stats))
             column_estimator.stats->merge(column_stats);
         /// else: incompatible statistics (e.g. a concurrent ALTER changed the column type,
@@ -599,7 +584,7 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     }
 }
 
-ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
+std::shared_ptr<ConditionSelectivityEstimator> ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
     return has_data ? estimator : nullptr;
 }

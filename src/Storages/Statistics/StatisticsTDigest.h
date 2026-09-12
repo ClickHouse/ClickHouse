@@ -22,6 +22,8 @@ public:
 
     String getNameForLogs() const override { return "TDigest"; }
 
+    size_t memoryUsageBytes() const override { return sizeof(*this) + t_digest.allocatedBytes(); }
+
 private:
     QuantileTDigest<Float64> t_digest;
     DataTypePtr data_type;

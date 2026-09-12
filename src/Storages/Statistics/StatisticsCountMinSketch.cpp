@@ -4,6 +4,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/convertFieldToType.h>
+#include <Common/typeid_cast.h>
 
 #if USE_DATASKETCHES
 
@@ -92,6 +93,23 @@ void StatisticsCountMinSketch::deserialize(ReadBuffer & buf, StatisticsFileVersi
     buf.readStrict(reinterpret_cast<char *>(bytes.data()), size);
 
     sketch = Sketch::deserialize(bytes.data(), size);
+}
+
+size_t StatisticsCountMinSketch::memoryUsageBytes() const
+{
+    return sizeof(*this) + sketch.get_serialized_size_bytes();
+}
+
+bool StatisticsCountMinSketch::isCompatibleWith(const IStatistics & other) const
+{
+    /// Sketches merge only when their configuration matches; a mismatch (e.g. constants
+    /// changed between versions) would throw from inside datasketches.
+    const auto * other_sketch = typeid_cast<const StatisticsCountMinSketch *>(&other);
+    if (!other_sketch)
+        return false;
+    return sketch.get_num_hashes() == other_sketch->sketch.get_num_hashes()
+        && sketch.get_num_buckets() == other_sketch->sketch.get_num_buckets()
+        && sketch.get_seed() == other_sketch->sketch.get_seed();
 }
 
 bool countMinSketchStatisticsValidator(const SingleStatisticsDescription & /*description*/, const DataTypePtr & data_type)

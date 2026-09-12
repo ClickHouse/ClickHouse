@@ -26,14 +26,13 @@ struct RelationProfile
     std::unordered_map<String, ColumnStats> column_stats = {};
 };
 
-class IMergeTreeDataPart;
-using DataPartPtr = std::shared_ptr<const IMergeTreeDataPart>;
 struct StorageInMemoryMetadata;
 using StorageMetadataPtr = std::shared_ptr<const StorageInMemoryMetadata>;
-struct RangesInDataParts;
 
 /// Estimates the selectivity of a condition and cardinality of columns.
-class ConditionSelectivityEstimator : public WithContext
+/// Deliberately holds no query context: instances are cached and shared across queries
+/// (`SelectivityEstimatorCache`), so callers pass their own context per call.
+class ConditionSelectivityEstimator
 {
     struct ColumnEstimator;
     using ColumnEstimators = std::unordered_map<String, ColumnEstimator>;
@@ -57,19 +56,16 @@ class ConditionSelectivityEstimator : public WithContext
 
     friend class ConditionSelectivityEstimatorBuilder;
 public:
-    explicit ConditionSelectivityEstimator(ContextPtr context_) : WithContext(context_) {}
+    ConditionSelectivityEstimator() = default;
 
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
-    RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
+    RelationProfile estimateRelationProfile(const ContextPtr & context, const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const;
+    RelationProfile estimateRelationProfile(const ContextPtr & context, const StorageMetadataPtr & metadata, const ActionsDAG::Node * node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node) const;
     RelationProfile estimateRelationProfile(const StorageMetadataPtr & metadata, const std::vector<RPNBuilderTreeNode> & nodes) const;
     RelationProfile estimateRelationProfile() const;
 
-    /// Return true if the estimator was built from a different ordered sequence of data parts.
-    bool isStale(const std::vector<DataPartPtr> & data_parts) const;
-    /// Perform the same check against an analyzed query part set. Mark ranges are intentionally
-    /// ignored because the estimator contains whole-part statistics.
-    bool isStale(const RangesInDataParts & parts) const;
+    /// Approximate memory usage, for cache-weight accounting (`SelectivityEstimatorCache`).
+    size_t memoryUsageBytes() const;
 
     struct RPNElement
     {
@@ -142,23 +138,22 @@ private:
 
     UInt64 total_rows = 0;
     ColumnEstimators column_estimators;
-    Strings parts_names;
 };
 
-using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
+/// Consumers only estimate; the mutable pointer exists only inside the builder and the cache.
+using ConditionSelectivityEstimatorPtr = std::shared_ptr<const ConditionSelectivityEstimator>;
 
 class ConditionSelectivityEstimatorBuilder
 {
 public:
-    explicit ConditionSelectivityEstimatorBuilder(ContextPtr context_);
+    ConditionSelectivityEstimatorBuilder();
     void addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats);
     void incrementRowCount(UInt64 rows);
-    void markDataPart(const DataPartPtr & data_part);
-    ConditionSelectivityEstimatorPtr getEstimator() const;
+    std::shared_ptr<ConditionSelectivityEstimator> getEstimator() const;
 
 private:
     bool has_data = false;
-    ConditionSelectivityEstimatorPtr estimator;
+    std::shared_ptr<ConditionSelectivityEstimator> estimator;
 };
 
 }

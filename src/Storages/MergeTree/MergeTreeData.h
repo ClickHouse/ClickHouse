@@ -1640,6 +1640,9 @@ public:
     void loadPrimaryKeys() const;
     void unloadPrimaryKeys();
 
+    /// Drops the estimates memoized on all data parts for statistics-based part pruning.
+    void resetPartEstimates() const;
+
     /// Unloads primary keys of outdated parts that are not used by any query.
     /// Returns the number of parts for which index was unloaded.
     size_t unloadPrimaryKeysAndClearCachesOfOutdatedParts();
@@ -2176,8 +2179,10 @@ protected:
 
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
-    mutable std::mutex stats_mutex;
-    ConditionSelectivityEstimatorPtr cached_estimator;
+    /// Hash of the active part names at the last completed statistics prewarm. Touched only by
+    /// `refreshStatistics`, which never runs concurrently with itself, and by `startStatisticsCache`
+    /// after it has deactivated (and joined) the task, before recreating it.
+    std::optional<UInt128> prewarmed_parts_hash;
 
     void startStatisticsCache();
     void refreshStatistics(UInt64 interval_seconds);

@@ -151,7 +151,7 @@ TEST(Statistics, Estimator)
     ColumnStatisticsPtr stats_c = mock_statistics("c");
     stats_c->build(std::move(c));
 
-    ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    ConditionSelectivityEstimatorBuilder estimator_builder;
     estimator_builder.addStatistics("a", stats_a);
     estimator_builder.addStatistics("b", stats_b);
     estimator_builder.addStatistics("c", stats_c);
@@ -313,7 +313,7 @@ TEST(Statistics, NullableEstimatorWithBasic)
     ASSERT_EQ(stats_a->getNonNullRowCount(), 800u);
     ASSERT_EQ(stats_b->getNonNullRowCount(), 900u);
 
-    ConditionSelectivityEstimatorBuilder builder(getContext().context);
+    ConditionSelectivityEstimatorBuilder builder;
     builder.addStatistics("a", stats_a);
     builder.addStatistics("b", stats_b);
     builder.incrementRowCount(1000);
@@ -409,7 +409,7 @@ TEST(Statistics, LikeSelectivity)
     auto stats = MergeTreeStatisticsFactory::instance().get(column_desc);
     stats->build(std::move(col));
 
-    ConditionSelectivityEstimatorBuilder estimator_builder(getContext().context);
+    ConditionSelectivityEstimatorBuilder estimator_builder;
     estimator_builder.addStatistics("a", stats);
     estimator_builder.incrementRowCount(10000);
     auto estimator = estimator_builder.getEstimator();
@@ -846,4 +846,57 @@ TEST(Statistics, DeserializeV3SkipsRevertedNullCount)
     /// ...and the reverted `NullCount` payload was skipped, not misread as a `Basic` payload.
     EXPECT_FALSE(restored->getStats().contains(StatisticsType::Basic));
     EXPECT_FALSE(restored->hasNullCount());
+}
+
+/// Parts written by 26.6 / 26.7 set the `basic` feature bit 2 only for Nullable columns (it was the
+/// NULL count), so a non-Nullable column from such a part has no default count at all. A serialize
+/// round-trip (`clone`, a mutation rewriting the statistics file) must keep it that way instead of
+/// inventing an exact zero, which would also make the copy incompatible with the remaining parts.
+TEST(Statistics, BasicCloneKeepsMissingDefaultCount)
+{
+    auto data_type = std::make_shared<DataTypeInt32>();
+
+    String basic_payload;
+    {
+        WriteBufferFromString buf(basic_payload);
+        writeIntBinary(static_cast<UInt64>(100), buf); /// row_count
+        writeIntBinary(static_cast<UInt8>(1u << 0), buf); /// BasicFeatureMask::NumericMinMax only
+        writeFieldBinary(Field(Int64(-5)), buf);
+        writeFieldBinary(Field(Int64(42)), buf);
+        buf.finalize();
+    }
+
+    String file;
+    {
+        WriteBufferFromString buf(file);
+        writeIntBinary(static_cast<UInt16>(4), buf); /// StatisticsFileVersion::V4
+        writeIntBinary(static_cast<UInt64>(1ULL << 4), buf); /// StatisticsType::Basic
+        writeStringBinary(data_type->getName(), buf);
+        writeIntBinary(static_cast<UInt64>(100), buf); /// rows
+        writeIntBinary(static_cast<UInt64>(basic_payload.size()), buf);
+        buf.write(basic_payload.data(), basic_payload.size());
+        buf.finalize();
+    }
+
+    ReadBufferFromString rb(file);
+    auto legacy = ColumnStatistics::deserialize(rb, data_type);
+    ASSERT_TRUE(legacy != nullptr);
+
+    auto get_basic = [](const ColumnStatistics & stats) -> const StatisticsBasic &
+    {
+        return assert_cast<const StatisticsBasic &>(*stats.getStats().at(StatisticsType::Basic));
+    };
+
+    EXPECT_FALSE(get_basic(*legacy).hasDefaultCount());
+    EXPECT_FALSE(legacy->estimateEqual(Field(Int64(0))).has_value());
+
+    auto copy = legacy->clone();
+    ASSERT_TRUE(copy != nullptr);
+    EXPECT_FALSE(get_basic(*copy).hasDefaultCount());
+    EXPECT_FALSE(copy->estimateEqual(Field(Int64(0))).has_value());
+    EXPECT_TRUE(copy->structureEquals(*legacy));
+    EXPECT_EQ(copy->getNumRows(), 100u);
+    ASSERT_TRUE(copy->hasMinMax());
+    EXPECT_EQ(*copy->getEstimate().estimated_min, Field(Int64(-5)));
+    EXPECT_EQ(*copy->getEstimate().estimated_max, Field(Int64(42)));
 }
