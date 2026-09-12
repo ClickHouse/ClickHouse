@@ -22,7 +22,7 @@ across test runs.
 
 ---
 
-## Solution: PGID tracking via per-worker group pid files
+## Solution: PGID tracking via per-group pid files
 
 The kernel stores the PGID directly in the process descriptor.  It is **never
 reset** when a process is re-parented.  Therefore `kill_process_group(pgid)`
@@ -33,39 +33,52 @@ reaches an orphan as long as we know its PGID — no parent-chain walk needed.
 ```
 _GROUP_PID_PATH = {repo}/ci/tmp/
 _GROUP_PID_NAME = "clickhouse_test_group_pid"
+_RUN_TOKEN      = "<parent_pid>-<random hex>"   # seeded through the environment
+                                               # (`_CLICKHOUSE_TEST_RUN_TOKEN`), so
+                                               # `fork` and `spawn` workers alike share
+                                               # the invocation's token
 ```
 
-Each worker process (`os.getpid()`) writes its own file:
+A worker process (`os.getpid()`) writes one file per group it launches:
 
 ```
-{repo}/ci/tmp/clickhouse_test_group_pid.<worker_pid>
+{repo}/ci/tmp/clickhouse_test_group_pid.<run_token>.<worker_pid>.<pgid>
 ```
 
-One PGID per file.  Because every worker owns a separate file no cross-process
-locking is needed.  Files are written atomically via `write_text_atomic`
-(write to a `.tmp` sibling, then `rename`), so `--cleanup` never sees a
-partial write.
+One PGID per file, and no two files ever share a name, so no cross-process
+locking is needed and a record that is kept because its group may still be live
+is not overwritten by that worker's next test.  The run token is what scopes a
+reap to this invocation's own records (see `worker_pids` below), and it is passed
+to workers through the environment because a `spawn` worker re-executes the
+runner and would otherwise mint its own; a worker pid alone cannot scope a reap,
+being recyclable into a concurrent invocation's worker.  Files are
+written atomically via `write_text_atomic` (write to a `.tmp` sibling, then
+`rename`), so `--cleanup` never sees a partial write.
 
 ### Per-test bookkeeping
 
 ```python
 proc = Popen(command, shell=True, start_new_session=True, preexec_fn=cgroup_fn)
 # proc.pid == PGID after start_new_session=True
-_gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
-write_text_atomic(_gpid_file, f"{proc.pid}\n")
+write_text_atomic(test_process_group_record(proc.pid), f"{proc.pid}\n")
 
 try:
     proc.wait(args.timeout)
 finally:
     if cgroup_name:
         cleanup_cgroup(cgroup_name)
-    _gpid_file.unlink(missing_ok=True)
 ```
 
-On a clean run every started test deletes its file in the `finally` block, so
-no files remain when `clickhouse-test` exits.  If `clickhouse-test` is
-SIGKILL'd, the file for the currently-running test is left behind with its
-PGID.
+The record is written at launch and kept for as long as the group may still be
+live, since it is the only thing that can lead a reaper to that group.
+`process_result_impl` deals with the group once the test finishes and then calls
+`forget_test_process_group`, but only if `test_process_group_is_gone` confirms
+the group is gone, because neither `proc.returncode` nor a returning
+`kill_process_group` rules out a backgrounded member that outlived the leader.
+Anything still recorded is consumed by the parent's abort-path reap
+(`reap_recorded_test_groups`) or by a later `--cleanup`.  So on a clean run no
+files remain when `clickhouse-test` exits, and if a worker is SIGKILL'd its
+record survives for those reapers.
 
 ### `--cleanup` mode
 
@@ -75,7 +88,9 @@ clickhouse-test --cleanup
 
 Calls `cleanup_test_groups()`, which globs `{_GROUP_PID_PATH}/{_GROUP_PID_NAME}.*`
 (skipping `.tmp` files), reads each file, calls `kill_process_group(pgid, None)`
-on the recorded PGID, and removes the file.
+on the recorded PGID, and removes the file.  It passes no `worker_pids`, so it
+matches every record regardless of name shape: it is an orphan sweep run when
+nothing else is live, and the orphan it exists for may predate a name change.
 
 ### `clickhouse-test` startup
 
@@ -115,9 +130,10 @@ The hook contains no kill logic of its own — it just calls
 
 | Layer | Trigger | Mechanism |
 |---|---|---|
-| `cleanup_child_processes` | SIGTERM/SIGINT/SIGHUP to `clickhouse-test` | `killpg` on each direct child's PGID |
-| test `finally` block | Any exit of the per-test code path (incl. SIGKILL to the worker) | `_gpid_file.unlink` — removes the per-worker file |
-| `run_test()` `finally` | Any exit of `clickhouse-test` (incl. SIGKILL) | `clickhouse-test --cleanup` → `kill_process_group` per PGID file |
+| `cleanup_child_processes` | SIGTERM/SIGINT/SIGHUP to `clickhouse-test` | `killpg` on each direct child's PGID (so it cannot reach a group whose leader already exited) |
+| `process_result_impl` | The test finished | `kill_process_group`, then `forget_test_process_group` if the group is gone |
+| `reap_recorded_test_groups` | Any exit of the parallel or sequential runner: an abort (hung check, server death, time limit, `--max-failures`), a signal to the parent, or a normal finish | `kill_process_group` per record written by this run's own workers |
+| `run_test` `finally` | Any exit of `clickhouse-test` (incl. SIGKILL) | `clickhouse-test --cleanup` → `kill_process_group` per PGID file |
 | Post-hook | Any exit of `fast_test.py` (incl. SIGKILL) | same — `clickhouse-test --cleanup` |
 
 ### Remaining limitation
@@ -133,36 +149,22 @@ clears all processes.  For Linux production CI the Docker boundary already cover
 ### Process group not killed on normal test exit
 
 When the bash script exits normally (exit code is set), `kill_process_group` is
-**not** called.  The code path is:
+**not** called:
 
 ```python
-# run_single_test_command (line ~3136)
-proc = Popen(command, shell=True, start_new_session=True, ...)
-_gpid_file = _GROUP_PID_PATH / f"{_GROUP_PID_NAME}.{os.getpid()}"
-write_text_atomic(_gpid_file, f"{proc.pid}\n")
-try:
-    proc.wait(args.timeout)
-except subprocess.TimeoutExpired:
-    pass
-finally:
-    _gpid_file.unlink(missing_ok=True)   # file removed here on every exit
-return proc, total_time
-
-# process_result_impl (line ~2712)
-if proc.returncode is None:              # only true on TimeoutExpired
+# process_result_impl
+timed_out = proc.returncode is None      # only true on TimeoutExpired
+if timed_out:
     kill_process_group(os.getpgid(proc.pid), ...)
+elif test_process_group_is_gone(proc.pid):
+    forget_test_process_group(proc.pid)
 ```
 
-Consequence: any processes that are still in the process group after bash exits
-(e.g. background jobs the test script started without `wait`) are **not killed**
-and the PGID file is already gone, so `--cleanup` cannot reach them either.
+So background jobs the test script started without `wait` are still not killed
+here, to avoid the overhead on every normally passing test.  They are no longer
+unreachable, though: the group is only forgotten once it is actually gone, so a
+surviving member keeps its record and stays reapable by the abort-path reap and
+by `--cleanup`.
 
-In practice, most shell tests call `wait` at the end, so all background jobs
-finish before bash exits and the group is empty.  A test that does not call
-`wait` (or that spawns detached sub-subprocesses inside the group) leaks those
-processes silently.
-
-The fix would be to call `kill_process_group` on the PGID before deleting the
-file, unconditionally (or at least when `pgrep(pgid=proc.pid)` still shows
-living members).  This is not done today to avoid the overhead on every normally
-passing test.
+In practice most shell tests call `wait` at the end, so the group is empty by
+the time bash exits and the record is dropped immediately.
