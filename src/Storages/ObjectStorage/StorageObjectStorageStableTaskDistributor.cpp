@@ -1,5 +1,6 @@
 #include <Storages/ObjectStorage/StorageObjectStorageStableTaskDistributor.h>
 #include <Common/SipHash.h>
+#include <Common/maskSensitiveQueryParameters.h>
 #include <consistent_hashing.h>
 #include <optional>
 
@@ -125,7 +126,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getPreQueuedFile(size_t
         LOG_TRACE(
             log,
             "Assigning pre-queued file {} to replica {}",
-            file_identifier,
+            maskCredentialsInURI(file_identifier),
             number_of_current_replica
         );
 
@@ -165,7 +166,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
             file_identifier = getSchedulingIdentifier(object_info, send_over_whole_archive);
             LOG_TEST(log, "Will send over the whole archive {} to replicas. "
                      "This will be suboptimal, consider turning on "
-                     "cluster_function_process_archive_on_multiple_nodes setting", file_identifier);
+                     "cluster_function_process_archive_on_multiple_nodes setting", maskCredentialsInURI(file_identifier));
         }
         else
         {
@@ -177,7 +178,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         {
             LOG_TRACE(
                 log, "Found file {} for replica {}",
-                file_identifier, number_of_current_replica
+                maskCredentialsInURI(file_identifier), number_of_current_replica
             );
 
             return object_info;
@@ -185,7 +186,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         LOG_TEST(
             log,
             "Found file {} for replica {} (number of current replica: {})",
-            file_identifier,
+            maskCredentialsInURI(file_identifier),
             file_replica_idx,
             number_of_current_replica
         );
@@ -215,7 +216,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
         LOG_TRACE(
             log,
             "Iterator exhausted. Assigning unprocessed file {} to replica {}",
-            file_path,
+            maskCredentialsInURI(file_path),
             number_of_current_replica
         );
 

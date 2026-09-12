@@ -3,6 +3,8 @@
 #include <base/types.h>
 #include <fmt/format.h>
 
+#include <Common/maskSensitiveQueryParameters.h>
+
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage_fwd.h>
 #include <string_view>
 
@@ -176,8 +178,11 @@ struct std::hash<DB::Iceberg::IcebergPathFromMetadata>
 template <>
 struct fmt::formatter<DB::Iceberg::IcebergPathFromMetadata> : fmt::formatter<std::string>
 {
+    /// Metadata can spell a file as a presigned `S3` URL, an Azure SAS URL or a
+    /// `scheme://user:password@host` one, and this formatter feeds log and exception messages only --
+    /// I/O, hashing and serialization go through `serialize` -- so the credentials are masked here.
     auto format(const DB::Iceberg::IcebergPathFromMetadata & p, fmt::format_context & ctx) const
     {
-        return fmt::formatter<std::string>::format(p.serialize(), ctx);
+        return fmt::formatter<std::string>::format(DB::maskCredentialsInURI(p.serialize()), ctx);
     }
 };
