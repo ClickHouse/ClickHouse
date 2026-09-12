@@ -868,7 +868,7 @@ void MergeTreeReadersChain::applyPatches(
     if (min_version.has_value())
         source_data_version = std::max(source_data_version, *min_version);
 
-    applyPatchesToBlock(result_block, versions_block, patch_read_results, source_data_version);
+    applyPatchesToBlock(result_block, versions_block, additional_columns, patch_read_results, source_data_version);
 
     result_columns = result_block.getColumns();
     result_columns.resize(result_header.columns());
