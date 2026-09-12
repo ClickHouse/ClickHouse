@@ -86,6 +86,12 @@ public:
     virtual bool supportsWritingException() const { return false; }
     virtual void setException(const String & /*exception_message*/) {}
 
+    /// Whether this format can deliver query result previews (see `QueryResultPreview.h`) to the
+    /// client. Preview emitters stay dormant when the format cannot (see
+    /// `QueryPipeline::complete`); preview chunks reaching a format anyway are dropped.
+    /// By default previews can be written only under a framing format, as `preview` packets.
+    virtual bool canWriteQueryResultPreviews() const { return framing != nullptr; }
+
     /// A framing format (see IFramingFormat.h) multiplexes the formatted data along with auxiliary
     /// packets (progress, logs, profile events, exceptions) in the output stream. The format must
     /// have been created over the framing format's payload buffer. When set, the format notifies
@@ -172,6 +178,13 @@ protected:
     virtual void consume(Chunk) = 0;
     virtual void consumeTotals(Chunk) {}
     virtual void consumeExtremes(Chunk) {}
+
+    /// Handles a chunk annotated as a query result preview (see `QueryResultPreview.h`) out of
+    /// band: previews must not affect `result_rows`/`result_bytes` or the main output. The default
+    /// implementation renders the preview as a self-contained document into a `preview` packet of
+    /// the framing format, and drops the chunk when there is no framing or the main output has
+    /// already started (a late preview is stale anyway - previews are best effort).
+    virtual void consumeQueryResultPreview(Chunk chunk);
     virtual void finalizeImpl() {}
     virtual void finalizeBuffers() {}
     virtual void writePrefix() {}

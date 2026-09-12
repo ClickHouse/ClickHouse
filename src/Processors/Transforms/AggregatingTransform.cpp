@@ -1086,7 +1086,10 @@ private:
 };
 
 AggregatingTransform::AggregatingTransform(
-    SharedHeader header, AggregatingTransformParamsPtr params_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    SharedHeader header,
+    AggregatingTransformParamsPtr params_,
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    AggregationQueryResultPreviewsPtr query_result_previews_)
     : AggregatingTransform(
           std::move(header),
           std::move(params_),
@@ -1096,7 +1099,8 @@ AggregatingTransform::AggregatingTransform(
           1,
           true /* should_produce_results_in_order_of_bucket_number */,
           false /* skip_merging */,
-          updater_)
+          updater_,
+          std::move(query_result_previews_))
 {
 }
 
@@ -1104,18 +1108,21 @@ AggregatingTransform::AggregatingTransform(
     SharedHeader header,
     AggregatingTransformParamsPtr params_,
     ManyAggregatedDataPtr many_data_,
-    size_t current_variant,
+    size_t current_variant_,
     size_t max_threads_,
     size_t temporary_data_merge_threads_,
     bool should_produce_results_in_order_of_bucket_number_,
     bool skip_merging_,
-    RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+    AggregationQueryResultPreviewsPtr query_result_previews_)
     : IProcessor({std::move(header)}, {params_->getHeader()})
     , params(std::move(params_))
     , key_columns(params->params.keys_size)
     , aggregate_columns(params->params.aggregates_size)
     , many_data(std::move(many_data_))
-    , variants(*many_data->variants[current_variant])
+    , variants(*many_data->variants[current_variant_])
+    , current_variant(current_variant_)
+    , query_result_previews(std::move(query_result_previews_))
     , max_threads(std::min(many_data->variants.size(), max_threads_))
     , temporary_data_merge_threads(temporary_data_merge_threads_)
     , should_produce_results_in_order_of_bucket_number(should_produce_results_in_order_of_bucket_number_)
@@ -1165,6 +1172,12 @@ IProcessor::Status AggregatingTransform::prepare()
     if (!output.canPush())
     {
         input.setNotNeeded();
+        return Status::PortFull;
+    }
+
+    if (pending_query_result_preview)
+    {
+        output.push(std::move(pending_query_result_preview));
         return Status::PortFull;
     }
 
@@ -1270,25 +1283,135 @@ void AggregatingTransform::consume(Chunk chunk)
     src_rows += num_rows;
     src_bytes += chunk.bytes();
 
-    if (params->params.only_merge)
+    const UInt64 num_bytes = chunk.bytes();
+    const bool consider_previews
+        = query_result_previews && query_result_previews->control.isActivated() && !query_result_previews->control.isDisabled();
+
     {
-        materializeChunk(chunk);
-        if (!params->aggregator.mergeOnBlock(chunk.detachColumns(), num_rows, false, variants, no_more_keys, is_cancelled))
-            is_consume_finished = true;
+        /// Pairs with the snapshot walk in tryEmitQueryResultPreview.
+        std::unique_lock<std::mutex> preview_lock;
+        if (consider_previews)
+            preview_lock = std::unique_lock(query_result_previews->control.participantMutex(current_variant));
+
+        if (params->params.only_merge)
+        {
+            materializeChunk(chunk);
+            if (!params->aggregator.mergeOnBlock(chunk.detachColumns(), num_rows, false, variants, no_more_keys, is_cancelled))
+                is_consume_finished = true;
+        }
+        else
+        {
+            if (!params->aggregator.executeOnBlock(
+                    chunk.detachColumns(),
+                    0,
+                    num_rows,
+                    variants,
+                    key_columns,
+                    aggregate_columns,
+                    no_more_keys,
+                    adaptive_context.get()))
+                is_consume_finished = true;
+        }
     }
-    else
+
+    if (consider_previews && !is_consume_finished)
+        tryEmitQueryResultPreview(num_rows, num_bytes);
+}
+
+void AggregatingTransform::activateQueryResultPreviews()
+{
+    if (query_result_previews)
+        query_result_previews->control.activate();
+}
+
+void AggregatingTransform::tryEmitQueryResultPreview(UInt64 num_rows, UInt64 num_bytes)
+{
+    auto & control = query_result_previews->control;
+    if (!control.accountAndCheckThresholds(num_rows, num_bytes))
+        return;
+
+    /// Another transform is emitting a preview right now; do not wait for it.
+    std::unique_lock emit_lock(control.emit_mutex, std::try_to_lock);
+    if (!emit_lock.owns_lock())
+        return;
+
+    if (control.isDisabled())
+        return;
+
+    const auto & preview_settings = control.settings;
+
+    /// The cost of a round is linear in the memory of the states it merges, so the threshold is
+    /// checked against what the aggregation really holds across all of its threads - the arenas,
+    /// the hash tables, and whatever the aggregate function states allocate on their own, which is
+    /// where a `uniq` or a `groupArray` keeps almost all of its data. The arenas alone see almost
+    /// none of it: for `SELECT AdvEngineID, count(), uniq(UserID), uniq(*) FROM hits GROUP BY ALL`
+    /// with 64 threads they hold 0.1 MiB while the states hold 106 MiB.
+    if (preview_settings.max_result_bytes
+        && params->aggregator.getStateMemoryUsage() > static_cast<Int64>(preview_settings.max_result_bytes))
     {
-        if (!params->aggregator.executeOnBlock(
-                chunk.detachColumns(),
-                0,
-                num_rows,
-                variants,
-                key_columns,
-                aggregate_columns,
-                no_more_keys,
-                adaptive_context.get()))
-            is_consume_finished = true;
+        /// Aggregation states never shrink, so previews are off for the rest of the query.
+        control.disable();
+        return;
     }
+
+    /// The states of every participant are merged into one private snapshot, which is then
+    /// finalized into the preview chunk. Nothing is copied out of a participant: the merge only
+    /// reads its states, and it happens under the participant's lock.
+    AggregatedDataVariants snapshot;
+
+    for (size_t i = 0; i < many_data->variants.size(); ++i)
+    {
+        std::lock_guard participant_lock(control.participantMutex(i));
+
+        /// Once the aggregation spilled to disk, the in-memory state is incomplete. A spill happens
+        /// under the owner's participant lock, so a spill of this participant is visible here.
+        for (const auto & aggregator : *params->aggregator_list_ptr)
+        {
+            if (aggregator.hasTemporaryData())
+            {
+                control.disable();
+                return;
+            }
+        }
+
+        auto & participant = *many_data->variants[i];
+        if (participant.empty())
+            continue;
+
+        if (participant.isTwoLevel())
+        {
+            control.disable();
+            return;
+        }
+
+        /// The merged snapshot holds at least the keys of this participant, so a participant that
+        /// alone is over the threshold settles it before the merge does the work.
+        if (preview_settings.max_result_rows && participant.sizeWithoutOverflowRow() > preview_settings.max_result_rows)
+        {
+            control.disable();
+            return;
+        }
+
+        params->aggregator.mergeIntoQueryResultPreviewSnapshot(participant, snapshot);
+
+        /// The threshold counts the rows of the preview - the keys of the merged snapshot - not
+        /// the keys of every participant added up, which would depend on `max_threads`.
+        if (preview_settings.max_result_rows && snapshot.sizeWithoutOverflowRow() > preview_settings.max_result_rows)
+        {
+            /// Aggregation states never shrink, so previews are off for the rest of the query.
+            control.disable();
+            return;
+        }
+    }
+
+    control.startNextRound();
+
+    Chunk preview = params->aggregator.convertQueryResultPreviewSnapshotToChunk(snapshot);
+    if (!preview.getNumRows())
+        return;
+
+    markAsQueryResultPreview(preview);
+    pending_query_result_preview = std::move(preview);
 }
 
 void AggregatingTransform::initGenerate()
@@ -1300,6 +1423,11 @@ void AggregatingTransform::initGenerate()
     /// To do this, we pass a block with zero rows to aggregate.
     if (variants.empty() && params->params.keys_size == 0 && !params->params.empty_result_for_aggregation_by_empty_set)
     {
+        /// Another transform may still be consuming and snapshotting this variant for a query result preview.
+        std::unique_lock<std::mutex> preview_lock;
+        if (query_result_previews)
+            preview_lock = std::unique_lock(query_result_previews->control.participantMutex(current_variant));
+
         if (params->params.only_merge)
             params->aggregator.mergeOnBlock(getInputs().front().getHeader().getColumns(), 0, false, variants, no_more_keys, is_cancelled);
         else

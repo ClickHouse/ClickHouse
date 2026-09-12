@@ -1,4 +1,6 @@
+#include <Processors/QueryResultPreview.h>
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
+#include <Processors/Transforms/DistinctTransform.h>
 
 #include <Core/SortCursor.h>
 
@@ -47,6 +49,10 @@ DistinctSortedStreamTransform::DistinctSortedStreamTransform(
     sorted_columns.reserve(sorted_columns_pos.size());
     other_columns.reserve(other_columns_pos.size());
     prev_chunk_latest_key.reserve(sorted_columns.size());
+
+    all_distinct_columns_pos.reserve(sorted_columns_pos.size() + other_columns_pos.size());
+    all_distinct_columns_pos.insert(all_distinct_columns_pos.end(), sorted_columns_pos.begin(), sorted_columns_pos.end());
+    all_distinct_columns_pos.insert(all_distinct_columns_pos.end(), other_columns_pos.begin(), other_columns_pos.end());
 }
 
 void DistinctSortedStreamTransform::initChunkProcessing(const Columns & input_columns)
@@ -161,6 +167,15 @@ void DistinctSortedStreamTransform::transform(Chunk & chunk)
     const size_t chunk_rows = chunk.getNumRows();
     if (unlikely(0 == chunk_rows))
         return;
+
+    /// A query result preview is a self-contained chunk (see `QueryResultPreview.h`): deduplicate
+    /// it standalone, with the generic hash-based method - it must not read or advance the
+    /// range-tracking state of the sorted stream.
+    if (isQueryResultPreview(chunk))
+    {
+        deduplicateChunkForQueryResultPreview(chunk, all_distinct_columns_pos);
+        return;
+    }
 
     removeSpecialColumnRepresentations(chunk);
     convertToFullIfConst(chunk);

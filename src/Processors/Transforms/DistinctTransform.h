@@ -90,6 +90,12 @@ private:
     size_t unique_rows_observed = 0;
 };
 
+/// Deduplicates one chunk standalone with a fresh set, keeping the first occurrence of every key
+/// in the original order. For query result previews (see `QueryResultPreview.h`): each preview is
+/// a self-contained intermediate result, so `DISTINCT` applies to the preview chunk alone, and the
+/// accumulated state of the transform must not be involved in either direction.
+void deduplicateChunkForQueryResultPreview(Chunk & chunk, const ColumnNumbers & key_columns_pos);
+
 class DistinctTransform final : public ISimpleTransform
 {
 public:
@@ -108,6 +114,9 @@ public:
         bool skip_null_keys_ = false);
 
     String getName() const override { return "DistinctTransform"; }
+
+    /// Preview chunks are deduplicated standalone, without touching the accumulated set.
+    bool supportsQueryResultPreviews() const override { return true; }
 
 protected:
     void transform(Chunk & chunk) override;

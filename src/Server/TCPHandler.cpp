@@ -944,6 +944,10 @@ void TCPHandler::runImpl()
             if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_OUT_OF_ORDER_BUCKETS_IN_AGGREGATION)
                 query_state->query_context->setSetting("enable_producing_buckets_out_of_order_in_aggregation", false);
 
+            /// An older client does not know the `PreviewData` packet type.
+            if (client_tcp_protocol_version < DBMS_MIN_REVISION_WITH_QUERY_RESULT_PREVIEWS)
+                query_state->query_context->setSetting("query_result_previews", false);
+
             /// Processing Query
             std::tie(query_state->parsed_query, query_state->io) = executeQuery(query_state->query, query_state->query_context, QueryFlags{}, query_state->stage);
 
@@ -1640,7 +1644,12 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
                     // Block might be empty in case of timeout, i.e. there is no data to process
                     if (!block.empty() && !state.io.null_format && !discard_query_data)
-                        sendData(state, block);
+                    {
+                        if (block.info.is_preview)
+                            sendPreviewData(state, block);
+                        else
+                            sendData(state, block);
+                    }
 
                     out->sync();
                 }
@@ -1901,6 +1910,25 @@ void TCPHandler::sendExtremes(QueryState & state, const Block & extremes)
     if (state.maybe_compressed_out != out)
         state.maybe_compressed_out->next();
     out->finishChunk();
+}
+
+
+void TCPHandler::sendPreviewData(QueryState & state, const Block & block)
+{
+    /// The pipeline never produces preview blocks for clients that do not know the packet type:
+    /// `query_result_previews` is force-disabled for them before the query is executed.
+    chassert(client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_QUERY_RESULT_PREVIEWS);
+
+    initBlockOutput(state, block);
+
+    writeVarUInt(Protocol::Server::PreviewData, *out);
+    writeStringBinary("", *out);
+
+    state.block_out->write(block);
+    if (state.maybe_compressed_out != out)
+        state.maybe_compressed_out->next();
+    out->finishChunk();
+    /// The caller synchronizes `out` after the packet, the same way as for `Data` packets.
 }
 
 
