@@ -52,7 +52,6 @@ namespace S3AuthSetting
 {
     extern const S3AuthSettingsString access_key_id;
     extern const S3AuthSettingsUInt64 connect_timeout_ms;
-    extern const S3AuthSettingsBool disable_checksum;
     extern const S3AuthSettingsUInt64 expiration_window_seconds;
     extern const S3AuthSettingsBool gcs_issue_compose_request;
     extern const S3AuthSettingsUInt64 http_keep_alive_max_requests;
@@ -194,7 +193,6 @@ getClient(const S3::URI & url, const S3Settings & settings, ContextPtr context, 
 
     S3::ClientSettings client_settings{
         .use_virtual_addressing = url.is_virtual_hosted_style,
-        .disable_checksum = auth_settings[S3AuthSetting::disable_checksum],
         .gcs_issue_compose_request = auth_settings[S3AuthSetting::gcs_issue_compose_request],
         .is_s3express_bucket = is_s3_express_bucket
     };
