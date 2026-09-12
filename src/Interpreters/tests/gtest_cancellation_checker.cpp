@@ -41,6 +41,7 @@ QueryStatusPtr makeQueryStatus(const String & query_id)
         /*priority_handle_*/ QueryPriorities::Handle{},
         /*query_slot_*/ nullptr,
         /*memory_reservation_*/ nullptr,
+        /*holds_admission_slot_*/ false,
         /*thread_group_*/ nullptr,
         IAST::QueryKind::Select,
         settings,
