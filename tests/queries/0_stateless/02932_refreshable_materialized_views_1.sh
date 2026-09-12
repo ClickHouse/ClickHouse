@@ -10,12 +10,25 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT" | sed 's/--session_timezone[= ][^ ]*//g'`"
 CLICKHOUSE_CLIENT="`echo "$CLICKHOUSE_CLIENT --session_timezone Etc/UTC"`"
 
-# Whole budget for one wait, both SIGKILL graces and the diagnostic dump included: `timeout -k`
-# waits its grace in addition to the primary duration, so the graces come out of the budget.
-WAIT_TOTAL_S=30
+# Both SIGKILL graces and the diagnostic dump come out of every budget below: `timeout -k` waits
+# its grace in addition to the primary duration, so the graces are subtracted, not added on top.
 WAIT_DUMP_S=8
 WAIT_KILL_S=2
-WAIT_POLL_S=$((WAIT_TOTAL_S - WAIT_DUMP_S - WAIT_KILL_S))
+
+# Cap for a single wait. It has to cover a whole refresh rather than only scheduling latency: a
+# refresh writes a part to the default disk, and in the object-storage configurations under load
+# that takes tens of seconds. One `rmv_b` refresh in `arm_asan_ubsan, azure` spent 15.5s inside a
+# single-row part write and completed 0.2s after the 20s of polling this used to allow, which
+# reported a view that was refreshing normally as a failure.
+WAIT_MAX_S=120
+
+# `clickhouse-test` kills the test after CLICKHOUSE_TEST_TIMEOUT seconds, counted from the start of
+# this script, so a wait that expires later than that reports nothing: the kill truncates the very
+# diagnostic the bounded waits exist to produce. That cap is not the same everywhere - 60s in Fast
+# test, 600s in the stateless jobs - hence one deadline for the whole script, derived from it, that
+# no single wait may poll past. Hold back the dump's own budget and a margin for the harness.
+HARNESS_TIMEOUT_S=${CLICKHOUSE_TEST_TIMEOUT:-600}
+SCRIPT_DEADLINE=$((EPOCHSECONDS + HARNESS_TIMEOUT_S - WAIT_DUMP_S - 5))
 
 wait_failed() {
     echo "Wait failed for: $1"
@@ -34,7 +47,12 @@ wait_failed() {
 # transitions), leaving the last output in $wait_result. Expiry reports and exits non-zero.
 wait_for() {
     local query="$1" op="$2" value="$3" rc remaining out
-    local poll_end=$((EPOCHSECONDS + WAIT_POLL_S + WAIT_KILL_S))
+    local poll_end=$((EPOCHSECONDS + WAIT_MAX_S)) bound="the ${WAIT_MAX_S}s cap on one wait"
+    if ((poll_end > SCRIPT_DEADLINE))
+    then
+        poll_end=$SCRIPT_DEADLINE
+        bound="the harness cap of ${HARNESS_TIMEOUT_S}s on the whole test"
+    fi
     wait_result='(no poll returned)'
     while :
     do
@@ -42,7 +60,7 @@ wait_for() {
         if ((remaining <= 0))
         then
             wait_failed "$query" "$op $value" "$wait_result" \
-                "budget exhausted, last poll returned normally"
+                "budget exhausted ($bound), last poll returned normally"
         fi
         # -k because a client ignoring SIGTERM would keep a bare `timeout` waiting forever.
         out=$(timeout -k "$WAIT_KILL_S" "$remaining" $CLICKHOUSE_CLIENT -q "$query")
