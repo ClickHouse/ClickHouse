@@ -87,7 +87,7 @@ namespace wide
 
 constexpr bool supportsBitInt256()
 {
-#if defined(__x86_64__)
+#if defined(__x86_64__) && !defined(__FILC__)
     return true;
 #else
     return false;
@@ -298,7 +298,11 @@ constexpr uint64_t divide_128_by_64(uint64_t high, uint64_t low, uint64_t diviso
     if (!std::is_constant_evaluated())
     {
         uint64_t quotient;
-        __asm__("divq %[divisor]" : "=a"(quotient), "=d"(remainder) : "a"(low), "d"(high), [divisor] "r"(divisor));
+        __asm__(
+            "divq %[divisor]"
+            : "=a"(quotient), "=d"(remainder)
+            : "a"(low), "d"(high), [divisor] "r"(divisor)
+            : "cc");
         return quotient;
     }
 #endif
