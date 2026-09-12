@@ -1,0 +1,14 @@
+the fragment keeps the condition, so it does not order the read
+Read type: Default
+Prewhere filter column:  tenant = 5
+and answers instead of failing on the coordination mode
+5
+with the fragment set to ship it, the read is ordered as the replicas order theirs
+Read type: InOrder
+Prewhere filter column:  tenant = 5
+the splice is written into an AST, so it needs the setting that allows that
+Read type: Default
+5
+and the replicas must be running that AST rather than a shipped plan
+Read type: Default
+5

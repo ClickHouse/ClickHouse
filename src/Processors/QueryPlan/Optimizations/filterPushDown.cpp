@@ -1,10 +1,11 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/IColumn.h>
 #include <Core/Block.h>
+#include <Core/Settings.h>
 #include <Common/assert_cast.h>
 
-#include <Common/logger_useful.h>
 #include <Common/typeid_cast.h>
+#include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
@@ -41,6 +42,13 @@
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsBool parallel_replicas_filter_pushdown;
+    extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
+    extern const SettingsBool serialize_query_plan;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -1131,7 +1139,42 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
-size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
+/// Whether a condition might fix a column to a single value, which is what could let the fragment's
+/// read go in order and so change the coordination mode the initiator announces: `WHERE tenant = 42`
+/// can, while `WHERE tenant > 42`, a bare boolean or a join runtime filter leave the decision alone.
+///
+/// Deliberately structural, and not `appendFixedColumnsFromFilterExpression` - the analysis
+/// read-in-order itself uses - because the two want their errors to point opposite ways. That analysis
+/// is an under-approximation by design: it descends only `and`, takes only an `equals` with a single
+/// non-constant child, and reads nothing out of an `isNotDistinctFrom` or anything below an `or`. Each
+/// miss costs it one optimization. A miss here would let the fragment read in order off a condition the
+/// replicas do not have, so this stays a superset of whatever that analysis can find.
+static bool mayFixColumn(const ActionsDAG::Node * condition)
+{
+    std::vector<const ActionsDAG::Node *> stack{condition};
+    std::unordered_set<const ActionsDAG::Node *> visited;
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (!visited.emplace(node).second)
+            continue;
+
+        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        {
+            const auto & name = node->function_base->getName();
+            if (name == "equals" || name == "isNotDistinctFrom")
+                return true;
+        }
+
+        for (const auto * child : node->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
+
+size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings &)
 {
     if (parent_node->children.size() != 1)
         return 0;
@@ -1404,8 +1447,37 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
-        if (!settings.parallel_replicas_filter_pushdown)
-            return 0;
+        /// Only the initiator's share of the read gets the condition here; the replicas get it as well
+        /// only under `parallel_replicas_filter_pushdown`, which splices it into their query. A join
+        /// runtime filter can never travel there at all - `__applyFilter` is non-deterministic, so the
+        /// rewrite drops it - so waiting for that setting means never pushing one.
+        ///
+        /// What the condition may not do without the replicas having it is decide how this fragment
+        /// reads: an equality fixes a sort key column, the read goes in order, and the initiator
+        /// announces `WithOrder` to the shared coordinator against the replicas' `Default`. Pruning is
+        /// not in question - it changes which rows this replica reads, not the order it reads them in -
+        /// so push the condition either way and take only that one consequence away from it.
+        ///
+        /// Ask the settings the fragment carries, not the query being optimized: the fragment is what
+        /// travels, `SETTINGS` and all, and the rewrite that splices the condition into the replicas'
+        /// query answers to those. And `parallel_replicas_filter_pushdown` alone does not mean the
+        /// condition arrives - `ReadFromRemote::addFilters` splices it into an AST, so it never runs
+        /// without `allow_push_predicate_ast_for_distributed_subqueries`, and what it writes is not
+        /// what the replicas execute when the plan is shipped instead under `serialize_query_plan`.
+        /// Each of the three leaves the replicas on the fragment as it was, so each has to leave this
+        /// read unordered too.
+        const auto & fragment_settings = parallel_replicas_local_plan->getContext()->getSettingsRef();
+        /// The settings only say the rewrite was asked for. It also refuses outright any fragment that
+        /// is not a single-table query - one that unions, one that joins - and then the replicas keep
+        /// the query they were given, so such a fragment orders off nothing it was handed.
+        const bool replicas_get_the_condition = fragment_settings[Setting::parallel_replicas_filter_pushdown]
+            && fragment_settings[Setting::allow_push_predicate_ast_for_distributed_subqueries]
+            && !fragment_settings[Setting::serialize_query_plan]
+            && !parallel_replicas_local_plan->remoteRewriteRefusesThisShape();
+
+        const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
+        if (!replicas_get_the_condition && condition && mayFixColumn(condition))
+            parallel_replicas_local_plan->restrictFixedColumnsToOwnFilters();
 
         // actual push down will be done when plan for local parallel replica will be optimized
         FilterDAGInfo info{filter->getExpression().clone(), filter->getFilterColumnName(), filter->removesFilterColumn()};

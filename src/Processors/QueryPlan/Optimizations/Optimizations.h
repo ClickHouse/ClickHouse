@@ -74,7 +74,6 @@ struct Optimization
         size_t max_block_size{};
 
         // parallel replicas
-        bool parallel_replicas_filter_pushdown = false;
 
         /// Mirrors `QueryPlanOptimizationSettings::push_down_volume_reducing_functions`.
         /// `tryExecuteFunctionsAfterSorting` consults it to avoid pinging volume-reducing
@@ -323,6 +322,11 @@ void optimizeJoinLazyIndexing(QueryPlan::Node & node, QueryPlan::Nodes &, const 
 // Should be called once the query plan tree structure is finalized, i.e. no nodes addition, deletion or pushing down should happen after that call.
 // Since those hashes are used for join optimization, the calculation performed before join optimization.
 std::unordered_map<const QueryPlan::Node *, UInt64> calculateHashTableCacheKeys(const QueryPlan::Node & root);
+
+/// Names of the columns the filters already inside `root` fix to a single value, by the same rule
+/// read-in-order itself uses. Taken before a condition from outside is pushed in, this is what the
+/// replicas' own copy of the fragment will fix as well.
+NameSet collectFixedColumnNames(const QueryPlan::Node & root);
 
 /// Stamp every AggregatingStep in the plan with a hash-table preallocation cache key derived from
 /// the query plan (the node's bottom-up hash from calculateHashTableCacheKeys), instead of from the
