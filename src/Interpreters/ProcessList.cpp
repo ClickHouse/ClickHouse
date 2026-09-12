@@ -143,14 +143,13 @@ ProcessList::EntryPtr ProcessList::insert(
     MemoryReservationPtr memory_reservation;
     if (!is_unlimited_query)
     {
-        // A single admission deadline shared by the query slot and the memory reservation, so the whole
-        // pre-execution admission wait is bounded by one `workload_admission_timeout_ms` budget (the two
-        // resources are acquired sequentially below). 0 means no timeout.
+        // One deadline shared by the query slot and the memory reservation (acquired sequentially
+        // below), so the whole pre-execution admission wait is bounded by a single
+        // `workload_admission_timeout_ms` budget; 0 means no timeout. It saturates rather than overflows
+        // the nanosecond steady_clock time_point (the `Milliseconds` setting can hold values whose
+        // millisecond-to-nanosecond widening would overflow), so anything representable (~292 years)
+        // keeps its exact deadline and a larger, absurd timeout behaves as no timeout.
         const UInt64 admission_timeout_ms = static_cast<UInt64>(settings[Setting::workload_admission_timeout_ms].totalMilliseconds());
-        // One shared deadline for both admission waits. Saturate rather than overflow the nanosecond
-        // steady_clock time_point: the `Milliseconds` setting can hold values whose millisecond-to-
-        // nanosecond widening would overflow. Everything representable (~292 years from now) keeps its
-        // exact deadline; a larger, absurd timeout simply behaves as "no deadline". 0 means no timeout.
         std::chrono::steady_clock::time_point admission_deadline{};
         if (admission_timeout_ms)
         {
