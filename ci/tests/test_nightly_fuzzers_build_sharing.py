@@ -14,10 +14,9 @@ things have to line up for that, and all three were wrong:
     is the AMD one, where the two lists still agree, so the arms below pin that
     agreement rather than assume it.
 
-  - The long-retention tags are part of those artifact configs, and the upload
-    path is keyed by branch and commit. An untagged upload therefore both misses
-    the cache and replaces MasterCI's long-retention binary with a
-    default-retention one.
+  - The long-retention tags are part of those artifact configs, so an untagged
+    upload misses the cache. It cannot damage MasterCI's own upload: the S3 prefix
+    carries the workflow and the job name too.
 
   - `run_after` is hashed too, and mangle appends the docker job names to it, so
     the two workflows must inject the same docker jobs. MasterCI merges a
@@ -51,11 +50,9 @@ from ci.defs.defs import (  # noqa: E402
     with_long_retention_tags,
 )
 from ci.defs.job_configs import JobConfigs  # noqa: E402
-from ci.praktika import Workflow  # noqa: E402
 from ci.praktika.native_jobs import _publish_latest_docker_manifest  # noqa: E402
 from ci.workflows.master import workflow as master_workflow  # noqa: E402
 from ci.workflows.nightly_fuzzers import workflow as nightly_workflow  # noqa: E402
-from ci.workflows.nightly_jepsen import workflow as jepsen_workflow  # noqa: E402
 from ci.workflows.nightly_sqlancer import workflow as sqlancer_workflow  # noqa: E402
 from ci.workflows.release_branches import (  # noqa: E402
     workflow as release_workflow,
@@ -404,18 +401,12 @@ class TestOnlyTheGeneratingJobNeedsTheBinary:
 class TestLongRetentionTags:
     @pytest.mark.parametrize(
         "workflow",
-        [
-            master_workflow,
-            nightly_workflow,
-            release_workflow,
-            jepsen_workflow,
-            sqlancer_workflow,
-        ],
+        [master_workflow, nightly_workflow, release_workflow],
         ids=lambda w: w.name,
     )
     def test_long_retention_binaries_are_tagged(self, workflow):
-        # Every workflow uploading these has to tag them identically, otherwise
-        # one workflow's upload downgrades another's retention.
+        # The call sites that apply the helper must leave no listed binary
+        # untagged, whichever of the artifact groups declares it.
         by_name = {a.name: a for a in workflow.artifacts}
         untagged = [
             name
@@ -446,34 +437,6 @@ class TestLongRetentionTags:
             dataclasses.asdict(a) for a in expected
         ]
         assert sum(1 for a in actual if _tags(a)) == len(BINARIES_WITH_LONG_RETENTION)
-
-    def test_every_colliding_workflow_tags_them(self):
-        # Enumerated rather than listed by hand so a workflow added later is covered.
-        #
-        # A pull_request upload is keyed under PRs/<number> and a merge_queue one under
-        # the queue's own throwaway ref, so neither shares a key with master's.
-        examined, untagged = [], []
-        directory = os.path.join(os.path.dirname(__file__), "..", "workflows")
-        for name in sorted(os.listdir(directory)):
-            if not name.endswith(".py") or name == "__init__.py":
-                continue
-            module = importlib.import_module(f"ci.workflows.{name[:-3]}")
-            for workflow in getattr(module, "WORKFLOWS", []):
-                if workflow.event in (
-                    Workflow.Event.PULL_REQUEST,
-                    Workflow.Event.MERGE_QUEUE,
-                ):
-                    continue
-                declared = {a.name: a for a in workflow.artifacts or []}
-                provided = {a for job in workflow.jobs for a in job.provides}
-                for binary in BINARIES_WITH_LONG_RETENTION:
-                    if binary not in declared or binary not in provided:
-                        continue
-                    examined.append((workflow.name, binary))
-                    if _tags(declared[binary]) != {"retention": "long"}:
-                        untagged.append((workflow.name, binary))
-        assert examined, "no workflow uploads a long-retention binary: arm is vacuous"
-        assert untagged == []
 
     def test_helper_does_not_mutate_the_shared_configs(self):
         # The artifact configs are module-level singletons shared by every
