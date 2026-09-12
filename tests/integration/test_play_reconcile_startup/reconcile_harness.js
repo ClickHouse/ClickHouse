@@ -1641,6 +1641,56 @@ async function main() {
             vm.runInContext("JSON.stringify(tabs.map(t => t.query))", r.sandbox));
     }
 
+    /// Contract: the endpoint the page defaults to is the WHOLE address it was served at - the path
+    /// prefix and the routing query. A reverse proxy can expose one origin as several backends and
+    /// select between them with `?cluster=a`, so dropping that query would point a direct load, and a
+    /// `clickhouse-credentials` handover that carries no `url`, at the proxy's default backend. The
+    /// query string of the configured address is part of the endpoint identity everywhere else (it is
+    /// sent verbatim with every request, and `sameServerAddress` compares it), and every URL derived
+    /// from that address - the Documentation link here - has to stay on the same backend. That address
+    /// is also not trusted input (it comes from `?url=`, from a handover and from a text field), so a
+    /// non-HTTP scheme must never be turned into a link: `new URL` accepts `javascript:` just as
+    /// happily as an HTTP endpoint.
+    {
+        const r = await runScenario(js, {
+            href: 'https://proxy.example/clickhouse/play?cluster=a',
+            historyState: null,
+            seedTabs: [],
+            seedMeta: null,
+        });
+        const configured = vm.runInContext('url_elem.value', r.sandbox);
+        check('proxied-endpoint', 'the default connection keeps the path prefix and the routing query',
+            configured === 'https://proxy.example/clickhouse/?cluster=a', configured);
+        /// `writeHistoryEntry` is the one place that rebuilds the query string from scratch. The
+        /// routing parameter has to survive it: otherwise the very next read of `defaultServerAddress`
+        /// resolves to a different endpoint, and a reload lands on the proxy's default backend. It must
+        /// also not be mistaken for a non-default endpoint and serialized as a redundant `url=`.
+        vm.runInContext("query_area.value = 'SELECT 1'; onQueryInput({ type: 'input', isTrusted: true });"
+            + "refreshCurrentHistoryEntry(tabs.find(t => t.id === activeTabId));", r.sandbox);
+        await sleep(50);
+        check('proxied-endpoint', 'the history write keeps the routing parameter and adds no url=',
+            r.sandbox.location.search.includes('cluster=a')
+                && !r.sandbox.location.search.includes('url='),
+            r.sandbox.location.href);
+        check('proxied-endpoint', 'the default connection is unchanged by that write',
+            vm.runInContext('defaultServerAddress()', r.sandbox) === 'https://proxy.example/clickhouse/?cluster=a',
+            vm.runInContext('defaultServerAddress()', r.sandbox));
+        const docs_href = vm.runInContext('docsURL().href', r.sandbox);
+        check('proxied-endpoint', 'the Documentation link stays on the selected backend',
+            docs_href === 'https://proxy.example/clickhouse/docs?cluster=a', docs_href);
+        /// The credentials of the configured address are the exception: they are not routing, and the
+        /// derived URL is written into a link `href`, where a password would be recorded in browser
+        /// history, referrer headers and access logs.
+        const with_credentials = vm.runInContext(
+            "url_elem.value = 'https://u:p@proxy.example/clickhouse/?cluster=a&user=u&password=p'; docsURL().href",
+            r.sandbox);
+        check('proxied-endpoint', 'the Documentation link carries no credentials of its own',
+            with_credentials === 'https://proxy.example/clickhouse/docs?cluster=a', with_credentials);
+        const non_http = vm.runInContext("url_elem.value = 'javascript:alert(1)'; docsURL()", r.sandbox);
+        check('proxied-endpoint', 'a non-HTTP configured address yields no Documentation URL',
+            non_http === null, non_http);
+    }
+
     if (failures) {
         console.log(`${failures} check(s) FAILED`);
         process.exit(1);

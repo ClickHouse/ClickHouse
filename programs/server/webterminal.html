@@ -91,6 +91,17 @@
     // and cross-origin restrictions prevent reading window.parent.location.
     var trustedParentOrigin = null;
 
+    // Origins allowed to hand credentials to this page: its own origin (`play.html` embeds the
+    // terminal) and the ClickHouse Cloud consoles. The list is exact rather than a domain suffix:
+    // every Cloud service endpoint is a `*.clickhouse.cloud` host serving content of its owner's
+    // choosing, and none of them speaks for the console. `event.origin` is normalized by the
+    // browser (lower case, default port omitted), so these can be compared literally.
+    var TRUSTED_PARENT_ORIGINS = [
+        'https://console.clickhouse.cloud',
+        'https://console.clickhouse-staging.com',
+        'https://clickhouse.com',
+    ];
+
     /// Tell the embedding page that the user pressed Escape, or that the session ended, so that
     /// it can close the panel the terminal is embedded in.
     ///
@@ -103,24 +114,33 @@
     }
 
     function isTrustedParentOrigin(origin) {
-        if (origin === window.location.origin) return true;
-        try {
-            var u = new URL(origin);
-            if (u.protocol !== 'https:') return false;
-            var h = u.hostname;
-            return h === 'clickhouse.com'
-                || h === 'clickhouse.cloud'
-                || h.endsWith('.clickhouse.com')
-                || h.endsWith('.clickhouse.cloud');
-        } catch (e) {
-            return false;
-        }
+        return origin === window.location.origin || TRUSTED_PARENT_ORIGINS.indexOf(origin) !== -1;
     }
 
+    // The WebSocket endpoint is this very route, so derive it from the address this page was served
+    // from instead of a root-absolute path. Behind a path-routed reverse proxy the server is exposed
+    // as `https://proxy.example/clickhouse/` and the page is served as
+    // `https://proxy.example/clickhouse/webterminal`, while the same route at the origin belongs to
+    // an unrelated site. The page is attached with `attachNonStrictPath` (see `HTTPHandlerFactory`),
+    // so the served path may carry a suffix - `/webterminal/`, `/webterminalfoo` - and the route is
+    // therefore cut at its last occurrence in the path.
+    // The query string of that address is part of the endpoint as well: a proxy route can select a
+    // cluster or a namespace with `?cluster=a`, and `play.html` carries such parameters over into the
+    // terminal URL (`getTerminalURL`). Dropping them here would authenticate this terminal against the
+    // proxy's default backend instead of the server selected in the page that opened it. Only `user`
+    // and `password` are removed: they are this page's own parameters (`user` is read above, and a
+    // password must never travel in a URL), not routing of the endpoint.
     function getWebSocketURL() {
         var loc = window.location;
         var protocol = loc.protocol === 'https:' ? 'wss:' : 'ws:';
-        return protocol + '//' + loc.host + '/webterminal';
+        var path = loc.pathname;
+        var route = path.lastIndexOf('/webterminal');
+        if (route !== -1) path = path.slice(0, route) + '/webterminal';
+        var query = new URLSearchParams(loc.search || '');
+        query.delete('user');
+        query.delete('password');
+        var suffix = query.toString();
+        return protocol + '//' + loc.host + path + (suffix ? '?' + suffix : '');
     }
 
     function initTerminal() {
@@ -367,7 +387,7 @@
     }
 
     // Listen for messages from the parent (credentials, refit requests).
-    // Accepted origins: same-origin, *.clickhouse.com, *.clickhouse.cloud (https only).
+    // Accepted origins: same-origin and the exact `TRUSTED_PARENT_ORIGINS` list.
     // A 'webterminal-hello' handshake lets the parent register its origin so the iframe
     // can post back even when the parent is cross-origin.
     window.addEventListener('message', function(e) {
