@@ -33,7 +33,7 @@ private:
         const String & entity_name,
         bool throw_if_not_exists) override;
 
-    void createDirectory();
+    void createDirectory(bool fsync);
     void loadEntitiesImpl();
     ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name);
     ASTPtr tryLoadEntity(WorkloadEntityType entity_type, const String & entity_name, const String & file_path, bool check_file_exists);
