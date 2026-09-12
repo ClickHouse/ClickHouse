@@ -271,16 +271,23 @@ public:
         if (return_type->onlyNull())
             return return_type->createColumnConstWithDefaultValue(input_rows_count);
 
-        auto source_full_col = arguments[0].column->convertToFullColumnIfConst();
         const bool exclude_is_const = isColumnConst(*arguments[1].column);
 
         // We expect some form of arrays for both params
-        const ColumnArray * source_col = checkAndGetColumn<ColumnArray>(source_full_col.get());
         const ColumnArray * exclude_col = exclude_is_const
             ? typeid_cast<const ColumnArray *>(&typeid_cast<const ColumnConst *>(arguments[1].column.get())->getDataColumn())
             : checkAndGetColumn<ColumnArray>(arguments[1].column.get());
 
-        if (!source_col || !exclude_col)
+        if (!exclude_col)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be arrays");
+
+        if (exclude_col->getData().empty())
+            return arguments[0].column;
+
+        auto source_full_col = arguments[0].column->convertToFullColumnIfConst();
+        const ColumnArray * source_col = checkAndGetColumn<ColumnArray>(source_full_col.get());
+
+        if (!source_col)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be arrays");
 
         // With a little twist that they might be nullable...
