@@ -241,12 +241,12 @@ stateDiagram-v2
 
 顺畅路径沿直线向下推进——`HANDSHAKE → READY → READING_RESPONSE → READY`——其中 `Ping`/`Pong` 会形成自循环，而所有失败分支最终都会汇入唯一的 `Terminated` 终态。
 
-| State              | Description                                                                                                                                       |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `HANDSHAKE`        | TCP connection 打开后的初始状态。只有[握手](#handshake-phase)消息是有效的。成功时转换到 `READY`，失败时则终止。                                                                     |
-| `READY`            | 空闲。客户端可以发送 [Ping](#ping-phase)、[Query](#query-phase)，或关闭连接。该连接可以无限期停留在 `READY` 状态 (受 `idle_connection_timeout` 限制，参见[连接限制](#connection-limits)) 。 |
-| `READING_RESPONSE` | 当客户端发送 Query 时进入此状态。客户端必须先完整读取服务器的响应 stream，才能返回 `READY`。此时唯一允许的 client→server 数据包是 Cancel (本页未说明) 。                                              |
-| Terminated         | 不再可用。客户端必须打开新的 TCP connection 并重新开始握手。                                                                                                            |
+| State              | Description                                                                                                                                                                                                                                                             |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `HANDSHAKE`        | TCP 连接 打开后的初始状态。只有[握手](#handshake-phase)消息是有效的。成功时转换到 `READY`，失败时则终止。                                                                                                                                                                                           |
+| `READY`            | 空闲。客户端可以发送 [Ping](#ping-phase)、[Query](#query-phase)，或关闭连接。该连接可以无限期停留在 `READY` 状态 (受 `idle_connection_timeout` 限制，参见[连接限制](#connection-limits)) 。此时收到 `Data` (2) 或 `Scalar` (7) 数据包属于协议违规：服务器会直接终止连接，既不会解码数据包主体，也不会先发送 `Exception` 数据包。由于主体未被读取，客户端可能观察到 TCP 重置，而非有序关闭。 |
+| `READING_RESPONSE` | 当客户端发送 Query 时进入此状态。客户端必须先完整读取服务器的响应流，才能返回 `READY`。此时唯一允许的 client→server 数据包是 Cancel (本页未说明) 。                                                                                                                                                                    |
+| Terminated         | 不再可用。客户端必须打开新的 TCP 连接 并重新开始握手。                                                                                                                                                                                                                                  |
 
 ### 握手阶段 {#handshake-phase}
 

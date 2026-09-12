@@ -1403,7 +1403,7 @@ Estos tres códecs son los que produce el servidor para el enmarcado `Native` de
 | Byte   | Método | Codificación del cuerpo                                                                                                           |
 | ------ | ------ | --------------------------------------------------------------------------------------------------------------------------------- |
 | `0x02` | NONE   | El cuerpo son los bytes sin procesar (sin compresión). La trama se sigue emitiendo; el receptor verifica la suma de comprobación. |
-| `0x82` | LZ4    | El cuerpo está en el **formato de block LZ4** — *no* en el formato de trama LZ4. Sin número mágico.                               |
+| `0x82` | LZ4    | El cuerpo está en el **formato de bloque LZ4** — *no* en el formato de trama LZ4. Sin número mágico.                               |
 | `0x90` | ZSTD   | El cuerpo es un flujo zstd sin procesar de una sola trama (el número mágico estándar de zstd forma parte del cuerpo).             |
 
 El byte de método también codifica los [códecs a nivel de columna](/es/reference/statements/create/table/codec). Estos se aplican por columna en las rutas en disco de MergeTree, en lugar de al enmarcado de flujo completo, pero la ruta de entrada HTTP `decompress=1` toma el códec del byte de método de cada trama, por lo que cualquiera de estos bytes puede aparecer legítimamente en la entrada. Por lo tanto, un decodificador compatible debe reconocer todo el espacio asignado y rechazar cualquier byte que no implemente, en lugar de interpretar mal el cuerpo. Sus cuerpos son específicos de cada códec y quedan fuera de este contrato genérico de trama:
@@ -1423,6 +1423,8 @@ El byte de método también codifica los [códecs a nivel de columna](/es/refere
 | `0x9d` | `SZ3`                                                                         |
 | `0x9e` | `Quantized`                                                                   |
 | `0x9f` | `ZXC`                                                                         |
+
+`DoubleDelta` (`0x94`) almacena las segundas diferencias como bits de prefijo/signo/magnitud con el bit más significativo primero. La decodificación basada en palabras preserva esta codificación, el número de elementos y el relleno del byte final.
 
 `0x9c` (`ALP`) es un códec sin pérdida **beta** para `Float32` y `Float64` (compresión adaptativa sin pérdida de coma flotante). Una tabla solo puede crearse con `CODEC(ALP)` cuando `enable_alp_codec` está habilitado, pero el byte de método siempre se acepta durante la descompresión para que los datos escritos previamente sigan siendo legibles. `0x9d` (`SZ3`) es un códec *lossy* **experimental**, con error acotado, para `Float32`, `Float64` y `Array` de esos tipos. Una tabla solo puede crearse con `CODEC(SZ3)` cuando `enable_sz3_codec` está habilitado, pero el byte de método siempre se acepta durante la descompresión para que los datos escritos previamente sigan siendo legibles. `0x9f` (`ZXC`) es un códec LZ asimétrico **experimental**: lento al comprimir, pero muy rápido al descomprimir, con una ratio entre `LZ4` y `ZSTD`. Una tabla solo puede crearse con `CODEC(ZXC)` cuando `enable_zxc_codec` está habilitado, pero el byte de método siempre se acepta durante la descompresión para que los datos escritos previamente sigan siendo legibles. Los bytes `0x99` (`DeflateQpl`) y `0x9b` (`ZSTD_QPL`) se asignaron a códecs que desde entonces se han eliminado; están reservados y no se reutilizan.
 
