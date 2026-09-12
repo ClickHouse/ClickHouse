@@ -2,6 +2,7 @@
     <settings>
         <max_partitions_per_insert_block>1024</max_partitions_per_insert_block>
         <use_statistics>0</use_statistics>
+        <use_query_condition_cache>0</use_query_condition_cache>
     </settings>
     <create_query>
         CREATE TABLE skip_order_pruned (p UInt64, x UInt64, y UInt64,
