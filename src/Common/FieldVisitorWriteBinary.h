@@ -2,6 +2,8 @@
 
 #include <Common/FieldVisitors.h>
 
+#include <cstddef>
+
 namespace DB
 {
 
@@ -32,5 +34,7 @@ public:
     void operator() (const CustomType & x, WriteBuffer & buf) const;
     void operator() (const bool & x, WriteBuffer & buf) const;
 };
+
+size_t getFieldBinarySize(const Field & x);
 
 }
