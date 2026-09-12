@@ -8,7 +8,8 @@ DROP TABLE IF EXISTS t_mut;
 
 CREATE TABLE t_mut (date1 Date, value1 String, value2 UInt64) ENGINE = MergeTree ORDER BY tuple()
 SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1,
-         part_minmax_index_columns = 'with_block_number_offset';
+         part_minmax_index_columns = 'with_block_number_offset',
+         optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO t_mut SELECT toDate('2018-10-01') + number % 3, toString(number), number FROM numbers(9);
 

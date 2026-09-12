@@ -1,5 +1,5 @@
 <test>
-    <create_query>CREATE TABLE t_json_subcolumns_conversions (json JSON) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE t_json_subcolumns_conversions (json JSON) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
 
     <fill_query>INSERT INTO t_json_subcolumns_conversions SELECT toJSONString(map('key' || toString(number % 400), number)) FROM numbers(1000000)</fill_query>
     <fill_query>OPTIMIZE TABLE t_json_subcolumns_conversions FINAL</fill_query>

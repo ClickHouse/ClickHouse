@@ -1,0 +1,660 @@
+"""Helpers for making a perf-test ``CREATE TABLE`` backward-compatible.
+
+The performance comparison runs the same test DDL against two servers: the
+patched (PR) build and an older baseline build. When the PR introduces a new
+``MergeTree`` setting, the baseline server does not know it and rejects the
+``CREATE TABLE`` with ``UNKNOWN_SETTING``. To keep both sides comparable,
+``perf.py`` strips such a setting from the query and retries, letting the old
+server fall back to its own default.
+
+The stripping is a correctness-critical baseline rewrite: a bug here would
+silently rewrite the baseline ``CREATE TABLE`` while the PR side keeps the
+original DDL, invalidating the comparison instead of failing fast. The scanner
+therefore lives in this small importable module (rather than nested inside the
+``perf.py`` script body, which executes top to bottom on import) so it can be
+covered by unit tests in ``ci/tests/test_strip_setting_from_query.py``.
+"""
+
+WHITESPACE = " \t\r\n\f\v"
+
+
+def is_word_at(text, pos, word):
+    """Case-insensitive word-boundary match of `word` at `pos`.
+
+    A `.` immediately before the match makes it the trailing part of a
+    qualified name (`system.settings`, `db.engine`), never a clause keyword,
+    so it is rejected as well.
+    """
+    wlen = len(word)
+    if text[pos : pos + wlen].upper() != word:
+        return False
+    if pos > 0 and (text[pos - 1].isalnum() or text[pos - 1] in "_."):
+        return False
+    end = pos + wlen
+    return end >= len(text) or not (text[end].isalnum() or text[end] == "_")
+
+
+def skip_identifier(text, pos):
+    """Advance `pos` past one identifier: a backtick- or double-quote-quoted
+    one, or a bare run of identifier characters. Return `pos` unchanged when
+    there is no identifier at `pos`."""
+    length = len(text)
+    if pos >= length:
+        return pos
+    quote = text[pos]
+    if quote in "`\"":
+        pos += 1
+        while pos < length:
+            if text[pos] == "\\" and pos + 1 < length:
+                pos += 2
+                continue
+            if text[pos] == quote:
+                # A doubled quote inside a quoted identifier is an escape.
+                if pos + 1 < length and text[pos + 1] == quote:
+                    pos += 2
+                    continue
+                return pos + 1
+            pos += 1
+        return pos
+    start = pos
+    while pos < length and (text[pos].isalnum() or text[pos] in "_$"):
+        pos += 1
+    return pos if pos > start else start
+
+
+def skip_table_carrier(text, pos):
+    """Advance `pos` past a `[db.]table` name or a `table_function(...)` call.
+
+    Used after a top-level `AS` in `CREATE TABLE dst AS src ...` /
+    `... CLONE AS src`: the source name is an identifier, not syntax, so the
+    clause scan must resume *after* it. Otherwise a perfectly valid
+    `CREATE TABLE dst AS system.settings ENGINE = MergeTree ... SETTINGS ...`
+    would take the `settings` of `system.settings` for the table's own
+    `SETTINGS` clause.
+    """
+    length = len(text)
+    pos = skip_identifier(text, pos)
+    # An optional `db.` qualifier -- and `db . tbl` is valid too.
+    j = skip_whitespace_and_comments(text, pos)
+    while j < length and text[j] == ".":
+        j = skip_whitespace_and_comments(text, j + 1)
+        pos = skip_identifier(text, j)
+        j = skip_whitespace_and_comments(text, pos)
+    # A table function carries an argument list; skip it as a balanced group,
+    # because it may contain anything, including the word `SETTINGS`.
+    if j < length and text[j] == "(":
+        depth = 0
+        quote = None
+        while j < length:
+            c = text[j]
+            if quote is not None:
+                if c == "\\" and j + 1 < length:
+                    j += 2
+                    continue
+                if c == quote:
+                    if quote == "'" and j + 1 < length and text[j + 1] == "'":
+                        j += 2
+                        continue
+                    quote = None
+                j += 1
+                continue
+            after_comment = comment_end(text, j)
+            if after_comment is not None:
+                j = after_comment
+                continue
+            if c in "'\"`":
+                quote = c
+                j += 1
+                continue
+            if c in "([{":
+                depth += 1
+            elif c in ")]}":
+                depth -= 1
+                if depth == 0:
+                    return j + 1
+            j += 1
+        return length
+    return pos
+
+
+def comment_end(text, pos):
+    """If a SQL comment starts at `pos`, return the index just past it,
+    else `None`.
+
+    This is the single definition of the comment grammar for every scanner
+    in this module, mirroring `src/Parsers/Lexer.cpp`: `--` and `//` start a
+    line comment; `#` starts a MySQL-style line comment only when followed
+    by a space or `!` (a bare `#foo` is an error token, not a comment); and
+    `/* ... */` block comments nest according to the SQL standard. A line
+    comment ends just before its `\\n` (the newline itself is whitespace, as
+    in the lexer, where the newline cannot be escaped). An unterminated
+    block comment extends to the end of the text: the lexer flags it as an
+    error token, and here nothing meaningful can follow it either way.
+    """
+    length = len(text)
+    c = text[pos]
+    next_c = text[pos + 1] if pos + 1 < length else ""
+    if (c == "-" and next_c == "-") or (c == "/" and next_c == "/") or (c == "#" and next_c in (" ", "!")):
+        while pos < length and text[pos] != "\n":
+            pos += 1
+        return pos
+    if c == "/" and next_c == "*":
+        pos += 2
+        nesting_level = 1
+        while pos < length:
+            pair = text[pos : pos + 2]
+            if pair == "/*":
+                nesting_level += 1
+                pos += 2
+            elif pair == "*/":
+                nesting_level -= 1
+                pos += 2
+                if nesting_level == 0:
+                    return pos
+            else:
+                pos += 1
+        return length
+    return None
+
+
+def skip_whitespace_and_comments(text, pos):
+    """Advance `pos` past whitespace and comments (see `comment_end`)."""
+    length = len(text)
+    while pos < length:
+        if text[pos] in WHITESPACE:
+            pos += 1
+            continue
+        after_comment = comment_end(text, pos)
+        if after_comment is None:
+            break
+        pos = after_comment
+    return pos
+
+
+def first_keyword(sql):
+    """Return the first SQL keyword of a statement, in upper case, or `""`.
+
+    Leading whitespace and comments are skipped with the same grammar as
+    every other scanner here (see `comment_end`), so a statement introduced
+    by `--`, `//`, `#!`, or a nested `/* ... */` comment still reports its
+    real leading verb. A bare `#foo` is not a comment (`Lexer.cpp` treats it
+    as an error token), so it is reported as the keyword and the caller
+    fails fast on it.
+    """
+    pos = skip_whitespace_and_comments(sql, 0)
+    end = pos
+    while end < len(sql):
+        if sql[end] in WHITESPACE or sql[end] in "(;" or comment_end(sql, end) is not None:
+            break
+        end += 1
+    return sql[pos:end].upper()
+
+
+def create_query_engine(query):
+    """Return the engine name of a `CREATE TABLE`, or `None` when there is none.
+
+    The `ENGINE` keyword is located outside string / backtick literals,
+    outside comments (see `comment_end`) and at bracket depth zero, so an
+    `ENGINE` written inside a column `COMMENT` literal or inside the schema
+    parentheses is not matched. Only the bare engine name is returned; its
+    arguments (`ReplicatedMergeTree('/path', 'replica')`) are not parsed.
+    """
+    i = 0
+    n = len(query)
+    quote = None
+    depth = 0
+    while i < n:
+        c = query[i]
+        next_c = query[i + 1] if i + 1 < n else ""
+        if quote is not None:
+            if c == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if c == quote:
+                if quote == "'" and next_c == "'":
+                    i += 2
+                    continue
+                quote = None
+            i += 1
+            continue
+        after_comment = comment_end(query, i)
+        if after_comment is not None:
+            i = after_comment
+            continue
+        if c in "'\"`":
+            quote = c
+            i += 1
+            continue
+        if c in "([{":
+            depth += 1
+            i += 1
+            continue
+        if c in ")]}":
+            if depth > 0:
+                depth -= 1
+            i += 1
+            continue
+        if depth == 0 and is_word_at(query, i, "ENGINE"):
+            j = skip_whitespace_and_comments(query, i + len("ENGINE"))
+            if j < n and query[j] == "=":
+                j = skip_whitespace_and_comments(query, j + 1)
+            start = j
+            while j < n and (query[j].isalnum() or query[j] == "_"):
+                j += 1
+            if j > start:
+                return query[start:j]
+            return None
+        i += 1
+    return None
+
+
+def is_mergetree_create_query(query):
+    """Whether `query` creates a table of the `MergeTree` family.
+
+    The baseline rewrite performed by `strip_setting_from_query` is only
+    meaningful for a `MergeTree`-family engine: those are the engines that
+    accept the newly added `MergeTree` settings. For any other engine an
+    `UNKNOWN_SETTING` means the fixture itself is wrong (e.g. `ENGINE =
+    Memory SETTINGS optimize_row_order_if_no_order_by = 0`), and silently
+    dropping the setting would let a broken fixture benchmark the wrong
+    setup on both sides instead of failing fast.
+    """
+    engine = create_query_engine(query)
+    return engine is not None and engine.lower().endswith("mergetree")
+
+
+def is_ordinary_mergetree_create_query(query):
+    """Whether `query` creates an ordinary `MergeTree`-family table.
+
+    `optimize_row_order_if_no_order_by` only changes writes to ordinary
+    `MergeTree` engines. The corresponding replicated and shared variants
+    retain that mode; specialized engines such as `ReplacingMergeTree` and
+    `AggregatingMergeTree` deliberately keep the inserted row order.
+    """
+    engine = create_query_engine(query)
+    return engine is not None and engine.lower() in {
+        "mergetree",
+        "replicatedmergetree",
+        "sharedmergetree",
+    }
+
+
+def strip_setting_from_query(query, setting_name, allowed_values=None):
+    """Strip a single MergeTree setting from a CREATE TABLE SETTINGS clause.
+
+    Used to make a CREATE TABLE backward-compatible with an older server
+    that does not know a newly-added MergeTree setting. The semantics on
+    the old server fall back to its default for that setting, which is
+    the desired behavior when the perf test wants to keep the old
+    behavior on the PR side by setting the value explicitly.
+
+    Stripping is only semantics-preserving when the fixture pins the
+    setting to a value that is equivalent to the baseline server's
+    default: dropping `optimize_row_order_if_no_order_by = 0` leaves both
+    sides with the optimization off, but dropping an *enabled* value
+    (`= 1`) would build an unoptimized table on the baseline while the PR
+    side uses the optimized layout, silently comparing different on-disk
+    layouts instead of surfacing an unsupported fixture. When
+    `allowed_values` is given (a set of lowercased value strings such as
+    `{"0", "false"}`), the assignment is stripped only if its value is one
+    of them; otherwise the query is returned unchanged so `perf.py`
+    re-raises `UNKNOWN_SETTING` and the benchmark fails fast. When
+    `allowed_values` is `None`, the value is not inspected.
+
+    The value of a setting may legitimately contain commas inside quoted
+    strings, parentheses, brackets, or braces (e.g. tuples, arrays,
+    maps). Use a small scanner that tracks quote and bracket state so
+    that the whole `name = value` assignment is removed even for such
+    values. The same scanner first locates the `SETTINGS` keyword
+    outside of any string/comment context, so an occurrence of the
+    setting name inside, e.g., a column `COMMENT` literal preceding the
+    clause cannot be matched.
+    """
+
+    # Keywords that can follow the SETTINGS clause at the top level of a
+    # CREATE TABLE (`AS SELECT ...`, `COMMENT '...'`, `EMPTY AS SELECT ...`,
+    # `... CLONE AS src`) and therefore terminate it. `SELECT` / `WITH` are
+    # included as a guard rail: a setting name or value can never be one of
+    # them at bracket depth zero, so a bare top-level `SELECT` after the
+    # table's `SETTINGS` (an ill-formed statement -- the grammar only starts
+    # the select query with `AS`) stops the scans instead of letting them
+    # run into the select list and cut it at a column separator. The query
+    # is then returned unchanged and `perf.py` fails fast on the original
+    # error, rather than silently truncating the DDL.
+    trailing_clause_keywords = ("AS", "COMMENT", "EMPTY", "CLONE", "SELECT", "WITH")
+
+    def find_table_settings_keyword(text):
+        """Return the index of the table's own top-level `SETTINGS` keyword,
+        ignoring matches inside string/backtick literals or comments (see
+        `comment_end`) and inside brackets. Return -1 when there is no
+        table-level SETTINGS clause.
+
+        A top-level `AS` is disambiguated the way `ParserCreateQuery.cpp`
+        does: when it is followed by `SELECT`, `WITH`, or `(`, it starts the
+        select query, so any later `SETTINGS` is a query-level clause (e.g.
+        on `AS SELECT ...`), not the table's own -- return -1 so the caller
+        leaves the query unchanged and `perf.py` fails fast on a misplaced
+        setting instead of silently stripping a query-level clause. When `AS`
+        is instead followed by a source table or table function (`CREATE
+        TABLE dst AS src ENGINE = MergeTree ... SETTINGS ...`), the storage
+        clause -- including the new table's own `SETTINGS` -- may still
+        follow, so the scan continues. A top-level `COMMENT '...'`, in
+        contrast, ends the engine definition (`ParserCreateQuery.cpp` parses
+        the table comment after the storage clause), so a `SETTINGS` that
+        follows it is query-level -- return -1 there as well. The `EMPTY` /
+        `CLONE` markers are scanned over: the grammar requires an `AS` after
+        them, and it is that `AS` which decides. Bracket depth is tracked so a
+        column-level `COMMENT` inside the schema parens does not confuse the
+        scan."""
+        i = 0
+        n = len(text)
+        quote = None
+        depth = 0
+        while i < n:
+            c = text[i]
+            next_c = text[i + 1] if i + 1 < n else ""
+            if quote is not None:
+                if c == "\\" and i + 1 < n:
+                    i += 2
+                    continue
+                if c == quote:
+                    # `''` inside a single-quoted string is an escaped quote.
+                    if quote == "'" and next_c == "'":
+                        i += 2
+                        continue
+                    quote = None
+                i += 1
+                continue
+            after_comment = comment_end(text, i)
+            if after_comment is not None:
+                i = after_comment
+                continue
+            if c in "'\"`":
+                quote = c
+                i += 1
+                continue
+            if c in "([{":
+                depth += 1
+                i += 1
+                continue
+            if c in ")]}":
+                if depth > 0:
+                    depth -= 1
+                i += 1
+                continue
+            if depth == 0:
+                if is_word_at(text, i, "SETTINGS"):
+                    return i
+                if is_word_at(text, i, "COMMENT"):
+                    # A top-level `COMMENT '...'` before any table-level
+                    # `SETTINGS` ends the engine definition, so a later
+                    # `SETTINGS` is a query-level clause (see
+                    # `03234_enable_secure_identifiers.sql`). The table has no
+                    # settings of its own -- leave the query unchanged and let
+                    # `perf.py` fail fast on the misplaced setting.
+                    return -1
+                if is_word_at(text, i, "AS"):
+                    j = skip_whitespace_and_comments(text, i + len("AS"))
+                    if j >= n or text[j] == "(" or is_word_at(text, j, "SELECT") or is_word_at(text, j, "WITH"):
+                        # `AS SELECT ...` / `AS WITH ...` / `AS (...)`: the
+                        # select query starts here, so a following SETTINGS is
+                        # query-level and the table has none of its own.
+                        return -1
+                    # `AS [db.]source_table` / `AS table_function(...)`: the
+                    # storage clause (with the table's own SETTINGS) may still
+                    # follow, so keep scanning -- but only after the whole
+                    # source-table / table-function carrier, whose identifiers
+                    # are not clause keywords even when they read like one
+                    # (`AS system.settings`, `AS settings`).
+                    i = skip_table_carrier(text, j)
+                    continue
+            i += 1
+        return -1
+
+    settings_pos = find_table_settings_keyword(query)
+    if settings_pos < 0:
+        return query
+
+    # Locate `setting_name = ` at the top level of the SETTINGS clause:
+    # outside string and backtick literals, outside comments (see
+    # `comment_end`), and at bracket depth 0 (so a literal containing the
+    # setting name inside an array, tuple, or function call is not
+    # matched). The plain `re.search` cannot enforce this on raw text.
+    name_lower = setting_name.lower()
+    name_len = len(setting_name)
+    i = settings_pos + len("SETTINGS")
+    n = len(query)
+    quote = None
+    depth = 0
+    name_start = -1
+    value_start = -1
+    last_top_level_comma = -1
+    while i < n:
+        c = query[i]
+        next_c = query[i + 1] if i + 1 < n else ""
+        if quote is not None:
+            if c == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if c == quote:
+                if quote == "'" and next_c == "'":
+                    i += 2
+                    continue
+                quote = None
+            i += 1
+            continue
+        after_comment = comment_end(query, i)
+        if after_comment is not None:
+            i = after_comment
+            continue
+        if c in "'\"`":
+            quote = c
+            i += 1
+            continue
+        if c in "([{":
+            depth += 1
+            i += 1
+            continue
+        if c in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+            i += 1
+            continue
+        if depth == 0 and i > settings_pos + len("SETTINGS") and any(is_word_at(query, i, kw) for kw in trailing_clause_keywords):
+            # A trailing clause (`AS SELECT ...`, `COMMENT '...'`) ends the
+            # SETTINGS clause. Stop the name scan here, exactly as the value
+            # scan below does, so the setting name is only matched inside the
+            # table's own SETTINGS. Without this, the scan would run past
+            # `AS SELECT ...` and could match the name inside a query-level
+            # SETTINGS or, worse, cut from a comma in the SELECT column list,
+            # silently rewriting the baseline DDL instead of failing fast.
+            break
+        if depth == 0 and c == ",":
+            # Top-level comma: the separator between two settings. Remember
+            # the last one before the matched name so the cut can remove the
+            # whole separator (including any comment between it and the name).
+            last_top_level_comma = i
+            i += 1
+            continue
+        if depth == 0 and query[i : i + name_len].lower() == name_lower:
+            before_ok = i == settings_pos + len("SETTINGS") or not (query[i - 1].isalnum() or query[i - 1] == "_")
+            after_idx = i + name_len
+            if before_ok and after_idx < n and not (query[after_idx].isalnum() or query[after_idx] == "_"):
+                # Comments are allowed anywhere whitespace is, including
+                # between the setting name and `=` and between `=` and the
+                # value, so skip them with the same comment-aware scanner
+                # used for the post-cut cleanup below.
+                j = skip_whitespace_and_comments(query, after_idx)
+                if j < n and query[j] == "=":
+                    j = skip_whitespace_and_comments(query, j + 1)
+                    name_start = i
+                    value_start = j
+                    break
+        i += 1
+
+    if name_start < 0:
+        return query
+
+    # When the dropped assignment is not the first entry in the SETTINGS
+    # clause, cut from the top-level comma that separates it from the
+    # previous entry, so the whole separator (the comma plus any whitespace
+    # or comments between it and the setting name) is removed cleanly. The
+    # comma position comes from the comment- and literal-aware forward scan
+    # above, so a `/* ... */` comment sitting in the separator does not
+    # defeat it. A plain backward whitespace scan, by contrast, would stop
+    # at such a comment and leave the orphaned comma (and comment) behind.
+    if last_top_level_comma >= 0:
+        cut_start = last_top_level_comma
+    else:
+        cut_start = name_start
+
+    # Scan from the start of the value to find its end at the next
+    # top-level comma or semicolon, a keyword starting a trailing
+    # clause, or end of query. Mirror the name-scan state machine so
+    # commas inside string/backtick literals or inside comments (see
+    # `comment_end`) are ignored.
+    i = value_start
+    quote = None
+    depth = 0
+    while i < n:
+        c = query[i]
+        next_c = query[i + 1] if i + 1 < n else ""
+        if quote is not None:
+            if c == "\\" and i + 1 < n:
+                i += 2
+                continue
+            if c == quote:
+                # `''` inside a single-quoted string is an escaped quote.
+                if quote == "'" and next_c == "'":
+                    i += 2
+                    continue
+                quote = None
+            i += 1
+            continue
+        after_comment = comment_end(query, i)
+        if after_comment is not None:
+            i = after_comment
+            continue
+        if c in "'\"`":
+            quote = c
+            i += 1
+            continue
+        if c in "([{":
+            depth += 1
+            i += 1
+            continue
+        if c in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+            i += 1
+            continue
+        if depth == 0 and c in ",;":
+            break
+        if depth == 0 and i > value_start and any(is_word_at(query, i, kw) for kw in trailing_clause_keywords):
+            # Leave the whitespace before the keyword in place so the
+            # preceding token is not glued to the trailing clause.
+            while i > value_start and query[i - 1] in WHITESPACE:
+                i -= 1
+            break
+        i += 1
+
+    # Value-aware guard: stripping the assignment is only semantics-preserving
+    # when its value matches the baseline server's default (see the docstring).
+    # `i` now sits just past the value, so `query[value_start:i]` is the raw
+    # value text. If the caller supplied the set of baseline-equivalent values
+    # and this one is not among them (e.g. an enabled `= 1`), leave the query
+    # unchanged so `perf.py` re-raises `UNKNOWN_SETTING` and fails fast instead
+    # of silently comparing an optimized PR table against an unoptimized
+    # baseline one.
+    def value_without_comments(text):
+        """Return the setting value with SQL comments removed, so a value
+        written as `0 /* keep */` or `false -- keep` normalizes to `0` /
+        `false` for the `allowed_values` comparison. The value scan above only
+        breaks on the next top-level comma or trailing clause, so a comment
+        sitting between the value and that boundary is captured in
+        `query[value_start:i]` and would otherwise make a baseline-default
+        value miss the allowlist. Comment markers inside a string or backtick
+        literal are part of the value and are kept."""
+        out = []
+        pos = 0
+        length = len(text)
+        in_quote = None
+        while pos < length:
+            ch = text[pos]
+            nxt = text[pos + 1] if pos + 1 < length else ""
+            if in_quote is not None:
+                out.append(ch)
+                if ch == "\\" and pos + 1 < length:
+                    out.append(nxt)
+                    pos += 2
+                    continue
+                if ch == in_quote:
+                    # `''` inside a single-quoted string is an escaped quote.
+                    if in_quote == "'" and nxt == "'":
+                        out.append(nxt)
+                        pos += 2
+                        continue
+                    in_quote = None
+                pos += 1
+                continue
+            after_comment = comment_end(text, pos)
+            if after_comment is not None:
+                pos = after_comment
+                continue
+            if ch in "'\"`":
+                in_quote = ch
+            out.append(ch)
+            pos += 1
+        return "".join(out).strip().lower()
+
+    if allowed_values is not None:
+        stripped_value = value_without_comments(query[value_start:i])
+        if stripped_value not in allowed_values:
+            return query
+
+    # When the dropped assignment is the first entry of the SETTINGS clause
+    # (no preceding top-level comma to cut from, so `cut_start` stayed at
+    # `name_start`), consume the trailing comma and any whitespace after it
+    # so the next entry is not left with a stray leading separator.
+    if cut_start == name_start and i < n and query[i] == ",":
+        i += 1
+        while i < n and query[i] in WHITESPACE:
+            i += 1
+
+    stripped = query[:cut_start] + query[i:]
+
+    # The cleanup below is anchored at the known position of the
+    # `SETTINGS` keyword (which is unchanged by the cut, as the cut
+    # starts after it) instead of a global regex over the whole query:
+    # the query may legitimately contain `SETTINGS` or commas inside
+    # string literals (e.g. in a column `COMMENT`), which a global
+    # regex would corrupt.
+    after_keyword = settings_pos + len("SETTINGS")
+
+    # Drop a stray leading `,` that the structural cut above may have
+    # missed in unusual whitespace/comment shapes.
+    rest = skip_whitespace_and_comments(stripped, after_keyword)
+    if rest < len(stripped) and stripped[rest] == ",":
+        stripped = stripped[:rest] + stripped[rest + 1 :]
+
+    # Drop an empty SETTINGS clause (the only setting was the dropped one),
+    # along with any whitespace that preceded the SETTINGS keyword. The
+    # clause is considered empty when only whitespace or comments remain
+    # between `SETTINGS` and the terminating `;`/end/trailing clause, so
+    # a comment that sat between `SETTINGS` and the removed first setting
+    # is dropped too instead of being left as a stray `SETTINGS /*...*/ ;`.
+    rest = skip_whitespace_and_comments(stripped, after_keyword)
+    if rest >= len(stripped) or stripped[rest] == ";":
+        lead = settings_pos
+        while lead > 0 and stripped[lead - 1] in WHITESPACE:
+            lead -= 1
+        stripped = stripped[:lead] + stripped[rest:]
+    elif any(is_word_at(stripped, rest, kw) for kw in trailing_clause_keywords):
+        # A trailing clause (`AS SELECT ...`, `COMMENT '...'`) follows the
+        # now-empty SETTINGS clause; keep the whitespace before `SETTINGS`
+        # as the separator.
+        stripped = stripped[:settings_pos] + stripped[rest:]
+
+    return stripped

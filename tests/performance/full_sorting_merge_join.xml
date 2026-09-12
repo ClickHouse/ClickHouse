@@ -60,8 +60,8 @@
     <fill_query>OPTIMIZE TABLE fsm_str_sparse_right FINAL</fill_query>
 
     <!-- Sparse match on Nullable keys with ~10% NULLs on both sides. -->
-    <create_query>CREATE TABLE fsm_nullable_left (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE fsm_nullable_right (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE fsm_nullable_left (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE fsm_nullable_right (k Nullable(UInt64)) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
     <fill_query>INSERT INTO fsm_nullable_left SELECT if(number % 10 = 0, NULL, number) FROM numbers_mt(10000000)</fill_query>
     <fill_query>INSERT INTO fsm_nullable_right SELECT if(number % 10 = 0, NULL, number * 100 + 1) FROM numbers(100000)</fill_query>
     <fill_query>OPTIMIZE TABLE fsm_nullable_left FINAL</fill_query>

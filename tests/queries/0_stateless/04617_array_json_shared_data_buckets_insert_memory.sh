@@ -20,7 +20,7 @@ for VERSION in map_with_buckets advanced; do
     ${CLICKHOUSE_CLIENT} -q "
         CREATE TABLE t_arr_json_buckets (data Array(JSON(max_dynamic_paths=0)))
         ENGINE = MergeTree ORDER BY tuple()
-        SETTINGS object_shared_data_serialization_version_for_zero_level_parts = '${VERSION}'"
+        SETTINGS optimize_row_order_if_no_order_by = 0, object_shared_data_serialization_version_for_zero_level_parts = '${VERSION}'"
 
     # 800 MiB: comfortably above the ~630 MiB optimized peak, well below the >1.1 GiB an unoptimized
     # (all-buckets-at-once) split would need, so a regression fails with MEMORY_LIMIT_EXCEEDED.

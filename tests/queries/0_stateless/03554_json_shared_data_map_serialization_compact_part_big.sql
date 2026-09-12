@@ -2,7 +2,7 @@
 -- Random settings limits: index_granularity=(100, None); index_granularity_bytes=(100000, None)
 
 drop table if exists test_compact_map;
-create table test_compact_map (json JSON(max_dynamic_paths=8)) engine=MergeTree order by tuple() settings min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
+create table test_compact_map (json JSON(max_dynamic_paths=8)) engine=MergeTree order by tuple() settings optimize_row_order_if_no_order_by = 0, min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
 insert into test_compact_map select multiIf(
 number < 15000,
 '{"?1" : 1, "?2" : 1, "?3" : 1, "?4" : 1, "?5" : 1, "?6" : 1, "?7" : 1, "?8" : 1}',
@@ -40,7 +40,7 @@ select json.a.a1, json.^a from test_compact_map format Null;
 drop table test_compact_map format Null;
 
 drop table if exists test_compact_map_tuple;
-create table test_compact_map_tuple (json Tuple(data JSON(max_dynamic_paths=8))) engine=MergeTree order by tuple() settings min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
+create table test_compact_map_tuple (json Tuple(data JSON(max_dynamic_paths=8))) engine=MergeTree order by tuple() settings optimize_row_order_if_no_order_by = 0, min_bytes_for_wide_part='200G', min_rows_for_wide_part=1, write_marks_for_substreams_in_compact_parts=1, object_serialization_version='v3', object_shared_data_serialization_version='map', object_shared_data_serialization_version_for_zero_level_parts='map';
 insert into test_compact_map_tuple select tuple(multiIf(
 number < 15000,
 '{"?1" : 1, "?2" : 1, "?3" : 1, "?4" : 1, "?5" : 1, "?6" : 1, "?7" : 1, "?8" : 1}',

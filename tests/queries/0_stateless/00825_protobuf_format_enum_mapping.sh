@@ -17,7 +17,7 @@ DROP TABLE IF EXISTS enum_mapping_protobuf_00825;
 CREATE TABLE enum_mapping_protobuf_00825
 (
   x Enum16('First'=-100, 'Second'=0, 'Third'=100)
-) ENGINE = MergeTree ORDER BY tuple();
+) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
 INSERT INTO enum_mapping_protobuf_00825 VALUES ('Second'), ('Third'), ('First'), ('First'), ('Second');
 

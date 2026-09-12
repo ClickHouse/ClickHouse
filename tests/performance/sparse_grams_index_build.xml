@@ -1,9 +1,9 @@
 <test>
 
     <create_query>CREATE TABLE sg_src (s String) ENGINE = Memory</create_query>
-    <create_query>CREATE TABLE sg_bloom_3_8 (s String, INDEX idx s TYPE sparse_grams(3, 8, 8192, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE sg_bloom_3_100 (s String, INDEX idx s TYPE sparse_grams(3, 100, 8192, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()</create_query>
-    <create_query>CREATE TABLE sg_text_3_8 (s String, INDEX idx s TYPE text(tokenizer = sparseGrams(3, 8)) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple()</create_query>
+    <create_query>CREATE TABLE sg_bloom_3_8 (s String, INDEX idx s TYPE sparse_grams(3, 8, 8192, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE sg_bloom_3_100 (s String, INDEX idx s TYPE sparse_grams(3, 100, 8192, 3, 0) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
+    <create_query>CREATE TABLE sg_text_3_8 (s String, INDEX idx s TYPE text(tokenizer = sparseGrams(3, 8)) GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0</create_query>
     <create_query>SYSTEM STOP MERGES</create_query>
 
     <fill_query>INSERT INTO sg_src SELECT randomPrintableASCII(200) FROM numbers(150_000)</fill_query>

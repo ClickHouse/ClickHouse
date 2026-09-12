@@ -18,7 +18,8 @@ string1 String,
 string2 String
 )
 ENGINE = MergeTree
-ORDER BY tuple();
+ORDER BY tuple()
+SETTINGS optimize_row_order_if_no_order_by = 0;
 insert into string_or_string values ('str1',''), ('','str2');
 SELECT * FROM string_or_string
 SETTINGS format_schema_source='string',

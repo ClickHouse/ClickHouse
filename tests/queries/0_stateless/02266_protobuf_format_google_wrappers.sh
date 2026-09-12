@@ -54,7 +54,7 @@ $CLICKHOUSE_CLIENT --query "
   (
     str Nullable(String),
     ref Int32
-  ) ENGINE = MergeTree ORDER BY tuple();
+  ) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
   CREATE TABLE $ROUNDTRIP_TABLE AS $MAIN_TABLE;
 
@@ -62,14 +62,14 @@ $CLICKHOUSE_CLIENT --query "
   (
     str Tuple(value String),
     ref Int32
-  ) ENGINE = MergeTree ORDER BY tuple();
+  ) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 
   CREATE TABLE $MULTI_TABLE
   (
     x0 Nullable(Int32),
     x1 Nullable(Int32),
     x2 Int32
-  ) ENGINE = MergeTree ORDER BY tuple();
+  ) ENGINE = MergeTree ORDER BY tuple() SETTINGS optimize_row_order_if_no_order_by = 0;
 "
 
 echo "Unless specified otherwise, operations use:"

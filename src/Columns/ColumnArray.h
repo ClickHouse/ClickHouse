@@ -76,6 +76,7 @@ public:
     void get(size_t n, Field & res) const override;
     void getValueNameImpl(WriteBufferFromOwnString &, size_t n, const Options &) const override;
     std::string_view getDataAt(size_t n) const override;
+    bool supportsGetDataAt() const override { return data->isFixedAndContiguous(); }
     bool isDefaultAt(size_t n) const override;
     UInt64 getNumberOfDefaultRows() const override;
 

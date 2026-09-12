@@ -1,5 +1,5 @@
 <test>
-    <create_query>CREATE TABLE test_shared_data_wide (json JSON(max_dynamic_paths=0)) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=1, min_rows_for_wide_part=1</create_query>
+    <create_query>CREATE TABLE test_shared_data_wide (json JSON(max_dynamic_paths=0)) ENGINE=MergeTree ORDER BY tuple() SETTINGS min_bytes_for_wide_part=1, min_rows_for_wide_part=1, optimize_row_order_if_no_order_by = 0</create_query>
 
     <fill_query>INSERT INTO test_shared_data_wide SELECT arrayMap(x -> tuple('key' || x, randomStringUTF8(16)), range(256))::Map(String, String) FROM numbers(150000)</fill_query>
     <fill_query>INSERT INTO test_shared_data_wide SELECT arrayMap(x -> tuple('key' || x, randomStringUTF8(16)), range(256))::Map(String, String) FROM numbers(150000)</fill_query>

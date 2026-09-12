@@ -306,6 +306,10 @@ struct StorageInMemoryMetadata
     /// Storage settings
     ASTPtr getSettingsChanges() const;
     Field getSettingChange(const String & setting_name) const;
+
+    /// Whether the table `SETTINGS` clause contains an explicit override of `setting_name`.
+    /// Unlike `getSettingsChanges`, it does not clone the AST, so it is cheap enough for hot paths.
+    bool hasSettingChange(const String & setting_name) const;
     bool hasSettingsChanges() const { return settings_changes != nullptr; }
 
     /// Select query for *View storages.
