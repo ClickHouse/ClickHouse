@@ -238,6 +238,10 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             command_arguments.erase(command_arguments.begin());
         }
 
+        /// Same as for `executable`: this source has no shared-memory transport, so a config that
+        /// asks for one must fail here instead of quietly falling back to the pipes.
+        checkSharedMemoryIsNotConfigured(config, settings_config_prefix, "Executable pool dictionary source");
+
         ExecutablePoolDictionarySource::Configuration configuration
         {
             .command = std::move(command_value),
@@ -257,7 +261,9 @@ void registerDictionarySourceExecutablePool(DictionarySourceFactory & factory)
             .max_command_execution_time_seconds = max_command_execution_time,
             .is_executable_pool = true,
             .send_chunk_header = config.getBool(settings_config_prefix + ".send_chunk_header", false),
-            .execute_direct = execute_direct
+            .execute_direct = execute_direct,
+            .use_shared_memory = false,
+            .shared_memory_size = 0
         };
 
         auto coordinator = std::make_shared<ShellCommandSourceCoordinator>(shell_command_coordinator_configration);

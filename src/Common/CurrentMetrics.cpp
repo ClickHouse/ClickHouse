@@ -73,6 +73,7 @@
     M(MemoryTracking, "Total amount of memory (bytes) allocated by the server.") \
     M(MemoryTrackingUncorrected, "Total amount of memory (bytes) allocated by the server not corrected by RSS.") \
     M(MergesMutationsMemoryTracking, "Total amount of memory (bytes) allocated by background tasks (merges and mutations).") \
+    M(ExecutableUDFSharedMemoryPooledBytes, "Total size in bytes of the shared-memory regions of executable user-defined functions that are currently charged to the server rather than to a query, because the pooled process holding them is idle between invocations. Measured from the backing files when each worker went back into the pool; a command that enlarges its own region file after that holds pages this does not count until its worker is borrowed again and discarded for it.") \
     M(EphemeralNode, "Number of ephemeral nodes hold in ZooKeeper.") \
     M(MaxAllocatedEphemeralLockSequentialNumber, "The maximum sequential number allocated for ephemeral lock znodes in ZooKeeper. Primarily influenced by the block numbers.") \
     M(ZooKeeperSession, "Number of sessions (connections) to ZooKeeper. Should be no more than one, because using more than one connection to ZooKeeper may lead to bugs due to lack of linearizability (stale reads) that ZooKeeper consistency model allows.") \

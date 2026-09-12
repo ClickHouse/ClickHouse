@@ -514,6 +514,7 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::mutex embedded_dictionaries_mutex;
     mutable std::mutex external_dictionaries_mutex;
     mutable std::mutex external_user_defined_executable_functions_mutex;
+
     /// Separate mutex for storage policies. During server startup we may
     /// initialize some important storages (system logs with MergeTree engine)
     /// under context lock.

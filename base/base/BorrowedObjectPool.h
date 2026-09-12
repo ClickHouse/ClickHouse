@@ -38,22 +38,24 @@ public:
     {
         std::unique_lock<std::mutex> lock(objects_mutex);
 
-        if (!objects.empty())
+        while (true)
         {
-            dest = borrowFromObjects(lock);
-            return;
+            if (!objects.empty())
+            {
+                borrowFromObjects(lock, dest);
+                return;
+            }
+
+            if (canAllocate())
+            {
+                allocateObjectForBorrowing(lock, dest, std::forward<FactoryFunc>(func));
+                return;
+            }
+
+            ++waiting_borrowers_size;
+            condition_variable.wait(lock, [this] { return canBorrowOrAllocate(); });
+            --waiting_borrowers_size;
         }
-
-        bool has_unlimited_size = (max_size == 0);
-
-        if (unlikely(has_unlimited_size) || allocated_objects_size < max_size)
-        {
-            dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
-            return;
-        }
-
-        condition_variable.wait(lock, [this] { return !objects.empty(); });
-        dest = borrowFromObjects(lock);
     }
 
     /// Same as borrowObject function, but wait with timeout.
@@ -63,26 +65,32 @@ public:
     {
         std::unique_lock<std::mutex> lock(objects_mutex);
 
-        if (!objects.empty())
+        /// One deadline for the whole call: the wait below can be entered more than once (a slot
+        /// that frees up wakes this thread, and another thread may take it first), and restarting
+        /// the timeout each time would let the call outlast the timeout it was given.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_in_milliseconds);
+
+        while (true)
         {
-            dest = borrowFromObjects(lock);
-            return true;
+            if (!objects.empty())
+            {
+                borrowFromObjects(lock, dest);
+                return true;
+            }
+
+            if (canAllocate())
+            {
+                allocateObjectForBorrowing(lock, dest, std::forward<FactoryFunc>(func));
+                return true;
+            }
+
+            ++waiting_borrowers_size;
+            const bool woken = condition_variable.wait_until(lock, deadline, [this] { return canBorrowOrAllocate(); });
+            --waiting_borrowers_size;
+
+            if (!woken)
+                return false;
         }
-
-        bool has_unlimited_size = (max_size == 0);
-
-        if (unlikely(has_unlimited_size) || allocated_objects_size < max_size)
-        {
-            dest = allocateObjectForBorrowing(lock, std::forward<FactoryFunc>(func));
-            return true;
-        }
-
-        bool wait_result = condition_variable.wait_for(lock, std::chrono::milliseconds(timeout_in_milliseconds), [this] { return !objects.empty(); });
-
-        if (wait_result)
-            dest = borrowFromObjects(lock);
-
-        return wait_result;
     }
 
     /// Return object into pool. Client must return same object that was borrowed.
@@ -91,7 +99,26 @@ public:
         {
             std::lock_guard lock(objects_mutex);
 
-            objects.emplace_back(std::move(object_to_return));
+            try
+            {
+                objects.emplace_back(std::move(object_to_return));
+            }
+            catch (...)
+            {
+                /// The object does not make it back into the pool, so the pool must not keep
+                /// counting it: otherwise every such failure permanently costs one slot of
+                /// `max_size`, and after enough of them borrowing only ever times out.
+                --allocated_objects_size;
+                --borrowed_objects_size;
+
+                /// Nothing was pushed into `objects`, so the freed slot is the only thing a waiter
+                /// can go on, and it is what waiters watch for besides a returned object. Wake one
+                /// here - the notify after this block is skipped by the unwinding - or a pool with
+                /// `max_size == 1` leaves its only waiter asleep with the pool standing empty.
+                condition_variable.notify_one();
+                throw;
+            }
+
             --borrowed_objects_size;
         }
 
@@ -118,6 +145,18 @@ public:
         return allocated_objects_size == max_size;
     }
 
+    /// Number of threads currently blocked inside `borrowObject`/`tryBorrowObject` waiting for an
+    /// object to be returned or for a slot to free up. The counter is incremented under
+    /// `objects_mutex` before the wait, which only releases the mutex once the thread is registered
+    /// on the condition variable: another thread that acquires the mutex and sees a non-zero count
+    /// therefore knows the waiter is asleep and will observe a `notify_one`. That is what makes it
+    /// usable as a synchronization point rather than only as a statistic.
+    size_t waitingBorrowersSize() const
+    {
+        std::lock_guard lock(objects_mutex);
+        return waiting_borrowers_size;
+    }
+
     /// Borrowed objects size. If borrowedObjectsSize == allocatedObjectsSize and pool is full.
     /// Then client will wait during borrowObject function call.
     size_t borrowedObjectsSize() const
@@ -128,24 +167,72 @@ public:
 
 private:
 
+    /// Both must be called under `objects_mutex`.
+
+    bool canAllocate() const
+    {
+        bool has_unlimited_size = (max_size == 0);
+        return unlikely(has_unlimited_size) || allocated_objects_size < max_size;
+    }
+
+    /// What a waiting borrower is waiting for. A returned object is the usual case, but free
+    /// capacity counts too: `returnObject` can fail to put the object back and give up its slot
+    /// instead, and then allocating a replacement is the only way forward.
+    bool canBorrowOrAllocate() const
+    {
+        return !objects.empty() || canAllocate();
+    }
+
     template <typename FactoryFunc>
-    T allocateObjectForBorrowing(const std::unique_lock<std::mutex> &, FactoryFunc && func)
+    void allocateObjectForBorrowing(const std::unique_lock<std::mutex> &, T & dest, FactoryFunc && func)
     {
         ++allocated_objects_size;
         ++borrowed_objects_size;
 
-        return std::forward<FactoryFunc>(func)();
+        try
+        {
+            /// The hand-over to `dest` is inside the guard, not just the factory call: it is an
+            /// assignment of a user-supplied type and may throw in its own right, and a slot that
+            /// is accounted for but was never handed to anybody is a slot the pool loses for the
+            /// rest of the process - with `max_size` of them, every later borrow times out.
+            dest = std::forward<FactoryFunc>(func)();
+        }
+        catch (...)
+        {
+            /// No object was created or borrowed, so a failed factory must not consume one of the
+            /// pool's slots permanently.
+            --allocated_objects_size;
+            --borrowed_objects_size;
+
+            /// And the slot it gives back is what the next waiter proceeds on - nothing was pushed
+            /// into `objects` here either - so one has to be woken for it, exactly as in
+            /// `returnObject`. Without this a waiter that was woken by some earlier freed slot,
+            /// only to have its own factory fail, takes the wakeup with it and leaves the waiter
+            /// behind it asleep with the pool below `max_size`.
+            condition_variable.notify_one();
+            throw;
+        }
     }
 
-    T borrowFromObjects(const std::unique_lock<std::mutex> &)
+    void borrowFromObjects(const std::unique_lock<std::mutex> &, T & dest)
     {
-        T dst;
-        detail::moveOrCopyIfThrow(std::move(objects.back()), dst);
-        objects.pop_back();
-
         ++borrowed_objects_size;
 
-        return dst;
+        try
+        {
+            detail::moveOrCopyIfThrow(std::move(objects.back()), dest);
+        }
+        catch (...)
+        {
+            /// Nothing has left the pool: `moveOrCopyIfThrow` copies exactly when a move could
+            /// throw, so a failure here leaves `objects.back()` intact and only the count to undo.
+            /// Skipping this would keep an object that is still in the pool counted as borrowed,
+            /// and after `max_size` such failures the pool would refuse to lend anything at all.
+            --borrowed_objects_size;
+            throw;
+        }
+
+        objects.pop_back();
     }
 
     size_t max_size;
@@ -154,5 +241,6 @@ private:
     std::condition_variable condition_variable;
     size_t allocated_objects_size = 0;
     size_t borrowed_objects_size = 0;
+    size_t waiting_borrowers_size = 0;
     std::vector<T> objects;
 };

@@ -471,3 +471,21 @@ def test_executable_source_exit_code_check(started_cluster):
     assert "DB::Exception" in node.query(
         "SELECT last_exception FROM system.dictionaries WHERE name='executable_input_missing_executable'"
     )
+
+
+def test_executable_source_rejects_shared_memory_configuration(started_cluster):
+    skip_test_msan(node)
+
+    # The shared-memory transport exists only for executable user defined functions. A dictionary
+    # that asks for it has to fail, because the alternative is that it loads and runs over the pipes
+    # instead - a different transport from the one it was configured for, with nothing said about it.
+    for name in [
+        "executable_shared_memory_rejected_python",
+        "executable_pool_shared_memory_rejected_python",
+    ]:
+        assert "DB::Exception" in node.query_and_get_error(
+            f"SELECT dictGet('{name}', 'result', toUInt64(1))"
+        )
+        assert "shared-memory transport is available for executable" in node.query(
+            f"SELECT last_exception FROM system.dictionaries WHERE name='{name}'"
+        )
