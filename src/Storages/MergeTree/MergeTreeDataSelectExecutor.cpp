@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <optional>
+#include <numeric>
 #include <DataTypes/DataTypeString.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadGroupSwitcher.h>
@@ -1000,13 +1001,75 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
 
     std::vector<IndexStat> useful_indices_stat(stat_size);
 
-    /// per_part_index_orders can be shorter than the parts being read when index analysis was cached
-    /// for a smaller part set; fall back to the natural order (the order only picks which index to try first).
-    auto index_order_at = [&skip_indexes](size_t part_index, size_t idx) -> size_t
+    /// Part filtering precedes this stage. Compute costs only for the surviving parts,
+    /// and only when there is an index order to choose.
+    std::vector<std::vector<size_t>> per_part_index_orders;
+    if (skip_indexes.useful_indices.size() > 1)
     {
-        return part_index < skip_indexes.per_part_index_orders.size()
-            ? skip_indexes.per_part_index_orders[part_index][idx]
-            : idx;
+        std::vector<size_t> index_sizes;
+        index_sizes.reserve(skip_indexes.useful_indices.size());
+
+        for (const auto & part : parts_with_ranges)
+        {
+            auto & index_order = per_part_index_orders.emplace_back();
+            index_order.resize(skip_indexes.useful_indices.size());
+            std::iota(index_order.begin(), index_order.end(), 0);
+
+            index_sizes.clear();
+
+            for (const auto & idx : skip_indexes.useful_indices)
+            {
+                size_t index_size = 0;
+                auto format = idx.index->getDeserializedFormat(*part.data_part, idx.index->getFileName());
+
+                for (const auto & substream : format.substreams)
+                {
+                    String stream_name = idx.index->getFileName() + substream.suffix;
+                    /// getFileSizeOrZeroResolved resolves the on-disk name and also sizes substreams
+                    /// with no checksums entry (bundled in skp_idx.packed), so the cost-based
+                    /// reordering accounts for them instead of treating them as free.
+                    index_size += part.data_part->getFileSizeOrZeroResolved(stream_name, substream.extension);
+                }
+
+                index_sizes.emplace_back(index_size);
+            }
+
+            // Move minmax indices to first positions, so they will be applied first as cheapest ones
+            ::stableSort(index_order.begin(), index_order.end(), [ &idx_sizes = std::as_const(index_sizes), &useful_indices = std::as_const(skip_indexes.useful_indices)](const auto & l, const auto & r)
+            {
+                const auto l_index = useful_indices[l].index;
+                const auto r_index = useful_indices[r].index;
+
+                const bool l_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(l_index.get());
+                const bool r_is_minmax = typeid_cast<const MergeTreeIndexMinMax *>(r_index.get());
+
+                auto l_index_priority = l_is_minmax ? 1 : 2;
+                auto r_index_priority = r_is_minmax ? 1 : 2;
+
+#if USE_USEARCH
+                // A vector similarity index (if present) is the most selective, hence move it to front
+                bool l_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(l_index.get());
+                bool r_is_vectorsimilarity = typeid_cast<const MergeTreeIndexVectorSimilarity *>(r_index.get());
+                if (l_is_vectorsimilarity)
+                    l_index_priority = 0;
+                if (r_is_vectorsimilarity)
+                    r_index_priority = 0;
+#endif
+                // negated since we want to prioritize coarser indexes
+                const auto neg_l_granularity = -l_index->getGranularity();
+                const auto neg_r_granularity = -r_index->getGranularity();
+
+                const auto l_size = idx_sizes[l];
+                const auto r_size = idx_sizes[r];
+
+                return std::tie(l_index_priority, neg_l_granularity, l_size) < std::tie(r_index_priority, neg_r_granularity, r_size);
+            });
+        }
+    }
+
+    auto index_order_at = [&per_part_index_orders](size_t part_index, size_t idx) -> size_t
+    {
+        return per_part_index_orders.empty() ? idx : per_part_index_orders[part_index][idx];
     };
 
     std::atomic<size_t> sum_marks_pk = 0;
