@@ -2018,8 +2018,33 @@ class JobConfigs:
         result_name_for_cidb="Tests",
         digest_config=Job.CacheDigestConfig(
             include_paths=[
+                "./ci/defs/defs.py",
+                "./ci/defs/job_configs.py",
+                "./.github/workflows/pull_request.yml",
                 "./ci/jobs/parser_memory_check.py",
+                "./ci/jobs/scripts/workflow_hooks/store_data.py",
+                "./ci/workflows/pull_request.py",
                 "./utils/parser-memory-profiler/",
+            ],
+        ),
+    )
+    storage_memory_check_job = Job.Config(
+        name=JobNames.STORAGE_MEMORY_CHECK,
+        runs_on=RunnerLabels.ARM_SMALL,
+        run_in_docker="clickhouse/test-base",
+        command="python3 ./ci/jobs/storage_memory_check.py",
+        requires=[ArtifactNames.CLICKHOUSE_EXAMPLES],
+        result_name_for_cidb="Tests",
+        digest_config=Job.CacheDigestConfig(
+            include_paths=[
+                "./ci/defs/defs.py",
+                "./ci/defs/job_configs.py",
+                "./.github/workflows/pull_request.yml",
+                "./ci/jobs/parser_memory_check.py",
+                "./ci/jobs/scripts/workflow_hooks/store_data.py",
+                "./ci/jobs/storage_memory_check.py",
+                "./ci/workflows/pull_request.py",
+                "./utils/storage-memory-profiler/",
             ],
         ),
     )

@@ -211,6 +211,7 @@ workflow = Workflow.Config(
             for job in JobConfigs.performance_comparison_with_master_head_jobs
         ],
         JobConfigs.parser_memory_check_job,
+        JobConfigs.storage_memory_check_job,
         # ClickBench runs on PRs only when files in its digest change
         # (see `clickbench_jobs.digest_config`), so the cost is bounded.
         *[
