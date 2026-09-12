@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/FieldToDataType.h>
+#include <DataTypes/FixedStringZeroPadding.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <DataTypes/Utils.h>
 #include <Interpreters/Context.h>
@@ -4427,6 +4428,17 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
             if (!cast_not_needed && !key_expr_type_not_null->equals(*const_type))
             {
+                /// A `FixedString` nested in an `Array`, a `Map` or a `Tuple` is compared ignoring
+                /// its trailing zero bytes, so the constant stands for a family of key values rather
+                /// than for one. Unlike a top-level `String`, that family is not a contiguous run of
+                /// the sort order — `['V0', 'a']` lies between `['V0']` and `['V0\0']` and is not a
+                /// member — so no range built from the converted constant covers it, and pruning
+                /// would drop granules holding matching rows. Decline index analysis. A top-level
+                /// `String` or `FixedString` key is handled below and is left untouched.
+                if (!isStringOrFixedString(key_expr_type_not_null)
+                    && zeroPaddedStringComparison(key_expr_type_not_null, const_type))
+                    return false;
+
                 if (const_value.getType() == Field::Types::String)
                 {
                     /// These functions use the constant as a string pattern or prefix.
