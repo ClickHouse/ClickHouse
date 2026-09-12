@@ -722,6 +722,8 @@ Reuse the base storage's `S3` credentials when creating a secondary object stora
 
 Without this setting the credentials are reused only when the target resolves to the same endpoint as the base storage. Enabling it reuses them for any endpoint the table metadata names, including an endpoint of a different provider and a plain `http` one: whoever can write the table's manifests can then direct the base storage's credentials, including a temporary session token, at a host of their choice.
 
+For that reason this setting is ignored while `s3_allow_server_credentials_in_user_queries` is disabled: the base storage's credentials can be the server's own, and a session fenced off from them must not receive them through the table metadata either.
+
 Has no effect on `Azure`, where a path naming a storage account other than the table's is rejected regardless of this setting.
 )", 0) \
     DECLARE(Bool, hdfs_throw_on_zero_files_match, false, R"(

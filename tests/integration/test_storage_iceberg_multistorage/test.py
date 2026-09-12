@@ -1602,7 +1602,9 @@ def _relocate_data_files_to_bucket_by_ip(started_cluster, table_name, data_bucke
 
 
 # `object_storage_propagate_credentials_to_other_storages` decides whether the base storage's S3
-# credentials are handed to a secondary storage built for a file the metadata places elsewhere.
+# credentials are handed to a secondary storage built for a file the metadata places elsewhere, and it
+# is honoured only in a session that `s3_allow_server_credentials_in_user_queries` already trusts with
+# the server's own credentials.
 # Without it they are reused only when the target resolves to the same endpoint, which is compared
 # by scheme and authority -- so addressing the very same MinIO through its IP instead of its host
 # name makes the target a different endpoint while the object stays exactly where it is. A secondary
@@ -1631,8 +1633,18 @@ def test_propagate_credentials_to_other_endpoint(started_cluster):
     error = instance.query_and_get_error(f"SELECT * FROM {table_function} ORDER BY id")
     assert "not allowed to use the server's own credentials" in error, error
 
-    # Opted in: the base credentials are propagated to that endpoint and the same read succeeds.
-    result = instance.query(
+    # The setting alone changes nothing while the session is fenced off from the server's own
+    # credentials: the base storage's identity can be server-managed, so propagating it to an endpoint
+    # the table metadata names would hand out exactly what the fence is there to withhold.
+    # https://github.com/ClickHouse/ClickHouse/pull/90740#discussion_r3993934228
+    error = instance.query_and_get_error(
         f"SELECT * FROM {table_function} ORDER BY id "
         f"SETTINGS object_storage_propagate_credentials_to_other_storages = 1")
+    assert "not allowed to use the server's own credentials" in error, error
+
+    # Opted in on both: the base credentials are propagated to that endpoint and the same read succeeds.
+    result = instance.query(
+        f"SELECT * FROM {table_function} ORDER BY id "
+        f"SETTINGS object_storage_propagate_credentials_to_other_storages = 1, "
+        f"s3_allow_server_credentials_in_user_queries = 1")
     assert result == "1\talpha\n2\tbeta\n3\tgamma\n"

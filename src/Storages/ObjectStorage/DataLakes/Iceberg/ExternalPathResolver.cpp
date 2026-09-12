@@ -591,7 +591,19 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
 
         checkRemoteHostIsAllowed(context, endpoint_to_use);
 
-        const bool propagate_creds = context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
+        /// The session's server-credential restriction shapes the client below (see `getClient`), so it
+        /// belongs to the storage identity: a restricted session must not reuse a storage that an opt-in
+        /// session created, as `S3ObjectStorage::applyNewSettings` already ensures for the base storage.
+        const bool restricts_server_credentials = context->shouldRestrictUserQueryS3Credentials();
+
+        /// The base storage's identity can itself be server-managed: a disk resolves ambient credentials,
+        /// an assume-role flow mints a session token. Propagation copies that identity into explicit
+        /// `access_key_id` / `session_token`, which `getClient` accepts -- it only refuses to resolve
+        /// server credentials implicitly -- and sends it to an endpoint the table metadata names. A
+        /// session that is fenced off from the server's own credentials must not reach them that way, so
+        /// the setting has no effect there.
+        const bool propagate_creds = !restricts_server_credentials
+            && context->getSettingsRef()[Setting::object_storage_propagate_credentials_to_other_storages];
 
         /// Decide whether the base storage's S3 credentials apply to this target
         bool reuse_base_credentials = false;
@@ -622,11 +634,6 @@ std::optional<std::pair<DB::ObjectStoragePtr, std::string>> tryResolveObjectStor
                 }
             }
         }
-
-        /// The session's server-credential restriction shapes the client below (see `getClient`), so it
-        /// belongs to the storage identity: a restricted session must not reuse a storage that an opt-in
-        /// session created, as `S3ObjectStorage::applyNewSettings` already ensures for the base storage.
-        const bool restricts_server_credentials = context->shouldRestrictUserQueryS3Credentials();
 
         /// The creator runs only on a cache miss, so every input that shapes the created storage must
         /// be part of the cache key. Include the credential-propagation flag and, when credentials are
