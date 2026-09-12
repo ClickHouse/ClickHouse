@@ -208,6 +208,61 @@ namespace ErrorCodes
 namespace
 {
 
+/// `__table<N>`, the alias analysis assigns to every table expression. The numbering is per query
+/// tree, and the rewrite that ships a query to replicas builds its own, so a name from this
+/// namespace does not denote the same relation on an initiator and on a follower.
+bool isGeneratedTableAlias(std::string_view name)
+{
+    static constexpr std::string_view prefix = "__table";
+    if (!name.starts_with(prefix) || name.size() == prefix.size())
+        return false;
+
+    return std::ranges::all_of(name.substr(prefix.size()), [](char c) { return c >= '0' && c <= '9'; });
+}
+
+/// True when some `additional_table_filters` key would select a different relation on a replica that
+/// replans the query: an alias, or a bare table name. A key equal to a storage's full name, or
+/// matching no table of the query, is stable; an identity without a database is not comparable.
+bool hasSessionRelativeAdditionalFilter(const TableExpressionNodePtr & join_tree, const Map & additional_table_filters)
+{
+    if (std::ranges::any_of(
+            additional_table_filters,
+            [](const Field & entry) { return isGeneratedTableAlias(entry.safeGet<Tuple>().at(0).safeGet<String>()); }))
+        return true;
+
+    for (const auto & table_expression : extractTableExpressions(join_tree, false, true))
+    {
+        const auto * table_node = table_expression->as<TableNode>();
+        const auto * table_function_node = table_expression->as<TableFunctionNode>();
+        if (!table_node && !table_function_node)
+            continue;
+
+        const auto & storage = table_node ? table_node->getStorage() : table_function_node->getStorage();
+        const bool matched = std::ranges::any_of(
+            additional_table_filters,
+            [&](const Field & entry)
+            {
+                const auto & key = entry.safeGet<Tuple>().at(0).safeGet<String>();
+                if (storage)
+                {
+                    const auto & storage_id = storage->getStorageID();
+                    if (!storage_id.hasDatabase())
+                        return true;
+                    if (key == storage_id.getFullNameNotQuoted())
+                        return false;
+                    if (key == storage_id.getTableName())
+                        return true;
+                }
+                return key == table_expression->getOriginalAlias();
+            });
+
+        if (matched)
+            return true;
+    }
+
+    return false;
+}
+
 /** Check that table and table function table expressions from planner context support transactions.
   *
   * There is precondition that table expression data for table expression nodes is collected in planner context.
@@ -2625,16 +2680,24 @@ void Planner::buildPlanForQueryNode()
     /// but on followers the rewritten `SELECT` uses fully qualified names and the follower's current
     /// database is the initiator's user-default DB, so the filter match is unreliable. Rather than
     /// patch the match (which differs case by case), disable the combination on the analyzer path.
-    /// With `serialize_query_plan` the initiator lowers `additional_table_filters` into an explicit
-    /// `FilterStep` and ships the serialized plan, so the follower never re-resolves the setting —
-    /// the combination works there and the check is skipped.
+    /// The check is skipped when the filter travels inside a shipped plan: with
+    /// `serialize_query_plan` and either the plan-based path or a local plan. Otherwise only the
+    /// entries a follower would match differently are refused, see `hasSessionRelativeAdditionalFilter`.
+    const auto & additional_table_filters = settings[Setting::additional_table_filters].value;
+
     if (query_context->canUseParallelReplicasOnInitiator()
-        && !settings[Setting::serialize_query_plan]
-        && !settings[Setting::additional_table_filters].value.empty())
+        && !additional_table_filters.empty()
+        && (!settings[Setting::serialize_query_plan]
+            || (!settings[Setting::parallel_replicas_plan_based]
+                && !ClusterProxy::canUseLocalPlanForParallelReplicas(query_context)
+                && hasSessionRelativeAdditionalFilter(query_node.getJoinTreeNodeTyped(), additional_table_filters))))
     {
         if (settings[Setting::allow_experimental_parallel_reading_from_replicas] >= 2)
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
-                "additional_table_filters is not supported with parallel and without serialize_query_plan=1");
+                "additional_table_filters is not supported with parallel replicas unless the query plan "
+                "is shipped to the replicas, which requires serialize_query_plan=1 together with either "
+                "parallel_replicas_plan_based=1, or a local plan (parallel_replicas_local_plan=1 and "
+                "parallel_replicas_prefer_local_replica=1, and not inside a Distributed subquery)");
 
         auto & mutable_context = planner_context->getMutableQueryContext();
         mutable_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(0));

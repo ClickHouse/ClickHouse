@@ -282,7 +282,11 @@ QueryTreeNodePtr IQueryTreeNode::cloneAndReplace(const ReplacementMap & replacem
         old_pointer_to_new_pointer.emplace(node_to_clone, node_clone);
 
         node_clone->original_ast = node_to_clone->original_ast;
-        node_clone->setAlias(node_to_clone->alias);
+        /// Copy both alias fields verbatim. `setAlias` treats the node's current alias as the one
+        /// being renamed away, so on a fresh clone it would record the clone's empty alias as the
+        /// original and lose the alias the query was written with.
+        node_clone->alias = node_to_clone->alias;
+        node_clone->original_alias = node_to_clone->original_alias;
         node_clone->parenthesized = node_to_clone->parenthesized;
         node_clone->children = node_to_clone->children;
 
