@@ -388,10 +388,9 @@ std::optional<WindowAnalysisResult> analyzeWindow(
         }
     }
 
-    /// When `group_by_use_nulls = 1` with CUBE/ROLLUP/GROUPING SETS, GROUP BY keys become Nullable
-    /// in the data flowing into window functions. But the aggregate function was created during analysis
-    /// with the original (non-nullable) argument types. We need to re-create the aggregate function
-    /// with the actual (nullable) argument types so that the Null combinator is properly applied.
+    /// A window function's aggregate is created during analysis and keeps the argument types known then,
+    /// so an argument whose actual type differs when the window step runs needs the aggregate re-created
+    /// with that type.
     for (auto & window_description : window_descriptions)
     {
         for (auto & window_function : window_description.window_functions)
