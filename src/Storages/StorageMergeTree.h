@@ -157,6 +157,9 @@ private:
     /// currently mutating parts with future version
     std::map<DataPartPtr, Int64> currently_mutating_part_future_versions;
 
+    /// currently merging parts with the future data version of the merge result
+    std::map<DataPartPtr, Int64> currently_merging_part_future_versions;
+
     /// current parts postpone reasons
     std::map<std::string, std::string> current_parts_postpone_reasons;
 
