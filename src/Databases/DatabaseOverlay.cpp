@@ -1166,10 +1166,23 @@ void registerDatabaseOverlay(DatabaseFactory & factory)
         /// An explicit `ATTACH DATABASE ... ENGINE = Overlay(...)` (mode `ATTACH`) is user-facing
         /// DDL just like `CREATE`, and it persists metadata: letting it attach a facade over another
         /// read-only facade would write a database that silently loses that source on every lookup
-        /// (see `resolveDatabases`). Unlike `CREATE`, sources may legitimately be missing at this point
-        /// (databases can be reattached in a different order than they were detached), so only the
-        /// nested-facade rejection applies, and only when the source is currently resolvable.
-        const bool validate_no_nested_facade = validate_sources_exist || (args.mode == LoadingStrictnessLevel::ATTACH);
+        /// (see `resolveDatabases`). The same holds for `RESTORE DATABASE` (mode `SECONDARY_CREATE`):
+        /// it persists a facade definition just as `CREATE` does, so restoring a database that an
+        /// existing facade already names as a source, or restoring a facade over a database that is
+        /// itself a facade, must be refused rather than silently produce a definition whose source
+        /// `resolveDatabases` has to drop. Unlike `CREATE`, sources may legitimately be missing at
+        /// this point (databases can be reattached in a different order than they were detached, and
+        /// a facade's sources are restored in the same operation as the facade itself), so only the
+        /// nested-facade rejection applies here, and only when the source is currently resolvable —
+        /// the missing-source validation above stays `CREATE`-only.
+        /// Loading previously-written metadata on server startup uses `ATTACH` too, but it must not
+        /// refuse a definition: a server that does not start is far worse than a facade that loses a
+        /// source, and `resolveDatabases` already fail-closes on exactly that shape at every lookup.
+        /// `internal` is what separates the two (`RESTORE` is internal as well, hence the separate
+        /// `SECONDARY_CREATE` arm above it).
+        const bool validate_no_nested_facade = validate_sources_exist
+            || args.mode == LoadingStrictnessLevel::SECONDARY_CREATE
+            || (args.mode == LoadingStrictnessLevel::ATTACH && !args.internal);
 
         /// The same nesting can also be configured from the other side: an existing facade names a
         /// database that is only now (re-)created as a facade itself (`db_top = Overlay('db_hid')`,
