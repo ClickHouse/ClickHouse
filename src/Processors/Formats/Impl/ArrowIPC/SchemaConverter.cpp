@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/DateLUTImpl.h>
+#include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/NetUtils.h>
 #include <Common/PODArray.h>
@@ -537,6 +538,8 @@ buildField(
     flatbuf::Type type_type = flatbuf::Type_NONE;
     flatbuffers::Offset<void> type_offset;
     VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::Field>> children;
+    /// Set for a type with no first-class Arrow mapping, to tag the field with its ClickHouse type name.
+    String opaque_type_name;
 
     auto make_int = [&](int bits, bool is_signed)
     {
@@ -744,20 +747,38 @@ buildField(
                 break;
             }
             default:
-                /// A type with no first-class Arrow mapping: written as an Arrow `Binary` column when
-                /// `output_format_arrow_unsupported_types_as_binary` is set (matching the encoder and the
-                /// Apache Arrow library writer); otherwise rejected.
-                if (settings.arrow.output_unsupported_types_as_binary)
+                /// A type with no first-class Arrow mapping, handled per `output_format_arrow_unsupported_types`:
+                /// rejected, or written as an opaque variable-width column holding one serialized value per row,
+                /// typed by `arrowOpaqueTypeIsUtf8` and filled by `RecordBatchEncoder::encodeAsOpaque`.
+                /// The decision is made here, before the schema message is written, so a rejected type cannot
+                /// abort a stream whose schema the reader has already accepted.
+                switch (settings.arrow.output_unsupported_types)
                 {
-                    type_type = flatbuf::Type_Binary;
-                    type_offset = flatbuf::CreateBinary(b).Union();
-                    break;
+                    case FormatSettings::ArrowUnsupportedTypes::THROW:
+                        throw Exception(
+                            ErrorCodes::NOT_IMPLEMENTED,
+                            "Native Arrow IPC writer does not support type {}. Set "
+                            "output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column",
+                            type->getName());
+                    case FormatSettings::ArrowUnsupportedTypes::TEXT:
+                    case FormatSettings::ArrowUnsupportedTypes::BINARY:
+                    {
+                        if (arrowOpaqueTypeIsUtf8(
+                                settings.arrow.output_unsupported_types, t, settings.arrow.output_string_as_string))
+                        {
+                            type_type = flatbuf::Type_Utf8;
+                            type_offset = flatbuf::CreateUtf8(b).Union();
+                        }
+                        else
+                        {
+                            type_type = flatbuf::Type_Binary;
+                            type_offset = flatbuf::CreateBinary(b).Union();
+                        }
+                        break;
+                    }
                 }
-                throw Exception(
-                    ErrorCodes::NOT_IMPLEMENTED,
-                    "Native Arrow IPC writer does not support type {}. Set "
-                    "output_format_arrow_unsupported_types_as_binary = 1 to write it as binary",
-                    type->getName());
+                opaque_type_name = t->getName();
+                break;
         }
     }
 
@@ -768,6 +789,21 @@ buildField(
         VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:name"), b.CreateString("arrow.uuid")));
         kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:metadata"), b.CreateString("")));
+        custom_metadata_off = b.CreateVector(kvs);
+    }
+    else if (!opaque_type_name.empty())
+    {
+        /// A type written as an opaque `Utf8`/`Binary` column is otherwise indistinguishable from a genuine
+        /// string or binary column. Declare it as an Arrow extension type carrying the original ClickHouse
+        /// type name, so a consumer can tell the two apart. Per the Arrow extension-type convention a reader
+        /// that does not know the extension name ignores the metadata and sees the plain storage type.
+        VectorWithMemoryTracking<flatbuffers::Offset<flatbuf::KeyValue>> kvs;
+        kvs.push_back(flatbuf::CreateKeyValue(
+            b,
+            b.CreateString("ARROW:extension:name"),
+            b.CreateString(
+                FormatSettings::ARROW_OPAQUE_EXTENSION_NAME.data(), FormatSettings::ARROW_OPAQUE_EXTENSION_NAME.size())));
+        kvs.push_back(flatbuf::CreateKeyValue(b, b.CreateString("ARROW:extension:metadata"), b.CreateString(opaque_type_name)));
         custom_metadata_off = b.CreateVector(kvs);
     }
 

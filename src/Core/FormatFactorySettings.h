@@ -1507,8 +1507,25 @@ Compression method for Arrow output format. Supported codecs: lz4_frame, zstd, n
     DECLARE(Bool, output_format_arrow_date_as_uint16, false, R"(
 Write Date values as plain 16-bit numbers (read back as UInt16), instead of converting to a 32-bit Arrow DATE32 type (read back as Date32).
 )", 0) \
+    DECLARE(ArrowUnsupportedTypes, output_format_arrow_unsupported_types, "binary", R"(
+What to write for a column whose type has no first-class Arrow mapping (for example `JSON`, `Dynamic`, `QBit` or `AggregateFunction`):
+
+- `throw` — reject the query;
+- `text` — one text-form value per row (what `CAST(col AS String)` would produce), in whichever Arrow type a `String` column would use: `Utf8`, or `Binary` when `output_format_arrow_string_as_string = 0`;
+- `binary` — the binary representation of each value, as an Arrow `Binary` column (the same per-value encoding as `RowBinary`).
+
+An `AggregateFunction` column is `Binary` in `text` mode as well, because its text form is the raw aggregate state rather than text, and an Arrow `Utf8` column must hold valid UTF-8. Use `finalizeAggregation` to get a readable value.
+
+A value written into a `Utf8` column is made to hold valid UTF-8, with each invalid sequence replaced by U+FFFD. This only affects text that a reader could not have interpreted as text anyway - for example a `JSON` value embedding a `String` field that holds arbitrary bytes. Set `output_format_arrow_string_as_string = 0` for a byte-exact text form in a `Binary` column, or use `binary` mode.
+
+In both `text` and `binary` the field is tagged in the Arrow schema with the `clickhouse.opaque` extension name and the original ClickHouse type name, so that a reader can tell it apart from a genuine string or binary column.
+
+Takes precedence over the older `output_format_arrow_unsupported_types_as_binary`, which is only consulted when this setting is left at its default.
+)", 0) \
     DECLARE(Bool, output_format_arrow_unsupported_types_as_binary, true, R"(
-Output types having no conversion as raw binary data. If false - such types would raise UNKNOWN_TYPE exception.
+Output types having no conversion as raw binary data. If false - such types would raise an exception.
+
+Superseded by `output_format_arrow_unsupported_types`: `0` means `throw` and `1` means `binary`. Only consulted when `output_format_arrow_unsupported_types` is not set explicitly.
 )", 0) \
     \
     DECLARE(Bool, output_format_orc_string_as_string, true, R"(
