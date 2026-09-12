@@ -242,26 +242,25 @@ StorageMergeTree::StorageMergeTree(
 
 void StorageMergeTree::startup()
 {
-    /// Do not schedule any background jobs if the table is read-only.
-    if (isTableReadonly())
-        return;
     auto component_guard = Coordination::setCurrentComponent("StorageMergeTree::startup");
 
-    clearEmptyParts();
+    const bool readonly = isTableReadonly();
+    if (!readonly)
+    {
+        clearEmptyParts();
 
-    /// Temporary directories contain incomplete results of merges (after forced restart)
-    ///  and don't allow to reinitialize them, so delete each of them immediately
-    clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
+        /// Temporary directories contain incomplete results of merges (after forced restart)
+        /// and don't allow to reinitialize them, so delete each of them immediately
+        clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
+    }
 
     /// NOTE background task will also clean runtime temporary directories periodically.
 
     try
     {
-        cleanup_thread.start();
-        background_operations_assignee.start();
-        background_streaming_assignee.start();
-        startBackgroundMovesIfNeeded();
-        startOutdatedAndUnexpectedDataPartsLoadingTask();
+        if (!readonly)
+            startBackgroundWorkers();
+        /// Statistics refresh only reads parts and must also run for read-only tables.
         startStatisticsCache();
     }
     catch (...)
@@ -805,6 +804,22 @@ void StorageMergeTree::alter(
     {
         /// Some additional changes in settings
         auto new_storage_settings = getSettings();
+
+        /// Wait for an active cleanup iteration and prevent further disk cleanup while read-only.
+        if (!(*old_storage_settings)[MergeTreeSetting::table_readonly] && isTableReadonly())
+            cleanup_thread.stop();
+
+        /// A table that started read-only has no background workers at all: `startup` skipped them.
+        /// `table_readonly` is documented to be toggleable back, so restore them here instead of
+        /// requiring a server restart. `isTableReadonly` stays true for a static storage, which
+        /// must never run them.
+        if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
+        {
+            /// The same one-off cleanup a writable `startup` performs.
+            clearEmptyParts();
+            clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
+            startBackgroundWorkers();
+        }
 
         if ((*old_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window] != (*new_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window])
         {
@@ -3922,6 +3937,15 @@ void StorageMergeTree::startBackgroundMovesIfNeeded()
 {
     if (areBackgroundMovesNeeded())
         background_moves_assignee.start();
+}
+
+void StorageMergeTree::startBackgroundWorkers()
+{
+    cleanup_thread.start();
+    background_operations_assignee.start();
+    background_streaming_assignee.start();
+    startBackgroundMovesIfNeeded();
+    startOutdatedAndUnexpectedDataPartsLoadingTask();
 }
 
 std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const
