@@ -7,6 +7,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 
 #include <map>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 
@@ -96,6 +97,8 @@ namespace Nested
 
     /// Convert old-style nested (single arrays with same prefix, `n.a`, `n.b`...) to subcolumns of data type Nested.
     NamesAndTypesList convertToSubcolumns(const NamesAndTypesList & names_and_types);
+    /// Same, but `std::nullopt` when the conversion would leave every entry unchanged.
+    std::optional<NamesAndTypesList> tryConvertToSubcolumns(const NamesAndTypesList & names_and_types);
 
     /// Unwrap Nullable(Tuple(...)) into Tuple(...) by propagating the struct-level null map
     /// to each element. Scalar elements become Nullable(T), already-Nullable elements get merged

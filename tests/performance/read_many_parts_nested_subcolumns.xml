@@ -1,0 +1,61 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <!-- Reader construction is per read task; with many small parts it dominates a query that touches
+         Nested members and subcolumns. Merges are made impossible by the table settings so that the
+         number of parts stays as inserted. -->
+    <substitutions>
+        <substitution>
+            <name>table</name>
+            <values>
+                <value>t_many_parts_wide</value>
+                <value>t_many_parts_compact</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query>
+        CREATE TABLE t_many_parts_wide
+        (
+            id UInt64,
+            u32 UInt32,
+            n8 Nullable(UInt8),
+            arr Array(UInt16),
+            nested1 Nested(a UInt8, b Bool, c UInt32),
+            tup Tuple(f Float32, u UInt16),
+            m Map(String, UInt8)
+        )
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+            max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1,
+            parts_to_delay_insert = 100000, parts_to_throw_insert = 100000
+    </create_query>
+    <create_query>
+        CREATE TABLE t_many_parts_compact AS t_many_parts_wide
+        ENGINE = MergeTree ORDER BY id
+        SETTINGS min_bytes_for_wide_part = 1000000000000,
+            max_bytes_to_merge_at_max_space_in_pool = 1, max_bytes_to_merge_at_min_space_in_pool = 1,
+            parts_to_delay_insert = 100000, parts_to_throw_insert = 100000
+    </create_query>
+
+    <fill_query>
+        INSERT INTO t_many_parts_wide
+        SELECT number, toUInt32(number * 13 % 100000), if(number % 7 = 0, NULL, toUInt8(number % 20)),
+            arrayMap(i -> toUInt16(i), range(number % 6)),
+            arrayMap(i -> toUInt8(i), range(number % 5)), arrayMap(i -> i % 2 = 0, range(number % 5)), arrayMap(i -> toUInt32(i * 3), range(number % 5)),
+            (toFloat32(number % 100) / 100, toUInt16(number % 20)),
+            map('k', toUInt8(number % 2), 'm', toUInt8(number % 3))
+        FROM numbers(50000)
+        SETTINGS max_block_size = 10, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1
+    </fill_query>
+    <fill_query>INSERT INTO t_many_parts_compact SELECT * FROM t_many_parts_wide SETTINGS max_block_size = 10, min_insert_block_size_rows = 0, min_insert_block_size_bytes = 0, max_insert_threads = 1</fill_query>
+
+    <query>SELECT sum(length(nested1.a)), sum(arraySum(nested1.c)), countIf(arrayExists(x -> x, nested1.b)) FROM {table} FORMAT Null</query>
+    <query>SELECT sum(n8.null), sum(arr.size0), sum(nested1.a.size0), sum(tup.u), sum(length(m.keys)) FROM {table} FORMAT Null</query>
+    <query>SELECT * FROM {table} FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS t_many_parts_wide</drop_query>
+    <drop_query>DROP TABLE IF EXISTS t_many_parts_compact</drop_query>
+</test>

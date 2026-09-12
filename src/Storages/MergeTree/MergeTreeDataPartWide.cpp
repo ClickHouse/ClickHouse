@@ -97,6 +97,7 @@ Strings MergeTreeDataPartWide::getPreferredFileOrder() const
 MergeTreeReaderPtr createMergeTreeReaderWide(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
+    NamesAndTypesList converted_columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
@@ -111,6 +112,7 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
 MergeTreeReaderPtr createMergeTreeReaderWide(
     const MergeTreeDataPartInfoForReaderPtr & read_info,
     const NamesAndTypesList & columns_to_read,
+    NamesAndTypesList converted_columns_to_read,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeSettingsPtr & storage_settings,
     const MarkRanges & mark_ranges,
@@ -125,6 +127,7 @@ MergeTreeReaderPtr createMergeTreeReaderWide(
     return std::make_unique<MergeTreeReaderWide>(
         read_info,
         columns_to_read,
+        std::move(converted_columns_to_read),
         virtual_fields,
         storage_snapshot,
         storage_settings,
@@ -687,11 +690,13 @@ std::vector<String> MergeTreeDataPartWide::getListOfStreamsForColumn(const NameA
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
 
+    auto storage_settings = storage.getSettings();
     MergeTreeReaderPtr reader = createMergeTreeReaderWide(
         part_info,
         cols,
+        convertRequestedColumns(cols, *storage_settings),
         storage_snapshot_ptr,
-        storage.getSettings(),
+        storage_settings,
         MarkRanges{MarkRange(0, getMarksCount())},
         /*virtual_fields=*/{},
         /*uncompressed_cache=*/{},

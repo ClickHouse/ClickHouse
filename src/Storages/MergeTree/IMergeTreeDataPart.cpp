@@ -2549,11 +2549,13 @@ UInt64 IMergeTreeDataPart::readExistingRowsCount()
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
 
+    auto storage_settings = storage.getSettings();
     MergeTreeReaderPtr reader = createMergeTreeReader(
         part_info,
         cols,
+        convertRequestedColumns(cols, *storage_settings),
         storage_snapshot_ptr,
-        storage.getSettings(),
+        storage_settings,
         MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
@@ -3676,11 +3678,13 @@ ColumnPtr IMergeTreeDataPart::getColumnSample(const NameAndTypePair & column) co
     auto alter_conversions = std::make_shared<AlterConversions>();
     auto part_info = std::make_shared<LoadedMergeTreeDataPartInfoForReader>(shared_from_this(), alter_conversions);
 
+    auto storage_settings = storage.getSettings();
     MergeTreeReaderPtr reader = createMergeTreeReader(
         part_info,
         cols,
+        convertRequestedColumns(cols, *storage_settings),
         storage_snapshot_ptr,
-        storage.getSettings(),
+        storage_settings,
         MarkRanges{MarkRange(0, total_mark)},
         /*virtual_fields=*/ {},
         /*uncompressed_cache=*/{},
