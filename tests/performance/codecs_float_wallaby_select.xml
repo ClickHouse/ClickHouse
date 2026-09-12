@@ -1,0 +1,49 @@
+<!-- The `Wallaby` codec does not exist on the reference server, so its create and fill queries are
+     marked `do_not_check_in_pr` and this test runs on the new server only. Once the codec is on
+     master, fold these values into `codecs_float_select.xml` and delete this file. -->
+<test>
+    <settings>
+        <allow_suspicious_codecs>1</allow_suspicious_codecs>
+    </settings>
+
+    <substitutions>
+        <substitution>
+            <name>type</name>
+            <values>
+                <value>Float64</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>seq_type</name>
+            <values>
+                <value>seq</value>
+                <value>mon</value>
+                <value>rnd</value>
+                <value>rtn</value>
+            </values>
+        </substitution>
+        <substitution>
+            <name>num_rows</name>
+            <values>
+                <value>20000000</value>
+            </values>
+        </substitution>
+    </substitutions>
+
+    <create_query do_not_check_in_pr="113575">
+        CREATE TABLE IF NOT EXISTS codec_wallaby_{seq_type}_{type} (n {type} CODEC(Wallaby))
+        ENGINE = MergeTree PARTITION BY tuple()
+        ORDER BY tuple();
+    </create_query>
+
+    <fill_query do_not_check_in_pr="113575">INSERT INTO codec_wallaby_seq_{type} (n) SELECT number/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
+    <fill_query do_not_check_in_pr="113575">INSERT INTO codec_wallaby_mon_{type} (n) SELECT number+sin(number) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
+    <fill_query do_not_check_in_pr="113575">INSERT INTO codec_wallaby_rnd_{type} (n) SELECT (intHash64(number) - 4294967295)/pi() FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
+    <fill_query do_not_check_in_pr="113575">INSERT INTO codec_wallaby_rtn_{type} (n) SELECT round(number/20+sin(number), 3) FROM system.numbers LIMIT {num_rows} SETTINGS max_threads=1</fill_query>
+    <fill_query do_not_check_in_pr="113575">optimize table codec_wallaby_{seq_type}_{type} FINAL settings optimize_throw_if_noop = 1</fill_query>
+
+    <query>SELECT count(n) FROM codec_wallaby_{seq_type}_{type} WHERE ignore(n) == 0 LIMIT {num_rows} SETTINGS max_threads=1</query>
+
+    <drop_query>DROP TABLE IF EXISTS codec_wallaby_{seq_type}_{type}</drop_query>
+
+</test>

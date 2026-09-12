@@ -8956,6 +8956,9 @@ Enables the `Quantized` compression codec.
     DECLARE(Bool, enable_sz3_codec, false, R"(
 Enables the `SZ3` compression codec.
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_wallaby_codec, false, R"(
+Allows using the experimental `Wallaby` compression codec.
+)", EXPERIMENTAL) \
     DECLARE(Bool, enable_zxc_codec, false, R"(
 Enables the `ZXC` compression codec.
 )", EXPERIMENTAL) \
