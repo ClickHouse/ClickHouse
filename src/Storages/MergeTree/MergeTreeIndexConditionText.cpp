@@ -10,6 +10,7 @@
 #include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeString.h>
+#include <DataTypes/FixedStringZeroPadding.h>
 #include <DataTypes/NestedUtils.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/MultiSearchImpl.h>
@@ -1017,32 +1018,6 @@ static void validateRegexpPatterns(const Array & patterns, const Settings & sett
 #endif
 }
 
-/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
-static Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
-{
-    auto inner_type = removeNullable(removeLowCardinality(type));
-
-    if (isFixedString(inner_type) && field.getType() == Field::Types::String)
-    {
-        String value = field.safeGet<String>();
-        value.resize(value.find_last_not_of('\0') + 1);
-        return Field(std::move(value));
-    }
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
-        array_type && field.getType() == Field::Types::Array)
-    {
-        Array stripped;
-        const auto & elements = field.safeGet<Array>();
-        stripped.reserve(elements.size());
-        for (const auto & element : elements)
-            stripped.push_back(stripFixedStringPaddingForTerms(element, array_type->getNestedType()));
-        return Field(std::move(stripped));
-    }
-
-    return field;
-}
-
 /// These functions compare a `FixedString` constant through the `String` supertype, which drops the trailing zero padding.
 static bool functionIgnoresFixedStringPadding(const String & function_name)
 {
@@ -1075,6 +1050,16 @@ static bool canStripFixedStringPadding(ITokenizer::Type tokenizer_type, const Bl
     return !isFixedString(indexed_type);
 }
 
+/// Whether the values that become terms in this index are variable-length `String`s, in which case
+/// one logical value can be stored under several spellings differing in trailing zero bytes.
+static bool indexedTermTypeIsVariableLengthString(const Block & header, const String & column_name)
+{
+    if (!header.has(column_name))
+        return true;
+
+    return isString(indexedElementType(header.getByName(column_name).type));
+}
+
 bool MergeTreeIndexConditionText::traverseFunctionNode(
     const RPNBuilderFunctionTreeNode & function_node,
     const RPNBuilderTreeNode & index_column_node,
@@ -1089,6 +1074,22 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
     bool has_index_column = hasIndexForColumn(index_column_name);
     bool has_map_keys_column = hasIndexForColumn(fmt::format("mapKeys({})", index_column_name));
     bool has_map_values_column = hasIndexForColumn(fmt::format("mapValues({})", index_column_name));
+
+    /// The array-search functions compare under the zero-padding rule, so a `FixedString` constant
+    /// matches multiple `String` values ('ab', 'ab\0', 'ab\0\0'). A term-preserving tokenizer
+    /// keeps those as distinct terms so we must fall back to a scan instead of pruning matching granules.
+    /// A `FixedString` index col is unambiguous and unaffected, as are `equals`, the token functions
+    /// and the `Like`/`match` variants, which compare exactly. See `zeroPaddedStringConstant` and
+    /// https://github.com/ClickHouse/ClickHouse/issues/118669.
+    if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll"
+        || function_name == "mapContainsKey" || function_name == "mapContainsValue")
+    {
+        const auto searched_column = has_map_keys_column
+            ? fmt::format("mapKeys({})", index_column_name)
+            : (has_map_values_column ? fmt::format("mapValues({})", index_column_name) : index_column_name);
+        if (zeroPaddedStringConstant(value_type) && indexedTermTypeIsVariableLengthString(header, searched_column))
+            return false;
+    }
 
     bool candidate_for_exact_mode = true;
     if (traverseMapElementValueNode(index_column_node, value_field))
@@ -2002,7 +2003,7 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
         /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
         if (is_fixed_string_element && strip_fixed_string_padding)
-            element = element.substr(0, element.find_last_not_of('\0') + 1);
+            element = stripTrailingZeros(element);
 
         /// Reject the index usage when there is an empty string in the set.
         /// The condition with such a predicate will be always true on granule.

@@ -10,6 +10,7 @@
 #include <Interpreters/TokenizerFactory.h>
 #include <Core/Defines.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/FixedStringZeroPadding.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeMapHelpers.h>
@@ -487,32 +488,6 @@ bool isLikePatternFunction(const String & function_name)
         || function_name == "mapContainsValueLike";
 }
 
-/// `String = FixedString(N)` ignores the constant's trailing zero padding, so the search terms must be taken from the value without it.
-Field stripFixedStringPaddingForTerms(const Field & field, const DataTypePtr & type)
-{
-    auto inner_type = removeNullable(removeLowCardinality(type));
-
-    if (isFixedString(inner_type) && field.getType() == Field::Types::String)
-    {
-        String value = field.safeGet<String>();
-        value.resize(value.find_last_not_of('\0') + 1);
-        return Field(std::move(value));
-    }
-
-    if (const auto * array_type = typeid_cast<const DataTypeArray *>(inner_type.get());
-        array_type && field.getType() == Field::Types::Array)
-    {
-        Array stripped;
-        const auto & elements = field.safeGet<Array>();
-        stripped.reserve(elements.size());
-        for (const auto & element : elements)
-            stripped.push_back(stripFixedStringPaddingForTerms(element, array_type->getNestedType()));
-        return Field(std::move(stripped));
-    }
-
-    return field;
-}
-
 /// These functions compare a `FixedString` constant through the `String` supertype, which drops the trailing zero padding.
 bool functionIgnoresFixedStringPadding(const String & function_name)
 {
@@ -573,6 +548,19 @@ bool MergeTreeConditionBloomFilterText::traverseTreeEquals(
     auto key_index = getKeyIndex(column_name);
     const auto map_key_index = getKeyIndex(fmt::format("mapKeys({})", column_name));
     const auto map_value_index = getKeyIndex(fmt::format("mapValues({})", column_name));
+
+    /// The array-search functions compare under the zero-padding rule, so a `FixedString` constant
+    /// matches multiple String values (e.g. 'ab', 'ab\0', 'ab\0\0') so we must fall back to a scan
+    /// instead of pruning matching granules. A FixedString index col is unambiguous and unaffected.
+    /// `equals` and the `Like` variants compare exactly and are unaffected. See `zeroPaddedStringConstant`.
+    if (function_name == "has" || function_name == "hasAny" || function_name == "hasAll"
+        || function_name == "mapContains" || function_name == "mapContainsKey" || function_name == "mapContainsValue")
+    {
+        const auto searched_index = key_index ? key_index : (map_key_index ? map_key_index : map_value_index);
+        if (searched_index && zeroPaddedStringConstant(value_type)
+            && isString(removeNullable(removeLowCardinality(indexedElementType(index_data_types[*searched_index])))))
+            return false;
+    }
 
     if (key_node.isFunction())
     {
@@ -952,7 +940,7 @@ bool MergeTreeConditionBloomFilterText::tryPrepareSetBloomFilter(
             /// `FixedString` element carries its padding, which the comparison ignores but the tokenizer would not.
             std::string_view element = column->getDataAt(row);
             if (is_fixed_string_element)
-                element = element.substr(0, element.find_last_not_of('\0') + 1);
+                element = stripTrailingZeros(element);
 
             forEachTokenToBloomFilter(*tokenizer, element.data(), element.size(), bloom_filters.back().back());
         }
