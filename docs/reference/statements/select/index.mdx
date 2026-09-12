@@ -27,6 +27,7 @@ SELECT [DISTINCT [ON (column1, column2, ...)]] expr_list
 [ORDER BY expr_list] [WITH FILL] [FROM expr] [TO expr] [STEP expr] [INTERPOLATE [(expr_list)]]
 [LIMIT [offset_value, ]n BY columns]
 [LIMIT [n, ]m] [WITH TIES]
+[LIMIT [n] AFTER start_expr [ALL] [UNTIL end_expr] | LIMIT [n] UNTIL end_expr]
 [SETTINGS ...]
 [UNION  ...]
 [INTO OUTFILE filename [TRUNCATE] [COMPRESSION type [LEVEL level]] ]
@@ -189,7 +190,7 @@ An extra two rows are calculated – the minimums and maximums, respectively. Th
 
 In `JSON*` and `XML` formats, the extreme values are output in a separate 'extremes' field. In `TabSeparated*`, `CSV*` and `Vertical` formats, the row comes after the main result, and after 'totals' if present. It is preceded by an empty row (after the other data). In `Pretty*` formats, the row is output as a separate table after the main result, and after `totals` if present. In `Template` format the extreme values are output according to specified template.
 
-Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. However, when using `LIMIT offset, size`, the rows before `offset` are included in `extremes`. In stream requests, the result may also include a small number of rows that passed through `LIMIT`.
+Extreme values are calculated for rows before `LIMIT`, but after `LIMIT BY`. However, when using `LIMIT offset, size`, the rows before `offset` are included in `extremes`. A [`LIMIT ... AFTER ... UNTIL`](/reference/statements/select/limit#limit-after-until) range behaves like `LIMIT` here: the extremes are calculated over the rows read before the range is applied. In stream requests, the result may also include a small number of rows that passed through `LIMIT`.
 
 ### Notes {#notes}
 

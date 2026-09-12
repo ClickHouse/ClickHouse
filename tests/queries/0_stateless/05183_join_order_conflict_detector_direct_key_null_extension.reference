@@ -1,0 +1,22 @@
+Array    rows limit=0	1	1	ten
+Array    rows limit=0	2	\N	null_key
+Array    rows cd_a  	1	1	ten
+Array    rows cd_a  	2	\N	null_key
+Array    rows cd_c  	1	1	ten
+Array    rows cd_c  	2	\N	null_key
+Array    plan cd_a	Join conditions: k = k
+Array    plan cd_a	Join conditions: a = a
+Variant  rows limit=0	1	1	ten
+Variant  rows limit=0	2	\N	null_key
+Variant  rows cd_a  	1	1	ten
+Variant  rows cd_a  	2	\N	null_key
+Variant  plan cd_a	Join conditions: k = k
+Variant  plan cd_a	Join conditions: a = a
+Nullable rows limit=0	1	1	ten
+Nullable rows limit=0	2	\N	\N
+Nullable rows cd_a  	1	1	ten
+Nullable rows cd_a  	2	\N	\N
+Nullable plan cd_a	Join conditions: a = a
+Nullable plan cd_a	Join conditions: k = k
+Nullable plan cd_c	Join conditions: a = a
+Nullable plan cd_c	Join conditions: k = k

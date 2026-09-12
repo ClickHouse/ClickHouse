@@ -327,6 +327,9 @@ Int32 IcebergMetadata::parseTableSchema(
 {
     const auto format_version = metadata_object->getValue<Int32>(f_format_version);
 
+    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
+        schema_processor.updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
+
     if (format_version == 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
@@ -376,6 +379,8 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 {
     if (!metadata_object->has(f_snapshots))
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot set found in metadata for iceberg file");
+    if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
+        schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
@@ -399,7 +404,7 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
 }
 
 IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSON(
-    Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
+    Poco::JSON::Object::Ptr metadata_object, Poco::JSON::Object::Ptr snapshot_object, Int64 snapshot_id, ContextPtr local_context) const
 {
     if (!snapshot_object->has(f_manifest_list))
         throw Exception(
@@ -437,7 +442,8 @@ IcebergDataSnapshotPtr IcebergMetadata::createIcebergDataSnapshotFromSnapshotJSO
         schema_id,
         total_rows,
         total_bytes,
-        total_position_deletes);
+        total_position_deletes,
+        metadata_object->has(f_partition_specs) ? metadata_object->get(f_partition_specs).extract<Poco::JSON::Array::Ptr>() : nullptr);
 }
 
 IcebergDataSnapshotPtr
@@ -447,7 +453,7 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
     if (!object)
         throw Exception(ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION, "No snapshot found for id `{}`", snapshot_id);
 
-    return createIcebergDataSnapshotFromSnapshotJSON(object, snapshot_id, local_context);
+    return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, object, snapshot_id, local_context);
 }
 
 bool IcebergMetadata::optimize(
@@ -928,7 +934,7 @@ Iceberg::IcebergDataSnapshotPtr IcebergMetadata::getRelevantDataSnapshotFromTabl
     Poco::JSON::Object::Ptr snapshot_object = traverseMetadataAndFindNecessarySnapshotObject(
         metadata_object, *table_state_snapshot.snapshot_id, persistent_components.schema_processor);
 
-    return createIcebergDataSnapshotFromSnapshotJSON(snapshot_object, *table_state_snapshot.snapshot_id, local_context);
+    return createIcebergDataSnapshotFromSnapshotJSON(metadata_object, snapshot_object, *table_state_snapshot.snapshot_id, local_context);
 }
 
 DataLakeMetadataPtr IcebergMetadata::create(
@@ -1528,7 +1534,7 @@ SinkToStoragePtr IcebergMetadata::write(
     {
         throw Exception(
             ErrorCodes::SUPPORT_IS_DISABLED,
-            "Insert into iceberg is in beta."
+            "Insert into iceberg is in beta. "
             "To allow its usage, enable setting allow_insert_into_iceberg");
     }
 }
