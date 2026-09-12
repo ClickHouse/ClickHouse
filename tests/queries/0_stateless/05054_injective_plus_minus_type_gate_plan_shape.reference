@@ -1,0 +1,169 @@
+-- { echo }
+
+-- ---------------------------------------------------------------------------
+-- Preservation: integer arithmetic with an integer constant stays injective, so the
+-- optimization must keep firing. A correctness-only test would not notice this. Each arm
+-- prints two plan lines; an arm printing nothing has lost the optimization.
+-- ---------------------------------------------------------------------------
+
+DROP TABLE IF EXISTS t_int;
+CREATE TABLE t_int (a UInt32) ENGINE = MergeTree ORDER BY a PARTITION BY intDiv(a, 2) * 2 + 1;
+INSERT INTO t_int SELECT number FROM numbers_mt(32);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT intDiv(a, 2) + 1 AS a1 FROM t_int SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+-- subtraction widens to a signed result, which is a different branch of the integer test
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT intDiv(a, 2) - 1 AS a1 FROM t_int SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+-- the constant may be either operand, so both positions have to be recognized
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT 7 - intDiv(a, 2) AS a1 FROM t_int SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT 1 + intDiv(a, 2) AS a1 FROM t_int SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+DROP TABLE t_int;
+-- wide integers are exact, so the gate must not be narrowed to native widths
+DROP TABLE IF EXISTS t_int128;
+CREATE TABLE t_int128 (a Int128) ENGINE = MergeTree ORDER BY a PARTITION BY a % 8;
+INSERT INTO t_int128 SELECT number FROM numbers_mt(200);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT a + 7 AS a1 FROM t_int128 SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+DROP TABLE t_int128;
+DROP TABLE IF EXISTS t_uint256;
+CREATE TABLE t_uint256 (b UInt256) ENGINE = MergeTree ORDER BY b PARTITION BY b % 8;
+INSERT INTO t_uint256 SELECT number FROM numbers_mt(200);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT b + 7 AS b1 FROM t_uint256 SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+DROP TABLE t_uint256;
+-- both type-wrapper orders must be stripped before the integer test. Contrast with the NULL
+-- constant arm above: a Nullable column keeps the optimization, a NULL constant loses it.
+DROP TABLE IF EXISTS t_nullable;
+CREATE TABLE t_nullable (n Nullable(UInt32)) ENGINE = MergeTree ORDER BY n PARTITION BY n % 8 SETTINGS allow_nullable_key = 1;
+INSERT INTO t_nullable SELECT number FROM numbers_mt(200);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT n + 1 AS n1 FROM t_nullable SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+DROP TABLE t_nullable;
+DROP TABLE IF EXISTS t_lc;
+CREATE TABLE t_lc (l LowCardinality(UInt32)) ENGINE = MergeTree ORDER BY l PARTITION BY l % 8;
+INSERT INTO t_lc SELECT number FROM numbers_mt(200);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT l + 1 AS l1 FROM t_lc SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+DROP TABLE t_lc;
+DROP TABLE IF EXISTS t_lc_nullable;
+CREATE TABLE t_lc_nullable (ln LowCardinality(Nullable(UInt32))) ENGINE = MergeTree ORDER BY ln PARTITION BY ln % 8 SETTINGS allow_nullable_key = 1;
+INSERT INTO t_lc_nullable SELECT number FROM numbers_mt(200);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT ln + 1 AS ln1 FROM t_lc_nullable SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+DROP TABLE t_lc_nullable;
+-- ---------------------------------------------------------------------------
+-- Accepted narrowings. These three expressions are injective, but every type they would
+-- admit also admits a non-injective case above that cannot be told apart: an Interval on
+-- Date is not separable from one on DateTime by kind, a Date operand re-admits the
+-- narrowing constant, and a Decimal operand re-admits the rescaling constant. Each arm
+-- prints nothing; the bare-key arm after it is the control showing the fixture does reach
+-- the optimization.
+-- ---------------------------------------------------------------------------
+
+DROP TABLE IF EXISTS t_date;
+CREATE TABLE t_date (d Date) ENGINE = MergeTree ORDER BY d PARTITION BY toDayOfWeek(d);
+INSERT INTO t_date SELECT toDate('2001-01-01') + number FROM numbers_mt(200);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT d + INTERVAL 1 DAY AS d1 FROM t_date SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT d + 1 AS d1 FROM t_date SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT toDayOfWeek(d) AS d1 FROM t_date SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+DROP TABLE t_date;
+DROP TABLE IF EXISTS t_dec;
+CREATE TABLE t_dec (dec Decimal64(2)) ENGINE = MergeTree ORDER BY dec PARTITION BY toUInt32(dec) % 8;
+INSERT INTO t_dec SELECT number FROM numbers_mt(200);
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT dec + 1 AS dec1 FROM t_dec SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\\1') FROM (EXPLAIN actions = 1 SELECT DISTINCT toUInt32(dec) AS dec1 FROM t_dec SETTINGS allow_distinct_partitions_independently = 1) WHERE explain LIKE '%Skip stream merging%' OR explain LIKE '%Read each partition through separate port%';
+Skip stream merging: 1
+Read each partition through separate port: 1
+DROP TABLE t_dec;
+-- ---------------------------------------------------------------------------
+-- Consumers that answered false for every plus and minus before, and now answer true for the
+-- integer case. Each arm is followed by a control on the same shape whose function is not
+-- injective, so the change is attributable to the operation and not to the fixture.
+-- ---------------------------------------------------------------------------
+
+-- ORDER BY truncation: an injective function of the grouping keys covers them, so the sort
+-- tail after it is redundant. Counting SORT nodes shows the tail dropped, and the row order
+-- is what truncation has to leave unchanged.
+DROP TABLE IF EXISTS t_ord;
+CREATE TABLE t_ord (a UInt32, b UInt32) ENGINE = MergeTree ORDER BY a;
+INSERT INTO t_ord SELECT number % 10, number FROM numbers(100);
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT a, max(b) AS m FROM t_ord GROUP BY a ORDER BY a + 1, m) WHERE explain ILIKE '%SORT id%';
+1
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT a, max(b) AS m FROM t_ord GROUP BY a ORDER BY a, m) WHERE explain ILIKE '%SORT id%';
+1
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 1 SELECT a, max(b) AS m FROM t_ord GROUP BY a ORDER BY intDiv(a, 2), m) WHERE explain ILIKE '%SORT id%';
+2
+SELECT groupArray(a) FROM (SELECT a, max(b) AS m FROM t_ord GROUP BY a ORDER BY a + 1, m);
+[0,1,2,3,4,5,6,7,8,9]
+DROP TABLE t_ord;
+-- OUTER to INNER conversion: the join keys have to cover the aggregation keys of the side
+-- whose unmatched rows the filter rejects. ANY strictness is what reaches this code path.
+-- Only the pretty plan prints the join kind, so these arms override the legacy default set
+-- above for themselves.
+DROP TABLE IF EXISTS t_jl;
+DROP TABLE IF EXISTS t_jr;
+CREATE TABLE t_jl (x UInt32) ENGINE = MergeTree ORDER BY x;
+CREATE TABLE t_jr (y UInt32, v UInt32) ENGINE = MergeTree ORDER BY y;
+INSERT INTO t_jl SELECT number FROM numbers(20);
+INSERT INTO t_jr SELECT number, number * 10 FROM numbers(10);
+SELECT count() FROM (EXPLAIN SELECT l.x, r.c FROM t_jl l LEFT ANY JOIN (SELECT y, count() AS c FROM t_jr GROUP BY y) r ON l.x = r.y + 1 WHERE r.c > 0 SETTINGS explain_query_plan_default = 'pretty') WHERE explain ILIKE '%Type: inner%';
+1
+SELECT count() FROM (EXPLAIN SELECT l.x, r.c FROM t_jl l LEFT ANY JOIN (SELECT y, count() AS c FROM t_jr GROUP BY y) r ON l.x = r.y WHERE r.c > 0 SETTINGS explain_query_plan_default = 'pretty') WHERE explain ILIKE '%Type: inner%';
+1
+SELECT count() FROM (EXPLAIN SELECT l.x, r.c FROM t_jl l LEFT ANY JOIN (SELECT y, count() AS c FROM t_jr GROUP BY y) r ON l.x = intDiv(r.y, 2) WHERE r.c > 0 SETTINGS explain_query_plan_default = 'pretty') WHERE explain ILIKE '%Type: inner%';
+0
+SELECT count(), sum(x) FROM (SELECT l.x, r.c FROM t_jl l LEFT ANY JOIN (SELECT y, count() AS c FROM t_jr GROUP BY y) r ON l.x = r.y + 1 WHERE r.c > 0);
+10	55
+DROP TABLE t_jl;
+DROP TABLE t_jr;
+-- Key-condition exactness: an equality atom over an injective key transform describes exactly
+-- the matching rows, so the range stays exact and the exact-count projection can serve the
+-- count. A relaxed atom loses it, which the projection's absence from the plan shows.
+DROP TABLE IF EXISTS t_kc_plus;
+DROP TABLE IF EXISTS t_kc_nested;
+DROP TABLE IF EXISTS t_kc_bare;
+CREATE TABLE t_kc_plus (a UInt64) ENGINE = MergeTree ORDER BY toString(intDiv(a, 2) + 1) SETTINGS index_granularity = 1;
+CREATE TABLE t_kc_nested (a UInt64) ENGINE = MergeTree ORDER BY toString(intDiv(intDiv(a, 2), 3)) SETTINGS index_granularity = 1;
+CREATE TABLE t_kc_bare (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+INSERT INTO t_kc_plus SELECT number FROM numbers(64);
+INSERT INTO t_kc_nested SELECT number FROM numbers(64);
+INSERT INTO t_kc_bare SELECT number FROM numbers(64);
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_kc_plus WHERE intDiv(a, 2) = 7 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1) WHERE explain ILIKE '%_exact_count_projection%';
+1
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_kc_nested WHERE intDiv(a, 2) = 7 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1) WHERE explain ILIKE '%_exact_count_projection%';
+0
+SELECT count() FROM (EXPLAIN indexes = 1 SELECT count() FROM t_kc_bare WHERE a >= 8 AND a < 32 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1) WHERE explain ILIKE '%_exact_count_projection%';
+1
+SELECT (SELECT count() FROM t_kc_plus WHERE intDiv(a, 2) = 7 SETTINGS optimize_use_projections = 0) = (SELECT count() FROM t_kc_plus WHERE intDiv(a, 2) = 7 SETTINGS optimize_use_projections = 1, optimize_use_implicit_projections = 1);
+1
+DROP TABLE t_kc_plus;
+DROP TABLE t_kc_nested;
+DROP TABLE t_kc_bare;
+-- ---------------------------------------------------------------------------
+-- A GROUP BY key that is now an injective function of constants unwraps to an empty key
+-- list, and the query must still aggregate.
+-- ---------------------------------------------------------------------------
+
+DROP TABLE IF EXISTS t_const_key;
+CREATE TABLE t_const_key (k UInt64) ENGINE = MergeTree ORDER BY k;
+INSERT INTO t_const_key SELECT number FROM numbers(10);
+SELECT count() FROM (SELECT 1 FROM t_const_key GROUP BY materialize(1) + 1);
+1
+SELECT count() FROM (SELECT 1 FROM t_const_key GROUP BY materialize(1) + 1, k);
+10
+SELECT count() FROM (SELECT k FROM t_const_key ORDER BY k LIMIT 1 BY materialize(1) + 1);
+1
+DROP TABLE t_const_key;
