@@ -134,6 +134,7 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_parts_interval_seconds;
     extern const MergeTreeSettingsUInt64 merge_tree_clear_old_temporary_directories_interval_seconds;
     extern const MergeTreeSettingsUInt64 non_replicated_deduplication_window;
+    extern const MergeTreeSettingsBool remove_empty_parts;
     extern const MergeTreeSettingsSeconds temporary_directories_lifetime;
     extern const MergeTreeSettingsString auto_statistics_types;
     extern const MergeTreeSettingsBool table_readonly;
@@ -1959,6 +1960,20 @@ MergeMutateSelectedEntryPtr StorageMergeTree::selectPartsToMutate(
         auto mutations_begin_it = current_mutations_by_version.upper_bound(part->info.getDataVersion());
         if (mutations_begin_it == mutations_end_it)
             continue;
+
+        /// An empty part is disposed of by `clearEmptyParts`, not by mutation: mutating it would
+        /// only produce another empty part, while the mutation tag holds off the removal. Skipping
+        /// it is correct only while something still runs that removal, hence the cleanup check.
+        /// `clearEmptyParts`'s `outdated_data_parts_loading_finished` gate is deliberately not mirrored: that window is the race.
+        if (part->rows_count == 0 && (*storage_settings.get())[MergeTreeSetting::remove_empty_parts]
+            && !cleanup_thread.isCleanupBlocked()
+            && (part->version->getInfo().creation_tid.isNonTransactional()
+                || part->version->isVisible(TransactionLog::instance().getLatestSnapshot())))
+        {
+            current_parts_postpone_reasons[part->name] = PostponeReasons::EMPTY_PART_WILL_BE_DROPPED;
+            cleanup_thread.requestEmptyPartsCleanup();
+            continue;
+        }
 
         fiu_do_on(FailPoints::mt_select_parts_to_mutate_max_part_size, { max_source_part_size = 1; });
         if (max_source_part_size < part->getBytesOnDisk())
