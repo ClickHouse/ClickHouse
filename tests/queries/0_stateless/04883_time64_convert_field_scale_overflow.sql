@@ -27,10 +27,10 @@ select 1 where toDateTime64('1970-01-01 00:00:01', 6) in (253402207200000::Decim
 -- A wrapped value must not be persisted: the row that lands in the table is the saturated maximum, not the
 -- `-999:59:59.722624` that the unguarded rescale produced. The conversion is asserted through `format` so that
 -- it happens on the server: an inline `VALUES` list of an `INSERT` is parsed by the client, and which side
--- parses it is not the contract here.
+-- parses it is not the contract here. The two inserts make two parts, so the read is ordered.
 drop table if exists t_04883;
 create table t_04883 (t Time64(6)) engine = MergeTree order by tuple();
 insert into t_04883 select * from format(Values, 'x Time64(6)', '(253402207200000::Decimal64(0))');
 insert into t_04883 values (-12::Decimal64(0));
-select toString(t) from t_04883;
+select toString(t) from t_04883 order by t;
 drop table t_04883;
