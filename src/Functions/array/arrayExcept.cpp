@@ -282,7 +282,9 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Arguments must be arrays");
 
         if (exclude_col->getData().empty())
-            return arguments[0].column;
+        {
+            return exclude_is_const ? arguments[0].column : arguments[0].column->convertToFullColumnIfConst();
+        }
 
         auto source_full_col = arguments[0].column->convertToFullColumnIfConst();
         const ColumnArray * source_col = checkAndGetColumn<ColumnArray>(source_full_col.get());
