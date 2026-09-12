@@ -570,16 +570,16 @@ namespace
 
             /// Writing sizes.json
             {
-                FileChecker file_checker{"tmp_sizes_json"};
+                std::map<String, size_t> file_sizes;
                 for (size_t i = 0; i != file_paths.size(); ++i)
                 {
                     if (i == sizes_json_pos)
                         continue;
-                    file_checker.update(std::filesystem::path{file_paths[i]}.filename(), backup_entries[i].second->getSize());
+                    file_sizes[std::filesystem::path{file_paths[i]}.filename()] = backup_entries[i].second->getSize();
                 }
 
                 WriteBufferFromOwnString write_buffer;
-                file_checker.save(write_buffer);
+                FileChecker::save(write_buffer, file_sizes);
                 backup_entries[sizes_json_pos] = {file_paths[sizes_json_pos], std::make_shared<BackupEntryFromMemory>(std::move(write_buffer.str()))};
             }
 
@@ -771,11 +771,11 @@ void registerStorageMemory(StorageFactory & factory)
     },
     Documentation{
         .description = R"DOCS_MD(
-:::note
+<Note>
 When using the Memory table engine on ClickHouse Cloud, data is not replicated across all nodes (by design). To guarantee that all queries are routed to the same node and that the Memory table engine works as expected, you can do one of the following:
 - Execute all operations in the same session
 - Use a client that uses TCP or the native interface (which enables support for sticky connections) such as [clickhouse-client](/concepts/features/interfaces/client)
-:::
+</Note>
 
 The Memory engine stores data in RAM, in uncompressed form. Data is stored in exactly the same form as it is received when read. In other words, reading from this table is completely free.
 Concurrent data access is synchronized. Locks are short: read and write operations do not block each other.
