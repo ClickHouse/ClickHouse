@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
+
 SELECT CAST(1 AS Enum8('hello' = 1, 'world' = 2));
 SELECT cast(1 AS Enum8('hello' = 1, 'world' = 2));
 

@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 . "$CURDIR"/../shell_config.sh
 
 
+
+# Disable force_primary_key_reverse_order: tests query cancellation, creates MergeTree tables internally
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 function wait_query_started()
 {
     local query_id="$1"

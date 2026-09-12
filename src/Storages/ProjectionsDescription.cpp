@@ -561,6 +561,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     const ASTPtr & partition_columns,
     const Names & minmax_columns,
     const KeyDescription & primary_key,
+    const KeyDescription & sorting_key,
     const KeyDescription * partition_key,
     const ContextPtr & query_context)
 {
@@ -577,7 +578,7 @@ ProjectionDescription ProjectionDescription::getMinMaxCountProjection(
     auto primary_key_asts = primary_key.expression_list_ast->children;
     if (!primary_key_asts.empty())
     {
-        if (!primary_key.reverse_flags.empty() && primary_key.reverse_flags[0])
+        if (!sorting_key.reverse_flags.empty() && sorting_key.reverse_flags[0])
         {
             select_expression_list->children.push_back(makeASTFunction("max", primary_key_asts.front()->clone()));
             select_expression_list->children.push_back(makeASTFunction("min", primary_key_asts.front()->clone()));

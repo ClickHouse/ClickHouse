@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests MergeTree memory usage analysis, partition and ordering affect results
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 sql="toUInt16OrNull(arrayFirst((v, k) -> (k = '4Id'), arr[2], arr[1]))"
 
 # Create the table and fill it

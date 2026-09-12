@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 SET max_threads=0;
 SET optimize_read_in_order=1;
 SET optimize_trivial_insert_select = 1;

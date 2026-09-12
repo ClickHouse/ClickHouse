@@ -1,4 +1,7 @@
 -- Tags: no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 -- - no-random-merge-tree-settings -- may change amount of granulas
 
 drop table if exists with_skip_index;

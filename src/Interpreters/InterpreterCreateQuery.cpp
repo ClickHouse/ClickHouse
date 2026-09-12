@@ -8,6 +8,7 @@
 
 #include <Core/Settings.h>
 #include <Interpreters/InterpreterAlterQuery.h>
+#include <Parsers/ASTOrderByElement.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
@@ -145,6 +146,7 @@ namespace Setting
     extern const SettingsString default_view_definer;
     extern const SettingsUInt64 distributed_ddl_entry_format_version;
     extern const SettingsBool flatten_nested;
+    extern const SettingsBool force_primary_key_reverse_order;
     extern const SettingsBool fsync_metadata;
     extern const SettingsBool insert_allow_materialized_columns;
     extern const SettingsSeconds lock_acquire_timeout;
@@ -838,6 +840,50 @@ ConstraintsDescription InterpreterCreateQuery::getConstraintsDescription(
     return ConstraintsDescription{constraints_data};
 }
 
+namespace
+{
+
+void forceReverse(ASTPtr & node)
+{
+    if (auto * elem = node->as<ASTStorageOrderByElement>())
+    {
+        elem->direction = -1;
+        return;
+    }
+
+    auto new_elem = make_intrusive<ASTStorageOrderByElement>();
+    new_elem->direction = -1;
+    new_elem->children.push_back(node);
+    node = new_elem;
+}
+
+void applyForceReverseOrder(ASTStorage * storage)
+{
+    if (!storage || !storage->order_by)
+        return;
+
+    if (auto * func = storage->order_by->as<ASTFunction>(); func && func->name == "tuple" && func->arguments)
+    {
+        for (auto & child : func->arguments->children)
+            forceReverse(child);
+    }
+    else
+    {
+        if (auto * elem = storage->order_by->as<ASTStorageOrderByElement>())
+        {
+            elem->direction = -1;
+        }
+        else
+        {
+            auto new_elem = make_intrusive<ASTStorageOrderByElement>();
+            new_elem->direction = -1;
+            new_elem->children.push_back(storage->order_by->clone());
+            storage->set(storage->order_by, new_elem);
+        }
+    }
+}
+
+}
 
 namespace
 {
@@ -1204,6 +1250,13 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     std::swap(create.as_table, as_table_saved);
     if (!as_table_saved.empty())
         create.is_create_empty = false;
+
+    /// `CLONE AS` and restoring from a backup attach existing data parts, which are physically laid out
+    /// in the original order. Flipping the stored `ORDER BY` to `DESC` for them would make the metadata
+    /// disagree with the data on disk, so the rewrite is skipped for these.
+    if (!internal && !create.is_clone_as && !is_restore_from_backup && mode <= LoadingStrictnessLevel::CREATE
+        && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
+        applyForceReverseOrder(create.storage);
 
     return properties;
 }

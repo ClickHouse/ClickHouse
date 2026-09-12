@@ -1,4 +1,7 @@
 -- Tags: no-random-merge-tree-settings, no-replicated-database
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
+
 -- Tag no-replicated-database: Old syntax is not allowed
 -- The test use replicated table to test serialize and deserialize column with settings declaration on zookeeper
 -- Tests column-level settings for MergeTree* tables

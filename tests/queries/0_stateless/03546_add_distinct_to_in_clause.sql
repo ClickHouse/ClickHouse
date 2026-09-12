@@ -1,4 +1,6 @@
 -- Tags: shard, no-parallel
+-- Disable force_primary_key_reverse_order: tests distributed query optimization, creates MergeTree tables internally
+SET force_primary_key_reverse_order = 0;
 
 drop table if exists local_table_1;
 drop table if exists local_table_2;

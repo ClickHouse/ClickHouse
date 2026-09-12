@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: SHOW CREATE TABLE output checks ORDER BY clause
+SET force_primary_key_reverse_order = 0;
 #!/usr/bin/env bash
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

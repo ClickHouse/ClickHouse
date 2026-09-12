@@ -43,6 +43,7 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
         /// Note: please check if the key already exists to prevent duplicate entries.
         addSettingsChanges(settings_changes_history, "26.9",
         {
+            {"force_primary_key_reverse_order", false, false, "New testing setting that forces all ORDER BY columns to DESC for stress-testing reverse key functionality"},
             {"session_query_ids_history_size", 0, 1000, "New setting limiting the size of the session-local query id history exposed through the new `system.session_query_ids` system table. The previous value `0` (recording disabled) reproduces the pre-26.9 behavior."},
             {"query_plan_optimize_join_order_use_conflict_detector_a", false, false, "New setting to use the conflict detector A for join reordering validity in the DPsub join order algorithm."},
             {"query_plan_optimize_join_order_use_conflict_detector_c", false, false, "New setting to use the (correct and complete) conflict detector C for join reordering validity in the DPsub join order algorithm."},

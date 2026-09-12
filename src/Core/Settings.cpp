@@ -6306,6 +6306,13 @@ Possible values:
 - 0 - No delay (default)
 - N - Delay in milliseconds
 )", 0) \
+    DECLARE(Bool, force_primary_key_reverse_order, false, R"(
+Automatically force all ORDER BY columns in CREATE TABLE to DESC for testing purposes.
+When enabled, every column in ORDER BY will be set to DESC regardless of original direction.
+This is useful for stress-testing the reverse key functionality across all functional tests.
+The rewrite is skipped for `CREATE TABLE ... CLONE AS ...` and for restoring from a backup, because
+those attach existing data parts that are physically sorted in the original order.
+)", 0) \
     DECLARE(Bool, optimize_rewrite_sum_if_to_count_if, true, R"(
 Rewrite sumIf() and sum(if()) function countIf() function when logically equivalent
 )", 0) \

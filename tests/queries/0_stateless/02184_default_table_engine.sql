@@ -1,4 +1,7 @@
 -- Tags: memory-engine
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
+
 SET create_table_empty_primary_key_by_default = 0;
 SET default_table_engine = 'None';
 

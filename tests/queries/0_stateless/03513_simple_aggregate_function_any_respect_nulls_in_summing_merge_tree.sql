@@ -1,3 +1,5 @@
+-- SummingMergeTree merge order for any_respect_nulls depends on key direction
+SET force_primary_key_reverse_order = 0;
 DROP TABLE IF EXISTS simple_agf_any_summing_mt;
 
 CREATE TABLE simple_agf_any_summing_mt

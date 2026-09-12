@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests OpenTelemetry DDL operations, creates MergeTree tables internally
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 # The test cases in this file cover DDLs running on both Replicated database engine and non-Replicated database engine.
 # Since the processing flow is a little bit different from each other, in order to share same reference file,
 # we compare the expected result and actual result by ourselves. See check_span method below for more detail.

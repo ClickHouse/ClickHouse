@@ -5,6 +5,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: tests backup bandwidth, creates MergeTree tables internally
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 $CLICKHOUSE_CLIENT -m -q "
     drop table if exists data;
     create table data (key UInt64 CODEC(NONE)) engine=MergeTree() order by tuple() settings min_bytes_for_wide_part=1e9;

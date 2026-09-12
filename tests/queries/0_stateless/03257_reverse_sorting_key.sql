@@ -1,4 +1,6 @@
 -- Tags: no-random-merge-tree-settings
+-- Disable force_primary_key_reverse_order: tests reverse sorting key feature itself, forced DESC would interfere with explicit ASC/DESC
+SET force_primary_key_reverse_order = 0;
 SET explain_query_plan_default = 'legacy';
 
 set optimize_read_in_order = 1;

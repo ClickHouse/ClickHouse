@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 -- String type
 drop table if exists table_map;
 create table table_map (a Map(String, String)) engine = Memory;

@@ -1,4 +1,6 @@
 -- Tags: no-parallel
+-- Disable force_primary_key_reverse_order: SHOW CREATE output contains ORDER BY which changes with forced DESC
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS 02484_substitute_udf;
 DROP FUNCTION IF EXISTS 02484_plusone;

@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests read-in-order optimization sensitive to sort direction
+SET force_primary_key_reverse_order = 0;
+
 SET merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0.0;
 
 DROP TABLE IF EXISTS t_max_rows_to_read;

@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order potentially affecting join results
+SET force_primary_key_reverse_order = 0;
 -- Regression test for https://github.com/ClickHouse/ClickHouse/issues/75247
 -- GROUP BY with parallel_hash join on LowCardinality(String) and a 64-bit type
 -- should produce deterministic and correct results.
