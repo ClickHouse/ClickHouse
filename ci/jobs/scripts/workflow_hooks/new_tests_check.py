@@ -200,7 +200,7 @@ def unit_bugfix_validation_refuted():
 
 
 def check():
-    _title, _body, labels = GH.get_pr_title_body_labels()
+    _title, _body, labels, _is_draft = GH.get_pr_title_body_labels()
     if not labels:
         labels = Info().pr_labels
 
