@@ -784,8 +784,8 @@ Container restoreContainerFromDump(std::string_view & tail, char closing, std::s
     }
 }
 
-/// Consumes one element from the front of `tail`. A nested container is consumed here rather than
-/// delimited and then parsed again, so each byte of the dump is examined a bounded number of times.
+/// Consumes one element from the front of `tail`, a nested container included, so each byte of the
+/// dump is examined a bounded number of times.
 Field restoreElementFromDump(std::string_view & tail, std::string_view whole_dump)
 {
     /// The grammar nests without a bound and the dumps reaching this parser are user supplied.
