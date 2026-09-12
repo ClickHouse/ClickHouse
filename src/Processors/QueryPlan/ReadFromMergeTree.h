@@ -349,6 +349,13 @@ public:
     /// shape.
     AnalysisResultPtr estimateRangesToReadWithoutQueryConditionCache() const;
 
+    /// How many compressed bytes this step reads off disk, based on index analysis (which is run here
+    /// if it has not run yet, and memoized as usual). Where a per-column estimate cannot be made
+    /// conservatively (e.g. a partial read of a compact part, which does not track per-column sizes),
+    /// it charges every selected part in full rather than giving up, so the answer errs high. Returns
+    /// nullopt only when the ranges to read cannot be analyzed at all.
+    std::optional<size_t> estimateCompressedBytesToRead() const;
+
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
     /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not

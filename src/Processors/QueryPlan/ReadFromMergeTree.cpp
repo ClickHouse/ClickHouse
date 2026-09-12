@@ -67,6 +67,7 @@
 #include <Storages/MergeTree/MergeTreeReadPoolProjectionIndex.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/MergeTreeSource.h>
+#include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Storages/MergeTree/RequestResponse.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
@@ -1389,24 +1390,38 @@ static bool missingColumnReadsPhysicalColumns(
     return false;
 }
 
-/// Estimate the uncompressed size of `column_names` over the mark ranges actually selected in
-/// `parts_with_ranges`.
+/// Which of the two sizes a part records for a column the estimate below should sum up.
+enum class ReadBytesKind : uint8_t
+{
+    /// The bytes the values occupy once decoded, i.e. the amount of work the pipeline does.
+    Uncompressed,
+    /// The bytes the values occupy on disk, i.e. the amount of data the read pulls in.
+    Compressed,
+};
+
+/// Estimate the size of `column_names` over the mark ranges actually selected in `parts_with_ranges`.
 ///
-/// Returns nullopt if the estimate cannot be made conservatively, in which case the caller must not cap.
+/// Returns nullopt if the estimate cannot be made conservatively, in which case the caller must not
+/// rely on it.
 ///
-/// Uncompressed rather than compressed size is deliberate: the per-stream overhead we are trading
-/// against is proportional to the work done per stream, which scales with the number of values
-/// processed, not with how well they compress. A highly compressible column (e.g. a constant
-/// `UInt64` under `ZSTD(9)`, ~1400x) is tiny on disk yet still feeds every row through PREWHERE,
-/// expressions and aggregation.
+/// `kind` picks which size to sum, and the choice belongs to the caller's question. Stream capping
+/// wants `Uncompressed`: the per-stream overhead it trades against is proportional to the work done
+/// per stream, which scales with the number of values processed, not with how well they compress. A
+/// highly compressible column (e.g. a constant `UInt64` under `ZSTD(9)`, ~1400x) is tiny on disk yet
+/// still feeds every row through PREWHERE, expressions and aggregation. Sizing a read against a
+/// byte threshold wants `Compressed`, which is what the read actually pulls off disk.
 static std::optional<size_t> estimateReadBytes(
     const RangesInDataParts & parts_with_ranges,
     const Names & column_names,
     const StorageSnapshotPtr & storage_snapshot,
     const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
-    const Settings & settings)
+    const Settings & settings,
+    ReadBytesKind kind)
 {
+    const auto size_of = [kind](const ColumnSize & column_size)
+    { return kind == ReadBytesKind::Compressed ? column_size.data_compressed : column_size.data_uncompressed; };
+
     const bool use_subcolumn_sizes = settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
     const auto & virtuals = storage_snapshot->metadata->virtuals;
 
@@ -1549,7 +1564,7 @@ static std::optional<size_t> estimateReadBytes(
                 const auto & requested_name = *requested_names.begin();
                 const auto col = data_part.tryGetColumn(requested_name);
                 if (col && col->isSubcolumn() && use_subcolumn_sizes)
-                    col_bytes = data_part.getSubcolumnSize(requested_name).data_uncompressed;
+                    col_bytes = size_of(data_part.getSubcolumnSize(requested_name));
             }
 
             /// Multiple subcolumns may overlap in streams. The complete physical column is a safe
@@ -1564,7 +1579,7 @@ static std::optional<size_t> estimateReadBytes(
                     && (!physical_col || !canScaleSizeBySelectedRows(*physical_col->type)))
                     return std::nullopt;
 
-                col_bytes = data_part.getColumnSize(physical_name).data_uncompressed;
+                col_bytes = size_of(data_part.getColumnSize(physical_name));
             }
 
             if (col_bytes == 0)
@@ -1589,7 +1604,7 @@ static std::optional<size_t> estimateReadBytes(
             if (selected_rows < data_part.rows_count)
                 return std::nullopt;
 
-            part_bytes = data_part.getTotalColumnsSize().data_uncompressed;
+            part_bytes = size_of(data_part.getTotalColumnsSize());
         }
 
         const auto selected_bytes_wide
@@ -1675,8 +1690,8 @@ static void capStreamsByReadBytes(
     const Settings & settings,
     LoggerPtr log)
 {
-    const auto estimated_read_bytes
-        = estimateReadBytes(parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings);
+    const auto estimated_read_bytes = estimateReadBytes(
+        parts_with_ranges, column_names, storage_snapshot, mutations_snapshot, context, settings, ReadBytesKind::Uncompressed);
     if (!estimated_read_bytes)
         return;
 
@@ -2735,6 +2750,79 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToReadForEst
         allow_query_condition_cache,
         supportsSkipIndexesOnDataRead(),
         /*check_row_limits=*/false);
+}
+
+std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const
+{
+    const auto analysis = analyzed_result_ptr ? analyzed_result_ptr : selectRangesToRead();
+    if (!analysis)
+        return {};
+
+    /// Reads that are priced per part below, but whose column set is only known once a read task is
+    /// built for a concrete part: `getReadTaskColumns` gives every index read task and on-fly mutation
+    /// step its own input columns. Patch parts are the same case twice over - `MergeTreeReadPoolBase`
+    /// picks them per part and `addPatchPartsColumns` then adds the patch key columns to the main
+    /// read, and the patch parts themselves are read in full but are not among `parts_with_ranges`.
+    /// They are counted separately from data mutations, so a lightweight update leaves
+    /// `hasDataMutations` false. Rather than under-count any of this, decline to answer - the caller
+    /// reads that as "could be any size".
+    if (!index_read_tasks.empty()
+        || (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts())))
+        return {};
+
+    /// With the range-splitting fault injection enabled, `spreadMarkRangesAmongStreams` may turn an
+    /// ordinary read into an in-order one and append the whole sorting key to the columns it reads,
+    /// which the estimate below does not account for because `reader_settings.read_in_order` is not
+    /// set. The decision is a per-execution coin flip made when the pipeline is built, long after
+    /// this runs, so it cannot be predicted here - decline to answer whenever the injection is armed,
+    /// as `capStreamsByReadBytes` already does with the same estimate. The setting is only ever set
+    /// by tests, so this costs nothing in production.
+    if (context->getSettingsRef()[Setting::merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability] > 0)
+        return {};
+
+    Names column_names = analysis->column_names_to_read.empty() ? all_column_names : analysis->column_names_to_read;
+    {
+        NameSet present(column_names.begin(), column_names.end());
+        const auto add_columns = [&](const Names & names_to_add)
+        {
+            for (const auto & column_name : names_to_add)
+                if (present.emplace(column_name).second)
+                    column_names.push_back(column_name);
+        };
+
+        if (query_info.prewhere_info)
+            add_columns(query_info.prewhere_info->prewhere_actions.getRequiredColumnsNames());
+        if (query_info.row_level_filter)
+            add_columns(query_info.row_level_filter->actions.getRequiredColumnsNames());
+        if (analysis->sampling.use_sampling && analysis->sampling.filter_expression)
+            add_columns(analysis->sampling.filter_expression->getRequiredColumns().getNames());
+
+        if (reader_settings.read_in_order)
+            add_columns(storage_snapshot->metadata->getColumnsRequiredForSortingKey());
+
+        if (reader_settings.apply_deleted_mask)
+            add_columns({RowExistsColumn::name});
+    }
+
+    if (const auto estimate = estimateReadBytes(
+            analysis->parts_with_ranges,
+            column_names,
+            storage_snapshot,
+            mutations_snapshot,
+            context,
+            context->getSettingsRef(),
+            ReadBytesKind::Compressed))
+        return estimate;
+
+    /// No per-column estimate is available. Charge every selected part in full rather than giving up:
+    /// the caller needs a number it can act on, and over-estimating only makes it act less often.
+    size_t total_bytes = 0;
+    for (const auto & part : analysis->parts_with_ranges)
+    {
+        if (__builtin_add_overflow(total_bytes, part.data_part->getTotalColumnsSize().data_compressed, &total_bytes))
+            return std::numeric_limits<size_t>::max();
+    }
+    return total_bytes;
 }
 
 namespace
