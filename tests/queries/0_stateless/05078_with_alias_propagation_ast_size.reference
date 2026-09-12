@@ -1,0 +1,12 @@
+explain ast unaffected
+1	1	1
+two aliases still work
+1	1
+plain aliases unaffected
+10	10	10
+source SETTINGS win on the insert fast path
+insert accepted
+analyzer is not bounded on the insert fast path
+analyzer insert accepted
+analyzer unaffected
+1	1	1

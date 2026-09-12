@@ -71,6 +71,7 @@
 
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/ClusterProxy/SelectStreamFactory.h>
 #include <Interpreters/ClusterProxy/executeQuery.h>
 #include <Interpreters/Cluster.h>
@@ -154,6 +155,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsUInt64 max_expanded_ast_elements;
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_nondeterministic_optimize_skip_unused_shards;
     extern const SettingsBool async_socket_for_remote;
@@ -1526,10 +1528,28 @@ std::optional<QueryPipeline> StorageDistributed::distributedWrite(const ASTInser
     {
         if (auto * select_query = select.list_of_selects->children.at(0)->as<ASTSelectQuery>())
         {
-            if (local_context->getSettingsRef()[Setting::enable_global_with_statement])
-                ApplyWithAliasVisitor::visit(select.list_of_selects->children.at(0));
+            /// Same as in `InterpreterInsertQuery`: the source SELECT's own SETTINGS are applied by its
+            /// interpreter later, and the parser's push-down onto the INSERT keeps only `changes`.
+            auto select_context = Context::createCopy(local_context);
+            if (select_query->settings())
+                InterpreterSetQuery(select_query->settings(), select_context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+            const auto & select_settings = select_context->getSettingsRef();
+            if (select_settings[Setting::enable_global_with_statement])
+            /// The bound only makes sense for the old interpreter. The compounding it guards against
+            /// comes from `InterpreterSelectQuery` re-running the propagation over an AST that already
+            /// carries the injected aliases; the analyzer never does that, so here the visitor makes a
+            /// single linear pass and a bound could only reject queries every other path accepts.
+                ApplyWithAliasVisitor::visit(
+                    select.list_of_selects->children.at(0),
+                    select_settings[Setting::allow_experimental_analyzer]
+                        ? 0
+                        : select_settings[Setting::max_expanded_ast_elements].value);
             ApplyWithSubqueryVisitor::visit(select.list_of_selects->children.at(0));
 
+            /// `select_context` is deliberately not used here: the only settings-sensitive part of
+            /// `getLeftTableStorage` is a table-function source, and that is executed through
+            /// `getQueryContext()`, which `Context::createCopy` carries over unchanged. The ordinary
+            /// path resolves table functions under the query context too.
             JoinedTables joined_tables(Context::createCopy(local_context), *select_query);
 
             if (joined_tables.tablesCount() == 1)
