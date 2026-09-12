@@ -98,4 +98,9 @@ ColumnPtr recursiveLowCardinalityTypeConversion(const ColumnPtr & column, const 
 /// Removes LowCardinality and Nullable in a correct order and returns T
 /// if the type is LowCardinality(T) or LowCardinality(Nullable(T)); type otherwise
 DataTypePtr removeLowCardinalityAndNullable(const DataTypePtr & type);
+
+/// Same, for a caller that holds a raw `IDataType` and cannot call `getPtr()`
+/// (it throws for a type not owned by a `shared_ptr`). The result points into
+/// `type`'s wrapper chain, so it is valid as long as `type` is.
+const IDataType * removeLowCardinalityAndNullable(const IDataType * type);
 }

@@ -40,15 +40,8 @@ template <> struct FunctionUnaryArithmeticMonotonicity<NameNegate>
     static bool has() { return true; }
     static IFunction::Monotonicity get(const IDataType & original_type, const Field & left, const Field & right)
     {
-        const IDataType * type = &original_type;
-        if (const DataTypeLowCardinality * t = typeid_cast<const DataTypeLowCardinality *>(type))
-            type = t->getDictionaryType().get();
-        bool is_nullable = false;
-        if (const DataTypeNullable * t = typeid_cast<const DataTypeNullable *>(type))
-        {
-            is_nullable = true;
-            type = t->getNestedType().get();
-        }
+        const IDataType * type = removeLowCardinalityAndNullable(&original_type);
+        const bool is_nullable = original_type.isNullable() || original_type.isLowCardinalityNullable();
 
         /// For compound types (Tuple, Array, etc.) monotonicity analysis is not applicable.
         if (!type->isValueRepresentedByNumber())
