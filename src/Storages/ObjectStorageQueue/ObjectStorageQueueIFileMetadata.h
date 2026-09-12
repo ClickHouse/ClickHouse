@@ -140,6 +140,15 @@ public:
     /// own in-memory cache is cold (e.g. after a restart or on a different replica).
     virtual PathState getPathState(std::string & failure_message, UInt64 * retries_out) const = 0;
 
+    /// Cheap check for a fresh file (state == None): only probes the live
+    /// `.retriable` marker (a single Keeper read), which nothing in the
+    /// downstream claim path (claim-multi / claim loop) checks on its own.
+    /// Does NOT recheck processed/failed terminal nodes - the downstream
+    /// claim path already does that cheaply as part of its own Keeper call.
+    /// Returns true if the marker's stored retry count is at or above the
+    /// current `max_loading_retries` limit (file should not be claimed).
+    bool isRetriableMarkerExhausted() const;
+
     const std::string & getFailedNodePath() const { return failed_node_path; }
     const std::string & getProcessedNodePath() const { return processed_node_path; }
 

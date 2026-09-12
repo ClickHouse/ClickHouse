@@ -311,6 +311,26 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
     return data == processor_info;
 }
 
+bool ObjectStorageQueueIFileMetadata::isRetriableMarkerExhausted() const
+{
+    std::string data;
+    bool exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        exists = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->tryGet(
+            failed_node_path + ".retriable", data);
+    });
+
+    if (!exists)
+        return false;
+
+    UInt64 retries = 0;
+    if (!data.empty())
+        retries = NodeMetadata::fromString(data).retries;
+
+    return retries >= max_loading_retries;
+}
+
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
@@ -321,18 +341,11 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
         return false;
     }
 
-    if (state == FileStatus::State::None || state == FileStatus::State::Failed)
+    if (state == FileStatus::State::Failed)
     {
-        /// Revalidate against Keeper whenever the local cache is not positively
-        /// Processing/Processed. This covers both:
-        ///  - the cache already thinks this file Failed and locally-tracked retries
-        ///    are exhausted (possibly stale: another replica may have cleaned it up
-        ///    via TTL or SYSTEM DROP), and
-        ///  - a cold cache (state == None, e.g. after a restart or on a different
-        ///    replica) where Keeper may already hold a terminal failure or a live
-        ///    `.retriable` marker whose stored retry count already meets or exceeds
-        ///    the *current* `loading_retries` limit - a case the local cache cannot
-        ///    know about at all.
+        /// Revalidate against Keeper: the cache already thinks this file Failed and
+        /// locally-tracked retries may be exhausted, but this could be stale info -
+        /// another replica may have cleaned the failure up via TTL or SYSTEM DROP.
         /// We always compare against Keeper's live retry count, not the local cache,
         /// so a lowered `loading_retries` is honored immediately.
         std::string failure_message;
@@ -361,6 +374,20 @@ bool ObjectStorageQueueIFileMetadata::trySetProcessing()
             /// File is already processed - update cache and skip.
             LOG_TEST(log, "File {} is already processed in Keeper, updating cache", path);
             file_status->updateState(FileStatus::State::Processed);
+            return false;
+        }
+    }
+    else if (state == FileStatus::State::None)
+    {
+        /// Fresh file: skip the full Keeper revalidation above (the downstream
+        /// claim path already cheaply rechecks processed/failed). Only the live
+        /// `.retriable` marker is worth a dedicated check here, since nothing
+        /// else probes it and a newly-lowered `loading_retries` must still be
+        /// honored immediately even with a cold cache after a restart.
+        if (isRetriableMarkerExhausted())
+        {
+            LOG_TEST(log, "File {} has a retriable marker in Keeper with retries "
+                     "at or above the current limit", path);
             return false;
         }
     }
@@ -405,18 +432,11 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
         return std::nullopt;
     }
 
-    if (state == FileStatus::State::None || state == FileStatus::State::Failed)
+    if (state == FileStatus::State::Failed)
     {
-        /// Revalidate against Keeper whenever the local cache is not positively
-        /// Processing/Processed. This covers both:
-        ///  - the cache already thinks this file Failed and locally-tracked retries
-        ///    are exhausted (possibly stale: another replica may have cleaned it up
-        ///    via TTL or SYSTEM DROP), and
-        ///  - a cold cache (state == None, e.g. after a restart or on a different
-        ///    replica) where Keeper may already hold a terminal failure or a live
-        ///    `.retriable` marker whose stored retry count already meets or exceeds
-        ///    the *current* `loading_retries` limit - a case the local cache cannot
-        ///    know about at all.
+        /// Revalidate against Keeper: the cache already thinks this file Failed and
+        /// locally-tracked retries may be exhausted, but this could be stale info -
+        /// another replica may have cleaned the failure up via TTL or SYSTEM DROP.
         /// We always compare against Keeper's live retry count, not the local cache,
         /// so a lowered `loading_retries` is honored immediately.
         std::string failure_message;
@@ -445,6 +465,20 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
             /// File is already processed - update cache and skip.
             LOG_TEST(log, "File {} is already processed in Keeper, updating cache", path);
             file_status->updateState(FileStatus::State::Processed);
+            return std::nullopt;
+        }
+    }
+    else if (state == FileStatus::State::None)
+    {
+        /// Fresh file: skip the full Keeper revalidation above (the downstream
+        /// claim-multi below already cheaply rechecks processed/failed). Only the
+        /// live `.retriable` marker is worth a dedicated check here, since nothing
+        /// else probes it and a newly-lowered `loading_retries` must still be
+        /// honored immediately even with a cold cache after a restart.
+        if (isRetriableMarkerExhausted())
+        {
+            LOG_TEST(log, "File {} has a retriable marker in Keeper with retries "
+                     "at or above the current limit", path);
             return std::nullopt;
         }
     }
