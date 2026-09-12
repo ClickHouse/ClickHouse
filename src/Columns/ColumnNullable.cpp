@@ -328,8 +328,37 @@ void ColumnNullable::insertRangeFromNotNullable(const IColumn & src, size_t star
 
 void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t position, size_t length)
 {
-    for (size_t i = 0; i < length; ++i)
+    if (length == 0)
+        return;
+
+    if (length == 1)
+    {
         insertFromNotNullable(src, position);
+        return;
+    }
+
+    auto & null_map_data = getNullMapData();
+    const size_t old_size = null_map_data.size();
+    const size_t new_size = old_size + length;
+
+    /// Reserve before modifying the nested column so extending the null map cannot fail after a
+    /// successful nested insertion.
+    null_map_data.reserve(new_size);
+
+    /// Some nested columns may partially insert rows before throwing. Keep both columns in sync
+    /// if that happens.
+    auto checkpoint = getNestedColumn().getCheckpoint();
+    try
+    {
+        getNestedColumn().insertManyFrom(src, position, length);
+        null_map_data.resize_fill(new_size);
+    }
+    catch (...)
+    {
+        null_map_data.resize_assume_reserved(old_size);
+        getNestedColumn().rollback(*checkpoint);
+        throw;
+    }
 }
 
 void ColumnNullable::popBack(size_t n)
