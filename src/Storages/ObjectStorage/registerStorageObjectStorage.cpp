@@ -14,6 +14,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSettings.h>
+#include <Storages/ArchivePathSyntax.h>
 #include <Storages/ObjectStorage/StorageObjectStorageDefinitions.h>
 #include <Storages/ObjectStorage/Utils.h>
 #include <Storages/StorageFactory.h>
@@ -50,7 +51,12 @@ std::shared_ptr<StorageObjectStorage>
 createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObjectStorageConfigurationPtr configuration)
 {
     const auto context = args.getLocalContext();
-    StorageObjectStorageConfiguration::initialize(*configuration, args.engine_args, context, false, &args.table_id);
+    const auto archive_path_syntax = resolveAndPersistArchivePathSyntax(
+        *args.storage_def,
+        context,
+        isFreshTableDefinition(args.mode, args.query.attach_short_syntax, args.is_restore_from_backup));
+    StorageObjectStorageConfiguration::initialize(
+        *configuration, args.engine_args, archive_path_syntax.context, false, &args.table_id);
 
     // Use format settings from global server context + settings from
     // the SETTINGS clause of the create query. Settings from current
@@ -79,7 +85,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         order_by = args.storage_def->order_by->clone();
 
     ContextMutablePtr context_copy = Context::createCopy(args.getContext());
-    Settings settings_copy = args.getLocalContext()->getSettingsCopy();
+    Settings settings_copy = archive_path_syntax.context->getSettingsCopy();
     context_copy->setSettings(settings_copy);
 
     /// The user-query credential restriction is NOT relaxed when loading from existing metadata: a table whose
@@ -109,7 +115,8 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         configuration,
         // We only want to perform write actions (e.g. create a container in Azure) when the table is being created,
         // and we want to avoid it when we load the table after a server restart.
-        configuration->createObjectStorage(context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
+        configuration->createObjectStorage(
+            archive_path_syntax.context, /* is_readonly */ args.mode != LoadingStrictnessLevel::CREATE, std::nullopt),
         context_copy, /// Use global context.
         args.table_id,
         args.columns,
@@ -117,7 +124,7 @@ createStorageObjectStorage(const StorageFactory::Arguments & args, StorageObject
         args.comment,
         format_settings,
         args.mode,
-        configuration->getCatalog(context, args.table_id),
+        configuration->getCatalog(archive_path_syntax.context, args.table_id),
         args.query.if_not_exists,
         /* is_datalake_query*/ false,
         /* distributed_processing */ false,

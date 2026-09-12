@@ -52,6 +52,9 @@ class SettingsChanges;
 // clang-format off
 
 #define DATA_LAKE_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(Bool, allow_archive_path_syntax, true, R"(
+Creation-time choice for interpreting `::` in persistent data-lake object-storage table paths as archive syntax. The setting is immutable after creation.
+)", 0) \
     DECLARE(String, iceberg_metadata_file_path, "", R"(
 Explicit path to desired Iceberg metadata file, should be relative to path in object storage. Make sense for table function use case only.
 )", 0) \

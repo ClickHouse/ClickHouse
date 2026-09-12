@@ -70,7 +70,12 @@ private:
 
 using StorageObjectStorageSettingsPtr = std::shared_ptr<StorageObjectStorageSettings>;
 
+#define STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(DECLARE, ALIAS) \
+    DECLARE(Bool, allow_archive_path_syntax, true, \
+        "Creation-time choice for interpreting `::` in persistent object-storage table paths as archive syntax. The setting is immutable after creation.", 0)
+
 #define LIST_OF_STORAGE_OBJECT_STORAGE_SETTINGS(M, ALIAS) \
+    STORAGE_OBJECT_STORAGE_RELATED_SETTINGS(M, ALIAS) \
     LIST_OF_ALL_FORMAT_SETTINGS(M, ALIAS)
 
 }
