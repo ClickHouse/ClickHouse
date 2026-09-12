@@ -79,6 +79,7 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
         return Status::NeedData;
 
     chunk = input.pull();
+    was_output_processed.assign(output_size, false);
 
     return Status::Ready;
 }
@@ -86,7 +87,6 @@ IProcessor::Status ScatterByPartitionTransform::prepare()
 void ScatterByPartitionTransform::work()
 {
     generateOutputChunks();
-    was_output_processed.assign(outputs.size(), false);
     has_output_chunks = true;
 }
 
