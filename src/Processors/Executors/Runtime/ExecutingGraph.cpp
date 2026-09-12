@@ -317,19 +317,21 @@ void ExecutingGraph::initializeExecution(Queue & queue, Queue & async_queue)
         Node * node = stack.top();
         stack.pop();
 
-        updateNode(node, queue, async_queue);
+        updateNode(*node->processor(), queue, async_queue);
     }
 }
 
-ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Queue & queue, Queue & async_queue)
+ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(IProcessor & initial, Queue & queue, Queue & async_queue)
 {
     Processors delayed_destruction;
     boost::container::devector<Edge *> updated_edges;
     boost::container::devector<Node *> updated_processors;
     std::vector<Node *> pending_expansion;
-    updated_processors.push_back(start_node);
 
     std::shared_lock read_lock(nodes_mutex);
+
+    /// Traversal starts from the node related to updated processor
+    updated_processors.push_back(processors_map.at(&initial));
 
     while (!updated_processors.empty() || !updated_edges.empty())
     {
@@ -432,13 +434,13 @@ ExecutingGraph::UpdateNodeStatus ExecutingGraph::updateNode(Node * start_node, Q
                     case IProcessor::Status::Ready:
                     {
                         node.status = ExecutingGraph::ExecStatus::Executing;
-                        queue.push(&node);
+                        queue.push(node.processor());
                         break;
                     }
                     case IProcessor::Status::Async:
                     {
                         node.status = ExecutingGraph::ExecStatus::Executing;
-                        async_queue.push(&node);
+                        async_queue.push(node.processor());
                         break;
                     }
                     case IProcessor::Status::UpdatePipeline:

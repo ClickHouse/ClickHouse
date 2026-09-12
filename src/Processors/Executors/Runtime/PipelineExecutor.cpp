@@ -388,7 +388,7 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                 bool updated = false;
                 try
                 {
-                    updated = graph->updateNode(context.getTask(), queue, async_queue) == ExecutingGraph::UpdateNodeStatus::Done;
+                    updated = graph->updateNode(*context.getTask(), queue, async_queue) == ExecutingGraph::UpdateNodeStatus::Done;
                 }
                 catch (...)
                 {
