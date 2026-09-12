@@ -494,20 +494,28 @@ try
 
         runNonInteractive();
 
-        // If exception code isn't zero, we should return non-zero return
-        // code anyway.
-        const auto * exception = server_exception ? server_exception.get() : client_exception.get();
-
-        if (exception)
+        /// `--ignore-error` has already reported every failed statement and elected to carry on,
+        /// so the run is not a failure. Reporting one here would mean reporting whichever error
+        /// the final statement happened to hit, which says nothing about the rest of the batch;
+        /// `clickhouse-local --ignore-error` returns success in the same situation. BuzzHouse is
+        /// the exception: it stops the run on an error, so it keeps the error code.
+        if (buzz_house || !ignore_error)
         {
-            return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
-        }
+            // If exception code isn't zero, we should return non-zero return
+            // code anyway.
+            const auto * exception = server_exception ? server_exception.get() : client_exception.get();
 
-        if (have_error)
-        {
-            // Shouldn't be set without an exception, but check it just in
-            // case so that at least we don't lose an error.
-            return -1;
+            if (exception)
+            {
+                return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
+            }
+
+            if (have_error)
+            {
+                // Shouldn't be set without an exception, but check it just in
+                // case so that at least we don't lose an error.
+                return -1;
+            }
         }
 
         if (delayed_interactive)
