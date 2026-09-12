@@ -111,6 +111,7 @@ namespace Setting
     extern const SettingsBool allow_suspicious_types_in_group_by;
     extern const SettingsBool allow_suspicious_types_in_order_by;
     extern const SettingsBool allow_experimental_correlated_subqueries;
+    extern const SettingsBool allow_experimental_lateral_join;
     extern const SettingsString implicit_table_at_top_level;
     extern const SettingsBool parallel_replicas_for_cluster_engines;
     extern const SettingsBool enable_identifier_resolve_cache;
@@ -5442,13 +5443,26 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
 
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getLeftTableExpressionNode()))
         throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Correlated subqueries are not supported in JOINs yet, but found in expression: {}",
+            "Correlated subqueries are not supported in the left side of JOINs, but found in expression: {}",
             join_node_typed.getLeftTableExpressionNode()->formatASTForErrorMessage());
 
+    /// Check the experimental setting for any LATERAL JOIN, regardless of whether the subquery is correlated
+    if (join_node_typed.isLateral())
+    {
+        if (!scope.context->getSettingsRef()[Setting::allow_experimental_lateral_join])
+            throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                "LATERAL JOIN is experimental. Set 'allow_experimental_lateral_join = 1' to enable it");
+    }
+
     if (isCorrelatedQueryOrUnionNode(join_node_typed.getRightTableExpressionNode()))
-        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
-            "Correlated subqueries are not supported in JOINs yet, but found in expression: {}",
-            join_node_typed.getRightTableExpressionNode()->formatASTForErrorMessage());
+    {
+        if (!join_node_typed.isLateral())
+            throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                "Correlated subqueries are not supported in JOINs. Use LATERAL JOIN to allow "
+                "the right side of a JOIN to reference columns from the left side. "
+                "Found in expression: {}",
+                join_node_typed.getRightTableExpressionNode()->formatASTForErrorMessage());
+    }
 
     if (!join_node_typed.getLeftTableExpressionNode()->hasAlias() && !join_node_typed.getRightTableExpressionNode()->hasAlias())
         checkDuplicateTableNamesOrAliasForPasteJoin(join_node_typed, scope);

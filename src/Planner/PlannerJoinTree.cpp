@@ -101,6 +101,7 @@
 #include <Planner/CollectColumnIdentifiers.h>
 #include <Planner/Planner.h>
 #include <Planner/PlannerContext.h>
+#include <Planner/PlannerCorrelatedSubqueries.h>
 #include <Planner/PlannerJoins.h>
 #include <Planner/PlannerJoinsLogical.h>
 #include <Planner/PlannerActionsVisitor.h>
@@ -186,6 +187,7 @@ namespace ErrorCodes
     extern const int PARAMETER_OUT_OF_BOUND;
     extern const int TOO_MANY_COLUMNS;
     extern const int UNSUPPORTED_METHOD;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace
@@ -3369,7 +3371,7 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
             /// The distributed table on the right side would be wrapped into a subquery,
             /// causing parallel replicas to incorrectly choose the left table for parallel reading.
             /// Each replica would then independently read the full distributed table, resulting in duplicate data.
-            if (join_kind == JoinKind::Right)
+            if (join_kind == JoinKind::Right && !join_node.isLateral())
             {
                 const auto & right_expression_data = planner_context->getTableExpressionDataOrThrow(join_node.getRightTableExpressionNode());
                 is_right_join_with_remote_table = right_expression_data.isRemote();
@@ -3480,6 +3482,15 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
 
     std::vector<JoinTreeQueryPlan> query_plans_stack;
 
+    /// Right-side table expressions of LATERAL JOINs are not planned directly:
+    /// they are rebuilt by decorrelation when the JOIN node itself is processed.
+    std::unordered_set<const IQueryTreeNode *> lateral_right_table_expressions;
+    for (const auto & node : table_expressions_stack)
+    {
+        if (const auto * join = node->as<JoinNode>(); join && join->isLateral())
+            lateral_right_table_expressions.insert(join->getRightTableExpressionNode().get());
+    }
+
     for (size_t i = 0; i < table_expressions_stack_size; ++i)
     {
         const auto & table_expression = table_expressions_stack[i];
@@ -3500,23 +3511,129 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
         }
         else if (table_expression_node_type == QueryTreeNodeType::JOIN)
         {
-            if (query_plans_stack.size() < 2)
-                throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "Expected at least 2 query plans on stack before JOIN processing. Actual {}",
-                    query_plans_stack.size());
+            const auto & join_node = table_expression->as<JoinNode &>();
 
-            auto right_query_plan = std::move(query_plans_stack.back());
-            query_plans_stack.pop_back();
+            if (join_node.isLateral())
+            {
+                /// For LATERAL JOIN, both sides are on the stack (the right side was built
+                /// from the table expressions stack for analyzer compatibility, e.g. SELECT * expansion).
+                /// Pop and discard the right side plan — it will be rebuilt via decorrelation.
+                if (query_plans_stack.size() < 2)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Expected at least 2 query plans on stack before LATERAL JOIN processing. Actual {}",
+                        query_plans_stack.size());
 
-            auto left_query_plan = std::move(query_plans_stack.back());
-            query_plans_stack.pop_back();
+                query_plans_stack.pop_back(); /// discard right side plan
 
-            query_plans_stack.push_back(buildQueryPlanForJoinNode(
-                table_expression,
-                std::move(left_query_plan),
-                std::move(right_query_plan),
-                table_expressions_outer_scope_columns[i],
-                planner_context));
+                auto left_query_plan = std::move(query_plans_stack.back());
+                query_plans_stack.pop_back();
+
+                /// Extract correlated column identifiers from the right-side subquery
+                const auto & right_table_expression = join_node.getRightTableExpressionNode();
+                auto * query_node_right = right_table_expression->as<QueryNode>();
+                auto * union_node_right = right_table_expression->as<UnionNode>();
+
+                if (!query_node_right && !union_node_right)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN right side must be a subquery");
+
+                /// Reject NATURAL JOIN LATERAL — the analyzer synthesizes USING for NATURAL joins,
+                /// but LATERAL JOIN joins on correlated-column equality, not column name matching.
+                if (join_node.isNaturalJoin())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "NATURAL JOIN is not supported with LATERAL");
+
+                /// Reject USING expressions — LATERAL JOIN only supports ON true or no ON clause
+                if (join_node.isUsingJoinExpression())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN does not support USING clause");
+
+                /// Reject non-trivial ON predicates — only ON true (constant true) is allowed.
+                /// The LATERAL planning path joins on correlated-column equality only;
+                /// an arbitrary ON predicate would be silently ignored.
+                if (join_node.isOnJoinExpression())
+                {
+                    const auto * constant_node = join_node.getJoinExpression()->as<ConstantNode>();
+                    bool is_constant_true = false;
+                    if (constant_node)
+                    {
+                        const auto & value = constant_node->getValue();
+                        /// Accept any numeric/boolean constant that is truthy (e.g. ON true, ON 1)
+                        is_constant_true = !value.isNull() && value.getType() == Field::Types::UInt64 && value.safeGet<UInt64>() != 0;
+                    }
+                    if (!is_constant_true)
+                    {
+                        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                            "LATERAL JOIN does not support non-trivial ON conditions. Use ON true and move "
+                            "filter predicates into the lateral subquery's WHERE clause");
+                    }
+                }
+
+                /// Reject unsupported join kinds: only INNER and LEFT are supported
+                auto lateral_kind = join_node.getKind();
+                if (lateral_kind != JoinKind::Inner && lateral_kind != JoinKind::Left)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN only supports INNER and LEFT join kinds. "
+                        "{} JOIN LATERAL is not supported", toString(lateral_kind));
+
+                /// Reject unsupported strictness: only ALL (default) is supported
+                auto lateral_strictness = join_node.getStrictness();
+                if (lateral_strictness != JoinStrictness::Unspecified && lateral_strictness != JoinStrictness::All)
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN does not support {} strictness",
+                        toString(lateral_strictness));
+
+                const QueryTreeNodes & correlated_columns = query_node_right
+                    ? query_node_right->getCorrelatedColumns().getNodes()
+                    : union_node_right->getCorrelatedColumns().getNodes();
+
+                if (correlated_columns.empty())
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "LATERAL JOIN subquery must reference at least one column from the left side. "
+                        "Use a regular JOIN for non-correlated subqueries");
+
+                ColumnIdentifiers correlated_column_identifiers;
+                correlated_column_identifiers.reserve(correlated_columns.size());
+                for (const auto & column : correlated_columns)
+                {
+                    correlated_column_identifiers.push_back(
+                        calculateActionNodeName(column, *planner_context));
+                }
+
+                /// Build the LATERAL JOIN using correlated subquery decorrelation
+                String action_node_name = fmt::format("__lateral_join_{}", i);
+                CorrelatedSubquery correlated_subquery(
+                    right_table_expression,
+                    CorrelatedSubqueryKind::LATERAL_JOIN,
+                    action_node_name,
+                    std::move(correlated_column_identifiers));
+                correlated_subquery.lateral_join_kind = join_node.getKind();
+
+                buildQueryPlanForCorrelatedSubquery(
+                    planner_context, left_query_plan.query_plan, correlated_subquery, select_query_options);
+
+                query_plans_stack.push_back(std::move(left_query_plan));
+            }
+            else
+            {
+                if (query_plans_stack.size() < 2)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR,
+                        "Expected at least 2 query plans on stack before JOIN processing. Actual {}",
+                        query_plans_stack.size());
+
+                auto right_query_plan = std::move(query_plans_stack.back());
+                query_plans_stack.pop_back();
+
+                auto left_query_plan = std::move(query_plans_stack.back());
+                query_plans_stack.pop_back();
+
+                query_plans_stack.push_back(buildQueryPlanForJoinNode(
+                    table_expression,
+                    std::move(left_query_plan),
+                    std::move(right_query_plan),
+                    table_expressions_outer_scope_columns[i],
+                    planner_context));
+            }
         }
         else if (table_expression_node_type == QueryTreeNodeType::CROSS_JOIN)
         {
@@ -3549,18 +3666,28 @@ JoinTreeQueryPlan buildJoinTreeQueryPlan(const QueryTreeNodePtr & query_node,
                 continue;
             }
 
-            /** If table expression is remote and it is not left most table expression, we wrap read columns from such
-              * table expression in subquery.
-              */
-            bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
-            query_plans_stack.push_back(buildQueryPlanForTableExpression(
-                table_expression,
-                nullptr /*parent_join_tree*/,
-                select_query_info,
-                select_query_options,
-                planner_context,
-                is_single_table_expression,
-                is_remote /*wrap_read_columns_in_subquery*/));
+            /// For LATERAL JOINs, skip building a plan for the right side — it will be
+            /// rebuilt via decorrelation. Push an empty plan as a placeholder that will be
+            /// discarded when the LATERAL JOIN node is processed.
+            if (lateral_right_table_expressions.contains(table_expression.get()))
+            {
+                query_plans_stack.emplace_back();
+            }
+            else
+            {
+                /** If table expression is remote and it is not left most table expression, we wrap read columns from such
+                  * table expression in subquery.
+                  */
+                bool is_remote = planner_context->getTableExpressionDataOrThrow(table_expression).isRemote();
+                query_plans_stack.push_back(buildQueryPlanForTableExpression(
+                    table_expression,
+                    nullptr /*parent_join_tree*/,
+                    select_query_info,
+                    select_query_options,
+                    planner_context,
+                    is_single_table_expression,
+                    is_remote /*wrap_read_columns_in_subquery*/));
+            }
         }
     }
 

@@ -4,6 +4,7 @@
 #include <string_view>
 #include <vector>
 
+#include <Core/Joins.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 
 namespace DB
@@ -25,6 +26,7 @@ enum class CorrelatedSubqueryKind
 {
     SCALAR,
     EXISTS,
+    LATERAL_JOIN,
 };
 
 struct CorrelatedSubquery
@@ -40,6 +42,9 @@ struct CorrelatedSubquery
     CorrelatedSubqueryKind kind;
     String action_node_name;
     ColumnIdentifiers correlated_column_identifiers;
+
+    /// For LATERAL_JOIN kind: the join kind (LEFT, INNER, etc.)
+    JoinKind lateral_join_kind = JoinKind::Left;
 };
 
 using CorrelatedSubqueries = std::vector<CorrelatedSubquery>;
