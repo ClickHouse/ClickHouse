@@ -700,7 +700,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     LoggerPtr log,
-    ReadFromMergeTree::IndexStats & index_stats)
+    ReadFromMergeTree::IndexStats & index_stats,
+    bool check_index_usage)
 {
     RangesInDataParts res;
     const Settings & settings = context->getSettingsRef();
@@ -709,7 +710,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     if (minmax_idx_condition)
         minmax_columns_types = MergeTreeData::getMinMaxColumns(metadata_snapshot->getPartitionKey(), data.getSettings()).getTypes();
 
-    if (metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
+    if (check_index_usage && metadata_snapshot->hasPartitionKey() && settings[Setting::force_index_by_date]
         && (!minmax_idx_condition || minmax_idx_condition->generateUnsubstituted().alwaysUnknownOrTrue())
         && (!partition_pruner || partition_pruner->isUseless()))
     {

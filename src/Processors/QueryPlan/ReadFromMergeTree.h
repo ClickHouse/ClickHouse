@@ -450,6 +450,17 @@ public:
     /// instead of all prepared parts. Passing nullptr falls back to getParts().
     ConditionSelectivityEstimatorPtr getConditionSelectivityEstimator(const Names & required_columns, const AnalysisResultPtr & analyzed_result) const;
 
+    ConditionSelectivityEstimatorPtr getConditionSelectivityEstimatorForPrewhere(
+        const Names & required_columns, const ActionsDAG::Node * predicate) const;
+
+    static RangesInDataParts filterPartsForStatistics(
+        const RangesInDataParts & parts,
+        const ActionsDAG::Node * predicate,
+        const MergeTreeData & data,
+        const StorageMetadataPtr & metadata_snapshot,
+        const ContextPtr & query_context,
+        bool skip_partition_pruning_ = false);
+
     static void buildIndexes(
         std::optional<ReadFromMergeTree::Indexes> & indexes,
         const ActionsDAG * filter_actions_dag_,
@@ -542,6 +553,15 @@ public:
     static std::unique_ptr<IQueryPlanStep> deserialize(Deserialization & ctx);
 
 private:
+    static void buildPartitionPruningIndexes(
+        Indexes & indexes,
+        const std::shared_ptr<ActionsDAGWithInversionPushDown> & filter_dag_ptr,
+        const MergeTreeData & data,
+        const ContextPtr & query_context,
+        const StorageMetadataPtr & metadata_snapshot,
+        bool skip_partition_pruning_,
+        bool require_ready_sets = false);
+
     MergeTreeSettingsPtr data_settings;
     MergeTreeReaderSettings reader_settings;
 

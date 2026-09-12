@@ -80,6 +80,7 @@
 #include <Processors/QueryPlan/OffsetStep.h>
 #include <Processors/QueryPlan/NegativeOffsetStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ReadNothingStep.h>
 #include <Processors/QueryPlan/RollupStep.h>
@@ -208,6 +209,7 @@ namespace Setting
     extern const SettingsFloat totals_auto_threshold;
     extern const SettingsTotalsMode totals_mode;
     extern const SettingsBool use_concurrency_control;
+    extern const SettingsBool use_statistics;
     extern const SettingsBool use_with_fill_by_sorting_prefix;
     extern const SettingsFloat min_hit_rate_to_use_consecutive_keys_optimization;
     extern const SettingsUInt64 max_rows_to_group_by;
@@ -949,9 +951,17 @@ InterpreterSelectQuery::InterpreterSelectQuery(
                 const auto * where_function = query.where()->as<ASTFunction>();
                 const bool has_multiple_conditions = where_function && where_function->name == "and";
                 const bool has_statistics = storage_snapshot->metadata->hasStatistics();
-                auto estimator = (has_statistics && has_multiple_conditions)
-                                    ? storage->getConditionSelectivityEstimator(parts_for_estimator, queried_columns, context)
-                                    : nullptr;
+                ConditionSelectivityEstimatorPtr estimator;
+                if (has_statistics && has_multiple_conditions && context->getSettingsRef()[Setting::use_statistics])
+                {
+                    if (const auto * merge_tree = dynamic_cast<const MergeTreeData *>(storage.get()))
+                    {
+                        auto filter = ExpressionAnalyzer(query.where()->clone(), syntax_analyzer_result, context).getActionsDAG(true);
+                        parts_for_estimator = ReadFromMergeTree::filterPartsForStatistics(
+                            parts_for_estimator, filter.getOutputs().front(), *merge_tree, storage_snapshot->metadata, context);
+                    }
+                    estimator = storage->getConditionSelectivityEstimator(parts_for_estimator, queried_columns, context);
+                }
 
                 MergeTreeWhereOptimizer where_optimizer{
                     std::move(column_compressed_sizes),

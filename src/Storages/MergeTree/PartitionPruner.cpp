@@ -9,14 +9,17 @@ PartitionPruner::PartitionPruner(
     const ActionsDAGWithInversionPushDown & filter_dag,
     ContextPtr context,
     bool strict,
-    bool skip_analysis)
+    bool skip_analysis,
+    bool require_ready_sets)
     : partition_key(MergeTreePartition::adjustPartitionKey(metadata, context))
     , partition_condition(
           filter_dag,
           context,
-          partition_key,
+          partition_key.column_names,
+          partition_key.expression,
           true /* single_point */,
-          skip_analysis)
+          skip_analysis,
+          require_ready_sets)
     , useless((strict && partition_condition.isRelaxed()) || partition_condition.alwaysUnknownOrTrue())
 {
 }
