@@ -163,6 +163,11 @@ AvroSerializer::SchemaWithSerializeFn AvroSerializer::createSchemaWithSerializeF
             {
                 encoder.encodeLong(assert_cast<const ColumnUInt64 &>(column).getElement(row_num));
             }};
+        case TypeIndex::MacAddress:
+            return {avro::LongSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
+            {
+                encoder.encodeLong(assert_cast<const ColumnVector<MacAddress> &>(column).getElement(row_num).toUInt64());
+            }};
         case TypeIndex::Int64:
             return {avro::LongSchema(), [](const IColumn & column, size_t row_num, avro::Encoder & encoder)
             {

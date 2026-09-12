@@ -72,6 +72,11 @@ void MsgPackRowOutputFormat::serializeField(const IColumn & column, DataTypePtr 
             packer.pack_uint64(assert_cast<const ColumnUInt64 &>(column).getElement(row_num));
             return;
         }
+        case TypeIndex::MacAddress:
+        {
+            packer.pack_uint64(assert_cast<const ColumnVector<MacAddress> &>(column).getElement(row_num).toUInt64());
+            return;
+        }
         case TypeIndex::Enum8: [[fallthrough]];
         case TypeIndex::Int8:
         {

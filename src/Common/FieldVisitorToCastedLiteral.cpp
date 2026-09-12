@@ -105,6 +105,11 @@ String FieldVisitorToCastedLiteral::operator() (const IPv6 & x) const
     return FieldVisitorToString()(x) + "::IPv6";
 }
 
+String FieldVisitorToCastedLiteral::operator() (const MacAddress & x) const
+{
+    return FieldVisitorToString()(x) + "::MacAddress";
+}
+
 String FieldVisitorToCastedLiteral::operator() (const DecimalField<Decimal32> & x) const
 {
     return FieldVisitorToString()(x) + "::Decimal32(" + std::to_string(x.getScale()) + ")";

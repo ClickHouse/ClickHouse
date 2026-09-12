@@ -1518,6 +1518,15 @@ void ColumnVector<T>::serializeAsComparable(size_t n, String & out) const
         transformEndianness<std::endian::big>(value);
         out.append(reinterpret_cast<const char *>(&value), sizeof(UInt128));
     }
+    else if constexpr (std::is_same_v<T, MacAddress>)
+    {
+        /// `toUInt64` masks to the low 48 bits exactly as `MacAddress::operator<` does,
+        /// so the encoding stays order-consistent even if the upper-16-bits-zero
+        /// invariant is ever violated.
+        auto value = data[n].toUInt64();
+        transformEndianness<std::endian::big>(value);
+        out.append(reinterpret_cast<const char *>(&value), sizeof(UInt64));
+    }
     else
     {
         IColumn::serializeAsComparable(n, out);
@@ -1555,6 +1564,7 @@ template class ColumnVector<Float64>;
 template class ColumnVector<UUID>;
 template class ColumnVector<IPv4>;
 template class ColumnVector<IPv6>;
+template class ColumnVector<MacAddress>;
 
 INSTANTIATE_INDEX_TEMPLATE_IMPL(ColumnVector)
 /// Used by ColumnVariant.cpp

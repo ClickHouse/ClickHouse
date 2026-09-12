@@ -681,6 +681,9 @@ buildField(
             case TypeIndex::IPv4:
                 make_int(32, false);
                 break;
+            case TypeIndex::MacAddress:
+                make_int(64, false);
+                break;
             case TypeIndex::UUID:
             case TypeIndex::IPv6:
             case TypeIndex::Int128:

@@ -95,13 +95,13 @@ size_t AvroInputStreamReadBufferAdapter::byteCount() const
 /// Only floating-point to integer/float conversions can cause undefined behavior,
 /// so we only apply range checks for floating-point source types.
 /// Integer-to-integer conversions are always defined (may truncate/wrap).
-template <typename Source, typename Target, typename Column, bool is_ipv4 = false>
+template <typename Source, typename Target, typename Column, bool wrap_in_value_type = false>
 static void convertAndInsert(Column & column, Source value, TypeIndex type_index)
 {
     auto insert = [&](Target value_to_insert)
     {
-        if constexpr (is_ipv4)
-            column.insertValue(IPv4(value_to_insert));
+        if constexpr (wrap_in_value_type)
+            column.insertValue(typename Column::ValueType(value_to_insert));
         else
             column.insertValue(value_to_insert);
     };
@@ -179,6 +179,9 @@ static void insertNumber(IColumn & column, WhichDataType type, T value)
             break;
         case TypeIndex::IPv4:
             convertAndInsert<T, UInt32, ColumnIPv4, true>(assert_cast<ColumnIPv4 &>(column), value, type.idx);
+            break;
+        case TypeIndex::MacAddress:
+            convertAndInsert<T, UInt64, ColumnVector<MacAddress>, true>(assert_cast<ColumnVector<MacAddress> &>(column), value, type.idx);
             break;
         default:
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Type is not compatible with Avro");
@@ -456,7 +459,9 @@ AvroDeserializer::DeserializeFn AvroDeserializer::createDeserializeFn(const avro
             }
             break;
         case avro::AVRO_LONG:
-            if (target_type->isValueRepresentedByNumber())
+            /// `MacAddress` is written as a `long`, but unlike `IPv4` it is not represented by a
+            /// number, so it has to be named explicitly to be readable back.
+            if (target_type->isValueRepresentedByNumber() || target.isMacAddress())
             {
                 return [target](IColumn & column, avro::Decoder & decoder)
                 {

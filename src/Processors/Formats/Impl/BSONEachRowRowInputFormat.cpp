@@ -168,6 +168,17 @@ static void readAndInsertIPv4(ReadBuffer & in, IColumn & column, BSONType bson_t
     assert_cast<ColumnIPv4 &>(column).insertValue(IPv4(value));
 }
 
+static void readAndInsertMacAddress(ReadBuffer & in, IColumn & column, BSONType bson_type)
+{
+    /// We expect BSON type Int64 as MacAddress value.
+    if (bson_type != BSONType::INT64)
+        throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Cannot insert BSON {} into column with type MacAddress", getBSONTypeName(bson_type));
+
+    UInt64 value = 0;
+    readBinaryLittleEndian(value, in);
+    assert_cast<ColumnVector<MacAddress> &>(column).insertValue(MacAddress(value));
+}
+
 template <typename T>
 static void readAndInsertDouble(ReadBuffer & in, IColumn & column, const DataTypePtr & data_type, BSONType bson_type)
 {
@@ -667,6 +678,11 @@ bool BSONEachRowRowInputFormat::readField(IColumn & column, const DataTypePtr & 
             readAndInsertIPv4(*in, column, bson_type);
             return true;
         }
+        case TypeIndex::MacAddress:
+        {
+            readAndInsertMacAddress(*in, column, bson_type);
+            return true;
+        }
         case TypeIndex::IPv6:
         {
             readAndInsertIPv6(*in, column, bson_type);
@@ -1155,6 +1171,7 @@ For output it uses the following correspondence between ClickHouse types and BSO
 | [Map](/reference/data-types/map)                                                                       | `\x03` document                                                                                               |
 | [IPv4](/reference/data-types/ipv4)                                                                     | `\x10` int32                                                                                                  |
 | [IPv6](/reference/data-types/ipv6)                                                                     | `\x05` binary, `\x00` binary subtype                                                                          |
+| [MacAddress](/reference/data-types/macaddress)                                                         | `\x12` int64                                                                                                  |
 
 For input it uses the following correspondence between BSON types and ClickHouse types:
 
@@ -1175,7 +1192,7 @@ For input it uses the following correspondence between BSON types and ClickHouse
 | `\x0D` JavaScript code                   | [String](/reference/data-types/string)/[FixedString](/reference/data-types/fixedstring)                                                                                                                       |
 | `\x0E` symbol                            | [String](/reference/data-types/string)/[FixedString](/reference/data-types/fixedstring)                                                                                                                       |
 | `\x10` int32                             | [Int32/UInt32](/reference/data-types/int-uint)/[Decimal32](/reference/data-types/decimal)/[IPv4](/reference/data-types/ipv4)/[Enum8/Enum16](/reference/data-types/enum) |
-| `\x12` int64                             | [Int64/UInt64](/reference/data-types/int-uint)/[Decimal64](/reference/data-types/decimal)/[DateTime64](/reference/data-types/datetime64)                                                       |
+| `\x12` int64                             | [Int64/UInt64](/reference/data-types/int-uint)/[Decimal64](/reference/data-types/decimal)/[DateTime64](/reference/data-types/datetime64)/[MacAddress](/reference/data-types/macaddress)                                                       |
 
 Other BSON types are not supported. Additionally, it performs conversion between different integer types. 
 For example, it is possible to insert a BSON `int32` value into ClickHouse as [`UInt8`](/reference/data-types/int-uint).

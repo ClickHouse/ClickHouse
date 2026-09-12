@@ -919,6 +919,7 @@ private:
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<UUID>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<IPv4>>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<IPv6>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnVector<MacAddress>>, strategy>,
 
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnString>, strategy>,
         SortingQueueForCursor<SpecializedSingleColumnSortCursor<ColumnFixedString>, strategy>,
@@ -950,6 +951,7 @@ private:
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<UUID>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv4>>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<IPv6>>, strategy>,
+        SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnVector<MacAddress>>, strategy>,
 
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnString>, strategy>,
         SortingQueueForCursor<SpecializedSingleNullableColumnSortCursor<ColumnFixedString>, strategy>,
