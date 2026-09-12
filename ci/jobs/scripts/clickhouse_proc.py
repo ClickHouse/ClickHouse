@@ -323,6 +323,30 @@ class ClickHouseProc:
                 f"Removed {file_path}; server default max_server_memory_usage_to_ram_ratio applies"
             )
 
+    def install_build_type_configs(self):
+        """Re-decide the test configs that `install.sh` selects by probing the
+        installed binary's build flavour. Needed when the same installed config
+        tree is reused to launch a different build type (the bugfix-validation
+        loop swaps binaries without reinstalling configs): one left from the
+        previous build type makes the server reject its own settings."""
+        # `install.sh` shifts away its first two positionals, so the client config
+        # dir has to be passed as well or the flag is consumed in its place.
+        client_config_dir = Path(self.ch_config_dir).parent / "clickhouse-client"
+        # A server is started from each replica tree as well, so each tree needs its
+        # own decision. They hold a populated `config.d` only in `DBReplicated` runs,
+        # so probing for them selects exactly the installed ones.
+        config_dirs = [self.ch_config_dir] + [
+            d
+            for d in (self.ch_config_dir_replica_1, self.ch_config_dir_replica_2)
+            if Path(d, "config.d").is_dir()
+        ]
+        for config_dir in config_dirs:
+            Shell.run(
+                f"./tests/config/install.sh {config_dir} {client_config_dir} --build-type-configs-only",
+                verbose=True,
+                strict=True,
+            )
+
     def create_log_export_config(self, config_dir=None):
         # Write into the config dir the server actually reads. Callers that run
         # the server from a non-default location (e.g. `ClickHouseService` under
