@@ -1000,8 +1000,20 @@ def test_optimize_manifest_files_all_deleted(started_cluster_iceberg_with_spark,
 
         Scoped to the current snapshot via its snap-<id>-*.avro manifest list, since older
         snapshots' manifests hold live entries.
+
+        Everything is read inside the instance, and the current snapshot is resolved the way
+        ClickHouse resolves it - from the `v<N>.metadata.json` with the highest version. The
+        host-side helpers cannot be used here: `default_upload_directory` copies Spark's table
+        *into* the container, so the host only ever sees what Spark wrote, while
+        `OPTIMIZE TABLE ... MANIFEST` commits its new metadata inside the container.
         """
-        current_snapshot_id = get_last_snapshot(table_path)
+        current_snapshot_id = instance.query(
+            f"SELECT JSONExtractInt(json, 'current-snapshot-id') "
+            f"FROM file('{metadata_dir}/v*.metadata.json', JSONAsString) "
+            f"ORDER BY toUInt32(extract(_file, '^v([0-9]+)')) DESC LIMIT 1"
+        ).strip()
+        assert current_snapshot_id, "no v<N>.metadata.json in the table's metadata directory"
+
         snap_files = (
             instance.exec_in_container(
                 ["bash", "-c", f"find '{metadata_dir}' -maxdepth 1 -name 'snap-{current_snapshot_id}-*.avro' -type f"]
