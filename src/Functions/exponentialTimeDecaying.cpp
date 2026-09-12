@@ -328,11 +328,11 @@ sensitive inputs when stronger numerical reproducibility is required.
         .returned_value = {"Returns the combined `ExponentialTimeDecayingFloat64(decay_length)` value.", {}},
         .examples = {{
             "Add values with the same decay length",
-            "SELECT exponentialTimeDecayingAdd("
+            "SELECT round(exponentialTimeDecayingValueAt(exponentialTimeDecayingAdd("
             "exponentialTimeDecayingFloat64(10)(2.718281828459045, toFloat64(0)), "
-            "exponentialTimeDecayingFloat64(10)(4, toFloat64(10))) "
+            "exponentialTimeDecayingFloat64(10)(4, toFloat64(10))), toFloat64(10)), 6) "
             "SETTINGS allow_experimental_time_decay_aggregate_functions = 1",
-            "(1,26.094379124341003,10)"}},
+            "5"}},
         .introduced_in = {26, 8},
         .category = FunctionDocumentation::Category::Other});
 
