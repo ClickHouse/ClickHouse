@@ -70,7 +70,6 @@ namespace Setting
     extern const SettingsBool use_join_disjunctions_push_down;
     extern const SettingsBool enable_lazy_columns_replication;
     extern const SettingsBool enable_software_prefetch_in_join;
-    extern const SettingsBool legacy_join_size_limits_trigger_spilling;
     extern const SettingsBool use_hash_table_stats_for_join_reordering;
     extern const SettingsUInt64 max_bytes_before_external_join;
     extern const SettingsDouble max_bytes_ratio_before_external_join;
@@ -127,7 +126,6 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool use_join_disjunctions_push_down;
     extern const QueryPlanSerializationSettingsBool enable_lazy_columns_replication;
     extern const QueryPlanSerializationSettingsBool enable_software_prefetch_in_join;
-    extern const QueryPlanSerializationSettingsBool legacy_join_size_limits_trigger_spilling;
     extern const QueryPlanSerializationSettingsBool use_hash_table_stats_for_join_reordering;
 
     extern const QueryPlanSerializationSettingsBool enable_join_fixed_hash_table_conversion;
@@ -188,7 +186,6 @@ JoinSettings::JoinSettings(const Settings & query_settings, JoinAnalyzeMode join
     use_join_disjunctions_push_down = query_settings[Setting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = query_settings[Setting::enable_lazy_columns_replication];
     enable_software_prefetch_in_join = query_settings[Setting::enable_software_prefetch_in_join];
-    legacy_join_size_limits_trigger_spilling = query_settings[Setting::legacy_join_size_limits_trigger_spilling];
 
     use_hash_table_stats_for_join_reordering = query_settings[Setting::use_hash_table_stats_for_join_reordering];
 
@@ -248,7 +245,6 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings)
     use_join_disjunctions_push_down = settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down];
     enable_lazy_columns_replication = settings[QueryPlanSerializationSetting::enable_lazy_columns_replication];
     enable_software_prefetch_in_join = settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join];
-    legacy_join_size_limits_trigger_spilling = settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling];
     use_hash_table_stats_for_join_reordering = settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering];
 
     enable_join_fixed_hash_table_conversion = settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion];
@@ -307,7 +303,6 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings)
     settings[QueryPlanSerializationSetting::use_join_disjunctions_push_down] = use_join_disjunctions_push_down;
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
     settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join] = enable_software_prefetch_in_join;
-    settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling] = legacy_join_size_limits_trigger_spilling;
     settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering] = use_hash_table_stats_for_join_reordering;
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;

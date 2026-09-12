@@ -14,6 +14,12 @@ SET enable_parallel_replicas = 0;
 SET enable_join_runtime_filters = 0;
 SET param__internal_cascades_cluster_node_count = 4;
 
+-- The rejected queries below pin the rejection itself, so each keeps the exception instead of
+-- taking the local-execution fallback. The setting is per query rather than session-wide because
+-- `make_distributed_plan` is set for the whole session here, and a session-wide strict mode would
+-- also reject the `INSERT ... SELECT FROM numbers()` seeding below (a `system.numbers` read cannot
+-- execute remotely).
+
 DROP TABLE IF EXISTS t_paste_left;
 DROP TABLE IF EXISTS t_paste_right;
 
@@ -24,18 +30,20 @@ INSERT INTO t_paste_left SELECT number FROM numbers(100000);
 INSERT INTO t_paste_right SELECT number * 10 FROM numbers(1000);
 
 SELECT '-- 1. PASTE JOIN is rejected under Cascades';
-SELECT count() FROM (SELECT * FROM t_paste_left PASTE JOIN t_paste_right); -- { serverError SUPPORT_IS_DISABLED }
+SELECT count() FROM (SELECT * FROM t_paste_left PASTE JOIN t_paste_right)
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT '-- 2. Baseline without Cascades';
 SELECT count() FROM (SELECT * FROM t_paste_left PASTE JOIN t_paste_right)
 SETTINGS enable_cascades_optimizer = 0, make_distributed_plan = 0;
 
 SELECT '-- 3. PASTE JOIN nested under aggregation is also rejected';
-SELECT sum(x + y) FROM (SELECT * FROM t_paste_left PASTE JOIN t_paste_right) WHERE x < 100; -- { serverError SUPPORT_IS_DISABLED }
+SELECT sum(x + y) FROM (SELECT * FROM t_paste_left PASTE JOIN t_paste_right) WHERE x < 100
+SETTINGS distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 SELECT '-- 4. Rejected without Cascades too (legacy path gathers a distributed read below the join)';
 SELECT count() FROM (SELECT * FROM t_paste_left PASTE JOIN t_paste_right)
-SETTINGS enable_cascades_optimizer = 0; -- { serverError SUPPORT_IS_DISABLED }
+SETTINGS enable_cascades_optimizer = 0, distributed_plan_fallback_to_local_execution = 0; -- { serverError SUPPORT_IS_DISABLED }
 
 DROP TABLE t_paste_left;
 DROP TABLE t_paste_right;

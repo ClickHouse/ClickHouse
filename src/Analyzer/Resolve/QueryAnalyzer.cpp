@@ -1553,15 +1553,40 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifier(const IdentifierLook
 
         if (unlikely(prefer_column_name_to_alias))
         {
+            bool can_check_aliases = identifier_resolve_context.allow_to_check_aliases && !already_in_resolve_process;
+            bool ambiguous_in_join_tree = false;
+
             if (identifier_resolve_context.allow_to_check_join_tree)
             {
-                resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
+                /** A column name that is ambiguous between joined tables but also names an alias resolves to the alias,
+                  * as the old analyzer did (`JoinToSubqueryTransformVisitor`, `allow_ambiguous = got_alias`).
+                  * Example: SELECT t1.x AS x FROM t1, t2, t3 WHERE ... ORDER BY x
+                  */
+                bool alias_can_take_over = can_check_aliases
+                    && identifier_lookup.isExpressionLookup()
+                    && scope.aliases.find(identifier_lookup, ScopeAliases::FindOption::FIRST_NAME) != nullptr;
+
+                if (alias_can_take_over)
+                {
+                    auto tolerant_lookup = identifier_lookup;
+                    tolerant_lookup.allow_ambiguous_join_tree_identifier = true;
+                    resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(tolerant_lookup, scope);
+                    ambiguous_in_join_tree = resolve_result.ambiguous_in_join_tree;
+                }
+                else
+                {
+                    resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
+                }
             }
 
-            if (identifier_resolve_context.allow_to_check_aliases && !resolve_result.resolved_identifier && !already_in_resolve_process)
+            if (can_check_aliases && !resolve_result.resolved_identifier)
             {
                 resolve_result = tryResolveIdentifierFromAliases(identifier_lookup, scope, identifier_resolve_context);
             }
+
+            /// No alias took over: resolve from the join tree again to throw the original `AMBIGUOUS_IDENTIFIER`.
+            if (ambiguous_in_join_tree && !resolve_result.resolved_identifier)
+                resolve_result = identifier_resolver.tryResolveIdentifierFromJoinTree(identifier_lookup, scope);
         }
         else
         {
@@ -2609,6 +2634,9 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
 
                 if (apply_transformer->getApplyTransformerType() == ApplyColumnTransformerType::LAMBDA)
                 {
+                    /// A lambda body can only learn a matched column's name from this map; the FUNCTION branch below also reads its alias.
+                    node_to_projection_name.emplace(node, result_projection_names.back());
+
                     auto lambda_expression_to_resolve = expression_node->clone();
                     auto & lambda_scope = createIdentifierResolveScope(lambda_expression_to_resolve, /*parent_scope=*/&scope);
                     node_projection_names = resolveLambda(expression_node, lambda_expression_to_resolve, {node}, lambda_scope);

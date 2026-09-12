@@ -61,6 +61,10 @@ public:
     /// The function returns false if user-defined function at a specified zk path are being already restored by another replica.
     bool acquireReplicatedSQLObjects(const String & loader_zk_path, UserDefinedSQLObjectType object_type) override;
 
+    /// Sets that this replica is going to restore replicated workload entities (WORKLOAD and RESOURCE).
+    /// The function returns false if workload entities at a specified zk path are being already restored by another replica.
+    bool acquireReplicatedWorkloadEntities(const String & loader_zk_path) override;
+
     /// Sets that this table is going to restore data into Keeper for all KeeperMap tables defined on root_zk_path.
     /// The function returns false if data for this specific root path is already being restored by another table.
     bool acquireInsertingDataForKeeperMap(const String & root_zk_path, const String & table_unique_id) override;
