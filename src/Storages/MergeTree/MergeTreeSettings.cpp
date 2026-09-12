@@ -734,12 +734,16 @@ writing a text index never fails because of this setting.
 
 During a rolling upgrade, pin the format with the profile-level `compatibility` setting on
 the already upgraded servers, so that they keep writing the format that older servers can still read.
+`jsonPathValues` indexes are an exception: they always use at least `v3_with_tokenizer_config`,
+even when `compatibility` or this setting selects an older version. Do not create or materialize
+these indexes until every replica can read `v3_with_tokenizer_config`.
 
 Possible values:
 
 - `v0_initial` — The original format. Does not persist the posting list codec type.
 - `v1_with_codec` — Persists the posting list codec type in the text index header.
 - `v2_with_positions` — Persists token positions for indexes with `support_phrase_search`.
+- `v3_with_tokenizer_config` — Persists tokenizer configuration required to read `jsonPathValues` indexes.
 )", 0) \
     DECLARE(UInt64, merge_selecting_sleep_ms, 5000, R"(
 Minimum time to wait before trying to select parts to merge again after no

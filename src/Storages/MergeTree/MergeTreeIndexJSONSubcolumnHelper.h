@@ -15,8 +15,16 @@ struct JSONSubcolumnIndexInfo
 {
     String json_column_name;       /// e.g., "json"
     String path;                   /// e.g., "a.b"
+    String escaped_path;           /// literal brackets/backslashes escaped; structural Array(JSON) [] retained
     size_t header_position;        /// position of JSONAllPaths column in the index header
+    size_t array_json_levels = 0;  /// number of Array(JSON) levels represented by [] in path
 };
+
+/// Match a JSON subcolumn name against a known JSON base column.
+std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumn(
+    const String & column_name,
+    const String & json_column_name,
+    size_t header_position = 0);
 
 /// Try to match a column name from the filter DAG to a JSON index column in the header.
 /// Scans the index columns, not the dot positions of `column_name`, so cost is independent of the
@@ -67,5 +75,7 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchNodeToJSONIndex(
 bool isJSONPathFilterSafe(
     const DataTypePtr & key_expression_type,
     const Field & value_field);
+
+String serializeFieldAsText(const Field & value, const DataTypePtr & type);
 
 }
