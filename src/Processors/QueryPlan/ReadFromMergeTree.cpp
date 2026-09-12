@@ -3492,7 +3492,15 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
         .result = result,
     };
 
-    if (context_->canUseParallelReplicasOnFollower() && settings[Setting::parallel_replicas_local_plan]
+    /// Only a read the coordinator actually drives may skip its own analysis, because the coordinator is
+    /// what assigns its ranges, off the analysis done on the initiator. `canUseParallelReplicasOnFollower`
+    /// alone does not say that: with plan-based parallel replicas the whole fragment is rebuilt on the
+    /// follower from one shared context, so an uncoordinated read shipped in it - the broadcast side of a
+    /// JOIN - answers `true` here as well, and skipping would leave it reading every mark with nobody to
+    /// narrow it. Such a read has to analyze itself in any case: an analysis made on the initiator names
+    /// the initiator's parts, which are not the parts this replica reads.
+    if (context_->canUseParallelReplicasOnFollower() && is_parallel_reading_from_replicas_
+        && settings[Setting::parallel_replicas_local_plan]
         && settings[Setting::parallel_replicas_index_analysis_only_on_coordinator]
         /// If parallel replicas support projection optimization, selected_marks will be used to determine the optimal projection.
         && !support_projection_optimization)
