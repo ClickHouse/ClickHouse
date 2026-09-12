@@ -1,5 +1,6 @@
 #include <Interpreters/QueryOracleChecker.h>
 
+#include <Access/EnabledRowPolicies.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 
 #include <Common/ProfileEvents.h>
@@ -7,6 +8,7 @@
 #include <Interpreters/Context.h>
 #include <Interpreters/GetAggregatesVisitor.h>
 #include <Interpreters/executeQuery.h>
+#include <Interpreters/misc.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
@@ -1022,6 +1024,125 @@ bool referencesDistributedTableAnywhere(const ASTPtr & ast, const ContextPtr & c
     }
     for (const auto & child : ast->children)
         if (referencesDistributedTableAnywhere(child, context))
+            return true;
+    return false;
+}
+
+constexpr size_t MAX_DEFINITION_SCREEN_DEPTH = 8;
+
+/// A query names relations and columns; reading them evaluates the definitions
+/// stored behind those names, and each read re-evaluates them, so the oracle's
+/// two reads of one name can observe different values while the query's own AST
+/// holds only an `ASTTableIdentifier`. A view reading another view recurses, and
+/// the depth cap bounds a chain closed into a cycle by `CREATE OR REPLACE`.
+bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr & context, size_t depth = 0)
+{
+    if (!ast)
+        return false;
+    if (depth > MAX_DEFINITION_SCREEN_DEPTH)
+        return true;
+
+    if (const auto * table_id = ast->as<ASTTableIdentifier>())
+    {
+        try
+        {
+            /// Resolve the name as a read resolves it: a temporary view lives in the session
+            /// namespace, not a database, and a `{name:Identifier}` placeholder has no name
+            /// until substitution. A name that does not resolve cannot be proven safe.
+            const StorageID resolved = context->tryResolveStorageID(StorageID{table_id->getDatabaseName(), table_id->shortName()});
+            if (!resolved)
+                return true;
+
+            if (auto storage = DatabaseCatalog::instance().tryGetTable(resolved, context))
+            {
+                /// An engine that returns rows it does not store evaluates a definition that
+                /// is neither in this AST nor in its own metadata, so its engine name does
+                /// not say what a read of it evaluates.
+                if (storage->readsFromOtherTables())
+                    return true;
+
+                /// A `MaterializedView` read is forwarded to whatever its target name resolves to
+                /// at read time, and a refresh replaces that table, so this metadata does not
+                /// describe what a read of this name evaluates.
+                if (storage->getName() == "MaterializedView")
+                    return true;
+
+                auto metadata = storage->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+                ASTs definitions;
+
+                /// Match the engine name: `isView()` is also true for `MaterializedView`.
+                if (storage->getName() == "View")
+                {
+                    /// A `DEFINER` view evaluates its body as the definer, so the row policies a read
+                    /// of it applies are that user's, while the screen below resolves them for the
+                    /// current one. `NONE` runs with no user at all, where no policy applies.
+                    if (metadata->sql_security_type == SQLSecurityType::DEFINER)
+                        return true;
+
+                    /// `hasSelectQuery()` tests `select_query`, which `StorageView`
+                    /// never sets; `inner_query` is what `readImpl` evaluates.
+                    const auto & inner_query = metadata->getSelectQuery().inner_query;
+                    if (!inner_query)
+                        return true;
+                    definitions.push_back(inner_query);
+                }
+
+                /// A read evaluates an `ALIAS` expression always, and any other kind for a column
+                /// the part does not store, which this metadata does not say. Supplying one also
+                /// pulls in the defaults its own expression needs, reaching an `EPHEMERAL` one.
+                for (const auto & column : metadata->getColumns())
+                    if (column.default_desc.expression)
+                        definitions.push_back(column.default_desc.expression);
+
+                /// A row policy filters every read of this name for the current user, with an
+                /// expression stored on the policy rather than in this metadata; the lookup a read
+                /// performs resolves a policy on the table and, failing that, one on the database.
+                auto row_policy = context->getRowPolicyFilter(
+                    resolved.getDatabaseName(), resolved.getTableName(), RowPolicyFilterType::SELECT_FILTER);
+                if (row_policy && row_policy->expression)
+                    definitions.push_back(row_policy->expression);
+
+                for (const auto & definition : definitions)
+                    if (hasNonDeterministicFunctionsImpl(definition, context)
+                        || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
+                        || referencesDistributedTableAnywhere(definition, context)
+                        || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
+                        return true;
+            }
+        }
+        catch (...)
+        {
+            /// Ok: fail closed. A name or metadata we cannot read cannot be proven safe, so
+            /// skip the query rather than risk a false oracle mismatch. Deliberately not
+            /// logged: this runs per-AST-node on a hot path.
+            return true;
+        }
+    }
+
+    /// `IN t` names a table and means `IN (SELECT * FROM t)`. That operand is still a plain
+    /// `ASTIdentifier` here, because the rewrite to `ASTTableIdentifier` happens during
+    /// analysis, after this check runs.
+    if (const auto * func = ast->as<ASTFunction>())
+    {
+        if (functionIsInOrGlobalInOperator(func->name) && func->arguments && func->arguments->children.size() > 1)
+        {
+            if (const auto * identifier = func->arguments->children[1]->as<ASTIdentifier>())
+            {
+                /// A name that cannot be read as a table name, such as a `{name:Identifier}`
+                /// placeholder before substitution, cannot be proven safe either.
+                const ASTPtr table_id = identifier->createTable();
+                if (!table_id)
+                    return true;
+
+                /// An operand naming an alias or a CTE needs no exclusion: it resolves to no storage, which the branch above passes over.
+                if (referencesUnscreenedDefinitionAnywhere(table_id, context, depth))
+                    return true;
+            }
+        }
+    }
+
+    for (const auto & child : ast->children)
+        if (referencesUnscreenedDefinitionAnywhere(child, context, depth))
             return true;
     return false;
 }
@@ -2632,6 +2753,15 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
     if (referencesDistributedTableAnywhere(query_ast, context))
     {
         LOG_TRACE(logger, "Oracle skip: query reads from a Distributed table");
+        return false;
+    }
+
+    /// A view body and an `ALIAS` column expression are evaluated on every read,
+    /// so a construct rejected when written in the query must be rejected when a
+    /// name hides it too, or the oracle's reads observe different values.
+    if (referencesUnscreenedDefinitionAnywhere(query_ast, context))
+    {
+        LOG_TRACE(logger, "Oracle skip: query reads a stored definition the gates reject");
         return false;
     }
 
