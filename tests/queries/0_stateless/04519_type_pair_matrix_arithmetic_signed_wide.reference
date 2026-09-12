@@ -70,19 +70,19 @@ Int128 vs Int128	-1007	-1007	-1007	-1007	-993	-993	-993	-993	7000	7000	7000	7000
 Int128 vs Int128 types	Int128	Int128	Int128	Float64	Int128	Int128	UInt128	Int128	Nullable(Int128)	Nullable(Int128)	Nullable(UInt128)
 Int256 vs Int256	-1007	-1007	-1007	-1007	-993	-993	-993	-993	7000	7000	7000	7000	142.85714285714286	142.85714285714286	142.85714285714286	142.85714285714286	142	142	142	142	142	142	142	142	142	142	142	142	-6	-6	-6	-6	-6	-6	-6	-6	-6	-6	-6	-6	1	1	1	1	1	1	1	1	-6	-6	-6	-6	0	0	0	0	\N	\N	\N	\N	0	0	0	0	\N	\N	\N	\N	\N	\N	\N	\N
 Int256 vs Int256 types	Int256	Int256	Int256	Float64	Int256	Int256	UInt256	Int256	Nullable(Int256)	Nullable(Int256)	Nullable(UInt256)
-Int128 vs Float32	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	\N	\N	\N	\N	nan	nan	nan	nan	\N	\N	\N	\N	\N	\N	\N	\N
+Int128 vs Float32	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	\N	\N	\N	\N	0	0	0	0	\N	\N	\N	\N	\N	\N	\N	\N
 Int128 vs Float32 types	Float64	Int128	Float64	Float64	Float64	Nullable(Int128)	Nullable(Float64)	Nullable(Float64)
-Float32 vs Int128	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	0	0	0	0	\N	\N	\N	\N	nan	nan	nan	nan	\N	\N	\N	\N	\N	\N	\N	\N
+Float32 vs Int128	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	0	0	0	0	\N	\N	\N	\N	0	0	0	0	\N	\N	\N	\N	\N	\N	\N	\N
 Float32 vs Int128 types	Float64	Int32	Float64	Float64	Float64	Nullable(Int32)	Nullable(Float64)	Nullable(Float64)
-Int128 vs Float64	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	\N	\N	\N	\N	nan	nan	nan	nan	\N	\N	\N	\N	\N	\N	\N	\N
+Int128 vs Float64	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	\N	\N	\N	\N	0	0	0	0	\N	\N	\N	\N	\N	\N	\N	\N
 Int128 vs Float64 types	Float64	Int128	Float64	Float64	Float64	Nullable(Int128)	Nullable(Float64)	Nullable(Float64)
-Float64 vs Int128	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	0	0	0	0	\N	\N	\N	\N	nan	nan	nan	nan	\N	\N	\N	\N	\N	\N	\N	\N
+Float64 vs Int128	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	0	0	0	0	\N	\N	\N	\N	0	0	0	0	\N	\N	\N	\N	\N	\N	\N	\N
 Float64 vs Int128 types	Float64	Int64	Float64	Float64	Float64	Nullable(Int64)	Nullable(Float64)	Nullable(Float64)
-Int256 vs Float32	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	\N	\N	\N	\N	nan	nan	nan	nan	\N	\N	\N	\N	\N	\N	\N	\N
+Int256 vs Float32	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	\N	\N	\N	\N	0	0	0	0	\N	\N	\N	\N	\N	\N	\N	\N
 Int256 vs Float32 types	Float64	Int256	Float64	Float64	Float64	Nullable(Int256)	Nullable(Float64)	Nullable(Float64)
-Float32 vs Int256	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	0	0	0	0	\N	\N	\N	\N	nan	nan	nan	nan	\N	\N	\N	\N	\N	\N	\N	\N
+Float32 vs Int256	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	0	0	0	0	\N	\N	\N	\N	0	0	0	0	\N	\N	\N	\N	\N	\N	\N	\N
 Float32 vs Int256 types	Float64	Int32	Float64	Float64	Float64	Nullable(Int32)	Nullable(Float64)	Nullable(Float64)
-Int256 vs Float64	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	\N	\N	\N	\N	nan	nan	nan	nan	\N	\N	\N	\N	\N	\N	\N	\N
+Int256 vs Float64	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	-250	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	0	\N	\N	\N	\N	0	0	0	0	\N	\N	\N	\N	\N	\N	\N	\N
 Int256 vs Float64 types	Float64	Int256	Float64	Float64	Float64	Nullable(Int256)	Nullable(Float64)	Nullable(Float64)
-Float64 vs Int256	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	0	0	0	0	\N	\N	\N	\N	nan	nan	nan	nan	\N	\N	\N	\N	\N	\N	\N	\N
+Float64 vs Int256	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1.4285714285714286	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	-1	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	3	0	0	0	0	\N	\N	\N	\N	0	0	0	0	\N	\N	\N	\N	\N	\N	\N	\N
 Float64 vs Int256 types	Float64	Int64	Float64	Float64	Float64	Nullable(Int64)	Nullable(Float64)	Nullable(Float64)
