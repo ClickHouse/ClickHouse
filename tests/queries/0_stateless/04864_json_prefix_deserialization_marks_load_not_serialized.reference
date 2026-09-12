@@ -7,5 +7,3 @@ async: scheduled background marks loads
 prefetch: scheduled background marks loads
 prefix prefetch callback ran for every dynamic path
 async: marks loading overlaps across prefix tasks
-prefetch: marks loading overlaps across prefix tasks
-sync: marks loading overlaps across prefix tasks

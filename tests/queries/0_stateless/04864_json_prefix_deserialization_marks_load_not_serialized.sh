@@ -75,7 +75,9 @@ FROM t LIMIT 1;
 SYSTEM ENABLE FAILPOINT merge_tree_marks_load_sync_sleep;
 
 -- Three arms. 'async' additionally reaches the carriers that exist only while a marks load can
--- still be in flight; 'prefetch' additionally executes the prefix prefetch callback.
+-- still be in flight; 'prefetch' additionally executes the prefix prefetch callback. Only 'async'
+-- carries the overlap verdict at the end of this query; the other two run for the code paths they
+-- reach and for the deterministic checks below.
 SELECT count() FROM (SELECT j FROM t LIMIT 1)
 SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, log_comment = 'sync'
 FORMAT Null;
@@ -95,7 +97,7 @@ SYSTEM DISABLE FAILPOINT merge_tree_marks_load_sync_sleep;
 SYSTEM FLUSH LOGS query_log, filesystem_read_prefetches_log;
 
 -- Load-bearing preconditions: without a measurable wait, or without a background load in the
--- asynchronous arms, the ratios below would be vacuous. The same query without the failpoint waits
+-- asynchronous arms, the ratio below would be vacuous. The same query without the failpoint waits
 -- under 15 ms, so one second is unreachable unless the injected sleep ran.
 SELECT log_comment || ': ' || if(ProfileEvents['WaitMarksLoadMicroseconds'] > 1000000,
           'marks-load wait is measurable',
@@ -117,38 +119,30 @@ SELECT if(count() = 39, 'prefix prefetch callback ran for every dynamic path',
           'UNEXPECTED prefix prefetch count: ' || toString(count()))
 FROM system.filesystem_read_prefetches_log WHERE path LIKE '%dynamic\_structure%';
 
--- The assertion. Master serializes every load behind one mutex, giving ratio ~= 1.0.
+-- The assertion. Master serializes every load behind one mutex, giving ratio <= 1.0.
 -- Concurrent loading pushes it well above 1; require a margin so the test is not timing-flaky.
+-- 'async' is the arm that carries it because it is the one whose wait is a wait on background
+-- loads: a machine that slows the query down slows those loads too, so contention lands in the
+-- numerator and the denominator together. In the other two arms each consumer waits for its own
+-- load, while the denominator also carries data-stream reads (serial in 'sync', prefetched in
+-- 'prefetch') that a loaded machine inflates on its own.
 SELECT log_comment || ': ' || if(ProfileEvents['WaitMarksLoadMicroseconds'] / (query_duration_ms * 1000) > 1.15,
           'marks loading overlaps across prefix tasks',
           'REGRESSION: marks loading is serialized, ratio = '
               || toString(round(ProfileEvents['WaitMarksLoadMicroseconds'] / (query_duration_ms * 1000), 2)))
 FROM system.query_log
-WHERE type = 'QueryFinish' AND current_database = currentDatabase()
-      AND log_comment IN ('sync', 'async', 'prefetch') ORDER BY log_comment;
+WHERE type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'async';
 ")
 
 # Overlap is a capability: one measurement above the threshold proves it, and a build that holds a
 # lock across marks loading cannot produce one at any attempt, because non-overlapping waits cannot
-# sum to more than the query they happened in. The denominator, though, also counts time that is not
-# marks loading (reading the column data), and the flaky check runs a copy of this test on all but
-# one of the runner's cores, so a co-scheduled machine can inflate that term while the numerator
-# stays put. That is a measurement artifact, so re-measure just the arm that missed the threshold.
-# Do not replace this with a threshold that normalizes by a second measurement: contention landing
-# on the baseline alone would then report a serialized build as concurrent, which turns a false
-# alarm into a missed regression.
+# sum to more than the query they happened in. The flaky check runs a copy of this test on all but
+# one of the runner's cores, though, so a co-scheduled machine can still push a single measurement
+# under the threshold. Re-measure before reporting a regression, and do not replace this with a
+# threshold that normalizes by a second measurement: contention landing on the baseline alone would
+# then report a serialized build as concurrent, which turns a false alarm into a missed regression.
 MAX_RETRIES=2
 THRESHOLD_MILLI=1150
-
-# The arms as above, minus enable_filesystem_read_prefetches_log: a retry does not read that log,
-# and flushing a log the process never wrote to blocks until the flush timeout.
-arm_settings() {
-    case "$1" in
-        async)    echo ", load_marks_asynchronously = 1" ;;
-        prefetch) echo ", load_marks_asynchronously = 1, local_filesystem_read_prefetch = 1" ;;
-        *)        echo "" ;;
-    esac
-}
 
 # A process that did not create $TD has no system.query_log, so a retry reads the process-wide
 # counters instead. They describe the arm alone as long as it is the only other query in the
@@ -158,8 +152,8 @@ arm_settings() {
 # not this query's.
 EXPECTED_SELECTS=2
 
-retry_arm() {
-    local arm="$1" verdict="$2" measurement selects wait_ms ratio_milli
+retry_async_arm() {
+    local verdict="$1" measurement selects wait_ms ratio_milli
 
     for _retry in $(seq 1 "$MAX_RETRIES"); do
         # Command substitution, not process substitution: it waits for the process to exit, so the
@@ -169,7 +163,7 @@ retry_arm() {
         SYSTEM ENABLE FAILPOINT merge_tree_marks_load_sync_sleep;
 
         SELECT count() FROM (SELECT j FROM t LIMIT 1)
-        SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1$(arm_settings "$arm")
+        SETTINGS merge_tree_use_prefixes_deserialization_thread_pool = 1, load_marks_asynchronously = 1
         FORMAT Null;
 
         SYSTEM DISABLE FAILPOINT merge_tree_marks_load_sync_sleep;
@@ -188,7 +182,7 @@ retry_arm() {
         [ "${wait_ms:-0}" -gt 1000 ] || break
 
         if [ "${ratio_milli:-0}" -gt "$THRESHOLD_MILLI" ]; then
-            echo "$arm: marks loading overlaps across prefix tasks"
+            echo "async: marks loading overlaps across prefix tasks"
             return
         fi
     done
@@ -198,7 +192,7 @@ retry_arm() {
 
 while IFS= read -r line; do
     case "$line" in
-        *": REGRESSION: marks loading is serialized"*) retry_arm "${line%%:*}" "$line" ;;
+        "async: REGRESSION: marks loading is serialized"*) retry_async_arm "$line" ;;
         *) echo "$line" ;;
     esac
 done <<< "$MEASURED"
