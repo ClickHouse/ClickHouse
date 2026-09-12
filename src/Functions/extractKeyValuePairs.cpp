@@ -1,17 +1,21 @@
-#include <Columns/ColumnsNumber.h>
+#include <Functions/extractKeyValuePairs.h>
+
 #include <Columns/ColumnMap.h>
+#include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <Core/Settings.h>
-
-#include <Functions/FunctionFactory.h>
-#include <Functions/IFunction.h>
-
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeString.h>
-
+#include <Functions/FunctionFactory.h>
+#include <Functions/FunctionHelpers.h>
+#include <Functions/IFunction.h>
+#include <IO/ReadBufferFromMemory.h>
+#include <IO/ReadHelpers.h>
 #include <Interpreters/Context.h>
+#include <Common/ByteSetLookup.h>
+#include <Common/Exception.h>
+#include <base/EnumReflection.h>
 
-#include <Functions/keyvaluepair/impl/KeyValuePairExtractorBuilder.h>
-#include <Functions/keyvaluepair/ArgumentExtractor.h>
 
 namespace DB
 {
@@ -23,146 +27,557 @@ namespace Setting
 
 namespace ErrorCodes
 {
-extern const int BAD_ARGUMENTS;
+    extern const int BAD_ARGUMENTS;
+    extern const int ILLEGAL_TYPE_OF_ARGUMENT;
+    extern const int LIMIT_EXCEEDED;
+    extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
 }
+
+namespace
+{
+
+constexpr char ESCAPE_CHARACTER = '\\';
+
+/// A key or a value being read. Without escape sequences it is a view into the input;
+/// after the first decoded escape sequence it is accumulated in `buffer`.
+class Token
+{
+public:
+    explicit Token(std::string & buffer_) : buffer(buffer_) {}
+
+    void start(const char * pos)
+    {
+        chunk_begin = pos;
+        in_buffer = false;
+    }
+
+    /// Decodes the escape sequence at `pos` (the backslash) and moves `pos` past it.
+    /// Returns false if the sequence is invalid; `pos` is still moved past the consumed bytes.
+    bool consumeEscapeSequence(const char *& pos, const char * end)
+    {
+        if (!in_buffer)
+        {
+            buffer.clear();
+            in_buffer = true;
+        }
+
+        buffer.append(chunk_begin, pos);
+
+        ReadBufferFromMemory in(pos, end - pos);
+        bool ok = parseComplexEscapeSequence(buffer, in);
+        pos = in.position();
+        chunk_begin = pos;
+        return ok;
+    }
+
+    /// Returns the token read so far, ending at `pos`.
+    std::string_view finish(const char * pos)
+    {
+        if (!in_buffer)
+            return {chunk_begin, pos};
+
+        buffer.append(chunk_begin, pos);
+        chunk_begin = pos;
+        return buffer;
+    }
+
+private:
+    std::string & buffer;
+    const char * chunk_begin = nullptr;
+    bool in_buffer = false;
+};
+
+/// What ended the reading of a token.
+enum class Stop
+{
+    KeyValueDelimiter,
+    PairDelimiter,
+    QuotingCharacter,
+    End,
+    InvalidEscapeSequence,
+};
+
+/// Outcome of reading a key or a value.
+enum class ReadResult
+{
+    /// The token was read: for a key `pos` is at the start of the value, for a value the pair is complete.
+    Ok,
+    /// The token is invalid, go back to waiting for a key.
+    Discard,
+    /// The input is over.
+    End,
+};
+
+}
+
+struct KeyValuePairExtractor::Impl
+{
+    Configuration configuration;
+
+    /// Bytes skipped while waiting for a key: the delimiters, and the escape character with escaping.
+    ByteSetLookup waiting_key_bytes;
+    /// Bytes that end an unquoted key: both delimiters, the quoting character
+    /// unless the strategy is `ACCEPT`, and the escape character with escaping.
+    ByteSetLookup key_stop_bytes;
+    /// Bytes that end an unquoted value: same as for a key, except the key-value delimiter is a regular byte.
+    ByteSetLookup value_stop_bytes;
+    /// Bytes that end a quoted key or value: the quoting character, and the escape character with escaping.
+    ByteSetLookup quoted_stop_bytes;
+    /// Bytes that end a pair: the pair delimiters.
+    ByteSetLookup pair_delimiters;
+
+    explicit Impl(const Configuration & configuration_)
+        : configuration(configuration_)
+    {
+        validate();
+
+        waiting_key_bytes.add(configuration.key_value_delimiter);
+        key_stop_bytes.add(configuration.key_value_delimiter);
+
+        for (char c : configuration.pair_delimiters)
+        {
+            waiting_key_bytes.add(c);
+            key_stop_bytes.add(c);
+            value_stop_bytes.add(c);
+            pair_delimiters.add(c);
+        }
+
+        if (configuration.unexpected_quoting_character_strategy != UnexpectedQuotingCharacterStrategy::ACCEPT)
+        {
+            key_stop_bytes.add(configuration.quoting_character);
+            value_stop_bytes.add(configuration.quoting_character);
+        }
+
+        quoted_stop_bytes.add(configuration.quoting_character);
+
+        if (configuration.with_escaping)
+        {
+            waiting_key_bytes.add(ESCAPE_CHARACTER);
+            key_stop_bytes.add(ESCAPE_CHARACTER);
+            value_stop_bytes.add(ESCAPE_CHARACTER);
+            quoted_stop_bytes.add(ESCAPE_CHARACTER);
+        }
+    }
+
+    void validate() const
+    {
+        const auto & pair_delimiters_str = configuration.pair_delimiters;
+
+        if (configuration.key_value_delimiter == configuration.quoting_character)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, key_value_delimiter and quoting_character can not be the same");
+
+        if (pair_delimiters_str.size() > MAX_NUMBER_OF_PAIR_DELIMITERS)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, pair delimiters can contain at most {} characters", MAX_NUMBER_OF_PAIR_DELIMITERS);
+
+        if (pair_delimiters_str.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, pair delimiters list is empty");
+
+        if (pair_delimiters_str.contains(configuration.key_value_delimiter))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, key_value_delimiter conflicts with pair delimiters");
+
+        if (pair_delimiters_str.contains(configuration.quoting_character))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, quoting_character conflicts with pair delimiters");
+
+        if (configuration.with_escaping)
+        {
+            bool used_escape_character = configuration.key_value_delimiter == ESCAPE_CHARACTER
+                || configuration.quoting_character == ESCAPE_CHARACTER
+                || pair_delimiters_str.contains(ESCAPE_CHARACTER);
+
+            if (used_escape_character)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid arguments, {} is reserved for the escaping character", ESCAPE_CHARACTER);
+        }
+    }
+
+    /// Reads a token starting at `pos` until a byte from `stop_set` and moves `pos` past that byte
+    /// (or to `end`). With escaping, escape sequences are decoded into the token.
+    template <bool with_escaping>
+    Stop readToken(const ByteSetLookup & stop_bytes, Token & token, std::string_view & result, const char *& pos, const char * end) const
+    {
+        token.start(pos);
+
+        while (true)
+        {
+            pos = stop_bytes.find<true>(pos, end);
+            if (pos == end)
+            {
+                result = token.finish(pos);
+                return Stop::End;
+            }
+
+            char c = *pos;
+            if constexpr (with_escaping)
+            {
+                if (c == ESCAPE_CHARACTER)
+                {
+                    if (token.consumeEscapeSequence(pos, end))
+                        continue;
+
+                    result = token.finish(pos);
+                    return Stop::InvalidEscapeSequence;
+                }
+            }
+
+            result = token.finish(pos);
+            ++pos;
+
+            if (c == configuration.key_value_delimiter)
+                return Stop::KeyValueDelimiter;
+
+            if (c == configuration.quoting_character)
+                return Stop::QuotingCharacter;
+
+            return Stop::PairDelimiter;
+        }
+    }
+
+    /// Reads an unquoted key starting at `pos`. Depending on the strategy, an unexpected quoting
+    /// character either discards the key or restarts it as a quoted key.
+    template <bool with_escaping>
+    ReadResult readUnquotedKey(Token & key, std::string_view & key_view, const char *& pos, const char * end) const
+    {
+        Stop stop = readToken<with_escaping>(key_stop_bytes, key, key_view, pos, end);
+        switch (stop)
+        {
+            case Stop::End:
+                return ReadResult::End;
+            case Stop::KeyValueDelimiter:
+                return ReadResult::Ok;
+            case Stop::PairDelimiter:
+            case Stop::InvalidEscapeSequence:
+                return ReadResult::Discard;
+            case Stop::QuotingCharacter:
+            {
+                if (configuration.unexpected_quoting_character_strategy == UnexpectedQuotingCharacterStrategy::INVALID)
+                    return ReadResult::Discard;
+
+                return readQuotedKey<with_escaping>(key, key_view, pos, end);
+            }
+        }
+    }
+
+    /// Reads a quoted key, `pos` is right after the opening quote. The key must be non-empty
+    /// and the closing quote must be followed by the key-value delimiter.
+    template <bool with_escaping>
+    ReadResult readQuotedKey(Token & key, std::string_view & key_view, const char *& pos, const char * end) const
+    {
+        Stop stop = readToken<with_escaping>(quoted_stop_bytes, key, key_view, pos, end);
+        if (stop == Stop::End)
+            return ReadResult::End;
+
+        if (stop == Stop::InvalidEscapeSequence || key_view.empty())
+            return ReadResult::Discard;
+
+        if (pos == end || *pos != configuration.key_value_delimiter)
+            return ReadResult::Discard;
+
+        ++pos;
+        return ReadResult::Ok;
+    }
+
+    /// Reads an unquoted value starting at `pos`. It ends at a pair delimiter or at the end of the input;
+    /// an invalid escape sequence ends it as well and what was read so far is kept. Depending on the
+    /// strategy, an unexpected quoting character either discards the value or restarts it as a quoted value.
+    template <bool with_escaping>
+    ReadResult readUnquotedValue(Token & value, std::string_view & value_view, const char *& pos, const char * end) const
+    {
+        if constexpr (with_escaping)
+        {
+            /// A value cannot start with an escape sequence.
+            if (pos != end && *pos == ESCAPE_CHARACTER)
+                return ReadResult::Discard;
+        }
+
+        Stop stop = readToken<with_escaping>(value_stop_bytes, value, value_view, pos, end);
+        if (stop != Stop::QuotingCharacter)
+            return ReadResult::Ok;
+
+        if (configuration.unexpected_quoting_character_strategy == UnexpectedQuotingCharacterStrategy::INVALID)
+            return ReadResult::Discard;
+
+        return readQuotedValue<with_escaping>(value, value_view, pos, end);
+    }
+
+    /// Reads a quoted value, `pos` is right after the opening quote. Only a pair delimiter may follow
+    /// the closing quote, everything up to it is skipped.
+    template <bool with_escaping>
+    ReadResult readQuotedValue(Token & value, std::string_view & value_view, const char *& pos, const char * end) const
+    {
+        Stop stop = readToken<with_escaping>(quoted_stop_bytes, value, value_view, pos, end);
+        if (stop == Stop::End)
+            return ReadResult::End;
+
+        if (stop == Stop::InvalidEscapeSequence)
+            return ReadResult::Discard;
+
+        pos = pair_delimiters.find<true>(pos, end);
+        if (pos != end)
+            ++pos;
+
+        return ReadResult::Ok;
+    }
+
+    template <bool with_escaping, typename OnPair>
+    size_t extractImpl(std::string_view data, OnPair && on_pair) const
+    {
+        const char * pos = data.data();
+        const char * const end = pos + data.size();
+        size_t num_pairs = 0;
+
+        /// Used only when escape sequences are decoded, otherwise keys and values are views into `data`.
+        std::string key_buffer;
+        std::string value_buffer;
+        Token key(key_buffer);
+        Token value(value_buffer);
+        std::string_view key_view;
+        std::string_view value_view;
+
+        auto commit = [&]
+        {
+            ++num_pairs;
+
+            if (configuration.max_number_of_pairs && num_pairs > configuration.max_number_of_pairs)
+                throw Exception(ErrorCodes::LIMIT_EXCEEDED, "Number of pairs produced exceeded the limit of {}", configuration.max_number_of_pairs);
+
+            on_pair(key_view, value_view);
+        };
+
+        while (true)
+        {
+            /// Waiting for a key.
+            pos = waiting_key_bytes.find<false>(pos, end);
+            if (pos == end)
+                return num_pairs;
+
+            ReadResult key_result{};
+            if (*pos == configuration.quoting_character)
+            {
+                ++pos;
+                key_result = readQuotedKey<with_escaping>(key, key_view, pos, end);
+            }
+            else
+            {
+                key_result = readUnquotedKey<with_escaping>(key, key_view, pos, end);
+            }
+
+            if (key_result == ReadResult::End)
+                return num_pairs;
+
+            if (key_result == ReadResult::Discard)
+                continue;
+
+            /// Waiting for a value.
+            ReadResult value_result{};
+            if (pos != end && *pos == configuration.quoting_character)
+            {
+                ++pos;
+                value_result = readQuotedValue<with_escaping>(value, value_view, pos, end);
+            }
+            else
+            {
+                value_result = readUnquotedValue<with_escaping>(value, value_view, pos, end);
+            }
+
+            if (value_result == ReadResult::End)
+                return num_pairs;
+
+            if (value_result == ReadResult::Discard)
+                continue;
+
+            commit();
+            if (pos == end)
+                return num_pairs;
+        }
+    }
+
+    template <typename OnPair>
+    size_t extract(std::string_view data, OnPair && on_pair) const
+    {
+        return configuration.with_escaping ? extractImpl<true>(data, on_pair) : extractImpl<false>(data, on_pair);
+    }
+
+    static constexpr size_t MAX_NUMBER_OF_PAIR_DELIMITERS = 8;
+};
+
+KeyValuePairExtractor::KeyValuePairExtractor(const Configuration & configuration_)
+    : impl(std::make_unique<const Impl>(configuration_))
+{
+}
+
+KeyValuePairExtractor::~KeyValuePairExtractor() = default;
+
+size_t KeyValuePairExtractor::extract(std::string_view data, ColumnString & keys, ColumnString & values) const
+{
+    return impl->extract(data, [&](std::string_view key, std::string_view value)
+    {
+        keys.insertData(key.data(), key.size());
+        values.insertData(value.data(), value.size());
+    });
+}
+
+size_t KeyValuePairExtractor::forEachPair(std::string_view data, const PairCallback & on_pair) const
+{
+    return impl->extract(data, on_pair);
+}
+
+namespace
+{
 
 class ExtractKeyValuePairs final : public IFunction
 {
-    KeyValuePairExtractorBuilder getBuilder(const ArgumentExtractor::ParsedArguments & parsed_arguments) const
-    {
-        auto builder = KeyValuePairExtractorBuilder();
-
-        if (parsed_arguments.key_value_delimiter)
-        {
-            builder.withKeyValueDelimiter(parsed_arguments.key_value_delimiter.value());
-        }
-
-        if (!parsed_arguments.pair_delimiters.empty())
-        {
-            builder.withItemDelimiters(parsed_arguments.pair_delimiters);
-        }
-
-        if (parsed_arguments.quoting_character)
-        {
-            builder.withQuotingCharacter(parsed_arguments.quoting_character.value());
-        }
-
-        bool is_number_of_pairs_unlimited = extract_key_value_pairs_max_pairs_per_row == 0;
-        if (!is_number_of_pairs_unlimited)
-        {
-            builder.withMaxNumberOfPairs(extract_key_value_pairs_max_pairs_per_row);
-        }
-
-        if (parsed_arguments.unexpected_quoting_character_strategy)
-        {
-            const std::string unexpected_quoting_character_strategy_string{parsed_arguments.unexpected_quoting_character_strategy->getDataAt(0)};
-            const auto unexpected_quoting_character_strategy = magic_enum::enum_cast<extractKV::Configuration::UnexpectedQuotingCharacterStrategy>(
-                    unexpected_quoting_character_strategy_string, magic_enum::case_insensitive);
-
-            if (!unexpected_quoting_character_strategy)
-            {
-                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid unexpected_quoting_character_strategy argument: {}", unexpected_quoting_character_strategy_string);
-            }
-
-            builder.withUnexpectedQuotingCharacterStrategy(unexpected_quoting_character_strategy.value());
-        }
-
-        return builder;
-    }
-
-    ColumnPtr extract(ColumnPtr data_column, auto & extractor, size_t input_rows_count) const
-    {
-        auto offsets = ColumnUInt64::create();
-
-        auto keys = ColumnString::create();
-        auto values = ColumnString::create();
-
-        uint64_t offset = 0u;
-
-        for (auto i = 0u; i < input_rows_count; i++)
-        {
-            auto row = data_column->getDataAt(i);
-
-            auto pairs_count = extractor.extract(row, keys, values);
-
-            offset += pairs_count;
-
-            offsets->insert(offset);
-        }
-
-        keys->validate();
-        values->validate();
-
-        ColumnPtr keys_ptr = std::move(keys);
-
-        return ColumnMap::create(keys_ptr, std::move(values), std::move(offsets));
-    }
-
 public:
-    ExtractKeyValuePairs(ContextPtr context, const char * name_, bool with_escaping_)
-        : extract_key_value_pairs_max_pairs_per_row(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row])
-        , function_name(name_)
+    ExtractKeyValuePairs(ContextPtr context, String name_, bool with_escaping_)
+        : max_number_of_pairs(context->getSettingsRef()[Setting::extract_key_value_pairs_max_pairs_per_row])
+        , name(std::move(name_))
         , with_escaping(with_escaping_)
-    {}
-
-    String getName() const override
     {
-        return function_name;
     }
 
-    static FunctionPtr create(ContextPtr context, const char * name, bool with_escaping)
+    static FunctionPtr create(ContextPtr context, String name, bool with_escaping)
     {
-        return std::make_shared<ExtractKeyValuePairs>(context, name, with_escaping);
+        return std::make_shared<ExtractKeyValuePairs>(context, std::move(name), with_escaping);
+    }
+
+    String getName() const override { return name; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1, 2, 3, 4}; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.empty() || arguments.size() > MAX_NUMBER_OF_ARGUMENTS)
+        {
+            throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires at least 1 argument and at most {}. {} was provided",
+                getName(), MAX_NUMBER_OF_ARGUMENTS, arguments.size());
+        }
+
+        for (size_t i = 0; i < arguments.size(); ++i)
+        {
+            if (!isStringOrFixedString(arguments[i].type))
+                throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Illegal type {} of argument {}. Must be String.", arguments[i].type, ARGUMENT_NAMES[i]);
+        }
+
+        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
-        auto parsed_arguments = ArgumentExtractor::extract(arguments);
+        KeyValuePairExtractor extractor(getConfiguration(arguments));
+        const auto & data_column = *arguments[0].column;
 
-        auto builder = getBuilder(parsed_arguments);
+        auto keys = ColumnString::create();
+        auto values = ColumnString::create();
+        auto offsets = ColumnUInt64::create();
+        auto & offsets_data = offsets->getData();
+        offsets_data.reserve(input_rows_count);
 
-        if (with_escaping)
+        UInt64 offset = 0;
+        auto process_row = [&](size_t i)
         {
-            auto extractor = builder.buildWithEscaping();
-            return extract(parsed_arguments.data_column, extractor, input_rows_count);
-        }
-        else
+            offset += extractor.extract(data_column.getDataAt(i), *keys, *values);
+            offsets_data.push_back(offset);
+        };
+
+        /// The output size is roughly proportional to the number of rows. It is extrapolated from a
+        /// sample of rows and reserved once, so the columns do not regrow while they are filled.
+        const size_t sample_rows = std::min<size_t>(input_rows_count, std::max<size_t>(1, input_rows_count / 32));
+        for (size_t i = 0; i < sample_rows; ++i)
+            process_row(i);
+
+        /// The sample may not be representative, so the estimate is capped by what the output can
+        /// reach at most: the keys and values together are never longer than the input, and a pair
+        /// takes at least two bytes of it.
+        const size_t input_bytes = data_column.byteSize();
+        auto estimate = [&](size_t sample_size, size_t max_size)
         {
-            auto extractor = builder.buildWithoutEscaping();
-            return extract(parsed_arguments.data_column, extractor, input_rows_count);
+            return std::min(sample_size * input_rows_count / sample_rows, max_size);
+        };
+
+        if (sample_rows < input_rows_count)
+        {
+            keys->getChars().reserve(estimate(keys->getChars().size(), input_bytes));
+            values->getChars().reserve(estimate(values->getChars().size(), input_bytes));
+            keys->getOffsets().reserve(estimate(offset, input_bytes / 2));
+            values->getOffsets().reserve(estimate(offset, input_bytes / 2));
         }
-    }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes &) const override
-    {
-        return std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>());
-    }
+        for (size_t i = sample_rows; i < input_rows_count; ++i)
+            process_row(i);
 
-    bool isVariadic() const override
-    {
-        return true;
-    }
-
-    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override
-    {
-        return false;
-    }
-
-    std::size_t getNumberOfArguments() const override
-    {
-        return 0u;
-    }
-
-    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override
-    {
-        return {1, 2, 3, 4, 5};
+        return ColumnMap::create(ColumnPtr(std::move(keys)), ColumnPtr(std::move(values)), ColumnPtr(std::move(offsets)));
     }
 
 private:
-    const UInt64 extract_key_value_pairs_max_pairs_per_row;
-    const char * function_name;
-    bool with_escaping;
+    static constexpr size_t MAX_NUMBER_OF_ARGUMENTS = 5;
+    static constexpr std::array<std::string_view, MAX_NUMBER_OF_ARGUMENTS> ARGUMENT_NAMES =
+    {
+        "data_column",
+        "key_value_delimiter",
+        "pair_delimiters",
+        "quoting_character",
+        "unexpected_quoting_character_strategy"
+    };
+
+    KeyValuePairExtractor::Configuration getConfiguration(const ColumnsWithTypeAndName & arguments) const
+    {
+        KeyValuePairExtractor::Configuration configuration;
+        configuration.with_escaping = with_escaping;
+        configuration.max_number_of_pairs = max_number_of_pairs;
+
+        /// An empty argument keeps the default.
+        if (arguments.size() > 1)
+        {
+            if (auto c = getCharacterArgument(arguments[1]))
+                configuration.key_value_delimiter = *c;
+        }
+
+        if (arguments.size() > 2)
+        {
+            if (auto pair_delimiters = arguments[2].column->getDataAt(0); !pair_delimiters.empty())
+                configuration.pair_delimiters = pair_delimiters;
+        }
+
+        if (arguments.size() > 3)
+        {
+            if (auto c = getCharacterArgument(arguments[3]))
+                configuration.quoting_character = *c;
+        }
+
+        if (arguments.size() > 4)
+        {
+            auto strategy_name = arguments[4].column->getDataAt(0);
+            auto strategy = magic_enum::enum_cast<KeyValuePairExtractor::UnexpectedQuotingCharacterStrategy>(strategy_name, magic_enum::case_insensitive);
+
+            if (!strategy)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid unexpected_quoting_character_strategy argument: {}", strategy_name);
+
+            configuration.unexpected_quoting_character_strategy = *strategy;
+        }
+
+        return configuration;
+    }
+
+    static std::optional<char> getCharacterArgument(const ColumnWithTypeAndName & argument)
+    {
+        auto value = argument.column->getDataAt(0);
+        if (value.empty())
+            return {};
+
+        if (value.size() == 1)
+            return value.front();
+
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Control character argument must either be empty or contain exactly 1 character");
+    }
+
+    const UInt64 max_number_of_pairs;
+    const String name;
+    const bool with_escaping;
 };
+
+}
 
 REGISTER_FUNCTION(ExtractKeyValuePairs)
 {
@@ -195,27 +610,19 @@ Query:
 
 **Simple case**
 ```sql
-arthur :) select extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
-
-SELECT extractKeyValuePairs('name:neymar, age:31 team:psg,nationality:brazil') as kv
-
-Query id: f9e0ca6f-3178-4ee2-aa2c-a5517abb9cee
+SELECT extractKeyValuePairs('name:neymar, age:34 team:santos,nationality:brazil') AS kv;
 
 ┌─kv──────────────────────────────────────────────────────────────────────┐
-│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil'}        │
+│ {'name':'neymar','age':'34','team':'santos','nationality':'brazil'}        │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
 **Single quote as quoting character**
 ```sql
-arthur :) select extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
-
-SELECT extractKeyValuePairs('name:\'neymar\';\'age\':31;team:psg;nationality:brazil,last_key:last_value', ':', ';,', '\'') as kv
-
-Query id: 0e22bf6b-9844-414a-99dc-32bf647abd5e
+SELECT extractKeyValuePairs('name:\'neymar\';\'age\':34;team:santos;nationality:brazil,last_key:last_value', ':', ';,', '\'') AS kv;
 
 ┌─kv───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
-│ {'name':'neymar','age':'31','team':'psg','nationality':'brazil','last_key':'last_value'}                                 │
+│ {'name':'neymar','age':'34','team':'santos','nationality':'brazil','last_key':'last_value'}                                 │
 └──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -224,7 +631,7 @@ unexpected_quoting_character_strategy examples:
 unexpected_quoting_character_strategy=invalid
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') AS kv;
 ```
 
 ```text
@@ -234,7 +641,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'INVALID') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') AS kv;
 ```
 
 ```text
@@ -246,7 +653,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'INVALID') as kv;
 unexpected_quoting_character_strategy=accept
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') AS kv;
 ```
 
 ```text
@@ -256,7 +663,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') AS kv;
 ```
 
 ```text
@@ -268,7 +675,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'ACCEPT') as kv;
 unexpected_quoting_character_strategy=promote
 
 ```sql
-SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') AS kv;
 ```
 
 ```text
@@ -278,7 +685,7 @@ SELECT extractKeyValuePairs('name"abc:5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 ```
 
 ```sql
-SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
+SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') AS kv;
 ```
 
 ```text
@@ -289,11 +696,7 @@ SELECT extractKeyValuePairs('name"abc":5', ':', ' ,;', '\"', 'PROMOTE') as kv;
 
 **Escape sequences without escape sequences support**
 ```sql
-arthur :) select extractKeyValuePairs('age:a\\x0A\\n\\0') as kv
-
-SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv
-
-Query id: e9fd26ee-b41f-4a11-b17f-25af6fd5d356
+SELECT extractKeyValuePairs('age:a\\x0A\\n\\0') AS kv;
 
 ┌─kv─────────────────────┐
 │ {'age':'a\\x0A\\n\\0'} │
@@ -322,11 +725,7 @@ Leading escape sequences will be skipped in keys and will be considered invalid 
 
 **Escape sequences with escape sequence support turned on**
 ```sql
-arthur :) select extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') as kv
-
-SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv
-
-Query id: 44c114f0-5658-4c75-ab87-4574de3a1645
+SELECT extractKeyValuePairsWithEscaping('age:a\\x0A\\n\\0') AS kv;
 
 ┌─kv────────────────┐
 │ {'age':'a\n\n\0'} │
