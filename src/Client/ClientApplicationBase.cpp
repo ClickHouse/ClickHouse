@@ -273,13 +273,45 @@ void ClientApplicationBase::init(int argc, char ** argv)
         fatal_channel_ptr->addChannel(fatal_file_channel_ptr);
     }
 
-    fatal_log = createLogger("ClientBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
+    /// A name of its own: loggers are shared by name, and this one is pinned to fatal severity.
+    fatal_log = createLogger("ClientApplicationBase", fatal_channel_ptr.get(), Poco::Message::PRIO_FATAL);
 #if defined(OS_HAS_SIGNAL_HANDLERS)
     /// Without signals nothing ever writes to the signal pipe, so there is nothing to listen
     /// for - and the blocking read of that pipe is all the listener thread does.
     signal_listener = std::make_unique<SignalListener>(nullptr, fatal_log);
     signal_listener_thread.start(*signal_listener);
 #endif
+}
+
+void ClientApplicationBase::restoreFatalLogChannel(bool configured_channel_reports_to_stderr)
+{
+    if (!fatal_log || !fatal_channel_ptr)
+        return;
+
+    /// Re-entering would fan every record out once more, and nest the splitter inside itself.
+    if (fatal_log->getChannel() == fatal_channel_ptr.get())
+        return;
+
+    /// Additive, so a destination the user configured keeps receiving the report.
+    if (auto * configured = fatal_log->getChannel())
+        fatal_channel_ptr->addChannel(configured);
+
+    /// Exactly one route to stderr.
+    if (configured_channel_reports_to_stderr && fatal_console_channel_ptr)
+        fatal_channel_ptr->removeChannel(fatal_console_channel_ptr.get());
+
+    /// A file destination opens on its first record and a throw there ends the fan-out, so it
+    /// goes after the destinations that do not touch the filesystem. The owning pointer keeps
+    /// the channel alive across the move.
+    if (fatal_file_channel_ptr)
+    {
+        fatal_channel_ptr->removeChannel(fatal_file_channel_ptr.get());
+        fatal_channel_ptr->addChannel(fatal_file_channel_ptr.get());
+    }
+
+    fatal_log->setChannel(fatal_channel_ptr.get());
+    /// Anything below fatal reaches stderr, which is the program's own output.
+    fatal_log->setLevel(Poco::Message::PRIO_FATAL);
 }
 
 

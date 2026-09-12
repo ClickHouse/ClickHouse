@@ -99,6 +99,23 @@ Poco::AutoPtr<OwnPatternFormatter> getFormatForChannel(Poco::Util::AbstractConfi
         return new OwnPatternFormatter(color);
 }
 
+bool loggerWritesToConsole(const Poco::Util::AbstractConfiguration & config)
+{
+    if (config.hasProperty("logger.console"))
+        return config.getBool("logger.console", false);
+    return !config.getBool("application.runAsDaemon", false) && (isatty(STDIN_FILENO) || isatty(STDERR_FILENO));
+}
+
+bool loggerConsoleAcceptsFatal(const Poco::Util::AbstractConfiguration & config)
+{
+    if (!loggerWritesToConsole(config))
+        return false;
+
+    /// `parseLevel("none")` is 0, which is below every priority.
+    const auto level = config.getString("logger.console_log_level", config.getString("logger.level", "trace"));
+    return Poco::Logger::parseLevel(level) >= Poco::Message::PRIO_FATAL;
+}
+
 /// NOLINTBEGIN(readability-static-accessed-through-instance)
 
 void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Logger & logger /*_root*/, const std::string & cmd_name)
@@ -108,8 +125,6 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
         return;
 
     config_logger = current_logger;
-
-    bool is_daemon = config.getBool("application.runAsDaemon", false);
 
     /// Split logs to ordinary log, error log, syslog and console.
     /// Use extended interface of Channel for more comprehensive logging.
@@ -233,11 +248,9 @@ void Loggers::buildLoggers(Poco::Util::AbstractConfiguration & config, Poco::Log
             log, "Syslog", syslog_level, ProfileEvents::AsyncLoggingSyslogTotalMessages, ProfileEvents::AsyncLoggingSyslogDroppedMessages);
     }
 
-    bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
     bool color_logs_by_default = isatty(STDERR_FILENO);
 
-    if (config.getBool("logger.console", false)
-        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
+    if (loggerWritesToConsole(config))
     {
         bool color_enabled = config.getBool("logger.color_terminal", color_logs_by_default);
 
@@ -352,10 +365,7 @@ void Loggers::updateLevels(Poco::Util::AbstractConfiguration & config, Poco::Log
         split->setLevel("FileLog", log_level);
 
     // Set level to console
-    bool is_daemon = config.getBool("application.runAsDaemon", false);
-    bool should_log_to_console = isatty(STDIN_FILENO) || isatty(STDERR_FILENO);
-    if (config.getBool("logger.console", false)
-        || (!config.hasProperty("logger.console") && !is_daemon && should_log_to_console))
+    if (loggerWritesToConsole(config))
     {
         auto console_log_level_string = config.getString("logger.console_log_level", log_level_string);
         auto console_log_level = Poco::Logger::parseLevel(console_log_level_string);
