@@ -57,7 +57,7 @@
     </fill_query>
 
     <!-- Sparse counterpart: ~1 sample per 100s (10x fewer) while step stays 10, so only ~1 in 10 buckets is
-         populated -> density ~0.1 < BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.4 -> exercises the collect-and-sort
+         populated -> density ~0.1 < BUCKET_DENSITY_TO_ENABLE_RANGE_SCAN=0.35 -> exercises the collect-and-sort
          bucket iteration in doInsertResultInto (the dense fill above always range-scans). 400 series, 1000
          samples/series, 400K rows. -->
     <fill_query>

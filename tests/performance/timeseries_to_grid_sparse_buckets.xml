@@ -1,0 +1,37 @@
+<test>
+    <settings>
+        <allow_experimental_time_series_aggregate_functions>1</allow_experimental_time_series_aggregate_functions>
+        <max_insert_threads>8</max_insert_threads>
+    </settings>
+
+    <!--
+        Focused benchmark for the sparse collect-and-sort path in doInsertResultInto.
+        There are 50,000 series with up to 32 populated buckets each, while the grid has
+        201 bucket slots. Even the largest case has density 32 / 201 < 0.35, so every
+        query stays on the sparse path. The 1/2/4/8/16/32 cases sweep across the inline
+        capacity boundary. With 50,000 states and 201 output points, each query still
+        materializes about 10M output values, while making the per-state setup visible.
+    -->
+    <create_query>
+        CREATE TABLE ts_grid_sparse_buckets (id UInt32, bucket_index UInt8, timestamp DateTime, value Float64) ENGINE = MergeTree ORDER BY (id, timestamp)
+    </create_query>
+    <fill_query>
+        INSERT INTO ts_grid_sparse_buckets
+        SELECT
+            number % 50000 AS id,
+            intDiv(number, 50000) AS bucket_index,
+            toDateTime(intDiv(number, 50000) * 10) AS timestamp,
+            number::Float64 AS value
+        FROM numbers_mt(50000 * 32)
+    </fill_query>
+
+    <!-- window = step, so there is one bucket per grid step. The maximum density is 32 / 201 < 0.35. -->
+    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 2000, 10, 10)(timestamp, value) FROM ts_grid_sparse_buckets WHERE bucket_index &lt; 1 GROUP BY id SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 2000, 10, 10)(timestamp, value) FROM ts_grid_sparse_buckets WHERE bucket_index &lt; 2 GROUP BY id SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 2000, 10, 10)(timestamp, value) FROM ts_grid_sparse_buckets WHERE bucket_index &lt; 4 GROUP BY id SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 2000, 10, 10)(timestamp, value) FROM ts_grid_sparse_buckets WHERE bucket_index &lt; 8 GROUP BY id SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 2000, 10, 10)(timestamp, value) FROM ts_grid_sparse_buckets WHERE bucket_index &lt; 16 GROUP BY id SETTINGS max_threads = 1 FORMAT Null</query>
+    <query>SELECT id, timeSeriesResampleToGridWithStaleness(0, 2000, 10, 10)(timestamp, value) FROM ts_grid_sparse_buckets WHERE bucket_index &lt; 32 GROUP BY id SETTINGS max_threads = 1 FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS ts_grid_sparse_buckets</drop_query>
+</test>
