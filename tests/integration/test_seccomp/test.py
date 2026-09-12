@@ -15,6 +15,7 @@ disabled_node = cluster.add_instance(
     "disabled_node", main_configs=["configs/disabled.xml"]
 )
 errno_node = cluster.add_instance("errno_node", main_configs=["configs/errno.xml"])
+log_node = cluster.add_instance("log_node", main_configs=["configs/log.xml"])
 
 # `/proc/<pid>/status` reports the seccomp mode of a process: 0 is no filter, 2 is a BPF filter.
 SECCOMP_MODE_DISABLED = "0"
@@ -26,7 +27,7 @@ def started_cluster():
     try:
         cluster.start()
 
-        for node in [default_node, disabled_node, errno_node]:
+        for node in [default_node, disabled_node, errno_node, log_node]:
             os.system(
                 f"docker cp {os.path.join(SCRIPT_DIR, 'user_scripts/.')} "
                 f"{node.docker_id}:/var/lib/clickhouse/user_scripts"
@@ -76,6 +77,7 @@ def test_setting_is_reported(started_cluster):
         (default_node, "trap"),
         (disabled_node, "disabled"),
         (errno_node, "errno"),
+        (log_node, "log"),
     ]:
         assert (
             node.query(
@@ -145,6 +147,25 @@ def test_system_call_outside_the_policy_is_refused(started_cluster):
     assert getxattr_result == "EPERM"
     assert clone_result == "EPERM"
     assert clone3_result == "ENOSYS"
+    assert thread_result == "OK"
+
+
+def test_log_mode_refuses_nothing(started_cluster):
+    # The `log` mode installs a filter and has the kernel record what the policy does not allow,
+    # but refuses nothing at all - so the probe sees exactly what it sees without a filter. What it
+    # does share with the enforcing modes is `PR_SET_NO_NEW_PRIVS`, which the kernel asks for
+    # before it accepts a filter.
+    pid = get_server_pid(log_node)
+    assert get_status_field(log_node, pid, "Seccomp") == SECCOMP_MODE_FILTER
+    assert get_status_field(log_node, pid, "NoNewPrivs") == "1"
+
+    mode, getxattr_result, clone_result, clone3_result, thread_result = run_probe(
+        log_node
+    )
+    assert mode == SECCOMP_MODE_FILTER
+    assert getxattr_result in ("ENODATA", "ENOTSUP", "EOPNOTSUPP")
+    assert clone_result == "EINVAL"
+    assert clone3_result in ("EFAULT", "ENOSYS")
     assert thread_result == "OK"
 
 

@@ -1238,7 +1238,8 @@ try
         LOG_WARNING(
             log,
             "The `seccomp` server setting is set to `{}`, but the seccomp policy is not implemented for this architecture, "
-            "so the server is running without one",
+            "so the server is running without one. `PR_SET_NO_NEW_PRIVS` has been set anyway, so nothing this process runs "
+            "can gain privileges through a setuid program",
             SettingFieldSeccompMode(seccomp_mode).toString());
 #endif
 

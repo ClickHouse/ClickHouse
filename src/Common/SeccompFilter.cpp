@@ -732,7 +732,9 @@ size_t installSeccompFilter(SeccompMode mode)
 
     /// Installing a filter needs either this or `CAP_SYS_ADMIN`, and it is wanted in its own right:
     /// from here on, neither the server nor anything it forks can gain privileges by executing a
-    /// setuid binary or one carrying file capabilities.
+    /// setuid binary or one carrying file capabilities. It happens in every mode but `disabled`,
+    /// including `log`, where nothing is refused - the kernel asks for it before it accepts a
+    /// filter at all, and a filter is what the `log` mode installs.
     if (0 != prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
         throw ErrnoException(
             ErrorCodes::SYSTEM_ERROR, "Cannot do `prctl(PR_SET_NO_NEW_PRIVS)`, which is required to install a seccomp filter");
@@ -782,11 +784,34 @@ size_t installSeccompFilter(SeccompMode mode)
 
 #elif defined(OS_LINUX)
 
+#include <Common/ErrnoException.h>
+
+#include <sys/prctl.h>
+
 namespace DB
 {
 
-size_t installSeccompFilter(SeccompMode)
+namespace ErrorCodes
 {
+    extern const int SYSTEM_ERROR;
+}
+
+size_t installSeccompFilter(SeccompMode mode)
+{
+    if (mode == SeccompMode::Disabled)
+        return 0;
+
+    /// A policy is a list of system call numbers and those are specific to an architecture, so
+    /// there is none to install here. `PR_SET_NO_NEW_PRIVS` is not: it is the half of the setting
+    /// that does not depend on the architecture, and it is worth having on its own, so it is
+    /// applied here as well. Neither the server nor anything it forks can gain privileges by
+    /// executing a setuid binary or one carrying file capabilities from here on.
+    if (0 != prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0))
+        throw ErrnoException(
+            ErrorCodes::SYSTEM_ERROR,
+            "Cannot do `prctl(PR_SET_NO_NEW_PRIVS)`, which the `seccomp` server setting asks for. Set it to `disabled` to "
+            "leave the process as it is");
+
     /// Returning zero is not an error - the caller reports that the server is running without a
     /// filter, because the policy is not implemented for this architecture.
     return 0;

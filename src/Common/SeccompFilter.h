@@ -16,8 +16,10 @@ enum class SeccompMode : uint8_t
 {
     /// Do not install a filter at all.
     Disabled,
-    /// Let the system call through and ask the kernel to record it in the audit log. Nothing is
-    /// blocked in this mode; it exists to validate the policy against a real workload.
+    /// Let the system call through and ask the kernel to record it in the audit log. No system
+    /// call is refused in this mode; it exists to validate the policy against a real workload.
+    /// `PR_SET_NO_NEW_PRIVS` is still set, because the kernel asks for it before it accepts a
+    /// filter, so a setuid program the server runs still does not get to elevate.
     Log,
     /// Fail the system call with `EPERM`.
     Errno,
@@ -33,6 +35,9 @@ enum class SeccompMode : uint8_t
 
 /// Installs a seccomp-BPF system call filter on every thread of the current process, allowing only
 /// the system calls ClickHouse is known to use and applying `mode` to all the others.
+///
+/// In every mode but `Disabled` this also sets `PR_SET_NO_NEW_PRIVS`, which does not depend on the
+/// architecture and happens even where no filter can be installed.
 ///
 /// Returns the number of allowed system calls, or 0 if no filter was installed - either because
 /// `mode` is `Disabled`, or because the policy is not implemented for this architecture (only
