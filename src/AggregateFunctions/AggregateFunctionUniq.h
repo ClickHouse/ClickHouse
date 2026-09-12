@@ -559,6 +559,11 @@ public:
 
     bool allocatesMemoryInArena() const override { return false; }
 
+    // Append-equivalent for the whole uniq family, but merging set/sketch states costs
+    // proportionally to the state size, so it only beats re-aggregating a sliding
+    // frame when the per-row add is expensive (String hashing).
+    bool mergeIsEquivalentToAddingRows() const override { return std::is_same_v<T, String>; }
+
     /// ALWAYS_INLINE is required to have better code layout for uniqHLL12 function
     void ALWAYS_INLINE add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {
@@ -690,6 +695,10 @@ public:
     String getName() const override { return Data::getName(); }
 
     bool allocatesMemoryInArena() const override { return false; }
+
+    // Unlike the unary numeric case, the variadic add hashes several columns into a
+    // combined key per row, which is expensive enough that merging partial states wins.
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
 
     void add(AggregateDataPtr __restrict place, const IColumn ** columns, size_t row_num, Arena *) const override
     {

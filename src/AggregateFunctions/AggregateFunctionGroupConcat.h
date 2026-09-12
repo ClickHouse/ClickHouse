@@ -65,6 +65,8 @@ public:
     void insertResultInto(AggregateDataPtr place, IColumn & to, Arena * arena) const override;
 
     bool allocatesMemoryInArena() const override;
+
+    bool mergeIsEquivalentToAddingRows() const override { return true; }
 };
 
 }

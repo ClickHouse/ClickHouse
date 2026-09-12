@@ -507,6 +507,14 @@ bool AggregateFunctionTuple::allocatesMemoryInArena() const
     return false;
 }
 
+bool AggregateFunctionTuple::mergeIsEquivalentToAddingRows() const
+{
+    for (const auto & func : nested_functions)
+        if (!func->mergeIsEquivalentToAddingRows())
+            return false;
+    return true;
+}
+
 /// The tuple result contains nested aggregation states if any element produces one, so the whole
 /// result requires state lifetime handling as soon as a single nested function is state-producing.
 bool AggregateFunctionTuple::isState() const

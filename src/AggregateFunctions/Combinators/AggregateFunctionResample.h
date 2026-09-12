@@ -139,6 +139,11 @@ public:
         return nested_function->allocatesMemoryInArena();
     }
 
+    bool mergeIsEquivalentToAddingRows() const override
+    {
+        return nested_function->mergeIsEquivalentToAddingRows();
+    }
+
     bool hasTrivialDestructor() const override
     {
         return nested_function->hasTrivialDestructor();

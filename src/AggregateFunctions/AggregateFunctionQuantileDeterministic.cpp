@@ -33,6 +33,7 @@ namespace
 template <typename Value>
 struct QuantileReservoirSamplerDeterministic
 {
+    static constexpr bool merge_is_equivalent_to_adding_rows = true;
     using Data = ReservoirSamplerDeterministic<Value, ReservoirSamplerDeterministicOnEmpty::RETURN_NAN_OR_ZERO>;
     Data data;
 
