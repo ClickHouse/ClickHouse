@@ -1,0 +1,6 @@
+CustomSeparated with a tab delimiter accepts the escaped value forms
+42	7
+43	8
+44	9
+CustomSeparated with a non-TSV delimiter after an AggregateFunction field is rejected
+The state form is rejected too

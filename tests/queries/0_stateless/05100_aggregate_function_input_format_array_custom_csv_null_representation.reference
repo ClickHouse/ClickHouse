@@ -1,0 +1,13 @@
+tsvraw	[1]
+tsvraw count	1
+tsvraw last element	1
+tsvraw low cardinality	1
+tsvraw date	1
+tsv	1
+csv	1
+json string-wrapped	1
+values	1
+tsvraw nan	[nan,1]
+tsvraw NULL keyword	1
+tsvraw string	['NULL','a']
+tsvraw default	1

@@ -1,0 +1,26 @@
+UInt64	42
+UInt64	42
+UInt64	42
+UInt64	42
+Float64	4.5
+Date	2020-01-01
+DateTime	2020-01-01 10:20:30
+IPv4	1.2.3.4
+Decimal	4.25
+Nullable(UInt64)	42
+Nullable(UInt64)	42
+Nullable(String)	abc
+LowCardinality(String)	abc
+String	abc
+String	\'abc\'
+String	a,b
+FixedString	abc\0\0
+Enum	b
+Dynamic	Dynamic	42
+Dynamic	\'42\'
+Variant	42
+Array	[1,2]
+unquoted	42
+unquoted	abc
+enum_as_number	b
+enum_as_number	b

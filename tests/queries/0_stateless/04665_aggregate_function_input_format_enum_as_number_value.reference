@@ -1,0 +1,26 @@
+default settings
+a
+b
+a
+b
+a
+b
+a
+b
+input_format_tsv_enum_as_number
+a
+b
+a
+b
+a
+b
+input_format_csv_enum_as_number
+b
+b
+nullable
+a
+b
+\N
+array mode
+['a','b']
+['a','b']

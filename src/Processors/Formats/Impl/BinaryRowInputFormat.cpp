@@ -180,8 +180,12 @@ void BinaryFormatReader<with_defaults>::skipField(size_t file_column)
             return;
     }
 
-    Field field;
-    read_data_types[file_column]->getDefaultSerialization()->deserializeBinary(field, *in, format_settings);
+    /// A `Field` can use a representation intended for a value nested in another serialization. Read an
+    /// actual temporary column instead, so skipping consumes exactly the representation used by the row
+    /// input format.
+    const auto & data_type = read_data_types[file_column];
+    auto tmp_column = data_type->createColumn();
+    data_type->getDefaultSerialization()->deserializeBinary(*tmp_column, *in, format_settings);
 }
 
 BinaryWithNamesAndTypesSchemaReader::BinaryWithNamesAndTypesSchemaReader(ReadBuffer & in_, const FormatSettings & format_settings_)
@@ -1386,6 +1390,17 @@ The RowBinaryWithNamesAndTypes header reports the type as `SimpleAggregateFuncti
 <Warning>
 Aggregate states have **no length prefix** in RowBinary. A parser must understand the internal serialization format of each specific aggregate function to know how many bytes to consume. In practice, most clients treat aggregate states as opaque and use `*State` / `*Merge` combinators to let the server handle serialization.
 </Warning>
+
+The opaque-state encoding is used on input only under the default [`aggregate_function_input_format`](/reference/settings/session-settings/aggregate#aggregate_function_input_format) setting value `'state'`. When that setting is `'value'` or `'array'`, an `INSERT` in a RowBinary-family format expects a different wire representation for each `AggregateFunction(func, T)` cell:
+
+- `'value'` — a single value of the argument type `T`, encoded exactly as `T` is in RowBinary (when `func` takes several arguments, a `Tuple` of them);
+- `'array'` — an `Array` of such values (an LEB128 length prefix followed by the elements).
+
+The server deserializes the received values and aggregates them with `func` to build the state. The setting does not affect output: `SELECT` always writes the opaque state described below. In the `RowBinaryWithNamesAndTypes` header the column type is still reported as `AggregateFunction(...)` regardless of the setting.
+
+<Note>
+The `value` and `array` forms are read for an `AggregateFunction` cell that the format reads as a column, including one nested inside `Array`, `Tuple`, `Map`, `Nullable`, `Variant`, or a `Dynamic` or `JSON` path that has its own subcolumn. They are not supported for a value that a carrier keeps in the generic nested representation: a `JSON` path that goes to the shared data — because the object already reached `max_dynamic_paths`, for example — always expects the length-prefixed opaque state, independently of `aggregate_function_input_format`. The shared data keeps the consumed bytes as they are and reads them back with the same representation, so it can only accept the form that it writes.
+</Note>
 
 The internal format varies by function. Some simple examples:
 

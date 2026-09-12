@@ -1,0 +1,8 @@
+array	1.5
+array group	[1,2,3]
+array string	['a','b']
+value	42
+value string	hello
+value null	1
+native value	42
+native array	1.5

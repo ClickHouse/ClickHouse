@@ -1,0 +1,8 @@
+JSON shared data carrier
+1	{'a':'AggregateFunction(any, UInt64)'}	010101000000000000
+1	{'a':'AggregateFunction(any, UInt64)'}	010101000000000000
+1	{'a':'AggregateFunction(any, UInt64)'}	010101000000000000
+Value form on the column path
+42
+AggregateFunction(any, UInt64)	42
+42
