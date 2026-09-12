@@ -15,7 +15,6 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
-#include <Functions/FunctionTopKFilter.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -257,7 +256,7 @@ std::optional<String> topKDynamicFilterColumn(const PrewhereInfo & prewhere)
         node = node->children.front();
 
     if (node->type != ActionsDAG::ActionType::FUNCTION || !node->function_base
-        || node->function_base->getName() != TOP_K_FILTER_FUNCTION_NAME || node->children.size() != 1)
+        || node->function_base->getName() != "__topKFilter" || node->children.size() != 1)
         return {};
 
     const auto * argument = node->children.front();
