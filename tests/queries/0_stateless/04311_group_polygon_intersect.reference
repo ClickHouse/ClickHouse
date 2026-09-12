@@ -1,0 +1,23 @@
+two_overlapping
+1
+disjoint
+MULTIPOLYGON()
+single
+100
+three_overlapping
+3
+containment
+4
+ring_input
+1
+multipolygon_input
+4
+empty_group
+MULTIPOLYGON()
+group_by
+1	1
+2	25
+short_circuit
+MULTIPOLYGON()
+geometric_equivalence
+1

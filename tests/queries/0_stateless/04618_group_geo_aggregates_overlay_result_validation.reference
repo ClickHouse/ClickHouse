@@ -1,0 +1,2 @@
+union_rejects_empty_overlay_result
+intersection_rejects_non_finite_overlay_result

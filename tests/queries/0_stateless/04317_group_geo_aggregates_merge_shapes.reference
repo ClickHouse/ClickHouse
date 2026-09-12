@@ -1,0 +1,14 @@
+convex_hull_direct_vs_state_merge
+1	1
+polygon_union_direct_vs_state_merge
+1
+polygon_intersect_direct_vs_state_merge
+1
+polygon_union_many_states_merge
+1
+polygon_intersect_many_states_merge
+1
+intersect_merge_disjoint_order_variants
+0	0
+merge_with_single_state
+25
