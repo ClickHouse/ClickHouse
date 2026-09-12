@@ -95,6 +95,7 @@ SELECT bitwise_and(12, 10), bitwise_or(12, 10), bitwise_left_shift(1, 4);
 SELECT bitwise_left_shift(1, 8), bitwise_left_shift(1, 20);
 SELECT bitwise_left_shift(CAST(1 AS TINYINT), 4), toTypeName(bitwise_left_shift(1, 8));
 SELECT bitwise_right_shift(-8, 3);
+SELECT bitwise_left_shift(TINYINT '-128', 1), bitwise_left_shift(SMALLINT '-32768', 1), toTypeName(bitwise_left_shift(TINYINT '1', 2));
 SELECT to_hex(from_hex('414243'));
 SELECT to_big_endian_64(1) = from_hex('0000000000000001');
 SELECT random() BETWEEN 0 AND 1, random(10) BETWEEN 0 AND 9;

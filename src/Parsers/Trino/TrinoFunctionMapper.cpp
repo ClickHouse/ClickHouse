@@ -841,17 +841,16 @@ const std::unordered_map<String, Rewriter> & getRewriters()
         {
             /// An untyped Trino literal is INTEGER-wide, but ClickHouse infers a
             /// minimal width for it, so e.g. bitwise_left_shift(1, 8) would shift
-            /// within UInt8 and return 0. Promote only untyped literals to 64-bit;
-            /// explicitly typed arguments (e.g. TINYINT '1') keep their Trino width.
+            /// within UInt8 and return 0. Promote only an untyped literal value to
+            /// 64-bit; an explicitly typed value (e.g. TINYINT '1') keeps its Trino
+            /// width, and the shift count is never promoted - the result type of
+            /// `bitShiftLeft` is as wide as the widest of its two arguments, so a
+            /// 64-bit shift count would widen a narrow value as well.
             requireArguments(function, arguments, 2, 2, "(value, shift)");
-            auto promote_literal = [](const ASTPtr & argument) -> ASTPtr
-            {
-                if (argument->as<ASTLiteral>())
-                    return makeFunctionWithArguments("toInt64", {argument});
-                return argument;
-            };
-            node = makeFunctionWithArguments(
-                "bitShiftLeft", {promote_literal(arguments[0]), promote_literal(arguments[1])});
+            ASTPtr value = arguments[0];
+            if (value->as<ASTLiteral>())
+                value = makeFunctionWithArguments("toInt64", {value});
+            node = makeFunctionWithArguments("bitShiftLeft", {value, arguments[1]});
         }},
         {"bitwise_right_shift", [](ASTPtr & node, ASTFunction & function, ASTs & arguments)
         {
