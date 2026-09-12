@@ -971,7 +971,8 @@ void TCPHandler::runImpl()
                     if (auto callback = query_state->query_context->getInteractiveCancelCallback();
                         !query_state->need_receive_data_for_input && callback)
                     {
-                        executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
+                        executor.setCancelCallback(
+                            ExecutorCancellation::cancelQuery(std::move(callback), query_state->query_context), interactive_delay / 1000);
                     }
 
                     executor.execute();
@@ -1606,6 +1607,14 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
 
     {
         PullingAsyncPipelineExecutor executor(pipeline);
+        executor.setCancelCallback(
+            ExecutorCancellation::finishPartialResult([this, &state]
+            {
+                std::lock_guard lock(*callback_mutex);
+                receivePacketsExpectCancel(state);
+                return state.stop_read_return_partial_result;
+            }),
+            interactive_delay / 1000);
         pipeline.setConcurrencyControl(state.query_context->getSettingsRef()[Setting::use_concurrency_control]);
         CurrentMetrics::Increment query_thread_metric_increment{CurrentMetrics::QueryThread};
 
@@ -1614,18 +1623,6 @@ void TCPHandler::processOrdinaryQuery(QueryState & state)
             Block block;
             while (executor.pull(block, interactive_delay / 1000))
             {
-                bool stop_read_return_partial_result = false;
-                {
-                    std::lock_guard lock(*callback_mutex);
-                    receivePacketsExpectCancel(state);
-                    stop_read_return_partial_result = state.stop_read_return_partial_result;
-                }
-
-                if (stop_read_return_partial_result)
-                {
-                    executor.cancelReading();
-                }
-
                 {
                     std::lock_guard lock(*callback_mutex);
 
@@ -3155,7 +3152,12 @@ void TCPHandler::processCancel(QueryState & state)
     state.read_all_data = true;
     state.stop_query = true;
 
-    throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query.");
+    auto exception = std::make_exception_ptr(
+        Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "Received 'Cancel' packet from the client, canceling the query."));
+    if (auto process_list_element = state.query_context->getProcessListElementSafe())
+        process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, exception);
+
+    std::rethrow_exception(exception);
 }
 
 void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
@@ -3198,6 +3200,10 @@ void TCPHandler::receivePacketsExpectCancel(QueryState & state, bool force)
             /// the mutex is released during stack unwinding, and a pipeline worker thread can acquire it
             /// and attempt to read from the canceled ReadBuffer before the executor is canceled.
             state.stop_query = true;
+
+            if (auto process_list_element = state.query_context->getProcessListElementSafe())
+                process_list_element->cancelQuery(CancelReason::CANCELLED_BY_USER, std::current_exception());
+
             throw;
         }
     }

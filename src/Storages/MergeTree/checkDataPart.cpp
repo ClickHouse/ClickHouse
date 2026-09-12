@@ -13,7 +13,9 @@
 #include <Compression/CompressedReadBuffer.h>
 #include <IO/HashingReadBuffer.h>
 #include <IO/S3Common.h>
+#include <Common/CurrentThread.h>
 #include <Common/CurrentMetrics.h>
+#include <Common/FailPoint.h>
 #include <Common/NetException.h>
 #include <Common/SipHash.h>
 #include <Common/ZooKeeper/IKeeper.h>
@@ -56,6 +58,11 @@ namespace ErrorCodes
     extern const int ABORTED;
     extern const int CANNOT_WRITE_TO_OSTREAM;
     extern const int CACHE_CANNOT_WRITE_TO_CACHE_DISK;
+}
+
+namespace FailPoints
+{
+    extern const char merge_tree_reader_pause_before_report_broken[];
 }
 
 
@@ -152,6 +159,12 @@ bool isRetryableException(std::exception_ptr exception_ptr)
         /// But it is OK, because there is a safety guard against deleting too many parts.
         return false;
     }
+}
+
+bool shouldReportBrokenPart(std::exception_ptr exception_ptr)
+{
+    FailPointInjection::pauseFailPoint(FailPoints::merge_tree_reader_pause_before_report_broken);
+    return !isRetryableException(exception_ptr) && !CurrentThread::isQueryCancellationException(exception_ptr);
 }
 
 static IMergeTreeDataPart::Checksums checkDataPart(

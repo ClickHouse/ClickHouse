@@ -345,6 +345,8 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
         [this]() -> MarkCache::MappedPtr
         {
             auto component_guard = Coordination::setCurrentComponent("MergeTreeMarksLoader::loadMarksAsync");
+            read_settings.read_cancellation.checkIfNotCancelled();
+
             if (is_canceled)
             {
                 ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);

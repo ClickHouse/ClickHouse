@@ -26,6 +26,7 @@
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Storages/IStorage.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
 
 namespace ProfileEvents
@@ -37,6 +38,11 @@ namespace ProfileEvents
 
 namespace DB
 {
+
+namespace FailPoints
+{
+    extern const char scalar_subquery_before_cardinality_check[];
+}
 
 namespace ErrorCodes
 {
@@ -296,6 +302,7 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             }
 
             std::optional<PullingAsyncPipelineExecutor> executor;
+            ContextPtr query_context;
             Chunk chunk;
 
             if (!skip_execution_for_exists)
@@ -305,8 +312,11 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
                 io.pipeline.setConcurrencyControl(context->getSettingsRef()[Setting::use_concurrency_control]);
 
                 executor.emplace(io.pipeline);
-                if (auto cancel_cb = context->hasQueryContext() ? context->getQueryContext()->getInteractiveCancelCallback() : nullptr)
-                    executor->setCancelCallback(std::move(cancel_cb), std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+                query_context = context->hasQueryContext() ? context->getQueryContext() : nullptr;
+                if (auto cancel_cb = query_context ? query_context->getInteractiveCancelCallback() : nullptr)
+                    executor->setCancelCallback(
+                        ExecutorCancellation::cancelQuery(std::move(cancel_cb), query_context),
+                        std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
                 while (chunk.getNumRows() == 0 && executor->pull(chunk))
                 {
                 }
@@ -347,6 +357,21 @@ void QueryAnalyzer::evaluateScalarSubqueryIfNeeded(QueryTreeNodePtr & node, Iden
             {
                 if (chunk.getNumRows() != 1)
                     throw Exception(ErrorCodes::INCORRECT_RESULT_OF_SCALAR_SUBQUERY, "Scalar subquery returned more than one row");
+
+                /// The injected `LIMIT 1` makes a non-empty `EXISTS` result final. From this point,
+                /// cancellation can stop the EOF drain without invalidating the result.
+                if (execute_for_exists)
+                {
+                    if (auto cancel_cb = query_context ? query_context->getInteractiveCancelCallback() : nullptr)
+                        executor->setCancelCallback(
+                            ExecutorCancellation::finishPartialResult(std::move(cancel_cb)),
+                            std::max(UInt64(100), context->getSettingsRef()[Setting::interactive_delay] / 1000));
+                }
+
+                const auto & query_id = context->getCurrentQueryId();
+                if (query_id.starts_with("scalar_subquery_cardinality_cancel_")
+                    || query_id.starts_with("exists_subquery_partial_cancel_"))
+                    FailPointInjection::pauseFailPoint(FailPoints::scalar_subquery_before_cardinality_check);
 
                 Chunk tmp_chunk;
                 while (tmp_chunk.getNumRows() == 0 && executor->pull(tmp_chunk))

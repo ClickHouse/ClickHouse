@@ -1,4 +1,5 @@
 #pragma once
+#include <Processors/Executors/ExecutorCancellation.h>
 #include <functional>
 #include <memory>
 
@@ -27,9 +28,10 @@ public:
     /// Get structure of returned block or chunk.
     const Block & getHeader() const;
 
-    /// Set a callback that is polled every interactive_timeout_ms during pull().
-    /// When set, pull() uses the timeout internally and calls the callback on each iteration.
+    /// Check before starting execution and every interactive_timeout_ms during `pull`.
+    /// A true result cancels execution. Use an explicit policy to finish a partial result or cancel the query.
     void setCancelCallback(std::function<bool()> callback, uint64_t interactive_timeout_ms_);
+    void setCancelCallback(ExecutorCancellation callback, uint64_t interactive_timeout_ms_);
 
     /// Methods return false if query is finished.
     /// If milliseconds > 0, returns empty object and `true` after timeout exceeded. Otherwise method is blocking.
@@ -66,7 +68,7 @@ private:
     std::shared_ptr<LazyOutputFormat> lazy_format;
     std::unique_ptr<Data> data;
 
-    std::function<bool()> cancel_callback;
+    ExecutorCancellation cancel_callback;
     uint64_t interactive_timeout_ms = 0;
 };
 

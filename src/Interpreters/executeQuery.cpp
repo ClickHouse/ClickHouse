@@ -4739,7 +4739,7 @@ void executeTrivialBlockIO(BlockIO & streams, ContextPtr context, bool with_inte
         if (auto callback = context->getInteractiveCancelCallback(); callback && with_interactive_cancel)
         {
             auto interactive_delay = context->getSettingsRef()[Setting::interactive_delay];
-            executor.setCancelCallback(std::move(callback), interactive_delay / 1000);
+            executor.setCancelCallback(ExecutorCancellation::cancelQuery(std::move(callback), context), interactive_delay / 1000);
         }
 
         executor.execute();

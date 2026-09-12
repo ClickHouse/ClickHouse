@@ -668,7 +668,7 @@ TableNodePtr executeSubqueryNode(const QueryTreeNodePtr & subquery_node,
     if (mutable_context->hasQueryContext())
     {
         if (auto cancel_callback = mutable_context->getQueryContext()->getInteractiveCancelCallback())
-            executor.setCancelCallback(std::move(cancel_callback), std::max(UInt64(100), mutable_context->getSettingsRef()[Setting::interactive_delay] / 1000));
+            executor.setCancelCallback(ExecutorCancellation::finishPartialResult(std::move(cancel_callback)), std::max(UInt64(100), mutable_context->getSettingsRef()[Setting::interactive_delay] / 1000));
     }
     executor.execute();
     mutable_context->addExternalTable(temporary_table_name, std::move(external_storage_holder));
