@@ -389,12 +389,22 @@ void Session::authenticate(const Credentials & credentials_, const Poco::Net::So
         user_id = auth_result.user_id;
         user_authenticated_with = auth_result.authentication_data;
         settings_from_auth_server = auth_result.settings;
+        /// Roles attached to this authentication by an external user directory (e.g. the `http`
+        /// directory). Session-scoped: they ride the same external-role machinery as interserver
+        /// pushed roles, but are not gated by push_external_roles_in_interserver_queries because
+        /// they are a local access-storage decision, not a remote push. They are kept apart from
+        /// the pushed roles appended below, because only they are authentication-time input for
+        /// settings-profile initialization. Both are replaced on every authentication.
+        authentication_external_roles = auth_result.external_roles;
+        pushed_external_roles.clear();
+        external_roles = authentication_external_roles;
         LOG_DEBUG(log, "{} Authenticated with global context as user {}",
                 toString(auth_id), toString(*user_id));
 
         if (!external_roles_.empty() && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries])
         {
-            external_roles = global_context->getAccessControl().find<Role>(external_roles_);
+            pushed_external_roles = global_context->getAccessControl().find<Role>(external_roles_);
+            external_roles.insert(external_roles.end(), pushed_external_roles.begin(), pushed_external_roles.end());
 
             LOG_DEBUG(log, "User {} has external_roles applied: [{}] ({})",
                       toString(*user_id), fmt::join(external_roles_, ", "), external_roles_.size());
@@ -598,7 +608,7 @@ ContextMutablePtr Session::makeSessionContext()
     prepared_client_info.reset();
 
     /// Set user information for the new context: current profiles, roles, access rights.
-    new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+    setAuthenticatedUser(*new_session_context, pushed_external_roles);
 
     /// Session context is ready.
     session_context = new_session_context;
@@ -640,51 +650,131 @@ ContextMutablePtr Session::makeSessionContext(const String & session_name_, std:
         = NamedSessionsStorage::instance().acquireSession(global_context, *user_id, session_name_, timeout_, session_check_);
 
     auto new_session_context = new_named_session->context;
-    new_session_context->makeSessionContext();
-
-    /// Copy prepared client info to the session context, no matter it's been just created or not.
-    /// If we continue using a previously created session context found by session ID
-    /// it's necessary to replace the client info in it anyway, because it contains actual connection information (client address, etc.)
-    new_session_context->setClientInfo(*prepared_client_info);
-    prepared_client_info.reset();
-
-    auto access = new_session_context->getAccess();
     UInt64 max_sessions_for_user = 0;
-    /// Set user information for the new context: current profiles, roles, access rights.
-    if (!access->tryGetUser())
-    {
-        new_session_context->setUser(*user_id, external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
-        max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
-    }
-    else
-    {
-        /// The session context is reused, but the current connection could be authenticated with
-        /// a different authentication method than the one which created the session. The access rights
-        /// limit must correspond to the method used by this connection: otherwise reattaching to a named session
-        /// would allow a credential with the GRANTS clause to use the full access rights of the user.
-        new_session_context->setAuthenticationGrants(getAuthenticationGrants());
-        /// The per-method expiry follows the same reasoning: the reused context must fail closed on the
-        /// expiry of the method used by this connection, not the one that originally created the session.
-        new_session_context->setAuthenticationValidUntil(getAuthenticationValidUntil());
+    SessionTracker::SessionTrackerHandle new_session_tracker_handle;
 
-        // Always get setting from profile
-        // profile can be changed by ALTER PROFILE during single session
-        auto settings = access->getDefaultSettings();
-        const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
-        if (max_session_for_user_field)
-            max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
+    /// State of a reused session that this call replaces, kept so a failed reattachment can
+    /// restore it and leave the session exactly as it was.
+    struct ReusedSessionState
+    {
+        ClientInfo client_info;
+        std::vector<UUID> external_roles;
+        std::shared_ptr<const AccessRightsElements> authentication_grants;
+        time_t authentication_valid_until = 0;
+    };
+    std::optional<ReusedSessionState> reused_session_state;
+
+    /// `acquireSession` has already published a newly created session into the named-session map
+    /// (and taken a reused one off its close schedule) before this initialization runs. Every step
+    /// below that can throw - including the admission check in `trackSession` - must therefore be
+    /// compensated: a session THIS call created must not remain reusable half-initialized, and a
+    /// reused session must be put back on its close schedule. Nothing is published into `this`
+    /// until all of them have succeeded.
+    try
+    {
+        new_session_context->makeSessionContext();
+
+        if (!new_named_session_created)
+            reused_session_state = ReusedSessionState{
+                .client_info = new_session_context->getClientInfo(),
+                .external_roles = new_session_context->getExternalRoles(),
+                .authentication_grants = new_session_context->getAuthenticationGrants(),
+                .authentication_valid_until = new_session_context->getAuthenticationValidUntil()};
+
+        /// Copy prepared client info to the session context, no matter it's been just created or not.
+        /// If we continue using a previously created session context found by session ID
+        /// it's necessary to replace the client info in it anyway, because it contains actual connection information (client address, etc.)
+        new_session_context->setClientInfo(*prepared_client_info);
+        prepared_client_info.reset();
+
+        auto access = new_session_context->getAccess();
+        /// Set user information for the new context: current profiles, roles, access rights.
+        if (!access->tryGetUser())
+        {
+            /// Creation-time state that reattachment does not rebuild.
+            setAuthenticatedUser(*new_session_context, pushed_external_roles);
+            max_sessions_for_user = new_session_context->getSettingsRef()[Setting::max_sessions_for_user];
+
+            /// Apply session settings received from the authentication server once, when the
+            /// named session is created. Applied AFTER max_sessions_for_user is captured from
+            /// the login profiles, mirroring the unnamed makeSessionContext, so a returned
+            /// max_sessions_for_user does not change named-session admission. Not re-applied
+            /// on reattachment, so settings modified with SET persist.
+            new_session_context->checkSettingsConstraints(settings_from_auth_server, SettingSource::QUERY);
+            new_session_context->applySettingsChanges(settings_from_auth_server);
+        }
+        else
+        {
+            /// The session context is reused, but the current connection could be authenticated with
+            /// a different authentication method than the one which created the session. The access rights
+            /// limit must correspond to the method used by this connection: otherwise reattaching to a named session
+            /// would allow a credential with the GRANTS clause to use the full access rights of the user.
+
+            /// Helper-returned roles are authentication-scoped, like the authentication grants and
+            /// expiry below: replace the previous authentication's external role set, including
+            /// replacement by an empty set. A named session must not retain the role set of the
+            /// authentication that created it. Role-derived settings/constraints installed at
+            /// session creation are deliberately NOT rebuilt here (see the docs).
+            new_session_context->setExternalRoles(external_roles);
+            new_session_context->setAuthenticationGrants(getAuthenticationGrants());
+            /// The per-method expiry follows the same reasoning: the reused context must fail closed on the
+            /// expiry of the method used by this connection, not the one that originally created the session.
+            new_session_context->setAuthenticationValidUntil(getAuthenticationValidUntil());
+
+            /// The wrapper obtained before the replacements above reflects the previous
+            /// authentication's roles/grants; re-acquire so the profile-derived values below
+            /// (max_sessions_for_user) are read from the recalculated access.
+            access = new_session_context->getAccess();
+
+            // Always get setting from profile
+            // profile can be changed by ALTER PROFILE during single session
+            auto settings = access->getDefaultSettings();
+            const Field * max_session_for_user_field = settings.tryGet("max_sessions_for_user");
+            if (max_session_for_user_field)
+                max_sessions_for_user = max_session_for_user_field->safeGet<UInt64>();
+        }
+
+        /// Admission is part of the transactional initialization: `trackSession` throws
+        /// USER_SESSION_LIMIT_EXCEEDED when the user's session count is exhausted, and a session
+        /// refused here must not survive as a reusable named session initialized under the
+        /// refused request's roles and settings.
+        new_session_tracker_handle = new_session_context->getSessionTracker().trackSession(
+            *user_id,
+            { session_name_ },
+            max_sessions_for_user);
+    }
+    catch (...)
+    {
+        if (new_named_session_created)
+        {
+            /// Remove the session this call published, so a later request with the same
+            /// session_id creates a fresh one instead of reusing a half-initialized one.
+            NamedSessionsStorage::instance().releaseAndCloseSession(*user_id, session_name_, new_named_session);
+        }
+        else
+        {
+            /// Undo the replacements made above, so the refused reattachment leaves the
+            /// session as the previous authentication left it, then put it back on the
+            /// close schedule that `acquireSession` removed it from (the destructor of
+            /// `this` will not release it, because it was never assigned to `named_session`).
+            if (reused_session_state)
+            {
+                new_session_context->setClientInfo(reused_session_state->client_info);
+                new_session_context->setExternalRoles(reused_session_state->external_roles);
+                new_session_context->setAuthenticationGrants(reused_session_state->authentication_grants);
+                new_session_context->setAuthenticationValidUntil(reused_session_state->authentication_valid_until);
+            }
+            new_named_session->release();
+        }
+        throw;
     }
 
     /// Session context is ready.
     session_context = std::move(new_session_context);
-    named_session = new_named_session;
+    named_session = std::move(new_named_session);
     named_session_created = new_named_session_created;
+    session_tracker_handle = std::move(new_session_tracker_handle);
     user = session_context->getUser();
-
-    session_tracker_handle = session_context->getSessionTracker().trackSession(
-        *user_id,
-        { session_name_ },
-        max_sessions_for_user);
 
     recordLoginSuccess(session_context);
 
@@ -704,6 +794,14 @@ ContextMutablePtr Session::makeQueryContext(ClientInfo && query_client_info) con
 ContextMutablePtr Session::makeDetachedQueryContext(const ClientInfo & query_client_info) const
 {
     return makeQueryContextImpl(&query_client_info, nullptr, /* detached= */ true);
+}
+
+void Session::setAuthenticatedUser(Context & context, const std::vector<UUID> & propagated_external_roles) const
+{
+    context.setUserFromAuthentication(
+        *user_id,
+        {.external_roles = authentication_external_roles, .grants = getAuthenticationGrants(), .valid_until = getAuthenticationValidUntil()},
+        propagated_external_roles);
 }
 
 std::shared_ptr<SessionLog> Session::getSessionLog() const
@@ -783,23 +881,28 @@ ContextMutablePtr Session::makeQueryContextImpl(const ClientInfo * client_info_t
 
     /// On a secret interserver query, enable the initiator's current roles (external, bypassing the grant check)
     /// and drop defaults so row policies match. Gate on the session interface, not the client-controlled per-query one.
-    std::vector<UUID> effective_external_roles = external_roles;
+    std::vector<UUID> propagated_external_roles = pushed_external_roles;
     const bool apply_initiator_roles = getClientInfo().interface == ClientInfo::Interface::TCP_INTERSERVER
         && query_context->getClientInfo().current_roles.has_value()
         && global_context->getSettingsRef()[Setting::push_external_roles_in_interserver_queries];
     if (apply_initiator_roles)
     {
         const auto & role_names = *query_context->getClientInfo().current_roles;
-        effective_external_roles = global_context->getAccessControl().find<Role>(role_names);
+        propagated_external_roles = global_context->getAccessControl().find<Role>(role_names);
         /// Fail closed: a role unknown here cannot be honored; dropping it could drop a restrictive policy.
-        if (effective_external_roles.size() != role_names.size())
+        if (propagated_external_roles.size() != role_names.size())
             throw Exception(ErrorCodes::ACCESS_DENIED,
                 "Not all of the initiator's current roles are known on this node: [{}]", fmt::join(role_names, ", "));
+        /// The initiator's roles REPLACE this connection's external roles. That is equivalent to the
+        /// union computed by `setUserFromAuthentication` only because an interserver connection is
+        /// authenticated with `AlwaysAllowCredentials`, which never returns roles.
+        chassert(authentication_external_roles.empty());
     }
 
     /// Set user information for the new context: current profiles, roles, access rights.
+    /// The first context built from this session's authentication (there is no session context).
     if (user_id && !query_context->getAccess()->tryGetUser())
-        query_context->setUser(*user_id, effective_external_roles, getAuthenticationGrants(), getAuthenticationValidUntil());
+        setAuthenticatedUser(*query_context, propagated_external_roles);
 
     if (apply_initiator_roles && user_id)
         query_context->setCurrentRoles(std::vector<UUID>{}, /* check_grants= */ false);

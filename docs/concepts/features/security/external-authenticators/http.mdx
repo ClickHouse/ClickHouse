@@ -101,3 +101,239 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ### Passing session settings {#passing-session-settings}
 
 If a response body from HTTP authentication server has JSON format and contains `settings` sub-object, ClickHouse will try parse its key: value pairs as string values and set them as session settings for authenticated user's current session. If parsing is failed, a response body from server will be ignored.
+
+## HTTP external user directory {#http-external-user-directory}
+
+In addition to authenticating locally defined users, an HTTP authentication server can back
+a `user_directories` entry, so users that are not defined in ClickHouse can authenticate and
+are materialized as ephemeral in-memory users. Nothing is persisted to disk; a server restart
+starts with an empty cache.
+
+**Example**
+
+```xml
+<clickhouse>
+    <user_directories>
+        <http>
+            <server>basic_server</server>
+            <allowed_roles>
+                <role>reader</role>
+                <role>analyst</role>
+            </allowed_roles>
+            <allowed_role_prefix>external_</allowed_role_prefix>
+            <default_profile>readonly</default_profile>
+            <networks>
+                <ip>10.0.0.0/8</ip>
+            </networks>
+            <max_cached_users>10000</max_cached_users>
+        </http>
+    </user_directories>
+</clickhouse>
+```
+
+### Parameters {#http-external-user-directory-parameters}
+
+| Parameter | Default | Description |
+|---|---|---|
+| `server` | — | Name of an entry in `http_authentication_servers` (required). |
+| `allowed_roles` | empty | `role` entries: local role names this directory may assign. |
+| `allowed_role_prefix` | empty | Prefix of local role names this directory may assign; may be repeated. |
+| `default_profile` | none | Settings profile attached to every user materialized by this directory. The configured name is re-resolved on every authentication that materializes a user or reuses a cached one; if it does not resolve, the attempt fails. A cached user's profile reference is reconciled if a profile of the same name is recreated with a new identity. |
+| `networks` | any host | ClickHouse-side network restrictions (`ip`, `host`, `host_regexp`) for users of this directory. |
+| `max_cached_users` | `10000` | Bound on materialized users; `0` means unlimited. A new username is rejected once the bound is reached; already-materialized users keep authenticating. Materialized users are not evicted on their own; `SYSTEM RELOAD USERS` drops all of them (see below), and so does a restart. |
+
+Unknown parameters are rejected at startup, and so is a repeated parameter: only
+`allowed_role_prefix` (and the `role` and network entries inside `allowed_roles` and
+`networks`) may appear more than once.
+
+At most one `<http>` user directory is permitted: a second `<http>` entry is rejected at
+startup. (On distributed queries the receiving node materializes the user internally by
+username alone and could not determine which of several HTTP directories owns it.)
+
+The `<http>` directory may coexist with other dynamic external user directories such as
+`<ldap>`, but on distributed queries the receiving node cannot infer which dynamic
+directory originally authenticated an uncached username: the first configured dynamic
+directory materializes it. Deployments combining them should keep the directory order
+consistent across nodes, use non-overlapping username namespaces where practical, and
+keep baseline policies (`default_profile`, `networks`) compatible for usernames that can
+appear on remote nodes.
+
+### Response metadata {#http-external-user-directory-response}
+
+On HTTP `200`, the response body may be empty (equivalent to `{}`) or a JSON object:
+
+```json
+{
+    "settings": {"max_threads": "4"},
+    "roles": ["reader", "analyst"],
+    "valid_until": 1788192000
+}
+```
+
+- `roles` — the complete role set for this authentication. Every role must exist in
+  ClickHouse and be allowed by `allowed_roles`/`allowed_role_prefix`; otherwise the
+  authentication attempt fails. Roles are session-scoped: they are applied to the
+  authenticated session and are not persisted as grants on the materialized user, so
+  two simultaneous sessions of the same user may have different role sets. An empty
+  delegation configuration denies every returned role. When a fresh authenticated session
+  is created, the returned roles supply their privileges, row policies, role hierarchy and
+  quotas, and they also participate in settings-profile initialization, so their
+  role-attached settings values and constraints become creation-time session state.
+- `settings` — session settings, applied like the existing `IDENTIFIED WITH HTTP`
+  response settings, subject to the usual setting constraints. Every name must be either
+  a built-in server setting or a custom setting whose name matches
+  `custom_settings_prefixes`; any other name, or a built-in setting with a malformed
+  value, fails the authentication attempt. Values may be JSON strings, numbers or
+  booleans. A built-in setting is converted to its type (so `"4"` and `4` are equivalent),
+  while a custom setting keeps the JSON scalar type it was sent with, for example
+  `{"SQL_tenant": "acme", "SQL_region_id": 42}` is readable in queries as
+  `getSetting('SQL_tenant')` and `getSetting('SQL_region_id')`.
+- `valid_until` — absolute Unix timestamp limiting this authentication; `0` or absence
+  means no expiry; a past or malformed value fails the attempt.
+
+Unlike locally defined users with `IDENTIFIED WITH HTTP`, malformed response metadata
+fails the authentication attempt instead of being ignored; a JSON object with a duplicate
+member name is malformed. A `200` response must be
+length-delimited, with `Content-Length` (`Content-Length: 0` for an empty body) or chunked
+transfer encoding, so that an incomplete body is detected; a body delimited only by closing
+the connection fails the attempt even if it is valid, and so does a truncated body. The
+response body is read up to a fixed limit of 1 MiB; a larger body fails the attempt. A `404`
+body is read and discarded so that the connection to the authentication server can be
+reused; an empty `404` body is preferred, and a truncated `404` body fails the attempt
+instead of letting the next access storage be tried.
+
+### Failure semantics {#http-external-user-directory-failures}
+
+For Basic authentication attempts handled by this directory, only HTTP `404` ("user not
+known to this directory") lets ClickHouse try the next access storage. Every other outcome
+— `401`/`403`, `429`, `5xx`, network errors, malformed metadata, disallowed roles, expired
+`valid_until`, an unresolvable `default_profile`, a rejected network, or the cache bound —
+fails the authentication attempt. (An authentication form this directory cannot evaluate,
+such as an SSL certificate, is not handled here at all and continues to later storages.)
+
+:::warning
+`404` must mean "this username does not belong to this directory" — never "invalid
+credentials". A service that answers `404` for a rejected authentication attempt (for
+example to hide username existence) causes ClickHouse to try later access storages with
+the same authentication attempt.
+:::
+
+Authentication-specific authorization changes on named-session reattachment must be
+expressed through **roles** (privileges, row policies, quotas) and **`valid_until`**.
+Helper-returned `settings` and role-attached settings profiles are session initialization
+state, not per-authentication authorization state: they are not re-applied or rebuilt when
+a connection reattaches to a named session.
+
+### Named sessions {#http-external-user-directory-named-sessions}
+
+A named session (`session_id`) preserves ordinary mutable session state (settings changed
+with `SET`, temporary tables, the current database) across requests, but every request is
+authenticated before it attaches to the session. Authentication-scoped state therefore
+follows the authentication of the current request: on reattachment, the helper-returned
+role set replaces the previous one (including replacement by an empty set) for privileges,
+row policies, role hierarchy, and quotas, and the authentication expiry is replaced
+likewise. Role-derived settings values and constraints are established when the named
+session is created and are not rebuilt on reattachment; applications that need fresh
+role-profile policy should create a new named session. Settings returned by the
+authentication server are applied once, when the named session is created, and are not
+re-applied on reattachment, so settings modified inside the session persist.
+
+One admission-control value is an intentional exception: `max_sessions_for_user` is
+re-read from the current access/profile state each time a named session is acquired
+(pre-existing named-session behavior, unchanged by this feature). Rebinding does not
+rebuild the session's settings values or constraints, but it does not suppress this
+existing per-acquisition re-read either.
+
+If creating a named session fails — a returned setting violates a constraint, or the
+request is refused with `USER_SESSION_LIMIT_EXCEEDED` — no session is left behind under
+that `session_id`: a later request with the same `session_id` creates a fresh session from
+its own authentication.
+
+### `SQL SECURITY DEFINER` is not supported {#http-external-user-directory-definer}
+
+For an ephemeral user, ClickHouse persists a single shadow user named `<username>:definer`
+as the definer of `SQL SECURITY DEFINER` objects, replacing it on every such creation.
+Roles returned by the authentication server belong to one authentication, and two
+simultaneous sessions of the same username may carry different role sets, so no single
+shadow can represent them: a later view created by the same username would silently change
+the authorization of earlier ones. Creating a `SQL SECURITY DEFINER` object as a user of
+this directory whose authentication returned roles therefore fails with `NOT_IMPLEMENTED`.
+Use `SQL SECURITY INVOKER` for views. Materialized views default to `SQL SECURITY DEFINER`
+(see `default_materialized_view_sql_security`) and must be created with an explicit
+`SQL SECURITY NONE` by such users, which requires the `ALLOW_SQL_SECURITY_NONE` privilege.
+Only roles attached by the authentication trigger this rejection; roles replayed for an
+already-established identity, such as the initiator's roles on the hosts executing an
+`ON CLUSTER` query with `distributed_ddl_use_initial_user_and_roles`, do not. The `ON CLUSTER`
+form of the statement is rejected as well, because the check runs on the initiator before the
+query is queued for the cluster.
+
+### Propagated roles {#http-external-user-directory-propagated-roles}
+
+Distributed and interserver queries, and deferred execution such as asynchronous inserts,
+propagate the session's effective role set through the existing external-role machinery, so
+role-based authorization (privileges, row policies, role hierarchy, quotas) is preserved on
+the remote or deferred side. The propagated current-role list is not treated as fresh
+authentication-time input: it does not rebuild settings-profile values or constraints there.
+Execution settings continue to be propagated as before; settings-profile provenance is not.
+Likewise, `SET ROLE` inside a session does not rebuild that session's creation-time
+settings-profile state.
+
+### Established-session refresh and revocation {#http-external-user-directory-revocation}
+
+The HTTP user directory does not cache successful authentication decisions: normal
+authentications always consult the configured HTTP authentication server, so a server-side
+rejection takes effect on the next authentication without clearing the materialized-user
+cache. However, stateful ClickHouse protocols authenticate once per connection and do not
+refresh external authentication state while the connection remains established. Returned
+`valid_until` is enforced locally before subsequent queries, but earlier revocation or
+changes to returned roles/settings are observed only after reauthentication. HTTP requests
+authenticate individually; named HTTP-session reattachment therefore receives the new role
+set and expiry according to the named-session rules. Interserver execution uses the
+existing already-authenticated path and does not independently contact the HTTP
+authentication server.
+
+### `SYSTEM RELOAD USERS` {#http-external-user-directory-reload}
+
+`SYSTEM RELOAD USERS` drops every user materialized by this directory. This is the way to
+recover from a reached `max_cached_users` bound without a restart, and it releases a name
+held by a materialized user so that `CREATE USER` can define it locally. Users drop back in
+on their next successful authentication. Established connections of dropped users fail on
+their next query and must reconnect; HTTP requests re-authenticate on their own, but a
+named HTTP session (`session_id`) is recreated under the new user identity, so its `SET`
+state and temporary tables are lost. The directory configuration is not reloaded.
+
+### Limitations {#http-external-user-directory-limitations}
+
+- The directory configuration is fixed until server restart; neither `SYSTEM RELOAD CONFIG`
+  nor `SYSTEM RELOAD USERS` reconfigures it.
+- Dropping the settings profile named by `default_profile` fails authentication for users
+  of this directory, including ones already materialized, and including the internal
+  already-authenticated path used by distributed queries — so distributed queries on
+  behalf of such a user start failing on remote nodes until the profile exists again. This
+  is deliberate: the profile is baseline policy for every user of this directory, and
+  authenticating without it would silently drop that policy. Recreate the profile (any
+  same-named profile is picked up on the next authentication) or leave `default_profile`
+  unset if you do not want this coupling.
+- Users found in an earlier configured access storage (for example `users.xml`) are handled
+  by that storage and never reach this directory. Conversely, if `<http>` is configured
+  BEFORE the local storages, every Basic login of a locally defined user reaches this
+  directory first, so that user's name and password are sent to the external authentication
+  service on every login, and any answer other than `404` for a username the service does
+  not own fails the attempt without trying the local storage, locking that user out.
+- `allowed_roles` and `allowed_role_prefix` bound which role names the service may assign,
+  not what those roles grant: a later `GRANT` to an allowed role widens what the service can
+  hand out through it.
+- On the internal already-authenticated path (distributed/interserver queries and
+  config-embedded credentials), this directory never falls through to a later storage: it
+  always returns the cached user, or materializes a grant-less baseline user, regardless of
+  whether the username is actually defined elsewhere. So if `<http>` is configured BEFORE
+  `users.xml`/`local_directory` in `user_directories`, a username that also exists locally
+  gets materialized here first as a grant-less ephemeral HTTP user on remote nodes, shadowing
+  its real, locally defined grants. Configure `<http>` AFTER the local storages to avoid this.
+- The same ordering matters for `CREATE USER`: an access entity is inserted into the first
+  storage that is writable or already holds an entity of that name. If `<http>` is configured
+  BEFORE the local storages and has already materialized `alice`, `CREATE USER alice` fails
+  with `ACCESS_STORAGE_READONLY`, and `CREATE USER alice IN local_directory` fails because a
+  user of that name already exists in the `http` storage. This is the same behavior as for
+  users materialized by an `<ldap>` directory. Configuring `<http>` AFTER the local storages
+  avoids it; a user defined locally afterwards is then found by the local storage first.

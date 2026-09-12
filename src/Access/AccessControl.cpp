@@ -5,6 +5,7 @@
 #include <Access/UsersConfigAccessStorage.h>
 #include <Access/DiskAccessStorage.h>
 #include <Access/LDAPAccessStorage.h>
+#include <Access/HTTPAccessStorage.h>
 #include <Access/ContextAccess.h>
 #include <Access/EnabledSettings.h>
 #include <Access/EnabledRolesInfo.h>
@@ -436,6 +437,16 @@ void AccessControl::addLDAPStorage(const String & storage_name_, const Poco::Uti
 }
 
 
+void AccessControl::addHTTPStorage(
+    const String & storage_name_, const Poco::Util::AbstractConfiguration & config_, const String & prefix_)
+{
+    auto new_storage = std::make_shared<HTTPAccessStorage>(storage_name_, *this, config_, prefix_);
+    addStorage(new_storage);
+    LOG_DEBUG(getLogger(), "Added {} access storage '{}', HTTP authentication server name: {}",
+        String(new_storage->getStorageType()), new_storage->getStorageName(), new_storage->getHTTPAuthServerName());
+}
+
+
 void AccessControl::addStoragesFromUserDirectoriesConfig(
     const Poco::Util::AbstractConfiguration & config,
     const String & key,
@@ -446,6 +457,26 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
 {
     Strings keys_in_user_directories;
     config.keys(key, keys_in_user_directories);
+
+    /// At most one `http` external user directory is permitted: on the interserver
+    /// AlwaysAllowCredentials path the receiving node has only a username and cannot
+    /// determine which of several HTTP directories owns it. (The generic cross-type
+    /// ambiguity with other materializing dynamic directories, e.g. `ldap`, pre-exists
+    /// and is documented, not restricted.)
+    {
+        size_t http_directories = 0;
+        for (const auto & key_in_user_directories : keys_in_user_directories)
+        {
+            String directory_type = key_in_user_directories;
+            if (size_t bracket_pos = directory_type.find('['); bracket_pos != String::npos)
+                directory_type.resize(bracket_pos);
+            if (directory_type == HTTPAccessStorage::STORAGE_TYPE)
+                ++http_directories;
+        }
+        if (http_directories > 1)
+            throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG,
+                "At most one 'http' user directory is allowed, found {} in {}", http_directories, key);
+    }
 
     for (const String & key_in_user_directories : keys_in_user_directories)
     {
@@ -486,6 +517,10 @@ void AccessControl::addStoragesFromUserDirectoriesConfig(
         else if (type == LDAPAccessStorage::STORAGE_TYPE)
         {
             addLDAPStorage(name, config, prefix);
+        }
+        else if (type == HTTPAccessStorage::STORAGE_TYPE)
+        {
+            addHTTPStorage(name, config, prefix);
         }
         else if (type == ReplicatedAccessStorage::STORAGE_TYPE)
         {

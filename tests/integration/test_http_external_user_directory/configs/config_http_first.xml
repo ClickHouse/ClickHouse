@@ -1,0 +1,32 @@
+<clickhouse>
+    <http_authentication_servers>
+        <cache_server>
+            <uri>http://localhost:8000/cache</uri>
+        </cache_server>
+    </http_authentication_servers>
+
+    <!--
+      CRITICAL for the fallback tests: the base image sets <users_config>users.xml</users_config>,
+      which AccessControl::addStoragesFromMainConfig adds as a users_config storage BEFORE any
+      <user_directories> entries. Left in place, users.xml would precede <http> and intercept the
+      fallback cases, making them vacuous. So DISABLE the implicit users_config here and put the
+      users_xml directory explicitly AFTER <http>.
+      Verify the effective order at fixture start (see the fixture) rather than trusting the merge.
+    -->
+    <users_config remove="remove"></users_config>
+
+    <user_directories replace="replace">
+        <http>
+            <server>cache_server</server>
+            <max_cached_users>3</max_cached_users>
+        </http>
+        <users_xml>
+            <path>/etc/clickhouse-server/users.xml</path>
+        </users_xml>
+        <!-- A writable storage AFTER <http>, so node3 also has the documented CREATE USER
+             ordering trap: a name held by a materialized http user cannot be created here. -->
+        <local_directory>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+    </user_directories>
+</clickhouse>

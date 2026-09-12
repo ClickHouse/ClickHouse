@@ -1,0 +1,41 @@
+<clickhouse>
+    <custom_settings_prefixes>SQL_</custom_settings_prefixes>
+    <http_authentication_servers>
+        <main_server>
+            <uri>http://localhost:8000/main</uri>
+            <!-- test_distinct_users_authenticate_concurrently barriers 4 handler requests
+                 before releasing any of them; on a loaded CI runner the 4 docker exec
+                 client spawns can spread over more than 1 second, so these timeouts must
+                 exceed that client-spawn skew or an early request times out, `HTTPAuthClient`
+                 retries, and the late arrival finds the barrier already broken. The barrier's
+                 own 10s timeout still fails the test closed if the mock genuinely hangs. -->
+            <connection_timeout_ms>15000</connection_timeout_ms>
+            <receive_timeout_ms>15000</receive_timeout_ms>
+            <send_timeout_ms>15000</send_timeout_ms>
+            <max_tries>3</max_tries>
+            <retry_initial_backoff_ms>50</retry_initial_backoff_ms>
+            <retry_max_backoff_ms>1000</retry_max_backoff_ms>
+        </main_server>
+    </http_authentication_servers>
+
+    <user_directories>
+        <http>
+            <server>main_server</server>
+            <allowed_roles>
+                <role>reader</role>
+                <role>analyst</role>
+                <role>role_a</role>
+                <role>role_b</role>
+                <role>policy_role</role>
+                <role>cluster_role</role>
+                <role>only_node1_role</role>
+                <role>probe_role_a</role>
+                <role>probe_role_b</role>
+                <role>capped_role</role>
+                <role>limit_role_a</role>
+                <role>limit_role_b</role>
+            </allowed_roles>
+            <allowed_role_prefix>external_</allowed_role_prefix>
+        </http>
+    </user_directories>
+</clickhouse>
