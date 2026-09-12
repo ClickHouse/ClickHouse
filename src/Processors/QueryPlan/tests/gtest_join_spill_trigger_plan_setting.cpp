@@ -82,8 +82,9 @@ TEST(JoinSpillTriggerPlanSetting, RefusedTowardsOldPeersWhenTheContractsDiverge)
     EXPECT_THROW(serializeAt(makeJoinSettings({{"max_rows_in_join", 100u}}), pre_setting_version), Exception);
     EXPECT_THROW(serializeAt(makeJoinSettings({{"max_bytes_in_join", 1000u}}), pre_setting_version), Exception);
 
-    /// Standalone `grace_hash` takes its spill threshold from `max_bytes_before_external_join` here and ignores it
-    /// there, where the (unset) size limits are its only trigger, so it would never spill.
+    /// Standalone `grace_hash` takes its spill threshold from `max_bytes_before_external_join` /
+    /// `max_bytes_ratio_before_external_join` here and ignores both there, where the (unset) size limits are its
+    /// only trigger, so it would never spill.
     EXPECT_THROW(
         serializeAt(
             makeJoinSettings({{"join_algorithm", "grace_hash"}, {"max_bytes_before_external_join", 1000000u}}),
@@ -116,12 +117,19 @@ TEST(JoinSpillTriggerPlanSetting, AllowedTowardsOldPeersWhenBothContractsAgree)
         EXPECT_TRUE(JoinSettings(settings, pre_setting_version).legacy_join_size_limits_trigger_spilling);
     }
 
-    /// `grace_hash` without a spill threshold: both sides keep the whole right side in memory, the size limits are
-    /// unset, so there is nothing the two contracts can disagree about.
-    EXPECT_NO_THROW(serializeAt(makeJoinSettings({{"join_algorithm", "grace_hash"}}), pre_setting_version));
+    /// `grace_hash` without a spill threshold - `max_bytes_ratio_before_external_join` is non-zero by default, so
+    /// both have to be cleared: neither side spills, the size limits are unset, so there is nothing the two
+    /// contracts can disagree about.
+    EXPECT_NO_THROW(serializeAt(
+        makeJoinSettings({{"join_algorithm", "grace_hash"}, {"max_bytes_ratio_before_external_join", 0.0}}),
+        pre_setting_version));
 
     /// A spill threshold without `grace_hash`: `hash` spills at `max_bytes_before_external_join` on both sides.
     EXPECT_NO_THROW(
         serializeAt(makeJoinSettings({{"join_algorithm", "hash"}, {"max_bytes_before_external_join", 1000000u}}),
                     pre_setting_version));
+
+    /// The default `join_algorithm` does not list `grace_hash`, so the default settings pass the gate even though
+    /// `max_bytes_ratio_before_external_join` is non-zero out of the box.
+    EXPECT_NO_THROW(serializeAt(makeJoinSettings({}), pre_setting_version));
 }
