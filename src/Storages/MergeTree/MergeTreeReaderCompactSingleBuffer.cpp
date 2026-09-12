@@ -93,7 +93,8 @@ try
 }
 catch (...)
 {
-    if (!isRetryableException(std::current_exception()))
+    /// A cancellation observed inside a column prefix read says nothing about the part's health.
+    if (!isCancelledPrefixRead() && !isRetryableException(std::current_exception()))
         data_part_info_for_read->reportBroken();
 
     /// Better diagnostics.
