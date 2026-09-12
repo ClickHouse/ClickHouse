@@ -3865,8 +3865,10 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// The conversion only produces its own leading sort columns; the extra merge columns of a
     /// widened re-request are default-filled by setVirtualRow, so the announced boundary is wrong.
     /// Drop the virtual row here: the merge then falls back to normal cross-part comparison.
+    /// Coverage is the number of primary key columns the conversion reads, not the number of
+    /// columns it outputs: constant ORDER BY columns are outputs backed by no key column.
     if (widened_over_previous_request && virtual_row_conversion
-        && virtual_row_conversion->getSampleBlock().columns() < prefix_size)
+        && virtual_row_conversion->getRequiredColumnsWithTypes().size() < prefix_size)
         resetVirtualRowConversions();
 
     /// In case of read-in-order, don't create too many reading streams.
@@ -4939,11 +4941,9 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         if (deferred_prewhere_info)
             add_required_columns(deferred_prewhere_info->prewhere_actions.getRequiredColumnsNames());
 
-        /// Recreate output_header without the deferred filters since they will be applied after FINAL
-        output_header = std::make_shared<const Block>(MergeTreeSelectProcessor::transformHeader(
-            storage_snapshot->getSampleBlockForColumns(all_column_names),
-            query_info.row_level_filter,
-            query_info.prewhere_info));
+        /// The declared output header must not change here: parent steps, and under
+        /// `make_distributed_plan` an already serialized `ShuffleReceiveStep`, are built from it.
+        /// The deferred filters run as pipeline transforms and the converting actions below restore it.
 
         LOG_DEBUG(
             log,
@@ -6222,7 +6222,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
     /// below) so a deduplication group stays within one bucket.
     if (!isQueryWithFinal() || data.merging_params.mode == MergeTreeData::MergingParams::Ordinary)
     {
-        auto analysis = selectRangesToRead();
+        auto analysis = getOrCreateAnalyzedResult();
         if (!analysis || analysis->parts_with_ranges.empty())
         {
             LOG_TRACE(log, "Distributed read not bucketed: nothing to read");
@@ -6276,7 +6276,7 @@ size_t ReadFromMergeTree::setupDistributedReadBuckets(size_t target_buckets, siz
         return 0;
     }
 
-    auto analysis = selectRangesToRead();
+    auto analysis = getOrCreateAnalyzedResult();
     if (!analysis || analysis->parts_with_ranges.empty())
     {
         LOG_TRACE(log, "Distributed read not bucketed: nothing to read");
@@ -6430,7 +6430,7 @@ Strings ReadFromMergeTree::getShardsForDistributedRead() const
     if (distributed_read_bucket_count == 0)
         return default_shard_list;
 
-    auto analysis_result = selectRangesToRead();
+    auto analysis_result = getOrCreateAnalyzedResult();
     if (!analysis_result)
         return default_shard_list;
 
@@ -6456,8 +6456,8 @@ bool ReadFromMergeTree::supportsBucketedRead() const
         unsupported_deferred_filters = false;
 #endif
     /// An order set before the plan was optimized (the old analyzer's executeOrderOptimized) is rejected in
-    /// checkDistributedReadSupported, so it cannot reach here. Do not gate on it: the worker path asks for
-    /// its order before consulting this, and refusing would route the read to a node with no catalog.
+    /// getReasonReadCannotBeDistributed, so it cannot reach here. Do not gate on it: the worker
+    /// path asks for its order before consulting this, and refusing would route the read to a node with no catalog.
     return !unsupported_deferred_filters
         && !(analyzed_result_ptr && analyzed_result_ptr->readFromProjection())
         && index_read_tasks.empty();
@@ -6488,7 +6488,7 @@ void ReadFromMergeTree::serialize(Serialization & ctx) const
 {
     /// Serializing the STREAM modifier is not implemented yet, so reject it instead of silently
     /// reading a plain snapshot. (Pinned block boundaries and part-order virtual columns are rejected
-    /// earlier in checkDistributedReadSupported.)
+    /// earlier in getReasonReadCannotBeDistributed.)
     if (query_info.isStream())
         throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
             "make_distributed_plan does not support a distributed read with the STREAM modifier");

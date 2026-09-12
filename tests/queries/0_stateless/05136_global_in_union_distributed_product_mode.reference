@@ -1,0 +1,30 @@
+IN with UNION ALL
+1
+1
+2
+2
+IN with UNION DISTINCT in a CTE
+1
+1
+2
+2
+NOT IN with UNION ALL
+2
+2
+IN with three distributed tables in the subquery
+1
+1
+2
+2
+Nested IN, both with UNION ALL
+1
+1
+2
+2
+JOIN with UNION ALL of distributed tables in the left table expression
+4
+IN with UNION ALL and prefer_global_in_and_join
+1
+1
+2
+2
