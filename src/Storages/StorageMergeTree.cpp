@@ -805,6 +805,10 @@ void StorageMergeTree::alter(
         /// Some additional changes in settings
         auto new_storage_settings = getSettings();
 
+        /// Wait for an active cleanup iteration and prevent further disk cleanup while read-only.
+        if (!(*old_storage_settings)[MergeTreeSetting::table_readonly] && isTableReadonly())
+            cleanup_thread.stop();
+
         /// A table that started read-only has no background workers at all: `startup` skipped them.
         /// `table_readonly` is documented to be toggleable back, so restore them here instead of
         /// requiring a server restart. `isTableReadonly` stays true for a static storage, which

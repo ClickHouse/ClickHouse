@@ -2446,7 +2446,7 @@ Minimal index sizes (data skipping and primary key) on disk (but uncompressed) t
 Batch size for ZooKeeper multi-create get-part requests when cloning replica.
 )", 0) \
     DECLARE(Bool, table_readonly, false, R"(
-If set to true, the table is in read-only mode and performs no modifications on disk.
+If set to true, the table is in read-only mode.
 
 All foreground operations that would modify the table are rejected: inserts, mutations, `OPTIMIZE`, and the data-mutating partition commands
 (`ATTACH`/`MOVE`/`DROP`/`DROP DETACHED`/`FETCH`/`REPLACE PARTITION`, as well as `MOVE PARTITION ... TO TABLE` targeting this table). Operations
@@ -2454,7 +2454,7 @@ that do not modify the table's data, such as `FREEZE`/`UNFREEZE` and `FORGET PAR
 
 Background work that modifies table data is not scheduled: regular merges, TTL merges (`DELETE`/`MOVE`/recompression), recompression merges, background mutations,
 and background part moves are all suppressed. As a consequence, a table with a TTL no longer reclaims or moves its expired data while this setting
-is enabled.
+is enabled. Cleanup is stopped, waiting for an active cleanup iteration to finish. Other operations already in progress may finish.
 
 The in-memory statistics cache still refreshes periodically. Set `refresh_statistics_interval = 0` to disable this background task too.
 
