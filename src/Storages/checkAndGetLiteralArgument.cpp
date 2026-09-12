@@ -16,7 +16,8 @@ T checkAndGetLiteralArgument(const ASTPtr & arg, const String & arg_name)
 {
     if (arg)
     {
-        if (const auto * func = arg->as<const ASTFunction>(); func && func->name == "_CAST")
+        if (const auto * func = arg->as<const ASTFunction>();
+            func && func->name == "_CAST" && func->arguments && func->arguments->children.size() == 2)
             return T(checkAndGetLiteralArgument<T>(func->arguments->children.at(0), arg_name));
 
         if (arg->as<ASTLiteral>())
