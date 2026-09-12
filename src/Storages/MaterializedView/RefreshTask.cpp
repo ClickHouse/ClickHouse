@@ -1322,7 +1322,7 @@ std::optional<UUID> RefreshTask::executeRefreshUnlocked(int32_t root_znode_versi
         {
             stream_cursor = execution.znode.cursor;
             auto cursor = std::make_shared<StreamingCursor>();
-            cursor->tree = stream_cursor ? stream_cursor->clone() : std::make_shared<CursorTreeNode>();
+            cursor->tree = std::make_shared<CursorTreeNode>();
             refresh_context->setStreamingCursor(std::move(cursor));
         }
 
