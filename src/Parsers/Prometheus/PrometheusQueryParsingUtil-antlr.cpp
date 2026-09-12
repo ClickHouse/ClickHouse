@@ -558,6 +558,8 @@ namespace
                     new_node->at_modifier = Offset::AtModifier::Timestamp;
                     auto & timestamp = new_node->at_timestamp.emplace();
                     ok &= parseTimestamp(number_ctx, timestamp);
+                    if (ok && timestamp_ctx->SUB())
+                        timestamp = -timestamp;
                 }
                 else if (timestamp_ctx->START())
                 {
