@@ -1,0 +1,29 @@
+-- two reference sites: aliased self-join plus IN, scalar subquery in the outer WHERE
+1	1
+-- the recursion terminates and yields the same rows with and without parallel replicas
+1
+2
+3
+4
+1
+2
+3
+4
+-- a recursive CTE referencing another recursive CTE, see issue 89844
+5
+-- the recursive CTE stays on the initiator even when only the subquery enables parallel replicas
+1	1
+-- a query over the same table without a recursive CTE is still sent to the replicas
+1
+-- a sibling branch of the same union still ships, whichever branch is visited first
+1
+-- ParallelReplicasQueryCount: 0 for the recursive CTE, non-zero for the plain query
+10
+10
+-- the same pair with the settings on the subquery instead of the top-level query
+10
+10
+rcte_pr_nested_ships	1
+rcte_pr_nested_stays_local	0
+rcte_pr_ships	1
+rcte_pr_stays_local	0
