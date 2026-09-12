@@ -34,6 +34,7 @@
 
 #include <array>
 #include <bit>
+#include <bitset>
 #include <cstring>
 
 namespace
@@ -7532,9 +7533,11 @@ Use schema from cache for URL with last modification time validation (for URLs w
 )", 0) \
     \
     DECLARE(String, compatibility, "", R"(
-The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, where the previous version is provided as the setting.
+The `compatibility` setting causes ClickHouse to use the default settings of a previous version of ClickHouse, with exceptions recorded in the settings changes history.
 
 If settings are set to non-default values, then those settings are honored (only settings that have not been modified are affected by the `compatibility` setting).
+
+Changes marked `Ignore` in [`system.settings_changes`](/reference/system-tables/settings_changes) block rollback of that change and all earlier changes to the same setting.
 
 This setting takes a ClickHouse version number as a string, like `22.3`, `22.8`. An empty value means that this setting is disabled.
 
@@ -9832,6 +9835,7 @@ struct ResolvedCompatibilityChange
     const Field * previous_value;
     /// Whether `previous_value` is what the setting holds when nothing changed it.
     bool previous_value_is_default;
+    SettingsChangesHistory::SettingChange::CompatibilitySetting compatibility_mode;
 };
 
 using ResolvedCompatibilityHistory = std::vector<std::pair<ClickHouseVersion, std::vector<ResolvedCompatibilityChange>>>;
@@ -9862,7 +9866,7 @@ const ResolvedCompatibilityHistory & getResolvedCompatibilityHistory()
                 const bool previous_value_is_default
                     = accessor.getValue(default_settings, index) == change.previous_value;
 
-                resolved_changes.push_back({index, &change.previous_value, previous_value_is_default});
+                resolved_changes.push_back({index, &change.previous_value, previous_value_is_default, change.compatibility_mode});
             }
             result.emplace_back(version, std::move(resolved_changes));
         }
@@ -9905,6 +9909,8 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
     ClickHouseVersion version(compatibility_value);
     const auto & accessor = Traits::Accessor::instance();
     const auto & resolved_history = getResolvedCompatibilityHistory();
+    /// Keep blockers across versions to skip earlier changes to the same setting.
+    std::bitset<static_cast<size_t>(SettingsTraits::SettingID_::NUM_SETTINGS)> blocked_settings;
     /// Iterate through ClickHouse version in descending order and apply reversed
     /// changes for each version that is higher that version from compatibility setting
     for (auto it = resolved_history.rbegin(); it != resolved_history.rend(); ++it)
@@ -9915,6 +9921,12 @@ void SettingsImpl::applyCompatibilitySetting(const String & compatibility_value)
         /// Apply reversed changes from this version.
         for (const auto & change : it->second)
         {
+            if (change.compatibility_mode == SettingsChangesHistory::SettingChange::CompatibilitySetting::Ignore)
+                blocked_settings.set(change.index);
+
+            if (blocked_settings[change.index])
+                continue;
+
             const bool changed_by_compatibility = isChangedByCompatibility(change.index);
 
             /// If this setting was changed manually, we don't change it
