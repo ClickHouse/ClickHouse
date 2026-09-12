@@ -54,27 +54,6 @@ DataTypePtr originEnum()
     });
 }
 
-/// Long enough to be worth naming, and it is the one column with no counterpart in the other two
-/// settings tables.
-String sourceColumnComment()
-{
-    return "Where the value came from. "
-            "`default` - the engine's compiled-in default. "
-            "`config` - a server config section, such as `<merge_tree>` or `<distributed>`. "
-            "`compatibility` - rolled back to an older release's default by the `compatibility` setting. "
-            "`definition` - the table's own `SETTINGS` clause, whether stated in `CREATE` or written there by a later `ALTER`; "
-            "the two cannot be told apart, because `ALTER ... MODIFY SETTING` rewrites the stored `CREATE` query. "
-            "`named_collection` - a named collection referenced in the engine arguments. "
-            "`shared_metadata` - table metadata shared between replicas, such as Keeper for `S3Queue` and `AzureQueue`, "
-            "which is what the table uses even when its own `CREATE` query says otherwise. "
-            "`runtime` - adjusted by the engine as it runs and never written back to its settings. Reserved: no engine "
-            "reports it yet. "
-            "`other` - something assigned the setting, but the engine does not say what. "
-            "Which of these an engine can report depends on the engine: only `MergeTree` family tables report `config` "
-            "and `compatibility`, only `S3Queue` and `AzureQueue` report `shared_metadata`, and an engine that keeps no "
-            "settings struct reports only `definition`.";
-}
-
 }
 
 StorageSystemTableSettings::StorageSystemTableSettings(const StorageID & table_id_)
@@ -102,23 +81,23 @@ ColumnsDescription StorageSystemTableSettings::getColumnsDescription()
     for (const auto & column : sharedSettingColumns())
         description.add(column);
 
-    /// Two of them say more here than they can say of an engine, because only a table has a
-    /// `SETTINGS` clause and only a table's values can hold a secret.
-    description.modify("value", [](ColumnDescription & column)
-    {
-        column.comment = "Value the table uses. Unlike `SHOW CREATE TABLE`, this is the value in effect, which may come "
-            "from a named collection, from replicated metadata, or from the engine adjusting it while running, and so "
-            "need not be the value the `CREATE` query states. A placeholder when `is_masked` is 1.";
-    });
-    description.modify("tier", [](ColumnDescription & column)
-    {
-        column.comment = "Support level of the setting. Reported as `Production` for a setting known only from the "
-            "table's `SETTINGS` clause, where the engine keeps no settings struct to say otherwise - such rows have an "
-            "empty `default`, `type` and `description` too.";
-    });
-
     /// Particular to this table.
-    description.add({"source", originEnum(), sourceColumnComment()});
+    description.add({"source", originEnum(),
+        "Where the value came from. "
+        "`default` - the engine's compiled-in default. "
+        "`config` - a server config section, such as `<merge_tree>` or `<distributed>`. "
+        "`compatibility` - rolled back to an older release's default by the `compatibility` setting. "
+        "`definition` - the table's own `SETTINGS` clause, whether stated in `CREATE` or written there by a later `ALTER`; "
+        "the two cannot be told apart, because `ALTER ... MODIFY SETTING` rewrites the stored `CREATE` query. "
+        "`named_collection` - a named collection referenced in the engine arguments. "
+        "`shared_metadata` - table metadata shared between replicas, such as Keeper for `S3Queue` and `AzureQueue`, "
+        "which is what the table uses even when its own `CREATE` query says otherwise. "
+        "`runtime` - adjusted by the engine as it runs and never written back to its settings. Reserved: no engine "
+        "reports it yet. "
+        "`other` - something assigned the setting, but the engine does not say what. "
+        "Which of these an engine can report depends on the engine: only `MergeTree` family tables report `config` "
+        "and `compatibility`, only `S3Queue` and `AzureQueue` report `shared_metadata`, and an engine that keeps no "
+        "settings struct reports only `definition`."});
     description.add({"is_masked", std::make_shared<DataTypeUInt8>(),
         "1 if `value` is a placeholder rather than the real value, because the setting holds a secret and the current "
         "user may not see it. Grant `displaySecretsInShowAndSelect` and enable "
