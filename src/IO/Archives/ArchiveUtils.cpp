@@ -79,4 +79,27 @@ std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const
 
     return std::pair{std::string{path_to_archive_view}, std::string{archive_pattern_view}};
 }
+
+std::pair<std::string, std::optional<std::string>> getURLAndArchivePattern(const std::string & source)
+{
+    const size_t archive_separator = source.find("::");
+    if (archive_separator == std::string::npos)
+        return {source, std::nullopt};
+
+    const size_t query_or_fragment = source.find_first_of("?#");
+    if (query_or_fragment != std::string::npos && query_or_fragment < archive_separator)
+    {
+        const size_t scheme_pos = source.find("://");
+        const size_t authority_start = scheme_pos == std::string::npos ? 0 : scheme_pos + 3;
+        const size_t path_start = source.find('/', authority_start);
+        if (path_start == std::string::npos || path_start >= query_or_fragment)
+            return {source, std::nullopt};
+
+        const std::string_view path(source.data() + path_start, query_or_fragment - path_start);
+        if (!hasSupportedArchiveExtension(path) && path.find_first_of("*{") == std::string_view::npos)
+            return {source, std::nullopt};
+    }
+
+    return getURIAndArchivePattern(source);
+}
 }

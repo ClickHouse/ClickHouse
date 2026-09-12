@@ -44,6 +44,8 @@ ClusterFunctionReadTaskResponse::ClusterFunctionReadTaskResponse(ObjectInfoPtr o
     const bool send_over_whole_archive = !context->getSettingsRef()[Setting::cluster_function_process_archive_on_multiple_nodes];
     path = send_over_whole_archive ? object->getPathOrPathToArchiveIfArchive() : object->getPath();
     read_source_index = object->relative_path_with_metadata.read_source_index;
+    is_web_url_task = read_source_index.has_value();
+    resolved_url = object->relative_path_with_metadata.resolved_url;
     file_bucket_info = object->file_bucket_info;
 }
 
@@ -74,6 +76,7 @@ ObjectInfoPtr ClusterFunctionReadTaskResponse::getObjectInfo() const
         object = std::make_shared<ObjectInfo>(path);
     }
     object->relative_path_with_metadata.read_source_index = read_source_index;
+    object->relative_path_with_metadata.resolved_url = resolved_url;
     object->data_lake_metadata = data_lake_metadata;
     object->file_bucket_info = file_bucket_info;
 
@@ -84,6 +87,17 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
 {
     auto protocol_version
         = std::min(static_cast<UInt64>(worker_protocol_version), static_cast<UInt64>(DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION));
+
+    if (is_web_url_task && protocol_version < DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS)
+    {
+        throw Exception(
+            ErrorCodes::UNKNOWN_PROTOCOL,
+            "Worker cluster-function protocol version {} cannot process distributed Web `urlCluster` tasks "
+            "(minimum protocol version: {})",
+            protocol_version,
+            DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS);
+    }
+
     writeVarUInt(protocol_version, out);
     writeStringBinary(path, out);
 
@@ -151,6 +165,13 @@ void ClusterFunctionReadTaskResponse::serialize(WriteBuffer & out, size_t worker
             protocol_version,
             DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_READ_SOURCE_INDEX);
     }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS)
+    {
+        writeVarUInt(resolved_url.has_value(), out);
+        if (resolved_url)
+            writeStringBinary(*resolved_url, out);
+    }
 }
 
 void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
@@ -214,6 +235,18 @@ void ClusterFunctionReadTaskResponse::deserialize(ReadBuffer & in)
             UInt64 value = 0;
             readVarUInt(value, in);
             read_source_index = value;
+        }
+    }
+
+    if (protocol_version >= DBMS_CLUSTER_PROCESSING_PROTOCOL_VERSION_WITH_WEB_URL_TASKS)
+    {
+        bool has_resolved_url = false;
+        readVarUInt(has_resolved_url, in);
+        if (has_resolved_url)
+        {
+            String value;
+            readStringBinary(value, in);
+            resolved_url = std::move(value);
         }
     }
 }

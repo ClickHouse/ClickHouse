@@ -187,7 +187,8 @@ private:
     ObjectInfoPtr createObjectInfoInArchive(
         const std::string & path_to_archive,
         const std::string & path_in_archive,
-        std::optional<size_t> read_source_index);
+        std::optional<size_t> read_source_index,
+        const std::optional<String> & resolved_url);
 
     ClusterFunctionReadTaskCallback callback;
     ObjectInfos buffer;
@@ -275,7 +276,24 @@ public:
         NamesAndTypesList hive_columns_ = {},
         String object_namespace_ = {},
         ContextPtr context_ = {},
-        String archive_member_path_ = {});
+        String archive_member_path_ = {},
+        bool filter_after_metadata_ = false);
+
+    KeysIterator(
+        const RelativePathsWithMetadata & keys_,
+        ObjectStoragePtr object_storage_,
+        const NamesAndTypesList & virtual_columns_,
+        ObjectInfos * read_keys_,
+        bool ignore_non_existent_files_,
+        bool skip_object_metadata_,
+        bool with_tags_,
+        std::function<void(FileProgress)> file_progress_callback = {},
+        ExpressionActionsPtr deferred_filter_actions_ = {},
+        NamesAndTypesList hive_columns_ = {},
+        String object_namespace_ = {},
+        ContextPtr context_ = {},
+        String archive_member_path_ = {},
+        bool filter_after_metadata_ = false);
 
     ~KeysIterator() override = default;
 
@@ -287,7 +305,7 @@ private:
     const ObjectStoragePtr object_storage;
     const NamesAndTypesList virtual_columns;
     const std::function<void(FileProgress)> file_progress_callback;
-    const std::vector<String> keys;
+    const RelativePathsWithMetadata keys;
     std::atomic<size_t> index = 0;
     const bool ignore_non_existent_files;
     const bool skip_object_metadata;
@@ -303,6 +321,9 @@ private:
     /// A known archive member is part of the user-visible `_path` / `_file` value, although the
     /// iterator itself must fetch the outer archive object.
     const String archive_member_path;
+    /// Path failover determines the user-visible path only after a metadata request succeeds.
+    /// Such predicates must run after that resolution rather than against the first candidate.
+    const bool filter_after_metadata;
 };
 
 /*
