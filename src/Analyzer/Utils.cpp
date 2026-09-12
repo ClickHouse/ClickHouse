@@ -37,6 +37,9 @@
 #include <base/unit.h>
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
+#include <AggregateFunctions/Combinators/AggregateFunctionCombinatorFactory.h>
+
+#include <Poco/String.h>
 
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionFactory.h>
@@ -165,6 +168,34 @@ bool isNameOfLocalInFunction(const std::string & function_name)
         function_name == "notNullInIgnoreSet";
 
     return is_special_function_in;
+}
+
+bool functionDropsUnqualifiedMatcherArgument(const std::string & function_name)
+{
+    /** To determine if it is safe to remove the asterisk, check the `transformsArgumentTypes` method
+      * of each combinator. If any combinator transforms argument types, it is not safe to remove it.
+      */
+    std::string base_function_name = function_name;
+
+    while (AggregateFunctionCombinatorPtr combinator = AggregateFunctionCombinatorFactory::instance().tryFindSuffix(base_function_name))
+    {
+        if (combinator->transformsArgumentTypes())
+            return false;
+
+        base_function_name = base_function_name.substr(0, base_function_name.size() - combinator->getName().size());
+    }
+
+    auto base_function_name_lowercase = Poco::toLower(base_function_name);
+    auto function_name_lowercase = Poco::toLower(function_name);
+
+    /** Only `count` and `countState` (possibly with combinators) drop the asterisk, not other functions
+      * like `countDistinct`, which is transformed into `uniqExact` and requires arguments.
+      */
+    bool is_count_function = base_function_name_lowercase == "count" || base_function_name_lowercase == "countstate";
+
+    return is_count_function
+        && function_name_lowercase.starts_with(base_function_name_lowercase)
+        && function_name_lowercase != "countdistinct";
 }
 
 bool isNameOfGlobalInFunction(const std::string & function_name)
