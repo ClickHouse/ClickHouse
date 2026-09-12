@@ -499,6 +499,18 @@ void ColumnsDescription::rename(const String & column_from, const String & colum
     invalidateGetCache();
 }
 
+void ColumnsDescription::setComment(const String & column_name, const String & comment)
+{
+    auto it = columns.get<1>().find(column_name);
+    if (it == columns.get<1>().end())
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot find column {} in ColumnsDescription{}",
+                        column_name, getHintsMessage(column_name));
+    }
+
+    columns.get<1>().modify(it, [&comment](ColumnDescription & column) { column.comment = comment; });
+}
+
 void ColumnsDescription::modifyColumnOrder(const String & column_name, const String & after_column, bool first)
 {
     const auto & reorder_column = [&](auto get_new_pos)
