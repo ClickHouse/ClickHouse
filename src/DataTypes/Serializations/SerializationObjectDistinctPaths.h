@@ -26,6 +26,8 @@ public:
     size_t allocatedBytes() const override;
     bool supportsPooling() const override { return shared_data_paths_serialization->supportsPooling(); }
 
+    /// A JSON typed path may be spelled exactly like the special subcolumn, and then the flat name resolves
+    /// to that path (`ObjectTypedPath`) instead of to the distinct-paths substream.
     static bool isDistinctPathsSubcolumn(const SubstreamPath & path);
 
     void enumerateStreams(
