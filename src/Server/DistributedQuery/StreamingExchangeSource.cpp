@@ -11,10 +11,21 @@
 #include <QueryPipeline/DistributedPlanExecutor.h>
 #include <Poco/Net/NetException.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/logger_useful.h>
 #include <Common/PODArray.h>
 #include <base/scope_guard.h>
 #include <base/types.h>
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeReceiveBytes;
+    extern const Event StreamingExchangePacketsReceived;
+    extern const Event StreamingExchangeDeserializeMicroseconds;
+    extern const Event StreamingExchangeReceiveWaitMicroseconds;
+    extern const Event StreamingExchangeEarlyCloses;
+}
 
 namespace DB
 {
@@ -208,6 +219,8 @@ void StreamingExchangeSource::sendNoMoreDataNeeded()
     const UInt64 packet = StreamingExchangeProtocol::PacketType::NoMoreDataNeeded;
     StreamingExchangeProtocol::sendAll(
         *socket, reinterpret_cast<const char *>(&packet), sizeof(packet), "NoMoreDataNeeded for " + stream_name);
+    /// Counted only when the sender got the packet: a sender that is already gone was not stopped early.
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeEarlyCloses);
 }
 
 void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, size_t & position)
@@ -221,7 +234,14 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
         if (received == 0)
         {
             /// Socket is not ready for reading, wait for epoll event.
+            if (!receive_wait)
+                receive_wait.emplace();
             break;
+        }
+        if (receive_wait)
+        {
+            ProfileEvents::increment(ProfileEvents::StreamingExchangeReceiveWaitMicroseconds, receive_wait->elapsedMicroseconds());
+            receive_wait.reset();
         }
 
         LOG_TEST(log, "Received {} bytes from exchange stream {}, fd: {}", received, stream_name, socket->sockfd());
@@ -234,7 +254,9 @@ void StreamingExchangeSource::readFromSocket(char * buffer, size_t buffer_size, 
 void StreamingExchangeSource::tryReadHeader()
 {
     /// Read remaining size to header buffer
+    const size_t header_bytes_before = current_packet_header_bytes_filled;
     readFromSocket(reinterpret_cast<char*>(&current_packet_header) , sizeof(current_packet_header), current_packet_header_bytes_filled);
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeReceiveBytes, current_packet_header_bytes_filled - header_bytes_before);
     if (current_packet_header_bytes_filled == sizeof(current_packet_header))
     {
         if (current_packet_header.packet_type != StreamingExchangeProtocol::PacketType::Data)
@@ -256,12 +278,15 @@ void StreamingExchangeSource::tryReadHeader()
 void StreamingExchangeSource::tryReadBody()
 {
     /// Read remaining size of the packet
+    const size_t body_bytes_before = current_packet_body_bytes_filled;
     readFromSocket(current_packet_body.data() , current_packet_body.size(), current_packet_body_bytes_filled);
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeReceiveBytes, current_packet_body_bytes_filled - body_bytes_before);
     if (current_packet_body_bytes_filled == current_packet_body.size())
     {
         packet_receive_state = ReceivingHeader;
         current_packet_header_bytes_filled = 0;
         packet_in = std::make_unique<ReadBufferFromMemory>(current_packet_body.data(), current_packet_body.size());
+        ProfileEvents::increment(ProfileEvents::StreamingExchangePacketsReceived);
     }
 }
 
@@ -366,9 +391,11 @@ std::optional<Chunk> StreamingExchangeSource::readChunk()
     std::optional<Chunk> result;
     if (num_columns != 0)
     {
+        Stopwatch watch;
         auto compressed_buf = std::make_unique<CompressedReadBuffer>(*packet_in);
         auto reader = std::make_unique<NativeReader>(*compressed_buf, output.getHeader(), DBMS_TCP_PROTOCOL_VERSION);
         Block block = reader->read();
+        ProfileEvents::increment(ProfileEvents::StreamingExchangeDeserializeMicroseconds, watch.elapsedMicroseconds());
 
         result = Chunk(block.getColumns(), num_rows);
         if (has_aggregated_chunk_info)

@@ -1,14 +1,30 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
+#include <Formats/NativeWriter.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Chunk.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/StreamSocket.h>
 
 #include <algorithm>
 #include <climits>
 #include <cerrno>
+#include <cstddef>
+#include <cstring>
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeSerializedBytes;
+    extern const Event StreamingExchangeSerializeMicroseconds;
+}
 
 namespace DB
 {
@@ -16,6 +32,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EXCHANGE_PEER_DISCONNECTED;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace StreamingExchangeProtocol
@@ -61,6 +78,81 @@ namespace
         return socket_errno == ECONNRESET || socket_errno == ECONNABORTED || socket_errno == EPIPE
             || socket_errno == ENETRESET || socket_errno == ENOTCONN || socket_errno == ETIMEDOUT;
     }
+}
+
+size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out)
+{
+    Stopwatch watch;
+    const size_t packet_offset = out.count();
+    PacketHeader packet_header{.packet_type = PacketType::Data, .bytes_size = 0};
+    out.write(reinterpret_cast<const char *>(&packet_header), sizeof(packet_header));
+
+    const bool final_chunk = chunk.empty();
+    auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+    UInt64 flags = 0;
+    if (final_chunk)
+        flags |= 1;
+    if (agg_info)
+        flags |= 2;
+    writeVarUInt(flags, out);
+    writeVarUInt(chunk.getNumRows(), out);
+    writeVarUInt(chunk.getNumColumns(), out);
+    /// chunk_num has no BlockInfo field; carry it in the exchange framing so memory-bound merging
+    /// can restore chunk order on the receiver.
+    if (agg_info)
+        writeVarUInt(agg_info->chunk_num, out);
+
+    if (chunk.getNumColumns() > 0)
+    {
+        /// The exchange stream uses the server default codec: `network_compression_method` is a
+        /// per-query setting and the sender has no query settings at hand. This is safe: each
+        /// compressed frame is self-describing (the receiver auto-detects the codec via
+        /// `CompressedReadBuffer`), and the exchange is a transient, same-version channel -
+        /// the handshake rejects peers on a different protocol version, so a stream is never read
+        /// back by a node expecting a different codec.
+        CompressedWriteBuffer compressed_buf(out);
+        try
+        {
+            NativeWriter writer(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header);
+            Block block = header->cloneWithColumns(chunk.getColumns());
+            /// Carry the remaining aggregation metadata in block.info, the same way partial-aggregation
+            /// results are transported for distributed/parallel reads.
+            if (agg_info)
+            {
+                block.info.bucket_num = agg_info->bucket_num;
+                block.info.is_overflows = agg_info->is_overflows;
+                block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
+            }
+            writer.write(block);
+            writer.flush();
+            compressed_buf.finalize();
+            ProfileEvents::increment(ProfileEvents::StreamingExchangeSerializedBytes, compressed_buf.count());
+        }
+        catch (...)
+        {
+            compressed_buf.cancel();
+            throw;
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeSerializeMicroseconds, watch.elapsedMicroseconds());
+    return packet_offset;
+}
+
+void finishDataPacket(char * packet, size_t packet_bytes)
+{
+    const size_t packet_data_size = packet_bytes - sizeof(PacketHeader);
+
+    /// The receiver rejects Data packets above this limit; fail here with a clear, local error
+    /// instead of sending one the peer would reject. Splitting large chunks is not implemented yet.
+    if (packet_data_size > MAX_DATA_PACKET_BODY_BYTES)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Exchange data packet of {} bytes exceeds the maximum {}; splitting large chunks is not implemented",
+            packet_data_size, MAX_DATA_PACKET_BODY_BYTES);
+
+    /// memcpy: the header may sit at an unaligned offset of the buffer.
+    static_assert(sizeof(PacketHeader::bytes_size) == sizeof(packet_data_size));
+    memcpy(packet + offsetof(PacketHeader, bytes_size), &packet_data_size, sizeof(packet_data_size));
 }
 
 String describePeer(const Poco::Net::StreamSocket & socket)
