@@ -499,8 +499,10 @@ ColumnPtr IExecutableFunction::executeWithoutSparseColumns(
             /// fast path (and resizes the constants to the dictionary size); it returns nullptr and
             /// leaves the arguments intact when the assumption no longer holds, and we fall back to
             /// full materialization.
-            ColumnPtr indexes = replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
-                columns_without_low_cardinality, can_be_executed_on_default_arguments);
+            ColumnPtr indexes;
+            if (isDeterministicInScopeOfQuery())
+                indexes = replaceLowCardinalityColumnByNestedAndGetDictionaryIndexes(
+                    columns_without_low_cardinality, can_be_executed_on_default_arguments);
 
             /// Fast path: the row count comes from the (resized) nested dictionary column. Fallback:
             /// the constants keep their original row counts, so it is the original input_rows_count,
@@ -614,7 +616,7 @@ ColumnPtr IExecutableFunction::execute(
         }
 
         auto arguments_without_replicated = arguments;
-        if (has_full_columns || !common_replicated_indexes)
+        if (has_full_columns || !common_replicated_indexes || !isDeterministicInScopeOfQuery())
         {
             convertReplicatedColumnsToFull(arguments_without_replicated);
             return executeWithoutReplicatedColumns(arguments_without_replicated, result_type, input_rows_count, dry_run);
@@ -691,7 +693,7 @@ ColumnPtr IExecutableFunction::executeWithoutReplicatedColumns(
             return executeWithoutSparseColumns(arguments, result_type, input_rows_count, dry_run);
 
         auto columns_without_sparse = arguments;
-        if (num_sparse_columns == 1 && num_full_columns == 0)
+        if (num_sparse_columns == 1 && num_full_columns == 0 && isDeterministicInScopeOfQuery())
         {
             auto & arg_with_sparse = columns_without_sparse[sparse_column_position];
             ColumnPtr sparse_offsets;

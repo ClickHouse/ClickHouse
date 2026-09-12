@@ -134,6 +134,14 @@ protected:
       */
     virtual bool canThrow(const DataTypesWithConstInfo & /*arguments*/) const { return true; }
 
+    /** The default implementations above may execute the function over a representation that stores
+      * equal rows once (replicated nested rows, sparse values, a LowCardinality dictionary) and map the
+      * result back onto the logical rows, which is sound only if the result is determined by the
+      * argument values. A function answering `false` is executed over materialized rows instead.
+      * See `IFunction::isDeterministicInScopeOfQuery` for the property itself.
+      */
+    virtual bool isDeterministicInScopeOfQuery() const { return true; }
+
 private:
 
     ColumnPtr defaultImplementationForConstantArguments(
