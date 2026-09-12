@@ -260,21 +260,6 @@ SplitByStringTokenizer::SplitByStringTokenizer(const std::vector<String> & separ
     all_separators_single_byte = std::ranges::all_of(separators, [](const auto & separator) { return separator.size() == 1; });
 }
 
-size_t SplitByStringTokenizer::matchSeparator(const char * data, size_t length, size_t pos) const
-{
-    if (!separator_first_bytes.contains(data[pos]))
-        return 0;
-
-    for (const auto & separator : separators)
-    {
-        size_t separator_length = separator.size();
-        if (pos + separator_length <= length && std::memcmp(data + pos, separator.data(), separator_length) == 0)
-            return separator_length;
-    }
-
-    return 0;
-}
-
 bool SplitByStringTokenizer::nextInString(const char * data, size_t length, size_t & pos, size_t & token_start, size_t & token_length) const
 {
     size_t i = pos;

@@ -309,9 +309,98 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
     void substringToBloomFilter(const char * data, size_t length, BloomFilter & bloom_filter, bool is_prefix, bool is_suffix) const override;
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
+    /// Hot-path tokenizer used by the free `forEachToken` (index build, search, the `tokens` function).
+    /// Unlike a per-token `nextInString` call, the scan state stays in registers across tokens, and with
+    /// multi-byte separators every 16-byte block is classified once, so `matchSeparator` runs only at the
+    /// bytes that can start a separator. Reads exactly `length` bytes; no padding is required.
+    template <Fn<bool(const char *, size_t)> Callback>
+    void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
+    {
+        if (all_separators_single_byte)
+            forEachTokenSingleByte(data, length, callback);
+        else
+            forEachTokenMultiByte(data, length, callback);
+    }
+
 private:
     /// Returns the length of the separator that starts at `pos`, or 0 if there is none.
-    size_t matchSeparator(const char * data, size_t length, size_t pos) const;
+    ALWAYS_INLINE size_t matchSeparator(const char * data, size_t length, size_t pos) const
+    {
+        if (!separator_first_bytes.contains(data[pos]))
+            return 0;
+
+        for (const auto & separator : separators)
+        {
+            size_t separator_length = separator.size();
+            if (pos + separator_length <= length && std::memcmp(data + pos, separator.data(), separator_length) == 0)
+                return separator_length;
+        }
+
+        return 0;
+    }
+
+    /// Separators are exactly the bytes of `separator_first_bytes`: tokens are the maximal runs of other bytes.
+    template <typename Callback>
+    void forEachTokenSingleByte(const char * __restrict data, size_t length, Callback && callback) const
+    {
+        const char * pos = data;
+        const char * end = data + length;
+
+        while (pos < end)
+        {
+            pos = separator_first_bytes.find<false>(pos, end);
+            if (pos >= end)
+                return;
+
+            const char * token_start = pos;
+            pos = separator_first_bytes.find<true>(pos, end);
+
+            if (callback(token_start, pos - token_start))
+                return;
+        }
+    }
+
+    /// Walks the string block by block; the candidate bits of a block are the positions holding a possible
+    /// first byte of a separator, and only those are verified with `matchSeparator`. A matched separator may
+    /// extend past the block: `resume` marks the first byte after it, and candidates before it are skipped.
+    template <typename Callback>
+    void forEachTokenMultiByte(const char * __restrict data, size_t length, Callback && callback) const
+    {
+        const char * end = data + length;
+        const char * token_start = data;
+        const char * block = data;
+
+        while (block < end)
+        {
+            const char * block_end = std::min(end, block + ByteSetLookup::BLOCK_SIZE);
+            UInt32 candidates = separator_first_bytes.matchBytes(block, block_end - block);
+            const char * resume = block;
+
+            while (candidates != 0)
+            {
+                const char * candidate = block + std::countr_zero(candidates);
+                candidates &= candidates - 1;
+
+                if (candidate < resume)
+                    continue;
+
+                size_t separator_length = matchSeparator(data, length, candidate - data);
+                if (separator_length == 0)
+                    continue;
+
+                if (candidate > token_start && callback(token_start, candidate - token_start))
+                    return;
+
+                resume = candidate + separator_length;
+                token_start = resume;
+            }
+
+            block = std::max(block_end, resume);
+        }
+
+        if (token_start < end)
+            callback(token_start, end - token_start);
+    }
 
     std::vector<String> separators;
     /// The first bytes of all separators. Only positions holding one of them can start a separator.
@@ -633,7 +722,7 @@ void forEachToken(const ITokenizer & tokenizer, const char * __restrict data, si
         case ITokenizer::Type::SplitByString:
         {
             const auto & split_by_string_tokenizer = assert_cast<const SplitByStringTokenizer &>(tokenizer);
-            detail::forEachTokenImpl(split_by_string_tokenizer, data, length, callback);
+            split_by_string_tokenizer.forEachTokenImpl(data, length, callback);
             return;
         }
         case ITokenizer::Type::SplitByRegexp:

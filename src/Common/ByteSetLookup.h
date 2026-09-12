@@ -137,6 +137,19 @@ public:
         return mask;
     }
 
+    /// Classifies the `n` bytes at `pos` (`n` <= `BLOCK_SIZE`): bit `i` of the result is set iff `i < n` and
+    /// byte `i` is in the set. Unlike `matchBlock`, reads only `n` bytes, so it is suitable for the tail of a buffer.
+    ALWAYS_INLINE UInt32 matchBytes(const char * pos, size_t n) const
+    {
+        if (n == BLOCK_SIZE)
+            return matchBlock(pos);
+
+        UInt32 mask = 0;
+        for (size_t i = 0; i < n; ++i)
+            mask |= static_cast<UInt32>(contains(pos[i])) << i;
+        return mask;
+    }
+
 private:
     static constexpr ptrdiff_t SCALAR_PREFIX = 16;
 
