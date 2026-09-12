@@ -54,6 +54,14 @@ inline auto scaleMultiplier(UInt32 scale)
  *  0.123 represents  0 /  0.123
  * -0.123 represents  0 / -0.123
  * -1.123 represents -1 /  0.123
+ *
+ * The struct itself does not pin down the sign convention for a negative value - it carries whichever one
+ * its producer used, and the matching inverse has to be used to reassemble it:
+ * - `splitWithScaleMultiplier` truncates towards zero, as shown above, and its inverse is
+ *   `decimalFromComponentsWithMultiplier`, which re-derives the sign of the fractional part from `whole`.
+ * - `splitFlooringNegative` rounds towards negative infinity, so -1.123 represents -2 / 0.875 and the
+ *   fractional part is always a non-negative offset upwards from `whole`. Its inverse is
+ *   `dateTimeFromComponentsWithMultiplier`, which adds the fractional part without flipping its sign.
  */
 template <typename DecimalType>
 struct DecimalComponents
