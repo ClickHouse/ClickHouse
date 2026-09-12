@@ -8,8 +8,36 @@ doc_type: 'reference'
 keywords: ['并发', 'QPS']
 ---
 
-ClickHouse 专为可直接面向外部用户提供服务的实时分析应用而设计。它能够在 PB 级数据库上，同时处理历史数据和实时插入的数据，并以低延迟 (小于 10 毫秒) 和高并发 (每秒超过 10,000 次查询) 提供分析查询服务。
+是的。ClickHouse 专为可直接面向外部用户提供服务的实时分析应用而设计。它能够在 PB 级数据库上，同时处理历史数据和实时插入的数据，并以低延迟 (小于 10 毫秒) 和高并发 (每秒超过 10,000 次查询) 提供分析查询服务。
 
-这得益于高效的索引结构、灵活的缓存机制，以及 projections 和 materialized views 等可用配置。
+<div id="what-makes-high-concurrency-possible">
+  ## 高并发的实现基础
+</div>
 
-内置的基于角色的访问控制、资源使用配额、可配置的查询复杂度防护机制以及工作负载调度器，使 ClickHouse 成为分析数据之上的理想服务层。
+单个查询速度快是实现高 QPS 的基础。每个查询需要处理的工作越少，服务器能够同时运行的查询就越多。减少单个查询工作量的主要功能包括：
+
+* MergeTree 表引擎家族的[稀疏主索引](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)，可跳过读取不符合查询条件的数据。
+* [查询缓存](/zh/concepts/features/performance/caches/query-cache)等缓存，可直接使用缓存结果响应重复的 `SELECT` 查询。
+* [投影](/zh/concepts/features/projections/projections)，可在写入时预计算数据，并由 ClickHouse 自动选用；以及 [materialized view](/zh/concepts/features/materialized-views/index)，可将预计算结果存储在单独的目标表中，供查询直接读取。
+
+<div id="controlling-and-limiting-concurrency">
+  ## 控制和限制并发
+</div>
+
+默认情况下，ClickHouse OSS 不限制并发查询数量。ClickHouse Cloud 默认将 `max_concurrent_queries_for_all_users` 设为 `1000`。您可以在多个层级配置限制：
+
+* [`max_concurrent_queries`](/zh/reference/settings/server-settings/settings/max-concurrent#max_concurrent_queries) 限制服务器上同时执行的查询总数。[`max_concurrent_insert_queries`](/zh/reference/settings/server-settings/settings/max-concurrent#max_concurrent_insert_queries) 和 [`max_concurrent_select_queries`](/zh/reference/settings/server-settings/settings/max-concurrent#max_concurrent_select_queries) 分别对 `INSERT` 和 `SELECT` 查询施加相同的限制。这三项的默认值均为 `0` (不限制) 。
+* [`max_concurrent_queries_for_user`](/zh/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_user) 和 [`max_concurrent_queries_for_all_users`](/zh/reference/settings/session-settings/max-concurrent#max_concurrent_queries_for_all_users) 分别限制每个用户和所有用户的并发数。
+
+<div id="isolating-workloads">
+  ## 隔离工作负载
+</div>
+
+为防止并发工作负载彼此干扰，ClickHouse 提供：
+
+* [工作负载调度](/zh/concepts/features/configuration/server-config/workload-scheduling)，用于调控 CPU、内存和 IO 在不同工作负载之间的分配。
+* [配额](/zh/concepts/features/configuration/server-config/quotas)，用于限制每位用户在指定时间间隔内的资源使用量。
+* [查询复杂度限制](/zh/concepts/features/configuration/settings/query-complexity)，用于防止单个查询占用过多资源。
+* 内置的[基于角色的访问控制](/zh/concepts/features/security/access-rights)，用于限定每位用户可查询的内容。
+
+这些功能共同使 ClickHouse 适合作为分析数据之上的服务层。

@@ -11,9 +11,7 @@ import ReleaseSchedule from "/snippets/ko/components/ReleaseSchedule/ReleaseSche
 
 ClickHouse Cloud는 안정성, 새로운 기능에 대한 접근성, 업그레이드 예측 가능성에 관한 다양한 요구를 충족할 수 있도록 여러 릴리스 채널을 제공합니다. 각 채널은 업그레이드 일정이 서로 다르며, 새 릴리스를 즉시 사용하려는 경우와 가장 안정적인 버전을 받기 위해 업그레이드를 미루려는 경우 등 다양한 사용 사례를 지원하도록 설계되었습니다.
 
-<div id="release-channel-details">
-  ## 릴리스 채널 세부 정보
-</div>
+## 릴리스 채널 세부 정보 {#release-channel-details}
 
 <Accordion title="릴리스 채널에 대해 자세히 알아보기">
   | 채널 이름             | 설명                                                                                                     | 주요 고려 사항                                                                          | 지원 티어                                 |
@@ -33,9 +31,7 @@ ClickHouse Cloud는 안정성, 새로운 기능에 대한 접근성, 업그레�
 
 윈도우는 Enterprise 티어 서비스의 모든 릴리스 채널에서 사용할 수 있습니다. 이 기능을 사용하면 특정 요일의 시간대를 업그레이드 시간대로 구성할 수 있습니다.
 
-<div id="release-schedule">
-  ## 릴리스 일정
-</div>
+## 릴리스 일정 {#release-schedule}
 
 <Warning>
   **릴리스 날짜 이해하기**
@@ -52,12 +48,25 @@ ClickHouse Cloud는 안정성, 새로운 기능에 대한 접근성, 업그레�
 <ReleaseSchedule
   releases={[
   {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
+   version: '26.6',
+   fast_start_date: '2026-09-07',
+   fast_end_date: 'TBD',
+   regular_start_date: 'TBD',
+   regular_end_date: 'TBD',
+   slow_start_date: 'TBD',
+   slow_end_date: 'TBD',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
+  {
    changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
    version: '26.4',
    fast_start_date: '2026-06-22',
    fast_end_date: '2026-07-16',
    regular_start_date: '2026-08-03',
-   regular_end_date: 'TBD',
+   regular_end_date: '2026-09-07',
    slow_start_date: 'TBD',
    slow_end_date: 'TBD',
    fast_progress: 'green',
@@ -67,35 +76,6 @@ ClickHouse Cloud는 안정성, 새로운 기능에 대한 접근성, 업그레�
   {
    changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
    version: '26.2',
-   fast_start_date: '2026-04-03',
-   fast_end_date: '2026-04-14',
-   regular_start_date: '2026-05-06',
-   regular_end_date: '2026-06-17',
-   slow_start_date: '2026-07-22',
-   slow_end_date: '2026-07-22',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-   fast_delay_note: '윈도우가 설정된 서비스는 2026-04-15부터 업그레이드됩니다.',
-  },
-  {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
-   version: '25.12',
-   fast_start_date: '2026-02-10',
-   fast_end_date: '2026-02-11',
-   regular_start_date: '2026-03-09',
-   regular_end_date: '2026-03-18',
-   slow_start_date: '2026-04-07',
-   slow_end_date: '2026-04-09',
-   fast_progress: 'green',
-   regular_progress: 'green',
-   slow_progress: 'green',
-   regular_delay_note: '윈도우가 있는 서비스는 3월 23일 다음 주의 윈도우 동안 25.12로 업그레이드됩니다',
-   slow_delay_note: '윈도우가 있는 서비스는 4월 13일 다음 주의 윈도우 동안 25.12로 업그레이드됩니다',
- },
- {
-   changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
-   version: '25.10',
    fast_start_date: 'Completed',
    fast_end_date: 'Completed',
    regular_start_date: 'Completed',
@@ -105,19 +85,19 @@ ClickHouse Cloud는 안정성, 새로운 기능에 대한 접근성, 업그레�
    fast_progress: 'green',
    regular_progress: 'green',
    slow_progress: 'green',
- },
- {
-  changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
-  version: '25.8',
-  fast_start_date: 'Completed',
-  fast_end_date: 'Completed',
-  regular_start_date: 'Completed',
-  regular_end_date: 'Completed',
-  slow_start_date: 'Completed',
-  slow_end_date: 'Completed',
-  fast_progress: 'green',
-  regular_progress: 'green',
-  slow_progress: 'green',
-}
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+   version: '25.12',
+   fast_start_date: 'Completed',
+   fast_end_date: 'Completed',
+   regular_start_date: 'Completed',
+   regular_end_date: 'Completed',
+   slow_start_date: 'Completed',
+   slow_end_date: 'Completed',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
 ]}
 />

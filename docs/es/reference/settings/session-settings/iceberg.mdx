@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/Exp
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="iceberg_delete_data_on_drop">
-  ## iceberg_delete_data_on_drop
-</div>
+## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,25 +22,35 @@ Estas configuraciones están disponibles en [system.settings](/es/reference/syst
 
 Indica si se deben eliminar todos los archivos de Iceberg al hacer drop.
 
-<div id="iceberg_delete_manifest_decode_concurrency">
-  ## iceberg_delete_manifest_decode_concurrency
-</div>
+## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "Nueva configuración para la capacidad, antes fijada en el código, de la cola entre las tareas de decodificación del manifiesto de datos de Iceberg y la consulta."}]}]} />
+
+Capacidad de la cola entre las tareas de decodificación del manifiesto de datos de Iceberg y la consulta, expresada en entradas de archivos de datos.
+
+Las tareas de decodificación se pausan cuando la cola se llena y la consulta no está consumiendo datos, por lo que esto también limita la lectura anticipada.
+
+Debe ser mayor que cero.
+
+## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+
+**Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "Nueva configuración que limita cuántos archivos de manifiesto de eliminación de Iceberg se decodifican simultáneamente antes de leer la primera fila. Antes de la versión 26.8, se decodificaba un manifiesto a la vez mientras la obtención del siguiente ya estaba en curso, por lo que `2` es lo más equivalente al comportamiento anterior, que situaba la suma de los viajes de ida y vuelta al almacenamiento de objetos en la ruta crítica antes de la primera fila."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "Nueva configuración que limita cuántos archivos de manifiesto de Iceberg se decodifican de forma concurrente, tanto los manifiestos de borrado como los de datos. Sustituye a `iceberg_delete_manifest_decode_concurrency` (que se conserva como alias). El valor `2` aproxima el data path anterior a 26.9, que decodificaba un manifiesto a la vez con el fetch del siguiente ya en curso; por tanto, con `compatibility` igual o inferior a 26.8, la decodificación de borrados también se ejecuta con 2 en lugar de su valor predeterminado publicado de 4, lo que preserva el envelope de memoria del data path anterior a costa de cierto solapamiento en la decodificación de borrados."}]}]} />
 
-Número máximo de archivos de manifiesto de eliminación de Iceberg que se decodifican simultáneamente durante la ejecución de una consulta antes de leer cualquier archivo de datos.
+Número máximo de archivos de manifiesto de Iceberg que se decodifican de forma concurrente durante la lectura de una tabla.
 
-Todos los manifiestos de eliminación deben decodificarse antes de leer cualquier archivo de datos, por lo que esta tarea se encuentra en la ruta crítica antes de devolver la primera fila. Decodificar varios a la vez solapa tanto los viajes de ida y vuelta al almacenamiento de objetos como el trabajo de poda por fila.
+Los manifiestos de borrado se decodifican en su totalidad antes de leer cualquier archivo de datos; los manifiestos de datos se decodifican mientras se genera la lista de archivos de datos de la consulta, y solo se decodifican nuevos a medida que la consulta consume las entries ya decodificadas. Decodificar varios manifiestos a la vez solapa los round-trip al object storage con el trabajo de pruning por entry.
 
-Los valores más altos aumentan el uso máximo de memoria durante la inicialización de la consulta cuando la caché de archivos de metadatos de Iceberg está deshabilitada o llena, ya que cada manifiesto en curso conserva su propio contenido decodificado.
+Los valores más altos elevan el pico de memoria cuando la caché de metadata files de Iceberg está deshabilitada o llena, ya que cada manifiesto en curso retiene entonces su propio contenido decodificado.
 
-Debe ser mayor que cero; `1` decodifica los manifiestos de uno en uno.
+Debe ser mayor que cero; con `1` los manifiestos se decodifican de uno en uno.
 
-<div id="iceberg_manifest_min_count_to_compact">
-  ## iceberg_manifest_min_count_to_compact
-</div>
+## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 
 <ExperimentalBadge />
 
@@ -54,9 +62,7 @@ Número mínimo de archivos de manifiesto necesario para activar la compactació
 Si el número actual de archivos de manifiesto es menor o igual que este umbral, se omite la compactación.
 Requiere que allow&#95;experimental&#95;iceberg&#95;compaction esté habilitado.
 
-<div id="iceberg_max_number_datafiles_to_compact">
-  ## iceberg_max_number_datafiles_to_compact
-</div>
+## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,9 +70,7 @@ Requiere que allow&#95;experimental&#95;iceberg&#95;compaction esté habilitado.
 
 Umbral para los archivos de datos de compactación en Iceberg.
 
-<div id="iceberg_orphan_files_older_than_seconds">
-  ## iceberg_orphan_files_older_than_seconds
-</div>
+## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />
 
@@ -76,9 +80,7 @@ Umbral para los archivos de datos de compactación en Iceberg.
 
 Umbral predeterminado de antigüedad, en segundos, para eliminar archivos huérfanos en tablas Iceberg. Los archivos más recientes que este umbral no se consideran huérfanos. Se usa cuando se omite el argumento older&#95;than en la llamada al procedimiento `remove_orphan_files()`. El valor predeterminado es 259200 (3 días).
 
-<div id="iceberg_snapshot_id">
-  ## iceberg_snapshot_id
-</div>
+## iceberg_snapshot_id {#iceberg_snapshot_id}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -86,9 +88,7 @@ Umbral predeterminado de antigüedad, en segundos, para eliminar archivos huérf
 
 Consulta la tabla Iceberg con el ID de instantánea especificado.
 
-<div id="iceberg_timestamp_ms">
-  ## iceberg_timestamp_ms
-</div>
+## iceberg_timestamp_ms {#iceberg_timestamp_ms}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 

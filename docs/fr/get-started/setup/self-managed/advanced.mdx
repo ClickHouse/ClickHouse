@@ -8,9 +8,7 @@ hide_title: false
 doc_type: 'guide'
 ---
 
-<div id="compile-from-source">
-  ## Compiler depuis le code source
-</div>
+## Compiler depuis le code source {#compile-from-source}
 
 Pour compiler manuellement ClickHouse, suivez les instructions pour [Linux](/fr/resources/develop-contribute/build/build) ou [macOS](/fr/resources/develop-contribute/build/build-osx).
 
@@ -21,7 +19,7 @@ Client: <build_directory>/programs/clickhouse-client
 Server: <build_directory>/programs/clickhouse-server
 ```
 
-Vous devrez créer manuellement les dossiers de données et de métadonnées, puis exécuter `chown` dessus pour l’utilisateur souhaité. Leurs chemins peuvent être modifiés dans la config du server (src/programs/server/config.xml) ; par défaut, ils sont les suivants :
+Vous devrez créer manuellement les dossiers de données et de métadonnées, puis exécuter `chown` dessus pour l’utilisateur souhaité. Leurs chemins peuvent être modifiés dans la config du server (src/programs/server/config.xml) ; par défaut, ils sont les suivants :
 
 ```bash
 /var/lib/clickhouse/data/default/
@@ -31,7 +29,7 @@ Vous devrez créer manuellement les dossiers de données et de métadonnées, pu
 Sur Gentoo, vous pouvez simplement utiliser `emerge clickhouse` pour installer ClickHouse depuis le code source.
 
 <div id="install-a-ci-generated-binary">
-  ## Installer un binaire généré par la CI
+  ## Installer un binaire généré par la CI {#install-a-ci-generated-binary}
 </div>
 
 L’infrastructure d’intégration continue (CI) de ClickHouse produit des builds spécialisés pour chaque commit du [dépôt

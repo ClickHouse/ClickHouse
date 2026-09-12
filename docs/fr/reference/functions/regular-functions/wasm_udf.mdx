@@ -140,9 +140,7 @@ SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d
 
 Si le hash fourni ne correspond pas au SHA256 calculé pour le code du module, l&#39;insertion échoue. Cela peut être utile lors du chargement de modules depuis des sources externes telles que S3 ou HTTP.
 
-<div id="distribute-a-module-across-a-cluster">
-  ### Distribuer un module à l’échelle d’un cluster
-</div>
+### Distribuer un module à l’échelle d’un cluster {#distribute-a-module-across-a-cluster}
 
 `system.webassembly_modules` est une table propre à chaque instance — un `INSERT` n’atteint que la réplique qui gère la connection. Il n’existe pas de forme `ON CLUSTER` pour l’instruction `INSERT`, donc un `CREATE FUNCTION ... ON CLUSTER` exécuté ensuite échouera sur les répliques qui ne disposent pas du module :
 
@@ -287,24 +285,26 @@ WebAssembly ne distingue pas les arguments signés des arguments non signés, ma
 
 Traite des blocs entiers en une seule fois via une (dé)sérialisation dans la mémoire WASM. Prend en charge tous les types d’arguments et de retour.
 
-Les données sont échangées via des buffers dans la mémoire WASM. Un buffer est une structure de 8 octets contenant un pointeur vers les données et leur taille (deux valeurs `u32` au format little-endian). Les buffers sont transmis par handle — un pointeur vers cette structure, et non vers les données elles-mêmes. Le code invité doit exporter deux fonctions permettant de créer et de détruire ces buffers.
+Les données sont échangées via des buffers dans la mémoire WASM. Un buffer est une structure de 8 octets contenant un pointeur vers les données et leur taille (deux valeurs `u32` au format little-endian). Les buffers sont transmis par handle — un pointeur vers cette structure, et non vers les données elles-mêmes. Le code invité doit exporter deux fonctions permettant de créer et de détruire ces buffers. Lorsque la taille est non nulle, le pointeur de données doit également être non nul : un buffer qui déclare une taille positive mais pointe vers l’offset `0` de la mémoire linéaire n’est pas un buffer valide, et le code invité ne doit pas en produire ; ClickHouse rejette un tel buffer et fait échouer la requête avec une `WASM_ERROR`.
 
-Pour chaque bloc d’entrée, ClickHouse :
+Pour chaque bloc d’entrée, ClickHouse :
 
-1. Sérialise les colonnes d’arguments à l’aide du `serialization_format` de la fonction (`MsgPack` par défaut). Les formats basés sur les lignes écrivent les valeurs ligne par ligne, avec les valeurs d’arguments dans l’ordre de leur déclaration dans `ARGUMENTS` ; les formats comportant des champs nommés utilisent les noms des arguments. Déclarez donc ces derniers dans `ARGUMENTS` lorsque vous utilisez de tels formats.
+1. Sérialise les colonnes d’arguments à l’aide du `serialization_format` de la fonction (`MsgPack` par défaut). Les formats basés sur les lignes écrivent les valeurs ligne par ligne, avec les valeurs d’arguments dans l’ordre de leur déclaration dans `ARGUMENTS` ; les formats comportant des champs nommés utilisent les noms des arguments. Déclarez donc ces derniers dans `ARGUMENTS` lorsque vous utilisez de tels formats.
 2. Appelle `clickhouse_create_buffer`, exportée par le module, et copie les données sérialisées dans la mémoire pointée par le buffer renvoyé.
-3. Appelle la fonction définie par l’utilisateur avec deux arguments `i32` : le handle du buffer d’entrée (`0` si la fonction n’a aucun argument) et le nombre de lignes. La fonction renvoie un unique `i32` — le handle du buffer de résultat, que le code invité alloue lui-même ; renvoyer `0` fait échouer la requête avec une erreur.
-4. Lit le buffer de résultat : il doit contenir exactement une colonne avec exactement le même nombre de lignes, sérialisée dans le même format. Pour les formats comportant des champs nommés, tels que `JSONEachRow`, la colonne de résultat doit être nommée `result`.
+3. Appelle la fonction définie par l’utilisateur avec deux arguments `i32` : le handle du buffer d’entrée (`0` si la fonction n’a aucun argument) et le nombre de lignes. La fonction renvoie un unique `i32` — le handle du buffer de résultat, que le code invité alloue lui-même ; renvoyer `0` fait échouer la requête avec une erreur.
+4. Lit le buffer de résultat : il doit contenir exactement une colonne avec exactement le même nombre de lignes, sérialisée dans le même format. Pour les formats comportant des champs nommés, tels que `JSONEachRow`, la colonne de résultat doit être nommée `result`.
 5. Appelle `clickhouse_destroy_buffer` sur les handles du buffer d’entrée (le cas échéant) et du buffer de résultat. Le code invité ne doit pas libérer lui-même le buffer de résultat ni renvoyer le handle d’entrée comme résultat — il serait alors détruit deux fois.
 
-La fonction est invoquée une fois par bloc d’entrée : une requête volumineuse est divisée en plusieurs blocs par le pipeline de requête (le nombre maximal de lignes par appel peut également être limité par le paramètre `webassembly_udf_max_input_block_size`). Le nombre de lignes transmis à chaque appel correspond donc à la taille de ce bloc, et non à celle de la requête entière.
+La fonction est invoquée une fois par bloc d’entrée : une requête volumineuse est divisée en plusieurs blocs par le pipeline de requête. Le nombre de lignes transmis à chaque appel correspond donc à la taille de ce bloc, et non à celle de la requête entière.
+
+Un bloc du pipeline peut néanmoins être trop large pour la mémoire linéaire du module ; il est alors découpé davantage. Par défaut, `webassembly_udf_input_split_memory_ratio` le découpe dynamiquement : ClickHouse mesure les lignes sérialisées et démarre un nouvel appel avant que l’entrée ne dépasse cette fraction de la mémoire linéaire de l’invité, de sorte que le nombre de lignes varie selon les données. Une valeur non nulle de `webassembly_udf_max_input_block_size` remplace ce mécanisme par une limite fixe de ce nombre de lignes par appel, tandis qu’un ratio de `0` transmet le bloc entier en un seul appel. Un appel ne descend jamais en dessous d’une ligne : une ligne trop volumineuse à elle seule pour la mémoire du module échoue donc toujours à l’intérieur de l’invité.
 
 <Note>
-  Les octets exacts contenus dans les buffers sont définis par le format choisi, et le code invité doit les décoder et les encoder lui-même. En particulier, pour les valeurs `String` :
+  Les octets exacts contenus dans les buffers sont définis par le format choisi, et le code invité doit les décoder et les encoder lui-même. En particulier, pour les valeurs `String` :
 
-  * `MsgPack` : ClickHouse écrit les valeurs `String` à l’aide de la famille de types `bin` (`0xc4`/`0xc5`/`0xc6`), et non de la famille `str`. Les deux familles sont acceptées lors de l’analyse du résultat.
-  * `RowBinary` : chaque `String` est préfixée de sa longueur en octets sous forme de varint non signé ([LEB128](https://en.wikipedia.org/wiki/LEB128)), et non d’un entier à largeur fixe.
-  * `JSONEachRow` : chaque ligne de résultat doit être un objet avec la clé `result`, par exemple `{"result":"value"}`.
+  * `MsgPack` : ClickHouse écrit les valeurs `String` à l’aide de la famille de types `bin` (`0xc4`/`0xc5`/`0xc6`), et non de la famille `str`. Les deux familles sont acceptées lors de l’analyse du résultat.
+  * `RowBinary` : chaque `String` est préfixée de sa longueur en octets sous forme de varint non signé ([LEB128](https://en.wikipedia.org/wiki/LEB128)), et non d’un entier à largeur fixe.
+  * `JSONEachRow` : chaque ligne de résultat doit être un objet avec la clé `result`, par exemple `{"result":"value"}`.
 </Note>
 
 ```
@@ -328,7 +328,7 @@ La fonction est invoquée une fois par bloc d’entrée : une requête volumine
 )
 ```
 
-Exemple complet en C freestanding : `str_reverse` inverse les octets de chaque chaîne d’entrée en utilisant `serialization_format = 'RowBinary'`. Les instances de module sont réutilisées d’un bloc à l’autre ; `clickhouse_destroy_buffer` doit donc réellement libérer la mémoire. Ici, l’allocator se réinitialise une fois tous les buffers détruits.
+Un exemple complet en C autonome : `str_reverse` inverse les octets de chaque chaîne d&#39;entrée, en utilisant `serialization_format = 'RowBinary'`. Les instances de module sont réutilisées d&#39;un bloc à l&#39;autre, `clickhouse_destroy_buffer` doit donc réellement libérer la mémoire — ici, l&#39;allocator se réinitialise dès que tous les buffers ont été détruits.
 
 ```c
 #include <stdint.h>
@@ -410,16 +410,16 @@ ClickHouseBuffer * str_reverse(ClickHouseBuffer * input, uint32_t num_rows)
 }
 ```
 
-Compilez avec clang et `wasm-ld` (fourni avec LLVM/lld) :
+Compilez avec clang et `wasm-ld` (fourni avec LLVM/lld) :
 
 ```bash
 clang --target=wasm32 -ffreestanding -nostdlib -fno-builtin -c str_reverse.c
 wasm-ld --no-entry str_reverse.o -o str_reverse.wasm
 ```
 
-Les fonctions doivent être visibles parmi les exports du module : marquez-les avec `__attribute__((export_name("...")))` comme ci-dessus, ou établissez l’édition de liens avec `wasm-ld --export-all`. `-fno-builtin` empêche clang de convertir les simples boucles sur les octets en appels à `memcpy`/`memset`, qui ne sont pas disponibles sans bibliothèque standard.
+Les fonctions doivent être visibles parmi les exports du module : marquez-les avec `__attribute__((export_name("...")))` comme ci-dessus, ou établissez l’édition de liens avec `wasm-ld --export-all`. `-fno-builtin` empêche clang de convertir les simples boucles sur les octets en appels à `memcpy`/`memset`, qui ne sont pas disponibles sans bibliothèque standard.
 
-Chargez le module et créez la fonction :
+Chargez le module et créez la fonction :
 
 ```bash
 cat str_reverse.wasm | clickhouse client -q "INSERT INTO system.webassembly_modules (name, code) SELECT 'str_reverse', code FROM input('code String') FORMAT RawBlob"
@@ -528,17 +528,19 @@ Les fonctions hôte suivantes peuvent être importées et utilisées par les mod
   ## Paramètres
 </div>
 
-Les paramètres suivants, au niveau de la requête, contrôlent l&#39;exécution des UDF WebAssembly :
+Les paramètres de requête suivants contrôlent l&#39;exécution des UDF WebAssembly :
 
-* `webassembly_udf_max_fuel` — Limite de fuel par exécution d&#39;une instance d&#39;UDF WebAssembly. Chaque instruction WebAssembly consomme une certaine quantité de fuel. La valeur est multipliée par 1024 avant d&#39;être transmise au runtime, ainsi `webassembly_udf_max_fuel = 1` correspond à environ 1024 unités de fuel. Définissez-la sur 0 pour supprimer toute limite finie. S&#39;applique uniquement aux fonctions dont le paramètre par fonction `webassembly_udf_enable_fuel` est true, ce qui est la valeur par défaut.
+* `webassembly_udf_max_fuel` — Limite de fuel par exécution d&#39;une instance d&#39;UDF WebAssembly. Chaque instruction WebAssembly consomme une certaine quantité de fuel. La valeur est multipliée par 1024 avant d&#39;être transmise au runtime, ainsi `webassembly_udf_max_fuel = 1` correspond à environ 1024 unités de fuel. Définissez-la sur 0 pour supprimer toute limite finie. S&#39;applique uniquement aux fonctions dont le paramètre propre à la fonction `webassembly_udf_enable_fuel` est true, ce qui est la valeur par défaut.
 
 * `webassembly_udf_max_memory` — Limite de mémoire, en octets, par instance d&#39;UDF WebAssembly.
 
-* `webassembly_udf_max_input_block_size` — Nombre maximal de lignes transmises à une UDF WebAssembly dans un seul bloc. Définissez 0 pour traiter toutes les lignes en une seule fois.
+* `webassembly_udf_max_input_block_size` — Nombre maximal de lignes transmises à une UDF WebAssembly dans un seul bloc, pour toutes les ABI. Définissez 0 pour laisser `webassembly_udf_input_split_memory_ratio` dimensionner les appels d&#39;une fonction `ABI BUFFERED_V1` ; les autres ABI reçoivent alors le bloc de pipeline entier.
+
+* `webassembly_udf_input_split_memory_ratio` — La fraction de la mémoire linéaire qu&#39;un module déclare avoir au démarrage (de son plafond de mémoire, pour un module qui démarre sans aucune page) que l&#39;entrée d&#39;un appel peut occuper. Utilisé pour découper les blocs d&#39;une fonction `ABI BUFFERED_V1` lorsque `webassembly_udf_max_input_block_size` vaut 0 ; les autres ABI ne transportent aucun bloc d&#39;entrée sérialisé et l&#39;ignorent. Valeur par défaut : `0.5`, ce qui laisse le reste de la mémoire au working set propre du guest — un ratio proche de 1 peut malgré tout échouer au sein de l&#39;allocator du guest. Définissez 0, ou fixez `compatibility` à une version antérieure à 26.9, pour transmettre le bloc de pipeline entier en un seul appel. Doit être au minimum 0 et au maximum 1.
 
 * `webassembly_udf_max_instances` — Nombre maximal d&#39;instances d&#39;UDF WebAssembly pouvant s&#39;exécuter en parallèle par fonction.
 
-Exemple d&#39;utilisation :
+Exemple d&#39;utilisation :
 
 ```sql
 SET webassembly_udf_max_fuel = 200000;

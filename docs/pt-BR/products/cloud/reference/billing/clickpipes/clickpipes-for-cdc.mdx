@@ -13,11 +13,11 @@ Esta seção descreve o modelo de preços dos conectores de Captura de Dados de 
   ## CDC OLTP
 </div>
 
-| Conector         | Ciclo de vida do recurso   | Status de cobrança                                                                                                                                                                                                              |
-| ---------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Postgres CDC** | Disponibilidade Geral (GA) | Cobrado de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas.                                                                                                                                              |
-| **MySQL CDC**    | Beta Pública               | **Gratuito** durante a Beta Pública. A cobrança terá início quando o conector passar para Disponibilidade Geral (GA), em **1º de setembro de 2026**, de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas. |
-| **MongoDB CDC**  | Beta Pública               | **Gratuito** durante a Beta Pública. A cobrança terá início quando o conector passar para Disponibilidade Geral (GA), de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas.                                |
+| Conector         | Ciclo de vida do recurso   | Status de cobrança                                                                                                                                                                               |
+| ---------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Postgres CDC** | Disponibilidade Geral (GA) | Cobrado de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas.                                                                                                               |
+| **MySQL CDC**    | Disponibilidade Geral (GA) | Cobrado de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas a partir de 1º de setembro de 2026.                                                                            |
+| **MongoDB CDC**  | Beta Pública               | **Gratuito** durante a Beta Pública. A cobrança terá início quando o conector passar para Disponibilidade Geral (GA), de acordo com as [dimensões de preços](#pricing-dimensions-oltp) listadas. |
 
 <div id="pricing-dimensions-oltp">
   ### Dimensões de preço
@@ -58,7 +58,7 @@ Como a computação é compartilhada, esse componente de preço permanece **fixo
 </div>
 
 <Note>
-  Este exemplo combina vários conectores para ilustrar o modelo de preços de capacidade computacional compartilhada dos ClickPipes de CDC. Observe que o [MySQL CDC é gratuito durante a Beta Pública](#cdc-oltp).
+  Este exemplo combina vários conectores para ilustrar o modelo de preços de capacidade de computação compartilhada dos ClickPipes de CDC.
 </Note>
 
 Considere um serviço no tier **Scale** com a seguinte configuração:

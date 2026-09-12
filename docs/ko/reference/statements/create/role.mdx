@@ -18,9 +18,9 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
-<div id="managing-roles">
-  ## 역할 관리
-</div>
+`CREATE ROLE`에는 [CREATE ROLE](/ko/reference/statements/grant#access-management) 권한이 필요합니다. `OR REPLACE`는 동일한 이름의 기존 역할을 해당 역할에 부여된 권한과 함께 삭제하므로, 추가로 [DROP ROLE](/ko/reference/statements/grant#access-management) 권한이 필요합니다. `DROP ROLE` 권한은 해당 역할이 이미 존재하는지 여부와 관계없이 SQL 문에 나열된 모든 이름에 대해 필요하므로, 이 SQL 문으로 어떤 역할이 존재하는지 알아낼 수는 없습니다.
+
+## 역할 관리 {#managing-roles}
 
 사용자에게는 여러 개의 역할을 할당할 수 있습니다. 사용자는 [SET ROLE](/ko/reference/statements/set-role) SQL 문을 사용하여 할당된 역할을 임의로 조합해 적용할 수 있습니다. 최종 권한 범위는 적용된 모든 역할에 부여된 모든 권한을 합친 집합입니다. 사용자 계정에 직접 부여된 권한이 있는 경우, 해당 권한도 역할을 통해 부여된 권한과 합쳐집니다.
 
@@ -30,9 +30,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 역할을 삭제하려면 [DROP ROLE](/ko/reference/statements/drop#drop-role) SQL 문을 사용하십시오. 삭제된 역할은 해당 역할이 할당되어 있던 모든 사용자와 역할에서 자동으로 해제됩니다.
 
-<div id="examples">
-  ## 예시
-</div>
+## 예시 {#examples}
 
 ```sql
 CREATE ROLE accountant;

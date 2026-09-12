@@ -1,22 +1,22 @@
 ---
 title: 'Référence de la CLI'
 sidebarTitle: 'CLI'
-description: 'Référence des commandes clicklink clctl : init, preflight, sessions de support, approbation de la gateway, audit et provisionnement des accès'
-keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
+description: 'Référence des commandes clicklink clctl : init, preflight, sessions de support, approbation de la passerelle, audit et provisionnement des accès'
+keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connecteur', 'CLI']
 doc_type: 'reference'
 ---
 
-Le connector est fourni sous la forme d’un unique binaire nommé `clicklink` ; les commandes à exécuter se trouvent sous `clicklink clctl`. Cette page présente les commandes utilisées lors de l’installation et des opérations quotidiennes. Exécutez n’importe quelle commande avec `--help` pour afficher son aide complète. Les flags des sous-arborescences `troubleshoot` et `preflight` peuvent également être fournis via les variables d’environnement `CLCTL_*` (dont le nom est indiqué dans l’aide de chaque flag) ou le fichier `~/.clicklink/clctl.yaml`.
+import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="init">
-  ## clicklink clctl init
-</div>
+<PrivatePreviewBadge />
+
+Le connecteur est fourni sous la forme d’un unique binaire nommé `clicklink` ; les commandes à exécuter se trouvent sous `clicklink clctl`. Cette page présente les commandes utilisées lors de l’installation et des opérations quotidiennes. Exécutez n’importe quelle commande avec `--help` pour afficher son aide complète. Les flags des sous-arborescences `troubleshoot` et `preflight` peuvent également être fournis via les variables d’environnement `CLCTL_*` (dont le nom est indiqué dans l’aide de chaque flag) ou le fichier `~/.clicklink/clctl.yaml`.
+
+## clicklink clctl init {#init}
 
 Initialise le connecteur à partir d’un jeton d’inscription, d’un bundle d’inscription enregistré ou d’un certificat signé transmis hors bande. Une seule exécution prépare la configuration, provisionne l’accès à ClickHouse, obtient le certificat client mTLS, effectue le déploiement (chart Helm ou unités systemd) et vérifie l’état de santé. Vous pouvez relancer la commande sans risque : la configuration et l’UUID du cluster sont conservés, les informations d’identification sont remplacées de façon atomique et une clé client existante est réutilisée, sauf si vous spécifiez `--force`. Consultez [l’onboarding](/fr/products/bring-your-own-cloud/connector/onboarding) pour connaître le processus complet.
 
-<div id="init-entry-points">
-  ### Points d&#39;entrée
-</div>
+### Points d&#39;entrée {#init-entry-points}
 
 Un seul des trois points d&#39;entrée est obligatoire ; ils s&#39;excluent mutuellement.
 
@@ -26,9 +26,7 @@ Un seul des trois points d&#39;entrée est obligatoire ; ils s&#39;excluent mut
 | `--handoff <path>`     | Initialise à partir d&#39;un bundle d&#39;inscription enregistré. Les réexécutions et la récupération utilisent cette option une fois que `handoff.yaml` existe.                                                                                                                                                                                                                                                                                     |
 | `--signed-cert <path>` | Phase 2 du flux air-gapped : installe un certificat client signé hors bande et termine l&#39;installation par étapes. `--chain <path>` remplace facultativement la chaîne de CA associée.                                                                                                                                                                                                                                                            |
 
-<div id="init-common-flags">
-  ### Options communes
-</div>
+### Options communes {#init-common-flags}
 
 | Option                      | Description                                                                                                                                                                                                                                                      |
 | --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -41,18 +39,14 @@ Un seul des trois points d&#39;entrée est obligatoire ; ils s&#39;excluent mut
 | `--ch-user-suffix <suffix>` | Suffixe facultatif pour les noms d&#39;utilisateur ClickHouse provisionnés (`pcm_scraper` devient `pcm_scraper_<suffix>`), afin qu&#39;un second déploiement de connecteur puisse partager une instance sans entrer en conflit avec les utilisateurs du premier. |
 | `--ch-admin-password-stdin` | Lit le mot de passe administrateur ClickHouse depuis stdin lorsqu&#39;il est requis pour le provisionnement SQL ; lors d&#39;une exécution dans un terminal, une invite s&#39;affiche à la place.                                                                |
 
-<div id="init-signing-flags">
-  ### Options de signature (phase 1 uniquement)
-</div>
+### Options de signature (phase 1 uniquement) {#init-signing-flags}
 
 | Option                  | Description                                                                                                                                                                   |
 | ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--no-auto-sign`        | Uniquement à cette étape : ignore la signature automatique de la CSR via l’endpoint d’inscription, pour les flux de signature en environnement isolé du réseau ou hors bande. |
 | `--sign-endpoint <url>` | Remplace l’endpoint de signature d’inscription (par défaut : dérivé de l’endpoint du bundle par insertion du label DNS `enroll`). Doit être une URL HTTPS.                    |
 
-<div id="init-kubernetes-flags">
-  ### Options réservées à Kubernetes
-</div>
+### Options réservées à Kubernetes {#init-kubernetes-flags}
 
 Valables uniquement avec `--target helm`.
 
@@ -68,9 +62,7 @@ Valables uniquement avec `--target helm`.
 | `--ch-pod <ref>`            | Pod ClickHouse utilisé pour les étapes de provisionnement dans le pod, sous forme de nom ou de sélecteur d’étiquettes `k=v` (par défaut : un pod Running associé au Service de chaque instance). |
 | `--api-private-ca`          | L’endpoint d’API fournit un certificat émis par la CA du bundle d’inscription : prépare `api.tls.caFile` pour qu’il pointe vers la chaîne de CA montée plutôt que vers les racines système.      |
 
-<div id="init-vm-flags">
-  ### Options réservées aux VM
-</div>
+### Options réservées aux VM {#init-vm-flags}
 
 Valable uniquement avec `--target systemd`.
 
@@ -79,9 +71,7 @@ Valable uniquement avec `--target systemd`.
 | `--server <url>`     | URL du serveur d’API Kubernetes vers lequel pointent les bundles d’accès (par défaut : kubeconfig de cet hôte, sinon demandée). |
 | `--ca-data <base64>` | `certificate-authority-data` encodé en Base64 pour `--server` (par défaut : kubeconfig de cet hôte, sinon demandée).            |
 
-<div id="init-flag-conflicts">
-  ### Conflits entre indicateurs
-</div>
+### Conflits entre indicateurs {#init-flag-conflicts}
 
 * `--handoff`, `--enroll` et `--signed-cert` s’excluent mutuellement ; un seul doit être spécifié.
 * Les indicateurs propres à Kubernetes sont rejetés sauf avec `--target helm` ; `--server` et `--ca-data` sont rejetés avec `--target helm` (le processus Helm lit le kubeconfig du poste de travail).
@@ -89,9 +79,7 @@ Valable uniquement avec `--target systemd`.
 * `--operators` et `--no-gateway` s’excluent mutuellement.
 * `--skip-provision` rejette `--ch-pod`, `--ch-user-suffix`, `--server`, `--ca-data` et `--ch-admin-password-stdin` (aucun provisionnement n’est effectué).
 
-<div id="preflight">
-  ## clicklink clctl preflight
-</div>
+## clicklink clctl preflight {#preflight}
 
 Exécute la suite de vérifications du connecteur, regroupées par catégorie : configuration, fichiers, réseau, ClickHouse, systemd, accès, disque, masquage. Chaque vérification indique une réussite, un avertissement, un échec ou une omission. Le code de sortie 0 signifie que toutes les vérifications ont réussi (les avertissements ne sont pas bloquants) ; le code de sortie 2 signifie qu&#39;une ou plusieurs vérifications ont échoué.
 
@@ -110,9 +98,7 @@ Par défaut, la commande s&#39;exécute localement. Avec `--k8s-namespace`, elle
 
 Les options `--k8s-*` et les options du canal distant s&#39;excluent mutuellement ; choisissez une cible.
 
-<div id="troubleshoot-session">
-  ## clicklink clctl troubleshoot session
-</div>
+## clicklink clctl troubleshoot session {#troubleshoot-session}
 
 Active, désactive et inspecte la session de support : la période limitée pendant laquelle le composant de dépannage accepte les commandes. Lorsqu&#39;aucune session n&#39;est active, le démon refuse toutes les commandes, même lorsque son WebSocket est connecté. Consultez les [sessions de support](/fr/products/bring-your-own-cloud/connector/support-sessions).
 
@@ -121,9 +107,7 @@ Les commandes fonctionnent dans l&#39;un des deux modes suivants :
 * **Fichier local** (par défaut) : lit et écrit le fichier d&#39;état de session sur l&#39;hôte sur lequel le composant de dépannage s&#39;exécute (par défaut, `/var/lib/clicklink/session.json`).
 * **Gateway** : avec `--gateway-url`, obtient un jeton d&#39;ID OIDC et appelle à la place la gateway de session du composant de dépannage depuis votre poste de travail.
 
-<div id="init-common-flags">
-  ### Options communes
-</div>
+### Options communes {#session-shared-flags}
 
 | Option                     | Description                                                                                                                                                                                                                                                            |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -136,9 +120,7 @@ Les commandes fonctionnent dans l&#39;un des deux modes suivants :
 | `--token-file <path>`      | Fichier contenant un jeton d&#39;ID OIDC préémis, utilisé comme jeton Bearer et contournant les autres fournisseurs de jetons.                                                                                                                                         |
 | `--gateway-ca <path>`      | Bundle d&#39;AC vérifiant le certificat de la passerelle (certificat fourni par vos soins). Lorsqu&#39;il n&#39;est pas défini, un certificat épinglé via `gateway trust` est utilisé ; une passerelle autosignée sans certificat épinglé échoue de manière sécurisée. |
 
-<div id="session-enable">
-  ### activation de session
-</div>
+### activation de session {#session-enable}
 
 | Indicateur         | Description                                                                                                                                                                  |
 | ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -148,15 +130,11 @@ Les commandes fonctionnent dans l&#39;un des deux modes suivants :
 
 L’activation échoue si une session est déjà active ; désactivez-la d’abord ou attendez qu’elle expire.
 
-<div id="session-disable">
-  ### session disable
-</div>
+### session disable {#session-disable}
 
 Désactive immédiatement la session. Cette commande est sans effet lorsqu’aucune session n’est active.
 
-<div id="session-status">
-  ### état de la session
-</div>
+### état de la session {#session-status}
 
 Indique si la session est active, qui l’a activée et à quelle date elle expire. `--output` (`-o`) sélectionne `table` (par défaut) ou `json`.
 
@@ -170,9 +148,7 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-<div id="gateway-trust">
-  ## clicklink clctl troubleshoot gateway trust
-</div>
+## clicklink clctl troubleshoot gateway trust {#gateway-trust}
 
 Sur une VM, la passerelle de session utilise un certificat TLS auto-signé. Cette commande enregistre l’empreinte SHA-256 du certificat dans `~/.clicklink/clctl.yaml` afin que les commandes `session` puissent le vérifier ; si une empreinte épinglée ne correspond plus, la vérification échoue de manière sécurisée. La relation de confiance est établie hors bande de l’une des deux manières suivantes :
 
@@ -193,9 +169,7 @@ clicklink clctl troubleshoot gateway trust \
 
 Sur Kubernetes, le pinning n’est pas utilisé : exposez la passerelle via un Ingress avec un certificat émis par une CA, ou utilisez un port-forward.
 
-<div id="audit-tail">
-  ## clicklink clctl troubleshoot audit tail
-</div>
+## clicklink clctl troubleshoot audit tail {#audit-tail}
 
 Affiche les dernières entrées du journal d’audit de l’utilitaire de dépannage : JSON délimité par des sauts de ligne, avec une entrée pour chaque commande acceptée ou bloquée par le démon. La commande ouvre le journal en lecture seule et ne le modifie jamais.
 
@@ -211,9 +185,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-<div id="access-provision">
-  ## Provisionnement des accès
-</div>
+## Provisionnement des accès {#access-provision}
 
 `clicklink clctl scraper access provision` et `clicklink clctl troubleshoot access provision` créent et, avec `--force`, renouvellent le bundle d&#39;accès par instance d&#39;un composant : l&#39;utilisateur ClickHouse en lecture seule et ses privilèges, ainsi que le ServiceAccount Kubernetes, les RBAC et le jeton utilisés par le composant. `init` exécute cette opération directement lors de l&#39;installation ; les commandes autonomes permettent de la relancer ou de renouveler les identifiants.
 
@@ -250,9 +222,7 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-<div id="channel-flags">
-  ## Options du canal distant
-</div>
+## Options du canal distant {#channel-flags}
 
 `preflight`, `gateway trust` et `access provision` acceptent un ensemble commun d&#39;options qui déterminent comment accéder à une VM cible :
 

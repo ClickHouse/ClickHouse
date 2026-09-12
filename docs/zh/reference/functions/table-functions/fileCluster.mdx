@@ -15,29 +15,23 @@ doc_type: 'reference'
   如果这些文件在各节点之间不一致，则返回值无法预先确定，并且取决于工作节点向发起节点请求任务的顺序。
 </Note>
 
-<div id="syntax">
-  ## 语法
-</div>
+## 语法 {#syntax}
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-<div id="arguments">
-  ## 参数
-</div>
+## 参数 {#arguments}
 
-| 参数                   | 说明                                                                                                                                   |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `cluster_name`       | 集群名称，用于构建远程和本地服务器的地址集合及连接参数。                                                                                                         |
-| `path`               | 相对于 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings/user#user_files_path) 的文件路径。该路径也支持 [通配符](#globs-in-path)。 |
-| `format`             | 文件的[格式](/zh/reference/formats/index)。类型：[String](/zh/reference/data-types/string)。                                                         |
-| `structure`          | 表结构，格式为 `'UserID UInt64, Name String'`。用于确定列名和类型。类型：[String](/zh/reference/data-types/string)。                                          |
-| `compression_method` | 压缩方法。支持的压缩类型包括 `gz`、`br`、`xz`、`zst`、`lz4` 和 `bz2`。                                                                                   |
+| 参数                   | 说明                                                                                                                                                                                                                     |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`       | 集群名称，用于构建远程和本地服务器的地址集合及连接参数。                                                                                                                                                                                           |
+| `path`               | 相对于 [user&#95;files&#95;path](/zh/reference/settings/server-settings/settings/user#user_files_path) 的文件路径。该路径也支持 [通配符](#globs-in-path)。                                                                                   |
+| `format`             | 文件的[格式](/zh/reference/formats/index)。类型：[String](/zh/reference/data-types/string)。                                                                                                                                           |
+| `structure`          | 表结构，格式为 `'UserID UInt64, Name String'`。用于确定列名和类型。类型：[String](/zh/reference/data-types/string)。                                                                                                                            |
+| `compression_method` | 压缩方法。支持的值包括 `none` (不压缩) 、`gzip/gz`、`deflate`、`brotli/br`、`lzma/xz`、`zstd/zst`、`lz4`、`bz2` 和 `snappy`。对于 `snappy`，传输格式由 [snappy&#95;mode](/zh/reference/settings/session-settings/other#snappy_mode) 设置决定 (默认为 `basic`) 。 |
 
-<div id="returned-value">
-  ## 返回值
-</div>
+## 返回值 {#returned-value}
 
 一个表，采用指定的格式和结构，并包含来自与指定路径匹配的文件中的数据。
 
@@ -86,15 +80,11 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-<div id="globs-in-path">
-  ## 路径中的通配符
-</div>
+## 路径中的通配符 {#globs-in-path}
 
 FileCluster 支持 [File](/zh/reference/functions/table-functions/file#globs-in-path) 表函数支持的所有模式。
 
-<div id="related">
-  ## 相关
-</div>
+## 相关 {#related}
 
 * [File 表函数](/zh/reference/functions/table-functions/file)
 

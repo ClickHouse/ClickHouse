@@ -18,9 +18,9 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
-<div id="managing-roles">
-  ## ロールの管理
-</div>
+`CREATE ROLE` には [CREATE ROLE](/ja/reference/statements/grant#access-management) 権限が必要です。`OR REPLACE` は、同名の既存のロールを、そのロールに付与されている権限とともに破棄するため、追加で [DROP ROLE](/ja/reference/statements/grant#access-management) 権限も必要になります。`DROP ROLE` 権限は、ステートメントに列挙されたすべての名前について、そのロールが既に存在するかどうかにかかわらず必要となるため、このステートメントを使ってどのロールが存在するかを調べることはできません。
+
+## ロールの管理 {#managing-roles}
 
 1人のユーザーに複数のロールを割り当てることができます。ユーザーは [SET ROLE](/ja/reference/statements/set-role) ステートメントを使って、割り当てられたロールを任意の組み合わせで適用できます。最終的な権限の範囲は、適用されたすべてのロールに付与された権限を組み合わせたものになります。ユーザーアカウントに直接付与された権限がある場合は、それらもロールによって付与された権限に加わります。
 
@@ -30,9 +30,7 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
 
 ロールを削除するには、[DROP ROLE](/ja/reference/statements/drop#drop-role) ステートメントを使用します。削除されたロールは、割り当てられていたすべてのユーザーおよびロールから自動的に取り消されます。
 
-<div id="examples">
-  ## 例
-</div>
+## 例 {#examples}
 
 ```sql
 CREATE ROLE accountant;

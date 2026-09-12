@@ -6,11 +6,13 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration'
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 このページでは、ClickHouse Connector のインストール後に特に変更する可能性が高い設定について説明します。各キーのデフォルト値と意味については[設定リファレンス](/ja/products/bring-your-own-cloud/connector/reference/configuration)を、コマンドフラグについては[CLI リファレンス](/ja/products/bring-your-own-cloud/connector/reference/cli)を参照してください。
 
-<div id="configuration-surfaces">
-  ## 設定箇所
-</div>
+## 設定箇所 {#configuration-surfaces}
 
 コネクタでは、インストール先ごとに設定箇所が 1 つあります。
 
@@ -56,9 +58,7 @@ doc_type: 'guide'
   </Tab>
 </Tabs>
 
-<div id="clickhouse-instances">
-  ## ClickHouse インスタンスの追加または変更
-</div>
+## ClickHouse インスタンスの追加または変更 {#clickhouse-instances}
 
 `instances` 配下の各エントリでは、コネクタが読み取る ClickHouse ネイティブプロトコルのエンドポイントとして、`host`、`port`、`database`、`secure`、および Kubernetes 上では `namespace` と `cluster` を指定します。認証情報は設定には含まれません。各コンポーネントは、プロビジョニングで作成されるアクセスバンドルから読み取り専用の ClickHouse ユーザーを取得します。
 
@@ -153,9 +153,7 @@ doc_type: 'guide'
   同じ `access provision` コマンドに `--force` を指定すると、インスタンスの ClickHouse 認証情報をローテーションできます。[操作](/ja/products/bring-your-own-cloud/connector/operations)を参照してください。
 </Tip>
 
-<div id="operator-allowlist">
-  ## Operator 許可リスト
-</div>
+## Operator 許可リスト {#operator-allowlist}
 
 ゲートウェイで管理されるセッションは、operator のメールアドレスの許可リストによって制限されます。セッションゲートウェイへのすべてのリクエストには、証明済みメールアドレスがリストに含まれている、短期間有効な OIDC ID トークンが必要です。許可リストが空の場合、ゲートウェイは閉鎖され、誰もゲートウェイ経由でセッションを開始できません。VM では、ホストの root ユーザーはローカルのセッションファイルを通じてセッションを直接管理することもできます。許可リストはゲートウェイ経由の経路にのみ適用されます。信頼モデルの詳細については、[サポートセッション](/ja/products/bring-your-own-cloud/connector/support-sessions)を参照してください。
 
@@ -185,9 +183,7 @@ doc_type: 'guide'
   </Tab>
 </Tabs>
 
-<div id="network-policy">
-  ## ネットワークポリシーとegress
-</div>
+## ネットワークポリシーとegress {#network-policy}
 
 Kubernetes では、チャート にデフォルト拒否の NetworkPolicy と egress の許可リスト (`networkPolicy.enabled: true`) が含まれています。NetworkPolicy オブジェクトは、CNI がこれらを適用する場合にのみ有効になります。適用可能な CNI を使用している場合、`allowEgressCIDRs` でコネクタの API エンドポイントの背後にある CIDR を指定するまで、コネクタからの egress は一切許可されません。
 
@@ -227,9 +223,7 @@ clctl:
 
 イングレスに関する設定は、さらに 2 つあります。`metricsScrapeSelector` は、ラベルによりメトリクスのスクレイプ用イングレスを特定の Prometheus ネームスペースに制限します。`kubeletProbeCIDRs` は、デフォルト拒否が厳格に適用される環境でキューブレットのヘルスプローブを明示的に許可します。キーの完全な一覧については、[設定リファレンス](/ja/products/bring-your-own-cloud/connector/reference/configuration)を参照してください。
 
-<div id="redaction-patterns">
-  ## マスキングパターン
-</div>
+## マスキングパターン {#redaction-patterns}
 
 Troubleshooter の出力は、境界外に送信される前にマスキングされます。組み込みパターンでは、`ipv4`、`ipv6`、`bearer-token`、`aws-access-key`、`email`、`jwt`、`ssh-private-key`、`connection-string-credentials` を対象とします。独自のパターンは YAML ファイルに追加できます。独自のパターンはファイル内の記述順に最初に実行され、その後に組み込みパターンが実行されます。また、組み込みパターンと同じ `name` を使用するエントリは、その組み込みパターンを置き換えます。
 
@@ -254,9 +248,7 @@ VM では、ファイルは `/etc/clicklink/redaction-patterns.yaml` にあり�
   パターンファイルが存在するものの無効な場合、troubleshooter は起動を拒否し、問題のあるエントリをログに記録します。`clicklink clctl preflight` でファイルを検証できるため、デーモンを再起動する前に実行してください。
 </Warning>
 
-<div id="private-mirrors">
-  ## プライベートミラーと境界内のエンドポイント
-</div>
+## プライベートミラーと境界内のエンドポイント {#private-mirrors}
 
 公開されているチャートでは、`image.repository` にパブリックなマルチアーキテクチャ対応のcosign署名済みコネクタイメージが事前設定されているため、通常のインストールではイメージ値を指定する必要はありません。公開されているデフォルトを確認するには:
 
@@ -283,9 +275,7 @@ clicklink clctl init --handoff handoff.yaml --target helm \
 
 コネクタの API エンドポイントが境界内の private CA の配下にある場合は、`init` に `--api-private-ca` を渡します。これにより `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt` が設定され、エンドポイントはシステムルートではなく、登録バンドルの CA チェーンを使用して検証されます。VM では、これに相当する設定は `/etc/clicklink/config.yaml` の `api.tls.ca_file` です。`init` はバンドルのチェーンを `/etc/clicklink/tls/ca.crt` にインストールし、検証用にシステムルートへ追加します。完全に air-gapped な環境での登録と証明書署名については、[オンボーディング](/ja/products/bring-your-own-cloud/connector/onboarding)を参照してください。
 
-<div id="storage">
-  ## ストレージ
-</div>
+## ストレージ {#storage}
 
 <Tabs>
   <Tab title="Kubernetes">

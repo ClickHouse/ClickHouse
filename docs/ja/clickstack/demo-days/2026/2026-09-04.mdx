@@ -1,0 +1,104 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-09-04
+title: 'デモデイズ - 2026-09-04'
+sidebarTitle: '2026-09-04'
+description: '2026-09-04 の ClickStack デモデイズ'
+doc_type: 'guide'
+keywords: ['ClickStack', 'デモデイズ']
+---
+
+## 新しい種類のダッシュボードフィルター {#new-types-of-dashboard-filter}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/VnlNxvcvg-g" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、ダッシュボードフィルターで使える値は1種類だけでした。ドロップダウンの選択肢を ClickHouse のカラムから取得する、クエリ値です。フィルターと変数のモーダルを開くと、さらに2種類のタイプを選べるようになりました。
+
+静的な値では、フィルターの作成時に選択肢を自分で入力できます。たとえば環境フィルターなら、背後にクエリを持たせずに `dev`、`staging`、`prod` を並べるだけで済みます。静的リストフィルターには `expression` がないため、変数モードのみに対応し、ブロードキャストモード用の SQL 条件に変換することはできません。
+
+PromQL ラベル値は、PromQL ソースの `<label>/values` エンドポイントから選択肢を取得します。使いたいラベルを選び、必要に応じてマッチャーで絞り込めます。マッチャー自体も他の変数を参照できます。これにより、フィルター同士に依存関係を持たせられます。環境を選択すると、次のフィルターに表示されるインスタンスがそれに合わせて絞り込まれ、操作を進めるにつれて PromQL のチャートも絞り込まれていきます。
+
+いずれのタイプも変数として公開できるため、フィルターの用途は `WHERE` clause にとどまりません。デモでは、`ServiceName` と `SeverityText` を並べた静的フィルターをチャートの group-by ディメンションとして使っており、ドロップダウンで値を選ぶだけで、任意の組み合わせでチャートのグループ化基準を切り替えられます。
+
+**関連 PR:** [#3017](https://github.com/hyperdxio/hyperdx/pull/3017) スキーマと API に静的値リストフィルターを追加、[#3022](https://github.com/hyperdxio/hyperdx/pull/3022) 静的値リストフィルターの入力欄をレンダリング、[#3020](https://github.com/hyperdxio/hyperdx/pull/3020) UI での静的リストフィルターの作成と編集を可能に、[#3060](https://github.com/hyperdxio/hyperdx/pull/3060) MCP での静的カスタム値フィルターをサポート、[#3053](https://github.com/hyperdxio/hyperdx/pull/3053) Prometheus ラベル値に基づくダッシュボードフィルターをサポート、[#3072](https://github.com/hyperdxio/hyperdx/pull/3072) PromQL ラベルフィルターの autocomplete をサポート、[#3039](https://github.com/hyperdxio/hyperdx/pull/3039) Prometheus ラベル値エンドポイントで任意の時間範囲を受け付け、[#3079](https://github.com/hyperdxio/hyperdx/pull/3079) PromQL の labels および values エンドポイントで match[] をサポート、[#3080](https://github.com/hyperdxio/hyperdx/pull/3080) PromQL ラベルフィルターで match[] をサポート、[#3083](https://github.com/hyperdxio/hyperdx/pull/3083) Mantine のクラッシュを防ぐため PromQL のラベルと値を重複排除、[#3005](https://github.com/hyperdxio/hyperdx/pull/3005) フィルターエディターを閉じる際、未保存の変更を破棄する前に確認、[#3078](https://github.com/hyperdxio/hyperdx/pull/3078) ダッシュボードフィルターを必須として設定できるようにサポート、[#3093](https://github.com/hyperdxio/hyperdx/pull/3093) タイルエディターのプレビューにダッシュボードフィルターを任意で適用
+
+## PromQL チャート向けのカスタム凡例テンプレート {#custom-legend-templates-for-promql-charts}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/2rR_kRAEvWw" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+Vladimir が指摘したとおり、PromQL の凡例は読みづらいものでした。デフォルトでは、メトリクス名に続けて、返された series 間で異なる ラベル をすべて表示します。多数の series を返すクエリでは長大な文字列になり、内容を把握するにはクリックして開く必要がありました。
+
+チャートの表示設定で凡例テンプレートを指定できるようになりました。Handlebars テンプレートなので、実際に必要な ラベル だけを参照し、凡例と tooltip の両方で短い series 名を表示できます。
+
+テンプレートが存在しない ラベル を参照している場合、その参照は空欄としてレンダリングされます。結果が空になる場合や series 間で一意にならない場合は、区別に必要な ラベル の完全な集合にフォールバックするため、見分けのつかない 2 つの series が生じることはありません。
+
+**関連 PR:** [#3055](https://github.com/hyperdxio/hyperdx/pull/3055) PromQL の series 凡例でカスタムテンプレートをサポート
+
+## 相対的な日付範囲をダッシュボードのデフォルトとして保存する {#saving-a-relative-date-range-as-a-dashboard-default}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/8KzwsEG-KSg" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+ダッシュボードで、相対的な日付範囲をデフォルトとして保存できるようになりました。目的の時間範囲を設定して「Save Query and Filters as default」をクリックすると、以降そのダッシュボードは常にその範囲で開きます。
+
+ポイントは、範囲を相対指定できることです。「直近6時間」を保存しておけば、固定された時間枠のように内容が古くなることはなく、いつ開いても適切なデータが表示されます。ダッシュボードを表示中に範囲を変更して直近7日間を確認し、別のページに移動してから戻れば、保存したデフォルトの範囲に戻ります。
+
+**関連 PR:** [#3073](https://github.com/hyperdxio/hyperdx/pull/3073) ダッシュボードで相対的な日付範囲を保存できるようになりました
+
+## 保存済み検索 や ダッシュボードタイル なしでのアラート {#alerts-without-a-saved-search-or-dashboard-tile}
+
+*Demo by [@wrn14897](https://github.com/wrn14897)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/wuK7geV7F94" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+これまで、アラート を作成するには必ず裏付けとなるものが必要でした。logs なら 保存済み検索、メトリクス なら ダッシュボードタイル です。しかし、数千件もの Grafana アラートを移行するとなると、この方式では立ち行きません。
+
+インラインアラートなら、この要件は不要です。チャート explorer のアクションバーに **Create アラート** アクションがあるので、メトリクス や events から チャート を作成し、何も保存せずにそのまま アラート を設定できます。アラート ページからインラインアラートを作成することも可能で、保存済み検索 や ダッシュボード にあえて紐付けたくない場合はこちらを使います。
+
+インラインアラートは、アラート ドキュメント上に自身の `chartConfig` を保持します。その形式は ダッシュボードタイル が保存するものとまったく同じなので、別系統の処理ではなく tile アラートと同じコードパスで評価されます。対応範囲は `line`、`stacked_bar`、`number` の各表示形式における builder と Raw SQL です。PromQL は現時点では未対応です。
+
+この `source: 'inline'` と同じ形式は external v2 API と MCP の `save_alert` ツールでも受け付けられ、ダッシュボード が使うものと同じ tile-config の dialect v2 を利用します。そのため、アラート をプログラムから大量に作成できます。ルーターは ダッシュボードタイル の converters を再利用しており、2 つの面が乖離していくのを防いでいます。
+
+**関連 PR:** [#3010](https://github.com/hyperdxio/hyperdx/pull/3010) 保存済み検索 や ダッシュボードタイル なしでのアラート作成のサポート (backend)、[#3069](https://github.com/hyperdxio/hyperdx/pull/3069) インラインチャートアラートの作成・編集用 UI、[#3043](https://github.com/hyperdxio/hyperdx/pull/3043) external API v2 と MCP でのチャートアラートのサポート
+
+## アラート名とタグ {#alert-names-and-tags}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/nIJGusSLBuk" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+アラートに独自の名前とタグを設定できるようになりました。ダッシュボードタイルや保存済み検索のアラートフォームには名前とタグの入力欄があり、新しいアラートにはデフォルトでチャートまたは保存済み検索の名前が設定され、配置先のダッシュボードや保存済み検索のタグが継承されます。
+
+アラートページに表示されるのはこれらの名前で、検索やフィルタリングの対象にもなります。名前が未設定のまま既にデータベースに存在するアラートについても、参照先の保存済み検索やダッシュボードから名前が導出されます。
+
+`team/tags` エンドポイントが返すタグには、ダッシュボードや保存済み検索のタグに加えて、アラートドキュメントのタグも含まれるようになりました。これがないと、アラートでしか使われていないタグは、次のアラートにタグ付けする際に候補として表示されません。
+
+これは、タグによる検索とフィルタリングを維持したままアラートページをページネーションするための下準備です。そのためには、ダッシュボードや保存済み検索のコレクションとの join ではなく、アラートドキュメント自体に名前とタグを持たせる必要があります。ページネーション自体はまだ実装されていません。
+
+**関連 PR:** [#3063](https://github.com/hyperdxio/hyperdx/pull/3063) アラートレベルの displayName と tags を永続化、[#3065](https://github.com/hyperdxio/hyperdx/pull/3065) アラートの displayName と tags の書き込みに対応、[#3067](https://github.com/hyperdxio/hyperdx/pull/3067) UI でアラートの displayName と tags を表示・編集、[#3092](https://github.com/hyperdxio/hyperdx/pull/3092) tags API のレスポンスにアラートのタグを含める、[#3029](https://github.com/hyperdxio/hyperdx/pull/3029) アラート名とタグの backfill (オープン)
+
+## Explore のプロトタイプ {#an-explore-prototype}
+
+*Demo by [@elizabetdev](https://github.com/elizabetdev)*
+
+<iframe width="768" height="432" src="https://www.youtube.com/embed/vlGMKp5Eroc" title="YouTube ビデオプレーヤー" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+
+**これは探索的な取り組みであり、提供を確約するものではありません。**
+
+このプロトタイプは、検索ページと チャート Explorer の両方を置き換える単一の Explore ページです。現在は HyperDX リポジトリ内でドラフト段階にあります。これらのページを置き換えることになるかもしれませんし、3 つ目のページとして併存するかもしれませんし、まったく何も実現しないかもしれません。
+
+解決しようとしているのは、現在の 2 つのページ間を行き来しなければならない点です。検索で抱いた疑問をそのまま チャート Explorer に持ち込むのは面倒だという声をお客様からいただいています。多くの場合、ログソースを選び直し、同じクエリをもう一方で作り直す必要があります。Explore ではこれを 1 ページに収め、ページ自体が切り替わるのではなく、events、patterns、deltas、charts の間でビューを切り替えます。
+
+2 つ目のテーマは、クエリ言語に習熟していない人にとってのハードルを下げることです。テーブルへのカラムの追加、ソート、group-by の選択はいずれもドロップダウンで行え、必要なときには SQL も使えます。group-by は現状のギャップを示す好例です。検索ページのヒストグラムは status code でグループ化されており、これを変更する手段がないため、別のグルーピングを行いたい人は チャート Explorer に移らなければなりません。Explore では events ビューで group-by を設定し、小さなヒストグラムでは物足りないときには時系列チャートや棒グラフに切り替え、aggregation を `p99` などに変更し、その結果をダッシュボードに保存できます。
+
+フィルターバーは Lucene と SQL の両方を抽象化した小さなクエリビルダーです。フィールドを選び、operator を選び、値を入力するだけで済み、上級者向けには完全なクエリエディターと macros も用意されています。そもそも query language を 2 つ持つこと自体が正解なのかどうかも、未解決の問いの 1 つです。
+
+未解決の点はまだ多く残っています。PromQL は未対応で、メトリクスをこのページに含めるべきか、それとも 1 ページに求めすぎなのかも定まっていません。このプロトタイプは logs と traces の体験に焦点を当てています。
+
+ぜひフィードバックをお寄せください。
+
+**関連 PR:** [#2985](https://github.com/hyperdxio/hyperdx/pull/2985) Explore as search-first visualization (prototype) (open)

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で参照でき、[ソース](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="use_text_index_header_cache">
-  ## use_text_index_header_cache
-</div>
+## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 デシリアライズされたテキスト索引ヘッダーをメモリにキャッシュするかどうかを指定します。
 テキスト索引ヘッダーキャッシュを使用すると、多数のテキスト索引クエリを扱う際のレイテンシを大幅に削減し、スループットを向上させることができます。
 
-<div id="use_text_index_like_evaluation_by_dictionary_scan">
-  ## use_text_index_like_evaluation_by_dictionary_scan
-</div>
+## use_text_index_like_evaluation_by_dictionary_scan {#use_text_index_like_evaluation_by_dictionary_scan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,9 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 転置テキスト索引の Dictionary を走査して LIKE/ILIKE クエリを評価できるようにします。
 
-<div id="use_text_index_negative_tokens_cache">
-  ## use_text_index_negative_tokens_cache
-</div>
+高速化されるパターンは `%value%`、`value%`、`%value` と、`optimize_rewrite_like_perfect_affix` によって `value%` および `%value` に書き換えられる `startsWith` および `endsWith` の呼び出しです。
+
+## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -45,9 +41,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 データパートに存在しないテキスト索引トークンをキャッシュするかどうかを指定します。
 ネガティブトークンキャッシュはテキスト索引トークンキャッシュを使用し、存在しないトークンに対するDictionaryへの繰り返しのルックアップを回避します。
 
-<div id="use_text_index_postings_cache">
-  ## use_text_index_postings_cache
-</div>
+## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -56,9 +50,7 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 デシリアライズされたテキスト索引のポスティングリストをメモリにキャッシュするかどうか。
 テキスト索引のポスティングリストキャッシュを使用すると、大量のテキスト索引クエリを処理する際のレイテンシを大幅に低減し、スループットを向上させることができます。
 
-<div id="use_text_index_tokens_cache">
-  ## use_text_index_tokens_cache
-</div>
+## use_text_index_tokens_cache {#use_text_index_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

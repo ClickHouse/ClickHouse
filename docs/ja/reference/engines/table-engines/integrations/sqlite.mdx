@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 
 このエンジンでは、SQLite との間でデータをインポートおよびエクスポートできるほか、ClickHouse から SQLite のテーブルに対して直接クエリを実行できます。
 
-<div id="creating-a-table">
-  ## テーブルの作成
-</div>
+## テーブルの作成 {#creating-a-table}
 
 ```sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -32,9 +30,7 @@ import { CloudNotSupportedBadge } from "/snippets/ja/components/CloudNotSupporte
 * `db_path` — データベースを含む SQLite ファイルへのパス。
 * `table` — SQLite データベース内のテーブル名、またはそのまま SQLite に渡されるクエリ ([テーブル名の代わりにクエリを渡す](#passing-a-query) を参照) 。
 
-<div id="passing-a-query">
-  ## テーブル名の代わりにクエリを渡す
-</div>
+## テーブル名の代わりにクエリを渡す {#passing-a-query}
 
 テーブル名の代わりに、`table` 引数には、そのまま SQLite に渡される `SELECT` クエリを指定できます。テーブルの構造はクエリ結果から推論されます。クエリは、サブクエリとして記述することも、`query` 関数でラップすることもできます。
 
@@ -48,12 +44,10 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 
 <Note>
   サブクエリ形式 `(SELECT ...)` は ClickHouse によって解析され、SQLite に送信される前に再シリアライズされます。そのため、有効な ClickHouse SQL である必要があります。ClickHouse が解析しない SQLite 固有の構文を渡すには、`query('...')` 形式を使用してください。この形式では、テキストがそのまま SQLite に送信されます。
 
-  周囲の ClickHouse クエリにある外側の `WHERE`、`LIMIT`、集約などは、渡したクエリには **プッシュダウンされず**、完全なクエリ結果を取得した後に ClickHouse で適用されます。SQLite から読み取るデータを制限するには、渡すクエリの中にフィルターを含めてください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、プッシュダウンできない外側のフィルターはローカルで適用される代わりに、例外を返して拒否されます。
+  周囲の ClickHouse クエリにある外側の `WHERE`、`LIMIT`、集約などは、渡したクエリには **プッシュダウンされず**、完全なクエリ結果を取得した後に ClickHouse で適用されます。SQLite から読み取るデータを制限するには、渡すクエリの中にフィルターを含めてください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、このテーブルのカラムに対する外側のフィルターは、渡したクエリにプッシュダウンできないため、ローカルで適用される代わりに例外を返して拒否されます。このチェックの対象は、トップレベルの `WHERE` の predicate と、トップレベルの `AND` の各項です。このテーブルのカラムに対する `PREWHERE` は、この設定の対象ではありません。このテーブルエンジンは `PREWHERE` をサポートしておらず、そのようなクエリは設定に関係なく `ILLEGAL_PREWHERE` で拒否されます。アナライザ (デフォルト) を使用している場合、このチェックはフィルターをプッシュダウンできる可能性がある場所でのみ実行されます。すなわち、このテーブルがクエリ内の唯一のテーブルである場合、`INNER JOIN` のいずれかの側にある場合、または外部結合の保持側 (`LEFT JOIN` の左側、`RIGHT JOIN` の右側) にある場合です。`LEFT`/`RIGHT JOIN` の非保持側や `FULL JOIN` のいずれの側でも、何もプッシュダウンされず、何もチェックされないため、このテーブルのカラムに対するフィルターは、厳格モードであっても join の後にローカルで適用されます。チェックが実行される場所では、周囲のクエリで join されている他のテーブルを参照する predicate はプッシュダウンされず、チェックの対象から除外されます。これは、join 側のみを参照する場合でも、`AND` 以外の 1 つの expression (たとえば `OR`) の中でこのテーブルと混在させている場合でも同様です。そのような predicate は通常の ClickHouse での評価位置 (join の後の `WHERE`、その前の `PREWHERE`) を保持し、拒否されることはありません。旧アナライザ (`enable_analyzer = 0`) ではこのスコープ設定は適用されません。このテーブルが join ツリーの最初のテーブルである場合、join 側に対する predicate も含めて外側のフィルター全体がチェックされ、join された右側のテーブルはチェックされません。
 </Note>
 
-<div id="data-types-support">
-  ## サポートされるデータ型
-</div>
+## サポートされるデータ型 {#data-types-support}
 
 テーブル定義で ClickHouse のカラム型を明示的に指定すると、SQLite の TEXT カラムから以下の ClickHouse 型をパースできます。
 
@@ -68,9 +62,7 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 
 
 デフォルトの型マッピングについては、[SQLite データベースエンジン](/ja/reference/engines/database-engines/sqlite#data_types-support) を参照してください。
 
-<div id="usage-example">
-  ## 使用例
-</div>
+## 使用例 {#usage-example}
 
 SQLite のテーブルを作成するクエリを示します。
 

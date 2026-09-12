@@ -15,14 +15,12 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 Les ClickPipes Kinesis peuvent être déployés et gérés manuellement via l’UI ClickPipes, ainsi que de manière programmatique à l’aide d’[OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et de [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="prerequisite">
-  ## Prérequis
+  ## Prérequis {#prerequisite}
 </div>
 
 Vous vous êtes familiarisé avec l’[introduction à ClickPipes](/fr/integrations/clickpipes/home) et avez configuré des [identifiants IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) ou un [rôle IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Suivez le [guide d’accès basé sur les rôles pour Kinesis](/fr/integrations/clickpipes/kinesis/auth) pour savoir comment configurer un rôle compatible avec ClickHouse Cloud.
 
-<div id="creating-your-first-clickpipe">
-  ## Création de votre premier ClickPipe
-</div>
+## Création de votre premier ClickPipe {#creating-your-first-clickpipe}
 
 1. Accédez à la SQL Console de votre service ClickHouse Cloud.
 
@@ -40,7 +38,9 @@ Vous vous êtes familiarisé avec l’[introduction à ClickPipes](/fr/integrati
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Remplir les détails de connexion" size="lg" border />
 
-5. Sélectionnez le Kinesis Stream et l&#39;offset de départ. L&#39;UI affichera un exemple de document provenant de la source sélectionnée (topic Kafka, etc.). Vous pouvez également activer Enhanced Fan-out pour les Kinesis streams afin d&#39;améliorer les performances et la stabilité de votre ClickPipe (vous trouverez plus d&#39;informations sur Enhanced Fan-out [ici](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+5. Sélectionnez le stream Kinesis, le **Data format** et l&#39;offset de départ. Pour `Protobuf`, téléversez un fichier `.proto` ou un `FileDescriptorSet` sérialisé (768 Kio maximum). Aucun schema registry n&#39;est requis.
+
+   L&#39;UI affiche un échantillon de données provenant du stream sélectionné. L&#39;option **Use Kinesis Enhanced Fan-Out** est activée par défaut. Consultez la [documentation Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) pour plus de détails.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Définir le format des données et le topic" size="lg" border />
 
@@ -58,10 +58,10 @@ Vous pouvez également personnaliser les paramètres avancés à l&#39;aide des 
 
 8. Enfin, vous pouvez configurer les permissions de l&#39;utilisateur interne ClickPipes.
 
-**Permissions :** ClickPipes créera un utilisateur dédié pour écrire des données dans une table de destination. Vous pouvez sélectionner un rôle pour cet utilisateur interne à l&#39;aide d&#39;un rôle personnalisé ou de l&#39;un des rôles prédéfinis :
+**Permissions :** ClickPipes créera un utilisateur dédié pour écrire des données dans une table de destination. Vous pouvez sélectionner un rôle pour cet utilisateur interne à l&#39;aide d&#39;un rôle personnalisé ou de l&#39;un des rôles prédéfinis :
 
-* `Full access` : accès complet au cluster. Cela peut être utile si vous utilisez une vue matérialisée ou un Dictionary avec la table de destination.
-  * `Only destination table` : avec les permissions `INSERT` sur la seule table de destination.
+* `Full access` : accès complet au cluster. Cela peut être utile si vous utilisez une vue matérialisée ou un Dictionary avec la table de destination.
+  * `Only destination table` : avec les permissions `INSERT` sur la seule table de destination.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" border />
 
@@ -79,18 +79,19 @@ Ainsi que des contrôles pour supprimer le ClickPipe et afficher un récapitulat
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Afficher la vue d'ensemble" size="lg" border />
 
-10. **Félicitations !** Vous avez configuré avec succès votre premier ClickPipe. S&#39;il s&#39;agit d&#39;un ClickPipe de streaming, il s&#39;exécutera en continu et ingérera les données en temps réel depuis votre source de données distante. Sinon, il ingérera le batch puis se terminera.
+10. **Félicitations !** Vous avez configuré avec succès votre premier ClickPipe. S&#39;il s&#39;agit d&#39;un ClickPipe de streaming, il s&#39;exécutera en continu et ingérera les données en temps réel depuis votre source de données distante. Sinon, il ingérera le batch puis se terminera.
 
 <div id="supported-data-formats">
-  ## Formats de données pris en charge
+  ## Formats de données pris en charge {#supported-data-formats}
 </div>
 
-Les formats pris en charge sont :
+Les formats pris en charge sont :
 
 * [JSON](/fr/reference/formats/JSON/JSON)
+* [Protobuf](/fr/reference/formats/Protobuf/Protobuf)
 
 <div id="compression">
-  ## Compression
+  ## Compression {#compression}
 </div>
 
 ClickPipes for Kinesis détecte automatiquement les enregistrements compressés et les décompresse. Contrairement à Kafka, où la bibliothèque cliente gère la décompression de manière transparente, Kinesis transmet des octets bruts — ClickPipes s’en charge pour vous, sans aucune configuration.
@@ -109,11 +110,11 @@ La compression est détectée automatiquement à l’aide des octets magiques de
 </Note>
 
 <div id="supported-data-types">
-  ## Types de données pris en charge
+  ## Types de données pris en charge {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### Prise en charge des types standard
+  ### Prise en charge des types standard {#standard-types-support}
 </div>
 
 Les types de données ClickHouse suivants sont actuellement pris en charge dans ClickPipes :
@@ -136,7 +137,7 @@ Les types de données ClickHouse suivants sont actuellement pris en charge dans 
 * types SimpleAggregateFunction (pour les destinations AggregatingMergeTree ou SummingMergeTree)
 
 <div id="variant-type-support">
-  ### Prise en charge des types Variant
+  ### Prise en charge des types Variant {#variant-type-support}
 </div>
 
 Vous pouvez spécifier manuellement un type Variant (tel que `Variant(String, Int64, DateTime)`) pour n’importe quel champ JSON
@@ -144,14 +145,14 @@ du flux de données source. En raison de la façon dont ClickPipes détermine le
 peut être utilisé dans la définition de Variant. Par exemple, `Variant(Int64, UInt32)` n’est pas pris en charge.
 
 <div id="json-type-support">
-  ### Prise en charge du type JSON
+  ### Prise en charge du type JSON {#json-type-support}
 </div>
 
 Les champs JSON qui sont toujours des objets JSON peuvent être affectés à une colonne de destination de type JSON. Vous devrez modifier manuellement la
 colonne de destination pour lui attribuer le type JSON souhaité, y compris les chemins fixes ou ignorés.
 
 <div id="kinesis-virtual-columns">
-  ## Colonnes virtuelles Kinesis
+  ## Colonnes virtuelles Kinesis {#kinesis-virtual-columns}
 </div>
 
 Les colonnes virtuelles suivantes sont prises en charge pour le Kinesis Stream. Lors de la création d’une nouvelle table de destination, vous pouvez ajouter des colonnes virtuelles à l’aide du bouton `Add Column`.
@@ -167,18 +168,18 @@ Les colonnes virtuelles suivantes sont prises en charge pour le Kinesis Stream. 
 Le champ &#95;raw&#95;message peut être utilisé lorsque seul l’enregistrement JSON Kinesis complet est nécessaire (par exemple, en utilisant les fonctions ClickHouse [`JsonExtract*`](/fr/reference/functions/regular-functions/json-functions#jsonextract-functions) pour alimenter une vue matérialisée en aval). Pour ce type de pipes, la suppression de toutes les colonnes « non virtuelles » peut améliorer les performances de ClickPipes.
 
 <div id="limitations">
-  ## Limitations
+  ## Limitations {#limitations}
 </div>
 
 * [DEFAULT](/fr/reference/statements/create/table#default) n&#39;est pas pris en charge.
 * La taille des messages individuels est limitée par défaut à 16MB (non compressés) avec la plus petite taille de réplique (XS), et à 32MB (non compressés) avec des répliques plus grandes.  Les messages qui dépassent cette limite seront rejetés avec une erreur.  Si vous avez besoin de messages plus volumineux, veuillez contacter l&#39;assistance.
 
 <div id="performance">
-  ## Performances
+  ## Performances {#performance}
 </div>
 
 <div id="batching">
-  ### Traitement par lots
+  ### Traitement par lots {#batching}
 </div>
 
 ClickPipes insère les données dans ClickHouse par lots. Cela permet d&#39;éviter de créer trop de parts dans la base de données, ce qui peut entraîner des problèmes de performances dans le cluster.
@@ -189,7 +190,7 @@ Les lots sont insérés dès que l&#39;un des critères suivants est atteint :
 * Le lot est resté ouvert pendant la durée maximale (5 secondes)
 
 <div id="latency">
-  ### Latence
+  ### Latence {#latency}
 </div>
 
 La latence (définie comme le temps écoulé entre l’envoi du message Kinesis vers le flux et le moment où le message devient disponible dans ClickHouse) dépendra de plusieurs facteurs (par ex. la latence de Kinesis, la latence réseau, ainsi que la taille/le format du message). Le [traitement par lots](#batching) décrit dans la section précédente aura également un impact sur la latence. Nous recommandons toujours de tester votre cas d’usage afin de comprendre la latence à laquelle vous pouvez vous attendre.
@@ -197,19 +198,13 @@ La latence (définie comme le temps écoulé entre l’envoi du message Kinesis 
 Si vous avez des exigences spécifiques en matière de faible latence, veuillez [nous contacter](https://clickhouse.com/company/contact?loc=clickpipes).
 
 <div id="active-shards">
-  ### Shards actifs
+  ### Shards actifs {#active-shards}
 </div>
 
-Nous recommandons vivement de limiter le nombre de shards actifs simultanément afin de l’adapter à vos besoins en débit.  Pour un flux Kinesis « On Demand », AWS attribue automatiquement un nombre de shards correspondant en fonction du débit,
-mais pour les flux « Provisioned », provisionner trop de shards peut entraîner de la latence, comme décrit ci-dessous, ainsi qu’une hausse des coûts, car la tarification Kinesis pour ces flux est calculée « par shard ».
-
-Si votre application productrice écrit en continu sur un grand nombre de shards actifs, cela peut entraîner de la latence si votre pipeline n’est pas dimensionné de façon suffisante pour les traiter efficacement.  En fonction des limites de débit de Kinesis,
-ClickPipes attribue un nombre précis de « workers » par réplique pour lire les données des shards.  Par exemple, dans la plus petite taille, une réplique ClickPipes dispose de 4 de ces threads de travail.  Si le producteur écrit
-sur plus de 4 shards en même temps, les données des shards « supplémentaires » ne seront pas traitées tant qu’un thread de travail ne sera pas disponible.  En particulier, si le pipeline utilise « enhanced fanout », chaque thread de travail s’abonne à un
-seul shard pendant 5 minutes et ne peut lire aucun autre shard pendant cette période.  Cela peut provoquer des « pics » de latence par tranches de 5 minutes.
+Un grand nombre de shards actifs peut réduire le débit du ClickPipe si celui-ci n’est pas [dimensionné](#scaling) pour les traiter.
 
 <div id="scaling">
-  ### Mise à l’échelle
+  ### Mise à l’échelle {#scaling}
 </div>
 
 ClickPipes for Kinesis est conçu pour une mise à l’échelle à la fois horizontale et verticale. Par défaut, nous créons un groupe de consommateurs avec un seul consommateur. Cela peut être configuré lors de la création du ClickPipe, ou ultérieurement dans **Paramètres** -&gt; **Paramètres avancés** -&gt; **Mise à l’échelle**.
@@ -221,8 +216,6 @@ Quel que soit le nombre de consommateurs en cours d’exécution, la tolérance 
 Si un consommateur ou l’infrastructure sous-jacente tombe en panne,
 le ClickPipe redémarre automatiquement le consommateur et poursuit le traitement des messages.
 
-<div id="authentication">
-  ## Authentification
-</div>
+## Authentification {#authentication}
 
 Pour accéder aux Kinesis streams d’Amazon, vous pouvez utiliser des [identifiants IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) ou un [rôle IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). Pour plus de détails sur la configuration d’un rôle IAM, vous pouvez [consulter ce guide](/fr/integrations/clickpipes/kinesis/auth) expliquant comment configurer un rôle compatible avec ClickHouse Cloud

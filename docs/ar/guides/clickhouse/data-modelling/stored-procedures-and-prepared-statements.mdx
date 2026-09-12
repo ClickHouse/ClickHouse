@@ -10,9 +10,7 @@ doc_type: 'guide'
 إذا كنت تستخدم قاعدة بيانات علائقية تقليدية، فقد تبحث في ClickHouse عن الإجراءات المخزنة والعبارات المُحضّرة.
 يشرح هذا الدليل نهج ClickHouse تجاه هذه المفاهيم ويقدّم بدائل موصى بها.
 
-<div id="alternatives-to-stored-procedures">
-  ## بدائل الإجراءات المخزنة في ClickHouse
-</div>
+## بدائل الإجراءات المخزنة في ClickHouse {#alternatives-to-stored-procedures}
 
 لا يدعم ClickHouse الإجراءات المخزنة التقليدية التي تتضمن منطق التحكم في التدفق (`IF`/`ELSE`، والحلقات، وما إلى ذلك).
 وهذا قرار تصميمي مقصود يستند إلى معمارية ClickHouse باعتباره قاعدة بيانات تحليلية.
@@ -26,15 +24,11 @@ doc_type: 'guide'
 
 تتعارض الإجراءات المخزنة ذات المنطق الإجرائي مع أوجه التحسين هذه. وبدلًا من ذلك، يوفّر ClickHouse بدائل تتوافق مع نقاط قوته.
 
-<div id="user-defined-functions">
-  ### الدوال المعرّفة من قبل المستخدم (UDFs)
-</div>
+### الدوال المعرّفة من قبل المستخدم (UDFs) {#user-defined-functions}
 
 تتيح لك الدوال المعرّفة من قبل المستخدم تغليف منطق قابل لإعادة الاستخدام من دون التحكم في التدفق. يدعم ClickHouse نوعين:
 
-<div id="lambda-based-udfs">
-  #### UDFs المستندة إلى Lambda
-</div>
+#### UDFs المستندة إلى Lambda {#lambda-based-udfs}
 
 أنشئ الدوال باستخدام تعبيرات SQL وبنية Lambda:
 
@@ -107,9 +101,7 @@ SELECT format_phone('5551234567');
 
 راجع [`CREATE FUNCTION`](/ar/reference/statements/create/function) للاطلاع على البنية الكاملة.
 
-<div id="executable-udfs">
-  #### دوال UDF القابلة للتنفيذ
-</div>
+#### دوال UDF القابلة للتنفيذ {#executable-udfs}
 
 للمنطق الأكثر تعقيدًا، استخدم دوال UDF القابلة للتنفيذ التي تستدعي برامج خارجية:
 
@@ -141,9 +133,7 @@ FROM customer_reviews;
 
 راجع [Executable UDFs](/ar/reference/functions/regular-functions/udf) لمزيد من التفاصيل.
 
-<div id="parameterized-views">
-  ### العروض ذات المعلمات
-</div>
+### العروض ذات المعلمات {#parameterized-views}
 
 تعمل العروض ذات المعلمات كأنها دوال تُرجِع مجموعات بيانات.
 وهي مثالية للاستعلامات القابلة لإعادة الاستخدام مع التصفية الديناميكية:
@@ -198,9 +188,7 @@ FROM sales_by_date(start_date='2024-01-01', end_date='2024-01-31')
 WHERE product_id = 12345;
 ```
 
-<div id="common-use-cases">
-  #### حالات الاستخدام الشائعة
-</div>
+#### حالات الاستخدام الشائعة {#common-use-cases}
 
 * تصفية نطاق التاريخ ديناميكيًا
 * تقسيم البيانات حسب المستخدم
@@ -245,9 +233,7 @@ SELECT * FROM top_products_by_category(
 
 راجع قسم [العروض ذات المعلمات](/ar/reference/statements/create/view#parameterized-view) لمزيد من المعلومات.
 
-<div id="materialized-views">
-  ### العروض المادية
-</div>
+### العروض المادية {#materialized-views}
 
 تُعد العروض المادية مثالية للحساب المسبق لعمليات التجميع المكلفة التي كانت تُنفَّذ تقليديًا داخل الإجراءات المخزنة. إذا كنت معتادًا على قواعد البيانات التقليدية، فاعتبر العرض المادي **مُشغِّل INSERT** يحوِّل البيانات ويجمعها تلقائيًا عند إدراجها في جدول المصدر:
 
@@ -300,9 +286,7 @@ WHERE date BETWEEN '2024-01-01' AND '2024-01-31'
 GROUP BY user_id;
 ```
 
-<div id="refreshable-materialized-views">
-  #### العروض المادية القابلة للتحديث
-</div>
+#### العروض المادية القابلة للتحديث {#refreshable-materialized-views}
 
 للمعالجة الدفعية المجدولة (مثل الإجراءات المخزنة الليلية):
 
@@ -328,16 +312,12 @@ WHERE month = toStartOfMonth(today());
 
 راجع [العروض المادية المتتالية](/ar/concepts/features/materialized-views/cascading-materialized-views) للاطلاع على الأنماط المتقدمة.
 
-<div id="external-orchestration">
-  ### تنسيق العمليات خارجيًا
-</div>
+### تنسيق العمليات خارجيًا {#external-orchestration}
 
 عند التعامل مع منطق أعمال معقّد، أو سير عمل ETL، أو عمليات متعددة الخطوات، يمكن دائمًا تنفيذ هذا المنطق خارج ClickHouse
 باستخدام مكتبات العملاء للغات البرمجة.
 
-<div id="using-application-code">
-  #### استخدام شيفرة التطبيق
-</div>
+#### استخدام شيفرة التطبيق {#using-application-code}
 
 فيما يلي مقارنة جنبًا إلى جنب توضّح كيفية تحويل إجراء مخزّن في MySQL إلى شيفرة تطبيق عند استخدام ClickHouse:
 
@@ -570,9 +550,7 @@ WHERE month = toStartOfMonth(today());
 
 <br />
 
-<div id="key-differences">
-  #### الاختلافات الرئيسية
-</div>
+#### الاختلافات الرئيسية {#key-differences}
 
 1. **التحكم في التدفق** - تستخدم الإجراءات المخزنة في MySQL تعليمات `IF/ELSE` وحلقات `WHILE`. في ClickHouse، نفّذ هذا المنطق في شيفرة التطبيق لديك (بايثون، Java، إلخ.)
 2. **المعاملات** - يدعم MySQL أوامر `BEGIN/COMMIT/ROLLBACK` لمعاملات ACID. أما ClickHouse فهي قاعدة بيانات تحليلية مُحسّنة لأعباء العمل المعتمدة على الإلحاق فقط، وليست مخصّصة للتحديثات المعاملاتية
@@ -583,14 +561,12 @@ WHERE month = toStartOfMonth(today());
 <Tip>
   **متى تستخدم كل نهج:**
 
-  * **أعباء عمل OLTP** (الطلبات، المدفوعات، حسابات المستخدمين) → استخدم MySQL/PostgreSQL مع الإجراءات المخزنة
+  * **أعباء عمل OLTP** (الطلبات، المدفوعات، حسابات المستخدمين) → استخدم MySQL أو PostgreSQL لمعاملات التطبيق والإجراءات المخزنة. تتوفر [ClickHouse Managed Postgres](/ar/products/managed-postgres/overview) في ClickHouse Cloud.
   * **أعباء عمل التحليلات** (التقارير، التجميعات، السلاسل الزمنية) → استخدم ClickHouse مع التنسيق على مستوى التطبيق
-  * **المعمارية الهجينة** → استخدم كليهما! ابثّ البيانات المعاملاتية من OLTP إلى ClickHouse لأغراض التحليلات
+  * **المعمارية الهجينة** → احتفظ بمعاملات التطبيق في Postgres وانسخ التغييرات المؤكَّدة إلى ClickHouse لأغراض التحليلات. راجع [كيف يعمل Postgres وClickHouse معًا](/ar/products/managed-postgres/overview#transactions-and-analytics) و[دليل البدء السريع للتكامل](/ar/products/managed-postgres/quickstart#part-2).
 </Tip>
 
-<div id="using-workflow-orchestration-tools">
-  #### استخدام أدوات تنسيق سير العمل
-</div>
+#### استخدام أدوات تنسيق سير العمل {#using-workflow-orchestration-tools}
 
 * **Apache Airflow** - جدولة مخططات DAG المعقدة لاستعلامات ClickHouse ومراقبتها
 * **dbt** - تحويل البيانات باستخدام مهام سير عمل قائمة على SQL
@@ -606,21 +582,15 @@ WHERE month = toStartOfMonth(today());
 * المراقبة والتنبيهات
 * جدولة أكثر مرونة
 
-<div id="alternatives-to-prepared-statements-in-clickhouse">
-  ## بدائل العبارات المُحضَّرة في ClickHouse
-</div>
+## بدائل العبارات المُحضَّرة في ClickHouse {#alternatives-to-prepared-statements-in-clickhouse}
 
 مع أن ClickHouse لا يدعم &quot;العبارات المُحضَّرة&quot; التقليدية بالمفهوم المتعارف عليه في أنظمة إدارة قواعد البيانات العلائقية، فإنه يوفّر **معلمات الاستعلام** التي تؤدي الغرض نفسه: استعلامات آمنة مُعلَّمة بمعلمات وتمنع حقن SQL.
 
-<div id="query-parameters-syntax">
-  ### الصيغة
-</div>
+### الصيغة {#query-parameters-syntax}
 
 هناك طريقتان لتحديد معلمات الاستعلام:
 
-<div id="method-1-using-set">
-  #### الطريقة 1: استخدام `SET`
-</div>
+#### الطريقة 1: استخدام `SET` {#method-1-using-set}
 
 <Accordion title="مثال على الجدول والبيانات">
   ```sql
@@ -670,9 +640,7 @@ WHERE user_id = {user_id: UInt64}
 GROUP BY event_name;
 ```
 
-<div id="method-2-using-cli-parameters">
-  #### الطريقة 2: استخدام معلَمات CLI
-</div>
+#### الطريقة 2: استخدام معلَمات CLI {#method-2-using-cli-parameters}
 
 ```bash
 clickhouse-client \
@@ -684,18 +652,14 @@ clickhouse-client \
              AND event_date BETWEEN {start_date: Date} AND {end_date: Date}"
 ```
 
-<div id="parameter-syntax">
-  ### بنية المعاملات
-</div>
+### بنية المعاملات {#parameter-syntax}
 
 يُشار إلى المعاملات باستخدام: `{parameter_name: DataType}`
 
 * `parameter_name` - اسم المعامل (من دون البادئة `param_`)
 * `DataType` - نوع بيانات ClickHouse الذي يُحوَّل المعامل إليه
 
-<div id="data-type-examples">
-  ### أمثلة على أنواع البيانات
-</div>
+### أمثلة على أنواع البيانات {#data-type-examples}
 
 <Accordion title="الجداول وبيانات العينة لهذا المثال">
   ```sql
@@ -810,9 +774,7 @@ clickhouse-client \
 لاستخدام معلَمات الاستعلام في [مكتبات العملاء للغات البرمجة](/ar/integrations/language-clients/index)، راجع وثائق
 مكتبة العميل الخاصة بلغة البرمجة التي تهمك.
 
-<div id="limitations-of-query-parameters">
-  ### قيود معلمات الاستعلام
-</div>
+### قيود معلمات الاستعلام {#limitations-of-query-parameters}
 
 معلمات الاستعلام **ليست بدائل نصية عامة**، بل لها قيود محددة:
 
@@ -852,9 +814,7 @@ ALTER TABLE {table: Identifier} ADD COLUMN new_col String;  -- NOT SUPPORTED
 {statements: String};  -- NOT SUPPORTED
 ```
 
-<div id="security-best-practices">
-  ### أفضل الممارسات الأمنية
-</div>
+### أفضل الممارسات الأمنية {#security-best-practices}
 
 **استخدم دائمًا معلمات الاستعلام لأي إدخال من المستخدم:**
 
@@ -890,9 +850,7 @@ def get_user_orders(user_id: int, start_date: str):
     )
 ```
 
-<div id="mysql-protocol-prepared-statements">
-  ### العبارات المُحضَّرة في بروتوكول MySQL
-</div>
+### العبارات المُحضَّرة في بروتوكول MySQL {#mysql-protocol-prepared-statements}
 
 تتضمن [واجهة MySQL](/ar/concepts/features/interfaces/mysql) في ClickHouse حدًا أدنى من دعم العبارات المُحضَّرة (`COM_STMT_PREPARE`, `COM_STMT_EXECUTE`, `COM_STMT_CLOSE`)، وذلك أساسًا لإتاحة الاتصال بأدوات مثل Tableau Online التي تُغلّف الاستعلامات داخل عبارات مُحضَّرة.
 
@@ -922,13 +880,9 @@ EXECUTE stmt USING @user_id;  -- Parameter binding not supported
 
 لمزيد من التفاصيل، راجع [وثائق واجهة MySQL](/ar/concepts/features/interfaces/mysql) و[منشور المدونة حول دعم MySQL](https://clickhouse.com/blog/mysql-support-in-clickhouse-the-journey).
 
-<div id="summary">
-  ## الخلاصة
-</div>
+## الخلاصة {#summary}
 
-<div id="summary-stored-procedures">
-  ### بدائل ClickHouse للإجراءات المخزنة
-</div>
+### بدائل ClickHouse للإجراءات المخزنة {#summary-stored-procedures}
 
 | نمط الإجراءات المخزنة التقليدي                    | بديل ClickHouse                                                    |
 | ------------------------------------------------- | ------------------------------------------------------------------ |
@@ -939,9 +893,7 @@ EXECUTE stmt USING @user_id;  -- Parameter binding not supported
 | مهام ETL المعقدة متعددة الخطوات                   | العروض المادية المتسلسلة أو التنسيق الخارجي (بايثون, Airflow, dbt) |
 | منطق الأعمال مع التحكم في التدفق                  | شيفرة التطبيق                                                      |
 
-<div id="summary-query-parameters">
-  ### استخدام معلمات الاستعلام
-</div>
+### استخدام معلمات الاستعلام {#summary-query-parameters}
 
 يمكن استخدام معلمات الاستعلام للأغراض التالية:
 
@@ -950,9 +902,7 @@ EXECUTE stmt USING @user_id;  -- Parameter binding not supported
 * التصفية الديناميكية في التطبيقات
 * قوالب استعلام قابلة لإعادة الاستخدام
 
-<div id="related-documentation">
-  ## الوثائق ذات الصلة
-</div>
+## الوثائق ذات الصلة {#related-documentation}
 
 * [`CREATE FUNCTION`](/ar/reference/statements/create/function) - الدوال المعرّفة من قبل المستخدم
 * [`CREATE VIEW`](/ar/reference/statements/create/view) - العروض، بما في ذلك العروض ذات المعلمات والعروض المادية

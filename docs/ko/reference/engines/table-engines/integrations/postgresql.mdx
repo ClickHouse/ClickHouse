@@ -18,9 +18,7 @@ PostgreSQL 엔진을 사용하면 원격 PostgreSQL 서버에 저장된 데이�
   [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) 서비스를 확인해 보십시오. 컴퓨트와 물리적으로 같은 위치에 배치된 NVMe 스토리지를 기반으로 하므로, EBS와 같은 네트워크 연결 스토리지를 사용하는 대안과 비교했을 때 디스크 입출력에 병목이 있는 워크로드에서 최대 10배 더 빠른 성능을 제공합니다. 또한 ClickPipes의 Postgres CDC 커넥터를 사용해 Postgres 데이터를 ClickHouse로 복제할 수 있습니다.
 </Tip>
 
-<div id="creating-a-table">
-  ## 테이블 생성
-</div>
+## 테이블 생성 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -76,9 +74,7 @@ SETTINGS
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-<div id="tls-ssl">
-  ### TLS/SSL
-</div>
+### TLS/SSL {#tls-ssl}
 
 TLS/SSL 매개변수는 `libpq`로 전달되며, 명명된 컬렉션 키 또는 후행 키-값 인수로 설정할 수 있습니다. `sslmode`(`disable`, `allow`, `prefer`, `require`, `verify-ca` 또는 `verify-full`)와 인증서 및 키는 다음 두 가지 형식 중 하나로 지정할 수 있습니다. 설정하지 않으면 `libpq` 기본값(`sslmode=prefer`)이 적용됩니다.
 
@@ -110,47 +106,35 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 -----END CERTIFICATE-----');
 ```
 
-<div id="settings">
-  ## 설정
-</div>
+## 설정 {#settings}
 
 `PostgreSQL` 테이블 엔진(및 [`postgresql`](/ko/reference/functions/table-functions/postgresql) 테이블 함수)에서 사용하는 연결 풀은 `SETTINGS` 절을 사용해 테이블별로 구성할 수 있습니다. 설정을 지정하지 않으면 해당 쿼리 수준 `postgresql_*` 설정 값이 기본값으로 적용됩니다.
 
-<div id="postgresql-connection-pool-size">
-  ### `postgresql_connection_pool_size`
-</div>
+### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
 연결 풀 크기입니다(모든 연결이 사용 중이면 일부 연결이 해제될 때까지 쿼리가 대기합니다). 0이 아닌 값이어야 합니다.
 
 기본값: `16`.
 
-<div id="postgresql-connection-pool-wait-timeout">
-  ### `postgresql_connection_pool_wait_timeout`
-</div>
+### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
 
 풀이 비어 있을 때 연결 풀의 push/pop timeout을 밀리초 단위로 지정합니다. `0`은 풀이 비어 있으면 계속 대기함을 의미합니다.
 
 기본값: `5000`.
 
-<div id="postgresql-connection-pool-retries">
-  ### `postgresql_connection_pool_retries`
-</div>
+### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
 
 연결 풀의 push/pop 작업 재시도 횟수입니다.
 
 기본값: `2`.
 
-<div id="postgresql-connection-pool-auto-close-connection">
-  ### `postgresql_connection_pool_auto_close_connection`
-</div>
+### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
 
 풀에 반환하기 전에 연결을 종료합니다.
 
 기본값: `false`.
 
-<div id="postgresql-connection-attempt-timeout">
-  ### `postgresql_connection_attempt_timeout`
-</div>
+### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
 
 PostgreSQL 엔드포인트에 한 번 연결을 시도할 때 적용되는 연결 타임아웃 시간(초)입니다. 이 값은 연결 URL의 `connect_timeout` 매개변수로 전달됩니다.
 
@@ -169,9 +153,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgr
 SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
 ```
 
-<div id="implementation-details">
-  ## 구현 세부 사항
-</div>
+## 구현 세부 사항 {#implementation-details}
 
 PostgreSQL 측의 `SELECT` 쿼리는 각 `SELECT` 쿼리 후 커밋되는 읽기 전용 PostgreSQL 트랜잭션 내에서 `COPY (SELECT ...) TO STDOUT` 형태로 실행됩니다.
 
@@ -179,9 +161,7 @@ PostgreSQL 측의 `SELECT` 쿼리는 각 `SELECT` 쿼리 후 커밋되는 읽기
 
 모든 조인, 집계, 정렬, `IN [ array ]` 조건, 그리고 `LIMIT` 샘플링 제약은 PostgreSQL에 대한 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
 
-<div id="passing-a-query">
-  ## 테이블 이름 대신 쿌리 전달하기
-</div>
+## 테이블 이름 대신 쿌리 전달하기 {#passing-a-query}
 
 테이블 이름 대신 `table` 인수로 PostgreSQL에 있는 그대로 전달되는 `SELECT` 쿼리를 사용할 수 있습니다. 테이블의 구조는 쿼리 결과에서 자동으로 추론됩니다. 쿼리는 서브쿼리로 작성하거나 `query` 함수로 감싸서 작성할 수 있습니다:
 
@@ -195,7 +175,7 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELEC
 <Note>
   서브쿼리 형식 `(SELECT ...)`은 ClickHouse에서 파싱된 다음 서버로 전송되기 전에 PostgreSQL 방언(PostgreSQL 식별자 인용 및 문자열 리터럴 이스케이프)으로 다시 직렬화됩니다. 따라서 유효한 ClickHouse SQL이어야 합니다. ClickHouse가 파싱하지 않는 PostgreSQL 전용 구문을 전달하려면 `query('...')` 형식을 사용하십시오. 이 형식의 텍스트는 PostgreSQL로 그대로 전송됩니다.
 
-  전달된 쿼리에는 이를 둘러싼 ClickHouse 쿼리의 외부 `WHERE`, `LIMIT`, 집계 등이 **푸시다운되지 않으며**, 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. PostgreSQL에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 푸시다운할 수 없는 외부 필터는 로컬에서 적용되는 대신 예외와 함께 거부됩니다.
+  전달된 쿼리에는 이를 둘러싼 ClickHouse 쿼리의 외부 `WHERE`, `LIMIT`, 집계 등이 **푸시다운되지 않으며**, 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. PostgreSQL에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 전달된 쿼리로 푸시다운할 수 없는 이 테이블의 컬럼에 대한 외부 필터는 로컬에서 적용되는 대신 예외와 함께 거부됩니다. 이 검사는 최상위 `WHERE` 프레디케이트와 최상위 `AND`의 각 논리곱 항을 대상으로 합니다. 이 테이블의 컬럼에 대한 `PREWHERE`는 이 설정의 대상이 아닙니다. 이 테이블 엔진은 `PREWHERE`를 지원하지 않으며, 이러한 쿼리는 설정과 관계없이 `ILLEGAL_PREWHERE`로 거부됩니다. 분석기(기본값)를 사용하면 필터를 푸시다운할 수 있는 경우에만 검사가 실행됩니다. 즉, 이 테이블이 쿼리의 유일한 테이블인 경우, `INNER JOIN`의 어느 한쪽에 있는 경우 또는 외부 조인의 보존 측(`LEFT JOIN`의 왼쪽, `RIGHT JOIN`의 오른쪽)에 있는 경우입니다. `LEFT`/`RIGHT JOIN`의 비보존 측과 `FULL JOIN`의 어느 한쪽에서는 아무것도 푸시다운되거나 검사되지 않으므로, 엄격 모드에서도 이 테이블의 컬럼에 대한 필터는 조인 후 로컬에서 적용됩니다. 검사가 실행되는 경우, 이를 둘러싼 쿼리에서 조인된 다른 테이블을 참조하는 프레디케이트는 푸시다운되지 않으며 검사에서 제외됩니다. 조인된 측만 참조하는지, 하나의 `AND`가 아닌 표현식(예: `OR`) 내에서 이 테이블과 함께 참조하는지와 관계없습니다. 이러한 프레디케이트는 일반적인 ClickHouse 평가 시점(조인 후 `WHERE`, 조인 전 `PREWHERE`)을 유지하며 거부되지 않습니다. 이전 분석기(`enable_analyzer = 0`)에서는 이 범위 지정이 적용되지 않습니다. 이 테이블이 조인 트리의 첫 번째 테이블이면 조인된 측의 프레디케이트를 포함하여 전체 외부 필터가 검사되며, 조인된 오른쪽 테이블은 검사되지 않습니다.
 </Note>
 
 PostgreSQL 측의 `INSERT` 쿼리는 각 `INSERT` 문 후 자동 커밋되는 PostgreSQL 트랜잭션 내에서 `COPY \"table_name\" (field1, field2, ... fieldN) FROM STDIN` 형태로 실행됩니다.
@@ -234,16 +214,11 @@ PostgreSQL 딕셔너리 소스에서는 레플리카 우선순위를 지원합�
     <where>id=10</where>
     <invalidate_query>SQL_QUERY</invalidate_query>
 </postgresql>
-</source>
 ```
 
-<div id="usage-example">
-  ## 사용 예시
-</div>
+## 사용 예시 {#usage-example}
 
-<div id="table-in-postgresql">
-  ### PostgreSQL의 테이블
-</div>
+### PostgreSQL의 테이블 {#table-in-postgresql}
 
 ```text
 postgres=# CREATE TABLE "public"."test" (
@@ -266,9 +241,7 @@ int_id | int_nullable | float | str  | float_nullable
 (1 row)
 ```
 
-<div id="creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above">
-  ### ClickHouse에서 테이블 생성 및 위에서 생성한 PostgreSQL 테이블에 연결하기
-</div>
+### ClickHouse에서 테이블 생성 및 위에서 생성한 PostgreSQL 테이블에 연결하기 {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
 
 이 예시에서는 [PostgreSQL 테이블 엔진](/ko/reference/engines/table-engines/integrations/postgresql)을 사용해 ClickHouse 테이블을 PostgreSQL 테이블에 연결하고, PostgreSQL 데이터베이스에 대해 SELECT와 INSERT SQL 문을 모두 사용할 수 있습니다:
 
@@ -282,9 +255,7 @@ CREATE TABLE default.postgresql_table
 ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-<div id="inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query">
-  ### SELECT 쿼리를 사용해 PostgreSQL 테이블의 초기 데이터를 ClickHouse 테이블에 삽입하기
-</div>
+### SELECT 쿼리를 사용해 PostgreSQL 테이블의 초기 데이터를 ClickHouse 테이블에 삽입하기 {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
 
 [postgresql 테이블 함수](/ko/reference/functions/table-functions/postgresql)는 PostgreSQL의 데이터를 ClickHouse로 복사합니다. 이는 PostgreSQL 대신 ClickHouse에서 데이터를 쿼리하거나 분석하여 쿼리 성능을 높일 때 자주 사용되며, PostgreSQL에서 ClickHouse로 데이터를 마이그레이션하는 데에도 사용할 수 있습니다. PostgreSQL의 데이터를 ClickHouse로 복사할 것이므로, ClickHouse에서는 MergeTree 테이블 엔진을 사용하는 테이블을 만들고 이름을 postgresql&#95;copy로 지정합니다:
 
@@ -304,9 +275,7 @@ INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-<div id="inserting-incremental-data-from-postgresql-table-into-clickhouse-table">
-  ### PostgreSQL 테이블에서 ClickHouse 테이블로 증분 데이터 삽입하기
-</div>
+### PostgreSQL 테이블에서 ClickHouse 테이블로 증분 데이터 삽입하기 {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}
 
 초기 삽입 후 PostgreSQL 테이블과 ClickHouse 테이블 간 동기화를 계속 수행하려면, ClickHouse에서 WHERE 절을 사용해 타임스탬프 또는 고유한 시퀀스 ID를 기준으로 PostgreSQL에 새로 추가된 데이터만 삽입할 수 있습니다.
 
@@ -324,9 +293,7 @@ SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'p
 WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
 ```
 
-<div id="selecting-data-from-the-resulting-clickhouse-table">
-  ### 생성된 ClickHouse 테이블에서 데이터 조회하기
-</div>
+### 생성된 ClickHouse 테이블에서 데이터 조회하기 {#selecting-data-from-the-resulting-clickhouse-table}
 
 ```sql
 SELECT * FROM postgresql_copy WHERE str IN ('test');
@@ -338,9 +305,7 @@ SELECT * FROM postgresql_copy WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-<div id="using-non-default-schema">
-  ### 기본값이 아닌 스키마 사용
-</div>
+### 기본값이 아닌 스키마 사용 {#using-non-default-schema}
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
@@ -360,9 +325,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 * [`postgresql` 테이블 함수](/ko/reference/functions/table-functions/postgresql)
 * [딕셔너리 소스로 PostgreSQL 사용하기](/ko/reference/statements/create/dictionary/sources/postgresql)
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse와 PostgreSQL - 데이터를 위한 환상적인 조합 - 1부](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * 블로그: [ClickHouse와 PostgreSQL - 데이터를 위한 환상적인 조합 - 2부](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

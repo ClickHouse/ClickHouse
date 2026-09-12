@@ -145,7 +145,7 @@ OpenTelemetryデータは、[exporter plugin](https://github.com/open-telemetry/
 OpenTelemetry を使用している場合は、&quot;**Use OTel**&quot; スイッチを有効にし、**デフォルトのログテーブル** を `otel_logs` に設定してください。
 これにより、デフォルトのカラムは自動的に上書きされ、選択した OTel スキーマバージョンが使用されます。
 
-ログで OpenTelemetry は必須ではありませんが、logs/trace で単一のデータセットを使用すると、[データリンク](/ja/integrations/connectors/data-visualization/grafana/query-builder#data-links)によって、よりスムーズなオブザーバビリティのワークフローを実現できます。
+ログで OpenTelemetry は必須ではありませんが、ログ/トレース で単一のデータセットを使用すると、[データリンク](/ja/integrations/connectors/data-visualization/grafana/query-builder#data-links)によって、よりスムーズなオブザーバビリティのワークフローを実現できます。
 
 ログ設定画面の例:
 
@@ -162,11 +162,22 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showLogLinks: true # set to false to hide the "View logs" data links on trace ID fields.
+
     # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
     timeColumn:       <string> # the primary time column for the log.
     levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
     messageColumn: <string> # the log's message/content.
 ```
+
+<div id="disabling-view-logs-links">
+  #### 「View logs」リンクを無効にする
+</div>
+
+ログ設定の**Trace ID correlation**セクションには、**「View logs」リンクを表示**トグルがあります。
+このトグルは、プラグインがクエリ結果のトレース ID フィールドに「View logs」の[データリンク](/ja/integrations/connectors/data-visualization/grafana/query-builder#data-links)を追加するかどうかを制御します。
+このトグルはデフォルトで有効になっています。同じ種類のクエリの「View logs」リンクにはログのデフォルト設定は不要ですが、トレースクエリの結果から別シグナルへ移動する「View logs」リンクには必要です。
+非表示にするには、トグルをオフにするか、YAML で`showLogLinks: false`を設定します。
 
 <div id="traces">
   ### トレース
@@ -193,6 +204,8 @@ jsonData:
     otelEnabled: false  # set to true if OTel is enabled.
     otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
 
+    showTraceLinks: true # set to false to hide the "View trace" data links on trace ID fields.
+
     # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
     traceIdColumn:       <string>    # trace ID column.
     spanIdColumn:        <string>    # span ID column.
@@ -205,6 +218,15 @@ jsonData:
     tagsColumn:          <string>    # tags column. This is expected to be a map type.
     serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
 ```
+
+<div id="disabling-view-trace-links">
+  #### 「View トレース」リンクを無効にする
+</div>
+
+トレース設定の **Trace ID correlation** セクションには、**Show &quot;View トレース&quot; links** トグルがあります。
+このトグルは、プラグインがクエリ結果の トレース ID フィールドに「View トレース」の[データリンク](/ja/integrations/connectors/data-visualization/grafana/query-builder#data-links)を追加するかどうかを制御します。
+トグルはデフォルトで有効になっています。同じクエリタイプの「View トレース」リンクには トレース のデフォルト設定は不要ですが、ログクエリ結果から別のシグナルへ移動する「View トレース」リンクには必要です。
+リンクを非表示にするには、トグルをオフにするか、YAML で `showTraceLinks: false` を設定します。
 
 <div id="column-aliases">
   ### カラムの別名
@@ -323,6 +345,7 @@ datasources:
         defaultTable: otel_logs
         otelEnabled: false
         otelVersion: latest
+        showLogLinks: <boolean>
         timeColumn: <string>
         levelColumn: <string>
         messageColumn: <string>
@@ -331,6 +354,7 @@ datasources:
         defaultTable: otel_traces
         otelEnabled: false
         otelVersion: latest
+        showTraceLinks: <boolean>
         traceIdColumn: <string>
         spanIdColumn: <string>
         operationNameColumn: <string>

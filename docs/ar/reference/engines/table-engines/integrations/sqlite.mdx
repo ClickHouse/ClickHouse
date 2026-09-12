@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 يتيح هذا المحرك استيراد البيانات إلى SQLite وتصديرها منه، كما يدعم الاستعلام عن جداول SQLite مباشرةً من ClickHouse.
 
-<div id="creating-a-table">
-  ## إنشاء جدول
-</div>
+## إنشاء جدول {#creating-a-table}
 
 ```sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -32,11 +30,9 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 * `db_path` — مسار ملف SQLite الذي يحتوي على قاعدة البيانات.
 * `table` — اسم جدول في قاعدة بيانات SQLite، أو استعلام يُمرَّر إلى SQLite كما هو (انظر [تمرير استعلام بدلًا من اسم جدول](#passing-a-query)).
 
-<div id="passing-a-query">
-  ## تمرير استعلام بدلًا من اسم جدول
-</div>
+## تمرير استعلام بدلًا من اسم جدول {#passing-a-query}
 
-بدلًا من اسم الجدول، يمكن أن تكون قيمة الوسيطة `table` استعلام `SELECT` يُمرَّر إلى SQLite كما هو. ويُستدل على بنية الجدول من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما كاستعلام فرعي أو بتغليفه داخل الدالة `query`:
+بدلًا من اسم الجدول، يمكن أن تكون قيمة الوسيطة `table` استعلام `SELECT` يُمرَّر إلى SQLite كما هو. ويُستدل على بنية الجدول من نتيجة الاستعلام. ويمكن كتابة الاستعلام إما كاستعلام فرعي أو بتغليفه داخل الدالة `query`:
 
 ```sql
 CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', (SELECT col1, col2 FROM table1 WHERE col2 > 1));
@@ -46,14 +42,12 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 
 مثل هذا الجدول للقراءة فقط: لا يُسمح بتنفيذ `INSERT` فيه. وتدعم دالة الجدول [`sqlite`](/ar/reference/functions/table-functions/sqlite) الصياغة نفسها.
 
 <Note>
-  يُحلَّل شكل الاستعلام الفرعي `(SELECT ...)` بواسطة ClickHouse، ثم يُعاد تسلسله قبل إرساله إلى SQLite. لذلك يجب أن يكون صالحًا في ClickHouse SQL. ولتمرير صياغة خاصة بـ SQLite لا يحلّلها ClickHouse، استخدم صيغة `query('...')`، إذ يُرسَل نصها إلى SQLite كما هو.
+  يُحلَّل شكل الاستعلام الفرعي `(SELECT ...)` بواسطة ClickHouse، ثم يُعاد تسلسله قبل إرساله إلى SQLite. لذلك يجب أن يكون صالحًا في ClickHouse SQL. ولتمرير صياغة خاصة بـ SQLite لا يحلّلها ClickHouse، استخدم صيغة `query('...')`، إذ يُرسَل نصها إلى SQLite كما هو.
 
-  أي `WHERE` أو `LIMIT` أو aggregation أو غير ذلك من عناصر استعلام ClickHouse المحيط **لا** يُدفَع إلى داخل الاستعلام المُمرَّر — بل يُطبَّق في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من SQLite، ضع filter داخل الاستعلام المُمرَّر. ومع [`external_table_strict_query = 1`](/ar/reference/settings/session-settings/external-table#external_table_strict_query)، يُرفَض أي filter خارجي لا يمكن دفعه إلى المصدر عبر exception بدلًا من تطبيقه محليًا.
+  أي `WHERE` أو `LIMIT` أو aggregation أو غير ذلك من عناصر استعلام ClickHouse المحيط **لا** يُدفَع إلى داخل الاستعلام المُمرَّر — بل يُطبَّق في ClickHouse بعد جلب نتيجة الاستعلام كاملةً. ولتقييد البيانات المقروءة من SQLite، ضع filter داخل الاستعلام المُمرَّر. ومع [`external_table_strict_query = 1`](/ar/reference/settings/session-settings/external-table#external_table_strict_query)، يُرفَض أي filter خارجي على أعمدة الجدول عبر exception بدلًا من تطبيقه محليًا، لأنه لا يمكن دفعه إلى داخل الاستعلام المُمرَّر. ويشمل هذا الفحص predicate الخاص بـ `WHERE` في المستوى الأعلى وكل عامل من عوامل `AND` في المستوى الأعلى. أما `PREWHERE` على أعمدة هذا الجدول فلا يخضع لهذا الإعداد: فمحرّك الجدول هذا لا يدعم `PREWHERE`، ويُرفَض مثل هذا الاستعلام بالخطأ `ILLEGAL_PREWHERE` بصرف النظر عن الإعداد. ومع analyzer (الوضع الافتراضي)، لا يُجرى الفحص إلا حيث يمكن دفع filter أصلًا: عندما يكون هذا الجدول هو الجدول الوحيد في الاستعلام، أو على أي من جانبي `INNER JOIN`، أو على الجانب المحفوظ من outer join (الجانب الأيسر في `LEFT JOIN`، والجانب الأيمن في `RIGHT JOIN`). وعلى الجانب غير المحفوظ من `LEFT`/`RIGHT JOIN` وعلى أي من جانبي `FULL JOIN` لا يُدفَع شيء ولا يُفحَص شيء، لذا يُطبَّق filter على أعمدة هذا الجدول محليًا بعد الـ join حتى في الوضع الصارم. وحيث يُجرى الفحص، فإن predicate يشير إلى جداول أخرى مضمومة في الاستعلام المحيط لا يُدفَع ويُستثنى من الفحص، سواء أشار إلى الجانب المضموم فقط أو خلطه مع هذا الجدول داخل تعبير واحد ليس `AND` (مثل `OR`)؛ ويحتفظ مثل هذا الـ predicate بنقطة تقييمه المعتادة في ClickHouse (`WHERE` بعد الـ join، و`PREWHERE` قبله) ولا يُرفَض. أما مع analyzer القديم (`enable_analyzer = 0`) فلا ينطبق هذا التحديد النطاقي: يُفحَص filter الخارجي بأكمله عندما يكون هذا الجدول هو الجدول الأول في شجرة الـ join، بما في ذلك predicate على الجانب المضموم، ولا يُفحَص الجدول المضموم على الجانب الأيمن.
 </Note>
 
-<div id="data-types-support">
-  ## دعم أنواع البيانات
-</div>
+## دعم أنواع البيانات {#data-types-support}
 
 عند تحديد أنواع أعمدة ClickHouse صراحةً في تعريف الجدول، يمكن تحليل أنواع ClickHouse التالية من أعمدة TEXT في SQLite:
 
@@ -68,9 +62,7 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 
 
 راجع [محرك قاعدة بيانات SQLite](/ar/reference/engines/database-engines/sqlite#data_types-support) للاطّلاع على مطابقة الأنواع الافتراضية.
 
-<div id="usage-example">
-  ## مثال على الاستخدام
-</div>
+## مثال على الاستخدام {#usage-example}
 
 يعرض استعلامًا لإنشاء جدول SQLite:
 

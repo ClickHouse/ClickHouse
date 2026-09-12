@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_text_index_header_cache">
-  ## use_text_index_header_cache
-</div>
+## use_text_index_header_cache {#use_text_index_header_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/
 Indica se os cabeçalhos de índice de texto desserializados devem ser armazenados em cache na memória.
 Usar o cache do cabeçalho do índice de texto pode reduzir significativamente a latência e aumentar a taxa de transferência ao trabalhar com um grande número de consultas de índice de texto.
 
-<div id="use_text_index_like_evaluation_by_dictionary_scan">
-  ## use_text_index_like_evaluation_by_dictionary_scan
-</div>
+## use_text_index_like_evaluation_by_dictionary_scan {#use_text_index_like_evaluation_by_dictionary_scan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,9 @@ Usar o cache do cabeçalho do índice de texto pode reduzir significativamente a
 
 Habilita a avaliação de consultas LIKE/ILIKE por varredura do dicionário do índice de texto invertido.
 
-<div id="use_text_index_negative_tokens_cache">
-  ## use_text_index_negative_tokens_cache
-</div>
+Os padrões acelerados são `%value%`, `value%` e `%value`, bem como as chamadas `startsWith` e `endsWith` que `optimize_rewrite_like_perfect_affix` reescreve como `value%` e `%value`.
+
+## use_text_index_negative_tokens_cache {#use_text_index_negative_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -45,9 +41,7 @@ Habilita a avaliação de consultas LIKE/ILIKE por varredura do dicionário do �
 Define se os tokens do índice de texto ausentes de uma parte de dados devem ser armazenados em cache.
 O cache de tokens negativos usa o cache de tokens do índice de texto e evita consultas repetidas ao dicionário para tokens ausentes.
 
-<div id="use_text_index_postings_cache">
-  ## use_text_index_postings_cache
-</div>
+## use_text_index_postings_cache {#use_text_index_postings_cache}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -56,9 +50,7 @@ O cache de tokens negativos usa o cache de tokens do índice de texto e evita co
 Define se as listas de postings desserializadas do índice de texto devem ser armazenadas em cache na memória.
 Usar o cache de postings do índice de texto pode reduzir significativamente a latência e aumentar a taxa de transferência ao lidar com um grande número de consultas que usam índice de texto.
 
-<div id="use_text_index_tokens_cache">
-  ## use_text_index_tokens_cache
-</div>
+## use_text_index_tokens_cache {#use_text_index_tokens_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -10,9 +10,7 @@ doc_type: 'referência'
 
 O mecanismo MySQL permite executar consultas `SELECT` e `INSERT` em dados armazenados em um servidor MySQL remoto.
 
-<div id="creating-a-table">
-  ## Criando uma tabela
-</div>
+## Criando uma tabela {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -58,9 +56,7 @@ Cláusulas `WHERE` simples, como `=, !=, >, >=, <, <=`, são executadas no servi
 
 O restante das condições e a restrição de amostragem `LIMIT` são executados no ClickHouse somente após o término da consulta ao MySQL.
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 As credenciais de uma conexão criptografada com o MySQL são fornecidas como chaves de uma coleção nomeada (ou como argumentos de chave-valor):
 
@@ -86,9 +82,7 @@ As mesmas credenciais também podem ser fornecidas como caminhos para arquivos n
 </named_collections>
 ```
 
-<div id="passing-a-query">
-  ## Passando uma consulta em vez do nome de uma tabela
-</div>
+## Passando uma consulta em vez do nome de uma tabela {#passing-a-query}
 
 Em vez do nome de uma tabela, o argumento `table` pode ser uma consulta `SELECT` passada ao MySQL como está. A estrutura da tabela é inferida a partir do resultado da consulta. A consulta pode ser escrita como uma subconsulta ou encapsulada na função `query`:
 
@@ -102,7 +96,7 @@ Isso é útil para delegar junções, agregações ou qualquer outro processamen
 <Note>
   A forma de subconsulta `(SELECT ...)` é analisada pelo ClickHouse e serializada novamente no dialeto do MySQL (com identificadores entre crases) antes de ser enviada ao servidor. Portanto, ela deve ser um SQL do ClickHouse válido. Para passar uma sintaxe específica do MySQL que o ClickHouse não analisa, use a forma `query('...')`, cujo texto é enviado ao MySQL literalmente.
 
-  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse envolvente **não** é delegado à consulta fornecida — ele é aplicado no ClickHouse depois que o resultado completo da consulta é obtido. Para restringir os dados lidos do MySQL, coloque o filtro dentro da consulta fornecida. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo que não pode ser delegado é rejeitado com uma exceção em vez de ser aplicado localmente.
+  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse envolvente **não** é delegado à consulta fornecida — ele é aplicado no ClickHouse depois que o resultado completo da consulta é obtido. Para restringir os dados lidos do MySQL, coloque o filtro dentro da consulta fornecida. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo sobre as colunas da tabela é rejeitado com uma exceção em vez de ser aplicado localmente, porque não pode ser delegado à consulta fornecida. A verificação abrange o predicado `WHERE` de nível superior e cada conjunção de um `AND` de nível superior. Um `PREWHERE` sobre as colunas desta tabela não se enquadra nesta configuração: este mecanismo de tabela não suporta `PREWHERE`, e tal consulta é rejeitada com `ILLEGAL_PREWHERE` independentemente da configuração. Com o analyzer (o padrão), a verificação é executada apenas onde um filtro poderia de fato ser delegado: quando esta tabela é a única tabela da consulta, em qualquer lado de um `INNER JOIN`, ou no lado preservado de uma junção externa (o lado esquerdo de um `LEFT JOIN`, o lado direito de um `RIGHT JOIN`). No lado não preservado de um `LEFT`/`RIGHT JOIN` e em qualquer lado de um `FULL JOIN`, nada é delegado e nada é verificado, portanto um filtro sobre as colunas desta tabela é aplicado localmente após a junção, mesmo no modo estrito. Onde a verificação é executada, um predicado que referencia outras tabelas unidas na consulta envolvente não é delegado e fica de fora da verificação, tanto se referenciar apenas o lado unido quanto se o misturar com esta tabela dentro de uma única expressão que não seja `AND` (por exemplo, um `OR`); tal predicado mantém seu ponto de avaliação usual no ClickHouse (`WHERE` após a junção, `PREWHERE` antes dela) e não é rejeitado. Com o analyzer antigo (`enable_analyzer = 0`), esse escopo não se aplica: todo o filtro externo é verificado quando esta tabela é a primeira tabela da árvore de junção, incluindo um predicado sobre o lado unido, e uma tabela unida do lado direito não é verificada.
 </Note>
 
 Compatível com múltiplas réplicas, que devem ser listadas com `|`. Por exemplo:
@@ -111,9 +105,7 @@ Compatível com múltiplas réplicas, que devem ser listadas com `|`. Por exempl
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-<div id="usage-example">
-  ## Exemplo de uso
-</div>
+## Exemplo de uso {#usage-example}
 
 Criar tabela no MySQL:
 
@@ -178,15 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-<div id="mysql-settings">
-  ## Configurações
-</div>
+## Configurações {#mysql-settings}
 
 As configurações padrão não são muito eficientes, pois nem sequer reutilizam as conexões. Essas configurações permitem aumentar o número de consultas que o servidor executa por segundo.
 
-<div id="connection-auto-close">
-  ### `connection_auto_close`
-</div>
+### `connection_auto_close` {#connection-auto-close}
 
 Permite fechar automaticamente a conexão após a execução da consulta, ou seja, desativa a reutilização da conexão.
 
@@ -197,9 +185,7 @@ Valores possíveis:
 
 Valor padrão: `1`.
 
-<div id="connection-max-tries">
-  ### `connection_max_tries`
-</div>
+### `connection_max_tries` {#connection-max-tries}
 
 Define o número de novas tentativas para o pool com failover.
 
@@ -210,9 +196,7 @@ Valores possíveis:
 
 Valor padrão: `3`.
 
-<div id="connection-pool-size">
-  ### `connection_pool_size`
-</div>
+### `connection_pool_size` {#connection-pool-size}
 
 Tamanho do pool de conexões (se todas as conexões estiverem em uso, a consulta aguardará até que alguma seja liberada).
 
@@ -222,9 +206,7 @@ Valores possíveis:
 
 Valor padrão: `16`.
 
-<div id="connection-wait-timeout">
-  ### `connection_wait_timeout`
-</div>
+### `connection_wait_timeout` {#connection-wait-timeout}
 
 Tempo limite (em segundos) para aguardar uma conexão livre (caso já haja `connection_pool_size` conexões ativas); 0 - não aguardar.
 
@@ -234,9 +216,7 @@ Valores possíveis:
 
 Valor padrão: `5`.
 
-<div id="connect-timeout">
-  ### `connect_timeout`
-</div>
+### `connect_timeout` {#connect-timeout}
 
 Tempo limite de conexão (em segundos).
 
@@ -246,9 +226,7 @@ Valores possíveis:
 
 Valor padrão: `10`.
 
-<div id="read-write-timeout">
-  ### `read_write_timeout`
-</div>
+### `read_write_timeout` {#read-write-timeout}
 
 Tempo limite de leitura e gravação (em segundos).
 
@@ -258,9 +236,7 @@ Valores possíveis:
 
 Valor padrão: `300`.
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 Habilita a compressão para a conexão do protocolo MySQL.
 
@@ -289,9 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="see-also">
-  ## Veja também
-</div>
+## Veja também {#see-also}
 
 * [A função de tabela do MySQL](/pt-BR/reference/functions/table-functions/mysql)
 * [Usando o MySQL como fonte de dicionário](/pt-BR/reference/statements/create/dictionary/sources/mysql)

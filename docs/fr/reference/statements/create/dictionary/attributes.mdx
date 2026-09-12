@@ -53,7 +53,7 @@ Les attributs sont décrits dans le corps de la requête :
 * `AttrName AttrType` — Colonne de données. Il peut y avoir plusieurs attributs.
 
 <div id="key">
-  ## Clé
+  ## Clé {#key}
 </div>
 
 ClickHouse prend en charge les types de clés suivants :
@@ -68,7 +68,7 @@ Une structure XML peut contenir soit `<id>`, soit `<key>`. La requête DDL ne do
 </Note>
 
 <div id="numeric-key">
-  ### Clé numérique
+  ### Clé numérique {#numeric-key}
 </div>
 
 Type : `UInt64`.
@@ -98,9 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – Le nom de la colonne contenant les clés.
 
-<div id="composite-key">
-  ### Clé composite
-</div>
+### Clé composite {#composite-key}
 
 La clé peut être un `tuple` composé de champs de n’importe quel type. Le [layout](/fr/reference/statements/create/dictionary/layouts/overview) doit alors être `complex_key_hashed` ou `complex_key_cache`.
 
@@ -108,7 +106,7 @@ La clé peut être un `tuple` composé de champs de n’importe quel type. Le [l
   Une clé composite peut être constituée d’un seul élément. Cela permet par exemple d’utiliser une chaîne comme clé.
 </Tip>
 
-La structure de la clé est définie dans l’élément `<key>`. Les champs de la clé sont spécifiés dans le même format que les [attributs](#attributes) du dictionnaire. Exemple :
+La structure de la clé est définie dans l’élément `<key>`. Les champs de la clé sont spécifiés dans le même format que les [attributs](#attributes) du dictionnaire. Exemple :
 
 ```xml
 <structure>
@@ -139,12 +137,12 @@ PRIMARY KEY field1, field2
 ...
 ```
 
-Pour une requête adressée à la fonction `dictGet*`, un tuple est utilisé comme clé. Exemple : `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
+Pour une requête adressée à la fonction `dictGet*`, un tuple est utilisé comme clé. Exemple : `dictGetString('dict_name', 'attr_name', tuple('string for field1', num_for_field2))`.
 
 Lorsque la clé composite est constituée d’un seul attribut, la valeur de la clé peut être transmise directement, sans être encapsulée dans `tuple`. Par exemple, `dictGetString('dict_name', 'attr_name', 'key')` et `dictGetString('dict_name', 'attr_name', tuple('key'))` sont tous deux valides.
 
 <div id="attributes">
-  ## Attributs
+  ## Attributs {#attributes}
 </div>
 
 Exemple de configuration :

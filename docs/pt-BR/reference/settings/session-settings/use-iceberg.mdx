@@ -13,9 +13,15 @@ import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/Versio
 
 Estas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são geradas automaticamente a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_iceberg_metadata_files_cache">
-  ## use_iceberg_metadata_files_cache
-</div>
+## use_iceberg_manifest_list_partition_pruning {#use_iceberg_manifest_list_partition_pruning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nova configuração para ignorar manifest files do Iceberg cujos resumos de partição da manifest list não possam corresponder ao filtro da consulta, sem precisar lê-los."}]}]} />
+
+Ignora manifest files inteiros do Iceberg cujos resumos de partição na manifest list não possam corresponder ao filtro da consulta, sem precisar lê-los. Requer que [use&#95;iceberg&#95;partition&#95;pruning](/pt-BR/reference/settings/session-settings/use-iceberg#use_iceberg_partition_pruning) esteja habilitado e só traz benefício quando um manifest file contém poucos valores de partição distintos, que é justamente o resultado de `rewriteManifests` agrupado pelas partition columns.
+
+## use_iceberg_metadata_files_cache {#use_iceberg_metadata_files_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -28,9 +34,7 @@ Possíveis valores:
 * 0 - Desativado
 * 1 - Ativado
 
-<div id="use_iceberg_partition_pruning">
-  ## use_iceberg_partition_pruning
-</div>
+## use_iceberg_partition_pruning {#use_iceberg_partition_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

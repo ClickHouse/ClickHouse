@@ -12,25 +12,19 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 
 Эти настройки автоматически сгенерированы на основе [исходного файла](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/FormatFactorySettings.h).
 
-<div id="type_json_allow_duplicated_key_with_literal_and_nested_object">
-  ## type_json_allow_duplicated_key_with_literal_and_nested_object
-</div>
+## type_json_allow_duplicated_key_with_literal_and_nested_object {#type_json_allow_duplicated_key_with_literal_and_nested_object}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Если включено, допускается разбор JSON вида `{"a" : 42, "a" : {"b" : 42}}`, где некоторый ключ дублируется, но одно из его значений является вложенным объектом.
 
-<div id="type_json_skip_duplicated_paths">
-  ## type_json_skip_duplicated_paths
-</div>
+## type_json_skip_duplicated_paths {#type_json_skip_duplicated_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Если параметр включен, при разборе объекта JSON в тип JSON дублирующиеся пути будут игнорироваться, и вместо исключения будет вставляться только первый из них
 
-<div id="type_json_skip_invalid_typed_paths">
-  ## type_json_skip_invalid_typed_paths
-</div>
+## type_json_skip_invalid_typed_paths {#type_json_skip_invalid_typed_paths}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -43,9 +37,18 @@ import SettingsInfoBlock from "/snippets/ru/components/SettingsInfoBlock/Setting
 * 0 — Отключить (вызывать ошибку при несоответствии типов).
 * 1 — Включить (пропускать поле при несоответствии типов).
 
-<div id="type_json_use_partial_match_to_skip_paths_by_regexp">
-  ## type_json_use_partial_match_to_skip_paths_by_regexp
-</div>
+## type_json_skip_null_typed_paths {#type_json_skip_null_typed_paths}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+Когда настройка включена, типизированные пути в JSON-столбцах, имеющие значения NULL, считаются отсутствующими — так же, как это происходит с динамическими путями. Это влияет на результат JSON-сериализации, на функции интроспекции, такие как `JSONAllPaths`, `JSONHas`, `JSONExtractRaw`, `has`, а также на проверки `empty`/`notEmpty`.
+
+Возможные значения:
+
+* 0 — Отключено (типизированные пути присутствуют всегда, даже со значениями NULL).
+* 1 — Включено (типизированные пути со значением NULL считаются отсутствующими).
+
+## type_json_use_partial_match_to_skip_paths_by_regexp {#type_json_use_partial_match_to_skip_paths_by_regexp}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

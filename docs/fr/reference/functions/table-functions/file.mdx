@@ -15,9 +15,7 @@ Un moteur de table qui fournit une interface de type table pour exécuter des `S
 
 La fonction `file` peut être utilisée dans des requêtes `SELECT` et `INSERT` pour lire des fichiers ou y écrire.
 
-<div id="syntax">
-  ## Syntaxe
-</div>
+## Syntaxe {#syntax}
 
 ```sql
 file([path_to_archive ::] path [,format] [,structure] [,compression])
@@ -29,17 +27,15 @@ Pour les requêtes `SELECT`, `path` peut aussi être une expression qui renvoie 
 file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
 ```
 
-<div id="arguments">
-  ## Arguments
-</div>
+## Arguments {#arguments}
 
-| Parameter         | Description                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `path`            | Le chemin relatif vers le fichier à partir de [user&#95;files&#95;path](/fr/reference/settings/server-settings/settings/user#user_files_path), ou un `Array(String)` de chemins dans les requêtes `SELECT`. En mode lecture seule, prend en charge les [globs](#globs-in-path) suivants : `*`, `?`, `{abc,def}` (où `'abc'` et `'def'` sont des chaînes de caractères) et `{N..M}` (où `N` et `M` sont des nombres). |
-| `path_to_archive` | Le chemin relatif vers une archive zip/tar/7z. Prend en charge les mêmes globs que `path`.                                                                                                                                                                                                                                                                                                                        |
-| `format`          | Le [format](/fr/reference/formats/index) du fichier.                                                                                                                                                                                                                                                                                                                                                                 |
-| `structure`       | Structure de la table. Format : `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                    |
-| `compression`     | Le type de compression existant lorsqu’il est utilisé dans une requête `SELECT`, ou le type de compression souhaité lorsqu’il est utilisé dans une requête `INSERT`. Les types de compression pris en charge sont `gz`, `br`, `xz`, `zst`, `lz4` et `bz2`.                                                                                                                                                        |
+| Parameter         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`            | Le chemin relatif vers le fichier à partir de [user&#95;files&#95;path](/fr/reference/settings/server-settings/settings/user#user_files_path), ou un `Array(String)` de chemins dans les requêtes `SELECT`. En mode lecture seule, prend en charge les [globs](#globs-in-path) suivants : `*`, `?`, `{abc,def}` (où `'abc'` et `'def'` sont des chaînes de caractères) et `{N..M}` (où `N` et `M` sont des nombres).                                                                               |
+| `path_to_archive` | Le chemin relatif vers une archive zip/tar/7z. Prend en charge les mêmes globs que `path`.                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `format`          | Le [format](/fr/reference/formats/index) du fichier.                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| `structure`       | Structure de la table. Format : `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `compression`     | Le type de compression existant lorsqu’il est utilisé dans une requête `SELECT`, ou le type de compression souhaité lorsqu’il est utilisé dans une requête `INSERT`. Les valeurs prises en charge sont `none` (sans compression), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2` et `snappy`. Pour `snappy`, le format de transmission est sélectionné par le paramètre [snappy&#95;mode](/fr/reference/settings/session-settings/other#snappy_mode) (`basic` par défaut). |
 
 <Tip>
   Lorsque l’argument `structure` est omis, ClickHouse déduit le schéma du format lui-même.
@@ -59,19 +55,13 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
   ```
 </Tip>
 
-<div id="returned-value">
-  ## Valeur retournée
-</div>
+## Valeur retournée {#returned-value}
 
 Une table permettant de lire ou d’écrire des données dans un fichier.
 
-<div id="examples-for-writing-to-a-file">
-  ## Exemples d’écriture dans un fichier
-</div>
+## Exemples d’écriture dans un fichier {#examples-for-writing-to-a-file}
 
-<div id="write-to-a-tsv-file">
-  ### Écrire dans un fichier TSV
-</div>
+### Écrire dans un fichier TSV {#write-to-a-tsv-file}
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -88,9 +78,7 @@ Par conséquent, les données sont enregistrées dans le fichier `test.tsv` :
 1    3    2
 ```
 
-<div id="partitioned-write-to-multiple-tsv-files">
-  ### Écriture partitionnée dans plusieurs fichiers TSV
-</div>
+### Écriture partitionnée dans plusieurs fichiers TSV {#partitioned-write-to-multiple-tsv-files}
 
 Si vous spécifiez une expression `PARTITION BY` lors de l’insertion de données dans une fonction de table de type `file`, un fichier distinct est créé pour chaque partition. Répartir les données dans des fichiers distincts permet d’améliorer les performances des opérations de lecture.
 
@@ -114,13 +102,9 @@ Par conséquent, les données sont écrites dans trois fichiers : `test_1.tsv`,
 1    2    3
 ```
 
-<div id="examples-for-reading-from-a-file">
-  ## Exemples de lecture depuis un fichier
-</div>
+## Exemples de lecture depuis un fichier {#examples-for-reading-from-a-file}
 
-<div id="select-from-a-csv-file">
-  ### SELECT depuis un fichier CSV
-</div>
+### SELECT depuis un fichier CSV {#select-from-a-csv-file}
 
 Commencez par définir `user_files_path` dans la configuration du serveur et préparez un fichier `test.csv` :
 
@@ -149,9 +133,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="inserting-data-from-a-file-into-a-table">
-  ### Insérer des données d’un fichier dans une table
-</div>
+### Insérer des données d’un fichier dans une table {#inserting-data-from-a-file-into-a-table}
 
 ```sql
 INSERT INTO FUNCTION
@@ -177,9 +159,7 @@ Lecture des données à partir de `table.csv`, situé dans `archive1.zip` ou/et 
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-<div id="globs-in-path">
-  ## Globs dans le chemin
-</div>
+## Globs dans le chemin {#globs-in-path}
 
 Les chemins peuvent utiliser des globs. Les fichiers doivent correspondre à l’intégralité du motif de chemin, et pas seulement au suffixe ou au préfixe. Il existe une exception : si le chemin fait référence à un répertoire existant
 et n’utilise pas de globs, un `*` sera implicitement ajouté au chemin afin que
@@ -193,9 +173,7 @@ tous les fichiers du répertoire soient sélectionnés.
 
 Les constructions avec `{}` sont similaires aux fonctions de table [remote](/fr/reference/functions/table-functions/remote) et [hdfs](/fr/reference/functions/table-functions/hdfs).
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 **Exemple**
 
@@ -254,18 +232,14 @@ Exécutez une requête pour obtenir le nombre total de lignes de tous les fichie
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
-<div id="virtual-columns">
-  ## Colonnes virtuelles
-</div>
+## Colonnes virtuelles {#virtual-columns}
 
 * `_path` — Chemin du fichier. Type : `LowCardinality(String)`.
 * `_file` — Nom du fichier. Type : `LowCardinality(String)`.
 * `_size` — Taille du fichier en octets. Type : `Nullable(UInt64)`. Si la taille du fichier est inconnue, la valeur est `NULL`.
 * `_time` — Date et heure de la dernière modification du fichier. Type : `Nullable(DateTime)`. Si la date et l’heure sont inconnues, la valeur est `NULL`.
 
-<div id="hive-style-partitioning">
-  ## paramètre use_hive_partitioning
-</div>
+## paramètre use_hive_partitioning {#hive-style-partitioning}
 
 Lorsque le paramètre `use_hive_partitioning` est défini sur 1, ClickHouse détecte le partitionnement de type Hive dans le chemin (`/name=value/`) et permet d’utiliser les colonnes de partition comme colonnes virtuelles dans la requête. Ces colonnes virtuelles porteront les mêmes noms que dans le chemin partitionné.
 
@@ -277,9 +251,7 @@ Utiliser une colonne virtuelle créée avec un partitionnement de type Hive
 SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="settings">
-  ## Paramètres
-</div>
+## Paramètres {#settings}
 
 | Paramètre                                                                                                                                               | Description                                                                                                                                                                                                                |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -289,9 +261,7 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 | [engine&#95;file&#95;skip&#95;empty&#95;files](/fr/reference/settings/session-settings/engine-file#engine_file_skip_empty_files)                           | permet d&#39;ignorer les fichiers vides lors de la lecture. Désactivé par défaut.                                                                                                                                          |
 | [storage&#95;file&#95;read&#95;method](/fr/reference/settings/session-settings/storage#storage_file_read_method)                                           | méthode de lecture des données depuis le fichier de stockage ; valeurs possibles : read, pread, mmap (uniquement pour clickhouse-local). Valeur par défaut : `pread` pour clickhouse-server, `mmap` pour clickhouse-local. |
 
-<div id="related">
-  ## Voir aussi
-</div>
+## Voir aussi {#related}
 
 * [Colonnes virtuelles](/fr/reference/engines/table-engines/index#table_engines-virtual_columns)
 * [Renommer les fichiers après traitement](/fr/reference/settings/session-settings/other#rename_files_after_processing)

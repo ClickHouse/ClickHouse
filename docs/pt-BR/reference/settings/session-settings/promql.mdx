@@ -10,25 +10,21 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/pt-BR/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/pt-BR/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 Essas configurações estão disponíveis em [system.settings](/pt-BR/reference/system-tables/settings) e são autogeradas a partir do [código-fonte](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="promql_database">
-  ## promql_database
-</div>
+## promql_database {#promql_database}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "Nova configuração experimental"}]}]} />
 
 Especifica o nome do banco de dados usado pelo dialeto &#39;promql&#39;. Uma string vazia significa o banco de dados atual.
 
-<div id="promql_evaluation_time">
-  ## promql_evaluation_time
-</div>
+## promql_evaluation_time {#promql_evaluation_time}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 **Aliases**: `evaluation_time`
 
@@ -38,11 +34,9 @@ Especifica o nome do banco de dados usado pelo dialeto &#39;promql&#39;. Uma str
 
 Define o tempo de avaliação a ser usado com o dialeto promql. &#39;auto&#39; significa a hora atual.
 
-<div id="promql_table">
-  ## promql_table
-</div>
+## promql_table {#promql_table}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "Nova configuração experimental"}]}]} />
 

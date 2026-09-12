@@ -7,13 +7,9 @@ description: 'ClickHouse Bring Your Own Cloud(BYOC)에 관한 자주 묻는 질�
 doc_type: 'reference'
 ---
 
-<div id="faq">
-  ## FAQ
-</div>
+## FAQ {#faq}
 
-<div id="onboarding-and-provisioning">
-  ### 온보딩 및 프로비저닝
-</div>
+### 온보딩 및 프로비저닝 {#onboarding-and-provisioning}
 
 <Accordion title="BYOC를 시작하려면 어떻게 해야 하나요?">
   [문의 양식](https://clickhouse.com/cloud/bring-your-own-cloud)을 통해 ClickHouse에 문의하면 ClickHouse 팀에서 조직에 BYOC를 활성화합니다. 그런 다음 전용 클라우드 계정(AWS 계정, GCP 프로젝트 또는 Azure subscription)을 준비하고 [표준 온보딩 가이드](/ko/products/bring-your-own-cloud/onboarding/standard)를 따르십시오. BYOC 전용 계정, 프로젝트 또는 subscription을 사용하는 것을 강력히 권장합니다.
@@ -39,24 +35,24 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="BYOC에서 기존 VPC를 사용할 수 있나요? 공유 VPC는 어떤가요?">
-  AWS 및 GCP에서는 BYOC 인프라와 **동일한** 계정 또는 프로젝트에 있는 기존 VPC에 배포할 수 있습니다. [AWS](/ko/products/bring-your-own-cloud/onboarding/customization-aws) 및 [GCP](/ko/products/bring-your-own-cloud/onboarding/customization-gcp) 사용자 지정 가이드를 참조하십시오. GCP에서는 별도의 호스트 프로젝트에 있는 **Shared VPC**도 지원합니다. [onboarding module](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)은 호스트 프로젝트와 서브넷을 직접 지정할 수 있도록 지원합니다. 설정 및 사전 요구 사항은 해당 모듈의 &quot;Shared VPC&quot; 섹션을 참조하십시오. Azure에서 자체 VNet을 사용하는 기능은 곧 제공될 예정입니다.
+  AWS 및 GCP에서는 BYOC 인프라와 **동일한** 계정 또는 프로젝트에 있는 기존 VPC에 배포할 수 있습니다. [AWS](/ko/products/bring-your-own-cloud/onboarding/customization-aws) 및 [GCP](/ko/products/bring-your-own-cloud/onboarding/customization-gcp) 사용자 지정 가이드를 참조하십시오. GCP에서는 별도의 호스트 프로젝트에 있는 **Shared VPC**도 지원합니다. [온보딩 모듈](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)은 호스트 프로젝트와 서브넷을 직접 지정할 수 있도록 지원합니다. 설정 및 사전 요구 사항은 해당 모듈의 &quot;Shared VPC&quot; 섹션을 참조하십시오. Azure에서 자체 VNet을 사용하는 기능은 곧 제공될 예정입니다.
 
-  AWS에서는 다른 계정에서 공유된 서브넷(AWS RAM)을 지원하지 않습니다. 대신 VPC peering 또는 PrivateLink를 통해 기존 네트워크에 연결된 전용 계정을 사용하십시오. 고객 관리형 VPC에서는 기본적으로 프라이빗 로드 밸런서만 활성화됩니다([구성](/ko/products/bring-your-own-cloud/configuration/configurations) 참조).
+  AWS에서는 AWS Resource Access Manager(RAM)를 통해 다른 계정에서 공유된 서브넷도 지원하므로, 네트워킹을 허브 계정에 중앙화하고 BYOC 인프라는 스포크 계정에서 실행할 수 있습니다. 이 구성에 특화된 사전 요구 사항이 하나 있습니다. RAM으로 공유된 리소스는 계정별 태그 뷰를 가지므로 **스포크** 계정이 직접 필요한 VPC 및 서브넷 태그를 적용해야 합니다. 허브 계정에서 적용한 태그는 스포크에서 보이지 않으며, 태그가 없으면 프로비저닝이 실패합니다. 라우트 테이블은 계속 허브 계정이 소유하며, 허브 계정이 공유 서브넷의 NAT 및 이그레스 라우팅을 계속 담당합니다. 태그 및 기타 요구 사항은 [AWS 사용자 지정 가이드](/ko/products/bring-your-own-cloud/onboarding/customization-aws)를 참조하십시오.
+
+  고객 관리형 VPC에서는 기본적으로 프라이빗 로드 밸런서만 활성화됩니다([구성](/ko/products/bring-your-own-cloud/configuration/configurations) 참조).
 </Accordion>
 
-<Accordion title="기존 Kubernetes 클러스터에 BYOC를 설치할 수 있나요?">
-  아니요. Kubernetes 클러스터(EKS, GKE 또는 AKS)는 ClickHouse가 생성하고 완전히 관리합니다. 이는 ClickHouse가 플랫폼을 안정적으로 운영하고 최신 상태로 유지하기 위해 필요합니다.
+<Accordion title="기존 Kubernetes 클러스터에 BYOC를 설치할 수 있습니까?">
+  아니요. Kubernetes 클러스터(EKS, GKE 또는 AKS)는 ClickHouse가 생성하고 전적으로 관리합니다. 이는 ClickHouse가 플랫폼을 안정적으로 운영하고 최신 버전으로 유지하기 위해 필요합니다.
 </Accordion>
 
 <Accordion title="BYOC 클러스터 또는 클라우드 계정에서 자체 워크로드를 실행할 수 있습니까?">
-  클라우드 계정에서는 가능하지만, 함께 배치된 리소스는 항상 어느 정도 ClickHouse의 권한 범위에 속합니다. AWS에서는 대부분의 쓰기 권한이 태그 및 prefix 범위로 제한되며(ClickHouse가 프로비저닝한 리소스에는 `clickhouse-byoc=true`가 지정됨), 일부 EC2 작업은 태그 범위로 제한할 수 없습니다. GCP 및 Azure에서는 온보딩 ID에 프로젝트 또는 subscription 범위의 권한이 부여됩니다. 리소스를 ClickHouse가 프로비저닝한 리소스와 분리하고, 모든 cloud에서 전용 account, 프로젝트 또는 subscription을 사용하는 것을 권장합니다. 이는 여전히 강력히 권장되는 방식입니다.
+  클라우드 계정에서는 가능하지만, 함께 배치된 리소스는 항상 어느 정도 ClickHouse의 권한 범위에 속합니다. AWS에서는 대부분의 쓰기 권한이 태그 및 접두사 범위로 제한되며(ClickHouse가 프로비저닝한 리소스에는 `clickhouse-byoc=true`가 지정됨), 일부 EC2 작업은 태그 범위로 제한할 수 없습니다. GCP 및 Azure에서는 온보딩 아이덴티티에 프로젝트 또는 subscription 범위의 권한이 부여됩니다. 리소스를 ClickHouse가 프로비저닝한 리소스와 분리하고, 모든 cloud에서 전용 account, 프로젝트 또는 subscription을 사용하는 것을 권장합니다. 이는 여전히 강력히 권장되는 방식입니다.
 
   Kubernetes 클러스터에서는 몇 가지 제약 조건을 준수하면 가능합니다. taint 및 toleration을 적용한 자체 노드 그룹을 사용하고, ClickHouse가 관리하는 네임스페이스를 피하며, ClickHouse 구성 요소의 리컨실리에이션을 차단할 수 있는 cluster-wide admission controller 또는 policy engine을 설치하지 마십시오. 충돌이 없는지 확인할 수 있도록 지원팀에 계획을 설명하십시오.
 </Accordion>
 
-<div id="compute">
-  ### 컴퓨트 및 스케일링
-</div>
+### 컴퓨트 및 스케일링 {#compute}
 
 <Accordion title="단일 BYOC 인프라에서 여러 서비스를 생성할 수 있습니까?">
   예. 인프라(Kubernetes 클러스터 포함)는 클라우드 계정/프로젝트/구독 및 리전 조합별로 한 번만 프로비저닝하면 되며, 해당 리전에서 생성하는 모든 서비스가 이를 공유합니다.
@@ -88,12 +84,10 @@ doc_type: 'reference'
   예. BYOC에서는 웨어하우스(컴퓨트-컴퓨트 분리)를 지원합니다. 여러 서비스가 동일한 데이터를 공유하므로 일부 서비스는 수집에, 다른 서비스는 쿼리에 전용으로 할당할 수 있습니다.
 </Accordion>
 
-<div id="network-and-security">
-  ### 네트워크 및 보안
-</div>
+### 네트워크 및 보안 {#network-and-security}
 
 <Accordion title="설치 중 부여된 권한을 제한하거나 취소할 수 있습니까?">
-  AWS와 GCP에서는 처음부터 권한 부여 범위를 줄일 수 있습니다. 온보딩 아티팩트는 매개변수화되어 있으므로 자체 VPC를 사용할 때 VPC 네트워크 토폴로지 관리 권한을 제외할 수 있습니다(CloudFormation의 `IncludeVPCWritePermissions`, Terraform 모듈의 `include_vpc_write_permissions`). GCP에서는 이 설정으로 토폴로지 관리 권한만 제한됩니다. ClickHouse는 Private Service Connect NAT 서브넷, 서비스 연결, 수신 주소 등 VPC 내에서 소유한 네트워킹 리소스에 대한 쓰기 액세스는 유지합니다. AWS에서는 지원팀을 통해 활성화되는 비공개 프리뷰에서 IAM 역할을 직접 관리할 수도 있으며(`IncludeIAMWritePermissions=false`, [고객 관리형 IAM 역할](/ko/products/bring-your-own-cloud/onboarding/customization-aws) 참조), 교차 계정 역할은 혼동된 대리인(confused deputy) 액세스를 방지하기 위해 외부 ID로 보호됩니다. Azure에서는 현재 온보딩 모듈이 범위 지정 매개변수 없이 subscription 범위의 고정 역할을 부여합니다. 모든 클라우드에서 일부 권한은 특정 기능에만 필요하므로 해당 기능을 사용하지 않을 예정이라면 제거할 수 있습니다. 아티팩트에서 제공하는 범위보다 더 권한을 제한해야 한다면 지원팀에 문의하십시오.
+  AWS와 GCP에서는 처음부터 권한 부여 범위를 줄일 수 있습니다. 온보딩 아티팩트는 매개변수화되어 있으므로 자체 VPC를 사용할 때 VPC 네트워크 토폴로지 관리 권한을 제외할 수 있습니다(CloudFormation의 `IncludeVPCWritePermissions`, Terraform 모듈의 `include_vpc_write_permissions`). GCP에서는 이 설정으로 토폴로지 관리 권한만 제한됩니다. ClickHouse는 Private Service Connect 서비스 연결 및 수신 주소 등 VPC 내에서 소유한 네트워킹 리소스에 대한 쓰기 액세스는 유지합니다. Private Service Connect NAT 서브넷은 여기에 포함되지 않습니다. BYO-VPC에서는 private link를 활성화하기 전에 [직접 생성](/ko/products/bring-your-own-cloud/onboarding/network-gcp#setup-psc)해야 합니다. AWS에서는 지원팀을 통해 활성화되는 비공개 프리뷰에서 IAM 역할을 직접 관리할 수도 있으며(`IncludeIAMWritePermissions=false`, [고객 관리형 IAM 역할](/ko/products/bring-your-own-cloud/onboarding/customization-aws) 참조), 교차 계정 역할은 혼동된 대리인(confused deputy) 액세스를 방지하기 위해 external ID로 보호됩니다. Azure에서는 현재 온보딩 모듈이 범위 지정 매개변수 없이 subscription 범위의 고정 역할을 부여합니다. 모든 클라우드에서 일부 권한은 특정 기능에만 필요하므로 해당 기능을 사용하지 않을 예정이라면 제거할 수 있습니다. 아티팩트에서 제공하는 범위보다 더 권한을 제한해야 한다면 지원팀에 문의하십시오.
 
   프로비저닝 후 관리 아이덴티티의 권한을 임의로 제거하지 마십시오. ClickHouse는 인프라를 지속적으로 조정하므로 권한이 누락되면 프로비저닝, 업그레이드 및 지원에 문제가 발생합니다. 부여된 권한을 변경하거나 완전히 오프보딩하려면 지원팀과 협의하십시오(아래의 서비스 해제 관련 질문 참조).
 </Accordion>
@@ -115,11 +109,11 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="ClickHouse 컨트롤 플레인은 계정 내 Kubernetes API에 어떻게 연결됩니까? Tailscale이 필요합니까?">
-  기본적으로 Kubernetes API 엔드포인트는 공개되어 있지만 ClickHouse의 NAT IP 주소로만 접근이 제한됩니다. 이 기본 설정을 사용하는 동안에는 컨트롤 플레인이 클러스터를 관리하는 데 필요하므로 ClickHouse 허용 목록 항목을 제거하지 마십시오. ClickHouse 팀과 협의하여 엔드포인트를 비공개 전용 접근으로 전환할 수도 있습니다. Tailscale(아웃바운드 전용이며 문제 해결 접근에도 사용됨) 또는 AWS에서는 VPC Lattice(비공개 프리뷰)를 사용할 수 있습니다. 자세한 내용은 [구성](/ko/products/bring-your-own-cloud/configuration/configurations)을 참조하십시오. 이는 Kubernetes API에만 적용됩니다. 클라우드 제공업체 API 호출(예: AWS의 EKS 및 EC2)은 교차 계정 역할 수임을 통해 ClickHouse Cloud 네트워크에서 시작되며, Tailscale을 통해 라우팅할 수 없습니다. 자세한 내용은 [클라우드 제공업체 API와 Kubernetes API 비교](/ko/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api)를 참조하십시오.
+  기본적으로 Kubernetes API 엔드포인트는 공개되어 있으며, 접근을 제한하는 방식은 클라우드마다 다릅니다. AWS에서는 ClickHouse의 NAT IP 주소만 포함된 IP 허용 목록으로 제한되며, 이 기본 설정을 사용하는 동안에는 컨트롤 플레인이 클러스터를 관리하는 데 필요하므로 ClickHouse 허용 목록 항목을 제거하지 마십시오. GCP와 Azure에서는 IP 허용 목록 대신 클라우드 IAM으로 제한됩니다([Kubernetes API 서버 노출](/ko/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure) 참조). ClickHouse 팀과 협의하여 엔드포인트를 비공개 전용 접근으로 전환할 수도 있습니다. Tailscale(아웃바운드 전용이며 문제 해결 접근에도 사용됨) 또는 AWS에서는 VPC Lattice(비공개 프리뷰)를 사용할 수 있습니다. 자세한 내용은 [구성](/ko/products/bring-your-own-cloud/configuration/configurations)을 참조하십시오. 이는 Kubernetes API에만 적용됩니다. 클라우드 제공업체 API 호출(예: AWS의 EKS 및 EC2)은 교차 계정 역할 수임을 통해 ClickHouse Cloud 네트워크에서 시작되며, Tailscale을 통해 라우팅할 수 없습니다. 자세한 내용은 [클라우드 제공업체 API와 Kubernetes API 비교](/ko/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api)를 참조하십시오.
 </Accordion>
 
 <Accordion title="BYOC 네트워크와 객체 스토리지 간 네트워크 통신은 어떻게 이루어집니까?">
-  AWS에서는 Customer BYOC VPC와 S3 간의 테이블 데이터, 백업 및 로그 트래픽이 AWS S3 API를 통해 HTTPS(포트 443)를 사용합니다. 이 트래픽은 S3 gateway VPC endpoint를 통해 전송되므로 AWS 네트워크 내에 유지되고, 공용 인터넷을 거치지 않으며 NAT gateway 요금도 발생하지 않습니다. GCP에서도 Google API 접근에 Private Google Access를 사용합니다. Azure에서는 데이터가 구독 내 Azure Blob Storage 계정에 저장됩니다.
+  AWS에서는 Customer BYOC VPC와 S3 간의 테이블 데이터 및 백업 트래픽, 그리고 활성화한 경우 장기 메트릭 및 로그 아카이브 트래픽이 AWS S3 API를 통해 HTTPS(포트 443)를 사용합니다. 실시간 로그는 객체 스토리지가 아니라 ClickHouse 노드에 연결된 스토리지 볼륨에 기록됩니다([네트워크 경계](/ko/products/bring-your-own-cloud/reference/network-security#outbound-connections) 참조). 이 트래픽은 S3 gateway VPC endpoint를 통해 전송되므로 AWS 네트워크 내에 유지되고, 공용 인터넷을 거치지 않으며 NAT gateway 요금도 발생하지 않습니다. GCP에서도 Google API 접근에 Private Google Access를 사용합니다. Azure에서는 데이터가 구독 내 Azure Blob Storage 계정에 저장됩니다.
 </Accordion>
 
 <Accordion title="데이터가 자체 버킷에 있습니다. 직접 읽거나 수정할 수 있습니까?">
@@ -133,7 +127,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="서비스 엔드포인트가 공용 인터넷에 노출됩니까? 비공개 전용으로 전환할 수 있습니까?">
-  ClickHouse 관리형 VPC에서는 각 서비스에 기본적으로 IP 접근 목록으로 보호되는 퍼블릭 로드 밸런서가 제공됩니다. 네트워크 및 피어링된 네트워크에서 접근할 수 있는 프라이빗 로드 밸런서는 ClickHouse Cloud 콘솔에서 추가로 활성화할 수 있습니다([Load Balancers](/ko/products/bring-your-own-cloud/configuration/configurations#load-balancers) 참조). 고객 관리형 VPC에서는 기본값이 반대이며 프라이빗 로드 밸런서만 활성화됩니다. IP 필터링은 인그레스 프록시 계층에서 적용되므로 스캔 시 로드 밸런서 포트가 열려 있는 것처럼 보일 수 있지만, 목록에 없는 소스의 연결은 거부됩니다. 더 이상 이에 의존하는 항목이 없으면 퍼블릭 엔드포인트를 완전히 비활성화할 수 있습니다. 콘솔의 [Connection via 선택기](/ko/products/bring-your-own-cloud/configuration/connect#connection-via)에는 서비스에 활성화된 각 연결 경로의 엔드포인트가 표시됩니다. 자세한 내용은 [연결](/ko/products/bring-your-own-cloud/configuration/connect)을 참조하십시오.
+  ClickHouse 관리형 VPC에서는 각 서비스에 기본적으로 IP 접근 목록으로 보호되는 퍼블릭 로드 밸런서가 제공됩니다. 네트워크 및 피어링된 네트워크에서 접근할 수 있는 프라이빗 로드 밸런서는 ClickHouse Cloud 콘솔에서 추가로 활성화할 수 있습니다([Load Balancers](/ko/products/bring-your-own-cloud/configuration/configurations#load-balancers) 참조). 고객 관리형 VPC에서는 기본값이 반대이며 프라이빗 로드 밸런서만 활성화됩니다. IP 필터링은 인그레스 프록시 계층에서 적용되므로 스캔 시 로드 밸런서 포트가 열려 있는 것처럼 보일 수 있지만, 목록에 없는 소스의 연결은 거부됩니다. 더 이상 이에 의존하는 항목이 없으면 퍼블릭 엔드포인트를 완전히 비활성화할 수 있습니다. 콘솔의 [Connection via 셀렉터](/ko/products/bring-your-own-cloud/configuration/connect#connection-via)에는 서비스에 활성화된 각 연결 경로의 엔드포인트가 표시됩니다. 자세한 내용은 [연결](/ko/products/bring-your-own-cloud/configuration/connect)을 참조하십시오.
 </Accordion>
 
 <Accordion title="자체 DNS 도메인을 사용하거나 자체 TLS 인증서를 가져올 수 있습니까?">
@@ -141,7 +135,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="AWS PrivateLink, GCP Private Service Connect 또는 Azure Private Link는 어떻게 설정합니까?">
-  [AWS](/ko/products/bring-your-own-cloud/onboarding/network-aws), [GCP](/ko/products/bring-your-own-cloud/onboarding/network-gcp), [Azure](/ko/products/bring-your-own-cloud/onboarding/network-azure)용 네트워크 설정 가이드를 따르십시오. 흔히 놓치는 두 가지가 있습니다. 엔드포인트 허용 목록은 **서비스별**로 적용되므로 새 서비스마다 엔드포인트를 다시 등록해야 하며, 자체 DNS를 운영하는 경우 비공개 엔드포인트 이름의 DNS 확인을 직접 구성해야 합니다. 설정이 완료되면 콘솔의 [Connection via 선택기](/ko/products/bring-your-own-cloud/configuration/connect#connection-via)를 사용하여 올바른 비공개 엔드포인트 호스트 이름을 복사하십시오.
+  [AWS](/ko/products/bring-your-own-cloud/onboarding/network-aws), [GCP](/ko/products/bring-your-own-cloud/onboarding/network-gcp), [Azure](/ko/products/bring-your-own-cloud/onboarding/network-azure) 네트워크 설정 가이드를 따르십시오. 흔히 놓치는 두 가지가 있습니다. 엔드포인트 허용 목록은 **서비스별**로 관리되므로 새 서비스를 만들 때마다 엔드포인트를 다시 등록해야 합니다. 또한 자체 DNS를 운영하는 경우 프라이빗 엔드포인트 이름에 대한 DNS 해석을 직접 구성해야 합니다. 설정이 완료되면 콘솔의 [Connection via 셀렉터](/ko/products/bring-your-own-cloud/configuration/connect#connection-via)를 사용하여 올바른 프라이빗 엔드포인트 호스트명을 복사하십시오.
 </Accordion>
 
 <Accordion title="다른 AWS 리전에서 PrivateLink를 통해 연결할 수 있습니까?">
@@ -160,9 +154,7 @@ doc_type: 'reference'
   현재 BYOC에서는 지원하지 않습니다. 저장된 데이터는 클라우드 제공업체 관리형 키로 암호화됩니다. 현재 계획된 기능 목록은 [개요](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview)를 참조하십시오.
 </Accordion>
 
-<div id="upgrades-and-maintenance">
-  ### 업그레이드 및 유지 관리
-</div>
+### 업그레이드 및 유지 관리 {#upgrades-and-maintenance}
 
 <Accordion title="ClickHouse 버전 업그레이드는 어떻게 진행되나요? 유지 관리 빈도를 정할 수 있나요?">
   업그레이드는 ClickHouse Cloud와 동일한 방식으로 진행됩니다. 서비스는 릴리스 채널(빠름, 일반, 느림)에 등록되며, 예약된 유지 관리 기간을 따릅니다. 설정하려면 지원팀에 문의하십시오. 업데이트는 최소 주 1회 일정으로 진행됩니다. 업그레이드는 레플리카별로 순차적으로(make-before-break) 진행되므로 서비스 전체의 다운타임은 발생하지 않습니다. [운영](/ko/products/bring-your-own-cloud/configuration/operations)을 참조하십시오.
@@ -172,9 +164,7 @@ doc_type: 'reference'
   ClickHouse가 제공업체의 지원 종료일 전에 Kubernetes 업그레이드를 선제적으로 수행하고, 지원팀을 통해 유지 관리 기간을 조율합니다. 제어 플레인 업그레이드는 사용자에게 영향을 주지 않습니다. 노드 그룹 업그레이드는 make-before-break 방식으로 노드를 하나씩 순차적으로 진행되므로, 파드 재시작 시 짧은 연결 재설정이 발생할 수 있지만 데이터 손실은 없습니다. [운영](/ko/products/bring-your-own-cloud/configuration/operations)을 참조하십시오.
 </Accordion>
 
-<div id="backups-and-disaster-recovery">
-  ### 백업 및 재해 복구
-</div>
+### 백업 및 재해 복구 {#backups-and-disaster-recovery}
 
 <Accordion title="백업은 어디에 저장됩니까?">
   백업은 자체 클라우드 계정의 객체 스토리지에 저장되며, 환경 외부로 반출되지 않습니다. 백업 일정과 보존 기간은 구성할 수 있으며, 조정하려면 지원팀에 문의하십시오.
@@ -196,25 +186,19 @@ doc_type: 'reference'
   BYOC는 3개의 가용 영역에 걸쳐 배포되며, 객체 스토리지가 쓰기를 확인한 후에만 쓰기가 승인됩니다. 현재 리전 간 복제는 제공되지 않으므로 리전 재해 복구는 백업을 기반으로 하며, 달성 가능한 RPO는 백업 빈도에 따라 제한됩니다. 다른 리전의 버킷에 백업하는 것을 포함해 목표에 맞게 백업 빈도와 대상을 구성할 수 있습니다. 이를 설정하려면 지원팀에 문의하십시오.
 </Accordion>
 
-<div id="observability">
-  ### 관측성
-</div>
+### 관측성 {#observability}
 
 <Accordion title="BYOC를 자체 모니터링 및 알림과 어떻게 통합합니까?">
   모니터링 스택(Prometheus, Grafana, AlertManager)은 계정 내에서 실행되며, 프라이빗 연결을 통해 직접 사용할 수 있습니다. PromQL API를 통해 쿼리하거나 자체 Prometheus로 페더레이션하거나, 서비스별 ClickHouse `/metrics_all` 엔드포인트를 스크레이프할 수 있습니다. 현재 Datadog과 같은 타사 플랫폼용 기본 통합은 제공되지 않습니다. 해당 플랫폼의 Prometheus 호환 수집 기능을 통해 통합하십시오. 엔드포인트와 설정은 [관측성](/ko/products/bring-your-own-cloud/reference/observability-aws)을 참조하십시오.
 </Accordion>
 
-<div id="cost">
-  ### 비용
-</div>
+### 비용 {#cost}
 
 <Accordion title="BYOC에서 어떤 항목에 비용이 청구되나요?">
   청구서는 두 건으로 나뉩니다. ClickHouse Cloud는 서비스에 할당된 메모리를 기준으로 요금을 청구하고, 클라우드 제공업체는 기본 인프라 비용을 별도의 가산 없이 원가로 직접 청구합니다. 현재 상세 비용 참고 페이지는 AWS만 다룹니다. [비용 모델](/ko/products/bring-your-own-cloud/reference/cost-model-aws), [청구 대상 AWS 서비스](/ko/products/bring-your-own-cloud/reference/billable-aws-services), [AWS 서비스 한도](/ko/products/bring-your-own-cloud/reference/aws-service-limits)를 참조하십시오.
 </Accordion>
 
-<div id="availability-and-lifecycle">
-  ### 가용성 및 수명 주기
-</div>
+### 가용성 및 수명 주기 {#availability-and-lifecycle}
 
 <Accordion title="BYOC는 어떤 클라우드 제공업체에서 사용할 수 있습니까?">
   AWS, GCP, Azure는 모두 일반 제공됩니다. 각 클라우드에서 지원되는 기능과 리전은 [개요](/ko/products/cloud/guides/infrastructure/deployment-options/byoc/overview)를 참조하십시오.
@@ -224,9 +208,7 @@ doc_type: 'reference'
   ClickHouse 콘솔에서 서비스와 BYOC 인프라를 종료하십시오. 클라우드 제공업체 콘솔에서 리소스를 삭제하거나 권한을 취소하는 작업부터 시작하면 안 됩니다. 이렇게 하면 진행 중인 컨트롤 플레인 연결이 끊어져 수동으로 정리해야 합니다. 콘솔을 통한 종료가 완료되면 온보딩 스택(CloudFormation 스택 또는 Terraform 모듈)과 남아 있는 모든 리소스를 제거하십시오. AWS에서는 ClickHouse가 생성한 모든 리소스에 `clickhouse-byoc=true` 태그가 지정되므로, 이후 이를 나열하여 남은 항목이 없는지 확인할 수 있습니다. GCP와 Azure에서는 온보딩한 전용 프로젝트 또는 subscription이 검토할 범위를 한정합니다.
 </Accordion>
 
-<div id="uptime-sla">
-  ### 업타임 SLA
-</div>
+### 업타임 SLA {#uptime-sla}
 
 <Accordion title="ClickHouse는 BYOC에 대해 업타임 SLA를 제공합니까?">
   아니요. 데이터 플레인은 고객의 클라우드 환경에서 호스팅되므로 서비스 가용성은 ClickHouse가 통제할 수 없는 리소스에 따라 달라집니다. 따라서 ClickHouse는 BYOC 배포에 대해 공식적인 업타임 SLA를 제공하지 않습니다. 실행 중인 서비스는 ClickHouse 컨트롤 플레인과 독립적으로 작동합니다. 즉, 컨트롤 플레인 장애가 발생해도 계정에서 실행 중인 서비스는 중단되지 않습니다. 추가로 궁금한 사항이 있으면 support@clickhouse.com으로 문의하십시오.

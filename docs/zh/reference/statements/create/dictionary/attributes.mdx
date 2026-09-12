@@ -53,7 +53,7 @@ PRIMARY KEY Id
 * `AttrName AttrType` — 数据列。属性可以有多个。
 
 <div id="key">
-  ## 键
+  ## 键 {#key}
 </div>
 
 ClickHouse 支持以下几种键类型：
@@ -68,7 +68,7 @@ XML 结构中只能包含 `<id>` 或 `<key>` 其中之一。DDL 查询中必须�
 </Note>
 
 <div id="numeric-key">
-  ### 数值键
+  ### 数值键 {#numeric-key}
 </div>
 
 类型：`UInt64`。
@@ -98,9 +98,7 @@ PRIMARY KEY Id
 
 * `PRIMARY KEY` – 键所在列的名称。
 
-<div id="composite-key">
-  ### 复合键
-</div>
+### 复合键 {#composite-key}
 
 键可以是由任意类型的字段组成的 `tuple`。在这种情况下，[布局](/zh/reference/statements/create/dictionary/layouts/overview)必须为 `complex_key_hashed` 或 `complex_key_cache`。
 
@@ -144,7 +142,7 @@ PRIMARY KEY field1, field2
 当复合键仅由一个属性组成时，可以直接传递键值，而无需将其包装在 `tuple` 中。例如，`dictGetString('dict_name', 'attr_name', 'key')` 和 `dictGetString('dict_name', 'attr_name', tuple('key'))` 都是有效的。
 
 <div id="attributes">
-  ## 属性
+  ## 属性 {#attributes}
 </div>
 
 配置示例：

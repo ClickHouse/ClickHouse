@@ -1,24 +1,49 @@
 ---
 slug: /use-cases/observability/clickstack/example-datasets/instrument-app
-title: 'Инструментирование приложения с помощью Управляемого ClickStack'
+title: 'Демо HackerNews Analyzer'
 sidebarTitle: 'Демо HackerNews Analyzer'
-description: 'Руководство по инструментированию приложения на Node.js с OpenTelemetry и отправке журналов, метрик и трасс в Управляемый ClickStack'
+description: 'Добавьте в приложение Node.js агент и отправляйте в ClickStack журналы, трассировки, метрики и записи воспроизведения сеансов'
 doc_type: 'guide'
-keywords: ['clickstack', 'инструментирование', 'opentelemetry', 'управляемый clickstack', 'обсервабилити']
+keywords: ['ClickStack', 'HackerNews Analyzer', 'OpenTelemetry', 'инструментирование', 'воспроизведение сеанса', 'Node.js', 'OTLP']
 ---
 
 import InstrumentApplication from '/snippets/ru/clickstack/_instrument_application.mdx';
 
-В этом руководстве показано, как добавить OpenTelemetry-инструментацию в простое приложение Node.js и отправлять его журналы, метрики и трассировки в [Управляемый ClickStack](/ru/clickstack/getting-started/managed). Бэкенд инструментирован без изменений в исходном коде приложения.
+<Note>
+  **Кратко**
 
-[HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer) — небольшое приложение на Node.js, которое выполняет запросы к набору данных HackerNews, размещённому в общедоступном демо-экземпляре ClickHouse. За каждой диаграммой, таблицей и полем поиска стоит реальный запрос к ClickHouse, поэтому каждое взаимодействие порождает трассировку, в которой основной спан — это HTTPS-вызов от бэкенда к ClickHouse.
+  Клонируйте [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), укажите в `.env` конечную точку OTLP и токен, затем вставьте промпт агента. Backend не требует импортов OpenTelemetry: агент подключает `@hyperdx/node-opentelemetry` при запуске процесса.
+
+  Требуемое время: около 10 минут
+</Note>
+
+HackerNews Analyzer — приложение Node.js, которое выполняет запросы к датасету HackerNews, размещённому в публичной демоверсии ClickHouse. Каждая диаграмма, таблица и поле поиска выполняют реальный запрос к ClickHouse, поэтому при каждом взаимодействии создаётся трассировка, основной спан которой — HTTPS-вызов из backend в ClickHouse.
+
+Это отличается от [демонстрации воспроизведения сеанса](/ru/clickstack/example-datasets/session-replay), где браузерное приложение инструментируется для работы с локальным ClickStack в Docker. Здесь одно приложение предоставляет автоматическую инструментацию backend, спаны запросов к ClickHouse и воспроизведение сеанса.
 
 <div id="prerequisites">
   ## Предварительные требования
 </div>
 
-* Доступный OTel collector, к которому можно подключиться и который отправляет данные в ваш сервис Управляемый ClickStack. Вам понадобятся его конечная точка OTLP и токен для ингестии.
-* Node 18+ и npm.
+* Node 18+ и npm
+* Конечная точка ClickStack OTLP/HTTP и токен ингестии:
+  * **ClickHouse Cloud:** откройте сервис, затем перейдите в **ClickStack** → **Configure your OpenTelemetry exporter** → **Env vars**. Протокол: `http/protobuf`. Заголовок: `authorization=<ingestion token>` без префикса `Bearer`.
+  * **Локальный collector:** используйте `http://localhost:4318`. Если collector не защищён, оставьте `authorization=` пустым.
+
+<div id="clone-the-repository">
+  ## Клонируйте репозиторий
+</div>
+
+Клонируйте [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer), установите зависимости и скопируйте шаблон файла окружения:
+
+```bash
+git clone https://github.com/ClickHouse/hn-news-analyzer.git
+cd hn-news-analyzer
+npm install
+cp .env.example .env
+```
+
+На следующих шагах вы заполните `.env`, а затем из этого каталога инструментируете приложение.
 
 <InstrumentApplication />
 
@@ -26,6 +51,7 @@ import InstrumentApplication from '/snippets/ru/clickstack/_instrument_applicati
   ## Подробнее
 </div>
 
+* [HackerNews Analyzer](https://github.com/ClickHouse/hn-news-analyzer): репозиторий демо-приложения, которое инструментируется в этом руководстве.
 * [Воспроизведение сеанса](/ru/clickstack/features/session-replay): обзор этой возможности, варианты SDK и настройки конфиденциальности.
 * [Демо воспроизведения сеанса](/ru/clickstack/example-datasets/session-replay): автономное демо с локальным экземпляром ClickStack.
 * [Начало работы с ClickStack](/ru/clickstack/getting-started/index): разверните ClickStack и настройте приём первых данных.

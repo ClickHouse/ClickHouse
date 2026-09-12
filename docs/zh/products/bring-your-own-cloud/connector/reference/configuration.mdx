@@ -6,17 +6,17 @@ keywords: ['BYOC', 'cloud', '自备 Cloud', '连接器', '配置', '参考']
 doc_type: 'reference'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 本页列出所有可能需要调整的配置键及其默认值和含义：先介绍 VM 配置文件，再介绍 Helm 图表配置值。有关具体配置任务的指导，请参阅[配置指南](/zh/products/bring-your-own-cloud/connector/configuration)。
 
-<div id="vm-configuration-file">
-  ## VM 配置文件
-</div>
+## VM 配置文件 {#vm-configuration-file}
 
 在 Linux VM 上，连接器会读取由 `clicklink clctl init` 写入的 `/etc/clicklink/config.yaml`。除非传入 `--force`，否则重新运行时会保留该文件。文件中未指定的键将使用下方的编译时默认值。凭据绝不会存储在此文件中。
 
-<div id="vm-top-level">
-  ### 顶层键
-</div>
+### 顶层键 {#vm-top-level}
 
 | 键                | 默认值         | 含义                                                          |
 | ---------------- | ----------- | ----------------------------------------------------------- |
@@ -29,9 +29,7 @@ doc_type: 'reference'
 | `troubleshooter` |             | 故障排查守护进程块，参见 [troubleshooter](#vm-troubleshooter)。          |
 | `observability`  |             | 共享日志和端口块，参见 [observability](#vm-observability)。             |
 
-<div id="vm-api">
-  ### api
-</div>
+### api {#vm-api}
 
 | 键                         | 默认值                                        | 含义                                                       |
 | ------------------------- | ------------------------------------------ | -------------------------------------------------------- |
@@ -47,9 +45,7 @@ doc_type: 'reference'
 | `api.retry.max_delay`     | `30s`                                      | 退避延迟上限。                                                  |
 | `api.retry.jitter_factor` | `0.25`                                     | 应用于退避延迟的随机抖动。                                            |
 
-<div id="vm-instances">
-  ### instances
-</div>
+### instances {#vm-instances}
 
 `instances.<name>` 下的每个条目描述一个 ClickHouse 原生协议目标：
 
@@ -64,9 +60,7 @@ doc_type: 'reference'
 | `namespace`      |           | 实例所在的 Kubernetes 命名空间，用于限定故障排查器读取 Kubernetes 资源的范围。 |
 | `cluster`        | `default` | 用于分布式查询的 ClickHouse 集群名称。                            |
 
-<div id="vm-scraper">
-  ### 抓取器
-</div>
+### 抓取器 {#vm-scraper}
 
 | 键                                    | 默认值                             | 含义                                                                                                                                         |
 | ------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -85,9 +79,7 @@ doc_type: 'reference'
 | `scraper.observability.metrics_port` | `9092`                          | 抓取器指标端口。                                                                                                                                   |
 | `scraper.access_directory`           | `/etc/clicklink/access/scraper` | 抓取器各实例访问包的根目录。                                                                                                                             |
 
-<div id="vm-troubleshooter">
-  ### 故障排查器
-</div>
+### 故障排查器 {#vm-troubleshooter}
 
 | 键                                                  | 默认值                                                   | 含义                                                    |
 | -------------------------------------------------- | ----------------------------------------------------- | ----------------------------------------------------- |
@@ -122,9 +114,7 @@ doc_type: 'reference'
 | `troubleshooter.gateway.tls.key_file`              | `/var/lib/clicklink/gateway/tls/server.key`           | 网关服务私钥。                                               |
 | `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init` 会预填充主机名)                                 | 守护进程在证书不存在时自行生成的自签名证书的 SAN；可解析为 IP 地址的条目将成为 IP SAN。   |
 
-<div id="vm-observability">
-  ### 可观测性
-</div>
+### 可观测性 {#vm-observability}
 
 | 键                            | 默认值    | 含义            |
 | ---------------------------- | ------ | ------------- |
@@ -135,9 +125,7 @@ doc_type: 'reference'
 
 各组件的 `observability` 块会在这些基础配置之上进行覆盖：抓取器使用 `8082`/`9092`，故障排查器使用 `8084`/`9094`，网关 启用时则监听 `8443`。
 
-<div id="default-table-allowlist">
-  ### 默认表允许列表
-</div>
+### 默认表允许列表 {#default-table-allowlist}
 
 故障排查器的默认 `allowed_tables` 集合，与图表中 `troubleshooter.allowedTables` 的默认值相同：
 
@@ -155,15 +143,11 @@ system.functions        system.formats        system.table_engines
 system.users            system.roles          system.grants
 ```
 
-<div id="helm-chart-values">
-  ## Helm 图表配置值
-</div>
+## Helm 图表配置值 {#helm-chart-values}
 
 在 Kubernetes 中，连接器通过 `clicklink-connector` Helm 图表的配置值进行配置。`clicklink clctl init` 会生成一个 `clicklink-values.yaml` 覆盖文件，其中已填入以下所有内容；除非传入 `--force`，否则在重复运行时会保留该文件。下表列出了图表的默认值；每个组件都提供标准工作负载配置项 (`resources`、`nodeSelector`、`tolerations`、`affinity`、`serviceAccount.annotations`、`env`、`imagePullSecrets`) ，其默认值均为空，因此不在各表中重复列出。
 
-<div id="helm-cluster">
-  ### 集群
-</div>
+### 集群 {#helm-cluster}
 
 | 键                      | 默认值                 | 含义                                 |
 | ---------------------- | ------------------- | ---------------------------------- |
@@ -171,9 +155,7 @@ system.users            system.roles          system.grants
 | `cluster.region`       | `""` (由 `init` 填写)  | 区域标签。必填。                           |
 | `cluster.cloud`        | `""` (由 `init` 填写)  | 云提供商标签。必填。                         |
 
-<div id="helm-image">
-  ### image
-</div>
+### image {#helm-image}
 
 | 键                  | 默认值                                               | 含义                                                                                                                             |
 | ------------------ | ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -181,9 +163,7 @@ system.users            system.roles          system.grants
 | `image.tag`        | `""` (跟随 图表 的 `appVersion`；`init` 固定命令行客户端版本)  | 镜像标签。                                                                                                                          |
 | `image.pullPolicy` | `IfNotPresent`                                    | Kubernetes 镜像拉取策略。                                                                                                             |
 
-<div id="vm-api">
-  ### api
-</div>
+### api {#helm-api}
 
 | 键                 | 默认值                 | 含义                                                                                                                          |
 | ----------------- | ------------------- | --------------------------------------------------------------------------------------------------------------------------- |
@@ -191,9 +171,7 @@ system.users            system.roles          system.grants
 | `api.tls.enabled` | `true`              | 在 API 连接中提供 mTLS 客户端证书。                                                                                                     |
 | `api.tls.caFile`  | `""` (系统根证书)        | 用于服务器验证的 CA，会附加到系统根证书中。当端点使用由私有 CA 签发的证书时，将其设置为 `/etc/clicklink/secrets/mtls/ca.crt` (或使用 `--api-private-ca` 重新运行 `init`) 。 |
 
-<div id="helm-secrets">
-  ### 密钥
-</div>
+### 密钥 {#helm-secrets}
 
 该 图表 使用预先创建的 Secret；`init` 会在安装前创建这些 Secret。
 
@@ -203,9 +181,7 @@ system.users            system.roles          system.grants
 | `secrets.hmacSecretName` | `clicklink-hmac` | 包含用于请求签名的 `access-key` 和 `secret-key` 的 Opaque Secret。                                                         |
 | `secrets.mtlsWriteback`  | `true`           | 允许守护进程将自动续订的 mTLS 叶证书写回 mTLS Secret。这会为组件的 ServiceAccount 授予对该指定名称 Secret 的 `update` 权限；否则，续订后的证书将没有可持久化存储的位置。 |
 
-<div id="helm-scraper">
-  ### scraper
-</div>
+### scraper {#helm-scraper}
 
 | 键                                                                      | 默认值                          | 含义                                                                                                                                                                        |
 | ---------------------------------------------------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -221,9 +197,7 @@ system.users            system.roles          system.grants
 | `scraper.rbac.extraSecretNames`                                        | `[]`                         | 抓取器的 ServiceAccount 可执行 `get` 操作的额外 Secret 名称，仅支持精确名称。                                                                                                                    |
 | `scraper.accessBundles`                                                | `{}`                         | 按实例名称索引的每实例访问包，每个访问包包含 `secretName` 和 `serviceAccountName`。挂载至 `/etc/clicklink/access/scraper/<instance>/`；由 `clicklink clctl scraper access provision --target helm` 创建。 |
 
-<div id="vm-troubleshooter">
-  ### 故障排查器
-</div>
+### 故障排查器 {#helm-troubleshooter}
 
 | 键                                               | 默认值                                         | 含义                                                                                                                            |
 | ----------------------------------------------- | ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
@@ -246,9 +220,7 @@ system.users            system.roles          system.grants
 | `troubleshooter.rbac.extraSecretNames`          | `[]`                                        | 故障排查器的 ServiceAccount 可执行 `get` 操作的额外 Secret 名称，仅支持精确名称。                                                                      |
 | `troubleshooter.accessBundles`                  | `{}`                                        | 按实例配置的访问包，结构与 `scraper.accessBundles` 相同，挂载到 `/etc/clicklink/access/troubleshooter/<instance>/`。                            |
 
-<div id="helm-persistence">
-  ### 持久化
-</div>
+### 持久化 {#helm-persistence}
 
 | 键                          | 默认值               | 含义                                                           |
 | -------------------------- | ----------------- | ------------------------------------------------------------ |
@@ -257,9 +229,7 @@ system.users            system.roles          system.grants
 | `persistence.size`         | `5Gi`             | 声明的大小。                                                       |
 | `persistence.accessModes`  | `[ReadWriteOnce]` | 声明的访问模式。                                                     |
 
-<div id="helm-clctl-gateway">
-  ### clctl.gateway
-</div>
+### clctl.gateway {#helm-clctl-gateway}
 
 用于[支持会话](/zh/products/bring-your-own-cloud/connector/support-sessions)的会话网关。
 
@@ -279,9 +249,7 @@ system.users            system.roles          system.grants
 | `clctl.gateway.ingress.enabled`                                  | `false`                | 为网关渲染入口。禁用时，操作员 可通过 `kubectl port-forward` 访问网关；无需入口 controller 或 cert-manager。     |
 | `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | 标准入口字段；`tls` 引用 `kubernetes.io/tls` Secrets。                                             |
 
-<div id="helm-networkpolicy">
-  ### networkPolicy
-</div>
+### networkPolicy {#helm-networkpolicy}
 
 | 键                                     | 默认值     | 含义                                                                                                     |
 | ------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------ |

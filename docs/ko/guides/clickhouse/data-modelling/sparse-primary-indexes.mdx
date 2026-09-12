@@ -11,7 +11,7 @@ keywords: ['프라이머리 인덱스', '인덱싱', '성능', '쿼리 최적화
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <div id="introduction">
-  ## 소개
+  ## 소개 {#introduction}
 </div>
 
 이 가이드에서는 ClickHouse 인덱싱을 심층적으로 살펴봅니다. 구체적으로 다음 내용을 자세히 설명합니다.
@@ -30,7 +30,7 @@ ClickHouse 설치 및 시작 방법은 [Quick Start](/ko/get-started/setup/insta
 </Note>
 
 <div id="data-set">
-  ### 데이터 세트
+  ### 데이터 세트 {#data-set}
 </div>
 
 이 가이드 전반에서 익명화된 샘플 웹 트래픽 데이터 세트를 사용합니다.
@@ -46,13 +46,13 @@ ClickHouse 설치 및 시작 방법은 [Quick Start](/ko/get-started/setup/insta
 * &quot;사용자가 특정 URL을 클릭하는 가장 빈도가 높은 시간대(예: 요일)는 언제입니까?&quot;
 
 <div id="test-machine">
-  ### 테스트 머신
+  ### 테스트 머신 {#test-machine}
 </div>
 
 이 문서에 제시된 모든 런타임 수치는 Apple M1 Pro 칩과 16GB RAM을 탑재한 MacBook Pro에서 ClickHouse 22.2.1을 로컬로 실행했을 때를 기준으로 합니다.
 
 <div id="a-full-table-scan">
-  ### 전체 테이블 스캔
+  ### 전체 테이블 스캔 {#a-full-table-scan}
 </div>
 
 기본 키(primary key)가 없는 데이터 세트에서 쿼리가 어떻게 실행되는지 살펴보기 위해, 다음 SQL DDL 문을 실행하여 MergeTree 테이블 엔진을 사용하는 테이블을 생성합니다:
@@ -137,11 +137,11 @@ clickhouse client의 결과 출력은 ClickHouse가 전체 테이블 스캔을 �
 이를 훨씬 더 효율적이고 빠르게 처리하려면, 적절한 기본 키(primary key)가 있는 테이블을 사용해야 합니다. 그러면 ClickHouse가 기본 키의 컬럼을 기반으로 희소 프라이머리 인덱스(sparse primary index)를 자동으로 생성할 수 있으며, 이 인덱스를 사용해 예시 쿼리의 실행 속도를 크게 높일 수 있습니다.
 
 <div id="clickhouse-index-design">
-  ## ClickHouse 인덱스 설계
+  ## ClickHouse 인덱스 설계 {#clickhouse-index-design}
 </div>
 
 <div id="an-index-design-for-massive-data-scales">
-  ### 대규모 데이터 처리를 위한 인덱스 설계
+  ### 대규모 데이터 처리를 위한 인덱스 설계 {#an-index-design-for-massive-data-scales}
 </div>
 
 전통적인 관계형 데이터베이스 관리 시스템에서는 프라이머리 인덱스(primary index)에 테이블의 각 행마다 인덱스 항목 하나가 포함됩니다. 이렇게 하면 이 데이터 세트의 프라이머리 인덱스에는 887만 개의 인덱스 항목이 들어가게 됩니다. 이러한 인덱스는 특정 행을 빠르게 찾을 수 있게 해 주므로, 조회 쿼리와 포인트 업데이트를 매우 효율적으로 수행할 수 있습니다. `B(+)-Tree` 데이터 구조에서 인덱스 항목을 검색하는 평균 시간 복잡도는 `O(log n)`입니다. 더 정확히는 `log_b n = log_2 n / log_2 b`이며, 여기서 `b`는 `B(+)-Tree`의 branching factor이고 `n`은 인덱싱된 행 수입니다. `b`는 일반적으로 수백에서 수천 사이이므로 `B(+)-Trees`는 매우 얕은 구조이며, 레코드를 찾는 데 필요한 디스크 탐색 횟수도 적습니다. 887만 개의 행과 branching factor 1000을 가정하면 평균적으로 2.3회의 디스크 탐색이 필요합니다. 하지만 이러한 기능에는 비용이 따릅니다. 추가적인 디스크 및 메모리 오버헤드가 발생하고, 테이블에 새 행을 추가하고 인덱스에 인덱스 항목을 추가할 때 삽입 비용이 더 커지며, 경우에 따라 B-Tree 리밸런싱도 필요합니다.
@@ -153,7 +153,7 @@ B-Tree 인덱스의 이러한 한계를 고려해 ClickHouse의 테이블 엔진
 아래에서는 ClickHouse가 희소 프라이머리 인덱스를 어떻게 구축하고 사용하는지 자세히 설명합니다. 이 글의 뒷부분에서는 인덱스 구축에 사용되는 테이블 컬럼(기본 키 컬럼)을 선택하고, 제거하고, 정렬할 때의 모범 사례도 살펴보겠습니다.
 
 <div id="a-table-with-a-primary-key">
-  ### 기본 키가 있는 테이블
+  ### 기본 키가 있는 테이블 {#a-table-with-a-primary-key}
 </div>
 
 UserID와 URL을 키 컬럼으로 갖는 복합 기본 키가 있는 테이블을 생성합니다:
@@ -285,9 +285,7 @@ ClickHouse client의 출력은 다음과 같습니다:
 * 테이블에는 1083개의 항목(&#39;마크&#39;라고 함)으로 구성된 프라이머리 인덱스가 있으며, 인덱스 크기는 96.93 KB입니다.
 * 전체적으로 테이블의 데이터 파일, 마크 파일, 프라이머리 인덱스 파일이 디스크에서 차지하는 크기는 207.07 MB입니다.
 
-<div id="data-is-stored-on-disk-ordered-by-primary-key-columns">
-  ### 데이터는 프라이머리 키 컬럼 순으로 정렬되어 디스크에 저장됩니다
-</div>
+### 데이터는 프라이머리 키 컬럼 순으로 정렬되어 디스크에 저장됩니다 {#data-is-stored-on-disk-ordered-by-primary-key-columns}
 
 위에서 생성한 테이블에는 다음이 있습니다.
 
@@ -328,9 +326,7 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
   * ClickHouse 내부 행 번호 체계와 로깅 메시지에서 사용하는 체계에 맞추기 위해 행 번호는 0부터 시작합니다.
 </Note>
 
-<div id="data-is-organized-into-granules-for-parallel-data-processing">
-  ### 데이터는 병렬 데이터 처리를 위해 그래뉼로 구성됩니다
-</div>
+### 데이터는 병렬 데이터 처리를 위해 그래뉼로 구성됩니다 {#data-is-organized-into-granules-for-parallel-data-processing}
 
 데이터 처리를 위해 테이블의 컬럼 값은 논리적으로 그래뉼로 나뉩니다.
 그래뉼은 데이터 처리를 위해 ClickHouse로 스트리밍되는 가장 작은 불가분 데이터 집합입니다.
@@ -362,9 +358,7 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
   * ClickHouse 내부 번호 체계에 맞추기 위해 그래뉼 번호는 0부터 시작합니다. 이 번호 체계는 로깅 메시지에도 사용됩니다.
 </Note>
 
-<div id="the-primary-index-has-one-entry-per-granule">
-  ### 프라이머리 인덱스는 그래뉼당 하나의 항목을 가집니다
-</div>
+### 프라이머리 인덱스는 그래뉼당 하나의 항목을 가집니다 {#the-primary-index-has-one-entry-per-granule}
 
 프라이머리 인덱스는 위 다이어그램에 표시된 그래뉼을 기준으로 생성됩니다. 이 인덱스는 0부터 시작하는 이른바 숫자형 인덱스 마크를 포함하는 압축되지 않은 평면 배열 파일(primary.idx)입니다.
 
@@ -473,9 +467,7 @@ ClickHouse는 <a href="/ko/get-started/about/distinctive-features#true-column-or
 
   이것이 쿼리 실행 성능에 어떤 영향을 미치는지는 뒤에서 더 자세히 설명하겠습니다.
 
-<div id="the-primary-index-is-used-for-selecting-granules">
-  ### 프라이머리 인덱스는 그래뉼을 선택하는 데 사용됩니다
-</div>
+### 프라이머리 인덱스는 그래뉼을 선택하는 데 사용됩니다 {#the-primary-index-is-used-for-selecting-granules}
 
 이제 프라이머리 인덱스를 활용해 쿼리를 실행할 수 있습니다.
 
@@ -526,15 +518,15 @@ Processed 8.19 thousand rows,
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
 
-:::note
-최근 버전의 ClickHouse에서는 `Running binary search on index range`, `Found (LEFT) boundary mark`, `Found (RIGHT) boundary mark` 메시지가 `trace`가 아닌 `test` 수준(가장 높은 상세 수준)에서 로깅됩니다. 이를 확인하려면 로그 상세 수준을 `test`로 높이십시오(예: 클라이언트에서 `SET send_logs_level = 'test'`를 설정하거나 서버 구성에서 `<logger><level>test</level></logger>`를 설정). 위에 표시된 나머지 줄은 계속 `trace` 수준에서 로깅됩니다. 이는 이 가이드의 모든 이진 검색 로그 예시에 적용됩니다.
-:::
+<Note>
+  최근 버전의 ClickHouse에서는 `Running binary search on index range`, `Found (LEFT) boundary mark`, `Found (RIGHT) boundary mark` 메시지가 `trace`가 아닌 `test` 수준(가장 높은 상세 수준)에서 로깅됩니다. 이를 확인하려면 로그 상세 수준을 `test`로 높이십시오(예: 클라이언트에서 `SET send_logs_level = 'test'`를 설정하거나 서버 구성에서 `<logger><level>test</level></logger>`를 설정). 위에 표시된 나머지 줄은 계속 `trace` 수준에서 로깅됩니다. 이는 이 가이드의 모든 이진 검색 로그 예시에 적용됩니다.
+</Note>
 
 위의 trace log에서 기존 1083개의 마크 중 1개가 쿼리 조건을 만족한 것을 확인할 수 있습니다.
 
 <Accordion title="Trace Log 세부 정보">
   <p>
-    마크 176이 식별되었으며(&#39;found left boundary mark&#39;는 포함, &#39;found right boundary mark&#39;는 제외), 따라서 그래뉼 176의 8192개 행 전체가(`이 가이드의 뒷부분에서 살펴보겠지만` 이 그래뉼은 1,441,792번째 행에서 시작합니다) `749927693`인 UserID 컬럼 값을 가진 실제 행을 찾기 위해 ClickHouse로 스트리밍됩니다.
+    마크 176이 식별되었으며(&#39;found left boundary mark&#39;는 포함, &#39;found right boundary mark&#39;는 제외), 따라서 그래뉼 176의 8192개 행 전체가(이 가이드의 뒷부분에서 살펴보겠지만 이 그래뉼은 1,441,792번째 행에서 시작합니다) `749927693`인 UserID 컬럼 값을 가진 실제 행을 찾기 위해 ClickHouse로 스트리밍됩니다.
   </p>
 </Accordion>
 
@@ -593,9 +585,7 @@ LIMIT 10;
 
 다음 섹션에서는 이 두 번째 단계를 더 자세히 설명합니다.
 
-<div id="mark-files-are-used-for-locating-granules">
-  ### 그래뉼 위치를 찾는 데 마크 파일을 사용합니다
-</div>
+### 그래뉼 위치를 찾는 데 마크 파일을 사용합니다 {#mark-files-are-used-for-locating-granules}
 
 다음 다이어그램은 이 테이블의 프라이머리 인덱스 파일 일부를 보여줍니다.
 
@@ -682,14 +672,12 @@ ClickHouse는 예시 쿼리(UserID가 749.927.693인 인터넷 사용자가 가�
 이와 동시에 ClickHouse는 URL.bin 데이터 파일의 그래뉼 176에 대해서도 동일한 작업을 수행합니다. 이렇게 각 그래뉼은 서로 정렬된 상태로 ClickHouse 엔진에 스트리밍되어 추가 처리됩니다. 즉, UserID가 749.927.693인 모든 행에 대해 그룹별 URL 값을 집계하고 개수를 계산한 다음, 최종적으로 개수가 많은 순서대로 가장 큰 URL 그룹 10개를 출력합니다.
 
 <div id="using-multiple-primary-indexes">
-  ## 여러 프라이머리 인덱스 사용
+  ## 여러 프라이머리 인덱스 사용 {#using-multiple-primary-indexes}
 </div>
 
 <a name="filtering-on-key-columns-after-the-first" />
 
-<div id="secondary-key-columns-can-not-be-inefficient">
-  ### 보조 키 컬럼은 비효율적일 수도, 아닐 수도 있습니다
-</div>
+### 보조 키 컬럼은 비효율적일 수도, 아닐 수도 있습니다 {#secondary-key-columns-can-not-be-inefficient}
 
 쿼리가 복합 키의 일부이면서 첫 번째 키 컬럼인 컬럼을 기준으로 필터링하는 경우, [ClickHouse는 해당 키 컬럼의 인덱스 마크를 대상으로 이진 검색 알고리즘을 실행합니다](#the-primary-index-is-used-for-selecting-granules).
 
@@ -767,9 +755,7 @@ Processed 8.81 million rows,
 
 <a name="generic-exclusion-search-algorithm" />
 
-<div id="generic-exclusion-search-algorithm">
-  ### 일반 제외 검색 알고리즘
-</div>
+### 일반 제외 검색 알고리즘 {#generic-exclusion-search-algorithm}
 
 다음은 선행 키 컬럼의 카디널리티가 낮거나 높은 경우, 보조 컬럼을 통해 그래뉼을 선택할 때 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1438" target="_blank">ClickHouse 일반 제외 검색 알고리즘</a>이 어떻게 동작하는지 보여줍니다.
 
@@ -820,9 +806,7 @@ UserID의 카디널리티가 높으면 동일한 UserID 값이 여러 테이블 
 
 샘플 데이터 세트에서는 두 키 컬럼(UserID, URL) 모두 비슷하게 높은 카디널리티를 가지므로, 앞서 설명했듯이 URL 컬럼보다 앞선 키 컬럼의 카디널리티가 더 높거나 비슷한 경우 일반 제외 검색 알고리즘은 그다지 효과적이지 않습니다.
 
-<div id="note-about-data-skipping-index">
-  ### 데이터 스키핑 인덱스에 대한 참고 사항
-</div>
+### 데이터 스키핑 인덱스에 대한 참고 사항 {#note-about-data-skipping-index}
 
 UserID와 URL의 카디널리티가 모두 비슷하게 높기 때문에, [URL로 필터링하는 쿼리](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient) 역시 [(UserID, URL) 복합 기본 키를 사용하는 테이블](#a-table-with-a-primary-key)의 URL 컬럼에 [보조 데이터 스키핑 인덱스](/ko/concepts/features/performance/skip-indexes/skipping-indexes)를 생성해도 큰 이점을 얻지 못합니다.
 
@@ -848,7 +832,7 @@ UserID와 URL의 카디널리티가 비슷하게 높기 때문에, 이 보조 �
 쿼리가 찾는 특정 URL 값(즉, &#39;http://public&#95;search&#39;)은 각 그래뉼 그룹에 대해 인덱스에 저장된 최소값과 최대값 사이에 있을 가능성이 매우 높습니다. 따라서 ClickHouse는 해당 그래뉼 그룹을 선택할 수밖에 없습니다(쿼리와 일치하는 행이 포함되어 있을 수 있기 때문입니다).
 
 <div id="a-need-to-use-multiple-primary-indexes">
-  ### 여러 프라이머리 인덱스를 사용해야 하는 이유
+  ### 여러 프라이머리 인덱스를 사용해야 하는 이유 {#a-need-to-use-multiple-primary-indexes}
 </div>
 
 따라서 특정 URL이 있는 행을 필터링하는 예시 쿼리의 속도를 크게 높이려면, 해당 쿼리에 최적화된 프라이머리 인덱스를 사용해야 합니다.
@@ -859,9 +843,7 @@ UserID와 URL의 카디널리티가 비슷하게 높기 때문에, 이 보조 �
 
 <a name="multiple-primary-indexes" />
 
-<div id="options-for-creating-additional-primary-indexes">
-  ### 추가 프라이머리 인덱스를 생성하는 옵션
-</div>
+### 추가 프라이머리 인덱스를 생성하는 옵션 {#options-for-creating-additional-primary-indexes}
 
 특정 UserID가 있는 행을 필터링하는 쿼리와 특정 URL이 있는 행을 필터링하는 쿼리, 이 두 예시 쿼리를 모두 크게 가속하려면 다음 세 가지 방법 중 하나로 여러 프라이머리 인덱스를 사용해야 합니다.
 
@@ -889,9 +871,7 @@ UserID와 URL의 카디널리티가 비슷하게 높기 때문에, 이 보조 �
 
 <a name="multiple-primary-indexes-via-secondary-tables" />
 
-<div id="option-1-secondary-tables">
-  ### 옵션 1: 보조 테이블
-</div>
+### 옵션 1: 보조 테이블 {#option-1-secondary-tables}
 
 <a name="secondary-table" />
 
@@ -1046,9 +1026,7 @@ ClickHouse는 일반 제외 검색을 사용했을 때의 1076개 대신, 인덱
 
 이제 테이블이 2개입니다. 각각 `UserIDs`로 필터링하는 쿼리와 URL로 필터링하는 쿼리의 속도를 높이도록 최적화되어 있습니다:
 
-<div id="option-2-materialized-views">
-  ### 옵션 2: Materialized Views
-</div>
+### 옵션 2: Materialized Views {#option-2-materialized-views}
 
 기존 테이블에 [materialized view](/ko/reference/statements/create/view)를 생성합니다.
 
@@ -1131,9 +1109,7 @@ Processed 335.87 thousand rows,
 ...Executor): 4개 스트림으로 약 335872 행 읽는 중
 ```
 
-<div id="option-3-projections">
-  ### 옵션 3: PROJECTION
-</div>
+### 옵션 3: PROJECTION {#option-3-projections}
 
 기존 테이블에 PROJECTION을 생성하세요:
 
@@ -1218,7 +1194,7 @@ Processed 319.49 thousand rows, 1
 ```
 
 <div id="summary">
-  ### 요약
+  ### 요약 {#summary}
 </div>
 
 [복합 기본 키 (UserID, URL)를 사용하는 테이블](#a-table-with-a-primary-key)의 프라이머리 인덱스는 [UserID로 필터링하는 쿼리](#the-primary-index-is-used-for-selecting-granules)의 속도를 높이는 데 매우 유용했습니다. 하지만 URL 컬럼도 복합 기본 키의 일부임에도 불구하고, 이 인덱스는 [URL로 필터링하는 쿼리](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)의 속도를 높이는 데는 큰 도움이 되지 않습니다.
@@ -1235,7 +1211,7 @@ Processed 319.49 thousand rows, 1
 키를 구성하는 컬럼들 간 카디널리티 차이가 클수록, 키에서 해당 컬럼들의 순서는 더욱 중요해집니다. 다음 섹션에서 이를 살펴보겠습니다.
 
 <div id="ordering-key-columns-efficiently">
-  ## 정렬 키 컬럼을 효율적으로 배치하기
+  ## 정렬 키 컬럼을 효율적으로 배치하기 {#ordering-key-columns-efficiently}
 </div>
 
 <a name="test" />
@@ -1349,7 +1325,7 @@ WHERE URL != '';
 ```
 
 <div id="efficient-filtering-on-secondary-key-columns">
-  ### 보조 키 컬럼에 대한 효율적인 필터링
+  ### 보조 키 컬럼에 대한 효율적인 필터링 {#efficient-filtering-on-secondary-key-columns}
 </div>
 
 쿼리가 복합 키를 구성하는 컬럼 중 하나 이상으로 필터링하고, 그 컬럼이 첫 번째 키 컬럼인 경우 [ClickHouse는 해당 키 컬럼의 인덱스 마크에 이진 검색 알고리즘을 적용합니다](#the-primary-index-is-used-for-selecting-granules).
@@ -1402,9 +1378,7 @@ Processed 20.32 thousand rows,
 
 그 이유는 선행 키 컬럼의 카디널리티가 더 낮을 때 보조 키 컬럼을 통해 [그래뉼](#the-primary-index-is-used-for-selecting-granules)을 선택하면 [일반 제외 검색 알고리즘](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444)이 가장 효율적으로 동작하기 때문입니다. 이 점은 이 가이드의 [이전 섹션](#generic-exclusion-search-algorithm)에서 자세히 설명했습니다.
 
-<div id="optimal-compression-ratio-of-data-files">
-  ### 데이터 파일의 최적 압축률
-</div>
+### 데이터 파일의 최적 압축률 {#optimal-compression-ratio-of-data-files}
 
 이 쿼리는 앞에서 생성한 두 테이블 사이에서 `UserID` 컬럼의 압축률을 비교합니다:
 
@@ -1464,13 +1438,13 @@ ORDER BY Ratio ASC
 따라서 `cl` 값은 대부분 무작위 순서로 배치될 가능성이 높고, 그 결과 데이터 지역성(locality)과 압축률이 모두 좋지 않습니다.
 
 <div id="summary">
-  ### 요약
+  ### 요약 {#summary-1}
 </div>
 
 쿼리에서 보조 키 컬럼을 효율적으로 필터링하고 테이블의 컬럼 데이터 파일 압축률을 높이려면, 기본 키(primary key)의 컬럼을 카디널리티 오름차순으로 정렬하는 것이 유리합니다.
 
 <div id="identifying-single-rows-efficiently">
-  ## 단일 행을 효율적으로 식별하기
+  ## 단일 행을 효율적으로 식별하기 {#identifying-single-rows-efficiently}
 </div>
 
 일반적으로 이는 ClickHouse의 [최적 사용 사례는 아니지만](/ko/resources/support-center/knowledge-base/general-faqs/key-value),
@@ -1484,9 +1458,7 @@ ORDER BY Ratio ASC
 
 가장 빠른 조회와 최적의 데이터 압축 사이에서 절충하려면, UUID를 마지막 키 컬럼으로 두고 그 앞에 더 낮은 카디널리티의 키 컬럼을 배치한 복합 기본 키를 사용하는 것이 좋습니다. 이렇게 하면 테이블의 일부 컬럼에서 좋은 압축률을 확보할 수 있습니다.
 
-<div id="a-concrete-example">
-  ### 구체적인 예시
-</div>
+### 구체적인 예시 {#a-concrete-example}
 
 구체적인 예시로는 Alexey Milovidov가 개발하고 [블로그에 소개한](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/) 일반 텍스트 붙여넣기 서비스 [https://pastila.nl](https://pastila.nl)이 있습니다.
 

@@ -11,7 +11,7 @@ keywords: ['主索引', '索引', '性能', '查询优化', '最佳实践']
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <div id="introduction">
-  ## 介绍
+  ## 介绍 {#introduction}
 </div>
 
 在本指南中，我们将深入探讨 ClickHouse 的索引。我们将详细说明并讨论：
@@ -30,7 +30,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 </Note>
 
 <div id="data-set">
-  ### 数据集
+  ### 数据集 {#data-set}
 </div>
 
 在本指南中，我们将使用一份经过匿名化处理的网站流量样本数据集。
@@ -46,13 +46,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * “用户点击某个特定 URL 最集中的时间是什么时候 (例如一周中的哪几天) ？”
 
 <div id="test-machine">
-  ### 测试机器
+  ### 测试机器 {#test-machine}
 </div>
 
 本文档中给出的所有运行时数据，均基于在一台配备 Apple M1 Pro 芯片和 16GB RAM 的 MacBook Pro 上本地运行 ClickHouse 22.2.1 时获得的结果。
 
 <div id="a-full-table-scan">
-  ### 全表扫描
+  ### 全表扫描 {#a-full-table-scan}
 </div>
 
 为了说明在没有主键的数据集上，查询是如何执行的，我们通过执行以下 SQL DDL 语句创建一个表 (使用 MergeTree 表引擎) ：
@@ -137,11 +137,11 @@ ClickHouse 客户端的结果输出表明，ClickHouse 执行了全表扫描！�
 要让这一过程变得 (大幅) 更高效、 (显著) 更快，我们需要使用具有合适主键的表。这样，ClickHouse 就会自动 (基于主键列) 创建稀疏主索引，从而显著加快示例查询的执行速度。
 
 <div id="clickhouse-index-design">
-  ## ClickHouse 索引设计
+  ## ClickHouse 索引设计 {#clickhouse-index-design}
 </div>
 
 <div id="an-index-design-for-massive-data-scales">
-  ### 适用于海量数据规模的索引设计
+  ### 适用于海量数据规模的索引设计 {#an-index-design-for-massive-data-scales}
 </div>
 
 在传统的关系型数据库管理系统中，主索引会为表中的每一行保存一个条目。对于我们的数据集，这意味着主索引将包含 887 万个条目。这样的索引能够快速定位特定行，因此查找查询和点更新的效率都很高。在 `B(+)-Tree` 数据结构中查找一个条目的平均时间复杂度为 `O(log n)`；更准确地说，`log_b n = log_2 n / log_2 b`，其中 `b` 是 `B(+)-Tree` 的分支因子，`n` 是已建立索引的行数。由于 `b` 通常在几百到几千之间，`B(+)-Trees` 的层级都很浅，因此定位记录只需要很少的磁盘寻道。对于 887 万行数据和 1000 的分支因子，平均只需 2.3 次磁盘寻道。不过，这种能力是有代价的：会带来额外的磁盘和内存开销，在向表中添加新行并向索引中写入条目时插入成本更高，有时还需要对 B-Tree 进行再平衡。
@@ -153,7 +153,7 @@ ClickHouse 客户端的结果输出表明，ClickHouse 执行了全表扫描！�
 下面将详细说明 ClickHouse 如何构建和使用其稀疏主索引。在本文后续部分，我们还会讨论一些最佳实践，介绍如何选择、移除以及排列用于构建索引的表列 (主键列) 。
 
 <div id="a-table-with-a-primary-key">
-  ### 带主键的表
+  ### 带主键的表 {#a-table-with-a-primary-key}
 </div>
 
 创建一个表，使用 UserID 和 URL 作为复合主键的键列：
@@ -285,9 +285,7 @@ ClickHouse 客户端的输出显示：
 * 该表有一个主索引，包含 1083 个条目 (称为 &#39;标记&#39;) ，索引大小为 96.93 KB。
 * 总计而言，该表的数据文件、标记文件和主索引文件在磁盘上共占用 207.07 MB。
 
-<div id="data-is-stored-on-disk-ordered-by-primary-key-columns">
-  ### 数据在磁盘上按主键列排序存储
-</div>
+### 数据在磁盘上按主键列排序存储 {#data-is-stored-on-disk-ordered-by-primary-key-columns}
 
 我们在上面创建的表具有：
 
@@ -328,9 +326,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
   * 我们从 0 开始对行编号，以便与 ClickHouse 内部的行编号方案保持一致，该方案也用于日志消息。
 </Note>
 
-<div id="data-is-organized-into-granules-for-parallel-data-processing">
-  ### 数据按粒度组织，以便并行处理数据
-</div>
+### 数据按粒度组织，以便并行处理数据 {#data-is-organized-into-granules-for-parallel-data-processing}
 
 为了进行数据处理，表中的列值在逻辑上会被划分为多个粒度。
 粒度是流式传输到 ClickHouse 中进行数据处理的最小不可分割数据集。
@@ -363,9 +359,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
   * 我们从 0 开始对粒度编号，以与 ClickHouse 的内部编号方案保持一致，该方案也用于日志消息。
 </Note>
 
-<div id="the-primary-index-has-one-entry-per-granule">
-  ### 主索引中每个粒度对应一个条目
-</div>
+### 主索引中每个粒度对应一个条目 {#the-primary-index-has-one-entry-per-granule}
 
 主索引是根据上图所示的粒度创建的。该索引是一个未压缩的一维数组文件 (primary.idx) ，其中包含所谓的数值索引标记，编号从 0 开始。
 
@@ -474,9 +468,7 @@ ClickHouse 是一种<a href="/zh/get-started/about/distinctive-features#true-col
 
   我们稍后会更详细地讨论这对查询执行性能的影响。
 
-<div id="the-primary-index-is-used-for-selecting-granules">
-  ### 主索引用于筛选粒度
-</div>
+### 主索引用于筛选粒度 {#the-primary-index-is-used-for-selecting-granules}
 
 现在，我们可以借助主索引来执行查询。
 
@@ -512,7 +504,7 @@ Processed 8.19 thousand rows,
 740.18 KB (1.53 million rows/s., 138.59 MB/s.)
 ```
 
-ClickHouse 客户端的输出现在显示，ClickHouse 仅流入了 8190 行数据，而不是执行全表扫描。
+ClickHouse 客户端的输出现在显示，只有 8190 行数据流式传输到 ClickHouse，而不是执行全表扫描。
 
 如果启用了 <a href="/zh/reference/settings/server-settings/settings/other#logger" target="_blank">trace 日志</a>，那么 ClickHouse 服务器日志文件会显示，ClickHouse 在 1083 个 UserID 索引标记上执行了 <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">二分查找</a>，以识别可能包含 UserID 列值为 `749927693` 的行的粒度。这需要 19 个步骤，平均时间复杂度为 `O(log2 n)`：
 
@@ -527,15 +519,15 @@ ClickHouse 客户端的输出现在显示，ClickHouse 仅流入了 8190 行数�
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
 
-:::note
-在较新版本的 ClickHouse 中，`Running binary search on index range`、`Found (LEFT) boundary mark` 和 `Found (RIGHT) boundary mark` 消息会记录在 `test` 级别 (最高详细级别) ，而非 `trace` 级别。若要查看这些消息，请将日志详细级别提高到 `test` (例如，在客户端执行 `SET send_logs_level = 'test'`，或者在服务器配置中设置 `<logger><level>test</level></logger>`) 。上面显示的其余行仍记录在 `trace` 级别。本指南中的所有二分查找日志示例均适用此说明。
-:::
+<Note>
+  在较新版本的 ClickHouse 中，`Running binary search on index range`、`Found (LEFT) boundary mark` 和 `Found (RIGHT) boundary mark` 消息会记录在 `test` 级别 (最高详细级别) ，而非 `trace` 级别。若要查看这些消息，请将日志详细级别提高到 `test` (例如，在客户端执行 `SET send_logs_level = 'test'`，或者在服务器配置中设置 `<logger><level>test</level></logger>`) 。上面显示的其余行仍记录在 `trace` 级别。本指南中的所有二分查找日志示例均适用此说明。
+</Note>
 
 我们可以从上面的 trace 日志中看到，在现有的 1083 个标记中，只有 1 个标记满足该查询。
 
 <Accordion title="trace 日志详情">
   <p>
-    已定位到标记 176 (&#39;found left boundary mark&#39; 为包含边界，&#39;found right boundary mark&#39; 为排除边界) ，因此会将粒度 176 中的全部 8192 行 (该粒度从第 1.441.792 行开始——我们将在本指南后文看到) 读入 ClickHouse，以找出 UserID 列值为 `749927693` 的实际行。
+    已定位到标记 176 (&#39;found left boundary mark&#39; 为包含边界，&#39;found right boundary mark&#39; 为排除边界) ，因此会将粒度 176 中的全部 8192 行 (该粒度从第 1.441.792 行开始——我们将在本指南后文看到) 流式传输到 ClickHouse，以找出 UserID 列值为 `749927693` 的实际行。
   </p>
 </Accordion>
 
@@ -594,9 +586,7 @@ LIMIT 10;
 
 我们将在下一节更详细地讨论第二阶段。
 
-<div id="mark-files-are-used-for-locating-granules">
-  ### 标记文件用于定位粒度
-</div>
+### 标记文件用于定位粒度 {#mark-files-are-used-for-locating-granules}
 
 下图展示了该表主索引文件的一部分。
 
@@ -683,14 +673,12 @@ LIMIT 10;
 与此同时，ClickHouse 也会对 URL.bin 数据文件中的粒度 176 执行相同操作。两个对应的粒度彼此对齐，并被流式传入 ClickHouse 引擎进行后续处理，即对 UserID 为 749.927.693 的所有行按组聚合并统计 URL 值，最后按计数降序输出计数最高的 10 个 URL 分组。
 
 <div id="using-multiple-primary-indexes">
-  ## 使用多个主索引
+  ## 使用多个主索引 {#using-multiple-primary-indexes}
 </div>
 
 <a name="filtering-on-key-columns-after-the-first" />
 
-<div id="secondary-key-columns-can-not-be-inefficient">
-  ### 次级键列也可能 (不) 高效
-</div>
+### 次级键列也可能 (不) 高效 {#secondary-key-columns-can-not-be-inefficient}
 
 当查询按复合键中的某一列进行过滤，且该列是第一个键列时，[ClickHouse 会在该键列的索引标记上运行二分查找算法](#the-primary-index-is-used-for-selecting-granules)。
 
@@ -768,9 +756,7 @@ Processed 8.81 million rows,
 
 <a name="generic-exclusion-search-algorithm" />
 
-<div id="generic-exclusion-search-algorithm">
-  ### 通用排除搜索算法
-</div>
+### 通用排除搜索算法 {#generic-exclusion-search-algorithm}
 
 下面说明了当通过次级列选择粒度，且前一个键列具有较低或较高基数时，<a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1438" target="_blank">ClickHouse 通用排除搜索算法</a>是如何工作的。
 
@@ -821,9 +807,7 @@ Processed 8.81 million rows,
 
 在我们的样本数据集中，两个键列 (UserID、URL) 的基数都较高且相近。正如前文所述，当 URL 列的前置键列具有较高或相近的基数时，通用排除搜索算法并不太有效。
 
-<div id="note-about-data-skipping-index">
-  ### 关于数据跳过索引的说明
-</div>
+### 关于数据跳过索引的说明 {#note-about-data-skipping-index}
 
 由于 UserID 和 URL 都具有较高且相近的基数，我们的[按 URL 过滤的查询](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)即使在[具有复合主键 (UserID, URL) 的表](#a-table-with-a-primary-key)的 URL 列上创建[二级数据跳过索引](/zh/concepts/features/performance/skip-indexes/skipping-indexes)，收益也不会太大。
 
@@ -849,7 +833,7 @@ ClickHouse 现在又创建了一个额外索引，用于为每组 4 个连续的
 查询要查找的特定 URL 值 (即“http://public&#95;search”) 极有可能落在索引为每组粒度存储的最小值和最大值之间，因此 ClickHouse 不得不选取这些粒度组 (因为其中可能包含与查询匹配的行) 。
 
 <div id="a-need-to-use-multiple-primary-indexes">
-  ### 需要使用多个主索引
+  ### 需要使用多个主索引 {#a-need-to-use-multiple-primary-indexes}
 </div>
 
 因此，如果想显著加快按特定 URL 过滤行的示例查询，就需要使用针对该查询优化的主索引。
@@ -860,9 +844,7 @@ ClickHouse 现在又创建了一个额外索引，用于为每组 4 个连续的
 
 <a name="multiple-primary-indexes" />
 
-<div id="options-for-creating-additional-primary-indexes">
-  ### 创建额外主索引的选项
-</div>
+### 创建额外主索引的选项 {#options-for-creating-additional-primary-indexes}
 
 如果我们想同时显著加快两个样本查询——一个按特定 UserID 过滤行，另一个按特定 URL 过滤行——就需要通过以下三种方式之一使用多个主索引：
 
@@ -890,9 +872,7 @@ ClickHouse 现在又创建了一个额外索引，用于为每组 4 个连续的
 
 <a name="multiple-primary-indexes-via-secondary-tables" />
 
-<div id="option-1-secondary-tables">
-  ### 选项 1：辅助表
-</div>
+### 选项 1：辅助表 {#option-1-secondary-tables}
 
 <a name="secondary-table" />
 
@@ -1047,9 +1027,7 @@ ClickHouse 仅选择了 39 个索引标记，而使用 通用排除搜索 时则
 
 现在我们有两个表，分别针对加快按 `UserIDs` 过滤的查询和按 URL 过滤的查询进行了优化：
 
-<div id="option-2-materialized-views">
-  ### 选项 2：Materialized Views
-</div>
+### 选项 2：Materialized Views {#option-2-materialized-views}
 
 基于现有表创建一个 [materialized view](/zh/reference/statements/create/view)。
 
@@ -1132,9 +1110,7 @@ Processed 335.87 thousand rows,
 ...Executor): 使用 4 个流读取约 335872 行
 ```
 
-<div id="option-3-projections">
-  ### 选项 3：投影
-</div>
+### 选项 3：投影 {#option-3-projections}
 
 在现有表上创建投影：
 
@@ -1219,7 +1195,7 @@ Processed 319.49 thousand rows, 1
 ```
 
 <div id="summary">
-  ### 摘要
+  ### 摘要 {#summary}
 </div>
 
 我们的[复合主键为 (UserID, URL) 的表](#a-table-with-a-primary-key)的主索引，对于加速[按 UserID 过滤的查询](#the-primary-index-is-used-for-selecting-granules)非常有用。但尽管 URL 列也是复合主键的一部分，该索引对加速[按 URL 过滤的查询](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#secondary-key-columns-can-not-be-inefficient)并没有明显帮助。
@@ -1236,7 +1212,7 @@ Processed 319.49 thousand rows, 1
 键列之间的基数差异越大，这些列在键中的顺序就越重要。我们将在下一节中演示这一点。
 
 <div id="ordering-key-columns-efficiently">
-  ## 高效安排排序键列
+  ## 高效安排排序键列 {#ordering-key-columns-efficiently}
 </div>
 
 <a name="test" />
@@ -1350,7 +1326,7 @@ WHERE URL != '';
 ```
 
 <div id="efficient-filtering-on-secondary-key-columns">
-  ### 在次级键列上进行高效过滤
+  ### 在次级键列上进行高效过滤 {#efficient-filtering-on-secondary-key-columns}
 </div>
 
 当查询按复合键中的至少一列进行过滤，且该列是第一个键列时，[ClickHouse 会在该键列的索引标记上运行二分查找算法](#the-primary-index-is-used-for-selecting-granules)。
@@ -1403,9 +1379,7 @@ Processed 20.32 thousand rows,
 
 原因在于，当通过次级键列选择[粒度](#the-primary-index-is-used-for-selecting-granules)，且其前一个键列的基数更低时，[通用排除搜索算法](https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444)的效果最好。我们已在本指南的[前一节](#generic-exclusion-search-algorithm)中对此进行了详细说明。
 
-<div id="optimal-compression-ratio-of-data-files">
-  ### 数据文件的最佳压缩率
-</div>
+### 数据文件的最佳压缩率 {#optimal-compression-ratio-of-data-files}
 
 此查询比较了我们上面创建的两个表中 `UserID` 列的压缩率：
 
@@ -1465,13 +1439,13 @@ ORDER BY Ratio ASC
 因此，`cl` 值很可能是随机排列的，相应地，其局部性和压缩率通常都会比较差。
 
 <div id="summary-1">
-  ### 总结
+  ### 总结 {#summary-1}
 </div>
 
 无论是为了在查询中高效过滤二级键列，还是为了提高表列数据文件的压缩率，按基数从低到高排列主键中的各列都更有利。
 
 <div id="identifying-single-rows-efficiently">
-  ## 高效识别单行
+  ## 高效识别单行 {#identifying-single-rows-efficiently}
 </div>
 
 虽然总的来说，这[并不是](/zh/resources/support-center/knowledge-base/general-faqs/key-value) ClickHouse 的最佳适用场景，
@@ -1485,9 +1459,7 @@ ORDER BY Ratio ASC
 
 兼顾最快检索速度和最佳数据压缩效果的一种折中方案，是使用复合主键，并将 UUID 作为最后一个键列，放在基数较低的键列之后；这些列可用于确保表中某些列获得良好的压缩率。
 
-<div id="a-concrete-example">
-  ### 一个具体示例
-</div>
+### 一个具体示例 {#a-concrete-example}
 
 一个具体示例是明文粘贴服务 [https://pastila.nl](https://pastila.nl)。该服务由 Alexey Milovidov 开发，并曾在[博客中介绍](https://clickhouse.com/blog/building-a-paste-service-with-clickhouse/)。
 

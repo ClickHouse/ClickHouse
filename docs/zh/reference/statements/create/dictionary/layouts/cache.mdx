@@ -15,6 +15,26 @@ doc_type: 'reference'
 
 查找字典时，会先查缓存。对于每个数据块，凡是在缓存中未命中或已过期的键，都会通过 `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)` 从源中请求。接收到的数据随后会写入缓存。
 
+这适用于**查找**键，即 `dictGet` 和其他字典函数。通过 `SELECT ... FROM <dictionary>` 将字典**作为表读取**则有所不同：它会返回当时恰好驻留在缓存中的单元，且不会从源请求任何内容，因为缓存不会记录哪些键存在。对键使用的 `WHERE` 是针对这些驻留单元的普通过滤器，而不是要拉取的键列表：
+
+```sql
+CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'cache_src')) LIFETIME(MIN 0 MAX 900) LAYOUT(CACHE(SIZE_IN_CELLS 1000));
+
+-- nothing is cached yet, so nothing comes back and the source is not queried
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+0
+
+-- looking the keys up populates the cache
+SELECT dictGet('cache_dict', 'data', toUInt64(number + 1)) FROM numbers(3);
+
+-- and now the same read sees them
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+3
+```
+
+因此，cache 字典应通过字典函数访问。如果需要使用 `SELECT ... FROM <dictionary> WHERE key IN (...)` 从源获取数据，请使用 [direct](/zh/reference/statements/create/dictionary/layouts/direct) 布局；该布局会在每次请求时查询源，不会缓存任何数据。若要将整个字典作为表读取，请使用可容纳全部数据的布局，例如 [flat](/zh/reference/statements/create/dictionary/layouts/flat) 或 [hashed](/zh/reference/statements/create/dictionary/layouts/hashed)。
+
 如果在字典中找不到键，则会创建缓存更新任务并将其加入更新队列。更新队列的属性可通过 `max_update_queue_size`、`update_queue_push_timeout_milliseconds`、`query_wait_timeout_milliseconds`、`max_threads_for_updates` 这些设置来控制。
 
 对于 cache 字典，可以设置缓存中数据的过期 [lifetime](/zh/reference/statements/create/dictionary/lifetime)。如果某个单元中的数据自加载以来经过的时间超过了 `lifetime`，则该单元的值将不再使用，该键也会变为过期状态。下次需要使用该键时，会重新发起请求。此行为可通过 `allow_read_expired_keys` 设置进行配置。

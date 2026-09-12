@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Crée des [profils de paramètres](/fr/concepts/features/security/access-rights#settings-profiles-management) pouvant être attribués à un utilisateur ou à un rôle.
 
-Syntaxe :
+Syntaxe :
 
 ```sql
 CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
@@ -22,9 +22,9 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 
 La clause `ON CLUSTER` permet de créer des profils de paramètres sur un cluster. Voir [DDL distribué](/fr/reference/statements/distributed-ddl).
 
-<div id="example">
-  ## Exemple
-</div>
+`CREATE SETTINGS PROFILE` requiert le privilège [CREATE SETTINGS PROFILE](/fr/reference/statements/grant#access-management). `OR REPLACE` supprime un profil existant du même nom, y compris les rôles auxquels il s&#39;applique, et requiert donc en plus le privilège [DROP SETTINGS PROFILE](/fr/reference/statements/grant#access-management). Le privilège `DROP SETTINGS PROFILE` est requis, que le profil existe déjà ou non ; l&#39;instruction ne peut donc pas servir à déterminer quels profils existent.
+
+## Exemple {#example}
 
 Créez un utilisateur :
 

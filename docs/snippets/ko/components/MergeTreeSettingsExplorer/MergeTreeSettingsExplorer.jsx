@@ -37,9 +37,8 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "allow_experimental_*",
-      count: 4,
+      count: 3,
       settings: [
-        { name: "allow_experimental_adaptive_codec_selection", path: "/allow-experimental#allow_experimental_adaptive_codec_selection", default: "0" },
         { name: "allow_experimental_replacing_merge_with_cleanup", path: "/allow-experimental#allow_experimental_replacing_merge_with_cleanup", default: "0" },
         { name: "allow_experimental_reverse_key", path: "/allow-experimental#allow_experimental_reverse_key", default: "0" },
         { name: "allow_experimental_text_index_phrase_search", path: "/allow-experimental#allow_experimental_text_index_phrase_search", default: "0" }
@@ -177,8 +176,9 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "enable_*",
-      count: 6,
+      count: 7,
       settings: [
+        { name: "enable_adaptive_codec_selection", path: "/enable#enable_adaptive_codec_selection", default: "0" },
         { name: "enable_index_granularity_compression", path: "/enable#enable_index_granularity_compression", default: "1" },
         { name: "enable_max_bytes_limit_for_min_age_to_force_merge", path: "/enable#enable_max_bytes_limit_for_min_age_to_force_merge", default: "1" },
         { name: "enable_mixed_granularity_parts", path: "/enable#enable_mixed_granularity_parts", default: "1" },
@@ -318,7 +318,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 10,
+      count: 13,
       settings: [
         { name: "max_avg_part_size_for_too_many_parts", path: "/max#max_avg_part_size_for_too_many_parts", default: "1073741824" },
         { name: "max_buckets_in_map", path: "/max#max_buckets_in_map", default: "32" },
@@ -329,6 +329,9 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_file_name_length", path: "/max#max_file_name_length", default: "127" },
         { name: "max_partitions_to_read", path: "/max#max_partitions_to_read", default: "-1" },
         { name: "max_projections", path: "/max#max_projections", default: "25" },
+        { name: "max_table_size_bytes_compressed", path: "/max#max_table_size_bytes_compressed", default: "0" },
+        { name: "max_table_size_bytes_uncompressed", path: "/max#max_table_size_bytes_uncompressed", default: "0" },
+        { name: "max_table_size_rows", path: "/max#max_table_size_rows", default: "0" },
         { name: "max_uncompressed_bytes_in_patches", path: "/max#max_uncompressed_bytes_in_patches", default: "32212254720" }
       ],
       children: []
@@ -496,7 +499,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "min_*",
-      count: 8,
+      count: 9,
       settings: [
         { name: "min_absolute_delay_to_close", path: "/min#min_absolute_delay_to_close", default: "0" },
         { name: "min_columns_to_activate_adaptive_write_buffer", path: "/min#min_columns_to_activate_adaptive_write_buffer", default: "500" },
@@ -504,6 +507,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "min_index_granularity_bytes", path: "/min#min_index_granularity_bytes", default: "1024" },
         { name: "min_marks_to_honor_max_concurrent_queries", path: "/min#min_marks_to_honor_max_concurrent_queries", default: "0" },
         { name: "min_merge_bytes_to_use_direct_io", path: "/min#min_merge_bytes_to_use_direct_io", default: "10737418240" },
+        { name: "min_partition_age_to_force_merge_seconds", path: "/min#min_partition_age_to_force_merge_seconds", default: "0" },
         { name: "min_parts_to_merge_at_once", path: "/min#min_parts_to_merge_at_once", default: "0" },
         { name: "min_replicated_logs_to_keep", path: "/min#min_replicated_logs_to_keep", default: "10" }
       ],
@@ -895,7 +899,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "기타",
-      count: 52,
+      count: 53,
       settings: [
         { name: "adaptive_write_buffer_initial_size", path: "/other#adaptive_write_buffer_initial_size", default: "16384" },
         { name: "add_implicit_sign_column_constraint_for_collapsing_engine", path: "/other#add_implicit_sign_column_constraint_for_collapsing_engine", default: "0" },
@@ -942,6 +946,7 @@ const MergeTreeSettingsExplorer = ({ href: baseRoute }) => {
         { name: "serialization_info_version", path: "/other#serialization_info_version", default: "with_types" },
         { name: "share_nested_offsets", path: "/other#share_nested_offsets", default: "1" },
         { name: "simultaneous_parts_removal_limit", path: "/other#simultaneous_parts_removal_limit", default: "0" },
+        { name: "skip_empty_columns_on_insert", path: "/other#skip_empty_columns_on_insert", default: "0" },
         { name: "storage_policy", path: "/other#storage_policy", default: "default" },
         { name: "string_serialization_version", path: "/other#string_serialization_version", default: "with_size_stream" },
         { name: "temporary_directories_lifetime", path: "/other#temporary_directories_lifetime", default: "86400" },

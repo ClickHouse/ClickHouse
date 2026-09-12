@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 Ce moteur fournit une intégration avec des tables [Delta Lake](https://github.com/delta-io/delta) existantes dans les stockages S3, GCP et Azure, et prend en charge aussi bien la lecture que l’écriture (à partir de la version 25.10).
 
-<div id="create-table">
-  ## Créer une table DeltaLake
-</div>
+## Créer une table DeltaLake {#create-table}
 
 Pour créer une table DeltaLake, celle-ci doit déjà exister dans un stockage S3, GCP ou Azure. Les commandes ci-dessous n&#39;acceptent pas de paramètres DDL permettant de créer une nouvelle table.
 
@@ -70,11 +68,9 @@ Pour créer une table DeltaLake, celle-ci doit déjà exister dans un stockage S
     ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
     ```
 
-    <Info>
-      **URI gsutil non prise en charge**
-
+    <Note title="URI gsutil non prise en charge">
       Les URI gsutil telles que `gs://clickhouse-docs-example-bucket` ne sont pas prises en charge ; veuillez utiliser une URL commençant par `https://storage.googleapis.com`
-    </Info>
+    </Note>
 
     **Arguments**
 
@@ -117,9 +113,7 @@ Pour créer une table DeltaLake, celle-ci doit déjà exister dans un stockage S
   </Tab>
 </Tabs>
 
-<div id="insert-data">
-  ## Écrire des données à l’aide d’une table DeltaLake
-</div>
+## Écrire des données à l’aide d’une table DeltaLake {#insert-data}
 
 Une fois la table créée avec le moteur de table DeltaLake, vous pouvez y insérer des données avec :
 
@@ -137,15 +131,11 @@ Les écritures Delta Lake sont une fonctionnalité Beta désactivée par défaut
   Les écritures vers Azure ne sont pas encore prises en charge, mais elles fonctionnent avec S3 et GCS.
 </Note>
 
-<div id="data-cache">
-  ### Cache de données
-</div>
+### Cache de données {#data-cache}
 
 Le moteur de table et la fonction de table `DeltaLake` prennent en charge le cache de données, à l’instar des stockages `S3`, `AzureBlobStorage` et `HDFS`. Voir [&quot;moteur de table S3&quot;](/fr/reference/engines/table-engines/integrations/s3#data-cache) pour plus de détails.
 
-<div id="see-also">
-  ## Voir aussi
-</div>
+## Voir aussi {#see-also}
 
 * [fonction de table DeltaLake](/fr/reference/functions/table-functions/deltalake)
 

@@ -211,7 +211,9 @@ Você pode criar um link de dados selecionando uma coluna chamada `traceID` na s
 
 Se o OpenTelemetry estiver habilitado em uma consulta de [logs](#logs) ou [traces](#traces), uma coluna de trace ID será incluída automaticamente.
 
-Ao incluir uma coluna de trace ID, os links &quot;**View Trace**&quot; e &quot;**View Logs**&quot; serão associados aos dados.
+Quando uma coluna de trace ID está presente, o plugin pode associar os links &quot;**View Trace**&quot; e &quot;**View Logs**&quot; aos dados.
+
+Os controles de alternância são habilitados por padrão. Um link para o tipo de consulta atual não exige padrões configurados, enquanto um link entre sinais aparece somente quando a fonte de dados tem padrões configurados para o sinal de destino. Você pode ocultá-los com os controles de alternância **Mostrar links &quot;View trace&quot;** e **Mostrar links &quot;View logs&quot;** nas seções de configuração de [trace](/pt-BR/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) e [log](/pt-BR/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) da fonte de dados.
 
 <div id="linking-abilities">
   ### Recursos de vinculação

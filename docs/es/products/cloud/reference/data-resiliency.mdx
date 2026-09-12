@@ -70,16 +70,13 @@ Esta sección también muestra el estado de éxito o fallo de cada copia de segu
   ## Guía sobre la duración de las copias de seguridad y la restauración
 </div>
 
-La duración de las copias de seguridad y de la restauración depende de varios factores, como el tamaño de la base de datos, así como el esquema y el número de tablas que contiene.
+La duración de las copias de seguridad y de las restauraciones varía considerablemente según el tamaño de los datos, la complejidad del esquema y el número de tablas. Las cifras que se indican a continuación proceden de pruebas internas y no constituyen compromisos de rendimiento.
 
-En nuestras pruebas, hemos visto que las copias de seguridad más pequeñas, de ~1 TB, pueden tardar entre 10 y 15 minutos o más en completarse.
-Las copias de seguridad de menos de 20 TB suelen completarse en una hora, y hacer una copia de seguridad de ~50 TB de datos debería llevar entre 2 y 3 horas.
-Las copias de seguridad se benefician de economías de escala a medida que aumenta el tamaño, y hemos visto que copias de seguridad de hasta 1 PB para algunos servicios internos se completan en menos de 10 horas.
+En nuestras pruebas, una copia de seguridad de aproximadamente 1 TB ha tardado entre 10 y 15 minutos, y una de 20 TB, alrededor de una hora. Los conjuntos de datos más grandes tardan proporcionalmente más, y las copias de seguridad de varios cientos de TB o más pueden tardar muchas horas, aunque existen economías de escala que ayudan con tamaños mayores.
 
-Recomendamos hacer pruebas con su propia base de datos o con datos de muestra para obtener estimaciones más precisas, ya que la duración real depende de varios factores, como se ha indicado anteriormente.
+Las restauraciones suelen ser más lentas que la copia de seguridad equivalente, especialmente cuando incluyen una cadena larga de copias de seguridad incrementales, ya que deben aplicarse la copia de seguridad completa y todas las copias de seguridad incrementales posteriores de la cadena. Restaurar un servicio muy grande puede tardar más de un día.
 
-La duración de la restauración es similar a la de las copias de seguridad para tamaños equivalentes.
-Como se ha mencionado anteriormente, recomendamos hacer pruebas con su propia base de datos para hacerse una idea de cuánto tardará en restaurarse la copia de seguridad.
+Dado que la duración depende en gran medida de sus datos, su esquema y la configuración de las copias de seguridad, recomendamos encarecidamente probar una restauración con sus propios datos antes de depender de un tiempo de recuperación objetivo.
 
 <Note>
   Actualmente NO hay soporte para la conmutación por error automática entre 2 instancias de ClickHouse Cloud, ya sea en la misma región o en regiones diferentes.

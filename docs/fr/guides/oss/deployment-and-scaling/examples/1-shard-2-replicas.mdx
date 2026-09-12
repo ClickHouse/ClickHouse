@@ -28,7 +28,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
 <DedicatedKeeperServers />
 
 <div id="pre-requisites">
-  ## Prérequis
+  ## Prérequis {#pre-requisites}
 </div>
 
 * Vous avez déjà configuré un [serveur ClickHouse local](/fr/get-started/setup/install)
@@ -139,7 +139,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
   </Step>
 
   <Step title="Configurer les nœuds ClickHouse" id="configure-clickhouse-servers">
-    ### Configuration du serveur
+    ### Configuration du serveur {#server-setup}
 
     Modifiez maintenant chaque fichier de configuration vide `config.xml` situé dans
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Les lignes surlignées
@@ -213,7 +213,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
 
     Chaque section du fichier de configuration ci-dessus est expliquée plus en détail ci-dessous.
 
-    #### Réseau et journalisation
+    #### Réseau et journalisation {#networking}
 
     <ListenHost />
 
@@ -233,7 +233,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     Pour plus d&#39;informations sur la configuration de la journalisation, consultez les commentaires inclus dans le
     [fichier de configuration](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) ClickHouse par défaut.
 
-    #### Configuration du cluster
+    #### Configuration du cluster {#cluster-configuration}
 
     La configuration du cluster est définie dans le bloc `<remote_servers>`.
     Le nom du cluster `cluster_1S_2R` y est défini.
@@ -269,7 +269,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
 
     <ServerParameterTable />
 
-    #### Configuration de Keeper
+    #### Configuration de Keeper {#keeper-config-explanation}
 
     La section `<ZooKeeper>` indique à ClickHouse où ClickHouse Keeper (ou ZooKeeper) s&#39;exécute.
     Comme nous utilisons un cluster ClickHouse Keeper, chaque `<node>` du cluster doit être spécifié,
@@ -299,7 +299,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
       dans les environnements de production, nous recommandons vivement d&#39;exécuter ClickHouse Keeper sur des hôtes dédiés.
     </Note>
 
-    #### Configuration des macros
+    #### Configuration des macros {#macros-config-explanation}
 
     Par ailleurs, la section `<macros>` permet de définir des substitutions de paramètres pour
     les tables répliquées. Celles-ci sont répertoriées dans `system.macros` et permettent d&#39;utiliser des substitutions
@@ -317,7 +317,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
       Ils seront définis de manière spécifique selon la topologie du cluster.
     </Note>
 
-    ### Configuration utilisateur
+    ### Configuration utilisateur {#user-config}
 
     Modifiez maintenant chaque fichier de configuration vide `users.xml` situé dans
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` en y ajoutant le contenu suivant :
@@ -335,7 +335,6 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -343,7 +342,6 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -376,7 +374,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
   </Step>
 
   <Step title="Configurer ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
-    ### Configuration de ClickHouse Keeper
+    ### Configuration de ClickHouse Keeper {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -393,14 +391,14 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
 
   <Step title="Tester la configuration" id="test-the-setup">
     Assurez-vous que Docker est en cours d’exécution sur votre machine.
-    Démarrez le cluster à l’aide de la commande `docker-compose up` depuis la racine du répertoire `cluster_1S_2R` :
+    Démarrez le cluster à l’aide de la commande `docker-compose up` depuis la racine du répertoire `cluster_1S_2R` :
 
     ```bash
     docker-compose up -d
     ```
 
     Vous devriez voir Docker commencer à télécharger les images ClickHouse et Keeper,
-    puis démarrer les conteneurs :
+    puis démarrer les conteneurs :
 
     ```bash
     [+] Running 6/6
@@ -413,21 +411,21 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     ```
 
     Pour vérifier que le cluster fonctionne, connectez-vous à `clickhouse-01` ou à `clickhouse-02` et exécutez la
-    requête suivante. La commande pour se connecter au premier nœud est indiquée :
+    requête suivante. La commande pour se connecter au premier nœud est indiquée :
 
     ```bash
     # Connect to any node
     docker exec -it clickhouse-01 clickhouse-client
     ```
 
-    Si tout se passe bien, vous verrez l’invite de commande du client ClickHouse :
+    Si tout se passe bien, vous verrez l’invite de commande du client ClickHouse :
 
     ```response
     cluster_1S_2R node 1 :)
     ```
 
     Exécutez la requête suivante pour vérifier quelles topologies de cluster sont définies pour quels
-    hôtes :
+    hôtes :
 
     ```sql title="Query"
     SELECT 
@@ -447,7 +445,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
        └───────────────┴───────────┴─────────────┴───────────────┴──────┘
     ```
 
-    Exécutez la requête suivante pour vérifier l’état du cluster ClickHouse Keeper :
+    Exécutez la requête suivante pour vérifier l’état du cluster ClickHouse Keeper :
 
     ```sql title="Query"
     SELECT *
@@ -473,11 +471,11 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
   <Step title="Créer une base de données" id="creating-a-database">
     Maintenant que vous avez vérifié que le cluster est correctement configuré et fonctionne, vous
     allez recréer la même table que celle utilisée dans le tutoriel du [jeu de données d’exemple sur les prix de l’immobilier au Royaume-Uni](/fr/get-started/sample-datasets/uk-price-paid).
-    Il contient environ 30 millions de lignes correspondant aux prix payés
+    Il contient environ 30 millions de lignes correspondant aux prix payés
     pour des biens immobiliers en Angleterre et au pays de Galles depuis 1995.
 
     Connectez-vous au client de chaque hôte en exécutant chacune des commandes suivantes dans des
-    onglets ou fenêtres de terminal distincts :
+    onglets ou fenêtres de terminal distincts :
 
     ```bash
     docker exec -it clickhouse-01 clickhouse-client
@@ -485,7 +483,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     ```
 
     Vous pouvez exécuter la requête ci-dessous depuis `clickhouse-client` sur chaque hôte afin de vérifier
-    qu&#39;aucune base de données n&#39;a encore été créée, en dehors de celles par défaut :
+    qu&#39;aucune base de données n&#39;a encore été créée, en dehors de celles par défaut :
 
     ```sql title="Query"
     SHOW DATABASES;
@@ -501,7 +499,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     ```
 
     Depuis le client `clickhouse-01`, exécutez la requête DDL **distribuée** suivante à l’aide de la
-    clause `ON CLUSTER` pour créer une nouvelle base de données nommée `uk` :
+    clause `ON CLUSTER` pour créer une nouvelle base de données nommée `uk` :
 
     ```sql highlight={2}
     CREATE DATABASE IF NOT EXISTS uk 
@@ -510,7 +508,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
 
     Vous pouvez à nouveau exécuter la même requête qu’auparavant depuis le client de chaque hôte
     pour confirmer que la base de données a bien été créée sur l’ensemble du cluster, bien que la requête
-    n’ait été exécutée que sur `clickhouse-01` :
+    n’ait été exécutée que sur `clickhouse-01` :
 
     ```sql
     SHOW DATABASES;
@@ -529,7 +527,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
 
   <Step title="Créer une table sur le cluster" id="creating-a-table">
     Maintenant que la base de données a été créée, créez une table sur le cluster.
-    Exécutez la requête suivante depuis n’importe quel client hôte :
+    Exécutez la requête suivante depuis n’importe quel client hôte :
 
     ```sql highlight={2,19}
     CREATE TABLE IF NOT EXISTS uk.uk_price_paid_local
@@ -567,7 +565,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
     fonctionne comme le moteur de table `MergeTree` classique, mais il réplique également les données.
 
     Vous pouvez exécuter la requête ci-dessous depuis le client `clickhouse-01` ou `clickhouse-02`
-    pour vérifier que la table a bien été créée sur l&#39;ensemble du cluster :
+    pour vérifier que la table a bien été créée sur l&#39;ensemble du cluster :
 
     ```sql title="Query"
     SHOW TABLES IN uk;
@@ -777,7 +775,7 @@ L’architecture du cluster que vous allez mettre en place est présentée ci-de
 </Steps>
 
 <div id="conclusion">
-  ## Conclusion
+  ## Conclusion {#conclusion}
 </div>
 
 L’avantage de cette topologie de cluster est qu’avec deux répliques,

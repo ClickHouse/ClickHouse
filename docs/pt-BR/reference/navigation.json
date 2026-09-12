@@ -124,6 +124,7 @@
                     "pt-BR/reference/statements/create/table/replace-table"
                   ]
                 },
+                "pt-BR/reference/statements/create/token",
                 "pt-BR/reference/statements/create/user",
                 "pt-BR/reference/statements/create/view"
               ]
@@ -139,6 +140,7 @@
             "pt-BR/reference/statements/explain",
             "pt-BR/reference/statements/grant",
             "pt-BR/reference/statements/hypothetical-index",
+            "pt-BR/reference/statements/hypothetical-projection",
             "pt-BR/reference/statements/in",
             "pt-BR/reference/statements/insert-into",
             "pt-BR/reference/statements/kill",
@@ -419,13 +421,20 @@
             "pt-BR/reference/engines/database-engines/atomic",
             "pt-BR/reference/engines/database-engines/backup",
             "pt-BR/reference/engines/database-engines/datalake",
+            "pt-BR/reference/engines/database-engines/dictionary",
+            "pt-BR/reference/engines/database-engines/filesystem",
+            "pt-BR/reference/engines/database-engines/hdfs",
             "pt-BR/reference/engines/database-engines/materialized-postgresql",
+            "pt-BR/reference/engines/database-engines/memory",
             "pt-BR/reference/engines/database-engines/mysql",
+            "pt-BR/reference/engines/database-engines/ordinary",
             "pt-BR/reference/engines/database-engines/postgresql",
             "pt-BR/reference/engines/database-engines/remote",
             "pt-BR/reference/engines/database-engines/replicated",
+            "pt-BR/reference/engines/database-engines/s3",
             "pt-BR/reference/engines/database-engines/shared",
-            "pt-BR/reference/engines/database-engines/sqlite"
+            "pt-BR/reference/engines/database-engines/sqlite",
+            "pt-BR/reference/engines/database-engines/url"
           ]
         }
       ]
@@ -1066,14 +1075,17 @@
         "pt-BR/reference/system-tables/histogram_metric_log",
         "pt-BR/reference/system-tables/histogram_metrics",
         "pt-BR/reference/system-tables/hypothetical_indexes",
+        "pt-BR/reference/system-tables/hypothetical_projections",
         "pt-BR/reference/system-tables/iceberg_files",
         "pt-BR/reference/system-tables/iceberg_history",
         "pt-BR/reference/system-tables/iceberg_metadata_log",
         "pt-BR/reference/system-tables/information_schema",
         "pt-BR/reference/system-tables/instrumentation",
+        "pt-BR/reference/system-tables/jemalloc_arena_bins",
         "pt-BR/reference/system-tables/jemalloc_bins",
         "pt-BR/reference/system-tables/jemalloc_stats",
         "pt-BR/reference/system-tables/jemalloc_profile_text",
+        "pt-BR/reference/system-tables/jemalloc_sampled_allocations",
         "pt-BR/reference/system-tables/kafka_consumers",
         "pt-BR/reference/system-tables/keeper_changelogs",
         "pt-BR/reference/system-tables/keeper_cluster",
@@ -1135,6 +1147,7 @@
         "pt-BR/reference/system-tables/schema_inference_cache",
         "pt-BR/reference/system-tables/server_settings",
         "pt-BR/reference/system-tables/session_log",
+        "pt-BR/reference/system-tables/session_query_ids",
         "pt-BR/reference/system-tables/settings",
         "pt-BR/reference/system-tables/settings_changes",
         "pt-BR/reference/system-tables/settings_profile_elements",

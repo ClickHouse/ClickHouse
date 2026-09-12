@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="alter_move_to_space_execute_async">
-  ## alter_move_to_space_execute_async
-</div>
+## alter_move_to_space_execute_async {#alter_move_to_space_execute_async}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 以异步方式执行 ALTER TABLE MOVE ... TO [DISK|VOLUME]
 
-<div id="alter_partition_verbose_result">
-  ## alter_partition_verbose_result
-</div>
+## alter_partition_verbose_result {#alter_partition_verbose_result}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -58,9 +54,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-<div id="alter_sync">
-  ## alter_sync
-</div>
+## alter_sync {#alter_sync}
 
 **别名**: `replication_alter_partitions_sync`
 
@@ -73,7 +67,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 * `0` — 不等待。
 * `1` — 等待本副本执行完成。
 * `2` — 等待所有副本完成。
-* `3` - 仅等待活跃副本。
+* `3` - 仅等待活跃副本。仅 `SharedMergeTree` 支持。对于 `ReplicatedMergeTree`，其行为与 `alter_sync = 2` 相同。
 
 Cloud 默认值：`0`。
 
@@ -81,9 +75,7 @@ Cloud 默认值：`0`。
   `alter_sync` 仅适用于 `Replicated` 和 `SharedMergeTree` 表；对非 `Replicated` 或 `Shared` 表执行 alter 时，此设置不起作用。
 </Note>
 
-<div id="alter_update_mode">
-  ## alter_update_mode
-</div>
+## alter_update_mode {#alter_update_mode}
 
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
 

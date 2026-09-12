@@ -1,22 +1,22 @@
 ---
 title: 'CLI 참고'
 sidebarTitle: 'CLI'
-description: 'clicklink clctl 명령어 참고: init, preflight, 지원 세션, gateway 신뢰, 감사, 액세스 프로비저닝'
+description: 'clicklink clctl 명령어 참고: init, preflight, 지원 세션, gateway trust, 감사, 액세스 프로비저닝'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'CLI']
 doc_type: 'reference'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 커넥터는 `clicklink`라는 단일 바이너리로 제공되며, 실행할 명령어는 `clicklink clctl` 아래에 있습니다. 이 페이지에서는 설치 및 일상적인 운영에 사용하는 명령어를 다룹니다. 각 명령어에 `--help`를 지정하면 전체 도움말을 확인할 수 있습니다. `troubleshoot` 및 `preflight` 하위 트리의 플래그는 `CLCTL_*` 환경 변수(각 플래그의 도움말 출력에 이름이 표시됨) 또는 `~/.clicklink/clctl.yaml`로도 지정할 수 있습니다.
 
-<div id="init">
-  ## clicklink clctl init
-</div>
+## clicklink clctl init {#init}
 
 등록 토큰, 저장된 등록 번들 또는 대역 외에서 서명된 인증서를 사용하여 커넥터를 초기 설정합니다. 한 번의 호출로 구성을 준비하고, ClickHouse 액세스를 프로비저닝하며, mTLS 클라이언트 인증서를 가져오고, 배포(Helm 차트 또는 systemd unit)한 후 상태를 확인합니다. 다시 실행해도 안전합니다. 구성과 클러스터 UUID는 유지되며, 자격 증명은 원자적으로 덮어쓰고, `--force`를 전달하지 않는 한 기존 클라이언트 키를 재사용합니다. 전체 흐름은 [onboarding](/ko/products/bring-your-own-cloud/connector/onboarding)을 참조하십시오.
 
-<div id="init-entry-points">
-  ### 진입점
-</div>
+### 진입점 {#init-entry-points}
 
 3개의 진입점 중 정확히 하나를 지정해야 하며, 동시에 사용할 수 없습니다.
 
@@ -26,9 +26,7 @@ doc_type: 'reference'
 | `--handoff <path>`     | 저장된 등록 번들을 사용하여 Bootstrap합니다. `handoff.yaml`이 있으면 재실행 및 recovery 시 이 옵션을 사용합니다.                                                                                                                                                                                              |
 | `--signed-cert <path>` | air-gapped 흐름의 단계 2입니다. 별도 경로로 서명된 클라이언트 인증서를 설치하고 단계별 설치를 완료합니다. 필요에 따라 `--chain <path>`를 사용하여 CA 체인도 함께 대체할 수 있습니다.                                                                                                                                                 |
 
-<div id="init-common-flags">
-  ### 공통 플래그
-</div>
+### 공통 플래그 {#init-common-flags}
 
 | 플래그                         | 설명                                                                                                                                                       |
 | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -41,18 +39,14 @@ doc_type: 'reference'
 | `--ch-user-suffix <suffix>` | 프로비저닝된 ClickHouse 사용자 이름에 추가할 선택적 접미사입니다(`pcm_scraper`는 `pcm_scraper_<suffix>`가 됨). 이를 통해 두 번째 커넥터 배포가 첫 번째 배포의 사용자와 충돌하지 않고 인스턴스를 공유할 수 있습니다.           |
 | `--ch-admin-password-stdin` | SQL 프로비저닝에 필요한 경우 stdin에서 ClickHouse 관리자 비밀번호를 읽습니다. 터미널에서 실행하는 경우에는 대신 입력을 요청합니다.                                                                       |
 
-<div id="init-signing-flags">
-  ### 서명 플래그(1단계에만 해당)
-</div>
+### 서명 플래그(1단계에만 해당) {#init-signing-flags}
 
 | 플래그                     | 설명                                                                                         |
 | ----------------------- | ------------------------------------------------------------------------------------------ |
 | `--no-auto-sign`        | 1단계에서만 사용: air-gapped 또는 대역 외 서명 흐름을 위해 등록 endpoint를 통한 자동 CSR 서명을 건너뜁니다.                  |
 | `--sign-endpoint <url>` | 등록 서명 endpoint를 재정의합니다(기본값: 번들 endpoint에 `enroll` DNS 레이블을 삽입해 파생됨). HTTPS URL이어야 합니다. |
 
-<div id="init-kubernetes-flags">
-  ### Kubernetes 전용 플래그
-</div>
+### Kubernetes 전용 플래그 {#init-kubernetes-flags}
 
 `--target helm`에서만 유효합니다.
 
@@ -68,9 +62,7 @@ doc_type: 'reference'
 | `--ch-pod <ref>`            | 파드 내 프로비저닝 단계에 사용할 ClickHouse 파드입니다. 이름 또는 `k=v` 레이블 셀렉터로 지정합니다(기본값: 각 인스턴스의 Service를 지원하는 Running 파드).          |
 | `--api-private-ca`          | API endpoint가 등록 번들의 CA에서 발급한 인증서를 제공하는 경우 사용합니다. 시스템 루트 대신 마운트된 CA 체인을 가리키도록 `api.tls.caFile`을 준비합니다.           |
 
-<div id="init-vm-flags">
-  ### VM 전용 플래그
-</div>
+### VM 전용 플래그 {#init-vm-flags}
 
 `--target systemd`와 함께 사용할 때만 유효합니다.
 
@@ -79,9 +71,7 @@ doc_type: 'reference'
 | `--server <url>`     | 액세스 번들이 가리키는 Kubernetes API server URL입니다(기본값: 이 host의 kubeconfig, 없으면 입력하라는 메시지가 표시됨).              |
 | `--ca-data <base64>` | `--server`용 Base64 인코딩 `certificate-authority-data`입니다(기본값: 이 host의 kubeconfig, 없으면 입력하라는 메시지가 표시됨). |
 
-<div id="init-flag-conflicts">
-  ### 플래그 충돌
-</div>
+### 플래그 충돌 {#init-flag-conflicts}
 
 * `--handoff`, `--enroll`, `--signed-cert`는 상호 배타적이며, 정확히 하나를 지정해야 합니다.
 * Kubernetes 전용 플래그는 `--target helm`을 지정한 경우에만 사용할 수 있습니다. `--target helm`에서는 `--server`와 `--ca-data`가 거부됩니다(Helm 흐름은 워크스테이션의 kubeconfig를 읽습니다).
@@ -89,9 +79,7 @@ doc_type: 'reference'
 * `--operators`와 `--no-gateway`는 서로 함께 사용할 수 없습니다.
 * `--skip-provision`을 지정하면 `--ch-pod`, `--ch-user-suffix`, `--server`, `--ca-data`, `--ch-admin-password-stdin`이 거부됩니다(프로비저닝이 수행되지 않음).
 
-<div id="preflight">
-  ## clicklink clctl preflight
-</div>
+## clicklink clctl preflight {#preflight}
 
 구성, 파일, 네트워크, clickhouse, systemd, 액세스, 디스크, 민감 정보 마스킹 범주별로 그룹화된 커넥터 검사 모음을 실행합니다. 각 검사는 통과, 경고, 실패 또는 건너뜀 상태를 보고합니다. 종료 코드 0은 모든 검사가 통과했음을 의미하며(경고는 non-blocking), 종료 코드 2는 하나 이상의 검사가 실패했음을 의미합니다.
 
@@ -110,9 +98,7 @@ doc_type: 'reference'
 
 `--k8s-*` 플래그와 원격 채널 플래그는 함께 사용할 수 없습니다. 대상 하나만 선택하십시오.
 
-<div id="troubleshoot-session">
-  ## clicklink clctl troubleshoot session
-</div>
+## clicklink clctl troubleshoot session {#troubleshoot-session}
 
 지원 세션을 활성화, 비활성화하고 상태를 확인합니다. 지원 세션은 문제 해결 도구가 명령어를 수락하는 시간 제한 창입니다. 활성화된 세션이 없으면 WebSocket이 연결되어 있더라도 데몬은 모든 명령어를 거부합니다. [지원 세션](/ko/products/bring-your-own-cloud/connector/support-sessions)을 참조하십시오.
 
@@ -121,9 +107,7 @@ doc_type: 'reference'
 * **로컬 파일**(기본값): 문제 해결 도구가 실행되는 호스트에서 세션 상태 파일을 읽고 씁니다(기본값: `/var/lib/clicklink/session.json`).
 * **게이트웨이**: `--gateway-url`을 사용하면 워크스테이션에서 OIDC ID 토큰을 획득한 후 문제 해결 도구의 세션 게이트웨이를 호출합니다.
 
-<div id="init-common-flags">
-  ### 공통 플래그
-</div>
+### 공통 플래그 {#session-shared-flags}
 
 | 플래그                        | 설명                                                                                                                                                         |
 | -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -136,9 +120,7 @@ doc_type: 'reference'
 | `--token-file <path>`      | 미리 발급된 OIDC ID 토큰이 포함된 파일입니다. 이 토큰을 bearer로 사용하며 다른 토큰 provider를 우회합니다.                                                                           |
 | `--gateway-ca <path>`      | 게이트웨이 인증서를 검증하는 CA 번들입니다(BYO 인증서). 설정하지 않으면 `gateway trust`로 고정한 인증서를 사용합니다. 고정 정보가 없는 self-signed 게이트웨이는 연결을 거부하도록 실패합니다. |
 
-<div id="session-enable">
-  ### 세션 활성화
-</div>
+### 세션 활성화 {#session-enable}
 
 | 플래그                | 설명                                                                                                 |
 | ------------------ | -------------------------------------------------------------------------------------------------- |
@@ -148,15 +130,11 @@ doc_type: 'reference'
 
 이미 활성 상태인 세션이 있으면 활성화할 수 없습니다. 먼저 비활성화하거나 만료될 때까지 기다리십시오.
 
-<div id="session-disable">
-  ### session 비활성화
-</div>
+### session 비활성화 {#session-disable}
 
 session을 즉시 비활성화합니다. 활성 session이 없으면 아무 작업도 수행하지 않습니다.
 
-<div id="session-status">
-  ### 세션 상태
-</div>
+### 세션 상태 {#session-status}
 
 세션의 활성 여부, 활성화한 사용자 및 만료 시점을 표시합니다. `--output`(`-o`)으로 `table`(기본값) 또는 `json`을 선택합니다.
 
@@ -170,9 +148,7 @@ clicklink clctl troubleshoot session enable \
   --duration 1h --reason "support ticket 1234"
 ```
 
-<div id="gateway-trust">
-  ## clicklink clctl troubleshoot gateway trust
-</div>
+## clicklink clctl troubleshoot gateway trust {#gateway-trust}
 
 VM에서 세션 게이트웨이는 self-signed TLS 인증서를 제공합니다. 이 명령어는 인증서의 SHA-256 fingerprint를 `~/.clicklink/clctl.yaml`에 기록하여 `session` 명령어가 이를 검증할 수 있도록 합니다. 고정된 fingerprint가 더 이상 일치하지 않으면 연결이 안전하게 실패합니다. 신뢰는 다음 두 가지 방법 중 하나로 대역 외에서 설정됩니다.
 
@@ -193,9 +169,7 @@ clicklink clctl troubleshoot gateway trust \
 
 Kubernetes에서는 pinning을 사용하지 않습니다. CA에서 발급한 인증서를 사용하는 인그레스를 통해 게이트웨이를 노출하거나 포트 포워딩을 사용하십시오.
 
-<div id="audit-tail">
-  ## clicklink clctl troubleshoot audit tail
-</div>
+## clicklink clctl troubleshoot audit tail {#audit-tail}
 
 문제 해결사 감사 로그의 마지막 항목을 출력합니다. 각 줄에 하나의 JSON 객체가 포함되는 형식이며, 데몬이 허용하거나 차단한 명령마다 항목이 하나씩 기록됩니다. 이 명령은 로그를 읽기 전용으로 열며 수정하지 않습니다.
 
@@ -211,9 +185,7 @@ kubectl -n <connector-namespace> exec <troubleshooter-pod> -- \
   /clicklink clctl troubleshoot audit tail
 ```
 
-<div id="access-provision">
-  ## 액세스 프로비저닝
-</div>
+## 액세스 프로비저닝 {#access-provision}
 
 `clicklink clctl scraper access provision` 및 `clicklink clctl troubleshoot access provision`은 구성 요소별 인스턴스 액세스 번들, 즉 읽기 전용 ClickHouse 사용자와 해당 권한 부여, 그리고 구성 요소가 사용하는 Kubernetes ServiceAccount, RBAC, 토큰을 생성합니다. `--force`를 사용하면 이를 교체합니다. `init`는 설치 과정에서 이를 인라인으로 실행하며, 독립 실행형 명령어는 재실행 및 자격 증명 교체에 사용합니다.
 
@@ -250,9 +222,7 @@ clicklink clctl scraper access provision --target helm \
   --force
 ```
 
-<div id="channel-flags">
-  ## 원격 채널 플래그
-</div>
+## 원격 채널 플래그 {#channel-flags}
 
 `preflight`, `gateway trust`, `access provision`은 VM 대상에 연결하는 방식을 선택하는 공통 플래그 세트를 지원합니다.
 

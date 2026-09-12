@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/es/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/es/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 Estos ajustes están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -18,7 +18,7 @@ Estos ajustes están disponibles en [system.settings](/es/reference/system-table
   ## ai_function_allow_insecure_endpoint
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -30,7 +30,7 @@ Si es false (valor predeterminado), las funciones de IA no permiten usar un `end
   ## ai_function_embedding_default_credentials
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración"}]}]} />
 
@@ -40,7 +40,7 @@ Nombre de la colección con nombre que usan las funciones de embedding (`aiEmbed
   ## ai_function_embedding_max_batch_size
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -52,7 +52,7 @@ Número máximo de textos que se pueden incluir en una sola solicitud HTTP reali
   ## ai_function_max_api_calls_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,7 +64,7 @@ Número máximo de solicitudes HTTP que las funciones de IA pueden realizar por 
   ## ai_function_max_input_tokens_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
@@ -78,7 +78,7 @@ Este límite solo se aplica a los proveedores que informan un objeto `usage` en 
   ## ai_function_max_output_tokens_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="500000" />
 
@@ -92,11 +92,11 @@ Este límite solo se aplica a los proveedores que informan un objeto `usage` en 
   ## ai_function_max_retries
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="UInt64" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Reintenta un error transitorio de la API una vez de forma predeterminada, para que un único error 429 o 5xx del proveedor no haga fallar la consulta."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "Nueva configuración"}]}]} />
 
 Número máximo de reintentos por errores transitorios para cada solicitud individual a la API. Cada reintento usa backoff exponencial a partir de `ai_function_retry_initial_delay_ms`.
 
@@ -104,7 +104,7 @@ Número máximo de reintentos por errores transitorios para cada solicitud indiv
   ## ai_function_request_timeout_sec
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
@@ -116,7 +116,7 @@ Tiempo de espera, en segundos, para cada solicitud HTTP realizada por funciones 
   ## ai_function_retry_initial_delay_ms
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -128,7 +128,7 @@ Retraso inicial, en milisegundos, antes del primer reintento de una solicitud a 
   ## ai_function_text_default_credentials
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "Nueva configuración"}]}]} />
 
@@ -138,7 +138,7 @@ Nombre de la colección con nombre que usan las funciones de IA de texto (`aiGen
   ## ai_function_throw_on_error
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -150,7 +150,7 @@ Si es true (valor predeterminado), una llamada a una función de IA que falle de
   ## ai_function_throw_on_quota_exceeded
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

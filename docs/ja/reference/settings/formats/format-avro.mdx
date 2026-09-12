@@ -17,11 +17,11 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
   ## format_avro_schema_registry_connection_timeout
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "AvroConfluent フォーマットで使用される Confluent スキーマレジストリ HTTP クライアントに対する接続タイムアウト（秒）を制御する新しい設定。"}]}]} />
 
-AvroConfluent フォーマット向け: Confluent スキーマレジストリ HTTP クライアントに対する接続タイムアウト (秒) 。スキーマの取得とスキーマ登録の両方で使用されます。0 より大きく、600 (10 分) 未満である必要があります。
+AvroConfluent フォーマット向け: Confluent スキーマレジストリ HTTP クライアントに対する接続タイムアウト (秒) 。スキーマの取得とスキーマ登録の両方で使用されます。0 より大きい必要があり、600 (10 分) 以上の値は 599 に減らされます。
 
 <div id="format_avro_schema_registry_max_retries">
   ## format_avro_schema_registry_max_retries
@@ -31,37 +31,37 @@ AvroConfluent フォーマット向け: Confluent スキーマレジストリ HT
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "5"},{"label": "Confluent スキーマレジストリとの通信時に発生する一時的な障害（転送タイムアウト、接続拒否、DNS エラー、HTTP 5xx\/408\/429）に対する最大再試行回数を制御する新しい設定です。再試行を無効にするには 0 に設定します。以前の動作（再試行なし）は `compatibility = '26.5'` で維持されます。"}]}]} />
 
-AvroConfluent フォーマット: Confluent スキーマレジストリとの通信時に発生する一時的な障害 (転送タイムアウト、接続拒否、DNS エラー、HTTP 5xx/408/429) に対する最大再試行回数です。再試行を無効にするには 0 に設定します。許容される最大値は 20 です。スキーマ検証エラー (HTTP 409、不正な Avro JSON) では再試行されません。
+AvroConfluent フォーマット: Confluent スキーマレジストリとの通信時に発生する一時的な障害 (転送タイムアウト、接続拒否、DNS エラー、HTTP 5xx/408/429) に対する最大再試行回数です。再試行を無効にするには 0 に設定します。20 を超える値は 20 に切り下げられます。スキーマ検証エラー (HTTP 409、不正な Avro JSON) では再試行されません。
 
 <div id="format_avro_schema_registry_receive_timeout">
   ## format_avro_schema_registry_receive_timeout
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "AvroConfluent フォーマットで使用される Confluent スキーマレジストリ HTTP クライアントの受信タイムアウト（秒単位）を制御する新しい設定。"}]}]} />
 
-AvroConfluent フォーマット向けの Confluent スキーマレジストリ HTTP クライアントの受信タイムアウト (秒単位) です。スキーマの取得とスキーマ登録の両方で使用されます。0 より大きく、600 (10 分) 未満である必要があります。
+AvroConfluent フォーマット向けの Confluent スキーマレジストリ HTTP クライアントの受信タイムアウト (秒単位) です。スキーマの取得とスキーマ登録の両方で使用されます。0 より大きい値である必要があり、600 (10 分) 以上の値は 599 に切り下げられます。
 
 <div id="format_avro_schema_registry_retry_initial_backoff_ms">
   ## format_avro_schema_registry_retry_initial_backoff_ms
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="100" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "100"},{"label": "失敗した Confluent スキーマレジストリへのリクエストを再試行する前の初期バックオフ（ミリ秒単位）を制御する新しい設定です。バックオフは再試行のたびに 2 倍になり、上限は 10 秒です。`format_avro_schema_registry_max_retries = 0` の場合は効果がありません（`compatibility = '26.5'` によって復元される 26.6 以前の動作）。"}]}]} />
 
-AvroConfluent フォーマット用の設定です。失敗した Confluent スキーマレジストリへのリクエストを再試行する前の初期バックオフを、ミリ秒単位で指定します。バックオフは以降の再試行のたびに 2 倍になり、上限は 10 秒です。0 より大きく、60000 以下である必要があります。
+AvroConfluent フォーマット用の設定です。失敗した Confluent スキーマレジストリへのリクエストを再試行する前の初期バックオフを、ミリ秒単位で指定します。バックオフは以降の再試行のたびに 2 倍になり、上限は 10 秒です。0 より大きい必要があり、60000 を超える値は 60000 に切り下げられます。
 
 <div id="format_avro_schema_registry_send_timeout">
   ## format_avro_schema_registry_send_timeout
 </div>
 
-<SettingsInfoBlock type="UInt64" default_value="1" />
+<SettingsInfoBlock type="NonZeroUInt64" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.5"},{"label": "1"},{"label": "AvroConfluent フォーマットで使用される Confluent スキーマレジストリ HTTPクライアントの送信タイムアウト（秒）を制御するための新しい設定。"}]}]} />
 
-AvroConfluent フォーマット向けの設定です。Confluent スキーマレジストリ HTTPクライアントの送信タイムアウトを秒単位で指定します。スキーマの取得とスキーマ登録の両方で使用されます。0 より大きく、600 (10 分) 未満である必要があります。
+AvroConfluent フォーマット向けの設定です。Confluent スキーマレジストリ HTTPクライアントの送信タイムアウトを秒単位で指定します。スキーマの取得とスキーマ登録の両方で使用されます。0 より大きい値である必要があり、600 (10 分) 以上の値は 599 に切り下げられます。
 
 <div id="format_avro_schema_registry_url">
   ## format_avro_schema_registry_url

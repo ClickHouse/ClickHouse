@@ -1,18 +1,19 @@
 ---
-title: 'Sessions de support'
-sidebarTitle: 'Sessions de support'
+title: 'Sessions d’assistance'
+sidebarTitle: 'Sessions d’assistance'
 description: 'Activez, délimitez, auditez et révoquez les accès du support ClickHouse via ClickHouse Connector'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-Les sessions Support vous permettent d’accorder à ClickHouse un accès temporaire à des fins de diagnostic via le ClickHouse Connector. Cette page explique ce qu’est une session, comment l’activer et la désactiver, ce que les opérateurs ClickHouse peuvent faire lorsqu’elle est active et comment auditer l’ensemble des actions effectuées.
+<PrivatePreviewBadge />
 
-<div id="what-a-support-session-is">
-  ## Qu’est-ce qu’une session de support ?
-</div>
+Les sessions d’assistance vous permettent d’accorder à ClickHouse un accès temporaire à des fins de diagnostic via le ClickHouse Connector. Cette page explique ce qu’est une session, comment l’activer et la désactiver, ce que les opérateurs ClickHouse peuvent faire lorsqu’elle est active et comment auditer l’ensemble des actions effectuées.
+
+## Qu’est-ce qu’une session de support ? {#what-a-support-session-is}
 
 Une session de support est une période limitée dans le temps pendant laquelle l’outil de diagnostic accepte les commandes des ingénieurs du support ClickHouse. Lorsqu’aucune session n’est active, l’outil de diagnostic refuse toutes les commandes, même si son WebSocket sortant est connecté. Il n’existe aucune autre voie d’exécution : rien ne s’exécute sans session et ClickHouse ne peut pas en ouvrir une à votre place. Le plan de contrôle de ClickHouse ne se connecte jamais à votre environnement ; il reçoit uniquement ce que l’outil de diagnostic envoie via son canal sortant, et ce canal ne transmet des commandes que lorsque l’état de votre session l’autorise.
 
@@ -27,9 +28,7 @@ Le transport de la passerelle dépend de la cible. Une passerelle sur VM utilise
 
 Vous définissez votre politique de session, y compris la liste d’autorisation des opérateurs, lors de l’exécution de `clicklink clctl init`.
 
-<div id="enabling-and-disabling-sessions">
-  ## Activation et désactivation des sessions
-</div>
+## Activation et désactivation des sessions {#enabling-and-disabling-sessions}
 
 <Tabs>
   <Tab title="Kubernetes">
@@ -80,24 +79,18 @@ Vous définissez votre politique de session, y compris la liste d’autorisation
   </Tab>
 </Tabs>
 
-<div id="session-expiry">
-  ## Expiration de la session
-</div>
+## Expiration de la session {#session-expiry}
 
 Les sessions expirent automatiquement. La durée par défaut est de 4 heures ; `session enable --duration` permet de définir une durée pouvant aller jusqu’à 24 heures. Lorsque la session expire ou dès que vous exécutez `session disable`, l’outil de diagnostic cesse d’accepter les commandes. La désactivation de la session permet une révocation immédiate : aucun redémarrage ni aucune coordination avec ClickHouse ne sont nécessaires.
 
-<div id="operator-allowlist">
-  ## Liste d’autorisation des opérateurs
-</div>
+## Liste d’autorisation des opérateurs {#operator-allowlist}
 
 Chaque appel vers la passerelle est autorisé selon une liste d’adresses e-mail d’opérateurs, comparée à l’adresse e-mail attestée par le jeton OIDC validé, et jamais à ce que le client déclare à son sujet.
 
 * **Kubernetes :** définissez `clctl.gateway.allowedOperators` dans votre fichier de surcharge de valeurs. La liste est générée dans une ConfigMap que la passerelle relit toutes les 30 secondes ; ainsi, une modification des valeurs suivie de `helm upgrade` renouvelle la liste d’autorisation sans redémarrer le pod.
 * **VM Linux :** la liste d’autorisation se trouve dans `/etc/clicklink/allowed-operators.txt`, écrit par `clicklink clctl init` à partir des adresses e-mail d’opérateurs que vous fournissez.
 
-<div id="what-operators-can-do">
-  ## Ce que les opérateurs peuvent faire pendant une session
-</div>
+## Ce que les opérateurs peuvent faire pendant une session {#what-operators-can-do}
 
 Lorsqu’une session est active, les ingénieurs du support ClickHouse peuvent exécuter :
 
@@ -106,9 +99,7 @@ Lorsqu’une session est active, les ingénieurs du support ClickHouse peuvent e
 
 Le RBAC de l’outil de diagnostic ne contient aucune permission `exec`, `delete` ou `patch` ; les opérateurs ne peuvent donc pas ouvrir de shell dans vos pods ni modifier quoi que ce soit via le connecteur. La liste complète des privilèges et du RBAC figure dans la référence du [modèle de privilèges](/fr/products/bring-your-own-cloud/connector/reference/privilege-model).
 
-<div id="audit-log">
-  ## Journal d’audit
-</div>
+## Journal d’audit {#audit-log}
 
 Chaque appel de passerelle et chaque commande exécutée au cours d’une session sont ajoutés à `/var/log/clicklink/troubleshoot-audit.log` sous la forme d’un objet JSON par ligne (NDJSON). Le champ `submitted_by` enregistre l’identité associée à chaque entrée, laquelle dépend de son origine : les appels de passerelle contiennent l’adresse e-mail attestée par le jeton validé, jamais une valeur fournie par le client ; les modifications de session effectuées localement sur une VM enregistrent l’utilisateur hôte à l’origine de l’appel ; et les commandes exécutées au cours d’une session enregistrent l’identité de l’organisation transmise sur le canal de commandes authentifié. Une entrée d’activation de session via la passerelle se présente comme suit :
 
@@ -139,15 +130,11 @@ kubectl -n "${CONNECTOR_NAMESPACE}" exec statefulset/clicklink-connector-trouble
 
 Le journal est un simple fichier dans votre environnement ; transmettez-le à votre SIEM comme n’importe quel autre journal d’hôte ou de conteneur.
 
-<div id="redaction">
-  ## Masquage
-</div>
+## Masquage {#redaction}
 
 Tout ce que renvoie l’outil de diagnostic est masqué avant de quitter votre environnement. Des modèles intégrés couvrent les adresses IPv4 et IPv6, les jetons Bearer, les clés d&#39;accès AWS, les adresses e-mail, les JWT, les clés privées SSH et les informations d&#39;identification incluses dans les chaînes de connexion. Vous pouvez les étendre ou les remplacer dans `/etc/clicklink/redaction-patterns.yaml` ; une entrée portant le même nom qu&#39;un modèle intégré le remplace. Le démon refuse de démarrer si le fichier de modèles n&#39;est pas valide, et `clicklink clctl preflight` le valide : ainsi, une configuration de masquage défectueuse échoue explicitement au lieu de laisser passer silencieusement des données.
 
-<div id="related-pages">
-  ## Pages associées
-</div>
+## Pages associées {#related-pages}
 
 * [Architecture](/fr/products/bring-your-own-cloud/connector/architecture) : toutes les connexions établies par le connecteur et les flux de données associés aux sessions.
 * [Configuration](/fr/products/bring-your-own-cloud/connector/configuration) : paramètres de passerelle, de liste d’autorisation et de masquage.

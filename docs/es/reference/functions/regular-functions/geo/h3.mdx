@@ -328,7 +328,9 @@ SELECT arrayJoin(h3kRing(644325529233966508, 1)) AS h3index;
   ## h3PolygonToCells
 </div>
 
-Devuelve los hexágonos (con la resolución especificada) que quedan dentro de la geometría proporcionada, ya sea un anillo o un (multi)polígono.
+Devuelve los hexágonos (con la resolución especificada) que quedan dentro de la geometría proporcionada, ya sea un anillo o un (multi)polígono. Un hexágono está contenido cuando la geometría contiene su centro, que corresponde al modo de contención `0` de [h3PolygonToCellsWithContainment](#h3polygontocellswithcontainment).
+
+Cada vértice de la geometría debe estar en la esfera: longitud en el rango `[-180, 180]` y latitud en el rango `[-90, 90]` grados. El orden de las celdas devueltas no está garantizado, por lo que ordene el array cuando el orden sea importante.
 
 **Sintaxis**
 
@@ -346,7 +348,7 @@ h3PolygonToCells(geometry, resolution)
 
 **Valores devueltos**
 
-* Array de los H3-indexes contenidos. [Array](/es/reference/data-types/array)([UInt64](/es/reference/data-types/int-uint)).
+* Array de los índices H3 contenidos. [Array](/es/reference/data-types/array)([UInt64](/es/reference/data-types/int-uint)).
 
 **Ejemplo**
 
@@ -356,12 +358,12 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 
 ```text title="Response"
 ┌────────────h3index─┐
-│ 608692970769612799 │
-│ 608692971927240703 │
 │ 608692970585063423 │
-│ 608692970819944447 │
 │ 608692970719281151 │
 │ 608692970752835583 │
+│ 608692970769612799 │
+│ 608692970819944447 │
+│ 608692971927240703 │
 │ 608692972027903999 │
 └────────────────────┘
 ```
@@ -371,6 +373,8 @@ SELECT h3PolygonToCells([(-122.4089866999972145,37.813318999983238),(-122.354473
 </div>
 
 Devuelve los hexágonos (con la resolución especificada) que cubren la geometría proporcionada, ya sea un anillo, un polígono o un multipolígono, utilizando modos experimentales de contención de H3.
+
+Cada vértice de la geometría debe estar en la esfera: longitud en el rango `[-180, 180]` y latitud en `[-90, 90]` grados. No se garantiza el orden de las celdas devueltas, por lo que debe ordenar el array cuando el orden sea importante.
 
 Esta función asigna los valores de `flags` a los modos de contención de H3:
 

@@ -18,6 +18,8 @@ doc_type: 'reference'
 [LIMIT [n, ]m] [OFFSET offset_row_count]
 ```
 
+Les formes `OFFSET ... FETCH` de la norme SQL ne peuvent pas être combinées avec la forme de plage [`LIMIT ... AFTER ... UNTIL`](/fr/reference/statements/select/limit#limit-after-until).
+
 La valeur `offset_row_count` ou `fetch_row_count` peut être un nombre ou une constante littérale. Vous pouvez omettre `fetch_row_count` ; par défaut, elle est égale à 1.
 
 `OFFSET` spécifie le nombre de lignes à ignorer avant de commencer à renvoyer des lignes du jeu de résultats de la requête. `OFFSET n` ignore les `n` premières lignes du résultat.
@@ -57,9 +59,7 @@ L’option `WITH TIES` permet de renvoyer toutes les lignes supplémentaires à 
   Le décalage effectif peut aussi dépendre du paramètre [offset](/fr/reference/settings/session-settings/other#offset).
 </Note>
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 Table d’entrée :
 

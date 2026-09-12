@@ -12,7 +12,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
 يمكن استخدام خادم HTTP لمصادقة مستخدمي ClickHouse. ولا يمكن استخدام مصادقة HTTP إلا كمُصادِق خارجي للمستخدمين الحاليين، والمُعرَّفين في `users.xml` أو في مسارات التحكم بالوصول المحلية. حاليًا، لا يتم دعم سوى مخطط مصادقة [Basic](https://datatracker.ietf.org/doc/html/rfc7617) باستخدام طريقة GET.
 
 <div id="http-auth-server-definition">
-  ## تعريف خادم مصادقة HTTP
+  ## تعريف خادم مصادقة HTTP {#http-auth-server-definition}
 </div>
 
 لتعريف خادم مصادقة HTTP، يجب إضافة القسم `http_authentication_servers` إلى ملف `config.xml`.
@@ -64,11 +64,9 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
 
 يحدّد هذا الجزء الرؤوس التي سيتم تمريرها من رؤوس طلب العميل إلى خدمة المصادقة الخارجية عبر HTTP. لاحظ أن الرؤوس ستُطابَق مع الرؤوس المعرّفة في الإعدادات بطريقة غير حساسة لحالة الأحرف، لكن سيتم تمريرها كما هي، أي دون تعديل.
 
-<div id="enabling-http-auth-in-users-xml">
-  ### تمكين مصادقة HTTP في `users.xml`
-</div>
+### تمكين مصادقة HTTP في `users.xml` {#enabling-http-auth-in-users-xml}
 
-لتمكين مصادقة HTTP لهذا المستخدم، حدِّد قسم `http_authentication` بدلًا من `password` أو أي أقسام مشابهة في تعريف المستخدم.
+لتمكين مصادقة HTTP لهذا المستخدم، حدِّد قسم `http_authentication` بدلًا من `password` أو أي أقسام مشابهة في تعريف المستخدم.
 
 المعلمات:
 
@@ -95,7 +93,7 @@ import SelfManaged from '/snippets/ar/_self_managed_only_no_roadmap.mdx';
 </Note>
 
 <div id="enabling-http-auth-using-sql">
-  ### تمكين مصادقة HTTP باستخدام SQL
+  ### تمكين مصادقة HTTP باستخدام SQL {#enabling-http-auth-using-sql}
 </div>
 
 عند تمكين [التحكم بالوصول وإدارة الحسابات المعتمدان على SQL](/ar/concepts/features/security/access-rights#access-control-usage) في ClickHouse، يمكن أيضًا إنشاء المستخدمين الذين تُحدَّد هويتهم عبر مصادقة HTTP باستخدام عبارات SQL.
@@ -111,7 +109,7 @@ CREATE USER my_user IDENTIFIED WITH HTTP SERVER 'basic_server'
 ```
 
 <div id="passing-session-settings">
-  ### تمرير إعدادات الجلسة
+  ### تمرير إعدادات الجلسة {#passing-session-settings}
 </div>
 
 إذا كان جسم الاستجابة من خادم مصادقة HTTP بتنسيق JSON ويحتوي على كائن فرعي `settings`، فسيحاول ClickHouse تحليل أزواج `key: value` فيه باعتبارها قيماً نصية وتعيينها كإعدادات جلسة للجلسة الحالية للمستخدم المُستوثَق منه. وإذا فشل التحليل، فسيتم تجاهل جسم الاستجابة الوارد من الخادم.

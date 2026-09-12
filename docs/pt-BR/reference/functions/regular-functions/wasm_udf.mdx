@@ -140,9 +140,7 @@ SELECT 'my_module', base64Decode('...'), reinterpretAsUInt256(unhex('369f...c57d
 
 Se o hash fornecido não corresponder ao SHA256 calculado para o código do módulo, a inserção falhará. Isso pode ser útil ao carregar módulos a partir de fontes externas, como S3 ou HTTP.
 
-<div id="distribute-a-module-across-a-cluster">
-  ### Distribuir um módulo em um cluster
-</div>
+### Distribuir um módulo em um cluster {#distribute-a-module-across-a-cluster}
 
 `system.webassembly_modules` é uma tabela por instância — um `INSERT` é gravado apenas na réplica que atende à conexão. Não existe uma forma `ON CLUSTER` para a instrução `INSERT`, portanto, um `CREATE FUNCTION ... ON CLUSTER` subsequente falhará nas réplicas que não têm o módulo:
 
@@ -287,7 +285,7 @@ O WebAssembly não faz distinção entre argumentos com sinal e sem sinal; em ve
 
 Processa blocos inteiros de uma só vez usando (des)serialização por meio da memória WASM. Compatível com quaisquer tipos de argumentos e de retorno.
 
-Os dados são trocados por meio de buffers na memória WASM. Um buffer é uma estrutura de 8 bytes que contém um ponteiro para os dados e o tamanho deles (dois valores `u32` little-endian). Os buffers são passados por identificador — um ponteiro para essa estrutura, e não para os próprios dados. O código guest deve exportar duas funções para criar e destruir esses buffers.
+Os dados são trocados por meio de buffers na memória WASM. Um buffer é uma estrutura de 8 bytes que contém um ponteiro para os dados e o tamanho deles (dois valores `u32` little-endian). Os buffers são passados por identificador — um ponteiro para essa estrutura, e não para os próprios dados. O código guest deve exportar duas funções para criar e destruir esses buffers. Quando o tamanho for diferente de zero, o ponteiro dos dados também deve ser diferente de zero: um buffer que declara um tamanho positivo, mas aponta para o deslocamento `0` da memória linear, não é um buffer válido, e o código guest não deve produzir um; o ClickHouse rejeita esse buffer e faz a consulta falhar com um `WASM_ERROR`.
 
 Para cada bloco de entrada, o ClickHouse:
 
@@ -297,7 +295,9 @@ Para cada bloco de entrada, o ClickHouse:
 4. Lê o buffer de resultado: ele deve conter exatamente uma coluna com exatamente o mesmo número de linhas, serializada no mesmo formato. Para formatos com campos nomeados, como `JSONEachRow`, a coluna de resultado deve se chamar `result`.
 5. Chama `clickhouse_destroy_buffer` nos identificadores dos buffers de entrada (se houver) e de resultado. O código guest não deve liberar o buffer de resultado por conta própria nem retornar o identificador de entrada como resultado — caso contrário, ele seria destruído duas vezes.
 
-A função é invocada uma vez por bloco de entrada: uma consulta grande é dividida em vários blocos pelo pipeline de consulta (o número máximo de linhas por chamada também pode ser limitado pela configuração `webassembly_udf_max_input_block_size`). Portanto, a contagem de linhas passada em cada chamada corresponde ao tamanho desse bloco, e não ao da consulta inteira.
+A função é invocada uma vez por bloco de entrada: uma consulta grande é dividida em vários blocos pelo pipeline de consulta. Portanto, a contagem de linhas passada em cada chamada corresponde ao tamanho desse bloco, e não ao da consulta inteira.
+
+Um bloco do pipeline ainda pode ser largo demais para a memória linear do módulo, e por isso é subdividido. Por padrão, `webassembly_udf_input_split_memory_ratio` faz essa divisão dinamicamente: o ClickHouse mede as linhas serializadas e inicia uma nova chamada antes que a entrada ultrapasse essa fração da memória linear do guest, de modo que a contagem de linhas varia conforme os dados. Um `webassembly_udf_max_input_block_size` diferente de zero substitui esse comportamento por um limite fixo desse número de linhas por chamada, e uma razão de `0` passa o bloco inteiro em uma única chamada. Uma chamada nunca fica abaixo de uma linha, portanto uma linha grande demais para a memória do módulo por si só ainda falha dentro do guest.
 
 <Note>
   Os bytes exatos dentro dos buffers são definidos pelo formato escolhido, e o código guest deve decodificá-los e codificá-los por conta própria. Em particular, para valores `String`:
@@ -328,7 +328,7 @@ A função é invocada uma vez por bloco de entrada: uma consulta grande é divi
 )
 ```
 
-Um exemplo completo em C freestanding: `str_reverse` inverte os bytes de cada string de entrada usando `serialization_format = 'RowBinary'`. As instâncias do módulo são reutilizadas entre blocos, portanto `clickhouse_destroy_buffer` precisa realmente liberar a memória — aqui, o allocator é redefinido quando todos os buffers são destruídos.
+Um exemplo completo em C freestanding: `str_reverse` inverte os bytes de cada string de entrada, usando `serialization_format = 'RowBinary'`. As instâncias do módulo são reutilizadas entre blocos, portanto `clickhouse_destroy_buffer` precisa realmente recuperar a memória — aqui o allocator é redefinido quando todos os buffers são destruídos.
 
 ```c
 #include <stdint.h>
@@ -534,7 +534,9 @@ As configurações a seguir, no nível da consulta, controlam a execução de UD
 
 * `webassembly_udf_max_memory` — Limite de memória, em bytes, por instância de UDF em WebAssembly.
 
-* `webassembly_udf_max_input_block_size` — Número máximo de linhas passadas para uma UDF em WebAssembly em um único bloco. Defina como 0 para processar todas as linhas de uma só vez.
+* `webassembly_udf_max_input_block_size` — Número máximo de linhas passadas para uma UDF em WebAssembly em um único bloco, para todas as ABIs. Defina como 0 para permitir que `webassembly_udf_input_split_memory_ratio` dimensione as chamadas de uma função com `ABI BUFFERED_V1`; as demais ABIs então recebem o bloco inteiro do pipeline.
+
+* `webassembly_udf_input_split_memory_ratio` — A fração da memória linear que um módulo declara ter no início (do seu teto de memória, no caso de um módulo que começa sem páginas) que a entrada de uma chamada pode ocupar. Usada para dividir os blocos de uma função com `ABI BUFFERED_V1` quando `webassembly_udf_max_input_block_size` é 0; as demais ABIs não carregam bloco de entrada serializado e a ignoram. Padrão: `0.5`, deixando o restante da memória para o working set do próprio guest — uma razão próxima de 1 ainda pode falhar dentro do allocator do guest. Defina como 0, ou defina `compatibility` para uma versão anterior à 26.9, para passar o bloco inteiro do pipeline em uma única chamada. Deve ser no mínimo 0 e no máximo 1.
 
 * `webassembly_udf_max_instances` — Número máximo de instâncias de UDF em WebAssembly que podem ser executadas em paralelo por função.
 

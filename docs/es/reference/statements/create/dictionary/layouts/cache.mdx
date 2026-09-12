@@ -15,11 +15,31 @@ La clave del diccionario tiene el tipo [UInt64](/es/reference/data-types/int-uin
 
 Al buscar en un diccionario, primero se consulta la caché. Para cada block de datos, todas las claves que no se encuentran en la caché o que están desactualizadas se solicitan desde el origen mediante `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Después, los datos recibidos se escriben en la caché.
 
+Esto se aplica a la búsqueda de una clave: `dictGet` y las demás funciones de diccionario. Leer el diccionario **como una tabla** con `SELECT ... FROM <dictionary>` es diferente: devuelve las celdas que residen en la caché en ese momento y no solicita nada del origen, porque una caché no conserva ningún registro de qué claves existen. Un `WHERE` sobre la clave es un filtro normal sobre esas celdas residentes, no una lista de claves que obtener:
+
+```sql
+CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'cache_src')) LIFETIME(MIN 0 MAX 900) LAYOUT(CACHE(SIZE_IN_CELLS 1000));
+
+-- nothing is cached yet, so nothing comes back and the source is not queried
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+0
+
+-- looking the keys up populates the cache
+SELECT dictGet('cache_dict', 'data', toUInt64(number + 1)) FROM numbers(3);
+
+-- and now the same read sees them
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+3
+```
+
+Por tanto, un diccionario cache está pensado para usarse mediante funciones de diccionario. Si necesita que `SELECT ... FROM <dictionary> WHERE key IN (...)` obtenga datos del origen, use el layout [direct](/es/reference/statements/create/dictionary/layouts/direct), que consulta el origen en cada solicitud y no almacena nada en caché; para leer el diccionario completo como una tabla, use un layout que lo contenga por completo, como [flat](/es/reference/statements/create/dictionary/layouts/flat) o [hashed](/es/reference/statements/create/dictionary/layouts/hashed).
+
 Si las claves no se encuentran en el diccionario, se crea una tarea de actualización de la caché y se añade a la cola de actualización. Las propiedades de la cola de actualización pueden controlarse con las configuraciones `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
 Para los diccionarios cache, se puede establecer el [lifetime](/es/reference/statements/create/dictionary/lifetime) de expiración de los datos de la caché. Si ha pasado más tiempo que `lifetime` desde que se cargaron los datos en una celda, el valor de la celda no se usa y la clave pasa a estar expirada. La clave se vuelve a solicitar la próxima vez que sea necesario usarla. Este comportamiento puede configurarse con la configuración `allow_read_expired_keys`.
 
-Esta es la forma menos eficaz de almacenar diccionarios. La velocidad de la caché depende en gran medida de una configuración correcta y del escenario de uso. Un diccionario de tipo cache funciona bien solo cuando la tasa de aciertos es lo bastante alta (se recomienda un 99% o más). Puede ver la tasa media de aciertos en la table [system.dictionaries](/es/reference/system-tables/dictionaries).
+Esta es la forma menos eficaz de almacenar diccionarios. La velocidad de la caché depende en gran medida de una configuración correcta y del escenario de uso. Un diccionario de tipo cache funciona bien solo cuando la tasa de aciertos es lo bastante alta (se recomienda un 99% o más). Puede ver la tasa media de aciertos en la tabla [system.dictionaries](/es/reference/system-tables/dictionaries).
 
 Si la configuración `allow_read_expired_keys` se establece en 1, su valor predeterminado es 0. En ese caso, el diccionario puede admitir actualizaciones asíncronas. Si un cliente solicita claves y todas están en la caché, pero algunas han expirado, el diccionario devolverá al cliente las claves expiradas y las solicitará de forma asíncrona desde el origen.
 
@@ -64,7 +84,7 @@ Establezca un tamaño de caché lo bastante grande. Debe experimentar para deter
 
 1. Establezca un valor.
 2. Ejecute consultas hasta que la caché esté completamente llena.
-3. Evalúe el consumo de memoria usando la table `system.dictionaries`.
+3. Evalúe el consumo de memoria usando la tabla `system.dictionaries`.
 4. Aumente o disminuya el número de celdas hasta alcanzar el consumo de memoria deseado.
 
 <Note>

@@ -10,9 +10,7 @@ doc_type: '참고'
 
 MySQL 엔진을 사용하면 원격 MySQL 서버에 저장된 데이터에 대해 `SELECT` 및 `INSERT` 쿼리를 실행할 수 있습니다.
 
-<div id="creating-a-table">
-  ## 테이블 생성하기
-</div>
+## 테이블 생성하기 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -58,9 +56,7 @@ SETTINGS
 
 나머지 조건과 `LIMIT` 샘플링 제약은 MySQL 쿼리가 완료된 후에만 ClickHouse에서 실행됩니다.
 
-<div id="tls-ssl">
-  ## TLS/SSL
-</div>
+## TLS/SSL {#tls-ssl}
 
 MySQL 암호화 연결의 자격 증명은 명명된 컬렉션 키(또는 키-값 인수)로 전달됩니다.
 
@@ -86,9 +82,7 @@ MySQL 암호화 연결의 자격 증명은 명명된 컬렉션 키(또는 키-�
 </named_collections>
 ```
 
-<div id="passing-a-query">
-  ## 테이블 이름 대신 쿼리 전달하기
-</div>
+## 테이블 이름 대신 쿼리 전달하기 {#passing-a-query}
 
 테이블 이름 대신 `table` 인수에 MySQL로 그대로 전달되는 `SELECT` 쿼리를 사용할 수 있습니다. 테이블의 구조는 쿼리 결과를 바탕으로 추론됩니다. 쿼리는 서브쿼리로 작성하거나 `query` 함수로 감싸 작성할 수 있습니다:
 
@@ -102,7 +96,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 <Note>
   서브쿼리 형식 `(SELECT ...)`은 ClickHouse에서 파싱된 후 서버로 전송되기 전에 MySQL 방언(백틱으로 식별자 인용)으로 다시 직렬화됩니다. 따라서 유효한 ClickHouse SQL이어야 합니다. ClickHouse가 파싱하지 않는 MySQL 전용 구문을 전달하려면 텍스트가 MySQL로 그대로 전송되는 `query('...')` 형식을 사용하십시오.
 
-  전달된 쿼리에는 이를 둘러싼 ClickHouse 쿼리의 외부 `WHERE`, `LIMIT`, 집계 등이 **푸시 다운되지 않습니다**. 대신 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. MySQL에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 푸시 다운할 수 없는 외부 필터는 로컬에서 적용되지 않고 예외와 함께 거부됩니다.
+  전달된 쿼리에는 이를 둘러싼 ClickHouse 쿼리의 외부 `WHERE`, `LIMIT`, 집계 등이 **푸시 다운되지 않습니다**. 대신 전체 쿼리 결과를 가져온 후 ClickHouse에서 적용됩니다. MySQL에서 읽는 데이터를 제한하려면 필터를 전달된 쿼리 내부에 넣으십시오. [`external_table_strict_query = 1`](/ko/reference/settings/session-settings/external-table#external_table_strict_query)을 사용하면 전달된 쿼리로 푸시 다운할 수 없는 테이블 컬럼에 대한 외부 필터는 로컬에서 적용되는 대신 예외와 함께 거부됩니다. 이 검사는 최상위 수준의 `WHERE` 프레디케이트와 최상위 수준 `AND`의 각 결합 항목에 적용됩니다. 이 테이블의 컬럼에 대한 `PREWHERE`는 이 설정의 대상이 아닙니다. 이 테이블 엔진은 `PREWHERE`를 지원하지 않으므로 설정과 관계없이 이러한 쿼리는 `ILLEGAL_PREWHERE`와 함께 거부됩니다. 분석기(기본값)를 사용하면 필터를 푸시 다운할 수 있는 경우에만 검사가 실행됩니다. 즉, 이 테이블이 쿼리의 유일한 테이블인 경우, `INNER JOIN`의 어느 한쪽에 있는 경우 또는 외부 조인의 보존 측(`LEFT JOIN`의 왼쪽, `RIGHT JOIN`의 오른쪽)에 있는 경우입니다. `LEFT`/`RIGHT JOIN`의 비보존 측 및 `FULL JOIN`의 어느 한쪽에서는 아무것도 푸시 다운되지 않고 검사도 수행되지 않으므로, 엄격 모드에서도 이 테이블의 컬럼에 대한 필터는 조인 후 로컬에서 적용됩니다. 검사가 실행되는 경우, 이를 둘러싼 쿼리에서 조인된 다른 테이블을 참조하는 프레디케이트는 조인된 측만 참조하든 하나의 비-`AND` 표현식(예: `OR`) 내에서 이 테이블과 함께 참조하든 푸시 다운되지 않으며 검사에서 제외됩니다. 이러한 프레디케이트는 일반적인 ClickHouse 평가 시점(조인 후 `WHERE`, 조인 전 `PREWHERE`)을 유지하며 거부되지 않습니다. 이전 분석기(`enable_analyzer = 0`)에서는 이 범위 지정이 적용되지 않습니다. 이 테이블이 조인 트리의 첫 번째 테이블이면 조인된 측의 프레디케이트를 포함하여 전체 외부 필터가 검사되며, 조인된 오른쪽 테이블은 검사되지 않습니다.
 </Note>
 
 여러 레플리카를 지원하며, `|`로 구분해 나열해야 합니다. 예를 들면 다음과 같습니다.
@@ -111,9 +105,7 @@ CREATE TABLE mysql_table ENGINE = MySQL('localhost:3306', 'test', query('SELECT 
 CREATE TABLE test_replicas (id UInt32, name String, age UInt32, money UInt32) ENGINE = MySQL(`mysql{2|3|4}:3306`, 'clickhouse', 'test_replicas', 'root', 'clickhouse');
 ```
 
-<div id="usage-example">
-  ## 사용 예시
-</div>
+## 사용 예시 {#usage-example}
 
 MySQL에서 테이블 생성:
 
@@ -178,15 +170,11 @@ SELECT * FROM mysql_table
 └────────────────┴────────┘
 ```
 
-<div id="mysql-settings">
-  ## 설정
-</div>
+## 설정 {#mysql-settings}
 
 기본 설정은 연결조차 재사용하지 않아 효율이 그다지 높지 않습니다. 이러한 설정을 사용하면 서버가 초당 처리할 수 있는 쿼리 수를 늘릴 수 있습니다.
 
-<div id="connection-auto-close">
-  ### `connection_auto_close`
-</div>
+### `connection_auto_close` {#connection-auto-close}
 
 쿼리 실행 후 연결을 자동으로 닫아, 연결 재사용을 비활성화할 수 있습니다.
 
@@ -197,9 +185,7 @@ SELECT * FROM mysql_table
 
 기본값: `1`.
 
-<div id="connection-max-tries">
-  ### `connection_max_tries`
-</div>
+### `connection_max_tries` {#connection-max-tries}
 
 페일오버를 지원하는 풀의 재시도 횟수를 설정합니다.
 
@@ -210,9 +196,7 @@ SELECT * FROM mysql_table
 
 기본값: `3`.
 
-<div id="connection-pool-size">
-  ### `connection_pool_size`
-</div>
+### `connection_pool_size` {#connection-pool-size}
 
 연결 풀의 크기입니다(모든 연결이 사용 중인 경우, 일부 연결이 해제될 때까지 쿼리는 대기합니다).
 
@@ -222,9 +206,7 @@ SELECT * FROM mysql_table
 
 기본값: `16`.
 
-<div id="connection-wait-timeout">
-  ### `connection_wait_timeout`
-</div>
+### `connection_wait_timeout` {#connection-wait-timeout}
 
 사용 가능한 연결이 생길 때까지 대기하는 시간 제한(초)입니다(이미 `connection_pool_size`개의 연결이 활성 상태인 경우). 0이면 대기하지 않습니다.
 
@@ -234,9 +216,7 @@ Possible values:
 
 기본값: `5`.
 
-<div id="connect-timeout">
-  ### `connect_timeout`
-</div>
+### `connect_timeout` {#connect-timeout}
 
 연결 시간 제한(초)입니다.
 
@@ -246,9 +226,7 @@ Possible values:
 
 기본값: `10`.
 
-<div id="read-write-timeout">
-  ### `read_write_timeout`
-</div>
+### `read_write_timeout` {#read-write-timeout}
 
 읽기-쓰기 타임아웃(초)입니다.
 
@@ -258,9 +236,7 @@ Possible values:
 
 기본값: `300`.
 
-<div id="enable-compression">
-  ### `enable_compression`
-</div>
+### `enable_compression` {#enable-compression}
 
 MySQL 프로토콜 연결에서 압축을 활성화합니다.
 
@@ -289,9 +265,7 @@ ENGINE = MySQL('mysql80:3306', 'clickhouse', 'test_table', 'root', 'password')
 SETTINGS enable_compression = 1;
 ```
 
-<div id="see-also">
-  ## 관련 항목
-</div>
+## 관련 항목 {#see-also}
 
 * [MySQL 테이블 함수](/ko/reference/functions/table-functions/mysql)
 * [MySQL을 딕셔너리 소스로 사용하는 방법](/ko/reference/statements/create/dictionary/sources/mysql)

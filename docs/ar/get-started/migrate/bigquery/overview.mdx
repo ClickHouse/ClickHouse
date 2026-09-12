@@ -10,22 +10,20 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ar/components/Image.jsx";
 
-<div id="resource-organization">
-  ## تنظيم الموارد
-</div>
+## تنظيم الموارد {#resource-organization}
 
 تشبه طريقة تنظيم الموارد في ClickHouse Cloud [التسلسل الهرمي للموارد في BigQuery](https://cloud.google.com/bigquery/docs/resource-hierarchy). ونوضّح أدناه أوجه الاختلاف المحددة استنادًا إلى المخطط التالي الذي يبيّن التسلسل الهرمي لموارد ClickHouse Cloud:
 
 <Image img="/images/migrations/bigquery-1.webp" size="md" alt="تنظيم الموارد" />
 
 <div id="organizations">
-  ### المؤسسات
+  ### المؤسسات {#organizations}
 </div>
 
 على غرار BigQuery، تُعدّ المؤسسات العُقد الجذرية في التسلسل الهرمي لموارد ClickHouse Cloud. يُسنَد أول مستخدم تُنشِئه في حساب ClickHouse Cloud الخاص بك تلقائيًا إلى مؤسسة يملكها هذا المستخدم. ويمكنه دعوة مستخدمين إضافيين إلى المؤسسة.
 
 <div id="bigquery-projects-vs-clickhouse-cloud-services">
-  ### مشاريع BigQuery مقابل خدمات ClickHouse Cloud
+  ### مشاريع BigQuery مقابل خدمات ClickHouse Cloud {#bigquery-projects-vs-clickhouse-cloud-services}
 </div>
 
 ضمن المؤسسات، يمكنك إنشاء خدمات تُعدّ مكافئة إلى حدٍّ ما لمشاريع BigQuery، لأن البيانات المخزنة في ClickHouse Cloud تكون مرتبطة بخدمة. تتوفر في ClickHouse Cloud [عدة أنواع من الخدمات](/ar/products/cloud/features/cloud-tiers). يتم نشر كل خدمة ClickHouse Cloud في Region محددة، وتتضمن:
@@ -35,19 +33,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 3. نقطة نهاية (أو عدة نقاط نهاية يتم إنشاؤها عبر Console في واجهة المستخدم لـ ClickHouse Cloud)  - أي URL خدمة تستخدمه للاتصال بالخدمة (على سبيل المثال، `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
 
 <div id="bigquery-datasets-vs-clickhouse-cloud-databases">
-  ### مجموعات بيانات BigQuery مقابل قواعد بيانات ClickHouse Cloud
+  ### مجموعات بيانات BigQuery مقابل قواعد بيانات ClickHouse Cloud {#bigquery-datasets-vs-clickhouse-cloud-databases}
 </div>
 
 ينظّم ClickHouse الجداول منطقيًا ضمن قواعد بيانات. وكما هي الحال مع مجموعات بيانات BigQuery، تُعد قواعد بيانات ClickHouse حاويات منطقية لتنظيم الوصول إلى بيانات الجداول والتحكم فيه.
 
 <div id="bigquery-folders">
-  ### مجلدات BigQuery
+  ### مجلدات BigQuery {#bigquery-folders}
 </div>
 
 لا يوجد في ClickHouse Cloud حاليًا مفهوم يعادل مجلدات BigQuery.
 
 <div id="bigquery-slot-reservations-and-quotas">
-  ### حجوزات Slot والحصص في BigQuery
+  ### حجوزات Slot والحصص في BigQuery {#bigquery-slot-reservations-and-quotas}
 </div>
 
 كما هو الحال مع حجوزات Slot في BigQuery، يمكنك [تهيئة التحجيم التلقائي الرأسي والأفقي](/ar/products/cloud/features/autoscaling/vertical#configuring-vertical-auto-scaling) في ClickHouse Cloud. بالنسبة إلى التحجيم التلقائي الرأسي، يمكنك تحديد الحدين الأدنى والأقصى لحجم الذاكرة وأنوية CPU لعُقد الحوسبة الخاصة بالخدمة. بعد ذلك، ستتوسع الخدمة أو تتقلص حسب الحاجة ضمن هذه الحدود. تتوفر هذه الإعدادات أيضًا أثناء عملية إنشاء الخدمة لأول مرة. ويكون لكل عقدة حوسبة في الخدمة الحجم نفسه. ويمكنك تغيير عدد عُقد الحوسبة داخل الخدمة باستخدام [التحجيم الأفقي](/ar/products/cloud/features/autoscaling/horizontal#manual-horizontal-scaling).
@@ -59,13 +57,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 وأخيرًا، تتيح لك جدولة I/O تقييد الوصول إلى الأقراص المحلية والبعيدة لفئات أعباء العمل استنادًا إلى الحد الأقصى لعرض النطاق، والطلبات قيد التنفيذ، والسياسة.
 
 <div id="permissions">
-  ### الأذونات
+  ### الأذونات {#permissions}
 </div>
 
-يتحكم ClickHouse Cloud في وصول المستخدمين من خلال موضعين: عبر [Cloud Console](/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments) وعبر [قاعدة البيانات](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users). تُدار إمكانية الوصول إلى Console عبر واجهة المستخدم [clickhouse.cloud](https://console.clickhouse.cloud). وتُدار إمكانية الوصول إلى قاعدة البيانات عبر حسابات مستخدمي قاعدة البيانات والأدوار. بالإضافة إلى ذلك، يمكن منح مستخدمي Console أدوارًا داخل قاعدة البيانات تتيح لهم التفاعل مع قاعدة البيانات عبر [SQL Console](/ar/integrations/connectors/sql-clients/sql-console).
+يتحكم ClickHouse Cloud في وصول المستخدمين من خلال موضعين: عبر [Cloud Console](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users) وعبر [قاعدة البيانات](/ar/products/cloud/guides/security/cloud-access-management/manage-database-users). تُدار إمكانية الوصول إلى Console عبر واجهة المستخدم [clickhouse.cloud](https://console.clickhouse.cloud). وتُدار إمكانية الوصول إلى قاعدة البيانات عبر حسابات مستخدمي قاعدة البيانات والأدوار. بالإضافة إلى ذلك، يمكن منح مستخدمي Console أدوارًا داخل قاعدة البيانات تتيح لهم التفاعل مع قاعدة البيانات عبر [SQL Console](/ar/integrations/connectors/sql-clients/sql-console).
 
 <div id="data-types">
-  ## أنواع البيانات
+  ## أنواع البيانات {#data-types}
 </div>
 
 يوفّر ClickHouse مستويات أدق من الدقة للأنواع العددية. على سبيل المثال، يوفّر BigQuery الأنواع العددية [`INT64` و`NUMERIC` و`BIGNUMERIC` و`FLOAT64`](https://cloud.google.com/bigquery/docs/reference/standard-sql/data-types#numeric_types). بالمقابل، يوفّر ClickHouse أنواعًا متعددة الدقة للأعداد العشرية والأعداد ذات الفاصلة العائمة والأعداد الصحيحة. وباستخدام أنواع البيانات هذه، يمكنك تحسين استخدام التخزين وتقليل العبء على الذاكرة، مما يؤدي إلى استعلامات أسرع واستهلاك أقل للموارد. نعرض أدناه نوع ClickHouse المكافئ لكل نوع في BigQuery:
@@ -92,11 +90,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 عند توفّر عدة خيارات لأنواع ClickHouse، راعِ النطاق الفعلي للبيانات واختر أقل نوع يلبّي الحاجة. وراعِ أيضًا استخدام [مرمّزات الضغط المناسبة](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema) للحصول على ضغط إضافي.
 
 <div id="query-acceleration-techniques">
-  ## تقنيات تسريع الاستعلامات
+  ## تقنيات تسريع الاستعلامات {#query-acceleration-techniques}
 </div>
 
 <div id="primary-and-foreign-keys-and-primary-index">
-  ### المفاتيح الأساسية والخارجية والفهرس الأساسي
+  ### المفاتيح الأساسية والخارجية والفهرس الأساسي {#primary-and-foreign-keys-and-primary-index}
 </div>
 
 في BigQuery، يمكن أن يحتوي الجدول على [قيود المفتاح الأساسي والمفتاح الخارجي](https://cloud.google.com/bigquery/docs/information-schema-table-constraints). عادةً ما تُستخدم المفاتيح الأساسية والخارجية في قواعد البيانات العلائقية لضمان تكامل البيانات. وتكون قيمة المفتاح الأساسي فريدةً عادةً لكل صف، ولا تكون `NULL`. ويجب أن تكون كل قيمة مفتاح خارجي في الصف موجودة في عمود المفتاح الأساسي لجدول المفتاح الأساسي أو أن تكون `NULL`. في BigQuery، لا تُفرَض هذه القيود، لكن مُحسِّن الاستعلامات قد يستخدم هذه المعلومات لتحسين الاستعلامات.
@@ -104,7 +102,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 في ClickHouse، يمكن أن يحتوي الجدول أيضًا على مفتاح أساسي. ومثل BigQuery، لا يفرض ClickHouse التفرّد على قيم عمود المفتاح الأساسي في الجدول. وعلى عكس BigQuery، تُخزَّن بيانات الجدول على القرص [مرتبة](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files) بحسب أعمدة المفتاح الأساسي. ويستفيد مُحسِّن الاستعلامات من ترتيب الفرز هذا لتجنّب إعادة الفرز، وتقليل استخدام الذاكرة في عمليات الربط، وتمكين الإنهاء المبكر لعبارات LIMIT. وعلى عكس BigQuery، ينشئ ClickHouse تلقائيًا [فهرسًا أساسيًا متناثرًا](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#an-index-design-for-massive-data-scales) استنادًا إلى قيم أعمدة المفتاح الأساسي. ويُستخدم هذا الفهرس لتسريع جميع الاستعلامات التي تتضمن عوامل تصفية على أعمدة المفتاح الأساسي. ولا يدعم ClickHouse حاليًا قيود المفتاح الخارجي.
 
 <div id="secondary-indexes-only-available-in-clickhouse">
-  ## الفهارس الثانوية (متاحة فقط في ClickHouse)
+  ## الفهارس الثانوية (متاحة فقط في ClickHouse) {#secondary-indexes-only-available-in-clickhouse}
 </div>
 
 بالإضافة إلى الفهرس الأساسي المُنشأ من قيم أعمدة المفتاح الأساسي للجدول، يتيح ClickHouse إنشاء فهارس ثانوية على أعمدة لا تدخل ضمن المفتاح الأساسي. ويوفّر ClickHouse عدة أنواع من الفهارس الثانوية، يناسب كلٌّ منها أنواعًا مختلفة من الاستعلامات:
@@ -119,25 +117,25 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   * يساعد على تخطي قراءة أجزاء البيانات التي لا تقع ضمن النطاق المحدد.
 
 <div id="search-indexes">
-  ## فهارس البحث
+  ## فهارس البحث {#search-indexes}
 </div>
 
 على غرار [فهارس البحث](https://cloud.google.com/bigquery/docs/search-index) في BigQuery، يمكن إنشاء [فهارس النص الكامل](/ar/reference/engines/table-engines/mergetree-family/textindexes) لجداول ClickHouse على الأعمدة التي تحتوي على قيم نصية.
 
 <div id="vector-indexes">
-  ## الفهارس المتجهية
+  ## الفهارس المتجهية {#vector-indexes}
 </div>
 
 طرحت BigQuery مؤخرًا [فهارس متجهية](https://cloud.google.com/bigquery/docs/vector-index) كميزة ضمن مرحلة ما قبل GA. وبالمثل، يوفّر ClickHouse دعمًا تجريبيًا لـ [فهارس لتسريع](/ar/reference/engines/table-engines/mergetree-family/annindexes) حالات استخدام البحث المتجهي.
 
 <div id="partitioning">
-  ## التقسيم
+  ## التقسيم {#partitioning}
 </div>
 
 على غرار BigQuery، يستخدم ClickHouse تقسيم الجداول لتحسين أداء الجداول الكبيرة وتسهيل إدارتها، وذلك بتقسيمها إلى أجزاء أصغر وأسهل في الإدارة تُسمى أقسامًا. نشرح تقسيم الجداول في ClickHouse بالتفصيل [هنا](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key).
 
 <div id="clustering">
-  ## التجميع العنقودي
+  ## التجميع العنقودي {#clustering}
 </div>
 
 باستخدام التجميع العنقودي، يرتّب BigQuery تلقائيًا بيانات الجدول وفقًا لقيم عدد قليل من الأعمدة المحددة، ويخزّنها معًا في كتل ذات أحجام مثالية. يحسّن التجميع العنقودي أداء الاستعلامات، مما يتيح لـ BigQuery تقدير تكلفة تشغيل الاستعلام بشكل أفضل. ومع الأعمدة المجمّعة عنقوديًا، تتجنب الاستعلامات أيضًا فحص البيانات غير الضرورية.
@@ -145,13 +143,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 في ClickHouse، تُ[جمَّع البيانات عنقوديًا على القرص](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#optimal-compression-ratio-of-data-files) تلقائيًا استنادًا إلى أعمدة المفتاح الأساسي للجدول، وتُنظَّم منطقيًا في كتل يمكن للاستعلامات التي تستخدم بنية بيانات الفهرس الأساسي تحديدها بسرعة أو استبعادها.
 
 <div id="materialized-views">
-  ## العروض المادية
+  ## العروض المادية {#materialized-views}
 </div>
 
 يدعم كلٌّ من BigQuery وClickHouse العروض المادية، وهي نتائج تُحتسب مسبقًا استنادًا إلى ناتج استعلام تحويل على جدول أساسي، مما يحسّن الأداء ويزيد الكفاءة.
 
 <div id="querying-materialized-views">
-  ## الاستعلام عن العروض المادية
+  ## الاستعلام عن العروض المادية {#querying-materialized-views}
 </div>
 
 يمكن الاستعلام عن العروض المادية في BigQuery مباشرةً، أو يمكن للمُحسِّن استخدامها لمعالجة الاستعلامات على الجداول الأساسية. وإذا كانت التغييرات التي تطرأ على الجداول الأساسية قد تُبطل العرض المادي، فتُقرأ البيانات مباشرةً من الجداول الأساسية. أما إذا كانت هذه التغييرات لا تُبطل العرض المادي، فتُقرأ بقية البيانات من العرض المادي، ولا تُقرأ من الجداول الأساسية إلا التغييرات فقط.
@@ -165,13 +163,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 في ClickHouse، تُحدَّث العروض المادية بشكل تزايدي. وتوفّر آلية التحديث التزايدي هذه قابلية توسّع عالية وتكاليف حوسبة منخفضة، إذ صُمِّمت العروض المادية التي تُحدَّث تزايديًا خصيصًا للسيناريوهات التي تحتوي فيها الجداول الأساسية على مليارات أو تريليونات من الصفوف. وبدلًا من الاستعلام مرارًا عن الجدول الأساسي الذي يواصل النمو لتحديث العرض المادي، يحسب ClickHouse ببساطة نتيجة جزئية من قيم الصفوف المُدرجة حديثًا في الجدول الأساسي فقط. ثم تُدمج هذه النتيجة الجزئية تدريجيًا مع النتيجة الجزئية المحسوبة سابقًا في الخلفية. ويؤدي ذلك إلى خفض كبير في تكاليف الحوسبة مقارنةً بتحديث العرض المادي مرارًا انطلاقًا من الجدول الأساسي بالكامل.
 
 <div id="transactions">
-  ## المعاملات
+  ## المعاملات {#transactions}
 </div>
 
 بخلاف ClickHouse، يدعم BigQuery المعاملات متعددة العبارات داخل استعلام واحد، أو عبر عدة استعلامات عند استخدام الجلسات. تتيح لك المعاملة متعددة العبارات تنفيذ عمليات تعديل، مثل إدراج صفوف أو حذفها في جدول واحد أو أكثر، ثم إما اعتماد التغييرات أو التراجع عنها بشكل ذرّي. المعاملات متعددة العبارات مدرجة على [خارطة طريق ClickHouse لعام 2024](https://github.com/ClickHouse/ClickHouse/issues/58392).
 
 <div id="aggregate-functions">
-  ## الدوال التجميعية
+  ## الدوال التجميعية {#aggregate-functions}
 </div>
 
 مقارنةً بـ BigQuery، يوفّر ClickHouse عددًا أكبر بكثير من الدوال التجميعية المضمّنة:
@@ -180,7 +178,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * يضم ClickHouse أكثر من [150 دالة تجميع مُعدّة مسبقًا](/ar/reference/functions/aggregate-functions/reference-index)، بالإضافة إلى [مُركِّبات تجميع](/ar/reference/functions/aggregate-functions/combinators) قوية [لتوسيع](https://www.youtube.com/watch?v=7ApwD0cfAFI) سلوك دوال التجميع المُعدّة مسبقًا. على سبيل المثال، يمكنك تطبيق أكثر من 150 دالة تجميع مُعدّة مسبقًا على المصفوفات بدلًا من صفوف الجدول، وذلك ببساطة عبر استدعائها باستخدام [اللاحقة -Array](/ar/reference/functions/aggregate-functions/combinators#-array). وباستخدام [اللاحقة -Map](/ar/reference/functions/aggregate-functions/combinators#-map)، يمكنك تطبيق أي دالة تجميع على القيم من نوع Map. وباستخدام [اللاحقة -ForEach](/ar/reference/functions/aggregate-functions/combinators#-foreach)، يمكنك تطبيق أي دالة تجميع على المصفوفات المتداخلة.
 
 <div id="data-sources-and-file-formats">
-  ## مصادر البيانات وتنسيقات الملفات
+  ## مصادر البيانات وتنسيقات الملفات {#data-sources-and-file-formats}
 </div>
 
 مقارنةً بـ BigQuery، يدعم ClickHouse عددًا أكبر بكثير من تنسيقات الملفات ومصادر البيانات:
@@ -189,13 +187,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * يدعم BigQuery خمسة تنسيقات ملفات و19 مصدر بيانات
 
 <div id="sql-language-features">
-  ## ميزات لغة SQL
+  ## ميزات لغة SQL {#sql-language-features}
 </div>
 
 يوفّر ClickHouse لغة SQL القياسية مع العديد من الامتدادات والتحسينات التي تجعلها أكثر ملاءمة للمهام التحليلية. على سبيل المثال، تدعم ClickHouse SQL [دوال لامبدا](/ar/reference/functions/regular-functions/overview#arrow-operator-and-lambda) والدوال عالية الرتبة، لذلك لا تحتاج إلى فرد المصفوفات أو تفجيرها عند تطبيق التحويلات. وهذه ميزة كبيرة مقارنةً بأنظمة أخرى مثل BigQuery.
 
 <div id="arrays">
-  ## المصفوفات
+  ## المصفوفات {#arrays}
 </div>
 
 مقارنةً بوظائف المصفوفات الثماني في BigQuery، يوفّر ClickHouse أكثر من 80 [وظيفة مصفوفات مضمّنة](/ar/reference/functions/regular-functions/array-functions) لنمذجة مجموعة واسعة من المشكلات وحلّها ببساطة وأناقة.

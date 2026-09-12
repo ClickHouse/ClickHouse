@@ -19,8 +19,8 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-动态去除 datetime64 值中末尾的零，将输出标度调整为 [0, 3, 6]，
-分别对应“秒”“毫秒”和“微秒”
+动态去除 `DateTime64` 值中末尾的零，将输出标度向上舍入为可保留所有有效数字的下一个
+3 的倍数：[0, 3, 6, 9]。如果小数部分全为零，则将其省略。
 
 <div id="date_time_input_format">
   ## date_time_input_format

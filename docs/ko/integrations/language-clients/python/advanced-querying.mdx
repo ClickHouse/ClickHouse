@@ -7,9 +7,7 @@ title: '고급 쿼리'
 doc_type: '참고'
 ---
 
-<div id="querycontexts">
-  ## QueryContexts
-</div>
+## QueryContexts {#querycontexts}
 
 ClickHouse Connect는 표준 쿼리를 `QueryContext` 내에서 실행합니다. `QueryContext`에는 ClickHouse 데이터베이스에 대해 쿼리를 구성하는 데 사용되는 핵심 데이터 구조와, 결과를 `QueryResult` 또는 다른 응답 데이터 구조로 처리하는 데 사용되는 구성이 포함됩니다. 여기에는 쿼리 자체, 매개변수, 설정, 읽기 포맷, 기타 속성이 포함됩니다.
 
@@ -32,9 +30,7 @@ assert result.first_row == (79,)
 
 `QueryContext`는 스레드 안전하지 않으므로, 멀티스레드 환경에서는 `QueryContext.updated_copy` 메서드를 호출해 복사본을 얻을 수 있다는 점에 유의하십시오.
 
-<div id="streaming-queries">
-  ## 스트리밍 쿼리
-</div>
+## 스트리밍 쿼리 {#streaming-queries}
 
 ClickHouse Connect Client는 데이터를 스트림으로 가져오는 여러 메서드를 제공합니다(Python generator로 구현됨).
 
@@ -48,9 +44,7 @@ ClickHouse Connect Client는 데이터를 스트림으로 가져오는 여러 �
 
 각 메서드는 `with` 문으로 열어야 하는 `StreamContext`를 반환합니다. async 클라이언트 스트리밍 메서드는 `await`로 대기한 후 `async with`로 엽니다.
 
-<div id="data-blocks">
-  ### 데이터 블록
-</div>
+### 데이터 블록 {#data-blocks}
 
 ClickHouse Connect는 기본 `query` 메서드의 모든 데이터를 ClickHouse 서버에서 수신한 블록 스트림으로 처리합니다. 이러한 블록은 ClickHouse와 주고받을 때 사용자 정의 &quot;Native&quot; 포맷으로 전송됩니다. &quot;블록&quot;은 바이너리 데이터 컬럼의 시퀀스이며, 각 컬럼에는 지정된 데이터 타입의 값이 동일한 개수로 들어 있습니다. (컬럼형 데이터베이스인 ClickHouse는 이 데이터를 유사한 형태로 저장합니다.) 쿼리에서 반환되는 블록 크기는 여러 수준(사용자 프로필, 사용자, 세션 또는 쿼리)에서 설정할 수 있는 두 가지 사용자 설정에 따라 결정됩니다. 다음과 같습니다.
 
@@ -61,15 +55,11 @@ ClickHouse Connect는 기본 `query` 메서드의 모든 데이터를 ClickHouse
 
 Client `query_*_stream` 메서드 중 하나를 사용하면 결과가 블록 단위로 반환됩니다. ClickHouse Connect는 한 번에 하나의 블록만 로드합니다. 따라서 큰 result set 전체를 메모리에 로드하지 않고도 대량의 데이터를 처리할 수 있습니다. 애플리케이션은 블록 수에 관계없이 처리할 수 있도록 준비되어 있어야 하며, 각 블록의 정확한 크기는 제어할 수 없다는 점에 유의하십시오.
 
-<div id="http-data-buffer-for-slow-processing">
-  ### 느린 처리 시 HTTP 데이터 버퍼
-</div>
+### 느린 처리 시 HTTP 데이터 버퍼 {#http-data-buffer-for-slow-processing}
 
 애플리케이션이 서버가 생성하는 블록을 훨씬 더 느리게 읽어들이면 처리가 완료되기 전에 HTTP 연결이 닫힐 수 있습니다. 애플리케이션에 더 많은 응답 데이터를 버퍼링할 수 있을 만큼 충분한 메모리가 있다면 공통 `http_buffer_size` 설정 값을 늘리십시오. 기본값은 10 MiB입니다. 이 버퍼에서는 lz4 및 zstd 응답 바이트가 압축된 상태로 유지되므로 실질적인 용량이 커집니다.
 
-<div id="streamcontexts">
-  ### StreamContexts
-</div>
+### StreamContexts {#streamcontexts}
 
 `query_*_stream` 메서드(예: `query_row_block_stream`)는 각각 Python 컨텍스트와 제너레이터가 결합된 ClickHouse `StreamContext` 객체를 반환합니다. 기본 사용법은 다음과 같습니다.
 
@@ -88,9 +78,7 @@ with client.query_row_block_stream(
 
 `StreamContext`의 `source` 속성을 사용하면 상위 결과 객체에 접근할 수 있으며, 여기에는 컬럼 이름과 타입이 포함됩니다. 대부분의 스트림에서는 이것이 `QueryResult`이며, `query_np_stream` 및 `query_df_stream` 메서드는 대신 `NumpyResult`를 노출합니다.
 
-<div id="stream-types">
-  ### 스트림 유형
-</div>
+### 스트림 유형 {#stream-types}
 
 `query_column_block_stream` 메서드는 블록을 네이티브 Python 데이터 타입으로 저장된 컬럼 데이터 시퀀스로 반환합니다. 위의 `taxi_trips` 쿼리를 사용하면, 반환되는 데이터는 각 요소가 해당 컬럼의 모든 데이터를 담은 또 다른 리스트(또는 튜플)인 리스트입니다. 따라서 `block[0]`은 문자열만 담고 있는 튜플이 됩니다. 컬럼 지향 포맷은 총 운임을 합산하는 것처럼 특정 컬럼의 모든 값에 대해 집계 연산을 수행할 때 가장 많이 사용됩니다.
 
@@ -114,13 +102,9 @@ with df_stream:
 
 마지막으로, `query_arrow_stream` 메서드는 ClickHouse `ArrowStream` 응답을 `StreamContext`로 래핑합니다. 각 반복에서는 PyArrow `RecordBatch`를 반환합니다.
 
-<div id="streaming-examples">
-  ### 스트리밍 예시
-</div>
+### 스트리밍 예시 {#streaming-examples}
 
-<div id="stream-rows">
-  #### 행 단위로 스트리밍
-</div>
+#### 행 단위로 스트리밍 {#stream-rows}
 
 ```python
 import clickhouse_connect
@@ -138,9 +122,7 @@ with client.query_rows_stream("SELECT number, number * 2 as doubled FROM system.
         # Additional rows follow
 ```
 
-<div id="stream-row-blocks">
-  #### 행 블록 스트리밍하기
-</div>
+#### 행 블록 스트리밍하기 {#stream-row-blocks}
 
 ```python
 import clickhouse_connect
@@ -153,9 +135,7 @@ with client.query_row_block_stream("SELECT number, number * 2 FROM system.number
         print(f"Received block with {len(block)} rows")
 ```
 
-<div id="stream-pandas-dataframes">
-  #### Pandas 데이터프레임 스트리밍
-</div>
+#### Pandas 데이터프레임 스트리밍 {#stream-pandas-dataframes}
 
 ```python
 import clickhouse_connect
@@ -170,9 +150,7 @@ with client.query_df_stream("SELECT number, toString(number) AS str FROM system.
         print(df.head(3))
 ```
 
-<div id="stream-arrow-batches">
-  #### Arrow 배치 스트리밍
-</div>
+#### Arrow 배치 스트리밍 {#stream-arrow-batches}
 
 ```python
 import clickhouse_connect
@@ -186,9 +164,7 @@ with client.query_arrow_stream("SELECT * FROM large_table") as stream:
         print(f"Received Arrow batch with {arrow_batch.num_rows} rows")
 ```
 
-<div id="async-stream-rows">
-  #### 비동기 스트림의 행
-</div>
+#### 비동기 스트림의 행 {#async-stream-rows}
 
 ```python
 import asyncio
@@ -208,15 +184,11 @@ async def main():
 asyncio.run(main())
 ```
 
-<div id="numpy-pandas-and-arrow-queries">
-  ## NumPy, Pandas, and Arrow 쿼리
-</div>
+## NumPy, Pandas, and Arrow 쿼리 {#numpy-pandas-and-arrow-queries}
 
 ClickHouse Connect는 NumPy, Pandas, Arrow 데이터 구조를 다루기 위한 전용 쿼리 메서드를 제공합니다. 이러한 메서드를 사용하면 별도의 수동 변환 없이 쿼리 결과를 이러한 널리 사용되는 데이터 포맷으로 직접 가져올 수 있습니다.
 
-<div id="numpy-queries">
-  ### NumPy 쿼리
-</div>
+### NumPy 쿼리 {#numpy-queries}
 
 `query_np` 메서드는 쿼리 결과를 ClickHouse Connect `QueryResult` 대신 NumPy 배열로 반환합니다.
 
@@ -241,9 +213,7 @@ print(np_array)
 #  [4 8]]
 ```
 
-<div id="pandas-queries">
-  ### Pandas 쿼리
-</div>
+### Pandas 쿼리 {#pandas-queries}
 
 `query_df` 메서드는 쿼리 결과를 ClickHouse Connect의 `QueryResult`가 아니라 Pandas 데이터프레임으로 반환합니다.
 
@@ -267,9 +237,7 @@ print(df)
 # 4       4        8
 ```
 
-<div id="pyarrow-queries">
-  ### PyArrow 쿼리
-</div>
+### PyArrow 쿼리 {#pyarrow-queries}
 
 `query_arrow` 메서드는 ClickHouse의 `Arrow` 출력 형식을 직접 사용하여 PyArrow Table을 반환합니다. 이 메서드는 `query`, `parameters`, `settings`, `external_data`, `transport_settings`를 인수로 받습니다. `use_strings` 옵션은 ClickHouse `String` 컬럼을 Arrow 문자열로 내보낼지, 아니면 바이너리 값으로 내보낼지를 제어합니다.
 
@@ -295,9 +263,7 @@ print(arrow_table)
 # str: [["0","1","2"]]
 ```
 
-<div id="arrow-backed-dataframes">
-  ### Arrow 기반 데이터프레임
-</div>
+### Arrow 기반 데이터프레임 {#arrow-backed-dataframes}
 
 ClickHouse Connect는 `query_df_arrow` 및 `query_df_arrow_stream`을 통해 Arrow 결과로부터 데이터프레임을 효율적으로 생성할 수 있도록 지원합니다. 이러한 메서드는 Python 행 객체로 변환하는 과정을 거치지 않으며, 대상 라이브러리에서 지원하는 경우 Arrow 버퍼를 재사용합니다:
 
@@ -306,9 +272,7 @@ ClickHouse Connect는 `query_df_arrow` 및 `query_df_arrow_stream`을 통해 Arr
   * `dataframe_library="polars"`는 `pl.from_arrow`를 통해 생성된 Polars 데이터프레임을 반환합니다.
 * `query_df_arrow_stream`: Arrow 배치를 Pandas 또는 Polars 데이터프레임으로 스트리밍합니다.
 
-<div id="query-to-arrow-backed-dataframe">
-  #### 쿼리를 Arrow 기반 데이터프레임으로 변환
-</div>
+#### 쿼리를 Arrow 기반 데이터프레임으로 변환 {#query-to-arrow-backed-dataframe}
 
 ```python
 import clickhouse_connect
@@ -344,18 +308,14 @@ with client.query_df_arrow_stream(
         print(f"Received {type(df_batch)} batch with {len(df_batch)} rows and dtypes: {df_batch.dtypes}")
 ```
 
-<div id="notes-and-caveats">
-  #### 참고 사항 및 주의점
-</div>
+#### 참고 사항 및 주의점 {#notes-and-caveats}
 
 * ClickHouse가 Arrow 스키마를 제어합니다. Arrow에서 직접 표현할 수 없는 타입은 바이너리 필드를 포함한 호환 가능한 물리 타입으로 반환될 수 있습니다. 애플리케이션별 변환을 적용하기 전에 `table.schema` 또는 DataFrame dtype을 확인하십시오.
 * Arrow 기반 Pandas 결과를 사용하려면 Pandas 2.0 이상이 필요합니다.
 * `use_strings`는 서버가 `output_format_arrow_string_as_string`을 지원할 때 ClickHouse `String` 컬럼이 Arrow 문자열 필드 또는 바이너리 필드를 사용할지 제어합니다.
 * `tz_mode="schema"`는 아직 Arrow 기반 쿼리 메서드에서 지원되지 않습니다. 이 메서드는 경고를 표시하고 Arrow 응답에서 제공된 시간대 메타데이터를 유지합니다.
 
-<div id="read-formats">
-  ## 읽기 포맷
-</div>
+## 읽기 포맷 {#read-formats}
 
 읽기 포맷은 `query`, `query_np`, `query_df`가 반환하는 값을 제어합니다. raw 메서드나 Arrow 메서드에는 적용되지 않습니다. 이러한 메서드는 서버 출력 형식을 직접 사용하기 때문입니다. 예를 들어, UUID 읽기 포맷을 `"string"`으로 설정하면 `uuid.UUID` 객체 대신 UUID 문자열이 반환됩니다.
 
@@ -395,42 +355,43 @@ client.query(
 )
 ```
 
-<div id="read-format-options-python-types">
-  ### 읽기 포맷 옵션 (Python 타입)
-</div>
+### 읽기 포맷 옵션 (Python 타입) {#read-format-options-python-types}
 
-| ClickHouse 타입         | 네이티브 Python 타입          | 읽기 포맷             | 비고                                                                    |
-| --------------------- | ----------------------- | ----------------- | --------------------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     | string            |                                                                       |
-| UInt64                | int                     | signed            | Superset는 현재 큰 unsigned UInt64 값을 처리하지 못합니다                           |
-| [U]Int[128,256]       | int                     | string            | Pandas와 NumPy의 int 값은 최대 64비트이므로 문자열로 반환될 수 있습니다                      |
-| BFloat16              | float                   | -                 | 모든 Python float는 내부적으로 64비트입니다                                        |
-| Float32               | float                   | string            | 모든 Python float는 내부적으로 64비트입니다                                        |
-| Float64               | float                   | string            |                                                                       |
-| Decimal               | decimal.Decimal         | -                 |                                                                       |
-| String                | str                     | bytes             | ClickHouse String 컬럼에는 고유한 인코딩이 없으므로 가변 길이 바이너리 데이터에도 사용됩니다           |
-| FixedString           | bytes                   | string            | FixedString은 고정 크기의 바이트 배열이지만, 경우에 따라 Python 문자열로도 처리됩니다              |
-| Enum[8,16]            | str                     | int               | 네이티브 포맷은 레이블을 반환하며, `int`는 내부 정수값을 반환합니다.                             |
-| Date                  | datetime.date           | int               | 정수 포맷은 1970-01-01부터의 일 수를 반환합니다.                                      |
-| Date32                | datetime.date           | int               | 정수 포맷은 더 넓은 signed 일 오프셋을 반환합니다.                                      |
-| DateTime              | datetime.datetime       | int               | 정수 포맷은 epoch 초를 반환합니다.                                                |
-| DateTime64            | datetime.datetime       | int               | 정수 포맷은 컬럼 precision 기준의 틱을 반환합니다. Python `datetime`은 마이크로초까지로 제한됩니다.  |
-| Time                  | datetime.timedelta      | int, string, time | 정수 포맷은 초를 반환합니다. `time` 포맷은 `datetime.time`에 담을 수 있는 값으로 제한됩니다.       |
-| Time64                | datetime.timedelta      | int, string, time | 정수 포맷은 컬럼 precision 기준의 틱을 반환합니다. Python `timedelta`는 마이크로초까지로 제한됩니다. |
-| IPv4                  | `ipaddress.IPv4Address` | string, int       | IP 주소는 문자열 또는 정수로 읽을 수 있습니다.                                          |
-| IPv6                  | `ipaddress.IPv6Address` | string            | IP 주소는 문자열로 읽을 수 있으며, 올바른 포맷이면 IP 주소로 삽입할 수 있습니다                      |
-| Tuple                 | dict or tuple           | tuple, dict, json | 이름이 지정된 튜플은 기본적으로 딕셔너리를 반환하고, 이름이 없는 튜플은 튜플을 반환합니다.                   |
-| Map                   | dict                    | -                 |                                                                       |
-| Nested                | Sequence[dict]          | -                 |                                                                       |
-| UUID                  | uuid.UUID               | string            | UUID는 RFC 4122 형식의 문자열로 읽을 수 있습니다<br />                               |
-| JSON                  | dict                    | string            | 기본적으로 Python 딕셔너리가 반환됩니다. `string` 포맷은 JSON 문자열을 반환합니다                |
-| Variant               | object                  | typed             | `typed`는 `TypedVariant(value, type_name)`를 반환하므로 원래 멤버 타입이 유지됩니다.     |
-| Dynamic               | object                  | -                 | 값에 저장된 ClickHouse 데이터 타입에 맞는 Python 타입을 반환합니다                         |
-| QBit                  | list[float]             | -                 | 설치되어 있으면 더 빠른 비트 전치를 위해 NumPy가 자동으로 사용됩니다.                            |
+| ClickHouse 타입         | 네이티브 Python 타입          | 읽기 포맷             | 비고                                                                                                                                |
+| --------------------- | ----------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| Int[8-64], UInt[8-32] | int                     | string            |                                                                                                                                   |
+| UInt64                | int                     | signed            | Superset는 현재 큰 unsigned UInt64 값을 처리하지 못합니다                                                                                       |
+| [U]Int[128,256]       | int                     | string            | Pandas와 NumPy의 int 값은 최대 64비트이므로 문자열로 반환될 수 있습니다                                                                                  |
+| BFloat16              | float                   | -                 | 모든 Python float는 내부적으로 64비트입니다                                                                                                    |
+| Float32               | float                   | string            | 모든 Python float는 내부적으로 64비트입니다                                                                                                    |
+| Float64               | float                   | string            |                                                                                                                                   |
+| Decimal               | decimal.Decimal         | -                 |                                                                                                                                   |
+| Interval*             | int                     | string            | 값은 해당 인터벌 타입 단위의 signed 64비트 카운트입니다.                                                                                              |
+| String                | str                     | bytes             | ClickHouse String 컬럼에는 고유한 인코딩이 없으므로 가변 길이 바이너리 데이터에도 사용됩니다                                                                       |
+| FixedString           | bytes                   | string            | FixedString은 고정 크기의 바이트 배열이지만, 경우에 따라 Python 문자열로도 처리됩니다                                                                          |
+| Enum[8,16]            | str                     | int               | 네이티브 포맷은 레이블을 반환하며, `int`는 내부 정수값을 반환합니다.                                                                                         |
+| Date                  | datetime.date           | int               | 정수 포맷은 1970-01-01부터의 일 수를 반환합니다.                                                                                                  |
+| Date32                | datetime.date           | int               | 정수 포맷은 더 넓은 signed 일 오프셋을 반환합니다.                                                                                                  |
+| DateTime              | datetime.datetime       | int               | 정수 포맷은 epoch 초를 반환합니다.                                                                                                            |
+| DateTime64            | datetime.datetime       | int               | 정수 포맷은 컬럼 precision 기준의 틱을 반환합니다. Python `datetime`은 마이크로초까지로 제한됩니다.                                                              |
+| Time                  | datetime.timedelta      | int, string, time | 정수 포맷은 초를 반환합니다. `time` 포맷은 `datetime.time`에 담을 수 있는 값으로 제한됩니다.                                                                   |
+| Time64                | datetime.timedelta      | int, string, time | scale 0부터 9까지 지원됩니다. 정수 포맷은 컬럼 precision 기준의 틱을 반환합니다. Python `timedelta`는 마이크로초까지로 제한됩니다.                                        |
+| IPv4                  | `ipaddress.IPv4Address` | string, int       | IP 주소는 문자열 또는 정수로 읽을 수 있습니다.                                                                                                      |
+| IPv6                  | `ipaddress.IPv6Address` | string            | IP 주소는 문자열로 읽을 수 있으며, 올바른 포맷이면 IP 주소로 삽입할 수 있습니다                                                                                  |
+| Tuple                 | dict or tuple           | tuple, dict, json | 이름이 지정된 튜플은 기본적으로 딕셔너리를 반환하고, 이름이 없는 튜플은 튜플을 반환합니다. `Tuple()` 값은 `()`를 반환합니다.                                                     |
+| Map                   | dict                    | -                 |                                                                                                                                   |
+| Nested                | Sequence[dict]          | -                 |                                                                                                                                   |
+| UUID                  | uuid.UUID               | string            | UUID는 RFC 4122 형식의 문자열로 읽을 수 있습니다<br />                                                                                           |
+| JSON                  | dict                    | string            | 기본적으로 Python 딕셔너리가 반환됩니다. `string` 포맷은 JSON 문자열을 반환합니다                                                                            |
+| Variant               | object                  | typed             | `typed`는 `TypedVariant(value, type_name)`를 반환하므로 원래 멤버 타입이 유지됩니다.                                                                 |
+| Dynamic               | object                  | -                 | 값에 저장된 ClickHouse 데이터 타입에 맞는 Python 타입을 반환합니다                                                                                     |
+| MultiPoint            | list[tuple]             | -                 | 각 point는 2-튜플로 반환됩니다.                                                                                                             |
+| Geometry              | tuple or list           | typed             | Point 값은 2-튜플입니다. MultiPoint를 포함한 다른 멤버는 중첩 리스트를 사용합니다. 멤버 타입을 유지하려면 `Geometry` 키와 함께 `typed`를 선택하세요. `Variant` 포맷 설정은 적용되지 않습니다. |
+| QBit                  | list[float]             | -                 | 설치되어 있으면 더 빠른 비트 전치를 위해 NumPy가 자동으로 사용됩니다.                                                                                        |
 
-<div id="external-data">
-  ## 외부 데이터
-</div>
+`query_np`, `query_np_stream`, `query_df`, `query_df_stream`은 `Time64`의 scale 0, 3, 6, 9를 지원합니다. 다른 scale은 대응하는 NumPy 시간 단위가 없기 때문에 `ProgrammingError`를 발생시킵니다. 해당 precision을 유지하려면 `int` 또는 `string` 읽기 포맷을 사용하는 일반 Python 쿼리를 사용하세요. 실험적인 [Rust 코덱](/ko/integrations/language-clients/python/rust-codec#known-behavior-differences) 문서에는 `Dynamic` 내부에 저장된 `Time64`에 대한 예외가 설명되어 있습니다.
+
+## 외부 데이터 {#external-data}
 
 ClickHouse 쿼리는 지원되는 모든 입력 형식의 외부 데이터를 받을 수 있습니다. 클라이언트는 요청의 일부로 데이터를 전송하며, 쿼리는 이를 임시 외부 테이블로 참조할 수 있습니다. [ClickHouse 외부 데이터 문서](/ko/reference/engines/table-engines/special/external-data)를 참조하십시오. 클라이언트 쿼리 메서드는 `external_data` 매개변수를 통해 `clickhouse_connect.driver.external.ExternalData` 객체를 받습니다.
 
@@ -473,9 +434,7 @@ result = client.query(
 
 chDB 백엔드는 외부 데이터를 지원하지 않습니다.
 
-<div id="time-zones">
-  ## 시간대
-</div>
+## 시간대 {#time-zones}
 
 ClickHouse `DateTime` 및 `DateTime64` 값은 epoch 기반 숫자 값으로 전송됩니다. ClickHouse Connect는 컬럼 메타데이터(metadata), 쿼리 재정의, 그리고 클라이언트의 시간대 정책을 사용해 이를 Python `datetime` 객체로 변환합니다.
 

@@ -209,6 +209,10 @@ Les identifiants (une collection nommée spécifiant le fournisseur, le modèle,
 sont récupérés depuis la clé `credentials` de la map de paramètres optionnelle, ou depuis le paramètre
 `ai_function_text_default_credentials` lorsque la map l’omet.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents avec les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -232,7 +236,6 @@ L’un des libellés de catégorie fournis, ou la valeur par défaut du type de 
 **Classifier le sentiment**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiClassify('I love this product!', ['positive', 'negative', 'neutral'])
 ```
 
@@ -243,7 +246,6 @@ positive
 **Classifier une colonne avec des identifiants explicites**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE issues (body String) ENGINE = Memory;
 INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiClassify(body, ['bug', 'question', 'feature'], map('credentials', 'ai_text_credentials')) AS kind FROM issues LIMIT 5
@@ -298,21 +300,18 @@ Le vecteur d’embedding, ou un tableau vide si l’entrée est NULL ou vide, si
 **Encoder une seule chaîne (`credentials` peut être omis si le paramètre `ai_function_embedding_default_credentials` est défini)**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **Avec des dimensions explicites**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiEmbed('Hello world', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256'))
 ```
 
 **Générer des embeddings pour une colonne de textes**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (title String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse is a fast analytical database.');
 SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials', 'dimensions', '256')) FROM articles LIMIT 10
@@ -322,19 +321,23 @@ SELECT aiEmbed(title, 'text-embedding-3-small', map('credentials', 'ai_embedding
   ## aiExtract
 </div>
 
-Introduit dans : v26.4.0
+Introduite dans : v26.4.0
 
 Extrait des informations structurées à partir de texte non structuré à l’aide d’un fournisseur de LLM.
 
-Le troisième argument peut être soit une instruction en langage naturel librement formulée (par ex. `'the main complaint'`), soit un
-schéma au format JSON de la forme `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
+Le troisième argument peut être soit une instruction libre en langage naturel (par ex. `'le principal motif de plainte'`), soit un
+schéma encodé en JSON de la forme `'{"field_a": "description of field a", "field_b": "description of field b"}'`.
 
-En mode instruction, la fonction renvoie la valeur extraite sous la forme d’une simple chaîne de caractères, ou une chaîne vide si rien n’a été trouvé.
-En mode schéma, la fonction renvoie une chaîne JSON représentant un objet dont les clés correspondent au schéma demandé ; les champs manquants sont `null`.
+En mode instruction, la fonction renvoie la valeur extraite sous forme de chaîne de caractères, ou une chaîne vide si aucune valeur n’est trouvée.
+En mode schéma, la fonction renvoie une chaîne contenant un objet JSON dont les clés correspondent au schéma demandé ; les champs absents sont `null`.
 
-Les identifiants (une collection nommée qui spécifie le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API)
-sont pris dans la clé `credentials` de la map de paramètres facultative, ou dans le
-paramètre `ai_function_text_default_credentials` lorsque la map l’omet.
+Les informations d’identification (une collection nommée spécifiant le fournisseur, le modèle, le endpoint et, éventuellement, une clé API)
+sont extraites de la clé `credentials` de la map de paramètres facultative, ou du
+paramètre `ai_function_text_default_credentials` lorsque la map ne la contient pas.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents pour les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -346,20 +349,19 @@ aiExtract(text, instruction_or_schema[, params])
 
 **Arguments**
 
-* `text` — Texte à partir duquel extraire des informations. [`String`](/fr/reference/data-types/string)
-* `instruction_or_schema` — Instruction d’extraction en texte libre, ou objet JSON constant décrivant les champs à extraire. [`const String`](/fr/reference/data-types/string)
-* `params` — `Map(String, String)` constant optionnel de paramètres. Clés spécifiques à la fonction : `temperature` (température d’échantillonnage qui contrôle le caractère aléatoire ; valeur par défaut : `0.0`), `max_tokens` (nombre maximal de tokens de sortie par appel ; valeur par défaut : `1024`). Les paramètres communs `credentials` et `model` s’appliquent également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
+* `text` — Texte duquel extraire des informations. [`String`](/fr/reference/data-types/string)
+* `instruction_or_schema` — Instruction d’extraction en texte libre ou objet JSON constant décrivant les champs à extraire. [`const String`](/fr/reference/data-types/string)
+* `params` — `Map(String, String)` constant facultatif de paramètres. Clés propres à la fonction : `temperature` (température d’échantillonnage contrôlant l’aléatoire ; valeur par défaut : `0.0`), `max_tokens` (nombre maximal de tokens de sortie par appel ; valeur par défaut : `1024`). Les paramètres communs `credentials` et `model` s’appliquent également (voir [Fonctions d’IA](/fr/reference/functions/regular-functions/ai-functions)). [`Map(String, String)`](/fr/reference/data-types/map)
 
 **Valeur renvoyée**
 
-Une valeur extraite (mode instruction) ou une chaîne JSON représentant un objet (mode schéma). Renvoie la valeur par défaut du type de colonne (chaîne vide) si la requête a échoué et que `ai_function_throw_on_error` est désactivé. [`String`](/fr/reference/data-types/string)
+Une valeur extraite unique (mode instruction) ou une chaîne représentant un objet JSON (mode schéma). Renvoie la valeur par défaut du type de colonne (chaîne vide) si la requête a échoué et que `ai_function_throw_on_error` est désactivé. [`String`](/fr/reference/data-types/string)
 
 **Exemples**
 
 **Instruction en texte libre**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiExtract('The package arrived late and was damaged.', 'the main complaint')
 ```
 
@@ -370,7 +372,6 @@ late and damaged package
 **Extraction du schéma**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE reviews (review String) ENGINE = Memory;
 INSERT INTO reviews VALUES ('The screen is bright, but the battery lasts only two hours.');
 SELECT aiExtract(review, '{"sentiment": "positive, negative or neutral", "topic": "main topic of the review"}') FROM reviews LIMIT 5
@@ -399,6 +400,10 @@ sont extraits de la clé `credentials` de la map de paramètres facultative ou d
 
 Remarque : l’utilisation d’`aiFilter` dans `JOIN ... ON` évalue le LLM une fois par paire candidate et peut être coûteuse.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents avec les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -422,7 +427,6 @@ aiFilter(text, condition[, params])
 **Filtrer les avis négatifs**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE reviews (body String) ENGINE = Memory;
 INSERT INTO reviews VALUES ('The package arrived three days late.');
 SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping')
@@ -431,7 +435,6 @@ SELECT * FROM reviews WHERE aiFilter(body, 'the customer is angry about shipping
 **Filtrer une colonne avec des identifiants explicites**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE issues (body String) ENGINE = Memory;
 INSERT INTO issues VALUES ('The application exits unexpectedly after login.');
 SELECT body, aiFilter(body, 'describes a bug', map('credentials', 'ai_text_credentials')) AS is_bug FROM issues LIMIT 5
@@ -455,6 +458,10 @@ La map de paramètres facultative peut également définir `system_prompt` (une 
 comportement du modèle, par ex. le ton, le format ou le rôle), `temperature`, `max_tokens` et `model`. Si `system_prompt` n’est
 pas défini, la valeur par défaut est : `You are a helpful assistant. Provide a clear and concise response.`
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents avec les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -477,7 +484,6 @@ Le texte généré, ou la valeur par défaut du type de colonne (chaîne vide) s
 **Question simple**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 ```
 
@@ -488,14 +494,12 @@ SELECT aiGenerate('What is 2 + 2? Reply with just the number.')
 **Avec des identifiants explicites et une instruction système**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiGenerate('Explain ClickHouse', map('credentials', 'ai_text_credentials', 'system_prompt', 'You are a database expert. Be concise.'))
 ```
 
 **Résumer les valeurs d’une colonne**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (article_title String, article_body String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse', 'ClickHouse is an open-source column-oriented database for online analytical processing.');
 SELECT article_title, aiGenerate(concat('Summarize in one sentence: ', article_body)) AS summary FROM articles LIMIT 5
@@ -533,6 +537,10 @@ Définissez `max_tokens` (valeur par défaut : `1024`) sur une valeur supérieu
 rejetée avec `AI_PROVIDER_RESPONSE_TRUNCATED` (ou renvoie la valeur par défaut de la colonne lorsque `ai_function_throw_on_error`
 est désactivé) au lieu de renvoyer du texte partiellement masqué.
 
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents avec les mêmes arguments.
+</Note>
+
 **Syntaxe**
 
 ```sql
@@ -556,7 +564,6 @@ Le texte dans lequel les informations personnelles identifiables détectées son
 **Masquer des catégories spécifiques**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiRedact('Purchase was done by customer John Doe with email test@test.org', ['email', 'credit_card', 'name'])
 ```
 
@@ -567,7 +574,6 @@ Purchase was done by customer [REDACTED] with email [REDACTED]
 **Masquez les catégories de PII par défaut à l’aide d’un token personnalisé**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE tickets (body String) ENGINE = Memory;
 INSERT INTO tickets VALUES ('Contact Jane Doe at jane@example.com.');
 SELECT aiRedact(body, [], map('replacement', '***')) FROM tickets LIMIT 5
@@ -619,14 +625,12 @@ La similarité cosinus dans `[-1, 1]`, ou NULL si l’un des textes est NULL ou 
 **Comparer deux chaînes (`credentials` peut être omis si le paramètre `ai_function_embedding_default_credentials` est défini)**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiSimilarity('cat', 'kitten', 'text-embedding-3-small', map('credentials', 'ai_embedding_credentials'))
 ```
 
 **Classer les avis selon leur similarité avec une requête**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE product_reviews (review String) ENGINE = Memory;
 INSERT INTO product_reviews VALUES ('It works well under rain.');
 SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well under rain', 'text-embedding-3-small') DESC LIMIT 100
@@ -635,7 +639,6 @@ SELECT review FROM product_reviews ORDER BY aiSimilarity(review, 'It works well 
 **Déduplication sémantique via une auto-jointure**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE docs (id UInt64, title String) ENGINE = Memory;
 INSERT INTO docs VALUES (1, 'ClickHouse documentation'), (2, 'ClickHouse database guide');
 SELECT a.id, b.id FROM docs a, docs b WHERE a.id < b.id AND aiSimilarity(a.title, b.title, 'text-embedding-3-small') > 0.9
@@ -654,6 +657,10 @@ Des instructions supplémentaires de style ou de dialecte peuvent être transmis
 Les identifiants (une collection nommée spécifiant le fournisseur, le modèle, le point de terminaison et, éventuellement, une clé API)
 sont extraits de la clé `credentials` de la map de paramètres facultative, ou du
 paramètre `ai_function_text_default_credentials` lorsque la map ne la contient pas.
+
+<Note>
+  Cette fonction est non déterministe : elle peut renvoyer des résultats différents avec les mêmes arguments.
+</Note>
 
 **Syntaxe**
 
@@ -678,7 +685,6 @@ Le texte traduit, ou la valeur par défaut du type de colonne (chaîne vide) si 
 **Traduire en français**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 SELECT aiTranslate('Hello, world!', 'French')
 ```
 
@@ -689,7 +695,6 @@ Bonjour le monde!
 **Traduire en japonais en suivant les consignes de style**
 
 ```sql title=Query
-SET allow_experimental_ai_functions = 1;
 CREATE TABLE articles (body String) ENGINE = Memory;
 INSERT INTO articles VALUES ('ClickHouse processes analytical queries quickly.');
 SELECT aiTranslate(body, 'Japanese', map('instructions', 'Use polite form (desu/masu)')) FROM articles LIMIT 5

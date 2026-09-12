@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并根据[源代码](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)自动生成。
 
-<div id="function_base58_max_input_size">
-  ## function_base58_max_input_size
-</div>
+## function_base58_max_input_size {#function_base58_max_input_size}
 
 <SettingsInfoBlock type="UInt64" default_value="10000" />
 
@@ -23,9 +21,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 函数 `base58Encode`、`base58Decode` 和 `tryBase58Decode` 的单个输入值最大大小，以字节为单位。通用的 `base58` 转换复杂度随输入长度呈二次增长，因此单个较大的值可能会运行很长时间。`base58` 适用于短数据 (密钥、哈希、地址) ，因此默认的 10 KB 是一个较为宽松的安全阈值。对于更大的输入，`base58Encode` 和 `base58Decode` 会抛出 `TOO_LARGE_STRING_SIZE`，而 `tryBase58Decode` 会返回空字符串。值 `0` 会禁用此限制 (即引入此设置之前的行为) 。线性的 `base32` 和 `base64` 函数不受影响。
 
-<div id="function_date_trunc_return_type_behavior">
-  ## function_date_trunc_return_type_behavior
-</div>
+## function_date_trunc_return_type_behavior {#function_date_trunc_return_type_behavior}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -38,15 +34,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 - 当第二个参数为 `DateTime64/Date32` 时，返回类型将始终为 `DateTime64/Date32`，与第一个参数中的时间单位无关。
 * 1 - 对于 `Date32`，结果始终为 `Date`。对于 `DateTime64`，当时间单位为 `second` 及以上时，结果为 `DateTime`。
 
-<div id="function_implementation">
-  ## function_implementation
-</div>
-
-为特定目标或变体选择函数实现方式 (Experimental) 。如果留空，则启用所有实现。
-
-<div id="function_locate_has_mysql_compatible_argument_order">
-  ## function_locate_has_mysql_compatible_argument_order
-</div>
+## function_locate_has_mysql_compatible_argument_order {#function_locate_has_mysql_compatible_argument_order}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -59,9 +47,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * 0 — 函数 `locate` 接受参数 `(haystack, needle[, start_pos])`。
 * 1 — 函数 `locate` 接受参数 `(needle, haystack, [, start_pos])` (兼容 MySQL 的行为)
 
-<div id="function_range_max_elements_in_block">
-  ## function_range_max_elements_in_block
-</div>
+## function_range_max_elements_in_block {#function_range_max_elements_in_block}
 
 <SettingsInfoBlock type="UInt64" default_value="500000000" />
 
@@ -76,9 +62,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 * [`max_block_size`](/zh/reference/settings/session-settings/max#max_block_size)
 * [`min_insert_block_size_rows`](/zh/reference/settings/session-settings/min-insert#min_insert_block_size_rows)
 
-<div id="function_sleep_max_microseconds_per_block">
-  ## function_sleep_max_microseconds_per_block
-</div>
+## function_sleep_max_microseconds_per_block {#function_sleep_max_microseconds_per_block}
 
 <SettingsInfoBlock type="UInt64" default_value="3000000" />
 
@@ -86,9 +70,7 @@ import { VersionHistory } from "/snippets/zh/components/VersionHistory/VersionHi
 
 函数 `sleep` 在每个块中允许休眠的最大微秒数。如果用户调用时传入更大的值，就会抛出异常。这是一个安全阈值。
 
-<div id="function_visible_width_behavior">
-  ## function_visible_width_behavior
-</div>
+## function_visible_width_behavior {#function_visible_width_behavior}
 
 <SettingsInfoBlock type="UInt64" default_value="1" />
 

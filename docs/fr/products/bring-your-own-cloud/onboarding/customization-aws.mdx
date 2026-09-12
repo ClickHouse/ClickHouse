@@ -10,7 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <div id="customer-managed-vpc-aws">
-  ## VPC géré par le client (BYO-VPC) pour AWS
+  ## VPC géré par le client (BYO-VPC) pour AWS {#customer-managed-vpc-aws}
 </div>
 
 Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plutôt que de laisser ClickHouse Cloud créer un nouveau VPC, suivez les étapes ci-dessous. Cette approche vous offre un contrôle accru sur votre configuration réseau et vous permet d’intégrer ClickHouse BYOC à votre infrastructure réseau existante.
@@ -54,7 +54,7 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
       Les buckets de stockage, le cluster Kubernetes et les ressources de calcul nécessaires à l’exécution de ClickHouse ne sont pas inclus dans cette configuration initiale. Ils seront provisionnés à une étape ultérieure. Même si vous contrôlez votre VPC, ClickHouse Cloud a toujours besoin d’autorisations IAM pour créer et gérer le cluster Kubernetes, les rôles IAM pour les comptes de service, les buckets S3 et d’autres ressources essentielles dans votre compte AWS.
     </Note>
 
-    #### Module Terraform
+    #### Module Terraform {#terraform-module-aws}
 
     Si vous préférez utiliser Terraform plutôt que CloudFormation, utilisez le module [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) :
 
@@ -98,9 +98,16 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
   </Step>
 </Steps>
 
-<div id="customer-managed-iam-roles">
-  ## Rôles IAM gérés par le client
-</div>
+### Sous-réseaux partagés depuis un autre compte (AWS RAM) {#shared-subnets-ram}
+
+Vous pouvez exécuter BYOC dans un compte satellite (spoke) sur des sous-réseaux partagés depuis un compte central (hub) avec [AWS Resource Access Manager (RAM)](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html), ce qui permet de centraliser la gestion du réseau. La configuration est identique à celle décrite ci-dessus, à deux différences près, qui découlent du fonctionnement des partages RAM :
+
+* **Appliquez les tags depuis le compte spoke.** Les ressources partagées via RAM ont une vue des tags propre à chaque compte : les tags appliqués dans le compte hub ne sont donc pas visibles depuis le compte spoke. Appliquez `clickhouse-byoc="true"` au VPC, ainsi que `kubernetes.io/role/internal-elb=1` et `clickhouse-byoc="true"` à chaque sous-réseau partagé, **depuis le compte spoke**. Faute de quoi, la validation préalable signalera des tags manquants et le provisionnement échouera.
+* **Le routage reste à la charge du compte hub.** Les route tables des sous-réseaux partagés restent la propriété du compte hub, qui est donc responsable du NAT et du routage de l&#39;egress, ainsi que du endpoint gateway S3, puisqu&#39;il s&#39;agit d&#39;une ressource de niveau VPC. Vérifiez que les sous-réseaux partagés répondent toujours à l&#39;exigence de connectivité sortante indiquée ci-dessus.
+
+Tout le reste est inchangé : trois private subnets répartis sur trois availability zones, un CIDR minimal de `/25` par sous-réseau, et la configuration de `ClickHouseManagementRole` dans le compte spoke où s&#39;exécute la infrastructure BYOC.
+
+## Rôles IAM gérés par le client {#customer-managed-iam-roles}
 
 Pour les organisations ayant des exigences de sécurité avancées ou des politiques de conformité strictes, vous pouvez fournir vos propres rôles IAM au lieu de laisser ClickHouse Cloud les créer. Cette approche vous donne un contrôle total sur les permissions IAM et vous permet d’appliquer les politiques de sécurité de votre organisation.
 

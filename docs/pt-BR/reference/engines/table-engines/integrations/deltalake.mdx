@@ -11,9 +11,7 @@ doc_type: 'reference'
 
 Este mecanismo fornece integração com tabelas [Delta Lake](https://github.com/delta-io/delta) existentes no S3 e nos armazenamentos do GCP e do Azure, com suporte tanto a leituras quanto a gravações (a partir da v25.10).
 
-<div id="create-table">
-  ## Criar uma tabela DeltaLake
-</div>
+## Criar uma tabela DeltaLake {#create-table}
 
 Para criar uma tabela DeltaLake, ela já deve existir no armazenamento S3, GCP ou Azure. Os comandos abaixo não aceitam parâmetros DDL para criar uma nova tabela.
 
@@ -26,13 +24,13 @@ Para criar uma tabela DeltaLake, ela já deve existir no armazenamento S3, GCP o
     ENGINE = DeltaLake(url, [aws_access_key_id, aws_secret_access_key,] [extra_credentials])
     ```
 
-    **Parâmetros do mecanismo**
+    **Parâmetros do motor**
 
     * `url` — URL do bucket com o caminho para a tabela Delta Lake existente.
     * `aws_access_key_id`, `aws_secret_access_key` - Credenciais de longo prazo para o usuário da conta [AWS](https://aws.amazon.com/). Você pode usá-las para autenticar suas solicitações. O parâmetro é opcional. Se as credenciais não forem especificadas, elas serão obtidas do arquivo de configuração.
     * `extra_credentials` - Opcional. Usado para informar um `role_arn` para acesso baseado em função no ClickHouse Cloud. Consulte [Secure S3](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) para ver as etapas de configuração.
 
-    Os parâmetros do mecanismo podem ser especificados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections).
+    Os parâmetros do motor podem ser especificados usando [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections).
 
     **Exemplo**
 
@@ -70,11 +68,9 @@ Para criar uma tabela DeltaLake, ela já deve existir no armazenamento S3, GCP o
     ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
     ```
 
-    <Info>
-      **URI gsutil sem suporte**
-
+    <Note title="URI gsutil sem suporte">
       URIs gsutil, como `gs://clickhouse-docs-example-bucket`, não têm suporte. Use uma URL começando com `https://storage.googleapis.com`
-    </Info>
+    </Note>
 
     **Argumentos**
 
@@ -117,9 +113,7 @@ Para criar uma tabela DeltaLake, ela já deve existir no armazenamento S3, GCP o
   </Tab>
 </Tabs>
 
-<div id="insert-data">
-  ## Grave dados usando uma tabela DeltaLake
-</div>
+## Grave dados usando uma tabela DeltaLake {#insert-data}
 
 Depois de criar uma tabela usando o motor de tabela DeltaLake, você pode inserir dados nela com:
 
@@ -137,15 +131,11 @@ As gravações no Delta Lake são um recurso Beta desabilitado por padrão e dev
   Gravações no Azure ainda não são compatíveis, mas já funcionam com S3 e GCS.
 </Note>
 
-<div id="data-cache">
-  ### Cache de dados
-</div>
+### Cache de dados {#data-cache}
 
 O motor de tabela e a função de tabela `DeltaLake` são compatíveis com cache de dados, assim como os armazenamentos `S3`, `AzureBlobStorage` e `HDFS`. Consulte [&quot;motor de tabela S3&quot;](/pt-BR/reference/engines/table-engines/integrations/s3#data-cache) para mais detalhes.
 
-<div id="see-also">
-  ## Veja também
-</div>
+## Veja também {#see-also}
 
 * [função de tabela deltaLake](/pt-BR/reference/functions/table-functions/deltalake)
 

@@ -12,15 +12,11 @@ doc_type: 'справочник'
 Создаёт новую таблицу. По умолчанию таблицы создаются только на текущем сервере.
 Распределённые DDL-запросы реализованы в виде предложения `ON CLUSTER`, которое [описано отдельно](/ru/reference/statements/distributed-ddl).
 
-<div id="syntax-forms">
-  ## Синтаксические формы
-</div>
+## Синтаксические формы {#syntax-forms}
 
 Этот запрос может иметь различные синтаксические формы в зависимости от сценария использования.
 
-<div id="with-explicit-schema">
-  ### Создание таблицы с явной схемой
-</div>
+### Создание таблицы с явной схемой {#with-explicit-schema}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -45,9 +41,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Для столбцов и таблицы можно добавлять комментарии.
 
-<div id="with-a-schema-similar-to-other-table">
-  ### Создать таблицу со схемой существующей таблицы
-</div>
+### Создать таблицу со схемой существующей таблицы {#with-a-schema-similar-to-other-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine]
@@ -59,9 +53,7 @@ ClickHouse позволяет копировать схему и данные с
 
 Это создает таблицу с такой же структурой, как у другой таблицы.
 
-<div id="with-a-schema-and-data-cloned-from-another-table">
-  ### Создать таблицу со схемой и данными существующей таблицы
-</div>
+### Создать таблицу со схемой и данными существующей таблицы {#with-a-schema-and-data-cloned-from-another-table}
 
 Чтобы реплицировать схему и данные существующей таблицы:
 
@@ -69,18 +61,23 @@ ClickHouse позволяет копировать схему и данные с
 CREATE TABLE [IF NOT EXISTS] [db2.]table_clone CLONE AS [db.]table [ENGINE = engine]
 ```
 
-Это создаёт таблицу с той же схемой и теми же данными, что и существующая таблица. После создания новой таблицы к ней присоединяются все партиции из `db.table`. Иными словами, при создании данные из `db.table` клонируются в `db2.table_clone`. Этот запрос эквивалентен следующему:
+Это создаёт таблицу с той же схемой и теми же данными, что и существующая таблица. После создания новой таблицы к ней присоединяются все партиции из `db.table`. Иными словами, при создании данные из `db.table` клонируются в `db2.table_clone`.
 
-```sql
-CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
-ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
-```
+<Note>
+  `CLONE AS` не поддерживается, если в базе данных назначения используется движок базы данных [Replicated](/ru/reference/engines/database-engines/replicated).
 
-Для обеих возможностей можно указать для таблицы другой движок. Если движок не указан, будет использоваться тот же движок, что и у исходной таблицы (`db.table`).
+  Вместо этого используйте:
 
-<div id="from-a-table-function">
-  ### Создание таблицы с помощью табличной функции
-</div>
+  ```sql
+  CREATE TABLE [IF NOT EXISTS] [db2.]table_clone AS [db.]table [ENGINE = engine];
+  ALTER TABLE [db2.]table_clone ATTACH PARTITION ALL FROM [db.]table;
+  ```
+</Note>
+
+Для обеих возможностей можно указать для таблицы другой движок.
+Если движок не указан, будет использоваться тот же движок, что и у исходной таблицы (`db.table`).
+
+### Создание таблицы с помощью табличной функции {#from-a-table-function}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
@@ -88,9 +85,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name AS table_function()
 
 Создаёт таблицу с тем же результатом, что и указанная [табличная функция](/ru/reference/functions/table-functions/index). Созданная таблица также будет работать так же, как соответствующая табличная функция.
 
-<div id="from-select-query">
-  ### Создание таблицы с помощью SELECT-запроса
-</div>
+### Создание таблицы с помощью SELECT-запроса {#from-select-query}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name[(name1 [type1], name2 [type2], ...)] ENGINE = engine AS SELECT ...
@@ -115,9 +110,7 @@ SELECT x, toTypeName(x) FROM t1;
 └───┴───────────────┘
 ```
 
-<div id="default_values">
-  ## Указание значений по умолчанию
-</div>
+## Указание значений по умолчанию {#default_values}
 
 Описание столбца может задавать выражение значения по умолчанию в форме `DEFAULT expr`, `MATERIALIZED expr` или `ALIAS expr`. Пример: `URLDomain String DEFAULT domain(URL)`.
 
@@ -129,9 +122,7 @@ SELECT x, toTypeName(x) FROM t1;
 
 Выражение значения по умолчанию `expr` может ссылаться на произвольные столбцы таблицы и константы. ClickHouse проверяет, что изменения структуры таблицы не приводят к появлению циклов при вычислении выражений. Для INSERT также проверяется, что выражения могут быть вычислены, то есть что переданы все столбцы, на основе которых их можно вычислить.
 
-<div id="default">
-  ### DEFAULT
-</div>
+### DEFAULT {#default}
 
 `DEFAULT expr`
 
@@ -157,9 +148,7 @@ SELECT * FROM test;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="materialized">
-  ### MATERIALIZED
-</div>
+### MATERIALIZED {#materialized}
 
 `MATERIALIZED expr`
 
@@ -197,9 +186,7 @@ SELECT * FROM test SETTINGS asterisk_include_materialized_columns=1;
 └────┴─────────────────────┴─────────────────┘
 ```
 
-<div id="ephemeral">
-  ### EPHEMERAL
-</div>
+### EPHEMERAL {#ephemeral}
 
 `EPHEMERAL [expr]`
 
@@ -235,9 +222,7 @@ hexed:      Z��
 hex(hexed): 5A90B714
 ```
 
-<div id="alias">
-  ### ALIAS
-</div>
+### ALIAS {#alias}
 
 `ALIAS expr`
 
@@ -274,9 +259,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 └────┴────────────┴──────────┘
 ```
 
-<div id="null-or-not-null-modifiers">
-  ## Модификаторы `NULL` и `NOT NULL`
-</div>
+## Модификаторы `NULL` и `NOT NULL` {#null-or-not-null-modifiers}
 
 Модификаторы `NULL` и `NOT NULL`, указанные после типа данных в определении столбца, соответственно разрешают или запрещают делать его [Nullable](/ru/reference/data-types/nullable).
 
@@ -284,9 +267,7 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
 
 См. также настройку [data&#95;type&#95;default&#95;nullable](/ru/reference/settings/session-settings/other#data_type_default_nullable).
 
-<div id="primary-key">
-  ## Первичный ключ
-</div>
+## Первичный ключ {#primary-key}
 
 При создании таблицы можно определить [первичный ключ](/ru/reference/engines/table-engines/mergetree-family/mergetree#primary-keys-and-indexes-in-queries). Первичный ключ можно задать двумя способами:
 
@@ -322,15 +303,11 @@ SELECT * FROM test SETTINGS asterisk_include_alias_columns=1;
   Нельзя использовать оба способа в одном запросе.
 </Tip>
 
-<div id="constraints">
-  ## Задание ограничений таблицы
-</div>
+## Задание ограничений таблицы {#constraints}
 
 Наряду с описанием столбцов можно также задавать ограничения:
 
-<div id="constraint">
-  ### CONSTRAINT
-</div>
+### CONSTRAINT {#constraint}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -348,9 +325,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Существующие ограничения для всех таблиц можно просмотреть в таблице [`system.constraints`](/ru/reference/system-tables/constraints).
 
-<div id="assume">
-  ### ASSUME
-</div>
+### ASSUME {#assume}
 
 Предложение `ASSUME` используется для задания `CONSTRAINT` для таблицы, которое считается истинным. Затем это ограничение может использоваться оптимизатором для повышения производительности SQL-запросов.
 
@@ -374,15 +349,11 @@ ORDER BY (name_len, name);
 
 `ASSUME CONSTRAINT` **не обеспечивает соблюдение ограничения**, а лишь сообщает оптимизатору, что ограничение выполняется. Если ограничение на самом деле не выполняется, результаты запросов могут быть некорректными. Поэтому использовать `ASSUME CONSTRAINT` следует только в том случае, если вы уверены, что ограничение действительно выполняется.
 
-<div id="ttl-expression">
-  ## Укажите срок хранения с TTL
-</div>
+## Укажите срок хранения с TTL {#ttl-expression}
 
 Определяет срок хранения значений. Может быть указано только для таблиц семейства MergeTree. Подробное описание см. в разделе [TTL для столбцов и таблиц](/ru/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-ttl).
 
-<div id="column_compression_codec">
-  ## Выбор кодеков сжатия для столбцов
-</div>
+## Выбор кодеков сжатия для столбцов {#column_compression_codec}
 
 {/* Якоря для ссылок на разделы, перенесённые в /reference/statements/create/table/codec */}
 
@@ -447,15 +418,11 @@ ENGINE = <Engine>
 
 Сведения о доступных универсальных, специализированных кодеках и кодеках шифрования см. в разделе [Кодеки сжатия столбцов](/ru/reference/statements/create/table/codec).
 
-<div id="temporary-tables">
-  ## Создание временных таблиц
-</div>
+## Создание временных таблиц {#temporary-tables}
 
 ClickHouse поддерживает временные таблицы, которые удаляются после завершения сеанса. Подробнее см. [CREATE TEMPORARY TABLE](/ru/reference/statements/create/table/temporary-table).
 
-<div id="replace-table">
-  ## Атомарное обновление таблицы с помощью REPLACE TABLE
-</div>
+## Атомарное обновление таблицы с помощью REPLACE TABLE {#replace-table}
 
 {/* Якоря для ссылок на разделы, перемещённые в /reference/statements/create/table/replace-table */}
 
@@ -465,9 +432,7 @@ ClickHouse поддерживает временные таблицы, кото�
 
 Оператор `REPLACE` позволяет атомарно обновить таблицу [атомарно](/ru/concepts/core-concepts/glossary#atomicity). Подробнее см. в разделе [REPLACE TABLE](/ru/reference/statements/create/table/replace-table).
 
-<div id="comment-clause">
-  ## Добавление комментария к таблице
-</div>
+## Добавление комментария к таблице {#comment-clause}
 
 Комментарий к таблице можно добавить при её создании.
 
@@ -508,9 +473,7 @@ SELECT name, comment FROM system.tables WHERE name = 't1';
 └──────┴─────────────────────┘
 ```
 
-<div id="related-content">
-  ## Материалы по теме
-</div>
+## Материалы по теме {#related-content}
 
 * Блог: [Оптимизация ClickHouse с помощью схем и кодеков](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema)
 * Блог: [Работа с временными рядами в ClickHouse](https://clickhouse.com/blog/working-with-time-series-data-and-functions-ClickHouse)

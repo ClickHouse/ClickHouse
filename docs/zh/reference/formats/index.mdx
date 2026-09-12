@@ -11,9 +11,7 @@ import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupporte
 ClickHouse 支持大多数已知的文本和二进制数据格式。这使其能够轻松集成到几乎任何现有的数据管道中，
 从而充分发挥 ClickHouse 的优势。
 
-<div id="input-formats">
-  ## 输入格式
-</div>
+## 输入格式 {#input-formats}
 
 输入格式用于：
 
@@ -36,18 +34,14 @@ ClickHouse 支持大多数已知的文本和二进制数据格式。这使其能
 请阅读完整的[基准分析](https://www.clickhouse.com/blog/clickhouse-input-format-matchup-which-is-fastest-most-efficient)。
 如需查看完整测试结果，请访问 [FastFormats](https://fastformats.clickhouse.com/) 在线仪表板。
 
-<div id="output-formats">
-  ## 输出格式
-</div>
+## 输出格式 {#output-formats}
 
 支持输出的格式可用于：
 
 * 格式化 `SELECT` 查询结果
 * 对以文件为后端的表执行 `INSERT` 操作
 
-<div id="formats-overview">
-  ## 格式概述
-</div>
+## 格式概述 {#formats-overview}
 
 支持的格式如下：
 
@@ -150,14 +144,15 @@ ClickHouse 支持大多数已知的文本和二进制数据格式。这使其能
 | [DWARF](/zh/reference/formats/DWARF)                                                                                               | ✔  | ✗  |
 | [Markdown](/zh/reference/formats/Markdown)                                                                                         | ✗  | ✔  |
 | [Form](/zh/reference/formats/Form)                                                                                                 | ✔  | ✗  |
+| [PNG](/zh/reference/formats/PNG)                                                                                                   | ✗  | ✔  |
+| [Puffin](/zh/reference/formats/Puffin/Puffin)                                                                                      | ✔  | ✗  |
+| [PuffinMetadata](/zh/reference/formats/Puffin/PuffinMetadata)                                                                      | ✔  | ✗  |
 
 您可以通过 ClickHouse 设置控制某些格式处理参数。更多信息，请参阅 [设置](/zh/reference/settings/formats) 部分。
 
 JSON 特有的其他设置记录在 [JSON 格式设置](/zh/reference/formats/JSON/format-settings) 页面中。
 
-<div id="formatschema">
-  ## 格式 schema
-</div>
+## 格式 schema {#formatschema}
 
 包含格式 schema 的文件名由设置 `format_schema` 指定。
 使用 `Cap'n Proto` 和 `Protobuf` 这两种格式之一时，必须设置此项。
@@ -174,9 +169,7 @@ JSON 特有的其他设置记录在 [JSON 格式设置](/zh/reference/formats/JS
 应位于服务器配置中 [format&#95;schema&#95;path](/zh/reference/settings/server-settings/settings/format#format_schema_path)
 指定的目录下。
 
-<div id="skippingerrors">
-  ## 跳过错误
-</div>
+## 跳过错误 {#skippingerrors}
 
 某些格式 (如 `CSV`、`TabSeparated`、`TSKV`、`JSONEachRow`、`Template`、`CustomSeparated` 和 `Protobuf`) 在发生解析错误时，可以跳过损坏的行，并从下一行的开头继续解析。请参阅设置 [input&#95;format&#95;allow&#95;errors&#95;num](/zh/reference/settings/formats/input-format#input_format_allow_errors_num) 和
 [input&#95;format&#95;allow&#95;errors&#95;ratio](/zh/reference/settings/formats/input-format#input_format_allow_errors_ratio)。

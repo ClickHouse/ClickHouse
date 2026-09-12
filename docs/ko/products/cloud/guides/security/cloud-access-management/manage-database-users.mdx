@@ -12,16 +12,14 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 이 가이드에서는 SQL 콘솔과 데이터베이스에서 직접 데이터베이스 사용자를 관리하는 두 가지 방법을 설명합니다.
 
 <div id="sql-console-passwordless-authentication">
-  ### SQL 콘솔 무암호 인증
+  ### SQL 콘솔 무암호 인증 {#sql-console-passwordless-authentication}
 </div>
 
 SQL 콘솔 사용자는 각 세션마다 생성되며, 자동으로 교체되는 X.509 인증서를 사용해 인증됩니다. 세션이 종료되면 해당 사용자는 삭제됩니다. 감사용 액세스 목록을 생성할 때는 콘솔에서 해당 서비스의 설정 탭으로 이동한 다음, 데이터베이스에 존재하는 데이터베이스 사용자뿐 아니라 SQL 콘솔 액세스도 함께 확인하십시오. 사용자 지정 역할이 구성된 경우, 사용자의 액세스 권한은 사용자 이름으로 끝나는 역할에 나열됩니다.
 
-<div id="sql-console-users-and-roles">
-  ## SQL 콘솔 사용자 및 역할
-</div>
+## SQL 콘솔 사용자 및 역할 {#sql-console-users-and-roles}
 
-기본 SQL 콘솔 역할은 Service Read Only 및 Service Admin 권한이 있는 사용자에게 할당할 수 있습니다. 자세한 내용은 [SQL 콘솔 역할 할당 관리](/ko/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments)를 참조하십시오. 이 가이드에서는 SQL 콘솔 사용자를 위한 사용자 지정 역할을 만드는 방법을 설명합니다.
+기본 SQL 콘솔 역할은 Service Read Only 및 Service Admin 권한이 있는 사용자에게 할당할 수 있습니다. 자세한 내용은 [Manage cloud users](/ko/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments)를 참조하십시오. 이 가이드에서는 SQL 콘솔 사용자를 위한 사용자 지정 역할을 만드는 방법을 설명합니다.
 
 <Tip>
   콘솔에서 데이터베이스 액세스를 관리하려면 [Cloud 관리형 데이터베이스 역할](/ko/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles)(베타)을 사용하는 것이 좋습니다. `sql-console-role:<email>` 역할은 [JWT 인증](/ko/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)과 호환되지 않습니다.
@@ -57,11 +55,11 @@ SQL 콘솔 사용자를 위한 사용자 지정 역할을 만들고 일반 역�
 </Steps>
 
 <div id="database-authentication">
-  ## 데이터베이스 인증
+  ## 데이터베이스 인증 {#database-authentication}
 </div>
 
 <div id="database-user-id--password">
-  ### 데이터베이스 사용자 ID 및 비밀번호
+  ### 데이터베이스 사용자 ID 및 비밀번호 {#database-user-id--password}
 </div>
 
 비밀번호를 안전하게 보호하려면 [사용자 계정을 생성할 때](/ko/reference/statements/create/user) SHA256&#95;hash 방식을 사용하십시오. ClickHouse 데이터베이스 비밀번호는 최소 12자 이상이어야 하며, 복잡도 요구 사항도 충족해야 합니다. 즉, 대문자, 소문자, 숫자 및/또는 특수 문자를 포함해야 합니다.
@@ -77,7 +75,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### SSH 인증을 사용하는 데이터베이스 사용자
+  ### SSH 인증을 사용하는 데이터베이스 사용자 {#database-ssh}
 </div>
 
 ClickHouse Cloud 데이터베이스 사용자에 SSH 인증을 설정하는 방법입니다.
@@ -90,7 +88,7 @@ ClickHouse Cloud 데이터베이스 사용자에 SSH 인증을 설정하는 방�
 예시가 포함된 자세한 단계별 안내는 Knowledgebase의 [How to connect to ClickHouse Cloud using SSH keys](/ko/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys)를 참조하십시오.
 
 <div id="database-permissions">
-  ## 데이터베이스 권한
+  ## 데이터베이스 권한 {#database-permissions}
 </div>
 
 SQL [GRANT](/ko/reference/statements/grant) 문을 사용하여 서비스와 데이터베이스에서 다음 항목을 구성하십시오.
@@ -109,7 +107,7 @@ SQL [GRANT](/ko/reference/statements/grant) 문을 사용하여 서비스와 데
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="사용자에게 권한이 부여될 수 있는 다양한 방법을 보여주는 그림" size="md" background="black" />
 
 <div id="initial-settings">
-  ### 초기 설정
+  ### 초기 설정 {#initial-settings}
 </div>
 
 데이터베이스에는 `default`라는 계정이 자동으로 추가되며, 서비스가 생성될 때 default&#95;role이 부여됩니다. 서비스를 생성한 사용자에게는 서비스 생성 시 `default` 계정에 할당된 자동 생성 임시 비밀번호가 표시됩니다. 이 비밀번호는 초기 설정 이후에는 다시 표시되지 않지만, 이후 콘솔에서 Service Admin 권한이 있는 사용자가 변경할 수 있습니다. 이 계정이나 콘솔에서 Service Admin 권한을 가진 계정은 언제든지 추가 데이터베이스 사용자와 역할을 설정할 수 있습니다.
@@ -127,9 +125,7 @@ SQL [GRANT](/ko/reference/statements/grant) 문을 사용하여 서비스와 데
 
 적절한 복잡성을 갖춘 12자 이상의 password를 SHA256 문자열로 변환하려면 SHA256 해시 생성기나 Python의 `hashlib` 같은 함수를 사용할 수 있으며, 이렇게 변환한 값을 시스템 관리자에게 password로 제공할 수 있습니다. 이렇게 하면 관리자가 평문 password를 보거나 직접 다루지 않게 됩니다.
 
-<div id="database-access-listings-with-sql-console-users">
-  ### SQL 콘솔 사용자를 포함한 데이터베이스 액세스 목록
-</div>
+### SQL 콘솔 사용자를 포함한 데이터베이스 액세스 목록 {#database-access-listings-with-sql-console-users}
 
 다음 절차를 사용하면 조직의 SQL 콘솔과 데이터베이스 전반에 대한 전체 액세스 목록을 생성할 수 있습니다.
 
@@ -175,8 +171,6 @@ SQL [GRANT](/ko/reference/statements/grant) 문을 사용하여 서비스와 데
   </Step>
 </Steps>
 
-<div id="warehouse-users">
-  ## Warehouse 사용자
-</div>
+## Warehouse 사용자 {#warehouse-users}
 
 Warehouse 사용자는 동일한 warehouse 내의 서비스 전반에서 공유됩니다. 자세한 내용은 [warehouse의 액세스 제어](/ko/products/cloud/features/infrastructure/warehouses#access-controls)를 참조하십시오.

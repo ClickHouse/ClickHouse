@@ -10,7 +10,7 @@ doc_type: 'guide'
 クエリの種類によっては、これにより ClickHouse server のレイテンシとリソース使用量を大幅に削減できます。
 
 <div id="background-design-and-limitations">
-  ## 背景、設計、および制限事項
+  ## 背景、設計、および制限事項 {#background-design-and-limitations}
 </div>
 
 クエリキャッシュは、一般にトランザクション整合性があるものとないものに分けられます。
@@ -25,7 +25,7 @@ doc_type: 'guide'
 configuration が重複して実装されることが少なくありません。ClickHouse の クエリキャッシュ では、キャッシュロジックが server 側に移ります。これにより、保守の手間が減り、冗長性も回避できます。
 
 <div id="configuration-settings-and-usage">
-  ## 設定と使用方法
+  ## 設定と使用方法 {#configuration-settings-and-usage}
 </div>
 
 <Note>
@@ -167,7 +167,7 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 クエリキャッシュからタグ `tag` の付いたエントリのみを削除するには、ステートメント `SYSTEM CLEAR QUERY CACHE TAG 'tag'` を使用します。
 
 <div id="subquery-caching">
-  ## サブクエリのキャッシュ
+  ## サブクエリのキャッシュ {#subquery-caching}
 </div>
 
 デフォルトでは、外側のクエリで `use_query_cache` を有効にしても、その設定はサブクエリには伝播しません。つまり、各サブクエリで明示的にキャッシュを有効にする必要があります:
@@ -244,7 +244,7 @@ ClickHouse は、テーブルデータを [max&#95;block&#95;size](/ja/reference
 アクセス可能 (つまり共有) としてマークできます。
 
 <div id="related-content">
-  ## 関連コンテンツ
+  ## 関連コンテンツ {#related-content}
 </div>
 
 * ブログ: [ClickHouse クエリキャッシュ の紹介](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

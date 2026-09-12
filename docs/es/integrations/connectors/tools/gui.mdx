@@ -6,9 +6,7 @@ title: 'Interfaces visuales de terceros'
 doc_type: 'reference'
 ---
 
-<div id="open-source">
-  ## Código abierto
-</div>
+## Código abierto {#open-source}
 
 <Accordion title="agx">
   [agx](https://github.com/agnosticeng/agx) es una aplicación de escritorio creada con Tauri y SvelteKit que proporciona una interfaz moderna para explorar y consultar datos mediante el motor de base de datos integrado de ClickHouse (chdb).
@@ -428,12 +426,41 @@ doc_type: 'reference'
   * Implementación basada en Docker para una configuración rápida en entornos de desarrollo.
 </Accordion>
 
-<div id="commercial">
-  ## Comercial
-</div>
+<Accordion title="Beekeeper Studio">
+  [Beekeeper Studio](https://www.beekeeperstudio.io/) es un editor SQL y gestor de bases de datos gratuito y de código abierto compatible con ClickHouse.
+
+  Características:
+
+  * Editor SQL moderno con autocompletado y ejecución de consultas en varias pestañas.
+  * Explorador de esquema para tablas, vistas y columnas.
+  * Guarda y organiza tus consultas favoritas.
+  * Aplicación de escritorio multiplataforma (Windows, macOS, Linux), además de una edición autohospedado/web.
+
+  [Guía de Beekeeper Studio y ClickHouse](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
+</Accordion>
+
+## Comercial {#commercial}
+
+<Accordion title="ADQM Notebook">
+  [ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html) es un espacio de trabajo SQL de estilo notebook incluido en la edición Enterprise de [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), el DBMS orientado a columnas creado sobre ClickHouse por Arenadata. Amplía la interfaz web integrada de ClickHouse con notebooks de múltiples celdas, resultados interactivos, análisis de planes de consulta y un explorador de esquemas a nivel de clúster, y está disponible de forma inmediata en `/notebook` en el puerto HTTP (`8123`) de un host ADQM, junto a `/play`, o mediante Chproxy.
+
+  Características:
+
+  * Celdas SQL y Markdown, hasta cinco sentencias por celda y límites de memoria, tiempo y subprocesos por notebook o celda.
+  * Editor SQL con resaltado de sintaxis, autocompletado, sustitución de `{{variable}}` y `Beautify SQL`.
+  * Resultados en una cuadrícula ordenable y con búsqueda, con proporción de NULL, recuento de valores únicos y rango de valores por columna.
+  * Gráficos de líneas, áreas y barras; descargas en CSV, TSV, JSON, JSONLines o Parquet.
+  * Planes de consulta estimados y reales, `EXPLAIN PIPELINE` y vistas lógicas, así como hallazgos con correcciones sugeridas.
+  * Estadísticas de consultas de `system.query_log` con desglose por nodo; historial de las últimas cinco ejecuciones.
+  * Panel de bases de datos para el host local o para todo el clúster, con estadísticas de columnas y consultas predefinidas.
+  * Grafo de dependencias de tablas, vistas, vistas materializadas, diccionarios y proyecciones.
+  * Vista en vivo de las consultas en ejecución con un botón `KILL`.
+  * Acceso mediante Chproxy como punto de entrada único al clúster, con las consultas balanceadas entre todos los hosts.
+  * Guardado automático, exportación e importación en JSON, almacenamiento de notebooks en el servidor de ClickHouse y compartición mediante enlace.
+</Accordion>
 
 <Accordion title="ProbeDeck">
-  [ProbeDeck](https://probedeck.app) es un cliente de iOS y iPadOS para monitorizar y consultar ClickHouse.
+  [ProbeDeck](https://probedeck.app) es un Client de iOS y iPadOS para monitorizar y consultar ClickHouse.
 
   Características:
 
@@ -491,13 +518,13 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Looker">
-  [Looker](https://looker.com) es una plataforma de datos y herramienta de inteligencia empresarial compatible con más de 50 dialectos de bases de datos, incluido ClickHouse. Looker está disponible como plataforma SaaS y autohospedada. Los usuarios pueden utilizar Looker mediante el navegador para explorar datos, crear visualizaciones y dashboards, programar informes y compartir información con sus colegas. Looker proporciona un amplio conjunto de herramientas para integrar estas funcionalidades en otras aplicaciones, y una API
+  [Looker](https://looker.com) es una plataforma de datos y herramienta de inteligencia empresarial compatible con más de 50 dialectos de bases de datos, incluido ClickHouse. Looker está disponible como plataforma SaaS y en versión autohospedada. Los usuarios pueden utilizar Looker desde el navegador para explorar datos, crear visualizaciones y dashboards, programar informes y compartir sus conclusiones con sus colegas. Looker ofrece un amplio conjunto de herramientas para integrar estas funcionalidades en otras aplicaciones, así como una API
   para integrar datos con otras aplicaciones.
 
   Características:
 
   * Desarrollo sencillo y ágil mediante LookML, un lenguaje que admite
-    [modelado de datos](https://looker.com/platform/data-modeling) cuidadosamente diseñado para ayudar a los creadores de informes y usuarios finales.
+    [Data Modeling](https://looker.com/platform/data-modeling) curado para dar soporte a los autores de informes y a los usuarios finales.
   * Potente integración de flujos de trabajo mediante las [Data Actions](https://looker.com/platform/actions) de Looker.
 
   [Cómo configurar ClickHouse en Looker.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
@@ -525,7 +552,7 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="TABLUM.IO">
-  [TABLUM.IO](https://tablum.io/) es una herramienta en línea de consultas y análisis para ETL y visualización. Permite conectarse a ClickHouse, consultar datos mediante una versátil consola SQL y cargar datos desde archivos estáticos y servicios de terceros. TABLUM.IO permite visualizar los resultados como gráficos y tablas.
+  [TABLUM.IO](https://tablum.io/) es una herramienta en línea de consultas y analítica para ETL y visualización. Permite conectarse a ClickHouse, consultar datos mediante una versátil consola SQL y cargar datos desde archivos estáticos y servicios de terceros. TABLUM.IO permite visualizar los resultados como gráficos y tablas.
 
   Características:
 
@@ -571,4 +598,19 @@ doc_type: 'reference'
   * Edición de datos en línea en tablas de resultados con guardado por lotes, además de exportación e importación CSV/JSON/SQL mediante los formatos nativos de ClickHouse.
   * Opciones de conexión: HTTP/HTTPS, túnel SSH para clústeres privados detrás de un firewall y modo opcional de solo lectura para explorar de forma segura entornos de producción.
   * Funciona con ClickHouse Cloud y en entornos autohospedados.
+</Accordion>
+
+<Accordion title="ADQM Control">
+  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) es una plataforma de observabilidad para clústeres de ClickHouse desplegados como [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), el SGBD orientado a columna desarrollado por Arenadata sobre ClickHouse. Combina métricas de hosts procedentes de Prometheus con datos sobre hosts, tablas y consultas recopilados del clúster para mostrar cómo crecen las tablas, cómo se comportan las consultas y qué hosts están sometidos a mayor carga, en uno o varios clústeres de ADQM. ADQM Control se despliega como un clúster independiente con [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) y almacena los datos recopilados en PostgreSQL.
+
+  Características:
+
+  * Mapa de calor del estado de los hosts para el clúster de ADQM seleccionado.
+  * Alertas relacionadas agrupadas en incidentes por tiempo, con sensibilidad ajustable.
+  * Tamaño de las tablas, filas y número de peticiones a lo largo del tiempo, con métricas de sesgo y desequilibrio entre hosts.
+  * Tamaño comprimido y sin comprimir por columna, ahorro por compresión y códec, con gráficos.
+  * Historial completo de consultas con estado, códigos de excepción, duración, memoria y filas y bytes leídos y escritos.
+  * Filtros de consultas por texto, tabla, usuario, host, duración, estado y valores predefinidos de códigos de excepción.
+  * Gráficos de consultas por duración, usuario y tipo; gráficos de carga por host con detección de anomalías.
+  * Alertas por umbral sobre los recursos de los hosts que explican el problema y recomiendan una solución.
 </Accordion>

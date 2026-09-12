@@ -16,12 +16,11 @@ Os dialetos atualmente suportados são:
 * `clickhouse`: O [dialeto SQL](/pt-BR/chdb/reference/sql-reference) padrão do ClickHouse
 * `prql`: [Linguagem de consulta relacional em pipeline (PRQL)](https://prql-lang.org/)
 * `kusto`: [Linguagem de Consulta Kusto (KQL)](https://learn.microsoft.com/en-us/azure/data-explorer/kusto/query)
+* `trino`: [Trino SQL](https://trino.io/docs/current/language.html)
 
 A linguagem de consulta usada é controlada pela configuração `dialect`.
 
-<div id="standard-sql">
-  ## SQL padrão
-</div>
+## SQL padrão {#standard-sql}
 
 SQL padrão é a linguagem de consulta padrão do ClickHouse.
 
@@ -29,9 +28,7 @@ SQL padrão é a linguagem de consulta padrão do ClickHouse.
 SET dialect = 'clickhouse'
 ```
 
-<div id="pipelined-relational-query-language-prql">
-  ## Linguagem de consulta relacional em pipeline (PRQL)
-</div>
+## Linguagem de consulta relacional em pipeline (PRQL) {#pipelined-relational-query-language-prql}
 
 <ExperimentalBadge />
 
@@ -54,9 +51,7 @@ aggregate {
 
 Nos bastidores, o ClickHouse usa a transpilação de PRQL para SQL para executar consultas PRQL.
 
-<div id="kusto-query-language-kql">
-  ## Linguagem de Consulta Kusto (KQL)
-</div>
+## Linguagem de Consulta Kusto (KQL) {#kusto-query-language-kql}
 
 <ExperimentalBadge />
 
@@ -87,3 +82,50 @@ numbers(10) | project number
 ```
 
 Observe que as consultas KQL talvez não consigam acessar todas as funções definidas no ClickHouse.
+
+## Trino SQL {#trino-sql}
+
+<ExperimentalBadge />
+
+Para habilitar o dialeto Trino:
+
+```sql
+SET allow_experimental_trino_dialect = 1;
+SET dialect = 'trino'
+```
+
+A sintaxe específica do Trino é convertida para ClickHouse SQL, e os nomes das funções do Trino são mapeados para seus equivalentes no ClickHouse:
+
+```sql title="Query"
+SELECT approx_distinct(x) FROM (VALUES 1, 2, 2) AS t(x)
+```
+
+```response title="Response"
+┌─uniq(x)─┐
+│       2 │
+└─────────┘
+```
+
+A tradução cobre, entre outras coisas, literais `ARRAY[...]`, `TRY_CAST`, `UNNEST` (traduzido para `ARRAY JOIN`),
+construtores e tipos `ROW`, tabelas `VALUES`, `OFFSET` antes de `LIMIT`, `BETWEEN SYMMETRIC` e várias centenas de
+funções, incluindo aquelas cujos nomes existem em ambos os sistemas com semânticas diferentes (por exemplo, a função `length`
+do Trino conta code points Unicode e é traduzida para `lengthUTF8`). As funções do ClickHouse que não colidem com nomes
+do Trino continuam acessíveis, de modo que as duas famílias de funções podem ser combinadas em uma mesma consulta.
+
+Os valores `JSON` do Trino são mapeados para o tipo [`JSON`](/pt-BR/reference/data-types/newjson) do ClickHouse:
+literais `JSON '...'` e `json_parse` viram casts para `JSON`, `json_format` vira `toJSONString`, e as funções
+de caminho (`json_extract`, `json_extract_scalar`, `json_value`, `json_query`, `json_exists`, `json_size`) são
+traduzidas para suas contrapartes no ClickHouse. Como o tipo `JSON` do ClickHouse armazena objetos, documentos que não são objetos
+(arrays e escalares de nível superior) são rejeitados ao serem materializados como valores `JSON`; já as funções de caminho aceitam
+qualquer texto JSON.
+
+Algumas semânticas do Trino não podem ser expressas no texto da consulta traduzida; em vez disso, são aplicadas ao contexto
+da consulta: outer joins produzem `NULL` (`join_use_nulls`), set operations usam o supertipo numérico em vez de
+`Variant` (`use_variant_as_common_type`), e o query analyzer é obrigatório (`enable_analyzer`). Uma cláusula
+`SETTINGS` explícita na consulta continua tendo precedência sobre esses valores.
+
+As semânticas que não podem ser corrigidas por uma tradução no nível da consulta permanecem as do ClickHouse. Em especial,
+o operador de divisão `/` realiza divisão inteira no Trino, mas divisão de ponto flutuante no ClickHouse, e
+`round` usa banker&#39;s rounding no ClickHouse para argumentos `Float`.
+
+Use `EXPLAIN SYNTAX` para ver como uma consulta é traduzida.

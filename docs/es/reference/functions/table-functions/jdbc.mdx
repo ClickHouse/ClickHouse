@@ -13,14 +13,12 @@ doc_type: 'reference'
   ClickHouse recomienda usar las funciones de tabla integradas en ClickHouse, que ofrecen una mejor alternativa para escenarios de consultas ad hoc (Postgres, MySQL, MongoDB, etc.).
 </Note>
 
-La función de tabla JDBC devuelve una tabla conectada mediante un controlador JDBC.
+La función de tabla JDBC devuelve una tabla conectada mediante el controlador JDBC.
 
 Esta función de tabla requiere que el programa independiente [clickhouse-jdbc-bridge](https://github.com/ClickHouse/clickhouse-jdbc-bridge) esté en ejecución.
 Admite tipos Nullable (según el DDL de la tabla remota que se consulta).
 
-<div id="syntax">
-  ## Sintaxis
-</div>
+## Sintaxis {#syntax}
 
 ```sql
 jdbc(datasource, external_database, external_table)
@@ -28,9 +26,7 @@ jdbc(datasource, external_table)
 jdbc(named_collection)
 ```
 
-<div id="examples">
-  ## Ejemplos
-</div>
+## Ejemplos {#examples}
 
 En lugar del nombre de una base de datos externa, se puede especificar un esquema:
 

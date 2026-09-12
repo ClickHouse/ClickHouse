@@ -9,9 +9,7 @@ doc_type: 'reference'
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-<div id="customer-managed-vpc-gcp">
-  ## VPC géré par le client (BYO-VPC) pour GCP
-</div>
+## VPC géré par le client (BYO-VPC) pour GCP {#customer-managed-vpc-gcp}
 
 Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au lieu de laisser ClickHouse Cloud provisionner un nouveau VPC, suivez les étapes ci-dessous. Cette approche offre davantage de contrôle sur votre configuration réseau et vous permet d’intégrer ClickHouse BYOC à votre infrastructure réseau existante.
 
@@ -20,6 +18,10 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au li
     1. Allouez au moins 1 sous-réseau privé dans une [région prise en charge par ClickHouse BYOC](/fr/products/cloud/reference/supported-regions) pour le cluster Kubernetes (GKE) de ClickHouse. Assurez-vous que le sous-réseau dispose d’une plage CIDR minimale de `/24` (par exemple, 10.0.0.0/24) afin de fournir suffisamment d’adresses IP aux nœuds du cluster GKE.
     2. Dans le sous-réseau privé, allouez au moins 1 plage IPv4 secondaire qui sera utilisée pour les pods du cluster GKE. Cette plage secondaire doit être d’au moins `/21`. Les plages plus petites ne fournissent pas suffisamment d’adresses IP de pods pour que le cluster GKE termine son provisionnement, et la configuration de l’infrastructure échouera.
     3. Activez **Private Google Access** sur le sous-réseau. Cela permet aux nœuds GKE d’accéder aux API et services Google sans nécessiter d’adresses IP externes.
+
+    <Note>
+      Pour exposer des services via [Private Service Connect](/fr/cloud/reference/byoc/onboarding/network-gcp#setup-psc), vous avez également besoin, dans ce VPC, d’un sous-réseau dédié dont l’objectif est `PRIVATE_SERVICE_CONNECT`. Vous pouvez le créer dès maintenant ou plus tard, avant d’activer le private link.
+    </Note>
 
     <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Détails du sous-réseau GCP BYOC montrant les plages IPv4 primaires et secondaires avec Private Google Access activé" />
   </Step>
@@ -34,10 +36,10 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au li
 
   <Step title="Configurez l’infrastructure BYOC" id="set-up-byoc-infrastructure">
     <Note>
-      Lorsque vous cliquez sur **Set up Infrastructure**, ClickHouse Cloud exécute automatiquement la [validation préalable](/fr/products/bring-your-own-cloud/onboarding/standard#preflight-validation) avant le provisionnement, afin de vérifier que le compte de service de gestion dispose des autorisations requises et que les API Google Cloud requises sont activées. La validation automatique d’un VPC que vous fournissez ne fait pas encore partie de la vérification préalable GCP. Assurez-vous donc que votre VPC respecte les [exigences réseau](#configure-existing-vpc) ci-dessus avant de commencer.
+      Lorsque vous cliquez sur **Set up Infrastructure**, ClickHouse Cloud exécute automatiquement la [validation préalable](/fr/products/bring-your-own-cloud/onboarding/standard#preflight-validation) avant le provisionnement. Elle vérifie que le compte de service de gestion dispose des autorisations requises et que les API Google Cloud requises sont activées, et elle valide le VPC que vous fournissez : que le réseau et le sous-réseau se résolvent, que la plage primaire du sous-réseau et la plage secondaire des pods sont suffisamment grandes, et qu’une passerelle Cloud NAT couvre le réseau. Si un élément est manquant, la configuration s’interrompt en indiquant les problèmes précis à corriger.
     </Note>
 
-    Dans la console ClickHouse Cloud, configurez les éléments suivants lors de la mise en place d’une nouvelle infrastructure :
+    Dans la console ClickHouse Cloud, configurez les éléments suivants lors de la mise en place d’une nouvelle infrastructure :
 
     1. Sous **Configuration du VPC**, sélectionnez **Use existing VPC**.
     2. Saisissez le **nom de votre réseau VPC**.

@@ -10,7 +10,7 @@ doc_type: 'مرجع'
 
 import SettingsInfoBlock from "/snippets/ar/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 هذه الإعدادات متوفّرة في [system.settings](/ar/reference/system-tables/settings)، وقد أُنشئت تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
@@ -18,7 +18,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   ## ai_function_allow_insecure_endpoint
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -30,7 +30,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   ## ai_function_embedding_default_credentials
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد"}]}]} />
 
@@ -40,19 +40,19 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   ## ai_function_embedding_max_batch_size
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.6"},{"label": "100"},{"label": "إعداد جديد"}]}]} />
 
-الحد الأقصى لعدد النصوص التي يمكن تضمينها في طلب HTTP واحد تُرسله دوال التضمين (`aiEmbed`، `aiSimilarity`). تُجمَّع النصوص في دفعات بهذا الحجم لتقليل الحمل الإضافي لاستدعاءات واجهة برمجة التطبيقات. على سبيل المثال، ينتج عن 500 نص فريد وحجم دفعة يبلغ 100 خمسة طلبات HTTP.
+الحد الأقصى لعدد النصوص التي يمكن تضمينها في طلب HTTP واحد تُرسله دوال التضمين (`aiEmbed`، `aiSimilarity`). تُجمَّع النصوص في دفعات بهذا الحجم لتقليل الحمل الإضافي لاستدعاءات واجهة برمجة تطبيقات. على سبيل المثال، ينتج عن 500 نص فريد وحجم دفعة يبلغ 100 خمسة طلبات HTTP.
 
 <div id="ai_function_max_api_calls_per_query">
   ## ai_function_max_api_calls_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,13 +64,13 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   ## ai_function_max_input_tokens_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000000"},{"label": "إعداد جديد"}]}]} />
 
-الحد الأقصى لإجمالي رموز الإدخال (prompt) عبر جميع استدعاءات واجهة برمجة التطبيقات لدالة الذكاء الاصطناعي ضمن استعلام واحد. ويُحتسَب هذا الحد تراكميًا من استجابات الموفّرين. لاحظ أن هذا الحد قد يُتجاوز بما يصل إلى رموز الإدخال الخاصة باستدعاء واحد لكل طلب قيد التنفيذ، لأن رموز الإدخال الخاصة بالاستدعاء لا تكون معروفة حتى وصول استجابته. ومثل حصة الذكاء الاصطناعي الأخرى، يُفرَض لكل خادم / جزء من الاستعلام، ولا يُجمَع عبر استعلام موزع، ويجب ضبطه في الاستعلام ذي المستوى الأعلى - إذ يتم تجاهل تجاوز `SETTINGS` في الاستعلام الفرعي. اضبطه على 0 لتعطيله.
+الحد الأقصى لإجمالي رموز الإدخال (prompt) عبر جميع استدعاءات واجهة برمجة تطبيقات لدالة الذكاء الاصطناعي ضمن استعلام واحد. ويُحتسَب هذا الحد تراكميًا من استجابات الموفّرين. لاحظ أن هذا الحد قد يُتجاوز بما يصل إلى رموز الإدخال الخاصة باستدعاء واحد لكل طلب قيد التنفيذ، لأن رموز الإدخال الخاصة بالاستدعاء لا تكون معروفة حتى وصول استجابته. ومثل حصة الذكاء الاصطناعي الأخرى، يُفرَض لكل خادم / جزء من الاستعلام، ولا يُجمَع عبر استعلام موزع، ويجب ضبطه في الاستعلام ذي المستوى الأعلى - إذ يتم تجاهل تجاوز `SETTINGS` في الاستعلام الفرعي. اضبطه على 0 لتعطيله.
 
 لا يُفرَض هذا الحد إلا على الموفّرين الذين يبلّغون عن كائن `usage` في استجابتهم (OpenAI وAnthropic وvLLM). أما الموفّرون الذين لا يضمّنون معلومات استخدام الرموز (وخاصة HuggingFace TEI) فيؤدي ذلك إلى بقاء العداد عند 0 — استخدم `ai_function_max_api_calls_per_query` بدلًا من ذلك لتقييد مثل هذه الاستدعاءات.
 
@@ -78,7 +78,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   ## ai_function_max_output_tokens_per_query
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="500000" />
 
@@ -92,11 +92,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   ## ai_function_max_retries
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
-<SettingsInfoBlock type="UInt64" default_value="0" />
+<SettingsInfoBlock type="UInt64" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "تُعاد محاولة خطأ عابر في واجهة برمجة تطبيقات مرة واحدة افتراضيًا، بحيث لا يؤدي خطأ 429 أو 5xx واحد من موفّر إلى فشل الاستعلام."}]}, {"id": "row-2","items": [{"label": "26.4"},{"label": "0"},{"label": "إعداد جديد"}]}]} />
 
 الحد الأقصى لعدد محاولات إعادة المحاولة عند حدوث أخطاء عابرة لكل طلب منفرد إلى واجهة برمجة تطبيقات. تستخدم كل محاولة إعادة تأخيرًا أسيًا يبدأ من `ai_function_retry_initial_delay_ms`.
 
@@ -104,31 +104,31 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   ## ai_function_request_timeout_sec
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="60" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "60"},{"label": "إعداد جديد"}]}]} />
 
-المهلة بالثواني لطلبات HTTP الفردية التي تُجريها وظائف الذكاء الاصطناعي (عمليات إكمال AI Chat واستدعاءات واجهة برمجة التطبيقات للتضمين). إذا لم يكتمل الطلب خلال هذه المدة، فسيُعتبر فاشلًا وقد يُعاد حاولته وفقًا للإعداد `ai_function_max_retries`.
+المهلة بالثواني لطلبات HTTP الفردية التي تُجريها دوال الذكاء الاصطناعي (عمليات إكمال AI Chat واستدعاءات واجهة برمجة تطبيقات للتضمين). إذا لم يكتمل الطلب خلال هذه المدة، فسيُعتبر فاشلًا وقد يُعاد حاولته وفقًا للإعداد `ai_function_max_retries`.
 
 <div id="ai_function_retry_initial_delay_ms">
   ## ai_function_retry_initial_delay_ms
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1000"},{"label": "إعداد جديد"}]}]} />
 
-التأخير الأولي، بالمللي ثانية، قبل أول إعادة محاولة لطلب واجهة برمجة تطبيقات الفاشل الخاص بدالة AI. ويتضاعف التأخير مع كل محاولة لاحقة (تراجع أُسّي). على سبيل المثال، مع الإعدادات الافتراضية: 1000ms، 2000ms، 4000ms.
+التأخير الأولي، بالمللي ثانية، قبل أول إعادة محاولة لطلب واجهة برمجة تطبيقات الفاشل الخاص بدالة الذكاء الاصطناعي. ويتضاعف التأخير مع كل محاولة لاحقة (تراجع أُسّي). على سبيل المثال، مع الإعدادات الافتراضية: 1000ms، 2000ms، 4000ms.
 
 <div id="ai_function_text_default_credentials">
   ## ai_function_text_default_credentials
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": ""},{"label": "إعداد جديد"}]}]} />
 
@@ -138,19 +138,19 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
   ## ai_function_throw_on_error
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "26.4"},{"label": "1"},{"label": "إعداد جديد"}]}]} />
 
-إذا كانت القيمة true (وهي القيمة الافتراضية)، فإن استدعاء AI function الذي يفشل نهائيًا بعد استنفاد جميع محاولات إعادة المحاولة يُنهي الاستعلام مع إطلاق استثناء. وإذا كانت القيمة false، فإن الصف الذي فشل يتلقى القيمة الافتراضية لنوع العمود (سلسلة فارغة لـ String)، وتستمر المعالجة.
+إذا كانت القيمة true (وهي القيمة الافتراضية)، فإن استدعاء دالة الذكاء الاصطناعي الذي يفشل نهائيًا بعد استنفاد جميع محاولات إعادة المحاولة يُنهي الاستعلام مع إطلاق استثناء. وإذا كانت القيمة false، فإن الصف الذي فشل يتلقى القيمة الافتراضية لنوع العمود (سلسلة فارغة لـ String)، وتستمر المعالجة.
 
 <div id="ai_function_throw_on_quota_exceeded">
   ## ai_function_throw_on_quota_exceeded
 </div>
 
-<ExperimentalBadge />
+<BetaBadge />
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

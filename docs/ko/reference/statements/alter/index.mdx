@@ -54,9 +54,7 @@ doc_type: 'reference'
 | [ALTER DATABASE ... MODIFY COMMENT](/ko/reference/statements/alter/database-comment) | 이전 설정 여부와 관계없이 데이터베이스 주석을 추가, 수정 또는 제거합니다.                                              |
 | [ALTER NAMED COLLECTION](/ko/reference/statements/alter/named-collection)            | [이름이 지정된 컬렉션](/ko/concepts/features/configuration/server-config/named-collections)을 수정합니다. |
 
-<div id="mutations">
-  ## 뮤테이션
-</div>
+## 뮤테이션 {#mutations}
 
 테이블 데이터를 변경하기 위한 `ALTER` 쿼리는 &quot;뮤테이션&quot;이라는 메커니즘으로 구현되며, 대표적인 예로 [ALTER TABLE ... DELETE](/ko/reference/statements/alter/delete) 및 [ALTER TABLE ... UPDATE](/ko/reference/statements/alter/update)가 있습니다. 이는 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/index) 테이블의 머지와 유사한 비동기 백그라운드 프로세스로, 파트의 새로운 &quot;뮤테이션된&quot; 버전을 생성합니다.
 
@@ -69,9 +67,7 @@ doc_type: 'reference'
 
 완료된 뮤테이션 항목은 즉시 삭제되지 않습니다(보존되는 항목 수는 `finished_mutations_to_keep` 스토리지 엔진 매개변수로 결정됩니다). 오래된 뮤테이션 항목은 삭제됩니다.
 
-<div id="synchronicity-of-alter-queries">
-  ## ALTER 쿼리의 동기성
-</div>
+## ALTER 쿼리의 동기성 {#synchronicity-of-alter-queries}
 
 복제되지 않은 테이블에서는 모든 `ALTER` 쿼리가 동기식으로 수행됩니다. 복제된 테이블에서는 쿼리가 적절한 작업에 대한 지시만 `ZooKeeper`에 추가하고, 실제 작업은 가능한 한 빨리 수행됩니다. 다만, 쿼리는 이러한 작업이 모든 레플리카에서 완료될 때까지 기다릴 수 있습니다.
 
@@ -82,12 +78,10 @@ doc_type: 'reference'
 비활성 레플리카가 모든 `ALTER` 쿼리를 실행할 때까지 얼마나 오래 기다릴지(초 단위)는 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 설정으로 지정할 수 있습니다.
 
 <Note>
-  모든 `ALTER` 쿼리에서 `alter_sync = 2`이고 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다.
+  모든 `ALTER` 쿼리에서 `alter_sync = 2`이거나 `ReplicatedMergeTree`에서 `alter_sync = 3`이고, 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면 `UNFINISHED` 예외가 발생합니다.
 </Note>
 
-<div id="concurrent-alter-assignment-on-one-table">
-  ### 하나의 테이블에서 동시 `ALTER` 할당
-</div>
+### 하나의 테이블에서 동시 `ALTER` 할당 {#concurrent-alter-assignment-on-one-table}
 
 복제된 테이블에서 동일한 테이블에 여러 개의 개별 `ALTER` 문을 짧은 간격으로 연속 제출하면 `CANNOT_ASSIGN_ALTER`(코드 517) 오류가 발생할 수 있습니다. 레플리카가 이전 `ALTER` 중 일부를 아직 적용하지 않은 경우(메타데이터 버전이 공통 메타데이터보다 뒤처진 경우) 복제 경로에서 이 오류가 발생합니다. 서버는 레플리카가 &quot;still not applied some of previous alters&quot; 또는 &quot;Probably too many alters executing concurrently&quot; 상태라고 표시할 수 있습니다. 이전 `ALTER`가 이미 할당된 후에도 이 상태가 계속될 수 있습니다. 이는 **일반적인 동시 메타데이터 `ALTER` / 뮤테이션** 관련 상태이며, 뮤테이션 전용 SQL 문에만 국한되지 않습니다. 일반적인 동시 메타데이터 변경(`ADD` / `DROP` / `MODIFY` 등)에서도 동일한 재시도 가능한 코드가 발생할 수 있습니다(예를 들어 `tests/queries/0_stateless/03518_alter_logical_race.sh`에서 다루는 재시도 경로를 참조하십시오).
 
@@ -97,9 +91,7 @@ doc_type: 'reference'
 * `ALTER` 문을 순차적으로 실행하고, 이전 `ALTER`가 레플리카에 적용될 때까지 코드 517 오류 발생 시 재시도하십시오.
 * 뮤테이션을 생성하는 `ALTER`의 경우, 다음 작업을 제출하기 전에 [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync) 또는 [`system.mutations`](/ko/reference/system-tables/mutations)의 `is_done`과 같은 문서화된 확인 수단을 사용하여 이전 뮤테이션이 완료될 때까지 기다리십시오.
 
-<div id="combining-materialize-index-clauses">
-  ### `MATERIALIZE INDEX` 절 함께 사용하기
-</div>
+### `MATERIALIZE INDEX` 절 함께 사용하기 {#combining-materialize-index-clauses}
 
 하나의 `ALTER`에 여러 `MATERIALIZE INDEX` 절을 포함할 수 있습니다. 현재 트리에서 다루는 사례는 여러 `ADD INDEX` 절과 해당 새 인덱스에 대한 `MATERIALIZE INDEX`를 하나의 SQL 문에 함께 지정하는 것입니다(`tests/queries/0_stateless/02911_add_index_and_materialize_index.sql` 참고). 이렇게 `ADD INDEX`와 `MATERIALIZE INDEX`를 함께 사용하는 형식은 `AlterCommand` 세그먼트와 `MutationCommand` 세그먼트를 혼합하므로, **`DatabaseReplicated`는 이를 `QUERY_IS_PROHIBITED`와 함께 거부합니다**(`InterpreterAlterQuery::validateReplicatedDatabaseSegments`). 일반(`DatabaseReplicated`가 아닌) 데이터베이스에서는 `02911` 예시가 유효합니다. `DatabaseReplicated`에서는 메타데이터 변경과 구체화 뮤테이션을 별도 SQL 문으로 실행하십시오.
 
@@ -107,9 +99,7 @@ doc_type: 'reference'
 
 순서대로 뮤테이션을 적용해야 한다면, SQL 문마다 `MATERIALIZE INDEX`를 하나씩 실행하고 [`mutations_sync`](/ko/reference/settings/session-settings/mutations#mutations_sync)로 완료를 기다릴 수 있습니다.
 
-<div id="related-content">
-  ## 관련 콘텐츠
-</div>
+## 관련 콘텐츠 {#related-content}
 
 * 블로그: [ClickHouse에서 업데이트 및 삭제 처리](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

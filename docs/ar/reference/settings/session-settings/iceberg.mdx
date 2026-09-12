@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تتوفر هذه الإعدادات في [system.settings](/ar/reference/system-tables/settings)، وهي مُولَّدة تلقائيًا من [الشفرة المصدرية](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="iceberg_delete_data_on_drop">
-  ## iceberg_delete_data_on_drop
-</div>
+## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,25 +22,35 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 تحديد ما إذا كان سيتم حذف جميع ملفات Iceberg عند تنفيذ عملية الحذف أم لا.
 
-<div id="iceberg_delete_manifest_decode_concurrency">
-  ## iceberg_delete_manifest_decode_concurrency
-</div>
+## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "إعداد جديد للسعة التي كانت مثبّتة سابقًا في الشيفرة للطابور الواقع بين مهام فك ترميز manifest بيانات Iceberg والاستعلام."}]}]} />
+
+سعة الطابور الواقع بين مهام فك ترميز manifest بيانات Iceberg والاستعلام، مُقدَّرة بعدد مُدخلات ملف البيانات.
+
+تتوقف مهام فك الترميز مؤقتًا عند امتلاء الطابور وتوقّف الاستعلام عن استهلاك البيانات، ومن ثمّ فإن هذا يحدّ أيضًا من القراءة المسبقة.
+
+يجب أن تكون القيمة أكبر من الصفر.
+
+## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+
+**الأسماء البديلة**: `iceberg_delete_manifest_decode_concurrency`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "إعداد جديد يحدّ من عدد ملفات manifest الحذف لـ Iceberg التي تُفك شفرتها بالتزامن قبل قراءة الصف الأول. قبل الإصدار 26.8، كان يُفك ترميز ملف manifest واحد في كل مرة، بينما كان جلب الملف التالي جارياً بالفعل؛ لذا فإن `2` هو أقرب قيمة مكافئة للسلوك السابق، الذي كان يضع مجموع رحلات الذهاب والإياب إلى التخزين الكائني على المسار الحرج قبل الصف الأول."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "إعداد جديد يحدّد عدد ملفات manifest الخاصة بـ Iceberg التي يجري فك ترميزها بالتوازي، سواء أكانت manifests حذف أم بيانات. وهو يحل محل `iceberg_delete_manifest_decode_concurrency` (المحتفظ به كاسم بديل). تقارب القيمة `2` مسار البيانات السابق للإصدار 26.9، الذي كان يفك ترميز manifest واحد في كل مرة بينما يكون جلب التالي قيد الإرسال بالفعل؛ وفي ظل `compatibility` عند 26.8 أو أقل، يعمل فك ترميز الحذف أيضًا عند 2 بدلًا من قيمته الافتراضية المُصدَرة 4، مما يحافظ على غلاف ذاكرة مسار البيانات الأقدم مقابل بعض التداخل في فك ترميز الحذف."}]}]} />
 
-الحد الأقصى لعدد ملفات manifest الحذف لـ Iceberg التي تُفك شفرتها بالتزامن أثناء تنفيذ الاستعلام، قبل قراءة أي ملف بيانات.
+الحد الأقصى لعدد ملفات manifest الخاصة بـ Iceberg التي يجري فك ترميزها بالتوازي أثناء قراءة جدول.
 
-يجب فك شفرة جميع ملفات manifest الحذف قبل قراءة أي ملف بيانات، لذا يقع هذا العمل على المسار الحرج قبل إرجاع الصف الأول. يتيح فك شفرة عدة ملفات في الوقت نفسه تداخل رحلات الذهاب والإياب إلى التخزين الكائني مع أعمال التشذيب لكل صف.
+يُفكّ ترميز جميع manifests الحذف قبل قراءة أي ملف بيانات؛ أما manifests البيانات فيُفكّ ترميزها أثناء إنتاج قائمة ملفات البيانات الخاصة بالاستعلام، ولا يُفكّ ترميز ملفات جديدة إلا بمقدار ما يستهلكه الاستعلام من المدخلات التي فُكّ ترميزها بالفعل. ويؤدي فك ترميز عدة manifests في وقت واحد إلى تداخل رحلات الذهاب والعودة إلى تخزين الكائنات مع عمل التشذيب لكل مدخلة.
 
-تزيد القيم الأعلى من ذروة استخدام الذاكرة أثناء تهيئة الاستعلام عند تعطيل ذاكرة التخزين المؤقت لملفات البيانات الوصفية لـ Iceberg أو امتلائها، لأن كل ملف manifest قيد المعالجة يحتفظ عندئذٍ بمحتواه المفكوك الترميز.
+ترفع القيم الأعلى ذروة الذاكرة عندما تكون ذاكرة التخزين المؤقت لملفات البيانات الوصفية الخاصة بـ Iceberg معطّلة أو ممتلئة، إذ يحتفظ عندئذٍ كل manifest قيد الإرسال بمحتوياته المفكوكة الخاصة به.
 
-يجب أن تكون القيمة أكبر من صفر؛ تفك القيمة `1` شفرة ملفات manifest واحداً تلو الآخر.
+يجب أن تكون القيمة أكبر من صفر؛ فالقيمة `1` تفك ترميز manifests واحدًا تلو الآخر.
 
-<div id="iceberg_manifest_min_count_to_compact">
-  ## iceberg_manifest_min_count_to_compact
-</div>
+## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 
 <ExperimentalBadge />
 
@@ -54,9 +62,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 إذا كان العدد الحالي لملفات manifest أقل من هذه العتبة أو مساويًا لها، فسيتم تخطي الدمج.
 يتطلب تفعيل allow&#95;experimental&#95;iceberg&#95;compaction.
 
-<div id="iceberg_max_number_datafiles_to_compact">
-  ## iceberg_max_number_datafiles_to_compact
-</div>
+## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,9 +70,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 العتبة الخاصة بملفات بيانات الدمج في Iceberg.
 
-<div id="iceberg_orphan_files_older_than_seconds">
-  ## iceberg_orphan_files_older_than_seconds
-</div>
+## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />
 
@@ -76,9 +80,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 عتبة العمر الافتراضية، بالثواني، لإزالة الملفات اليتيمة في جداول Iceberg. لا تُعدّ الملفات الأحدث من هذه العتبة ملفات يتيمة. يُستخدم هذا الإعداد عند عدم تمرير الوسيط `older_than` في استدعاء الإجراء `remove_orphan_files()`. القيمة الافتراضية هي 259200 (3 أيام).
 
-<div id="iceberg_snapshot_id">
-  ## iceberg_snapshot_id
-</div>
+## iceberg_snapshot_id {#iceberg_snapshot_id}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -86,9 +88,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 
 نفّذ استعلامًا على جدول Iceberg باستخدام معرّف اللقطة المحدّد.
 
-<div id="iceberg_timestamp_ms">
-  ## iceberg_timestamp_ms
-</div>
+## iceberg_timestamp_ms {#iceberg_timestamp_ms}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 

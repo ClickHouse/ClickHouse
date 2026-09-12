@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически генерируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="alter_move_to_space_execute_async">
-  ## alter_move_to_space_execute_async
-</div>
+## alter_move_to_space_execute_async {#alter_move_to_space_execute_async}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Выполнять ALTER TABLE MOVE ... TO [DISK|VOLUME] асинхронно
 
-<div id="alter_partition_verbose_result">
-  ## alter_partition_verbose_result
-</div>
+## alter_partition_verbose_result {#alter_partition_verbose_result}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -58,9 +54,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-<div id="alter_sync">
-  ## alter_sync
-</div>
+## alter_sync {#alter_sync}
 
 **Псевдонимы**: `replication_alter_partitions_sync`
 
@@ -73,7 +67,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 * `0` — Не ждать.
 * `1` — Ждать выполнения на текущей реплике.
 * `2` — Ждать выполнения на всех репликах.
-* `3` - Ждать только активные реплики.
+* `3` - Ждать только активные реплики. Поддерживается только для `SharedMergeTree`. Для `ReplicatedMergeTree` работает так же, как `alter_sync = 2`.
 
 Значение по умолчанию в Cloud: `0`.
 
@@ -81,9 +75,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
   `alter_sync` применим только к таблицам `Replicated` и `SharedMergeTree`; для таблиц без `Replicated` или `Shared` этот параметр ни на что не влияет.
 </Note>
 
-<div id="alter_update_mode">
-  ## alter_update_mode
-</div>
+## alter_update_mode {#alter_update_mode}
 
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
 

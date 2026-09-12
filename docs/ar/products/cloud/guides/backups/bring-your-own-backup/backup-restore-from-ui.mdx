@@ -10,20 +10,18 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Note>
-  يتم إعداد النسخ الاحتياطية التلقائية إلى الحاوية الخارجية لديك لتُجرى كنسخ احتياطية &quot;كاملة&quot; كل 24 ساعة، ولا يمكن تغيير هذا التواتر.
+  النسخ الاحتياطية التلقائية إلى الحاوية الخارجية لديك هي نسخ احتياطية كاملة ومستقلة. وهي تتبع تواتر النسخ الاحتياطي ووقت البدء المهيّأين للخدمة (كل 24 ساعة بشكل افتراضي). كما تنشئ ClickHouse نسخة احتياطية منفصلة في حاوية تديرها ClickHouse كل 24 ساعة؛ وهذا التواتر ثابت.
 </Note>
 
 <div id="AWS">
-  ## AWS
+  ## AWS {#AWS}
 </div>
 
 <div id="taking-backups-to-aws">
-  ### إنشاء نسخ احتياطية على AWS
+  ### إنشاء نسخ احتياطية على AWS {#taking-backups-to-aws}
 </div>
 
-<div id="aws-steps">
-  #### 1. الخطوات التي يجب اتباعها في AWS
-</div>
+#### 1. الخطوات التي يجب اتباعها في AWS {#aws-steps}
 
 <Note>
   هذه الخطوات مشابهة لإعداد S3 الآمن كما هو موضح في [&quot;الوصول إلى بيانات S3 بأمان&quot;](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely)، ولكن هناك أيضًا إجراءات إضافية مطلوبة ضمن أذونات الدور.
@@ -106,9 +104,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="cloud-steps">
-  #### 2. الخطوات التي يجب اتباعها في ClickHouse Cloud
-</div>
+#### 2. الخطوات التي يجب اتباعها في ClickHouse Cloud {#cloud-steps}
 
 اتبع الخطوات التالية في وحدة تحكم ClickHouse Cloud لتهيئة الحاوية الخارجية:
 
@@ -132,9 +128,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="تغيير جدول النسخ الاحتياطي عن الجدول الافتراضي" id="changing-the-backup-schedule">
     ستُحفَظ النسخ الاحتياطية الخارجية الآن في حاوية التخزين الخاصة بك وفقًا للجدول الافتراضي.
     ويمكنك أيضًا تهيئة جدول النسخ الاحتياطي من صفحة “Settings”.
-    إذا تم تكوينه بشكل مختلف، فسيُستخدم الجدول المخصص لكتابة النسخ الاحتياطية إلى
-    حاوية التخزين الخاصة بك، بينما سيُستخدم الجدول الافتراضي (نسخة احتياطية كل 24 ساعة) للنسخ الاحتياطية في
-    حاوية التخزين المملوكة لـ ClickHouse Cloud.
+    إذا تم تكوينه بشكل مختلف، فسيُطبَّق الجدول المخصص وإعداد الاحتفاظ على
+    النسخ الاحتياطية المكتوبة إلى حاوية التخزين الخاصة بك. أما النسخ الاحتياطية في الحاوية المُدارة من ClickHouse Cloud
+    فتستخدم الجدول الافتراضي (نسخة احتياطية كل 24 ساعة) وسياسة الاحتفاظ الافتراضية.
   </Step>
 
   <Step title="عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك" id="view-backups-stored-in-your-bucket">
@@ -145,9 +141,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="restoring-backups-from-aws">
-  ### استعادة النسخ الاحتياطية من AWS
-</div>
+### استعادة النسخ الاحتياطية من AWS {#restoring-backups-from-aws}
 
 اتبع الخطوات التالية لاستعادة النسخ الاحتياطية من AWS:
 
@@ -193,18 +187,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Steps>
 
 <div id="gcp">
-  ## GCP
+  ## GCP {#gcp}
 </div>
 
 <div id="taking-backups-to-gcp">
-  ### إنشاء نسخ احتياطية على GCP
+  ### إنشاء نسخ احتياطية على GCP {#taking-backups-to-gcp}
 </div>
 
 اتبع الخطوات أدناه لإنشاء نسخ احتياطية على GCP:
 
-<div id="gcp-steps-to-follow">
-  #### الخطوات التي يجب اتباعها في GCP
-</div>
+#### الخطوات التي يجب اتباعها في GCP {#gcp-steps-to-follow}
 
 <Steps>
   <Step title="إنشاء حاوية تخزين في GCP" id="create-a-gcp-storage-bucket">
@@ -233,9 +225,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="gcp-cloud-steps">
-  #### الخطوات التي يجب اتباعها في ClickHouse Cloud
-</div>
+#### الخطوات التي يجب اتباعها في ClickHouse Cloud {#gcp-cloud-steps}
 
 اتبع الخطوات التالية في وحدة تحكم ClickHouse Cloud لتهيئة الحاوية الخارجية:
 
@@ -259,9 +249,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="تغيير جدول النسخ الاحتياطي عن الجدولة الافتراضية" id="gcp-changing-the-backup-schedule">
     ستُحفَظ النسخ الاحتياطية الخارجية الآن في الـ حاوية التخزين الخاص بك وفقًا للجدولة الافتراضية.
     وبدلاً من ذلك، يمكنك تهيئة جدول النسخ الاحتياطي من صفحة `Settings`.
-    إذا جرى إعدادها بشكل مختلف، فستُستخدَم الجدولة المخصصة لكتابة النسخ الاحتياطية إلى
-    الـ حاوية التخزين الخاص بك، بينما تُستخدَم الجدولة الافتراضية (نسخة احتياطية كل 24 ساعة) للنسخ الاحتياطية في
-    حاوية مملوك لـ ClickHouse Cloud.
+    إذا جرى إعدادها بشكل مختلف، فستنطبق الجدولة المخصصة وإعداد الاحتفاظ على
+    النسخ الاحتياطية المكتوبة إلى الـ حاوية التخزين الخاص بك. أما النسخ الاحتياطية في الحاوية المُدارة من ClickHouse Cloud
+    فتستخدم الجدولة الافتراضية (نسخة احتياطية كل 24 ساعة) وسياسة الاحتفاظ الافتراضية.
   </Step>
 
   <Step title="عرض النسخ الاحتياطية المخزنة في الـ حاوية التخزين الخاص بك" id="gcp-view-backups-stored-in-your-bucket">
@@ -271,9 +261,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="gcp-restoring-backups-from-gcp">
-  ### استعادة النسخ الاحتياطية من GCP
-</div>
+### استعادة النسخ الاحتياطية من GCP {#gcp-restoring-backups-from-gcp}
 
 اتبع الخطوات التالية لاستعادة النسخ الاحتياطية من GCP:
 
@@ -315,18 +303,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Steps>
 
 <div id="azure">
-  ## Azure
+  ## Azure {#azure}
 </div>
 
 <div id="taking-backups-to-azure">
-  ### إنشاء نسخ احتياطية على Azure
+  ### إنشاء نسخ احتياطية على Azure {#taking-backups-to-azure}
 </div>
 
 اتبع الخطوات أدناه لإنشاء نسخ احتياطية على Azure:
 
-<div id="steps-to-follow-in-azure">
-  #### الخطوات التي يجب اتباعها في Azure
-</div>
+#### الخطوات التي يجب اتباعها في Azure {#steps-to-follow-in-azure}
 
 <Steps>
   <Step title="إنشاء حساب تخزين" id="azure-create-a-storage-account">
@@ -340,9 +326,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="azure-cloud-steps">
-  #### الخطوات الواجب اتباعها في ClickHouse Cloud
-</div>
+#### الخطوات الواجب اتباعها في ClickHouse Cloud {#azure-cloud-steps}
 
 اتبع الخطوات التالية في وحدة تحكم ClickHouse Cloud لتهيئة الحاوية الخارجية:
 
@@ -365,23 +349,22 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   </Step>
 
   <Step title="تغيير جدول النسخ الاحتياطي من الجدول الافتراضي" id="azure-changing-the-backup-schedule">
-    ستُحفَظ النسخ الاحتياطية الخارجية الآن في الحاوية الخاصة بك وفقًا للجدول الافتراضي. وبدلًا من ذلك،
-    يمكنك تهيئة جدول النسخ الاحتياطي من صفحة `Settings`. وإذا تم تكوينه بشكل مختلف،
-    فسيُستخدم الجدول المخصص لكتابة النسخ الاحتياطية إلى الحاوية الخاصة بك، بينما يُستخدم الجدول الافتراضي
-    (نسخة احتياطية كل 24 ساعة) للنسخ الاحتياطية في ClickHouse cloud owned bucket.
+    ستُحفَظ النسخ الاحتياطية الخارجية الآن في حاوية التخزين الخاصة بك وفقًا للجدول الافتراضي. وبدلًا من ذلك،
+    يمكنك تهيئة جدول النسخ الاحتياطي من صفحة “Settings”. وإذا تمت تهيئته بشكل مختلف،
+    فسيُطبَّق الجدول المخصص وإعداد الاحتفاظ على النسخ الاحتياطية المكتوبة إلى حاوية التخزين الخاصة بك.
+    أما النسخ الاحتياطية في الحاوية المُدارة من ClickHouse Cloud فتستخدم الجدول الافتراضي (نسخة احتياطية كل
+    24 ساعة) وسياسة الاحتفاظ الافتراضية.
   </Step>
 
-  <Step title="عرض النسخ الاحتياطية المخزنة في الحاوية الخاصة بك" id="azure-view-backups-stored-in-your-bucket">
-    يجب أن تعرض صفحة Backups هذه النسخ الاحتياطية الموجودة في الحاوية الخاصة بك في جدول منفصل،
+  <Step title="عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك" id="azure-view-backups-stored-in-your-bucket">
+    يجب أن تعرض صفحة Backups هذه النسخ الاحتياطية الموجودة في حاوية التخزين الخاصة بك في جدول منفصل،
     كما هو موضح أدناه:
 
-    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="عرض النسخ الاحتياطية المخزنة في الحاوية الخاصة بك" size="md" />
+    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك" size="md" />
   </Step>
 </Steps>
 
-<div id="azure-restore-steps">
-  ### استعادة النسخ الاحتياطية من Azure
-</div>
+### استعادة النسخ الاحتياطية من Azure {#azure-restore-steps}
 
 لاستعادة النسخ الاحتياطية من Azure، اتبع الخطوات التالية:
 

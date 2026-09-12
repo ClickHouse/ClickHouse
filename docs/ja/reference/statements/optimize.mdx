@@ -26,7 +26,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 `OPTIMIZE` クエリは、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) ファミリー ([materialized view](/ja/reference/statements/create/view#materialized-view) を含む) および [Buffer](/ja/reference/engines/table-engines/special/buffer) エンジンでサポートされています。その他のテーブルエンジンではサポートされていません。
 
-`OPTIMIZE` を [ReplicatedMergeTree](/ja/reference/engines/table-engines/mergetree-family/replication) ファミリーのテーブルエンジンに対して使用すると、ClickHouse はマージ用のタスクを作成し、すべてのレプリカで実行されるのを待機します ([alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定が `2` の場合) 。または、現在のレプリカでの実行を待機します ([alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定が `1` の場合) 。
+`OPTIMIZE` を [ReplicatedMergeTree](/ja/reference/engines/table-engines/mergetree-family/replication) ファミリーのテーブルエンジンに対して使用すると、ClickHouse はマージ用のタスクを作成し、すべてのレプリカで実行されるのを待機します ([alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定が `2` の場合、または `ReplicatedMergeTree` では `3` の場合) 。または、現在のレプリカでの実行を待機します ([alter&#95;sync](/ja/reference/settings/session-settings/alter#alter_sync) 設定が `1` の場合) 。
 
 * 何らかの理由で `OPTIMIZE` がマージを実行しなかった場合、クライアントには通知されません。通知を有効にするには、[optimize&#95;throw&#95;if&#95;noop](/ja/reference/settings/session-settings/optimize#optimize_throw_if_noop) 設定を使用します。
 * `PARTITION` を指定すると、指定したパーティションだけが最適化されます。[パーティション式の設定方法](/ja/reference/statements/alter/partition#how-to-set-partition-expression)。
@@ -36,12 +36,10 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 非アクティブなレプリカが `OPTIMIZE` クエリを実行するのを待機する時間 (秒単位) は、[replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ja/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 設定で指定できます。
 
 <Note>
-  `alter_sync` が `2` に設定されていて、一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブなままの場合は、例外 `UNFINISHED` がスローされます。
+  `alter_sync` が `2` に設定されている場合、または `ReplicatedMergeTree` で `3` に設定されていて、一部のレプリカが `replication_wait_for_inactive_replica_timeout` 設定で指定された時間を超えて非アクティブなままの場合は、例外 `UNFINISHED` がスローされます。
 </Note>
 
-<div id="dry-run">
-  ## DRY RUN
-</div>
+## DRY RUN {#dry-run}
 
 `DRY RUN` 句は、指定されたパーツのマージを、結果をコミットせずにシミュレートします。マージされたパーツは一時的な場所に書き込まれ、検証された後に破棄されます。元のパーツとテーブルデータは変更されません。
 
@@ -90,9 +88,7 @@ ORDER BY name;
 └─────────────┴──────┘
 ```
 
-<div id="by-expression">
-  ## BY 式
-</div>
+## BY 式 {#by-expression}
 
 すべてのカラムではなく、任意のカラムの組み合わせに対して重複排除を行いたい場合は、カラムのリストを明示的に指定するか、[`*`](/ja/reference/statements/select/index#asterisk)、[`COLUMNS`](/ja/reference/statements/select/index#select-clause)、[`EXCEPT`](/ja/reference/statements/select/except_modifier) 式を任意に組み合わせて使用できます。明示的に記述した、または暗黙的に展開されたカラムのリストには、行の順序付け式 (プライマリキーとソートキーの両方) およびパーティション化式 (パーティション化キー) で指定されるすべてのカラムを含める必要があります。
 
@@ -159,9 +155,7 @@ SELECT * FROM example;
 
 以下のすべての例は、5行を含むこの状態に対して実行されます。
 
-<div id="deduplicate">
-  #### `DEDUPLICATE`
-</div>
+#### `DEDUPLICATE` {#deduplicate}
 
 重複排除の対象カラムが指定されていない場合は、すべてのカラムが対象になります。行が削除されるのは、すべてのカラムの値が直前の行の対応する値とすべて等しい場合に限られます。
 
@@ -186,9 +180,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-">
-  #### `DEDUPLICATE BY *`
-</div>
+#### `DEDUPLICATE BY *` {#deduplicate-by-}
 
 カラムが暗黙的に指定されている場合、テーブルは `ALIAS` または `MATERIALIZED` ではないすべてのカラムを基準に重複排除されます。上記のテーブルでは、該当するのは `primary_key`、`secondary_key`、`value`、`partition_key` の各カラムです。
 
@@ -213,9 +205,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by--except">
-  #### `DEDUPLICATE BY * EXCEPT`
-</div>
+#### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
 
 `ALIAS` または `MATERIALIZED` ではなく、かつ `value` を明示的に除いたすべてのカラム、つまり `primary_key`、`secondary_key`、`partition_key` の各カラムを対象に重複排除します。
 
@@ -239,9 +229,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-list-of-columns">
-  #### `DEDUPLICATE BY <list of columns>`
-</div>
+#### `DEDUPLICATE BY <list of columns>` {#deduplicate-by-list-of-columns}
 
 重複排除の対象として、`primary_key`、`secondary_key`、`partition_key` の各カラムを明示的に指定します:
 
@@ -265,9 +253,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-columnsregex">
-  #### `DEDUPLICATE BY COLUMNS(<regex>)`
-</div>
+#### `DEDUPLICATE BY COLUMNS(<regex>)` {#deduplicate-by-columnsregex}
 
 regex に一致するすべてのカラムを対象に重複排除します: `primary_key`、`secondary_key`、`partition_key` の各カラム:
 

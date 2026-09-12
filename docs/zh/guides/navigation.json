@@ -4,6 +4,7 @@
       "group": "ClickHouse guides",
       "pages": [
         "zh/guides/clickhouse/index",
+        "zh/guides/clickhouse/kusto-query-language",
         {
           "group": "Data formats",
           "pages": [

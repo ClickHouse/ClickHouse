@@ -12,19 +12,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يوضح هذا الدليل طريقتين لإدارة مستخدمي قاعدة البيانات: من خلال SQL Console أو مباشرةً داخل قاعدة البيانات.
 
 <div id="sql-console-passwordless-authentication">
-  ### المصادقة بدون كلمة مرور في SQL Console
+  ### المصادقة بدون كلمة مرور في SQL Console {#sql-console-passwordless-authentication}
 </div>
 
 يُنشأ مستخدمو SQL Console لكل جلسة، وتتم مصادقتهم باستخدام شهادات X.509 التي تُدوَّر تلقائيًا. ويُزال المستخدم عند إنهاء الجلسة. عند إنشاء قوائم الوصول لأغراض التدقيق، يُرجى الانتقال إلى علامة التبويب Settings الخاصة بالخدمة في Console، ومراعاة وصول SQL Console بالإضافة إلى مستخدمي قاعدة البيانات الموجودين في قاعدة البيانات. وإذا كانت الأدوار المخصصة مُهيأة، فسيُدرج وصول المستخدم ضمن الدور الذي ينتهي باسم المستخدم الخاص به.
 
-<div id="sql-console-users-and-roles">
-  ## مستخدمو SQL Console والأدوار
-</div>
+## مستخدمو SQL Console والأدوار {#sql-console-users-and-roles}
 
-يمكن إسناد أدوار SQL Console الأساسية إلى المستخدمين الذين لديهم أذونات Service Read Only وService Admin. لمزيد من المعلومات، راجع [إدارة تعيينات أدوار SQL Console](/ar/products/cloud/guides/security/cloud-access-management/manage-sql-console-role-assignments). يوضّح هذا الدليل كيفية إنشاء دور مخصّص لمستخدم في SQL Console.
+يمكن إسناد أدوار SQL Console الأساسية إلى المستخدمين الذين لديهم أذونات Service Read Only وService Admin. لمزيد من المعلومات، راجع [إدارة مستخدمي Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-cloud-users#manage-role-assignments). يوضّح هذا الدليل كيفية إنشاء دور مخصّص لمستخدم في SQL Console.
 
 <Tip>
-  يُفضَّل استخدام [أدوار قاعدة البيانات المُدارة عبر Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (Beta) لإدارة الوصول إلى قاعدة البيانات من Console. الأدوار `sql-console-role:<email>` غير متوافقة مع [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
+  يُفضَّل استخدام [أدوار قاعدة البيانات المُدارة عبر Cloud](/ar/products/cloud/guides/security/cloud-access-management/manage-custom-roles#manage-database-roles) (Beta) لإدارة الوصول إلى قاعدة البيانات من Console. الأدوار `sql-console-role:<email>` غير متوافقة مع [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup).
 </Tip>
 
 لإنشاء دور مخصّص لمستخدم في SQL Console ومنحه دورًا عامًا، شغّل الأوامر التالية. يجب أن يتطابق عنوان البريد الإلكتروني مع عنوان البريد الإلكتروني للمستخدم في Console.
@@ -57,11 +55,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Steps>
 
 <div id="database-authentication">
-  ## مصادقة قاعدة البيانات
+  ## مصادقة قاعدة البيانات {#database-authentication}
 </div>
 
 <div id="database-user-id--password">
-  ### معرّف مستخدم قاعدة البيانات وكلمة المرور
+  ### معرّف مستخدم قاعدة البيانات وكلمة المرور {#database-user-id--password}
 </div>
 
 استخدم أسلوب SHA256&#95;hash عند [إنشاء حسابات المستخدمين](/ar/reference/statements/create/user) لتأمين كلمات المرور. يجب أن تتكوّن كلمات مرور مستخدمي قاعدة بيانات ClickHouse من 12 حرفًا على الأقل، وأن تستوفي متطلبات التعقيد: أحرف كبيرة، وأحرف صغيرة، وأرقام و/أو رموز خاصة.
@@ -78,7 +76,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 ```
 
 <div id="database-ssh">
-  ### مستخدم قاعدة بيانات مع مصادقة SSH
+  ### مستخدم قاعدة بيانات مع مصادقة SSH {#database-ssh}
 </div>
 
 لإعداد مصادقة SSH لمستخدم قاعدة بيانات في ClickHouse Cloud.
@@ -90,9 +88,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 للاطّلاع على شرح تفصيلي مع أمثلة، راجع [How to connect to ClickHouse Cloud using SSH keys](/ar/resources/support-center/knowledge-base/cloud-services/how-to-connect-to-ch-cloud-using-ssh-keys) في قاعدة المعرفة الخاصة بنا.
 
-<div id="database-permissions">
-  ## أذونات قاعدة البيانات
-</div>
+## أذونات قاعدة البيانات {#database-permissions}
 
 اضبط ما يلي ضمن الخدمات وقواعد البيانات باستخدام عبارة SQL ‏[GRANT](/ar/reference/statements/grant).
 
@@ -110,7 +106,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 <Image img="/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp" alt="رسم توضيحي يبيّن الطرق المختلفة التي يمكن بها منح المستخدم أذونات" size="md" background="black" />
 
 <div id="initial-settings">
-  ### الإعدادات الأولية
+  ### الإعدادات الأولية {#initial-settings}
 </div>
 
 تتضمن قواعد البيانات حسابًا باسم `default` يُضاف تلقائيًا ويُمنَح الدور `default_role` عند إنشاء الخدمة. ويُعرَض للمستخدم الذي ينشئ الخدمة كلمة المرور العشوائية المُولَّدة تلقائيًا والمُعيَّنة لحساب `default` عند إنشاء الخدمة. ولا تظهر كلمة المرور بعد الإعداد الأولي، لكن يمكن لأي مستخدم لديه أذونات Service Admin في Console تغييرها لاحقًا. ويمكن لهذا الحساب، أو لأي حساب لديه امتيازات Service Admin ضمن Console، إعداد مستخدمي قاعدة بيانات إضافيين وأدوار في أي وقت.
@@ -128,9 +124,7 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
 
 يمكنك استخدام مولّد تجزئة SHA256 أو دالة برمجية مثل `hashlib` في بايثون لتحويل كلمة مرور مكوّنة من 12 حرفًا أو أكثر وبدرجة تعقيد مناسبة إلى سلسلة SHA256 لتقديمها إلى مسؤول النظام لاستخدامها ككلمة مرور. ويضمن ذلك ألّا يرى المسؤول كلمات المرور غير المشفّرة أو يتعامل معها.
 
-<div id="database-access-listings-with-sql-console-users">
-  ### قوائم الوصول إلى قاعدة البيانات باستخدام مستخدمي SQL console
-</div>
+### قوائم الوصول إلى قاعدة البيانات باستخدام مستخدمي SQL console {#database-access-listings-with-sql-console-users}
 
 يمكن استخدام العملية التالية لإنشاء قائمة وصول كاملة عبر SQL console وقواعد البيانات في مؤسستك.
 
@@ -176,8 +170,6 @@ CREATE USER userName IDENTIFIED WITH sha256_hash BY 'hash';
   </Step>
 </Steps>
 
-<div id="warehouse-users">
-  ## مستخدمو المستودع
-</div>
+## مستخدمو المستودع {#warehouse-users}
 
 يكون مستخدمو المستودع مشتركين بين الخدمات ضمن المستودع نفسه. لمزيد من المعلومات، راجع [ضوابط الوصول إلى المستودع](/ar/products/cloud/features/infrastructure/warehouses#access-controls).

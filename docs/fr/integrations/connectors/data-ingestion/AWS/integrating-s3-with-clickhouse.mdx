@@ -31,7 +31,7 @@ où :
 * path — URL du bucket avec le chemin vers le fichier. Prend en charge les caractères génériques suivants en mode lecture seule : `*`, `?`, `{abc,def}` et `{N..M}`, où `N` et `M` sont des nombres, et `'abc'`, `'def'` des chaînes. Pour plus d&#39;informations, consultez la documentation sur [l&#39;utilisation des caractères génériques dans le chemin](/fr/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * format — Le [format](/fr/reference/formats/index#formats-overview) du fichier.
 * structure — Structure de la table. Format `'column1_name column1_type, column2_name column2_type, ...'`.
-* compression — Le paramètre est facultatif. Valeurs prises en charge : `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`. Par défaut, la compression est détectée automatiquement à partir de l&#39;extension du fichier.
+* compression — Le paramètre est facultatif. Valeurs prises en charge : `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`. Par défaut, la compression est détectée automatiquement à partir de l&#39;extension du fichier. Pour `snappy`, le format de transmission est sélectionné par le paramètre [snappy&#95;mode](/fr/reference/settings/session-settings/other#snappy_mode) (`basic` par défaut).
 
 L&#39;utilisation de caractères génériques dans l&#39;expression du chemin permet de référencer plusieurs fichiers et autorise le parallélisme.
 
@@ -348,7 +348,7 @@ Les insertions se feront sur le nœud initiateur. Cela signifie que, même si le
   ## Moteurs de table S3
 </div>
 
-Bien que les fonctions `s3` permettent d’exécuter des requêtes ad hoc sur des données stockées dans S3, leur syntaxe est verbeuse. Le moteur de table `S3` évite d’avoir à préciser l’URL du bucket et les informations d’identification à répétition. Pour y remédier, ClickHouse fournit le moteur de table S3.
+Bien que les fonctions `s3` permettent d’exécuter des requêtes ad hoc sur des données stockées dans S3, leur syntaxe est verbeuse. Le moteur de table `S3` évite d’avoir à préciser l’URL du bucket et les identifiants à répétition. Pour y remédier, ClickHouse fournit le moteur de table S3.
 
 ```sql
 CREATE TABLE s3_engine_table (name String, value UInt32)
@@ -359,7 +359,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `path` — URL du bucket avec le chemin vers le fichier. Prend en charge les caractères génériques suivants en mode lecture seule : `*`, `?`, `{abc,def}` et `{N..M}`, où N et M sont des nombres, et &#39;abc&#39; et &#39;def&#39; des chaînes. Pour plus d’informations, voir [ici](/fr/reference/engines/table-engines/integrations/s3#wildcards-in-path).
 * `format` — Le [format](/fr/reference/formats/index#formats-overview) du fichier.
 * `aws_access_key_id`, `aws_secret_access_key` - Identifiants à long terme de l’utilisateur du compte AWS. Vous pouvez les utiliser pour authentifier vos requêtes. Le paramètre est facultatif. Si les identifiants ne sont pas spécifiés, les valeurs du fichier de configuration sont utilisées. Pour plus d’informations, voir [Gestion des identifiants](#managing-credentials).
-* `compression` — Type de compression. Valeurs prises en charge : none, gzip/gz, brotli/br, xz/LZMA, zstd/zst. Le paramètre est facultatif. Par défaut, la compression est détectée automatiquement à partir de l’extension du fichier.
+* `compression` — Type de compression. Valeurs prises en charge : none, gzip/gz, deflate, brotli/br, xz/LZMA, zstd/zst, lz4, bz2, snappy. Le paramètre est facultatif. Par défaut, la compression est détectée automatiquement à partir de l’extension du fichier. Pour `snappy`, le format de transmission est sélectionné par le paramètre [snappy&#95;mode](/fr/reference/settings/session-settings/other#snappy_mode) (`basic` par défaut).
 
 <div id="reading-data">
   ### Lecture des données

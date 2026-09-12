@@ -31,7 +31,7 @@ s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structur
 * path — ファイルへのパスを含むバケット URL。読み取り専用モードでは、次のワイルドカードをサポートします: `*`, `?`, `{abc,def}`、`{N..M}`。ここで、`N`、`M` は数値、`'abc'`、`'def'` は文字列です。詳細については、[path でのワイルドカードの使用](/ja/reference/engines/table-engines/integrations/s3#wildcards-in-path) に関するドキュメントを参照してください。
 * format — ファイルの[フォーマット](/ja/reference/formats/index#formats-overview)。
 * structure — テーブルの構造。フォーマットは `'column1_name column1_type, column2_name column2_type, ...'` です。
-* compression — このパラメータは省略可能です。サポートされる値: `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`。デフォルトでは、ファイル拡張子から圧縮方式を自動判別します。
+* compression — このパラメータは省略可能です。サポートされる値: `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`。デフォルトでは、ファイル拡張子から圧縮方式を自動判別します。`snappy` では、[snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定によりワイヤ形式が選択されます (デフォルトは `basic`) 。
 
 path 式でワイルドカードを使用すると、複数のファイルを参照できるようになり、並列度が可能になります。
 
@@ -359,7 +359,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `path` — ファイルへのパスを含むバケット URL。読み取り専用モードでは、`*`、`?`、`{abc,def}`、`{N..M}` のワイルドカードをサポートします。ここで、N、M は数値、&#39;abc&#39;、&#39;def&#39; は文字列です。詳細は、[こちら](/ja/reference/engines/table-engines/integrations/s3#wildcards-in-path)を参照してください。
 * `format` — ファイルの[フォーマット](/ja/reference/formats/index#formats-overview)。
 * `aws_access_key_id`, `aws_secret_access_key` - AWS アカウントユーザーの長期認証情報です。これらを使用してリクエストを認証できます。このパラメーターは省略可能です。認証情報が指定されていない場合は、設定ファイルの値が使用されます。詳細は、[認証情報の管理](#managing-credentials)を参照してください。
-* `compression` — 圧縮の種類。サポートされる値: none、gzip/gz、brotli/br、xz/LZMA、zstd/zst。このパラメーターは省略可能です。デフォルトでは、ファイル拡張子に基づいて圧縮方式を自動判別します。
+* `compression` — 圧縮の種類。サポートされる値: none、gzip/gz、deflate、brotli/br、xz/LZMA、zstd/zst、lz4、bz2、snappy。このパラメーターは省略可能です。デフォルトでは、ファイル拡張子に基づいて圧縮方式を自動判別します。`snappy` では、[snappy&#95;mode](/ja/reference/settings/session-settings/other#snappy_mode) 設定 (デフォルトは `basic`) によってワイヤ形式が選択されます。
 
 <div id="reading-data">
   ### データの読み込み

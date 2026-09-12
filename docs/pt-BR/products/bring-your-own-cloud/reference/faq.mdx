@@ -7,13 +7,9 @@ description: 'Perguntas frequentes sobre o ClickHouse Bring Your Own Cloud (BYOC
 doc_type: 'reference'
 ---
 
-<div id="faq">
-  ## FAQ
-</div>
+## FAQ {#faq}
 
-<div id="onboarding-and-provisioning">
-  ### Onboarding e provisionamento
-</div>
+### Onboarding e provisionamento {#onboarding-and-provisioning}
 
 <Accordion title="Como começar a usar o BYOC?">
   Entre em contato com a ClickHouse por meio do [formulário de contato](https://clickhouse.com/cloud/bring-your-own-cloud), e a equipe habilitará o BYOC para sua organização. Em seguida, prepare uma conta de Cloud dedicada (conta da AWS, projeto do GCP ou assinatura do Azure) e siga o [guia de onboarding padrão](/pt-BR/products/bring-your-own-cloud/onboarding/standard). Recomendamos enfaticamente usar uma conta, um projeto ou uma assinatura dedicados exclusivamente ao BYOC.
@@ -41,11 +37,13 @@ doc_type: 'reference'
 <Accordion title="O BYOC pode usar uma VPC existente? E VPCs compartilhadas?">
   Na AWS e no GCP, é possível implantar em uma VPC existente que esteja na **mesma** conta ou projeto da infraestrutura BYOC. Consulte os guias de personalização para [AWS](/pt-BR/products/bring-your-own-cloud/onboarding/customization-aws) e [GCP](/pt-BR/products/bring-your-own-cloud/onboarding/customization-gcp). No GCP, também há suporte para uma **VPC compartilhada** de um projeto host separado: o [módulo de onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp) aceita diretamente o projeto host e a sub-rede — consulte a seção &quot;Shared VPC&quot; para instruções de configuração e pré-requisitos. A opção de usar sua própria VNet no Azure estará disponível em breve.
 
-  Na AWS, não há suporte para sub-redes compartilhadas de outra conta (AWS RAM) — em vez disso, use uma conta dedicada conectada à sua rede existente por meio de VPC peering ou PrivateLink. Observe que, com uma VPC gerenciada pelo cliente, apenas o balanceador de carga privado é habilitado por padrão (consulte a [configuração](/pt-BR/products/bring-your-own-cloud/configuration/configurations)).
+  Na AWS, também há suporte para sub-redes compartilhadas de outra conta com o AWS Resource Access Manager (RAM), o que permite manter a rede centralizada em uma conta hub e executar a infraestrutura BYOC em uma conta spoke. Há um pré-requisito específico dessa configuração: recursos compartilhados via RAM têm uma visão de tags por conta, portanto a própria conta **spoke** deve aplicar as tags necessárias de VPC e sub-rede — tags aplicadas a partir da conta hub não são visíveis para a spoke, e o provisionamento falha sem elas. As tabelas de rotas continuam sob propriedade da conta hub, que permanece responsável pelo NAT e pelo roteamento de saída nas sub-redes compartilhadas. Consulte o [guia de personalização da AWS](/pt-BR/products/bring-your-own-cloud/onboarding/customization-aws) para conhecer as tags e outros requisitos.
+
+  Observe que, com uma VPC gerenciada pelo cliente, apenas o balanceador de carga privado é habilitado por padrão (consulte a [configuração](/pt-BR/products/bring-your-own-cloud/configuration/configurations)).
 </Accordion>
 
-<Accordion title="O BYOC pode ser instalado em um cluster do Kubernetes existente?">
-  Não. O cluster do Kubernetes (EKS, GKE ou AKS) é criado e totalmente gerenciado pela ClickHouse. Isso é necessário para que a ClickHouse possa operar a plataforma de forma confiável e mantê-la atualizada.
+<Accordion title="O BYOC pode ser instalado em um cluster do Kubernetes já existente?">
+  Não. O cluster do Kubernetes (EKS, GKE ou AKS) é criado e totalmente gerenciado pelo ClickHouse. Isso é necessário para que o ClickHouse possa operar a plataforma de forma confiável e mantê-la atualizada.
 </Accordion>
 
 <Accordion title="Podemos executar nossas próprias cargas de trabalho no cluster ou na conta de Cloud do BYOC?">
@@ -54,9 +52,7 @@ doc_type: 'reference'
   No cluster do Kubernetes: é possível, com restrições — use seus próprios grupos de nós com taints e tolerations, mantenha-se fora dos espaços de nomes gerenciados pelo ClickHouse e não instale controllers de admission nem motores de políticas em todo o cluster, pois eles podem bloquear a reconciliação dos componentes do ClickHouse. Primeiro, descreva seu plano ao suporte para que possamos confirmar que não há conflitos.
 </Accordion>
 
-<div id="compute">
-  ### Processamento e escalonamento
-</div>
+### Processamento e escalonamento {#compute}
 
 <Accordion title="Posso criar vários serviços em uma única infraestrutura BYOC?">
   Sim. A infraestrutura (incluindo o cluster do Kubernetes) só precisa ser provisionada uma vez para cada combinação de conta/projeto/assinatura de Cloud e região, e todos os serviços criados nessa região a compartilham.
@@ -88,12 +84,10 @@ doc_type: 'reference'
   Sim. Warehouses (separação de processamento) são compatíveis com BYOC: vários serviços compartilham os mesmos dados, permitindo dedicar alguns serviços à ingestão e outros às consultas.
 </Accordion>
 
-<div id="network-and-security">
-  ### Rede e segurança
-</div>
+### Rede e segurança {#network-and-security}
 
 <Accordion title="Podemos limitar ou revogar as permissões concedidas durante a instalação?">
-  Você pode reduzir as permissões desde o início na AWS e no GCP: os artefatos de onboarding são parametrizados, portanto, é possível não conceder permissões para gerenciar a topologia de rede da sua VPC ao usar sua própria VPC (`IncludeVPCWritePermissions` no CloudFormation, `include_vpc_write_permissions` nos módulos do Terraform). No GCP, isso restringe apenas o gerenciamento de topologia — o ClickHouse mantém acesso de gravação aos recursos de rede que possui dentro da VPC, como a sub-rede NAT do Private Service Connect, o anexo de serviço e os endereços de entrada. Na AWS, você também pode — em prévia privada, habilitada pelo suporte — gerenciar as funções do IAM por conta própria (`IncludeIAMWritePermissions=false`, consulte [funções do IAM gerenciadas pelo cliente](/pt-BR/products/bring-your-own-cloud/onboarding/customization-aws)), e as funções entre contas são protegidas contra acesso de deputy confuso por um ID externo. No Azure, o módulo de onboarding concede atualmente uma função fixa no escopo da assinatura, sem parâmetros para restringir esse escopo. Em todas as nuvens, algumas permissões são necessárias apenas para recursos específicos e podem ser removidas se você nunca for usar esses recursos — entre em contato com o suporte caso precise restringir as permissões além do que os artefatos permitem.
+  Você pode reduzir as permissões desde o início na AWS e no GCP: os artefatos de onboarding são parametrizados, portanto, é possível não conceder permissões para gerenciar a topologia de rede da sua VPC ao usar sua própria VPC (`IncludeVPCWritePermissions` no CloudFormation, `include_vpc_write_permissions` nos módulos do Terraform). No GCP, isso restringe apenas o gerenciamento de topologia — o ClickHouse mantém acesso de gravação aos recursos de rede que possui dentro da VPC, como o anexo de serviço do Private Service Connect e os endereços de entrada. A sub-rede NAT do Private Service Connect não está entre eles: em BYO-VPC, [você mesmo a cria](/pt-BR/products/bring-your-own-cloud/onboarding/network-gcp#setup-psc) antes de habilitar o private link. Na AWS, você também pode — em prévia privada, habilitada pelo suporte — gerenciar as funções do IAM por conta própria (`IncludeIAMWritePermissions=false`, consulte [funções do IAM gerenciadas pelo cliente](/pt-BR/products/bring-your-own-cloud/onboarding/customization-aws)), e as funções entre contas são protegidas contra acesso de deputy confuso por um ID externo. No Azure, o módulo de onboarding concede atualmente uma função fixa no escopo da assinatura, sem parâmetros para restringir esse escopo. Em todas as nuvens, algumas permissões são necessárias apenas para recursos específicos e podem ser removidas se você nunca for usar esses recursos — entre em contato com o suporte caso precise restringir as permissões além do que os artefatos permitem.
 
   Após o provisionamento, não remova permissões unilateralmente da identidade de gerenciamento: o ClickHouse reconcilia continuamente a infraestrutura, e permissões ausentes comprometem o provisionamento, as atualizações e o suporte. Para alterar as permissões concedidas ou desativar o serviço por completo, coordene com o suporte (consulte a pergunta sobre descomissionamento abaixo).
 </Accordion>
@@ -103,11 +97,11 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Que acesso os funcionários do ClickHouse têm ao nosso ambiente e aos nossos dados?">
-  Por padrão, nenhum acesso aos seus dados. Para solucionar problemas, os engenheiros devem passar por um processo interno de escalonamento just-in-time; o acesso tem validade limitada, é baseado em certificados, limitado às tabelas `system.*` (sem tabelas de dados de clientes), registrado e auditado por nossa equipe de segurança. Qualquer consulta executada por um engenheiro do ClickHouse fica visível para você em seu próprio `system.query_log`. Para diagnósticos de infraestrutura, o mesmo processo de escalonamento sujeito a aprovação também pode conceder acesso com validade limitada ao Kubernetes API server e à pilha de monitoramento no cluster via Tailscale. Consulte [ClickHouse data access](/pt-BR/products/bring-your-own-cloud/reference/clickhouse-data-access) para conhecer o modelo de acesso a dados e [segurança de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security) para conhecer o modelo de conexão.
+  Por padrão, nenhum acesso aos seus dados. Para solucionar problemas, os engenheiros devem passar por um processo interno de escalonamento just-in-time; o acesso tem validade limitada, é baseado em certificados, limitado às tabelas `system.*` (sem tabelas de dados de clientes), registrado e auditado por nossa equipe de segurança. Qualquer consulta executada por um engenheiro do ClickHouse fica visível para você em seu próprio `system.query_log`. Para diagnósticos de infraestrutura, o mesmo processo de escalonamento sujeito a aprovação também pode conceder acesso com validade limitada ao Kubernetes API server e à stack de monitoramento no cluster via Tailscale. Consulte [ClickHouse data access](/pt-BR/products/bring-your-own-cloud/reference/clickhouse-data-access) para conhecer o modelo de acesso a dados e [segurança de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security) para conhecer o modelo de conexão.
 </Accordion>
 
 <Accordion title="Vocês consideraram futuros controles de segurança para que engenheiros do ClickHouse acessem a infraestrutura do cliente para solucionar problemas?">
-  Sim. Está em nosso roteiro implementar um mecanismo controlado pelo cliente, no qual os clientes possam aprovar o acesso de engenheiros ao cluster. No momento, os engenheiros devem passar por nosso processo interno de escalonamento para obter acesso just-in-time ao cluster. Isso é registrado e auditado por nossa equipe de segurança.
+  Sim. Está em nosso roadmap implementar um mecanismo controlado pelo cliente, no qual os clientes possam aprovar o acesso de engenheiros ao cluster. No momento, os engenheiros devem passar por nosso processo interno de escalonamento para obter acesso just-in-time ao cluster. Isso é registrado e auditado por nossa equipe de segurança.
 </Accordion>
 
 <Accordion title="Quais dados saem da nossa conta?">
@@ -115,11 +109,11 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Como o plano de controle do ClickHouse acessa a API do Kubernetes em nossa conta? O Tailscale é necessário?">
-  Por padrão, o endpoint da API do Kubernetes é público, mas restrito aos endereços IP NAT do ClickHouse. Enquanto essa configuração padrão estiver em uso, não remova as entradas da lista de permissões do ClickHouse, pois o plano de controle precisa delas para gerenciar o cluster. Como alternativa, o endpoint pode ser alterado para acesso exclusivamente privado, em coordenação com a equipe da ClickHouse: via Tailscale (somente de saída, também usado para acesso de troubleshooting) ou, na AWS, via VPC Lattice (prévia privada). Consulte a [configuração](/pt-BR/products/bring-your-own-cloud/configuration/configurations). Observe que isso se aplica apenas à API do Kubernetes: as chamadas de API do provedor de Cloud (por exemplo, EKS e EC2 na AWS) têm origem na rede do ClickHouse Cloud por meio da assunção de funções entre contas e nunca podem ser roteadas pelo Tailscale. Consulte [APIs do provedor de Cloud vs. a API do Kubernetes](/pt-BR/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api).
+  Por padrão, o endpoint da API do Kubernetes é público, e o que restringe o acesso a ele difere conforme a cloud: na AWS, uma IP allow list contendo apenas os endereços IP NAT do ClickHouse — enquanto essa configuração padrão estiver em uso, não remova as entradas da lista de permissões do ClickHouse, pois o plano de controle precisa delas para gerenciar o cluster — e no GCP e no Azure, o IAM da cloud em vez de uma IP allow list (consulte [exposição do servidor de API do Kubernetes](/pt-BR/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)). Como alternativa, o endpoint pode ser alterado para acesso exclusivamente privado, em coordenação com a equipe da ClickHouse: via Tailscale (somente de saída, também usado para acesso para solucionar problemas) ou, na AWS, via VPC Lattice (prévia privada). Consulte a [configuração](/pt-BR/products/bring-your-own-cloud/configuration/configurations). Observe que isso se aplica apenas à API do Kubernetes: as chamadas de API do provedor de Cloud (por exemplo, EKS e EC2 na AWS) têm origem na rede do ClickHouse Cloud por meio da assunção de funções entre contas e nunca podem ser roteadas pelo Tailscale. Consulte [APIs do provedor de Cloud vs. a API do Kubernetes](/pt-BR/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api).
 </Accordion>
 
 <Accordion title="Como funciona a comunicação de rede entre a rede BYOC e o armazenamento de objetos?">
-  Na AWS, o tráfego entre sua VPC BYOC do cliente e o S3 usa HTTPS (porta 443) por meio da API do AWS S3 para dados de tabelas, backups e logs. Esse tráfego passa por um endpoint de gateway de VPC do S3, portanto permanece na rede da AWS, não trafega pela internet pública e não gera cobranças de gateway NAT. No GCP, o acesso às APIs do Google também usa o Private Google Access. No Azure, os dados são armazenados em contas do Azure Blob Storage na sua assinatura.
+  Na AWS, o tráfego entre sua VPC BYOC do cliente e o S3 usa HTTPS (porta 443) por meio da API do AWS S3 para dados de tabelas e backups, e também para arquivamentos de longo prazo de métricas e logs, caso você os tenha habilitado. Os logs ativos são gravados nos volumes de armazenamento anexados aos seus nós ClickHouse, e não no armazenamento de objetos — consulte [limites de rede](/pt-BR/products/bring-your-own-cloud/reference/network-security#outbound-connections). Esse tráfego passa por um endpoint de gateway de VPC do S3, portanto permanece na rede da AWS, não trafega pela internet pública e não gera cobranças de gateway NAT. No GCP, o acesso às APIs do Google também usa o Private Google Access. No Azure, os dados são armazenados em contas do Azure Blob Storage na sua assinatura.
 </Accordion>
 
 <Accordion title="Os dados estão em nosso próprio bucket — podemos lê-los ou modificá-los diretamente?">
@@ -140,8 +134,8 @@ doc_type: 'reference'
   Ainda não. Os endpoints de serviço são provisionados em `clickhouse-byoc.com` com certificados gerenciados pelo ClickHouse.
 </Accordion>
 
-<Accordion title="Como configuramos o AWS PrivateLink, o GCP Private Service Connect ou o Azure Private Link?">
-  Siga os guias de configuração de rede para [AWS](/pt-BR/products/bring-your-own-cloud/onboarding/network-aws), [GCP](/pt-BR/products/bring-your-own-cloud/onboarding/network-gcp) e [Azure](/pt-BR/products/bring-your-own-cloud/onboarding/network-azure). Dois pontos frequentemente esquecidos: a lista de permissões de endpoints é **por serviço**, portanto os endpoints devem ser registrados novamente para cada novo serviço, e a resolução de DNS dos nomes de endpoints privados deve ser configurada por você se executar seu próprio DNS. Após a configuração, use o [seletor Conexão via](/pt-BR/products/bring-your-own-cloud/configuration/connect#connection-via) do console para copiar o nome de host correto do endpoint privado.
+<Accordion title="Como configurar o AWS PrivateLink, o GCP Private Service Connect ou o Azure Private Link?">
+  Siga os guias de configuração de rede da [AWS](/pt-BR/products/bring-your-own-cloud/onboarding/network-aws), do [GCP](/pt-BR/products/bring-your-own-cloud/onboarding/network-gcp) e do [Azure](/pt-BR/products/bring-your-own-cloud/onboarding/network-azure). Dois pontos frequentemente ignorados: a inclusão de endpoints na lista de permissões é **por serviço**, portanto, os endpoints devem ser registrados novamente para cada novo serviço; além disso, se você usar seu próprio DNS, deverá configurar a resolução de DNS dos nomes dos endpoints privados. Após a configuração, use o [seletor Conexão via](/pt-BR/products/bring-your-own-cloud/configuration/connect#connection-via) no console para copiar o nome de host correto do endpoint privado.
 </Accordion>
 
 <Accordion title="Podemos nos conectar via PrivateLink a partir de uma região AWS diferente?">
@@ -160,9 +154,7 @@ doc_type: 'reference'
   Ainda não para BYOC. Os dados em repouso são criptografados com chaves gerenciadas pelo provedor de Cloud. Consulte a [visão geral](/pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview) para ver a lista atual de funcionalidades planejadas.
 </Accordion>
 
-<div id="upgrades-and-maintenance">
-  ### Upgrades e manutenção
-</div>
+### Upgrades e manutenção {#upgrades-and-maintenance}
 
 <Accordion title="Como funcionam os upgrades de versão do ClickHouse? Posso definir a frequência de manutenção?">
   Os upgrades funcionam da mesma forma que no ClickHouse Cloud: os serviços aderem a canais de lançamento (rápido, regular, lento) e seguem janelas de manutenção agendadas — entre em contato com o suporte para configurá-las. Espere atualizações pelo menos uma vez por semana. Os upgrades são realizados de forma contínua, réplica por réplica (make-before-break), portanto não há indisponibilidade de todo o serviço. Consulte [operations](/pt-BR/products/bring-your-own-cloud/configuration/operations).
@@ -172,9 +164,7 @@ doc_type: 'reference'
   O ClickHouse é responsável pelos upgrades do Kubernetes e os realiza proativamente, antes das datas de fim de suporte do provedor, coordenando a janela com você por meio do suporte. Os upgrades do plano de controle são transparentes; nos upgrades dos grupos de nós, os nós são atualizados um a um com semântica make-before-break. Você poderá observar breves redefinições de conexão enquanto os pods são reiniciados, mas não haverá perda de dados. Consulte [operations](/pt-BR/products/bring-your-own-cloud/configuration/operations).
 </Accordion>
 
-<div id="backups-and-disaster-recovery">
-  ### Backups e recuperação de desastres
-</div>
+### Backups e recuperação de desastres {#backups-and-disaster-recovery}
 
 <Accordion title="Onde os backups são armazenados?">
   No armazenamento de objetos da sua própria conta de Cloud — os backups nunca saem do seu ambiente. O agendamento e a retenção dos backups são configuráveis; entre em contato com o suporte para ajustá-los.
@@ -196,25 +186,19 @@ doc_type: 'reference'
   O BYOC é implantado em três zonas de disponibilidade, e as gravações só são confirmadas depois que o armazenamento de objetos as confirma. A replicação entre regiões não está disponível no momento; portanto, a recuperação de desastres em nível regional é baseada em backups, e o RPO alcançável é limitado pela frequência dos backups. A frequência e o destino dos backups podem ser configurados de acordo com suas metas, inclusive para realizar backups em um bucket de outra região — entre em contato com o suporte para configurar isso.
 </Accordion>
 
-<div id="observability">
-  ### Observabilidade
-</div>
+### Observabilidade {#observability}
 
 <Accordion title="Como integrar o BYOC ao seu próprio monitoramento e sistema de alertas?">
   A stack de monitoramento (Prometheus, Grafana, AlertManager) é executada na sua conta, e você pode acessá-la diretamente por conectividade privada: consultá-la pela API PromQL, federá-la ao seu próprio Prometheus ou fazer scrape do endpoint `/metrics_all` do ClickHouse para cada serviço. Atualmente, não há uma integração pronta para plataformas de terceiros, como o Datadog — integre por meio de uma ingestão compatível com Prometheus. Consulte [observabilidade](/pt-BR/products/bring-your-own-cloud/reference/observability-aws) para ver os endpoints e as instruções de configuração.
 </Accordion>
 
-<div id="cost">
-  ### Custo
-</div>
+### Custo {#cost}
 
 <Accordion title="O que pagamos com o BYOC?">
   Duas faturas separadas: o ClickHouse Cloud cobra com base na memória alocada aos seus serviços, e seu provedor de Cloud cobra diretamente pela infraestrutura subjacente, a preço de custo e sem margem de lucro. Atualmente, as páginas de referência detalhadas sobre custos abrangem a AWS: consulte o [modelo de custos](/pt-BR/products/bring-your-own-cloud/reference/cost-model-aws), os [serviços faturáveis da AWS](/pt-BR/products/bring-your-own-cloud/reference/billable-aws-services) e os [limites de serviço da AWS](/pt-BR/products/bring-your-own-cloud/reference/aws-service-limits).
 </Accordion>
 
-<div id="availability-and-lifecycle">
-  ### Disponibilidade e ciclo de vida
-</div>
+### Disponibilidade e ciclo de vida {#availability-and-lifecycle}
 
 <Accordion title="Em quais provedores de Cloud o BYOC está disponível?">
   AWS, GCP e Azure estão todos disponíveis de forma geral. Consulte a [visão geral](/pt-BR/products/cloud/guides/infrastructure/deployment-options/byoc/overview) para ver os recursos e as regiões compatíveis em cada Cloud.
@@ -224,9 +208,7 @@ doc_type: 'reference'
   Encerre seus serviços e a infraestrutura BYOC pelo console do ClickHouse — não comece excluindo recursos ou revogando permissões no console do seu provedor de Cloud, pois isso interrompe a conexão com o plano de controle durante o processo e exige limpeza manual. Após a conclusão do encerramento pelo console, remova a stack de onboarding (stack do CloudFormation ou módulo do Terraform) e todos os recursos restantes. Na AWS, todos os recursos criados pelo ClickHouse recebem a tag `clickhouse-byoc=true`, portanto, você pode listá-los posteriormente para verificar se nada restou; no GCP e no Azure, o projeto ou a assinatura dedicados configurados durante o onboarding delimitam o que deve ser revisado.
 </Accordion>
 
-<div id="uptime-sla">
-  ### SLAs de disponibilidade
-</div>
+### SLAs de disponibilidade {#uptime-sla}
 
 <Accordion title="A ClickHouse oferece um SLA de disponibilidade para BYOC?">
   Não. Como o plano de dados é hospedado no ambiente de Cloud do cliente, a disponibilidade do serviço depende de recursos que não estão sob o controle da ClickHouse. Portanto, a ClickHouse não oferece um SLA formal de disponibilidade para implantações BYOC. Observe que os serviços em execução operam independentemente do plano de controle da ClickHouse: uma interrupção no plano de controle não desativa os serviços em execução na sua conta. Se tiver outras dúvidas, entre em contato com support@clickhouse.com.

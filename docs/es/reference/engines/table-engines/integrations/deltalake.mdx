@@ -11,9 +11,7 @@ doc_type: 'referencia'
 
 Este motor proporciona una integración con tablas existentes de [Delta Lake](https://github.com/delta-io/delta) en S3 y en almacenamiento de GCP y Azure, y admite tanto lecturas como escrituras (desde la v25.10).
 
-<div id="create-table">
-  ## Crear una tabla DeltaLake
-</div>
+## Crear una tabla DeltaLake {#create-table}
 
 Para crear una tabla DeltaLake, la tabla ya debe existir en el almacenamiento de S3, GCP o Azure. Los siguientes comandos no aceptan parámetros DDL para crear una tabla nueva.
 
@@ -70,11 +68,9 @@ Para crear una tabla DeltaLake, la tabla ya debe existir en el almacenamiento de
     ENGINE = DeltaLake('https://storage.googleapis.com/<bucket>/<path>/', '<access_key_id>', '<secret_access_key>')
     ```
 
-    <Info>
-      **URI de gsutil no compatible**
-
+    <Note title="URI de gsutil no compatible">
       No se admite un URI de gsutil como `gs://clickhouse-docs-example-bucket`; use una URL que comience por `https://storage.googleapis.com`
-    </Info>
+    </Note>
 
     **Argumentos**
 
@@ -117,9 +113,7 @@ Para crear una tabla DeltaLake, la tabla ya debe existir en el almacenamiento de
   </Tab>
 </Tabs>
 
-<div id="insert-data">
-  ## Escribir datos con una tabla DeltaLake
-</div>
+## Escribir datos con una tabla DeltaLake {#insert-data}
 
 Una vez que haya creado una tabla con el motor de tabla DeltaLake, puede insertar datos en ella con:
 
@@ -137,15 +131,11 @@ Las escrituras de Delta Lake son una funcionalidad Beta deshabilitada de forma p
   Las escrituras en Azure aún no son compatibles, pero sí en S3 y GCS.
 </Note>
 
-<div id="data-cache">
-  ### Caché de datos
-</div>
+### Caché de datos {#data-cache}
 
 El motor de tabla `DeltaLake` y la función de tabla admiten la caché de datos, al igual que los almacenamientos `S3`, `AzureBlobStorage` y `HDFS`. Consulta [&quot;motor de tabla S3&quot;](/es/reference/engines/table-engines/integrations/s3#data-cache) para más detalles.
 
-<div id="see-also">
-  ## Véase también
-</div>
+## Véase también {#see-also}
 
 * [función de tabla DeltaLake](/es/reference/functions/table-functions/deltalake)
 

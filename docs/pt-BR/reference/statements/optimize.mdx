@@ -26,7 +26,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 A consulta `OPTIMIZE` é compatível com a família [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) (incluindo [visões materializadas](/pt-BR/reference/statements/create/view#materialized-view)) e com os motores [Buffer](/pt-BR/reference/engines/table-engines/special/buffer). Outros motores de tabela não são compatíveis.
 
-Quando `OPTIMIZE` é usado com a família [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replication) de motores de tabela, o ClickHouse cria uma tarefa de mesclagem e aguarda sua execução em todas as réplicas (se a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings/alter#alter_sync) estiver definida como `2`) ou na réplica atual (se a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings/alter#alter_sync) estiver definida como `1`).
+Quando `OPTIMIZE` é usado com a família [ReplicatedMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replication) de motores de tabela, o ClickHouse cria uma tarefa de mesclagem e aguarda sua execução em todas as réplicas (se a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings/alter#alter_sync) estiver definida como `2`, ou como `3` em `ReplicatedMergeTree`) ou na réplica atual (se a configuração [alter&#95;sync](/pt-BR/reference/settings/session-settings/alter#alter_sync) estiver definida como `1`).
 
 * Se `OPTIMIZE` não executar uma mesclagem por qualquer motivo, o cliente não será notificado. Para ativar notificações, use a configuração [optimize&#95;throw&#95;if&#95;noop](/pt-BR/reference/settings/session-settings/optimize#optimize_throw_if_noop).
 * Se você especificar uma `PARTITION`, apenas a partição especificada será otimizada. [Como definir a expressão de partição](/pt-BR/reference/statements/alter/partition#how-to-set-partition-expression).
@@ -36,12 +36,10 @@ Quando `OPTIMIZE` é usado com a família [ReplicatedMergeTree](/pt-BR/reference
 Você pode especificar por quanto tempo (em segundos) esperar que réplicas inativas executem consultas `OPTIMIZE` por meio da configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  Se `alter_sync` estiver definido como `2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado pela configuração `replication_wait_for_inactive_replica_timeout`, então será gerada uma exceção `UNFINISHED`.
+  Se `alter_sync` estiver definido como `2`, ou como `3` em `ReplicatedMergeTree`, e algumas réplicas permanecerem inativas por mais tempo do que o especificado pela configuração `replication_wait_for_inactive_replica_timeout`, então será gerada uma exceção `UNFINISHED`.
 </Note>
 
-<div id="dry-run">
-  ## DRY RUN
-</div>
+## DRY RUN {#dry-run}
 
 A cláusula `DRY RUN` simula uma mesclagem das partes especificadas sem efetivar o resultado. A parte mesclada é gravada em um local temporário, validada e depois descartada. As partes originais e os dados da tabela permanecem inalterados.
 
@@ -90,9 +88,7 @@ ORDER BY name;
 └─────────────┴──────┘
 ```
 
-<div id="by-expression">
-  ## expressão BY
-</div>
+## expressão BY {#by-expression}
 
 Se você quiser realizar a desduplicação em um conjunto personalizado de colunas, em vez de em todas elas, poderá especificar explicitamente uma lista de colunas ou usar qualquer combinação das expressões [`*`](/pt-BR/reference/statements/select/index#asterisk), [`COLUMNS`](/pt-BR/reference/statements/select/index#select-clause) ou [`EXCEPT`](/pt-BR/reference/statements/select/except_modifier). A lista de colunas escrita explicitamente ou expandida implicitamente deve incluir todas as colunas especificadas na expressão de ordenação das linhas (tanto a chave primária quanto a chave de ordenação) e na expressão de particionamento (chave de particionamento).
 
@@ -159,9 +155,7 @@ SELECT * FROM example;
 
 Todos os exemplos a seguir são executados nesse estado com 5 linhas.
 
-<div id="deduplicate">
-  #### `DEDUPLICATE`
-</div>
+#### `DEDUPLICATE` {#deduplicate}
 
 Quando as colunas para desduplicação não são especificadas, todas são consideradas. A linha é removida apenas se todos os valores de todas as colunas forem iguais aos valores correspondentes da linha anterior:
 
@@ -186,9 +180,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-">
-  #### `DEDUPLICATE BY *`
-</div>
+#### `DEDUPLICATE BY *` {#deduplicate-by-}
 
 Quando as colunas são especificadas de forma implícita, a tabela é deduplicada com base em todas as colunas que não são `ALIAS` nem `MATERIALIZED`. Considerando a tabela acima, essas colunas são `primary_key`, `secondary_key`, `value` e `partition_key`:
 
@@ -213,9 +205,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by--except">
-  #### `DEDUPLICATE BY * EXCEPT`
-</div>
+#### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
 
 Remova duplicatas com base em todas as colunas que não são `ALIAS` nem `MATERIALIZED`, excluindo explicitamente `value`: as colunas `primary_key`, `secondary_key` e `partition_key`.
 
@@ -239,9 +229,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-list-of-columns">
-  #### `DEDUPLICATE BY <list of columns>`
-</div>
+#### `DEDUPLICATE BY <list of columns>` {#deduplicate-by-list-of-columns}
 
 Remova duplicatas explicitamente com base nas colunas `primary_key`, `secondary_key` e `partition_key`:
 
@@ -265,9 +253,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-columnsregex">
-  #### `DEDUPLICATE BY COLUMNS(<regex>)`
-</div>
+#### `DEDUPLICATE BY COLUMNS(<regex>)` {#deduplicate-by-columnsregex}
 
 Remova duplicatas com base em todas as colunas que correspondam a uma expressão regular: as colunas `primary_key`, `secondary_key` e `partition_key`:
 

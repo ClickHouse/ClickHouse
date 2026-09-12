@@ -6,17 +6,17 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuration'
 doc_type: 'reference'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 Esta página lista todas as chaves de configuração que talvez seja necessário alterar, com seus valores padrão e significados: primeiro o arquivo de configuração da VM e, em seguida, os valores do Chart do Helm. Para orientações por tarefa, consulte o [guia de configuração](/pt-BR/products/bring-your-own-cloud/connector/configuration).
 
-<div id="vm-configuration-file">
-  ## Arquivo de configuração da VM
-</div>
+## Arquivo de configuração da VM {#vm-configuration-file}
 
 Em uma VM Linux, o conector lê `/etc/clicklink/config.yaml`, gravado por `clicklink clctl init` e preservado entre novas execuções, a menos que `--force` seja informado. As chaves omitidas do arquivo usam os padrões compilados abaixo. As credenciais nunca ficam neste arquivo.
 
-<div id="vm-top-level">
-  ### Chaves de nível superior
-</div>
+### Chaves de nível superior {#vm-top-level}
 
 | Chave            | Padrão               | Significado                                                                                                                                                |
 | ---------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -29,9 +29,7 @@ Em uma VM Linux, o conector lê `/etc/clicklink/config.yaml`, gravado por `click
 | `troubleshooter` |                      | Bloco do daemon troubleshooter; consulte [troubleshooter](#vm-troubleshooter).                                                                             |
 | `observability`  |                      | Bloco compartilhado de logging e porta; consulte [observability](#vm-observability).                                                                       |
 
-<div id="vm-api">
-  ### api
-</div>
+### api {#vm-api}
 
 | Chave                     | Padrão                                           | Significado                                                                                                                    |
 | ------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------ |
@@ -47,9 +45,7 @@ Em uma VM Linux, o conector lê `/etc/clicklink/config.yaml`, gravado por `click
 | `api.retry.max_delay`     | `30s`                                            | Limite máximo de backoff.                                                                                                      |
 | `api.retry.jitter_factor` | `0.25`                                           | Jitter aleatório aplicado aos atrasos de backoff.                                                                              |
 
-<div id="vm-instances">
-  ### instances
-</div>
+### instances {#vm-instances}
 
 Cada entrada em `instances.<name>` descreve um destino do protocolo nativo do ClickHouse:
 
@@ -64,9 +60,7 @@ Cada entrada em `instances.<name>` descreve um destino do protocolo nativo do Cl
 | `namespace`      |              | Espaço de nomes do Kubernetes da instância, usado para delimitar as leituras do Kubernetes pelo troubleshooter. |
 | `cluster`        | `default`    | Nome do cluster do ClickHouse usado para consultas distribuídas.                                                |
 
-<div id="vm-scraper">
-  ### scraper
-</div>
+### scraper {#vm-scraper}
 
 | Chave                                | Padrão                          | Significado                                                                                                                                                                                                                                                  |
 | ------------------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -85,9 +79,7 @@ Cada entrada em `instances.<name>` descreve um destino do protocolo nativo do Cl
 | `scraper.observability.metrics_port` | `9092`                          | Porta de métricas do scraper.                                                                                                                                                                                                                                |
 | `scraper.access_directory`           | `/etc/clicklink/access/scraper` | Diretório raiz dos pacotes de acesso por instância do scraper.                                                                                                                                                                                               |
 
-<div id="vm-troubleshooter">
-  ### troubleshooter
-</div>
+### troubleshooter {#vm-troubleshooter}
 
 | Chave                                              | Padrão                                                                                 | Significado                                                                                                                                           |
 | -------------------------------------------------- | -------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -122,9 +114,7 @@ Cada entrada em `instances.<name>` descreve um destino do protocolo nativo do Cl
 | `troubleshooter.gateway.tls.key_file`              | `/var/lib/clicklink/gateway/tls/server.key`                                            | Chave usada pelo gateway.                                                                                                                             |
 | `troubleshooter.gateway.tls.self_signed_dns_names` | `[]` (`init` preenche previamente o host)                                              | SANs do certificado autossinado gerado pelo próprio daemon quando não existe nenhum; entradas interpretadas como endereços IP tornam-se SANs de IP.   |
 
-<div id="vm-observability">
-  ### observabilidade
-</div>
+### observabilidade {#vm-observability}
 
 | Chave                        | Padrão | Significado                                                |
 | ---------------------------- | ------ | ---------------------------------------------------------- |
@@ -135,9 +125,7 @@ Cada entrada em `instances.<name>` descreve um destino do protocolo nativo do Cl
 
 Os blocos `observability` específicos de cada componente substituem essa configuração base: o scraper usa `8082`/`9092`, o troubleshooter usa `8084`/`9094` e o gateway escuta na porta `8443` quando habilitado.
 
-<div id="default-table-allowlist">
-  ### Lista de permissões padrão de tabelas
-</div>
+### Lista de permissões padrão de tabelas {#default-table-allowlist}
 
 O conjunto padrão `allowed_tables` do troubleshooter, idêntico ao padrão `troubleshooter.allowedTables` do chart:
 
@@ -155,15 +143,11 @@ system.functions        system.formats        system.table_engines
 system.users            system.roles          system.grants
 ```
 
-<div id="helm-chart-values">
-  ## Valores do Chart do Helm
-</div>
+## Valores do Chart do Helm {#helm-chart-values}
 
 No Kubernetes, o conector é configurado pelos valores do Chart `clicklink-connector`. O comando `clicklink clctl init` prepara uma sobreposição `clicklink-values.yaml` com todos os itens abaixo preenchidos e a preserva entre execuções, a menos que seja usada a opção `--force`. As tabelas listam os valores padrão do Chart; as configurações padrão de workload (`resources`, `nodeSelector`, `tolerations`, `affinity`, `serviceAccount.annotations`, `env`, `imagePullSecrets`) estão disponíveis em cada componente, com valores padrão vazios, e não são repetidas em cada tabela.
 
-<div id="helm-cluster">
-  ### cluster
-</div>
+### cluster {#helm-cluster}
 
 | Chave                  | Padrão                   | Significado                                                                                                                               |
 | ---------------------- | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------- |
@@ -171,9 +155,7 @@ No Kubernetes, o conector é configurado pelos valores do Chart `clicklink-conne
 | `cluster.region`       | `""` (`init` o preenche) | Rótulo da região. Obrigatório.                                                                                                            |
 | `cluster.cloud`        | `""` (`init` o preenche) | Rótulo do provedor de Cloud. Obrigatório.                                                                                                 |
 
-<div id="helm-image">
-  ### imagem
-</div>
+### imagem {#helm-image}
 
 | Chave              | Padrão                                                                | Significado                                                                                                                                                                                                                                                                    |
 | ------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -181,9 +163,7 @@ No Kubernetes, o conector é configurado pelos valores do Chart `clicklink-conne
 | `image.tag`        | `""` (acompanha o `appVersion` do chart; `init` fixa a versão da CLI) | Tag da imagem.                                                                                                                                                                                                                                                                 |
 | `image.pullPolicy` | `IfNotPresent`                                                        | Política de pull de imagem do Kubernetes.                                                                                                                                                                                                                                      |
 
-<div id="vm-api">
-  ### api
-</div>
+### api {#helm-api}
 
 | Chave             | Padrão                       | Significado                                                                                                                                                                                                                        |
 | ----------------- | ---------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -191,9 +171,7 @@ No Kubernetes, o conector é configurado pelos valores do Chart `clicklink-conne
 | `api.tls.enabled` | `true`                       | Apresenta o certificado de cliente mTLS nas conexões com a API.                                                                                                                                                                    |
 | `api.tls.caFile`  | `""` (raízes do sistema)     | CA adicionada às raízes do sistema para verificar o servidor. Defina como `/etc/clicklink/secrets/mtls/ca.crt` (ou execute `init` novamente com `--api-private-ca`) quando o endpoint apresentar um certificado de uma CA privada. |
 
-<div id="helm-secrets">
-  ### secrets
-</div>
+### secrets {#helm-secrets}
 
 O chart usa Secrets criados previamente; `init` os cria antes da instalação.
 
@@ -203,9 +181,7 @@ O chart usa Secrets criados previamente; `init` os cria antes da instalação.
 | `secrets.hmacSecretName` | `clicklink-hmac` | Secret opaco que armazena `access-key` e `secret-key` para assinatura de requisições.                                                                                                                                                                                                        |
 | `secrets.mtlsWriteback`  | `true`           | Permite que os daemons gravem novamente o certificado mTLS final renovado automaticamente no Secret mTLS. Concede às ServiceAccounts do componente a permissão `update` nesse único Secret, pelo nome exato; sem isso, não há um local persistente para armazenar os certificados renovados. |
 
-<div id="vm-scraper">
-  ### scraper
-</div>
+### scraper {#helm-scraper}
 
 | Chave                                                                    | Padrão                        | Significado                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------------------ | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
@@ -221,9 +197,7 @@ O chart usa Secrets criados previamente; `init` os cria antes da instalação.
 | `scraper.rbac.extraSecretNames`                                          | `[]`                          | Nomes adicionais de Secret aos quais a ServiceAccount do scraper pode aplicar `get`, somente nomes exatos.                                                                                                                                             |
 | `scraper.accessBundles`                                                  | `{}`                          | Pacotes de acesso por instância, identificados pelo nome da instância, cada um com `secretName` e `serviceAccountName`. Montados em `/etc/clicklink/access/scraper/<instance>/`; criados por `clicklink clctl scraper access provision --target helm`. |
 
-<div id="vm-troubleshooter">
-  ### troubleshooter
-</div>
+### troubleshooter {#helm-troubleshooter}
 
 | Chave                                           | Padrão                                                             | Significado                                                                                                                                                                                                                                                                                          |
 | ----------------------------------------------- | ------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -246,9 +220,7 @@ O chart usa Secrets criados previamente; `init` os cria antes da instalação.
 | `troubleshooter.rbac.extraSecretNames`          | `[]`                                                               | Nomes adicionais de Secrets que a ServiceAccount do troubleshooter pode `get`; somente nomes exatos.                                                                                                                                                                                                 |
 | `troubleshooter.accessBundles`                  | `{}`                                                               | Pacotes de acesso por instância, com o mesmo formato de `scraper.accessBundles`, montados em `/etc/clicklink/access/troubleshooter/<instance>/`.                                                                                                                                                     |
 
-<div id="helm-persistence">
-  ### persistência
-</div>
+### persistência {#helm-persistence}
 
 | Chave                      | Padrão                   | Significado                                                                                                                                                                     |
 | -------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -257,9 +229,7 @@ O chart usa Secrets criados previamente; `init` os cria antes da instalação.
 | `persistence.size`         | `5Gi`                    | Tamanho da claim.                                                                                                                                                               |
 | `persistence.accessModes`  | `[ReadWriteOnce]`        | Modos de acesso da claim.                                                                                                                                                       |
 
-<div id="helm-clctl-gateway">
-  ### clctl.gateway
-</div>
+### clctl.gateway {#helm-clctl-gateway}
 
 O gateway de sessão para [sessões de suporte](/pt-BR/products/bring-your-own-cloud/connector/support-sessions).
 
@@ -279,9 +249,7 @@ O gateway de sessão para [sessões de suporte](/pt-BR/products/bring-your-own-c
 | `clctl.gateway.ingress.enabled`                                  | `false`                | Renderiza uma Entrada para o gateway. Quando desabilitada, os operadores acessam o gateway com `kubectl port-forward`; não é necessário ter um controller de Entrada nem o cert-manager.                                     |
 | `clctl.gateway.ingress.className`, `hosts`, `tls`, `annotations` | `""`, `[]`, `[]`, `{}` | Campos padrão de Entrada; `tls` referencia Secrets `kubernetes.io/tls`.                                                                                                                                                      |
 
-<div id="helm-networkpolicy">
-  ### networkPolicy
-</div>
+### networkPolicy {#helm-networkpolicy}
 
 | Chave                                 | Padrão  | Significado                                                                                                                                                                                                                                                                                   |
 | ------------------------------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

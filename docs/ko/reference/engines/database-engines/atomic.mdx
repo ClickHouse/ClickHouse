@@ -16,21 +16,15 @@ doc_type: 'reference'
   위에서 언급한 작업을 지원합니다.
 </Note>
 
-<div id="creating-a-database">
-  ## 데이터베이스 생성
-</div>
+## 데이터베이스 생성 {#creating-a-database}
 
 ```sql
 CREATE DATABASE test [ENGINE = Atomic] [SETTINGS disk=...];
 ```
 
-<div id="specifics-and-recommendations">
-  ## 세부 정보 및 권장 사항
-</div>
+## 세부 정보 및 권장 사항 {#specifics-and-recommendations}
 
-<div id="table-uuid">
-  ### 테이블 UUID
-</div>
+### 테이블 UUID {#table-uuid}
 
 `Atomic` 데이터베이스의 각 테이블에는 영구적인 [UUID](/ko/reference/data-types/uuid)가 있으며, 해당 데이터는 다음 디렉터리에 저장됩니다:
 
@@ -52,22 +46,16 @@ CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE 
   [show&#95;table&#95;uuid&#95;in&#95;table&#95;create&#95;query&#95;if&#95;not&#95;nil](/ko/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil) 설정을 사용하면 `SHOW CREATE` 쿼리에서 UUID를 표시할 수 있습니다.
 </Note>
 
-<div id="rename-table">
-  ### RENAME TABLE
-</div>
+### RENAME TABLE {#rename-table}
 
 [`RENAME`](/ko/reference/statements/rename) 쿼리는 UUID를 변경하거나 테이블 데이터를 이동하지 않습니다. 이 쿼리는 즉시 실행되며, 해당 테이블을 사용 중인 다른 쿼리가 끝날 때까지 기다리지 않습니다.
 
-<div id="drop-detach-table">
-  ### DROP/DETACH TABLE
-</div>
+### DROP/DETACH TABLE {#drop-detach-table}
 
 `DROP TABLE`를 사용해도 데이터는 삭제되지 않습니다. `Atomic` 엔진은 메타데이터를 `/clickhouse_path/metadata_dropped/`로 이동하여 테이블을 삭제된 것으로 표시하고 백그라운드 스레드에 알립니다. 최종적으로 테이블 데이터가 삭제되기 전까지의 지연 시간은 [`database_atomic_delay_before_drop_table_sec`](/ko/reference/settings/server-settings/settings/other#database_atomic_delay_before_drop_table_sec) 설정으로 지정됩니다.
 `SYNC` 수정자를 사용하여 동기 모드를 지정할 수 있습니다. 이를 위해 [`database_atomic_wait_for_drop_and_detach_synchronously`](/ko/reference/settings/session-settings/database#database_atomic_wait_for_drop_and_detach_synchronously) 설정을 사용하십시오. 이 경우 `DROP`은 테이블을 사용 중인 실행 중의 `SELECT`, `INSERT` 및 기타 쿼리가 완료될 때까지 기다립니다. 테이블은 더 이상 사용되지 않을 때 제거됩니다.
 
-<div id="exchange-tables">
-  ### EXCHANGE TABLES/사전
-</div>
+### EXCHANGE TABLES/사전 {#exchange-tables}
 
 [`EXCHANGE`](/ko/reference/statements/exchange) 쿼리는 테이블이나 사전의 이름을 원자적으로 서로 바꿉니다. 예를 들어, 다음과 같은 원자적이지 않은 작업 대신:
 
@@ -81,15 +69,11 @@ Atomic 데이터베이스를 사용할 수 있습니다:
 EXCHANGE TABLES new_table AND old_table;
 ```
 
-<div id="replicatedmergetree-in-atomic-database">
-  ### Atomic 데이터베이스의 ReplicatedMergeTree
-</div>
+### Atomic 데이터베이스의 ReplicatedMergeTree {#replicatedmergetree-in-atomic-database}
 
 [`ReplicatedMergeTree`](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블에서는 ZooKeeper의 경로와 레플리카 이름에 대한 엔진 매개변수를 지정하지 않는 것을 권장합니다. 이 경우 구성 매개변수 [`default_replica_path`](/ko/reference/settings/server-settings/settings/default-replica#default_replica_path)와 [`default_replica_name`](/ko/reference/settings/server-settings/settings/default-replica#default_replica_name)이 사용됩니다. 엔진 매개변수를 명시적으로 지정하려면 `{uuid}` 매크로를 사용하는 것을 권장합니다. 이렇게 하면 ZooKeeper에서 각 테이블마다 고유한 경로가 자동으로 생성됩니다.
 
-<div id="metadata-disk">
-  ### 메타데이터 디스크
-</div>
+### 메타데이터 디스크 {#metadata-disk}
 
 `SETTINGS`에서 `disk`를 지정하면 테이블 메타데이터 파일은 해당 디스크에 저장됩니다.
 예시:
@@ -100,9 +84,31 @@ CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path
 
 지정하지 않으면 `database_disk.disk`에 정의된 디스크가 기본값으로 사용됩니다.
 
-<div id="see-also">
-  ## 관련 항목
-</div>
+### 테이블 수 제한 {#limiting-the-number-of-tables}
+
+`max_tables` 설정은 데이터베이스가 포함할 수 있는 테이블 수를 제한합니다. `0`(기본값)은 무제한을 의미합니다. 일반 테이블, VIEW, materialized view, `CREATE DICTIONARY`로 생성한 딕셔너리 등 테이블 형태의 모든 객체가 이 제한에 포함됩니다. 제한에 도달하면 `CREATE TABLE`, `CREATE DICTIONARY`, `ATTACH TABLE`은 `TOO_MANY_TABLES` 예외를 발생시킵니다.
+
+```sql
+CREATE DATABASE db ENGINE = Atomic SETTINGS max_tables = 100;
+```
+
+기존 데이터베이스의 제한은 `ALTER DATABASE`로 변경할 수 있습니다:
+
+```sql
+ALTER DATABASE db MODIFY SETTING max_tables = 200;
+```
+
+현재 테이블 수보다 낮은 값으로 제한을 낮추더라도 기존 테이블이 삭제되지는 않습니다. 테이블 수가 다시 제한 아래로 내려갈 때까지 새 테이블 생성만 차단될 뿐입니다.
+
+`CREATE OR REPLACE TABLE`은 대체 테이블을 임시 이름으로 잠시 생성한 뒤 스왑하므로, 데이터베이스가 정확히 `max_tables`에 도달한 상태에서 테이블을 교체하면 최종 테이블 수가 늘어나지 않더라도 `TOO_MANY_TABLES` 오류로 실패합니다. `RENAME TABLE`이나 `RENAME DICTIONARY`로 객체를 해당 데이터베이스로 이동하는 작업에도 이 제한이 적용됩니다.
+
+`TO` 절 없이 생성된 materialized view는 숨겨진 내부 테이블을 가지며, 이 내부 테이블도 별도의 테이블로 제한에 포함됩니다.
+
+제한은 작업이 시작되기 전에 확인되므로 최선 노력(best-effort) 방식입니다. 즉, 동시에 실행되는 쿼리로 인해 데이터베이스가 제한을 약간 초과할 수 있습니다.
+
+이 설정은 테이블을 메모리에 유지하고 메타데이터를 로컬 `.sql` 파일에 저장하는 온디스크 데이터베이스 엔진인 `Atomic`과 `Ordinary`에서 사용할 수 있습니다. `Replicated` 엔진에서는 지원되지 않습니다.
+
+## 관련 항목 {#see-also}
 
 * [system.databases](/ko/reference/system-tables/databases) 시스템 테이블
 

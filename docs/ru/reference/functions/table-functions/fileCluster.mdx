@@ -20,29 +20,23 @@ doc_type: 'reference'
   Если эти файлы различаются на разных узлах, возвращаемое значение нельзя определить заранее: оно зависит от того, в каком порядке узлы-воркеры запрашивают задачи у инициатора.
 </Note>
 
-<div id="syntax">
-  ## Синтаксис
-</div>
+## Синтаксис {#syntax}
 
 ```sql
 fileCluster(cluster_name, path[, format, structure, compression_method])
 ```
 
-<div id="arguments">
-  ## Аргументы
-</div>
+## Аргументы {#arguments}
 
-| Аргумент             | Описание                                                                                                                                                                                    |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `cluster_name`       | Имя кластера, используемое для построения набора адресов и параметров подключения к удалённым и локальным серверам.                                                                         |
-| `path`               | Относительный путь к файлу из [user&#95;files&#95;path](/ru/reference/settings/server-settings/settings/user#user_files_path). Путь к файлу также поддерживает [глоб-шаблоны](#globs-in-path). |
-| `format`             | [Формат](/ru/reference/formats/index) файлов. Тип: [String](/ru/reference/data-types/string).                                                                                                     |
-| `structure`          | Структура таблицы в формате `'UserID UInt64, Name String'`. Определяет имена столбцов и типы. Тип: [String](/ru/reference/data-types/string).                                                  |
-| `compression_method` | Метод сжатия. Поддерживаются следующие типы сжатия: `gz`, `br`, `xz`, `zst`, `lz4` и `bz2`.                                                                                                 |
+| Аргумент             | Описание                                                                                                                                                                                                                                                                                                   |
+| -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cluster_name`       | Имя кластера, используемое для построения набора адресов и параметров подключения к удалённым и локальным серверам.                                                                                                                                                                                        |
+| `path`               | Относительный путь к файлу из [user&#95;files&#95;path](/ru/reference/settings/server-settings/settings/user#user_files_path). Путь к файлу также поддерживает [глоб-шаблоны](#globs-in-path).                                                                                                                |
+| `format`             | [Формат](/ru/reference/formats/index) файлов. Тип: [String](/ru/reference/data-types/string).                                                                                                                                                                                                                    |
+| `structure`          | Структура таблицы в формате `'UserID UInt64, Name String'`. Определяет имена столбцов и типы. Тип: [String](/ru/reference/data-types/string).                                                                                                                                                                 |
+| `compression_method` | Метод сжатия. Поддерживаемые значения: `none` (без сжатия), `gzip/gz`, `deflate`, `brotli/br`, `lzma/xz`, `zstd/zst`, `lz4`, `bz2` и `snappy`. Для `snappy` формат передачи данных выбирается настройкой [snappy&#95;mode](/ru/reference/settings/session-settings/other#snappy_mode) (по умолчанию `basic`). |
 
-<div id="returned-value">
-  ## Возвращаемое значение
-</div>
+## Возвращаемое значение {#returned-value}
 
 Таблица с указанными форматом и структурой, содержащая данные из файлов, соответствующих указанному пути.
 
@@ -91,15 +85,11 @@ SELECT * FROM fileCluster('my_cluster', 'file{1,2}.csv', 'CSV', 'i UInt32, s Str
 └────┴────────┘
 ```
 
-<div id="globs-in-path">
-  ## Глоб-шаблоны в пути
-</div>
+## Глоб-шаблоны в пути {#globs-in-path}
 
 Все шаблоны, поддерживаемые табличной функцией [File](/ru/reference/functions/table-functions/file#globs-in-path), также поддерживаются в FileCluster.
 
-<div id="related">
-  ## См. также
-</div>
+## См. также {#related}
 
 * [Табличная функция File](/ru/reference/functions/table-functions/file)
 

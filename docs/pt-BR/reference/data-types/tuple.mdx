@@ -14,9 +14,7 @@ Tuplas são usadas para o agrupamento temporário de colunas. As colunas podem s
 
 Tuplas podem ser o resultado de uma consulta. Nesse caso, em formatos de texto diferentes de JSON, os valores são separados por vírgulas em `()`. Em formatos JSON, as tuplas são exibidas como arrays (em `[]`).
 
-<div id="creating-tuples">
-  ## Criando Tuplas
-</div>
+## Criando Tuplas {#creating-tuples}
 
 Você pode usar uma função para criar uma tupla:
 
@@ -64,9 +62,7 @@ SELECT (1, 'a') AS x, (today(), rand(), 'someString') AS y, ('a') AS not_a_tuple
 └─────────┴────────────────────────────────────────┴─────────────┘
 ```
 
-<div id="data-type-detection">
-  ## Detecção de tipos de dados
-</div>
+## Detecção de tipos de dados {#data-type-detection}
 
 Ao criar Tuples dinamicamente, o ClickHouse infere o tipo dos argumentos da Tuple como os menores tipos capazes de armazenar o valor do argumento fornecido. Se o valor for [NULL](/pt-BR/reference/settings/formats/input-format#input_format_null_as_default), o tipo inferido será [Nullable](/pt-BR/reference/data-types/nullable).
 
@@ -82,9 +78,7 @@ SELECT tuple(1, NULL) AS x, toTypeName(x)
 └───────────┴─────────────────────────────────┘
 ```
 
-<div id="referring-to-tuple-elements">
-  ## Referência aos elementos de Tuple
-</div>
+## Referência aos elementos de Tuple {#referring-to-tuple-elements}
 
 Os elementos de Tuple podem ser referenciados pelo nome ou pelo índice:
 
@@ -108,9 +102,7 @@ SELECT a.2 FROM named_tuples; -- por índice
 └────────────────────┘
 ```
 
-<div id="comparison-operations-with-tuple">
-  ## Operações de comparação com Tuple
-</div>
+## Operações de comparação com Tuple {#comparison-operations-with-tuple}
 
 Duas tuplas são comparadas sequencialmente, da esquerda para a direita. Se o elemento da primeira tupla for maior (menor) que o elemento correspondente da segunda tupla, então a primeira tupla será maior (menor) que a segunda; caso contrário (se ambos os elementos forem iguais), compara-se o próximo elemento.
 
@@ -188,16 +180,12 @@ ORDER BY key ASC;
 └─────┴───────────────┴───────────────────────────────────────┘
 ```
 
-<div id="nullable-tuple">
-  ## Nullable(Tuple(T1, T2, ...))
-</div>
+## Nullable(Tuple(T1, T2, ...)) {#nullable-tuple}
 
-<Info>
-  **Funcionalidade Beta**
-
+<Note title="Funcionalidade Beta">
   Requer `SET enable_nullable_tuple_type = 1`
   Esta é uma funcionalidade Beta.
-</Info>
+</Note>
 
 Permite que a tupla inteira seja `NULL`, ao contrário de `Tuple(Nullable(T1), Nullable(T2), ...)`, em que apenas os elementos individuais podem ser `NULL`.
 

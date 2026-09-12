@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически сгенерированы на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="use_statistics">
-  ## use_statistics
-</div>
+## use_statistics {#use_statistics}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -24,9 +22,7 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 /// предпочтительнее, чем &#39;allow&#95;statistics&#95;optimize&#39;, для согласованности с &#39;use&#95;primary&#95;key&#39; и &#39;use&#95;skip&#95;indexes&#39;
 Разрешает использовать статистику для оптимизации запросов
 
-<div id="use_statistics_cache">
-  ## use_statistics_cache
-</div>
+## use_statistics_cache {#use_statistics_cache}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -34,9 +30,24 @@ import { VersionHistory } from "/snippets/ru/components/VersionHistory/VersionHi
 
 Использовать кэш статистики в запросе, чтобы избежать накладных расходов на загрузку статистики для каждой части
 
-<div id="use_statistics_for_part_pruning">
-  ## use_statistics_for_part_pruning
-</div>
+## use_statistics_for_min_max_aggregation {#use_statistics_for_min_max_aggregation}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка, позволяющая вычислять агрегации `min`, `max` и `count` без `GROUP BY` и фильтров по постатейной статистике столбцов тех частей, где она материализована, считывая только оставшиеся части. previous_value=false, поэтому `compatibility` с версиями до 26.9 оставляет оптимизацию отключенной и восстанавливает прежний план."}]}]} />
+
+Вычисляет агрегации `min`, `max` и `count` по статистике столбцов отдельных частей вместо чтения данных.
+
+Когда настройка включена, запрос вида `SELECT min(column), max(column), count() FROM table` без `GROUP BY` и фильтров
+вычисляется по статистике столбцов (например, статистике MinMax, см. настройку MergeTree `auto_statistics_types`)
+для тех частей данных, где она материализована, а читаются только оставшиеся части.
+
+Возможные значения:
+
+* 0 — отключено.
+* 1 — включено.
+
+## use_statistics_for_part_pruning {#use_statistics_for_part_pruning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 这些设置可在 [system.settings](/zh/reference/system-tables/settings) 中查看，并由 [源文件](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) 自动生成。
 
-<div id="ast_fuzzer_any_query">
-  ## ast_fuzzer_any_query
-</div>
+## ast_fuzzer_any_query {#ast_fuzzer_any_query}
 
 <ExperimentalBadge />
 
@@ -26,9 +24,17 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 当为 false (默认值) 时，服务器端 AST fuzzer (由 `ast_fuzzer_runs` 控制) 仅对只读查询 (SELECT、EXPLAIN、SHOW、DESCRIBE、EXISTS) 进行 fuzzing。当为 true 时，则会对所有查询类型进行 fuzzing，包括 DDL 和 INSERT。
 
-<div id="ast_fuzzer_runs">
-  ## ast_fuzzer_runs
-</div>
+## ast_fuzzer_oracle {#ast_fuzzer_oracle}
+
+<ExperimentalBadge />
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "用于在服务器端 AST fuzzer 中启用正确性预言机检查的新设置。"}]}]} />
+
+与 `ast_fuzzer_runs` 一同启用时，会对成功执行的经模糊测试的 SELECT 查询应用一组正确性预言机检查：TLP WHERE/DISTINCT/GROUP BY/HAVING/Aggregate、NoREC、DQP (切换各个 optimizer 设置) 、Identity WHERE 和 Subquery wrap。若检查结果不一致，将抛出 `AST_FUZZER_ORACLE_MISMATCH` 异常。
+
+## ast_fuzzer_runs {#ast_fuzzer_runs}
 
 <ExperimentalBadge />
 

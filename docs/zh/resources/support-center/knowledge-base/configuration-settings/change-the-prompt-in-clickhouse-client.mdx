@@ -20,7 +20,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 更新提示符有几种方法，下面我们将逐一介绍。
 
 <div id="--prompt-flag">
-  ## --prompt 标志
+  ## --prompt 标志 {#--prompt-flag}
 </div>
 
 修改该标志的第一种方法是使用 `--prompt`：
@@ -34,7 +34,7 @@ clickhouse --prompt 👉
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="带有手指表情符号的 ClickHouse 客户端 提示符" />
 
 <div id="config-file---top-level">
-  ## 配置文件 - 顶层
+  ## 配置文件 - 顶层 {#config-file---top-level}
 </div>
 
 或者，您也可以在 `config.xml` 文件中提供提示前缀：
@@ -78,9 +78,7 @@ clickhouse -C christmas.yaml
 
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="带黄色圆圈表情符号的 ClickHouse 客户端 提示符" />
 
-<div id="config-file---connections_credentials">
-  ## 配置文件 - connections_credentials
-</div>
+## 配置文件 - connections_credentials {#config-file---connections_credentials}
 
 或者，你也可以为每组连接凭据单独指定提示符。
 这仅在使用 `clickhouse-client` 时才有意义。

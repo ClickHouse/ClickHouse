@@ -1,0 +1,100 @@
+---
+sidebarTitle: 'ClickHouse Managed Postgres'
+description: '将 ClickHouse Managed Postgres 设置为 ClickPipes 的源'
+slug: /integrations/clickpipes/postgres/source/managed-postgres
+title: 'ClickHouse Managed Postgres 源设置指南'
+doc_type: 'guide'
+keywords: ['clickpipes', 'clickhouse managed postgres', 'postgresql', 'cdc', 'data ingestion', 'real-time sync']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+[ClickHouse Managed Postgres](/zh/products/managed-postgres/overview) 是 ClickHouse Cloud 中的全托管 Postgres 服务，也是接入 ClickPipes 最便捷的 Postgres 源：每个实例均已启用逻辑复制，ClickPipes IP 地址默认放行，连接详情也与你的 ClickHouse 服务位于同一个控制台中。
+
+要从 ClickHouse Managed Postgres 实例开始复制，有两种方式。两者都会创建一个常规的 Postgres ClickPipe，因此管道运行起来后，[Postgres ClickPipe 文档](/zh/integrations/clickpipes/postgres/index)中的所有内容均同样适用。
+
+## 方式 1：从 Postgres 服务同步到 ClickHouse {#sync-to-clickhouse}
+
+在 ClickHouse Cloud 控制台中打开你的 ClickHouse Managed Postgres 服务，然后在侧边栏中点击 **Sync to ClickHouse**。向导会自动填好源端连接信息，你只需选择目标端 ClickHouse 服务、复制方式以及要复制的表即可，无需另行配置用户、publication 或网络。
+
+详细的分步操作说明请参阅 [Sync to ClickHouse](/zh/products/managed-postgres/clickpipes) 指南。如果需要低延迟复制，你还可以选择 [WalShadow](/zh/products/managed-postgres/walshadow)，这是一种在文件系统层面读取数据的原生复制引擎，目前处于私有预览阶段。
+
+## 方式 2：在 ClickPipes 中选择 ClickHouse Managed Postgres 作为源 {#clickpipes-source}
+
+如果你更希望从目标端入手，可打开你的 ClickHouse 服务，进入 **Data Sources**，并在源列表中选择 **ClickHouse Managed Postgres**。随后，像配置其他任何 Postgres 源一样，填写你的 Postgres 实例的连接详情即可。
+
+### 连接详情 {#connection-details}
+
+打开您的 ClickHouse Managed Postgres 服务并点击 **Connect**，即可查看主机、端口、数据库、用户名和密码。请使用 Postgres 直连方式，而非 **via PgBouncer** 开关：ClickPipes 不支持通过 PgBouncer 或任何其他连接池器进行复制。详情请参阅 [Connection](/zh/products/managed-postgres/connection)。
+
+### 创建具有权限的用户 {#creating-a-user-with-permissions}
+
+你可以使用默认的 `postgres` 用户进行连接。在生产环境中，我们建议使用专用的只读复制用户，做法与其他任何 Postgres 源完全相同。使用 `psql` 连接到你的实例并运行：
+
+1. 为 ClickPipes 创建一个专用用户：
+
+   ```sql
+   CREATE USER clickpipes_user PASSWORD 'some-password';
+   ```
+
+2. 为该用户授予 schema 级别的只读访问权限。以下示例展示了对 `public` schema 的权限设置。对每个包含待复制表的 schema 重复执行这些命令：
+
+   ```sql
+   GRANT USAGE ON SCHEMA "public" TO clickpipes_user;
+   GRANT SELECT ON ALL TABLES IN SCHEMA "public" TO clickpipes_user;
+   ALTER DEFAULT PRIVILEGES IN SCHEMA "public" GRANT SELECT ON TABLES TO clickpipes_user;
+   ```
+
+3. 为该用户授予复制特权：
+
+   ```sql
+   ALTER USER clickpipes_user WITH REPLICATION;
+   ```
+
+4. 为需要复制的表创建一个 [publication](https://www.postgresql.org/docs/current/logical-replication-publication.html)。我们强烈建议在 publication 中仅包含所需的表，以免带来额外的性能开销。
+
+<Warning>
+  publication 中包含的任何表，都必须定义 **primary key**，*或* 将其 **副本标识** 配置为 `FULL`。有关如何界定 publication 范围，请参阅 [Postgres FAQ](/zh/integrations/clickpipes/postgres/faq#how-should-i-scope-my-publications-when-setting-up-replication)。
+</Warning>
+
+* 为特定表创建 publication：
+
+  ```sql
+  CREATE PUBLICATION clickpipes FOR TABLE table_to_replicate, table_to_replicate2;
+  ```
+
+  * 为特定 schema 中的所有表创建 publication：
+
+    ```sql
+    CREATE PUBLICATION clickpipes FOR TABLES IN SCHEMA "public";
+    ```
+
+### 逻辑复制 {#logical-replication}
+
+每个 ClickHouse Managed Postgres 实例均已启用逻辑复制，无需修改 `wal_level` 设置或参数组。可通过以下方式确认：
+
+```sql
+SHOW wal_level; -- should be logical
+```
+
+### 网络访问 {#network-access}
+
+ClickHouse Managed Postgres 默认接受来自 ClickPipes 的连接。如果您已在 Postgres 服务上配置了 [IP filters](/zh/products/managed-postgres/security#ip-whitelisting)，请将 **ClickHouse 服务**所在区域的 [ClickPipes 静态 IP 地址](/zh/integrations/clickpipes/networking/static-ips)添加到允许列表中。
+
+### TLS {#tls}
+
+ClickHouse Managed Postgres 实例出示的证书由该实例专属的 CA 签发，不受公共信任。ClickPipes 默认启用证书校验，因此在你完成以下任一操作之前，连接检查都会失败：
+
+* 在 Postgres 服务的 **Settings** 选项卡中下载 CA 证书包，并在 ClickPipe 连接设置中通过 **Upload CA** 上传。推荐使用此方式。有关该证书包的获取位置，请参阅 [Verified TLS connection](/zh/products/managed-postgres/connection#verified-tls)。
+* 在 ClickPipe 连接设置中开启 **Skip certificate verification**。此时连接仍然加密，但不会校验 server 身份。
+
+如果你使用 `clickhousectl` 创建管道，请先拉取该证书包，并通过 `--ca-certificate` 传入：
+
+```bash
+clickhousectl cloud postgres certs get <postgres-service-id> --output pg-ca.pem
+```
+
+## 接下来做什么？ {#whats-next}
+
+现在，您可以[创建 ClickPipe](/zh/integrations/clickpipes/postgres/index)，将数据从 ClickHouse Managed Postgres 实例摄取到 ClickHouse Cloud。从 ClickHouse Managed Postgres 到 ClickHouse 的原生 CDC (变更数据捕获) 不收取额外费用；详情请参阅[定价](/zh/products/managed-postgres/pricing)。

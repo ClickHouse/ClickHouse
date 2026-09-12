@@ -32,6 +32,8 @@ CREATE QUOTA [IF NOT EXISTS | OR REPLACE] name [ON CLUSTER cluster_name]
 
 `ON CLUSTER` 句を使用すると、クラスター上にクォータを作成できます。詳しくは [Distributed DDL](/ja/reference/statements/distributed-ddl) を参照してください。
 
+`CREATE QUOTA` には [CREATE QUOTA](/ja/reference/statements/grant#access-management) 権限が必要です。`OR REPLACE` は、同名の既存のクォータを、それが適用されるロールも含めて破棄するため、追加で [DROP QUOTA](/ja/reference/statements/grant#access-management) 権限も必要になります。`DROP QUOTA` 権限は、そのクォータがすでに存在するかどうかにかかわらず必要となるため、このステートメントを使ってどのクォータが存在するかを調べることはできません。
+
 **例**
 
 現在のユーザーに対して、15 か月間で最大 123 クエリという制約を設定します:
@@ -60,9 +62,7 @@ CREATE QUOTA qD FOR INTERVAL 1 hour MAX queries_per_normalized_hash = 50 TO defa
 
 xml 設定を使用するその他の例 (ClickHouse Cloud ではサポートされていません) については、[Quotas ガイド](/ja/concepts/features/configuration/server-config/quotas)を参照してください。
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouse を使ったシングルページアプリケーションの構築](https://clickhouse.com/blog/building-single-page-applications-with-clickhouse-and-http)
 

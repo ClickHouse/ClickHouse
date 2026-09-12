@@ -15,20 +15,18 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以使用 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
 
 <div id="prerequisite">
-  ## 前置条件
+  ## 前置条件 {#prerequisite}
 </div>
 
 你应已了解 [ClickPipes 简介](/zh/integrations/clickpipes/home)，并已设置好 [IAM 凭证](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) 或 [IAM 角色](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)。有关如何设置可与 ClickHouse Cloud 配合使用的角色，请参阅 [Kinesis 基于角色的访问指南](/zh/integrations/clickpipes/kinesis/auth)。
 
-<div id="creating-your-first-clickpipe">
-  ## 创建你的第一个 ClickPipe
-</div>
+## 创建你的第一个 ClickPipe {#creating-your-first-clickpipe}
 
 1. 进入你的 ClickHouse Cloud 服务的 SQL 控制台。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 服务" size="lg" border />
 
-2. 在左侧菜单中选择 `Data Sources` 按钮，然后点击“Set up a ClickPipe”
+2. 在左侧菜单中选择 `数据源` 按钮，然后点击“Set up a ClickPipe”
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
 
@@ -40,7 +38,9 @@ Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="填写连接详细信息" size="lg" border />
 
-5. 选择 Kinesis Stream 和起始偏移量。UI 会显示所选源中的一个样本文档 (Kafka topic 等) 。你还可以为 Kinesis 数据流启用 Enhanced Fan-out，以提升 ClickPipe 的性能和稳定性 (有关 Enhanced Fan-out 的更多信息，请参见[此处](https://aws.amazon.com/blogs/aws/kds-enhanced-fanout))
+5. 选择 Kinesis 数据流、**数据格式** 和起始偏移量。对于 `Protobuf`，请上传 `.proto` 文件或序列化的 `FileDescriptorSet` (最大 768 KiB) 。无需 Schema Registry。
+
+   UI 会显示所选数据流中的样本数据。**Use Kinesis Enhanced Fan-Out** 默认已启用。详情请参见 [Amazon Kinesis 文档](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html)。
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="设置数据格式和 topic" size="lg" border />
 
@@ -82,15 +82,16 @@ Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 10. **恭喜！** 你已成功设置第一个 ClickPipe。如果这是一个流式 ClickPipe，它将持续运行，实时从远程数据源摄取数据。否则，它会摄取该批次的数据并完成。
 
 <div id="supported-data-formats">
-  ## 支持的数据格式
+  ## 支持的数据格式 {#supported-data-formats}
 </div>
 
 支持的格式如下：
 
 * [JSON](/zh/reference/formats/JSON/JSON)
+* [Protobuf](/zh/reference/formats/Protobuf/Protobuf)
 
 <div id="compression">
-  ## 压缩
+  ## 压缩 {#compression}
 </div>
 
 用于 Kinesis 的 ClickPipes 会自动检测并解压压缩记录。不同于 Kafka 由客户端库透明地完成解压，Kinesis 传递的是原始字节数据——ClickPipes 会为你处理这些，无需任何配置。
@@ -109,11 +110,11 @@ Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 </Note>
 
 <div id="supported-data-types">
-  ## 受支持的数据类型
+  ## 受支持的数据类型 {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### 标准类型支持
+  ### 标准类型支持 {#standard-types-support}
 </div>
 
 ClickPipes 当前支持以下 ClickHouse 数据类型：
@@ -136,20 +137,20 @@ ClickPipes 当前支持以下 ClickHouse 数据类型：
 * SimpleAggregateFunction 类型 (适用于 AggregatingMergeTree 或 SummingMergeTree 目标端)
 
 <div id="variant-type-support">
-  ### Variant 类型支持
+  ### Variant 类型支持 {#variant-type-support}
 </div>
 
 您可以为源数据流中的任何 JSON 字段手动指定 Variant 类型 (例如 `Variant(String, Int64, DateTime)`) 。
 由于 ClickPipes 确定应使用哪种 Variant 子类型的方式所限，Variant 定义中只能使用一种整数类型或一种 DateTime 类型——例如，不支持 `Variant(Int64, UInt32)`。
 
 <div id="json-type-support">
-  ### JSON 类型支持
+  ### JSON 类型支持 {#json-type-support}
 </div>
 
 始终为 JSON 对象的 JSON 字段可以映射到 JSON 目标列。您需要手动将目标列调整为所需的 JSON 类型，包括任何固定路径或跳过路径。
 
 <div id="kinesis-virtual-columns">
-  ## Kinesis 虚拟列
+  ## Kinesis 虚拟列 {#kinesis-virtual-columns}
 </div>
 
 Kinesis 数据流支持以下虚拟列。创建新的目标表时，可以使用 `Add Column` 按钮添加虚拟列。
@@ -165,18 +166,18 @@ Kinesis 数据流支持以下虚拟列。创建新的目标表时，可以使用
 在仅需完整 Kinesis JSON 记录的场景下，可以使用 &#95;raw&#95;message 字段 (例如使用 ClickHouse [`JsonExtract*`](/zh/reference/functions/regular-functions/json-functions#jsonextract-functions) 函数填充下游 materialized view) 。对于这类管道，删除所有“非虚拟”列可能会提升 ClickPipes 性能。
 
 <div id="limitations">
-  ## 限制
+  ## 限制 {#limitations}
 </div>
 
 * 不支持 [DEFAULT](/zh/reference/statements/create/table#default)。
 * 默认情况下，使用最小 (XS) 副本规格运行时，单条消息大小上限为 16MB (未压缩) ；使用更大副本时，上限为 32MB (未压缩) 。超过此限制的消息将被拒绝并报错。如果您需要更大的消息，请联系支持团队。
 
 <div id="performance">
-  ## 性能
+  ## 性能 {#performance}
 </div>
 
 <div id="batching">
-  ### 批量处理
+  ### 批量处理 {#batching}
 </div>
 
 ClickPipes 以批次方式将数据插入 ClickHouse。这样做是为了避免在数据库中创建过多的 parts，否则可能会导致集群出现性能问题。
@@ -187,7 +188,7 @@ ClickPipes 以批次方式将数据插入 ClickHouse。这样做是为了避免�
 * 批次的最长保留时间达到上限 (5 秒)
 
 <div id="latency">
-  ### 延迟
+  ### 延迟 {#latency}
 </div>
 
 延迟 (即消息从发送到 Kinesis stream，到在 ClickHouse 中可用之间的时间) 取决于多种因素 (例如 Kinesis 延迟、网络延迟、消息大小/格式) 。上文所述的[批处理](#batching)也会对延迟产生影响。我们始终建议针对您的具体使用场景进行测试，以了解实际可预期的延迟水平。
@@ -195,19 +196,13 @@ ClickPipes 以批次方式将数据插入 ClickHouse。这样做是为了避免�
 如果您对低延迟有特定要求，请[联系我们](https://clickhouse.com/company/contact?loc=clickpipes)。
 
 <div id="active-shards">
-  ### 活跃分片
+  ### 活跃分片 {#active-shards}
 </div>
 
-我们强烈建议将同时处于活跃状态的分片数量限制在满足吞吐量需求的范围内。对于 “On Demand” Kinesis 数据流，AWS 会根据吞吐量自动分配相应数量的分片；
-但对于 “Provisioned” 数据流，配置过多分片不仅会导致下文所述的延迟问题，还会增加成本，因为这类 Kinesis 数据流按“每个分片”计费。
-
-如果生产者应用持续向大量活跃分片写入数据，而您的管道规模又不足以高效处理这些分片，就可能产生延迟。根据 Kinesis 的吞吐量限制，
-ClickPipes 会为每个副本分配固定数量的“工作线程”来读取分片数据。例如，在最小规格下，一个 ClickPipes 副本会有 4 个这样的工作线程。如果生产者同时向
-超过 4 个分片写入数据，那么在某个工作线程空闲之前，“额外”分片中的数据不会得到处理。特别是，如果该管道使用了 “enhanced fanout”，每个工作线程都会订阅
-单个分片 5 分钟，并且在此期间无法读取任何其他分片。这会导致延迟出现以 5 分钟为倍数的“尖峰”。
+如果 ClickPipe 未[扩缩容](#scaling)到足以处理这些分片，大量活跃分片会降低 ClickPipe 的吞吐量。
 
 <div id="scaling">
-  ### 扩缩容
+  ### 扩缩容 {#scaling}
 </div>
 
 ClickPipes for Kinesis 旨在同时支持水平和垂直扩缩容。默认情况下，我们会创建一个仅包含一个消费者的消费者组。这可以在创建 ClickPipe 时配置，也可以在之后的任意时间通过 **Settings** -&gt; **Advanced Settings** -&gt; **扩缩容** 进行配置。
@@ -219,8 +214,6 @@ ClickPipes 通过跨可用区的分布式架构提供高可用性。
 如果某个消费者或其底层基础设施发生故障，
 ClickPipe 会自动重启该消费者并继续处理消息。
 
-<div id="authentication">
-  ## 身份验证
-</div>
+## 身份验证 {#authentication}
 
 要访问Amazon Kinesis 数据流，您可以使用 [IAM 凭证](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) 或 [IAM 角色](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)。如需进一步了解如何设置 IAM 角色，您可以[参阅本指南](/zh/integrations/clickpipes/kinesis/auth)，了解如何设置可与 ClickHouse Cloud 配合使用的角色。

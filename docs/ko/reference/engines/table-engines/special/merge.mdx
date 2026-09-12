@@ -114,7 +114,7 @@ SELECT * FROM WatchLog;
 
 * `_table` — 데이터를 읽어온 테이블의 이름입니다. 유형: [String](/ko/reference/data-types/string).
 
-  `_table`로 필터링하면(예: `WHERE _table='xyz'`) 필터 조건을 만족하는 테이블만 읽어옵니다.
+  `_table`로 필터링하면(예: `WHERE _table='xyz'`) 필터 조건을 만족하는 테이블만 읽어옵니다. 다른 테이블에서 데이터를 읽는 테이블(`Distributed`, `Merge`, `Buffer`, `Alias`)은 실제로 행을 생성한 테이블의 이름이 포함된 행을 반환하므로, 이러한 테이블은 항상 읽고 필터는 해당 행에 적용합니다.
 
 * `_database` — 데이터를 읽어온 데이터베이스의 이름이 들어 있습니다. 유형: [String](/ko/reference/data-types/string).
 

@@ -1,16 +1,18 @@
 ---
 title: 'Configuración'
 sidebarTitle: 'Configuración'
-description: 'Configure ClickHouse Connector: instancias de ClickHouse, listas de permitidos de operadores, políticas de red, redacción, mirrors privados y almacenamiento'
+description: 'Configure ClickHouse Connector: instancias de ClickHouse, listas de permitidos de operadores, políticas de red, redacción, réplica privada y almacenamiento'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'configuración']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
+<PrivatePreviewBadge />
+
 En esta página se describen los cambios de configuración que probablemente realizará después de instalar ClickHouse Connector. Para consultar cada clave, su valor predeterminado y su significado, vea la [referencia de configuración](/es/products/bring-your-own-cloud/connector/reference/configuration); para los indicadores de línea de comandos, consulte la [referencia de la CLI](/es/products/bring-your-own-cloud/connector/reference/cli).
 
-<div id="configuration-surfaces">
-  ## Superficies de configuración
-</div>
+## Superficies de configuración {#configuration-surfaces}
 
 El conector tiene una superficie de configuración para cada destino de instalación.
 
@@ -56,9 +58,7 @@ El conector tiene una superficie de configuración para cada destino de instalac
   </Tab>
 </Tabs>
 
-<div id="clickhouse-instances">
-  ## Añadir o modificar instancias de ClickHouse
-</div>
+## Añadir o modificar instancias de ClickHouse {#clickhouse-instances}
 
 Cada entrada en `instances` define un endpoint del protocolo nativo de ClickHouse desde el que el conector lee: `host`, `port`, `database`, `secure` y, en Kubernetes, `namespace` y `cluster`. Las credenciales nunca se incluyen en la configuración; cada componente obtiene su usuario de ClickHouse de solo lectura del paquete de acceso que crea el aprovisionamiento.
 
@@ -153,9 +153,7 @@ Cada entrada en `instances` define un endpoint del protocolo nativo de ClickHous
   Los mismos comandos `access provision` con `--force` rotan las credenciales de ClickHouse de una instancia. Consulte [operaciones](/es/products/bring-your-own-cloud/connector/operations).
 </Tip>
 
-<div id="operator-allowlist">
-  ## Lista de operadores permitidos
-</div>
+## Lista de operadores permitidos {#operator-allowlist}
 
 Las sesiones administradas mediante Gateway están restringidas por una lista de direcciones de correo electrónico de operadores permitidos: cada solicitud al gateway de sesiones debe incluir un token de ID de OIDC de corta duración cuya dirección de correo electrónico verificada figure en la lista. Una lista vacía cierra el gateway, por lo que nadie puede abrir una sesión a través de él. En una VM, el usuario root del host también puede administrar sesiones directamente mediante el archivo de sesión local; la lista solo rige el acceso a través del gateway. Consulte [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions) para conocer el modelo de confianza completo.
 
@@ -185,9 +183,7 @@ Las sesiones administradas mediante Gateway están restringidas por una lista de
   </Tab>
 </Tabs>
 
-<div id="network-policy">
-  ## Política de red y salida
-</div>
+## Política de red y salida {#network-policy}
 
 En Kubernetes, el chart incluye una NetworkPolicy de denegación predeterminada con una lista de permitidos para la salida (`networkPolicy.enabled: true`). Los objetos NetworkPolicy solo surten efecto cuando su CNI los aplica; con un CNI que los aplica, el conector no tiene salida alguna hasta que `allowEgressCIDRs` especifique los CIDR asociados al API endpoint de su conector.
 
@@ -227,9 +223,7 @@ El ejemplo es el rango `private.googleapis.com`, que cubre un proveedor de ident
 
 Otros dos parámetros de Ingreso: `metricsScrapeSelector` restringe el Ingreso para la recopilación de métricas a un espacio de nombres específico de Prometheus mediante una etiqueta, y `kubeletProbeCIDRs` permite explícitamente las sondas de estado del agente kubelet en entornos con una política predeterminada estricta de denegación. Consulte la [referencia de configuración](/es/products/bring-your-own-cloud/connector/reference/configuration) para ver la lista completa de claves.
 
-<div id="redaction-patterns">
-  ## Patrones de redacción
-</div>
+## Patrones de redacción {#redaction-patterns}
 
 La salida del solucionador de problemas se redacciona antes de salir de su perímetro. Los patrones integrados cubren `ipv4`, `ipv6`, `bearer-token`, `aws-access-key`, `email`, `jwt`, `ssh-private-key` y `connection-string-credentials`. Puede añadir sus propios patrones en un archivo YAML; se aplican primero, en el orden en que aparecen en el archivo, seguidos de los integrados. Una entrada que reutilice el `name` de un patrón integrado sustituye dicho patrón.
 
@@ -254,9 +248,7 @@ En una VM, el archivo se encuentra en `/etc/clicklink/redaction-patterns.yaml`; 
   El solucionador de problemas no se inicia si existe un archivo de patrones no válido y registra la entrada que provoca el error. `clicklink clctl preflight` valida el archivo, por lo que debe ejecutarlo antes de reiniciar el daemon.
 </Warning>
 
-<div id="private-mirrors">
-  ## Réplicas privadas y endpoints dentro del perímetro
-</div>
+## Réplicas privadas y endpoints dentro del perímetro {#private-mirrors}
 
 El chart publicado preconfigura `image.repository` con la imagen pública del conector, multiarquitectura y firmada con cosign, por lo que las instalaciones habituales no requieren valores de imagen. Para consultar los valores predeterminados publicados:
 
@@ -283,9 +275,7 @@ clicklink clctl init --handoff handoff.yaml --target helm \
 
 Cuando el endpoint de la API de tu conector esté detrás de una CA privada dentro de tu perímetro, pasa `--api-private-ca` a `init`: configura `api.tls.caFile: /etc/clicklink/secrets/mtls/ca.crt` para que el endpoint se verifique con la cadena de CA de tu paquete de inscripción, en lugar de con las raíces del sistema. En una VM, el equivalente es `api.tls.ca_file` en `/etc/clicklink/config.yaml`; `init` instala la cadena del paquete en `/etc/clicklink/tls/ca.crt` y la añade a las raíces del sistema para la verificación. Para la inscripción y la firma de certificados en entornos completamente aislados, consulta [onboarding](/es/products/bring-your-own-cloud/connector/onboarding).
 
-<div id="storage">
-  ## Almacenamiento
-</div>
+## Almacenamiento {#storage}
 
 <Tabs>
   <Tab title="Kubernetes">

@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Эти настройки доступны в [system.settings](/ru/reference/system-tables/settings) и автоматически формируются на основе [исходного кода](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_aggregate_partitions_independently">
-  ## allow_aggregate_partitions_independently
-</div>
+## allow_aggregate_partitions_independently {#allow_aggregate_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает независимую агрегацию партиций в отдельных потоках, если ключ партиционирования соответствует ключу GROUP BY. Полезно, когда число партиций близко к числу ядер, а сами партиции имеют примерно одинаковый размер. Эвристики в `ReadFromMergeTree` автоматически отключают эту оптимизацию при неблагоприятной структуре (слишком мало партиций, слишком много партиций или размеры партиций сильно перекошены); чтобы обойти эти проверки, см. `force_aggregate_partitions_independently`.
 
-<div id="allow_archive_path_syntax">
-  ## allow_archive_path_syntax
-</div>
+## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,17 +31,13 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Движки File/S3 и табличная функция будут разбирать пути с &#39;::&#39; как `<archive> :: <file>`, если у архива корректное расширение.
 
-<div id="allow_asynchronous_read_from_io_pool_for_merge_tree">
-  ## allow_asynchronous_read_from_io_pool_for_merge_tree
-</div>
+## allow_asynchronous_read_from_io_pool_for_merge_tree {#allow_asynchronous_read_from_io_pool_for_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Использовать фоновый пул I/O для чтения из таблиц семейства MergeTree. Эта настройка может повысить производительность запросов, ограниченных пропускной способностью I/O
 
-<div id="allow_calculating_subcolumns_sizes_for_merge_tree_reading">
-  ## allow_calculating_subcolumns_sizes_for_merge_tree_reading
-</div>
+## allow_calculating_subcolumns_sizes_for_merge_tree_reading {#allow_calculating_subcolumns_sizes_for_merge_tree_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,26 +45,20 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Если настройка включена, ClickHouse будет вычислять размер файлов, необходимых для чтения каждого подстолбца, чтобы точнее рассчитывать размеры задач и блоков.
 
-<div id="allow_changing_replica_until_first_data_packet">
-  ## allow_changing_replica_until_first_data_packet
-</div>
+## allow_changing_replica_until_first_data_packet {#allow_changing_replica_until_first_data_packet}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Если параметр включен, в хеджированных запросах можно устанавливать новое соединение до получения первого пакета данных, даже если уже был достигнут некоторый прогресс
 (но прогресс не обновлялся в течение тайм-аута `receive_data_timeout`); в противном случае смена реплики отключается после первого достижения прогресса.
 
-<div id="allow_create_index_without_type">
-  ## allow_create_index_without_type
-</div>
+## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Разрешает выполнение запроса CREATE INDEX без TYPE. Запрос будет проигнорирован. Предназначено для тестов совместимости с SQL.
 
-<div id="allow_creating_set_partitions_independently">
-  ## allow_creating_set_partitions_independently
-</div>
+## allow_creating_set_partitions_independently {#allow_creating_set_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,25 +66,19 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает параллельную предварительную дедупликацию результата подзапроса по партициям при построении множества для `IN (subquery)`, если выражение партиционирования таблицы `MergeTree` в подзапросе является детерминированной функцией выходных столбцов подзапроса. Каждая партиция читается отдельным потоком и дедуплицируется независимо, поэтому единственное преобразование заполнения множества хеширует только уникальные строки. Не применяется с `FINAL`, параллельными репликами или `GLOBAL IN`. Оптимизация запрашивает чтение по партициям только если данные содержат более одной партиции, а наибольшая партиция содержит не более чем вдвое больше строк, чем средняя (см. [force&#95;creating&#95;set&#95;partitions&#95;independently](/ru/reference/settings/session-settings/force#force_creating_set_partitions_independently), чтобы обойти проверку неравномерности); если потоки уже разделены по партициям другой возможностью, работающей по партициям (например, `LIMIT BY` по партициям), предварительная дедупликация применяется в любом случае, поскольку структура чтения уже определена. Пока строится множество, таблицы дедупликации всех потоков вместе хранят примерно одну дополнительную копию уникальных ключей.
 
-<div id="allow_custom_error_code_in_throwif">
-  ## allow_custom_error_code_in_throwif
-</div>
+## allow_custom_error_code_in_throwif {#allow_custom_error_code_in_throwif}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Разрешает использование пользовательского кода ошибки в функции throwIf(). Если значение `true`, сгенерированные исключения могут иметь неожиданные коды ошибок.
 
-<div id="allow_ddl">
-  ## allow_ddl
-</div>
+## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Если установлено значение true, пользователю разрешается выполнять DDL-запросы.
 
-<div id="allow_delta_kernel_rs">
-  ## allow_delta_kernel_rs
-</div>
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
 
 <BetaBadge />
 
@@ -110,9 +90,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использовать реализацию `delta-kernel-rs` для чтения таблиц Delta Lake.
 
-<div id="allow_distinct_partitions_independently">
-  ## allow_distinct_partitions_independently
-</div>
+## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,25 +100,19 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Не применяется, если задано [max&#95;rows&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-rows#max_rows_in_distinct) или [max&#95;bytes&#95;in&#95;distinct](/ru/reference/settings/session-settings/max-bytes#max_bytes_in_distinct): эти ограничения применяются единственным преобразованием `DISTINCT`, которое обрабатывает весь объединённый результат, поэтому слияние между потоками сохраняется, чтобы обеспечить их глобальное действие.
 
-<div id="allow_distributed_ddl">
-  ## allow_distributed_ddl
-</div>
+## allow_distributed_ddl {#allow_distributed_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Если установлено значение true, пользователю разрешено выполнять распределённые DDL-запросы.
 
-<div id="allow_drop_detached">
-  ## allow_drop_detached
-</div>
+## allow_drop_detached {#allow_drop_detached}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Разрешает запросы ALTER TABLE ... DROP DETACHED PART[ITION] ...
 
-<div id="allow_dynamic_type_in_join_keys">
-  ## allow_dynamic_type_in_join_keys
-</div>
+## allow_dynamic_type_in_join_keys {#allow_dynamic_type_in_join_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -148,17 +120,13 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использовать тип Dynamic в ключах JOIN. Добавлено для совместимости. Не рекомендуется использовать тип Dynamic в ключах JOIN, поскольку сравнение с другими типами может приводить к неожиданным результатам.
 
-<div id="allow_execute_multiif_columnar">
-  ## allow_execute_multiif_columnar
-</div>
+## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Разрешает выполнять функцию multiIf в столбцовом режиме
 
-<div id="allow_fuzz_query_functions">
-  ## allow_fuzz_query_functions
-</div>
+## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
 <ExperimentalBadge />
 
@@ -168,9 +136,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает функцию `fuzzQuery`, которая применяет к строке запроса случайные мутации AST.
 
-<div id="allow_general_join_planning">
-  ## allow_general_join_planning
-</div>
+## allow_general_join_planning {#allow_general_join_planning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -178,9 +144,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использовать более универсальный алгоритм планирования JOIN, способный обрабатывать более сложные условия, но работающий только с hash join. Если hash join не включен, то независимо от значения этой настройки используется обычный алгоритм планирования JOIN.
 
-<div id="allow_get_client_http_header">
-  ## allow_get_client_http_header
-</div>
+## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -188,17 +152,13 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использовать функцию `getClientHTTPHeader`, которая позволяет получать значение заголовка текущего HTTP request. По соображениям безопасности эта возможность по умолчанию отключена, поскольку некоторые заголовки, например `Cookie`, могут содержать конфиденциальную информацию. Обратите внимание, что заголовки `X-ClickHouse-*`, `Authentication` и `Authorization` всегда недоступны и не могут быть получены с помощью этой функции.
 
-<div id="allow_hyperscan">
-  ## allow_hyperscan
-</div>
+## allow_hyperscan {#allow_hyperscan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Разрешает функции, использующие библиотеку Hyperscan. Отключите, чтобы избежать потенциально длительной компиляции и чрезмерного потребления ресурсов.
 
-<div id="allow_iceberg_remove_orphan_files">
-  ## allow_iceberg_remove_orphan_files
-</div>
+## allow_iceberg_remove_orphan_files {#allow_iceberg_remove_orphan_files}
 
 <ExperimentalBadge />
 
@@ -208,9 +168,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает использовать `ALTER TABLE ... EXECUTE remove_orphan_files()` для таблиц Iceberg.
 
-<div id="allow_insert_into_iceberg">
-  ## allow_insert_into_iceberg
-</div>
+## allow_insert_into_iceberg {#allow_insert_into_iceberg}
 
 <BetaBadge />
 
@@ -222,9 +180,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает выполнять запросы `insert` в Iceberg.
 
-<div id="allow_introspection_functions">
-  ## allow_introspection_functions
-</div>
+## allow_introspection_functions {#allow_introspection_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -240,9 +196,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 * [Выборочный профилировщик запросов](/ru/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * Системная таблица [trace&#95;log](/ru/reference/system-tables/trace_log)
 
-<div id="allow_key_condition_coalesce_rewrite">
-  ## allow_key_condition_coalesce_rewrite
-</div>
+## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -251,9 +205,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Переписывает предикаты вида `coalesce(a_1, ..., a_N) <op> const` (и аналогично для `ifNull`, а также с константой слева) в дизъюнкцию `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` перед анализом индексов, чтобы можно было использовать первичный ключ по каждому столбцу и индексы пропуска данных для каждого `a_i`. Обрабатываются формы с частично константными аргументами, такие как `coalesce(a, 42, b)` и `coalesce(a, b, 42)`: список аргументов нормализуется так же, как в самом `coalesce` (литералы `NULL` отбрасываются, аргументы после первого не-`Nullable` отбрасываются), а завершающая константа, отличная от `NULL`, если она есть, добавляется как последняя ветвь. Переписывание исключительно расширяет возможности отсечения данных по индексам; при выполнении запроса по-прежнему используется исходный предикат.
 Кроме того, предикаты точного равенства вида `nullIf(key, sentinel) = const` (где `sentinel != const` и типы полностью совпадают) переписываются в `key = const`, чтобы первичный ключ, партиция и индексы пропуска данных по `key` могли напрямую отсекать гранулы. Отсечение гранул для диапазонных и дизъюнктивных условий с `nullIf` не поддерживается.
 
-<div id="allow_limit_by_partitions_independently">
-  ## allow_limit_by_partitions_independently
-</div>
+## allow_limit_by_partitions_independently {#allow_limit_by_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -261,9 +213,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Включает независимое вычисление `LIMIT BY` для каждой партиции в отдельных потоках, когда выражение партиционирования является детерминированной функцией столбцов `LIMIT BY`.
 
-<div id="allow_lossy_numeric_supertype">
-  ## allow_lossy_numeric_supertype
-</div>
+## allow_lossy_numeric_supertype {#allow_lossy_numeric_supertype}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -271,9 +221,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Когда настройка включена, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` с набором числовых аргументов, не имеющих общего типа без потери точности (например, `Decimal` и `Float64` или `Int64` и `Float64`), вместо ошибки приводятся к числовому супертипу (`Float64`) с возможной потерей точности. Это позволяет напрямую использовать результат с агрегатными функциями, объединяющими значения, такими как `sum`, `avg`, `min` и `max`. Настройка не зависит от `use_variant_as_common_type`: числовой супертип создаётся независимо от того, включён ли `use_variant_as_common_type`. Когда настройка отключена (по умолчанию), такие наборы аргументов не имеют общего типа: они либо становятся `Variant` (если включён `use_variant_as_common_type`), либо вызывают ошибку `NO_COMMON_TYPE`.
 
-<div id="allow_materialized_view_with_bad_select">
-  ## allow_materialized_view_with_bad_select
-</div>
+## allow_materialized_view_with_bad_select {#allow_materialized_view_with_bad_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -281,9 +229,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает CREATE MATERIALIZED VIEW с SELECT-запросом, который ссылается на несуществующие таблицы или столбцы. При этом запрос всё равно должен быть синтаксически корректным. Не применяется к обновляемым MV. Не применяется, если схему MV нужно определить по SELECT-запросу (то есть если в CREATE нет списка столбцов и нет TO table). Может использоваться для создания MV до создания её исходной таблицы.
 
-<div id="allow_metadata_only_named_tuple_alter">
-  ## allow_metadata_only_named_tuple_alter
-</div>
+## allow_metadata_only_named_tuple_alter {#allow_metadata_only_named_tuple_alter}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -292,9 +238,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Если true, операция ALTER MODIFY COLUMN для именованного Tuple, при которой добавляются только новые подполя, изменяет только метаданные (без мутации данных).
 Установите false, чтобы принудительно включить прежнее поведение с полной мутацией.
 
-<div id="allow_minmax_index_for_json">
-  ## allow_minmax_index_for_json
-</div>
+## allow_minmax_index_for_json {#allow_minmax_index_for_json}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -302,25 +246,19 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Разрешает создавать индексы пропуска данных minmax для столбцов JSON (Object). По умолчанию отключено, поскольку путь сериализации индекса minmax не может обрабатывать неоднородные значения Field, которые могут содержаться в JSON-столбцах.
 
-<div id="allow_named_collection_override_by_default">
-  ## allow_named_collection_override_by_default
-</div>
+## allow_named_collection_override_by_default {#allow_named_collection_override_by_default}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 По умолчанию разрешает переопределение полей именованных коллекций.
 
-<div id="allow_non_metadata_alters">
-  ## allow_non_metadata_alters
-</div>
+## allow_non_metadata_alters {#allow_non_metadata_alters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Разрешает выполнять ALTER-запросы, которые затрагивают не только метаданные таблиц, но и данные на диске
 
-<div id="allow_nonconst_timezone_arguments">
-  ## allow_nonconst_timezone_arguments
-</div>
+## allow_nonconst_timezone_arguments {#allow_nonconst_timezone_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -331,9 +269,7 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 Включение этого параметра создаёт ложное впечатление, что разные значения в одном столбце могут иметь разные часовые пояса.
 Поэтому, пожалуйста, не включайте этот параметр.
 
-<div id="allow_nullable_tuple_in_extracted_subcolumns">
-  ## allow_nullable_tuple_in_extracted_subcolumns
-</div>
+## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -351,9 +287,15 @@ ClickHouse использует значение этой настройки, з
 Изменения, внесённые с помощью `SET` или `SETTINGS` на уровне запроса, не меняют поведение извлечённых подстолбцов.
 Чтобы изменить поведение извлечённых подстолбцов, обновите `allow_nullable_tuple_in_extracted_subcolumns` в конфигурации профиля запуска (например, в users.xml) и перезапустите сервер.
 
-<div id="allow_rank_dense_rank_arguments">
-  ## allow_rank_dense_rank_arguments
-</div>
+## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Новая настройка, позволяющая предварительному `DISTINCT` отказаться от дедупликации почти полностью уникальных входных данных, поскольку финальный `DISTINCT` всё равно повторно выполняет дедупликацию его результата."}]}]} />
+
+Позволяет предварительному (выполняемому для каждого потока) `DISTINCT` отказаться от дедупликации почти полностью уникальных входных данных, освободив свою hash table и пропуская оставшиеся строки дальше. Предварительный `DISTINCT` по своей природе работает по принципу «по мере возможности»: дубликаты из разных потоков проходят через него даже тогда, когда он выполняет дедупликацию, а финальный `DISTINCT` всё равно повторно дедуплицирует его результат. Поэтому такой отказ практически не ухудшает удаление дубликатов, но экономит память и вычисление hash для второй копии уникальных ключей. Не применяется, если предварительный `DISTINCT` содержит подсказку об ограничении (простой `LIMIT` без последующей сортировки).
+
+## allow_rank_dense_rank_arguments {#allow_rank_dense_rank_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -370,9 +312,7 @@ ClickHouse использует значение этой настройки, з
 генерируют ошибку `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`. Если установить значение `true`, восстанавливается прежнее более мягкое поведение —
 аргументы молча игнорируются, как и до версии 26.5.
 
-<div id="allow_reorder_prewhere_conditions">
-  ## allow_reorder_prewhere_conditions
-</div>
+## allow_reorder_prewhere_conditions {#allow_reorder_prewhere_conditions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -380,9 +320,7 @@ ClickHouse использует значение этой настройки, з
 
 При перемещении условий из WHERE в PREWHERE разрешает менять их порядок для оптимизации фильтрации
 
-<div id="allow_replace_partition_from_empty_source">
-  ## allow_replace_partition_from_empty_source
-</div>
+## allow_replace_partition_from_empty_source {#allow_replace_partition_from_empty_source}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -394,9 +332,7 @@ ClickHouse использует значение этой настройки, з
 
 Включите эту настройку, чтобы вернуть прежнее поведение, например если вы намеренно используете пустую исходную партицию для очистки данных в пункте назначения. Если нужно просто удалить партицию без дополнительных условий, предпочтительнее использовать `ALTER TABLE ... DROP PARTITION ...`.
 
-<div id="allow_settings_after_format_in_insert">
-  ## allow_settings_after_format_in_insert
-</div>
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -426,17 +362,13 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
   Используйте эту настройку только для обратной совместимости, если ваши сценарии зависят от старого синтаксиса.
 </Note>
 
-<div id="allow_simdjson">
-  ## allow_simdjson
-</div>
+## allow_simdjson {#allow_simdjson}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Разрешает использовать библиотеку simdjson в функциях &#39;JSON*&#39;, если доступны инструкции AVX2. Если параметр отключен, будет использоваться rapidjson.
 
-<div id="allow_special_serialization_kinds_in_output_formats">
-  ## allow_special_serialization_kinds_in_output_formats
-</div>
+## allow_special_serialization_kinds_in_output_formats {#allow_special_serialization_kinds_in_output_formats}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -445,17 +377,13 @@ INSERT INTO FUNCTION null('foo String') VALUES ('bar') SETTINGS max_threads=1;
 Позволяет выводить столбцы со специальными видами сериализации, такими как Sparse и Replicated, без преобразования их в полные столбцы.
 Это помогает избежать лишнего копирования данных при форматировании.
 
-<div id="allow_unrestricted_reads_from_keeper">
-  ## allow_unrestricted_reads_from_keeper
-</div>
+## allow_unrestricted_reads_from_keeper {#allow_unrestricted_reads_from_keeper}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Разрешает неограниченное чтение (без условия по path) из таблицы system.zookeeper; может быть удобно, но небезопасно для ZooKeeper
 
-<div id="allow_window_partitions_independently">
-  ## allow_window_partitions_independently
-</div>
+## allow_window_partitions_independently {#allow_window_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

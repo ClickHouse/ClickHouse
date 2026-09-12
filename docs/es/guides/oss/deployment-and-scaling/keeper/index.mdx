@@ -15,7 +15,7 @@ import SelfManaged from '/snippets/es/_self_managed_only_automated.mdx';
 ClickHouse Keeper proporciona el sistema de coordinación para la [replicación](/es/reference/engines/table-engines/mergetree-family/replication) de datos y la ejecución de consultas de [DDL distribuido](/es/reference/statements/distributed-ddl). ClickHouse Keeper es compatible con ZooKeeper.
 
 <div id="implementation-details">
-  ### Detalles de implementación
+  ### Detalles de implementación {#implementation-details}
 </div>
 
 ZooKeeper es uno de los primeros sistemas de coordinación de código abierto ampliamente conocidos. Está implementado en Java y tiene un modelo de datos simple y potente. El algoritmo de coordinación de ZooKeeper, ZooKeeper Atomic Broadcast (ZAB), no ofrece garantías de linealizabilidad para las lecturas, porque cada nodo de ZooKeeper atiende las lecturas localmente. A diferencia de ZooKeeper, ClickHouse Keeper está escrito en C++ y utiliza la [implementación](https://github.com/eBay/NuRaft) del [algoritmo RAFT](https://raft.github.io/). Este algoritmo permite la linealizabilidad tanto en lecturas como en escrituras, y cuenta con varias implementaciones de código abierto en distintos lenguajes.
@@ -29,82 +29,85 @@ ClickHouse Keeper admite listas de control de acceso (ACL) del mismo modo que [Z
 </Note>
 
 <div id="configuration">
-  ### Configuración
+  ### Configuración {#configuration}
 </div>
 
 ClickHouse Keeper puede usarse como reemplazo independiente de ZooKeeper o como parte interna de ClickHouse server. En ambos casos, la configuración se realiza prácticamente en el mismo archivo `.xml`.
 
 <div id="keeper-configuration-settings">
-  #### Parámetros de configuración de Keeper
+  #### Parámetros de configuración de Keeper {#keeper-configuration-settings}
 </div>
 
 La etiqueta principal de configuración de ClickHouse Keeper es `<keeper_server>` y tiene los siguientes parámetros:
 
-| Parameter                           | Description                                                                                                                                                                                                                                                                                   | Default                                                                                                      |
-| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `tcp_port`                          | Puerto al que puede conectarse un cliente.                                                                                                                                                                                                                                                    | `2181`                                                                                                       |
-| `tcp_port_secure`                   | Puerto seguro para una conexión SSL entre el cliente y el servidor Keeper.                                                                                                                                                                                                                    | -                                                                                                            |
-| `server_id`                         | ID único del servidor; cada participante del cluster de ClickHouse Keeper debe tener un número único (1, 2, 3...).                                                                                                                                                                            | -                                                                                                            |
-| `log_storage_path`                  | Ruta de los logs de coordinación; al igual que en ZooKeeper, es mejor almacenar los logs en nodos con poca carga.                                                                                                                                                                             | -                                                                                                            |
-| `snapshot_storage_path`             | Ruta de los snapshots de coordinación.                                                                                                                                                                                                                                                        | -                                                                                                            |
-| `enable_reconfiguration`            | Habilita la reconfiguración dinámica del cluster mediante [`reconfig`](#reconfiguration).                                                                                                                                                                                                     | `False`                                                                                                      |
-| `max_memory_usage_soft_limit`       | Límite flexible en bytes para el uso máximo de memoria de Keeper.                                                                                                                                                                                                                             | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                               |
-| `max_memory_usage_soft_limit_ratio` | Si `max_memory_usage_soft_limit` no está configurado o está establecido en cero, se usa este valor para definir el límite flexible predeterminado.                                                                                                                                            | `0.9`                                                                                                        |
-| `cgroups_memory_observer_wait_time` | Si `max_memory_usage_soft_limit` no está configurado o está establecido en `0`, se usa este intervalo para observar la cantidad de memoria física. Cuando cambie la cantidad de memoria, se recalculará el límite flexible de memoria de Keeper mediante `max_memory_usage_soft_limit_ratio`. | `15`                                                                                                         |
-| `http_control`                      | Configuración de la interfaz de [control HTTP](#http-control).                                                                                                                                                                                                                                | -                                                                                                            |
-| `digest_enabled`                    | Habilita la comprobación de consistencia de datos en tiempo real.                                                                                                                                                                                                                             | `True`                                                                                                       |
-| `create_snapshot_on_exit`           | Crea un snapshot durante el apagado.                                                                                                                                                                                                                                                          | -                                                                                                            |
-| `hostname_checks_enabled`           | Habilita comprobaciones de validez del hostname para la configuración del cluster (por ejemplo, si se usa localhost con endpoints remotos).                                                                                                                                                   | `True`                                                                                                       |
-| `four_letter_word_white_list`       | Lista blanca de comandos 4lw.                                                                                                                                                                                                                                                                 | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, ydld` |
-| `enable_ipv6`                       | Habilita IPv6                                                                                                                                                                                                                                                                                 | `True`                                                                                                       |
+| Parameter                           | Description                                                                                                                                                                                                                                                                                   | Default                                                                                                                                                                                                           |
+| ----------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tcp_port`                          | Puerto al que puede conectarse un cliente.                                                                                                                                                                                                                                                    | `2181`                                                                                                                                                                                                            |
+| `tcp_port_secure`                   | Puerto seguro para una conexión SSL entre el cliente y el servidor Keeper.                                                                                                                                                                                                                    | -                                                                                                                                                                                                                 |
+| `server_id`                         | ID único del servidor; cada participante del clúster de ClickHouse Keeper debe tener un número único (1, 2, 3...).                                                                                                                                                                            | -                                                                                                                                                                                                                 |
+| `log_storage_path`                  | Ruta de los logs de coordinación; al igual que en ZooKeeper, es mejor almacenar los logs en nodos con poca carga.                                                                                                                                                                             | -                                                                                                                                                                                                                 |
+| `snapshot_storage_path`             | Ruta de las instantáneas de coordinación.                                                                                                                                                                                                                                                        | -                                                                                                                                                                                                                 |
+| `enable_reconfiguration`            | Habilita la reconfiguración dinámica del clúster mediante [`reconfig`](#reconfiguration).                                                                                                                                                                                                     | `False`                                                                                                                                                                                                           |
+| `max_memory_usage_soft_limit`       | Límite flexible en bytes para el uso máximo de memoria de Keeper.                                                                                                                                                                                                                             | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                                                                                                                                    |
+| `max_memory_usage_soft_limit_ratio` | Si `max_memory_usage_soft_limit` no está configurado o está establecido en cero, se usa este valor para definir el límite flexible predeterminado.                                                                                                                                            | `0.9`                                                                                                                                                                                                             |
+| `cgroups_memory_observer_wait_time` | Si `max_memory_usage_soft_limit` no está configurado o está establecido en `0`, se usa este intervalo para observar la cantidad de memoria física. Cuando cambie la cantidad de memoria, se recalculará el límite flexible de memoria de Keeper mediante `max_memory_usage_soft_limit_ratio`. | `15`                                                                                                                                                                                                              |
+| `http_control`                      | Configuración de la interfaz de [control HTTP](#http-control).                                                                                                                                                                                                                                | -                                                                                                                                                                                                                 |
+| `digest_enabled`                    | Habilita la comprobación de consistencia de datos en tiempo real.                                                                                                                                                                                                                             | `True`                                                                                                                                                                                                            |
+| `create_snapshot_on_exit`           | Crea una instantánea durante el apagado.                                                                                                                                                                                                                                                          | -                                                                                                                                                                                                                 |
+| `hostname_checks_enabled`           | Habilita comprobaciones de validez del nombre de host para la configuración del clúster (por ejemplo, si se usa localhost con endpoints remotos).                                                                                                                                                   | `True`                                                                                                                                                                                                            |
+| `four_letter_word_white_list`       | Lista blanca de comandos 4lw.                                                                                                                                                                                                                                                                 | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, rclc, clrs, ftfl, ydld, bpon, bpof, pfev, lgrq`, además de `jmst, jmfp, jmep, jmdp` en builds con jemalloc |
+| `enable_ipv6`                       | Habilita IPv6                                                                                                                                                                                                                                                                                 | `True`                                                                                                                                                                                                            |
 
 Otros parámetros comunes se heredan de la configuración del ClickHouse server (`listen_host`, `logger`, etc.).
 
-<div id="internal-coordination-settings">
-  #### Configuración de coordinación interna
-</div>
+#### Configuración de coordinación interna {#internal-coordination-settings}
 
 La configuración de coordinación interna se encuentra en la sección `<keeper_server>.<coordination_settings>` y tiene los siguientes parámetros:
 
-| Parámetro                                 | Descripción                                                                                                                                                                                                                                                                                                                                                                                                           | Valor predeterminado |
-| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| `operation_timeout_ms`                    | Tiempo de espera de una sola operación del cliente (ms)                                                                                                                                                                                                                                                                                                                                                               | `10000`              |
-| `min_session_timeout_ms`                  | Tiempo de espera mínimo de la sesión del cliente (ms)                                                                                                                                                                                                                                                                                                                                                                 | `10000`              |
-| `session_timeout_ms`                      | Tiempo de espera máximo de la sesión del cliente (ms)                                                                                                                                                                                                                                                                                                                                                                 | `100000`             |
-| `dead_session_check_period_ms`            | Frecuencia con la que ClickHouse Keeper comprueba si hay sesiones muertas y las elimina (ms)                                                                                                                                                                                                                                                                                                                          | `500`                |
-| `heart_beat_interval_ms`                  | Frecuencia con la que un líder de ClickHouse Keeper envía latidos a los followers (ms)                                                                                                                                                                                                                                                                                                                                | `500`                |
-| `election_timeout_lower_bound_ms`         | Si el follower no recibe un latido del líder dentro de este intervalo, puede iniciar una elección de líder. Debe ser menor o igual que `election_timeout_upper_bound_ms`. Idealmente, no deberían ser iguales.                                                                                                                                                                                                        | `1000`               |
-| `election_timeout_upper_bound_ms`         | Si el follower no recibe un latido del líder dentro de este intervalo, debe iniciar una elección de líder.                                                                                                                                                                                                                                                                                                            | `2000`               |
-| `rotate_log_storage_interval`             | Cuántos registros de log almacenar en un solo archivo.                                                                                                                                                                                                                                                                                                                                                                | `100000`             |
-| `reserved_log_items`                      | Cuántos registros del log de coordinación almacenar antes de la compactación.                                                                                                                                                                                                                                                                                                                                         | `100000`             |
-| `snapshot_distance`                       | Frecuencia con la que ClickHouse Keeper crea nuevas instantáneas (en número de registros en los logs).                                                                                                                                                                                                                                                                                                                | `100000`             |
-| `snapshots_to_keep`                       | Cuántas instantáneas conservar.                                                                                                                                                                                                                                                                                                                                                                                       | `3`                  |
-| `stale_log_gap`                           | Umbral a partir del cual el líder considera que un follower está desactualizado y le envía la instantánea en lugar de los logs.                                                                                                                                                                                                                                                                                       | `10000`              |
-| `fresh_log_gap`                           | Cuándo un nodo pasa a considerarse actualizado.                                                                                                                                                                                                                                                                                                                                                                       | `200`                |
-| `max_requests_batch_size`                 | Tamaño máximo del batch en número de solicitudes antes de enviarlo a RAFT.                                                                                                                                                                                                                                                                                                                                            | `100`                |
-| `force_sync`                              | Llamar a `fsync` en cada escritura en el log de coordinación.                                                                                                                                                                                                                                                                                                                                                         | `true`               |
-| `quorum_reads`                            | Ejecutar las solicitudes de lectura como escrituras a través de todo el consenso de RAFT con una velocidad similar.                                                                                                                                                                                                                                                                                                   | `false`              |
-| `raft_logs_level`                         | Nivel de logging de texto sobre la coordinación (trace, debug, etc.).                                                                                                                                                                                                                                                                                                                                                 | `system default`     |
-| `auto_forwarding`                         | Permitir reenviar solicitudes de escritura desde los followers al líder.                                                                                                                                                                                                                                                                                                                                              | `true`               |
-| `shutdown_timeout`                        | Esperar a que finalicen las conexiones internas y apagar (ms).                                                                                                                                                                                                                                                                                                                                                        | `5000`               |
-| `startup_timeout`                         | Si el servidor no se conecta a otros participantes del quórum dentro del tiempo de espera especificado, finalizará (ms).                                                                                                                                                                                                                                                                                              | `30000`              |
-| `async_replication`                       | Habilitar la replicación asíncrona. Se conservan todas las garantías de lectura y escritura, a la vez que se obtiene un mejor rendimiento. Esta opción está deshabilitada de forma predeterminada para no romper la compatibilidad con versiones anteriores                                                                                                                                                           | `false`              |
-| `latest_logs_cache_size_threshold`        | Tamaño total máximo de la caché en memoria de las últimas entradas de log                                                                                                                                                                                                                                                                                                                                             | `1GiB`               |
-| `commit_logs_cache_size_threshold`        | Obsoleto. Se usa para `log_readahead_commit_window_bytes` si esta configuración no se ha establecido.                                                                                                                                                                                                                                                                                                                 | -                    |
-| `commit_logs_cache_entry_count_threshold` | Obsoleto, no tiene efecto. Use `log_readahead_commit_window_bytes` en su lugar.                                                                                                                                                                                                                                                                                                                                       | -                    |
-| `log_readahead_enabled`                   | Habilitar la lectura anticipada decodificada por peer para las lecturas de puesta al día del changelog (replicación de followers).                                                                                                                                                                                                                                                                                    | `false`              |
-| `log_readahead_window_bytes`              | Máximo de bytes de entradas decodificadas almacenadas temporalmente en el búfer por lector de peer. Debe ser al menos tan grande como un batch típico de append-entries.                                                                                                                                                                                                                                              | `64MiB`              |
-| `log_readahead_max_peer_readers`          | Número máximo de lectores simultáneos de lectura anticipada por peer.                                                                                                                                                                                                                                                                                                                                                 | `8`                  |
-| `log_readahead_eviction_timeout_ms`       | Tiempo de espera de inactividad tras el cual se expulsa un lector de lectura anticipada por peer inactivo o el lector de commit (un fallo posterior lo vuelve a crear).                                                                                                                                                                                                                                               | `30000`              |
-| `log_readahead_pool_threads`              | Número de threads en el grupo de threads dedicado a la lectura anticipada. `0` deriva el valor de `log_readahead_max_peer_readers`.                                                                                                                                                                                                                                                                                   | `0`                  |
-| `log_readahead_serve_wait_timeout_ms`     | Tiempo máximo de espera para que se complete la lectura anticipada en segundo plano antes de recurrir a una lectura directa.                                                                                                                                                                                                                                                                                          | `200`                |
-| `log_readahead_chunk_size`                | Número de entradas de log decodificadas por fragmento en la tarea de rellenado de lectura anticipada.                                                                                                                                                                                                                                                                                                                 | `16`                 |
-| `log_readahead_commit_window_bytes`       | Tamaño total máximo de las entradas de log decodificadas almacenadas temporalmente en el búfer antes del hilo de commit. `0` deshabilita la lectura anticipada de commit (el commit lee las entradas del disco una por una).                                                                                                                                                                                          | `500MiB`             |
-| `log_startup_read_max_streams`            | Número máximo de archivos de changelog leídos simultáneamente durante el inicio de Keeper. `0` = usar automáticamente el número de núcleos de CPU. `1` = usar la lectura de inicio serial (anterior al paralelismo). El paralelismo efectivo está limitado por el número de archivos de changelog que deben leerse; considere reducirlo en almacenamiento limitado por búsquedas (HDD, volúmenes con IOPS limitadas). | `0`                  |
-| `log_startup_read_buffer_size`            | Tamaño del búfer de lectura por stream (bytes) usado al leer changelogs durante el inicio de Keeper. Debe ser mayor que `0`. El búfer también se limita al tamaño del archivo.                                                                                                                                                                                                                                        | `8MiB`               |
-| `disk_move_retries_wait_ms`               | Cuánto tiempo esperar entre reintentos después de un fallo ocurrido mientras se movía un archivo entre discos                                                                                                                                                                                                                                                                                                         | `1000`               |
-| `disk_move_retries_during_init`           | Número de reintentos después de un fallo ocurrido mientras se movía un archivo entre discos durante la inicialización                                                                                                                                                                                                                                                                                                 | `100`                |
-| `experimental_use_rocksdb`                | Usar rocksdb como almacenamiento backend                                                                                                                                                                                                                                                                                                                                                                              | `0`                  |
+| Parámetro                                              | Descripción                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | Valor predeterminado |
+| ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| `operation_timeout_ms`                                 | Tiempo de espera de una sola operación del cliente (ms)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `10000`              |
+| `min_session_timeout_ms`                               | Tiempo de espera mínimo de la sesión del cliente (ms)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `10000`              |
+| `session_timeout_ms`                                   | Tiempo de espera máximo de la sesión del cliente (ms)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `100000`             |
+| `dead_session_check_period_ms`                         | Frecuencia con la que ClickHouse Keeper comprueba si hay sesiones muertas y las elimina (ms)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `500`                |
+| `heart_beat_interval_ms`                               | Frecuencia con la que un líder de ClickHouse Keeper envía latidos a los followers (ms)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `500`                |
+| `election_timeout_lower_bound_ms`                      | Si el follower no recibe un latido del líder dentro de este intervalo, puede iniciar una elección de líder. Debe ser menor o igual que `election_timeout_upper_bound_ms`. Idealmente, no deberían ser iguales.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `1000`               |
+| `election_timeout_upper_bound_ms`                      | Si el follower no recibe un latido del líder dentro de este intervalo, debe iniciar una elección de líder.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `2000`               |
+| `rotate_log_storage_interval`                          | Cuántos registros de log almacenar en un solo archivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `100000`             |
+| `reserved_log_items`                                   | Cuántos registros del log de coordinación almacenar antes de la compactación.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `100000`             |
+| `snapshot_distance`                                    | Frecuencia con la que ClickHouse Keeper crea nuevas instantáneas (en número de registros en los logs).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `100000`             |
+| `snapshots_to_keep`                                    | Cuántas instantáneas conservar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `3`                  |
+| `compress_snapshots_with_zstd_format`                  | Escribir las instantáneas en el formato ZSTD en lugar del formato de bloque LZ4 propio de ClickHouse.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `true`               |
+| `snapshot_zstd_compression_level`                      | Nivel de compresión ZSTD para las instantáneas. Los niveles más bajos usan menos CPU pero producen instantáneas más grandes. Los valores negativos seleccionan los niveles rápidos de ZSTD. Se usa únicamente cuando `compress_snapshots_with_zstd_format` está habilitado.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `3`                  |
+| `stale_log_gap`                                        | Umbral a partir del cual el líder considera que un follower está desactualizado y le envía la instantánea en lugar de los logs.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `10000`              |
+| `fresh_log_gap`                                        | Cuándo un nodo pasa a considerarse actualizado.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `200`                |
+| `max_requests_batch_size`                              | Tamaño máximo del batch en número de solicitudes antes de enviarlo a RAFT.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | `100`                |
+| `force_sync`                                           | Llamar a `fsync` en cada escritura en el log de coordinación.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `true`               |
+| `quorum_reads`                                         | Ejecutar las solicitudes de lectura como escrituras a través de todo el consenso de RAFT con una velocidad similar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `false`              |
+| `raft_logs_level`                                      | Nivel de logging de texto sobre la coordinación (trace, debug, etc.).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `system default`     |
+| `auto_forwarding`                                      | Permitir reenviar solicitudes de escritura desde los followers al líder.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `true`               |
+| `shutdown_timeout`                                     | Esperar a que finalicen las conexiones internas y apagar (ms).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `5000`               |
+| `startup_timeout`                                      | Si el servidor no se conecta a otros participantes del quórum dentro del tiempo de espera especificado, finalizará (ms).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `30000`              |
+| `async_replication`                                    | Habilitar la replicación asíncrona. Se conservan todas las garantías de lectura y escritura, a la vez que se obtiene un mejor rendimiento. Esta opción está deshabilitada de forma predeterminada para no romper la compatibilidad con versiones anteriores                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `false`              |
+| `latest_logs_cache_entry_count_threshold`              | Número máximo de entradas en la caché en memoria de las últimas entradas de log                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `200000`             |
+| `latest_logs_cache_size_threshold`                     | Memoria máxima ocupada por la caché en memoria de las últimas entradas de log, contando el sobrecoste de asignación por entrada                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | `1GiB`               |
+| `commit_logs_cache_size_threshold`                     | Obsoleto. Se usa para `log_readahead_commit_window_bytes` si esta configuración no se ha establecido.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | -                    |
+| `commit_logs_cache_entry_count_threshold`              | Obsoleto, no tiene efecto. Use `log_readahead_commit_window_bytes` en su lugar.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            | -                    |
+| `log_readahead_enabled`                                | Habilitar la lectura anticipada decodificada por peer para las lecturas de puesta al día del changelog (replicación de followers).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         | `false`              |
+| `log_readahead_window_bytes`                           | Máximo de bytes de entradas decodificadas almacenadas temporalmente en el búfer por lector de peer. Debe ser al menos tan grande como un batch típico de append-entries.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `64MiB`              |
+| `log_readahead_max_peer_readers`                       | Número máximo de lectores simultáneos de lectura anticipada por peer.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `8`                  |
+| `log_readahead_eviction_timeout_ms`                    | Tiempo de espera de inactividad tras el cual se expulsa un lector de lectura anticipada por peer inactivo o el lector de commit (un fallo posterior lo vuelve a crear).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | `30000`              |
+| `log_readahead_pool_threads`                           | Número de threads en el grupo de threads dedicado a la lectura anticipada. `0` deriva el valor de `log_readahead_max_peer_readers`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `0`                  |
+| `log_readahead_serve_wait_timeout_ms`                  | Tiempo máximo de espera para que se complete la lectura anticipada en segundo plano antes de recurrir a una lectura directa.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `200`                |
+| `log_readahead_chunk_size`                             | Número de entradas de log decodificadas por fragmento en la tarea de rellenado de lectura anticipada.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `16`                 |
+| `log_readahead_commit_window_bytes`                    | Tamaño total máximo de las entradas de log decodificadas almacenadas temporalmente en el búfer antes del hilo de commit. `0` deshabilita la lectura anticipada de commit (el commit lee las entradas del disco una por una).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               | `500MiB`             |
+| `log_startup_read_max_streams`                         | Número máximo de archivos de changelog leídos simultáneamente durante el inicio de Keeper. `0` = usar automáticamente el número de núcleos de CPU. `1` = usar la lectura de inicio serial (anterior al paralelismo). El paralelismo efectivo está limitado por el número de archivos de changelog que deben leerse; considere reducirlo en almacenamiento limitado por búsquedas (HDD, volúmenes con IOPS limitadas).                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `0`                  |
+| `log_startup_read_buffer_size`                         | Tamaño del búfer de lectura por stream (bytes) usado al leer changelogs durante el inicio de Keeper. Debe ser mayor que `0`. El búfer también se limita al tamaño del archivo.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             | `8MiB`               |
+| `disk_move_retries_wait_ms`                            | Cuánto tiempo esperar entre reintentos después de un fallo ocurrido mientras se movía un archivo entre discos                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `1000`               |
+| `disk_move_retries_during_init`                        | Número de reintentos después de un fallo ocurrido mientras se movía un archivo entre discos durante la inicialización                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | `100`                |
+| `experimental_use_rocksdb`                             | Usar rocksdb como almacenamiento backend                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `0`                  |
+| `slow_member_backpressure_no_progress_timeout_ms`      | Cuánto tiempo sigue esperando el líder a una réplica que no avanza en absoluto, mientras la contrapresión está activada con [`bpon`](#four-letter-word-commands), antes de dejarla atrás. Avanzar significa una respuesta aceptada —entradas de log tomadas o un objeto de instantánea guardado—, de modo que una réplica que simplemente es lenta reinicia este contador y solo se deja de esperar a una que está bloqueada. El valor predeterminado es de cinco minutos, y está pensado para ser así de grande: una réplica que aplica una instantánea grande puede permanecer en silencio durante minutos y es precisamente aquella a la que merece la pena esperar. Una réplica a la que el líder no puede llegar en absoluto se descarta de inmediato, sin esperar este tiempo. `0` significa que el líder nunca deja de esperar a una réplica a la que puede llegar. | `300000`             |
+| `slow_member_backpressure_max_uncommitted_log_entries` | El valor que toma `nuraft_max_uncommitted_log_entries` mientras la contrapresión por miembro lento está activada con [`bpon`](#four-letter-word-commands). Retener el índice de commit no impide que el líder siga añadiendo entradas, por lo que, sin un límite más estricto, el log se adelanta aún más y la réplica se queda todavía más atrás en lugar de ponerse al día. Al endurecerlo, el líder rechaza nuevas solicitudes con un error reintentable hasta que la réplica cierra la brecha. `0` deja el límite sin cambios.                                                                                                                                                                                                                                                                                                                                         | `0`                  |
 
 La configuración del quórum se encuentra en la sección `<keeper_server>.<raft_configuration>` y contiene la descripción de los servidores.
 
@@ -163,7 +166,7 @@ Puede encontrar ejemplos de configuración para un quórum de tres nodos en las 
 ```
 
 <div id="how-to-run">
-  ### Cómo ejecutarlo
+  ### Cómo ejecutarlo {#how-to-run}
 </div>
 
 ClickHouse Keeper está incluido en el paquete de ClickHouse server; solo agrega la configuración de `<keeper_server>` a tu `/etc/your_path_to_config/clickhouse-server/config.xml` e inicia ClickHouse server como siempre. Si quieres ejecutar ClickHouse Keeper en modo standalone, puedes iniciarlo de forma similar con:
@@ -178,13 +181,11 @@ Si no tiene el enlace simbólico (`clickhouse-keeper`), puede crearlo o indicar 
 clickhouse keeper --config /etc/your_path_to_config/config.xml
 ```
 
-<div id="four-letter-word-commands">
-  ### Comandos de cuatro letras
-</div>
+### Comandos de cuatro letras {#four-letter-word-commands}
 
 ClickHouse Keeper también proporciona comandos 4lw que son casi iguales a los de ZooKeeper. Cada comando está compuesto por cuatro letras, como `mntr`, `stat`, etc. Hay algunos comandos especialmente interesantes: `stat` proporciona información general sobre el servidor y los clientes conectados, `srvr` proporciona detalles ampliados sobre el servidor y `cons` proporciona detalles ampliados sobre las conexiones.
 
-Los comandos 4lw tienen una configuración de lista blanca, `four_letter_word_white_list`, cuyo valor predeterminado es `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,ydld`.
+Los comandos 4lw tienen una configuración de lista blanca, `four_letter_word_white_list`, cuyo valor predeterminado es `conf,cons,crst,envi,ruok,srst,srvr,stat,wchs,dirs,mntr,isro,rcvr,apiv,csnp,lgif,rqld,rclc,clrs,ftfl,ydld,bpon,bpof,pfev,lgrq`, al que se añaden `jmst,jmfp,jmep,jmdp` en las compilaciones con jemalloc. La lista se lee una sola vez durante el inicio, por lo que modificarla requiere reiniciar.
 
 Puede enviar los comandos a ClickHouse Keeper mediante telnet o nc, en el puerto del cliente.
 
@@ -212,6 +213,7 @@ zk_packets_sent 68
 zk_num_alive_connections        1
 zk_outstanding_requests 0
 zk_server_state leader
+zk_slow_member_backpressure      0
 zk_znode_count  4
 zk_watch_count  1
 zk_ephemerals_count     0
@@ -300,6 +302,7 @@ quorum_reads=false
 force_sync=false
 compress_logs=true
 compress_snapshots_with_zstd_format=true
+snapshot_zstd_compression_level=3
 configuration_change_tries_count=20
 ```
 
@@ -410,13 +413,38 @@ multi_read  1
 check_not_exists    0
 ```
 
-* `ydld`: Solicita ceder el liderazgo y convertirse en seguidor. Si el servidor que recibe la solicitud es el líder, primero pausará las operaciones de escritura, esperará a que el sucesor (el líder actual nunca puede ser el sucesor) termine de ponerse al día con el último log y, a continuación, renunciará. El sucesor se elegirá automáticamente. Devuelve `Sent yield leadership request to leader.` si se envía la solicitud o `Failed to send yield leadership request to leader.` si no se envía. Si el nodo ya es seguidor, el resultado es el mismo que si se envía la solicitud.
+* `bpon`: Pide al líder que espere a las réplicas que no consiguen seguir el ritmo. Mientras está activado, el líder no avanza el índice de commit más allá de ninguna réplica que pueda alcanzar, de modo que una réplica que se ha quedado atrás puede recuperar el terreno perdido en lugar de irse desviando hasta necesitar una instantánea. Las escrituras se confirman entonces a la velocidad de la réplica votante alcanzable más lenta, así que actívalo de forma deliberada, observa cómo las réplicas se ponen al día y vuelve a desactivarlo con `bpof`.
+
+  No hay umbral de retraso: se espera a todas las réplicas votantes que el líder pueda alcanzar, por muy atrasadas que estén, incluida una que esté recibiendo una instantánea. Una réplica con `can_become_leader` establecido en `false` no vota y nunca se la espera, por lo que puede seguir desviándose hasta necesitar una instantánea: la contrapresión no la protege. Si lo único que se pretende es que una réplica no lidere, asígnale `priority` `0` en su lugar: seguirá votando, por lo que se la seguirá esperando, mientras que `can_become_leader` `false` la deja fuera del quórum por completo. Una réplica solo queda fuera cuando esperarla no conduce a nada: su última solicitud falló, no hizo ningún progreso dentro de `slow_member_backpressure_no_progress_timeout_ms`, todavía no ha respondido en absoluto en una nueva conexión y tampoco hay ninguna instantánea en camino hacia ella, lo que deja al líder sin saber en qué punto se encuentra, o bien está fuera del rango de log del líder, de modo que ni el log ni una instantánea pueden recuperarla; y esto es así porque esperar a una réplica de ese tipo congelaría el índice de commit para nada.
+
+  Establece también `slow_member_backpressure_max_uncommitted_log_entries`. Retener el índice de commit no impide que el líder siga añadiendo entradas, así que sin este ajuste el log seguirá creciendo mientras se espera a la réplica.
+
+  El comando puede enviarse a cualquier nodo: un seguidor lo reenvía al líder actual y no cambia nada localmente, por lo que solo el líder mantiene el ajuste. Compruébalo con `zk_slow_member_backpressure` en `mntr` en el líder, que `zk_server_state` identifica. El ajuste dura un único liderazgo (se desactiva tanto cuando un nodo se convierte en líder como cuando deja de serlo) y no se persiste, por lo que un nodo reiniciado arranca con él desactivado.
+
+  Solo el líder puede responder por el ajuste, así que solo la respuesta del líder lo confirma. Un seguidor informa de que ha reenviado la solicitud, y nada más: el líder rechaza la que llega después de haber dejado de liderar.
+
+```bash
+$ echo bpon | nc localhost 9181   # sent to the leader
+Slow member backpressure is ON. Writes now commit at the speed of the slowest reachable voting replica; replicas with `can_become_leader` off are not waited for. A new leader switches it off, so send this again after a leader change.
+
+$ echo bpon | nc localhost 9181   # sent to a follower
+Sent slow member backpressure ON request to leader. Check `zk_slow_member_backpressure` in `mntr` on the leader, which `zk_server_state` identifies, to see whether it took effect.
+```
+
+* `bpof`: Solicita al líder que deje de esperar a las réplicas que no logran mantener el ritmo. Puede enviarse a cualquier nodo y llega al líder de la misma forma que `bpon`.
+
+```bash
+$ echo bpof | nc localhost 9181
+Sent slow member backpressure OFF request to leader.
+```
+
+* `ydld`: Solicitud para ceder el liderazgo y convertirse en seguidor. Si el server que recibe la solicitud es el líder, primero pausará las operaciones de escritura, esperará hasta que el sucesor (el líder actual nunca puede ser el sucesor) complete el catch-up del log más reciente y luego renunciará. El sucesor se elegirá automáticamente. Devuelve `Sent yield leadership request to leader.` si la solicitud se envió, o `Failed to send yield leadership request to leader.` si no se envió. Si el nodo ya es un seguidor, el resultado es el mismo que cuando se envía la solicitud.
 
 ```response
 Sent yield leadership request to leader.
 ```
 
-* `pfev`: Devuelve los valores de todos los eventos recopilados. Para cada evento, devuelve su nombre, valor y descripción.
+* `pfev`: Devuelve los valores de todos los eventos recopilados. Para cada evento devuelve su nombre, su valor y su descripción.
 
 ```response
 FileOpen        62      Number of files opened.
@@ -440,7 +468,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ```
 
 <div id="http-control">
-  ### Control HTTP
+  ### Control HTTP {#http-control}
 </div>
 
 ClickHouse Keeper proporciona una interfaz HTTP para comprobar si una réplica está lista para recibir tráfico. Puede utilizarse en entornos en la nube, como [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes).
@@ -461,7 +489,7 @@ Ejemplo de configuración que habilita el endpoint `/ready`:
 ```
 
 <div id="feature-flags">
-  ### Banderas de funcionalidad
+  ### Banderas de funcionalidad {#feature-flags}
 </div>
 
 Keeper es totalmente compatible con ZooKeeper y sus clientes, pero también incorpora algunas funcionalidades y tipos de solicitud propios que puede usar el cliente de ClickHouse.
@@ -498,13 +526,13 @@ Las siguientes funcionalidades están disponibles:
 </Note>
 
 <div id="migration-from-zookeeper">
-  ### Migración desde ZooKeeper
+  ### Migración desde ZooKeeper {#migration-from-zookeeper}
 </div>
 
 No es posible realizar una migración sin interrupciones de ZooKeeper a ClickHouse Keeper. Debe detener su clúster de ZooKeeper, convertir los datos e iniciar ClickHouse Keeper. La herramienta `clickhouse-keeper-converter` convierte los logs y instantáneas de ZooKeeper en una instantánea de ClickHouse Keeper. Requiere ZooKeeper 3.4 o posterior.
 
 <div id="pre-migration-preparation">
-  #### Preparación previa a la migración
+  #### Preparación previa a la migración {#pre-migration-preparation}
 </div>
 
 La migración requiere detener la ingestión de datos. Planifique una ventana de mantenimiento antes de empezar.
@@ -517,9 +545,7 @@ SYSTEM STOP MERGES;
 
 Registre métricas comparativas antes de la migración para poder verificar la consistencia después.
 
-<div id="migration-steps">
-  #### Pasos de migración
-</div>
+#### Pasos de migración {#migration-steps}
 
 1. Detenga la ingestión de datos en todos los nodos de ClickHouse.
 
@@ -549,7 +575,7 @@ clickhouse-keeper-converter \
 10. Reanude las tareas en segundo plano y reinicie la ingestión de datos.
 
 <div id="consolidating-multiple-zookeeper-clusters">
-  #### Consolidación de varios clústeres de ZooKeeper
+  #### Consolidación de varios clústeres de ZooKeeper {#consolidating-multiple-zookeeper-clusters}
 </div>
 
 Si ejecuta varios clústeres de ZooKeeper —por ejemplo, uno por grupo de segmentos—, puede consolidarlos en un único clúster de ClickHouse Keeper. La herramienta oficial `clickhouse-keeper-converter` solo admite conversiones uno a uno (un clúster de ZooKeeper a una instantánea de Keeper), por lo que la consolidación requiere modificar el código fuente del convertidor para fusionar varias instantáneas:
@@ -559,7 +585,7 @@ Si ejecuta varios clústeres de ZooKeeper —por ejemplo, uno por grupo de segme
 3. Escriba la salida fusionada en el directorio de instantáneas de ClickHouse Keeper de destino.
 
 <div id="handling-encryption-and-acls">
-  #### Gestión del cifrado y las ACL
+  #### Gestión del cifrado y las ACL {#handling-encryption-and-acls}
 </div>
 
 ClickHouse Keeper admite los mismos esquemas de ACL que ZooKeeper (`world`, `auth`, `digest`). La forma de gestionar las ACL durante la conversión depende de su configuración de ZooKeeper:
@@ -568,7 +594,7 @@ ClickHouse Keeper admite los mismos esquemas de ACL que ZooKeeper (`world`, `aut
 * **Parcialmente cifrado**: Antes de convertir, conceda privilegios de superadministrador a una cuenta y borre las ACL con `setAcl -R` en las rutas afectadas. Convierta y, después, vuelva a habilitar el cifrado en ClickHouse Keeper si es necesario.
 
 <div id="verifying-the-migration">
-  #### Verificación de la migración
+  #### Verificación de la migración {#verifying-the-migration}
 </div>
 
 Después de iniciar ClickHouse Keeper y reiniciar ClickHouse, compare sus métricas clave con la referencia previa a la migración para confirmar que esta se completó correctamente.
@@ -581,22 +607,23 @@ Al consolidar varios clústeres de ZooKeeper, distinga entre:
 Evite recorrer directamente árboles grandes de ZooKeeper para compararlos. En su lugar, imprima todas las rutas convertidas en un archivo durante la conversión.
 
 <div id="post-migration-tuning">
-  #### Ajustes posteriores a la migración
+  #### Ajustes posteriores a la migración {#post-migration-tuning}
 </div>
 
 Después de la migración, considere ajustar estos parámetros para clústeres más grandes o un mayor rendimiento:
 
-| Ajuste                                | Predeterminado | Recomendado | Notas                                                                          |
-| ------------------------------------- | -------------- | ----------- | ------------------------------------------------------------------------------ |
-| `max_requests_batch_size`             | `100`          | `10000`     | Auméntelo en clústeres con un gran número de partes o muchos segmentos         |
-| `force_sync`                          | `true`         | `false`     | Las escrituras asíncronas del registro mejoran el rendimiento                  |
-| `compress_logs`                       | `false`        | `true`      | Comprime los archivos de registro de Raft para reducir la E/S de disco         |
-| `compress_snapshots_with_zstd_format` | `true`         | —           | Ya está habilitado de forma predeterminada; comprime las instantáneas con zstd |
+| Ajuste                                | Predeterminado | Recomendado | Notas                                                                                                              |
+| ------------------------------------- | -------------- | ----------- | ------------------------------------------------------------------------------------------------------------------ |
+| `max_requests_batch_size`             | `100`          | `10000`     | Auméntelo en clústeres con un gran número de partes o muchos segmentos                                             |
+| `force_sync`                          | `true`         | `false`     | Las escrituras asíncronas del registro mejoran el rendimiento                                                      |
+| `compress_logs`                       | `false`        | `true`      | Comprime los archivos de registro de Raft para reducir la E/S de disco                                             |
+| `compress_snapshots_with_zstd_format` | `true`         | —           | Ya está habilitado de forma predeterminada; comprime las instantáneas con zstd                                     |
+| `snapshot_zstd_compression_level`     | `3`            | —           | Los valores más bajos reducen el consumo de CPU al comprimir las instantáneas, a costa de instantáneas más grandes |
 
 Estos parámetros se configuran en `coordination_settings` de su [configuración de Keeper](#internal-coordination-settings).
 
 <div id="recovering-after-losing-quorum">
-  ### Recuperación tras perder el quórum
+  ### Recuperación tras perder el quórum {#recovering-after-losing-quorum}
 </div>
 
 Como ClickHouse Keeper usa Raft, puede tolerar una cierta cantidad de fallos de nodos en función del tamaño del clúster.
@@ -625,7 +652,7 @@ Una vez que hayas confirmado lo anterior, debes hacer lo siguiente:
 7. Cuando se alcance el quórum, el nodo líder volverá al modo de funcionamiento normal y aceptará todas las solicitudes usando Raft; verifícalo con `mntr`, que debería devolver `leader` para `zk_server_state`.
 
 <div id="using-disks-with-keeper">
-  ## Uso de discos con Keeper
+  ## Uso de discos con Keeper {#using-disks-with-keeper}
 </div>
 
 Keeper admite un subconjunto de [discos externos](/es/concepts/features/configuration/server-config/storing-data) para almacenar instantáneas, archivos de registro y el archivo de estado.
@@ -706,7 +733,7 @@ Esta instancia almacenará todos los logs, salvo el más reciente, en el disco `
 La misma lógica se aplica a las instantáneas: todas las instantáneas, salvo la más reciente, se almacenarán en `snapshot_s3_plain`, mientras que la instantánea más reciente estará en el disco `snapshot_local`.
 
 <div id="changing-disk-setup">
-  ### Cambio de la configuración de discos
+  ### Cambio de la configuración de discos {#changing-disk-setup}
 </div>
 
 <Warning>
@@ -738,19 +765,26 @@ La siguiente configuración muestra cómo pasar de la configuración anterior de
 Al arrancar, todos los archivos de registro se moverán de `log_local` y `log_s3_plain` al disco `log_local2`.
 Además, todos los archivos de instantánea se moverán de `snapshot_local` y `snapshot_s3_plain` al disco `snapshot_local2`.
 
-<div id="configuring-logs-cache">
-  ## Configuración de la caché de logs
-</div>
+## Configuración de la caché de registros {#configuring-logs-cache}
 
-Para minimizar la cantidad de datos leídos del disco, Keeper almacena en caché las entradas de log en memoria.
-Si las solicitudes son grandes, las entradas de log consumirán demasiada memoria, por lo que se limita la cantidad de logs almacenados en caché.
-El límite de la caché de los logs más recientes se controla mediante:
+Para minimizar la cantidad de datos leídos del disco, Keeper almacena en caché las entradas de registro en memoria.
+Si las solicitudes son grandes, las entradas de registro consumirán demasiada memoria, por lo que se limita la cantidad de registros almacenados en caché.
+Los límites de la caché de los registros más recientes se controlan mediante:
 
-* `latest_logs_cache_size_threshold` - tamaño total de los logs más recientes almacenados en caché
+* `latest_logs_cache_size_threshold` - memoria ocupada por los registros más recientes almacenados en caché
+* `latest_logs_cache_entry_count_threshold` - cuántas entradas puede contener la caché
 
-Si el valor predeterminado es demasiado alto, puede reducir el uso de memoria disminuyendo esta configuración.
+El límite que se alcance primero restringe la caché; si se establece uno en `0`, solo queda vigente el otro.
 
-Las entradas de log necesarias para el siguiente commit se sirven mediante un lector de lectura anticipada decodificado, cuyo tamaño se define mediante
+El umbral de tamaño contabiliza la memoria que realmente ocupa una entrada en caché, no solo el tamaño de la propia entrada
+de registro: cada entrada en caché también incluye los objetos que la mantienen accesible, y su asignación
+se redondea al alza hasta una clase de tamaño del allocator. Para entradas pequeñas, ese overhead es varias veces el tamaño de la
+entrada, por lo que el número de entradas que la caché puede contener puede ser mucho menor de lo que sugiere dividir el umbral entre el
+tamaño de la entrada. `KeeperLatestLogsCacheSize` informa de la misma cantidad que el umbral limita.
+
+Si los valores predeterminados son demasiado altos, puede reducir el uso de memoria disminuyendo estas configuraciones.
+
+Las entradas de registro necesarias para el siguiente commit se sirven mediante un lector de lectura anticipada decodificado, cuyo tamaño se define mediante
 `log_readahead_commit_window_bytes` (`0` desactiva la lectura anticipada para commits). Esta configuración reemplaza las
 configuraciones obsoletas `commit_logs_cache_size_threshold` y `commit_logs_cache_entry_count_threshold`,
 que se mantienen únicamente por compatibilidad de configuración (la primera sigue asignándose a `log_readahead_commit_window_bytes` si
@@ -762,12 +796,12 @@ en la [configuración de coordinación interna](#internal-coordination-settings)
 ajuste del lado del par.
 
 <Note>
-  Puede usar el comando `pfev` para comprobar la cantidad de logs leídos de cada caché y de un archivo.
+  Puede usar el comando `pfev` para comprobar la cantidad de registros leídos de cada caché y de un archivo.
   También puede usar las métricas del endpoint de Prometheus para realizar un seguimiento del tamaño actual de ambas cachés.
 </Note>
 
 <div id="prometheus">
-  ## Prometheus
+  ## Prometheus {#prometheus}
 </div>
 
 Keeper puede exponer datos de métricas para su recopilación por [Prometheus](https://prometheus.io).
@@ -806,7 +840,7 @@ curl 127.0.0.1:9363/metrics
 Consulte también la [integración de Prometheus](/es/products/cloud/features/monitoring/prometheus) de ClickHouse Cloud.
 
 <div id="clickhouse-keeper-user-guide">
-  ## Guía de usuario de ClickHouse Keeper
+  ## Guía de usuario de ClickHouse Keeper {#clickhouse-keeper-user-guide}
 </div>
 
 Esta guía proporciona una configuración sencilla y mínima para ClickHouse Keeper, con un ejemplo de cómo probar operaciones distribuidas. Este ejemplo se realiza con 3 nodos en Linux.
@@ -1073,19 +1107,19 @@ Esta guía proporciona una configuración sencilla y mínima para ClickHouse Kee
 </Steps>
 
 <div id="summary">
-  ### Resumen
+  ### Resumen {#summary}
 </div>
 
 En esta guía se mostró cómo configurar un clúster con ClickHouse Keeper. Con ClickHouse Keeper, puede configurar clústeres y definir tablas distribuidas que pueden replicarse entre segmentos.
 
 <div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## Configuración de ClickHouse Keeper con rutas únicas
+  ## Configuración de ClickHouse Keeper con rutas únicas {#configuring-clickhouse-keeper-with-unique-paths}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### Descripción
+  ### Descripción {#description}
 </div>
 
 Este artículo describe cómo usar la configuración integrada de la macro `{uuid}`
@@ -1096,7 +1130,7 @@ elimine las entradas de ruta, ya que cada vez que se crea una ruta se utiliza un
 en ella; las rutas nunca se reutilizan.
 
 <div id="example-environment">
-  ### Entorno de ejemplo
+  ### Entorno de ejemplo {#example-environment}
 </div>
 
 Un clúster de tres nodos que se configurará para ejecutar ClickHouse Keeper
@@ -1136,7 +1170,7 @@ Configuración de ejemplo para el clúster:
 ```
 
 <div id="procedures-to-set-up-tables-to-use-uuid">
-  ### Procedimiento para configurar tablas para usar `{uuid}`
+  ### Procedimiento para configurar tablas para usar `{uuid}` {#procedures-to-set-up-tables-to-use-uuid}
 </div>
 
 1. Configure las macros en cada servidor
@@ -1230,7 +1264,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 ```
 
 <div id="testing">
-  ### Prueba
+  ### Prueba {#testing}
 </div>
 
 1. Inserte datos en el primer nodo (p. ej., `chnode1`)
@@ -1294,7 +1328,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 ```
 
 <div id="alternatives">
-  ### Alternativas
+  ### Alternativas {#alternatives}
 </div>
 
 La ruta de replicación predeterminada puede definirse de antemano mediante macros, usando también `{uuid}`
@@ -1362,7 +1396,7 @@ ORDER BY id
 ```
 
 <div id="troubleshooting">
-  ### Solución de problemas
+  ### Solución de problemas {#troubleshooting}
 </div>
 
 Comando de ejemplo para obtener información de la tabla y el UUID:
@@ -1409,13 +1443,13 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 ```
 
 <div id="reconfiguration">
-  ## Reconfiguración dinámica de ClickHouse Keeper
+  ## Reconfiguración dinámica de ClickHouse Keeper {#reconfiguration}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### Descripción
+  ### Descripción {#description-1}
 </div>
 
 ClickHouse Keeper admite parcialmente el comando [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying) de ZooKeeper
@@ -1507,7 +1541,7 @@ Hay algunas consideraciones que tener en cuenta en la implementación de la reco
   se aplicó.
 
 <div id="converting-a-single-node-keeper-into-a-cluster">
-  ## Convertir un keeper de un solo nodo en un clúster
+  ## Convertir un keeper de un solo nodo en un clúster {#converting-a-single-node-keeper-into-a-cluster}
 </div>
 
 A veces es necesario ampliar un nodo keeper experimental hasta convertirlo en un clúster. A continuación se muestra un esquema de cómo hacerlo paso a paso para un clúster de 3 nodos:
@@ -1523,7 +1557,7 @@ A veces es necesario ampliar un nodo keeper experimental hasta convertirlo en un
 Para familiarizarte con el proceso, aquí tienes un [repositorio sandbox](https://github.com/ClickHouse/keeper-extend-cluster).
 
 <div id="unsupported-features">
-  ## Funciones no compatibles
+  ## Funciones no compatibles {#unsupported-features}
 </div>
 
 Aunque ClickHouse Keeper pretende ser totalmente compatible con ZooKeeper, hay algunas funciones que aún no están implementadas (aunque el desarrollo sigue en curso):

@@ -13,12 +13,10 @@ import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureB
 데이터베이스 백업은 마지막으로 성공한 백업을 통해 서비스를 이전 상태로 복원할 수 있도록 설계되었습니다.
 
 <div id="backups">
-  ## 백업
+  ## 백업 {#backups}
 </div>
 
-<div id="how-backups-work-in-clickhouse-cloud">
-  ### ClickHouse Cloud에서 백업이 작동하는 방식
-</div>
+### ClickHouse Cloud에서 백업이 작동하는 방식 {#how-backups-work-in-clickhouse-cloud}
 
 ClickHouse Cloud 백업은 &quot;전체&quot; 백업과 &quot;증분&quot; 백업을 조합해 하나의 백업 체인을 구성합니다. 체인은 전체 백업으로 시작되며, 이후 예약된 여러 시점에 걸쳐 증분 백업이 수행되어 연속된 백업 시퀀스가 만들어집니다. 백업 체인이 일정 길이에 도달하면 새 체인이 시작됩니다. 필요할 경우 이 백업 체인 전체를 사용해 데이터를 새 서비스로 복원할 수 있습니다. 특정 체인에 포함된 모든 백업이 서비스에 설정된 보존 기간(보존에 대한 자세한 내용은 아래 참고)을 지나면 해당 체인은 폐기됩니다.
 
@@ -29,7 +27,7 @@ ClickHouse Cloud 백업은 &quot;전체&quot; 백업과 &quot;증분&quot; 백�
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloud의 백업 체인 예시" />
 
 <div id="default-backup-policy">
-  ### 기본 백업 정책
+  ### 기본 백업 정책 {#default-backup-policy}
 </div>
 
 백업은 Basic, Scale, Enterprise 티어에서 스토리지와 별도로 사용량이 측정되며 청구됩니다.
@@ -37,9 +35,7 @@ ClickHouse Cloud 백업은 &quot;전체&quot; 백업과 &quot;증분&quot; 백�
 
 자세한 내용은 [&quot;백업 검토 및 복원&quot;](/ko/products/cloud/guides/backups/review-and-restore-backups)을 참조하십시오.
 
-<div id="configurable-backups">
-  ## 설정 가능한 백업
-</div>
+## 설정 가능한 백업 {#configurable-backups}
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
 
@@ -57,12 +53,11 @@ ClickHouse Cloud에서는 **Scale** 및 **Enterprise** 티어 서비스의 백�
 
 백업 설정 단계는 [&quot;백업 일정 설정&quot;](/ko/products/cloud/guides/backups/configurable-backups)을 참조하십시오.
 
-<div id="byob">
-  ## Bring Your Own Bucket (BYOB) 백업
-</div>
+## Bring Your Own Bucket (BYOB) 백업 {#byob}
 
 ClickHouse Cloud에서는 자체 클라우드 서비스 제공업체(CSP) 계정의 스토리지(AWS S3, Google Cloud Storage 또는 Azure Blob Storage)로 백업을 내보낼 수 있습니다.
 자체 버킷으로 백업하도록 구성하면 ClickHouse Cloud는 기본적으로 자체 백업도 계속 생성합니다.
+백업 보존 설정은 사용자 버킷에 기록되는 백업에 적용됩니다. ClickHouse Cloud가 관리하는 백업에는 기본 보존 정책이 적용됩니다.
 
 ClickHouse Cloud 백업의 동작 방식에 대한 자세한 내용은 [백업](/ko/products/cloud/guides/backups/review-and-restore-backups) 문서를 참조하십시오.
 
@@ -81,9 +76,7 @@ ClickHouse Cloud 백업의 동작 방식에 대한 자세한 내용은 [백업](
 
 AWS, GCP, Azure 객체 스토리지에 전체 백업 및 증분 백업을 수행하는 방법과 백업에서 복원하는 방법에 대한 예시는 [&quot;자체 Cloud 계정으로 백업 내보내기&quot;](/ko/products/cloud/guides/backups/bring-your-own-backup/export-backups-to-own-cloud-account)를 참조하십시오.
 
-<div id="backup-options">
-  ### Backup 옵션
-</div>
+### Backup 옵션 {#backup-options}
 
 자체 클라우드 계정으로 백업을 내보내는 방법은 두 가지입니다:
 
@@ -101,7 +94,7 @@ AWS, GCP, Azure 객체 스토리지에 전체 백업 및 증분 백업을 수행
 </Steps>
 
 <Warning>
-  ClickHouse Cloud는 고객 버킷에 저장된 백업의 수명 주기를 관리하지 않습니다.
-  고객은 컴플라이언스 기준 준수와 비용 관리를 위해 버킷의 백업을 적절히 관리할 책임이 있습니다.
+  ClickHouse Cloud는 SQL 명령으로 내보낸 백업의 수명 주기를 관리하지 않습니다.
+  고객은 컴플라이언스 기준 준수와 비용 관리를 위해 이러한 백업을 적절히 관리할 책임이 있습니다.
   백업이 손상되면 복원할 수 없습니다.
 </Warning>

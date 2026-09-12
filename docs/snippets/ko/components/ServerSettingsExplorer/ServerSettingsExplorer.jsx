@@ -1,6 +1,7 @@
 const ServerSettingsExplorer = ({ href: baseRoute }) => {
-  // Mintlify의 프로덕션 렌더러는 내보낸 컴포넌트를 모듈 범위 바인딩을 유지하지 않은 상태로 평가합니다.
-  // Lazy state는 생성된 데이터를 해당 평가 범위에 보관하여 마운트당 한 번만 구성되도록 합니다.
+  // Mintlify의 프로덕션 렌더러는 모듈 범위 바인딩을 유지하지 않은 채
+  // 내보낸 컴포넌트를 평가합니다. Lazy state는 생성된 데이터를 해당 평가 범위에
+  // 보관하면서 마운트당 한 번만 구성되도록 합니다.
   const [entries] = useState(() => [
     {
       label: "access_control_*",
@@ -73,10 +74,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "asynchronous_metrics_*",
-      count: 3,
+      count: 4,
       settings: [
         { name: "asynchronous_metrics_enable_heavy_metrics", path: "/asynchronous-metrics#asynchronous_metrics_enable_heavy_metrics", default: "0" },
         { name: "asynchronous_metrics_keeper_metrics_only", path: "/asynchronous-metrics#asynchronous_metrics_keeper_metrics_only", default: "0" },
+        { name: "asynchronous_metrics_key_values_mode", path: "/asynchronous-metrics#asynchronous_metrics_key_values_mode", default: "key_values" },
         { name: "asynchronous_metrics_update_period_s", path: "/asynchronous-metrics#asynchronous_metrics_update_period_s", default: "1" }
       ],
       children: []
@@ -175,10 +177,11 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "database_catalog_*",
-      count: 5,
+      count: 6,
       settings: [
         { name: "database_catalog_drop_error_cooldown_sec", path: "/database-catalog#database_catalog_drop_error_cooldown_sec", default: "5" },
         { name: "database_catalog_drop_table_concurrency", path: "/database-catalog#database_catalog_drop_table_concurrency", default: "16" },
+        { name: "database_catalog_shutdown_table_concurrency", path: "/database-catalog#database_catalog_shutdown_table_concurrency", default: "0" },
         { name: "database_catalog_unused_dir_cleanup_period_sec", path: "/database-catalog#database_catalog_unused_dir_cleanup_period_sec", default: "86400" },
         { name: "database_catalog_unused_dir_hide_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_hide_timeout_sec", default: "3600" },
         { name: "database_catalog_unused_dir_rm_timeout_sec", path: "/database-catalog#database_catalog_unused_dir_rm_timeout_sec", default: "2592000" }
@@ -516,15 +519,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       ],
       children: []
     },
-    {
-      label: "license_*",
-      count: 2,
-      settings: [
-        { name: "license_file", path: "/license#license_file", default: '""' },
-        { name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }
-      ],
-      children: []
-    },
+    { label: "license_*", count: 1, settings: [{ name: "license_public_key_for_testing", path: "/license#license_public_key_for_testing", default: '""' }], children: [] },
     {
       label: "listen_*",
       count: 4,
@@ -576,7 +571,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "max_*",
-      count: 25,
+      count: 27,
       settings: [
         { name: "max_active_parts_loading_thread_pool_size", path: "/max#max_active_parts_loading_thread_pool_size", default: "64" },
         { name: "max_authentication_methods_per_user", path: "/max#max_authentication_methods_per_user", default: "100" },
@@ -587,6 +582,8 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "max_fetch_partition_thread_pool_size", path: "/max#max_fetch_partition_thread_pool_size", default: "64" },
         { name: "max_held_snapshots", path: "/max#max_held_snapshots", default: "0" },
         { name: "max_http_index_page_size", path: "/max#max_http_index_page_size", default: "10485760" },
+        { name: "max_iceberg_manifest_decode_thread_pool_free_size", path: "/max#max_iceberg_manifest_decode_thread_pool_free_size", default: "0" },
+        { name: "max_iceberg_manifest_decode_thread_pool_size", path: "/max#max_iceberg_manifest_decode_thread_pool_size", default: "100" },
         { name: "max_keep_alive_requests", path: "/max#max_keep_alive_requests", default: "10000" },
         { name: "max_materialized_views_count_for_table", path: "/max#max_materialized_views_count_for_table", default: "0" },
         { name: "max_merges_bandwidth_for_server", path: "/max#max_merges_bandwidth_for_server", default: "0" },
@@ -1003,6 +1000,16 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
       children: []
     },
     {
+      label: "reader_executor_*",
+      count: 3,
+      settings: [
+        { name: "reader_executor_memory_pressure_critical_level_pct", path: "/reader-executor#reader_executor_memory_pressure_critical_level_pct", default: "95" },
+        { name: "reader_executor_memory_pressure_elevated_level_pct", path: "/reader-executor#reader_executor_memory_pressure_elevated_level_pct", default: "75" },
+        { name: "reader_executor_memory_pressure_high_level_pct", path: "/reader-executor#reader_executor_memory_pressure_high_level_pct", default: "90" }
+      ],
+      children: []
+    },
+    {
       label: "remote_*",
       count: 2,
       settings: [
@@ -1315,7 +1322,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
     },
     {
       label: "기타",
-      count: 120,
+      count: 121,
       settings: [
         { name: "abort_on_logical_error", path: "/other#abort_on_logical_error", default: "0" },
         { name: "allowed_disks_for_table_engines", path: "/other#allowed_disks_for_table_engines", default: '""' },
@@ -1352,6 +1359,7 @@ const ServerSettingsExplorer = ({ href: baseRoute }) => {
         { name: "hdfs.libhdfs3_conf", path: "/other#hdfs.libhdfs3_conf", default: '""' },
         { name: "hsts_max_age", path: "/other#hsts_max_age" },
         { name: "iceberg_background_schedule_pool_size", path: "/other#iceberg_background_schedule_pool_size", default: "10" },
+        { name: "iceberg_manifest_decode_thread_pool_queue_size", path: "/other#iceberg_manifest_decode_thread_pool_queue_size", default: "10000" },
         { name: "ignore_empty_sql_security_in_create_view_query", path: "/other#ignore_empty_sql_security_in_create_view_query", default: "1" },
         { name: "include_from", path: "/other#include_from", default: '""' },
         { name: "insert_deduplication_version", path: "/other#insert_deduplication_version", default: "new_unified_hash" },

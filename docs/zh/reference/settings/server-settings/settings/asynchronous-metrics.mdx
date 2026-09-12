@@ -24,6 +24,24 @@ import SettingsInfoBlock from "/snippets/zh/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="否" />使异步指标只计算 Keeper 相关指标。
 
+<div id="asynchronous_metrics_key_values_mode">
+  ## asynchronous_metrics_key_values_mode
+</div>
+
+<SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
+
+按 CPU 核心、块设备、网络接口、磁盘、温度传感器、内存控制器或日志通道细分的键值异步指标以何种形式发布到 [`system.asynchronous_metrics`](/zh/reference/system-tables/asynchronous_metrics)、[`system.asynchronous_metric_log`](/zh/reference/system-tables/asynchronous_metric_log)、Prometheus 端点和 Graphite。
+
+可能的值：
+
+* `key_values` - 每个指标族都是一个键值指标：在 `system.asynchronous_metrics` 的 `key_values` 列中存储为一个 `Map`，在 `system.asynchronous_metric_log` 中每个键对应一行，Prometheus 中每个键对应一个样本并带有如 `device="sda"` 的标签，Graphite 路径为 `<prefix>.<Metric>.<key>`。
+* `legacy_names` - 每个键都是一个独立的标量指标，键会被编码到指标名称中，与 26.8 版本之前的方式相同：`OSUserTimeCPU3`、`CPUFrequencyMHz_0`、`BlockReadBytes_sda`、`NetworkReceiveBytes_eth0`、`DiskTotal_default`、`Temperature0`、`EDAC0_Correctable` 等。
+* `both` - 同时发布两种形式，在迁移监控系统期间很有用。请注意，此模式可能导致重复计数：对名称匹配某个前缀的指标进行聚合时，例如 `sum(value) ... WHERE metric LIKE 'NetworkReceiveBytes%'`，每个值都会被计算两次。
+
+26.8 版本之后引入的键值指标族没有旧版名称，始终以键值形式发布。
+
+此设置可动态生效：每次更新异步指标时都会重新读取，因此无需重启，执行 `SYSTEM RELOAD CONFIG` 即可切换形式。
+
 <div id="asynchronous_metrics_update_period_s">
   ## asynchronous_metrics_update_period_s
 </div>

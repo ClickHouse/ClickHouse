@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSuppo
 
 O motor permite importar e exportar dados para o SQLite e oferece suporte a consultas em tabelas do SQLite diretamente do ClickHouse.
 
-<div id="creating-a-table">
-  ## Criando uma tabela
-</div>
+## Criando uma tabela {#creating-a-table}
 
 ```sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -32,9 +30,7 @@ O motor permite importar e exportar dados para o SQLite e oferece suporte a cons
 * `db_path` — Caminho para o arquivo SQLite que contém um banco de dados.
 * `table` — Nome de uma tabela no banco de dados SQLite ou uma consulta passada ao SQLite tal como está (consulte [Passando uma consulta em vez de um nome de tabela](#passing-a-query)).
 
-<div id="passing-a-query">
-  ## Passando uma consulta em vez de um nome de tabela
-</div>
+## Passando uma consulta em vez de um nome de tabela {#passing-a-query}
 
 Em vez de um nome de tabela, o argumento `table` pode ser uma consulta `SELECT` passada ao SQLite como está. A estrutura da tabela é inferida a partir do resultado da consulta. A consulta pode ser escrita como uma subconsulta ou envolvida na função `query`:
 
@@ -46,14 +42,12 @@ CREATE TABLE sqlite_table ENGINE = SQLite('sqlite.db', query('SELECT col1, col2 
 Essa tabela é somente leitura: `INSERT` nela não é permitido. A mesma sintaxe também é compatível com a função de tabela [`sqlite`](/pt-BR/reference/functions/table-functions/sqlite).
 
 <Note>
-  A forma de subconsulta `(SELECT ...)` é analisada pelo ClickHouse e reserializada antes de ser enviada ao SQLite. Portanto, ela deve ser um ClickHouse SQL válido. Para passar uma sintaxe específica do SQLite que o ClickHouse não interpreta, use a forma `query('...')`, cujo texto é enviado ao SQLite literalmente.
+  A forma de subconsulta `(SELECT ...)` é convertida pelo ClickHouse e reserializada antes de ser enviada ao SQLite. Portanto, ela deve ser um ClickHouse SQL válido. Para passar uma sintaxe específica do SQLite que o ClickHouse não interpreta, use a forma `query('...')`, cujo texto é enviado ao SQLite literalmente.
 
-  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse ao redor **não** é enviado para execução na consulta passada — ele é aplicado no ClickHouse depois que o resultado completo da consulta é recuperado. Para restringir os dados lidos do SQLite, coloque o filtro dentro da consulta passada. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo que não pode ser enviado para execução é rejeitado com uma exceção, em vez de ser aplicado localmente.
+  Qualquer `WHERE`, `LIMIT`, agregação etc. externo da consulta ClickHouse ao redor **não** é enviado para execução na consulta passada — ele é aplicado no ClickHouse depois que o resultado completo da consulta é recuperado. Para restringir os dados lidos do SQLite, coloque o filtro dentro da consulta passada. Com [`external_table_strict_query = 1`](/pt-BR/reference/settings/session-settings/external-table#external_table_strict_query), um filtro externo nas colunas da tabela é rejeitado com uma exceção, em vez de ser aplicado localmente, pois não pode ser enviado para execução na consulta passada. A verificação abrange o predicado `WHERE` de nível superior e cada conjunção de um `AND` de nível superior. Um `PREWHERE` nas colunas desta tabela não é um caso para essa configuração: este motor de tabela não oferece suporte a `PREWHERE`, e essa consulta é rejeitada com `ILLEGAL_PREWHERE` independentemente da configuração. Com o analisador (o padrão), a verificação é executada apenas onde um filtro poderia ser enviado para execução: quando esta tabela é a única tabela da consulta, em qualquer lado de um `INNER JOIN` ou no lado preservado de um join externo (o lado esquerdo de um `LEFT JOIN`, o lado direito de um `RIGHT JOIN`). No lado não preservado de um `LEFT`/`RIGHT JOIN` e em qualquer lado de um `FULL JOIN`, nada é enviado para execução e nada é verificado; portanto, um filtro nas colunas desta tabela é aplicado localmente após o join mesmo no modo estrito. Onde a verificação é executada, um predicado que faz referência a outras tabelas unidas na consulta ao redor não é enviado para execução e é excluído da verificação, quer faça referência apenas ao lado unido ou o misture com esta tabela em uma expressão que não seja `AND` (por exemplo, um `OR`); esse predicado mantém seu ponto de avaliação usual do ClickHouse (`WHERE` após o join, `PREWHERE` antes dele) e não é rejeitado. Com o analisador antigo (`enable_analyzer = 0`), esse escopo não se aplica: todo o filtro externo é verificado quando esta tabela é a primeira tabela da árvore de joins, incluindo um predicado no lado unido, e uma tabela unida à direita não é verificada.
 </Note>
 
-<div id="data-types-support">
-  ## Suporte a tipos de dados
-</div>
+## Suporte a tipos de dados {#data-types-support}
 
 Ao especificar explicitamente os tipos de coluna do ClickHouse na definição da tabela, os tipos a seguir do ClickHouse podem ser interpretados a partir de colunas TEXT do SQLite:
 
@@ -68,9 +62,7 @@ Ao especificar explicitamente os tipos de coluna do ClickHouse na definição da
 
 Consulte o [motor de banco de dados SQLite](/pt-BR/reference/engines/database-engines/sqlite#data_types-support) para ver o mapeamento de tipos padrão.
 
-<div id="usage-example">
-  ## Exemplo de uso
-</div>
+## Exemplo de uso {#usage-example}
 
 Exibe uma consulta que cria a tabela SQLite:
 

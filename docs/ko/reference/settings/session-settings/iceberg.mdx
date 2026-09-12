@@ -14,9 +14,7 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 이 설정은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며, [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 바탕으로 자동 생성됩니다.
 
-<div id="iceberg_delete_data_on_drop">
-  ## iceberg_delete_data_on_drop
-</div>
+## iceberg_delete_data_on_drop {#iceberg_delete_data_on_drop}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -24,25 +22,35 @@ import { ExperimentalBadge } from "/snippets/ko/components/ExperimentalBadge/Exp
 
 drop할 때 모든 Iceberg 파일을 삭제할지 여부입니다.
 
-<div id="iceberg_delete_manifest_decode_concurrency">
-  ## iceberg_delete_manifest_decode_concurrency
-</div>
+## iceberg_file_entries_queue_size {#iceberg_file_entries_queue_size}
+
+<SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "100"},{"label": "기존에 하드코딩되어 있던 Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐 용량에 대한 새로운 설정."}]}]} />
+
+Iceberg 데이터 매니페스트 디코드 작업과 쿼리 사이 큐의 용량이며, 단위는 데이터 파일 항목 수입니다.
+
+큐가 가득 찬 상태에서 쿼리가 데이터를 소비하지 않으면 디코드 작업이 일시 중지되므로, 이 값은 미리 읽기(read-ahead) 양의 상한 역할도 합니다.
+
+0보다 커야 합니다.
+
+## iceberg_manifest_decode_concurrency {#iceberg_manifest_decode_concurrency}
+
+**Aliases**: `iceberg_delete_manifest_decode_concurrency`
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="4" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.8"},{"label": "4"},{"label": "첫 번째 행을 읽기 전에 동시에 디코딩할 Iceberg 삭제 manifest 파일 수의 상한을 지정하는 새로운 설정입니다. 26.8 이전에는 한 번에 manifest 하나를 디코딩하면서 다음 manifest를 fetch했으므로, 이전 동작과 가장 유사한 값은 `2`입니다. 이 경우 첫 번째 행이 반환되기 전 중요 경로에 두 manifest의 객체 스토리지 왕복 시간이 합산됩니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "4"},{"label": "delete manifest과 데이터 매니페스트 모두에 대해 동시에 디코딩되는 Iceberg manifest 파일 수를 제한하는 새로운 설정입니다. `iceberg_delete_manifest_decode_concurrency`를 대체하며, 기존 이름은 alias로 유지됩니다. `2`는 26.9 이전의 data path 동작과 거의 같습니다. 당시에는 다음 manifest의 fetch가 in-flight 상태인 채로 한 번에 하나의 manifest만 디코딩했습니다. 따라서 `compatibility`가 26.8 이하이면 delete 디코딩도 릴리스 기본값인 4가 아니라 2로 실행되며, delete 디코딩의 중첩을 일부 포기하는 대신 이전 data path의 메모리 엔벌로프를 그대로 유지합니다."}]}]} />
 
-데이터 파일을 읽기 전에 쿼리 실행 중 동시에 디코딩할 수 있는 Iceberg 삭제 manifest 파일의 최대 개수입니다.
+테이블을 읽는 동안 동시에 디코딩되는 Iceberg manifest 파일의 최대 개수입니다.
 
-데이터 파일을 읽기 전에 모든 삭제 manifest를 디코딩해야 하므로, 이 작업은 첫 번째 행이 반환되기 전의 중요 경로에 포함됩니다. 여러 개를 동시에 디코딩하면 객체 스토리지 왕복 시간과 행별 프루닝 작업을 모두 겹쳐서 수행할 수 있습니다.
+delete manifest는 데이터 파일을 읽기 전에 모두 디코딩됩니다. 데이터 매니페스트는 쿼리 대상 데이터 파일 목록이 생성되는 동안 디코딩되며, 쿼리가 이미 디코딩된 entry를 소비하는 만큼만 새로운 manifest가 디코딩됩니다. 여러 manifest를 동시에 디코딩하면 객체 스토리지 round-trip과 entry 단위 프루닝 작업이 서로 겹쳐 처리됩니다.
 
-Iceberg 메타데이터 파일 캐시가 비활성화되어 있거나 가득 찬 경우, 진행 중인 각 manifest가 자체 디코딩 결과를 보유하므로 값이 클수록 쿼리 초기화 중 최대 메모리 사용량이 증가합니다.
+Iceberg metadata 파일 캐시가 비활성화되어 있거나 가득 찬 경우, 값을 높이면 최대 메모리 사용량이 증가합니다. in-flight 상태인 각 manifest가 저마다 디코딩된 내용을 보유하기 때문입니다.
 
-0보다 커야 하며, `1`은 manifest를 한 번에 하나씩 디코딩합니다.
+0보다 커야 하며, `1`로 설정하면 manifest를 한 번에 하나씩 디코딩합니다.
 
-<div id="iceberg_manifest_min_count_to_compact">
-  ## iceberg_manifest_min_count_to_compact
-</div>
+## iceberg_manifest_min_count_to_compact {#iceberg_manifest_min_count_to_compact}
 
 <ExperimentalBadge />
 
@@ -54,9 +62,7 @@ OPTIMIZE TABLE ... MANIFEST를 통해 manifest만 compaction하는 작업을 트
 현재 manifest 파일 수가 이 임계값보다 작거나 같으면 compaction을 건너뜁니다.
 allow&#95;experimental&#95;iceberg&#95;compaction이 활성화되어 있어야 합니다.
 
-<div id="iceberg_max_number_datafiles_to_compact">
-  ## iceberg_max_number_datafiles_to_compact
-</div>
+## iceberg_max_number_datafiles_to_compact {#iceberg_max_number_datafiles_to_compact}
 
 <SettingsInfoBlock type="UInt64" default_value="1000" />
 
@@ -64,9 +70,7 @@ allow&#95;experimental&#95;iceberg&#95;compaction이 활성화되어 있어야 �
 
 Iceberg의 compaction 데이터 파일 수에 대한 임계값입니다.
 
-<div id="iceberg_orphan_files_older_than_seconds">
-  ## iceberg_orphan_files_older_than_seconds
-</div>
+## iceberg_orphan_files_older_than_seconds {#iceberg_orphan_files_older_than_seconds}
 
 <ExperimentalBadge />
 
@@ -76,9 +80,7 @@ Iceberg의 compaction 데이터 파일 수에 대한 임계값입니다.
 
 Iceberg 테이블에서 고아 파일 제거에 사용하는 기본 경과 시간 임계값(초)입니다. 이 값보다 최근 파일은 고아 파일로 간주되지 않습니다. remove&#95;orphan&#95;files() 프로시저 호출에서 older&#95;than 인수를 생략한 경우 사용됩니다. 기본값은 259200(3일)입니다.
 
-<div id="iceberg_snapshot_id">
-  ## iceberg_snapshot_id
-</div>
+## iceberg_snapshot_id {#iceberg_snapshot_id}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 
@@ -86,9 +88,7 @@ Iceberg 테이블에서 고아 파일 제거에 사용하는 기본 경과 시�
 
 특정 스냅샷 ID를 사용해 Iceberg 테이블을 쿼리합니다.
 
-<div id="iceberg_timestamp_ms">
-  ## iceberg_timestamp_ms
-</div>
+## iceberg_timestamp_ms {#iceberg_timestamp_ms}
 
 <SettingsInfoBlock type="Int64" default_value="0" />
 

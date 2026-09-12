@@ -15,36 +15,36 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "AMPLab Big Data Benchmark",
-          href: "/ru/get-started/sample-datasets/amplab-benchmark",
+          href: "/get-started/sample-datasets/amplab-benchmark",
           imgLight: "/images/sample-datasets-grid/amplab-benchmark-light.jpg",
           imgDark: "/images/sample-datasets-grid/amplab-benchmark-dark.jpg"
         },
         {
           title: "Brown University Benchmark",
-          href: "/ru/get-started/sample-datasets/brown-benchmark",
+          href: "/get-started/sample-datasets/brown-benchmark",
           imgLight: "/images/sample-datasets-grid/brown-benchmark-light.jpg",
           imgDark: "/images/sample-datasets-grid/brown-benchmark-dark.jpg"
         },
         {
           title: "Терабайтные логи кликов Criteo",
-          href: "/ru/get-started/sample-datasets/criteo",
+          href: "/get-started/sample-datasets/criteo",
           imgLight: "/images/sample-datasets-grid/criteo-light.jpg",
           imgDark: "/images/sample-datasets-grid/criteo-dark.jpg"
         },
         {
           title: "JOB benchmark",
-          href: "/ru/get-started/sample-datasets/job",
+          href: "/get-started/sample-datasets/job",
           imgLight: "/images/sample-datasets-grid/benchmarks-light.jpg",
           imgDark: "/images/sample-datasets-grid/benchmarks-dark.jpg"
         },
         {
           title: "Star Schema Benchmark (SSB)",
-          href: "/ru/get-started/sample-datasets/star-schema",
+          href: "/get-started/sample-datasets/star-schema",
           imgLight: "/images/sample-datasets-grid/star-schema-light.jpg",
           imgDark: "/images/sample-datasets-grid/star-schema-dark.jpg"
         },
-        { title: "TPC-DS", href: "/ru/get-started/sample-datasets/tpcds", imgLight: "/images/sample-datasets-grid/tpcds-light.jpg", imgDark: "/images/sample-datasets-grid/tpcds-dark.jpg" },
-        { title: "TPC-H", href: "/ru/get-started/sample-datasets/tpch", imgLight: "/images/sample-datasets-grid/tpch-light.jpg", imgDark: "/images/sample-datasets-grid/tpch-dark.jpg" }
+        { title: "TPC-DS", href: "/get-started/sample-datasets/tpcds", imgLight: "/images/sample-datasets-grid/tpcds-light.jpg", imgDark: "/images/sample-datasets-grid/tpcds-dark.jpg" },
+        { title: "TPC-H", href: "/get-started/sample-datasets/tpch", imgLight: "/images/sample-datasets-grid/tpch-light.jpg", imgDark: "/images/sample-datasets-grid/tpch-dark.jpg" }
       ]
     },
     {
@@ -56,19 +56,19 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "Базовые станции сотовой связи (OpenCelliD)",
-          href: "/ru/get-started/sample-datasets/cell-towers",
+          href: "/get-started/sample-datasets/cell-towers",
           imgLight: "/images/sample-datasets-grid/cell-towers-light.jpg",
           imgDark: "/images/sample-datasets-grid/cell-towers-dark.jpg"
         },
         {
           title: "Места Foursquare",
-          href: "/ru/get-started/sample-datasets/foursquare-os-places",
+          href: "/get-started/sample-datasets/foursquare-os-places",
           imgLight: "/images/sample-datasets-grid/foursquare-places-light.jpg",
           imgDark: "/images/sample-datasets-grid/foursquare-places-dark.jpg"
         },
         {
           title: "Данные о такси Нью-Йорка",
-          href: "/ru/get-started/sample-datasets/nyc-taxi",
+          href: "/get-started/sample-datasets/nyc-taxi",
           imgLight: "/images/sample-datasets-grid/nyc-taxi-light.jpg",
           imgDark: "/images/sample-datasets-grid/nyc-taxi-dark.jpg"
         }
@@ -83,31 +83,31 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "Открытые данные COVID-19",
-          href: "/ru/get-started/sample-datasets/covid19",
+          href: "/get-started/sample-datasets/covid19",
           imgLight: "/images/sample-datasets-grid/covid19-light.jpg",
           imgDark: "/images/sample-datasets-grid/covid19-dark.jpg"
         },
         {
           title: "Что в меню? (NYPL)",
-          href: "/ru/get-started/sample-datasets/menus",
+          href: "/get-started/sample-datasets/menus",
           imgLight: "/images/sample-datasets-grid/menus-light.jpg",
           imgDark: "/images/sample-datasets-grid/menus-dark.jpg"
         },
         {
           title: "Данные о жалобах NYPD",
-          href: "/ru/get-started/sample-datasets/nypd-complaint-data",
+          href: "/get-started/sample-datasets/nypd-complaint-data",
           imgLight: "/images/sample-datasets-grid/nypd-complaint-data-light.jpg",
           imgDark: "/images/sample-datasets-grid/nypd-complaint-data-dark.jpg"
         },
         {
           title: "OnTime (авиарейсы)",
-          href: "/ru/get-started/sample-datasets/ontime",
+          href: "/get-started/sample-datasets/ontime",
           imgLight: "/images/sample-datasets-grid/ontime-light.jpg",
           imgDark: "/images/sample-datasets-grid/ontime-dark.jpg"
         },
         {
           title: "Цены на недвижимость в Великобритании",
-          href: "/ru/get-started/sample-datasets/uk-price-paid",
+          href: "/get-started/sample-datasets/uk-price-paid",
           imgLight: "/images/sample-datasets-grid/uk-price-paid-light.jpg",
           imgDark: "/images/sample-datasets-grid/uk-price-paid-dark.jpg"
         }
@@ -122,23 +122,23 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "Данные экологических датчиков",
-          href: "/ru/get-started/sample-datasets/environmental-sensors",
+          href: "/get-started/sample-datasets/environmental-sensors",
           imgLight: "/images/sample-datasets-grid/environmental-sensors-light.jpg",
           imgDark: "/images/sample-datasets-grid/environmental-sensors-dark.jpg"
         },
         {
           title: "Глобальная историческая климатологическая сеть NOAA",
-          href: "/ru/get-started/sample-datasets/noaa",
+          href: "/get-started/sample-datasets/noaa",
           imgLight: "/images/sample-datasets-grid/noaa-light.jpg",
           imgDark: "/images/sample-datasets-grid/noaa-dark.jpg"
         },
         {
           title: "Исторические данные о погоде на Тайване",
-          href: "/ru/get-started/sample-datasets/tw-weather",
+          href: "/get-started/sample-datasets/tw-weather",
           imgLight: "/images/sample-datasets-grid/tw-weather-light.jpg",
           imgDark: "/images/sample-datasets-grid/tw-weather-dark.jpg"
         },
-        { title: "WikiStat", href: "/ru/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" }
+        { title: "WikiStat", href: "/get-started/sample-datasets/wikistat", imgLight: "/images/sample-datasets-grid/wikistat-light.jpg", imgDark: "/images/sample-datasets-grid/wikistat-dark.jpg" }
       ]
     },
     {
@@ -150,25 +150,25 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "dbpedia dataset",
-          href: "/ru/get-started/sample-datasets/dbpedia",
+          href: "/get-started/sample-datasets/dbpedia",
           imgLight: "/images/sample-datasets-grid/dbpedia-light.jpg",
           imgDark: "/images/sample-datasets-grid/dbpedia-dark.jpg"
         },
         {
           title: "Векторный поиск по Hacker News",
-          href: "/ru/get-started/sample-datasets/hacker-news-vector-search",
+          href: "/get-started/sample-datasets/hacker-news-vector-search",
           imgLight: "/images/sample-datasets-grid/hacker-news-vector-search-light.jpg",
           imgDark: "/images/sample-datasets-grid/hacker-news-vector-search-dark.jpg"
         },
         {
           title: "Laion-400M dataset",
-          href: "/ru/get-started/sample-datasets/laion",
+          href: "/get-started/sample-datasets/laion",
           imgLight: "/images/sample-datasets-grid/laion-400m-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion-400m-dark.jpg"
         },
         {
           title: "LAION 5B dataset",
-          href: "/ru/get-started/sample-datasets/laion5b",
+          href: "/get-started/sample-datasets/laion5b",
           imgLight: "/images/sample-datasets-grid/laion5b-light.jpg",
           imgDark: "/images/sample-datasets-grid/laion5b-dark.jpg"
         }
@@ -183,43 +183,43 @@ export const SampleDatasetExplorer = ({ categories }) => {
       datasets: [
         {
           title: "Отзывы покупателей Amazon",
-          href: "/ru/get-started/sample-datasets/amazon-reviews",
+          href: "/get-started/sample-datasets/amazon-reviews",
           imgLight: "/images/sample-datasets-grid/amazon-reviews-light.jpg",
           imgDark: "/images/sample-datasets-grid/amazon-reviews-dark.jpg"
         },
         {
           title: "Анонимизированная веб-аналитика",
-          href: "/ru/get-started/sample-datasets/anon-web-analytics-metrica",
+          href: "/get-started/sample-datasets/anon-web-analytics-metrica",
           imgLight: "/images/sample-datasets-grid/anon-web-analytics-light.jpg",
           imgDark: "/images/sample-datasets-grid/anon-web-analytics-dark.jpg"
         },
         {
           title: "Запросы к данным GitHub",
-          href: "/ru/get-started/sample-datasets/github",
+          href: "/get-started/sample-datasets/github",
           imgLight: "/images/sample-datasets-grid/github-light.jpg",
           imgDark: "/images/sample-datasets-grid/github-dark.jpg"
         },
         {
           title: "Датасет событий GitHub",
-          href: "/ru/get-started/sample-datasets/github-events",
+          href: "/get-started/sample-datasets/github-events",
           imgLight: "/images/sample-datasets-grid/github-events-light.jpg",
           imgDark: "/images/sample-datasets-grid/github-events-dark.jpg"
         },
         {
           title: "Hacker News dataset",
-          href: "/ru/get-started/sample-datasets/hacker-news",
+          href: "/get-started/sample-datasets/hacker-news",
           imgLight: "/images/sample-datasets-grid/hacker-news-light.jpg",
           imgDark: "/images/sample-datasets-grid/hacker-news-dark.jpg"
         },
         {
           title: "Анализ данных Stack Overflow",
-          href: "/ru/get-started/sample-datasets/stackoverflow",
+          href: "/get-started/sample-datasets/stackoverflow",
           imgLight: "/images/sample-datasets-grid/stackoverflow-light.jpg",
           imgDark: "/images/sample-datasets-grid/stackoverflow-dark.jpg"
         },
         {
           title: "Датасет дизлайков YouTube",
-          href: "/ru/get-started/sample-datasets/youtube-dislikes",
+          href: "/get-started/sample-datasets/youtube-dislikes",
           imgLight: "/images/sample-datasets-grid/youtube-dislikes-light.jpg",
           imgDark: "/images/sample-datasets-grid/youtube-dislikes-dark.jpg"
         }
@@ -247,7 +247,7 @@ export const SampleDatasetExplorer = ({ categories }) => {
       aria-label={item.title}
       style={{
         "--sde-image-light-mode": `url("${webpFor(item.imgDark)}")`,
-        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`,
+        "--sde-image-dark-mode": `url("${webpFor(item.imgLight)}")`
       }}
     />
   )
@@ -258,15 +258,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
       <style
         dangerouslySetInnerHTML={{
           __html: `
-        @keyframes sde-pop {
-          from { opacity: 0; transform: translateY(14px) scale(0.96); }
-          to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-        @keyframes sde-fade {
-          from { opacity: 0; }
-          to   { opacity: 1; }
-        }
-        .sde-view { animation: sde-fade 0.25s ease both; }
         .sde-tile {
           display: block;
           width: 100%;
@@ -275,8 +266,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           background: transparent;
           text-align: left;
           cursor: pointer;
-          animation: sde-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
-          transition: transform 0.25s cubic-bezier(0.22, 1, 0.36, 1);
         }
         .sde-tile:hover { transform: translateY(-4px) scale(1.015); }
         .sde-tile:active { transform: translateY(-1px) scale(0.995); }
@@ -290,7 +279,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           border-radius: 8px;
           overflow: hidden;
           box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-          transition: box-shadow 0.25s ease;
         }
         .dark .sde-root .sde-tile-media { border-color: #3c3c3c; }
         .sde-tile:hover .sde-tile-media { box-shadow: 0 12px 28px rgba(0,0,0,0.22); }
@@ -321,7 +309,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           backdrop-filter: blur(6px);
           -webkit-backdrop-filter: blur(6px);
           opacity: 0;
-          transition: opacity 0.25s ease;
           pointer-events: none;
         }
         .sde-tile:hover .sde-tile-hint { opacity: 1; }
@@ -349,7 +336,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           align-items: center;
           gap: 4px;
         }
-        .sde-child { animation: sde-pop 0.45s cubic-bezier(0.22, 1, 0.36, 1) both; }
         .sde-back {
           display: inline-flex;
           align-items: center;
@@ -362,7 +348,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           opacity: 0.5;
           font-size: 0.875rem;
           font-weight: 500;
-          transition: opacity 0.2s ease;
         }
         .sde-back:hover { opacity: 1; }
         .sde-detail-title {
@@ -370,7 +355,6 @@ export const SampleDatasetExplorer = ({ categories }) => {
           font-weight: 600;
           line-height: 1.3;
           margin: 0 0 1.25rem 0;
-          animation: sde-pop 0.4s cubic-bezier(0.22, 1, 0.36, 1) both;
         }
       `
         }}
@@ -379,8 +363,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
       {!selected ? (
         <div className="sde-view">
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-            {cats.map((cat, i) => (
-              <button key={cat.id} type="button" className="sde-tile" style={{ animationDelay: `${i * 60}ms` }} onClick={() => setSelectedId(cat.id)} aria-label={`Изучить наборы данных категории ${cat.title}`}>
+            {cats.map((cat) => (
+              <button key={cat.id} type="button" className="sde-tile" onClick={() => setSelectedId(cat.id)} aria-label={`Изучить наборы данных категории ${cat.title}`}>
                 <span className="sde-tile-media">
                   <Banner cat={cat} />
                   <span className="sde-tile-hint">
@@ -414,8 +398,8 @@ export const SampleDatasetExplorer = ({ categories }) => {
           <h2 className="sde-detail-title">{selected.title}</h2>
 
           <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 items-start">
-            {selected.datasets.map((ds, i) => (
-              <a key={ds.href} href={withBase(ds.href)} className="sde-child sde-tile" style={{ animationDelay: `${i * 50}ms` }}>
+            {selected.datasets.map((ds) => (
+              <a key={ds.href} href={withBase(ds.href)} className="sde-tile">
                 <span className="sde-tile-media">
                   {ds.imgDark && ds.imgLight && <ThemeImage item={ds} />}
                   <span className="sde-tile-hint">

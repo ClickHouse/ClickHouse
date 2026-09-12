@@ -211,7 +211,9 @@ ClickHouse 插件已启用此功能，可在 trace 和日志之间相互跳转�
 
 如果在[日志](#logs)或[trace](#traces)查询中启用了 OpenTelemetry，则会自动包含一个 trace ID 列。
 
-包含 trace ID 列后，数据中会附带“**View Trace**”和“**View Logs**”链接。
+存在 trace ID 列时，插件可以在数据中添加“**View Trace**”和“**View Logs**”链接。
+
+这些开关默认启用。当前查询类型的链接无需配置默认值；跨信号链接仅会在数据源为目标信号配置了默认值时显示。你可以在数据源的 [trace](/zh/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) 和[日志](/zh/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links)配置部分中，使用 **Show &quot;View trace&quot; links** 和 **Show &quot;View logs&quot; links** 开关隐藏这些链接。
 
 <div id="linking-abilities">
   ### 链接功能

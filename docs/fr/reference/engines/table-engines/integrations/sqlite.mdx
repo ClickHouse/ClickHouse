@@ -14,9 +14,7 @@ import { CloudNotSupportedBadge } from "/snippets/fr/components/CloudNotSupporte
 
 Le moteur permet d’importer et d’exporter des données vers SQLite et prend en charge les requêtes sur des tables SQLite directement depuis ClickHouse.
 
-<div id="creating-a-table">
-  ## Créer une table
-</div>
+## Créer une table {#creating-a-table}
 
 ```sql
     CREATE TABLE [IF NOT EXISTS] [db.]table_name
@@ -31,9 +29,7 @@ Le moteur permet d’importer et d’exporter des données vers SQLite et prend 
 * `db_path` — Chemin vers le fichier SQLite contenant une base de données.
 * `table` — Nom d’une table de la base de données SQLite, ou requête transmise telle quelle à SQLite (voir [Passer une requête au lieu d’un nom de table](#passing-a-query)).
 
-<div id="passing-a-query">
-  ## Passer une requête au lieu d’un nom de table
-</div>
+## Passer une requête au lieu d’un nom de table {#passing-a-query}
 
 Au lieu d’un nom de table, l’argument `table` peut être une requête `SELECT` transmise telle quelle à SQLite. La structure de la table est inférée à partir du résultat de la requête. La requête peut être écrite soit sous forme de sous-requête, soit encapsulée dans la fonction `query` :
 
@@ -47,12 +43,10 @@ Une telle table est en lecture seule : les opérations `INSERT` n&#39;y sont pa
 <Note>
   La forme de sous-requête `(SELECT ...)` est analysée par ClickHouse puis re-sérialisée avant d&#39;être envoyée à SQLite. Elle doit donc être valide en SQL ClickHouse. Pour transmettre une syntaxe spécifique à SQLite que ClickHouse n&#39;analyse pas, utilisez la forme `query('...')`, dont le texte est envoyé tel quel à SQLite.
 
-  Tout `WHERE`, `LIMIT`, toute agrégation, etc. externe de la requête ClickHouse englobante n&#39;est **pas** répercuté dans la requête transmise : ils sont appliqués dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis SQLite, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe qui ne peut pas être répercuté est rejeté avec une exception au lieu d&#39;être appliqué localement.
+  Tout `WHERE`, `LIMIT`, toute agrégation, etc. externe de la requête ClickHouse englobante n&#39;est **pas** répercuté dans la requête transmise : ils sont appliqués dans ClickHouse après récupération du résultat complet de la requête. Pour restreindre les données lues depuis SQLite, placez le filtre dans la requête transmise. Avec [`external_table_strict_query = 1`](/fr/reference/settings/session-settings/external-table#external_table_strict_query), un filtre externe sur les colonnes de la table est rejeté avec une exception au lieu d&#39;être appliqué localement, car il ne peut pas être répercuté dans la requête transmise. La vérification couvre le prédicat `WHERE` de niveau supérieur et chaque terme d’un `AND` de niveau supérieur. Un `PREWHERE` sur les colonnes de cette table n’est pas concerné par ce paramètre : ce moteur de table ne prend pas en charge `PREWHERE`, et une telle requête est rejetée avec `ILLEGAL_PREWHERE`, quel que soit le paramètre. Avec l’analyseur (par défaut), la vérification ne s’exécute que lorsqu’un filtre pourrait effectivement être répercuté : lorsque cette table est la seule table de la requête, de part et d’autre d’un `INNER JOIN`, ou du côté préservé d’une jointure externe (le côté gauche d’un `LEFT JOIN`, le côté droit d’un `RIGHT JOIN`). Du côté non préservé d’un `LEFT`/`RIGHT JOIN` et de chaque côté d’un `FULL JOIN`, rien n’est répercuté ni vérifié ; un filtre sur les colonnes de cette table est donc appliqué localement après la jointure, même en mode strict. Lorsque la vérification s’exécute, un prédicat qui fait référence à d’autres tables jointes dans la requête englobante n’est pas répercuté et est exclu de la vérification, qu’il fasse uniquement référence au côté joint ou qu’il mélange ce côté avec cette table dans une expression unique autre que `AND` (par exemple un `OR`) ; un tel prédicat conserve son point d’évaluation ClickHouse habituel (`WHERE` après la jointure, `PREWHERE` avant celle-ci) et n’est pas rejeté. Avec l’ancien analyseur (`enable_analyzer = 0`), cette portée ne s’applique pas : l’intégralité du filtre externe est vérifiée lorsque cette table est la première table de l’arbre de jointure, y compris un prédicat sur le côté joint, et une table jointe à droite n’est pas vérifiée.
 </Note>
 
-<div id="data-types-support">
-  ## Prise en charge des types de données
-</div>
+## Prise en charge des types de données {#data-types-support}
 
 Lorsque vous spécifiez explicitement les types de colonnes ClickHouse dans la définition de la table, les types ClickHouse suivants peuvent être interprétés à partir de colonnes TEXT SQLite :
 
@@ -67,9 +61,7 @@ Lorsque vous spécifiez explicitement les types de colonnes ClickHouse dans la d
 
 Consultez le [moteur de base de données SQLite](/fr/reference/engines/database-engines/sqlite#data_types-support) pour la correspondance de types par défaut.
 
-<div id="usage-example">
-  ## Exemple d&#39;utilisation
-</div>
+## Exemple d&#39;utilisation {#usage-example}
 
 Affiche une requête qui crée la table SQLite :
 

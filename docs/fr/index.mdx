@@ -8,9 +8,9 @@ sidebarTitle: "Accueil"
 
 export const localizeHref = (href) => {
     if (/^\/(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/.test(href)) return href;
-    const match = typeof window !== 'undefined' ? window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/) : null;
-    const locale = match ? match[1] : 'fr';
-    return `/${locale}${href}`;
+    if (typeof window === 'undefined') return href;
+    const match = window.location.pathname.match(/^\/(?:docs\/)?(ar|es|fr|ja|ko|pt-BR|ru|zh)(?:\/|$)/);
+    return match ? `/${match[1]}${href}` : href;
 };
 
 export const withDocsBase = (href) => {
@@ -159,8 +159,8 @@ export const IntegrationsBanner = () => {
             onClick={(event) => navigateTo(event, href)}
         >
             <div>
-                <h3 className="text-[#111827] dark:text-white text-lg font-semibold leading-[1.3] mt-0">Intégrations</h3>
-                <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-1 text-sm font-normal leading-normal">Plus de 100 intégrations pour connecter à ClickHouse les outils et services que vous aimez.</span>
+                <h3 className="text-[#111827] dark:text-white text-lg font-semibold leading-[1.3] mt-0">Integrations</h3>
+                <span className="block text-[#6b7280] dark:text-[#a1a1aa] mt-1 text-sm font-normal leading-normal">100+ integrations to connect the tools and services that you love with ClickHouse.</span>
             </div>
             <div className="ch-usecase-arrow shrink-0 flex items-center justify-center w-12 h-12 mr-2 rounded-full bg-gray-950/[0.05] dark:bg-white/[0.06]">
                 <span
@@ -194,7 +194,7 @@ export const HighlightedClickHouse = () => {
 
 export const McpLink = ({ children }) => {
     const assetBase = typeof window === 'undefined' || window.location.pathname.startsWith('/docs') ? '/docs' : '';
-    const path = localizeHref('/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server');
+    const path = '/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server';
     const href = withDocsBase(path);
     return (
         <a
@@ -217,7 +217,7 @@ export const McpLink = ({ children }) => {
 };
 
 export const QuickstartPill = ({ children }) => {
-    const path = '/fr/get-started/setup/cloud';
+    const path = '/get-started/setup/cloud';
     const href = withDocsBase(path);
     return (
         <a
@@ -303,12 +303,12 @@ export const PageWrapper = ({ children }) => {
     <div className="absolute -top-14 left-0 right-0 opacity-80">
       <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV84MjcpIj4KPHJlY3Qgb3BhY2l0eT0iMC4wMSIgd2lkdGg9IjExNTIiIGhlaWdodD0iMzg4IiBmaWxsPSJ1cmwoI3BhaW50MF9saW5lYXJfMjMxXzgyNykiLz4KPC9nPgo8ZGVmcz4KPGxpbmVhckdyYWRpZW50IGlkPSJwYWludDBfbGluZWFyXzIzMV84MjciIHgxPSI1NzYiIHkxPSIwIiB4Mj0iNTc2IiB5Mj0iMzg4IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CjxzdG9wIHN0b3AtY29sb3I9IiM3MzczNzMiLz4KPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjRDlEOUQ5IiBzdG9wLW9wYWNpdHk9IjAiLz4KPC9saW5lYXJHcmFkaWVudD4KPGNsaXBQYXRoIGlkPSJjbGlwMF8yMzFfODI3Ij4KPHJlY3Qgd2lkdGg9IjExNTIiIGhlaWdodD0iMzg4IiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo=" className="block dark:hidden pointer-events-none w-full h-auto" alt="Image décorative d’arrière-plan." />
 
-      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV83MzApIj4KPGcgb3BhY2l0eT0iMC4xMiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZl8yMzFfNzMwKSI+CjxjaXJjbGUgY3g9Ijg0My41IiBjeT0iLTIzMS41IiByPSIyMDMuNSIgZmlsbD0id2hpdGUiLz4KPC9nPgo8L2c+CjxkZWZzPgo8ZmlsdGVyIGlkPSJmaWx0ZXIwX2ZfMjMxXzczMCIgeD0iNTguMTk4OSIgeT0iLTEwMTYuOCIgd2lkdGg9IjE1NzAuNiIgaGVpZ2h0PSIxNTcwLjYiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0ic2hhcGUiLz4KPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMjkwLjkwMSIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzIzMV83MzAiLz4KPC9maWx0ZXI+CjxjbGlwUGF0aCBpZD0iY2xpcDBfMjMxXzczMCI+CjxyZWN0IHdpZHRoPSIxMTUyIiBoZWlnaHQ9IjM4OCIgZmlsbD0id2hpdGUiLz4KPC9jbGlwUGF0aD4KPC9kZWZzPgo8L3N2Zz4K" className="hidden dark:block pointer-events-none w-full h-auto" alt="Image de fond décorative." />
+      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV83MzApIj4KPGcgb3BhY2l0eT0iMC4xMiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZl8yMzFfNzMwKSI+CjxjaXJjbGUgY3g9Ijg0My41IiBjeT0iLTIzMS41IiByPSIyMDMuNSIgZmlsbD0id2hpdGUiLz4KPC9nPgo8L2c+CjxkZWZzPgo8ZmlsdGVyIGlkPSJmaWx0ZXIwX2ZfMjMxXzczMCIgeD0iNTguMTk4OSIgeT0iLTEwMTYuOCIgd2lkdGg9IjE1NzAuNiIgaGVpZ2h0PSIxNTcwLjYiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0ic2hhcGUiLz4KPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMjkwLjkwMSIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzIzMV83MzAiLz4KPC9maWx0ZXI+CjxjbGlwUGF0aCBpZD0iY2xpcDBfMjMxXzczMCI+CjxyZWN0IHdpZHRoPSIxMTUyIiBoZWlnaHQ9IjM4OCIgZmlsbD0id2hpdGUiLz4KPC9jbGlwUGF0aD4KPC9kZWZzPgo8L3N2Zz4K" className="hidden dark:block pointer-events-none w-full h-auto" alt="Image décorative d’arrière-plan." />
     </div>
 
     <div className="relative z-10 px-0 py-16 lg:py-12 lg:pb-40 max-w-6xl mx-auto">
       <div className="flex justify-center mb-8">
-        <QuickstartPill>Démarrage rapide : <span className="font-medium text-[#2563eb] dark:text-[#FCFF74]">Premiers pas avec Cloud</span></QuickstartPill>
+        <QuickstartPill>Démarrage rapide : <span className="font-medium text-[#2563eb] dark:text-[#FCFF74]">Premiers pas avec Cloud</span></QuickstartPill>
       </div>
 
       <h1 className="block text-[34px] font-semibold text-center text-gray-900 dark:text-zinc-50 tracking-tight">
@@ -334,7 +334,7 @@ export const PageWrapper = ({ children }) => {
         <HeroCard
           title="Prise en main"
           galaxyEvent="docs.home.get-started"
-          description="Je suis nouveau ici, je souhaite commencer et en savoir plus"
+          description="Je suis nouveau ici et souhaite en savoir plus"
           href={localizeHref("/get-started/setup/cloud")}
           icon={
           <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" viewBox="0 0 256 256" className="ch-goal-icon">
@@ -450,7 +450,7 @@ export const PageWrapper = ({ children }) => {
                 <p className="text-[#6b7280] dark:text-[#a1a1aa] mt-2 text-sm leading-[1.6]">
                     Cette section montre comment ClickHouse rend le data warehousing rapide, simple et prévisible. Au lieu de vous débattre avec des pipelines fragiles et des moteurs de requête lents, vous centralisez les données de vos applications, services et outils en quelques minutes plutôt qu’en plusieurs semaines. Vous pouvez ensuite alimenter des dashboards en temps réel, déclencher des alertes, analyser les tendances historiques et créer des produits pilotés par les événements sur une plateforme unique.
                 </p>
-                <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">Ce que vous apprendrez :</p>
+                <p className="text-[#111827] dark:text-zinc-200 mt-5 text-sm">Ce que vous apprendrez :</p>
             </>}
               links={[
                 { label: "1. Comment ingérer des données depuis des sources courantes avec un minimum d’effort", href: localizeHref("/integrations/home") },

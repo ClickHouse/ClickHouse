@@ -10,7 +10,7 @@ doc_type: '참고'
 import { Image } from "/snippets/ko/components/Image.jsx";
 
 <div id="customer-managed-vpc-aws">
-  ## AWS용 고객 관리형 VPC(BYO-VPC)
+  ## AWS용 고객 관리형 VPC(BYO-VPC) {#customer-managed-vpc-aws}
 </div>
 
 ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용해 ClickHouse BYOC를 배포하려면 아래 단계를 따르십시오. 이 방식은 네트워크 구성에 대한 제어 범위를 넓혀 주며, ClickHouse BYOC를 기존 네트워크 인프라에 통합할 수 있도록 합니다.
@@ -54,7 +54,7 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
       ClickHouse 실행에 필요한 스토리지 버킷, Kubernetes 클러스터, 컴퓨트 리소스는 이 초기 설정에 포함되지 않습니다. 이러한 항목은 이후 단계에서 프로비저닝됩니다. VPC는 직접 제어하더라도, ClickHouse Cloud는 AWS 계정에서 Kubernetes 클러스터, 서비스 계정용 IAM 역할, S3 버킷 및 기타 필수 리소스를 생성하고 관리할 수 있는 IAM 권한이 여전히 필요합니다.
     </Note>
 
-    #### Terraform 모듈
+    #### Terraform 모듈 {#terraform-module-aws}
 
     CloudFormation 대신 Terraform을 사용하려면 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 모듈을 사용하십시오:
 
@@ -98,9 +98,16 @@ ClickHouse Cloud가 새 VPC를 프로비저닝하는 대신 기존 VPC를 사용
   </Step>
 </Steps>
 
-<div id="customer-managed-iam-roles">
-  ## 고객 관리형 IAM 역할
-</div>
+### 다른 계정에서 공유된 서브넷(AWS RAM) {#shared-subnets-ram}
+
+[AWS Resource Access Manager(RAM)](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html)를 사용하면 허브 계정에서 공유한 서브넷 위에서 스포크 계정으로 BYOC를 실행할 수 있으며, 이를 통해 네트워킹을 중앙에서 관리할 수 있습니다. 설정 방법은 위와 동일하지만, RAM 공유의 동작 방식에서 비롯되는 두 가지 차이가 있습니다.
+
+* **태그는 스포크 계정에서 적용하십시오.** RAM으로 공유된 리소스는 계정별로 태그를 따로 보기 때문에, 허브 계정에서 적용한 태그는 스포크 계정에 표시되지 않습니다. **스포크 계정에서** VPC에는 `clickhouse-byoc="true"`를, 각 공유 서브넷에는 `kubernetes.io/role/internal-elb=1`과 `clickhouse-byoc="true"`를 함께 적용하십시오. 그렇지 않으면 사전 점검 유효성 검사에서 태그 누락이 보고되어 Provisioning이 실패합니다.
+* **라우팅은 허브 계정이 담당합니다.** 공유 서브넷의 라우트 테이블은 여전히 허브 계정이 소유하므로, NAT 및 egress 라우팅과 VPC 수준 리소스인 S3 gateway endpoint에 대한 책임도 허브 계정에 있습니다. 공유 서브넷이 위의 아웃바운드 연결 요구 사항을 여전히 충족하는지 확인하십시오.
+
+그 외의 사항은 동일합니다. 3개의 가용 영역에 걸친 3개의 프라이빗 서브넷, 서브넷당 최소 `/25` CIDR, 그리고 BYOC 인프라가 실행되는 스포크 계정의 `ClickHouseManagementRole` 설정이 필요합니다.
+
+## 고객 관리형 IAM 역할 {#customer-managed-iam-roles}
 
 고급 보안 요구 사항이나 엄격한 컴플라이언스 정책이 있는 조직에서는 ClickHouse Cloud가 IAM 역할을 생성하도록 하는 대신 자체 IAM 역할을 제공할 수 있습니다. 이 방식은 IAM 권한을 완전히 제어할 수 있게 해 주며, 조직의 보안 정책을 강제 적용할 수 있도록 합니다.
 

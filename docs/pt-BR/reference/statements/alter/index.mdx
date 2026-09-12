@@ -54,9 +54,7 @@ Estas instruções `ALTER` modificam entidades relacionadas ao Controle de Acess
 | [ALTER DATABASE ... MODIFY COMMENT](/pt-BR/reference/statements/alter/database-comment) | Adiciona, modifica ou remove comentários no banco de dados, independentemente de já terem sido definidos ou não. |
 | [ALTER NAMED COLLECTION](/pt-BR/reference/statements/alter/named-collection)            | Modifica [coleções nomeadas](/pt-BR/concepts/features/configuration/server-config/named-collections).                  |
 
-<div id="mutations">
-  ## Mutações
-</div>
+## Mutações {#mutations}
 
 Consultas `ALTER` destinadas a manipular dados de tabelas são implementadas por meio de um mecanismo chamado &quot;mutações&quot;, principalmente [ALTER TABLE ... DELETE](/pt-BR/reference/statements/alter/delete) e [ALTER TABLE ... UPDATE](/pt-BR/reference/statements/alter/update). Elas são processos assíncronos em segundo plano, semelhantes às mesclagens em tabelas [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index), que produzem novas versões &quot;mutadas&quot; das partes.
 
@@ -69,9 +67,7 @@ Uma consulta de mutação retorna imediatamente após a entrada da mutação ser
 
 As entradas de mutações concluídas não são excluídas imediatamente (o número de entradas preservadas é determinado pelo parâmetro do motor de armazenamento `finished_mutations_to_keep`). Entradas de mutação mais antigas são excluídas.
 
-<div id="synchronicity-of-alter-queries">
-  ## Sincronia das consultas `ALTER`
-</div>
+## Sincronia das consultas `ALTER` {#synchronicity-of-alter-queries}
 
 Para tabelas não replicadas, todas as consultas `ALTER` são executadas de forma síncrona. Para tabelas replicadas, a consulta apenas adiciona instruções para as ações apropriadas ao `ZooKeeper`, e as próprias ações são executadas assim que possível. No entanto, a consulta pode aguardar a conclusão dessas ações em todas as réplicas.
 
@@ -82,12 +78,10 @@ Para outras consultas `ALTER` que apenas modificam os metadados, você pode usar
 Você pode especificar por quanto tempo (em segundos) aguardar que réplicas inativas executem todas as consultas `ALTER` com a configuração [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/pt-BR/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  Para todas as consultas `ALTER`, se `alter_sync = 2` e algumas réplicas permanecerem inativas por mais tempo do que o especificado na configuração `replication_wait_for_inactive_replica_timeout`, uma exceção `UNFINISHED` será lançada.
+  Para todas as consultas `ALTER`, se `alter_sync = 2`, ou `alter_sync = 3` em `ReplicatedMergeTree`, e algumas réplicas permanecerem inativas por mais tempo do que o especificado na configuração `replication_wait_for_inactive_replica_timeout`, uma exceção `UNFINISHED` será lançada.
 </Note>
 
-<div id="concurrent-alter-assignment-on-one-table">
-  ### Atribuição simultânea de `ALTER` em uma tabela
-</div>
+### Atribuição simultânea de `ALTER` em uma tabela {#concurrent-alter-assignment-on-one-table}
 
 Em tabelas replicadas, enviar várias instruções `ALTER` separadas para a mesma tabela em rápida sucessão pode falhar com `CANNOT_ASSIGN_ALTER` (código 517). O caminho de replicação gera esse erro quando a réplica ainda não aplicou alguns `ALTER`s anteriores (a versão dos metadados ainda está defasada em relação aos metadados comuns — o servidor pode informar que a réplica &quot;ainda não aplicou alguns dos alters anteriores&quot; ou &quot;Provavelmente há muitos alters sendo executados simultaneamente&quot;). Essa condição pode persistir mesmo depois que um `ALTER` anterior já tiver sido atribuído. Trata-se de uma condição **geral de `ALTER` de metadados / mutação simultâneos** — não se limita a instruções que envolvem apenas mutações. Alterações simultâneas comuns de metadados (`ADD` / `DROP` / `MODIFY` e similares) podem gerar o mesmo código passível de nova tentativa (consulte, por exemplo, o caminho de nova tentativa abordado em `tests/queries/0_stateless/03518_alter_logical_race.sh`).
 
@@ -97,9 +91,7 @@ Abordagens para evitar a condição de corrida:
 * Serialize as instruções `ALTER` e tente novamente ao receber o código 517 até que os `ALTER`s anteriores tenham sido aplicados na réplica.
 * Para `ALTER`s que geram mutações, aguarde a conclusão da mutação anterior usando um indicador documentado, como [`mutations_sync`](/pt-BR/reference/settings/session-settings/mutations#mutations_sync) ou `is_done` em [`system.mutations`](/pt-BR/reference/system-tables/mutations), antes de enviar o próximo.
 
-<div id="combining-materialize-index-clauses">
-  ### Combinação de cláusulas `MATERIALIZE INDEX`
-</div>
+### Combinação de cláusulas `MATERIALIZE INDEX` {#combining-materialize-index-clauses}
 
 Várias cláusulas `MATERIALIZE INDEX` podem aparecer em um único `ALTER`. O caso coberto no repositório é combinar várias cláusulas `ADD INDEX` com `MATERIALIZE INDEX` para esses mesmos novos índices em uma única instrução (consulte `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). Essa forma combinada de `ADD INDEX` + `MATERIALIZE INDEX` mistura um segmento `AlterCommand` com um segmento `MutationCommand`; portanto, **é rejeitada por `DatabaseReplicated`** com `QUERY_IS_PROHIBITED` (`InterpreterAlterQuery::validateReplicatedDatabaseSegments`). Considere o exemplo `02911` válido para bancos de dados comuns (não `DatabaseReplicated`); em `DatabaseReplicated`, mantenha as alterações de metadados e as mutações de materialização em instruções separadas.
 
@@ -107,9 +99,7 @@ Na implementação atual, cada cláusula `MATERIALIZE INDEX` é resolvida com ba
 
 Se precisar que as mutações sejam aplicadas em ordem, ainda é possível emitir um `MATERIALIZE INDEX` por instrução e aguardar usando [`mutations_sync`](/pt-BR/reference/settings/session-settings/mutations#mutations_sync).
 
-<div id="related-content">
-  ## Conteúdo relacionado
-</div>
+## Conteúdo relacionado {#related-content}
 
 * Blog: [Como lidar com atualizações e exclusões no ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

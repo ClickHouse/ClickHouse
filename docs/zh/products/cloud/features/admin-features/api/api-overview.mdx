@@ -103,7 +103,7 @@ Beta 表示 schema 和行为可能会在未来的提供商版本中发生变化�
 
 每个服务在创建时的默认副本数，在 Scale 和 Enterprise 层级中为 3，而在基础版中为 1。
 对于 Scale 和 Enterprise 层级，可以通过在服务创建请求中传入 `numReplicas` 字段来调整副本数。
-对于仓库中的第一个服务，`numReplicas` 字段的值必须在 2 到 20 之间。在现有仓库中创建的服务，副本数则最低可为 1。
+对于仓库中的第一个服务，`numReplicas` 字段的值必须至少为 2。在现有仓库中创建的服务，副本数则最低可为 1。关于副本数的上限，请参阅 [使用限制](/zh/cloud/bestpractices/usage-limits)。
 
 <div id="support">
   ## 支持

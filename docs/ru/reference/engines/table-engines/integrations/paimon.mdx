@@ -12,9 +12,7 @@ doc_type: 'reference'
 Этот движок обеспечивает интеграцию в режиме только для чтения с существующими таблицами Apache [Paimon](https://paimon.apache.org/), хранящимися в Amazon S3, Azure, HDFS и локально.
 Он поддерживает чтение снимка, инкрементальное чтение и базовое отсечение партиций, реализованное в движке.
 
-<div id="create-table">
-  ## Создание таблицы
-</div>
+## Создание таблицы {#create-table}
 
 Обратите внимание, что таблица Paimon уже должна существовать в хранилище; эта команда не поддерживает DDL-параметры для создания новой таблицы.
 Создание таблиц `Paimon*` регулируется параметром `allow_experimental_paimon_storage_engine` (по умолчанию он отключен), поэтому включите его перед выполнением `CREATE TABLE`.
@@ -35,18 +33,14 @@ CREATE TABLE paimon_table_local
     ENGINE = PaimonLocal(path_to_table, [,format] [,compression_method])
 ```
 
-<div id="engine-arguments">
-  ## Аргументы движка
-</div>
+## Аргументы движка {#engine-arguments}
 
 Описание аргументов совпадает с описанием аргументов для движков `S3`, `AzureBlobStorage`, `HDFS` и `File` соответственно.
 `format` обозначает формат файлов данных в таблице Paimon.
 
 Параметры движка можно задавать с помощью [именованных коллекций](/ru/concepts/features/configuration/server-config/named-collections)
 
-<div id="example">
-  ### Пример
-</div>
+### Пример {#example}
 
 ```sql
 CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhouse-bucket/test_table', 'test', 'test')
@@ -70,9 +64,7 @@ CREATE TABLE paimon_table ENGINE=PaimonS3('http://test.s3.amazonaws.com/clickhou
 CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 ```
 
-<div id="capabilities">
-  ## Возможности
-</div>
+## Возможности {#capabilities}
 
 * Чтение снимка из последнего снимка таблицы.
 * Инкрементальное чтение по идентификатору зафиксированного снимка, если эта возможность включена.
@@ -80,11 +72,9 @@ CREATE TABLE paimon_table ENGINE=PaimonS3(paimon_conf, filename = 'test_table')
 * Необязательное фоновое обновление метаданных при соответствующей настройке.
 * Стабильный UUID таблицы при использовании баз данных Atomic/Replicated, что позволяет использовать макросы `{uuid}` в путях Keeper.
 
-<div id="settings">
-  ## Настройки
-</div>
+## Настройки {#settings}
 
-Этот движок использает те же настройки, что и соответствующие движки объектного хранилища, а также добавляет настройки, специфичные для Paimon:
+Этот движок использует те же настройки, что и соответствующие движки объектного хранилища, а также добавляет настройки, специфичные для Paimon:
 
 * `allow_experimental_paimon_storage_engine` — включает создание движков таблиц `Paimon`, `PaimonS3`, `PaimonAzure`, `PaimonHDFS` и `PaimonLocal`. По умолчанию: `0` (отключено).
 * `use_paimon_metadata_files_cache` — включает кэш файлов метаданных Paimon (кэширует десериализованные списки manifest и manifest-файлы). Установите `1`, чтобы включить, `0` — чтобы отключить. По умолчанию: `0`. Применение этой настройки различается для табличных функций и движков постоянных таблиц — см. примечание ниже.
@@ -103,20 +93,16 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-<Info>
-  **Жизненный цикл `use_paimon_metadata_files_cache`**
-
+<Note title="Жизненный цикл `use_paimon_metadata_files_cache`">
   То, как применяется `use_paimon_metadata_files_cache`, зависит от способа доступа к таблице Paimon:
 
   * **Табличные функции** (например, `SELECT ... FROM paimonS3(...)`): решение об использовании кэша принимается для каждого запроса, поэтому `SETTINGS use_paimon_metadata_files_cache = 1` можно передать прямо в `SELECT`.
-  * **Постоянные движки таблиц** (`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, `PaimonLocal` и алиас `Paimon`): решение об использовании кэша фиксируется один раз при инициализации метаданных таблицы и сохраняется в неизменяемых постоянных компонентах; механизм обновления метаданных намеренно не перечитывает эту настройку. Поэтому передача `SETTINGS use_paimon_metadata_files_cache = 1` в `SELECT` для уже инициализированной постоянной таблицы не дает эффекта — продолжает использоваться ранее зафиксированное решение. Чтобы изменить его, задайте `use_paimon_metadata_files_cache` до инициализации метаданных таблицы или выполните `DROP`, а затем повторный `CREATE` таблицы с нужным значением.
+  * **Постоянные движки таблиц** (`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, `PaimonLocal` и псевдоним `Paimon`): решение об использовании кэша фиксируется один раз при инициализации метаданных таблицы и сохраняется в неизменяемых постоянных компонентах; механизм обновления метаданных намеренно не перечитывает эту настройку. Поэтому передача `SETTINGS use_paimon_metadata_files_cache = 1` в `SELECT` для уже инициализированной постоянной таблицы не дает эффекта — продолжает использоваться ранее зафиксированное решение. Чтобы изменить его, задайте `use_paimon_metadata_files_cache` до инициализации метаданных таблицы или выполните `DROP`, а затем повторный `CREATE` таблицы с нужным значением.
 
   Емкость кэша на уровне сервера (`paimon_metadata_files_cache_size`) *не* фиксируется: это настройка runtime, которую можно изменить через `SYSTEM RELOAD CONFIG`, и она вступает в силу немедленно даже для уже инициализированных таблиц.
-</Info>
+</Note>
 
-<div id="incremental-read-examples">
-  ## Примеры инкрементального чтения
-</div>
+## Примеры инкрементального чтения {#incremental-read-examples}
 
 Инкрементальное чтение с состоянием в Keeper:
 
@@ -129,9 +115,7 @@ SETTINGS
     paimon_replica_name = '{replica}';
 ```
 
-<div id="query-level-settings-for-incremental-read">
-  ### Настройки на уровне запроса для инкрементального чтения
-</div>
+### Настройки на уровне запроса для инкрементального чтения {#query-level-settings-for-incremental-read}
 
 Следующие настройки действуют **на уровне запроса** (передаются через `SELECT ... SETTINGS`, а не в `CREATE TABLE`). Они управляют поведением инкрементального чтения в рамках отдельного запроса:
 
@@ -154,9 +138,7 @@ FROM paimon_inc
 SETTINGS max_consume_snapshots = 2;
 ```
 
-<div id="paimon-to-mergetree-via-refresh-mv">
-  ## Из Paimon в MergeTree через refreshable materialized view
-</div>
+## Из Paimon в MergeTree через refreshable materialized view {#paimon-to-mergetree-via-refresh-mv}
 
 Вы можете построить сквозной конвейер, который непрерывно синхронизирует данные из таблицы Paimon в таблицу семейства MergeTree с помощью refreshable materialized view в режиме `APPEND`. В каждом цикле обновления считываются только новые инкрементальные данные из Paimon и добавляются в целевую таблицу.
 
@@ -221,9 +203,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
   Остановите MV перед удалением, чтобы фоновое обновление не блокировало выполнение DDL-операций.
 </Note>
 
-<div id="limitations">
-  ## Ограничения
-</div>
+## Ограничения {#limitations}
 
 * Для инкрементального чтения должен быть настроен Keeper (ZooKeeper).
 * Для инкрементального чтения параметр `paimon_keeper_path` должен быть задан и быть уникальным для каждой таблицы.
@@ -233,15 +213,11 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * Инкрементальное чтение не обрабатывает удаление исторических данных из источника Paimon. Если исходные данные Paimon удаляются или обновляются, соответствующие строки, уже записанные в целевую таблицу семейства MergeTree в ClickHouse, не будут автоматически удалены. Чтобы очистить устаревшие данные, необходимо вручную выполнить `ALTER TABLE ... DELETE` для таблицы семейства MergeTree.
 * Если базовая таблица Paimon удаляется и создаётся заново по тому же пути объектного хранилища (например, через Flink или Spark), необходимо выполнить `DROP` и повторно `CREATE` соответствующую таблицу ClickHouse. ClickHouse обнаруживает повторное создание, сравнивая временную метку создания schema-0, и выдаёт ошибку; устаревшую таблицу ClickHouse нельзя использовать, пока она не будет создана заново.
 
-<div id="aliases">
-  ## Псевдонимы
-</div>
+## Псевдонимы {#aliases}
 
 Движок таблицы `Paimon` автоматически определяет тип хранилища по настройке `disk` и в зависимости от этого использует `PaimonS3`, `PaimonAzure` или `PaimonLocal`. Если `disk` не указан, по умолчанию используется реализация `PaimonS3`.
 
-<div id="virtual-columns">
-  ## Виртуальные столбцы
-</div>
+## Виртуальные столбцы {#virtual-columns}
 
 * `_path` — Путь к файлу. Тип: `LowCardinality(String)`.
 * `_file` — Имя файла. Тип: `LowCardinality(String)`.
@@ -249,9 +225,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 * `_time` — Время последнего изменения файла. Тип: `Nullable(DateTime)`. Если время неизвестно, значение — `NULL`.
 * `_etag` — ETag файла. Тип: `LowCardinality(String)`. Если ETag неизвестен, значение — `NULL`.
 
-<div id="data-types-supported">
-  ## Поддерживаемые типы данных
-</div>
+## Поддерживаемые типы данных {#data-types-supported}
 
 | Тип данных Paimon                 | Тип данных ClickHouse     |
 | --------------------------------- | ------------------------- |
@@ -273,9 +247,7 @@ DROP TABLE IF EXISTS paimon_mv_source SYNC;
 | ARRAY                             | Array                     |
 | MAP                               | Map                       |
 
-<div id="partition-supported">
-  ## Поддерживаемые партиции
-</div>
+## Поддерживаемые партиции {#partition-supported}
 
 Типы данных, поддерживаемые в ключах партиционирования Paimon:
 

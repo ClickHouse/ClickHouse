@@ -42,7 +42,7 @@ Para habilitá-lo:
 2. Defina o número máximo de réplicas como maior que o número mínimo de réplicas. O escalonador automático opera dentro desses limites. Definir os dois valores como iguais fixa o serviço em uma quantidade determinada de réplicas e desabilita o escalonamento automático horizontal.
 
 <Note>
-  Os serviços podem escalar horizontalmente para até 20 réplicas. Se precisar de réplicas adicionais, entre em contato com nossa equipe de suporte.
+  Para conhecer os limites de réplicas que se aplicam ao seu serviço, consulte [Limites de uso](/pt-BR/cloud/bestpractices/usage-limits). Entre em contato com nossa equipe de suporte se precisar de réplicas adicionais.
 </Note>
 
 <div id="configure-your-clients">
@@ -90,5 +90,5 @@ Os eventos de scaling são visíveis no dashboard de métricas do serviço no co
 
 * O escalonamento automático horizontal está em Private Preview e deve ser habilitado para sua organização pela equipe de suporte do ClickHouse.
 * O tamanho vertical da réplica deve ser fixado definindo a memória mínima como igual à memória máxima.
-* Cada serviço está limitado a, no máximo, 20 réplicas. Entre em contato com o suporte caso precise de réplicas adicionais.
+* Aplicam-se limites de réplicas; consulte [Limites de uso](/pt-BR/cloud/bestpractices/usage-limits) para conhecer os limites que se aplicam ao seu serviço e entre em contato com o suporte caso precise de réplicas adicionais.
 * As recomendações são feitas a cada 10 minutos; o escalonamento automático horizontal não foi projetado para lidar com picos de menos de um minuto. Para picos previsíveis, considere o [escalonamento agendado](/pt-BR/products/cloud/features/autoscaling/scheduled-scaling).

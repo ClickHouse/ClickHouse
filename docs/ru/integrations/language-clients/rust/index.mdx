@@ -45,12 +45,12 @@ clickhouse = { version = "0.12.2", features = ["test-util"] }
   ## Возможности Cargo
 </div>
 
-* `lz4` (включена по умолчанию) — включает варианты `Compression::Lz4` и `Compression::Lz4Hc(_)`. Если эта возможность включена, `Compression::Lz4` по умолчанию используется для всех запросов, кроме `WATCH`.
+* `lz4` (включена по умолчанию) — включает варианты `Compression::Lz4` и `Compression::Lz4Hc(_)`. Если эта возможность включена, `Compression::Lz4` по умолчанию используется для всех запросов, кроме `WATCH`, который принимается только ClickHouse версий ниже v26.9.
 * `native-tls` — поддерживает URL со схемой `HTTPS` через `hyper-tls`, который собирается с OpenSSL.
 * `rustls-tls` — поддерживает URL со схемой `HTTPS` через `hyper-rustls`, который не собирается с OpenSSL.
 * `inserter` — включает `client.inserter()`.
 * `test-util` — добавляет моки. См. [пример](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs). Используйте только в `dev-dependencies`.
-* `watch` — включает функциональность `client.watch`. Подробности см. в соответствующем разделе.
+* `watch` — включает функциональность `client.watch`. Она выполняет запрос `WATCH`, который был удалён в ClickHouse v26.9 вместе с `WINDOW VIEW`, поэтому работает только с более ранними серверами.
 * `uuid` — добавляет `serde::uuid` для работы с крейтом [uuid](https://docs.rs/uuid).
 * `time` — добавляет `serde::time` для работы с крейтом [time](https://docs.rs/time).
 
@@ -556,7 +556,7 @@ struct MyRow {
   ## Мокирование
 </div>
 
-Крейт предоставляет утилиты для мокирования сервера CH и тестирования запросов DDL, `SELECT`, `INSERT` и `WATCH`. Эту функциональность можно включить, активировав возможность `test-util`. Используйте её **только** как зависимость для разработки.
+Крейт предоставляет утилиты для мокирования сервера CH и тестирования запросов DDL, `SELECT`, `INSERT` и `WATCH` (`WATCH` принимается только ClickHouse версий ниже v26.9). Эту функциональность можно включить, активировав возможность `test-util`. Используйте её **только** как зависимость для разработки.
 
 См. [пример](https://github.com/ClickHouse/clickhouse-rs/tree/main/examples/mock.rs).
 

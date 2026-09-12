@@ -17,9 +17,21 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
   تدعم فئة Scale وفئة Enterprise الخدمات أحادية النسخة المتماثلة ومتعددة النسخ المتماثلة. تدعم خدمات Scale أحادية النسخة المتماثلة وخدمات Enterprise ذات ملفات التعريف القياسية `1:4` التوسّع الرأسي التلقائي بالخدمة الذاتية. تتطلب خدمات Enterprise ذات ملفات التعريف المخصصة تغيير الحجم الرأسي بمساعدة فريق الدعم. يمكن لخدمات Scale وEnterprise التوسّع أفقيًا إلى نسخ متماثلة متعددة. تحتوي خدمات فئة Basic على نسخة متماثلة واحدة، وهي ثابتة الحجم، ولا تتيح التوسّع الرأسي أو الأفقي. لمزيد من المعلومات، راجع [الخدمات الكبيرة ذات النسخة المتماثلة الواحدة](/ar/products/cloud/features/large-single-replica-services).
 </Note>
 
-<div id="how-scaling-works-in-clickhouse-cloud">
-  ## كيف تعمل آلية التوسّع في ClickHouse Cloud
-</div>
+## اختيار خيار compute {#choosing-a-compute-option}
+
+اختر الخيار المناسب بناءً على ما إذا كنت تريد تغيير سعة خدمتك الحالية، أو عزل عبء العمل على compute مخصص، أو إضافة compute مؤقتًا إلى query مؤهل.
+
+| الخيار                                                                         | ما الذي يفعله                                                                                                                          | متى تستخدمه                                                                               |
+| ------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| التوسّع خدمتك الحالية                                                            | يغيّر التوسّع الرأسي حجم CPU والذاكرة، أما التوسّع الأفقي فيغيّر عدد النسخ (replicas)، يدويًا أو تلقائيًا حيثما كان ذلك مدعومًا. | عندما تريد أن تُحجَّم خدمتك الحالية إلى التحجيم إلى الأعلى أو إلى التحجيم إلى الأسفل مع تغيّر الطلب على عبء العمل. |
+| [Warehouses](/ar/products/cloud/features/infrastructure/warehouses)               | ينشئ خدمات منفصلة لها compute وendpoints مخصصة وتشترك في البيانات نفسها.                                                               | عندما تحتاج إلى عزل compute طويل الأمد لأنواع مختلفة من أعباء العمل.                        |
+| [On-Demand Compute](/ar/products/cloud/features/infrastructure/on-demand-compute) | يخصّص workers مؤقتًا من pool مُدار عبر خدمتك وendpoint الحاليين.                                                                       | عندما يحتاج query من نوع `SELECT` مؤهل إلى compute إضافي دون تغيير حجم الخدمة.            |
+
+<Note>
+  يختلف دعم التوسّع حسب service tier وprofile. تتوفر ميزة [التحجيم الأفقي التلقائي](/ar/products/cloud/features/autoscaling/horizontal-autoscaling) ضمن Private Preview. كما أن On-Demand Compute متاح ضمن Private Preview ويدعم استعلامات `SELECT` المؤهلة فقط.
+</Note>
+
+## كيف تعمل آلية التوسّع في ClickHouse Cloud {#how-scaling-works-in-clickhouse-cloud}
 
 يدعم ClickHouse Cloud التوسّع الأفقي اليدوي لخدمات فئة Scale وفئة Enterprise. كما تدعم خدمات فئة Scale التوسّع الرأسي التلقائي؛ ويعتمد دعم التوسّع الرأسي التلقائي في فئة Enterprise على ملف التعريف، كما هو موضح أدناه. يتوفر [التوسّع الأفقي التلقائي](/ar/products/cloud/features/autoscaling/horizontal-autoscaling) في Private Preview لخدمات فئة Scale وفئة Enterprise.
 
@@ -39,9 +51,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
   ويحقق ذلك توازنًا بين الحاجة إلى إكمال queries الحالية وضمان عدم بقاء النسخ المتماثلة الأقدم لفترة أطول من اللازم.
 </Note>
 
-<div id="learn-more">
-  ## تعرّف على المزيد
-</div>
+## تعرّف على المزيد {#learn-more}
 
 * [التوسّع الرأسي التلقائي](/ar/products/cloud/features/autoscaling/vertical) — توسّع تلقائي لـ CPU والذاكرة استنادًا إلى الاستخدام
 * [التوسّع الأفقي التلقائي](/ar/products/cloud/features/autoscaling/horizontal-autoscaling) — توسّع تلقائي للنسخ المتماثلة استنادًا إلى متطلبات أعباء العمل

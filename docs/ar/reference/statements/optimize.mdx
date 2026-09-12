@@ -26,22 +26,20 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 استعلام `OPTIMIZE` مدعوم لعائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) (بما في ذلك [materialized views](/ar/reference/statements/create/view#materialized-view)) ومحركات [Buffer](/ar/reference/engines/table-engines/special/buffer). أما محركات الجداول الأخرى فلا يدعمها النظام.
 
-عند استخدام `OPTIMIZE` مع عائلة محركات الجداول [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication)، ينشئ ClickHouse مهمة دمج وينتظر تنفيذها على جميع النسخ المتماثلة (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) مضبوطًا على `2`) أو على النسخة المتماثلة الحالية (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) مضبوطًا على `1`).
+عند استخدام `OPTIMIZE` مع عائلة محركات الجداول [ReplicatedMergeTree](/ar/reference/engines/table-engines/mergetree-family/replication)، ينشئ ClickHouse مهمة دمج وينتظر تنفيذها على جميع النسخ المتماثلة (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) مضبوطًا على `2`، أو على `3` في `ReplicatedMergeTree`) أو على النسخة المتماثلة الحالية (إذا كان الإعداد [alter&#95;sync](/ar/reference/settings/session-settings/alter#alter_sync) مضبوطًا على `1`).
 
 * إذا لم يُجرِ `OPTIMIZE` عملية دمج لأي سبب، فلن يُخطر العميل بذلك. لتمكين الإشعارات، استخدم الإعداد [optimize&#95;throw&#95;if&#95;noop](/ar/reference/settings/session-settings/optimize#optimize_throw_if_noop).
-* إذا حددت `PARTITION`، فلن يُحسَّن إلا القسم المحدد. [كيفية تعيين تعبير القسم](/ar/reference/statements/alter/partition#how-to-set-partition-expression).
-* إذا حددت `FINAL` أو `FORCE`، فستُنفَّذ عملية التحسين حتى إذا كانت جميع البيانات موجودة بالفعل في جزء واحد. يمكنك التحكم في هذا السلوك باستخدام [optimize&#95;skip&#95;merged&#95;partitions](/ar/reference/settings/session-settings/optimize-skip#optimize_skip_merged_partitions). كذلك، يُفرَض الدمج حتى إذا كانت هناك عمليات دمج متزامنة قيد التنفيذ.
-* إذا حددت `DEDUPLICATE`، فستُزال الصفوف المتطابقة تمامًا (ما لم تُحدَّد عبارة BY) (تُقارَن جميع الأعمدة)، وهذا مفيد فقط مع محرك MergeTree.
+* إذا حددت `PARTITION`، فلن يُحسَّن إلا القسم المحدد. [كيفية تعيين تعبير القسم](/ar/reference/statements/alter/partition#how-to-set-partition-expression).
+* إذا حددت `FINAL` أو `FORCE`، فستُنفَّذ عملية التحسين حتى إذا كانت جميع البيانات موجودة بالفعل في جزء واحد. يمكنك التحكم في هذا السلوك باستخدام [optimize&#95;skip&#95;merged&#95;partitions](/ar/reference/settings/session-settings/optimize-skip#optimize_skip_merged_partitions). كذلك، يُفرَض الدمج حتى إذا كانت هناك عمليات دمج متزامنة قيد التنفيذ.
+* إذا حددت `DEDUPLICATE`، فستُزال الصفوف المتطابقة تمامًا (ما لم تُحدَّد عبارة BY) (تُقارَن جميع الأعمدة)، وهذا مفيد فقط مع محرك MergeTree.
 
 يمكنك تحديد مدة الانتظار (بالثواني) لكي تنفّذ النسخ المتماثلة غير النشطة استعلامات `OPTIMIZE` باستخدام الإعداد [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ar/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout).
 
 <Note>
-  إذا كان `alter_sync` مضبوطًا على `2` وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`.
+  إذا كان `alter_sync` مضبوطًا على `2`، أو على `3` في `ReplicatedMergeTree`، وكانت بعض النسخ المتماثلة غير نشطة لمدة تتجاوز الوقت المحدد في الإعداد `replication_wait_for_inactive_replica_timeout`، فسيتم طرح الاستثناء `UNFINISHED`.
 </Note>
 
-<div id="dry-run">
-  ## DRY RUN
-</div>
+## DRY RUN {#dry-run}
 
 يحاكي عبارة `DRY RUN` دمج الأجزاء المحددة من دون تثبيت النتيجة. ويُكتب الجزء المدموج في موقع مؤقت، ثم يُتحقَّق منه ويُتخلَّص منه بعد ذلك. وتبقى الأجزاء الأصلية وبيانات الجدول من دون تغيير.
 
@@ -90,9 +88,7 @@ ORDER BY name;
 └─────────────┴──────┘
 ```
 
-<div id="by-expression">
-  ## تعبير BY
-</div>
+## تعبير BY {#by-expression}
 
 إذا كنت تريد إجراء إزالة التكرار على مجموعة مخصّصة من الأعمدة بدلًا من جميع الأعمدة، فيمكنك تحديد قائمة الأعمدة صراحةً أو استخدام أي مزيج من تعبيرات [`*`](/ar/reference/statements/select/index#asterisk) و[`COLUMNS`](/ar/reference/statements/select/index#select-clause) و[`EXCEPT`](/ar/reference/statements/select/except_modifier). ويجب أن تتضمن قائمة الأعمدة المكتوبة صراحةً أو الموسَّعة ضمنيًا جميع الأعمدة المحددة في تعبير ترتيب الصفوف (أي كلًّا من المفتاح الأساسي ومفتاح الفرز) وتعبير التقسيم (مفتاح التقسيم).
 
@@ -159,9 +155,7 @@ SELECT * FROM example;
 
 تُنفَّذ جميع الأمثلة التالية على هذه الحالة، التي تضم 5 صفوف.
 
-<div id="deduplicate">
-  #### `DEDUPLICATE`
-</div>
+#### `DEDUPLICATE` {#deduplicate}
 
 عندما لا تُحدَّد الأعمدة المستخدمة لإزالة التكرار، تُؤخذ جميعها في الحسبان. ولا يُزال الصف إلا إذا كانت جميع القيم في كل الأعمدة مساويةً للقيم المناظرة في الصف السابق:
 
@@ -186,9 +180,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-">
-  #### `DEDUPLICATE BY *`
-</div>
+#### `DEDUPLICATE BY *` {#deduplicate-by-}
 
 عندما تُحدَّد الأعمدة ضمنيًا، يُزال التكرار من الجدول استنادًا إلى جميع الأعمدة التي ليست `ALIAS` أو `MATERIALIZED`. وبالنظر إلى الجدول أعلاه، فهذه هي الأعمدة `primary_key` و`secondary_key` و`value` و`partition_key`:
 
@@ -213,9 +205,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by--except">
-  #### `DEDUPLICATE BY * EXCEPT`
-</div>
+#### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
 
 أزل التكرار بحسب جميع الأعمدة التي ليست `ALIAS` أو `MATERIALIZED`، مع استبعاد `value` صراحةً: أعمدة `primary_key` و`secondary_key` و`partition_key`.
 
@@ -239,9 +229,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-list-of-columns">
-  #### `DEDUPLICATE BY <list of columns>`
-</div>
+#### `DEDUPLICATE BY <list of columns>` {#deduplicate-by-list-of-columns}
 
 أزل التكرار صراحةً استنادًا إلى الأعمدة `primary_key` و`secondary_key` و`partition_key`:
 
@@ -265,9 +253,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-columnsregex">
-  #### `DEDUPLICATE BY COLUMNS(<regex>)`
-</div>
+#### `DEDUPLICATE BY COLUMNS(<regex>)` {#deduplicate-by-columnsregex}
 
 أزل التكرار استنادًا إلى جميع الأعمدة التي تطابق تعبيرًا نمطيًا: الأعمدة `primary_key` و`secondary_key` و`partition_key`:
 

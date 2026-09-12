@@ -10,7 +10,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/zh/components/Image.jsx";
 
 <div id="customer-managed-vpc-aws">
-  ## 适用于 AWS 的客户管理的 VPC (BYO-VPC)
+  ## 适用于 AWS 的客户管理的 VPC (BYO-VPC) {#customer-managed-vpc-aws}
 </div>
 
 如果您希望使用现有 VPC 部署 ClickHouse BYOC，而不是由 ClickHouse Cloud 预配新的 VPC，请按照以下步骤操作。这样做可以让您更好地掌控网络配置，并将 ClickHouse BYOC 集成到现有的网络基础设施中。
@@ -54,7 +54,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       运行 ClickHouse 所需的存储桶、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在后续步骤中预配。虽然 VPC 由您自行控制，但 ClickHouse Cloud 仍需要 IAM 权限来创建和管理 Kubernetes 集群、服务账号的 IAM 角色、S3 bucket 以及您 AWS 账户中的其他必要资源。
     </Note>
 
-    #### Terraform 模块
+    #### Terraform 模块 {#terraform-module-aws}
 
     如果您希望使用 Terraform 而不是 CloudFormation，请使用 [terraform-byoc-onboarding](https://github.com/ClickHouse/terraform-byoc-onboarding) 模块：
 
@@ -98,9 +98,16 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="customer-managed-iam-roles">
-  ## 客户管理的 IAM 角色
-</div>
+### 来自其他账户的共享子网 (AWS RAM) {#shared-subnets-ram}
+
+你可以在 spoke 账户中运行 BYOC，使用通过 [AWS Resource Access Manager (RAM)](https://docs.aws.amazon.com/ram/latest/userguide/what-is.html) 从 hub 账户共享而来的子网，从而实现网络的集中管理。配置方式与上文相同，只有两处差异，均源于 RAM 共享机制本身的特性：
+
+* **在 spoke 账户中打标签。** RAM 共享的资源采用按账户隔离的标签视图，因此在 hub 账户中打的标签对 spoke 账户不可见。请**在 spoke 账户中**为 VPC 打上 `clickhouse-byoc="true"`，并为每个共享子网同时打上 `kubernetes.io/role/internal-elb=1` 和 `clickhouse-byoc="true"`。否则预检验证会报告标签缺失，预配将失败。
+* **路由仍由 hub 账户负责。** 共享子网的路由表仍归 hub 账户所有，因此 NAT 与出站流量路由由 hub 账户负责，S3 gateway 端点也是如此，因为它属于 VPC 级别的资源。请确认共享子网仍满足上文的出站连接要求。
+
+其余均保持不变：跨三个可用区的三个私有子网、每个子网最小 `/25` 的 CIDR，以及在运行 BYOC 基础设施的 spoke 账户中配置 `ClickHouseManagementRole`。
+
+## 客户管理的 IAM 角色 {#customer-managed-iam-roles}
 
 对于有高级安全要求或严格合规策略的组织，您可以提供自己的 IAM 角色，而不是由 ClickHouse Cloud 代为创建。这样一来，您就能完全掌控 IAM 权限，并可强制实施组织的安全策略。
 

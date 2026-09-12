@@ -10,11 +10,11 @@ doc_type: 'guide'
 이 가이드에서는 ClickHouse 연산자를 사용해 ClickHouse 및 Keeper 클러스터를 구성하는 방법을 안내합니다.
 
 <div id="clickhousecluster-configuration">
-  ## ClickHouseCluster 구성
+  ## ClickHouseCluster 구성 {#clickhousecluster-configuration}
 </div>
 
 <div id="basic-configuration">
-  ### 기본 구성
+  ### 기본 구성 {#basic-configuration}
 </div>
 
 ```yaml
@@ -34,7 +34,7 @@ spec:
 ```
 
 <div id="replicas-and-shards">
-  ### 레플리카와 세그먼트
+  ### 레플리카와 세그먼트 {#replicas-and-shards}
 </div>
 
 * **레플리카**: 세그먼트당 ClickHouse 인스턴스 수(고가용성을 위해)
@@ -49,7 +49,7 @@ spec:
 `replicas: 3` 및 `shards: 2`로 구성된 클러스터는 총 6개의 ClickHouse 파드를 생성합니다.
 
 <div id="keeper-integration">
-  ### Keeper 통합
+  ### Keeper 통합 {#keeper-integration}
 </div>
 
 모든 ClickHouse 클러스터는 클러스터 조정을 위해 KeeperCluster를 참조해야 합니다:
@@ -64,7 +64,7 @@ spec:
 `keeperClusterRef.namespace`가 설정되면 연산자는 두 네임스페이스를 모두 감시해야 합니다. `WATCH_NAMESPACE`가 구성되어 있다면 해당 목록에 ClickHouse와 Keeper 네임스페이스를 모두 포함하십시오.
 
 <div id="keepercluster-configuration">
-  ## KeeperCluster 구성
+  ## KeeperCluster 구성 {#keepercluster-configuration}
 </div>
 
 ```yaml
@@ -81,7 +81,7 @@ spec:
 ```
 
 <div id="storage-configuration">
-  ## 저장소 구성
+  ## 저장소 구성 {#storage-configuration}
 </div>
 
 표준 Kubernetes `PersistentVolumeClaimSpec`인 `dataVolumeClaimSpec`을 사용해 영구 저장소를 구성합니다.
@@ -106,7 +106,7 @@ spec:
 [Storage and volumes guide](/ko/products/kubernetes-operator/guides/storage)에서 다룹니다.
 
 <div id="cluster-domain">
-  ## 클러스터 도메인
+  ## 클러스터 도메인 {#cluster-domain}
 </div>
 
 `spec.clusterDomain`은 연산자가 ClickHouse 서버
@@ -134,11 +134,11 @@ Keeper 노드는 헤드리스 Service를 통해 파드 이름을 사용합니다
 </Note>
 
 <div id="pod-configuration">
-  ## 파드 구성
+  ## 파드 구성 {#pod-configuration}
 </div>
 
 <div id="automatic-topology-spread-and-affinity">
-  ### 토폴로지 분산 및 어피니티 자동 설정
+  ### 토폴로지 분산 및 어피니티 자동 설정 {#automatic-topology-spread-and-affinity}
 </div>
 
 가용 영역에 걸쳐 파드를 분산합니다:
@@ -155,7 +155,7 @@ spec:
 </Note>
 
 <div id="manual-configuration">
-  ### 수동 구성
+  ### 수동 구성 {#manual-configuration}
 </div>
 
 사용자 정의 파드 어피니티/안티어피니티 규칙과 토폴로지 분산 제약 조건을 지정할 수 있습니다.
@@ -169,12 +169,12 @@ spec:
       <your-topology-spread-constraints-here>
 ```
 
-<div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencepodtemplatespec-for-all-supported-pod-template-options">
+<div id="see-api-reference-for-all-supported-pod-template-options">
   ### 지원되는 모든 파드 템플릿 옵션은 [API 참조](/ko/products/kubernetes-operator/reference/api-reference#podtemplatespec)를 참조하십시오.
 </div>
 
 <div id="pod-disruption-budgets">
-  ## 파드 중단 예산
+  ## 파드 중단 예산 {#pod-disruption-budgets}
 </div>
 
 연산자는 자발적 중단(노드 드레인, 롤링 업그레이드, 오토스케일러 축출)으로 인해 정족수(quorum)를 잃거나 가용성을 해칠 만큼 많은 파드가 중단되지 않도록 각 클러스터에 대해 [PodDisruptionBudget](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/) (PDB)를 생성합니다.
@@ -182,7 +182,7 @@ spec:
 세그먼트가 2개 이상인 ClickHouse 클러스터에서는 **세그먼트마다 PDB가 하나씩 생성**되므로 한 세그먼트에서 발생한 중단이 다른 세그먼트에 영향을 미치지 않습니다.
 
 <div id="pdb-defaults">
-  ### 기본값
+  ### 기본값 {#pdb-defaults}
 </div>
 
 연산자는 클러스터 크기에 따라 안전한 기본값을 선택하므로, 새로 `apply`해도 우발적인 정족수 손실을 방지할 수 있습니다.
@@ -197,7 +197,7 @@ spec:
 `replicas: 3`인 3개 세그먼트 ClickHouseCluster의 경우, 연산자는 세그먼트마다 하나씩 총 3개의 PDB를 생성하며, 각각 `minAvailable: 1`로 설정합니다.
 
 <div id="pdb-overrides">
-  ### 기본값 덮어쓰기
+  ### 기본값 덮어쓰기 {#pdb-overrides}
 </div>
 
 `minAvailable` **또는** `maxUnavailable` 중 정확히 하나를 재정의하려면 `spec.podDisruptionBudget`를 사용합니다:
@@ -233,7 +233,7 @@ spec:
 ```
 
 <div id="pdb-policies">
-  ### 정책
+  ### 정책 {#pdb-policies}
 </div>
 
 `spec.podDisruptionBudget.policy`를 사용하면 연산자가 PDB를 **어느 정도 적극적으로** 관리할지 선택할 수 있습니다.
@@ -261,7 +261,7 @@ spec:
 ```
 
 <div id="pdb-cluster-wide-disable">
-  ### 클러스터 전체 비활성화
+  ### 클러스터 전체 비활성화 {#pdb-cluster-wide-disable}
 </div>
 
 PDB 관리는 오퍼레이터의 `ENABLE_PDB` 환경 변수를 통해 클러스터 전체에서 비활성화할 수도 있습니다. `ENABLE_PDB=false`로 설정하면 오퍼레이터는 각 ClickHouseCluster 및 KeeperCluster의 `spec.podDisruptionBudget.policy`와 관계없이 **모든** ClickHouseCluster와 KeeperCluster에 대해 PDB reconcile 단계를 건너뛰고, `PodDisruptionBudget` 리소스는 **전혀 감시하지 않습니다**. 따라서 오퍼레이터의 ServiceAccount에는 `poddisruptionbudgets.policy/v1`에 대한 RBAC 권한이 필요하지 않으며, 이는 해당 권한을 의도적으로 제외한 제한된 ServiceAccount로 오퍼레이터를 실행할 때 유용합니다.
@@ -276,11 +276,11 @@ env:
 이는 자체 중단 정책(예: Gatekeeper / Kyverno 사용)을 적용하고 연산자를 이 과정에서 완전히 배제하려는 환경을 위한 것입니다.
 
 <div id="container-configuration">
-  ## 컨테이너 구성
+  ## 컨테이너 구성 {#container-configuration}
 </div>
 
 <div id="custom-image">
-  ### 사용자 지정 이미지
+  ### 사용자 지정 이미지 {#custom-image}
 </div>
 
 특정 ClickHouse 이미지를 사용하세요:
@@ -295,7 +295,7 @@ spec:
 ```
 
 <div id="container-resources">
-  ### 컨테이너 리소스
+  ### 컨테이너 리소스 {#container-resources}
 </div>
 
 ClickHouse 컨테이너의 CPU와 메모리를 설정합니다:
@@ -314,7 +314,7 @@ spec:
 ```
 
 <div id="environment-variables">
-  ### 환경 변수
+  ### 환경 변수 {#environment-variables}
 </div>
 
 사용자 환경 변수를 추가합니다:
@@ -328,7 +328,7 @@ spec:
 ```
 
 <div id="volume-mounts">
-  ### 볼륨 마운트
+  ### 볼륨 마운트 {#volume-mounts}
 </div>
 
 추가 볼륨 마운트를 설정합니다:
@@ -347,16 +347,16 @@ spec:
   Operator는 지정된 모든 마운트를 포함하는 프로젝티드 볼륨을 생성합니다.
 </Note>
 
-<div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
+<div id="see-api-reference-for-all-supported-container-template-options">
   ### 지원되는 모든 컨테이너 템플릿 옵션은 [API 참조](/ko/products/kubernetes-operator/reference/api-reference#containertemplatespec)에서 확인하십시오.
 </div>
 
 <div id="tls-ssl-configuration">
-  ## TLS/SSL 구성
+  ## TLS/SSL 구성 {#tls-ssl-configuration}
 </div>
 
 <div id="configure-secure-endpoints">
-  ### 보안 endpoint 구성
+  ### 보안 endpoint 구성 {#configure-secure-endpoints}
 </div>
 
 TLS 인증서가 포함된 Kubernetes 시크릿을 참조하도록 설정하여 보안 endpoint를 활성화합니다
@@ -372,7 +372,7 @@ spec:
 ```
 
 <div id="ssl-certificate-secret-format">
-  ### SSL 인증서 시크릿 포맷
+  ### SSL 인증서 시크릿 포맷 {#ssl-certificate-secret-format}
 </div>
 
 시크릿에는 서버 키 쌍이 포함되어 있어야 합니다:
@@ -385,7 +385,7 @@ spec:
 </Note>
 
 <div id="clickhouse-keeper-communication-over-tls">
-  ### TLS를 통한 ClickHouse-Keeper 통신
+  ### TLS를 통한 ClickHouse-Keeper 통신 {#clickhouse-keeper-communication-over-tls}
 </div>
 
 KeeperCluster에서 TLS가 활성화되어 있으면 ClickHouseCluster는 자동으로 Keeper 노드에 대한 보안 연결(connection)을 사용합니다.
@@ -404,7 +404,7 @@ spec:
 ```
 
 <div id="external-secret">
-  ## 외부 시크릿
+  ## 외부 시크릿 {#external-secret}
 </div>
 
 기본적으로 연산자는 클러스터의 내부 자격 증명(interserver password, management password, Keeper 아이덴티티, cluster secret, named-collections key)이 포함된 시크릿을 생성하고 관리합니다. 이 시크릿은 클러스터 이름으로 생성되며 클러스터의 네임스페이스에 위치합니다.
@@ -434,7 +434,7 @@ spec:
 </Note>
 
 <div id="external-secret-required-keys">
-  ### 필수 키
+  ### 필수 키 {#external-secret-required-keys}
 </div>
 
 시크릿에는 다음 키가 포함되어야 합니다:
@@ -467,7 +467,7 @@ stringData:
 ```
 
 <div id="external-secret-policy">
-  ### 정책: Observe와 Manage
+  ### 정책: Observe와 Manage {#external-secret-policy}
 </div>
 
 `spec.externalSecret.policy`는 필수 키가 누락되었을 때 연산자가 어떻게 처리할지를 제어합니다.
@@ -484,7 +484,7 @@ stringData:
 외부 시스템(Vault, ESO, sealed-secrets, GitOps)이 신뢰할 수 있는 원본(source of truth)이고, 구성 오류가 있을 때 연산자가 명확하게 실패하도록 하려면 `Observe`를 선택하십시오. 자체적으로 초기 설정을 진행하면서도 시크릿 객체 자체의 소유권은 유지하려면(예: 백업 목적) `Manage`를 선택하십시오.
 
 <div id="external-secret-status">
-  ### 상태 조건과 문제 해결
+  ### 상태 조건과 문제 해결 {#external-secret-status}
 </div>
 
 연산자는 `ClickHouseCluster.status.conditions`에 `ExternalSecretValid` 조건을 표시합니다. 리컨실리에이션이 멈춘 것처럼 보이면 이 조건을 확인하십시오:
@@ -515,7 +515,7 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 </Note>
 
 <div id="additional-ports">
-  ## 추가 포트
+  ## 추가 포트 {#additional-ports}
 </div>
 
 연산자는 모든 ClickHouse 파드와 해당 공개 헤드리스 Service에 고정된 포트 집합을 노출합니다: `8123` HTTP, `9000` 네이티브, `9009` interserver, `9001`/`9002` management, `9363` Prometheus 메트릭, 그리고 TLS가 활성화된 경우 `8443`/`9440`의 TLS 포트도 함께 노출됩니다. `interserver` 및 management 포트는 레플리카가 준비 상태가 되기 전에 레플리카와 연산자가 통신할 수 있도록 레플리카별 내부 Service를 통해 추가로 노출됩니다. ClickHouse가 MySQL, PostgreSQL, gRPC 또는 사용자 지정 포트 같은 추가 프로토콜을 수신하도록 하려면 `spec.additionalPorts`에 선언하십시오:
@@ -539,7 +539,7 @@ spec:
 </Warning>
 
 <div id="additional-ports-mysql-example">
-  ### 종단 간 예시: MySQL wire protocol
+  ### 종단 간 예시: MySQL wire protocol {#additional-ports-mysql-example}
 </div>
 
 포트 `9004`에서 MySQL wire protocol로 ClickHouse를 노출하려면:
@@ -581,7 +581,7 @@ kubectl exec sample-clickhouse-0-0-0 -- \
 ```
 
 <div id="additional-ports-constraints">
-  ### 필드 제약 조건
+  ### 필드 제약 조건 {#additional-ports-constraints}
 </div>
 
 | 필드     | 규칙                                                                                                         |
@@ -590,7 +590,7 @@ kubectl exec sample-clickhouse-0-0-0 -- \
 | `port` | `[1, 65535]` 범위의 정수입니다. 웹훅은 목록 내 중복된 포트 번호를 허용하지 않습니다.                                                     |
 
 <div id="additional-ports-reserved">
-  ### 예약된 포트 및 이름
+  ### 예약된 포트 및 이름 {#additional-ports-reserved}
 </div>
 
 유효성 검사 웹큅은 연산자가 자체적으로 바인딩하는 포트와 충돌할 수 있는 `additionalPorts` 항목을 거부합니다. 모든 TLS 관련 포트는 **예외 없이** 예약되므로, 나중에 `spec.settings.tls.enabled`를 활성화하더라도 이전에 유효했던 클러스터가 손상되지 않습니다.
@@ -625,7 +625,7 @@ spec.additionalPorts[0].name: "http" is reserved by the operator
 ```
 
 <div id="version-probe-and-upgrade-channel">
-  ## 버전 프로브 및 업그레이드 채널
+  ## 버전 프로브 및 업그레이드 채널 {#version-probe-and-upgrade-channel}
 </div>
 
 연산자는 클러스터 버전과 관련해 서로 독립적인 두 가지 작업을 수행합니다:
@@ -634,7 +634,7 @@ spec.additionalPorts[0].name: "http" is reserved by the operator
 2. **업그레이드 채널** — 공개 ClickHouse 릴리스 피드(`https://clickhouse.com/data/version_date.tsv`)를 주기적으로 확인합니다. 연산자는 `VersionUpgraded` 상태 조건을 통해 더 최신 버전을 사용할 수 있는지 보고합니다. 연산자가 자체적으로 클러스터를 업그레이드하지는 않으며, image tag는 사용자가 직접 제어합니다.
 
 <div id="upgrade-channel-choosing">
-  ### 릴리스 채널 선택
+  ### 릴리스 채널 선택 {#upgrade-channel-choosing}
 </div>
 
 `spec.upgradeChannel`은 연산자가 비교 대상으로 삼을 업스트림 릴리스 집합을 선택합니다. 동일한 필드는 `ClickHouseCluster`와 `KeeperCluster` 모두에 있습니다.
@@ -656,7 +656,7 @@ spec:
 프로덕션 환경에서는 채널을 명시적인 `<major>.<minor>`(예: `25.8`)에 고정하는 방식을 일반적으로 권장합니다. 이렇게 하면 클러스터가 의도한 major 릴리스 라인에 고정되며, 어떤 레플리카가 다른 major로 벗어나는 경우 연산자가 `WrongReleaseChannel` 경고를 표시할 수 있습니다. 이는 특히 image가 사람이 읽기 쉬운 태그가 아니라 다이제스트(`@sha256:...`)로 참조될 때 중요합니다. 기본 empty 값은 major 버전 점프가 문제가 되지 않는 개발 클러스터에서는 적절합니다.
 
 <div id="version-status-conditions">
-  ### 상태 조건
+  ### 상태 조건 {#version-status-conditions}
 </div>
 
 프로브 및 업그레이드 확인 결과는 다음 두 조건에 반영됩니다:
@@ -681,7 +681,7 @@ kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
 ```
 
 <div id="version-probe-template">
-  ### 버전 프로브 Job 재정의
+  ### 버전 프로브 Job 재정의 {#version-probe-template}
 </div>
 
 이는 `ClickHouseCluster`에만 적용됩니다. `KeeperCluster`는 더 이상 version-probe Job을 실행하지 않습니다. 대신 버전은 실행 중인 Keeper 레플리카에서 직접 읽어 오므로 `spec.versionProbeTemplate`은 더 이상 사용이 권장되지 않으며 여기서는 아무런 효과가 없습니다.
@@ -713,24 +713,24 @@ spec:
 컨테이너 이름 `version-probe`는 연산자의 기본값입니다 — `containers:` 아래의 항목이 이름으로 일치하므로, 연산자는 사용자가 제공한 필드를 기본값 위에 깊게 병합합니다.
 
 <div id="version-operator-flags">
-  ### Operator 전체 제어
+  ### Operator 전체 제어 {#version-operator-flags}
 </div>
 
 연산자 manager의 두 플래그는 업그레이드 확인 루프를 전역적으로 제어합니다:
 
 | 플래그                               | 기본값     | 영향                                                                                                       |
 | --------------------------------- | ------- | -------------------------------------------------------------------------------------------------------- |
-| `--version-update-interval`       | `24h`   | 연산자가 업스트림 버전 목록을 다시 가져오는 주기                                                                              |
+| `--version-update-interval`       | `24h`   | 연산자가 업스트림 버전 목록을 다시 가져오는 주기. 버전 업데이트 확인이 활성화된 경우 0보다 커야 합니다                                              |
 | `--disable-version-update-checks` | `false` | 업그레이드 검사기를 완전히 비활성화합니다. `VersionUpgraded` 조건이 설정되지 않으며, `clickhouse.com`으로 나가는 아웃바운드 HTTP 트래픽도 발생하지 않습니다 |
 
 에어갭 환경이거나 `clickhouse.com`으로의 egress가 허용되지 않는 경우 `--disable-version-update-checks=true`를 설정하십시오.
 
 <div id="clickhouse-settings">
-  ## ClickHouse 설정
+  ## ClickHouse 설정 {#clickhouse-settings}
 </div>
 
 <div id="default-user-password">
-  ### 기본 `default` 사용자 비밀번호
+  ### 기본 `default` 사용자 비밀번호 {#default-user-password}
 </div>
 
 `spec.settings.defaultUserPassword`는 내장된 `default`
@@ -751,7 +751,7 @@ spec:
 및 `key`(비밀번호가 들어 있는 항목)가 모두 포함되어야 합니다.
 
 <div id="password-types">
-  #### 비밀번호 유형
+  #### 비밀번호 유형 {#password-types}
 </div>
 
 `passwordType`은 값을 어떻게 해석할지 ClickHouse에 지정합니다. 기본값은
@@ -762,7 +762,7 @@ spec:
 을 참조하십시오.
 
 <div id="default-password-secret-example">
-  #### 시크릿을 사용하는 전체 예시
+  #### 시크릿을 사용하는 전체 예시 {#default-password-secret-example}
 </div>
 
 시크릿을 생성한 후 해당 키를 참조하세요:
@@ -810,7 +810,7 @@ spec:
 ```
 
 <div id="using-configmap-for-user-passwords">
-  #### ConfigMap 사용하기
+  #### ConfigMap 사용하기 {#using-configmap-for-user-passwords}
 </div>
 
 ConfigMap도 같은 방식으로 작동하지만, 내용은 시크릿처럼 보호되지 않습니다.
@@ -832,9 +832,7 @@ spec:
   (`passwordType: password`) 값을 사용할 때는 시크릿을 사용하십시오.
 </Note>
 
-<div id="custom-users-in-configuration">
-  ### 구성의 사용자 지정 사용자
-</div>
+### 구성의 사용자 지정 사용자 {#custom-users-in-configuration}
 
 설정 파일에서 추가 사용자를 구성합니다.
 
@@ -888,7 +886,7 @@ spec:
 ```
 
 <div id="database-sync">
-  ### 데이터베이스 동기화
+  ### 데이터베이스 동기화 {#database-sync}
 </div>
 
 새 레플리카의 데이터베이스 자동 동기화를 활성화합니다:
@@ -908,7 +906,7 @@ spec:
 축소 시 레플리카를 제거하기 전에 연산자는 먼저 해당 레플리카에서 클라이언트 트래픽을 로드 해제하고, 더 이상 게시되지 않을 때까지 기다린 후 남은 데이터를 유지되는 레플리카에 복제한 다음에만 삭제합니다.
 
 <div id="server-logging">
-  ### 서버 로깅
+  ### 서버 로깅 {#server-logging}
 </div>
 
 `spec.settings.logger`에서 ClickHouse 서버 로그를 구성합니다. 모든 필드는 안전한 기본값이 적용되는 선택 사항이므로, 별도로 설정하지 않은 클러스터도 기본적으로 컨테이너 콘솔과 디스크의 롤링 파일 모두에 `trace` 수준으로 로그를 기록합니다.
@@ -951,11 +949,11 @@ logger:
 </Note>
 
 <div id="custom-configuration">
-  ## 사용자 지정 구성
+  ## 사용자 지정 구성 {#custom-configuration}
 </div>
 
 <div id="embedded-extra-configuration">
-  ### 내장 추가 구성
+  ### 내장 추가 구성 {#embedded-extra-configuration}
 </div>
 
 사용자 지정 설정 파일을 마운트하는 대신, ClickHouse의 추가 구성 옵션을 직접 지정할 수 있습니다.
@@ -977,7 +975,7 @@ spec:
 * [모든 서버 설정](/ko/reference/settings/server-settings/settings)
 
 <div id="embedded-extra-users-configuration">
-  ### 내장된 추가 사용자 구성
+  ### 내장된 추가 사용자 구성 {#embedded-extra-users-configuration}
 </div>
 
 `extraUsersConfig`를 사용해 추가 ClickHouse 사용자 구성을 지정할 수도 있습니다. 이는 클러스터 사양에서 사용자, 프로필, 쿼터, 권한 부여를 직접 정의할 때 유용합니다.
@@ -1008,12 +1006,12 @@ spec:
   `extraUsersConfig`는 k8s ConfigMap 객체에 저장됩니다. 여기에 평문 시크릿을 저장하지 마십시오.
 </Note>
 
-<div id="see-documentationconceptsfeaturesconfigurationsettingssettings-users-for-all-supported-clickhouse-users-configuration-options">
+<div id="see-documentation-for-all-supported-clickhouse-users-configuration-options">
   #### 지원되는 모든 ClickHouse 사용자 구성 옵션은 [문서](/ko/concepts/features/configuration/settings/settings-users)를 참조하십시오.
 </div>
 
 <div id="configuration-example">
-  ### 구성 예시
+  ### 구성 예시 {#configuration-example}
 </div>
 
 전체 구성 예시는 다음과 같습니다:
@@ -1083,4 +1081,17 @@ spec:
       configMap:
         key: password
         name: default-password
+```
+
+## 주기적 resync {#periodic-resync}
+
+연산자는 Kubernetes 이벤트에 반응하는 것 외에도, 일정한 인터벌마다 모든 클러스터를 다시 리컨실합니다. 이를 통해 어떤 watch로도 관찰할 수 없는 상태(ClickHouse 레플리카 health, Keeper quorum)의 상태 조건을 최신으로 유지하고, 멈춘 파드 정리와 같은 조치를 재시도합니다.
+
+이 인터벌은 연산자의 `RESYNC_PERIOD` environment variable(기본값 `30s`)로 제어됩니다. 이 설정은 `KeeperCluster` 리소스에 적용되며, `0`으로 지정하면 주기적 resync가 비활성화됩니다. `ClickHouseCluster` 리소스는 30초마다 ClickHouse `system.warnings`를 폴링하면서 이미 리컨실리에이션을 다시 트리거하므로, 현재 `RESYNC_PERIOD`는 이러한 리소스에 아무런 영향을 주지 않습니다.
+
+```yaml
+# in the operator Deployment spec
+env:
+- name: RESYNC_PERIOD
+  value: "1m"
 ```

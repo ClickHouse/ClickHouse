@@ -24,6 +24,24 @@ import SettingsInfoBlock from "/snippets/ko/components/SettingsInfoBlock/Setting
 
 <SettingsInfoBlock type="Bool" default_value="0" changeable_without_restart="No" />비동기 메트릭이 Keeper 관련 메트릭만 계산하게 합니다.
 
+<div id="asynchronous_metrics_key_values_mode">
+  ## asynchronous_metrics_key_values_mode
+</div>
+
+<SettingsInfoBlock type="AsynchronousMetricsKeyValuesMode" default_value="key_values" changeable_without_restart="Yes" />
+
+CPU 코어, 블록 디바이스, 네트워크 인터페이스, 디스크, 온도 센서, 메모리 컨트롤러 또는 로깅 채널별로 세분화된 키-값 비동기 메트릭을 [`system.asynchronous_metrics`](/ko/reference/system-tables/asynchronous_metrics), [`system.asynchronous_metric_log`](/ko/reference/system-tables/asynchronous_metric_log), Prometheus 엔드포인트 및 Graphite에 게시하는 형식을 지정합니다.
+
+가능한 값:
+
+* `key_values` - 각 패밀리는 하나의 키-값 메트릭입니다. 즉, `system.asynchronous_metrics`의 `key_values` 컬럼에 있는 `Map`, `system.asynchronous_metric_log`의 키당 1개 행, `device="sda"`와 같은 레이블을 포함하는 키당 1개의 Prometheus 샘플 및 `<prefix>.<Metric>.<key>` 형식의 Graphite 경로로 게시됩니다.
+* `legacy_names` - 버전 26.8 이전과 같이 각 키는 키가 이름에 포함된 별도의 스칼라 메트릭으로 게시됩니다. 예: `OSUserTimeCPU3`, `CPUFrequencyMHz_0`, `BlockReadBytes_sda`, `NetworkReceiveBytes_eth0`, `DiskTotal_default`, `Temperature0`, `EDAC0_Correctable` 등입니다.
+* `both` - 두 형식을 동시에 게시합니다. 모니터링을 마이그레이션하는 동안 유용합니다. 이 모드에서는 중복 집계에 유의하십시오. `sum(value) ... WHERE metric LIKE 'NetworkReceiveBytes%'`처럼 접두사와 일치하는 메트릭 이름을 대상으로 집계하면 각 값이 두 번 계산됩니다.
+
+버전 26.8 이후 도입된 키-값 메트릭 패밀리에는 레거시 이름이 없으므로 항상 키-값 형식으로 게시됩니다.
+
+이 설정은 동적으로 적용됩니다. 비동기 메트릭이 업데이트될 때마다 다시 읽히므로 재시작 없이 `SYSTEM RELOAD CONFIG`만으로 형식을 전환할 수 있습니다.
+
 <div id="asynchronous_metrics_update_period_s">
   ## asynchronous_metrics_update_period_s
 </div>

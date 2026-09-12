@@ -46,15 +46,11 @@ import WhenToUseJson from '/snippets/ar/_when-to-use-json.mdx';
 
 <WhenToUseJson />
 
-<div id="creating-json">
-  ## إنشاء `JSON`
-</div>
+## إنشاء `JSON` {#creating-json}
 
 في هذا القسم، سنستعرض الطرق المختلفة التي يمكنك من خلالها إنشاء `JSON`.
 
-<div id="using-json-in-a-table-column-definition">
-  ### استخدام `JSON` ضمن تعريف عمود في جدول
-</div>
+### استخدام `JSON` ضمن تعريف عمود في جدول {#using-json-in-a-table-column-definition}
 
 ```sql title="Query (Example 1)"
 CREATE TABLE test (json JSON) ENGINE = Memory;
@@ -84,15 +80,11 @@ SELECT json FROM test;
 └───────────────────────────────────┘
 ```
 
-<div id="using-cast-with-json">
-  ### استخدام CAST مع `::JSON`
-</div>
+### استخدام CAST مع `::JSON` {#using-cast-with-json}
 
 يمكن تحويل أنواع مختلفة باستخدام البنية الخاصة `::JSON`.
 
-<div id="cast-from-string-to-json">
-  #### التحويل باستخدام CAST من `String` إلى `JSON`
-</div>
+#### التحويل باستخدام CAST من `String` إلى `JSON` {#cast-from-string-to-json}
 
 ```sql title="Query"
 SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json;
@@ -104,9 +96,7 @@ SELECT '{"a" : {"b" : 42},"c" : [1, 2, 3], "d" : "Hello, World!"}'::JSON AS json
 └────────────────────────────────────────────────────────┘
 ```
 
-<div id="cast-from-tuple-to-json">
-  #### CAST من `Tuple` إلى `JSON`
-</div>
+#### CAST من `Tuple` إلى `JSON` {#cast-from-tuple-to-json}
 
 ```sql title="Query"
 SET enable_named_columns_in_function_tuple = 1;
@@ -119,9 +109,7 @@ SELECT (tuple(42 AS b) AS a, [1, 2, 3] AS c, 'Hello, World!' AS d)::JSON AS json
 └────────────────────────────────────────────────────────┘
 ```
 
-<div id="cast-from-map-to-json">
-  #### CAST من `Map` إلى `JSON`
-</div>
+#### CAST من `Map` إلى `JSON` {#cast-from-map-to-json}
 
 ```sql title="Query"
 SET use_variant_as_common_type=1;
@@ -162,9 +150,7 @@ SELECT map('a', map('b', 42), 'c', [1,2,3], 'd', 'Hello, World!')::JSON AS json;
   ```
 </Note>
 
-<div id="reading-json-paths-as-sub-columns">
-  ## قراءة مسارات JSON كأعمدة فرعية
-</div>
+## قراءة مسارات JSON كأعمدة فرعية {#reading-json-paths-as-sub-columns}
 
 يدعم النوع `JSON` قراءة كل مسار بوصفه عمودًا فرعيًا منفصلًا.
 إذا لم يُحدَّد نوع المسار المطلوب في تعريف النوع `JSON`،
@@ -295,9 +281,7 @@ while executing 'FUNCTION CAST(__table1.json.a.g :: 2, 'UUID'_String :: 1) -> CA
   لقراءة الأعمدة الفرعية بكفاءة من أجزاء Compact في MergeTree، تأكّد من تفعيل إعداد MergeTree ‏[write&#95;marks&#95;for&#95;substreams&#95;in&#95;compact&#95;parts](/ar/reference/settings/merge-tree-settings/write#write_marks_for_substreams_in_compact_parts).
 </Note>
 
-<div id="reading-json-sub-objects-as-sub-columns">
-  ## قراءة الكائنات الفرعية في JSON كأعمدة فرعية
-</div>
+## قراءة الكائنات الفرعية في JSON كأعمدة فرعية {#reading-json-sub-objects-as-sub-columns}
 
 يدعم النوع `JSON` قراءة الكائنات المتداخلة كأعمدة فرعية من النوع `JSON` باستخدام الصياغة الخاصة `json.^some.path`:
 
@@ -331,9 +315,7 @@ SELECT json.^a.b, json.^d.e.f FROM test;
   عندما تُخزَّن المسارات في [البيانات المشتركة](#shared-data-structure) الأساسية (`map`)، فقد لا تكون قراءة الأعمدة الفرعية للكائنات الفرعية فعّالة، لأنها تتطلب فحص بنية البيانات المشتركة بالكامل. أما مع `map_with_buckets` أو تسلسل البيانات المشتركة `advanced`، فتكون قراءة الأعمدة الفرعية من البيانات المشتركة محسّنة بدرجة كبيرة.
 </Note>
 
-<div id="reading-json-combined-sub-columns">
-  ## قراءة الأعمدة الفرعية المجمّعة في JSON
-</div>
+## قراءة الأعمدة الفرعية المجمّعة في JSON {#reading-json-combined-sub-columns}
 
 يدعم النوع `JSON` قراءة مسار باعتباره **عمودًا فرعيًا مجمّعًا** باستخدام الصياغة الخاصة `json.@some.path`.
 ويُرجع العمود الفرعي المجمّع لمسار معيّن ما يلي:
@@ -387,9 +369,7 @@ FROM test;
   عند تخزين المسارات في [البيانات المشتركة](#shared-data-structure) الأساسية (`map`)، قد تكون قراءة الأعمدة الفرعية المجمّعة غير فعّالة لأنها تتطلب فحص بنية البيانات المشتركة بالكامل. ومع `map_with_buckets` أو تسلسل البيانات المشتركة `advanced`، تصبح قراءة الأعمدة الفرعية من البيانات المشتركة محسّنة بدرجة كبيرة.
 </Note>
 
-<div id="type-inference-for-paths">
-  ## استنتاج الأنواع للمسارات
-</div>
+## استنتاج الأنواع للمسارات {#type-inference-for-paths}
 
 أثناء تحليل `JSON`، يحاول ClickHouse تحديد نوع البيانات الأنسب لكل مسار JSON.
 ويعمل ذلك بطريقة مشابهة لـ [الاستدلال التلقائي على المخطط من بيانات الإدخال](/ar/concepts/features/interfaces/schema-inference)،
@@ -448,9 +428,7 @@ SELECT JSONAllPathsWithTypes('{"a" : [1, 2, 3]}'::JSON) AS paths_with_types sett
 └──────────────────────┘
 ```
 
-<div id="handling-arrays-of-json-objects">
-  ## التعامل مع مصفوفات من كائنات JSON
-</div>
+## التعامل مع مصفوفات من كائنات JSON {#handling-arrays-of-json-objects}
 
 تُحلَّل مسارات JSON التي تحتوي على مصفوفة من الكائنات على أنها من النوع `Array(JSON)`، وتُدرَج في عمود `Dynamic` لذلك المسار.
 ولقراءة مصفوفة من الكائنات، يمكنك استخراجها من عمود `Dynamic` كعمود فرعي:
@@ -561,9 +539,7 @@ SELECT json.a.b[].^k FROM test
 └──────────────────────────────────────┘
 ```
 
-<div id="handling-json-keys-with-nulls">
-  ## التعامل مع مفاتيح JSON ذات القيمة NULL
-</div>
+## التعامل مع مفاتيح JSON ذات القيمة NULL {#handling-json-keys-with-nulls}
 
 في تنفيذ JSON لدينا، يُعدّ `null` وغياب القيمة أمرين متكافئين:
 
@@ -579,9 +555,7 @@ SELECT '{}'::JSON AS json1, '{"a" : null}'::JSON AS json2, json1 = json2
 
 وهذا يعني أنه يستحيل تحديد ما إذا كانت بيانات JSON الأصلية تتضمن مسارًا بقيمة NULL أم أنها لم تتضمنه أصلًا.
 
-<div id="handling-json-keys-with-dots">
-  ## التعامل مع مفاتيح JSON التي تحتوي على نقاط
-</div>
+## التعامل مع مفاتيح JSON التي تحتوي على نقاط {#handling-json-keys-with-dots}
 
 يخزّن عمود JSON داخليًا جميع المسارات والقيم بشكلٍ مُسطّح. وهذا يعني أنه، افتراضيًا، يُتعامل مع هذين الكائنين على أنهما متماثلان:
 
@@ -690,9 +664,7 @@ SELECT '{"a.b" : 42, "a" : {"b" : "Hello World!"}}'::JSON(SKIP `a%2Eb`) as json,
 └────────────────────────────┴────────────┘
 ```
 
-<div id="reading-json-type-from-data">
-  ## قراءة نوع JSON من البيانات
-</div>
+## قراءة نوع JSON من البيانات {#reading-json-type-from-data}
 
 تدعم جميع التنسيقات النصية
 ([`JSONEachRow`](/ar/reference/formats/JSON/JSONEachRow),
@@ -744,9 +716,7 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 └───────────────────────────────────────────────────────────────┘
 ```
 
-<div id="reaching-the-limit-of-dynamic-paths-inside-json">
-  ## الوصول إلى الحد الأقصى للمسارات الديناميكية داخل JSON
-</div>
+## الوصول إلى الحد الأقصى للمسارات الديناميكية داخل JSON {#reaching-the-limit-of-dynamic-paths-inside-json}
 
 لا يستطيع نوع البيانات `JSON` تخزين سوى عدد محدود من المسارات داخليًا على هيئة أعمدة فرعية منفصلة.
 ويبلغ هذا الحد افتراضيًا `1024`، لكن يمكنك تغييره في تعريف النوع باستخدام المعلمة `max_dynamic_paths`.
@@ -758,9 +728,7 @@ SELECT json FROM format(TSV, 'json JSON(a.b.c UInt32, SKIP a.b.d, SKIP REGEXP \'
 
 لنرَ ما يحدث عند الوصول إلى هذا الحد في بضعة سيناريوهات مختلفة.
 
-<div id="reaching-the-limit-during-data-parsing">
-  ### الوصول إلى الحد أثناء تحليل البيانات
-</div>
+### الوصول إلى الحد أثناء تحليل البيانات {#reaching-the-limit-during-data-parsing}
 
 أثناء تحليل كائنات `JSON` في البيانات، وعند الوصول إلى الحد للكتلة الحالية من البيانات،
 ستُخزَّن جميع المسارات الجديدة في بنية بيانات مشتركة. يمكننا استخدام دالتي الاستبطان التاليتين `JSONDynamicPaths` و`JSONSharedDataPaths`:
@@ -788,9 +756,7 @@ SELECT json, JSONDynamicPaths(json), JSONSharedDataPaths(json) FROM format(JSONE
 كما نرى، بعد إدراج المسارين `e` و `f.g`، تم الوصول إلى الحد،
 وأُدرجا في بنية بيانات مشتركة.
 
-<div id="during-merges-of-data-parts-in-mergetree-table-engines">
-  ### أثناء دمج أجزاء البيانات في محركات جداول MergeTree
-</div>
+### أثناء دمج أجزاء البيانات في محركات جداول MergeTree {#during-merges-of-data-parts-in-mergetree-table-engines}
 
 أثناء دمج عدة أجزاء بيانات في جدول `MergeTree`، قد يصل العمود `JSON` في جزء البيانات الناتج إلى حدّ المسارات الديناميكية،
 وبالتالي لن يتمكن من تخزين جميع المسارات من الأجزاء المصدرية كأعمدة فرعية.
@@ -855,25 +821,19 @@ ORDER BY _part ASC
 
 كما نرى، احتفظ ClickHouse بالمسارات الأكثر تكرارًا `a` و`b` و`c`، ونقل المسارين `d` و`e` إلى بنية بيانات مشتركة.
 
-<div id="shared-data-structure">
-  ## بنية البيانات المشتركة
-</div>
+## بنية البيانات المشتركة {#shared-data-structure}
 
 كما ذُكر في القسم السابق، عند بلوغ الحد `max_dynamic_paths`، تُخزَّن جميع المسارات الجديدة في بنية بيانات مشتركة واحدة.
 في هذا القسم، سنستعرض تفاصيل بنية البيانات المشتركة وكيفية قراءة الأعمدة الفرعية للمسارات منها.
 
 راجع قسم [&quot;دوال الاستبطان&quot;](/ar/reference/data-types/newjson#introspection-functions) للاطلاع على تفاصيل الدوال المستخدمة لفحص محتويات عمود JSON.
 
-<div id="shared-data-structure-in-memory">
-  ### بنية البيانات المشتركة في الذاكرة
-</div>
+### بنية البيانات المشتركة في الذاكرة {#shared-data-structure-in-memory}
 
 في الذاكرة، تكون بنية البيانات المشتركة مجرد عمود فرعي من النوع `Map(String, String)` يخزّن ربطًا بين مسار JSON مُسطَّح وقيمة مُرمَّزة ترميزًا ثنائيًا.
 ولاستخراج عمود فرعي لمسار منه، نمرّ ببساطة على جميع الصفوف في عمود `Map` هذا ونحاول العثور على المسار المطلوب وقيمه.
 
-<div id="shared-data-structure-in-merge-tree-parts">
-  ### بنية البيانات المشتركة في أجزاء MergeTree
-</div>
+### بنية البيانات المشتركة في أجزاء MergeTree {#shared-data-structure-in-merge-tree-parts}
 
 في جداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)، نُخزّن البيانات في أجزاء بيانات تحتفظ بكل شيء على القرص (محليًا أو عن بُعد). ويمكن تخزين البيانات على القرص بطريقة تختلف عن تخزينها في الذاكرة.
 يوجد حاليًا 3 تنسيقات serialization مختلفة لبنية البيانات المشتركة في أجزاء بيانات MergeTree: ‏`map` و`map_with_buckets`
@@ -887,9 +847,7 @@ ORDER BY _part ASC
 ملاحظة: لا يُدعَم تغيير serialization لبنية البيانات المشتركة إلا
 مع `v3` [object serialization version](/ar/reference/settings/merge-tree-settings/other#object_serialization_version)
 
-<div id="shared-data-map">
-  #### Map
-</div>
+#### Map {#shared-data-map}
 
 في إصدار التسلسل `map`، تُسلسَل البيانات المشتركة كعمود واحد من النوع `Map(String, String)`، تمامًا كما تُخزَّن في
 الذاكرة. لقراءة العمود الفرعي للمسار من هذا النوع من التسلسل، يقرأ ClickHouse عمود `Map` بالكامل ثم
@@ -897,9 +855,7 @@ ORDER BY _part ASC
 
 يكون هذا التسلسل فعّالًا لكتابة البيانات وقراءة عمود `JSON` بالكامل، لكنه ليس فعّالًا لقراءة الأعمدة الفرعية للمسارات.
 
-<div id="shared-data-map-with-buckets">
-  #### Map مع الحاويات
-</div>
+#### Map مع الحاويات {#shared-data-map-with-buckets}
 
 في إصدار تسلسل `map_with_buckets`، تُسلسَل البيانات المشتركة إلى `N` أعمدة (&quot;حاويات&quot;) من النوع `Map(String, String)`.
 ويحتوي كل حاوية من هذه الحاويات على مجموعة فرعية فقط من المسارات. لقراءة عمود فرعي لمسار من هذا النوع من التسلسل، يقرأ ClickHouse
@@ -912,9 +868,7 @@ ORDER BY _part ASC
 و[object&#95;shared&#95;data&#95;buckets&#95;for&#95;wide&#95;part](/ar/reference/settings/merge-tree-settings/object-shared#object_shared_data_buckets_for_wide_part) (32 افتراضيًا).
 والحد الأقصى المسموح به لكلا الإعدادين هو 256.
 
-<div id="shared-data-advanced">
-  #### متقدّم
-</div>
+#### متقدّم {#shared-data-advanced}
 
 في إصدار التسلسل `advanced`، تُسلسَل البيانات المشتركة ضمن بنية بيانات خاصة تُحسِّن إلى أقصى حد أداء
 قراءة الأعمدة الفرعية للمسارات، وذلك عبر تخزين بعض المعلومات الإضافية التي تتيح قراءة بيانات المسارات المطلوبة فقط.
@@ -927,9 +881,7 @@ ORDER BY _part ASC
 
 للاطلاع على نظرة عامة أكثر تفصيلًا حول تسلسلات البيانات المشتركة الجديدة وتفاصيل التنفيذ، اقرأ [منشور المدونة](https://clickhouse.com/blog/json-data-type-gets-even-better).
 
-<div id="controlling-the-number-of-dynamic-paths">
-  ## التحكّم في عدد المسارات الديناميكية داخل JSON في أجزاء MergeTree
-</div>
+## التحكّم في عدد المسارات الديناميكية داخل JSON في أجزاء MergeTree {#controlling-the-number-of-dynamic-paths}
 
 الطريقة الرئيسية لفرض حدّ على المسارات الديناميكية في JSON هي استخدام المَعلَمة `max_dynamic_paths` داخل تعريف النوع JSON.
 لكن تغيير `max_dynamic_paths` للأعمدة الحالية يتطلّب تشغيل `ALTER TABLE <table> MODIFY COLUMN <column> JSON(max_dynamic_paths=K)`، مما يبدأ عملية mutation في الخلفية تعيد كتابة جميع الأجزاء الموجودة.
@@ -941,9 +893,7 @@ ORDER BY _part ASC
 
 ملاحظة: لا يمكن أن يتجاوز حدّ المسارات الديناميكية القيمة المحددة في المَعلَمة `max_dynamic_paths`، حتى إذا كانت قيم الإعدادات المذكورة أعلى.
 
-<div id="introspection-functions">
-  ## دوال الاستبطان
-</div>
+## دوال الاستبطان {#introspection-functions}
 
 توجد عدة دوال تساعد على فحص محتوى عمود JSON:
 
@@ -1082,9 +1032,7 @@ SETTINGS date_time_input_format = 'best_effort'
 └─arrayJoin(distinctJSONPathsAndTypes(json))──────────────────┘
 ```
 
-<div id="alter-modify-column-to-json-type">
-  ## ALTER MODIFY COLUMN إلى النوع JSON
-</div>
+## ALTER MODIFY COLUMN إلى النوع JSON {#alter-modify-column-to-json-type}
 
 يمكن تعديل جدول موجود وتغيير نوع العمود إلى النوع `JSON` الجديد. حاليًا، لا يُدعَم `ALTER` إلا عند التحويل من النوع `String`.
 
@@ -1106,9 +1054,7 @@ SELECT json, json.a, json.b, json.c FROM test;
 └──────────────────────────────┴────────┴─────────┴────────────┘
 ```
 
-<div id="lazy-type-hints">
-  ## تلميحات الأنواع الكسولة (تجريبية)
-</div>
+## تلميحات الأنواع الكسولة (تجريبية) {#lazy-type-hints}
 
 <Note>
   هذه الميزة تجريبية، وتتطلب أن يكون الإعداد `allow_experimental_json_lazy_type_hints` مُمكّنًا.
@@ -1124,17 +1070,13 @@ SELECT json, json.a, json.b, json.c FROM test;
 
 وهذا يعني أنه يمكنك إضافة تلميحات الأنواع فورًا، وستُحوَّل البيانات تدريجيًا مع حدوث عمليات الدمج العادية في الخلفية.
 
-<div id="enabling-lazy-type-hints">
-  ### تمكين تلميحات الأنواع الكسولة
-</div>
+### تمكين تلميحات الأنواع الكسولة {#enabling-lazy-type-hints}
 
 ```sql
 SET allow_experimental_json_lazy_type_hints = 1;
 ```
 
-<div id="lazy-type-hints-example">
-  ### مثال
-</div>
+### مثال {#lazy-type-hints-example}
 
 ```sql title="Query"
 -- Create a table and insert data
@@ -1157,9 +1099,7 @@ SELECT json.user_id, toTypeName(json.user_id), json.score, toTypeName(json.score
 └──────────────┴──────────────────────────┴────────────┴────────────────────────┘
 ```
 
-<div id="verifying-no-mutation-occurred">
-  ### التحقق من عدم حدوث أي mutation
-</div>
+### التحقق من عدم حدوث أي mutation {#verifying-no-mutation-occurred}
 
 يمكنك التحقق من أن `ALTER` قد اكتملت من دون حدوث mutation عبر فحص جدول `system.mutations`:
 
@@ -1171,9 +1111,7 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
 ينطبق ذلك على تغييرات تلميحات الأنواع الموضحة أعلاه؛ راجع [القيود](#lazy-type-hints-limitations) للحالات التي تُرفض بدلاً من ذلك.
 
-<div id="materializing-type-hints">
-  ### تجسيد تلميح الأنواع
-</div>
+### تجسيد تلميح الأنواع {#materializing-type-hints}
 
 لتجسيد تلميح الأنواع في البيانات الموجودة، يمكنك إما:
 
@@ -1181,9 +1119,7 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 2. **فرض الدمج**: استخدم `OPTIMIZE TABLE test_lazy FINAL` لدمج جميع الأجزاء فورًا
 3. **إعادة كتابة الأجزاء**: استخدم `ALTER TABLE test_lazy REWRITE PARTS` لإعادة كتابة الأجزاء باستخدام البيانات الوصفية الجديدة
 
-<div id="lazy-type-hints-limitations">
-  ### القيود
-</div>
+### القيود {#lazy-type-hints-limitations}
 
 * هذه الميزة تجريبية وقد تتغير في الإصدارات المستقبلية
 * قد يترتب على تحويل الأنواع وقت الاستعلام عبء كبير على الأداء مقارنةً بالأنواع المُخزَّنة مسبقًا، خاصةً مع كائنات JSON الكبيرة
@@ -1196,9 +1132,7 @@ SELECT * FROM system.mutations WHERE table = 'test_lazy' AND NOT is_done;
 
   تظل إضافة تلميحات لمسارات غير مستخدمة في أي بنية من هذا النوع، أو التغييرات التي لا تغيّر النوع المخزن على القرص للأعمدة الفرعية المستخدمة (مثل إضافة مسار محدد النوع غير ذي صلة)، مقتصرة على البيانات الوصفية.
 
-<div id="comparison-between-values-of-the-json-type">
-  ## مقارنة قيم نوع JSON
-</div>
+## مقارنة قيم نوع JSON {#comparison-between-values-of-the-json-type}
 
 تُقارَن كائنات JSON بصورة مماثلة لـ Maps.
 
@@ -1236,9 +1170,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 
 **ملاحظة:** إذا احتوى مساران على قيم من أنواع بيانات مختلفة، فتُقارَن وفقًا لـ[قاعدة المقارنة](/ar/reference/data-types/variant#comparing-values-of-variant-data) الخاصة بنوع البيانات `Variant`.
 
-<div id="data-skipping-indexes-for-json">
-  ## فهارس تخطي البيانات في JSON
-</div>
+## فهارس تخطي البيانات في JSON {#data-skipping-indexes-for-json}
 
 يمكن استخدام [فهارس تخطي البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) مع أعمدة `JSON` بثلاث طرق:
 
@@ -1246,9 +1178,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 2. **فهارس قائمة على المسار باستخدام `JSONAllPaths`** — فهرسة *مجموعة المسارات* الموجودة في كل حبيبة لتخطي الحبيبات التي يستحيل أن تحتوي على المسار المطلوب في الاستعلام.
 3. **فهارس قائمة على القيم باستخدام `JSONAllValues`** — فهرسة *جميع القيم* عبر كل مسارات JSON باستخدام [فهرس نصي](/ar/reference/engines/table-engines/mergetree-family/textindexes) لتسريع البحث النصي الكامل في أي عمود JSON فرعي باستخدام فهرس واحد.
 
-<div id="json-indexes-on-subcolumns">
-  ### فهارس على أعمدة فرعية محددة
-</div>
+### فهارس على أعمدة فرعية محددة {#json-indexes-on-subcolumns}
 
 يمكنك إنشاء فهرس تخطٍ على أي عمود فرعي في JSON باستخدام الصياغة نفسها المستخدمة مع الأعمدة العادية.
 يعمل أي [نوع فهرس مدعوم](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) (`minmax`، `set`، `bloom_filter`، `tokenbf_v1`، `ngrambf_v1`، إلخ).
@@ -1260,9 +1190,7 @@ SELECT json1, json2, json1 < json2, json1 = json2, json1 > json2 FROM test;
 
 يمكنك أيضًا استخدام تعبيرات تجمع بين عدة أعمدة فرعية، على سبيل المثال `json.a || json.b::String`.
 
-<div id="json-indexes-on-subcolumns-example">
-  #### مثال
-</div>
+#### مثال {#json-indexes-on-subcolumns-example}
 
 ```sql title="Query"
 CREATE TABLE sensor_data
@@ -1311,16 +1239,12 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
         Granules: 1/8
 ```
 
-<div id="json-indexes-jsonallpaths">
-  ### فهارس قائمة على المسارات باستخدام JSONAllPaths
-</div>
+### فهارس قائمة على المسارات باستخدام JSONAllPaths {#json-indexes-jsonallpaths}
 
 يمكن أيضًا إنشاء [فهارس تخطي البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-data_skipping-indexes) على أعمدة `JSON` باستخدام الدالة [`JSONAllPaths`](/ar/reference/functions/regular-functions/json-functions#JSONAllPaths).
 ويعمل ذلك بطريقة مشابهة لإنشاء فهارس التخطي على أعمدة [`Map`](/ar/reference/data-types/map) عبر `mapKeys` — إذ يخزّن الفهرس مجموعة مسارات JSON الموجودة في كل حبيبة، ويستخدمها لتخطي الحبيبات التي لا يمكن أن تحتوي على المسار المطلوب في الاستعلام.
 
-<div id="json-indexes-jsonallpaths-supported-types">
-  #### أنواع الفهارس المدعومة
-</div>
+#### أنواع الفهارس المدعومة {#json-indexes-jsonallpaths-supported-types}
 
 يمكن استخدام `JSONAllPaths` مع أنواع فهارس التخطي التالية:
 
@@ -1329,9 +1253,7 @@ EXPLAIN indexes = 1 SELECT * FROM sensor_data WHERE data.location::String = 'roo
 * [`ngrambf_v1`](/ar/reference/engines/table-engines/mergetree-family/mergetree#n-gram-bloom-filter) — يدعم `equals` و`IS NOT NULL`.
 * [`text`](/ar/reference/engines/table-engines/mergetree-family/textindexes) (فهرس مقلوب) — يدعم `equals` و`in` و`IS NOT NULL`.
 
-<div id="json-indexes-on-subcolumns-example">
-  #### مثال
-</div>
+#### مثال {#json-indexes-jsonallpaths-example}
 
 ```sql title="Query"
 CREATE TABLE events
@@ -1394,26 +1316,23 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
         Granules: 1/2
 ```
 
-<div id="json-indexes-jsonallpaths-how-it-works">
-  #### كيف يعمل
-</div>
+#### كيف يعمل {#json-indexes-jsonallpaths-how-it-works}
 
 يُنتج التعبير `JSONAllPaths(json_column)` قيمة `Array(String)` تحتوي على جميع المسارات الموجودة في قيمة JSON.
-يخزّن فهرس التخطي سلاسل المسارات هذه في بنية البيانات الخاصة به (`bloom filter` أو `inverted index`).
+يخزّن فهرس التخطي سلاسل المسارات هذه في بنية البيانات الخاصة به (`bloom filter` أو `فهرس مقلوب`).
 عندما يطبّق الاستعلام عامل تصفية على `json.some.path`، يتحقق الفهرس مما إذا كانت السلسلة `"some.path"` موجودة في الفهرس لكل حبيبة، ويتجاوز الحبيبات التي لا تحتوي عليها.
 
-<div id="json-indexes-jsonallpaths-safety-with-missing-paths">
-  #### الأمان عند غياب المسارات
-</div>
+لا تُطابَق مع الفهرس إلا عمليات الوصول البسيطة إلى المسار، مع تلميح نوع أو تحويل نوع اختياريًا (`json.a.b`، `json.a.b.:Int64`، `json.a.b::String`).
+لا تستخدم عوامل التصفية على العمود الفرعي للكائن الفرعي (`json.^a`) وعلى العمود الفرعي المدمج للقيمة الحرفية والكائن الفرعي (``json.@`a``) الفهرس: إذ لا تكون هذه الأعمدة الفرعية `NULL` كلما وُجد أي مسار فرعي لـ `a`، لذا فإن وجود المسار `a` نفسه في `JSONAllPaths` ليس شرطًا مكافئًا.
+
+#### الأمان عند غياب المسارات {#json-indexes-jsonallpaths-safety-with-missing-paths}
 
 عندما يكون مسار JSON غائبًا عن حبيبة، فإن قيمة العمود الفرعي تكون:
 
 * `NULL` مع النوع `Dynamic` (مثل `json.path`) والأعمدة الفرعية من النوع `Nullable` (مثل `json.path.:Int64`) — تُرجِع المقارنات مع `NULL` دائمًا false، لذا يكون skipping آمنًا.
 * القيمة الافتراضية للنوع في تعبيرات `CAST` غير `Nullable` (مثل `json.path::Int64` الذي ينتج `0` عند غياب المسار) — لا يكون skipping آمنًا إلا عندما تختلف القيمة المُقارَنة عن القيمة الافتراضية. ويتولى الفهرس هذا التمييز تلقائيًا.
 
-<div id="json-indexes-jsonallvalues">
-  ### البحث النصي الكامل باستخدام JSONAllValues
-</div>
+### البحث النصي الكامل باستخدام JSONAllValues {#json-indexes-jsonallvalues}
 
 يمكن استخدام [الفهارس النصية](/ar/reference/engines/table-engines/mergetree-family/textindexes) لتسريع البحث النصي الكامل في أعمدة JSON من خلال الدالة [`JSONAllValues`](/ar/reference/functions/regular-functions/json-functions#JSONAllValues).
 تُرجع `JSONAllValues` جميع القيم من عمود JSON بصيغة `Array(String)`، ويمكن فهرستها باستخدام فهرس نصي.
@@ -1421,9 +1340,7 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 
 راجع [الفهارس المستندة إلى القيم باستخدام JSONAllValues](/ar/reference/engines/table-engines/mergetree-family/textindexes#json-indexes-jsonallvalues) في توثيق الفهارس النصية للاطلاع على التفاصيل والأمثلة.
 
-<div id="tips-for-better-usage-of-the-json-type">
-  ## نصائح لتحسين استخدام نوع JSON
-</div>
+## نصائح لتحسين استخدام نوع JSON {#tips-for-better-usage-of-the-json-type}
 
 قبل إنشاء عمود `JSON` وتحميل البيانات فيه، ضع النصائح التالية في اعتبارك:
 
@@ -1432,9 +1349,7 @@ EXPLAIN indexes = 1 SELECT * FROM events WHERE data.user.name IS NOT NULL;
 * لا تضبط المعلَمة `max_dynamic_paths` على قيم مرتفعة جدًا، لأن ذلك قد يقلّل من كفاءة التخزين والقراءة.
   ورغم أن ذلك يعتمد بدرجة كبيرة على معلمات النظام مثل الذاكرة وCPU وما إلى ذلك، فإن القاعدة العامة هي ألا تضبط `max_dynamic_paths` على قيمة تتجاوز 10 000 لتخزين نظام الملفات المحلي و1024 لتخزين نظام الملفات البعيد.
 
-<div id="further-reading">
-  ## للمزيد من القراءة
-</div>
+## للمزيد من القراءة {#further-reading}
 
 * [كيف بنينا نوع بيانات JSON جديدًا وقويًا لـ ClickHouse](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse)
 * [تحدي JSON لمليار مستند: ClickHouse في مواجهة MongoDB وElasticsearch وغيرهما](https://clickhouse.com/blog/json-bench-clickhouse-vs-mongodb-elasticsearch-duckdb-postgresql)

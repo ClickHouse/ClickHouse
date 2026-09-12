@@ -20,7 +20,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 هناك عدة طرق لتحديث موجّه الأوامر، وسنستعرضها واحدةً تلو الأخرى.
 
 <div id="--prompt-flag">
-  ## الخيار --prompt
+  ## الخيار --prompt {#--prompt-flag}
 </div>
 
 الطريقة الأولى لتغيير هذا الخيار هي باستخدام `--prompt`:
@@ -34,7 +34,7 @@ clickhouse --prompt 👉
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="موجّه عميل ClickHouse مع إيموجي الإصبع" />
 
 <div id="config-file---top-level">
-  ## ملف التهيئة - المستوى الأعلى
+  ## ملف التهيئة - المستوى الأعلى {#config-file---top-level}
 </div>
 
 بدلًا من ذلك، يمكنك تحديد بادئة لموجّه الأوامر في ملف `config.xml`:
@@ -78,9 +78,7 @@ clickhouse -C christmas.yaml
 
 <Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع إيموجي دائرة صفراء" />
 
-<div id="config-file---connections_credentials">
-  ## ملف التهيئة - connections_credentials
-</div>
+## ملف التهيئة - connections_credentials {#config-file---connections_credentials}
 
 بدلًا من ذلك، يمكنك تحديد موجّه الأوامر لكل مجموعة من بيانات اعتماد الاتصال.
 ولا يكون هذا منطقيًا إلا عند استخدام clickhouse-client.
@@ -149,7 +147,7 @@ connections_credentials:
 clickhouse client -C connections.yaml --connection dev
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse لاتصال Development باستخدام YAML" />
+<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse لاتصال التطوير باستخدام YAML" />
 
 والآن `prod`:
 

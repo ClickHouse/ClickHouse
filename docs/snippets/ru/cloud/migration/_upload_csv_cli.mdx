@@ -1,0 +1,152 @@
+---
+title: Загрузка CSV через CLI
+---
+
+На этой странице описана загрузка локального файла (например, CSV) в таблицу сервиса ClickHouse Cloud из командной строки с помощью [ClickHouse CLI](/ru/products/cloud/features/cli) (`clickhousectl`). Порядок действий повторяет мастер загрузки файлов в консоли: просмотреть схему файла, создать целевую таблицу и вставить файл по HTTP через Query API — при этом не требуются ни бинарный файл `clickhouse`, ни пароль сервиса.
+
+## Предварительные требования {#cli-prerequisites}
+
+Установите ClickHouse CLI:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+Также вам понадобится `jq`.
+
+Для операций записи требуется [аутентификация по API key](/ru/products/cloud/features/admin-features/api/openapi); вход через OAuth даёт доступ только для чтения:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+Проверьте с помощью `clickhousectl cloud auth status` — должна отобразиться запись с областью действия (scope) `read/write`.
+
+## Выбор сервиса {#pick-a-service}
+
+В этом руководстве предполагается, что у вас уже есть запущенный сервис. Если это не так, см. [Быстрый старт в Cloud](/ru/get-started/setup/cloud) — там описано создание сервиса через CLI. Найдите ID сервиса по его имени:
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="my-service") | .id')
+```
+
+## Подготовка файла {#prepare-the-file}
+
+Предположим, что приведённый ниже текст содержится в CSV-файле с именем `data.csv`. Первая строка — это строка заголовка, поэтому подходящий входной формат — `CSVWithNames`:
+
+```text title="data.csv"
+user_id,url,visited_at,duration_ms
+101,https://clickhouse.com/docs,2026-08-14 09:15:32,4210
+102,https://clickhouse.com/pricing,2026-08-14 09:16:01,1830
+101,https://clickhouse.com/cloud,2026-08-14 09:17:45,2650
+103,https://clickhouse.com/blog,2026-08-15 11:02:10,980
+102,https://clickhouse.com/docs/cloud,2026-08-15 11:05:44,3120
+```
+
+## Проверка схемы {#inspect-the-schema}
+
+Если мастер в консоли показывает выведенный тип каждого поля источника, то в CLI аналогом будет `DESCRIBE` для табличной функции [`format`](/ru/reference/functions/table-functions/format) со встроенной выборкой из файла:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+  --query "DESCRIBE format(CSVWithNames, '$(head -n 3 data.csv)')"
+```
+
+Первый вызов `query` автоматически создаёт для сервиса Query API endpoint и API key, ограниченный этим сервисом:
+
+```text
+Provisioning Query API endpoint + key for service 'my-service'...
+   ┌─name────────┬─type───────────────┬─default_type─┬─default_expression─┬─comment─┬─codec_expression─┬─ttl_expression─┐
+1. │ user_id     │ Nullable(Int64)    │              │                    │         │                  │                │
+2. │ url         │ Nullable(String)   │              │                    │         │                  │                │
+3. │ visited_at  │ Nullable(DateTime) │              │                    │         │                  │                │
+4. │ duration_ms │ Nullable(Int64)    │              │                    │         │                  │                │
+   └─────────────┴────────────────────┴──────────────┴────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+Выборка подставляется в строковый литерал SQL, поэтому она не должна содержать одинарных кавычек и обратных слешей; для файлов, где они встречаются, экранируйте их или просто напишите `CREATE TABLE` вручную.
+
+## Создание таблицы {#create-the-table}
+
+Всё, что предлагает шаг мастера &quot;Configure table&quot; — изменение выведенных типов, допустимости NULL, значений по умолчанию, исключаемых полей, движка таблицы, а также выражений сортировки, партиционирования и первичного ключа — здесь сводится к обычному оператору [`CREATE TABLE`](/ru/reference/statements/create/table). Например, уточним выведенные типы и выберем ключ сортировки:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "CREATE TABLE default.website_visits (
+    user_id UInt32,
+    url String,
+    visited_at DateTime,
+    duration_ms UInt32
+  ) ENGINE = MergeTree
+  ORDER BY (user_id, visited_at)"
+```
+
+Команда выводит `OK`. Если данные нужно загрузить в существующую таблицу, пропустите этот шаг.
+
+## Загрузка файла {#upload-the-file}
+
+`INSERT ... FORMAT` читает данные из stdin, поэтому передайте запрос и файл вместе через конвейер:
+
+```bash
+printf 'INSERT INTO default.website_visits FORMAT CSVWithNames\n' | cat - data.csv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+Команда выводит `OK`.
+
+<Warning>
+  **Передавайте запрос и данные вместе**
+
+  Передача `INSERT` через `--query` с перенаправлением или подачей файла в stdin по конвейеру (`--query "INSERT ..." < data.csv`) не работает: `--query` никогда не читает stdin, поэтому данные никуда не попадут. CLI сразу отклоняет такую комбинацию, вместо того чтобы молча ничего не вставить: он завершается с кодом `1`, не вставляет ни одной строки и выводит:
+
+  ```text
+  Error: --query cannot be combined with SQL or data on stdin. The Query API sends one request body, so redirected data is never read. Pipe the statement and its data together on stdin instead: printf 'INSERT INTO t FORMAT CSV\n' | cat - data.csv | clickhousectl cloud service query --id <id>. Or read a whole statement from stdin with --queries-file -.
+  ```
+
+  Всегда отправляйте запрос и данные через stdin одним потоком, как показано выше. С `--query` конфликтует только тот stdin, который действительно содержит данные, поэтому сам по себе `--query` по-прежнему работает в скриптах и конвейерах, где stdin не является терминалом.
+</Warning>
+
+Убедитесь, что строки записались:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --json \
+  --query "SELECT count() FROM default.website_visits"
+```
+
+```text
+{"count()":5}
+```
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" --format PrettyCompact \
+  --query "SELECT * FROM default.website_visits ORDER BY visited_at"
+```
+
+```text
+   ┌─user_id─┬─url───────────────────────────────┬──────────visited_at─┬─duration_ms─┐
+1. │     101 │ https://clickhouse.com/docs       │ 2026-08-14 09:15:32 │        4210 │
+2. │     102 │ https://clickhouse.com/pricing    │ 2026-08-14 09:16:01 │        1830 │
+3. │     101 │ https://clickhouse.com/cloud      │ 2026-08-14 09:17:45 │        2650 │
+4. │     103 │ https://clickhouse.com/blog       │ 2026-08-15 11:02:10 │         980 │
+5. │     102 │ https://clickhouse.com/docs/cloud │ 2026-08-15 11:05:44 │        3120 │
+   └─────────┴───────────────────────────────────┴─────────────────────┴─────────────┘
+```
+
+## Другие форматы файлов {#other-file-formats}
+
+Тот же подход работает с любым [входным форматом](/ru/reference/formats/index), который поддерживает ClickHouse, — включая все форматы, принимаемые мастером загрузки в консоли, такие как `CSV`, `JSONEachRow` и `TabSeparatedWithNames`. Для другого формата согласованно измените имя формата и на шаге вывода схемы `DESCRIBE format(...)`, и в операторе `INSERT ... FORMAT`, а также используйте пример файла, соответствующий этому формату (файл в формате TSV для `TabSeparatedWithNames`, файл в формате JSON Lines для `JSONEachRow` и так далее). Например, шаг загрузки для файла в формате TSV будет выглядеть так:
+
+```bash
+printf 'INSERT INTO default.website_visits FORMAT TabSeparatedWithNames\n' | cat - data.tsv \
+  | clickhousectl cloud service query --id "$CH_ID"
+```
+
+## Очистка {#cleanup}
+
+Если это был пробный запуск, удалите таблицу, чтобы убрать импортированные данные:
+
+```bash
+clickhousectl cloud service query --id "$CH_ID" \
+  --query "DROP TABLE default.website_visits"
+```

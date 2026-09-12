@@ -1,18 +1,19 @@
 ---
 title: 'Incorporación'
 sidebarTitle: 'Incorporación'
-description: 'Instala ClickHouse Connector y configúralo en Kubernetes o una máquina virtual Linux'
+description: 'Instala ClickHouse Connector y configúralo en Kubernetes o una VM Linux'
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector', 'onboarding']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/es/components/Image.jsx";
 
-Esta página le guía desde un token de inscripción hasta un conector en buen estado y verificado. El conector se instala en uno de estos dos destinos: un clúster de Kubernetes (Helm) o una máquina virtual Linux (systemd). La inscripción mediante token es el flujo estándar; si su entorno no puede acceder directamente a los endpoints de ClickHouse, consulte las [instalaciones aisladas y replicadas](#air-gapped-and-mirrored-installs).
+<PrivatePreviewBadge />
 
-<div id="prerequisites">
-  ## Requisitos previos
-</div>
+Esta página le guía desde un token de inscripción hasta un conector en buen estado y verificado. El conector se instala en uno de estos dos destinos: un clúster de Kubernetes (Helm) o una VM Linux (systemd). La inscripción mediante token es el flujo estándar; si su entorno no puede acceder directamente a los endpoints de ClickHouse, consulte las [instalaciones aisladas y con espejo](#air-gapped-and-mirrored-installs).
+
+## Requisitos previos {#prerequisites}
 
 Para cada instalación:
 
@@ -40,9 +41,7 @@ Para instalaciones en VM Linux (systemd):
   `--skip-provision` es la única forma de omitir el requisito de Kubernetes y solo sirve para la fase de preparación: omite el aprovisionamiento de usuarios de ClickHouse y, en una VM, la habilitación y verificación de la unidad, por lo que no genera por sí solo un conector en ejecución.
 </Note>
 
-<div id="install-and-enroll">
-  ## Instalar y registrar
-</div>
+## Instalar y registrar {#install-and-enroll}
 
 <Steps>
   <Step title="Obtenga el endpoint de su conector y el token de registro" id="get-endpoint-and-token">
@@ -153,9 +152,7 @@ Para instalaciones en VM Linux (systemd):
   </Step>
 </Steps>
 
-<div id="air-gapped-and-mirrored-installs">
-  ## Instalaciones aisladas y con espejo
-</div>
+## Instalaciones aisladas y con espejo {#air-gapped-and-mirrored-installs}
 
 Hay dos componentes independientes que pueden transferirse fuera de banda, según a qué pueda acceder su entorno.
 
@@ -167,9 +164,7 @@ En Kubernetes, `--chart` acepta un nombre de chart resuelto mediante `--chart-re
 
 El instalador también funciona desde un espejo: aloje los artifacts de la release y `install.sh` en su propio espejo y apunte a él con `CLICKLINK_MIRROR_URL`.
 
-<div id="manual-download-and-verification">
-  ### Descarga y verificación manuales
-</div>
+### Descarga y verificación manuales {#manual-download-and-verification}
 
 Si prefiere no usar una canalización para el instalador, descargue y verifique la versión por su cuenta. El bloque detecta su plataforma y arquitectura; ejecútelo tal cual en macOS o Linux, amd64 o arm64:
 
@@ -207,9 +202,7 @@ sudo install -m 0755 clicklink /usr/local/bin/clicklink
 
 En una VM, extraiga el tarball y ejecute `sudo ./install.sh` desde el directorio extraído; junto a los artefactos de la versión, realiza la misma instalación en el host que `--host`.
 
-<div id="if-something-fails">
-  ## Si algo falla
-</div>
+## Si algo falla {#if-something-fails}
 
 Vuelva a ejecutar el mismo comando. `init` es idempotente: las ejecuciones repetidas convergen en el mismo estado, conservan la configuración y los archivos preparados existentes, y omiten el trabajo ya completado. Cuando un paso falla a mitad del proceso, la CLI muestra los comandos de recuperación exactos para su caso, y es seguro repetirlos.
 

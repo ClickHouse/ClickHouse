@@ -8,11 +8,12 @@ doc_type: 'مرجع'
 ---
 
 import { Image } from "/snippets/ar/components/Image.jsx";
+import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 <Image img="/images/cloud/reference/architecture.webp" size="lg" alt="معمارية Cloud" />
 
 <div id="storage-backed-by-object-store">
-  ## تخزين مدعوم بتخزين الكائنات
+  ## تخزين مدعوم بتخزين الكائنات {#storage-backed-by-object-store}
 </div>
 
 * سعة تخزين شبه غير محدودة
@@ -20,7 +21,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * تكلفة أقل بكثير لتخزين البيانات، خاصةً البيانات التي يُقلّ الوصول إليها
 
 <div id="compute">
-  ## الحوسبة
+  ## الحوسبة {#compute}
 </div>
 
 * التوسيع التلقائي والدخول التلقائي في وضع الخمول: لا حاجة إلى تحديد الموارد مسبقًا، ولا إلى الإفراط في تخصيصها لذروة الاستخدام
@@ -28,30 +29,30 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * آمن وعالي التوافر افتراضيًا
 
 <div id="administration">
-  ## الإدارة
+  ## الإدارة {#administration}
 </div>
 
 * نتولى عنك الإعداد والمراقبة والنسخ الاحتياطية والفوترة.
 * تكون ضوابط التكلفة مفعّلة افتراضيًا، ويمكنك تعديلها عبر Cloud Console.
 
 <div id="service-isolation">
-  ## عزل الخدمة
+  ## عزل الخدمة {#service-isolation}
 </div>
 
 <div id="network-isolation">
-  ### العزل على مستوى الشبكة
+  ### العزل على مستوى الشبكة {#network-isolation}
 </div>
 
 جميع الخدمات معزولة على مستوى طبقة الشبكة.
 
 <div id="compute-isolation">
-  ### عزل موارد الحوسبة
+  ### عزل موارد الحوسبة {#compute-isolation}
 </div>
 
 يتم نشر جميع الخدمات في قرون منفصلة ضمن مساحات أسماء Kubernetes الخاصة بها، مع عزل على مستوى الشبكة.
 
 <div id="storage-isolation">
-  ### عزل التخزين
+  ### عزل التخزين {#storage-isolation}
 </div>
 
 تستخدم جميع الخدمات مسارًا فرعيًا منفصلًا داخل bucket مشتركة (AWS وGCP) أو حاوية تخزين مشتركة (Azure).
@@ -61,14 +62,22 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 أما في GCP وAzure، فتتمتع الخدمات بعزل على مستوى object storage (إذ تكون لكل خدمة buckets أو حاوية تخزين خاصة بها).
 
 <div id="compute-compute-separation">
-  ## الحوسبة-الحوسبة separation
+  ## الحوسبة-الحوسبة separation {#compute-compute-separation}
 </div>
 
 تتيح لك [الحوسبة-الحوسبة separation](/ar/products/cloud/features/infrastructure/warehouses) إنشاء مجموعات متعددة من عُقد المعالجة، لكلٍ منها URL خدمة خاص بها، مع استخدام تخزين الكائنات المشترك نفسه جميعًا. ويتيح ذلك عزل موارد المعالجة لحالات استخدام مختلفة، مثل فصل عمليات القراءة عن عمليات الكتابة، مع مشاركة البيانات نفسها. كما يؤدي ذلك إلى استخدام أكثر كفاءة للموارد من خلال إتاحة التوسّع المستقل لمجموعات المعالجة حسب الحاجة.
 
-<div id="concurrency-limits">
-  ## حدود التزامن
-</div>
+## الحوسبة عند الطلب {#on-demand-compute}
+
+<PrivatePreviewBadge />
+
+تُخصّص الحوسبة عند الطلب مؤقتًا **workers** من pool تديره ClickHouse لتشغيل الأحمال المدعومة عبر خدمة ClickHouse Cloud الحالية لديك. فتتولّى خدمتك المصادقة وتنسيق الـ query، بينما ينفّذ الـ workers المخصّصون الجزء الأكبر من أعمال الفحص والـ join والتجميع المؤهّلة خارج حوسبة الخدمة. ويُشترك في الـ pool بين خدمات ClickHouse Cloud، إلا أن كل worker يخدم خدمة واحدة فقط في الوقت ذاته.
+
+خلال private preview، لا تدعم الحوسبة عند الطلب سوى استعلامات `SELECT` المؤهّلة. ويُوفَّر التوافر على أساس بذل أفضل الجهود، ويتفاوت الأداء، ولا تنطبق أهداف مستوى الخدمة واتفاقيات مستوى الخدمة الخاصة بـ ClickHouse Cloud.
+
+[شروط خدمة Private Preview](https://clickhouse.com/legal/agreements/private-preview-terms-of-service)
+
+## حدود التزامن {#concurrency-limits}
 
 لا يوجد حدّ لعدد الاستعلامات في الثانية (QPS) في خدمة ClickHouse Cloud الخاصة بك. ومع ذلك، يوجد حد أقصى يبلغ 1000 استعلام متزامن لكل نسخة متماثلة. ويعتمد QPS في النهاية على متوسط وقت تنفيذ الاستعلام وعدد النسخ المتماثلة في خدمتك.
 

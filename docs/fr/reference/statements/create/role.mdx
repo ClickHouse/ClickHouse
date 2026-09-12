@@ -10,7 +10,7 @@ doc_type: 'reference'
 
 Crée un ou plusieurs [rôles](/fr/concepts/features/security/access-rights#role-management). Un rôle est un ensemble de [privilèges](/fr/reference/statements/grant#granting-privilege-syntax). Un [utilisateur](/fr/reference/statements/create/user) auquel un rôle est attribué obtient tous les privilèges associés à ce rôle.
 
-Syntaxe :
+Syntaxe :
 
 ```sql
 CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER cluster_name]
@@ -18,9 +18,9 @@ CREATE ROLE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]] [ON CLUSTER clus
     [SETTINGS variable [= value] [MIN [=] min_value] [MAX [=] max_value] [CONST|READONLY|WRITABLE|CHANGEABLE_IN_READONLY] | PROFILE 'profile_name'] [,...]
 ```
 
-<div id="managing-roles">
-  ## Gestion des rôles
-</div>
+`CREATE ROLE` requiert le privilège [CREATE ROLE](/fr/reference/statements/grant#access-management). `OR REPLACE` supprime un rôle existant portant le même nom, ainsi que les privilèges qui lui ont été accordés, et requiert donc en plus le privilège [DROP ROLE](/fr/reference/statements/grant#access-management). Le privilège `DROP ROLE` est requis pour chaque nom listé dans l&#39;instruction, que ce rôle existe déjà ou non ; l&#39;instruction ne peut donc pas être utilisée pour découvrir quels rôles existent.
+
+## Gestion des rôles {#managing-roles}
 
 Un utilisateur peut se voir attribuer plusieurs rôles. Les utilisateurs peuvent appliquer leurs rôles attribués dans des combinaisons arbitraires à l’aide de l’instruction [SET ROLE](/fr/reference/statements/set-role). La portée finale des privilèges correspond à l’ensemble cumulé de tous les privilèges de tous les rôles appliqués. Si des privilèges sont accordés directement à son compte utilisateur, ils sont également cumulés avec les privilèges accordés par les rôles.
 
@@ -30,9 +30,7 @@ Pour révoquer un rôle, utilisez l’instruction [REVOKE](/fr/reference/stateme
 
 Pour supprimer un rôle, utilisez l’instruction [DROP ROLE](/fr/reference/statements/drop#drop-role). Le rôle supprimé est automatiquement révoqué pour tous les utilisateurs et rôles auxquels il était attribué.
 
-<div id="examples">
-  ## Exemples
-</div>
+## Exemples {#examples}
 
 ```sql
 CREATE ROLE accountant;

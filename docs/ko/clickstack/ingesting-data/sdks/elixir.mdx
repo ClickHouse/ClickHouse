@@ -6,25 +6,15 @@ doc_type: 'guide'
 keywords: ['Elixir ClickStack SDK', 'Elixir 관측성', 'HyperDX Elixir', 'Elixir 로깅 SDK', 'ClickStack Elixir 통합']
 ---
 
-<table>
-  <tbody>
-    <tr>
-      <td className="pe-2">✅ 로그</td>
-      <td className="pe-2">✖️ 메트릭</td>
-      <td className="pe-2">✖️ 트레이스</td>
-    </tr>
-  </tbody>
-</table>
+import { ClickStackIntegrates } from '/snippets/ko/components/ClickStackIntegrates/ClickStackIntegrates.jsx'
+
+<ClickStackIntegrates signals={['logs']} />
 
 *🚧 OpenTelemetry 메트릭 및 트레이싱 계측 기능이 곧 제공됩니다!*
 
-<div id="getting-started">
-  ## 시작하기
-</div>
+## 시작하기 {#getting-started}
 
-<div id="install-hyperdx-logger-backend-package">
-  ### ClickStack 로거 백엔드 패키지 설치
-</div>
+### ClickStack 로거 백엔드 패키지 설치 {#install-hyperdx-logger-backend-package}
 
 이 패키지는 `mix.exs`의 의존성 목록에 `hyperdx`를 추가하여 설치할 수 있습니다:
 
@@ -36,9 +26,7 @@ def deps do
 end
 ```
 
-<div id="configure-logger">
-  ### 로거 설정
-</div>
+### 로거 설정 {#configure-logger}
 
 다음을 `config.exs` 파일에 추가합니다:
 
@@ -50,9 +38,7 @@ config :logger,
   backends: [:console, {Hyperdx.Backend, :hyperdx}]
 ```
 
-<div id="configure-environment-variables">
-  ### 환경 변수 설정
-</div>
+### 환경 변수 설정 {#configure-environment-variables}
 
 이후 OpenTelemetry collector를 통해 ClickStack으로 텔레메트리 데이터를 수집하려면
 셸에서 다음 환경 변수를 설정하십시오:
@@ -60,14 +46,14 @@ config :logger,
 <Tabs>
   <Tab title="Managed ClickStack">
     ```shell
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
     ```
   </Tab>
 
   <Tab title="ClickStack Open Source">
     ```shell
     export HYPERDX_API_KEY='<YOUR_INGESTION_API_KEY>' \
-    OTEL_SERVICE_NAME='<NAME_OF_YOUR_APP_OR_SERVICE>'
+    OTEL_SERVICE_NAME='<YOUR_SERVICE_NAME>'
     ```
   </Tab>
 </Tabs>

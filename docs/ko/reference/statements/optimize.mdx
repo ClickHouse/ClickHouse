@@ -26,7 +26,7 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 
 `OPTIMIZE` 쿼리는 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 엔진 계열([구체화된 뷰(Materialized View)](/ko/reference/statements/create/view#materialized-view) 포함)과 [Buffer](/ko/reference/engines/table-engines/special/buffer) 엔진에서 지원됩니다. 다른 테이블 엔진은 지원되지 않습니다.
 
-`OPTIMIZE`를 [ReplicatedMergeTree](/ko/reference/engines/table-engines/mergetree-family/replication) 엔진 계열의 테이블 엔진에 사용하면, ClickHouse는 머지를 위한 작업을 생성하고 모든 레플리카에서 실행될 때까지 기다립니다([alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정이 `2`인 경우). 또는 현재 레플리카에서 실행될 때까지 기다립니다([alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정이 `1`인 경우).
+`OPTIMIZE`를 [ReplicatedMergeTree](/ko/reference/engines/table-engines/mergetree-family/replication) 엔진 계열의 테이블 엔진에 사용하면, ClickHouse는 머지를 위한 작업을 생성하고 모든 레플리카에서 실행될 때까지 기다립니다([alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정이 `2`이거나, `ReplicatedMergeTree`에서 `3`인 경우). 또는 현재 레플리카에서 실행될 때까지 기다립니다([alter&#95;sync](/ko/reference/settings/session-settings/alter#alter_sync) 설정이 `1`인 경우).
 
 * 어떤 이유로든 `OPTIMIZE`가 머지를 수행하지 않더라도 클라이언트에는 알리지 않습니다. 알림을 활성화하려면 [optimize&#95;throw&#95;if&#95;noop](/ko/reference/settings/session-settings/optimize#optimize_throw_if_noop) 설정을 사용하십시오.
 * `PARTITION`을 지정하면 지정한 파티션만 최적화됩니다. [파티션 표현식을 설정하는 방법](/ko/reference/statements/alter/partition#how-to-set-partition-expression).
@@ -36,12 +36,10 @@ OPTIMIZE TABLE [db.]name DRY RUN PARTS 'part_name1', 'part_name2' [, ...] [DEDUP
 비활성 레플리카가 `OPTIMIZE` 쿼리를 실행할 때까지 기다릴 시간(초)은 [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ko/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) 설정으로 지정할 수 있습니다.
 
 <Note>
-  `alter_sync`가 `2`로 설정되어 있고 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면, `UNFINISHED` 예외가 발생합니다.
+  `alter_sync`가 `2`로 설정되어 있거나 `ReplicatedMergeTree`에서 `3`으로 설정되어 있고, 일부 레플리카가 `replication_wait_for_inactive_replica_timeout` 설정에 지정된 시간보다 오래 비활성 상태로 남아 있으면, `UNFINISHED` 예외가 발생합니다.
 </Note>
 
-<div id="dry-run">
-  ## DRY RUN
-</div>
+## DRY RUN {#dry-run}
 
 `DRY RUN` 절은 지정된 파트의 머지를 시뮬레이션하지만 결과를 커밋하지는 않습니다. 병합된 파트는 임시 위치에 기록된 뒤 검증되고, 이후 폐기됩니다. 원본 파트와 테이블 데이터는 변경되지 않습니다.
 
@@ -90,9 +88,7 @@ ORDER BY name;
 └─────────────┴──────┘
 ```
 
-<div id="by-expression">
-  ## BY 표현식
-</div>
+## BY 표현식 {#by-expression}
 
 모든 컬럼이 아닌 특정 컬럼 집합에 대해 중복 제거를 수행하려면 컬럼 목록을 명시적으로 지정하거나 [`*`](/ko/reference/statements/select/index#asterisk), [`COLUMNS`](/ko/reference/statements/select/index#select-clause), [`EXCEPT`](/ko/reference/statements/select/except_modifier) 표현식을 조합해 사용할 수 있습니다. 명시적으로 작성했거나 암시적으로 확장된 컬럼 목록에는 행 정렬 표현식(프라이머리 키와 정렬 키 모두)과 파티셔닝 표현식(파티셔닝 키)에 지정된 모든 컬럼이 포함되어야 합니다.
 
@@ -159,9 +155,7 @@ SELECT * FROM example;
 
 다음의 모든 예시는 행이 5개인 이 상태를 기준으로 실행됩니다.
 
-<div id="deduplicate">
-  #### `DEDUPLICATE`
-</div>
+#### `DEDUPLICATE` {#deduplicate}
 
 중복 제거에 사용할 컬럼을 지정하지 않으면 모든 컬럼을 기준으로 합니다. 모든 컬럼의 값이 이전 행의 해당 값과 모두 같을 때만 그 행이 제거됩니다.
 
@@ -186,9 +180,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-">
-  #### `DEDUPLICATE BY *`
-</div>
+#### `DEDUPLICATE BY *` {#deduplicate-by-}
 
 컬럼을 명시하지 않으면 `ALIAS` 또는 `MATERIALIZED`가 아닌 모든 컬럼을 기준으로 테이블에서 중복이 제거됩니다. 위의 테이블에서는 `primary_key`, `secondary_key`, `value`, `partition_key` 컬럼이 이에 해당합니다:
 
@@ -213,9 +205,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by--except">
-  #### `DEDUPLICATE BY * EXCEPT`
-</div>
+#### `DEDUPLICATE BY * EXCEPT` {#deduplicate-by--except}
 
 `ALIAS` 또는 `MATERIALIZED`가 아니며, `value`도 명시적으로 제외한 모든 컬럼(`primary_key`, `secondary_key`, `partition_key`)을 기준으로 중복을 제거합니다.
 
@@ -239,9 +229,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-list-of-columns">
-  #### `DEDUPLICATE BY <list of columns>`
-</div>
+#### `DEDUPLICATE BY <list of columns>` {#deduplicate-by-list-of-columns}
 
 `primary_key`, `secondary_key`, `partition_key` 컬럼을 기준으로 중복을 명시적으로 제거합니다:
 
@@ -265,9 +253,7 @@ SELECT * FROM example;
 └─────────────┴───────────────┴───────┴───────────────┘
 ```
 
-<div id="deduplicate-by-columnsregex">
-  #### `DEDUPLICATE BY COLUMNS(<regex>)`
-</div>
+#### `DEDUPLICATE BY COLUMNS(<regex>)` {#deduplicate-by-columnsregex}
 
 정규식과 일치하는 모든 컬럼을 기준으로 중복을 제거합니다. 예를 들면 `primary_key`, `secondary_key`, `partition_key` 컬럼이 있습니다:
 

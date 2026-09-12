@@ -12,25 +12,19 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="preferred_block_size_bytes">
-  ## preferred_block_size_bytes
-</div>
+## preferred_block_size_bytes {#preferred_block_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="1000000" />
 
 この設定は、クエリ処理におけるデータブロックサイズを調整するもので、より大まかな `max_block_size` 設定を補うための追加の微調整です。カラムが大きく、`max_block_size` 行ではブロックサイズが指定されたバイト数を超える可能性が高い場合は、CPU の cache locality を向上させるためにブロックサイズが小さく調整されます。
 
-<div id="preferred_max_column_in_block_size_bytes">
-  ## preferred_max_column_in_block_size_bytes
-</div>
+## preferred_max_column_in_block_size_bytes {#preferred_max_column_in_block_size_bytes}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
 読み取り時のブロック内のカラムの最大サイズの上限です。cacheミスの回数を減らすのに役立ちます。L2cacheサイズに近い値にするのが望ましいです。
 
-<div id="preferred_optimize_projection_name">
-  ## preferred_optimize_projection_name
-</div>
+## preferred_optimize_projection_name {#preferred_optimize_projection_name}
 
 空でない文字列が設定されている場合、ClickHouse はクエリで指定されたプロジェクションを適用しようとします。
 

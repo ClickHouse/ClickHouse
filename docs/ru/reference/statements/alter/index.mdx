@@ -54,9 +54,7 @@ doc_type: 'reference'
 | [ALTER DATABASE ... MODIFY COMMENT](/ru/reference/statements/alter/database-comment) | Добавляет, изменяет или удаляет комментарии к базе данных вне зависимости от того, были ли они заданы ранее. |
 | [ALTER NAMED COLLECTION](/ru/reference/statements/alter/named-collection)            | Изменяет [именованные коллекции](/ru/concepts/features/configuration/server-config/named-collections).          |
 
-<div id="mutations">
-  ## Мутации
-</div>
+## Мутации {#mutations}
 
 Запросы `ALTER`, предназначенные для изменения данных в таблице, реализованы с помощью механизма под названием «мутации», в частности [ALTER TABLE ... DELETE](/ru/reference/statements/alter/delete) и [ALTER TABLE ... UPDATE](/ru/reference/statements/alter/update). Это асинхронные фоновые процессы, похожие на слияния в таблицах [MergeTree](/ru/reference/engines/table-engines/mergetree-family/index), которые создают новые «мутированные» версии частей.
 
@@ -69,9 +67,7 @@ doc_type: 'reference'
 
 Записи о завершенных мутациях удаляются не сразу (количество сохраняемых записей определяется параметром движка хранения `finished_mutations_to_keep`). Более старые записи о мутациях удаляются.
 
-<div id="synchronicity-of-alter-queries">
-  ## Синхронность запросов `ALTER`
-</div>
+## Синхронность запросов `ALTER` {#synchronicity-of-alter-queries}
 
 Для нереплицируемых таблиц все запросы `ALTER` выполняются синхронно. Для реплицируемых таблиц запрос лишь добавляет в `ZooKeeper` инструкции для соответствующих действий, а сами действия выполняются как можно скорее. Однако запрос может ждать завершения этих действий на всех репликах.
 
@@ -82,12 +78,10 @@ doc_type: 'reference'
 С помощью настройки [replication&#95;wait&#95;for&#95;inactive&#95;replica&#95;timeout](/ru/reference/settings/session-settings/other#replication_wait_for_inactive_replica_timeout) можно указать, как долго (в секундах) ждать, пока неактивные реплики выполнят все запросы `ALTER`.
 
 <Note>
-  Для всех запросов `ALTER`: если `alter_sync = 2` и некоторые реплики остаются неактивными дольше времени, указанного в настройке `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.
+  Для всех запросов `ALTER`: если `alter_sync = 2` или `alter_sync = 3` для `ReplicatedMergeTree` и некоторые реплики остаются неактивными дольше времени, указанного в настройке `replication_wait_for_inactive_replica_timeout`, генерируется исключение `UNFINISHED`.
 </Note>
 
-<div id="concurrent-alter-assignment-on-one-table">
-  ### Одновременное назначение `ALTER` для одной таблицы
-</div>
+### Одновременное назначение `ALTER` для одной таблицы {#concurrent-alter-assignment-on-one-table}
 
 В реплицируемых таблицах быстрая последовательная отправка нескольких отдельных операторов `ALTER` для одной и той же таблицы может завершиться ошибкой `CANNOT_ASSIGN_ALTER` (код 517). В реплицируемом пути эта ошибка возникает, если реплика ещё не применила некоторые предыдущие `ALTER` (версия метаданных всё ещё отстаёт от общей версии метаданных — сервер может сообщить, что реплика «still not applied some of previous alters» или «Probably too many alters executing concurrently»). Это условие может сохраняться даже после того, как предыдущий `ALTER` уже был назначен. Это **общее условие одновременного выполнения `ALTER` метаданных / мутаций** — оно не ограничивается операторами, относящимися только к мутациям. Обычные одновременные изменения метаданных (`ADD` / `DROP` / `MODIFY` и аналогичные) могут вызывать тот же код, допускающий повторную попытку (см., например, путь повторной попытки в `tests/queries/0_stateless/03518_alter_logical_race.sh`).
 
@@ -97,9 +91,7 @@ doc_type: 'reference'
 * Выполняйте операторы `ALTER` последовательно и повторяйте попытку при коде 517, пока предыдущие `ALTER` не будут применены на реплике.
 * Для `ALTER`, создающих мутации, дождитесь завершения предыдущей мутации, используя документированный наблюдаемый признак, например [`mutations_sync`](/ru/reference/settings/session-settings/mutations#mutations_sync) или `is_done` в [`system.mutations`](/ru/reference/system-tables/mutations), прежде чем отправлять следующий.
 
-<div id="combining-materialize-index-clauses">
-  ### Объединение секций `MATERIALIZE INDEX`
-</div>
+### Объединение секций `MATERIALIZE INDEX` {#combining-materialize-index-clauses}
 
 В одном операторе `ALTER` может содержаться несколько секций `MATERIALIZE INDEX`. Рассматриваемый в исходном коде случай — объединение нескольких секций `ADD INDEX` с `MATERIALIZE INDEX` для тех же новых индексов в одном операторе (см. `tests/queries/0_stateless/02911_add_index_and_materialize_index.sql`). Такая объединённая форма `ADD INDEX` + `MATERIALIZE INDEX` сочетает сегмент `AlterCommand` с сегментом `MutationCommand`, поэтому **`DatabaseReplicated` отклоняет её** с ошибкой `QUERY_IS_PROHIBITED` (`InterpreterAlterQuery::validateReplicatedDatabaseSegments`). Пример `02911` допустим для обычных баз данных (не `DatabaseReplicated`); в `DatabaseReplicated` выполняйте изменения метаданных и мутации материализации отдельными операторами.
 
@@ -107,9 +99,7 @@ doc_type: 'reference'
 
 Если требуется упорядоченное применение мутаций, можно по-прежнему выполнять по одному `MATERIALIZE INDEX` в каждом операторе и ждать завершения с помощью [`mutations_sync`](/ru/reference/settings/session-settings/mutations#mutations_sync).
 
-<div id="related-content">
-  ## См. также
-</div>
+## См. также {#related-content}
 
 * Блог: [Обновления и удаления в ClickHouse](https://clickhouse.com/blog/handling-updates-and-deletes-in-clickhouse)
 

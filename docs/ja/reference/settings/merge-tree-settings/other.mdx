@@ -15,26 +15,20 @@ import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHi
 
 これらの設定は [system.merge&#95;tree&#95;settings](/ja/reference/system-tables/merge_tree_settings) で確認でき、ClickHouse のソースコードから自動生成されています。
 
-<div id="adaptive_write_buffer_initial_size">
-  ## adaptive_write_buffer_initial_size
-</div>
+## adaptive_write_buffer_initial_size {#adaptive_write_buffer_initial_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="16384" />
 
 アダプティブ書き込みバッファの初期サイズ
 
-<div id="add_implicit_sign_column_constraint_for_collapsing_engine">
-  ## add_implicit_sign_column_constraint_for_collapsing_engine
-</div>
+## add_implicit_sign_column_constraint_for_collapsing_engine {#add_implicit_sign_column_constraint_for_collapsing_engine}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 true に設定すると、CollapsingMergeTree または VersionedCollapsingMergeTree テーブルの `sign` カラムに暗黙的な制約が追加され、
 有効な値 (`1` と `-1`) のみを許可します。
 
-<div id="alter_column_secondary_index_mode">
-  ## alter_column_secondary_index_mode
-</div>
+## alter_column_secondary_index_mode {#alter_column_secondary_index_mode}
 
 <SettingsInfoBlock type="AlterColumnSecondaryIndexMode" default_value="rebuild" />
 
@@ -51,18 +45,14 @@ true に設定すると、CollapsingMergeTree または VersionedCollapsingMerge
 * `compatibility`: 元の動作に合わせます。`ALTER ... MODIFY COLUMN` では `throw`、`ALTER ... UPDATE/DELETE` では `rebuild` になります。
 * `ignore`: 熟練者向けです。索引を不整合な状態のままにするため、誤ったクエリ結果を招く可能性があります。
 
-<div id="always_use_copy_instead_of_hardlinks">
-  ## always_use_copy_instead_of_hardlinks
-</div>
+## always_use_copy_instead_of_hardlinks {#always_use_copy_instead_of_hardlinks}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 ミューテーション/replace/detach
 などの際は、ハードリンクではなく常にデータをコピーします。
 
-<div id="apply_patches_on_merge">
-  ## apply_patches_on_merge
-</div>
+## apply_patches_on_merge {#apply_patches_on_merge}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -70,18 +60,14 @@ true に設定すると、CollapsingMergeTree または VersionedCollapsingMerge
 
 true の場合、マージ時にパッチパーツが適用されます
 
-<div id="assign_part_uuids">
-  ## assign_part_uuids
-</div>
+## assign_part_uuids {#assign_part_uuids}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 有効にすると、新しく作成される各パーツに一意の識別子が割り当てられます。
 有効にする前に、すべてのレプリカが UUID バージョン 4 をサポートしていることを確認してください。
 
-<div id="auto_statistics_types">
-  ## auto_statistics_types
-</div>
+## auto_statistics_types {#auto_statistics_types}
 
 <SettingsInfoBlock type="String" default_value="basic, uniq_v2" />
 
@@ -91,26 +77,20 @@ true の場合、マージ時にパッチパーツが適用されます
 サポートされている統計タイプ: basic, tdigest, countmin, uniq, uniq&#95;v2。
 `minmax` 統計タイプは非推奨です。これは `basic` の部分集合であるため、代わりに `basic` を使用してください。
 
-<div id="background_task_preferred_step_execution_time_ms">
-  ## background_task_preferred_step_execution_time_ms
-</div>
+## background_task_preferred_step_execution_time_ms {#background_task_preferred_step_execution_time_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="50" />
 
 マージ または mutation の 1 ステップの実行に要する目標時間です。1 ステップの処理に
 これより長い時間がかかる場合は、この時間を超えることがあります
 
-<div id="clean_deleted_rows">
-  ## clean_deleted_rows
-</div>
+## clean_deleted_rows {#clean_deleted_rows}
 
 <SettingsInfoBlock type="CleanDeletedRows" default_value="Never" />
 
 廃止された設定で、効果はありません。
 
-<div id="clone_replica_zookeeper_create_get_part_batch_size">
-  ## clone_replica_zookeeper_create_get_part_batch_size
-</div>
+## clone_replica_zookeeper_create_get_part_batch_size {#clone_replica_zookeeper_create_get_part_batch_size}
 
 <SettingsInfoBlock type="NonZeroUInt64" default_value="100" />
 
@@ -118,9 +98,7 @@ true の場合、マージ時にパッチパーツが適用されます
 
 レプリカのクローン時に ZooKeeper の multi-create get-part リクエストで使用するバッチサイズ。
 
-<div id="compatibility_allow_sampling_expression_not_in_primary_key">
-  ## compatibility_allow_sampling_expression_not_in_primary_key
-</div>
+## compatibility_allow_sampling_expression_not_in_primary_key {#compatibility_allow_sampling_expression_not_in_primary_key}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -128,9 +106,7 @@ true の場合、マージ時にパッチパーツが適用されます
 後方互換性のために、不正なテーブルを含む状態でサーバーを一時的に実行できるようにする場合にのみ
 必要です。
 
-<div id="compute_exact_num_defaults_for_sparse_columns">
-  ## compute_exact_num_defaults_for_sparse_columns
-</div>
+## compute_exact_num_defaults_for_sparse_columns {#compute_exact_num_defaults_for_sparse_columns}
 
 <BetaBadge />
 
@@ -148,9 +124,7 @@ insert および
 無効のままにしておけば inserts/マージ の速度は従来どおり維持されますが、有効にすると
 スパース化の対象となり得る各カラムごとに O(rows) の追加パスが発生します。
 
-<div id="deduplicate_merge_projection_mode">
-  ## deduplicate_merge_projection_mode
-</div>
+## deduplicate_merge_projection_mode {#deduplicate_merge_projection_mode}
 
 <SettingsInfoBlock type="DeduplicateMergeProjectionMode" default_value="throw" />
 
@@ -170,9 +144,7 @@ MergeTree ではこの設定は無視されます。これは `OPTIMIZE DEDUPLIC
 * `drop`
 * `rebuild`
 
-<div id="deduplication_hashes_cache_update_wait_ms">
-  ## deduplication_hashes_cache_update_wait_ms
-</div>
+## deduplication_hashes_cache_update_wait_ms {#deduplication_hashes_cache_update_wait_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="100" />
 
@@ -183,9 +155,7 @@ MergeTree ではこの設定は無視されます。これは `OPTIMIZE DEDUPLIC
 `deduplication_hashes` ディレクトリを反映しているため、insert は
 Keeper との往復変換なしで重複を検出できます。
 
-<div id="default_compression_codec">
-  ## default_compression_codec
-</div>
+## default_compression_codec {#default_compression_codec}
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.4"},{"label": ""},{"label": "新しい設定"}]}]} />
 
@@ -197,15 +167,11 @@ Keeper との往復変換なしで重複を検出できます。
 3. `compression` 設定で定義されたデフォルトの圧縮コーデック
    デフォルト値: 空文字列 (未定義) 。
 
-<div id="disk">
-  ## ディスク
-</div>
+## ディスク {#disk}
 
 ストレージに使用するディスクの名前です。storage policy の代わりに指定できます。
 
-<div id="dynamic_serialization_version">
-  ## dynamic_serialization_version
-</div>
+## dynamic_serialization_version {#dynamic_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeDynamicSerializationVersion" default_value="v3" />
 
@@ -219,9 +185,7 @@ Dynamic データ型のシリアル化バージョンです。互換性のため
 * `v2`
 * `v3`
 
-<div id="enforce_index_structure_match_on_partition_manipulation">
-  ## enforce_index_structure_match_on_partition_manipulation
-</div>
+## enforce_index_structure_match_on_partition_manipulation {#enforce_index_structure_match_on_partition_manipulation}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -233,9 +197,7 @@ Dynamic データ型のシリアル化バージョンです。互換性のため
 同一である必要があります。無効な場合は、宛先テーブルが
 ソーステーブルの索引およびプロジェクションの上位集合を持つことができます。
 
-<div id="execute_merges_on_single_replica_time_threshold">
-  ## execute_merges_on_single_replica_time_threshold
-</div>
+## execute_merges_on_single_replica_time_threshold {#execute_merges_on_single_replica_time_threshold}
 
 <SettingsInfoBlock type="Seconds" default_value="0" />
 
@@ -245,18 +207,14 @@ Dynamic データ型のシリアル化バージョンです。互換性のため
 
 * 任意の正の整数。
 
-<div id="finished_mutations_to_keep">
-  ## finished_mutations_to_keep
-</div>
+## finished_mutations_to_keep {#finished_mutations_to_keep}
 
 <SettingsInfoBlock type="UInt64" default_value="100" />
 
 完了したミューテーションに関するレコードを保持する件数です。ゼロの場合は、
 そのすべてを保持します。
 
-<div id="force_read_through_cache_for_merges">
-  ## force_read_through_cache_for_merges
-</div>
+## force_read_through_cache_for_merges {#force_read_through_cache_for_merges}
 
 <ExperimentalBadge />
 
@@ -264,25 +222,19 @@ Dynamic データ型のシリアル化バージョンです。互換性のため
 
 マージ時の読み取りでファイルシステムキャッシュを強制的に経由させます
 
-<div id="initialization_retry_period">
-  ## initialization_retry_period
-</div>
+## initialization_retry_period {#initialization_retry_period}
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 
 テーブル初期化の再試行間隔 (秒) 。
 
-<div id="kill_threads">
-  ## kill_threads
-</div>
+## kill_threads {#kill_threads}
 
 <SettingsInfoBlock type="UInt64" default_value="128" />
 
 廃止された設定で、何の効果もありません。
 
-<div id="lightweight_mutation_projection_mode">
-  ## lightweight_mutation_projection_mode
-</div>
+## lightweight_mutation_projection_mode {#lightweight_mutation_projection_mode}
 
 <SettingsInfoBlock type="LightweightMutationProjectionMode" default_value="throw" />
 
@@ -304,9 +256,7 @@ drop や rebuild のようなアクションをトリガーすることなく、
 * `drop`
 * `rebuild`
 
-<div id="load_existing_rows_count_for_old_parts">
-  ## load_existing_rows_count_for_old_parts
-</div>
+## load_existing_rows_count_for_old_parts {#load_existing_rows_count_for_old_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -323,17 +273,13 @@ drop や rebuild のようなアクションをトリガーすることなく、
 
 * [exclude&#95;deleted&#95;rows&#95;for&#95;part&#95;size&#95;in&#95;merge](/ja/reference/settings/merge-tree-settings/exclude#exclude_deleted_rows_for_part_size_in_merge) 設定
 
-<div id="lock_acquire_timeout_for_background_operations">
-  ## lock_acquire_timeout_for_background_operations
-</div>
+## lock_acquire_timeout_for_background_operations {#lock_acquire_timeout_for_background_operations}
 
 <SettingsInfoBlock type="Seconds" default_value="120" />
 
 マージやミューテーションなどのバックグラウンド処理で、テーブルロックを取得できない場合に失敗と見なすまでの秒数。
 
-<div id="mutation_workload">
-  ## mutation_workload
-</div>
+## mutation_workload {#mutation_workload}
 
 ミューテーションと他のワークロードの間で、リソースの利用と共有をどのように制御するかを調整するために使用されます。指定した値は、このテーブルのバックグラウンドミューテーションに対する `workload` 設定の値として使用されます。指定しない場合 (空文字列) は、代わりにサーバー設定 `mutation_workload` が使用されます。
 
@@ -341,9 +287,7 @@ drop や rebuild のようなアクションをトリガーすることなく、
 
 * [ワークロードスケジューリング](/ja/concepts/features/configuration/server-config/workload-scheduling)
 
-<div id="non_replicated_deduplication_window">
-  ## non_replicated_deduplication_window
-</div>
+## non_replicated_deduplication_window {#non_replicated_deduplication_window}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -360,9 +304,7 @@ drop や rebuild のようなアクションをトリガーすることなく、
 ハッシュ値は、挿入されたブロック全体を対象に計算されます。ハッシュ値は
 ClickHouse Keeper ではなく、ディスク上のローカルファイルに書き込まれます。
 
-<div id="notify_newest_block_number">
-  ## notify_newest_block_number
-</div>
+## notify_newest_block_number {#notify_newest_block_number}
 
 <ExperimentalBadge />
 
@@ -372,9 +314,7 @@ ClickHouse Keeper ではなく、ディスク上のローカルファイルに�
 
 最新の ブロック 番号を SharedJoin または SharedSet に通知します。ClickHouse Cloud でのみ使用できます。
 
-<div id="nullable_serialization_version">
-  ## nullable_serialization_version
-</div>
+## nullable_serialization_version {#nullable_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeNullableSerializationVersion" default_value="basic" />
 
@@ -388,9 +328,7 @@ ClickHouse Keeper ではなく、ディスク上のローカルファイルに�
 
 * allow&#95;sparse — `Nullable(T)` でスパースエンコーディングの使用を許可します。
 
-<div id="object_serialization_version">
-  ## object_serialization_version
-</div>
+## object_serialization_version {#object_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeObjectSerializationVersion" default_value="v3" />
 
@@ -406,9 +344,7 @@ JSON データ型のシリアライゼーションバージョンです。互換
 
 共有データのシリアライゼーションバージョンを変更できるのは、バージョン `v3` のみです。
 
-<div id="old_parts_lifetime">
-  ## old_parts_lifetime
-</div>
+## old_parts_lifetime {#old_parts_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="480" />
 
@@ -442,9 +378,7 @@ server の RAM (OS キャッシュ) 上にしか存在しません。server が�
 `old_parts_lifetime` には 480 秒という値が選ばれており、この間に
 新しいパーツが確実にディスクへ書き込まれることが保証されます。
 
-<div id="optimize_row_order">
-  ## optimize_row_order
-</div>
+## optimize_row_order {#optimize_row_order}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -512,9 +446,7 @@ LZ4 または ZSTD の圧縮率は、平均で 20～40% 改善します。
 `DateTime64` の timestamp カラムを含む主キーでは、この設定の恩恵は
 期待できません。
 
-<div id="packed_skip_index_max_bytes">
-  ## packed_skip_index_max_bytes
-</div>
+## packed_skip_index_max_bytes {#packed_skip_index_max_bytes}
 
 <BetaBadge />
 
@@ -545,9 +477,7 @@ below the threshold)` に比例します。
 サブストリームを透過的に提供します。この設定の変更は新しく書き込まれるパーツにのみ影響し、
 既存のパーツは書き込み時のレイアウトを保持します。
 
-<div id="part_minmax_index_columns">
-  ## part_minmax_index_columns
-</div>
+## part_minmax_index_columns {#part_minmax_index_columns}
 
 <SettingsInfoBlock type="MergeTreePartMinMaxIndexColumns" default_value="partition_key_only" />
 
@@ -560,9 +490,7 @@ below the threshold)` に比例します。
 * `partition_key_only` — パーティションキーのカラムのみを追跡します。
 * `with_block_number_offset` — パーティションキーのカラムに加えて、永続化された仮想カラム `_block_number` と `_block_offset` も追跡します。これにより、これらのカラムによるパートレベルの pruning が有効になります。
 
-<div id="patch_parts_version">
-  ## patch_parts_version
-</div>
+## patch_parts_version {#patch_parts_version}
 
 <SettingsInfoBlock type="MergeTreePatchPartsVersion" default_value="v2" />
 
@@ -579,9 +507,7 @@ below the threshold)` に比例します。
 
 ディスク上の旧形式のパッチは、この設定にかかわらず引き続き読み取れます。
 
-<div id="propagate_types_serialization_versions_to_nested_types">
-  ## propagate_types_serialization_versions_to_nested_types
-</div>
+## propagate_types_serialization_versions_to_nested_types {#propagate_types_serialization_versions_to_nested_types}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -589,9 +515,7 @@ below the threshold)` に比例します。
 
 true の場合、`string_serialization_version` のようなシリアライゼーションバージョンは、Array/Map/Nullable/JSON/etc. のようなネスト型の内部にも伝播されます。無効にすると、シリアライゼーションバージョンはこの型のトップレベルのカラムと Tuple el にのみ適用されます
 
-<div id="ratio_of_defaults_for_sparse_serialization">
-  ## ratio_of_defaults_for_sparse_serialization
-</div>
+## ratio_of_defaults_for_sparse_serialization {#ratio_of_defaults_for_sparse_serialization}
 
 <SettingsInfoBlock type="Float" default_value="0.9375" />
 
@@ -704,9 +628,7 @@ WHERE table LIKE 'my_sparse_table';
 └────────┴────────────────────┘
 ```
 
-<div id="reduce_blocking_parts_sleep_ms">
-  ## reduce_blocking_parts_sleep_ms
-</div>
+## reduce_blocking_parts_sleep_ms {#reduce_blocking_parts_sleep_ms}
 
 <SettingsInfoBlock type="UInt64" default_value="5000" />
 
@@ -714,18 +636,14 @@ WHERE table LIKE 'my_sparse_table';
 
 ClickHouse Cloudでのみ利用できます。どの範囲も削除または置換されなかった場合に、blocking parts の削減を再度試みるまでの最小待機時間です。設定値を小さくすると、background&#95;schedule&#95;pool 内のタスクが高頻度でトリガーされるため、大規模なクラスターでは ZooKeeper への大量のリクエストが発生します
 
-<div id="replace_long_file_name_to_hash">
-  ## replace_long_file_name_to_hash
-</div>
+## replace_long_file_name_to_hash {#replace_long_file_name_to_hash}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 カラムのファイル名が長すぎる場合 (&#39;max&#95;file&#95;name&#95;length&#39;
 バイトを超える場合) は、SipHash128に置き換えます
 
-<div id="replicated_can_become_leader">
-  ## replicated_can_become_leader
-</div>
+## replicated_can_become_leader {#replicated_can_become_leader}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -737,9 +655,7 @@ ClickHouse Cloudでのみ利用できます。どの範囲も削除または置�
 * `true`
 * `false`
 
-<div id="search_orphaned_parts_disks">
-  ## search_orphaned_parts_disks
-</div>
+## search_orphaned_parts_disks {#search_orphaned_parts_disks}
 
 <SettingsInfoBlock type="SearchOrphanedPartsDisks" default_value="any" />
 
@@ -757,9 +673,7 @@ ATTACH または CREATE table のたびに、孤立したパーツがないか�
 * local - 範囲はローカルディスクに制限されます。
 * none - 対象範囲を空にし、検索しません
 
-<div id="serialization_info_version">
-  ## serialization_info_version
-</div>
+## serialization_info_version {#serialization_info_version}
 
 <SettingsInfoBlock type="MergeTreeSerializationInfoVersion" default_value="with_types" />
 
@@ -773,14 +687,14 @@ ATTACH または CREATE table のたびに、孤立したパーツがないか�
 * `basic` - 基本フォーマット。
 * `with_types` - 追加の `types_serialization_versions` フィールドを含むフォーマットで、型ごとのシリアライゼーションバージョンを使用できます。
   これにより、`string_serialization_version` のような設定が有効になります。
+* `with_missing_columns` - `with_types` が記録する内容に加えて、省略されたカラムと、そのデフォルト値が値を表す型を列挙する `missing_columns` フィールドを含みます。
+  `skip_empty_columns_on_insert` を有効にするために必要です。
 
 ローリングアップグレード中は、これを `basic` に設定し、新しいサーバーが
 古いサーバーと互換性のあるデータパーツを生成するようにします。アップグレード完了後は、
-型ごとのシリアライゼーションバージョンを有効にするため、`WITH_TYPES` に切り替えます。
+対応する機能を有効にするため、`with_types` (または `with_missing_columns`) に切り替えます。
 
-<div id="share_nested_offsets">
-  ## share_nested_offsets
-</div>
+## share_nested_offsets {#share_nested_offsets}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -794,9 +708,7 @@ INSERT 時には配列サイズが同一であることが検証されます。
 スカラー カラムを共存させることもできます
 (例: `n UInt32` と `n.a Array(String)`) 。この設定はテーブル作成後は変更できません。
 
-<div id="simultaneous_parts_removal_limit">
-  ## simultaneous_parts_removal_limit
-</div>
+## simultaneous_parts_removal_limit {#simultaneous_parts_removal_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
@@ -804,17 +716,34 @@ INSERT 時には配列サイズが同一であることが検証されます。
 `simultaneous_parts_removal_limit` 個のパーツを削除しようとします。
 `simultaneous_parts_removal_limit` を `0` に設定すると、上限なしを意味します。
 
-<div id="storage_policy">
-  ## storage_policy
-</div>
+## skip_empty_columns_on_insert {#skip_empty_columns_on_insert}
+
+<SettingsInfoBlock type="Bool" default_value="0" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "0"},{"label": "INSERT 時に型のデフォルト値のみで構成されるカラムの書き込みをスキップする新しい設定"}]}]} />
+
+有効にすると、ある INSERT ブロック内で値がすべて型のデフォルト値であるカラムは、
+ディスク上のデータパーツに書き込まれません。そのパーツを後から読み取る際には、
+欠落カラムは記録された型のデフォルト値で補完されます。これにより、
+各 INSERT で大半のカラムがその型のデフォルト値のままとなるスパースな更新
+ワークロードにおいて、ディスク容量を節約できます。
+`DEFAULT`、`MATERIALIZED`、`ALIAS` の式を持つカラムがスキップされることはありません。
+読み取り時に、明示的に挿入された型のデフォルト値ではなく、式が評価されてしまう
+ためです。パッチパート (論理更新で使用されるもの) も対象外です。
+この最適化では、欠落カラムを `with_missing_columns` フォーマットバージョンを
+用いてパーツの `serialization.json` に記録するため、
+`serialization_info_version` が `with_missing_columns` に設定されている場合にのみ
+有効になります。それより低いバージョン (たとえば、古いサーバーが新しく書き込まれた
+パーツを読み取れるように、ローリングアップグレードのために低い値に固定した場合) では、
+カラムはスキップされません。
+
+## storage_policy {#storage_policy}
 
 <SettingsInfoBlock type="String" default_value="default" />
 
 ストレージディスクポリシー名
 
-<div id="string_serialization_version">
-  ## string_serialization_version
-</div>
+## string_serialization_version {#string_serialization_version}
 
 <SettingsInfoBlock type="MergeTreeStringSerializationVersion" default_value="with_size_stream" />
 
@@ -822,7 +751,7 @@ INSERT 時には配列サイズが同一であることが検証されます。
 
 トップレベルの `String` カラムのシリアライゼーション フォーマットを制御します。
 
-この設定は、`serialization_info_version` が &quot;with&#95;types&quot; に設定されている場合にのみ有効です。
+この設定は、`serialization_info_version` が &quot;with&#95;types&quot; 以降に設定されている場合にのみ有効です。
 `with_size_stream` に設定すると、トップレベルの `String` カラムは、サイズをインラインで格納するのではなく、
 文字列長を格納する独立した `.size` サブカラムを使ってシリアライズされます。これにより実際の `.size`
 サブカラムを利用できるようになり、圧縮効率が向上する場合があります。
@@ -835,18 +764,14 @@ INSERT 時には配列サイズが同一であることが検証されます。
 * `single_stream` — サイズをインラインで格納する標準のシリアライゼーション フォーマットを使用します。
 * `with_size_stream` — トップレベルの `String` カラムに対して、独立したサイズストリームを使用します。
 
-<div id="temporary_directories_lifetime">
-  ## temporary_directories_lifetime
-</div>
+## temporary_directories_lifetime {#temporary_directories_lifetime}
 
 <SettingsInfoBlock type="Seconds" default_value="86400" />
 
 tmp&#95;ディレクトリを保持する期間 (秒) です。この値は下げないでください。
 この設定値が小さいと、マージやミューテーションが正常に動作しない可能性があるためです。
 
-<div id="try_fetch_recompressed_part_timeout">
-  ## try_fetch_recompressed_part_timeout
-</div>
+## try_fetch_recompressed_part_timeout {#try_fetch_recompressed_part_timeout}
 
 <SettingsInfoBlock type="Seconds" default_value="7200" />
 
@@ -862,9 +787,7 @@ ClickHouse は、この再圧縮を伴うマージが割り当てられたレプ
 
 * 任意の正の整数。
 
-<div id="ttl_only_drop_parts">
-  ## ttl_only_drop_parts
-</div>
+## ttl_only_drop_parts {#ttl_only_drop_parts}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -877,9 +800,7 @@ TTL 設定に基づいて有効期限が切れた行のみが削除されます�
 `ttl_only_drop_parts` が有効な場合、
 `TTL` 設定に従ってそのパーツ内のすべての行の有効期限が切れていれば、パーツ全体が削除されます。
 
-<div id="wait_for_unique_parts_send_before_shutdown_ms">
-  ## wait_for_unique_parts_send_before_shutdown_ms
-</div>
+## wait_for_unique_parts_send_before_shutdown_ms {#wait_for_unique_parts_send_before_shutdown_ms}
 
 <SettingsInfoBlock type="Milliseconds" default_value="0" />
 
@@ -887,9 +808,7 @@ TTL 設定に基づいて有効期限が切れた行のみが削除されます�
 (現在のレプリカにのみ存在するもの) が他のレプリカにフェッチされるまで、必要な時間だけ待機します (0 は
 無効を意味します) 。
 
-<div id="zookeeper_session_expiration_check_period">
-  ## zookeeper_session_expiration_check_period
-</div>
+## zookeeper_session_expiration_check_period {#zookeeper_session_expiration_check_period}
 
 <SettingsInfoBlock type="Seconds" default_value="60" />
 

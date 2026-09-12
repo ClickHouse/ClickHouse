@@ -7,13 +7,9 @@ description: '有关 ClickHouse 自备 Cloud (BYOC) 的常见问题'
 doc_type: '参考'
 ---
 
-<div id="faq">
-  ## FAQ
-</div>
+## FAQ {#faq}
 
-<div id="onboarding-and-provisioning">
-  ### 引导与预配
-</div>
+### 引导与预配 {#onboarding-and-provisioning}
 
 <Accordion title="如何开始使用 BYOC？">
   请通过[联系表单](https://clickhouse.com/cloud/bring-your-own-cloud)联系 ClickHouse，我们的团队将为您的组织启用 BYOC。随后，准备一个专用云账户 (AWS 账户、GCP 项目或 Azure 订阅) ，并按照[标准引导指南](/zh/products/bring-your-own-cloud/onboarding/standard)操作。我们强烈建议使用仅用于 BYOC 的专用账户、项目或订阅。
@@ -22,7 +18,7 @@ doc_type: '参考'
 <Accordion title="基础设施预配需要多长时间？常见的卡住原因有哪些？">
   整个过程预计约需 45–90 分钟。时间跨度较大，是因为大部分时间都用于等待云提供商预配资源 (Kubernetes 集群、负载均衡器和网络组件) ；每次执行所需时间并不固定，且不受 ClickHouse 控制。预配停滞时，最常见的原因通常与账户有关：
 
-  * 在应用 CloudFormation 模板或 Terraform 模块前对其进行了修改——例如添加 `PermissionsBoundary`，或为符合命名规范而重命名 IAM 角色 (在 AWS 上，请保留默认的 `ClickHouseManagementRole` 名称，除非 ClickHouse 已明确批准使用其他名称) 。请按原样应用这些文件——支持的自定义项会以参数形式提供，其他任何更改均需先获得 ClickHouse 批准。
+  * 在应用 CloudFormation 模板或 Terraform 模块前对其进行了修改——例如添加 `PermissionsBoundary`，或为符合命名规范而重命名 IAM 角色 (在 AWS 上，请保留默认的 `ClickHouseManagementRole` 名称，除非 ClickHouse 已明确批准使用其他名称) 。请按原样应用这些制品——支持的自定义项会以参数形式提供，其他任何更改均需先获得 ClickHouse 批准。
   * 组织级策略 (AWS SCP、GCP 组织策略，例如 `iam.allowedPolicyMemberDomains`，或限制角色分配的 Azure 策略) 阻止角色承担或 IAM 绑定。
   * 引导角色的外部 ID 不匹配 (请参阅下方关于外部 ID 的问题) 。
   * 账户配额限制 (例如 AWS 上的 Elastic IP 或 VPC) 。
@@ -41,11 +37,13 @@ doc_type: '参考'
 <Accordion title="BYOC 可以使用现有 VPC 吗？共享 VPC 呢？">
   在 AWS 和 GCP 上，您可以部署到与 BYOC 基础设施位于**同一**账户或项目中的现有 VPC。请参阅 [AWS](/zh/products/bring-your-own-cloud/onboarding/customization-aws) 和 [GCP](/zh/products/bring-your-own-cloud/onboarding/customization-gcp) 自定义指南。在 GCP 上，还支持来自独立宿主项目的**共享 VPC**：[引导模块](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/gcp)可直接接受宿主项目和子网——有关设置和前置条件，请参阅其“共享 VPC”部分。Azure 的自带 VNet 支持即将推出。
 
-  在 AWS 上，不支持来自其他账户的共享子网 (AWS RAM) ——请改用通过 VPC peering 或 PrivateLink 连接到现有网络的专用账户。请注意，使用客户管理的 VPC 时，默认仅启用私网负载均衡器 (请参阅[配置](/zh/products/bring-your-own-cloud/configuration/configurations)) 。
+  在 AWS 上，也支持通过 AWS Resource Access Manager (RAM) 从其他账户共享的子网，因此您可以将网络集中保留在中心账户中，而在分支账户中运行 BYOC 基础设施。此方案有一项特定的前置条件：RAM 共享资源的标签视图是按账户隔离的，因此**分支**账户必须自行应用所需的 VPC 和子网标签——从中心账户应用的标签对分支账户不可见，缺少这些标签将导致预配失败。路由表仍归中心账户所有，该账户继续负责共享子网上的 NAT 和出口路由。有关标签和其他要求，请参阅 [AWS 自定义指南](/zh/products/bring-your-own-cloud/onboarding/customization-aws)。
+
+  请注意，使用客户管理的 VPC 时，默认仅启用私网负载均衡器 (请参阅[配置](/zh/products/bring-your-own-cloud/configuration/configurations)) 。
 </Accordion>
 
-<Accordion title="可以将 BYOC 安装到现有 Kubernetes 集群中吗？">
-  不可以。Kubernetes 集群 (EKS、GKE 或 AKS) 由 ClickHouse 创建并完全管理。这是确保 ClickHouse 能够可靠运营平台并持续保持其更新所必需的。
+<Accordion title="BYOC 能否安装到已有的 Kubernetes 集群中？">
+  不能。Kubernetes 集群 (EKS、GKE 或 AKS) 由 ClickHouse 创建并全托管。这是必要条件，以便 ClickHouse 能够可靠地运营该平台并持续完成版本升级。
 </Accordion>
 
 <Accordion title="我们能否在 BYOC 集群或云账户中运行自己的工作负载？">
@@ -54,9 +52,7 @@ doc_type: '参考'
   在 Kubernetes 集群中：可以，但有一定限制——请使用自己的节点组，并配置污点和容忍；避开由 ClickHouse 管理的命名空间；也不要安装集群级准入控制器或策略引擎，因为它们可能会阻碍 ClickHouse 组件的协调。请先向支持团队说明您的计划，以便我们确认不会产生冲突。
 </Accordion>
 
-<div id="compute">
-  ### 计算资源与扩缩容
-</div>
+### 计算资源与扩缩容 {#compute}
 
 <Accordion title="我可以在同一 BYOC 基础设施中创建多个服务吗？">
   可以。对于每个云账户/项目/订阅与区域的组合，基础设施 (包括 Kubernetes 集群) 只需预配一次，您在该区域创建的所有服务都会共享该基础设施。
@@ -88,12 +84,10 @@ doc_type: '参考'
   可以。BYOC 支持仓库 (计算资源分离) ：多个服务共享相同的数据，因此您可以将部分服务专用于摄取，其他服务专用于查询。
 </Accordion>
 
-<div id="network-and-security">
-  ### 网络与安全
-</div>
+### 网络与安全 {#network-and-security}
 
 <Accordion title="我们能否限制或撤销安装期间授予的权限？">
-  在 AWS 和 GCP 上，您可以从一开始就缩减授权范围：引导制品支持参数配置，因此在使用自有 VPC 时，您可以不授予管理 VPC 网络拓扑的权限 (CloudFormation 中的 `IncludeVPCWritePermissions`、Terraform 模块中的 `include_vpc_write_permissions`) 。在 GCP 上，这仅会缩小拓扑管理的权限范围——ClickHouse 仍保留对其在 VPC 内拥有的网络资源的写入权限，例如 Private Service Connect NAT 子网、服务附件和入口地址。在 AWS 上，您还可以——目前处于私有预览阶段，需通过支持团队启用——自行管理 IAM 角色 (`IncludeIAMWritePermissions=false`，请参阅[客户管理的 IAM 角色](/zh/products/bring-your-own-cloud/onboarding/customization-aws)) ；跨账户角色则通过外部 ID 防范混淆代理访问。在 Azure 上，引导模块目前授予固定的订阅范围角色，且不提供范围限定参数。对于所有云平台，某些权限仅为特定功能所需；如果您永远不会使用这些功能，则可移除这些权限——如需将权限范围缩小至制品提供的范围以外，请联系支持团队。
+  在 AWS 和 GCP 上，您可以从一开始就缩减授权范围：引导制品支持参数配置，因此在使用自有 VPC 时，您可以不授予管理 VPC 网络拓扑的权限 (CloudFormation 中的 `IncludeVPCWritePermissions`、Terraform 模块中的 `include_vpc_write_permissions`) 。在 GCP 上，这仅会缩小拓扑管理的权限范围——ClickHouse 仍保留对其在 VPC 内拥有的网络资源的写入权限，例如 Private Service Connect 服务附件和入口地址。Private Service Connect NAT 子网不在其中：在使用自有 VPC 时，您需要在启用 private link 之前[自行创建它](/zh/products/bring-your-own-cloud/onboarding/network-gcp#setup-psc)。在 AWS 上，您还可以——目前处于私有预览阶段，需通过支持团队启用——自行管理 IAM 角色 (`IncludeIAMWritePermissions=false`，请参阅[客户管理的 IAM 角色](/zh/products/bring-your-own-cloud/onboarding/customization-aws)) ；跨账户角色则通过外部 ID 防范混淆代理访问。在 Azure 上，引导模块目前授予固定的订阅范围角色，且不提供范围限定参数。对于所有云平台，某些权限仅为特定功能所需；如果您永远不会使用这些功能，则可移除这些权限——如需将权限范围缩小至制品提供的范围以外，请联系支持团队。
 
   完成预配后，请勿单方面从管理身份中移除权限：ClickHouse 会持续协调基础设施，缺少权限会导致预配、升级和支持工作受阻。若要更改已授予的权限或完全退役，请与支持团队协调 (请参阅下方有关退役的问题) 。
 </Accordion>
@@ -115,11 +109,11 @@ doc_type: '参考'
 </Accordion>
 
 <Accordion title="ClickHouse 控制平面如何访问我们账户中的 Kubernetes API？是否必须使用 Tailscale？">
-  默认情况下，Kubernetes API 端点为公网端点，但仅允许来自 ClickHouse NAT IP 地址的访问。使用此默认设置时，请勿移除 ClickHouse 允许列表条目，因为控制平面需要这些条目来管理集群。也可在与 ClickHouse 团队协调后，将端点切换为仅私网访问：通过 Tailscale (仅出站，也用于故障排查访问) ，或者在 AWS 上通过 VPC Lattice (私有预览) ——请参阅[配置](/zh/products/bring-your-own-cloud/configuration/configurations)。请注意，这仅适用于 Kubernetes API：云提供商 API 调用 (例如 AWS 上的 EKS 和 EC2) 通过跨账户角色承担从 ClickHouse Cloud 网络发起，绝不能经由 Tailscale 路由——请参阅[云提供商 API 与 Kubernetes API](/zh/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api)。
+  默认情况下，Kubernetes API 端点为公网端点，而限制其访问的方式因云而异：在 AWS 上使用仅包含 ClickHouse NAT IP 地址的 IP 允许列表——使用此默认设置时，请勿移除 ClickHouse 允许列表条目，因为控制平面需要这些条目来管理集群——而在 GCP 和 Azure 上则使用云 IAM 而非 IP 允许列表 (请参阅 [Kubernetes API 服务器暴露](/zh/products/bring-your-own-cloud/reference/network-security#kubernetes-api-server-exposure)) 。也可在与 ClickHouse 团队协调后，将端点切换为仅私网访问：通过 Tailscale (仅出站，也用于故障排查访问) ，或者在 AWS 上通过 VPC Lattice (私有预览) ——请参阅[配置](/zh/products/bring-your-own-cloud/configuration/configurations)。请注意，这仅适用于 Kubernetes API：云提供商 API 调用 (例如 AWS 上的 EKS 和 EC2) 通过跨账户角色承担从 ClickHouse Cloud 网络发起，绝不能经由 Tailscale 路由——请参阅[云提供商 API 与 Kubernetes API](/zh/products/bring-your-own-cloud/reference/network-security#cloud-api-vs-kubernetes-api)。
 </Accordion>
 
 <Accordion title="BYOC 网络与对象存储之间如何通信？">
-  在 AWS 上，您的 Customer BYOC VPC 与 S3 之间的流量通过 AWS S3 API 使用 HTTPS (端口 443) 传输表数据、备份和日志。该流量经由 S3 网关 VPC 端点，因此始终位于 AWS 网络内，不经过公网，也不会产生 NAT 网关费用。在 GCP 上，访问 Google API 同样使用 Private Google Access。在 Azure 上，数据存储在您的订阅中的 Azure Blob 存储账户内。
+  在 AWS 上，您的 Customer BYOC VPC 与 S3 之间的流量通过 AWS S3 API 使用 HTTPS (端口 443) 传输表数据和备份，以及在您启用相关功能时传输长期指标和日志归档。实时日志写入挂载到 ClickHouse 节点的存储卷，而非对象存储——请参阅[网络边界](/zh/products/bring-your-own-cloud/reference/network-security#outbound-connections)。该流量经由 S3 网关 VPC 端点，因此始终位于 AWS 网络内，不经过公网，也不会产生 NAT 网关费用。在 GCP 上，访问 Google API 同样使用 Private Google Access。在 Azure 上，数据存储在您的订阅中的 Azure Blob 存储账户内。
 </Accordion>
 
 <Accordion title="数据位于我们自己的存储桶中，能否直接读取或修改？">
@@ -133,7 +127,7 @@ doc_type: '参考'
 </Accordion>
 
 <Accordion title="我们的服务端点是否暴露在公网？能否改为仅私网访问？">
-  对于 ClickHouse 管理的 VPC，默认情况下，每个服务都配备一个受 IP 访问列表保护的公网负载均衡器；此外，还可在 ClickHouse Cloud 控制台中启用私网负载均衡器，供您的网络及其对等网络访问 (请参阅[负载均衡器](/zh/products/bring-your-own-cloud/configuration/configurations#load-balancers)) 。对于客户管理的 VPC，默认设置则相反，仅启用私网负载均衡器。IP 过滤在入口代理层实施，因此负载均衡器端口在扫描中可能显示为开放，但来自未列出来源的连接会被拒绝。待不再有任何依赖项后，可完全禁用公网端点。控制台的[连接方式选择器](/zh/products/bring-your-own-cloud/configuration/connect#connection-via)会显示服务已启用的每条连接路径对应的端点。请参阅[连接性](/zh/products/bring-your-own-cloud/configuration/connect)。
+  对于 ClickHouse 管理的 VPC，默认情况下，每个服务都配备一个受 IP 访问列表保护的公网负载均衡器；此外，还可在 ClickHouse Cloud 控制台中启用私网负载均衡器，供您的网络及其对等网络访问 (请参阅[负载均衡器](/zh/products/bring-your-own-cloud/configuration/configurations#load-balancers)) 。对于客户管理的 VPC，默认设置则相反，仅启用私网负载均衡器。IP 过滤在入口代理层实施，因此负载均衡器端口在扫描中可能显示为开放，但来自未列出来源的连接会被拒绝。待不再有任何依赖项后，可完全禁用公网端点。控制台的[Connection via selector](/zh/products/bring-your-own-cloud/configuration/connect#connection-via)会显示服务已启用的每条连接路径对应的端点。请参阅[连接性](/zh/products/bring-your-own-cloud/configuration/connect)。
 </Accordion>
 
 <Accordion title="我们可以使用自己的 DNS 域名或自带 TLS 证书吗？">
@@ -141,7 +135,7 @@ doc_type: '参考'
 </Accordion>
 
 <Accordion title="如何设置 AWS PrivateLink、GCP Private Service Connect 或 Azure Private Link？">
-  请遵循 [AWS](/zh/products/bring-your-own-cloud/onboarding/network-aws)、[GCP](/zh/products/bring-your-own-cloud/onboarding/network-gcp) 和 [Azure](/zh/products/bring-your-own-cloud/onboarding/network-azure) 的网络设置指南。以下两点经常被忽略：端点允许列表是**按服务**设置的，因此每个新服务都必须再次注册端点；如果您运行自己的 DNS，则必须自行配置私有端点名称的 DNS 解析。设置完成后，使用控制台的[连接方式选择器](/zh/products/bring-your-own-cloud/configuration/connect#connection-via)复制正确的私有端点主机名。
+  请参阅 [AWS](/zh/products/bring-your-own-cloud/onboarding/network-aws)、[GCP](/zh/products/bring-your-own-cloud/onboarding/network-gcp) 和 [Azure](/zh/products/bring-your-own-cloud/onboarding/network-azure) 网络设置指南。有两点常被忽略：端点允许列表是**按服务**配置的，因此每项新服务都需要重新注册端点；如果您自行管理 DNS，还需要自行配置专用端点名称的 DNS 解析。设置完成后，使用控制台中的 [Connection via selector](/zh/products/bring-your-own-cloud/configuration/connect#connection-via) 复制正确的专用端点主机名。
 </Accordion>
 
 <Accordion title="能否通过 PrivateLink 从其他 AWS 区域连接？">
@@ -160,9 +154,7 @@ doc_type: '参考'
   BYOC 目前尚不支持。静态数据使用云提供商管理的密钥加密。有关当前计划功能的列表，请参阅[概述](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview)。
 </Accordion>
 
-<div id="upgrades-and-maintenance">
-  ### 升级与维护
-</div>
+### 升级与维护 {#upgrades-and-maintenance}
 
 <Accordion title="ClickHouse 版本如何升级？我可以决定维护频率吗？">
   升级方式与 ClickHouse Cloud 相同：服务会加入发布渠道 (快速、常规、慢速) ，并遵循预定的维护窗口——请联系支持团队进行配置。更新频率至少为每周一次。升级采用滚动方式，逐个副本进行 (先创建后删除) ，因此不会导致整个服务停机。请参阅[操作](/zh/products/bring-your-own-cloud/configuration/operations)。
@@ -172,9 +164,7 @@ doc_type: '参考'
   ClickHouse 会在提供商终止支持日期之前主动执行 Kubernetes 升级，并通过支持团队与您协调维护窗口。控制平面升级对您无感；节点组升级会以先创建后删除的方式逐个滚动升级节点，因此 pod (容器组) 重启时，可能会出现短暂的连接重置，但不会丢失数据。请参阅[操作](/zh/products/bring-your-own-cloud/configuration/operations)。
 </Accordion>
 
-<div id="backups-and-disaster-recovery">
-  ### 备份和灾难恢复
-</div>
+### 备份和灾难恢复 {#backups-and-disaster-recovery}
 
 <Accordion title="备份存储在哪里？">
   备份存储在您自己的云账户中的对象存储内，绝不会离开您的环境。您可以配置备份计划和保留期限；如需调整，请联系支持团队。
@@ -196,25 +186,19 @@ doc_type: '参考'
   BYOC 跨三个可用区部署，且只有在对象存储确认写入后，写入操作才会得到确认。目前不支持跨区域复制，因此区域级灾难恢复依赖备份，可实现的 RPO 受备份频率限制。您可以配置备份频率和目标端以满足自身目标，包括备份到其他区域的 bucket；如需设置，请联系支持团队。
 </Accordion>
 
-<div id="observability">
-  ### 可观测性
-</div>
+### 可观测性 {#observability}
 
 <Accordion title="如何将 BYOC 与自有监控和告警系统集成？">
   监控栈 (Prometheus、Grafana、AlertManager) 在您的账户内运行，您可以通过私有连接直接使用：通过 PromQL API 查询、将其联邦到您自己的 Prometheus，或抓取每个服务的 ClickHouse `/metrics_all` 端点。目前尚未提供与 Datadog 等第三方平台的开箱即用集成，可通过其兼容 Prometheus 的摄取方式进行集成。有关端点和设置，请参阅[可观测性](/zh/products/bring-your-own-cloud/reference/observability-aws)。
 </Accordion>
 
-<div id="cost">
-  ### 成本
-</div>
+### 成本 {#cost}
 
 <Accordion title="BYOC 的费用包括哪些？">
   账单分为两部分：ClickHouse Cloud 按分配给您的服务的内存计费；云提供商则直接向您收取底层基础设施的成本，不加价。目前，详细成本参考页面涵盖 AWS：请参阅[成本模型](/zh/products/bring-your-own-cloud/reference/cost-model-aws)、[计费 AWS 服务](/zh/products/bring-your-own-cloud/reference/billable-aws-services)和 [AWS 服务限制](/zh/products/bring-your-own-cloud/reference/aws-service-limits)。
 </Accordion>
 
-<div id="availability-and-lifecycle">
-  ### 可用性和生命周期
-</div>
+### 可用性和生命周期 {#availability-and-lifecycle}
 
 <Accordion title="BYOC 可在哪些云提供商上使用？">
   AWS、GCP 和 Azure 均已正式发布。有关各云平台支持的功能和区域，请参阅[概览](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview)。
@@ -224,9 +208,7 @@ doc_type: '参考'
   请在 ClickHouse 控制台中终止服务和 BYOC 基础设施——不要先在云提供商控制台中删除资源或撤销权限，否则会在操作过程中中断与控制平面的连接，并导致需要手动清理。通过控制台完成终止后，请移除引导技术栈 (CloudFormation stack 或 Terraform 模块) 及所有剩余资源。在 AWS 上，所有由 ClickHouse 创建的资源均带有 `clickhouse-byoc=true` 标签，因此您可以随后枚举这些资源，确认没有遗漏；在 GCP 和 Azure 上，您引导的专用项目或订阅界定了需要检查的范围。
 </Accordion>
 
-<div id="uptime-sla">
-  ### 运行时间 SLA
-</div>
+### 运行时间 SLA {#uptime-sla}
 
 <Accordion title="ClickHouse 是否为 BYOC 提供运行时间 SLA？">
   不提供。由于数据平面托管在客户自己的云环境中，服务可用性取决于 ClickHouse 无法控制的资源。因此，ClickHouse 不为 BYOC 部署提供正式的运行时间 SLA。请注意，正在运行的服务独立于 ClickHouse 控制平面运行：控制平面发生故障不会导致您账户中运行的服务停止。如有其他问题，请联系 support@clickhouse.com。

@@ -10,17 +10,9 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-
 import { Image } from "/snippets/ja/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
 import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.mdx';
-
-<BetaBadge />
-
-<Info>
-  ClickPipes 経由で MySQL から ClickHouse Cloud にデータを取り込む機能は、現在パブリックベータです。
-</Info>
 
 MySQL ClickPipe は、MySQL および MariaDB データベースから ClickHouse Cloud にデータを取り込むための、フルマネージドかつ耐障害性に優れた方法です。**バルクロード**による一回限りのインジェストと、**変更データキャプチャ (CDC (変更データキャプチャ) ) **による継続的インジェストの両方をサポートしています。
 

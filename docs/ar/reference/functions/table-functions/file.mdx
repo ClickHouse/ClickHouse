@@ -15,9 +15,7 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
 
 يمكن استخدام الدالة `file` في استعلامات `SELECT` و`INSERT` للقراءة من الملفات أو الكتابة إليها.
 
-<div id="syntax">
-  ## الصيغة
-</div>
+## الصيغة {#syntax}
 
 ```sql
 file([path_to_archive ::] path [,format] [,structure] [,compression])
@@ -29,17 +27,15 @@ file([path_to_archive ::] path [,format] [,structure] [,compression])
 file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
 ```
 
-<div id="arguments">
-  ## الوسائط
-</div>
+## الوسائط {#arguments}
 
-| المعلمة           | الوصف                                                                                                                                                                                                                                                                                                                                      |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `path`            | المسار النسبي إلى الملف من [user&#95;files&#95;path](/ar/reference/settings/server-settings/settings/user#user_files_path)، أو `Array(String)` من المسارات في استعلامات `SELECT`. يدعم في وضع القراءة فقط [أنماط glob](#globs-in-path) التالية: `*` و`?` و`{abc,def}` (حيث إن `'abc'` و`'def'` سلاسل نصية) و`{N..M}` (حيث إن `N` و`M` أرقام). |
-| `path_to_archive` | المسار النسبي إلى أرشيف zip/tar/7z. ويدعم أنماط glob نفسها المستخدمة في `path`.                                                                                                                                                                                                                                                            |
-| `format`          | [التنسيق](/ar/reference/formats/index) الخاص بالملف.                                                                                                                                                                                                                                                                                          |
-| `structure`       | بنية الجدول. التنسيق: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                       |
-| `compression`     | نوع الضغط الموجود عند استخدامه في استعلام `SELECT`، أو نوع الضغط المطلوب عند استخدامه في استعلام `INSERT`. أنواع الضغط المدعومة هي `gz` و`br` و`xz` و`zst` و`lz4` و`bz2`.                                                                                                                                                                  |
+| المعلمة           | الوصف                                                                                                                                                                                                                                                                                                                                                                               |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `path`            | المسار النسبي إلى الملف من [user&#95;files&#95;path](/ar/reference/settings/server-settings/settings/user#user_files_path)، أو `Array(String)` من المسارات في استعلامات `SELECT`. يدعم في وضع القراءة فقط [أنماط glob](#globs-in-path) التالية: `*` و`?` و`{abc,def}` (حيث إن `'abc'` و`'def'` سلاسل نصية) و`{N..M}` (حيث إن `N` و`M` أرقام).                                          |
+| `path_to_archive` | المسار النسبي إلى أرشيف zip/tar/7z. ويدعم أنماط glob نفسها المستخدمة في `path`.                                                                                                                                                                                                                                                                                                     |
+| `format`          | [التنسيق](/ar/reference/formats/index) الخاص بالملف.                                                                                                                                                                                                                                                                                                                                   |
+| `structure`       | بنية الجدول. التنسيق: `'column1_name column1_type, column2_name column2_type, ...'`.                                                                                                                                                                                                                                                                                                |
+| `compression`     | نوع الضغط الموجود عند استخدامه في استعلام `SELECT`، أو نوع الضغط المطلوب عند استخدامه في استعلام `INSERT`. القيم المدعومة هي `none` (بدون ضغط) و`gzip/gz` و`deflate` و`brotli/br` و`lzma/xz` و`zstd/zst` و`lz4` و`bz2` و`snappy`. وفي حالة `snappy`، يُحدَّد تنسيق النقل عبر الإعداد [snappy&#95;mode](/ar/reference/settings/session-settings/other#snappy_mode) (`basic` افتراضيًا). |
 
 <Tip>
   عند حذف الوسيط `structure`، يستنتج ClickHouse المخطط من التنسيق نفسه.
@@ -59,19 +55,13 @@ file(['file1.csv', 'file2.csv'], 'CSV', 'column1 UInt32, column2 UInt32')
   ```
 </Tip>
 
-<div id="returned-value">
-  ## القيمة المعادة
-</div>
+## القيمة المعادة {#returned-value}
 
 جدول لقراءة البيانات من ملف أو كتابتها فيه.
 
-<div id="examples-for-writing-to-a-file">
-  ## أمثلة على الكتابة إلى ملف
-</div>
+## أمثلة على الكتابة إلى ملف {#examples-for-writing-to-a-file}
 
-<div id="write-to-a-tsv-file">
-  ### الكتابة إلى ملف TSV
-</div>
+### الكتابة إلى ملف TSV {#write-to-a-tsv-file}
 
 ```sql
 INSERT INTO TABLE FUNCTION
@@ -88,9 +78,7 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 1    3    2
 ```
 
-<div id="partitioned-write-to-multiple-tsv-files">
-  ### كتابة مُقسَّمة إلى عدة ملفات TSV
-</div>
+### كتابة مُقسَّمة إلى عدة ملفات TSV {#partitioned-write-to-multiple-tsv-files}
 
 إذا حدّدت تعبير `PARTITION BY` عند إدراج البيانات في دالة جدول من النوع `file`، فسيُنشأ ملف منفصل لكل partition. ويساعد تقسيم البيانات إلى ملفات منفصلة على تحسين أداء عمليات القراءة.
 
@@ -114,13 +102,9 @@ VALUES (1, 2, 3), (3, 2, 1), (1, 3, 2)
 1    2    3
 ```
 
-<div id="examples-for-reading-from-a-file">
-  ## أمثلة على القراءة من ملف
-</div>
+## أمثلة على القراءة من ملف {#examples-for-reading-from-a-file}
 
-<div id="select-from-a-csv-file">
-  ### SELECT من ملف CSV
-</div>
+### SELECT من ملف CSV {#select-from-a-csv-file}
 
 أولًا، اضبط `user_files_path` في إعدادات الخادم وجهّز ملفًا باسم `test.csv`:
 
@@ -149,9 +133,7 @@ LIMIT 2;
 └─────────┴─────────┴─────────┘
 ```
 
-<div id="inserting-data-from-a-file-into-a-table">
-  ### إدخال البيانات من ملف إلى جدول
-</div>
+### إدخال البيانات من ملف إلى جدول {#inserting-data-from-a-file-into-a-table}
 
 ```sql
 INSERT INTO FUNCTION
@@ -177,9 +159,7 @@ file('test.csv', 'CSV', 'column1 UInt32, column2 UInt32, column3 UInt32');
 SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 ```
 
-<div id="globs-in-path">
-  ## أنماط glob في المسار
-</div>
+## أنماط glob في المسار {#globs-in-path}
 
 قد تستخدم المسارات أنماط glob. يجب أن تطابق الملفات نمط المسار بالكامل، لا اللاحقة أو البادئة فقط. ويوجد استثناء واحد: إذا كان المسار يشير إلى
 دليل موجود ولا يستخدم أنماط glob، فستُضاف `*` ضمنيًا إلى المسار بحيث
@@ -193,9 +173,7 @@ SELECT * FROM file('user_files/archives/archive{1..2}.zip :: table.csv');
 
 البُنى التي تستخدم `{}` مشابهة لما في دالتي الجداول [remote](/ar/reference/functions/table-functions/remote) و [hdfs](/ar/reference/functions/table-functions/hdfs).
 
-<div id="examples">
-  ## أمثلة
-</div>
+## أمثلة {#examples}
 
 **مثال**
 
@@ -254,18 +232,14 @@ SELECT count(*) FROM file('big_dir/**', 'CSV', 'name String, value UInt32');
 SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt32');
 ```
 
-<div id="virtual-columns">
-  ## الأعمدة الافتراضية
-</div>
+## الأعمدة الافتراضية {#virtual-columns}
 
 * `_path` — مسار الملف. النوع: `LowCardinality(String)`.
 * `_file` — اسم الملف. النوع: `LowCardinality(String)`.
 * `_size` — حجم الملف بالبايت. النوع: `Nullable(UInt64)`. إذا كان حجم الملف غير معروف، تكون القيمة `NULL`.
 * `_time` — وقت آخر تعديل على الملف. النوع: `Nullable(DateTime)`. إذا كان الوقت غير معروف، تكون القيمة `NULL`.
 
-<div id="hive-style-partitioning">
-  ## إعداد use_hive_partitioning
-</div>
+## إعداد use_hive_partitioning {#hive-style-partitioning}
 
 عند تعيين `use_hive_partitioning` إلى 1، سيكتشف ClickHouse التقسيم بنمط Hive في المسار (`/name=value/`)، وسيتيح استخدام أعمدة التقسيم كأعمدة افتراضية في الاستعلام. وستحمل هذه الأعمدة الافتراضية الأسماء نفسها الموجودة في مسار التقسيم.
 
@@ -277,9 +251,7 @@ SELECT count(*) FROM file('big_dir/**/file002', 'CSV', 'name String, value UInt3
 SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '2020-01-01' AND country = 'Netherlands' AND code = 42;
 ```
 
-<div id="settings">
-  ## الإعدادات
-</div>
+## الإعدادات {#settings}
 
 | الإعداد                                                                                                                                                 | الوصف                                                                                                                                                                                       |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -289,9 +261,7 @@ SELECT * FROM file('data/path/date=*/country=*/code=*/*.parquet') WHERE date > '
 | [engine&#95;file&#95;skip&#95;empty&#95;files](/ar/reference/settings/session-settings/engine-file#engine_file_skip_empty_files)                           | يتيح تخطي الملفات الفارغة أثناء القراءة. يكون معطّلًا افتراضيًا.                                                                                                                            |
 | [storage&#95;file&#95;read&#95;method](/ar/reference/settings/session-settings/storage#storage_file_read_method)                                           | طريقة قراءة البيانات من ملف التخزين، وهي إحدى القيم التالية: read أو pread أو mmap (فقط لـ clickhouse-local). القيمة الافتراضية: `pread` لـ clickhouse-server، و`mmap` لـ clickhouse-local. |
 
-<div id="related">
-  ## مواضيع ذات صلة
-</div>
+## مواضيع ذات صلة {#related}
 
 * [الأعمدة الافتراضية](/ar/reference/engines/table-engines/index#table_engines-virtual_columns)
 * [إعادة تسمية الملفات بعد المعالجة](/ar/reference/settings/session-settings/other#rename_files_after_processing)

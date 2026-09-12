@@ -19,9 +19,7 @@ PostgreSQL エンジンでは、リモートの PostgreSQL サーバーに保存
   [ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) サービスもご利用いただけます。コンピュートと物理的に同一配置された NVMe ストレージを基盤としており、EBS のようなネットワーク接続型ストレージを使用する代替手段と比べて、ディスク I/O がボトルネックになるワークロードで最大 10 倍高速なパフォーマンスを実現します。さらに、ClickPipes の Postgres CDC (変更データキャプチャ) コネクタを使用して、Postgres データを ClickHouse にレプリケートできます。
 </Tip>
 
-<div id="creating-a-table">
-  ## テーブルの作成
-</div>
+## テーブルの作成 {#creating-a-table}
 
 ```sql
 CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
@@ -77,9 +75,7 @@ SETTINGS
 SELECT * FROM postgresql(postgres_creds, table='table1');
 ```
 
-<div id="tls-ssl">
-  ### TLS/SSL
-</div>
+### TLS/SSL {#tls-ssl}
 
 TLS/SSL パラメータは `libpq` に渡され、名前付きコレクション のキーまたは末尾のキー・バリュー引数として設定できます。`sslmode` (`disable`、`allow`、`prefer`、`require`、`verify-ca`、`verify-full`) と、証明書および秘密鍵は、2 つの形式のいずれかで指定できます。未設定の場合は、`libpq` のデフォルト設定が適用されます (`sslmode=prefer`) 。
 
@@ -111,47 +107,35 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 -----END CERTIFICATE-----');
 ```
 
-<div id="settings">
-  ## 設定
-</div>
+## 設定 {#settings}
 
 `PostgreSQL` テーブルエンジン (および [`postgresql`](/ja/reference/functions/table-functions/postgresql) テーブル関数) で使用される接続プールは、`SETTINGS` 句を使ってテーブルごとに設定できます。設定を指定しない場合は、対応するクエリレベルの `postgresql_*` 設定の値がデフォルトで使用されます。
 
-<div id="postgresql-connection-pool-size">
-  ### `postgresql_connection_pool_size`
-</div>
+### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
 接続プールのサイズ (すべての接続が使用中の場合、クエリは接続が解放されるまで待機します) 。0以外の値である必要があります。
 
 デフォルト値: `16`。
 
-<div id="postgresql-connection-pool-wait-timeout">
-  ### `postgresql_connection_pool_wait_timeout`
-</div>
+### `postgresql_connection_pool_wait_timeout` {#postgresql-connection-pool-wait-timeout}
 
 空の接続プールに対する push/pop のタイムアウト時間 (ミリ秒単位) です。`0` は、プールが空のときにブロックすることを意味します。
 
 デフォルト値: `5000`。
 
-<div id="postgresql-connection-pool-retries">
-  ### `postgresql_connection_pool_retries`
-</div>
+### `postgresql_connection_pool_retries` {#postgresql-connection-pool-retries}
 
 接続プールでの push/pop の再試行回数。
 
 デフォルト値: `2`。
 
-<div id="postgresql-connection-pool-auto-close-connection">
-  ### `postgresql_connection_pool_auto_close_connection`
-</div>
+### `postgresql_connection_pool_auto_close_connection` {#postgresql-connection-pool-auto-close-connection}
 
 プールに返却する前に接続を閉じます。
 
 デフォルト値: `false`。
 
-<div id="postgresql-connection-attempt-timeout">
-  ### `postgresql_connection_attempt_timeout`
-</div>
+### `postgresql_connection_attempt_timeout` {#postgresql-connection-attempt-timeout}
 
 PostgreSQL エンドポイントへの1回の接続試行における接続タイムアウト時間 (秒) です。この値は、接続 URL の `connect_timeout` パラメータとして渡されます。
 
@@ -170,9 +154,7 @@ ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgr
 SETTINGS postgresql_connection_pool_size = 32, postgresql_connection_pool_auto_close_connection = 1;
 ```
 
-<div id="implementation-details">
-  ## 実装の詳細
-</div>
+## 実装の詳細 {#implementation-details}
 
 PostgreSQL 側の`SELECT`クエリは、読み取り専用の PostgreSQL トランザクション内で `COPY (SELECT ...) TO STDOUT` として実行され、各`SELECT`クエリの後にコミットされます。
 
@@ -180,9 +162,7 @@ PostgreSQL 側の`SELECT`クエリは、読み取り専用の PostgreSQL トラ�
 
 すべての JOIN、集計、ソート、`IN [ array ]` 条件、および`LIMIT`によるサンプリング制約は、PostgreSQL へのクエリが完了した後にのみ ClickHouse で実行されます。
 
-<div id="passing-a-query">
-  ## テーブル名の代わりにクエリを渡す
-</div>
+## テーブル名の代わりにクエリを渡す {#passing-a-query}
 
 テーブル名の代わりに、`table`引数には、そのまま PostgreSQL に渡される `SELECT`クエリを指定できます。テーブルの構造はクエリ結果から推論されます。クエリは、サブクエリとして記述することも、`query`関数でラップすることもできます。
 
@@ -196,7 +176,7 @@ CREATE TABLE pg_table ENGINE = PostgreSQL('localhost:5432', 'test', query('SELEC
 <Note>
   サブクエリ形式 `(SELECT ...)` は ClickHouse によって解析され、サーバーに送信される前に PostgreSQL 方言 (PostgreSQL の識別子の引用符付けと文字列リテラルのエスケープ) で再シリアライズされます。したがって、有効な ClickHouse SQL である必要があります。ClickHouse が解析しない PostgreSQL 固有の構文を渡すには、`query('...')` 形式を使用してください。この形式のテキストは、そのまま PostgreSQL に送信されます。
 
-  渡されたクエリに対して、外側の ClickHouse クエリの`WHERE`、`LIMIT`、集計などが**プッシュダウンされることはなく**、完全なクエリ結果が取得された後に ClickHouse で適用されます。PostgreSQL から読み取るデータを制限するには、渡されたクエリの内部にフィルターを置いてください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を使用すると、プッシュダウンできない外側のフィルターは、ローカルで適用される代わりに例外で拒否されます。
+  渡されたクエリに対して、外側の ClickHouse クエリの`WHERE`、`LIMIT`、集計などが**プッシュダウンされることはなく**、完全なクエリ結果が取得された後に ClickHouse で適用されます。PostgreSQL から読み取るデータを制限するには、渡されたクエリの内部にフィルターを置いてください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を使用すると、渡されたクエリにプッシュできないため、テーブルのカラムに対する外側のフィルターは、ローカルで適用される代わりに例外で拒否されます。このチェックは、トップレベルの`WHERE`述語およびトップレベルの`AND`の各連言項を対象とします。このテーブルのカラムに対する`PREWHERE`は、この設定の対象ではありません。このテーブルエンジンは`PREWHERE`をサポートしておらず、そのようなクエリは設定にかかわらず`ILLEGAL_PREWHERE`で拒否されます。アナライザ (デフォルト) では、フィルターをプッシュダウンできる場合にのみチェックが実行されます。すなわち、このテーブルがクエリ内の唯一のテーブルである場合、`INNER JOIN`のいずれかの側にある場合、または外部 JOIN の保持側 (`LEFT JOIN`の左側、`RIGHT JOIN`の右側) にある場合です。`LEFT`/`RIGHT JOIN`の非保持側および`FULL JOIN`のいずれの側でも、何もプッシュダウンされず、何もチェックされません。そのため、厳格モードでもこのテーブルのカラムに対するフィルターは JOIN の後にローカルで適用されます。チェックが実行される場合、周囲のクエリで JOIN される他のテーブルを参照する述語はプッシュダウンされず、チェックから除外されます。これは、JOIN された側のみを参照する場合でも、1 つの非`AND`式 (たとえば`OR`) 内でこのテーブルと混在させる場合でも同様です。このような述語は通常の ClickHouse での評価位置 (JOIN 後の`WHERE`、その前の`PREWHERE`) を維持し、拒否されません。古いアナライザ (`enable_analyzer = 0`) では、このスコープは適用されません。このテーブルが JOIN ツリーの最初のテーブルである場合、JOIN された側の述語を含め、外側のフィルター全体がチェックされ、JOIN された右側のテーブルはチェックされません。
 </Note>
 
 PostgreSQL 側の`INSERT`クエリは、PostgreSQL トランザクション内で `COPY "table_name" (field1, field2, ... fieldN) FROM STDIN` として実行され、各`INSERT`ステートメントの後に自動コミットされます。
@@ -235,16 +215,11 @@ PostgreSQL の Dictionary ソースでは、レプリカの優先度をサポー
     <where>id=10</where>
     <invalidate_query>SQL_QUERY</invalidate_query>
 </postgresql>
-</source>
 ```
 
-<div id="usage-example">
-  ## 使用例
-</div>
+## 使用例 {#usage-example}
 
-<div id="table-in-postgresql">
-  ### PostgreSQL内のテーブル
-</div>
+### PostgreSQL内のテーブル {#table-in-postgresql}
 
 ```text
 postgres=# CREATE TABLE "public"."test" (
@@ -267,9 +242,7 @@ int_id | int_nullable | float | str  | float_nullable
 (1 row)
 ```
 
-<div id="creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above">
-  ### ClickHouse でテーブルを作成し、上で作成した PostgreSQL テーブルに接続する
-</div>
+### ClickHouse でテーブルを作成し、上で作成した PostgreSQL テーブルに接続する {#creating-table-in-clickhouse-and-connecting-to--postgresql-table-created-above}
 
 この例では、[PostgreSQL テーブルエンジン](/ja/reference/engines/table-engines/integrations/postgresql) を使用して ClickHouse テーブルを PostgreSQL テーブルに接続し、PostgreSQL データベースに対して SELECT と INSERT の両方のステートメントを実行します。
 
@@ -283,9 +256,7 @@ CREATE TABLE default.postgresql_table
 ENGINE = PostgreSQL('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-<div id="inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query">
-  ### SELECTクエリを使用して、PostgreSQLテーブルからClickHouseテーブルに初期データを挿入する
-</div>
+### SELECTクエリを使用して、PostgreSQLテーブルからClickHouseテーブルに初期データを挿入する {#inserting-initial-data-from-postgresql-table-into-clickhouse-table-using-a-select-query}
 
 [postgresqlテーブル関数](/ja/reference/functions/table-functions/postgresql) は、PostgreSQL から ClickHouse にデータをコピーします。これは、PostgreSQL ではなく ClickHouse でデータのクエリや分析を実行することで、クエリパフォーマンスを向上させる目的でよく使用されます。また、PostgreSQL から ClickHouse へのデータ移行にも使用できます。今回は PostgreSQL から ClickHouse にデータをコピーするため、ClickHouse で MergeTree テーブルエンジンを使用し、これを postgresql&#95;copy と呼びます:
 
@@ -305,9 +276,7 @@ INSERT INTO default.postgresql_copy
 SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'postgres_password');
 ```
 
-<div id="inserting-incremental-data-from-postgresql-table-into-clickhouse-table">
-  ### PostgreSQLテーブルからClickHouseテーブルにインクリメンタルデータを挿入する
-</div>
+### PostgreSQLテーブルからClickHouseテーブルにインクリメンタルデータを挿入する {#inserting-incremental-data-from-postgresql-table-into-clickhouse-table}
 
 初回の挿入後も PostgreSQLテーブルとClickHouseテーブルの継続的な同期を行う場合は、ClickHouse 側でWHERE句を使用し、タイムスタンプまたは一意のシーケンスIDを基準に、PostgreSQL に新たに追加されたデータだけを挿入できます。
 
@@ -325,9 +294,7 @@ SELECT * FROM postgresql('localhost:5432', 'public', 'test', 'postgres_user', 'p
 WHERE int_id > (SELECT max(int_id) FROM default.postgresql_copy);
 ```
 
-<div id="selecting-data-from-the-resulting-clickhouse-table">
-  ### 作成された ClickHouse テーブルからデータを取得する
-</div>
+### 作成された ClickHouse テーブルからデータを取得する {#selecting-data-from-the-resulting-clickhouse-table}
 
 ```sql
 SELECT * FROM postgresql_copy WHERE str IN ('test');
@@ -339,9 +306,7 @@ SELECT * FROM postgresql_copy WHERE str IN ('test');
 └────────────────┴──────┴────────┘
 ```
 
-<div id="using-non-default-schema">
-  ### デフォルト以外のスキーマを使用する
-</div>
+### デフォルト以外のスキーマを使用する {#using-non-default-schema}
 
 ```text
 postgres=# CREATE SCHEMA "nice.schema";
@@ -361,9 +326,7 @@ CREATE TABLE pg_table_schema_with_dots (a UInt32)
 * [`postgresql` テーブル関数](/ja/reference/functions/table-functions/postgresql)
 * [Dictionary ソースとして PostgreSQL を使用する](/ja/reference/statements/create/dictionary/sources/postgresql)
 
-<div id="related-content">
-  ## 関連コンテンツ
-</div>
+## 関連コンテンツ {#related-content}
 
 * ブログ: [ClickHouse and PostgreSQL - データ界の理想的な組み合わせ - 第1部](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres)
 * ブログ: [ClickHouse and PostgreSQL - データ界の理想的な組み合わせ - 第2部](https://clickhouse.com/blog/migrating-data-between-clickhouse-postgres-part-2)

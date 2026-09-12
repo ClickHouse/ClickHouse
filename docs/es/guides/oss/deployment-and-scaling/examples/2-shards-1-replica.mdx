@@ -30,7 +30,7 @@ La arquitectura del clúster que configurarás se muestra a continuación:
 <DedicatedKeeperServers />
 
 <div id="pre-requisites">
-  ## Requisitos previos
+  ## Requisitos previos {#pre-requisites}
 </div>
 
 * Ya has configurado antes un [servidor local de ClickHouse](/es/get-started/setup/install)
@@ -163,7 +163,7 @@ La arquitectura del clúster que configurarás se muestra a continuación:
   </Step>
 
   <Step title="Configurar nodos de ClickHouse" id="configure-clickhouse-servers">
-    ### Configuración del servidor
+    ### Configuración del servidor {#server-setup}
 
     Ahora modifique cada archivo de configuración vacío `config.xml` ubicado en
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/config.d`. Las líneas resaltadas
@@ -237,7 +237,7 @@ La arquitectura del clúster que configurarás se muestra a continuación:
 
     Cada sección del archivo de configuración anterior se explica con más detalle a continuación.
 
-    #### Redes y registro
+    #### Redes y registro {#networking}
 
     <ListenHost />
 
@@ -257,15 +257,15 @@ La arquitectura del clúster que configurarás se muestra a continuación:
     Para obtener más información sobre la configuración de logging, consulte los comentarios incluidos en el
     [archivo de configuración](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml) predeterminado de ClickHouse.
 
-    #### Configuración del clúster
+    #### Configuración del clúster {#cluster-configuration}
 
     La configuración del clúster se establece en el bloque `<remote_servers>`.
     Aquí se define el nombre del clúster `cluster_2S_1R`.
 
-    El bloque `<cluster_2S_1R></cluster_2S_1R>` define el layout del clúster
+    El bloque `<cluster_2S_1R></cluster_2S_1R>` define el diseño del clúster,
     mediante las configuraciones `<shard></shard>` y `<replica></replica>`, y actúa como
-    plantilla para las consultas de DDL distribuido, es decir, consultas que se ejecutan en todo el
-    clúster mediante la cláusula `ON CLUSTER`. De forma predeterminada, las consultas de DDL distribuido
+    plantilla para las consultas DDL distribuidas, es decir, consultas que se ejecutan en todo el
+    clúster mediante la cláusula `ON CLUSTER`. De forma predeterminada, las consultas DDL distribuidas
     están permitidas, pero también pueden desactivarse con la configuración `allow_distributed_ddl_queries`.
 
     `internal_replication` se deja en false de forma predeterminada, ya que solo hay una réplica por segmento.
@@ -291,7 +291,7 @@ La arquitectura del clúster que configurarás se muestra a continuación:
 
     <ServerParameterTable />
 
-    #### Configuración de Keeper
+    #### Configuración de Keeper {#keeper-config-explanation}
 
     La sección `<ZooKeeper>` indica a ClickHouse dónde se está ejecutando ClickHouse Keeper (o ZooKeeper).
     Como estamos utilizando un cluster de ClickHouse Keeper, es necesario especificar cada `<node>` del cluster,
@@ -321,7 +321,7 @@ La arquitectura del clúster que configurarás se muestra a continuación:
       en entornos de producción recomendamos encarecidamente que ClickHouse Keeper se ejecute en servidores dedicados.
     </Note>
 
-    #### Configuración de macros
+    #### Configuración de macros {#macros-config-explanation}
 
     Además, la sección `<macros>` se utiliza para definir sustituciones de parámetros para
     tablas replicadas. Estas se listan en `system.macros` y permiten usar sustituciones
@@ -338,7 +338,7 @@ La arquitectura del clúster que configurarás se muestra a continuación:
       Estos se definirán específicamente según la configuración del clúster.
     </Note>
 
-    ### Configuración de usuario
+    ### Configuración de usuario {#user-config}
 
     Ahora modifique cada archivo de configuración vacío `users.xml` ubicado en
     `fs/volumes/clickhouse-{}/etc/clickhouse-server/users.d` con el siguiente contenido:
@@ -356,7 +356,6 @@ La arquitectura del clúster que configurarás se muestra a continuación:
         </profiles>
         <users>
             <default>
-                <access_management>1</access_management>
                 <profile>default</profile>
                 <networks>
                     <ip>::/0</ip>
@@ -364,7 +363,6 @@ La arquitectura del clúster que configurarás se muestra a continuación:
                 <quota>default</quota>
                 <access_management>1</access_management>
                 <named_collection_control>1</named_collection_control>
-                <show_named_collections>1</show_named_collections>
                 <show_named_collections_secrets>1</show_named_collections_secrets>
             </default>
         </users>
@@ -397,7 +395,7 @@ La arquitectura del clúster que configurarás se muestra a continuación:
   </Step>
 
   <Step title="Configurar ClickHouse Keeper" id="configure-clickhouse-keeper-nodes">
-    ### Configuración de ClickHouse Keeper
+    ### Configuración de ClickHouse Keeper {#configuration-explanation}
 
     <KeeperConfig />
 
@@ -812,7 +810,7 @@ La arquitectura del clúster que configurarás se muestra a continuación:
 </Steps>
 
 <div id="conclusion">
-  ## Conclusión
+  ## Conclusión {#conclusion}
 </div>
 
 La ventaja de esta topología de clúster es que los datos se distribuyen entre

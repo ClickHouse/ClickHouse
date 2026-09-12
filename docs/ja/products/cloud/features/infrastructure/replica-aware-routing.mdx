@@ -2,46 +2,46 @@
 title: 'レプリカ対応ルーティング'
 slug: /manage/replica-aware-routing
 description: '一時テーブル、セッション、cacheの再利用、書き込み後の読み取り整合性のため、関連するリクエストを同じClickHouse Cloudレプリカにルーティングします'
-keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session affinity', 'temporary tables', 'read-after-write consistency']
+keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session affinity', 'temporary tables', 'read-after-write consistency', 'sni', 'tls-sni-override']
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
-<EnterprisePlanFeatureBadge feature="レプリカ対応ルーティング" support="true" />
+<EnterprisePlanFeatureBadge feature="レプリカ対応ルーティング" />
 
 レプリカ対応ルーティング (sticky sessions、スティッキールーティング、session affinity とも呼ばれます) は、関連するリクエストを同じ ClickHouse レプリカに振り分けます。[一時テーブル](/ja/reference/statements/create/table/temporary-table)や[名前付きセッション状態](/ja/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)をクエリ間で利用可能な状態に保つ必要がある場合、関連するクエリで同じレプリカのローカル cache を再利用する場合、または書き込みとその後の読み取りで[書き込み後の読み取り整合性](#read-after-write-consistency)が必要な場合に使用します。
 
 これはベストエフォートであり、分離は保証されません。プロキシ は各ルーティング値を 1 つのレプリカにマッピングします。レプリカ数が変わらない限り、このマッピングは安定していますが、サービス をスケーリングすると、その値が別のレプリカにマッピングされる可能性があります。
 
-<Warning>
-  **HTTP インターフェイスが必要です**
+レプリカ対応ルーティングは、次の両方のインターフェイスで利用できます。
 
-  レプリカ対応ルーティングは、`X-ClickHouse-Replica-Tag` ヘッダーを使用して、[HTTP/HTTPS インターフェイス](/ja/concepts/features/interfaces/http)上の プロキシ レイヤーで適用されます。
+* [HTTP/HTTPS](#http-based-routing) 経由 (`X-ClickHouse-Replica-Tag` ヘッダーを使用) 。
+* [ネイティブプロトコル](#native-protocol-routing) 経由 (TLS Server Name Indication (SNI) の override を使用) 。
 
-  レプリカ対応ルーティングは**現在、ネイティブプロトコル経由では使用できません** (ネイティブポート、たとえばデフォルトのネイティブ mode で使用する [clickhouse-go](/ja/integrations/language-clients/go/index) ドライバー) 。ネイティブプロトコルを使うクライアント は HTTP に切り替え、すべてのリクエストでルーティング値を送信する必要があります。
-</Warning>
+どちらも個別に有効化され、プロキシ の背後で同じ 一貫性ハッシュ を使用します。
 
-<div id="prerequisites">
-  ## 前提条件
-</div>
+## 前提条件 {#prerequisites}
 
 * ご利用のサービスには **2 つ以上のレプリカ** が必要です。単一レプリカのサービスでは、固定先となるレプリカがありません。
-* この機能が **GA** になると、**Enterprise** ではデフォルトで利用可能になります。
+* **Enterprise** ティアのサービスであること。
 * 標準の ClickHouse Cloud サービスでサポートされています。[BYOC](/ja/products/cloud/guides/infrastructure/deployment-options/byoc/overview) は現時点ではサポートされていません。
 
-<div id="configuring-replica-aware-routing">
-  ## レプリカ対応ルーティングの設定
-</div>
+## レプリカ対応ルーティングの設定 {#configuring-replica-aware-routing}
 
-[サポート](https://clickhouse.com/support/program)チケットを作成し、HTTP ベースのスティッキーなレプリカルーティングを有効にするよう依頼してください。サービス ID と、必要な理由 (一時テーブル、セッション状態、cache の再利用、または書き込み後の読み取り整合性) を記載してください。再起動は不要です。
+Enterprise のお客様は、ClickHouse Cloud コンソールのサービス設定ページからレプリカ対応ルーティングを有効化できます。対象のサービスを開き、**Settings** に移動して、利用したいインターフェイスのトグルをオンにしてください。
 
-<div id="http-based-routing">
-  ## HTTP ベースのルーティング
-</div>
+* 一方のトグルは、`X-ClickHouse-Replica-Tag` ヘッダーを用いた HTTP ベースのルーティングを有効にします。
+* もう一方のトグルは、SNI オーバーライド を用いたネイティブプロトコルのルーティングを有効にします。
+
+いずれか一方でも、両方でも有効にできます。再起動は不要で、反映までにかかる時間は 1 分未満です。
+
+これらのトグルは Enterprise tier のプランへ順次展開されています。お使いのサービスでまだ利用できない場合は、サービス ID を添えて [サポート](https://clickhouse.com/support/program) チケットを起票いただければ、早期に機能を有効化できます。
+
+## HTTP ベースのルーティング {#http-based-routing}
 
 ワークロードを特定のレプリカに固定するには、[HTTPS インターフェイス](/ja/concepts/features/interfaces/http)経由のリクエストに `X-ClickHouse-Replica-Tag` ヘッダーを付加します。プロキシはヘッダー値に対して一貫性ハッシュを使用するため、レプリカ数が変わらない限り、同じ値を持つリクエストは同じレプリカに送られます。異なる値はそれぞれ独立してハッシュ化され、同じレプリカまたは別のレプリカに送られる可能性がありますが、値をどのレプリカにマッピングするかを指定することはできません。
 
@@ -63,55 +63,96 @@ clickhouse-go (v2) では、`Protocol: clickhouse.HTTP` を設定し、[`HttpHea
   `X-ClickHouse-Replica-Tag` を使用すると、ClickHouse HTTP セッションを作成せずにレプリカアフィニティを実現できます。同時実行リクエストでも、`SESSION_IS_LOCKED` を発生させることなく同じタグを再利用できます。
 </Info>
 
-<div id="read-after-write-consistency">
-  ### 書き込み後の読み取り整合性
-</div>
+## ネイティブプロトコルでのルーティング {#native-protocol-routing}
 
-複数のレプリカがあるサービスでは、あるレプリカへの書き込みは、レプリケーションが追いつくまで他のレプリカには反映されない場合があります。書き込み時に `X-ClickHouse-Replica-Tag` ヘッダーを送信し、後続の読み取りでも同じヘッダー値を使用します。プロキシにより両方のリクエストが同じレプリカにルーティングされるため、他のレプリカの反映が遅れている場合でも、自分で書き込んだデータを読み取れます。このパターンは、対話型アプリケーションや、挿入を検証してから次の処理に進む ETL ジョブなど、書き込み後に同じデータを直ちに読み戻すワークロードに適しています。
+[ネイティブプロトコル](/ja/interfaces/tcp)を使用する場合は、ルーティング値を `<routing-value>.sticky.<host>` という形式の TLS サーバー名として渡します。接続先には、通常どおりサービスホスト名を指定します。[ClickHouse Client](/ja/interfaces/client) では、`--tls-sni-override` でルーティング値を指定します:
 
-すべてのレプリカにわたる、より広範な保証が必要な場合は、ClickHouse Cloud で [`select_sequential_consistency`](/ja/reference/settings/session-settings#select_sequential_consistency) を `1` に設定することもできます。
+```bash
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query 'SELECT hostName()'
+```
 
-<div id="check-which-replica">
-  ### 接続先のレプリカを確認する
-</div>
+`--host` には通常のサービスホスト名を指定し、`--secure` で TLS を有効化し、`--tls-sni-override` でルーティング値を渡します。TLS は必須です。追加の証明書や DNS エントリは不要です。
 
-同じ `X-ClickHouse-Replica-Tag` 値を使用して、`SELECT hostName()` の例を再度実行します。レプリカ数が変わらない限り、同じホスト名が返されるはずです。異なるヘッダー値は、別のレプリカにマッピングされる場合があります。
+## 書き込み後の読み取り整合性 {#read-after-write-consistency}
 
-<div id="limitations-of-replica-aware-routing">
-  ## レプリカ対応ルーティングの制約事項
-</div>
+マルチレプリカの service では、あるレプリカへの書き込みが、レプリケーションが追いつくまで他のレプリカから見えないことがあります。書き込み時に routing value を指定し、後続の読み取りでも同じ値を再利用してください。proxy が両方を同じレプリカにルーティングするため、他のレプリカがまだ追いついていない状態でも、自身の書き込みを読み取れます。このパターンは、書き込んだ直後に同じデータを読み返すワークロード、たとえばインタラクティブなアプリケーションや、次の処理に進む前に insert を検証する ETL ジョブに適しています。
 
-<div id="replica-aware-routing-does-not-guarantee-isolation">
-  ### レプリカ数の変更によりスティッキー性が変化します
-</div>
+また、スキーマ変更がまだレプリケーションされていない場合にも有効です。routing value を再利用すれば、新しいスキーマをすでに持つレプリカに insert し続けられるためです。
 
-スケールアウト/スケールインにより、ルーティングのハッシュリングが変化します。その結果、同じルーティング値を共有するリクエストが別のレプリカに振り分けられる場合があります。一時テーブルやセッションレベルの設定に依存している場合は、再マップ後にそれらを再作成できるようにしておいてください。
+HTTP 経由では、ヘッダー値を再利用します:
 
-<div id="not-workload-isolation">
-  ### レプリカ対応ルーティングはワークロードの分離ではありません
-</div>
+```bash
+# Write, tagged with a routing value
+echo "INSERT INTO events VALUES (now(), 'signup')" | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+
+# Read it back on the same replica, using the same value
+echo 'SELECT count() FROM events' | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+```
+
+ネイティブプロトコル経由の場合は、同じ SNI オーバーライドを再利用します。
+
+```bash
+# Write with a routing value
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query "INSERT INTO events VALUES (now(), 'signup')"
+
+# Read it back on the same replica, using the same value
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query 'SELECT count() FROM events'
+```
+
+すべてのレプリカにわたるより広範な保証が必要な場合は、ClickHouse Cloud で [`select_sequential_consistency`](/ja/reference/settings/session-settings#select_sequential_consistency) を `1` に設定することもできます。
+
+## 接続先のレプリカを確認する {#check-which-replica}
+
+同じ routing value を使用して、`SELECT hostName()` の例のいずれかを再度実行します。レプリカ数が変わらない限り、同じホスト名が返されるはずです。異なる routing value は、別のレプリカにマッピングされる場合があります。
+
+## レプリカ対応ルーティングの制約事項 {#limitations-of-replica-aware-routing}
+
+### レプリカ数の変更によりスティッキー性が変化します {#replica-aware-routing-does-not-guarantee-isolation}
+
+スケールアウト/スケールインにより、ルーティングのハッシュリングが変化します。その結果、同じ routing value を共有するリクエストが別のレプリカに振り分けられる場合があります。一時テーブルやセッションレベルの設定に依存している場合は、再マップ後にそれらを再作成できるようにしておいてください。`SELECT hostName()` を実行すれば、現在どのレプリカに接続しているかを常に確認できます。
+
+### レプリカ対応ルーティングはワークロードの分離ではありません {#not-workload-isolation}
 
 スティッキールーティングで制御できるのは、どのレプリカがリクエストを処理するかだけです。そのレプリカは、引き続きほかのトラフィックも処理する可能性があります。専用のコンピュートが必要な場合は、[コンピュート-コンピュート分離](/ja/products/cloud/features/infrastructure/warehouses)を使用してください。
 
-<div id="private-networking">
-  ### プライベートネットワーキング
-</div>
+### プライベートネットワーキング {#private-networking}
 
-HTTP ベースのルーティングは、通常のサービスホスト名で[プライベートネットワーキング](/ja/products/cloud/guides/security/connectivity/private-networking)を使用する場合は動作します。追加の DNS エントリは必要ありません。
+HTTP ベースのルーティングとネイティブプロトコルのルーティングはいずれも、通常のサービスホスト名で[プライベートネットワーキング](/ja/products/cloud/guides/security/connectivity/private-networking)を使用する場合は動作します。追加の DNS エントリは必要ありません。
 
-<div id="replica-aware-routing-requires-http">
-  ### レプリカ対応ルーティングには HTTP プロトコルが必要です
-</div>
+### ネイティブプロトコルのルーティングには TLS が必要 {#native-protocol-routing-requires-tls}
 
-スティッキールーティングは、`X-ClickHouse-Replica-Tag` HTTP ヘッダーをキーにします。ネイティブバイナリプロトコルには、プロキシがハッシュのキーとして使えるこの値がないため、ネイティブプロトコルではレプリカ対応ルーティングを利用できません。この機能を使うには、ネイティブプロトコルを使うクライアントは該当するワークロードを HTTP インターフェイスに移す必要があります。
+ネイティブプロトコルのルーティングには TLS が必要なため、`--secure` を指定してください。暗号化されていないネイティブ接続の場合は、通常の負荷分散が使用されます。
 
-<div id="troubleshooting">
-  ## トラブルシューティング
-</div>
+## トラブルシューティング {#troubleshooting}
 
 **同じルーティング値を使用しているにもかかわらず、クエリが異なるレプリカに送信される**
 
-* すべてのリクエストに `X-ClickHouse-Replica-Tag` ヘッダーが含まれていることを確認してください。
-* すべてのリクエストで、完全に同じルーティング値を使用していることを確認してください。
+* 使用しているインターフェイスのトグルが、サービス設定ページで有効になっていることを確認してください。HTTP とネイティブの各メソッドは個別に有効化します。
+* HTTP 経由の場合、すべてのリクエストに `X-ClickHouse-Replica-Tag` ヘッダーが含まれ、すべてのリクエストで完全に同じ値が使用されていることを確認してください。
+* ネイティブプロトコル経由の場合、`--secure` が設定されており、`--tls-sni-override` が `<routing-value>.sticky.<host>` の形式になっていることを確認してください。
 * 有効化後、しばらく待ってください。反映までに 1 分未満かかることがあります。
 * 最近レプリカ数が変更されたかどうかを確認してください。スケーリング後の再マッピングは想定される動作です。新しいマッピングを確認するには、`SELECT hostName()` を使用してください。
+
+**ネイティブプロトコル経由での証明書エラー**
+
+* `--host` が通常のサービスホスト名であること、およびルーティング値が `--host` ではなく `--tls-sni-override` を介して渡されていることを確認してください。

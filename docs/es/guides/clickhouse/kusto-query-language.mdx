@@ -1,0 +1,204 @@
+---
+title: 'Kusto Query Language (KQL) en ClickHouse'
+description: 'Qué admite el dialecto KQL experimental y qué no admite deliberadamente'
+keywords: ['KQL', 'Kusto', 'dialecto']
+sidebarTitle: 'Kusto Query Language (KQL)'
+slug: /guides/kusto-query-language
+doc_type: 'guide'
+---
+
+ClickHouse puede analizar un subconjunto de [Kusto Query Language](https://learn.microsoft.com/en-us/kusto/query/)
+en lugar de SQL. El dialecto es **experimental** y está desactivado de forma predeterminada:
+
+```sql
+SET allow_experimental_kusto_dialect = 1;
+SET dialect = 'kusto';
+
+StormEvents
+| where State == 'FLORIDA' and DamageProperty > 0
+| summarize Total = sum(DamageProperty) by EventType
+| top 5 by Total
+```
+
+`SET dialect = 'clickhouse'` permite volver atrás. `SET` es la única instrucción SQL reconocida mientras
+el dialecto KQL está activo, por lo que siempre se puede salir de él desde una sesión.
+
+<div id="what-is-supported">
+  ## Compatibilidad
+</div>
+
+Se trata deliberadamente de un subconjunto reducido. Una construcción de KQL se traduce con la semántica
+documentada por Kusto o se rechaza explícitamente con un error de análisis; no se hacen aproximaciones silenciosas.
+Si una consulta se analiza correctamente, su resultado debe coincidir con el de Kusto.
+
+**Fuentes**: un nombre de tabla, `print`, `datatable`, `range`, una canalización entre paréntesis y `union`.
+Un `range` puede ir de un número en incrementos de un número, de un datetime en incrementos de un timespan o de un timespan en incrementos de
+un timespan.
+
+**Operadores**: `where` / `filter`, `extend`, `project`, `project-away`, `project-keep`,
+`project-rename`, `summarize`, `sort by` / `order by`, `take` / `limit`, `top`, `distinct`,
+`count`, `mv-expand`, `join`, `union`, `as`, `render`.
+
+**Operadores escalares**: `==`, `!=`, `<`, `<=`, `>`, `>=`, `=~`, `!~`, `in`, `in~`, `between`,
+`contains`, `startswith`, `endswith`, `has`, `hasprefix`, `hassuffix`, sus variantes `_cs`
+(sensibles a mayúsculas y minúsculas) y `!` (negadas), `has_any`, `has_all` y `matches regex`.
+`in` y `!in` también aceptan una expresión tabular cuya primera columna proporciona los valores
+(`x in (T | project key)`); `in~` solo acepta una lista. Un nombre aislado dentro de `in (...)` que no esté vinculado mediante
+`let` se interpreta como una columna, ya que el analizador no dispone de un esquema para distinguir una columna de una tabla;
+vincule la tabla con `let`, califíquela (`db.table`) o añada una canalización para obtener la forma tabular.
+
+**Sentencias**: `let`, que vincula un escalar, una expresión tabular completa o una **función**:
+
+```sql
+let MultiplyByN = (val: long, n: long = 2) { val * n };
+let RecentErrors = (since: timespan) { Logs | where Level == 'Error' and Timestamp > ago(since) };
+
+RecentErrors(1h) | summarize Count = count() by Component
+```
+
+Las funciones aceptan parámetros escalares con valores predeterminados literales opcionales y parámetros tabulares
+declarados como `T: (*)` o `T: (col: type, ...)`, que deben aparecer primero. Un parámetro tabular que
+nombra sus columnas expone al cuerpo solo esas columnas del argumento, por lo que se rechaza un cuerpo que lee una
+columna no declarada, incluso si el argumento concreto la contiene; `T: (*)`
+transmite el argumento tal como está. Los tipos declarados se validan en el límite de la llamada:
+se rechaza un argumento —o una columna declarada de un argumento tabular— cuyo tipo no pertenezca al
+tipo KQL declarado, se aplica una conversión sin pérdida como de `long` a `real`, y
+un valor que no se ajusta al tipo declarado —por ejemplo, un desbordamiento de `int`— genera un error en lugar
+de truncarse silenciosamente. Los argumentos pueden pasarse por
+nombre en cualquier orden (`f(c = 7, a = 12)`). Un cuerpo consta de cualquier número de sentencias `let` seguidas de
+una expresión, y puede acceder a las vinculaciones que lo engloban. Una función cuyo cuerpo es una
+canalización es una tabla en lugar de un valor, por lo que se rechaza donde se espera una expresión:
+en `extend`, `where` o `print`. Una función sin parámetros puede
+llamarse con o sin paréntesis. Se acepta `view ()` y, dado que aquí no se resuelven
+comodines de `union *`, significa lo mismo que `()`. La recursión se rechaza, como en Kusto.
+
+Un `let` crea una vinculación solo para la sentencia que le sigue, porque una sentencia KQL equivale a una
+consulta de ClickHouse; esto también evita que una vinculación se filtre a una consulta concurrente. Un
+nombre que necesiten dos sentencias debe vincularse dos veces.
+
+**Literales**: cadenas —incluidas las literales textuales `@'...'`—, números, `datetime(...)`, `guid(...)`,
+intervalos de tiempo como `1d` / `2.5h` / `500ms` y arrays `dynamic([...])`.
+
+Se traducen alrededor de 130 funciones escalares y de agregación. Como en Kusto, las funciones de agregación
+solo pueden llamarse en la lista de agregación de `summarize`; `print count()` se
+rechaza en lugar de pasarse a la función de agregación de ClickHouse del mismo nombre.
+
+También se puede acceder a las **funciones de ClickHouse**. Un nombre que el registro de KQL no reconoce se
+pasa a ClickHouse con la grafía utilizada, por lo que una consulta puede usar cualquier función que el servidor
+ofrezca:
+
+```sql
+SET dialect = 'kusto';
+
+StormEvents
+| extend Bucket = toStartOfHour(StartTime), Fingerprint = cityHash64(EventType)
+| summarize Events = count() by Bucket
+```
+
+La excepción son los nombres que Kusto define, pero que este dialecto no implementa: se
+rechazan en lugar de pasarse por alto, de modo que un nombre de Kusto nunca puede adquirir silenciosamente otro significado.
+`range` es el caso más claro: `range(1, 3, 1)` es `[1, 2, 3]` en Kusto y `[1, 2]` en
+ClickHouse, por lo que usarlo en KQL produce un error en lugar de un resultado incorrecto.
+
+<div id="coverage-against-the-kusto-reference">
+  ## Cobertura con respecto a la referencia de Kusto
+</div>
+
+Comparada con los propios índices de Microsoft
+([operadores tabulares](https://learn.microsoft.com/en-us/kusto/query/queries),
+[funciones escalares](https://learn.microsoft.com/en-us/kusto/query/scalar-functions),
+[funciones de agregación](https://learn.microsoft.com/en-us/kusto/query/aggregation-functions)):
+
+|                                     | Documentos de Kusto | compatibles aquí |
+| ----------------------------------- | ------------------- | ---------------- |
+| Operadores tabulares                | 52                  | 20               |
+| Funciones escalares y de agregación | 307                 | 162              |
+| Funciones definidas por el usuario  | sí                  | sí               |
+
+Los operadores compatibles son los que se enseñan en el tutorial de Microsoft *Learn common operators*,
+además de `datatable`, `range`, `print`, `union` y `join`; suficientes para el tipo de consultas que
+se desarrollan en ese tutorial y en la KQL Quick Reference.
+
+<div id="what-is-not-supported">
+  ## Lo que no se admite
+</div>
+
+Se rechazan con un error de análisis, en lugar de traducirse de forma incorrecta:
+
+* Operadores: `search`, `parse`, `mv-apply`, `lookup`, `evaluate`, `invoke`, `facet`,
+  `top-nested`, `make-series`, `sample`, `serialize`, `partition`, `range` como operador.
+* Funciones: la familia `series_*`, `bag_*` / `pack_*`, `parse_url`, `parse_csv`,
+  `parse_json`, `todynamic`, `toscalar`, `format_timespan`, `format_datetime`, `extract_all`,
+  `range`, la familia `percentiles*` y las funciones de ventana `row_*`.
+  (`format_datetime` y `extract_all` se rechazan en lugar de aproximarse: los
+  especificadores de formato `yyyy-MM-dd` de Kusto no son los de ClickHouse, y `extract_all` de Kusto devuelve un
+  array por cada grupo de captura.)
+* Nombres de Kusto que entran en conflicto con una función de ClickHouse de significado distinto: `range` (mostrado
+  arriba), `repeat`, `replace`, `translate` y `materialize`. Dejarlos pasar
+  calcularía silenciosamente algo diferente — `repeat(1, 3)` de Kusto es el array `[1, 1, 1]`, mientras que
+  `repeat` de ClickHouse repite una cadena —, por lo que todos se rechazan por nombre.
+* Las funciones geoespaciales que aceptan o devuelven GeoJSON — todas las `geo_*_to_central_point` y
+  todo lo que opera con polígonos y líneas. Las funciones de puntos, geohash y H3 que funcionan con
+  longitud/latitud sin formato *sí* se admiten. `geo_point_to_s2cell` no se admite: ClickHouse no tiene
+  formato de token S2.
+* Objetos `dynamic` (`dynamic({"a": 1})`), acceso a miembros (`x.y`) y búsqueda por clave
+  (`x['k']`). Solo los arrays `dynamic` se asignan a `Array` de ClickHouse. `dynamic` como
+  **tipo declarado** — en un esquema de `datatable`, un `typeof(...)` o un parámetro de función — también se
+  rechaza: la anotación no incluye ningún tipo de elemento, por lo que no hay nada a lo que asignarlo de forma fiel.
+* Referencias entre clústeres y entre bases de datos, como `cluster(...)` y `database(...)`.
+* Sugerencias de consulta y de `join` (`hint.strategy`, `hint.shufflekey`, ...).
+* Opciones de operador: `mv-expand ... to typeof(T)` / `limit N` / `bagexpansion`, sugerencias de `summarize`,
+  `union kind=` / `withsource=` / `isfuzzy=`, `join hint.*`.
+* Patrones de columnas con comodines en `project-away` y `project-keep` (`project-away Tmp*`):
+  expandir uno requiere el esquema, que no es visible durante el análisis sintáctico. Enumere las columnas explícitamente.
+* Todo el mecanismo de complementos de `evaluate`, y con él `bag_unpack`, `pivot`, `narrow`,
+  `python`, `R` y el resto.
+* Sentencias de aplicación: `alias database`, `declare pattern`,
+  `declare query_parameters`, `restrict access to`.
+* Literales de cadena ofuscados (`h"..."`) y literales multilínea (triple acento grave).
+
+<div id="behaviour-worth-knowing">
+  ## Comportamientos que conviene conocer
+</div>
+
+* **Los intervalos de tiempo son valores `Interval`.** `1d` se convierte en `toIntervalNanosecond(86400000000000)`.
+  Configure `interval_output_format = 'kusto'` para mostrarlos al estilo de Kusto (`1.00:00:00`) en lugar
+  de como un número.
+* **La división sigue el comportamiento de Kusto**: `7 / 2` es `3`, porque ambos operandos son enteros, y un
+  intervalo de tiempo dividido por otro es su razón en valores reales (`15ms / 10ms` es `1.5`). Esto se
+  implementa mediante `kqlDivide`, que decide según los tipos de los argumentos.
+* **Restar dos valores de fecha y hora devuelve un número de segundos**, mientras que Kusto devuelve un intervalo de tiempo.
+  Sumar o restar un intervalo de tiempo funciona como se espera.
+* **`sort` usa el orden descendente de forma predeterminada**, a diferencia de SQL, y coloca los valores nulos en el extremo inferior.
+* **`project-rename` mueve la columna renombrada al final** de la fila. Kusto conserva su
+  posición original; reproducir este comportamiento requeriría conocer el esquema durante el análisis.
+* **`union` requiere que los operandos tengan esquemas compatibles.** Kusto se amplía a la unión de
+  todas las columnas y rellena con valores nulos; `UNION ALL` de ClickHouse no lo hace.
+* **Los operadores de cadenas son funciones de coincidencia, no patrones `LIKE`.** `contains '50%'` busca
+  un signo de porcentaje literal.
+* **`geo_*` acepta la longitud antes que la latitud**, como Kusto. `geo_distance_2points` usa
+  `greatCircleDistance` de ClickHouse, una aproximación rápida que difiere de Kusto en la
+  cuarta cifra significativa —unos 600 m en 1500 km—, y `use_spheroid = true` selecciona
+  `geoDistance`, la fórmula elipsoidal, como en Kusto. La coincidencia exacta no es el objetivo:
+  estas funciones suelen usarse para filtrar, no para generar informes. Tenga en cuenta que una coordenada fuera de
+  [-180, 180] o [-90, 90] produce un número sin sentido en lugar del valor nulo que devuelve Kusto:
+  ninguna de las funciones de ClickHouse comprueba el rango de sus argumentos, y hacerlo costaría ocho
+  comparaciones por fila.
+* **`dayofweek()` devuelve un intervalo de tiempo**, no un número: un lunes es `1.00:00:00`.
+* **`tohex()` representa un valor negativo con un ancho de 64 bits.** Kusto lo representa con el ancho del
+  propio tipo del argumento, que no es visible durante el análisis.
+* **Los valores de fecha y hora son valores `DateTime64` reales**, por lo que se muestran al estilo de ClickHouse
+  (`2017-01-01 00:00:00`) en lugar de al de Kusto (`2017-01-01T00:00:00.0000000`). La implementación anterior
+  producía una *cadena* formateada, que se parecía a Kusto, pero no se comparaba
+  ni ordenaba como un valor de fecha y hora.
+* **Las agregaciones paramétricas de ClickHouse** (`quantileExact(0.5)(x)`) no tienen sintaxis en KQL.
+  Utilice una alternativa con nombre, como `medianExact(x)`.
+
+<div id="reporting-a-problem">
+  ## Informar de un problema
+</div>
+
+Una consulta que se analiza correctamente pero devuelve algo que Kusto no devolvería es un error; repórtala junto con
+ambos resultados. Una consulta que se rechaza y que necesitas es una solicitud de funcionalidad; las listas
+anteriores delimitan el alcance en lugar de enumerar todos los nombres rechazados; el propio error de análisis
+es la respuesta definitiva para cualquier consulta concreta, y nada de esto es permanente.

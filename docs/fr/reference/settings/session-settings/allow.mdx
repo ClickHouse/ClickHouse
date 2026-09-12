@@ -15,9 +15,7 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tables/settings) et sont générés automatiquement à partir du [source](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="allow_aggregate_partitions_independently">
-  ## allow_aggregate_partitions_independently
-</div>
+## allow_aggregate_partitions_independently {#allow_aggregate_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -25,9 +23,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 Active l’agrégation indépendante des partitions sur des threads séparés lorsque la clé de partitionnement est adaptée à la clé GROUP BY. Cela est utile lorsque le nombre de partitions est proche du nombre de cœurs et que les partitions ont à peu près la même taille. Les heuristiques de `ReadFromMergeTree` désactivent automatiquement l’optimisation pour les organisations défavorables (trop peu de partitions, trop de partitions ou des tailles de partition fortement déséquilibrées) ; consultez `force_aggregate_partitions_independently` pour contourner ces vérifications.
 
-<div id="allow_archive_path_syntax">
-  ## allow_archive_path_syntax
-</div>
+## allow_archive_path_syntax {#allow_archive_path_syntax}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -35,17 +31,13 @@ Active l’agrégation indépendante des partitions sur des threads séparés lo
 
 Les moteurs File/S3 et la fonction de table analyseront les chemins contenant &#39;::&#39; comme `<archive> :: <file>` si l&#39;archive a l&#39;extension appropriée.
 
-<div id="allow_asynchronous_read_from_io_pool_for_merge_tree">
-  ## allow_asynchronous_read_from_io_pool_for_merge_tree
-</div>
+## allow_asynchronous_read_from_io_pool_for_merge_tree {#allow_asynchronous_read_from_io_pool_for_merge_tree}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Utilise le pool d’E/S d’arrière-plan pour lire les tables MergeTree. Ce paramètre peut améliorer les performances des requêtes limitées par les E/S.
 
-<div id="allow_calculating_subcolumns_sizes_for_merge_tree_reading">
-  ## allow_calculating_subcolumns_sizes_for_merge_tree_reading
-</div>
+## allow_calculating_subcolumns_sizes_for_merge_tree_reading {#allow_calculating_subcolumns_sizes_for_merge_tree_reading}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -53,26 +45,20 @@ Utilise le pool d’E/S d’arrière-plan pour lire les tables MergeTree. Ce par
 
 Lorsqu’il est activé, ClickHouse calcule la taille des fichiers nécessaires à la lecture de chaque sous-colonne afin de mieux dimensionner les tâches et les blocs.
 
-<div id="allow_changing_replica_until_first_data_packet">
-  ## allow_changing_replica_until_first_data_packet
-</div>
+## allow_changing_replica_until_first_data_packet {#allow_changing_replica_until_first_data_packet}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Si ce paramètre est activé, dans les requêtes hedged, nous pouvons établir une nouvelle connexion jusqu&#39;à la réception du premier paquet de données, même si un certain progrès a déjà été réalisé
 (mais que la progression n&#39;a pas été mise à jour pendant le délai d&#39;expiration `receive_data_timeout`) ; sinon, nous désactivons le changement de réplique dès qu&#39;un premier progrès a été réalisé.
 
-<div id="allow_create_index_without_type">
-  ## allow_create_index_without_type
-</div>
+## allow_create_index_without_type {#allow_create_index_without_type}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Autorise les requêtes CREATE INDEX sans TYPE. La requête est alors ignorée. Prévu pour les tests de compatibilité SQL.
 
-<div id="allow_creating_set_partitions_independently">
-  ## allow_creating_set_partitions_independently
-</div>
+## allow_creating_set_partitions_independently {#allow_creating_set_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -80,25 +66,19 @@ Autorise les requêtes CREATE INDEX sans TYPE. La requête est alors ignorée. P
 
 Active le prédédoublonnage parallèle, partition par partition, du résultat de la sous-requête lors de la création de l’ensemble pour `IN (subquery)`, lorsque l’expression de partition de la table `MergeTree` de la sous-requête est une fonction déterministe des colonnes de sortie de la sous-requête. Chaque partition est lue dans un flux distinct et dédoublonnée indépendamment, de sorte que l’unique transformation de remplissage de l’ensemble ne calcule le hachage que des lignes uniques. Ne s’applique pas avec `FINAL`, les répliques parallèles ou `GLOBAL IN`. L’optimisation ne demande elle-même une lecture par partition que lorsque les données comportent plus d’une partition et que la plus grande partition contient au plus deux fois plus de lignes que la partition moyenne (voir [force&#95;creating&#95;set&#95;partitions&#95;independently](/fr/reference/settings/session-settings/force#force_creating_set_partitions_independently) pour contourner la vérification du déséquilibre) ; lorsque les flux sont déjà disjoints par partition parce qu’une autre fonctionnalité par partition les a divisés (par exemple, `LIMIT BY` par partition), le prédédoublonnage est appliqué dans tous les cas, car l’organisation de la lecture est déjà définie. Pendant la création de l’ensemble, les tables de dédoublonnage de tous les flux contiennent ensemble environ une copie supplémentaire des clés uniques.
 
-<div id="allow_custom_error_code_in_throwif">
-  ## allow_custom_error_code_in_throwif
-</div>
+## allow_custom_error_code_in_throwif {#allow_custom_error_code_in_throwif}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Active l’utilisation d’un code d’erreur personnalisé dans la fonction throwIf(). Si true, les exceptions levées peuvent avoir des codes d’erreur inattendus.
 
-<div id="allow_ddl">
-  ## allow_ddl
-</div>
+## allow_ddl {#allow_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 S&#39;il est défini sur true, l&#39;utilisateur est autorisé à exécuter des requêtes DDL.
 
-<div id="allow_delta_kernel_rs">
-  ## allow_delta_kernel_rs
-</div>
+## allow_delta_kernel_rs {#allow_delta_kernel_rs}
 
 <BetaBadge />
 
@@ -110,9 +90,7 @@ S&#39;il est défini sur true, l&#39;utilisateur est autorisé à exécuter des 
 
 Autorise l’utilisation de l’implémentation `delta-kernel-rs` pour lire les tables Delta Lake.
 
-<div id="allow_distinct_partitions_independently">
-  ## allow_distinct_partitions_independently
-</div>
+## allow_distinct_partitions_independently {#allow_distinct_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -122,25 +100,19 @@ Active l&#39;évaluation indépendante de `DISTINCT` pour chaque partition dans 
 
 Ne s&#39;applique pas lorsque [max&#95;rows&#95;in&#95;distinct](/fr/reference/settings/session-settings/max-rows#max_rows_in_distinct) ou [max&#95;bytes&#95;in&#95;distinct](/fr/reference/settings/session-settings/max-bytes#max_bytes_in_distinct) est défini : ces limites sont appliquées par l&#39;unique transformation `DISTINCT`, qui traite l&#39;ensemble du résultat fusionné. La fusion inter-flux est donc conservée afin de préserver leur portée globale.
 
-<div id="allow_distributed_ddl">
-  ## allow_distributed_ddl
-</div>
+## allow_distributed_ddl {#allow_distributed_ddl}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Si ce paramètre est défini sur true, l&#39;utilisateur est autorisé à exécuter des requêtes DDL distribuées.
 
-<div id="allow_drop_detached">
-  ## allow_drop_detached
-</div>
+## allow_drop_detached {#allow_drop_detached}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Autorise les requêtes ALTER TABLE ... DROP DETACHED PART[ITION] ...
 
-<div id="allow_dynamic_type_in_join_keys">
-  ## allow_dynamic_type_in_join_keys
-</div>
+## allow_dynamic_type_in_join_keys {#allow_dynamic_type_in_join_keys}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -148,17 +120,13 @@ Autorise les requêtes ALTER TABLE ... DROP DETACHED PART[ITION] ...
 
 Autorise l&#39;utilisation du type Dynamic dans les clés de JOIN. Ajouté pour des raisons de compatibilité. Il n&#39;est pas recommandé d&#39;utiliser le type Dynamic dans les clés de JOIN, car les comparaisons avec d&#39;autres types peuvent produire des résultats inattendus.
 
-<div id="allow_execute_multiif_columnar">
-  ## allow_execute_multiif_columnar
-</div>
+## allow_execute_multiif_columnar {#allow_execute_multiif_columnar}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Autorise l’exécution de la fonction multiIf en mode colonnaire
 
-<div id="allow_fuzz_query_functions">
-  ## allow_fuzz_query_functions
-</div>
+## allow_fuzz_query_functions {#allow_fuzz_query_functions}
 
 <ExperimentalBadge />
 
@@ -168,9 +136,7 @@ Autorise l’exécution de la fonction multiIf en mode colonnaire
 
 Active la fonction `fuzzQuery`, qui applique des mutations aléatoires de l&#39;AST à une chaîne de requête.
 
-<div id="allow_general_join_planning">
-  ## allow_general_join_planning
-</div>
+## allow_general_join_planning {#allow_general_join_planning}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -178,9 +144,7 @@ Active la fonction `fuzzQuery`, qui applique des mutations aléatoires de l&#39;
 
 Autorise un algorithme de planification des jointures plus générique, capable de gérer des conditions plus complexes, mais qui fonctionne uniquement avec le hash join. Si le hash join n’est pas activé, l’algorithme habituel de planification des jointures est utilisé, quelle que soit la valeur de ce paramètre.
 
-<div id="allow_get_client_http_header">
-  ## allow_get_client_http_header
-</div>
+## allow_get_client_http_header {#allow_get_client_http_header}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -188,17 +152,13 @@ Autorise un algorithme de planification des jointures plus générique, capable 
 
 Permet d&#39;utiliser la fonction `getClientHTTPHeader`, qui permet d&#39;obtenir la valeur d&#39;un en-tête de la requête HTTP en cours. Elle n&#39;est pas activée par défaut pour des raisons de sécurité, car certains en-têtes, comme `Cookie`, peuvent contenir des informations sensibles. Notez que les en-têtes `X-ClickHouse-*`, `Authentication` et `Authorization` sont toujours restreints et ne peuvent pas être obtenus avec cette fonction.
 
-<div id="allow_hyperscan">
-  ## allow_hyperscan
-</div>
+## allow_hyperscan {#allow_hyperscan}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Autorise les fonctions qui utilisent la bibliothèque Hyperscan. Désactivez-la pour éviter des temps de compilation potentiellement longs et une consommation excessive de ressources.
 
-<div id="allow_iceberg_remove_orphan_files">
-  ## allow_iceberg_remove_orphan_files
-</div>
+## allow_iceberg_remove_orphan_files {#allow_iceberg_remove_orphan_files}
 
 <ExperimentalBadge />
 
@@ -208,9 +168,7 @@ Autorise les fonctions qui utilisent la bibliothèque Hyperscan. Désactivez-la 
 
 Permet d’utiliser `ALTER TABLE ... EXECUTE remove_orphan_files()` pour les tables Iceberg.
 
-<div id="allow_insert_into_iceberg">
-  ## allow_insert_into_iceberg
-</div>
+## allow_insert_into_iceberg {#allow_insert_into_iceberg}
 
 <BetaBadge />
 
@@ -222,9 +180,7 @@ Permet d’utiliser `ALTER TABLE ... EXECUTE remove_orphan_files()` pour les tab
 
 Permet d’exécuter des requêtes `insert` dans Iceberg.
 
-<div id="allow_introspection_functions">
-  ## allow_introspection_functions
-</div>
+## allow_introspection_functions {#allow_introspection_functions}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -240,9 +196,7 @@ Valeurs possibles :
 * [Profileur de requêtes par échantillonnage](/fr/concepts/features/performance/troubleshoot/sampling-query-profiler)
 * Table système [trace&#95;log](/fr/reference/system-tables/trace_log)
 
-<div id="allow_key_condition_coalesce_rewrite">
-  ## allow_key_condition_coalesce_rewrite
-</div>
+## allow_key_condition_coalesce_rewrite {#allow_key_condition_coalesce_rewrite}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -251,9 +205,7 @@ Valeurs possibles :
 Réécrit les prédicats de la forme `coalesce(a_1, ..., a_N) <op> const` (ou, de manière équivalente, `ifNull`, ou avec la constante à gauche) en une disjonction `(a_1 <op> const) OR (a_1 IS NULL AND a_2 <op> const) OR ... OR (a_1 IS NULL AND ... AND a_{N-1} IS NULL AND a_N <op> const)` avant l’analyse des index, afin de pouvoir utiliser la clé primaire et les index de saut sur chaque `a_i`. Les formes partiellement constantes telles que `coalesce(a, 42, b)` et `coalesce(a, b, 42)` sont prises en charge : la liste d’arguments est normalisée comme le fait `coalesce` lui-même (les littéraux `NULL` sont supprimés, de même que les arguments suivant le premier argument non-`Nullable`), et une constante non-`NULL` finale, le cas échéant, est ajoutée comme branche finale. La réécriture est strictement additive pour l’élagage par index ; le filtrage à l’exécution utilise toujours le prédicat d’origine.
 De plus, les prédicats d’égalité exacte de la forme `nullIf(key, sentinel) = const` (où `sentinel != const` et les types correspondent exactement) sont réécrits en `key = const` afin que la clé primaire, la partition et les index de saut sur `key` puissent élaguer directement des granules. L’élagage par `nullIf` pour les plages et les disjonctions n’est pas pris en charge.
 
-<div id="allow_limit_by_partitions_independently">
-  ## allow_limit_by_partitions_independently
-</div>
+## allow_limit_by_partitions_independently {#allow_limit_by_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -261,9 +213,7 @@ De plus, les prédicats d’égalité exacte de la forme `nullIf(key, sentinel) 
 
 Active l’évaluation indépendante de `LIMIT BY` pour chaque partition sur des threads séparés lorsque l’expression de partition est une fonction déterministe des colonnes de `LIMIT BY`.
 
-<div id="allow_lossy_numeric_supertype">
-  ## allow_lossy_numeric_supertype
-</div>
+## allow_lossy_numeric_supertype {#allow_lossy_numeric_supertype}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -271,9 +221,7 @@ Active l’évaluation indépendante de `LIMIT BY` pour chaque partition sur des
 
 Lorsqu&#39;il est activé, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` appliqués à un ensemble d&#39;arguments numériques ne disposant pas d&#39;un type commun sans perte (par exemple un `Decimal` et un `Float64`, ou un `Int64` et un `Float64`) produisent un supertype numérique (`Float64`) au lieu d&#39;échouer, avec une perte de précision possible. Cela permet d&#39;utiliser directement le résultat avec des fonctions d&#39;agrégation combinant des valeurs, telles que `sum`, `avg`, `min` et `max`. Ce paramètre est indépendant de `use_variant_as_common_type` : le supertype numérique est produit, que `use_variant_as_common_type` soit activé ou non. Lorsqu&#39;il est désactivé (par défaut), de tels ensembles d&#39;arguments n&#39;ont pas de type commun : ils deviennent alors soit un `Variant` (si `use_variant_as_common_type` est activé), soit déclenchent `NO_COMMON_TYPE`.
 
-<div id="allow_materialized_view_with_bad_select">
-  ## allow_materialized_view_with_bad_select
-</div>
+## allow_materialized_view_with_bad_select {#allow_materialized_view_with_bad_select}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -281,9 +229,7 @@ Lorsqu&#39;il est activé, `if`/`multiIf`/`coalesce`/`ifNull`/`array`/`map` appl
 
 Autorise CREATE MATERIALIZED VIEW avec une requête SELECT faisant référence à des tables ou colonnes inexistantes. Elle doit toutefois rester syntaxiquement valide. Ne s&#39;applique pas aux MV actualisables. Ne s&#39;applique pas non plus si le schéma de la MV doit être inféré à partir de la requête SELECT (c.-à-d. si le CREATE ne comporte ni liste de colonnes ni table TO). Peut être utilisé pour créer une MV avant sa table source.
 
-<div id="allow_metadata_only_named_tuple_alter">
-  ## allow_metadata_only_named_tuple_alter
-</div>
+## allow_metadata_only_named_tuple_alter {#allow_metadata_only_named_tuple_alter}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -292,9 +238,7 @@ Autorise CREATE MATERIALIZED VIEW avec une requête SELECT faisant référence �
 Si cette option est définie sur true, ALTER MODIFY COLUMN sur un Tuple nommé qui ajoute uniquement de nouveaux sous-champs est limité aux métadonnées (sans mutation des données).
 Définissez-la sur false pour forcer l’ancien comportement de mutation complète.
 
-<div id="allow_minmax_index_for_json">
-  ## allow_minmax_index_for_json
-</div>
+## allow_minmax_index_for_json {#allow_minmax_index_for_json}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -302,25 +246,19 @@ Définissez-la sur false pour forcer l’ancien comportement de mutation complè
 
 Autorise la création d’index de saut minmax sur les colonnes JSON (Object). Désactivé par défaut, car le mécanisme de sérialisation de l’index minmax ne peut pas prendre en charge les valeurs de Field hétérogènes que peuvent contenir les colonnes JSON.
 
-<div id="allow_named_collection_override_by_default">
-  ## allow_named_collection_override_by_default
-</div>
+## allow_named_collection_override_by_default {#allow_named_collection_override_by_default}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Autorise par défaut la surcharge des champs des collections nommées.
 
-<div id="allow_non_metadata_alters">
-  ## allow_non_metadata_alters
-</div>
+## allow_non_metadata_alters {#allow_non_metadata_alters}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permet d’exécuter des opérations ALTER qui affectent non seulement les métadonnées des tables, mais aussi les données sur le disque
 
-<div id="allow_nonconst_timezone_arguments">
-  ## allow_nonconst_timezone_arguments
-</div>
+## allow_nonconst_timezone_arguments {#allow_nonconst_timezone_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -331,9 +269,7 @@ Ce paramètre existe uniquement pour des raisons de compatibilité. Dans ClickHo
 L&#39;activation de ce paramètre donne à tort l&#39;impression que différentes valeurs d&#39;une même colonne peuvent avoir des fuseaux horaires différents.
 Par conséquent, veuillez ne pas activer ce paramètre.
 
-<div id="allow_nullable_tuple_in_extracted_subcolumns">
-  ## allow_nullable_tuple_in_extracted_subcolumns
-</div>
+## allow_nullable_tuple_in_extracted_subcolumns {#allow_nullable_tuple_in_extracted_subcolumns}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -351,9 +287,15 @@ ClickHouse utilise la valeur de ce paramètre chargée au démarrage du serveur.
 Les modifications effectuées avec `SET` ou la clause `SETTINGS` au niveau de la requête ne changent pas le comportement des sous-colonnes extraites.
 Pour modifier le comportement des sous-colonnes extraites, mettez à jour `allow_nullable_tuple_in_extracted_subcolumns` dans la configuration du profil de démarrage (par exemple, users.xml) et redémarrez le serveur.
 
-<div id="allow_rank_dense_rank_arguments">
-  ## allow_rank_dense_rank_arguments
-</div>
+## allow_preliminary_distinct_abandoning {#allow_preliminary_distinct_abandoning}
+
+<SettingsInfoBlock type="Bool" default_value="1" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "1"},{"label": "Nouveau paramètre qui permet au `DISTINCT` préliminaire de renoncer à dédupliquer une entrée majoritairement unique, car le `DISTINCT` final déduplique à nouveau sa sortie."}]}]} />
+
+Permet au `DISTINCT` préliminaire (par flux) de renoncer à dédupliquer une entrée majoritairement unique, libérant ainsi sa hash table et laissant passer les lignes restantes. Le `DISTINCT` préliminaire fonctionne, par conception, en « meilleur effort » — les doublons provenant de flux différents le traversent même lorsqu&#39;il déduplique — et le `DISTINCT` final déduplique à nouveau sa sortie : y renoncer ne sacrifie donc quasiment aucune suppression et évite la mémoire et le hachage d&#39;une seconde copie des clés uniques. Non appliqué lorsque le `DISTINCT` préliminaire porte un hint de limite (un simple `LIMIT` sans tri ultérieur).
+
+## allow_rank_dense_rank_arguments {#allow_rank_dense_rank_arguments}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -370,9 +312,7 @@ Lorsque ce paramètre est `false` (valeur par défaut), `RANK` et `DENSE_RANK` r
 renvoient `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`. Lorsqu&#39;il est défini sur `true`, le comportement permissif legacy est
 rétabli — les arguments sont silencieusement ignorés, comme avant la version 26.5.
 
-<div id="allow_reorder_prewhere_conditions">
-  ## allow_reorder_prewhere_conditions
-</div>
+## allow_reorder_prewhere_conditions {#allow_reorder_prewhere_conditions}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -380,9 +320,7 @@ rétabli — les arguments sont silencieusement ignorés, comme avant la version
 
 Lors du déplacement des conditions de WHERE vers PREWHERE, autoriser leur réordonnancement afin d’optimiser le filtrage
 
-<div id="allow_replace_partition_from_empty_source">
-  ## allow_replace_partition_from_empty_source
-</div>
+## allow_replace_partition_from_empty_source {#allow_replace_partition_from_empty_source}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -394,9 +332,7 @@ Par défaut, ce n’est pas autorisé : un `REPLACE PARTITION` à partir d’un
 
 Activez ce paramètre pour rétablir le comportement précédent, par exemple si vous utilisez volontairement une partition source vide pour effacer les données de destination. Pour une suppression inconditionnelle, préférez `ALTER TABLE ... DROP PARTITION ...`.
 
-<div id="allow_settings_after_format_in_insert">
-  ## allow_settings_after_format_in_insert
-</div>
+## allow_settings_after_format_in_insert {#allow_settings_after_format_in_insert}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -426,17 +362,13 @@ Valeurs possibles :
   Utilisez ce paramètre uniquement à des fins de rétrocompatibilité si vos cas d’usage dépendent de l’ancienne syntaxe.
 </Note>
 
-<div id="allow_simdjson">
-  ## allow_simdjson
-</div>
+## allow_simdjson {#allow_simdjson}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
 Permet d&#39;utiliser la bibliothèque simdjson dans les fonctions &#39;JSON*&#39; si les instructions AVX2 sont disponibles. Si cette option est désactivée, rapidjson sera utilisé.
 
-<div id="allow_special_serialization_kinds_in_output_formats">
-  ## allow_special_serialization_kinds_in_output_formats
-</div>
+## allow_special_serialization_kinds_in_output_formats {#allow_special_serialization_kinds_in_output_formats}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
@@ -445,17 +377,13 @@ Permet d&#39;utiliser la bibliothèque simdjson dans les fonctions &#39;JSON*&#3
 Permet de produire des colonnes avec des types de sérialisation spéciaux comme Sparse et Replicated sans les convertir en représentation complète de colonne.
 Cela permet d’éviter des copies de données inutiles lors de la mise en forme.
 
-<div id="allow_unrestricted_reads_from_keeper">
-  ## allow_unrestricted_reads_from_keeper
-</div>
+## allow_unrestricted_reads_from_keeper {#allow_unrestricted_reads_from_keeper}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Autorise les lectures sans restriction (sans condition sur le chemin) depuis la table system.zookeeper ; cela peut être pratique, mais n&#39;est pas sans risque pour ZooKeeper
 
-<div id="allow_window_partitions_independently">
-  ## allow_window_partitions_independently
-</div>
+## allow_window_partitions_independently {#allow_window_partitions_independently}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

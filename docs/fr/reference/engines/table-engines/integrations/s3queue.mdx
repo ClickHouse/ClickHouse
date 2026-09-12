@@ -14,9 +14,7 @@ Ce moteur s’intègre à l’écosystème [Amazon S3](https://aws.amazon.com/s3
 
 Il est important de bien comprendre cette remarque issue de la [PR initiale de l’implémentation de S3Queue](https://github.com/ClickHouse/ClickHouse/pull/49086/files#diff-e1106769c9c8fbe48dd84f18310ef1a250f2c248800fde97586b3104e9cd6af8R183) : lorsqu’une `MATERIALIZED VIEW` est associée au moteur, le moteur de table S3Queue commence à collecter les données en arrière-plan.
 
-<div id="creating-a-table">
-  ## Créer une table
-</div>
+## Créer une table {#creating-a-table}
 
 ```sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
@@ -84,37 +82,32 @@ SETTINGS
     mode = 'ordered';
 ```
 
-<div id="settings">
-  ## Paramètres
-</div>
+## Paramètres {#settings}
 
 Pour obtenir la liste des paramètres configurés pour cette table, utilisez la table `system.s3_queue_settings`. Disponible depuis la version `24.10`.
 
-<Info>
-  **Noms des paramètres (24.7+)**
+<Note title="Noms des paramètres (24.7+)">
+  À partir de la version 24.7, les paramètres S3Queue peuvent être spécifiés avec ou sans le préfixe `s3queue_` :
 
-  À partir de la version 24.7, les paramètres S3Queue peuvent être spécifiés avec ou sans le préfixe `s3queue_` :
-
-  * **Syntaxe moderne** (24.7+) : `processing_threads_num`, `tracked_file_ttl_sec`, etc.
-  * **Syntaxe héritée** (toutes les versions) : `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
+  * **Syntaxe moderne** (24.7+) : `processing_threads_num`, `tracked_file_ttl_sec`, etc.
+  * **Syntaxe héritée** (toutes les versions) : `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
 
   Les deux formes sont prises en charge à partir de la version 24.7. Les exemples de cette page utilisent la syntaxe moderne sans préfixe.
-</Info>
+</Note>
 
-<div id="mode">
-  ### Mode
-</div>
+### Mode {#mode}
 
-Valeurs possibles :
+Valeurs possibles :
 
 * unordered — En mode unordered, l’ensemble des fichiers déjà traités est suivi au moyen de nœuds persistants dans ZooKeeper.
 * ordered — En mode ordered, les fichiers sont traités dans l’ordre lexicographique. Cela signifie que si un fichier nommé &#39;BBB&#39; a été traité à un moment donné et qu’un fichier nommé &#39;AA&#39; est ensuite ajouté au bucket, il sera ignoré. Seuls le nom maximal (au sens lexicographique) du fichier traité avec succès, ainsi que les noms des fichiers qui feront l’objet d’une nouvelle tentative après un échec de chargement, sont stockés dans ZooKeeper.
+* exclusive - En mode exclusive, rien n’est suivi dans Zookeeper. Votre URL S3 (premier paramètre de `S3Queue()`) *doit* correspondre à un host ou un path unique. Ce mode n’est utile que pour les scénarios à haut débit et/ou self-hosted.
 
-Valeur par défaut : `ordered` dans les versions antérieures à 24.6. À partir de la version 24.6, il n’y a plus de valeur par défaut ; le paramètre doit être spécifié manuellement. Pour les tables créées avec des versions antérieures, la valeur par défaut restera `Ordered` pour des raisons de compatibilité.
+Valeur par défaut : `ordered` dans les versions antérieures à 24.6. À partir de la version 24.6, il n’y a plus de valeur par défaut ; le paramètre doit être spécifié manuellement. Pour les tables créées avec des versions antérieures, la valeur par défaut restera `Ordered` pour des raisons de compatibilité.
 
-<div id="after_processing">
-  ### `after_processing`
-</div>
+En mode `exclusive`, l’utilisation de la macro `{replica}` dans l’URL S3 est prise en charge.
+
+### `after_processing` {#after_processing}
 
 Comment gérer le fichier après un traitement réussi.
 
@@ -150,9 +143,7 @@ Le déplacement d’un conteneur Azure vers un autre conteneur Azure nécessite 
 
 L’ajout de tags nécessite une clé de tag et une valeur de tag, fournies respectivement dans `after_processing_tag_key` et `after_processing_tag_value`.
 
-<div id="after_processing_retries">
-  ### `after_processing_retries`
-</div>
+### `after_processing_retries` {#after_processing_retries}
 
 Nombre de tentatives pour l’action demandée après traitement, avant abandon.
 
@@ -162,9 +153,7 @@ Valeurs possibles :
 
 Valeur par défaut : `10`.
 
-<div id="after_processing_move_access_key_id">
-  ### `after_processing_move_access_key_id`
-</div>
+### `after_processing_move_access_key_id` {#after_processing_move_access_key_id}
 
 Identifiant de la clé d’accès du bucket S3 vers lequel déplacer les fichiers traités avec succès, si la destination est un autre bucket S3.
 
@@ -174,9 +163,7 @@ Valeurs possibles :
 
 Valeur par défaut : chaîne vide.
 
-<div id="after_processing_move_prefix">
-  ### `after_processing_move_prefix`
-</div>
+### `after_processing_move_prefix` {#after_processing_move_prefix}
 
 Préfixe de chemin vers lequel déplacer les fichiers traités avec succès. Il s&#39;applique aussi bien à un déplacement dans le même bucket que vers un autre bucket.
 
@@ -186,9 +173,7 @@ Valeurs possibles :
 
 Valeur par défaut : chaîne vide.
 
-<div id="after_processing_move_preserve_path">
-  ### `after_processing_move_preserve_path`
-</div>
+### `after_processing_move_preserve_path` {#after_processing_move_preserve_path}
 
 Si `true`, le chemin complet de l&#39;objet source est ajouté à `after_processing_move_prefix` lors du déplacement d&#39;un fichier traité avec succès, de sorte que la structure des répertoires source sous le bucket soit préservée à la destination. Si `false`, seul le nom du fichier est utilisé et la structure des répertoires source est aplatie.
 
@@ -198,9 +183,7 @@ Valeurs possibles :
 
 Valeur par défaut : `false`.
 
-<div id="after_processing_move_secret_access_key">
-  ### `after_processing_move_secret_access_key`
-</div>
+### `after_processing_move_secret_access_key` {#after_processing_move_secret_access_key}
 
 Clé d&#39;accès secrète du bucket S3 vers lequel déplacer les fichiers correctement traités, si la destination est un autre bucket S3.
 
@@ -210,9 +193,7 @@ Valeurs possibles :
 
 Valeur par défaut : chaîne vide.
 
-<div id="after_processing_move_uri">
-  ### `after_processing_move_uri`
-</div>
+### `after_processing_move_uri` {#after_processing_move_uri}
 
 URI du bucket S3 vers lequel déplacer les fichiers traités avec succès, si la destination est un autre bucket S3.
 
@@ -222,9 +203,7 @@ Valeurs possibles :
 
 Valeur par défaut : chaîne vide.
 
-<div id="after_processing_tag_key">
-  ### `after_processing_tag_key`
-</div>
+### `after_processing_tag_key` {#after_processing_tag_key}
 
 Clé du tag à appliquer aux fichiers traités avec succès, si `after_processing='tag'`.
 
@@ -234,9 +213,7 @@ Valeurs possibles :
 
 Valeur par défaut : chaîne vide.
 
-<div id="after_processing_tag_value">
-  ### `after_processing_tag_value`
-</div>
+### `after_processing_tag_value` {#after_processing_tag_value}
 
 Valeur du tag à appliquer aux fichiers traités avec succès si `after_processing='tag'`.
 
@@ -246,9 +223,7 @@ Valeurs possibles :
 
 Valeur par défaut : chaîne vide.
 
-<div id="keeper_path">
-  ### `keeper_path`
-</div>
+### `keeper_path` {#keeper_path}
 
 Chemin vers les métadonnées de la file d&#39;attente dans ZooKeeper. S&#39;il n&#39;est pas spécifié explicitement, ClickHouse construit le chemin à partir de `s3queue_default_zookeeper_path`, de l&#39;UUID de la base de données et de l&#39;UUID de la table. Les valeurs absolues (commençant par `/`) sont utilisées telles quelles, tandis que les valeurs relatives sont ajoutées au préfixe configuré. Les macros telles que `{database}` ou `{uuid}` sont développées avant que le moteur ne se connecte à ZooKeeper.
 
@@ -260,9 +235,7 @@ Valeurs possibles :
 
 Valeur par défaut : `/`.
 
-<div id="loading_retries">
-  ### `loading_retries`
-</div>
+### `loading_retries` {#loading_retries}
 
 Réessaie le chargement du fichier jusqu’au nombre de tentatives spécifié.
 Valeurs possibles :
@@ -271,17 +244,13 @@ Valeurs possibles :
 
 Valeur par défaut : `10`.
 
-<div id="processing_threads_num">
-  ### `processing_threads_num`
-</div>
+### `processing_threads_num` {#processing_threads_num}
 
-Nombre de threads utilisés pour le traitement. S’applique uniquement au mode `Unordered`.
+Nombre de threads utilisés pour le traitement. S’applique uniquement aux modes `Unordered` ou `Exclusive`.
 
-Valeur par défaut : nombre de CPU ou 16.
+Valeur par défaut : nombre de CPU ou 16.
 
-<div id="parallel_inserts">
-  ### `parallel_inserts`
-</div>
+### `parallel_inserts` {#parallel_inserts}
 
 Par défaut, `processing_threads_num` produit un seul `INSERT` : il ne fera donc que télécharger les fichiers et les analyser sur plusieurs threads.
 Mais cela limite le parallélisme. Pour un meilleur débit, utilisez `parallel_inserts=true` ; cela permettra d’insérer les données en parallèle (gardez toutefois à l’esprit que cela générera un plus grand nombre de data parts pour la famille MergeTree).
@@ -292,17 +261,13 @@ Mais cela limite le parallélisme. Pour un meilleur débit, utilisez `parallel_i
 
 Valeur par défaut : `false`.
 
-<div id="enable_logging_to_queue_log">
-  ### `enable_logging_to_queue_log`
-</div>
+### `enable_logging_to_queue_log` {#enable_logging_to_queue_log}
 
 Active la journalisation vers `system.s3queue_log`.
 
 Valeur par défaut : `1`.
 
-<div id="polling_min_timeout_ms">
-  ### `polling_min_timeout_ms`
-</div>
+### `polling_min_timeout_ms` {#polling_min_timeout_ms}
 
 Spécifie le délai minimal, en millisecondes, pendant lequel ClickHouse attend avant d&#39;effectuer la tentative d’interrogation suivante.
 
@@ -312,9 +277,7 @@ Valeurs possibles :
 
 Valeur par défaut : `1000`.
 
-<div id="polling_max_timeout_ms">
-  ### `polling_max_timeout_ms`
-</div>
+### `polling_max_timeout_ms` {#polling_max_timeout_ms}
 
 Définit le délai maximal, en millisecondes, pendant lequel ClickHouse attend avant de lancer la tentative d’interrogation suivante.
 
@@ -324,9 +287,7 @@ Valeurs possibles :
 
 Valeur par défaut : `600000`.
 
-<div id="polling_backoff_ms">
-  ### `polling_backoff_ms`
-</div>
+### `polling_backoff_ms` {#polling_backoff_ms}
 
 Détermine le délai d&#39;attente supplémentaire ajouté à l&#39;intervalle d&#39;interrogation précédent lorsqu&#39;aucun nouveau fichier n&#39;est détecté. La prochaine interrogation a lieu après la somme de l&#39;intervalle précédent et de cette valeur de temporisation, ou après l&#39;intervalle maximal si celui-ci est inférieur.
 
@@ -336,24 +297,20 @@ Valeurs possibles :
 
 Valeur par défaut : `30000`.
 
-<div id="tracked_files_limit">
-  ### `tracked_files_limit`
-</div>
+### `tracked_files_limit` {#tracked_files_limit}
 
-Permet de limiter le nombre de nœuds Zookeeper lorsque le mode &#39;unordered&#39; est utilisé ; n’a aucun effet en mode &#39;ordered&#39;.
+Permet de limiter le nombre de nœuds Zookeeper lorsque le mode &#39;unordered&#39; est utilisé ; n’a aucun effet en mode &#39;ordered&#39; ou &#39;exclusive&#39;.
 Si la limite est atteinte, les fichiers traités les plus anciens seront supprimés du nœud ZooKeeper, puis traités à nouveau.
 
-Valeurs possibles :
+Valeurs possibles :
 
 * Entier positif.
 
-Valeur par défaut : `1000`.
+Valeur par défaut : `1000`.
 
-<div id="tracked_file_ttl_sec">
-  ### `tracked_file_ttl_sec`
-</div>
+### `tracked_file_ttl_sec` {#tracked_file_ttl_sec}
 
-Nombre maximal de secondes pendant lesquelles les fichiers traités sont conservés dans le nœud ZooKeeper (conservation indéfinie par défaut) en mode &#39;unordered&#39; ; sans effet en mode &#39;ordered&#39;.
+Nombre maximal de secondes pendant lesquelles les fichiers traités sont conservés dans le nœud ZooKeeper (conservation indéfinie par défaut) en mode &#39;unordered&#39; ; sans effet en mode &#39;ordered&#39; ou &#39;exclusive&#39;.
 Après le nombre de secondes spécifié, le fichier sera réimporté.
 
 Valeurs possibles :
@@ -362,53 +319,39 @@ Valeurs possibles :
 
 Valeur par défaut : `0`.
 
-<div id="cleanup_interval_min_ms">
-  ### `cleanup_interval_min_ms`
-</div>
+### `cleanup_interval_min_ms` {#cleanup_interval_min_ms}
 
 Pour le mode « Ordered ». Définit une limite minimale pour l’intervalle de nouvelle planification d’une tâche en arrière-plan, chargée de gérer le TTL des fichiers suivis et l’ensemble maximal de fichiers suivis.
 
 Valeur par défaut : `60000`.
 
-<div id="cleanup_interval_max_ms">
-  ### `cleanup_interval_max_ms`
-</div>
+### `cleanup_interval_max_ms` {#cleanup_interval_max_ms}
 
 Pour le mode &#39;Ordered&#39;. Définit la limite maximale de l’intervalle de replanification d’une tâche d’arrière-plan chargée de gérer le TTL des fichiers suivis et la taille maximale de l’ensemble des fichiers suivis.
 
 Valeur par défaut : `60000`.
 
-<div id="buckets">
-  ### `buckets`
-</div>
+### `buckets` {#buckets}
 
 Pour le mode &#39;Ordered&#39;. Disponible à partir de la version `24.6`. S&#39;il existe plusieurs répliques de la table S3Queue, utilisant toutes le même répertoire de métadonnées dans Keeper, la valeur de `buckets` doit être au moins égale au nombre de répliques. Si le paramètre `processing_threads` est également utilisé, il est pertinent d&#39;augmenter davantage la valeur du paramètre `buckets`, car elle détermine le parallélisme réel du traitement de `S3Queue`.
 
-<div id="use_persistent_processing_nodes">
-  ### `use_persistent_processing_nodes`
-</div>
+### `use_persistent_processing_nodes` {#use_persistent_processing_nodes}
 
 Les nœuds de traitement persistants éliminent le risque de doublons lorsqu&#39;une session Keeper expire une fois le traitement commencé, mais avant que S3Queue ne valide le fichier traité. Les versions antérieures utilisaient des nœuds de traitement éphémères, susceptibles de produire des doublons dans ce cas.
 
 Ce paramètre est obsolète et sa valeur est ignorée : les nœuds de traitement persistants sont toujours utilisés. Une table créée avec `use_persistent_processing_nodes = 0` les utilise malgré tout, et l&#39;introspection des paramètres, y compris `SHOW CREATE TABLE`, indique `1` quelle que soit la valeur fournie.
 
-<div id="persistent_processing_node_ttl_seconds">
-  ### `persistent_processing_node_ttl_seconds`
-</div>
+### `persistent_processing_node_ttl_seconds` {#persistent_processing_node_ttl_seconds}
 
 En cas d’arrêt brutal du serveur, il est possible que certains nœuds de traitement n’aient pas été supprimés. Ce paramètre définit la durée pendant laquelle ces nœuds de traitement peuvent être supprimés en toute sécurité. Le même TTL est également utilisé pour le verrou du bucket en mode `Ordered`, qui peut être conservé plus longtemps qu’un seul nœud de traitement ; la valeur doit donc aussi en tenir compte.
 
 Valeur par défaut : `21600` (6 heures).
 
-<div id="s3-settings">
-  ## Paramètres relatifs à S3
-</div>
+## Paramètres relatifs à S3 {#s3-settings}
 
 Le moteur prend en charge tous les paramètres relatifs à S3. Pour plus d’informations sur les paramètres S3, consultez [cette page](/fr/reference/engines/table-engines/integrations/s3).
 
-<div id="s3-role-based-access">
-  ## Accès à S3 basé sur les rôles
-</div>
+## Accès à S3 basé sur les rôles {#s3-role-based-access}
 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
@@ -431,9 +374,7 @@ SETTINGS
     ...
 ```
 
-<div id="ordered-mode">
-  ## Mode ordered de S3Queue
-</div>
+## Mode ordered de S3Queue {#ordered-mode}
 
 Le mode de traitement `S3Queue` permet de stocker moins de métadonnées dans ZooKeeper, mais il présente une limite : les fichiers ajoutés ultérieurement doivent avoir des noms alphanumériquement supérieurs.
 
@@ -445,17 +386,13 @@ En outre, le mode `ordered` introduit aussi un autre paramètre appelé `(s3queu
 L’utilisation du paramètre `(s3queue_)processing_threads_num` n’est pas recommandée avant la version `24.6`.
 Le paramètre `(s3queue_)buckets` est disponible à partir de la version `24.6`.
 
-<div id="select">
-  ## SELECT à partir du moteur de table S3Queue
-</div>
+## SELECT à partir du moteur de table S3Queue {#select}
 
 Les requêtes SELECT sont interdites par défaut sur les tables S3Queue. Cela correspond au modèle classique de file d’attente, dans lequel les données sont lues une seule fois puis retirées de la file d’attente. SELECT est interdit afin d’éviter toute perte accidentelle de données.
 Cela peut toutefois s’avérer utile dans certains cas. Pour cela, vous devez définir le paramètre `stream_like_engine_allow_direct_select` sur `True`.
-Le moteur S3Queue dispose d’un paramètre spécial pour les requêtes SELECT : `commit_on_select`. Définissez-le sur `False` pour conserver les données dans la file d’attente après leur lecture, ou sur `True` pour les supprimer.
+Le moteur S3Queue dispose d’un paramètre spécial pour les requêtes SELECT : `commit_on_select`. Définissez-le sur `False` pour conserver les données dans la file d’attente après leur lecture, ou sur `True` pour les supprimer. (Remarque : ce paramètre n’a pas de sens en mode `exclusive` et est ignoré ; le mode `exclusive` se comporte toujours comme si `commit_on_select` valait `True`.)
 
-<div id="description">
-  ## Description
-</div>
+## Description {#description}
 
 `SELECT` n’est pas particulièrement utile pour l’importation en continu (sauf pour le débogage), car chaque fichier ne peut être importé qu’une seule fois. Il est plus pratique de créer des flux en temps réel à l’aide de [vues matérialisées](/fr/reference/statements/create/view). Pour ce faire :
 
@@ -482,9 +419,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
   SELECT * FROM stats ORDER BY name;
 ```
 
-<div id="virtual-columns">
-  ## Colonnes virtuelles
-</div>
+## Colonnes virtuelles {#virtual-columns}
 
 * `_path` — Chemin du fichier.
 * `_file` — Nom du fichier.
@@ -493,9 +428,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 Pour en savoir plus sur les colonnes virtuelles, consultez [cette page](/fr/reference/engines/table-engines/index#table_engines-virtual_columns).
 
-<div id="wildcards-in-path">
-  ## Caractères génériques dans le chemin
-</div>
+## Caractères génériques dans le chemin {#wildcards-in-path}
 
 L&#39;argument `path` peut spécifier plusieurs fichiers à l&#39;aide de caractères génériques de style Bash. Pour être traité, un fichier doit exister et correspondre à l&#39;intégralité du motif de chemin. La liste des fichiers est établie lors du `SELECT` (et non au moment du `CREATE`).
 
@@ -507,9 +440,7 @@ L&#39;argument `path` peut spécifier plusieurs fichiers à l&#39;aide de caract
 
 Les constructions avec `{}` sont similaires à la fonction de table [remote](/fr/reference/functions/table-functions/remote).
 
-<div id="limitations">
-  ## Limitations
-</div>
+## Limitations {#limitations}
 
 1. Des lignes dupliquées peuvent apparaître dans les cas suivants :
 
@@ -523,9 +454,7 @@ Les constructions avec `{}` sont similaires à la fonction de table [remote](/fr
 
 3. Perte de lignes en cas de coupure d’alimentation au niveau du périphérique du nœud ClickHouse. Un fichier consommé est enregistré comme traité dans Keeper (et son objet source est supprimé lorsque `after_processing = 'delete'`) dès que l’insertion se termine, mais les lignes insérées ne sont durables qu’une fois la part cible synchronisée via fsync, ce qui ne se produit pas de manière synchrone par défaut (`fsync_after_insert = 0`). Keeper est synchronisé de force et s’exécute généralement sur un nœud distinct, il survit donc à la coupure d’alimentation de ce nœud. Si le nœud perd son alimentation après que le fichier a été validé comme traité, mais avant que la part cible soit synchronisée via fsync, le fichier n’est pas relu au redémarrage et ses lignes sont perdues (irrécupérables avec `after_processing = 'delete'`). Un simple arrêt forcé du processus ne révèle pas ce problème, car le cache de pages y survit. Pour le chemin de consommation recommandé via une vue matérialisée (le fichier n’est validé qu’après la fin de l’ensemble du pipeline d’insertion), définir `fsync_after_insert = 1` (et `fsync_part_directory = 1`) sur la table `MergeTree` cible rend la part insérée durable avant que le fichier ne soit validé comme traité, ce qui réduit considérablement cette fenêtre. Cela ne s’applique pas à `INSERT ... SELECT` direct avec `commit_on_select = 1`, où le fichier est validé à la fin de la lecture avant que le sink de destination ne finalise sa dernière part.
 
-<div id="introspection">
-  ## Introspection
-</div>
+## Introspection {#introspection}
 
 Pour l’introspection, utilisez les tables sans état `system.s3queue_metadata_cache` et `system.s3_queue_metadata`, ainsi que la table persistante `system.s3queue_log`.
 

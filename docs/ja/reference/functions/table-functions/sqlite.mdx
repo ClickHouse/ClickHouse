@@ -10,30 +10,22 @@ doc_type: 'reference'
 
 [SQLite](/ja/reference/engines/database-engines/sqlite) データベースに格納されているデータに対してクエリを実行できます。
 
-<div id="syntax">
-  ## 構文
-</div>
+## 構文 {#syntax}
 
 ```sql
 sqlite('db_path', 'table_name')
 ```
 
-<div id="arguments">
-  ## 引数
-</div>
+## 引数 {#arguments}
 
 * `db_path` — SQLite データベースを含むファイルへのパス。[String](/ja/reference/data-types/string)。
 * `table_name` — SQLite データベース内のテーブル名、または SQLite にそのまま渡されるクエリ ([テーブル名の代わりにクエリを渡す](#passing-a-query) を参照) 。[String](/ja/reference/data-types/string)。
 
-<div id="returned-value">
-  ## 戻り値
-</div>
+## 戻り値 {#returned-value}
 
 * 元の`SQLite`テーブルと同じカラムを持つテーブルオブジェクト。
 
-<div id="passing-a-query">
-  ## テーブル名の代わりにクエリを渡す
-</div>
+## テーブル名の代わりにクエリを渡す {#passing-a-query}
 
 第2引数には、テーブル名の代わりに、そのまま SQLite に渡される `SELECT` クエリを指定できます。生成されるテーブルの構造は、クエリ結果から推論されます。クエリは、サブクエリとして記述することも、`query` 関数で囲むこともできます。
 
@@ -47,12 +39,10 @@ SELECT * FROM sqlite('sqlite.db', query('SELECT col1, col2 FROM table1 WHERE col
 <Note>
   サブクエリ形式 `(SELECT ...)` は ClickHouse で解析され、SQLite に送信される前に再シリアル化されます。そのため、有効な ClickHouse SQL である必要があります。ClickHouse が解析しない SQLite 固有の構文を渡すには、`query('...')` 形式を使用してください。この形式では、テキストがそのまま SQLite に送信されます。
 
-  また、渡されたクエリには、外側の ClickHouse クエリの `WHERE`、`LIMIT`、aggregation などは **プッシュダウンされず**、クエリ結果全体を取得した後に ClickHouse 側で適用されます。SQLite から読み取るデータを制限するには、渡すクエリ内に filter を記述してください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、プッシュダウンできない外側の filter はローカルで適用されず、代わりに例外として拒否されます。
+  また、渡されたクエリには、外側の ClickHouse クエリの `WHERE`、`LIMIT`、aggregation などは **プッシュダウンされず**、クエリ結果全体を取得した後に ClickHouse 側で適用されます。SQLite から読み取るデータを制限するには、渡すクエリ内に filter を記述してください。[`external_table_strict_query = 1`](/ja/reference/settings/session-settings/external-table#external_table_strict_query) を指定すると、テーブル関数のカラムに対する外側の filter は渡されたクエリ内にプッシュできないため、ローカルで適用されず、代わりに例外として拒否されます。この check は、トップレベルの `WHERE` predicate と、トップレベルの `AND` の各項を対象とします。このテーブルのカラムに対する `PREWHERE` はこの設定の対象ではありません。このテーブルエンジンは `PREWHERE` をサポートしておらず、そのようなクエリは設定に関わらず `ILLEGAL_PREWHERE` で拒否されます。アナライザ (デフォルト) では、この check は filter がプッシュダウンされ得る場所でのみ実行されます。すなわち、このテーブルがクエリ内の唯一のテーブルである場合、`INNER JOIN` のいずれかの側にある場合、または OUTER JOIN の保持側 (`LEFT JOIN` の左側、`RIGHT JOIN` の右側) にある場合です。`LEFT`/`RIGHT JOIN` の非保持側や `FULL JOIN` のいずれの側でも何もプッシュダウンされず、check も行われないため、このテーブルのカラムに対する filter は厳格モードであっても join 後にローカルで適用されます。check が実行される箇所では、外側のクエリで join されている他のテーブルを参照する predicate はプッシュダウンされず、check の対象から除外されます。これは、その predicate が join 側のみを参照する場合でも、`AND` 以外の単一の expression (たとえば `OR`) 内でこのテーブルと混在している場合でも同様です。そのような predicate は通常の ClickHouse の評価タイミング (join 後の `WHERE`、join 前の `PREWHERE`) を保持し、拒否されません。旧アナライザ (`enable_analyzer = 0`) では、このスコープの扱いは適用されません。このテーブルが join ツリーの最初のテーブルである場合、join 側に対する predicate を含めて外側の filter 全体が check され、join された右側のテーブルは check されません。
 </Note>
 
-<div id="example">
-  ## 例
-</div>
+## 例 {#example}
 
 ```sql title="Query"
 SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
@@ -66,9 +56,7 @@ SELECT * FROM sqlite('sqlite.db', 'table1') ORDER BY col2;
 └───────┴──────┘
 ```
 
-<div id="related">
-  ## 関連
-</div>
+## 関連 {#related}
 
 * [SQLite](/ja/reference/engines/table-engines/integrations/sqlite) テーブルエンジン
 * [SQLite database engine](/ja/reference/engines/database-engines/sqlite) — データ型サポートのセクション

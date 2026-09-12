@@ -6,9 +6,7 @@ title: '서드파티 개발자가 제공하는 시각적 인터페이스'
 doc_type: 'reference'
 ---
 
-<div id="open-source">
-  ## 오픈 소스
-</div>
+## 오픈 소스 {#open-source}
 
 <Accordion title="agx">
   [agx](https://github.com/agnosticeng/agx)는 Tauri와 SvelteKit으로 구축된 데스크톱 애플리케이션으로, ClickHouse의 임베디드 데이터베이스 엔진(chdb)을 사용해 데이터를 탐색하고 쿼리할 수 있는 현대적인 인터페이스를 제공합니다.
@@ -428,9 +426,38 @@ doc_type: 'reference'
   * 개발 환경에서 빠르게 설정할 수 있도록 Docker 기반 배포를 제공합니다.
 </Accordion>
 
-<div id="commercial">
-  ## 상용
-</div>
+<Accordion title="Beekeeper Studio">
+  [Beekeeper Studio](https://www.beekeeperstudio.io/)는 ClickHouse를 지원하는 무료 오픈소스 SQL Editor 겸 데이터베이스 관리 도구입니다.
+
+  주요 기능:
+
+  * 자동 완성과 멀티 탭 쿼리 실행을 지원하는 최신 SQL Editor
+  * 테이블, 뷰, 컬럼을 살펴볼 수 있는 스키마 브라우저
+  * 자주 사용하는 쿼리 저장 및 정리
+  * 크로스 플랫폼 데스크톱 앱(Windows, macOS, Linux) 지원 및 자체 호스팅/웹 에디션 제공
+
+  [Beekeeper Studio 및 ClickHouse 가이드](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
+</Accordion>
+
+## 상용 {#commercial}
+
+<Accordion title="ADQM Notebook">
+  [ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html)은 Arenadata가 ClickHouse를 기반으로 구축한 컬럼 지향 DBMS인 [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html) Enterprise 에디션에 포함된 노트북 형식의 SQL 워크스페이스입니다. 기본 제공되는 ClickHouse 웹 인터페이스를 다중 셀 노트북, 대화형 결과, 쿼리 계획 분석, 클러스터 전체 스키마 브라우저로 확장하며, ADQM 호스트의 HTTP 포트(`8123`)에서 `/play` 옆의 `/notebook` 경로를 통해, 또는 Chproxy를 통해 별도 설치 없이 사용할 수 있습니다.
+
+  기능:
+
+  * SQL 및 Markdown 셀, 셀당 최대 5개의 구문, 노트북 또는 셀 단위 메모리·시간·스레드 제한.
+  * 구문 강조 표시, 자동 완성, `{{variable}}` 치환, `Beautify SQL`을 갖춘 SQL Editor.
+  * 컬럼별 NULL 비율, 고유값 개수, 값 범위를 제공하는 정렬 및 검색 가능한 그리드 형태의 결과.
+  * 선, 영역, 막대 차트; CSV, TSV, JSON, JSONLines, Parquet으로 다운로드.
+  * 예상 및 실제 쿼리 계획, `EXPLAIN PIPELINE` 및 논리적 뷰, 권장 해결 방안이 포함된 분석 결과.
+  * 노드별 세부 내역과 함께 `system.query_log`에서 수집한 쿼리 통계; 최근 5회 실행 기록.
+  * 컬럼 통계와 미리 준비된 쿼리를 제공하는 로컬 호스트 또는 전체 클러스터용 데이터베이스 패널.
+  * 테이블, 뷰, 구체화된 뷰(materialized view), 딕셔너리, 프로젝션의 의존성 그래프.
+  * `KILL` 버튼이 있는 실행 중인 쿼리 실시간 보기.
+  * 클러스터의 단일 진입점으로서 Chproxy를 통한 접근, 모든 호스트에 쿼리 부하 분산.
+  * 자동 저장, JSON 내보내기 및 가져오기, ClickHouse 서버에 노트북 저장, 링크를 통한 공유.
+</Accordion>
 
 <Accordion title="ProbeDeck">
   [ProbeDeck](https://probedeck.app)은 ClickHouse를 모니터링하고 쿼리하는 iOS 및 iPadOS 클라이언트입니다.
@@ -491,15 +518,14 @@ doc_type: 'reference'
 </Accordion>
 
 <Accordion title="Looker">
-  [Looker](https://looker.com)는 ClickHouse를 포함한 50개 이상의 데이터베이스 방언을 지원하는 데이터 플랫폼 및 비즈니스 인텔리전스 도구입니다. Looker는 SaaS 플랫폼 및 자체 호스팅 방식으로 제공됩니다. 사용자는 브라우저를 통해 Looker를 사용하여 데이터를 탐색하고, 시각화와 대시보드를 구축하고, 보고서 일정을 설정하며, 동료와 인사이트를 공유할 수 있습니다. Looker는 이러한 기능을 다른 애플리케이션에 내장할 수 있는 풍부한 도구 세트와 다른 애플리케이션과 데이터를 통합할 수 있는 API를 제공합니다.
+  [Looker](https://looker.com)는 ClickHouse를 포함한 50개 이상의 데이터베이스 방언을 지원하는 데이터 플랫폼이자 비즈니스 인텔리전스 도구입니다. Looker는 SaaS 플랫폼과 자체 호스팅 형태로 제공됩니다. 사용자는 브라우저를 통해 Looker를 사용하여 데이터를 탐색하고, 시각화와 대시보드를 구축하며, 보고서 일정을 예약하고, 동료와 인사이트를 공유할 수 있습니다. Looker는 이러한 기능을 다른 애플리케이션에 임베드할 수 있는 풍부한 도구 모음과, 데이터를 다른 애플리케이션과 통합할 수 있는 API를 제공합니다.
 
   기능:
 
-  * 보고서 작성자와 최종 사용자를 지원하는 선별된
-    [데이터 모델링](https://looker.com/platform/data-modeling)을 지원하는 언어인 LookML을 사용한 쉽고 민첩한 개발.
+  * 보고서 작성자와 최종 사용자를 지원하기 위해 정제된 [Data Modeling](https://looker.com/platform/data-modeling)을 지원하는 언어인 LookML을 사용한 쉽고 민첩한 개발.
   * Looker의 [Data Actions](https://looker.com/platform/actions)를 통한 강력한 워크플로 통합.
 
-  [Looker에서 ClickHouse를 구성하는 방법.](https://docs.looker.com/setup-and-management/database-config/clickhouse)
+  [Looker에서 ClickHouse를 구성하는 방법](https://docs.looker.com/setup-and-management/database-config/clickhouse)
 </Accordion>
 
 <Accordion title="SeekTable">
@@ -570,4 +596,19 @@ doc_type: 'reference'
   * 결과 테이블에서 인라인 데이터 편집과 배치 저장을 지원하며, ClickHouse의 Native 형식을 사용한 CSV/JSON/SQL 내보내기와 가져오기도 지원합니다.
   * 연결 옵션: HTTP/HTTPS, 방화벽 뒤의 프라이빗 클러스터를 위한 SSH 터널, 운영 환경에서 안전하게 탐색할 수 있도록 선택적인 읽기 전용 모드 제공.
   * ClickHouse Cloud와 자체 호스팅 환경 모두에서 사용할 수 있습니다.
+</Accordion>
+
+<Accordion title="ADQM Control">
+  [ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html)(Arenadata QuickMarts Control)은 Arenadata가 ClickHouse를 기반으로 구축한 컬럼 지향 DBMS인 [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html)으로 배포된 ClickHouse 클러스터를 위한 관측성 플랫폼입니다. Prometheus에서 수집한 호스트 메트릭과 클러스터에서 수집한 호스트, 테이블, 쿼리 데이터를 결합하여, 하나 또는 여러 ADQM 클러스터에 걸쳐 테이블이 어떻게 증가하는지, 쿼리가 어떻게 동작하는지, 어떤 호스트에 부하가 걸리는지를 보여줍니다. ADQM Control은 [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm)를 통해 별도의 클러스터로 배포되며, 수집된 데이터를 PostgreSQL에 저장합니다.
+
+  기능:
+
+  * 선택한 ADQM 클러스터의 호스트 상태 히트맵.
+  * 관련 알림을 시간 기준으로 인시던트로 그룹화하며, 민감도를 조정할 수 있습니다.
+  * 시간 경과에 따른 테이블 크기, 행 수, 요청 수와 호스트 간 편향 및 불균형 메트릭.
+  * 컬럼별 압축된 크기와 압축되지 않은 크기, 압축 절감량, 코덱을 그래프와 함께 제공.
+  * 상태, 예외 코드, 소요 시간, 메모리, 읽고 쓴 행 수와 바이트 수를 포함한 전체 쿼리 이력.
+  * 텍스트, 테이블, 사용자, 호스트, 소요 시간, 상태, 예외 코드 프리셋별 쿼리 필터.
+  * 소요 시간, 사용자, 종류별 쿼리 그래프와 이상 탐지 기능을 갖춘 호스트별 부하 그래프.
+  * 문제를 설명하고 해결 방법을 권장하는 호스트 리소스 임계값 알림.
 </Accordion>

@@ -30,9 +30,7 @@ doc_type: 'reference'
 
 {/* */}
 
-<div id="detach-partitionpart">
-  ## DETACH PARTITION|PART
-</div>
+## DETACH PARTITION|PART {#detach-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DETACH PARTITION|PART partition_expr
@@ -53,9 +51,7 @@ ALTER TABLE mt DETACH PART 'all_2_2_0';
 
 هذا الاستعلام مُكرَّر — إذ ينقل البيانات إلى الدليل `detached` على جميع النسخ المتماثلة. لاحظ أنه لا يمكنك تنفيذ هذا الاستعلام إلا على نسخة متماثلة قائدة. لمعرفة ما إذا كانت النسخة المتماثلة قائدة، نفِّذ استعلام `SELECT` على جدول [system.replicas](/ar/reference/system-tables/replicas). وبدلًا من ذلك، من الأسهل تنفيذ استعلام `DETACH` على جميع النسخ المتماثلة — فجميع النسخ المتماثلة ستُطلق استثناءً، باستثناء النسخ المتماثلة القائدة (إذ يُسمح بوجود عدة قادة).
 
-<div id="drop-partitionpart">
-  ## DROP PARTITION|PART
-</div>
+## DROP PARTITION|PART {#drop-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
@@ -74,9 +70,7 @@ ALTER TABLE mt DROP PARTITION '2020-11-21';
 ALTER TABLE mt DROP PART 'all_4_4_0';
 ```
 
-<div id="drop-detached-partitionpart">
-  ## DROP DETACHED PARTITION|PART
-</div>
+## DROP DETACHED PARTITION|PART {#drop-detached-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|partition_expr
@@ -85,9 +79,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] DROP DETACHED PARTITION|PART ALL|par
 يزيل الجزء المحدد أو جميع أجزاء القسم المحدد من `detached`.
 اقرأ المزيد عن كيفية تعيين تعبير القسم في قسم [كيفية تعيين تعبير القسم](#how-to-set-partition-expression).
 
-<div id="forget-partition">
-  ## FORGET PARTITION
-</div>
+## FORGET PARTITION {#forget-partition}
 
 ```sql
 ALTER TABLE table_name FORGET PARTITION partition_expr
@@ -103,9 +95,7 @@ ALTER TABLE table_name FORGET PARTITION partition_expr
 ALTER TABLE mt FORGET PARTITION '20201121';
 ```
 
-<div id="attach-partitionpart">
-  ## ATTACH PARTITION|PART
-</div>
+## ATTACH PARTITION|PART {#attach-partitionpart}
 
 ```sql
 ALTER TABLE table_name ATTACH PARTITION|PART partition_expr
@@ -128,9 +118,7 @@ ALTER TABLE visits ATTACH PART 201901_2_2_0;
 
 يمكنك وضع البيانات في دليل `detached` على إحدى النسخ المتماثلة واستخدام استعلام `ALTER ... ATTACH` لإضافتها إلى الجدول على جميع النسخ المتماثلة.
 
-<div id="attach-partition-from">
-  ## ATTACH PARTITION FROM
-</div>
+## ATTACH PARTITION FROM {#attach-partition-from}
 
 ```sql
 ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM table1
@@ -143,16 +131,15 @@ ALTER TABLE table2 [ON CLUSTER cluster] ATTACH PARTITION partition_expr FROM tab
 * لن تُحذف البيانات من `table1` ولا من `table2`.
 * قد يكون `table1` جدولًا مؤقتًا.
 
-لكي يُنفَّذ الاستعلام بنجاح، يجب استيفاء الشروط التالية:
+لكي يُنفَّذ الاستعلام بنجاح، يجب استيفاء الشروط التالية:
 
 * يجب أن يكون للجدولين البنية نفسها.
 * يجب أن يكون للجدولين مفتاح التقسيم نفسه، ومفتاح ORDER BY نفسه، والمفتاح الأساسي نفسه.
 * يجب أن تكون للجدولين سياسة التخزين نفسها.
-* يجب أن يتضمن جدول الوجهة جميع الفهارس والإسقاطات الموجودة في الجدول المصدر. إذا كان الإعداد `enforce_index_structure_match_on_partition_manipulation` مُمكّنًا في جدول الوجهة، فيجب أن تكون الفهارس والإسقاطات متطابقة. وإلا، فيمكن أن يشتمل جدول الوجهة على جميع فهارس الجدول المصدر وإسقاطاته، بالإضافة إلى فهارس وإسقاطات أخرى.
+* إذا كان الجزء المصدر يستخدم دقة فهرسة غير تكيفية، فيجب أن يكون للجدولين القيمة نفسها لـ `index_granularity`: إذ لا يخزّن هذا الجزء عدد الصفوف لكل علامة، لذا تُستخدم قيمة جدول الوجهة لتفسير علاماته.
+* يجب أن يتضمن جدول الوجهة جميع الفهارس والإسقاطات الموجودة في الجدول المصدر. إذا كان الإعداد `enforce_index_structure_match_on_partition_manipulation` مُمكّنًا في جدول الوجهة، فيجب أن تكون الفهارس والإسقاطات متطابقة. وإلا، فيمكن أن يشتمل جدول الوجهة على مجموعة فائقة من فهارس الجدول المصدر وإسقاطاته.
 
-<div id="replace-partition">
-  ## REPLACE PARTITION
-</div>
+## REPLACE PARTITION {#replace-partition}
 
 ```sql
 ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM table1
@@ -165,16 +152,15 @@ ALTER TABLE table2 [ON CLUSTER cluster] REPLACE PARTITION partition_expr FROM ta
 * لن تُحذف البيانات من `table1`.
 * يمكن أن يكون `table1` جدولًا مؤقتًا.
 
-لكي يُنفَّذ الاستعلام بنجاح، يجب استيفاء الشروط التالية:
+لكي يُنفَّذ الاستعلام بنجاح، يجب استيفاء الشروط التالية:
 
 * يجب أن تكون للجدولين البنية نفسها.
 * يجب أن يكون للجدولين مفتاح التقسيم نفسه، ومفتاح ORDER BY نفسه، والمفتاح الأساسي نفسه.
 * يجب أن تكون للجدولين سياسة التخزين نفسها.
+* إذا كان الجزء المصدر ذا دقة فهرسة غير تكيفية، فيجب أن يكون للجدولين القيمة نفسها لـ `index_granularity`: إذ لا يخزّن مثل هذا الجزء أعداد الصفوف لكل علامة، لذا تُستخدم قيمة الجدول الوجهة لتفسير علاماته.
 * يجب أن يتضمن الجدول الوجهة جميع الفهارس والإسقاطات الموجودة في الجدول المصدر. إذا كان الإعداد `enforce_index_structure_match_on_partition_manipulation` مُمكّنًا في الجدول الوجهة، فيجب أن تكون الفهارس والإسقاطات متطابقة. وإلا، يمكن أن يشتمل الجدول الوجهة على مجموعة فائقة من فهارس الجدول المصدر وإسقاطاته.
 
-<div id="move-partition-to-table">
-  ## MOVE PARTITION TO TABLE
-</div>
+## MOVE PARTITION TO TABLE {#move-partition-to-table}
 
 ```sql
 ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO TABLE table_dest
@@ -188,11 +174,10 @@ ALTER TABLE table_source [ON CLUSTER cluster] MOVE PARTITION partition_expr TO T
 * يجب أن يكون للجدولين مفتاح التقسيم نفسه، ومفتاح ORDER BY نفسه، والمفتاح الأساسي نفسه.
 * يجب أن تكون للجدولين سياسة التخزين نفسها.
 * يجب أن ينتمي الجدولان إلى الفئة نفسها من المحرك (replicated أو non-replicated).
-* يجب أن يتضمن جدول الوجهة جميع الفهارس والإسقاطات الموجودة في جدول المصدر. إذا كان الإعداد `enforce_index_structure_match_on_partition_manipulation` مُمكّنًا في جدول الوجهة، فيجب أن تكون الفهارس والإسقاطات متطابقة تمامًا. وإلا، يمكن أن يضم جدول الوجهة مجموعةً أشمل من فهارس جدول المصدر وإسقاطاته.
+* إذا كان جزء المصدر يستخدم دقة فهرسة غير تكيفية، فيجب أن يكون للجدولين القيمة نفسها لـ `index_granularity`: إذ لا يخزّن مثل هذا الجزء أعداد الصفوف لكل علامة، لذا تُستخدم قيمة جدول الوجهة لتفسير علاماته.
+* يجب أن يتضمن جدول الوجهة جميع الفهارس والإسقاطات الموجودة في جدول المصدر. إذا كان الإعداد `enforce_index_structure_match_on_partition_manipulation` مُمكّنًا في جدول الوجهة، فيجب أن تكون الفهارس والإسقاطات متطابقة تمامًا. وإلا، يمكن أن يضم جدول الوجهة مجموعةً فائقة من فهارس جدول المصدر وإسقاطاته.
 
-<div id="clear-column-in-partition">
-  ## CLEAR COLUMN IN PARTITION
-</div>
+## CLEAR COLUMN IN PARTITION {#clear-column-in-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITION partition_expr
@@ -206,9 +191,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] CLEAR COLUMN column_name IN PARTITIO
 ALTER TABLE visits CLEAR COLUMN hour in PARTITION 201902
 ```
 
-<div id="freeze-partition">
-  ## FREEZE PARTITION
-</div>
+## FREEZE PARTITION {#freeze-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [WITH NAME 'backup_name']
@@ -252,9 +235,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] FREEZE [PARTITION partition_expr] [W
 
 لمزيد من المعلومات حول النسخ الاحتياطي واستعادة البيانات، راجع قسم [&quot;النسخ الاحتياطي والاستعادة في ClickHouse&quot;](/ar/concepts/features/backup-restore/overview).
 
-<div id="unfreeze-partition">
-  ## UNFREEZE PARTITION
-</div>
+## UNFREEZE PARTITION {#unfreeze-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WITH NAME 'backup_name'
@@ -262,9 +243,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] UNFREEZE [PARTITION 'part_expr'] WIT
 
 يزيل أقسام `frozen` ذات الاسم المحدد من القرص. وإذا حُذفت عبارة `PARTITION`، يزيل الاستعلام النسخة الاحتياطية لجميع الأقسام دفعةً واحدة.
 
-<div id="clear-index-in-partition">
-  ## CLEAR INDEX IN PARTITION
-</div>
+## CLEAR INDEX IN PARTITION {#clear-index-in-partition}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION partition_expr
@@ -272,9 +251,7 @@ ALTER TABLE table_name [ON CLUSTER cluster] CLEAR INDEX index_name IN PARTITION 
 
 يعمل الاستعلام بشكل مشابه لـ `CLEAR COLUMN`، لكنه يعيد تعيين فهرس بدلًا من بيانات عمود.
 
-<div id="fetch-partitionpart">
-  ## FETCH PARTITION|PART
-</div>
+## FETCH PARTITION|PART {#fetch-partitionpart}
 
 ```sql
 ALTER TABLE table_name [ON CLUSTER cluster] FETCH PARTITION|PART partition_expr FROM 'path-in-zookeeper'
@@ -312,9 +289,7 @@ ALTER TABLE users ATTACH PART 201901_2_2_0;
 
 على الرغم من أن الاستعلام يُسمى `ALTER TABLE`، فإنه لا يغيّر بنية الجدول ولا يغيّر فورًا البيانات المتاحة في الجدول.
 
-<div id="move-partitionpart">
-  ## MOVE PARTITION|PART
-</div>
+## MOVE PARTITION|PART {#move-partitionpart}
 
 ينقل الأقسام أو أجزاء البيانات إلى وحدة تخزين أو قرص آخر في الجداول التي تستخدم المحرك `MergeTree`. راجع [استخدام عدة أجهزة تخزين كتلية لتخزين البيانات](/ar/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes).
 
@@ -335,9 +310,7 @@ ALTER TABLE hits MOVE PART '20190301_14343_16206_438' TO VOLUME 'slow'
 ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ```
 
-<div id="update-in-partition">
-  ## UPDATE IN PARTITION
-</div>
+## UPDATE IN PARTITION {#update-in-partition}
 
 يُعدِّل البيانات في القسم المحدد التي تطابق تعبير التصفية المحدد. ويُنفَّذ كـ [mutation](/ar/reference/statements/alter/index#mutations).
 
@@ -347,9 +320,7 @@ ALTER TABLE hits MOVE PARTITION '2019-09-01' TO DISK 'fast_ssd'
 ALTER TABLE [db.]table [ON CLUSTER cluster] UPDATE column1 = expr1 [, ...] [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
-<div id="example">
-  ### مثال
-</div>
+### مثال {#example}
 
 ```sql
 -- using partition name
@@ -359,15 +330,11 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION 2 WHERE p = 2;
 ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ```
 
-<div id="see-also">
-  ### انظر أيضًا
-</div>
+### انظر أيضًا {#see-also}
 
 * [UPDATE](/ar/reference/statements/alter/partition#update-in-partition)
 
-<div id="delete-in-partition">
-  ## DELETE IN PARTITION
-</div>
+## DELETE IN PARTITION {#delete-in-partition}
 
 يحذف البيانات من القسم المحدد التي تطابق تعبير التصفية المحدد. ويُنفَّذ على هيئة [mutation](/ar/reference/statements/alter/index#mutations).
 
@@ -377,9 +344,7 @@ ALTER TABLE mt UPDATE x = x + 1 IN PARTITION ID '2' WHERE p = 2;
 ALTER TABLE [db.]table [ON CLUSTER cluster] DELETE [IN PARTITION partition_expr] WHERE filter_expr
 ```
 
-<div id="example">
-  ### مثال
-</div>
+### مثال {#example-1}
 
 ```sql
 -- using partition name
@@ -389,30 +354,22 @@ ALTER TABLE mt DELETE IN PARTITION 2 WHERE p = 2;
 ALTER TABLE mt DELETE IN PARTITION ID '2' WHERE p = 2;
 ```
 
-<div id="rewrite-parts">
-  ## REWRITE PARTS
-</div>
+## REWRITE PARTS {#rewrite-parts}
 
 سيُعيد هذا كتابة الأجزاء من الصفر باستخدام جميع الإعدادات الجديدة. وهذا منطقي، لأن الإعدادات على مستوى الجدول مثل `use_const_adaptive_granularity` لا تُطبَّق افتراضيًا إلا على الأجزاء التي أُعيدت كتابتها حديثًا.
 
-<div id="example">
-  ### مثال
-</div>
+### مثال {#example-rewrite-parts}
 
 ```sql
 ALTER TABLE mt REWRITE PARTS;
 ALTER TABLE mt REWRITE PARTS IN PARTITION 2;
 ```
 
-<div id="see-also-1">
-  ### راجع أيضًا
-</div>
+### راجع أيضًا {#see-also-1}
 
 * [DELETE](/ar/reference/statements/alter/delete)
 
-<div id="how-to-set-partition-expression">
-  ## كيفية تحديد تعبير القسم
-</div>
+## كيفية تحديد تعبير القسم {#how-to-set-partition-expression}
 
 يمكنك تحديد تعبير القسم في استعلامات `ALTER ... PARTITION` بطرق مختلفة:
 

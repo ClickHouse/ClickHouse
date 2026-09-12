@@ -10,20 +10,18 @@ keywords: ['バックアップ', '災害復旧', 'データ保護', '復元', 'C
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <Note>
-  外部バケットへの自動バックアップは、24 時間ごとに「フル」バックアップが実行されるよう設定されており、頻度は変更できません。
+  外部バケットへの自動バックアップは、フルかつ独立したバックアップです。サービスに設定されたバックアップ頻度と開始時刻 (デフォルトでは 24 時間ごと) に従って実行されます。また、ClickHouse は ClickHouse が管理するバケットにも 24 時間ごとに別途バックアップを作成します。この間隔は固定されています。
 </Note>
 
 <div id="AWS">
-  ## AWS
+  ## AWS {#AWS}
 </div>
 
 <div id="taking-backups-to-aws">
-  ### AWS へのバックアップの作成
+  ### AWS へのバックアップの作成 {#taking-backups-to-aws}
 </div>
 
-<div id="aws-steps">
-  #### 1. AWS で実施する手順
-</div>
+#### 1. AWS で実施する手順 {#aws-steps}
 
 <Note>
   これらの手順は、[&quot;Accessing S3 data securely&quot;](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely) で説明されているセキュアな S3 の設定と似ていますが、ロールの権限には追加の設定が必要です
@@ -106,9 +104,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   </Step>
 </Steps>
 
-<div id="cloud-steps">
-  #### 2. ClickHouse Cloud で行う手順
-</div>
+#### 2. ClickHouse Cloud で行う手順 {#cloud-steps}
 
 外部バケットを設定するには、ClickHouse Cloud コンソールで以下の手順に従ってください。
 
@@ -132,22 +128,20 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="デフォルトのスケジュールからバックアップスケジュールを変更する" id="changing-the-backup-schedule">
     以降、外部バックアップはデフォルトのスケジュールでお使いのバケットに対して実行されます。
     また、“Settings” ページからバックアップスケジュールを設定することもできます。
-    別のスケジュールを設定した場合は、そのカスタムスケジュールに従ってお使いの
-    バケットにバックアップが書き込まれ、デフォルトのスケジュール (24 時間ごとのバックアップ) は
-    ClickHouse Cloud が所有するバケット内のバックアップに使用されます。
+    別のスケジュールを設定した場合は、その任意のスケジュールと保持設定が、お使いのバケットに
+    書き込まれるバックアップに適用されます。ClickHouse Cloud が管理するバケット内のバックアップには、
+    デフォルトのスケジュール (24 時間ごとのバックアップ) とデフォルトの保持ポリシーが使用されます。
   </Step>
 
-  <Step title="お使いのバケットに保存されているバックアップを表示する" id="view-backups-stored-in-your-bucket">
+  <Step title="バケットに保存されているバックアップを表示する" id="view-backups-stored-in-your-bucket">
     バックアップページには、以下のように、お使いのバケット内のこれらのバックアップが
     別のテーブルに表示されます。
 
-    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="お使いのバケットに保存されているバックアップを表示する" size="lg" />
+    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="バケットに保存されているバックアップを表示する" size="lg" />
   </Step>
 </Steps>
 
-<div id="restoring-backups-from-aws">
-  ### AWS からバックアップを復元する
-</div>
+### AWS からバックアップを復元する {#restoring-backups-from-aws}
 
 以下の手順に従って、AWS からバックアップを復元します。
 
@@ -189,18 +183,16 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 </Steps>
 
 <div id="gcp">
-  ## GCP
+  ## GCP {#gcp}
 </div>
 
 <div id="taking-backups-to-gcp">
-  ### GCP へのバックアップの作成
+  ### GCP へのバックアップの作成 {#taking-backups-to-gcp}
 </div>
 
 GCP にバックアップを作成するには、以下の手順に従ってください。
 
-<div id="gcp-steps-to-follow">
-  #### GCP で実施する手順
-</div>
+#### GCP で実施する手順 {#gcp-steps-to-follow}
 
 <Steps>
   <Step title="GCP のストレージ バケットを作成する" id="create-a-gcp-storage-bucket">
@@ -229,9 +221,7 @@ GCP にバックアップを作成するには、以下の手順に従ってく�
   </Step>
 </Steps>
 
-<div id="gcp-cloud-steps">
-  #### ClickHouse Cloud での手順
-</div>
+#### ClickHouse Cloud での手順 {#gcp-cloud-steps}
 
 外部バケットを設定するには、ClickHouse Cloudコンソールで以下の手順を実行してください。
 
@@ -255,9 +245,9 @@ GCP にバックアップを作成するには、以下の手順に従ってく�
   <Step title="デフォルトのスケジュールからバックアップスケジュールを変更する" id="gcp-changing-the-backup-schedule">
     以降、外部バックアップはデフォルトのスケジュールに従ってお使いのバケットに保存されます。
     また、`Settings` ページからバックアップスケジュールを設定することもできます。
-    別のスケジュールを設定した場合、バケットにバックアップを書き込む際にはカスタムスケジュールが使用され、
-    デフォルトのスケジュール (24時間ごとのバックアップ) は
-    ClickHouse Cloud が管理するバケット内のバックアップに使用されます。
+    別の設定を行った場合、お使いのバケットに書き込まれるバックアップには
+    任意のスケジュールと保持設定が適用されます。ClickHouse Cloud が管理するバケット内のバックアップには、
+    デフォルトのスケジュール (24時間ごとのバックアップ) とデフォルトの保持ポリシーが使用されます。
   </Step>
 
   <Step title="バケットに保存されているバックアップを表示する" id="gcp-view-backups-stored-in-your-bucket">
@@ -267,9 +257,7 @@ GCP にバックアップを作成するには、以下の手順に従ってく�
   </Step>
 </Steps>
 
-<div id="gcp-restoring-backups-from-gcp">
-  ### GCP からバックアップを復元する
-</div>
+### GCP からバックアップを復元する {#gcp-restoring-backups-from-gcp}
 
 以下の手順に従って、GCP からバックアップを復元します。
 
@@ -306,18 +294,16 @@ GCP にバックアップを作成するには、以下の手順に従ってく�
 </Steps>
 
 <div id="azure">
-  ## Azure
+  ## Azure {#azure}
 </div>
 
 <div id="taking-backups-to-azure">
-  ### Azure へのバックアップの作成
+  ### Azure へのバックアップの作成 {#taking-backups-to-azure}
 </div>
 
 Azure にバックアップを作成するには、以下の手順に従ってください。
 
-<div id="steps-to-follow-in-azure">
-  #### Azure での手順
-</div>
+#### Azure での手順 {#steps-to-follow-in-azure}
 
 <Steps>
   <Step title="ストレージ アカウントを作成する" id="azure-create-a-storage-account">
@@ -331,9 +317,7 @@ Azure にバックアップを作成するには、以下の手順に従って�
   </Step>
 </Steps>
 
-<div id="azure-cloud-steps">
-  #### ClickHouse Cloud で実施する手順
-</div>
+#### ClickHouse Cloud で実施する手順 {#azure-cloud-steps}
 
 外部バケットを設定するには、ClickHouse Cloudコンソールで以下の手順を実行してください。
 
@@ -356,9 +340,10 @@ Azure にバックアップを作成するには、以下の手順に従って�
 
   <Step title="デフォルトのスケジュールからバックアップスケジュールを変更する" id="azure-changing-the-backup-schedule">
     これで、外部バックアップはデフォルトのスケジュールでお使いのバケットに保存されます。必要に応じて、
-    `Settings` ページからバックアップスケジュールを設定することもできます。別のスケジュールを設定すると、
-    バケットへのバックアップの書き込みにはそのカスタムスケジュールが使用され、デフォルトのスケジュール
-    (24 時間ごとのバックアップ) は ClickHouse Cloud が管理するバケット内のバックアップに使用されます。
+    `Settings` ページからバックアップスケジュールを設定することもできます。別のスケジュールを設定した場合、
+    お使いのバケットに書き込まれるバックアップには、その任意のスケジュールと保持設定が適用されます。
+    ClickHouse Cloud が管理するバケット内のバックアップには、デフォルトのスケジュール (24 時間ごとのバックアップ)
+    とデフォルトの保持ポリシーが使用されます。
   </Step>
 
   <Step title="バケットに保存されているバックアップを表示する" id="azure-view-backups-stored-in-your-bucket">
@@ -368,9 +353,7 @@ Azure にバックアップを作成するには、以下の手順に従って�
   </Step>
 </Steps>
 
-<div id="azure-restore-steps">
-  ### Azure からバックアップを復元する
-</div>
+### Azure からバックアップを復元する {#azure-restore-steps}
 
 Azure からバックアップを復元するには、以下の手順に従ってください。
 

@@ -21,6 +21,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
     [[ADD | DROP] HOST {LOCAL | NAME 'name' | REGEXP 'name_regexp' | IP 'address' | LIKE 'pattern'} [,...] | ANY | NONE]
     [IN access_storage_type]
     [DEFAULT ROLE role [,...] | ALL | ALL EXCEPT role [,...] ]
+    [DEFAULT DATABASE database | NONE]
     [GRANTEES {user | role | ANY | NONE} [,...] [EXCEPT {user | role} [,...]]]
     [DROP ALL PROFILES]
     [DROP ALL SETTINGS]
@@ -35,9 +36,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 
 `SET variable = value` 是 `MODIFY SETTING variable = value` 的别名：它会原地修改单个设置，同时保留其余设置。相比裸 `SETTINGS` 子句 (它会替换整个 settings 列表，并移除所有继承的 (父) profile) ，请优先使用它 (或 `MODIFY SETTING`) 。
 
-<div id="grantees-clause">
-  ## GRANTEES 子句
-</div>
+## GRANTEES 子句 {#grantees-clause}
 
 指定哪些用户或角色可以从该用户处接收[权限](/zh/reference/statements/grant#privileges)，前提是该用户也已通过 [GRANT OPTION](/zh/reference/statements/grant#granting-privilege-syntax) 获得所有必需的访问权限。`GRANTEES` 子句的选项包括：
 
@@ -48,9 +47,7 @@ ALTER USER [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 
 你可以使用 `EXCEPT` 表达式排除任意用户或角色。例如，`ALTER USER user1 GRANTEES ANY EXCEPT user2`。这表示，如果 `user1` 拥有一些通过 `GRANT OPTION` 授予的权限，它就能够将这些权限授予除 `user2` 之外的任何人。
 
-<div id="examples">
-  ## 示例
-</div>
+## 示例 {#examples}
 
 将已分配的角色设置为默认角色：
 
@@ -110,9 +107,19 @@ ALTER USER user1 IDENTIFIED WITH plaintext_password by '1', bcrypt_password by '
 ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 ```
 
-<div id="valid-until-clause">
-  ## VALID UNTIL 子句
-</div>
+更改用户的默认数据库：
+
+```sql
+ALTER USER user1 DEFAULT DATABASE database1
+```
+
+`DEFAULT DATABASE NONE` 会清除用户的默认数据库。若要使用名为 `NONE` 的数据库，请使用反引号括起其名称：
+
+```sql
+DEFAULT DATABASE `NONE`
+```
+
+## VALID UNTIL 子句 {#valid-until-clause}
 
 用于指定身份验证方法的到期日期，以及可选的到期时间。它接受字符串参数。建议日期时间使用 `YYYY-MM-DD [hh:mm:ss] [timezone]` 格式。默认情况下，该参数为 `'infinity'`。可接受的截止时间范围为 `1900-01-01 00:00:00 UTC` 至 `9999-12-31 09:59:59 UTC`——这是在所有时区中仍处于 9999 年内的最晚时刻，因此存储的时刻在呈现时永远不会被截断。过去的截止时间表示凭据已过期。早于 `1970-01-01 00:00:01 UTC` 的截止时间仅接受作为“已过期”标记：它们会被规范化为最早的已过期时刻，即 Unix 纪元后一秒 (`1970-01-01 00:00:01 UTC`) ，因此 `SHOW CREATE USER` 显示的是该时刻，而非你指定的截止时间。自该时刻起的截止时间会被精确存储。
 
@@ -131,9 +138,7 @@ ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 * `ALTER USER name1 VALID UNTIL '2025-01-01' IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — 用户级截止时间适用于这两种方法。
 * `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID UNTIL '2025-01-01'` — 截止时间仅适用于 `bcrypt_password` 方法；`plaintext_password` 永不过期。
 
-<div id="valid-for-clause">
-  ## VALID FOR 子句
-</div>
+## VALID FOR 子句 {#valid-for-clause}
 
 `VALID FOR` 子句是 `VALID UNTIL` 的便捷写法。它不接受绝对日期和时间，而是接受一个[时间间隔](/zh/reference/data-types/special-data-types/interval)；执行查询时，过期截止时间将按当前时间加上该时间间隔计算。结果以 `VALID UNTIL` 形式存储，因此 `SHOW CREATE USER` 始终显示解析后的绝对截止时间。其位置规则与 `VALID UNTIL` 相同：位于 `IDENTIFIED` 之前 (或未指定身份验证方法) 时，它是适用于所有方法的用户级截止时间；位于某个身份验证方法之后时，则仅适用于该方法。截止时间以秒为精度存储和强制执行，因此不接受亚秒级时间间隔 (`NANOSECOND`、`MICROSECOND`、`MILLISECOND`) ；可接受的最小单位为 `SECOND`。可以使用负时间间隔将凭据标记为已过期；如果计算得出的截止时间早于 `1970-01-01 00:00:01 UTC`，则会将其规范化为该最早的过期时刻，之后 `SHOW CREATE USER` 会显示这一时刻——并按照 [`VALID UNTIL`](#valid-until-clause) 中所述，以服务器或会话时区呈现。
 
@@ -144,9 +149,7 @@ ALTER USER user1 RESET AUTHENTICATION METHODS TO NEW
 * `ALTER USER name1 VALID FOR INTERVAL 30 DAY IDENTIFIED WITH plaintext_password BY 'password_1', bcrypt_password BY 'password_2'` — 用户级截止时间适用于两种方法。
 * `ALTER USER name1 IDENTIFIED WITH plaintext_password BY 'no_expiration', bcrypt_password BY 'expiration_set' VALID FOR INTERVAL 30 DAY` — 截止时间仅适用于 `bcrypt_password` 方法；`plaintext_password` 永不过期。
 
-<div id="grants-clause">
-  ## GRANTS 子句
-</div>
+## GRANTS 子句 {#grants-clause}
 
 用于限制采用特定身份验证方法进行身份验证的会话可拥有的访问权限。详见 [CREATE USER 的 GRANTS 子句](/zh/reference/statements/create/user#grants-clause)。
 

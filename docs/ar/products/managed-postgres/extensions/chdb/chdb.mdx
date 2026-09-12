@@ -1,0 +1,178 @@
+---
+sidebarTitle: 'chdb'
+description: 'وثائق مرجعية كاملة لامتداد chdb الخاص بـ Postgres'
+slug: '/cloud/managed-postgres/extensions/chdb/chdb'
+title: 'الوثائق المرجعية لامتداد chdb'
+doc_type: 'reference'
+keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
+---
+
+## ملخص {#synopsis}
+
+```psql
+# CREATE EXTENSION chdb;
+CREATE EXTENSION
+
+# SELECT * FROM chdb_query('version()') AS (version text);
+ version
+----------
+ 26.7.2.1
+(1 row)
+```
+
+## الوصف {#description}
+
+يُنفّذ امتداد `chdb` استعلامات [chDB] في عملية مساعدة.
+
+## الدوال {#functions}
+
+<div id="pgchdb_version">
+  ### `pgchdb_version`
+</div>
+
+```sql
+SELECT pgchdb_version();
+```
+
+تُرجِع [الإصدار الدلالي][semver] الحالي لمكتبة امتداد chdb. وفي حين يستخدم إصدار امتداد chdb الجزء `x.y` فقط من الإصدار، فإن المكتبة توفّر [الإصدار الدلالي][semver] الكامل `x.y.z`. وستكون هذه القيمة مطابقة للقيمة التي تُرجِعها دالة [`pg_get_loaded_modules()`] في Postgres 18 والإصدارات الأحدث:
+
+```sql
+SELECT version
+  FROM pg_get_loaded_modules()
+ WHERE module_name = 'chdb';
+```
+
+### `chdb_query` {#chdb_query}
+
+```sql
+SELECT * FROM chdb_query('SELECT version()') AS (version text);
+```
+
+ينفّذ استعلام [chDB] ويعيد صفوفه على هيئة relation. ينشئ كل استدعاء قاعدة بيانات chDB مؤقتة على القرص ويحذفها بمجرد اكتمال الاستعلام. ونتيجة لذلك، لا تبقى أي كائنات أنشأتها استدعاءات `chdb_query()` السابقة، مثل DDL، متاحة للاستدعاءات اللاحقة.
+
+قائمة تعريف الأعمدة (`AS (col type, ...)`) مطلوبة: إذ يتطلب PostgreSQL تعريف بنية الصف قبل جلب الصفوف، ويجب أن تطابق تلك البنية الأعمدة التي يعيدها الاستعلام. وتُحوَّل القيم من chDB إلى الأنواع المعلَنة.
+
+لا يمتلك أي Role صلاحية `EXECUTE` افتراضيًا؛ استخدم `GRANT` لمنحها لأحد الأدوار كي يتمكن من استخدام الدالة.
+
+```sql
+GRANT EXECUTE ON FUNCTION chdb_query(text) TO chdb_admin;
+```
+
+**مثال:**
+
+```sql
+SELECT * FROM chdb_query(
+    'SELECT number AS n, number * number FROM numbers(5) ORDER BY n'
+) AS (n int2, p int);
+```
+
+المُخرَج:
+
+```
+ n | p
+---+----
+ 0 |  0
+ 1 |  1
+ 2 |  4
+ 3 |  9
+ 4 | 16
+(5 rows)
+```
+
+## ترميز النصوص {#text-encoding}
+
+راجع [ترميز النصوص في توثيق `chdb_hook`][text encoding] لمعرفة كيفية ارتباط سلاسل البايتات في chDB بأنواع Postgres مثل `text` و`bytea` وغيرها.
+
+## الإعدادات {#settings}
+
+### `chdb.max_memory` {#chdbmax_memory}
+
+```sql
+SET chdb.max_memory = '1 GB';
+```
+
+الحد الأقصى لمقدار الذاكرة المتاح لاستعلام chDB، ويُستخدم لتعيين إعداد chDB
+[`max_memory_usage`]. يتطلب صلاحيات مستخدم فائق الصلاحيات. استخدم عددًا صحيحًا
+للتعبير عن عدد الميغابايت، أو إحدى وحدات الذاكرة التالية:
+
+* `B` (بايت)
+* `kB` (كيلوبايت)
+* `MB` (ميغابايت)
+* `GB` (غيغابايت)
+* `TB` (تيرابايت)
+
+القيمة الافتراضية هي `0`، وهي تعني عدم فرض أي حد على الذاكرة.
+
+### `chdb.max_threads` {#chdmax_threads}
+
+```sql
+SET chdb.max_threads = 4;
+```
+
+الحد الأقصى لعدد خيوط معالجة الاستعلامات في استعلام chDB، ويُستخدم لتعيين إعداد
+[`max_threads`] الخاص بـ chDB. يتطلب صلاحيات مستخدم فائق الصلاحيات. القيمة الافتراضية هي
+`0`، وهي تترك لـ chDB مهمة تحديد القيمة.
+
+نوصي بشدة بتعيين `chdb.max_threads` قبل تنفيذ استعلام ضخم
+لتفادي استهلاك chDB لوحدة المعالجة المركزية بالكامل على حساب
+PostgreSQL.
+
+### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
+
+```sql
+SET chdb.max_parsing_threads = 2;
+```
+
+الحد الأقصى لعدد الـ threads التي يمكن لـ chDB استخدامها لتحليل البيانات في صيغ الإدخال التي تدعم التحليل المتوازي، ويُستخدم لضبط إعداد [`max_parsing_threads`] في chDB. يتطلب صلاحيات مستخدم فائق الصلاحيات. قيمته الافتراضية هي `0`، وهي تتيح لـ chDB تحديد القيمة تلقائيًا.
+
+ننصح بضبط `chdb.max_parsing_threads` قبل تنفيذ استعلام يحلّل كمًا كبيرًا من البيانات، مثل تحميل البيانات من [دوال الجداول]، لمنع chDB من استهلاك كامل طاقة الـ CPU على حساب PostgreSQL.
+
+## سياسة الإصدارات {#versioning-policy}
+
+يلتزم امتداد chdb بـ [الإصدار الدلالي][semver] في إصداراته العامة.
+
+* يزداد رقم الإصدار الرئيسي عند تغييرات واجهة برمجة التطبيقات
+* يزداد رقم الإصدار الثانوي عند تغييرات SQL المتوافقة مع الإصدارات السابقة
+* يزداد رقم إصدار التصحيح عند التغييرات الثنائية فقط
+
+بعد التثبيت، يتتبع PostgreSQL صيغتين من الإصدار:
+
+* إصدار المكتبة (المُعرَّف بواسطة `PG_MODULE_MAGIC` في PostgreSQL 18 وما بعده)
+  ويتضمن الإصدار الدلالي الكامل، ويظهر في مخرجات الدالة `pgchdb_version()` أو
+  دالة Postgres [`pg_get_loaded_modules()`].
+* إصدار الامتداد (المُعرَّف في ملف التحكم) ولا يتضمن سوى الرقمين الرئيسي والثانوي،
+  ويظهر في جدول `pg_catalog.pg_extension`، وفي مخرجات الدالة
+  `pg_available_extension_versions()`، وفي `\dx chdb`.
+
+وهذا يعني عملياً أن أي إصدار يزيد رقم التصحيح، مثلاً من `v0.1.0` إلى `v0.1.1`،
+يفيد جميع قواعد البيانات التي حمّلت `v0.1` دون الحاجة إلى تنفيذ
+`ALTER EXTENSION` للاستفادة من الترقية.
+
+أما الإصدار الذي يزيد الرقم الثانوي أو الرئيسي، فيأتي مصحوباً ببرامج نصية
+لترقية SQL، ويتعيّن على جميع قواعد البيانات الحالية التي تحتوي على الامتداد تنفيذ
+`ALTER EXTENSION chdb UPDATE` للاستفادة من الترقية.
+
+## المؤلفون {#authors}
+
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+
+## حقوق النشر {#copyright}
+
+حقوق النشر (c) 2026، ClickHouse
+
+[chDB]: https://clickhouse.com/chdb "chDB - قاعدة بيانات in-process سريعة وموثوقة وقابلة للتوسع"
+
+[`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
+
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: إعدادات الجلسة max_memory_usage_*"
+
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: إعدادات الجلسة max_threads_*"
+
+[`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: إعداد الجلسة max_parsing_threads"
+
+[table functions]: https://clickhouse.com/docs/reference/functions/table-functions "ClickHouse Docs: دوال الجداول"
+
+[text encoding]: /products/managed-postgres/extensions/chdb/chdb_hook#text-encoding "chdb_hook Docs: ترميز النصوص"
+
+[semver]: https://semver.org/spec/v2.0.0.html "الإصدار الدلالي 2.0.0"

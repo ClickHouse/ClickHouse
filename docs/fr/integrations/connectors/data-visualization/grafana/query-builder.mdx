@@ -211,7 +211,9 @@ Vous pouvez créer un lien de données en sélectionnant une colonne nommée `tr
 
 Si OpenTelemetry est activé dans une requête de [logs](#logs) ou de [trace](#traces), une colonne d’ID de trace sera ajoutée automatiquement.
 
-En incluant une colonne d’ID de trace, les liens &quot;**View Trace**&quot; et &quot;**View Logs**&quot; seront associés aux données.
+Lorsqu’une colonne d’ID de trace est présente, le plugin peut associer les liens &quot;**View Trace**&quot; et &quot;**View Logs**&quot; aux données.
+
+Les boutons bascule sont activés par défaut. Un lien pour le type de requête actuel ne nécessite pas de valeurs par défaut configurées, tandis qu’un lien inter-signaux n’apparaît que lorsque la source de données possède des valeurs par défaut configurées pour le signal cible. Vous pouvez les masquer à l’aide des boutons bascule **Afficher les liens « View trace »** et **Afficher les liens « View logs »** dans les sections de configuration [trace](/fr/integrations/connectors/data-visualization/grafana/config#disabling-view-trace-links) et [log](/fr/integrations/connectors/data-visualization/grafana/config#disabling-view-logs-links) de la source de données.
 
 <div id="linking-abilities">
   ### Fonctionnalités de liaison

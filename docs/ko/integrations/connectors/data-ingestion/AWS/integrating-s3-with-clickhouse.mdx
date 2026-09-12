@@ -31,7 +31,7 @@ s3(path, [NOSIGN | aws_access_key_id, aws_secret_access_key,] [format, [structur
 * path — 파일 경로를 포함하는 버킷 URL입니다. 읽기 전용 모드에서는 다음 와일드카드를 지원합니다: `*`, `?`, `{abc,def}`, `{N..M}`. 여기서 `N`, `M`은 숫자이고 `'abc'`, `'def'`는 문자열입니다. 자세한 내용은 [경로에서 와일드카드 사용](/ko/reference/engines/table-engines/integrations/s3#wildcards-in-path) 문서를 참조하십시오.
 * format — 파일의 [포맷](/ko/reference/formats/index#formats-overview)입니다.
 * structure — 테이블의 구조입니다. 포맷은 `'column1_name column1_type, column2_name column2_type, ...'`입니다.
-* compression — 이 매개변수는 선택 사항입니다. 지원되는 값은 `none`, `gzip/gz`, `brotli/br`, `xz/LZMA`, `zstd/zst`입니다. 기본적으로 파일 확장자를 기준으로 압축을 자동 감지합니다.
+* compression — 이 매개변수는 선택 사항입니다. 지원되는 값은 `none`, `gzip/gz`, `deflate`, `brotli/br`, `xz/LZMA`, `zstd/zst`, `lz4`, `bz2`, `snappy`입니다. 기본적으로 파일 확장자를 기준으로 압축을 자동 감지합니다. `snappy`의 경우 [snappy&#95;mode](/ko/reference/settings/session-settings/other#snappy_mode) 설정(기본값은 `basic`)으로 wire 형식을 선택합니다.
 
 경로 표현식에서 와일드카드를 사용하면 여러 파일을 참조할 수 있으므로 병렬 처리도 가능합니다.
 
@@ -359,7 +359,7 @@ CREATE TABLE s3_engine_table (name String, value UInt32)
 * `path` — 파일 경로를 포함한 버킷 URL입니다. 읽기 전용 모드에서는 다음 와일드카드를 지원합니다: `*`, `?`, `{abc,def}` 및 `{N..M}`. 여기서 N, M은 숫자이고, &#39;abc&#39;, &#39;def&#39;는 문자열입니다. 자세한 내용은 [여기](/ko/reference/engines/table-engines/integrations/s3#wildcards-in-path)를 참조하십시오.
 * `format` — 파일의 [포맷](/ko/reference/formats/index#formats-overview)입니다.
 * `aws_access_key_id`, `aws_secret_access_key` - AWS 계정 사용자의 장기 자격 증명입니다. 이를 사용해 요청을 인증할 수 있습니다. 이 매개변수는 선택 사항입니다. 자격 증명을 지정하지 않으면 설정 파일의 값을 사용합니다. 자세한 내용은 [자격 증명 관리](#managing-credentials)를 참조하십시오.
-* `compression` — 압축 유형입니다. 지원되는 값: none, gzip/gz, brotli/br, xz/LZMA, zstd/zst. 이 매개변수는 선택 사항입니다. 기본적으로 파일 확장자를 기준으로 압축을 자동 감지합니다.
+* `compression` — 압축 유형입니다. 지원되는 값: none, gzip/gz, deflate, brotli/br, xz/LZMA, zstd/zst, lz4, bz2, snappy. 이 매개변수는 선택 사항입니다. 기본적으로 파일 확장자를 기준으로 압축을 자동 감지합니다. `snappy`의 경우 [snappy&#95;mode](/ko/reference/settings/session-settings/other#snappy_mode) 설정(기본값은 `basic`)으로 wire 형식을 선택합니다.
 
 <div id="reading-data">
   ### 데이터 읽기

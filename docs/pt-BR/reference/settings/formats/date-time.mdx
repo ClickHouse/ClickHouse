@@ -19,8 +19,8 @@ Essas configurações são geradas automaticamente a partir do [código-fonte](h
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-Remove dinamicamente os zeros à direita dos valores de datetime64 para ajustar a escala de saída para [0, 3, 6],
-correspondendo a &#39;segundos&#39;, &#39;milissegundos&#39; e &#39;microssegundos&#39;
+Remove dinamicamente os zeros à direita dos valores de `DateTime64`, arredondando a escala de saída para cima até o próximo
+múltiplo de três que preserva todos os dígitos significativos: [0, 3, 6, 9]. Uma fração composta somente por zeros é removida.
 
 <div id="date_time_input_format">
   ## date_time_input_format

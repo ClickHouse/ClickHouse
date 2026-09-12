@@ -11,9 +11,7 @@ import ReleaseSchedule from "/snippets/ru/components/ReleaseSchedule/ReleaseSche
 
 ClickHouse Cloud предлагает разные каналы релизов, чтобы учитывать различные потребности пользователей в плане стабильности, доступа к новым возможностям и предсказуемости обновлений. У каждого канала свой график обновлений, и каждый из них предназначен для разных сценариев использования — как для пользователей, которым нужен немедленный доступ к новым релизам, так и для тех, кто хочет отложить обновление, чтобы получить максимально стабильную версию релиза.
 
-<div id="release-channel-details">
-  ## Подробности о каналах релизов
-</div>
+## Подробности о каналах релизов {#release-channel-details}
 
 <Accordion title="Подробнее о каналах релизов">
   | Название канала          | Описание                                                                                                                                                                                                                                       | Ключевые особенности                                                                                                                                      | Поддерживаемые уровни                       |
@@ -33,9 +31,7 @@ ClickHouse Cloud предлагает разные каналы релизов, 
 
 Запланированные окна обновления доступны во всех каналах релизов для сервисов уровня Enterprise. Эта возможность позволяет настроить временное окно в заданный день недели для обновлений.
 
-<div id="release-schedule">
-  ## График выпусков
-</div>
+## График выпусков {#release-schedule}
 
 <Warning>
   **Как понимать даты релизов**
@@ -51,73 +47,57 @@ ClickHouse Cloud предлагает разные каналы релизов, 
 
 <ReleaseSchedule
   releases={[
-{
- changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
- version: '26.4',
- fast_start_date: '2026-06-22',
- fast_end_date: '2026-07-16',
- regular_start_date: '2026-08-03',
- regular_end_date: 'Будет уточнено',
- slow_start_date: 'Будет уточнено',
- slow_end_date: 'Будет уточнено',
- fast_progress: 'green',
- regular_progress: 'green',
- slow_progress: 'green',
-},
-{
- changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
- version: '26.2',
- fast_start_date: '2026-04-03',
- fast_end_date: '2026-04-14',
- regular_start_date: '2026-05-06',
- regular_end_date: '2026-06-17',
- slow_start_date: '2026-07-22',
- slow_end_date: '2026-07-22',
- fast_progress: 'green',
- regular_progress: 'green',
- slow_progress: 'green',
- fast_delay_note: 'Сервисы с окнами обновления будут обновляться начиная с 2026-04-15.',
-},
-{
- changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
- version: '25.12',
- fast_start_date: '2026-02-10',
- fast_end_date: '2026-02-11',
- regular_start_date: '2026-03-09',
- regular_end_date: '2026-03-18',
- slow_start_date: '2026-04-07',
- slow_end_date: '2026-04-09',
- fast_progress: 'green',
- regular_progress: 'green',
- slow_progress: 'green',
- regular_delay_note: 'Сервисы с запланированными окнами обновления получат 25.12 в своё окно обновления на неделе после 23 марта',
- slow_delay_note: 'Сервисы с запланированными окнами обновления получат 25.12 в своё окно обновления на неделе после 13 апреля',
-},
-{
- changelog_link: 'https://clickhouse.com/docs/changelogs/25.10',
- version: '25.10',
- fast_start_date: 'Завершено',
- fast_end_date: 'Завершено',
- regular_start_date: 'Завершено',
- regular_end_date: 'Завершено',
- slow_start_date: 'Завершено',
- slow_end_date: 'Завершено',
- fast_progress: 'green',
- regular_progress: 'green',
- slow_progress: 'green',
-},
-{
-changelog_link: 'https://clickhouse.com/docs/changelogs/25.8',
-version: '25.8',
-fast_start_date: 'Завершено',
-fast_end_date: 'Завершено',
-regular_start_date: 'Завершено',
-regular_end_date: 'Завершено',
-slow_start_date: 'Завершено',
-slow_end_date: 'Завершено',
-fast_progress: 'green',
-regular_progress: 'green',
-slow_progress: 'green',
-}
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.6',
+   version: '26.6',
+   fast_start_date: '2026-09-07',
+   fast_end_date: 'Будет уточнено',
+   regular_start_date: 'Будет уточнено',
+   regular_end_date: 'Будет уточнено',
+   slow_start_date: 'Будет уточнено',
+   slow_end_date: 'Будет уточнено',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.4',
+   version: '26.4',
+   fast_start_date: '2026-06-22',
+   fast_end_date: '2026-07-16',
+   regular_start_date: '2026-08-03',
+   regular_end_date: '2026-09-07',
+   slow_start_date: 'Будет уточнено',
+   slow_end_date: 'Будет уточнено',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/26.2',
+   version: '26.2',
+   fast_start_date: 'Завершено',
+   fast_end_date: 'Завершено',
+   regular_start_date: 'Завершено',
+   regular_end_date: 'Завершено',
+   slow_start_date: 'Завершено',
+   slow_end_date: 'Завершено',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
+  {
+   changelog_link: 'https://clickhouse.com/docs/changelogs/25.12',
+   version: '25.12',
+   fast_start_date: 'Завершено',
+   fast_end_date: 'Завершено',
+   regular_start_date: 'Завершено',
+   regular_end_date: 'Завершено',
+   slow_start_date: 'Завершено',
+   slow_end_date: 'Завершено',
+   fast_progress: 'green',
+   regular_progress: 'green',
+   slow_progress: 'green',
+  },
 ]}
 />

@@ -7,13 +7,9 @@ title: 'Продвинутая вставка'
 doc_type: 'reference'
 ---
 
-<div id="inserting-data-with-clickhouse-connect--advanced-usage">
-  ## Вставка данных с помощью ClickHouse Connect: расширенные возможности
-</div>
+## Вставка данных с помощью ClickHouse Connect: расширенные возможности {#inserting-data-with-clickhouse-connect--advanced-usage}
 
-<div id="insertcontexts">
-  ### InsertContexts
-</div>
+### InsertContexts {#insertcontexts}
 
 ClickHouse Connect выполняет вставки в формате Native, методы `insert` и `insert_df`, в рамках `InsertContext`. Методы `insert_arrow`, `insert_df_arrow` и `raw_insert` отправляют свои полезные нагрузки напрямую и не используют его. `InsertContext` включает все значения, переданные в качестве аргументов в метод клиента `insert`. Кроме того, при первоначальном создании `InsertContext` ClickHouse Connect получает типы данных для столбцов, в которые выполняется вставка, что необходимо для эффективной вставки в Native format. При повторном использовании `InsertContext` для нескольких вставок этот &quot;предварительный запрос&quot; не выполняется, и вставки выполняются быстрее и эффективнее.
 
@@ -35,50 +31,47 @@ assert qr.first_row[0] == 113
 
 `InsertContext`s содержат изменяемое состояние, которое обновляется в процессе вставки, поэтому они не являются потокобезопасными.
 
-<div id="write-formats">
-  ### Форматы записи
-</div>
+### Форматы записи {#write-formats}
 
 Форматы записи реализованы для ограниченного числа типов. В большинстве случаев ClickHouse Connect автоматически определяет правильный формат записи для столбца по первому значению, отличному от NULL. Например, если первое значение в столбце `DateTime` — целое число, клиент трактует его как секунду эпохи.
 
 Обычно переопределять формат записи не требуется, но методы из `clickhouse_connect.datatypes.format` позволяют задать его глобально. Обёртки-контейнеры, такие как `Array`, `Nullable` и `LowCardinality`, сохраняют поведение форматирования типа элемента.
 
-<div id="write-format-options">
-  #### Параметры форматов записи
-</div>
+#### Параметры форматов записи {#write-format-options}
 
-| Тип ClickHouse        | Стандартный тип Python  | Форматы записи    | Комментарии                                                                                                                                                           |
-| --------------------- | ----------------------- | ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                                                                                       |
-| UInt64                | int                     |                   |                                                                                                                                                                       |
-| [U]Int[128,256]       | int                     |                   |                                                                                                                                                                       |
-| BFloat16              | float                   |                   |                                                                                                                                                                       |
-| Float32               | float                   |                   |                                                                                                                                                                       |
-| Float64               | float                   |                   |                                                                                                                                                                       |
-| Decimal               | decimal.Decimal         |                   |                                                                                                                                                                       |
-| String                | str or bytes            |                   | Столбец должен содержать либо текст, либо байты.                                                                                                                      |
-| FixedString           | bytes                   | string            | Строковые значения дополняются нулевыми байтами. Пустые байты записываются как полностью нулевые байты.                                                               |
-| Enum[8,16]            | str or int              |                   | Вставляйте метки как строки или их соответствующие целочисленные значения.                                                                                            |
-| Date                  | datetime.date           | int               | Целочисленные значения интерпретируются как количество дней с 1970-01-01.                                                                                             |
-| Date32                | datetime.date           | int               | Целочисленные значения интерпретируются как знаковые смещения в днях.                                                                                                 |
-| DateTime              | datetime.datetime       | int               | Целочисленные значения интерпретируются как секунды с начала эпохи Unix.                                                                                              |
-| DateTime64            | datetime.datetime       | int               | Целочисленные значения интерпретируются как тики с точностью столбца.                                                                                                 |
-| Time                  | datetime.timedelta      | int, string, time | Целочисленные значения интерпретируются как секунды.                                                                                                                  |
-| Time64                | datetime.timedelta      | int, string, time | Целочисленные значения интерпретируются как тики с точностью столбца.                                                                                                 |
-| IPv4                  | `ipaddress.IPv4Address` | string            | Строки в корректном формате можно вставлять как IPv4-адреса                                                                                                           |
-| IPv6                  | `ipaddress.IPv6Address` | string            | Строки в корректном формате можно вставлять как IPv6-адреса                                                                                                           |
-| Tuple                 | dict or tuple           |                   |                                                                                                                                                                       |
-| Map                   | dict                    |                   |                                                                                                                                                                       |
-| Nested                | Sequence[dict]          |                   |                                                                                                                                                                       |
-| UUID                  | uuid.UUID               | string            | Строки в корректном формате можно вставлять как UUID ClickHouse                                                                                                       |
-| JSON                  | dict                    | string            | Поддерживаются словари и строки объекта JSON. Устаревший тип `Object('json')` не поддерживается.                                                                      |
-| Variant               | object                  |                   | Значения используют нативную сериализацию соответствующего варианта. Используйте `clickhouse_connect.datatypes.dynamic.typed_variant`, если типы Python неоднозначны. |
-| Dynamic               | object                  |                   | В настоящее время значения вставляются через их строковое представление.                                                                                              |
-| QBit                  | Sequence[float]         |                   | Если установлен NumPy, он автоматически используется для более быстрого транспонирования битов.                                                                       |
+| Тип ClickHouse        | Стандартный тип Python  | Форматы записи    | Комментарии                                                                                                                                                                                                                                      |
+| --------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Int[8-64], UInt[8-32] | int                     |                   |                                                                                                                                                                                                                                                  |
+| UInt64                | int                     |                   |                                                                                                                                                                                                                                                  |
+| [U]Int[128,256]       | int                     |                   |                                                                                                                                                                                                                                                  |
+| BFloat16              | float                   |                   |                                                                                                                                                                                                                                                  |
+| Float32               | float                   |                   |                                                                                                                                                                                                                                                  |
+| Float64               | float                   |                   |                                                                                                                                                                                                                                                  |
+| Decimal               | decimal.Decimal         |                   |                                                                                                                                                                                                                                                  |
+| Interval*             | int                     |                   | Значения — знаковые 64-битные счётчики в единицах соответствующего типа интервала.                                                                                                                                                               |
+| String                | str or bytes            |                   | Столбец должен содержать либо текст, либо байты.                                                                                                                                                                                                 |
+| FixedString           | bytes                   | string            | Строковые значения дополняются нулевыми байтами. Пустые байты записываются как полностью нулевые байты.                                                                                                                                          |
+| Enum[8,16]            | str or int              |                   | Вставляйте метки как строки или их соответствующие целочисленные значения.                                                                                                                                                                       |
+| Date                  | datetime.date           | int               | Целочисленные значения интерпретируются как количество дней с 1970-01-01.                                                                                                                                                                        |
+| Date32                | datetime.date           | int               | Целочисленные значения интерпретируются как знаковые смещения в днях.                                                                                                                                                                            |
+| DateTime              | datetime.datetime       | int               | Целочисленные значения интерпретируются как секунды с начала эпохи Unix.                                                                                                                                                                         |
+| DateTime64            | datetime.datetime       | int               | Целочисленные значения интерпретируются как тики с точностью столбца.                                                                                                                                                                            |
+| Time                  | datetime.timedelta      | int, string, time | Целочисленные значения интерпретируются как секунды.                                                                                                                                                                                             |
+| Time64                | datetime.timedelta      | int, string, time | Поддерживаются значения scale от 0 до 9. Целочисленные значения интерпретируются как тики с точностью столбца. Значения timedelta из NumPy и вставки DataFrame работают при любом значении scale. Типы time из Python ограничены микросекундами. |
+| IPv4                  | `ipaddress.IPv4Address` | string            | Строки в корректном формате можно вставлять как IPv4-адреса                                                                                                                                                                                      |
+| IPv6                  | `ipaddress.IPv6Address` | string            | Строки в корректном формате можно вставлять как IPv6-адреса                                                                                                                                                                                      |
+| Tuple                 | dict or tuple           |                   | Используйте `()` для `Tuple()`.                                                                                                                                                                                                                  |
+| Map                   | dict                    |                   |                                                                                                                                                                                                                                                  |
+| Nested                | Sequence[dict]          |                   |                                                                                                                                                                                                                                                  |
+| UUID                  | uuid.UUID               | string            | Строки в корректном формате можно вставлять как UUID ClickHouse                                                                                                                                                                                  |
+| JSON                  | dict                    | string            | Поддерживаются словари и строки объекта JSON. Устаревший тип `Object('json')` не поддерживается.                                                                                                                                                 |
+| Variant               | object                  |                   | Значения используют нативную сериализацию соответствующего варианта. Используйте `clickhouse_connect.datatypes.dynamic.typed_variant`, если типы Python неоднозначны.                                                                            |
+| Dynamic               | object                  |                   | В настоящее время значения вставляются через их строковое представление.                                                                                                                                                                         |
+| MultiPoint            | Sequence[tuple]         |                   | Каждая точка — это кортеж из двух элементов. Для вставки значений MultiPoint требуется ClickHouse 26.8 или новее.                                                                                                                                |
+| Geometry              | tuple or list           |                   | Значения Point — кортежи из двух элементов. Оборачивайте значения на основе списков, включая MultiPoint, в `typed_variant`, чтобы выбрать нужный геометрический вариант.                                                                         |
+| QBit                  | Sequence[float]         |                   | Если установлен NumPy, он автоматически используется для более быстрого транспонирования битов.                                                                                                                                                  |
 
-<div id="specialized-insert-methods">
-  ### Специализированные методы вставки
-</div>
+### Специализированные методы вставки {#specialized-insert-methods}
 
 ClickHouse Connect предоставляет специализированные методы вставки для распространённых форматов данных:
 
@@ -92,9 +85,7 @@ ClickHouse Connect предоставляет специализированны
   Массив NumPy является допустимым Sequence of Sequences и может использоваться как аргумент `data` для основного метода `insert`, поэтому отдельный специализированный метод не требуется.
 </Note>
 
-<div id="pandas-dataframe-insert">
-  #### Вставка из Pandas DataFrame
-</div>
+#### Вставка из Pandas DataFrame {#pandas-dataframe-insert}
 
 ```python
 import clickhouse_connect
@@ -111,9 +102,7 @@ df = pd.DataFrame({
 client.insert_df("users", df)
 ```
 
-<div id="pyarrow-table-insert">
-  #### Вставка таблицы PyArrow
-</div>
+#### Вставка таблицы PyArrow {#pyarrow-table-insert}
 
 ```python
 import clickhouse_connect
@@ -130,9 +119,7 @@ arrow_table = pa.table({
 client.insert_arrow("users", arrow_table)
 ```
 
-<div id="arrow-backed-dataframe-insert-pandas-2">
-  #### Вставка DataFrame на базе Arrow (pandas 2.x)
-</div>
+#### Вставка DataFrame на базе Arrow (pandas 2.x) {#arrow-backed-dataframe-insert-pandas-2}
 
 ```python
 import clickhouse_connect
@@ -150,9 +137,7 @@ df = pd.DataFrame({
 client.insert_df_arrow("users", df)
 ```
 
-<div id="create-table-from-pyarrow-schema">
-  ### Создать таблицу по схеме PyArrow
-</div>
+### Создать таблицу по схеме PyArrow {#create-table-from-pyarrow-schema}
 
 `create_table_from_arrow_schema` формирует оператор `CREATE TABLE` на основе распространённых скалярных полей Arrow. Сопоставление охватывает знаковые и беззнаковые целые числа, числа с плавающей запятой, булевы значения, строки, даты и временные метки. Функция намеренно создаёт в ClickHouse столбцы, не допускающие `NULL`, и вызывает `TypeError` для неподдерживаемых типов Arrow, поэтому перед выполнением проверьте сгенерированный DDL.
 
@@ -179,15 +164,11 @@ ddl = create_table_from_arrow_schema(
 client.command(ddl)
 ```
 
-<div id="time-zones">
-  ### Часовые пояса
-</div>
+### Часовые пояса {#time-zones}
 
 При вставке объектов Python `datetime` в столбцы `DateTime` или `DateTime64` ClickHouse Connect преобразует их в значения Unix-времени.
 
-<div id="timezone-aware-datetime-objects">
-  #### Объекты datetime с часовым поясом
-</div>
+#### Объекты datetime с часовым поясом {#timezone-aware-datetime-objects}
 
 Объекты с часовым поясом сохраняют точный момент времени. Исходный часовой пояс не обязательно должен совпадать с часовым поясом, указанным для столбца ClickHouse.
 
@@ -216,9 +197,7 @@ assert [row[0].hour for row in results.result_rows] == [1, 10, 16]
   ClickHouse Connect использует модуль `zoneinfo` из стандартной библиотеки. Драйвер больше не зависит от `pytz`.
 </Note>
 
-<div id="timezone-naive-datetime-objects">
-  #### Объекты datetime без указания часового пояса
-</div>
+#### Объекты datetime без указания часового пояса {#timezone-naive-datetime-objects}
 
 Глобальная настройка `naive_datetime_insert` управляет вставкой нативных объектов Python со значениями `datetime` без указания часового пояса. Она также применяется к строкам ISO без указания часового пояса, принимаемым столбцами `DateTime64`.
 
@@ -259,9 +238,7 @@ client.insert("events", [[epoch_timestamp]], column_names=["event_time"])
 
 Для параметров запроса `datetime` без часового пояса используется отдельная настройка `naive_datetime_binding`. В режиме `"wall"`, используемом по умолчанию, поля времени передаются без преобразования в локальное время хоста. См. раздел [аргумент Parameters](/ru/integrations/language-clients/python/driver-api#parameters-argument).
 
-<div id="datetime-columns-with-timezone-metadata">
-  #### Столбцы DateTime с метаданными часового пояса
-</div>
+#### Столбцы DateTime с метаданными часового пояса {#datetime-columns-with-timezone-metadata}
 
 В столбцах ClickHouse можно задавать метаданные часового пояса, например `DateTime('America/Denver')` или `DateTime64(3, 'Asia/Tokyo')`. Эти метаданные определяют, как значения отображаются при выполнении запроса.
 
@@ -286,9 +263,7 @@ assert returned.hour == 7
 assert returned.tzinfo == ZoneInfo("America/Los_Angeles")
 ```
 
-<div id="file-inserts">
-  ## Вставка из файлов
-</div>
+## Вставка из файлов {#file-inserts}
 
 `clickhouse_connect.driver.tools.insert_file` потоково загружает локальный файл в существующую таблицу и передает разбор ClickHouse.
 

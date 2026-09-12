@@ -6,11 +6,12 @@ keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connector']
 doc_type: 'guide'
 ---
 
+import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 import { Image } from "/snippets/es/components/Image.jsx";
 
-<div id="components">
-  ## Componentes
-</div>
+<PrivatePreviewBadge />
+
+## Componentes {#components}
 
 ClickHouse Connector ejecuta dos demonios, ambos integrados en el binario `clicklink`:
 
@@ -21,9 +22,7 @@ En Kubernetes, ambos se ejecutan como cargas de trabajo desplegadas por el gráf
 
 <Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="Arquitectura de ClickHouse Connector" />
 
-<div id="connections">
-  ## Conexiones
-</div>
+## Conexiones {#connections}
 
 Todas las conexiones que establece el conector son salientes. Lista completa:
 
@@ -40,9 +39,7 @@ Cada solicitud de API incluye un encabezado `Authorization` con una firma HMAC-S
 
 En sentido entrante, el conector expone únicamente puertos locales de estado y métricas, además del gateway de sesión opcional descrito en la página de [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions). El plano de control de ClickHouse nunca se conecta a ninguno de ellos.
 
-<div id="certificate-lifecycle">
-  ## Ciclo de vida del certificado
-</div>
+## Ciclo de vida del certificado {#certificate-lifecycle}
 
 El conector se autentica ante su endpoint con un certificado de cliente que obtiene y mantiene por sí mismo:
 
@@ -52,32 +49,24 @@ El conector se autentica ante su endpoint con un certificado de cliente que obti
 
 El conector verifica el certificado de servidor de su endpoint con el almacén de confianza del sistema o con el paquete de CA proporcionado durante la inscripción cuando su endpoint utiliza una CA privada.
 
-<div id="data-flow">
-  ## Flujo de datos
-</div>
+## Flujo de datos {#data-flow}
 
 <Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="Flujo de datos de ClickHouse Connector" />
 
-<div id="what-leaves">
-  ### Qué sale de su entorno
-</div>
+### Qué sale de su entorno {#what-leaves}
 
 * **Métricas de tablas del sistema incluidas en la lista de permitidas.** El conjunto predeterminado del scraper es `metric_log`, `asynchronous_metric_log`, `tables`, `warnings` y `server_settings`. La lista de permitidas es una configuración explícita; el scraper no lee nada fuera de ella.
 * **Metadatos de infraestructura.** Inventario de instancias, infraestructura y copias de seguridad sincronizado mediante la API.
 * **Estado y métricas del propio sistema.** Estado de los componentes y métricas operativas del propio conector.
 * **Resultados de la sesión de Support.** Resultados de diagnósticos de solo lectura ejecutados durante una sesión que habilitó, tras la eliminación de información confidencial.
 
-<div id="what-never-leaves">
-  ### Lo que nunca sale de forma predeterminada
-</div>
+### Lo que nunca sale de forma predeterminada {#what-never-leaves}
 
 * **Texto sin procesar de las consultas en la ruta de recopilación.** `system.query_log` se excluye deliberadamente del conjunto de recopilación predeterminado porque sus columnas de consulta pueden contener valores literales y, con ellos, datos personales o secretos; volver a añadirlo es una sobrescritura específica de cada implementación que debe realizar de forma consciente. Durante una sesión de soporte, la lista predeterminada de tablas permitidas sí incluye `system.processes`, que muestra el texto de las consultas en curso; consulte [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions) para obtener información sobre cómo recortarlo.
 * **Credenciales.** Los archivos de configuración no contienen credenciales, ClickHouse solo almacena hashes bcrypt de las contraseñas de los usuarios del conector y los secretos permanecen en Kubernetes Secrets o en archivos del host legibles por root. Nada en las rutas de recopilación o sincronización los transmite.
 * **Salida sin censurar del solucionador de problemas.** Todo lo que devuelve el solucionador de problemas pasa por patrones de redacción (integrados y propios) antes de salir. Consulte [sesiones de soporte](/es/products/bring-your-own-cloud/connector/support-sessions).
 
-<div id="trust-boundaries">
-  ## Límites de confianza
-</div>
+## Límites de confianza {#trust-boundaries}
 
 * **Su entorno es el límite.** ClickHouse Cloud recibe únicamente lo que envía el scraper y lo que devuelve una sesión de soporte activa. Nunca inicia conexiones hacia el interior.
 * **La gateway de sesión es suya.** Solo es accesible dentro de su entorno (mediante `kubectl port-forward` en Kubernetes o localmente en una VM), salvo que decida exponerla mediante un Ingreso. El plano de control de ClickHouse nunca se conecta a ella.

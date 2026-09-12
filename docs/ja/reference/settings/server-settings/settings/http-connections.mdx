@@ -12,39 +12,27 @@ import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/Setting
 
 これらの設定はClickHouseサーバーを構成するためのもので、ClickHouseのソースコードから自動生成されています。
 
-<div id="http_connections_hard_limit">
-  ## http_connections_hard_limit
-</div>
+## http_connections_hard_limit {#http_connections_hard_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="200000" changeable_without_restart="No" />この上限に達した状態で作成を試みると、例外が発生します。0 に設定すると、この上限は無効になります。この制限は、どのディスクまたはストレージにも属さない HTTP 接続に適用されます。
 
-<div id="http_connections_rcvbuf">
-  ## http_connections_rcvbuf
-</div>
+## http_connections_rcvbuf {#http_connections_rcvbuf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />一般的な HTTP 接続における SO&#95;RCVBUF オプションのサイズです。0 より大きい値を設定すると、受信バッファに対するカーネルの TCP 自動調整を上書きします。0 = カーネルのデフォルト (自動調整) 。注: この設定を 0 に戻しても、自動調整が復元されるのは新規に作成される接続のみです。既存のプールされた接続は、再作成されるまで固定のバッファサイズを保持します。
 
-<div id="http_connections_sndbuf">
-  ## http_connections_sndbuf
-</div>
+## http_connections_sndbuf {#http_connections_sndbuf}
 
 <SettingsInfoBlock type="UInt64" default_value="0" changeable_without_restart="Yes" />一般的な HTTP 接続における SO&#95;SNDBUF オプションのサイズです。0 より大きい値を設定すると、送信バッファに対するカーネルの TCP 自動調整を上書きします。0 = カーネルのデフォルト (自動調整) 。注: この設定を 0 に戻しても、自動調整が復元されるのは新しく作成される接続のみです。既存のプールされた接続は、再作成されるまで固定のバッファサイズを保持します。
 
-<div id="http_connections_soft_limit">
-  ## http_connections_soft_limit
-</div>
+## http_connections_soft_limit {#http_connections_soft_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="100" changeable_without_restart="No" />この制限を超える接続は、存続時間が大幅に短くなります。この制限は、どのディスクやストレージにも属さない HTTP 接続に適用されます。
 
-<div id="http_connections_store_limit">
-  ## http_connections_store_limit
-</div>
+## http_connections_store_limit {#http_connections_store_limit}
 
-<SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />この制限を超える接続は、使用後にリセットされます。接続 cache を無効にするには、0 に設定します。この制限は、どのディスクまたはストレージにも属さない HTTP 接続に適用されます。
+<SettingsInfoBlock type="UInt64" default_value="1000" changeable_without_restart="No" />再利用のために pool に保持される idle 接続の最大数。この数の接続が保持された後は、それ以降の接続は保持されず、使用後にリセットされます。この制限は、使用中の接続数を制限するものではありません。接続 cache を無効にするには、0 に設定します。この制限は、どのディスクまたはストレージにも属さない HTTP 接続に適用されます。
 
-<div id="http_connections_warn_limit">
-  ## http_connections_warn_limit
-</div>
+## http_connections_warn_limit {#http_connections_warn_limit}
 
 <SettingsInfoBlock type="UInt64" default_value="500" changeable_without_restart="No" />使用中の接続数がこの制限を超えると、警告メッセージがログに出力されます。この制限は、どのディスクまたはストレージにも属さない HTTP 接続に適用されます。
 

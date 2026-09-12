@@ -10,25 +10,21 @@ doc_type: 'reference'
 
 import SettingsInfoBlock from "/snippets/ja/components/SettingsInfoBlock/SettingsInfoBlock.jsx";
 import { VersionHistory } from "/snippets/ja/components/VersionHistory/VersionHistory.jsx";
-import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 これらの設定は [system.settings](/ja/reference/system-tables/settings) で確認でき、[ソースコード](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp) から自動生成されています。
 
-<div id="promql_database">
-  ## promql_database
-</div>
+## promql_database {#promql_database}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "新しい実験的な設定"}]}]} />
 
 &#39;promql&#39; ダイアレクトで使用するデータベース名を指定します。空文字列は現在のデータベースを表します。
 
-<div id="promql_evaluation_time">
-  ## promql_evaluation_time
-</div>
+## promql_evaluation_time {#promql_evaluation_time}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 **別名**: `evaluation_time`
 
@@ -36,13 +32,11 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.9"},{"label": "auto"},{"label": "この設定はリネームされました。以前の名前は `evaluation_time` です。"}]}]} />
 
-promql dialect で使用する評価時刻を設定します。`auto` は現在時刻を表します。
+promql ダイアレクトで使用する評価時刻を設定します。`auto` は現在時刻を表します。
 
-<div id="promql_table">
-  ## promql_table
-</div>
+## promql_table {#promql_table}
 
-<ExperimentalBadge />
+<PrivatePreviewBadge />
 
 <VersionHistory rows={[{"id": "row-1","items": [{"label": "25.8"},{"label": ""},{"label": "新しい実験的な設定"}]}]} />
 

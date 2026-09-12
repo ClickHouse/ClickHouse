@@ -60,9 +60,7 @@ Union
             Output: number
 ```
 
-<div id="explain-types">
-  ## أنواع EXPLAIN
-</div>
+## أنواع EXPLAIN {#explain-types}
 
 * `AST` — شجرة البنية النحوية المجردة.
 * `SYNTAX` — نص الاستعلام بعد التحسينات على مستوى AST.
@@ -73,9 +71,7 @@ Union
 * `ESTIMATE` — العدد التقديري للصفوف والعلامات والأجزاء التي ستُقرأ من الجداول أثناء معالجة الاستعلام.
 * `TABLE OVERRIDE` — النتيجة التي تم التحقق من صحتها لتجاوز جدول على مخطط دالة الجدول.
 
-<div id="explain-ast">
-  ### EXPLAIN AST
-</div>
+### EXPLAIN AST {#explain-ast}
 
 يعرض AST للاستعلام. يدعم جميع أنواع الاستعلامات، وليس `SELECT` فقط.
 
@@ -113,9 +109,7 @@ EXPLAIN AST ALTER TABLE t1 DELETE WHERE date = today();
         ExpressionList
 ```
 
-<div id="explain-syntax">
-  ### EXPLAIN SYNTAX
-</div>
+### EXPLAIN SYNTAX {#explain-syntax}
 
 يعرض شجرة البنية النحوية المجرّدة (AST) للاستعلام بعد تحليل البنية النحوية.
 
@@ -156,9 +150,7 @@ ALL INNER JOIN system.numbers AS __table2 ON __table1.number = __table2.number
 ALL INNER JOIN system.numbers AS __table3 ON __table2.number = __table3.number
 ```
 
-<div id="explain-query-tree">
-  ### EXPLAIN شجرة الاستعلام
-</div>
+### EXPLAIN شجرة الاستعلام {#explain-query-tree}
 
 الإعدادات:
 
@@ -187,9 +179,7 @@ QUERY id: 0
     TABLE id: 3, table_name: default.test_table
 ```
 
-<div id="explain-plan">
-  ### EXPLAIN PLAN
-</div>
+### EXPLAIN PLAN {#explain-plan}
 
 يعرض خطوات خطة تنفيذ الاستعلام.
 
@@ -571,31 +561,57 @@ Expression ((Project names + Projection))
 * تعرض **خطوات التصفية** شرط التصفية بصياغة SQL. وعند وجود عوامل تصفية للربط وقت التشغيل، تُعرض بشكل منفصل.
 * تعرض **خطوات التجميع** المفاتيح والدوال التجميعية مع وسيطاتها (مثل `sum(c)` و`count()`).
 * تُظهر **مجموعات IN** من قيم `tuple` الحرفية قيمها (مقتطعةً للمجموعات الكبيرة)، وتُوسَم المجموعات المستندة إلى استعلامات فرعية على أنها `subquery1` و`subquery2` وما إلى ذلك، وتُظهر المجموعات من جداول محرك `Set` اسم الجدول.
-* تعرض **خطوات الربط** علاقة الربط باستخدام ترميز رياضي، والعدد التقديري لصفوف النتيجة،
-  وأي أعمدة ناتج تأتي من الجانب الأيسر مقابل الجانب الأيمن. وتُستخدم الرموز التالية
-  لتمثيل أنواع الربط المختلفة:
+* تعرض **خطوات الربط** علاقة الربط باستخدام ترميز رياضي، والتقديرات التي
+  أنتجها مُحسِّن ترتيب الربط للخطوة (التكلفة، والانتقائية، وصفوف الناتج، والصفوف لكل جانب)،
+  وأعمدة الإدخال لكل جانب. وتُستخدم الرموز التالية لتمثيل أنواع الربط المختلفة:
 
-| Symbol                 | Join Type       |
-| ---------------------- | --------------- |
-| `⋈`                    | Inner Join      |
-| `⟕`                    | Left Join       |
-| `⟖`                    | Right Join      |
-| `⟗`                    | Full Join       |
-| `⋉`                    | Left Semi Join  |
-| `⋊`                    | Right Semi Join |
-| `⋉` with strikethrough | Left Anti Join  |
-| `⋊` with strikethrough | Right Anti Join |
-| `×`                    | Cross Join      |
+| الرمز      | نوع الربط     |
+| ---------- | ------------- |
+| `⋈`        | ربط داخلي     |
+| `⟕`        | ربط أيسر      |
+| `⟖`        | ربط أيمن      |
+| `⟗`        | ربط كامل      |
+| `⋉`        | ربط شبه أيسر  |
+| `⋊`        | ربط شبه أيمن  |
+| `⋉` مع شطب | ربط مضاد أيسر |
+| `⋊` مع شطب | ربط مضاد أيمن |
+| `×`        | ربط تبادلي    |
 
-على سبيل المثال، `t1 ⟕ t2` تعني LEFT JOIN بين الجدولين `t1` و`t2`.
-ويشير الرقم بين القوسين بعد اسم الجدول (مثل `t1[100]`) إلى العدد التقديري للصفوف
+على سبيل المثال، تعني `t1 ⟕ t2` ربطًا أيسر بين الجدولين `t1` و`t2`.
+يشير الرقم بين قوسين بعد اسم الجدول (مثلًا، `t1[100]`) إلى العدد التقديري للصفوف
 عندما تكون إحصاءات الجدول متاحة.
 
-يعمل الخيار `pretty` جيدًا مع `compact = 1`، إذ يُخفي خطوات `Expression` ومعلومات الإجراءات التفصيلية، مما يجعل الخطة أسهل في القراءة.
+أسفل علاقة الربط، تطبع كل خطوة ربط التقديرات التي أنتجها مُحسِّن ترتيب الربط لها:
 
-مثال تفصيلي يتضمن عمليات JOIN:
+```txt
+Cost: estimated <cost>
+Selectivity: estimated (NDV) <selectivity>
+Output rows: estimated <rows>
+Left: rows estimated <left_rows>
+Right: rows estimated <right_rows>
+```
+
+* `Cost` — تكلفة شجرة الربط الفرعية بالكامل ضمن هذه الخطوة، وهي القيمة التي يقللها المُحسِّن عند مقارنة ترتيبات الربط المرشحة. تكلفة الربط هي العدد المقدّر لأزواج الصفوف المتطابقة، `<selectivity> * <left_rows> * <right_rows>`، بالإضافة إلى تكلفة مدخلاته.
+* `Selectivity` — النسبة المقدّرة من حاصل الضرب الديكارتي للجانبين التي تبقى بعد تطبيق شرط الربط. تُشتق من عدد القيم المميزة (NDV) لمفاتيح الربط: يحتفظ تساوي المفتاح بنحو `1 / max(NDV_left, NDV_right)` من الأزواج، وتُستخدم أصغر نسبة عبر شروط الربط.
+* `Output rows` — العدد المقدّر للصفوف التي ينتجها الربط:
+  `<selectivity> * <left_rows> * <right_rows>` للربط الداخلي، وبحد أدنى `<left_rows>` لـ`LEFT`، و`<right_rows>` لـ`RIGHT`، و`<left_rows> + <right_rows>` لـ`FULL`، لأن الربط الخارجي يحتفظ بكل صف من جانبه المحفوظ. عندما يشارك ربط `SEMI` أو `ANTI` في إعادة الترتيب، يُقدَّر باعتباره نسبة من جانبه المحفوظ، `<preserved_rows> * min(1, <selectivity> * <other_rows>)` لـ`SEMI`، والصفوف المتبقية لـ`ANTI`؛ وإلا فإنه يستخدم معادلة نوع الربط الخاص به.
+* `Left` / `Right` — العدد المقدّر للصفوف الداخلة إلى الربط من كل جانب.
+
+تُبلَّغ القيمة التي لم يتمكن المُحسِّن من تقديرها على أنها `no stats`. يحدث ذلك عندما لا يُشغَّل تحسين ترتيب الربط — مثلًا، عندما يكون
+[`query_plan_optimize_join_order_limit`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit)
+هو `0` — أو عندما لا يوجد أساس للتقدير.
+
+يسرد السطران `Input (left):` و`Input (right):` الأعمدة التي يُدخلها كل جانب إلى الربط.
+
+يعمل خيار `pretty` جيدًا مع `compact = 1`، الذي يُخفي خطوات `Expression` ومعلومات الإجراءات التفصيلية، مما يجعل الخطة أسهل قراءةً.
+
+مثال تفصيلي يتضمن عمليات ربط. يُخفَّض إعداد
+[`join_runtime_filter_min_probe_rows`](/ar/reference/settings/session-settings/join-runtime#join_runtime_filter_min_probe_rows)
+فقط لكي ينشئ جدول بهذا الحجم الصغير عامل تصفية للربط وقت التشغيل:
 
 ```sql
+SET join_runtime_filter_min_probe_rows = 10;
+
 CREATE TABLE t1 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 CREATE TABLE t2 (id UInt64, value String) ENGINE = MergeTree ORDER BY id;
 INSERT INTO t1 SELECT number, toString(number) FROM numbers(100);
@@ -611,11 +627,14 @@ Output: id, value, id, value
 Join (JOIN FillRightFirst)
 │  t1[100] ⋈ t2[100]
 │  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
-│  Result rows: 100
+│  Cost: estimated 100.00
+│  Selectivity: estimated (NDV) 0.01
+│  Output rows: estimated 100.00
+│  Left: rows estimated 100.00
+│  Right: rows estimated 100.00
 │  Join conditions: id = id
-│  Output:
-│    Left:  id, value
-│    Right: id, value
+│  Input (left): id, value
+│  Input (right): id, value
 ├──ReadFromMergeTree (default.t1)
 │     Read type: Default
 │     Parts: 1 | Granules: 1
@@ -630,9 +649,7 @@ Join (JOIN FillRightFirst)
          Output: id, value
 ```
 
-<div id="explain-pipeline">
-  ### EXPLAIN PIPELINE
-</div>
+### EXPLAIN PIPELINE {#explain-pipeline}
 
 الإعدادات:
 
@@ -672,9 +689,7 @@ ExpressionTransform
             NumbersRange × 2 0 → 1
 ```
 
-<div id="explain-analyze">
-  ### EXPLAIN ANALYZE
-</div>
+### EXPLAIN ANALYZE {#explain-analyze}
 
 يقوم `EXPLAIN ANALYZE` فعليًا بتشغيل الاستعلام، ثم يتجاهل صفوف النتائج ويطبع شجرة الخطة نفسها كما في `EXPLAIN PLAN`، مع إرفاق كل خطوة بتفاصيل عمّا حدث فعليًا أثناء التنفيذ.
 
@@ -784,21 +799,20 @@ I/O: rows <in> → <out> (<selectivity>%) · <bytes_in> → <bytes_out>
   2. الحد الأقصى لعدد خيوط معالجة الاستعلام المحدَّد في `max_threads`.
 </Note>
 
-<div id="explain-analyze-join-steps">
-  #### خطوات الربط
-</div>
+#### خطوات الربط {#explain-analyze-join-steps}
 
-في خطوة ربط، يطبع `EXPLAIN ANALYZE` أسطر *المشاركة* لكل جانب — `Left` و`Right` — ثم أي أسطر خاصة بتنفيذ الربط. يقابل `Left` و`Right` الجانبين المنطقيين في SQL. في معظم الحالات، يكون `Left` أيضًا جانب الفحص في الربط، بينما يكون `Right` جانب البناء. لكن ليس هذا هو الحال دائمًا بسبب التبديل الذي قد يحدث أثناء تنفيذ الربط. تُغطّى جميع قيم [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) (`hash`، `parallel_hash`، `grace_hash`، `partial_merge`، `full_sorting_merge`، `parallel_full_sorting_merge`، `direct`)، وكذلك التنفيذان اللذان لا يمكن للإعداد اختيارهما: ربط `CROSS` أو `COMMA`، وأي قسم `ON` لا يحتوي على مساواة مفتاح، ومحرك الجدول [`Join`](/ar/reference/engines/table-engines/special/join). يُبلّغ معظمها عن كلا الجانبين، بينما يُبلّغ بعضها فقط عن الجانب الذي يجسّده ماديًا (على سبيل المثال، يطبع `direct` ‏`Left:` فقط).
+في خطوة ربط، يطبع `EXPLAIN ANALYZE` أسطرًا تقارن تقديرات محسّن ترتيب الربط بما حدث فعليًا (انظر [مقاييس الربط المقدّرة مقابل الفعلية](#explain-analyze-join-estimation))، وأسطر *المشاركة* لكل جانب — `Left` و`Right` — ثم أي أسطر خاصة بتنفيذ الربط. تُغطّى جميع قيم [`join_algorithm`](/ar/reference/settings/session-settings/join#join_algorithm) (`hash`، `parallel_hash`، `grace_hash`، `partial_merge`، `full_sorting_merge`، `parallel_full_sorting_merge`، `direct`)، وكذلك التنفيذان اللذان لا يمكن للإعداد اختيارهما: ربط `CROSS` أو `COMMA`، وأي قسم `ON` لا يحتوي على مساواة مفتاح، ومحرك الجدول [`Join`](/ar/reference/engines/table-engines/special/join). يُبلّغ معظمها عن كلا الجانبين، بينما يُبلّغ بعضها فقط عن الجانب الذي يجسّده ماديًا (على سبيل المثال، يطبع `direct` ‏`Left:` فقط).
 
 تشترك الأسطر الخاصة بكل جانب في البنية نفسها:
 
 ```txt
-Left:  rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
-Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
+Left:  rows estimated <estimated_left_rows>  · rows <left_rows>  · matched <matched_left_rows>  · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · match rate <match_rate>% · fanout <fanout>
 ```
 
 لكل جانب، يعرض `EXPLAIN ANALYZE` ما يلي:
 
+* `rows estimated <estimated_rows>` — تقدير محسّن ترتيب الربط لعدد صفوف ذلك الجانب، ويُطبع للمقارنة مع قيمة `rows` الفعلية المجاورة له؛ وتظهر `no stats` عندما لا ينتج المحسّن أي تقدير (انظر [مقاييس الربط المقدّرة مقابل الفعلية](#explain-analyze-join-estimation)).
 * `rows <rows>` — العدد الإجمالي لصفوف ذلك الجانب التي مرّت عبر عملية الربط.
 * `matched <matched_rows>` — عدد صفوف ذلك الجانب التي وجدت شريك ربط واحدًا على الأقل في الجانب الآخر. يحسب هذا *الصفوف* لا المفاتيح: إذا ظهر مفتاح ثلاث مرات في الجانب الأيمن وطابق، تُحسب الصفوف الثلاثة في الجانب الأيمن كلها كصفوف متطابقة.
 * `match rate <match_rate>%` — النسبة المئوية لصفوف ذلك الجانب التي تطابقت، وتُحسب كالتالي: `100 * <matched_rows> / <rows>`.
@@ -806,9 +820,45 @@ Right: rows <right_rows> · matched <matched_right_rows> · match rate <match_ra
 
 يُعرض الرقم الذي لا يمكن اشتقاقه بدقة على أنه `not collected` بدلًا من `0`. يُشتق كل من `match rate` و`fanout` من `matched`، لذا يعرض الجانب الذي لا تتوفر لديه قيمة `matched` القيم الثلاث كلها باعتبارها `not collected`.
 
-<div id="explain-analyze-fanout">
-  #### Fanout
-</div>
+#### مقاييس ربط التقديرية والفعلية {#explain-analyze-join-estimation}
+
+تتضمن خطوة ربط تقديرات محسّن ترتيب الربط — وهي نفسها التي يعرضها `EXPLAIN PLAN` (راجع قسم [EXPLAIN PLAN](#explain-plan)) — ويطبع `EXPLAIN ANALYZE` كلًا منها إلى جانب القيمة المقاسة:
+
+```txt
+Cost: estimated <cost> · actual <cost>
+Selectivity: estimated (NDV) <selectivity> · actual (cartesian) <selectivity>
+Output rows: estimated <rows> · actual <rows> · q-error <ratio>
+```
+
+* `Cost` — كلتا القيمتين تعدّان صفوف الإخراج المطابقة. التقدير هو التكلفة التي يحسبها المُحسِّن لشجرة الـ ربط الفرعية: `<selectivity> * <left_rows> * <right_rows>` مضافًا إليها تكلفة مدخلاتها. أما القيمة الفعلية فتُقاس بالطريقة نفسها — صفوف الإخراج المطابقة لهذا الـ ربط مضافًا إليها التكلفة الفعلية لكل ربط أسفله ينتمي إلى عنقود إعادة الترتيب نفسه.
+* `Selectivity` — يُشتق التقدير من عدد القيم المميزة لمفاتيح الـ ربط؛ أما القيمة الفعلية فهي النسبة المقيسة من الجداء الديكارتي التي وصلت إلى الإخراج: `<matched output rows> / (<left rows> * <right rows>)`، إذ إن هذا هو ما يحاول المُحسِّن تقديره.
+* `Output rows` — العدد المقدَّر والعدد الفعلي للصفوف التي أنتجها الـ ربط. عندما تكون كلتا القيمتين غير صفرية، يُبلّغ `q-error` عن `max(estimated / actual, actual / estimated)`، وهو المقياس المعياري لجودة تقدير العدّية: القيمة `1.00` تعني تقديرًا مثاليًا، والقيمة الكبيرة تعني أن المُحسِّن اختار ترتيب الـ ربط اعتمادًا على عدّية خاطئة بدرجة كبيرة.
+
+أما التقدير الذي لم يُجرَ أصلًا فيُبلَّغ عنه بـ `no stats` — على سبيل المثال، عندما لا يُشغَّل تحسين ترتيب الـ ربط لأن قيمة [`query_plan_optimize_join_order_limit`](/ar/reference/settings/session-settings/query-plan#query_plan_optimize_join_order_limit) هي `0`. ويختلف هذا عن `not collected`، الذي يدل على قيمة فعلية لم يتمكن التنفيذ من قياسها. أما عمليات الـ ربط ذات الجانب الأيمن المملوء مسبقًا (محرك الجدول [`Join`](/ar/reference/engines/table-engines/special/join)، وعمليات `direct` ربط) فلا تمرّ عبر محسّن ترتيب الربط وتطبع أسطر المشاركة فقط.
+
+كما تطبع خطوة الـ ربط سطري `Input (left):` و`Input (right):` مع الأعمدة التي يمرّرها كل جانب إلى الـ ربط.
+
+وبالنسبة لجداول مثال الـ ربط في [EXPLAIN PLAN](#explain-plan)، تبدو خطوة الـ ربط في `EXPLAIN ANALYZE SELECT * FROM t1 INNER JOIN t2 ON t1.id = t2.id` على النحو التالي:
+
+```text
+Join (JOIN FillRightFirst)
+│  t1[100] ⋈ t2[100]
+│  Type: inner | Strictness: all | Algorithm: SpillingHashJoin(HashJoin)
+│  Join conditions: id = id
+│  Cost: estimated 100.00 · actual 100.00
+│  Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01
+│  Output rows: estimated 100.00 · actual 100.00 · q-error 1.00
+│  Left: rows estimated 100.00 · rows 100.00 · matched 100.00 · match rate 100.00% · fanout 1.00
+│  Right: rows estimated 100.00 · rows 100.00 · matched not collected · match rate not collected · fanout not collected
+│  Hash table: unique keys 100.00 · memory 6.27 KB
+│  Input (left): id, value
+│  Input (right): id, value
+│  I/O: rows 200 → 100 (50.00%) · 3.58 KB → 3.58 KB
+│    Stage (build): time 127.45 us (1.2%) · parallelism 0.99/1
+│    Stage (probe): time 124.99 us (1.2%) · parallelism 0.99/1
+```
+
+#### Fanout {#explain-analyze-fanout}
 
 يقيس `fanout` مدى تضاعف الصفوف:
 
@@ -823,9 +873,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 * `fanout = 1` — ربط نظيف بنسبة 1:1؛ إذ أنتج كل صف متطابق صف إخراج واحدًا بالضبط.
 * `fanout > 1` — ربط بنسبة 1:N؛ إذ ضاعفت المفاتيح المكررة في الجانب الآخر عدد الصفوف. وتشير قيمة كبيرة في كلا الجانبين في الوقت نفسه إلى تضخم ديكارتي غير مقصود.
 
-<div id="explain-analyze-matches">
-  #### عندما تتطلب الأرقام `matches = 1`
-</div>
+#### عندما تتطلب الأرقام `matches = 1` {#explain-analyze-matches}
 
 تنتج معظم هذه الأرقام تلقائيًا عن البيانات التي ينشئها الربط، ويعرضها `EXPLAIN ANALYZE` العادي. أما البقية فتتطلب تتبعًا إضافيًا لا يجريه الربط لولا ذلك، لذا لا تُعرض إلا مع `EXPLAIN ANALYZE matches = 1`. ويعتمد ذلك على الخوارزمية؛ ففي عائلة التجزئة توجد حالتان:
 
@@ -874,9 +922,7 @@ fanout              = <matched output rows> / <matched_rows of that side>
 
 عندما تُرجع خوارزميتان رقمًا، تكون الأرقام متطابقة. تمتلك خوارزميات الدمج معلومات إضافية فحسب، لكنها لا تختلف في تعريف ما يُعدّ تطابقًا.
 
-<div id="explain-analyze-join-algorithm-lines">
-  #### الأسطر الخاصة بالخوارزمية
-</div>
+#### الأسطر الخاصة بالخوارزمية {#explain-analyze-join-algorithm-lines}
 
 لنلقِ نظرة على الأسطر الإضافية التي يضيفها كل تنفيذ لعملية الربط.
 
@@ -903,13 +949,13 @@ Spill: yes · left spilled <left_spilled_bytes> · right spilled <right_spilled_
 بالنسبة إلى ربط `partial_merge`، يحمل السطر `Right:` معلومات إضافية حول كيفية تخزين الجدول الأيمن مؤقتًا وفرزه، ويُعرض وقت الفرز في السطرين `Stage (build)` و`Stage (probe)`:
 
 ```txt
-Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
+Right: rows estimated <estimated_right_rows> · rows <right_rows> · matched <matched_right_rows> · size <right_size> · blocks <right_blocks> · storage <in-memory|external> · match rate <match_rate>% · fanout <fanout>
   Stage (build): time <t> (<share>%) · parallelism <avg>/<max> · sort time <build_sort_time> · sort share <build_sort_share>%
   Stage (probe): time <t> (<share>%) · parallelism <avg>/<max> · sort time <probe_sort_time> · sort share <probe_sort_share>%
 ```
 
 * `size <right_size>` — حجم الذاكرة الذي تشغله كتل الجدول الأيمن.
-* `blocks <right_blocks>` — عدد الكتل التي خُزِّن فيها الجدول الأيمن مؤقتًا.
+* `blocks <right_blocks>` — عدد الكتل التي خُزِّن فيها الجدول الأيمن مؤقتًا.
 * `storage <in-memory|external>` — ما إذا كان الجدول الأيمن يتسع في الذاكرة (`in-memory`) أو كان يجب ترحيله إلى القرص (`external`). عندما تكون القيمة `external`، يعرض الحقل الإضافي `spilled <spilled_bytes>` عدد البايتات المضغوطة المكتوبة على القرص.
 * `sort time <sort_time>` — الوقت المستغرق في فرز الجدول الأيمن (في مرحلة البناء) وكل كتلة واردة من الجانب الأيسر (في مرحلة الفحص).
 * `sort share <sort_share>%` — قيمة `sort time` كنسبة من *وقت انشغال تلك المرحلة نفسها* (مجموع الوقت المنقضي لمعالجاتها)، بخلاف النسبة المئوية لـ `time` الخاصة بالمرحلة، التي تمثل حصة من *وقت تنفيذ الاستعلام بأكمله*.
@@ -918,24 +964,22 @@ Right: rows <right_rows> · matched <matched_right_rows> · size <right_size> ·
 
 بالنسبة إلى ربط `direct`، لا يُطبع سوى السطر `Left:`، لأن الجانب الأيمن مخزن مفتاح-قيمة يُبحث فيه مباشرةً بدلًا من تحويله إلى صفوف.
 
-بالنسبة إلى ربط `CROSS` أو `COMMA`، ولأي قسم `ON` دون مساواة مفتاح، يصف السطر `Buffer:` كيفية الاحتفاظ بالجدول الأيمن في الذاكرة، ويعرض السطر `Spill:` ما إذا كان قد رُحِّل إلى القرص:
+بالنسبة إلى ربط `CROSS` أو `COMMA`، ولأي قسم `ON` دون مساواة مفتاح، يصف السطر `Buffer:` كيفية الاحتفاظ بالجدول الأيمن في الذاكرة، ويعرض السطر `Spill:` ما إذا كان قد رُحِّل إلى القرص:
 
 ```txt
 Buffer: memory <peak_memory> · compressed <yes|no>
 Spill: yes · right spilled <right_spilled_bytes>
 ```
 
-* `memory <peak_memory>` — ذروة الذاكرة التي استهلكها الجدول الأيمن المُخزَّن مؤقتًا.
-* `compressed <yes|no>` — ما إذا كانت كتلة واحدة مخزَّنة مؤقتًا على الأقل قد ضُغطت؛ وفي هذه الحالة تفكّ القارئات ضغط كل كتلة مخزَّنة.
+* `memory <peak_memory>` — ذروة الذاكرة التي استهلكها الجدول الأيمن المُخزَّن مؤقتًا.
+* `compressed <yes|no>` — ما إذا كانت كتلة واحدة مخزَّنة مؤقتًا على الأقل قد ضُغطت؛ وفي هذه الحالة تفكّ القارئات ضغط كل كتلة مخزَّنة.
 * `Spill:` — علامة `yes`/`no` نفسها المستخدمة مع `grace_hash`، ويعرض `right spilled <right_spilled_bytes>` عدد البايتات المضغوطة المكتوبة على القرص.
 
 يعرض كلا الجانبين هنا `matched not collected`: إذ إن المسند الثابت إما يقرن كل صف من الجدول الأيسر بكل صف من الجدول الأيمن، أو لا يقرن أي صف منها، لذا لا يمكن تحديد الصفوف الفردية التي تطابقت.
 
 في عملية ربط مع محرك الجدول [`Join`](/ar/reference/engines/table-engines/special/join)، يُبلّغ عن كلا الجانبين، إلى جانب السطر `Hash table:` الذي يصف الجدول المُنشأ مسبقًا. ويعرض الجانب الأيمن عدد الصفوف المخزنة في المحرك، لا صفوف عملية بناء خاصة بكل query.
 
-<div id="explain-analyze-processors">
-  #### الأوقات لكل معالِج
-</div>
+#### الأوقات لكل معالِج {#explain-analyze-processors}
 
 عند استخدام `processors = 1`، يُطبَع سطر إضافي أسفل كل مرحلة يوضح توزيع الزمن المنقضي عبر معالجات المرحلة:
 
@@ -945,9 +989,7 @@ Time per processor (<n>): min <t> · median <t> · max <t> · sum <t>
 
 يشير `<n>` إلى عدد المعالِجات في هذه المرحلة. ويشير الفارق الكبير بين `median` و`max` إلى اختلال في توازن الحمل بين المعالِجات المتوازية.
 
-<div id="explain-estimate">
-  ### EXPLAIN ESTIMATE
-</div>
+### EXPLAIN ESTIMATE {#explain-estimate}
 
 يعرض العدد التقديري للصفوف والعلامات والأجزاء التي ستُقرأ من الجداول عند معالجة الاستعلام. يعمل مع الجداول من عائلة [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree).
 
@@ -971,11 +1013,11 @@ EXPLAIN ESTIMATE SELECT * FROM ttt;
 └──────────┴───────┴───────┴──────┴───────┘
 ```
 
-<div id="explain-whatif">
-  ### EXPLAIN WHATIF
-</div>
+### EXPLAIN WHATIF {#explain-whatif}
 
-يقدّر الفائدة التي يمكن أن يوفّرها فهرس تخطٍّ افتراضي لاستعلام `SELECT`، *من دون* إجراء materializing للفهرس على القرص. حدِّد مرشحًا واحدًا أو أكثر باستخدام [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index#create-hypothetical-index)، ثم شغّل `EXPLAIN WHATIF SELECT ...` لمعرفة ما يلي لكل مرشح: مدى قابليته للتطبيق، والعدد التقديري للعلامات المقروءة، والبايتات التقديرية، ونسبة التخطي.
+يقدّر الفائدة التي يمكن أن يوفّرها فهرس تخطٍّ افتراضي لاستعلام `SELECT`، *من دون* إجراء materializing للفهرس على القرص. حدِّد مرشحًا واحدًا أو أكثر باستخدام [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index#create-hypothetical-index)، ثم شغّل `EXPLAIN WHATIF SELECT ...` لمعرفة ما يلي لكل مرشح: مدى قابليته للتطبيق، والعدد التقديري للعلامات المقروءة، والبايتات التقديرية، ونسبة التخطي.
+
+كما تُدرَج ضمن المرشحين الإسقاطات الافتراضية المعرّفة باستخدام [`CREATE HYPOTHETICAL PROJECTION`](/ar/reference/statements/hypothetical-projection#create-hypothetical-projection)، غير أن فائدتها لا تُقدَّر بعد: إذ يُبلَّغ عن كل منها بالقيمة `status: not_applicable`. أما الإسقاط الذي لم يعد تعريفه منطبقًا على الجدول — بسبب عمود محذوف، أو تغيير في إعدادٍ يعطّل الخصائص التي يحتاجها — فيُبلَّغ عنه بذلك السبب بدلًا من ذلك.
 
 **الصياغة**
 
@@ -985,7 +1027,7 @@ EXPLAIN WHATIF [empirical = 0] SELECT ...
 
 **الإعدادات**
 
-* `empirical` — تؤدي القيمة `1` (الافتراضية) إلى تشغيل الفهرس في الذاكرة على الحبيبات التي جرى تقليصها وفق خط الأساس، وذلك لقياس نسبة التخطي (وهي حدٌّ أعلى). أما `0` فتتخطى هذا المسار. وفي كلتا الحالتين، إذا لم يُنتج `empirical` نتيجة (إما لأنه معطَّل أو لأن الفهرس لا يمكن تقييمه في الذاكرة)، فإن المُقدِّر يعود إلى [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)، ثم أخيرًا إلى ملخص يقتصر على قابلية التطبيق فقط إذا لم يتوفر أيٌّ منهما.
+* `empirical` — تؤدي القيمة `1` (الافتراضية) إلى تشغيل الفهرس في الذاكرة على الحبيبات التي جرى تقليصها وفق خط الأساس، وذلك لقياس نسبة التخطي (وهي حدٌّ أعلى). أما `0` فتتخطى هذا المسار. وفي كلتا الحالتين، إذا لم يُنتج `empirical` نتيجة (إما لأنه معطَّل أو لأن الفهرس لا يمكن تقييمه في الذاكرة)، فإن المُقدِّر يعود إلى [إحصاءات الأعمدة](/ar/reference/engines/table-engines/mergetree-family/mergetree#column-statistics)، ثم أخيرًا إلى ملخص يقتصر على قابلية التطبيق فقط إذا لم يتوفر أيٌّ منهما.
 
 **المخرجات**
 
@@ -1012,7 +1054,7 @@ Estimation:
 ```
 
 * `source` — كيفية احتساب التقدير.
-  * `empirical`: جرى بناء الفهرس في الذاكرة على الحبيبات المتبقية بعد استبعاد خط الأساس، ثم عُدَّت الحبيبات التي سيتجاوزها الفهرس. وهذا يمثل حدًا أعلى — راجع القيود في [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index#limitations).
+  * `empirical`: جرى بناء الفهرس في الذاكرة على الحبيبات المتبقية بعد استبعاد خط الأساس، ثم عُدَّت الحبيبات التي سيتجاوزها الفهرس. وهذا يمثل حدًا أعلى — راجع القيود في [`CREATE HYPOTHETICAL INDEX`](/ar/reference/statements/hypothetical-index#limitations).
   * `statistical`: مشتق من إحصاءات الأعمدة. يُستخدم عندما يكون `empirical` معطّلًا (`empirical = 0`) أو عندما يتعذر على `empirical` إنتاج نتيجة، مع توفّر إحصاءات أعمدة للأعمدة ذات الصلة.
   * `applicability_only`: الفهرس قابل للتطبيق على الشرط، لكن لم يُنتج لا التقدير التجريبي ولا الإحصائي نتيجة (مثلًا، `empirical = 0` مع عدم تعريف إحصاءات أعمدة). ويعرض `skip_ratio: 0.0%` بوصفه حدًا محافظًا.
 * `empirical_reason` — سبب تعذّر تشغيل التقدير التجريبي. لا يظهر إلا مع `empirical_status: unsupported`. على سبيل المثال، تؤدي قيمة غير صفرية لـ`merge_tree_min_rows_for_seek` أو `merge_tree_min_bytes_for_seek` إلى أن تدمج القراءة الفعلية نطاقات العلامات، وهو ما لا يحاكيه العد لكل حبيبة، لذا يعود التقدير إلى `statistical` أو `applicability_only`.
@@ -1021,13 +1063,13 @@ Estimation:
 
 يُكتب الإعداد Inline بين `WHATIF` و`SELECT` — ولا توجد الكلمة المفتاحية `SETTINGS` (وهذا يطابق الطريقة التي تقبل بها متغيرات `EXPLAIN` الأخرى خياراتها).
 
-إذا لم تكن هناك فهارس افتراضية معرّفة للجدول، فسيعرض `EXPLAIN WHATIF` القيمة `status: not_applicable` مع تلميح لإنشاء فهرس.
+إذا لم تكن هناك فهارس افتراضية ولا PROJECTION افتراضية معرّفة للجدول، فسيعرض `EXPLAIN WHATIF` القيمة `status: not_applicable` مع تلميح لإنشاء واحد منها.
 
 **الصف المجمّع (مرشحون متعددون)**
 
-عند تقييم مرشحين أو أكثر تجريبيًا، يُضيف `EXPLAIN WHATIF` كتلة إضافية واحدة باسم `(combined: idx_a, idx_b, ...)` بعد الصفوف الخاصة بكل مرشح. وتعرض هذه الكتلة الفائدة المشتركة لوجود *جميع* تلك الفهارس في الوقت نفسه: إذ إن القراءة الفعلية لا تُبقي الحبيبة إلا إذا نجت من *كل* فهرس تخطٍّ، لذلك يكون التقدير المجمّع هو تقاطع الحبيبات الباقية لدى المرشحين. ومن ثم تكون قيمة `skip_ratio` فيها على الأقل بقدر أفضل مرشح منفرد — فالفهارس المتكاملة تقلّص معًا بدرجة أكبر، بينما لا تغيّرها الفهارس المتكررة.
+عند تقييم مرشحين أو أكثر تجريبيًا، يُلحق `EXPLAIN WHATIF` كتلة إضافية واحدة باسم `(combined: idx_a, idx_b, ...)` بعد صفوف المرشحات الفردية. وتُبلّغ هذه الكتلة عن الفائدة المشتركة الناتجة عن توفّر *جميع* تلك الفهارس معًا: إذ إن عملية القراءة الفعلية لا تُبقي على حبيبة إلا إذا نجت من *كل* فهرس تخطٍّ، وبالتالي فإن التقدير المجمّع هو تقاطع الحبيبات الباقية لدى المرشحات. ولذلك تكون قيمة `skip_ratio` فيه مساوية على الأقل لأفضل مرشح منفرد — فالفهارس المتكاملة تُقصي قدرًا أكبر عند اجتماعها، بينما الفهارس المتكررة تتركها دون تغيير.
 
-لا تُسهم إلا المرشحات التي تحمل `source: empirical`، لأن الصف المجمّع يُبنى من تقاطع مجموعات البقاء الخاصة بكل حبيبة لكلٍ منها. أما المرشحات المقدَّرة على أنها `statistical` أو `applicability_only` فلا تملك بيانات على مستوى حبيبة، لذا تُستبعَد؛ وبناءً على ذلك لا تظهر الكتلة الموحَّدة إلا عندما يكون مرشحان على الأقل قد أنتجا تقديرًا تجريبيًا، وتُحذَف بخلاف ذلك (على سبيل المثال عند `empirical = 0`). وتكون حقول التقدير فيها مماثلة لحقول كتلة تجريبية خاصة بكل مرشح، باستثناء أن `elapsed_us` يساوي `0` — إذ إن التقدير الموحَّد مشتق من عمليات المسح الخاصة بكل مرشح، وليس من عملية مسح جديدة. أما الاسم التركيبي `(combined: ...)` فهو مجرد تسمية في التقرير، ولا يمكن استخدامه مع `force_data_skipping_indices`.
+لا تُسهم إلا المرشحات التي تحمل `source: empirical`، لأن الصف المجمّع يُبنى من تقاطع مجموعات البقاء الخاصة بكل حبيبة لكلٍ منها. أما المرشحات المقدَّرة على أنها `statistical` أو `applicability_only` فلا تملك بيانات على مستوى حبيبة، لذا تُستبعَد؛ وبناءً على ذلك لا تظهر الكتلة الموحَّدة إلا عندما يكون مرشحان على الأقل قد أنتجا تقديرًا تجريبيًا، وتُحذَف بخلاف ذلك (على سبيل المثال عند `empirical = 0`). وتكون حقول التقدير فيها مماثلة لحقول كتلة تجريبية خاصة بكل مرشح، باستثناء أن `elapsed_us` يساوي `0` — إذ إن التقدير الموحَّد مشتق من عمليات المسح الخاصة بكل مرشح، وليس من عملية مسح جديدة. أما الاسم التركيبي `(combined: ...)` فهو مجرد تسمية في التقرير، ولا يمكن استخدامه مع `force_data_skipping_indices`.
 
 **مثال تجريبي**
 
@@ -1073,7 +1115,7 @@ ALTER TABLE t ADD STATISTICS b TYPE tdigest;
 ALTER TABLE t MATERIALIZE STATISTICS b SETTINGS mutations_sync = 1;
 ```
 
-ثم عطِّل المسار التجريبي ليعتمد المُقدِّر على إحصاءات الأعمدة:
+ثم عطِّل المسار التجريبي ليعتمد المُقدِّر على إحصاءات الأعمدة:
 
 ```sql
 EXPLAIN WHATIF empirical = 0 SELECT * FROM t WHERE b < 10;
@@ -1093,11 +1135,9 @@ Estimation:
 
 يأتي الرقم من انتقائية إحصاءات العمود للتعبير `b < 10` (نحو 10 صفوف من أصل 10000)، ويُورَد باعتباره حدًا أعلى لـ `skip_ratio`. ولا توجد `sampled_parts` / `sampled_marks` — إذ لم تُقرأ أي بيانات.
 
-إذا لم يكن أيٌّ من المسارين متاحًا (مثلًا، `empirical = 0` ولم تُعرَّف أي إحصاءات أعمدة)، فإن المُقدِّر يُرجع `source: applicability_only` و`skip_ratio: 0.0%` بشكل متحفّظ.
+إذا لم يكن أيٌّ من المسارين متاحًا (مثلًا، `empirical = 0` ولم تُعرَّف أي إحصاءات أعمدة)، فإن المُقدِّر يُرجع `source: applicability_only` و`skip_ratio: 0.0%` بشكل متحفّظ.
 
-<div id="explain-table-override">
-  ### EXPLAIN TABLE OVERRIDE
-</div>
+### EXPLAIN TABLE OVERRIDE {#explain-table-override}
 
 يعرض ناتج تطبيق تجاوز على مخطط جدول تم الوصول إليه عبر دالة جدول.
 كما يُجري بعض عمليات التحقق، ويُطلق استثناءً إذا كان هذا التجاوز سيتسبب في أي نوع من الإخفاق.

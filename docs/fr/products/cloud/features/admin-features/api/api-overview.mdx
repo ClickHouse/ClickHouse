@@ -95,12 +95,12 @@ Les versions comportant le suffixe `-alphaN` (par ex. `3.15.0-alpha3`) sont ant�
 Lorsqu’une fonctionnalité atteint la disponibilité générale, la ressource correspondante perd son marqueur bêta dans la version suivante du provider : l’avertissement lors de la planification cesse de s’afficher et l’encadré de la documentation est supprimé. Rien d’autre ne change — aucune modification de configuration, aucune migration d’état et aucun basculement entre les builds.
 
 <div id="terraform-and-openapi-new-pricing---replica-settings-explained">
-  ## Nouveau modèle tarifaire Terraform et OpenAPI : explication des paramètres de répliques
+  ## Nouveau modèle tarifaire Terraform et OpenAPI : explication des paramètres de répliques
 </div>
 
 Le nombre de répliques avec lequel chaque service est créé est de 3 par défaut pour les tiers Scale et Enterprise, contre 1 par défaut pour le tier Basic.
 Pour les tiers Scale et Enterprise, il est possible de l&#39;ajuster en transmettant un champ `numReplicas` dans la requête de création du service.
-La valeur du champ `numReplicas` doit être comprise entre 2 et 20 pour le premier service d&#39;un warehouse. Les services créés dans un warehouse existant peuvent avoir seulement 1 réplique.
+La valeur du champ `numReplicas` doit être d&#39;au moins 2 pour le premier service d&#39;un warehouse. Les services créés dans un warehouse existant peuvent avoir seulement 1 réplique. Pour connaître le nombre maximal de répliques, consultez [Limites d&#39;utilisation](/fr/cloud/bestpractices/usage-limits).
 
 <div id="support">
   ## Assistance

@@ -1,0 +1,165 @@
+---
+sidebarTitle: 'chdb'
+description: 'Postgres chdb 扩展的完整参考文档'
+slug: '/cloud/managed-postgres/extensions/chdb/chdb'
+title: 'chdb 扩展参考文档'
+doc_type: 'reference'
+keywords: ['PostgreSQL', 'Postgres', 'COPY', 'Import', 'Export', 'extension', 'chdb', 'Parquet', 'CSV', 'TSV']
+---
+
+## 概要 {#synopsis}
+
+```psql
+# CREATE EXTENSION chdb;
+CREATE EXTENSION
+
+# SELECT * FROM chdb_query('version()') AS (version text);
+ version
+----------
+ 26.7.2.1
+(1 row)
+```
+
+## 描述 {#description}
+
+`chdb` 扩展会在一个辅助进程中运行 [chDB] 查询。
+
+## 函数 {#functions}
+
+<div id="pgchdb_version">
+  ### `pgchdb_version`
+</div>
+
+```sql
+SELECT pgchdb_version();
+```
+
+返回 chdb 扩展库当前的[语义化版本][semver]。chdb 扩展的版本仅使用版本号中的 `x.y` 部分，而该库提供完整的 `x.y.z` [语义化版本][semver]。此值与 Postgres 18 及更高版本中 [`pg_get_loaded_modules()`] 函数返回的值相同：
+
+```sql
+SELECT version
+  FROM pg_get_loaded_modules()
+ WHERE module_name = 'chdb';
+```
+
+### `chdb_query` {#chdb_query}
+
+```sql
+SELECT * FROM chdb_query('SELECT version()') AS (version text);
+```
+
+执行一条 [chDB] 查询，并将查询结果的行作为关系 (relation) 返回。每次调用都会在磁盘上创建一个临时的 chDB 数据库，并在查询完成后将其删除。因此，先前 `chdb_query()` 调用所创建的任何对象 (例如 DDL) 都不会保留到后续调用中。
+
+必须提供列定义列表 (`AS (col type, ...)`) ：PostgreSQL 在拉取行之前需要先获得行结构定义，且该结构必须与查询返回的列相匹配。值会从 chDB 转换为所声明的类型。
+
+默认情况下没有任何 role 拥有 `EXECUTE` 权限；需要将该权限 `GRANT` 给某个 role，才能允许它使用该 FUNCTION。
+
+```sql
+GRANT EXECUTE ON FUNCTION chdb_query(text) TO chdb_admin;
+```
+
+**示例：**
+
+```sql
+SELECT * FROM chdb_query(
+    'SELECT number AS n, number * number FROM numbers(5) ORDER BY n'
+) AS (n int2, p int);
+```
+
+输出：
+
+```
+ n | p
+---+----
+ 0 |  0
+ 1 |  1
+ 2 |  4
+ 3 |  9
+ 4 | 16
+(5 rows)
+```
+
+## 文本编码 {#text-encoding}
+
+有关 chDB 字节字符串如何映射到 Postgres 的 `text`、`bytea` 等类型，请参阅 [`chdb_hook` 文档中的文本编码][text encoding]。
+
+## 设置 {#settings}
+
+### `chdb.max_memory` {#chdbmax_memory}
+
+```sql
+SET chdb.max_memory = '1 GB';
+```
+
+chDB 查询可使用的最大内存量，用于设置 chDB 的
+[`max_memory_usage`] 配置项。需要 superuser 特权。可使用整数表示兆字节数，或使用以下内存单位之一：
+
+* `B` (字节) 
+* `kB` (千字节) 
+* `MB` (兆字节) 
+* `GB` (吉字节) 
+* `TB` (太字节) 
+
+默认值为 `0`，表示不限制内存。
+
+### `chdb.max_threads` {#chdmax_threads}
+
+```sql
+SET chdb.max_threads = 4;
+```
+
+chDB 查询的最大查询处理线程数，用于设置 chDB 的 [`max_threads`] 配置项。需要 superuser 特权。默认值为 `0`，即由 chDB 自行决定该值。
+
+我们强烈建议在执行大型查询前先设置 `chdb.max_threads`，避免 chDB 占满 CPU 资源，进而影响 PostgreSQL。
+
+### `chdb.max_parsing_threads` {#chdmax_parsing_threads}
+
+```sql
+SET chdb.max_parsing_threads = 2;
+```
+
+chDB 在解析支持并行解析的输入格式时可使用的最大线程数，用于设置 chDB 的 [`max_parsing_threads`] 设置。需要 superuser 特权。默认值为 `0`，即由 chDB 自行决定该值。
+
+在执行需要解析大量数据的查询 (例如从 [table functions] 加载数据) 之前，建议先设置 `chdb.max_parsing_threads`，以避免 chDB 占满 CPU 资源而影响 PostgreSQL。
+
+## 版本控制策略 {#versioning-policy}
+
+chdb 扩展 的公开发布遵循[语义化版本控制][semver]。
+
+* 主版本号 (major version) 在 API 发生变更时递增
+* 次版本号 (minor version) 在出现向后兼容的 SQL 变更时递增
+* 修订号 (patch version) 在仅有 binary 变更时递增
+
+安装完成后，PostgreSQL 会跟踪两种版本标识：
+
+* 库 版本 (在 PostgreSQL 18 及更高版本中由 `PG_MODULE_MAGIC` 定义) 包含完整的语义化版本号，可通过 `pgchdb_version()` 函数或 Postgres 的 [`pg_get_loaded_modules()`] 函数的输出查看。
+* extension 版本 (在 control 文件中定义) 仅包含主版本号和次版本号，可在 `pg_catalog.pg_extension` 表、`pg_available_extension_versions()` 函数的输出以及 `\dx chdb` 中查看。
+
+这意味着：仅递增修订号的发布 (例如从 `v0.1.0` 到 `v0.1.1`) 对所有已加载 `v0.1` 的 database 均生效，无需运行 `ALTER EXTENSION` 即可享受此次升级。
+
+而递增次版本号或主版本号的发布则会附带 SQL 升级 scripts，所有已安装该 extension 的现有 database 都必须运行 `ALTER EXTENSION chdb UPDATE`，才能享受此次升级。
+
+## 作者 {#authors}
+
+* [David E. Wheeler](https://justatheory.com/)
+* [serprex](https://github.com/serprex)
+
+## 版权 {#copyright}
+
+Copyright (c) 2026, ClickHouse
+
+[chDB]: https://clickhouse.com/chdb "chDB —— 快速、可靠、可扩展的进程内数据库"
+
+[`pg_get_loaded_modules()`]: https://pgpedia.info/g/pg_get_loaded_modules.html "pgPedia: pg_get_loaded_modules()"
+
+[`max_memory_usage`]: https://clickhouse.com/docs/reference/settings/session-settings/max-memory-usage "ClickHouse Docs: max_memory_usage_* session settings"
+
+[`max_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max-threads "ClickHouse Docs: max_threads_* session settings"
+
+[`max_parsing_threads`]: https://clickhouse.com/docs/reference/settings/session-settings/max#max_parsing_threads "ClickHouse Docs: max_parsing_threads session setting"
+
+[table functions]: https://clickhouse.com/docs/reference/functions/table-functions "ClickHouse Docs: Table Functions"
+
+[text encoding]: /products/managed-postgres/extensions/chdb/chdb_hook#text-encoding "chdb_hook Docs: 文本编码"
+
+[semver]: https://semver.org/spec/v2.0.0.html "Semantic Versioning 2.0.0"

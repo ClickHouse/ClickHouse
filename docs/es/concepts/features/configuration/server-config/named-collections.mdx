@@ -33,13 +33,9 @@ y/o la opción de configuración `allow_named_collection_override_by_default`.
   `allow_named_collection_override_by_default` (que está habilitado de forma predeterminada).
 </Warning>
 
-<div id="storing-named-collections-in-the-system-database">
-  ## Almacenar colecciones con nombre en la base de datos del sistema
-</div>
+## Almacenar colecciones con nombre en la base de datos del sistema {#storing-named-collections-in-the-system-database}
 
-<div id="ddl-example">
-  ### Ejemplo de DDL
-</div>
+### Ejemplo de DDL {#ddl-example}
 
 ```sql
 CREATE NAMED COLLECTION name AS
@@ -54,9 +50,7 @@ En el ejemplo anterior:
 * `key_2` nunca puede sobrescribirse.
 * `url` puede sobrescribirse o no, según el valor de `allow_named_collection_override_by_default`.
 
-<div id="permissions-to-create-named-collections-with-ddl">
-  ### Permisos para crear colecciones con nombre con DDL
-</div>
+### Permisos para crear colecciones con nombre con DDL {#permissions-to-create-named-collections-with-ddl}
 
 Para gestionar colecciones con nombre con DDL, un usuario debe tener el privilegio `named_collection_control`.  Esto se puede asignar añadiendo un archivo a `/etc/clickhouse-server/users.d/`.  En el ejemplo, se otorgan al usuario `default` los privilegios `access_management` y `named_collection_control`:
 
@@ -67,6 +61,8 @@ Para gestionar colecciones con nombre con DDL, un usuario debe tener el privileg
       <password_sha256_hex>65e84be33532fb784c48129675f9eff3a682b27168c0ea744b2cf58ee02337c5</password_sha256_hex replace=true>
       <access_management>1</access_management>
       <named_collection_control>1</named_collection_control>
+      <!-- Uncomment to also let this user see the values stored in named collections. -->
+      <!-- <show_named_collections_secrets>1</show_named_collections_secrets> -->
     </default>
   </users>
 </clickhouse>
@@ -76,9 +72,9 @@ Para gestionar colecciones con nombre con DDL, un usuario debe tener el privileg
   En el ejemplo anterior, el valor `password_sha256_hex` es la representación hexadecimal del hash SHA256 de la contraseña. Esta configuración para el usuario `default` tiene el atributo `replace=true` porque, en la configuración predeterminada, se define una `password` en texto plano, y no es posible tener configuradas a la vez una contraseña en texto plano y una contraseña SHA256 hexadecimal para un usuario.
 </Tip>
 
-<div id="storage-for-named-collections">
-  ### Almacenamiento de colecciones con nombre
-</div>
+`named_collection_control` permite al usuario crear, modificar y eliminar colecciones con nombre, pero no leer los valores que ya están almacenados en ellas. Ese es un privilegio independiente, `SHOW NAMED COLLECTIONS SECRETS`, habilitado mediante la configuración [`show_named_collections_secrets`](/es/concepts/features/configuration/settings/settings-users#show_named_collections_secrets-user-setting). Un usuario solo puede otorgar los privilegios que él mismo posee, por lo que, mientras `show_named_collections_secrets` esté deshabilitado, el usuario no dispone del conjunto completo de privilegios y `GRANT ALL ON *.* TO another_user WITH GRANT OPTION` se rechaza con `(Missing permissions: SHOW NAMED COLLECTIONS SECRETS ON *)`.
+
+### Almacenamiento de colecciones con nombre {#storage-for-named-collections}
 
 Las colecciones con nombre pueden almacenarse en el disco local o en ZooKeeper/Keeper. De forma predeterminada, se utiliza el almacenamiento local.
 También pueden almacenarse cifradas con los mismos algoritmos que se usan para el [cifrado de disco](/es/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system),
@@ -114,13 +110,9 @@ WHERE name = 'named_collections_storage.type';
 
 Cambiar el tipo de almacenamiento requiere reiniciar el servidor; `SYSTEM RELOAD CONFIG` no cambia el backend activo.
 
-<div id="storing-named-collections-in-configuration-files">
-  ## Guardar colecciones con nombre en archivos de configuración
-</div>
+## Guardar colecciones con nombre en archivos de configuración {#storing-named-collections-in-configuration-files}
 
-<div id="xml-example">
-  ### Ejemplo en XML
-</div>
+### Ejemplo en XML {#xml-example}
 
 ```xml title='/etc/clickhouse-server/config.d/named_collections.xml'
 <clickhouse>
@@ -140,15 +132,11 @@ En el ejemplo anterior:
 * `key_2` nunca puede sobrescribirse.
 * `url` puede sobrescribirse o no, según el valor de `allow_named_collection_override_by_default`.
 
-<div id="modifying-named-collections">
-  ## Modificar colecciones con nombre
-</div>
+## Modificar colecciones con nombre {#modifying-named-collections}
 
 Las colecciones con nombre creadas con consultas DDL pueden modificarse o eliminarse mediante DDL. Las colecciones con nombre creadas con archivos XML pueden gestionarse editando o eliminando el archivo XML correspondiente.
 
-<div id="alter-a-ddl-named-collection">
-  ### Modificar una colección con nombre DDL
-</div>
+### Modificar una colección con nombre DDL {#alter-a-ddl-named-collection}
 
 Cambie o añada las claves `key1` y `key3` de la colección `collection2`
 (esto no cambiará el valor de la marca `overridable` para esas claves):
@@ -183,23 +171,17 @@ ALTER NAMED COLLECTION collection2 DELETE key1;
 ALTER NAMED COLLECTION collection2 SET key1=4;
 ```
 
-<div id="drop-the-ddl-named-collection-collection2">
-  ### Elimine la colección con nombre de DDL `collection2`:
-</div>
+### Elimine la colección con nombre de DDL `collection2`: {#drop-the-ddl-named-collection-collection2}
 
 ```sql
 DROP NAMED COLLECTION collection2
 ```
 
-<div id="named-collections-for-accessing-s3">
-  ## Colecciones con nombre para acceder a S3
-</div>
+## Colecciones con nombre para acceder a S3 {#named-collections-for-accessing-s3}
 
 Consulte la descripción de los parámetros en [la función de tabla S3](/es/reference/functions/table-functions/s3).
 
-<div id="ddl-example">
-  ### Ejemplo de DDL
-</div>
+### Ejemplo de DDL {#ddl-example-1}
 
 ```sql
 CREATE NAMED COLLECTION s3_mydata AS
@@ -209,9 +191,7 @@ format = 'CSV',
 url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/'
 ```
 
-<div id="xml-example">
-  ### Ejemplo en XML
-</div>
+### Ejemplo en XML {#xml-example-1}
 
 ```xml
 <clickhouse>
@@ -226,15 +206,11 @@ url = 'https://s3.us-east-1.amazonaws.com/yourbucket/mydata/'
 </clickhouse>
 ```
 
-<div id="s3-function-and-s3-table-named-collection-examples">
-  ### Ejemplos de colecciones con nombre de la función s3() y la tabla S3
-</div>
+### Ejemplos de colecciones con nombre de la función s3() y la tabla S3 {#s3-function-and-s3-table-named-collection-examples}
 
 Ambos ejemplos siguientes usan la misma colección con nombre `s3_mydata`:
 
-<div id="s3-function">
-  #### Función s3()
-</div>
+#### Función s3() {#s3-function}
 
 ```sql
 INSERT INTO FUNCTION s3(s3_mydata, filename = 'test_file.tsv.gz',
@@ -246,9 +222,7 @@ SELECT * FROM numbers(10000);
   El primer argumento de la función `s3()` anterior es el nombre de la colección, `s3_mydata`. Sin colecciones con nombre, el ID de la clave de acceso, la clave secreta, el formato y la URL tendrían que pasarse en cada llamada a la función `s3()`.
 </Tip>
 
-<div id="s3-table">
-  #### Tabla de S3
-</div>
+#### Tabla de S3 {#s3-table}
 
 ```sql
 CREATE TABLE s3_engine_table (number Int64)
@@ -263,15 +237,11 @@ SELECT * FROM s3_engine_table LIMIT 3;
 └────────┘
 ```
 
-<div id="named-collections-for-accessing-mysql-database">
-  ## Colecciones con nombre para acceder a una base de datos MySQL
-</div>
+## Colecciones con nombre para acceder a una base de datos MySQL {#named-collections-for-accessing-mysql-database}
 
 Para consultar la descripción de los parámetros, vea [mysql](/es/reference/functions/table-functions/mysql).
 
-<div id="ddl-example">
-  ### Ejemplo de DDL
-</div>
+### Ejemplo de DDL {#ddl-example-2}
 
 ```sql
 CREATE NAMED COLLECTION mymysql AS
@@ -284,9 +254,7 @@ connection_pool_size = 8,
 replace_query = 1
 ```
 
-<div id="xml-example-2">
-  ### Ejemplo de XML
-</div>
+### Ejemplo de XML {#xml-example-2}
 
 ```xml
 <clickhouse>
@@ -304,15 +272,11 @@ replace_query = 1
 </clickhouse>
 ```
 
-<div id="mysql-function-mysql-table-mysql-database-and-dictionary-named-collection-examples">
-  ### Ejemplos de colecciones con nombre para la función mysql(), la tabla MySQL, la base de datos MySQL y el Diccionario
-</div>
+### Ejemplos de colecciones con nombre para la función mysql(), la tabla MySQL, la base de datos MySQL y el Diccionario {#mysql-function-mysql-table-mysql-database-and-dictionary-named-collection-examples}
 
 Los cuatro ejemplos siguientes usan la misma colección con nombre `mymysql`:
 
-<div id="mysql-function">
-  #### función mysql()
-</div>
+#### función mysql() {#mysql-function}
 
 ```sql
 SELECT count() FROM mysql(mymysql, table = 'test');
@@ -326,9 +290,7 @@ SELECT count() FROM mysql(mymysql, table = 'test');
   La colección con nombre no especifica el parámetro `table`, por lo que este se indica en la llamada a la función como `table = 'test'`.
 </Note>
 
-<div id="mysql-table">
-  #### Tabla de MySQL
-</div>
+#### Tabla de MySQL {#mysql-table}
 
 ```sql
 CREATE TABLE mytable(A Int64) ENGINE = MySQL(mymysql, table = 'test', connection_pool_size=3, replace_query=0);
@@ -343,9 +305,7 @@ SELECT count() FROM mytable;
   El DDL anula la configuración connection&#95;pool&#95;size de la colección con nombre.
 </Note>
 
-<div id="mysql-database">
-  #### Base de datos MySQL
-</div>
+#### Base de datos MySQL {#mysql-database}
 
 ```sql
 CREATE DATABASE mydatabase ENGINE = MySQL(mymysql);
@@ -358,9 +318,7 @@ SHOW TABLES FROM mydatabase;
 └────────┘
 ```
 
-<div id="mysql-dictionary">
-  #### Diccionario de MySQL
-</div>
+#### Diccionario de MySQL {#mysql-dictionary}
 
 ```sql
 CREATE DICTIONARY dict (A Int64, B String)
@@ -376,9 +334,7 @@ SELECT dictGet('dict', 'B', 2);
 └─────────────────────────┘
 ```
 
-<div id="named-collections-for-accessing-postgresql-database">
-  ## Colecciones con nombre para acceder a la base de datos PostgreSQL
-</div>
+## Colecciones con nombre para acceder a la base de datos PostgreSQL {#named-collections-for-accessing-postgresql-database}
 
 La descripción de los parámetros puede consultarse en [postgresql](/es/reference/functions/table-functions/postgresql). Además, existen alias:
 
@@ -426,9 +382,7 @@ Ejemplo de configuración:
 </clickhouse>
 ```
 
-<div id="example-of-using-named-collections-with-the-postgresql-function">
-  ### Ejemplo de uso de colecciones con nombre con la función postgresql
-</div>
+### Ejemplo de uso de colecciones con nombre con la función postgresql {#example-of-using-named-collections-with-the-postgresql-function}
 
 ```sql
 SELECT * FROM postgresql(mypg, table = 'test');
@@ -446,9 +400,7 @@ SELECT * FROM postgresql(mypg, table = 'test', schema = 'public');
 └───┘
 ```
 
-<div id="example-of-using-named-collections-with-database-with-engine-postgresql">
-  ### Ejemplo de uso de colecciones con nombre en una base de datos con motor PostgreSQL
-</div>
+### Ejemplo de uso de colecciones con nombre en una base de datos con motor PostgreSQL {#example-of-using-named-collections-with-database-with-engine-postgresql}
 
 ```sql
 CREATE TABLE mypgtable (a Int64) ENGINE = PostgreSQL(mypg, table = 'test', schema = 'public');
@@ -466,9 +418,7 @@ SELECT * FROM mypgtable;
   PostgreSQL copia los datos de la colección con nombre al crear la tabla. Los cambios en la colección no afectan a las tablas existentes.
 </Note>
 
-<div id="example-of-using-named-collections-with-database-with-engine-postgresql-1">
-  ### Ejemplo de uso de colecciones con nombre con una base de datos con motor PostgreSQL
-</div>
+### Ejemplo de uso de colecciones con nombre con una base de datos con motor PostgreSQL {#example-of-using-named-collections-with-database-with-engine-postgresql-1}
 
 ```sql
 CREATE DATABASE mydatabase ENGINE = PostgreSQL(mypg);
@@ -480,9 +430,7 @@ SHOW TABLES FROM mydatabase
 └──────┘
 ```
 
-<div id="example-of-using-named-collections-with-a-dictionary-with-source-postgresql">
-  ### Ejemplo de uso de colecciones con nombre en un diccionario con fuente POSTGRESQL
-</div>
+### Ejemplo de uso de colecciones con nombre en un diccionario con fuente POSTGRESQL {#example-of-using-named-collections-with-a-dictionary-with-source-postgresql}
 
 ```sql
 CREATE DICTIONARY dict (a Int64, b String)
@@ -498,9 +446,7 @@ SELECT dictGet('dict', 'b', 2);
 └─────────────────────────┘
 ```
 
-<div id="named-collections-for-accessing-a-remote-clickhouse-database">
-  ## Colecciones con nombre para acceder a una base de datos remota de ClickHouse
-</div>
+## Colecciones con nombre para acceder a una base de datos remota de ClickHouse {#named-collections-for-accessing-a-remote-clickhouse-database}
 
 Consulte la descripción de los parámetros en [remote](/es/reference/functions/table-functions/remote#parameters).
 
@@ -533,9 +479,7 @@ secure = 1
 
 `secure` no es necesario para la conexión con `remoteSecure`, pero puede usarse para diccionarios.
 
-<div id="example-of-using-named-collections-with-the-remoteremotesecure-functions">
-  ### Ejemplo de uso de colecciones con nombre con las funciones `remote`/`remoteSecure`
-</div>
+### Ejemplo de uso de colecciones con nombre con las funciones `remote`/`remoteSecure` {#example-of-using-named-collections-with-the-remoteremotesecure-functions}
 
 ```sql
 SELECT * FROM remote(remote1, table = one);
@@ -556,9 +500,7 @@ SELECT * FROM remote(remote1, database = default, table = test);
 └───┴───┘
 ```
 
-<div id="example-of-using-named-collections-with-a-dictionary-with-source-clickhouse">
-  ### Ejemplo de uso de colecciones con nombre en un diccionario con origen en ClickHouse
-</div>
+### Ejemplo de uso de colecciones con nombre en un diccionario con origen en ClickHouse {#example-of-using-named-collections-with-a-dictionary-with-source-clickhouse}
 
 ```sql
 CREATE DICTIONARY dict(a Int64, b String)
@@ -573,15 +515,11 @@ SELECT dictGet('dict', 'b', 1);
 └─────────────────────────┘
 ```
 
-<div id="named-collections-for-accessing-kafka">
-  ## Colecciones con nombre para acceder a Kafka
-</div>
+## Colecciones con nombre para acceder a Kafka {#named-collections-for-accessing-kafka}
 
 La descripción de los parámetros se encuentra en [Kafka](/es/reference/engines/table-engines/integrations/kafka).
 
-<div id="ddl-example">
-  ### Ejemplo de DDL
-</div>
+### Ejemplo de DDL {#ddl-example-3}
 
 ```sql
 CREATE NAMED COLLECTION my_kafka_cluster AS
@@ -593,9 +531,7 @@ kafka_max_block_size = '1048576';
 
 ```
 
-<div id="xml-example-2">
-  ### Ejemplo de XML
-</div>
+### Ejemplo de XML {#xml-example-3}
 
 ```xml
 <clickhouse>
@@ -611,9 +547,7 @@ kafka_max_block_size = '1048576';
 </clickhouse>
 ```
 
-<div id="example-of-using-named-collections-with-a-kafka-table">
-  ### Ejemplo de uso de colecciones con nombre con una tabla de Kafka
-</div>
+### Ejemplo de uso de colecciones con nombre con una tabla de Kafka {#example-of-using-named-collections-with-a-kafka-table}
 
 Los dos ejemplos siguientes usan la misma colección con nombre `my_kafka_cluster`:
 
@@ -637,23 +571,17 @@ SETTINGS kafka_num_consumers = 4,
          kafka_thread_per_consumer = 1;
 ```
 
-<div id="named-collections-for-backups">
-  ## Colecciones con nombre para copias de seguridad
-</div>
+## Colecciones con nombre para copias de seguridad {#named-collections-for-backups}
 
 Para ver la descripción de los parámetros, consulte [Copias de seguridad y restauración](/es/concepts/features/backup-restore/overview).
 
-<div id="ddl-example">
-  ### Ejemplo de DDL
-</div>
+### Ejemplo de DDL {#ddl-example-4}
 
 ```sql
 BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
 ```
 
-<div id="xml-example">
-  ### Ejemplo en XML
-</div>
+### Ejemplo en XML {#xml-example-4}
 
 ```xml
 <clickhouse>
@@ -667,15 +595,11 @@ BACKUP TABLE default.test to S3(named_collection_s3_backups, 'directory')
 </clickhouse>
 ```
 
-<div id="named-collections-for-accessing-mongodb-table-and-dictionary">
-  ## Colecciones con nombre para acceder a la tabla y al diccionario de MongoDB
-</div>
+## Colecciones con nombre para acceder a la tabla y al diccionario de MongoDB {#named-collections-for-accessing-mongodb-table-and-dictionary}
 
 Para obtener la descripción de los parámetros, consulte [mongodb](/es/reference/functions/table-functions/mongodb).
 
-<div id="ddl-example">
-  ### Ejemplo de DDL
-</div>
+### Ejemplo de DDL {#ddl-example-5}
 
 ```sql
 CREATE NAMED COLLECTION mymongo AS
@@ -688,9 +612,7 @@ collection = 'my_collection',
 options = 'connectTimeoutMS=10000'
 ```
 
-<div id="xml-example-2">
-  ### Ejemplo de XML
-</div>
+### Ejemplo de XML {#xml-example-5}
 
 ```xml
 <clickhouse>
@@ -708,9 +630,7 @@ options = 'connectTimeoutMS=10000'
 </clickhouse>
 ```
 
-<div id="mongodb-table">
-  #### Tabla de MongoDB
-</div>
+#### Tabla de MongoDB {#mongodb-table}
 
 ```sql
 CREATE TABLE mytable(log_type VARCHAR, host VARCHAR, command VARCHAR) ENGINE = MongoDB(mymongo, options='connectTimeoutMS=10000&compressors=zstd')
@@ -725,9 +645,7 @@ SELECT count() FROM mytable;
   El DDL anula la configuración de opciones de la colección con nombre.
 </Note>
 
-<div id="mongodb-dictionary">
-  #### Diccionario de MongoDB
-</div>
+#### Diccionario de MongoDB {#mongodb-dictionary}
 
 ```sql
 CREATE DICTIONARY dict

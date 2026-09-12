@@ -15,6 +15,26 @@ A chave do dicionário tem o tipo [UInt64](/pt-BR/reference/data-types/int-uint)
 
 Ao buscar em um dicionário, o cache é consultado primeiro. Para cada bloco de dados, todas as chaves que não forem encontradas no cache ou estiverem desatualizadas serão solicitadas da fonte usando `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. Os dados recebidos são então gravados no cache.
 
+Isso se aplica à **consulta** de uma chave — `dictGet` e as demais funções de dicionário. Ler o dicionário **como uma tabela** com `SELECT ... FROM <dictionary>` é diferente: retorna as células que por acaso estão residentes no cache naquele momento e nada solicita da fonte, pois um cache não mantém registro de quais chaves existem. Um `WHERE` sobre a chave é um filtro comum sobre essas células residentes, e não uma lista de chaves a serem buscadas:
+
+```sql
+CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'cache_src')) LIFETIME(MIN 0 MAX 900) LAYOUT(CACHE(SIZE_IN_CELLS 1000));
+
+-- nothing is cached yet, so nothing comes back and the source is not queried
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+0
+
+-- looking the keys up populates the cache
+SELECT dictGet('cache_dict', 'data', toUInt64(number + 1)) FROM numbers(3);
+
+-- and now the same read sees them
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+3
+```
+
+Portanto, um dicionário cache foi projetado para ser usado por meio das funções de dicionário. Se você precisar de `SELECT ... FROM <dictionary> WHERE key IN (...)` para buscar da fonte, use o layout [direct](/pt-BR/reference/statements/create/dictionary/layouts/direct), que consulta a fonte a cada requisição e não armazena nada em cache; para ler o dicionário inteiro como uma tabela, use um layout que o mantenha por completo, como [flat](/pt-BR/reference/statements/create/dictionary/layouts/flat) ou [hashed](/pt-BR/reference/statements/create/dictionary/layouts/hashed).
+
 Se as chaves não forem encontradas no dicionário, uma tarefa de atualização do cache será criada e adicionada à fila de atualização. As propriedades da fila de atualização podem ser controladas com as configurações `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
 Para dicionários cache, é possível definir o [lifetime](/pt-BR/reference/statements/create/dictionary/lifetime) de expiração dos dados no cache. Se tiver passado mais tempo do que `lifetime` desde o carregamento dos dados em uma célula, o valor da célula não será usado e a chave expirará. A chave será solicitada novamente na próxima vez em que precisar ser usada. Esse comportamento pode ser configurado com a configuração `allow_read_expired_keys`.

@@ -21,7 +21,7 @@ Este guia aborda como os backups funcionam no ClickHouse Cloud, quais opções v
   ## Lista de status de backups
 </div>
 
-Seu serviço terá backups realizados de acordo com o agendamento definido, seja o agendamento diário padrão ou um [agendamento personalizado](/pt-BR/products/cloud/guides/backups/configurable-backups) escolhido por você. Todos os backups disponíveis podem ser visualizados na aba **Backups** do serviço. Nela, você pode ver o status, a duração e o tamanho do backup. Você também pode restaurar um backup específico pela coluna **Actions**.
+Os backups são executados de acordo com o agendamento configurado para seu serviço, seja o agendamento diário padrão ou um [agendamento personalizado](/pt-BR/products/cloud/guides/backups/configurable-backups) escolhido por você. Todos os backups disponíveis podem ser visualizados na aba **Backups** do serviço. Nela, você pode ver o status, a duração e o tamanho do backup. Você também pode restaurar um backup específico pela coluna **Actions**.
 
 <Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="Lista de status de backups no ClickHouse Cloud" border />
 
@@ -29,7 +29,7 @@ Seu serviço terá backups realizados de acordo com o agendamento definido, seja
   ## Entendendo o custo dos backups
 </div>
 
-De acordo com a política padrão, o ClickHouse Cloud exige um backup por dia, com retenção de 24 horas. Escolher um agendamento que exija a retenção de mais dados ou resulte em backups mais frequentes pode gerar cobranças adicionais de armazenamento para os backups.
+A menos que seja configurado um agendamento diferente, é feito backup dos serviços a cada 24 horas, e cada backup é retido por 24 horas. A capacidade de configurar agendamentos de backup varia conforme o serviço e o plano. Escolher um agendamento que exija a retenção de mais dados ou resulte em backups mais frequentes pode gerar cobranças adicionais de armazenamento para os backups.
 
 Para entender o custo dos backups, você pode ver o custo por serviço na tela de uso (como mostrado abaixo). Depois de executar os backups por alguns dias com um agendamento personalizado, você poderá ter uma ideia do custo e extrapolar para chegar ao custo mensal dos backups.
 
@@ -170,24 +170,20 @@ Para evitar que usuários removam tabelas acidentalmente, você pode usar instru
 </Note>
 
 <div id="backup-durations">
-  ## Duração dos backups
+  ## Durações de backup
 </div>
 
-A duração do backup e da restauração depende de vários fatores, como o tamanho do banco de dados, o schema e o número de tabelas no banco de dados.
-Os backups incrementais normalmente são concluídos muito mais rápido do que um backup completo, já que há menos dados para incluir no backup.
-A restauração a partir de um backup incremental será um pouco mais lenta do que a restauração a partir de um backup completo, pois todos os backups incrementais e o último backup completo da cadeia são incluídos na restauração, conforme explicado acima.
+As durações de backup e restauração variam significativamente conforme o volume de dados, a complexidade do schema e o número de tabelas. Os números abaixo são observações de testes internos e não constituem compromissos de desempenho.
 
-Em nossos testes, observamos que backups menores, de ~1 TB, podem levar cerca de 10 a 15 minutos ou mais para serem concluídos.
-Backups com menos de 20 TB devem ser concluídos em até uma hora, e o backup de 50 TB de dados deve levar cerca de 2 a 3 horas.
-Backups em tamanhos maiores se beneficiam de economias de escala, e vimos backups de até 1 PB para alguns serviços internos serem concluídos em cerca de 10 horas.
+Em nossos testes, um backup de aproximadamente 1 TB levou de 10 a 15 minutos, e um de 20 TB, cerca de uma hora. Datasets maiores levam proporcionalmente mais tempo, e backups de várias centenas de TB ou mais podem levar muitas horas, embora haja economias de escala que favorecem volumes maiores.
+
+As restaurações geralmente são mais lentas do que o backup equivalente, especialmente quando incluem uma longa cadeia de backups incrementais, pois o backup completo e todos os backups incrementais subsequentes da cadeia precisam ser aplicados. A restauração de um serviço muito grande pode levar mais de um dia.
+
+Como as durações dependem muito dos seus dados, schema e configuração de backup, recomendamos fortemente testar uma restauração com seus próprios dados antes de depender de qualquer tempo de recuperação pretendido.
 
 <Note>
-  Backups para buckets externos podem ser mais lentos do que backups para buckets do ClickHouse
+  Backups em buckets externos podem ser mais lentos do que backups em buckets do ClickHouse
 </Note>
-
-A duração da restauração é aproximadamente a mesma que a do backup.
-
-Recomendamos testar com seu próprio banco de dados ou com dados de amostra para obter estimativas mais precisas, já que a duração real depende de vários fatores, conforme descrito acima.
 
 <div id="configurable-backups">
   ## Backups configuráveis

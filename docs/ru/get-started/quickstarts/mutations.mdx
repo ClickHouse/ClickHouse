@@ -1,6 +1,6 @@
 ---
 slug: /guides/developer/mutations
-sidebarTitle: 'Обновление и удаление данных'
+sidebarTitle: 'Обновление и удаление данных ClickHouse'
 searchable: true
 keywords: ['UPDATE', 'DELETE', 'mutations']
 title: 'Обновление и удаление данных ClickHouse'
@@ -34,7 +34,7 @@ import BackToQuickstarts from '/get-started/quickstarts/_back-to-quickstarts.mdx
 </Tip>
 
 <div id="updating-data">
-  ## Обновление данных
+  ## Обновление данных {#updating-data}
 </div>
 
 Используйте команду `ALTER TABLE...UPDATE`, чтобы обновить строки в таблице:
@@ -76,7 +76,7 @@ ALTER TABLE [<database>.]<table> UPDATE <column> = <expression> WHERE <filter_ex
 </Note>
 
 <div id="deleting-data">
-  ## Удаление данных
+  ## Удаление данных {#deleting-data}
 </div>
 
 Для удаления строк используйте команду `ALTER TABLE`:
@@ -106,7 +106,7 @@ ALTER TABLE [<database>.]<table> DELETE WHERE <filter_expr>
 Подробнее см. на [странице документации об операторе `DELETE`](/ru/reference/statements/delete).
 
 <div id="lightweight-deletes">
-  ## Легковесные удаления
+  ## Легковесные удаления {#lightweight-deletes}
 </div>
 
 Ещё один способ удалять строки — использовать команду `DELETE FROM`, которая называется **легковесным удалением**. Удалённые строки сразу помечаются как удалённые и автоматически исключаются из всех последующих запросов, поэтому не нужно ждать слияния частей или использовать ключевое слово `FINAL`. Очистка данных происходит асинхронно в фоновом режиме.

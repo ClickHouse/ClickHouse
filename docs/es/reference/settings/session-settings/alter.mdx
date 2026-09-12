@@ -13,17 +13,13 @@ import { VersionHistory } from "/snippets/es/components/VersionHistory/VersionHi
 
 Estas configuraciones están disponibles en [system.settings](/es/reference/system-tables/settings) y se generan automáticamente a partir del [código fuente](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp).
 
-<div id="alter_move_to_space_execute_async">
-  ## alter_move_to_space_execute_async
-</div>
+## alter_move_to_space_execute_async {#alter_move_to_space_execute_async}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
 Ejecutar ALTER TABLE MOVE ... TO [DISK|VOLUME] de forma asíncrona
 
-<div id="alter_partition_verbose_result">
-  ## alter_partition_verbose_result
-</div>
+## alter_partition_verbose_result {#alter_partition_verbose_result}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -58,9 +54,7 @@ ALTER TABLE test FREEZE SETTINGS alter_partition_verbose_result = 1;
 └──────────────┴──────────────┴──────────────┴─────────────┴───────────────────────────────┴─────────────────────────────────────────────────────────────┘
 ```
 
-<div id="alter_sync">
-  ## alter_sync
-</div>
+## alter_sync {#alter_sync}
 
 **Aliases**: `replication_alter_partitions_sync`
 
@@ -73,7 +67,7 @@ Valores posibles:
 * `0` — No esperar.
 * `1` — Esperar a la ejecución propia.
 * `2` — Esperar a todas.
-* `3` - Esperar solo a las réplicas activas.
+* `3` - Esperar solo a las réplicas activas. Solo se admite para `SharedMergeTree`. Para `ReplicatedMergeTree` se comporta igual que `alter_sync = 2`.
 
 Valor predeterminado en Cloud: `0`.
 
@@ -81,9 +75,7 @@ Valor predeterminado en Cloud: `0`.
   `alter_sync` solo se aplica a tablas `Replicated` y `SharedMergeTree`; no tiene ningún efecto al modificar tablas que no sean `Replicated` ni `Shared`.
 </Note>
 
-<div id="alter_update_mode">
-  ## alter_update_mode
-</div>
+## alter_update_mode {#alter_update_mode}
 
 <SettingsInfoBlock type="AlterUpdateMode" default_value="heavy" />
 

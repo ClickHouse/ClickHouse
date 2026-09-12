@@ -19,8 +19,8 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
-datetime64 값의 소수부 끝에 있는 불필요한 0을 동적으로 제거하여 출력 scale을 [0, 3, 6]에 맞게 조정합니다.
-각각 &#39;seconds&#39;, &#39;milliseconds&#39;, &#39;microseconds&#39;에 해당합니다.
+`DateTime64` 값의 소수부 끝에 있는 0을 동적으로 제거하고, 모든 유효 자릿수를 유지하는 다음 3의 배수인
+[0, 3, 6, 9]로 출력 scale을 올림합니다. 소수부가 모두 0이면 제거합니다.
 
 <div id="date_time_input_format">
   ## date_time_input_format

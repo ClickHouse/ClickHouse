@@ -18,11 +18,11 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     Recomendamos usar directamente el cliente de Java más reciente si el rendimiento o el acceso directo son críticos.
   </Note>
 
-  ## Requisitos del entorno
+  ## Requisitos del entorno {#environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) versión &gt;= 8
 
-  ### Setup
+  ### Setup {#setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -59,7 +59,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     * use el calificador `all` para obtener el JAR con todas las dependencias empaquetadas incluidas.
   * o desde el repositorio oficial [aquí](https://github.com/ClickHouse/clickhouse-java/releases)
 
-  ## Configuración
+  ## Configuración {#configuration}
 
   **Clase del driver**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -87,7 +87,9 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   * el driver no infiere el protocolo a partir del puerto, debe especificarlo explícitamente
   * El parámetro `ssl` no se requiere cuando se especifica el protocolo.
 
-  ### Propiedades de conexión
+  <div id="connection-properties">
+    ### Propiedades de conexión
+  </div>
 
   Los principales parámetros de configuración se definen en el [cliente de Java](/es/integrations/language-clients/java/client#client-configuration). Deben pasarse tal cual al driver. El driver tiene algunas propiedades propias que no forman parte de la configuración del cliente; estas se enumeran a continuación.
 
@@ -149,7 +151,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   Sin embargo, algunos usuarios necesitan pasar configuraciones de formato (por ejemplo, para leer JSON como String) y recomendamos usar el perfil `readonly=2`.
   Lea más sobre los perfiles de solo lectura [aquí](/es/concepts/features/configuration/settings/constraints-on-settings#read-only).
 
-  ### Identificación del cliente
+  ### Identificación del cliente {#client-identification}
 
   Existen dos formas de identificar la aplicación que originó una solicitud: establecer `com.clickhouse.client.api.ClientConfigProperties#CLIENT_NAME` mediante
   las propiedades de conexión o utilizar el método `java.sql.Connection#setClientInfo(String name, String value)`.
@@ -172,11 +174,11 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Nota:** Recomendamos usar el formato `app_name/version` para la propiedad `client_name`, ya que facilita la identificación de la aplicación en el registro de consultas.
 
-  ### Identificación de operaciones
+  ### Identificación de operaciones {#operation-identification}
 
   El controlador JDBC genera un `query_id` para cada operación (actualmente se incluye en las excepciones del servidor).
 
-  Para establecer `log_comment` en una operación, utilice el método `com.clickhouse.jdbc.StatementImpl#getLocalSettings`. Para ello, es necesario hacer un cast de `Statement` o `PreparedStatement` a `com.clickhouse.jdbc.StatementImpl` primero.
+  Para establecer `log_comment` en una operación, utilice el método `com.clickhouse.jdbc.StatementImpl#getLocalSettings`. Esto requiere que `Statement` o `PreparedStatement` se conviertan (cast) a `com.clickhouse.jdbc.StatementImpl` primero.
 
   ```java showLineNumbers
   StatementImpl stmt = (StatementImpl) conn.createStatement();
@@ -185,11 +187,11 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Nota:** este enfoque funciona para usos de sentencias en un solo hilo porque `localSettings` se comparte entre hilos.
 
-  ## Tipos de datos compatibles
+  ## Tipos de datos compatibles {#supported-data-types}
 
   El JDBC driver admite los mismos formatos de datos que el [java client](/es/integrations/language-clients/java/index#supported-data-types) subyacente.
 
-  ### Correspondencia de tipos JDBC
+  ### Correspondencia de tipos JDBC {#jdbc-type-mapping}
 
   La siguiente correspondencia se aplica a:
 
@@ -429,7 +431,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Lectura de Tuples**
 
-  El método `getObject(columnIndex)` devolverá `Object[]`. Los Tuples pueden leerse como `java.sql.Array` mediante el método `getObject(columnIndex, Array.class)`.
+  El método `getObject(columnIndex)` devolverá `Object[]`. Las tuplas pueden leerse como `java.sql.Array` mediante el método `getObject(columnIndex, Array.class)`.
 
   **Ejemplo**
 
@@ -488,7 +490,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  **Escritura de Nested**
+  **Escritura anidada**
 
   Utilice `java.sql.Connection#createStruct` para instanciar el objeto `java.sql.Struct`. Este objeto está diseñado para unificar el manejo de estructuras anidadas en distintas bases de datos.
   Se necesita una conexión para pasar la configuración al método de fábrica de Struct.
@@ -514,7 +516,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   Use `ResultSet#getStruct(columnIndex, StructDescriptor)` para leer el objeto `Nested`. El objeto puede utilizarse para acceder a elementos anidados de cualquier nivel de profundidad.
   El método `Struct#getResultSet()` puede emplearse para leer elementos anidados de forma más uniforme, como `java.sql.ResultSet`. Resulta útil
-  cuando el tipo exacto de los elementos anidados es desconocido.
+  cuando se desconoce el tipo exacto de los elementos anidados.
 
   **Ejemplo**
 
@@ -597,7 +599,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }});
   ```
 
-  Existe una opción más conveniente para leer JSON como String pasando la configuración del servidor `jdbc_read_json_as_string=true` a las propiedades de conexión.
+  Existe una opción más conveniente para leer JSON como String pasando la configuración del servidor `output_format_binary_write_json_as_string=1` a las propiedades de conexión.
   Esto hace que el driver devuelva los valores JSON como String y permite procesarlos con cualquier biblioteca JSON.
 
   ```java
@@ -624,12 +626,12 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   properties.put(ClientConfigProperties.serverSetting("output_format_json_quote_decimals"), "0");
   ```
 
-  ### Manejo de fechas, horas y zonas horarias
+  ### Manejo de fechas, horas y zonas horarias {#handling-dates-times-and-timezones}
 
   Lea la [Guía de Date/Time](/es/integrations/language-clients/java/date-time-guide), que explica los errores más comunes
   y la lógica del driver al gestionar valores de Date/Time y timestamps.
 
-  ## Creación de conexión
+  ## Creación de conexión {#creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server:8123/system";
@@ -640,7 +642,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   ... // do something with the connection
   ```
 
-  ## Suministro de credenciales y configuración
+  ## Suministro de credenciales y configuración {#supplying-credentials-and-settings}
 
   ```java showLineNumbers
   String url = "jdbc:ch://localhost:8123?jdbc_ignore_unsupported_values=true&socket_timeout=10";
@@ -662,7 +664,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Instrucción simple
+  ## Instrucción simple {#simple-statement}
 
   ```java showLineNumbers
 
@@ -675,7 +677,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Insert
+  ## Insert {#insert}
 
   ```java showLineNumbers
   try (PreparedStatement ps = conn.prepareStatement("INSERT INTO mytable VALUES (?, ?)")) {
@@ -687,7 +689,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## `HikariCP`
+  ## `HikariCP` {#hikaricp}
 
   ```java showLineNumbers
   // connection pooling won't help much in terms of performance,
@@ -710,17 +712,17 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Más información
+  ## Más información {#more-information}
 
   Para más información, consulte nuestro [repositorio de GitHub](https://github.com/ClickHouse/clickhouse-java) y la [documentación del cliente de Java](/es/integrations/language-clients/java/client).
 
-  ## Solución de problemas
+  ## Solución de problemas {#troubleshooting}
 
-  ### Registro
+  ### Registro {#logging}
 
   El driver utiliza [slf4j](https://www.slf4j.org/) para el logging y usará la primera implementación disponible en el `classpath`.
 
-  ### Resolución de timeout de JDBC en inserts de gran volumen
+  ### Resolución de timeout de JDBC en inserts de gran volumen {#resolving-jdbc-timeout-on-large-inserts}
 
   Al realizar inserciones grandes en ClickHouse con tiempos de ejecución prolongados, es posible que encuentre errores de timeout de JDBC como los siguientes:
 
@@ -730,7 +732,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   Estos errores pueden interrumpir el proceso de inserción de datos y afectar la estabilidad del sistema. Para resolver este problema, es posible que necesite ajustar algunas configuraciones de timeout en el sistema operativo del cliente.
 
-  #### Mac OS
+  #### Mac OS {#mac-os}
 
   En Mac OS, se pueden ajustar los siguientes parámetros para resolver el problema:
 
@@ -740,7 +742,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  #### Linux
+  #### Linux {#linux}
 
   En Linux, la configuración equivalente por sí sola puede no resolver el problema. Se requieren pasos adicionales debido a las diferencias en la forma en que Linux gestiona la configuración de keep-alive de los sockets. Siga estos pasos:
 
@@ -767,9 +769,9 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   properties.setProperty("socket_keepalive", "true");
   ```
 
-  ## Guía de migración
+  ## Guía de migración {#migration-guide}
 
-  ### Cambios principales
+  ### Cambios principales {#key-changes}
 
   | Funcionalidad                                | V1 (Anterior)          | V2 (Nueva)                                               |
   | -------------------------------------------- | ---------------------- | -------------------------------------------------------- |
@@ -784,7 +786,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   * JDBC V2 requiere una configuración explícita. No hay valores predeterminados para failover.
     * El protocolo debe especificarse en la URL. No se detecta implícitamente a partir de los números de puerto.
 
-  ### Cambios de configuración
+  ### Cambios de configuración {#configuration-changes}
 
   Solo hay dos enums:
 
@@ -814,7 +816,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### Cambios en los tipos de datos
+  ### Cambios en los tipos de datos {#data-types-changes}
 
   **Tipos numéricos**
 
@@ -844,10 +846,10 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Tipos de cadena**
 
-  | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2) | Clase Java (V2)  | Tipo JDBC (V1) | Clase de Java (V1) |
-  | ------------------ | ----------------- | -------------- | ---------------- | -------------- | ------------------ |
-  | String             | ✅                 | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String   |
-  | FixedString        | ✅                 | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String   |
+  | Tipo de ClickHouse | Compatible con V1 | Tipo JDBC (V2) | Clase Java (V2)  | Tipo JDBC (V1) | Clase Java (V1)  |
+  | ------------------ | ----------------- | -------------- | ---------------- | -------------- | ---------------- |
+  | String             | ✅                 | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
+  | FixedString        | ✅                 | VARCHAR        | java.lang.String | VARCHAR        | java.lang.String |
 
   * `FixedString` se lee tal cual en ambas versiones. Por ejemplo, `FixedString(10)` para `'John'` se leerá como `'John\0\0\0\0\0\0\0\0\0'`.
   * Cuando se utiliza `PreparedStatement#setBytes`, se convierte en `unhex('<hex_string>')` y luego se interpreta como `String`.
@@ -862,7 +864,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   | DateTime           | ❌                 | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
   | DateTime64         | ❌                 | TIMESTAMP      | java.sql.Timestamp | TIMESTAMP&#95;WITH&#95;TIMEZONE | java.time.OffsetDateTime |
   | Time               | ✅                 | TIME           | java.sql.Time      | nuevo tipo/no compatible        | nuevo tipo/no compatible |
-  | Time64             | ✅                 | TIME           | java.sql.Time      | tipo nuevo/no compatible        | tipo nuevo/no compatible |
+  | Time64             | ✅                 | TIME           | java.sql.Time      | nuevo tipo/no compatible        | nuevo tipo/no compatible |
 
   * `Time` y `Time64` solo son compatibles en V2 como tipos nuevos.
   * `DateTime` y `DateTime64` se asignan a `java.sql.Timestamp` para mejorar la compatibilidad con JDBC.
@@ -910,7 +912,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   **Tipos especiales**
 
-  | Tipo de ClickHouse      | Compatible con V1 | Tipo JDBC (V2)  | Clase Java (V2)          | Tipo JDBC (V1)  | Clase de Java (V1)       |
+  | Tipo de ClickHouse      | Compatible con V1 | Tipo JDBC (V2)  | Clase Java (V2)          | Tipo JDBC (V1)  | Clase Java (V1)          |
   | ----------------------- | ----------------- | --------------- | ------------------------ | --------------- | ------------------------ |
   | JSON                    | ❌                 | OTHER           | java.lang.String         | no admitido     | no admitido              |
   | AggregateFunction       | ✅                 | OTHER           | (representación binaria) | OTHER           | (representación binaria) |
@@ -918,7 +920,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   | UUID                    | ✅                 | OTHER           | java.util.UUID           | VARCHAR         | java.util.UUID           |
   | IPv4                    | ✅                 | OTHER           | java.net.Inet4Address    | VARCHAR         | java.net.Inet4Address    |
   | IPv6                    | ✅                 | OTHER           | java.net.Inet6Address    | VARCHAR         | java.net.Inet6Address    |
-  | Dynamic                 | ❌                 | OTHER           | java.Object              | no admitido     | no admitido              |
+  | Dynamic                 | ❌                 | OTHER           | java.Object              | compatible      | compatible               |
   | Variant                 | ❌                 | OTHER           | java.Object              | compatible      | compatible               |
 
   * V1 usa `VARCHAR` para `UUID`, pero siempre devuelve un objeto `java.util.UUID`. V2 corrige esto al mapear `UUID` a `OTHER` y devuelve un objeto `java.util.UUID`.
@@ -928,7 +930,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   * Los valores IPv4 e IPv6 pueden leerse como `byte[]` mediante el método `getBytes(columnIndex)`. Sin embargo, se recomienda usar las clases específicas para estos tipos.
   * V2 no admite la lectura de direcciones IP como valores numéricos porque la conversión está mejor implementada en las clases InetAddress.
 
-  ### Cambios en los metadatos de la base de datos
+  ### Cambios en los metadatos de la base de datos {#database-metadata-changes}
 
   * V2 usa únicamente el término `Schema` para referirse a las bases de datos. El término `Catalog` queda reservado para usos futuros.
   * V2 devuelve `false` para `DatabaseMetaData.supportsTransactions()` y `DatabaseMetaData.supportsSavepoints()`. Esto cambiará en el futuro.
@@ -945,11 +947,11 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   La API de `clickhouse-jdbc` es síncrona y, en general, presenta mayor sobrecarga (por ejemplo, análisis de SQL y correspondencia/conversión de tipos, etc.). Considere usar [clickhouse-client](/es/integrations/connectors/sql-clients/sql-console) cuando el rendimiento sea crítico o si prefiere una forma más directa de acceder a ClickHouse.
 
-  ## Requisitos del entorno
+  ## Requisitos del entorno {#v07-environment-requirements}
 
   * [OpenJDK](https://openjdk.java.net) versión &gt;= 8
 
-  ### Setup
+  ### Setup {#v07-setup}
 
   <Tabs>
     <Tab title="Maven">
@@ -1011,7 +1013,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     </Tab>
   </Tabs>
 
-  ## Configuración
+  ## Configuración {#v07-configuration}
 
   **Clase del driver**: `com.clickhouse.jdbc.ClickHouseDriver`
 
@@ -1036,7 +1038,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   Nota: consulte la [configuración específica de JDBC](https://github.com/ClickHouse/clickhouse-java/blob/main/clickhouse-jdbc/src/main/java/com/clickhouse/jdbc/JdbcConfig.java) para obtener más información.
 
-  ## Tipos de datos compatibles
+  ## Tipos de datos compatibles {#v07-supported-data-types}
 
   El driver JDBC admite los mismos formatos de datos que la biblioteca cliente.
 
@@ -1047,7 +1049,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     * UInt64 - se asigna a `long` (en client-v1)
   </Note>
 
-  ## Creación de conexión
+  ## Creación de conexión {#v07-creating-connection}
 
   ```java
   String url = "jdbc:ch://my-server/system"; // use http protocol and port 8123 by default
@@ -1060,7 +1062,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Instrucción simple
+  ## Instrucción simple {#v07-simple-statement}
 
   ```java showLineNumbers
 
@@ -1073,7 +1075,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Insert
+  ## Insert {#v07-insert}
 
   <Note>
     * Usa `PreparedStatement` en lugar de `Statement`
@@ -1091,7 +1093,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ### Con la table function input
+  ### Con la table function input {#with-input-table-function}
 
   Una opción con excelentes características de rendimiento:
 
@@ -1110,7 +1112,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   * [la documentación de la función input](/es/reference/functions/table-functions/input) siempre que sea posible
 
-  ### Insert con placeholders
+  ### Insert con placeholders {#insert-with-placeholders}
 
   Esta opción se recomienda únicamente para inserciones pequeñas, ya que requeriría una expresión SQL larga (que se procesará en el lado del cliente y consumirá CPU y memoria):
 
@@ -1125,7 +1127,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Gestión de DateTime y zonas horarias
+  ## Gestión de DateTime y zonas horarias {#handling-datetime-and-time-zones}
 
   Se recomienda usar `java.time.LocalDateTime` o `java.time.OffsetDateTime` en lugar de `java.sql.Timestamp`, y `java.time.LocalDate` en lugar de `java.sql.Date`.
 
@@ -1140,7 +1142,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   }
   ```
 
-  ## Manejo de `AggregateFunction`
+  ## Manejo de `AggregateFunction` {#handling-aggregatefunction}
 
   <Note>
     La lectura binaria directa del estado de `AggregateFunction` solo es compatible con `groupBitmap`. Para otras funciones de agregación (`min`, `max`, `avg`, etc.), usa los combinadores `-Merge` en tu consulta (p. ej., `SELECT minMerge(min_state) FROM ...`) para resolver el estado de agregación en el servidor y devolver un valor simple.
@@ -1188,7 +1190,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## Configuración de la biblioteca HTTP
+  ## Configuración de la biblioteca HTTP {#v07-configuring-http-library}
 
   El conector JDBC de ClickHouse admite tres bibliotecas HTTP: [`HttpClient`](https://docs.oracle.com/en/java/javase/11/docs/api/java.net.http/java/net/http/HttpClient.html), [`HttpURLConnection`](https://docs.oracle.com/en/java/javase/11/docs/api/java.base/java/net/HttpURLConnection.html) y [Apache `HttpClient`](https://hc.apache.org/httpcomponents-client-5.2.x/).
 
@@ -1212,11 +1214,11 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   <br />
 
-  ## Conectarse a ClickHouse mediante SSL
+  ## Conectarse a ClickHouse mediante SSL {#connect-to-clickhouse-with-ssl}
 
   Para establecer una conexión JDBC segura a ClickHouse mediante SSL, debe configurar las propiedades JDBC para incluir los parámetros SSL. Esto generalmente implica especificar propiedades SSL como `sslmode` y `sslrootcert` en la URL de JDBC o en el objeto Properties.
 
-  ## Propiedades SSL
+  ## Propiedades SSL {#ssl-properties}
 
   | Nombre               | Valor predeterminado | Valores opcionales | Descripción                                                                                            |
   | -------------------- | -------------------- | ------------------ | ------------------------------------------------------------------------------------------------------ |
@@ -1249,7 +1251,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
     }
   ```
 
-  ## Resolución de timeout de JDBC en inserts de gran volumen
+  ## Resolución de timeout de JDBC en inserts de gran volumen {#v07-resolving-jdbc-timeout-on-large-inserts}
 
   Al realizar inserciones grandes en ClickHouse con tiempos de ejecución prolongados, es posible que encuentre errores de timeout de JDBC como los siguientes:
 
@@ -1259,7 +1261,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
 
   Estos errores pueden interrumpir el proceso de inserción de datos y afectar la estabilidad del sistema. Para resolver este problema, es necesario ajustar algunas configuraciones de timeout en el sistema operativo del cliente.
 
-  ### Mac OS
+  ### Mac OS {#v07-mac-os}
 
   En Mac OS, se pueden ajustar los siguientes parámetros para resolver el problema:
 
@@ -1269,7 +1271,7 @@ import WideTableWrapper from "/snippets/es/components/WideTableWrapper/WideTable
   * `net.inet.tcp.keepcnt`: 8
   * `net.inet.tcp.always_keepalive`: 1
 
-  ### Linux
+  ### Linux {#v07-linux}
 
   En Linux, la configuración equivalente por sí sola puede no resolver el problema. Se requieren pasos adicionales debido a las diferencias en la forma en que Linux gestiona la configuración de keep-alive de los sockets. Siga estos pasos:
 

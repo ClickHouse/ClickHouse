@@ -2,46 +2,46 @@
 title: '副本感知路由'
 slug: /manage/replica-aware-routing
 description: '将相关请求路由到同一 ClickHouse Cloud 副本，以支持临时表、会话、缓存复用和写后读一致性'
-keywords: ['cloud', '粘性端点', '粘性', '端点', '粘性路由', '路由', '副本感知路由', 'X-ClickHouse-Replica-Tag', '会话亲和性', '临时表', '写后读一致性']
+keywords: ['cloud', '粘性端点', '粘性', '端点', '粘性路由', '路由', '副本感知路由', 'X-ClickHouse-Replica-Tag', '会话亲和性', '临时表', '写后读一致性', 'sni', 'tls-sni-override']
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/zh/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<PrivatePreviewBadge />
+<BetaBadge />
 
-<EnterprisePlanFeatureBadge feature="副本感知路由" support="true" />
+<EnterprisePlanFeatureBadge feature="副本感知路由" />
 
 副本感知路由 (也称为粘性会话、粘性路由或会话亲和性) 会将相关请求路由到同一个 ClickHouse 副本。当您需要让[临时表](/zh/reference/statements/create/table/temporary-table)或[命名会话状态](/zh/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol)在多个查询间保持可用、希望相关查询复用同一副本的本地缓存，或需要在写入及后续读取之间实现[写后读一致性](#read-after-write-consistency)时，请使用此功能。
 
 这是一种尽力而为的机制，并不保证隔离性。代理会将每个路由值映射到一个副本。只要副本数量不变，该映射便会保持稳定；服务扩缩容可能会使该值映射到其他副本。
 
-<Warning>
-  **需要 HTTP 接口**
+副本感知路由在以下两种接口上均可使用：
 
-  副本感知路由使用 `X-ClickHouse-Replica-Tag` 请求头在 [HTTP/HTTPS 接口](/zh/concepts/features/interfaces/http)之上的代理层实施。
+* 通过 [HTTP/HTTPS](#http-based-routing)，使用 `X-ClickHouse-Replica-Tag` 请求头。
+* 通过[原生协议](#native-protocol-routing)，使用 TLS 服务器名称指示 (SNI) 覆盖。
 
-  **目前无法通过原生协议使用副本感知路由** (原生端口，例如默认使用原生模式的 [clickhouse-go](/zh/integrations/language-clients/go/index) 驱动程序) 。原生协议客户端必须切换到 HTTP，并在每个请求中发送路由值。
-</Warning>
+两者需分别启用，并在代理背后使用相同的一致性哈希机制。
 
-<div id="prerequisites">
-  ## 前置条件
-</div>
+## 前置条件 {#prerequisites}
 
 * 你的服务需要有 **2 个或更多副本**。如果服务只有单个副本，就没有可固定到的副本。
-* 该功能在进入 GA 后，**Enterprise** 默认可用。
+* 需要 **Enterprise** 层级的服务。
 * 此功能适用于标准 ClickHouse Cloud 服务。[BYOC](/zh/products/cloud/guides/infrastructure/deployment-options/byoc/overview) 暂不支持。
 
-<div id="configuring-replica-aware-routing">
-  ## 配置副本感知路由
-</div>
+## 配置副本感知路由 {#configuring-replica-aware-routing}
 
-提交一个 [support](https://clickhouse.com/support/program) 工单，申请启用基于 HTTP 的粘性副本路由。请附上你的 service ID 以及需要启用它的原因 (临时表、会话状态、缓存复用或写后读一致性) 。无需重启。
+Enterprise 客户可在 ClickHouse Cloud 控制台的服务设置页面启用副本感知路由。打开你的服务，进入 **Settings**，然后为需要的接口打开相应开关：
 
-<div id="http-based-routing">
-  ## 基于 HTTP 的路由
-</div>
+* 一个开关用于基于 `X-ClickHouse-Replica-Tag` 请求头启用 HTTP 路由。
+* 另一个开关用于基于 SNI override 启用原生协议路由。
+
+两者可任选其一，也可同时启用。无需重启，通常不到一分钟即可生效。
+
+这些开关正在 Enterprise 层级套餐中逐步上线。如果你的服务尚未提供，可提交 [support](https://clickhouse.com/support/program) 工单并附上服务 ID，以便提前开启该功能。
+
+## 基于 HTTP 的路由 {#http-based-routing}
 
 要将工作负载固定到某个副本，请在 [HTTPS 接口](/zh/concepts/features/interfaces/http)中发送 `X-ClickHouse-Replica-Tag` 请求头。代理会根据请求头的值进行一致性哈希，因此只要副本数量不变，具有相同请求头值的请求就会被路由到同一副本。不同的值会独立进行哈希，可能会落到相同或不同的副本，但您无法指定某个值映射到*哪个*副本。
 
@@ -63,56 +63,96 @@ echo 'SELECT hostName()' | curl \
   `X-ClickHouse-Replica-Tag` 无需创建 ClickHouse HTTP 会话即可实现副本亲和性。并发请求可复用同一标签，不会触发 `SESSION_IS_LOCKED`。
 </Info>
 
-<div id="read-after-write-consistency">
-  ### 写后读一致性
-</div>
+## 原生协议路由 {#native-protocol-routing}
 
-在多副本服务中，在某个副本上写入的数据可能要等复制追赶完成后，其他副本才能看到。发送写入请求时添加 `X-ClickHouse-Replica-Tag` 请求头，然后在后续读取中复用相同的请求头值。代理会将两者路由到同一副本，因此即使其他副本仍未追赶上，您也能读到自己写入的数据。此模式适用于写入后立即读取相同数据的工作负载，例如交互式应用程序，或在继续执行前验证插入操作的 ETL 作业。
+使用[原生协议](/zh/interfaces/tcp)时，将路由值以 `<routing-value>.sticky.<host>` 形式的 TLS 服务器名称传入，并照常连接到常规的服务 hostname。[ClickHouse Client](/zh/interfaces/client) 通过 `--tls-sni-override` 接收路由值：
 
-如需在所有副本之间获得更强的一致性保证，还可以在 ClickHouse Cloud 上将 [`select_sequential_consistency`](/zh/reference/settings/session-settings#select_sequential_consistency) 设置为 `1`。
+```bash
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query 'SELECT hostName()'
+```
 
-<div id="check-which-replica">
-  ### 检查命中了哪个副本
-</div>
+`--host` 是常规的服务主机名，`--secure` 用于启用 TLS，`--tls-sni-override` 用于传递路由值。TLS 是必需的。无需额外的证书或 DNS 记录。
 
-使用相同的 `X-ClickHouse-Replica-Tag` 值再次运行 `SELECT hostName()` 示例。只要副本数量不变，您应会获得相同的主机名。不同的请求头值可能会映射到不同的副本。
+## 写后读一致性 {#read-after-write-consistency}
 
-<div id="limitations-of-replica-aware-routing">
-  ## 副本感知路由的局限性
-</div>
+在多副本 service 上，某个副本上的写入可能要等到 replication 追赶完成后，才能在其他副本上可见。发送写入时附带路由值，并在后续读取中复用同一个值。proxy 会将二者路由到同一个副本，因此即使其他副本仍有延迟，你也能读到自己刚写入的数据。该模式适用于写入后立即读回相同数据的工作负载，例如交互式应用，或在继续后续步骤前先 validate inserts 的 ETL jobs。
 
-<div id="replica-aware-routing-does-not-guarantee-isolation">
-  ### 副本数量变化时粘性会改变
-</div>
+在 schema 变更尚未 replicated 完成时，这种方式同样有帮助：复用路由值 可以让 inserts 始终落在已具备新 schema 的副本上。
 
-横向扩容或缩容会改变路由哈希环。共享同一路由值的请求可能会被路由到不同的副本。如果你依赖临时表或会话级设置，请准备在重新映射后重新创建它们。
+通过 HTTP 时，复用该请求头的值：
 
-<div id="not-workload-isolation">
-  ### 副本感知路由不是工作负载隔离
-</div>
+```bash
+# Write, tagged with a routing value
+echo "INSERT INTO events VALUES (now(), 'signup')" | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+
+# Read it back on the same replica, using the same value
+echo 'SELECT count() FROM events' | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+```
+
+通过 原生协议 连接时，同样复用 SNI override：
+
+```bash
+# Write with a routing value
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query "INSERT INTO events VALUES (now(), 'signup')"
+
+# Read it back on the same replica, using the same value
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query 'SELECT count() FROM events'
+```
+
+如需在所有副本上获得更强的保证，你还可以在 ClickHouse Cloud 中将 [`select_sequential_consistency`](/zh/reference/settings/session-settings#select_sequential_consistency) 设置为 `1`。
+
+## 检查命中了哪个副本 {#check-which-replica}
+
+使用相同的路由值再次运行其中一个 `SELECT hostName()` 示例。只要副本数量不变，您应会获得相同的主机名。不同的路由值可能会映射到不同的副本。
+
+## 副本感知路由的局限性 {#limitations-of-replica-aware-routing}
+
+### 副本数量变化时粘性会改变 {#replica-aware-routing-does-not-guarantee-isolation}
+
+扩缩容会改变路由哈希环。共享同一路由值的请求可能会被路由到不同的副本。如果你依赖临时表或会话级设置，请准备在重新映射后重新创建它们。`SELECT hostName()` 始终可以告诉你当前所在的副本。
+
+### 副本感知路由不是工作负载隔离 {#not-workload-isolation}
 
 粘性路由只决定请求由*哪个*副本来处理，但该副本仍可能同时承载其他流量。若需专用计算资源，请使用[计算资源分离](/zh/products/cloud/features/infrastructure/warehouses)。
 
-<div id="private-networking">
-  ### 私有网络连接
-</div>
+### 私有网络连接 {#private-networking}
 
-基于 HTTP 的路由在常规服务主机名上可与[私有网络连接](/zh/products/cloud/guides/security/connectivity/private-networking)配合使用，无需额外添加 DNS 记录。
+基于 HTTP 的路由和基于原生协议的路由在常规服务主机名上均可与[私有网络连接](/zh/products/cloud/guides/security/connectivity/private-networking)配合使用，无需额外添加 DNS 记录。
 
-<div id="replica-aware-routing-requires-http">
-  ### 副本感知路由要求使用 HTTP 协议
-</div>
+### 原生协议路由需要 TLS {#native-protocol-routing-requires-tls}
 
-粘性路由基于 `X-ClickHouse-Replica-Tag` HTTP 请求头。原生二进制协议不携带这类可供 HTTP 代理计算哈希的值，因此原生协议无法使用副本感知路由。原生协议客户端若要使用此功能，必须将相关工作负载迁移到 HTTP 接口。
+原生协议路由需要 TLS，因此请传入 `--secure`。未加密的原生连接仍使用常规负载均衡。
 
-<div id="troubleshooting">
-  ## 故障排查
-</div>
+## 故障排查 {#troubleshooting}
 
 **使用相同路由值的查询仍被路由到不同副本**
 
-* 确认每个请求均包含 `X-ClickHouse-Replica-Tag` 请求头。
+* 确认在服务设置页面上已为所使用的接口启用相应开关。HTTP 与原生方法需分别启用。
+* 对于 HTTP，确认每个请求均包含 `X-ClickHouse-Replica-Tag` 请求头，且每个请求使用的值完全一致。
+* 对于原生协议，确认已设置 `--secure`，且 `--tls-sni-override` 的形式为 `<routing-value>.sticky.<host>`。
+* 启用后请稍候片刻，通常不到一分钟即可生效。
+* 检查副本数量近期是否发生变化；扩缩容后发生重新映射属于预期行为。使用 `SELECT hostName()` 查找新的映射关系。
 
-- 确认每个请求使用的路由值完全一致。
-- 启用后请稍候片刻，通常不到一分钟即可生效。
-- 检查副本数量近期是否发生变化；扩缩容后发生重新映射属于预期行为。使用 `SELECT hostName()` 查找新的映射关系。
+**原生协议下出现证书错误**
+
+* 确认 `--host` 为常规的服务主机名，并且路由值是通过 `--tls-sni-override` 而非 `--host` 传递的。

@@ -13,9 +13,7 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 이 설정들은 [system.settings](/ko/reference/system-tables/settings)에서 확인할 수 있으며 [소스 코드](https://github.com/ClickHouse/ClickHouse/blob/master/src/Core/Settings.cpp)를 기반으로 자동 생성됩니다.
 
-<div id="validate_enum_literals_in_operators">
-  ## validate_enum_literals_in_operators
-</div>
+## validate_enum_literals_in_operators {#validate_enum_literals_in_operators}
 
 <SettingsInfoBlock type="Bool" default_value="0" />
 
@@ -23,21 +21,17 @@ import { VersionHistory } from "/snippets/ko/components/VersionHistory/VersionHi
 
 활성화하면 `IN`, `NOT IN`, `==`, `!=` 같은 연산자에서 enum 리터럴이 enum 유형에 맞는지 검사하며, 리터럴이 유효한 enum 값이 아니면 예외를 발생시킵니다.
 
-<div id="validate_mutation_query">
-  ## validate_mutation_query
-</div>
+## validate_mutation_query {#validate_mutation_query}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 
-<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "기본적으로 뮤테이션 쿼리를 검증하는 새로운 설정입니다."}]}]} />
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "24.11"},{"label": "1"},{"label": "기본적으로 뮤테이션 쿼리를 검사하는 새로운 설정입니다."}]}]} />
 
-뮤테이션 쿼리를 허용하기 전에 검증합니다. 뮤테이션은 백그라운드에서 실행되므로 잘못된 쿼리를 실행하면 뮤테이션이 중단된 채로 남아 수동 개입이 필요할 수 있습니다.
+뮤테이션 쿼리를 허용하기 전에 검사합니다. 뮤테이션은 백그라운드에서 실행되므로 유효하지 않은 쿼리를 실행하면 뮤테이션이 중단된 채로 남아 수동 개입이 필요할 수 있습니다.
 
 이전 버전과 호환되지 않는 버그가 발생한 경우에만 이 설정을 변경하십시오.
 
-<div id="validate_polygons">
-  ## validate_polygons
-</div>
+## validate_polygons {#validate_polygons}
 
 <SettingsInfoBlock type="Bool" default_value="1" />
 

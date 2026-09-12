@@ -114,7 +114,7 @@ SELECT * FROM WatchLog;
 
 * `_table` — 读取数据所来自的表名。类型：[String](/zh/reference/data-types/string)。
 
-  如果对 `_table` 进行过滤 (例如 `WHERE _table='xyz'`) ，则只会读取满足过滤条件的表。
+  如果对 `_table` 进行过滤 (例如 `WHERE _table='xyz'`) ，则只会读取满足过滤条件的表。从其他表读取数据的表 (`Distributed`、`Merge`、`Buffer`、`Alias`) 返回的行会带有实际生成这些行的表名，因此此类表始终会被读取，并会对其行应用过滤条件。
 
 * `_database` — 包含读取数据所来自的数据库名称。类型：[String](/zh/reference/data-types/string)。
 

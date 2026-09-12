@@ -40,26 +40,6 @@
       ]
     },
     {
-      "group": "Connector",
-      "pages": [
-        "ru/products/bring-your-own-cloud/connector/overview",
-        "ru/products/bring-your-own-cloud/connector/onboarding",
-        "ru/products/bring-your-own-cloud/connector/architecture",
-        "ru/products/bring-your-own-cloud/connector/support-sessions",
-        "ru/products/bring-your-own-cloud/connector/configuration",
-        "ru/products/bring-your-own-cloud/connector/operations",
-        {
-          "group": "Reference",
-          "pages": [
-            "ru/products/bring-your-own-cloud/connector/reference/cli",
-            "ru/products/bring-your-own-cloud/connector/reference/configuration",
-            "ru/products/bring-your-own-cloud/connector/reference/faq",
-            "ru/products/bring-your-own-cloud/connector/reference/privilege-model"
-          ]
-        }
-      ]
-    },
-    {
       "group": "Reference",
       "pages": [
         "ru/products/bring-your-own-cloud/reference/network-security",
@@ -70,7 +50,23 @@
         "ru/products/bring-your-own-cloud/reference/cost-model-aws",
         "ru/products/bring-your-own-cloud/reference/aws-service-limits",
         "ru/products/bring-your-own-cloud/reference/security-shared-responsibility",
-        "ru/products/bring-your-own-cloud/reference/faq"
+        "ru/products/bring-your-own-cloud/reference/faq",
+        {
+          "group": "Connector Mode",
+          "pages": [
+            "ru/products/bring-your-own-cloud/connector/overview",
+            "ru/products/bring-your-own-cloud/connector/onboarding",
+            "ru/products/bring-your-own-cloud/connector/architecture",
+            "ru/products/bring-your-own-cloud/connector/support-sessions",
+            "ru/products/bring-your-own-cloud/connector/configuration",
+            "ru/products/bring-your-own-cloud/connector/operations",
+            "ru/products/bring-your-own-cloud/connector/reference/cli",
+            "ru/products/bring-your-own-cloud/connector/reference/configuration",
+            "ru/products/bring-your-own-cloud/connector/reference/faq",
+            "ru/products/bring-your-own-cloud/connector/reference/privilege-model"
+          ],
+          "tag": "Preview"
+        }
       ]
     }
   ]

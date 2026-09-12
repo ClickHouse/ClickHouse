@@ -15,9 +15,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureB
 
 [S3Queue 구현의 원본 PR](https://github.com/ClickHouse/ClickHouse/pull/49086/files#diff-e1106769c9c8fbe48dd84f18310ef1a250f2c248800fde97586b3104e9cd6af8R183)의 다음 참고 사항을 이해하는 것이 중요합니다: `MATERIALIZED VIEW`가 이 엔진에 연결되면 S3Queue 테이블 엔진이 백그라운드에서 데이터 수집을 시작합니다.
 
-<div id="creating-a-table">
-  ## 테이블 생성
-</div>
+## 테이블 생성 {#creating-a-table}
 
 ```sql
 CREATE TABLE s3_queue_engine_table (name String, value UInt32)
@@ -85,37 +83,32 @@ SETTINGS
     mode = 'ordered';
 ```
 
-<div id="settings">
-  ## 설정
-</div>
+## 설정 {#settings}
 
 테이블에 구성된 설정 목록을 확인하려면 `system.s3_queue_settings` 테이블을 사용하십시오. `24.10`부터 사용할 수 있습니다.
 
-<Info>
-  **설정 이름 (24.7+)**
-
+<Note title="설정 이름 (24.7+)">
   버전 24.7부터는 `s3queue_` 접두사(prefix) 유무와 관계없이 S3Queue 설정을 지정할 수 있습니다.
 
   * **최신 구문** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec` 등
   * **레거시 구문** (모든 버전): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec` 등
 
   24.7+에서는 두 형식이 모두 지원됩니다. 이 페이지의 예시에서는 접두사 없는 최신 구문을 사용합니다.
-</Info>
+</Note>
 
-<div id="mode">
-  ### 모드
-</div>
+### 모드 {#mode}
 
 가능한 값:
 
 * unordered — unordered 모드에서는 이미 처리된 모든 파일의 집합을 ZooKeeper의 영구 노드로 추적합니다.
 * ordered — ordered 모드에서는 파일이 사전식 순서로 처리됩니다. 즉, 어느 시점에 &#39;BBB&#39;라는 이름의 파일이 처리된 뒤 나중에 &#39;AA&#39;라는 이름의 파일이 버킷에 추가되면, 해당 파일은 무시됩니다. ZooKeeper에는 성공적으로 처리된 파일 중 사전식 기준으로 가장 큰 이름과, 로드 시도에 실패하여 다시 시도할 파일의 이름만 저장됩니다.
+* exclusive - exclusive 모드에서는 ZooKeeper에 아무것도 추적되지 않습니다. S3 url(`S3Queue()`의 첫 번째 매개변수)은 *반드시* 고유한 호스트 또는 경로로 해석되어야 합니다. 이 모드는 고처리량 및/또는 자체 호스팅 시나리오에서만 유용합니다.
 
 기본값: 24.6 이전 버전에서는 `ordered`입니다. 24.6부터는 기본값이 없으며, 이 설정을 수동으로 지정해야 합니다. 이전 버전에서 생성된 테이블은 호환성을 위해 기본값이 계속 `Ordered`로 유지됩니다.
 
-<div id="after_processing">
-  ### `after_processing`
-</div>
+`exclusive` 모드를 사용할 때는 S3 url에서 `{replica}` 매크로를 사용할 수 있습니다.
+
+### `after_processing` {#after_processing}
 
 파일 처리가 성공적으로 끝난 후 파일을 어떻게 처리할지 지정합니다.
 
@@ -151,9 +144,7 @@ SETTINGS
 
 태그를 지정하려면 `after_processing_tag_key`와 `after_processing_tag_value`에 태그 키와 값을 제공해야 합니다.
 
-<div id="after_processing_retries">
-  ### `after_processing_retries`
-</div>
+### `after_processing_retries` {#after_processing_retries}
 
 지정된 후처리 작업을 포기하기 전까지의 재시도 횟수입니다.
 
@@ -163,9 +154,7 @@ SETTINGS
 
 기본값: `10`.
 
-<div id="after_processing_move_access_key_id">
-  ### `after_processing_move_access_key_id`
-</div>
+### `after_processing_move_access_key_id` {#after_processing_move_access_key_id}
 
 대상이 다른 S3 버킷인 경우, 성공적으로 처리된 파일을 이동할 S3 버킷의 Access Key ID입니다.
 
@@ -175,9 +164,7 @@ SETTINGS
 
 기본값: 빈 문자열입니다.
 
-<div id="after_processing_move_prefix">
-  ### `after_processing_move_prefix`
-</div>
+### `after_processing_move_prefix` {#after_processing_move_prefix}
 
 성공적으로 처리된 파일을 이동할 경로 접두사입니다. 동일한 버킷 내로 이동하는 경우와 다른 버킷으로 이동하는 경우 모두에 적용됩니다.
 
@@ -187,9 +174,7 @@ SETTINGS
 
 기본값: 빈 문자열.
 
-<div id="after_processing_move_preserve_path">
-  ### `after_processing_move_preserve_path`
-</div>
+### `after_processing_move_preserve_path` {#after_processing_move_preserve_path}
 
 `true`이면 성공적으로 처리된 파일을 이동할 때 전체 원본 객체 경로가 `after_processing_move_prefix`에 추가되므로, 버킷 아래의 원본 디렉터리 구조가 대상에도 그대로 유지됩니다. `false`이면 파일 이름만 사용되며 원본 디렉터리 구조는 평탄화됩니다.
 
@@ -199,9 +184,7 @@ SETTINGS
 
 기본값: `false`.
 
-<div id="after_processing_move_secret_access_key">
-  ### `after_processing_move_secret_access_key`
-</div>
+### `after_processing_move_secret_access_key` {#after_processing_move_secret_access_key}
 
 이동 대상이 다른 S3 버킷인 경우, 성공적으로 처리된 파일을 이동할 S3 버킷의 Secret Access Key입니다.
 
@@ -211,9 +194,7 @@ SETTINGS
 
 기본값: 빈 문자열.
 
-<div id="after_processing_move_uri">
-  ### `after_processing_move_uri`
-</div>
+### `after_processing_move_uri` {#after_processing_move_uri}
 
 대상이 다른 S3 버킷인 경우, 성공적으로 처리된 파일을 이동할 S3 버킷의 URI입니다.
 
@@ -223,9 +204,7 @@ SETTINGS
 
 기본값: 빈 문자열.
 
-<div id="after_processing_tag_key">
-  ### `after_processing_tag_key`
-</div>
+### `after_processing_tag_key` {#after_processing_tag_key}
 
 `after_processing='tag'`인 경우, 성공적으로 처리된 파일에 태그를 추가할 때 사용하는 태그 키입니다.
 
@@ -235,9 +214,7 @@ SETTINGS
 
 기본값: 빈 문자열입니다.
 
-<div id="after_processing_tag_value">
-  ### `after_processing_tag_value`
-</div>
+### `after_processing_tag_value` {#after_processing_tag_value}
 
 `after_processing='tag'`인 경우, 성공적으로 처리된 파일에 지정할 태그 값입니다.
 
@@ -247,9 +224,7 @@ SETTINGS
 
 기본값: 빈 문자열.
 
-<div id="keeper_path">
-  ### `keeper_path`
-</div>
+### `keeper_path` {#keeper_path}
 
 ZooKeeper의 큐 메타데이터 경로입니다. 명시적으로 지정하지 않으면 ClickHouse가 `s3queue_default_zookeeper_path`, 데이터베이스 UUID, 테이블 UUID를 기반으로 경로를 구성합니다. 절대값(`/`로 시작하는 값)은 지정된 그대로 사용되며, 상대값은 구성된 접두사에 추가됩니다. `{database}` 또는 `{uuid}`와 같은 매크로는 엔진이 ZooKeeper에 연결되기 전에 확장됩니다.
 
@@ -261,9 +236,7 @@ ZooKeeper의 큐 메타데이터 경로입니다. 명시적으로 지정하지 �
 
 기본값: `/`.
 
-<div id="loading_retries">
-  ### `loading_retries`
-</div>
+### `loading_retries` {#loading_retries}
 
 파일 로딩을 지정된 횟수까지 다시 시도합니다.
 가능한 값:
@@ -272,17 +245,13 @@ ZooKeeper의 큐 메타데이터 경로입니다. 명시적으로 지정하지 �
 
 기본값: `10`.
 
-<div id="processing_threads_num">
-  ### `processing_threads_num`
-</div>
+### `processing_threads_num` {#processing_threads_num}
 
-처리를 수행할 스레드 수입니다. `Unordered` 모드에서만 적용됩니다.
+처리를 수행할 스레드 수입니다. `Unordered` 또는 `Exclusive` 모드에서만 적용됩니다.
 
 기본값: CPU 수 또는 16입니다.
 
-<div id="parallel_inserts">
-  ### `parallel_inserts`
-</div>
+### `parallel_inserts` {#parallel_inserts}
 
 기본적으로 `processing_threads_num`은 하나의 `INSERT`만 생성하므로, 파일 다운로드와 파싱만 여러 스레드로 수행됩니다.
 하지만 이렇게 하면 병렬성이 제한되므로, 더 높은 처리량을 위해 `parallel_inserts=true`를 사용하세요. 이렇게 하면 데이터를 병렬로 삽입할 수 있습니다(단, MergeTree 엔진 계열에서는 생성되는 데이터 파트 수가 더 많아질 수 있다는 점에 유의하십시오).
@@ -293,17 +262,13 @@ ZooKeeper의 큐 메타데이터 경로입니다. 명시적으로 지정하지 �
 
 기본값: `false`.
 
-<div id="enable_logging_to_queue_log">
-  ### `enable_logging_to_queue_log`
-</div>
+### `enable_logging_to_queue_log` {#enable_logging_to_queue_log}
 
 `system.s3queue_log`에 로깅을 기록하도록 설정합니다.
 
 기본값: `1`.
 
-<div id="polling_min_timeout_ms">
-  ### `polling_min_timeout_ms`
-</div>
+### `polling_min_timeout_ms` {#polling_min_timeout_ms}
 
 ClickHouse가 다음 폴링을 시도하기 전에 대기하는 최소 시간을 밀리초 단위로 지정합니다.
 
@@ -313,9 +278,7 @@ ClickHouse가 다음 폴링을 시도하기 전에 대기하는 최소 시간을
 
 기본값: `1000`.
 
-<div id="polling_max_timeout_ms">
-  ### `polling_max_timeout_ms`
-</div>
+### `polling_max_timeout_ms` {#polling_max_timeout_ms}
 
 ClickHouse가 다음 폴링 시도를 시작하기 전까지 대기하는 최대 시간을 밀리초 단위로 정의합니다.
 
@@ -325,9 +288,7 @@ ClickHouse가 다음 폴링 시도를 시작하기 전까지 대기하는 최대
 
 기본값: `600000`.
 
-<div id="polling_backoff_ms">
-  ### `polling_backoff_ms`
-</div>
+### `polling_backoff_ms` {#polling_backoff_ms}
 
 새 파일을 찾지 못했을 때 이전 폴링 인터벌에 추가로 더해지는 대기 시간을 결정합니다. 다음 폴링은 이전 인터벌과 이 백오프 값의 합 또는 최대 인터벌 중 더 작은 값이 지난 후 수행됩니다.
 
@@ -337,11 +298,9 @@ ClickHouse가 다음 폴링 시도를 시작하기 전까지 대기하는 최대
 
 기본값: `30000`.
 
-<div id="tracked_files_limit">
-  ### `tracked_files_limit`
-</div>
+### `tracked_files_limit` {#tracked_files_limit}
 
-`unordered` 모드를 사용하는 경우 ZooKeeper 노드 수를 제한할 수 있으며, `ordered` 모드에서는 적용되지 않습니다.
+`unordered` 모드를 사용하는 경우 ZooKeeper 노드 수를 제한할 수 있으며, `ordered` 또는 `exclusive` 모드에서는 적용되지 않습니다.
 제한에 도달하면 가장 오래 전에 처리된 파일이 ZooKeeper 노드에서 삭제되고 다시 처리됩니다.
 
 가능한 값:
@@ -350,11 +309,9 @@ ClickHouse가 다음 폴링 시도를 시작하기 전까지 대기하는 최대
 
 기본값: `1000`.
 
-<div id="tracked_file_ttl_sec">
-  ### `tracked_file_ttl_sec`
-</div>
+### `tracked_file_ttl_sec` {#tracked_file_ttl_sec}
 
-&#39;unordered&#39; 모드에서는 처리된 파일을 ZooKeeper 노드에 저장하는 최대 기간(초)입니다(기본값은 영구 저장). &#39;ordered&#39; 모드에서는 적용되지 않습니다.
+&#39;unordered&#39; 모드에서는 처리된 파일을 ZooKeeper 노드에 저장하는 최대 기간(초)입니다(기본값은 영구 저장). &#39;ordered&#39; 또는 &#39;exclusive&#39; 모드에서는 적용되지 않습니다.
 지정한 시간이 지나면 파일을 다시 가져옵니다.
 
 Possible values:
@@ -363,53 +320,39 @@ Possible values:
 
 Default value: `0`.
 
-<div id="cleanup_interval_min_ms">
-  ### `cleanup_interval_min_ms`
-</div>
+### `cleanup_interval_min_ms` {#cleanup_interval_min_ms}
 
 &#39;Ordered&#39; 모드에서 사용합니다. 추적된 파일의 TTL 및 최대 추적 파일 집합을 유지 관리하는 백그라운드 작업의 재예약 인터벌에 대한 최소 한계를 정의합니다.
 
 기본값: `60000`.
 
-<div id="cleanup_interval_max_ms">
-  ### `cleanup_interval_max_ms`
-</div>
+### `cleanup_interval_max_ms` {#cleanup_interval_max_ms}
 
 &#39;Ordered&#39; 모드에서 사용합니다. 추적된 파일 TTL과 최대 추적 파일 집합을 유지 관리하는 백그라운드 작업의 재예약 인터벌 상한을 정의합니다.
 
 기본값: `60000`.
 
-<div id="buckets">
-  ### `buckets`
-</div>
+### `buckets` {#buckets}
 
 &#39;Ordered&#39; 모드에서 사용합니다. `24.6`부터 사용할 수 있습니다. S3Queue 테이블에 여러 레플리카가 있고 각 레플리카가 Keeper의 동일한 메타데이터 디렉터리를 사용하는 경우, `buckets` 값은 최소한 레플리카 수 이상이어야 합니다. `processing_threads` 설정도 함께 사용하는 경우에는 `buckets` 설정이 `S3Queue` 처리의 실제 병렬성을 결정하므로, 이 값을 더 크게 설정하는 것이 좋습니다.
 
-<div id="use_persistent_processing_nodes">
-  ### `use_persistent_processing_nodes`
-</div>
+### `use_persistent_processing_nodes` {#use_persistent_processing_nodes}
 
 영구 처리 노드는 처리가 시작된 후 S3Queue가 처리된 파일을 커밋하기 전에 Keeper 세션이 만료되더라도 중복이 발생하지 않도록 합니다. 이전 버전에서는 임시 처리 노드를 사용했으며, 이 경우 중복이 발생할 수 있었습니다.
 
 이 설정은 더 이상 사용되지 않으며 값은 무시됩니다. 영구 처리 노드는 항상 사용됩니다. `use_persistent_processing_nodes = 0`으로 생성된 테이블도 영구 처리 노드를 사용하며, `SHOW CREATE TABLE`을 포함한 설정 내부 검사는 지정한 값과 관계없이 `1`을 표시합니다.
 
-<div id="persistent_processing_node_ttl_seconds">
-  ### `persistent_processing_node_ttl_seconds`
-</div>
+### `persistent_processing_node_ttl_seconds` {#persistent_processing_node_ttl_seconds}
 
 서버가 정상적으로 종료되지 않은 경우, 제거되지 않은 processing 노드가 남아 있을 수 있습니다. 이 설정은 이러한 processing 노드를 안전하게 정리할 수 있는 시간 주기를 정의합니다. 동일한 TTL은 `Ordered` 모드의 버킷 잠금에도 사용되며, 이 잠금은 단일 processing 노드보다 더 오래 유지될 수 있으므로 이 점도 값을 정할 때 고려해야 합니다.
 
 기본값: `21600` (6시간)입니다.
 
-<div id="s3-settings">
-  ## S3 관련 설정
-</div>
+## S3 관련 설정 {#s3-settings}
 
 이 엔진은 모든 S3 관련 설정을 지원합니다. S3 설정에 대한 자세한 내용은 [여기](/ko/reference/engines/table-engines/integrations/s3)를 참조하십시오.
 
-<div id="s3-role-based-access">
-  ## S3 역할 기반 접근
-</div>
+## S3 역할 기반 접근 {#s3-role-based-access}
 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
@@ -432,9 +375,7 @@ SETTINGS
     ...
 ```
 
-<div id="ordered-mode">
-  ## S3Queue ordered 모드
-</div>
+## S3Queue ordered 모드 {#ordered-mode}
 
 `S3Queue` 처리 모드를 사용하면 ZooKeeper에 저장하는 메타데이터를 줄일 수 있지만, 나중 시점에 추가되는 파일은 영숫자 기준으로 더 큰 이름이어야 한다는 제한이 있습니다.
 
@@ -446,17 +387,13 @@ SETTINGS
 `(s3queue_)processing_threads_num` 설정은 버전 `24.6` 이전에서는 사용을 권장하지 않습니다.
 `(s3queue_)buckets` 설정은 버전 `24.6`부터 사용할 수 있습니다.
 
-<div id="select">
-  ## S3Queue 테이블 엔진에서 SELECT
-</div>
+## S3Queue 테이블 엔진에서 SELECT {#select}
 
 기본적으로 S3Queue 테이블에서는 SELECT 쿼리가 허용되지 않습니다. 이는 데이터를 한 번 읽은 후 큐에서 제거하는 일반적인 큐 패턴을 따르기 때문입니다. 의도치 않은 데이터 손실을 방지하기 위해 SELECT를 금지합니다.
 하지만 경우에 따라서는 이 기능이 유용할 수 있습니다. 이 경우 설정 `stream_like_engine_allow_direct_select`를 `True`로 지정해야 합니다.
-S3Queue 엔진에는 SELECT 쿼리용 특수 설정인 `commit_on_select`가 있습니다. 읽은 후에도 큐에 데이터를 유지하려면 `False`로 설정하고, 제거하려면 `True`로 설정하십시오.
+S3Queue 엔진에는 SELECT 쿼리용 특수 설정인 `commit_on_select`가 있습니다. 읽은 후에도 큐에 데이터를 유지하려면 `False`로 설정하고, 제거하려면 `True`로 설정하십시오. (참고: 이 설정은 `exclusive` 모드에서는 의미가 없으며 무시됩니다. `exclusive` 모드는 항상 `commit_on_select`가 `True`인 것처럼 동작합니다.)
 
-<div id="description">
-  ## 설명
-</div>
+## 설명 {#description}
 
 각 파일은 한 번만 가져올 수 있으므로 `SELECT`는 스트리밍 가져오기에는(디버깅 용도 제외) 그다지 유용하지 않습니다. 대신 [materialized views](/ko/reference/statements/create/view)를 사용해 실시간 스레드를 만드는 것이 더 실용적입니다. 이를 위해 다음을 수행합니다.
 
@@ -483,9 +420,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
   SELECT * FROM stats ORDER BY name;
 ```
 
-<div id="virtual-columns">
-  ## 가상 컬럼
-</div>
+## 가상 컬럼 {#virtual-columns}
 
 * `_path` — 파일 경로입니다.
 * `_file` — 파일 이름입니다.
@@ -494,9 +429,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 가상 컬럼에 대한 자세한 내용은 [여기](/ko/reference/engines/table-engines/index#table_engines-virtual_columns)를 참조하십시오.
 
-<div id="wildcards-in-path">
-  ## 경로 내 와일드카드
-</div>
+## 경로 내 와일드카드 {#wildcards-in-path}
 
 `path` 인수에는 bash 스타일의 와일드카드를 사용해 여러 파일을 지정할 수 있습니다. 처리할 파일은 실제로 존재해야 하며 전체 경로 패턴과 일치해야 합니다. 파일 목록은 `CREATE` 시점이 아니라 `SELECT` 시점에 결정됩니다.
 
@@ -508,9 +441,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 `{}` 구문은 [remote](/ko/reference/functions/table-functions/remote) 테이블 함수와 유사합니다.
 
-<div id="limitations">
-  ## 제한 사항
-</div>
+## 제한 사항 {#limitations}
 
 1. 중복된 행은 다음과 같은 이유로 발생할 수 있습니다.
 
@@ -524,9 +455,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 
 3. ClickHouse 노드에서 장치 수준의 전원 손실이 발생하면 행이 손실될 수 있습니다. 파일 활용이 완료되면 삽입이 끝나는 즉시 해당 파일은 Keeper에 처리됨으로 기록되며(`after_processing = 'delete'`인 경우 소스 객체도 제거됨), 삽입된 행은 대상 파트가 fsync된 후에만 영구적으로 저장됩니다. 기본적으로 이는 동기적으로 수행되지 않습니다(`fsync_after_insert = 0`). Keeper는 강제 동기화되고 일반적으로 별도 노드에서 실행되므로 이 노드의 전원 손실에도 유지됩니다. 파일이 처리됨으로 커밋된 후 대상 파트가 fsync되기 전에 노드의 전원이 꺼지면, 재시작 시 파일을 다시 읽지 않아 행이 손실됩니다(`after_processing = 'delete'`에서는 복구할 수 없음). 일반적인 프로세스 강제 종료에서는 페이지 캐시가 유지되므로 이 문제가 드러나지 않습니다. 권장되는 구체화된 뷰(Materialized View) 활용 경로(전체 삽입 파이프라인이 완료된 후에만 파일이 커밋됨)에서는 대상 `MergeTree` 테이블에 `fsync_after_insert = 1`(및 `fsync_part_directory = 1`)을 설정하면 파일이 처리됨으로 커밋되기 전에 삽입된 파트가 영구 저장되어 이 구간이 크게 줄어듭니다. 이는 대상 싱크가 마지막 파트를 완료하기 전에 읽기가 끝날 때 파일이 커밋되는 `commit_on_select = 1`의 직접 `INSERT ... SELECT`에는 적용되지 않습니다.
 
-<div id="introspection">
-  ## 내부 검사
-</div>
+## 내부 검사 {#introspection}
 
 내부 검사에는 `system.s3queue_metadata_cache` 및 `system.s3_queue_metadata` stateless 테이블과 `system.s3queue_log` 영속 테이블을 사용합니다.
 

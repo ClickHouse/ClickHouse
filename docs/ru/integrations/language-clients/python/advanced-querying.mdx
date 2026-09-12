@@ -7,9 +7,7 @@ title: 'Продвинутые запросы'
 doc_type: 'reference'
 ---
 
-<div id="querycontexts">
-  ## QueryContexts
-</div>
+## QueryContexts {#querycontexts}
 
 ClickHouse Connect выполняет стандартные запросы в контексте `QueryContext`. `QueryContext` содержит ключевые структуры, используемые для построения запросов к базе данных ClickHouse, а также конфигурацию, которая используется для преобразования результата в `QueryResult` или другую структуру данных ответа. Сюда входят сам запрос, параметры, настройки, форматы чтения и другие свойства.
 
@@ -32,9 +30,7 @@ assert result.first_row == (79,)
 
 Обратите внимание, что объекты `QueryContext` не являются потокобезопасными, однако в многопоточной среде можно получить их копию, вызвав метод `QueryContext.updated_copy`.
 
-<div id="streaming-queries">
-  ## Стриминг запросов
-</div>
+## Стриминг запросов {#streaming-queries}
 
 Клиент ClickHouse Connect предоставляет несколько методов для получения данных в виде потока (реализованного как генератор Python):
 
@@ -48,9 +44,7 @@ assert result.first_row == (79,)
 
 Каждый метод возвращает `StreamContext`, который необходимо открыть с помощью оператора `with`. Методы стриминга async client ожидаются через `await` и открываются с помощью `async with`.
 
-<div id="data-blocks">
-  ### Блоки данных
-</div>
+### Блоки данных {#data-blocks}
 
 ClickHouse Connect обрабатывает все данные из основного метода `query` как поток блоков, получаемых от сервер ClickHouse. Эти блоки передаются в собственном формате &quot;Native&quot; в ClickHouse и из ClickHouse. «Блок» — это просто последовательность столбцов бинарных данных, где каждый столбец содержит одинаковое количество значений указанного типа данных. (Поскольку ClickHouse — колоночная база данных, он хранит эти данные в похожем виде.) Размер блока, возвращаемого запросом, определяется двумя пользовательскими настройками, которые можно задавать на нескольких уровнях (профиль пользователя, пользователь, сеанс или запрос). Вот они:
 
@@ -61,15 +55,11 @@ ClickHouse Connect обрабатывает все данные из основ�
 
 При использовании одного из методов клиента `query_*_stream` результаты возвращаются по блокам. ClickHouse Connect загружает только один блок за раз. Это позволяет обрабатывать большие объёмы данных без необходимости загружать в память весь большой результирующий набор. Обратите внимание: приложение должно быть готово обработать любое количество блоков, а точный размер каждого блока нельзя контролировать.
 
-<div id="http-data-buffer-for-slow-processing">
-  ### HTTP-буфер данных для медленной обработки
-</div>
+### HTTP-буфер данных для медленной обработки {#http-data-buffer-for-slow-processing}
 
 Если приложение получает блоки значительно медленнее, чем сервер их отправляет, HTTP-соединение может закрыться до завершения обработки. Увеличьте значение общей настройки `http_buffer_size`, если у приложения достаточно памяти для буферизации большего объёма данных ответа. По умолчанию это значение равно 10 MiB. Данные ответа, сжатые с помощью lz4 и zstd, остаются в этом буфере в сжатом виде, что увеличивает его фактическую ёмкость.
 
-<div id="streamcontexts">
-  ### StreamContexts
-</div>
+### StreamContexts {#streamcontexts}
 
 Каждый из методов `query_*_stream` (например, `query_row_block_stream`) возвращает объект ClickHouse `StreamContext`, который сочетает в себе Python-контекст и генератор. Вот базовое использование:
 
@@ -88,9 +78,7 @@ with client.query_row_block_stream(
 
 Вы можете использовать свойство `source` объекта `StreamContext`, чтобы получить доступ к родительскому объекту результата, который содержит имена столбцов и типы. Для большинства потоков это `QueryResult`; методы `query_np_stream` и `query_df_stream` вместо этого возвращают `NumpyResult`.
 
-<div id="stream-types">
-  ### Типы потоков
-</div>
+### Типы потоков {#stream-types}
 
 Метод `query_column_block_stream` возвращает блок как последовательность данных столбцов в нативных типах данных Python. Если использовать приведённые выше запросы `taxi_trips`, возвращённые данные будут представлять собой список, где каждый элемент — это ещё один список (или кортеж), содержащий все данные соответствующего столбца. То есть `block[0]` будет кортежем, содержащим только строковые значения. Форматы с ориентацией по столбцам чаще всего используются для выполнения агрегатных операций над всеми значениями в столбце, например для подсчёта общей стоимости поездок.
 
@@ -114,13 +102,9 @@ with df_stream:
 
 Наконец, метод `query_arrow_stream` оборачивает ответ ClickHouse `ArrowStream` в `StreamContext`. На каждой итерации возвращается PyArrow `RecordBatch`.
 
-<div id="streaming-examples">
-  ### Примеры стриминга
-</div>
+### Примеры стриминга {#streaming-examples}
 
-<div id="stream-rows">
-  #### Поток строк
-</div>
+#### Поток строк {#stream-rows}
 
 ```python
 import clickhouse_connect
@@ -138,9 +122,7 @@ with client.query_rows_stream("SELECT number, number * 2 as doubled FROM system.
         # Additional rows follow
 ```
 
-<div id="stream-row-blocks">
-  #### Потоковая передача блоков со строками
-</div>
+#### Потоковая передача блоков со строками {#stream-row-blocks}
 
 ```python
 import clickhouse_connect
@@ -153,9 +135,7 @@ with client.query_row_block_stream("SELECT number, number * 2 FROM system.number
         print(f"Received block with {len(block)} rows")
 ```
 
-<div id="stream-pandas-dataframes">
-  #### Потоковая передача Pandas DataFrame
-</div>
+#### Потоковая передача Pandas DataFrame {#stream-pandas-dataframes}
 
 ```python
 import clickhouse_connect
@@ -170,9 +150,7 @@ with client.query_df_stream("SELECT number, toString(number) AS str FROM system.
         print(df.head(3))
 ```
 
-<div id="stream-arrow-batches">
-  #### Потоковая передача батчей Arrow
-</div>
+#### Потоковая передача батчей Arrow {#stream-arrow-batches}
 
 ```python
 import clickhouse_connect
@@ -186,9 +164,7 @@ with client.query_arrow_stream("SELECT * FROM large_table") as stream:
         print(f"Received Arrow batch with {arrow_batch.num_rows} rows")
 ```
 
-<div id="async-stream-rows">
-  #### Асинхронный стриминг строк
-</div>
+#### Асинхронный стриминг строк {#async-stream-rows}
 
 ```python
 import asyncio
@@ -208,15 +184,11 @@ async def main():
 asyncio.run(main())
 ```
 
-<div id="numpy-pandas-and-arrow-queries">
-  ## Запросы NumPy, Pandas и Arrow
-</div>
+## Запросы NumPy, Pandas и Arrow {#numpy-pandas-and-arrow-queries}
 
 ClickHouse Connect предоставляет специализированные методы для работы со структурами данных NumPy, Pandas и Arrow. Эти методы позволяют получать результаты запроса напрямую в этих популярных форматах данных без ручного преобразования.
 
-<div id="numpy-queries">
-  ### Запросы NumPy
-</div>
+### Запросы NumPy {#numpy-queries}
 
 Метод `query_np` возвращает результаты запроса в виде массива NumPy, а не объекта ClickHouse Connect `QueryResult`.
 
@@ -241,9 +213,7 @@ print(np_array)
 #  [4 8]]
 ```
 
-<div id="pandas-queries">
-  ### Запросы Pandas
-</div>
+### Запросы Pandas {#pandas-queries}
 
 Метод `query_df` возвращает результаты запроса в виде объекта Pandas DataFrame, а не ClickHouse Connect `QueryResult`.
 
@@ -267,9 +237,7 @@ print(df)
 # 4       4        8
 ```
 
-<div id="pyarrow-queries">
-  ### Запросы PyArrow
-</div>
+### Запросы PyArrow {#pyarrow-queries}
 
 Метод `query_arrow` возвращает таблицу PyArrow, напрямую используя формат вывода ClickHouse `Arrow`. Он принимает `query`, `parameters`, `settings`, `external_data` и `transport_settings`. Параметр `use_strings` определяет, будут ли столбцы ClickHouse `String` выводиться как строки Arrow или как двоичные значения.
 
@@ -295,9 +263,7 @@ print(arrow_table)
 # str: [["0","1","2"]]
 ```
 
-<div id="arrow-backed-dataframes">
-  ### DataFrames на базе Arrow
-</div>
+### DataFrames на базе Arrow {#arrow-backed-dataframes}
 
 ClickHouse Connect поддерживает эффективное создание DataFrame из результатов в формате Arrow с помощью `query_df_arrow` и `query_df_arrow_stream`. Эти методы позволяют избежать преобразования через объекты строк в Python и повторно использовать буферы Arrow там, где это поддерживается целевой библиотекой:
 
@@ -306,9 +272,7 @@ ClickHouse Connect поддерживает эффективное создан�
   * `dataframe_library="polars"` возвращает DataFrame Polars, созданный с помощью `pl.from_arrow`.
 * `query_df_arrow_stream`: Передаёт батчи Arrow в виде DataFrame Pandas или Polars.
 
-<div id="query-to-arrow-backed-dataframe">
-  #### Запрос к DataFrame на базе Arrow
-</div>
+#### Запрос к DataFrame на базе Arrow {#query-to-arrow-backed-dataframe}
 
 ```python
 import clickhouse_connect
@@ -344,18 +308,14 @@ with client.query_df_arrow_stream(
         print(f"Received {type(df_batch)} batch with {len(df_batch)} rows and dtypes: {df_batch.dtypes}")
 ```
 
-<div id="notes-and-caveats">
-  #### Примечания и ограничения
-</div>
+#### Примечания и ограничения {#notes-and-caveats}
 
 * ClickHouse определяет схему Arrow. Типы, для которых в Arrow нет прямого представления, могут возвращаться в совместимом физическом типе, включая двоичные поля. Проверяйте `table.schema` или dtypes DataFrame, прежде чем применять специфичные для приложения преобразования.
 * Результаты Pandas на базе Arrow требуют Pandas 2.0 или более поздней версии.
 * `use_strings` определяет, будут ли столбцы ClickHouse `String` использовать строковые или двоичные поля Arrow, если сервер поддерживает `output_format_arrow_string_as_string`.
 * `tz_mode="schema"` пока не поддерживается методами запросов на базе Arrow. Они выдают предупреждение и сохраняют метаданные часового пояса, переданные в ответе Arrow.
 
-<div id="read-formats">
-  ## Форматы чтения
-</div>
+## Форматы чтения {#read-formats}
 
 Форматы чтения определяют значения, возвращаемые `query`, `query_np` и `query_df`. Они не применяются к методам raw или Arrow, поскольку эти методы напрямую используют формат вывода сервера. Например, если задать для UUID формат чтения `"string"`, будут возвращаться строки UUID, а не объекты `uuid.UUID`.
 
@@ -395,42 +355,43 @@ client.query(
 )
 ```
 
-<div id="read-format-options-python-types">
-  ### Параметры форматов чтения (типы Python)
-</div>
+### Параметры форматов чтения (типы Python) {#read-format-options-python-types}
 
-| Тип ClickHouse        | Нативный тип Python     | Форматы чтения    | Комментарии                                                                                                                   |
-| --------------------- | ----------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| Int[8-64], UInt[8-32] | int                     | string            |                                                                                                                               |
-| UInt64                | int                     | signed            | Superset пока не поддерживает большие беззнаковые значения UInt64                                                             |
-| [U]Int[128,256]       | int                     | string            | Значения int в Pandas и NumPy ограничены 64 битами, поэтому они могут возвращаться как строки                                 |
-| BFloat16              | float                   | -                 | Все значения float в Python внутри представлены 64 битами                                                                     |
-| Float32               | float                   | string            | Все значения float в Python внутри представлены 64 битами                                                                     |
-| Float64               | float                   | string            |                                                                                                                               |
-| Decimal               | decimal.Decimal         | -                 |                                                                                                                               |
-| String                | str                     | bytes             | Столбцы String в ClickHouse не имеют встроенного кодирования, поэтому также используются для бинарных данных переменной длины |
-| FixedString           | bytes                   | string            | FixedString — это байтовые массивы фиксированного размера, но иногда они интерпретируются как строки Python                   |
-| Enum[8,16]            | str                     | int               | Нативный формат возвращает метки; `int` возвращает базовое целочисленное значение.                                            |
-| Date                  | datetime.date           | int               | Целочисленный формат возвращает количество дней с 1970-01-01.                                                                 |
-| Date32                | datetime.date           | int               | Целочисленный формат возвращает расширенное знаковое смещение в днях.                                                         |
-| DateTime              | datetime.datetime       | int               | Целочисленный формат возвращает секунды epoch.                                                                                |
-| DateTime64            | datetime.datetime       | int               | Целочисленный формат возвращает ticks с точностью столбца. Python `datetime` ограничен микросекундами.                        |
-| Time                  | datetime.timedelta      | int, string, time | Целочисленный формат возвращает секунды. Формат `time` ограничен значениями, которые помещаются в `datetime.time`.            |
-| Time64                | datetime.timedelta      | int, string, time | Целочисленный формат возвращает ticks с точностью столбца. Python `timedelta` ограничен микросекундами.                       |
-| IPv4                  | `ipaddress.IPv4Address` | string, int       | IP-адреса можно читать как строки или целые числа.                                                                            |
-| IPv6                  | `ipaddress.IPv6Address` | string            | IP-адреса можно читать как строки; при правильном форматировании их можно вставлять как IP-адреса                             |
-| Tuple                 | dict or tuple           | tuple, dict, json | Именованные Tuple по умолчанию возвращают словари; неименованные Tuple возвращают кортежи.                                    |
-| Map                   | dict                    | -                 |                                                                                                                               |
-| Nested                | Sequence[dict]          | -                 |                                                                                                                               |
-| UUID                  | uuid.UUID               | string            | UUID можно читать как строки, отформатированные в соответствии с RFC 4122<br />                                               |
-| JSON                  | dict                    | string            | По умолчанию возвращается словарь Python. Формат `string` возвращает JSON-строку                                              |
-| Variant               | object                  | typed             | `typed` возвращает `TypedVariant(value, type_name)`, чтобы сохранить исходный тип элемента.                                   |
-| Dynamic               | object                  | -                 | Возвращает соответствующий тип Python для типа данных ClickHouse, хранящегося в значении                                      |
-| QBit                  | list[float]             | -                 | Если установлен NumPy, он автоматически используется для более быстрого транспонирования битов.                               |
+| Тип ClickHouse        | Нативный тип Python     | Форматы чтения    | Комментарии                                                                                                                                                                                                                                |
+| --------------------- | ----------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Int[8-64], UInt[8-32] | int                     | string            |                                                                                                                                                                                                                                            |
+| UInt64                | int                     | signed            | Superset пока не поддерживает большие беззнаковые значения UInt64                                                                                                                                                                          |
+| [U]Int[128,256]       | int                     | string            | Значения int в Pandas и NumPy ограничены 64 битами, поэтому они могут возвращаться как строки                                                                                                                                              |
+| BFloat16              | float                   | -                 | Все значения float в Python внутри представлены 64 битами                                                                                                                                                                                  |
+| Float32               | float                   | string            | Все значения float в Python внутри представлены 64 битами                                                                                                                                                                                  |
+| Float64               | float                   | string            |                                                                                                                                                                                                                                            |
+| Decimal               | decimal.Decimal         | -                 |                                                                                                                                                                                                                                            |
+| Interval*             | int                     | string            | Значения представляют собой знаковые 64-битные счётчики в единицах соответствующего типа interval.                                                                                                                                         |
+| String                | str                     | bytes             | Столбцы String в ClickHouse не имеют встроенного кодирования, поэтому также используются для бинарных данных переменной длины                                                                                                              |
+| FixedString           | bytes                   | string            | FixedString — это байтовые массивы фиксированного размера, но иногда они интерпретируются как строки Python                                                                                                                                |
+| Enum[8,16]            | str                     | int               | Нативный формат возвращает метки; `int` возвращает базовое целочисленное значение.                                                                                                                                                         |
+| Date                  | datetime.date           | int               | Целочисленный формат возвращает количество дней с 1970-01-01.                                                                                                                                                                              |
+| Date32                | datetime.date           | int               | Целочисленный формат возвращает расширенное знаковое смещение в днях.                                                                                                                                                                      |
+| DateTime              | datetime.datetime       | int               | Целочисленный формат возвращает секунды epoch.                                                                                                                                                                                             |
+| DateTime64            | datetime.datetime       | int               | Целочисленный формат возвращает ticks с точностью столбца. Python `datetime` ограничен микросекундами.                                                                                                                                     |
+| Time                  | datetime.timedelta      | int, string, time | Целочисленный формат возвращает секунды. Формат `time` ограничен значениями, которые помещаются в `datetime.time`.                                                                                                                         |
+| Time64                | datetime.timedelta      | int, string, time | Поддерживаются scale от 0 до 9. Целочисленный формат возвращает ticks с точностью столбца. Python `timedelta` ограничен микросекундами.                                                                                                    |
+| IPv4                  | `ipaddress.IPv4Address` | string, int       | IP-адреса можно читать как строки или целые числа.                                                                                                                                                                                         |
+| IPv6                  | `ipaddress.IPv6Address` | string            | IP-адреса можно читать как строки; при правильном форматировании их можно вставлять как IP-адреса                                                                                                                                          |
+| Tuple                 | dict or tuple           | tuple, dict, json | Именованные Tuple по умолчанию возвращают словари; неименованные Tuple возвращают кортежи. Значение `Tuple()` возвращает `()`.                                                                                                             |
+| Map                   | dict                    | -                 |                                                                                                                                                                                                                                            |
+| Nested                | Sequence[dict]          | -                 |                                                                                                                                                                                                                                            |
+| UUID                  | uuid.UUID               | string            | UUID можно читать как строки, отформатированные в соответствии с RFC 4122<br />                                                                                                                                                            |
+| JSON                  | dict                    | string            | По умолчанию возвращается словарь Python. Формат `string` возвращает JSON-строку                                                                                                                                                           |
+| Variant               | object                  | typed             | `typed` возвращает `TypedVariant(value, type_name)`, чтобы сохранить исходный тип элемента.                                                                                                                                                |
+| Dynamic               | object                  | -                 | Возвращает соответствующий тип Python для типа данных ClickHouse, хранящегося в значении                                                                                                                                                   |
+| MultiPoint            | list[tuple]             | -                 | Каждый Point возвращается как 2-элементный кортеж.                                                                                                                                                                                         |
+| Geometry              | tuple or list           | typed             | Значения Point представляются 2-элементными кортежами. Остальные элементы, включая MultiPoint, используют вложенные списки. Укажите `typed` с ключом `Geometry`, чтобы сохранить тип элемента. Настройки формата `Variant` не применяются. |
+| QBit                  | list[float]             | -                 | Если установлен NumPy, он автоматически используется для более быстрого транспонирования битов.                                                                                                                                            |
 
-<div id="external-data">
-  ## Внешние данные
-</div>
+`query_np`, `query_np_stream`, `query_df` и `query_df_stream` поддерживают для `Time64` scale 0, 3, 6 и 9. Остальные scale приводят к `ProgrammingError`, поскольку для них нет соответствующей единицы времени в NumPy. Чтобы сохранить такую точность, используйте обычный запрос Python с форматом чтения `int` или `string`. В документации экспериментального [Rust codec](/ru/integrations/language-clients/python/rust-codec#known-behavior-differences) описано исключение для `Time64`, хранящегося внутри `Dynamic`.
+
+## Внешние данные {#external-data}
 
 Запросы ClickHouse могут принимать внешние данные в любом поддерживаемом формате ввода. Клиент отправляет данные как часть запроса, а запрос может ссылаться на них как на временную внешнюю таблицу. См. [документацию ClickHouse по внешним данным](/ru/reference/engines/table-engines/special/external-data). Методы клиентских запросов принимают объект `clickhouse_connect.driver.external.ExternalData` через параметр `external_data`.
 
@@ -473,9 +434,7 @@ result = client.query(
 
 backend chDB не поддерживает внешние данные.
 
-<div id="time-zones">
-  ## Часовые пояса
-</div>
+## Часовые пояса {#time-zones}
 
 Значения ClickHouse `DateTime` и `DateTime64` передаются как числовые значения на основе epoch. ClickHouse Connect преобразует их в объекты Python `datetime`, используя метаданные столбцов, переопределения запроса и политику часовых поясов клиента.
 

@@ -1,0 +1,290 @@
+---
+title: 'ClickHouse 按需计算'
+sidebarTitle: '按需计算'
+sidebar_label: '按需计算'
+slug: /cloud/features/on-demand-compute
+description: '无需调整主服务规格，即可为 ClickHouse Cloud 工作负载增加计算资源。私有预览阶段仅支持部分查询。'
+keywords: ['on-demand compute', 'workload isolation', 'stateless workers', 'private preview']
+doc_type: 'guide'
+---
+
+import { PrivatePreviewBadge } from "/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+<PrivatePreviewBadge />
+
+<Note>
+  按需计算 (On-Demand Compute) 目前处于私有预览阶段，不在 ClickHouse Cloud SLO 或 SLA 的覆盖范围内，且可能存在已知和未知的限制。请参阅[限制](#limitations)。
+
+  [加入等待列表](https://clickhouse.com/cloud/on-demand-compute-waitlist)。
+</Note>
+
+按需计算是 ClickHouse Cloud 提供的一项能力，可为你的云 service (即一个 tenant) 针对受支持的 workload 提供额外且即时的容量，而无需你调整 service 规模或再预配一个 service。这类工作会在你的 service 自身 compute 之外的 ClickHouse 工作线程上运行。工作线程来自同一区域内跨 tenant 共享的托管工作线程池，但每个工作线程在同一时刻只会分配给一个 tenant。
+
+在私有预览期间，按需计算仅支持 `SELECT` 查询。你可以通过查询级、session 级或用户级 settings 为某个查询启用该能力，ClickHouse 随后会从工作线程池中分配工作线程，通过你现有的 service 和端点来执行该查询。
+
+这与[计算-计算分离](/zh/products/cloud/features/infrastructure/warehouses)不同：仓库通过多个共享数据的 service 提供专用且长期存在的 compute；而按需计算则通过你现有的 service，从共享工作线程池中提供临时的工作线程。
+
+按需计算利用了以下全新能力：
+
+* 基于按需计算的无状态查询执行
+* 全新的 [CBO](https://github.com/ClickHouse/ClickHouse/pull/86353) (cost-based optimizer，基于代价的优化器)
+* 全新的[分布式查询执行](https://clickhouse.com/blog/multi-stage-distributed-query-execution-clickhouse-cloud)
+
+## 何时使用 按需计算 {#when-to-use-on-demand-compute}
+
+在私有预览期间，可将 按需计算 用于符合条件的计算密集型 `SELECT` 查询，即希望在主服务的计算资源之外运行的查询：
+
+* **临时查询与分析查询：** 在额外的工作线程上运行计算密集型 `SELECT` 查询。
+* **非关键读取工作负载：** 将部分读取操作从主服务中迁出。
+* **数据湖查询：** 在额外的工作线程上查询受支持的 Apache Iceberg、Delta Lake 或 `SharedMergeTree` 数据。
+* **临时增加计算能力：** 无需调整主服务规格，即可为符合条件的查询申请工作线程。
+
+私有预览仅支持 `SELECT` 查询。工作线程不会执行 `INSERT` 查询、DDL、变更或后台操作。
+
+## 工作原理 {#how-it-works}
+
+1. 您向 ClickHouse Cloud 服务发送一个符合条件的 `SELECT` 查询，并请求特定数量的工作线程。您的端点、身份验证和 RBAC 配置均无需更改
+2. 随后您的集群会连接到该池，并申请指定数量的工作线程
+3. 工作线程的租约时长至少为 60 秒；如果查询持续时间更长，租约会自动续期
+4. 工作线程接收查询并执行
+5. 响应随后返回给您的客户端
+6. 工作线程被清除。
+
+在私有预览期间，每个工作线程拥有 `8 vCPUs` 和 `32 GiB` 内存。可使用 `distributed_plan_workers_num` 指定查询申请的工作线程数量。
+
+## 使用按需计算资源 {#using-on-demand-compute}
+
+### 设置 {#settings}
+
+使用以下设置即可开始使用按需计算：
+
+| 设置                             | 必需值           | 用途                                                           |
+| ------------------------------ | ------------- | ------------------------------------------------------------ |
+| `make_distributed_plan`        | Yes           | 启用实验性的分布式查询计划。使用 按需计算 时必需。                                   |
+| `distributed_plan_workers_num` | Yes           | 为该查询租用的工作线程数量。若为 `0` (默认值) ，查询将在你的 service 上运行，而不是在工作线程池上运行。 |
+| `enable_parallel_replicas`     | Yes (设置为 `0`) | 并行副本与分布式查询计划不兼容。                                             |
+
+<Tip>
+  在预览期间，请在查询级别设置这些参数，或者单独创建一个使用不同设置的用户。这样可以一目了然地看出哪些语句使用了 按需计算，同时避免继承启用了并行副本的 Cloud 默认 profile。
+</Tip>
+
+### 示例 {#example}
+
+```sql
+SELECT
+    sum(l_extendedprice * l_discount) AS revenue
+FROM lineitem
+WHERE
+    l_shipdate >= DATE '1994-01-01'
+    AND l_shipdate < DATE '1994-01-01' + INTERVAL 1 YEAR
+    AND l_discount BETWEEN 0.06 - 0.01 AND 0.06 + 0.01
+    AND l_quantity < 24
+SETTINGS
+    make_distributed_plan = 1,
+    distributed_plan_workers_num = 5,
+    enable_parallel_replicas = 0
+```
+
+该查询请求五个工作线程。ClickHouse 实际提供的工作线程数量取决于私有预览版的限制以及可用的工作线程池容量。
+
+### 并发查询 {#concurrent-queries}
+
+来自同一 ClickHouse Cloud 服务的并发查询可以共享已分配的工作线程。只有当某个查询请求的工作线程数超过该服务已分配的数量时，ClickHouse 才会申请额外的工作线程。
+
+例如，若两个并发查询各请求三个工作线程，它们可以共用同样的这三个工作线程。若另一个查询请求五个工作线程，ClickHouse 可以复用已分配的三个工作线程，并从池中再申请两个。
+
+请参见下面的示例：
+
+```sql
+SELECT ... SETTINGS make_distributed_plan = 1, distributed_plan_workers_num = 3, ...;
+SELECT ... SETTINGS make_distributed_plan = 1, distributed_plan_workers_num = 3, ...;
+```
+
+它们共享同样的三个工作线程。
+
+如果第三个并发查询请求五个工作线程：
+
+```sql
+SELECT ... SETTINGS make_distributed_plan = 1, distributed_plan_workers_num = 5, ...;
+```
+
+该查询将在已有的三个工作线程以及两个新租用的工作线程上运行。
+
+### 当工作线程池无法满足请求时 {#pool-capacity}
+
+在私有预览期间，工作线程的可用性采用尽力而为策略。如果可用的工作线程少于请求数量，查询将使用 ClickHouse 实际能分配的工作线程运行。例如，请求五个工作线程的查询可能仅以三个工作线程运行。
+
+如果无法租用到任何工作线程，查询将失败。
+
+请重试该查询。如果问题持续存在，请联系您的 ClickHouse 客户团队——预览工作线程池可能已耗尽或规格配置不当。
+
+## Monitoring {#monitoring}
+
+在 service 上使用 `system.query_log`，即可查看为查询分配了多少个工作线程。
+
+### 已分配的工作线程数 {#worker-provided}
+
+```sql
+SELECT
+    ProfileEvents['StatelessWorkerRequested'],
+    ProfileEvents['StatelessWorkerProvided']
+FROM clusterAllReplicas(default, system.query_log)
+WHERE query_id = '<YOUR_QUERY_ID>'
+  AND type != 'QueryStart';
+```
+
+<Tip>
+  为按需 (On-Demand) 查询设置 `log_comment = 'on-demand'` (或某个 workload 名称) ，这样无需解析 `Settings` 即可过滤出这些查询。
+</Tip>
+
+```sql
+SELECT
+    sum(l_extendedprice * l_discount) AS revenue
+FROM lineitem
+WHERE
+    l_shipdate >= DATE '1994-01-01'
+    AND l_shipdate < DATE '1994-01-01' + INTERVAL 1 YEAR
+    AND l_discount BETWEEN 0.06 - 0.01 AND 0.06 + 0.01
+    AND l_quantity < 24
+SETTINGS
+    make_distributed_plan = 1,
+    distributed_plan_workers_num = 5,
+    enable_parallel_replicas = 0,
+    log_comment = 'on-demand-private-preview'
+```
+
+## 可用区域 {#available-regions}
+
+按需计算按区域提供：工作线程与您的服务运行在同一区域。
+
+| Cloud | 区域        | 说明 |
+| ----- | --------- | -- |
+| AWS   | us-east-1 |    |
+| AWS   | eu-west-1 |    |
+
+如果列表中没有您所需的区域，请在[等待列表](https://clickhouse.com/cloud/on-demand-compute-waitlist)中提交申请。我们会根据需求开放更多区域。
+
+## 定价 {#pricing}
+
+在私有预览期间，按需计算 (On-Demand Compute) 免费使用，但设有用量上限 (参见[限制](#limitations)) 。如需提高该上限，请联系您的 ClickHouse 客户团队。
+
+预览结束后将开始收费。在该功能进入 Beta 阶段以及开始计费之前，预览参与者均会提前收到通知。
+
+计划采用的计费模式与 ClickHouse Cloud 计算一致：按实际使用的计算量 (租用的工作线程时长) 计费，而非按扫描的数据量或读取的行数计费。
+
+## 限制 {#limitations}
+
+以下限制适用于私有预览阶段，此外可能还存在其他限制。如遇异常行为，请反馈给 ClickHouse 支持团队或您的客户团队。
+
+* **仅支持 `SELECT` 查询。** 工作线程不执行 `INSERT` 查询、变更、DDL 或后台操作。
+* **支持的格式。** 私有预览支持 Apache Iceberg、Delta Lake 和 `SharedMergeTree`。
+* **并行副本。** 必须禁用并行副本。
+* **工作线程规格。** 每个工作线程配备 `8 vCPUs` 和 `32 GiB` 内存。
+* **工作线程数量上限。** 在私有预览期间，每个查询最多可申请五个工作线程。
+* **工作线程池容量。** 工作线程的可用性为尽力而为，查询实际获得的工作线程数量可能少于申请数量；若没有可用的工作线程，查询将失败。
+* **性能。** 性能因查询而异。工作线程分配、分布式查询计划的生成以及查询计划各阶段的传输都会带来额外延迟。某些形态的查询，其性能可能不如在主服务上执行 (对于通常在一秒内即可完成的查询，在您的集群中执行的性能可能更好)
+* **查询兼容性。** 分布式查询计划器无法远程执行所有查询计划。不受支持的查询可能返回 `SUPPORT_IS_DISABLED` 异常。
+
+## Roadmap {#roadmap}
+
+On-Demand Compute 只是一个起点。正在推进或后续计划的工作包括：
+
+* 消除已知限制 (`SUPPORT_IS_DISABLED` 空缺)
+* 支持不同工作线程规格的池
+* 使查询性能达到并稳定在与 Stateful 执行相当的水平
+* 支持 background merge
+* 定价
+* 工作线程池 autoscaler 校准
+* 内置可观测性
+* 面向 On-Demand Compute 的专用权限
+* 扩展数据湖工作负载 (写入、合并整理等)
+
+## 安全 {#security}
+
+工作线程来自同一区域内多个服务共享的预热池，因此有一条不可妥协的规则：一个工作线程同一时间只服务于一个服务，且绝不会从一个服务转交给另一个服务。
+
+你访问 ClickHouse 的方式不会有任何改变。客户端仍使用现有身份验证连接到你的服务端点，并且只有你的服务会代表你与工作线程通信。工作线程不对客户暴露任何端点。
+
+* **一个工作线程只服务一个服务：** 工作线程在租约期内只租给单个服务，绝不会同时被两个服务共享。
+* **服务之间不复用：** 租约结束后，该工作线程会被销毁，并由新的工作线程取代。工作线程绝不会被重新分配给其他服务。
+* **无持久化数据：** 工作线程不保留任何持久化存储，也不会在租约结束后继续存在。
+* **与你的服务位于同一区域：** 工作线程运行在租用它们的服务所在区域，严格遵循数据驻留规则。
+* **你现有的访问控制依然生效：** IP 访问列表和专用终结点仍与以往完全一致地管控你的服务端点。按需计算不会新增任何需要你配置或保护的端点。
+* **沿用你现有的身份验证和 RBAC：** 查询以与你服务上其他查询相同的用户和特权运行。工作线程不携带独立的身份或权限模型。
+
+### 网络隔离 {#network-isolation}
+
+当某个工作线程被租用给你的 service 时，平台只允许该工作线程与你的 service 之间的网络流量，其余流量全部阻断。该限制在网络 layer 上实施，而不是在 query engine 中，因此它与查询本身、查询设置以及 optimizer 生成的执行 plan 都无关。
+
+<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Network isolation explanation diagram" />
+
+* **只有你的 service 能访问你的工作线程。** 这条 path 只在工作线程当前的 lease 期间存在，并且只对这一个 service 开放。
+* **未分配的工作线程不可达。** 在 pool 中等待的工作线程在被租用之前，与任何 service 之间都不存在网络路径。
+* **租用给不同 service 的工作线程之间无法互访。** 同一个 lease 内的工作线程会相互交换 plan stages 和中间结果；不同 lease 中的工作线程即使共用同一个 pool，也彼此隔离。
+* **path 随工作线程一起消失。** 结束 lease 会销毁该工作线程，流量唯一被允许到达的目标也随之不存在。
+* **请求路径保持最小化。** 你的 service 只会访问工作线程分配服务，用于租用和续租工作线程。该 path 不承载任何查询数据，且仅限于 assignment API。
+
+### 内部身份验证与授权 {#authentication-and-authorization}
+
+网络隔离决定哪些流量能够到达 工作线程，而身份验证决定调用方到达之后能做什么；两者相互独立地生效，调用方必须同时满足二者的要求。
+
+您的 service、工作线程分配服务与 工作线程 之间的每一条 connection 都经过身份验证。任何一方都不被默认信任，所有 credentials 均由平台签发，并按 lease 分发。
+
+* **每个 工作线程 一份 credential：**当 工作线程 被租借给您的 service 时，平台会为每个 工作线程 签发一个唯一的 signed token。该 token 仅对这一个 工作线程 有效，且仅对您的 service 有效。
+* **短期有效并与 lease 绑定：**token 会随签发它的 lease 一同过期。续租会签发新的 token；一旦 lease 结束，其 token 就不再具备任何身份验证效力。
+* **由平台校验：**工作线程 会将收到的 token 提交至平台的 identity 服务进行 validate，而不会信任请求中携带的任何内容。
+
+| Connection                  | 身份验证的内容                                                              |
+| --------------------------- | -------------------------------------------------------------------- |
+| 您的 service → 工作线程分配服务    | 您的 service 的平台 identity，由它决定该 service 可以操作哪些 lease。                  |
+| 您的 service → 租借给它的 工作线程   | 作用域仅限于该 工作线程 的 signed token，有效期与 lease 相同。                         |
+| 同一 lease 内的 工作线程 → 工作线程 | 每个 工作线程 自身的平台 identity，并额外 check 调用方是否仍持有对接收方 工作线程 的 live lease。 |
+
+<Note>
+  这些 credentials 属于 ClickHouse Cloud 执行您的查询时的内部机制，绝不会暴露给您的 clients，也与您连接 ClickHouse 所用的身份验证方式无关：clients 仍使用您现有的 credentials 进行连接，查询 privileges 也仍由您 service 的 RBAC 管控。
+</Note>
+
+## FAQ {#faq}
+
+<AccordionGroup>
+  <Accordion title="按需计算是开源的吗？">
+    不是。它是一种 ClickHouse Cloud 架构：ClickHouse server (分布式查询计划) 、data plane (工作线程池与 lease) 以及 control plane。Experimental 的 `make_distributed_plan` 设置和 CBO 在 ClickHouse OSS 中也有，但共享工作线程池和 stateless 执行仅在 Cloud 中提供。
+  </Accordion>
+
+  <Accordion title="加入私有预览是否需要特定版本？">
+    需要。私有预览期间使用的版本为定制构建版本，预览期间可能还需要进行额外升级。
+  </Accordion>
+
+  <Accordion title="定价会是怎样的？">
+    目前我们还没有可公开的定价方案，但在私有预览期间该 feature 可免费使用。定价理念将与 ClickHouse Cloud 一致：按使用的 compute 计费，而非按扫描的数据量或读取的行数计费。具体费率将在定价正式推出前公布。
+  </Accordion>
+
+  <Accordion title="我可以将其用于 production 吗？">
+    你可以运行真实 workload，但这是私有预览：存在已知和未知的限制，并且工作线程池的 availability 不提供 SLO/SLA 保障。
+  </Accordion>
+
+  <Accordion title="这与为我的 service 启用 autoscaling 有何不同？">
+    Autoscaling 改变的是分配给主节点 service 的 compute。在私有预览期间，按需计算让符合条件的 `SELECT` 查询临时使用托管池中的工作线程，而不改变主服务的规格。Autoscaling 管理的是持续的 service 容量，按需计算提供的则是针对特定 workloads 的临时 compute。
+  </Accordion>
+
+  <Accordion title="我可以在哪里提问？">
+    请联系你的 account team，他们会为你对接按需计算的产品经理。
+  </Accordion>
+
+  <Accordion title="我可以在哪里报告缺陷？">
+    提交支持 ticket (严重等级 3) 或直接反馈给产品经理。请附上 `query_id`、你的 Service ID 以及完整的 exception 信息。
+  </Accordion>
+
+  <Accordion title="其他 ClickHouse Cloud 服务能访问到运行我查询的工作线程吗？">
+    不能。当某个工作线程被 lease 给你的 service 时，平台仅允许该工作线程与你的 service 之间的流量，并阻断其他所有 service 的访问。未分配的工作线程以及被 lease 给其他 service 的工作线程与你的 service 之间没有网络路径。参见[网络隔离](#network-isolation)。
+  </Accordion>
+
+  <Accordion title="我的查询结束后，工作线程会被其他 service 复用吗？">
+    不会。lease 结束时，该工作线程会被销毁并替换为一个全新的工作线程，而不会移交给下一个 service。
+  </Accordion>
+
+  <Accordion title="ClickHouse BYOC 或 ClickHouse Private 中是否提供此功能？">
+    不提供。私有预览在 ClickHouse BYOC 和 ClickHouse Private 中均不可用。
+  </Accordion>
+</AccordionGroup>

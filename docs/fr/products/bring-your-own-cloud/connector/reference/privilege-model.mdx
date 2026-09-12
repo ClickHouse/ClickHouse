@@ -1,20 +1,20 @@
 ---
 title: 'Modèle de privilèges'
 sidebarTitle: 'Modèle de privilèges'
-description: "Ce que le Connecteur ClickHouse peut et ne peut pas faire : connexions sortantes, privilèges ClickHouse, RBAC Kubernetes, attribution et minimisation des données"
+description: "Ce que le Connecteur ClickHouse peut et ne peut pas faire : connexions sortantes, Autorisations ClickHouse, RBAC Kubernetes, attribution et minimisation des données"
 keywords: ['BYOC', 'cloud', 'bring your own cloud', 'connecteur', 'privilège', 'sécurité']
 doc_type: 'reference'
 ---
 
-Cette page constitue la référence de sécurité du Connecteur ClickHouse : l’ensemble des connexions qu’il établit, les privilèges exacts dont il dispose, ce qu’il ne peut structurellement pas faire et la façon dont chaque action est attribuée. Pour comprendre comment ces éléments s’articulent, consultez [l’architecture](/fr/products/bring-your-own-cloud/connector/architecture).
+import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
 
-<div id="what-the-connector-can-do">
-  ## Fonctionnalités du connecteur
-</div>
+<PrivatePreviewBadge />
 
-<div id="outbound-connections">
-  ### Connexions sortantes
-</div>
+Cette page constitue la référence de sécurité du Connecteur ClickHouse : l’ensemble des connexions qu’il établit, les privilèges exacts dont il dispose, ce qu’il ne peut structurellement pas faire et la façon dont chaque action est attribuée. Pour comprendre comment ces éléments s’articulent, consultez [l’architecture](/fr/products/bring-your-own-cloud/connector/architecture).
+
+## Fonctionnalités du connecteur {#what-the-connector-can-do}
+
+### Connexions sortantes {#outbound-connections}
 
 Voici la liste complète des connexions établies par le connecteur. Elles proviennent toutes de votre environnement.
 
@@ -29,9 +29,7 @@ Voici la liste complète des connexions établies par le connecteur. Elles provi
 
 En entrée, le connecteur expose uniquement des ports locaux de contrôle d’état et de métriques, ainsi que la passerelle de session facultative. Rien d’autre n’écoute, et ClickHouse Cloud ne se connecte jamais à votre environnement : il peut uniquement répondre au WebSocket sortant de l’outil de dépannage.
 
-<div id="clickhouse-grants">
-  ### Autorisations ClickHouse
-</div>
+### Autorisations ClickHouse {#clickhouse-grants}
 
 Le provisionnement crée un utilisateur en lecture seule par composant. La seule exception à la lecture seule est l’autorisation `SYSTEM FLUSH LOGS` accordée au scraper et indiquée ci-dessous, qui ne permet ni de lire ni de modifier quoi que ce soit ; elle force uniquement les tables de logs à rendre persistantes les entrées déjà présentes dans leur tampon. Les utilisateurs sont créés avec `IDENTIFIED WITH bcrypt_hash` : seul un hachage bcrypt salé figure dans le SQL de provisionnement ; le mot de passe en clair se trouve uniquement dans le fichier d’identifiants lu par le démon au moment de l’exécution. Les autorisations sont exactement les suivantes, avec les ensembles de tables par défaut :
 
@@ -88,9 +86,7 @@ L’autorisation `system.user_directories` accordée aux deux utilisateurs n’e
 
 Outre le privilège `SELECT` accordé table par table, le seul privilège système est `SYSTEM FLUSH LOGS` du scraper : il force les tables système `*_log` à écrire sur disque les entrées en mémoire tampon afin que les scrapes accèdent aux données à jour, et ne fait rien d’autre ; ClickHouse ne l’applique qu’aux tables de logs, bien que ce privilège ne puisse être accordé qu’à l’échelle globale. Aucun privilège `INSERT`, DDL, de gestion des utilisateurs, de paramètres ou de contrôle des processus n’est accordé. Lorsqu’un second déploiement de connecteur partage une instance, ses utilisateurs portent un suffixe (`pcm_scraper_<suffix>`) et disposent des mêmes ensembles d’autorisations.
 
-<div id="kubernetes-rbac">
-  ### RBAC Kubernetes
-</div>
+### RBAC Kubernetes {#kubernetes-rbac}
 
 Le chart crée uniquement des rôles limités à l’espace de noms ; aucun ClusterRole ni ClusterRoleBinding n’est créé.
 
@@ -102,9 +98,7 @@ Le chart crée uniquement des rôles limités à l’espace de noms ; aucun Clu
 | `pods`, `pods/log`, `pods/status`, `services`, `configmaps`, `events`, `persistentvolumeclaims` | `get`, `list`, `watch` | Uniquement pour le dépanneur                                                                                                        |
 | `deployments`, `statefulsets`, `replicasets` (`apps`)                                           | `get`, `list`, `watch` | Uniquement pour le dépanneur                                                                                                        |
 
-<div id="what-the-connector-cannot-do">
-  ## Ce que le connecteur ne peut pas faire
-</div>
+## Ce que le connecteur ne peut pas faire {#what-the-connector-cannot-do}
 
 * **Aucune écriture dans les données ni dans l’état de ClickHouse.** Les autorisations ci-dessus n’incluent aucun `INSERT`, aucune instruction DDL ni aucun privilège de gestion des utilisateurs, des paramètres ou des processus ; le seul privilège de classe SYSTEM, `SYSTEM FLUSH LOGS` du scraper, permet uniquement aux tables de logs de rendre persistantes les données qu’elles ont déjà mises en mémoire tampon. Le connecteur ne peut pas modifier les données, les schémas, les utilisateurs ni les paramètres.
 * **Aucune exécution de commandes.** Le RBAC n’inclut aucun `pods/exec` ; le connecteur ne peut pas exécuter de commandes dans vos pods.
@@ -112,27 +106,21 @@ Le chart crée uniquement des rôles limités à l’espace de noms ; aucun Clu
 * **Aucune portée à l’échelle du cluster.** Chaque Role est associé à un namespace ; le connecteur ne peut pas lister ni lire des ressources en dehors des namespaces que vous avez autorisés.
 * **Aucune connexion entrante.** ClickHouse Cloud n’ouvre jamais de connexion vers votre environnement. Le seul canal de commande est le WebSocket sortant du troubleshooter, qui refuse toute commande tant qu’aucune session d’assistance que vous avez activée n’est en cours. Même pendant une session, la portée est limitée des deux côtés : les requêtes ClickHouse sont limitées à la liste d’autorisation des tables, `query_log` et `text_log` étant refusés par le validateur quelle que soit la configuration, et l’accès à Kubernetes est limité séparément aux vues en lecture seule et aux logs des pods accordés par les Roles limités au namespace.
 
-<div id="what-requires-your-action">
-  ## Éléments nécessitant votre intervention
-</div>
+## Éléments nécessitant votre intervention {#what-requires-your-action}
 
 * **Sessions d&#39;assistance.** Le dépannage interactif ne peut avoir lieu que dans une session que vous activez, limitée à 4 heures par défaut et à 24 heures maximum. La désactivation prend effet immédiatement. Consultez les [sessions d&#39;assistance](/fr/products/bring-your-own-cloud/connector/support-sessions).
 * **Liste d&#39;autorisation des opérateurs.** Chaque requête adressée à la passerelle doit inclure un jeton OIDC dont l&#39;adresse e-mail attestée figure dans votre liste d&#39;autorisation. Une liste d&#39;autorisation vide interdit tout accès. Vous gérez cette liste ; consultez le [guide de configuration](/fr/products/bring-your-own-cloud/connector/configuration).
 * **Exposition de la passerelle.** La passerelle de session est désactivée tant que vous ne l&#39;activez pas et n&#39;est accessible que via une redirection de port, sauf si vous choisissez d&#39;utiliser un Ingress. Sur une VM, chaque opérateur doit épingler l&#39;empreinte de son certificat auto-signé avant que les commandes de session puissent communiquer avec lui.
 * **Trafic réseau sortant.** Avec un CNI appliquant les règles, le connecteur n&#39;a aucun accès sortant tant que vous n&#39;avez pas ajouté les CIDR des points de terminaison à la liste d&#39;autorisation de la NetworkPolicy du chart.
 
-<div id="how-access-is-attributed">
-  ## Attribution des accès
-</div>
+## Attribution des accès {#how-access-is-attributed}
 
 * **Identité du déploiement.** Le nom commun du certificat client mTLS correspond à l’ID de votre org, avec un seul nom DNS associé à l’hôte de votre point de terminaison, afin que chaque connexion API puisse être attribuée à votre org. Le renouvellement est automatique et effectué par le démon ; aucun opérateur ne manipule les éléments de clé.
 * **Intégrité des requêtes.** Chaque requête d’API inclut également une signature HMAC-SHA256 (`Authorization: HMAC-SHA256 AccessKey=..., Signature=..., Timestamp=...`) calculée à partir de la méthode, du chemin, de l’horodatage et du hash du corps, à l’aide de la paire de clés émise lors de l’inscription.
 * **Identité de l’opérateur.** Les appels de la passerelle sont attribués à l’e-mail attesté par le jeton d’ID OIDC de l’opérateur, vérifié par rapport au JWKS de votre fournisseur d’identité ; un nom déclaré par l’utilisateur n’est jamais considéré comme fiable lorsqu’un jeton est disponible.
 * **Piste d’audit.** Chaque appel à la passerelle et chaque commande de dépannage, qu’ils soient acceptés ou bloqués, sont ajoutés au journal d’audit NDJSON : les entrées de la passerelle incluent l’e-mail attesté de l’opérateur, les modifications de session locale de la VM incluent l’utilisateur hôte à l’origine de l’appel, et les commandes de session incluent l’identité de l’org transmise sur le canal authentifié. Consultez-le avec `clicklink clctl troubleshoot audit tail` ; voir la [référence de la CLI](/fr/products/bring-your-own-cloud/connector/reference/cli).
 
-<div id="data-minimization-defaults">
-  ## Paramètres par défaut de minimisation des données
-</div>
+## Paramètres par défaut de minimisation des données {#data-minimization-defaults}
 
 * **`query_log` est exclue des scrapes par défaut.** Ses colonnes contiennent du SQL brut avec des valeurs littérales, qui peuvent inclure des données personnelles ou des secrets ; elle ne quitte donc pas votre périmètre, sauf si vous l&#39;ajoutez délibérément.
 * **L&#39;outil troubleshooter lit uniquement les tables de la liste d&#39;autorisation**, et le validateur refuse systématiquement `query_log` et `text_log`, de sorte que l&#39;historique des requêtes n&#39;est jamais accessible en lecture. La liste d&#39;autorisation par défaut inclut `system.processes` (texte des requêtes en cours) ; restreignez la liste des tables autorisées pour les sessions (`troubleshooter.allowedTables` sur Kubernetes, `troubleshooter.allowed_tables` sur une VM) si ces informations doivent rester masquées pendant les sessions.
