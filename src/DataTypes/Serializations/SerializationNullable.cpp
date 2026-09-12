@@ -40,6 +40,13 @@ UInt128 SerializationNullable::getHash(const SerializationPtr & nested_, bool us
     return hash.get128();
 }
 
+MutableColumnPtr SerializationNullable::wrapColumnForDeserialization(MutableColumnPtr column) const
+{
+    const auto & nullable = assert_cast<const ColumnNullable &>(*column);
+    return ColumnNullable::create(
+        nested->wrapColumnForDeserialization(nullable.getNestedColumn().cloneEmpty()), nullable.getNullMapColumnPtr()->cloneEmpty());
+}
+
 void SerializationNullable::enumerateStreams(
     EnumerateStreamsSettings & settings, const StreamCallback & callback, const SubstreamData & data) const
 {
