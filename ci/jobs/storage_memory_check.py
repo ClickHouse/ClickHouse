@@ -257,7 +257,7 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
     shutil.rmtree(async_no_cache_run["data_dir"])
     async_no_cache_scenario.unlink()
 
-    if not batch_symbolize(master_binary, master_run["heap_files"]):
+    if not batch_symbolize(master_binary, master_run["heap_files"], timeout=1800):
         setup_results.append(
             Result(
                 name="Symbolize master profiles",
@@ -267,7 +267,7 @@ SETTINGS force_data_skipping_indices = 'idx_value', load_marks_asynchronously = 
         )
         Result.create_from(results=setup_results, stopwatch=stopwatch).complete_job()
         return
-    if not batch_symbolize(pr_binary, pr_run["heap_files"]):
+    if not batch_symbolize(pr_binary, pr_run["heap_files"], timeout=1800):
         setup_results.append(
             Result(
                 name="Symbolize PR profiles",
