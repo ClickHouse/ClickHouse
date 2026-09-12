@@ -1,4 +1,5 @@
 #include <unordered_map>
+#include <unordered_set>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 
 #include <Analyzer/TableFunctionNode.h>
@@ -11,6 +12,7 @@
 #include <Interpreters/SetSerialization.h>
 #include <Interpreters/TableJoin.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
 #include <Common/typeid_cast.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
@@ -77,23 +79,27 @@ bool sameByteLayout(const Block & lhs, const Block & rhs)
     return true;
 }
 
+/// A step is transparent for the cache key - it contributes nothing - when it changes neither the row
+/// count nor the byte layout. This is the loose, header-only test, and it stays that way: it decides
+/// only whether a step adds anything of its own to a key, where being wrong costs a slightly-off
+/// estimate. Deciding that a step can be *skipped over* is a stricter question, answered by
+/// `isPassThroughExpression` below.
+bool isByteTransparentTransform(const ITransformingStep & transform)
+{
+    return transform.getTransformTraits().preserves_number_of_rows
+        && !transform.getInputHeaders().empty()
+        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front());
+}
+
 UInt64 calculateHashFromStep(const ITransformingStep & transform)
 {
     /// A row-preserving step is transparent for the cache key (contributes nothing) ONLY if it also
-    /// leaves the output byte layout unchanged. The cache stores `output_bytes`, not just cardinality,
-    /// so a row-preserving `ExpressionStep` that adds, removes, or widens columns DOES change the
-    /// output bytes - a plain read and a wide projection must not share a key and reuse the wrong
-    /// output-byte estimate. Such a step gets a distinct key from its serialized form below; a
-    /// rename-only step keeps the same byte layout and stays transparent.
-    ///
-    /// `sameByteLayout` compares column types, not actual byte sizes, so this is best-effort (see the
-    /// note on `calculateHashTableCacheKeys`): a same-type expression that changes the byte size under
-    /// the same output name - e.g. replacing `s` with `concat(s, s)` (still one `String`) - keeps the
-    /// same layout and stays transparent, so it can share its child's key even though `output_bytes`
-    /// differs. We accept that: a precise byte-size key isn't available at planning time, and the only
-    /// consequence is a slightly-off estimate, never a wrong result.
-    if (transform.getTransformTraits().preserves_number_of_rows
-        && sameByteLayout(*transform.getOutputHeader(), *transform.getInputHeaders().front()))
+    /// leaves the output byte layout unchanged - see `isByteTransparentTransform`. The cache stores
+    /// `output_bytes`, not just cardinality, so a row-preserving `ExpressionStep` that adds, removes,
+    /// or widens columns DOES change the output bytes - a plain read and a wide projection must not
+    /// share a key and reuse the wrong output-byte estimate. Such a step gets a distinct key from its
+    /// serialized form below; a rename-only step keeps the same byte layout and stays transparent.
+    if (isByteTransparentTransform(transform))
         return 0;
 
     /// This serialized form is only ever hash input - nothing reads the bytes back - so it is
@@ -126,6 +132,48 @@ namespace DB
 
 namespace QueryPlanOptimizations
 {
+
+/// Does this expression hand every one of its inputs onward, renamed or reordered but otherwise
+/// untouched? Each output must trace back to an `INPUT` through `ALIAS` links alone, and no two outputs
+/// may land on the same one. Together with the equal column count that `sameByteLayout` demands, that
+/// makes the outputs a permutation of the inputs.
+///
+/// Both halves matter. A `FUNCTION` or a constant `COLUMN` means the step puts something in the column
+/// that was never read: `SELECT concat(s, s) AS s` keeps the arity, the position and the type name, and
+/// preserves the row count, yet doubles the bytes, and so does any first-stage `Projection` - the
+/// arbitrary DAG built from the query's projection list (`Planner.cpp`,
+/// `PlannerExpressionAnalysis::analyzeProjection`). And forwarding one input twice is no better:
+/// `SELECT a AS x, a AS y` over `(a, b)` keeps two `String` columns in the header while what leaves the
+/// step is `a + a`, not `a + b`.
+static bool expressionPermutesInputs(const ActionsDAG & actions)
+{
+    std::unordered_set<const ActionsDAG::Node *> forwarded;
+    for (const auto * output : actions.getOutputs())
+    {
+        const auto * node = output;
+        while (node->type == ActionsDAG::ActionType::ALIAS)
+        {
+            chassert(node->children.size() == 1);
+            node = node->children.front();
+        }
+        if (node->type != ActionsDAG::ActionType::INPUT)
+            return false;
+        if (!forwarded.insert(node).second)
+            return false;
+    }
+    return true;
+}
+
+/// Is this a wrapper that can be skipped over - looked through when locating the boundary the replicas
+/// ship from, and collapsed onto its child when keying it? Only an expression that permutes its inputs
+/// qualifies. Deliberately not every step that contributes nothing to a key: a full `SortingStep` does
+/// (it preserves rows and layout) and must still be a boundary of its own, which is what
+/// `Do not look through `Limit` and `Sorting` when picking the node to instrument` settled.
+bool isPassThroughExpression(const IQueryPlanStep & step)
+{
+    const auto * expression = typeid_cast<const ExpressionStep *>(&step);
+    return expression && isByteTransparentTransform(*expression) && expressionPermutesInputs(expression->getExpression());
+}
 
 UInt64 calculateJoinStepCacheKeyContribution(const JoinStepLogical & join_step, JoinTableSide side)
 {
@@ -336,13 +384,38 @@ void calculateHashTableCacheKeys(
         else if (const auto * read = dynamic_cast<const SourceStepWithFilter *>(node.step.get()))
             frame.hash.update(calculateHashFromStep(*read));
         else if (const auto * transform = dynamic_cast<const ITransformingStep *>(node.step.get()))
+        {
             // Completely ignore the ignored steps (i.e. the ones for which we return 0)
             if (auto hash = calculateHashFromStep(*transform))
                 frame.hash.update(hash);
+        }
 
-        const auto raw = frame.hash.get64();
-        raw_hashes[&node] = raw;
-        cache_keys[&node] = raw;
+        /// A step that contributes nothing must not contribute a hashing round either. Hashing its
+        /// child through it gives `SipHash(key(child))`, which is not `key(child)`, so the mere
+        /// presence of such a step shifts every key above it - the step is free of content but not
+        /// free of position. Adopt the child's key instead, which makes it genuinely invisible: a
+        /// plan that carries one and a plan that does not then agree on every key above it.
+        ///
+        /// This is what keeps `optimizePrewhere` from moving the keys. A filter fully moved into
+        /// PREWHERE leaves an `Expression` in the `Filter`'s place, and expression merging has
+        /// already run by then, so the plan is left with two neighbouring `Expression` steps that no
+        /// plan built any other way carries. That step is a rename, hence row- and layout-preserving,
+        /// hence transparent here - and with the adoption below the automatic-parallel-replicas
+        /// decision can still find its counterpart in the other plan.
+        ///
+        /// A transforming step always has exactly one child, so the join branches above never reach
+        /// this; the guard is for safety, not for a shape that occurs.
+        if (isPassThroughExpression(*node.step) && node.children.size() == 1)
+        {
+            raw_hashes[&node] = raw_hashes[node.children.front()];
+            cache_keys[&node] = cache_keys[node.children.front()];
+        }
+        else
+        {
+            const auto raw = frame.hash.get64();
+            raw_hashes[&node] = raw;
+            cache_keys[&node] = raw;
+        }
 
         stack.pop_back();
     }
