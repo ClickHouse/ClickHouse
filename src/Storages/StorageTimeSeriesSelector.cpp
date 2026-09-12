@@ -154,7 +154,9 @@ StorageTimeSeriesSelector::Arguments StorageTimeSeriesSelector::parseArgumentsOn
         /// A temporary table carries its own UUID and cannot appear in a stored definition.
         time_series_storage_id = std::move(temporary_table_id);
     }
-    else
+    /// An empty table name names nothing: qualifying it would form the database-without-table pair
+    /// `StorageID::assertNotEmpty()` rejects, and a compound identifier cannot hold an empty part.
+    else if (!time_series_storage_id.empty())
     {
         if (time_series_storage_id.database_name.empty())
             time_series_storage_id.database_name = context->getCurrentDatabase();

@@ -113,6 +113,13 @@ $CLIENT -q "CREATE TABLE ts_checks ENGINE = TimeSeries"
 error_of $CLIENT -q "SELECT * FROM timeSeriesSelector(ts_checks, 'up', 9999999999, 0)"
 error_of $CLIENT -q "SELECT * FROM timeSeriesSelector(ts_checks, 'rate(up[5m])', 0, 9999999999)"
 
+echo '--- (l2) a table name that names nothing is reported, not written back into the argument ---'
+# The write-back replaces a single table argument with a `database.table` identifier, whose parts cannot
+# be empty, so an empty name has to stay as written and be reported by the read.
+error_of $CLIENT -q "SELECT * FROM timeSeriesSelector('', 'up', 0, 9999999999)"
+error_of $CLIENT -q "SELECT * FROM prometheusQuery('', 'up', 1000)"
+error_of $CLIENT -q "SELECT * FROM prometheusQueryRange('', 'up', 1000, 1300, 60)"
+
 echo '--- (m) a stored definition binds to the database it was created in, not the replaying session ---'
 $CLIENT -mn -q "
     CREATE DATABASE ${OTHER_DB}_replay;

@@ -33,6 +33,10 @@ attached sel_no_database
 --- (l) the time bounds are still converted, so the checks that read them still fire ---
 BAD_ARGUMENTS
 BAD_ARGUMENTS
+--- (l2) a table name that names nothing is reported, not written back into the argument ---
+UNKNOWN_TABLE
+UNKNOWN_TABLE
+UNKNOWN_TABLE
 --- (m) a stored definition binds to the database it was created in, not the replaying session ---
 attached sel_qual
 attached pq_qual
