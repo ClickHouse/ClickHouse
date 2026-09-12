@@ -421,6 +421,22 @@ def test_remote_read_throttling_reload():
     _, took = elapsed(node, "select * from data")
     assert_took(took, 3)
 
+    # The configured server-wide limit is reported, not the reading session's own limit.
+    assert (
+        node.query(
+            "SELECT value FROM system.server_settings"
+            " WHERE name = 'max_remote_read_network_bandwidth_for_server'"
+            " SETTINGS max_remote_read_network_bandwidth = 1000001"
+        ).strip()
+        == "2000000"
+    )
+    assert (
+        node.query(
+            "SELECT getServerSetting('max_remote_read_network_bandwidth_for_server')"
+        ).strip()
+        == "2000000"
+    )
+
     # update bandwidth back to 0
     node_update_config(
         "server", "max_remote_read_network_bandwidth_for_server", "0", False
@@ -452,6 +468,22 @@ def test_local_read_throttling_reload():
     # reading 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
     _, took = elapsed(node, "select * from data")
     assert_took(took, 3)
+
+    # The configured server-wide limit is reported, not the reading session's own limit.
+    assert (
+        node.query(
+            "SELECT value FROM system.server_settings"
+            " WHERE name = 'max_local_read_bandwidth_for_server'"
+            " SETTINGS max_local_read_bandwidth = 1000001"
+        ).strip()
+        == "2000000"
+    )
+    assert (
+        node.query(
+            "SELECT getServerSetting('max_local_read_bandwidth_for_server')"
+        ).strip()
+        == "2000000"
+    )
 
     # update bandwidth back to 0
     node_update_config(
@@ -547,6 +579,22 @@ def test_remote_write_throttling_reload():
     _, took = elapsed(node, "insert into data select * from numbers(1e6)")
     assert_took(took, 3)
 
+    # The configured server-wide limit is reported, not the reading session's own limit.
+    assert (
+        node.query(
+            "SELECT value FROM system.server_settings"
+            " WHERE name = 'max_remote_write_network_bandwidth_for_server'"
+            " SETTINGS max_remote_write_network_bandwidth = 1000001"
+        ).strip()
+        == "2000000"
+    )
+    assert (
+        node.query(
+            "SELECT getServerSetting('max_remote_write_network_bandwidth_for_server')"
+        ).strip()
+        == "2000000"
+    )
+
     # update bandwidth back to 0
     node_update_config(
         "server", "max_remote_write_network_bandwidth_for_server", "0", False
@@ -578,6 +626,22 @@ def test_local_write_throttling_reload():
     # writing 1e6*8 bytes with 2M default bandwidth should take (8-2)/2=3 seconds
     _, took = elapsed(node, "insert into data select * from numbers(1e6)")
     assert_took(took, 3)
+
+    # The configured server-wide limit is reported, not the reading session's own limit.
+    assert (
+        node.query(
+            "SELECT value FROM system.server_settings"
+            " WHERE name = 'max_local_write_bandwidth_for_server'"
+            " SETTINGS max_local_write_bandwidth = 1000001"
+        ).strip()
+        == "2000000"
+    )
+    assert (
+        node.query(
+            "SELECT getServerSetting('max_local_write_bandwidth_for_server')"
+        ).strip()
+        == "2000000"
+    )
 
     # update bandwidth back to 0
     node_update_config(
