@@ -26,6 +26,11 @@ bool PartitionPruner::canBePruned(const IMergeTreeDataPart & part) const
     if (part.isEmpty())
         return true;
 
+    return canPartitionBePruned(part);
+}
+
+bool PartitionPruner::canPartitionBePruned(const IMergeTreeDataPart & part) const
+{
     const auto & partition_id = part.info.getPartitionId();
     bool is_valid = false;
 
