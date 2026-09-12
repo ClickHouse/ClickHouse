@@ -83,6 +83,15 @@ public:
         destroy();
     }
 
+    void ALWAYS_INLINE prefetch(Key value) const
+    {
+        const auto container_type = getContainerType();
+        if (container_type == details::ContainerType::MEDIUM)
+            getContainer<Medium>().prefetch(value);
+        else if (container_type == details::ContainerType::LARGE)
+            getContainer<Large>().prefetch(value);
+    }
+
     void insert(Key value)
     {
         auto container_type = getContainerType();
