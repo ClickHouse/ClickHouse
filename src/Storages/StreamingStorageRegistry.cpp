@@ -32,6 +32,7 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
+    extern const int METADATA_MISMATCH;
     extern const int TABLE_ALREADY_EXISTS;
 }
 
@@ -204,6 +205,21 @@ ObjectStorageQueueMetadataFactory::FilesMetadataPtr ObjectStorageQueueMetadataFa
         auto & metadata_from_keeper = it->second.metadata->getTableMetadata();
 
         metadata_from_table.checkEquals(metadata_from_keeper);
+
+        /// `parallel_inserts` is intentionally not persisted to Keeper (it only affects local
+        /// processing behaviour), so `checkEquals` above cannot catch a mismatch here: unlike
+        /// every other immutable field, both sides of this comparison come from local engine
+        /// settings, not from parsing Keeper metadata. Tables sharing `keeper_path` on the same
+        /// server share a single `files_metadata` object, so they must agree on this setting too.
+        if (metadata_from_table.parallel_inserts != metadata_from_keeper.parallel_inserts)
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Table {} has `parallel_inserts` = {}, but another table sharing the same `keeper_path` "
+                "was created with `parallel_inserts` = {}. All tables sharing a `keeper_path` "
+                "must use the same value for this setting",
+                storage_id.getFullTableName(),
+                metadata_from_table.parallel_inserts,
+                metadata_from_keeper.parallel_inserts);
     }
 
     it->second.metadata->registerNonActive(storage_id, created_new_metadata);
