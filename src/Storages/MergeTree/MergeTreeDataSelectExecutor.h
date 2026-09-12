@@ -215,14 +215,14 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context);
 
-    /// Filter parts using minmax index and partition key.
-    static RangesInDataParts filterPartsByPartition(
+    /// Apply snapshot, virtual-column, min-max, partition and statistics filters before range analysis.
+    static RangesInDataParts filterParts(
         const RangesInDataParts & parts,
-        const std::optional<PartitionPruner> & partition_pruner,
-        const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
-        const std::optional<std::unordered_set<String>> & part_values,
+        const ReadFromMergeTree::Indexes & indexes,
         const StorageMetadataPtr & metadata_snapshot,
         const MergeTreeData & data,
+        const SelectQueryInfo & query_info,
+        const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
         const ContextPtr & context,
         const PartitionIdToMaxBlock * max_block_numbers_to_read,
         LoggerPtr log,

@@ -690,13 +690,13 @@ std::optional<std::unordered_set<String>> MergeTreeDataSelectExecutor::filterPar
     return result;
 }
 
-RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
+RangesInDataParts MergeTreeDataSelectExecutor::filterParts(
     const RangesInDataParts & parts,
-    const std::optional<PartitionPruner> & partition_pruner,
-    const ConditionTemplate<KeyCondition>::Ptr & minmax_idx_condition,
-    const std::optional<std::unordered_set<String>> & part_values,
+    const ReadFromMergeTree::Indexes & indexes,
     const StorageMetadataPtr & metadata_snapshot,
     const MergeTreeData & data,
+    const SelectQueryInfo & query_info,
+    const MergeTreeData::MutationsSnapshotPtr & mutations_snapshot,
     const ContextPtr & context,
     const PartitionIdToMaxBlock * max_block_numbers_to_read,
     LoggerPtr log,
@@ -704,6 +704,8 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
 {
     RangesInDataParts res;
     const Settings & settings = context->getSettingsRef();
+    const auto & partition_pruner = indexes.partition_pruner;
+    const auto & minmax_idx_condition = indexes.minmax_idx_condition;
     DataTypes minmax_columns_types;
 
     if (minmax_idx_condition)
@@ -725,7 +727,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
     PartFilterCounters part_filter_counters;
     res = selectPartsToRead(
         parts,
-        part_values,
+        indexes.part_values,
         minmax_idx_condition,
         minmax_columns_types,
         partition_pruner,
@@ -761,7 +763,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPartition(
             .num_granules_after = part_filter_counters.num_granules_after_partition_pruner});
     }
 
-    return res;
+    return filterPartsByStatistics(res, metadata_snapshot, query_info, mutations_snapshot, context, log, index_stats);
 }
 
 std::expected<void, PreformattedMessage> MergeTreeDataSelectExecutor::canUseIndex(
