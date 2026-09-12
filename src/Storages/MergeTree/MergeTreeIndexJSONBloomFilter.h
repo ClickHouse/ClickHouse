@@ -121,7 +121,8 @@ public:
         const ActionsDAG::Node * predicate,
         ContextPtr context,
         const Block & header_,
-        std::shared_ptr<const JSONBloomPathMatcher> path_matcher_);
+        std::shared_ptr<const JSONBloomPathMatcher> path_matcher_,
+        NameSet columns_shadowing_map_subcolumns_);
 
     bool alwaysUnknownOrTrue() const override;
     bool usesPath(const String & path) const;
@@ -166,6 +167,7 @@ private:
     const Block & header;
     std::shared_ptr<const JSONBloomPathMatcher> path_matcher;
     const FormatSettings comparison_format_settings;
+    const NameSet columns_shadowing_map_subcolumns;
     std::vector<RPNElement> rpn;
     bool has_dynamic_probes = false;
 };

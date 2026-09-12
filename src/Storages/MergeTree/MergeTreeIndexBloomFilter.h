@@ -73,7 +73,12 @@ public:
         std::vector<std::pair<size_t, ColumnPtr>> predicate;
     };
 
-    MergeTreeIndexConditionBloomFilter(const ActionsDAG::Node * predicate, ContextPtr context_, const Block & header_, size_t hash_functions_);
+    MergeTreeIndexConditionBloomFilter(
+        const ActionsDAG::Node * predicate,
+        ContextPtr context_,
+        const Block & header_,
+        size_t hash_functions_,
+        NameSet columns_shadowing_map_subcolumns_);
 
     bool alwaysUnknownOrTrue() const override;
 
@@ -91,6 +96,7 @@ private:
     const Block & header;
     const size_t hash_functions;
     const FormatSettings comparison_format_settings;
+    const NameSet columns_shadowing_map_subcolumns;
     std::vector<RPNElement> rpn;
 
     bool mayBeTrueOnGranule(const MergeTreeIndexGranuleBloomFilter * granule, const UpdatePartialDisjunctionResultFn & update_partial_result_disjuntion_fn) const;
