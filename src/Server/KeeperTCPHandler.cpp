@@ -35,6 +35,8 @@
 
 #    include <boost/algorithm/string/trim.hpp>
 
+#    include <sys/socket.h>
+
 
 #    ifdef POCO_HAVE_FD_EPOLL
 #        include <sys/epoll.h>
@@ -1021,21 +1023,25 @@ void KeeperTCPHandler::unregisterConnection(KeeperTCPHandler * conn)
     connections.erase(conn);
 }
 
+/// A TLS socket serialises every SSL-level operation, StreamSocket::shutdown() included, on a mutex that
+/// the handler thread holds for the whole of a blocking read, so the SSL path cannot interrupt that read.
+/// Shutting the descriptor down needs no lock, at the cost of closing TLS abortively: no close_notify.
+static void shutdownSocketDescriptor(const Poco::Net::StreamSocket & socket)
+{
+    const auto fd = socket.impl()->sockfd();
+    if (fd == POCO_INVALID_SOCKET)
+        return;
+
+    [[maybe_unused]] const int rc = ::shutdown(fd, SHUT_RDWR);
+}
+
 void KeeperTCPHandler::closeAllConnections()
 {
     std::lock_guard lock(conns_mutex);
     for (auto * conn : connections)
     {
         conn->closing_for_shutdown.store(true, std::memory_order_release);
-
-        try
-        {
-            conn->socket().shutdown();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(conn->log, "Failed to close Keeper connection during shutdown");
-        }
+        shutdownSocketDescriptor(conn->socket());
     }
 }
 
