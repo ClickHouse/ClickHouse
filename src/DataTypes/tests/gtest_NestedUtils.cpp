@@ -12,6 +12,7 @@
 #include <Core/Field.h>
 #include <Common/FieldVisitorToString.h>
 #include <Common/assert_cast.h>
+#include <Common/tests/gtest_global_context.h>
 #include <gtest/gtest.h>
 
 using namespace DB;
@@ -53,9 +54,12 @@ GTEST_TEST(NestedUtils, collect)
 }
 
 /// Schema planning and data extraction must give a tuple subcolumn the same nullable type,
-/// including when the parent column has no rows.
+/// including when the parent column has no rows. `allow_nullable_tuple_in_extracted_subcolumns` is
+/// read from the global context, so the test needs one; its shipped default is what is asserted.
 GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTuplePreservesTypeOnEmptyBlock)
 {
+    getContext();
+
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
     DataTypePtr string_type = std::make_shared<DataTypeString>();
 
@@ -97,6 +101,8 @@ GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTuplePreservesTypeOnEmptyBlo
 /// an empty one gives a type: a null map in the data cannot change the shape of the result.
 GTEST_TEST(NestedUtils, extractSubcolumnFromNullableTupleWithNullRowKeepsPlannedType)
 {
+    getContext();
+
     DataTypePtr uint_type = std::make_shared<DataTypeUInt32>();
     DataTypePtr string_type = std::make_shared<DataTypeString>();
 
