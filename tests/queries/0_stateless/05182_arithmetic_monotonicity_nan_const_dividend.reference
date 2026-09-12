@@ -1,5 +1,7 @@
-the statistics pruner is live for this table
+the statistics pruner analyzes a constant dividend over this key
 1
+and keeps every part once an endpoint maps to NaN
+0
 a constant dividend whose range endpoint maps to NaN
 3
 3
@@ -13,3 +15,7 @@ pruning still applies with a constant dividend and a finite range
 49
 49
 1
+the statistics pruner analyzes a constant multiplier over this key
+1
+0
+0
