@@ -45,7 +45,8 @@ SQL
 done
 
 queries=''
-# Probe the second block of each part and a missing value in one scan per path.
+# Probe the second block of each part and a missing value.
+# Keep `Dynamic` equalities separate: the old analyzer rewrites their `OR` chain to unsupported `IN`.
 for predicate in \
     "j.s IN ('v7', 'v58', 'v91')" \
     "j.n IN ('v7', 'v58', 'v91')" \
@@ -53,7 +54,9 @@ for predicate in \
     "j.m['k1'] IN ('v7', 'v58', 'v91') SETTINGS optimize_functions_to_subcolumns = 0" \
     "j.t.obj.v IN ('v7', 'v58', 'v91')" \
     "hasAny(j.items[].v, ['tail7', 'tail58', 'tail91'])" \
-    "j.shared.k1 = 'v7' OR j.shared.k1 = 'v58' OR j.shared.k1 = 'v91'"; do
+    "j.shared.k1 = 'v7'" \
+    "j.shared.k1 = 'v58'" \
+    "j.shared.k1 = 'v91'"; do
     queries+="SELECT arraySort(groupArray(id)) FROM json_bf_lc_ranges WHERE ${predicate};"
 done
 
