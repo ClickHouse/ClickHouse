@@ -109,7 +109,7 @@ if (NOT ENABLE_XRAY)
     set (ENABLE_XRAY 0)
 endif()
 
-if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE OR USE_MUSL)
+if (NOT ((ARCH_AMD64 OR ARCH_AARCH64) AND OS_LINUX) OR SANITIZE)
     message (STATUS "Not using LLVM XRay, only Linux on amd64 and aarch64 is supported without sanitizers")
     set (ENABLE_XRAY 0)
 endif()
