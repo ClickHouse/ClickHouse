@@ -35,7 +35,7 @@ namespace ErrorCodes
 namespace
 {
 
-/// Frames in the main object arrive here already reduced to physical file offsets (see run()), which
+/// Frames in the main object may arrive here already reduced to physical file offsets (see run()), which
 /// StackTrace::toString cannot resolve; SymbolIndex::findSymbol accepts either representation.
 std::string symbolizeNormalizedTrace(const std::vector<UInt64> & trace)
 {
@@ -259,7 +259,7 @@ void TraceCollector::run()
             {
                 LOG_WARNING(
                     getLogger("MemoryTracker"),
-                    "Single allocation of {} charged to the global memory tracker on thread {} "
+                    "Single charge of {} to the global memory tracker on thread {} "
                     "(blocked context: {}). Global tracked total when logged: {}. Stack trace:\n{}",
                     ReadableSize(size),
                     thread_id,

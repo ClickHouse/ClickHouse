@@ -340,8 +340,8 @@ TEST(MemoryTracker, LimitEnforcementCanBeDisabled)
 }
 
 
-/// min_allocation_size_to_log_stack_trace: a stack trace for one large allocation charged to the
-/// global tracker. These cases charge the tracker directly, so no real memory is ever allocated and
+/// min_allocation_size_to_log_stack_trace: a stack trace for one large charge to the global
+/// tracker. These cases charge the tracker directly, so no real memory is ever allocated and
 /// the sizes can be large enough that one unmatched add dwarfs the accounting noise.
 
 constexpr Int64 TRACE_THRESHOLD = 64 * MB;

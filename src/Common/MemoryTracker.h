@@ -347,8 +347,9 @@ public:
     static void updateRSS(Int64 rss_);
     static void updateAllocated(Int64 allocated_, bool log_change);
 
-    /// Report a stack trace for any single allocation of at least `value` bytes charged to the
-    /// global tracker; 0 disables. Coerced to 0 when no TraceCollector is running.
+    /// Report a stack trace for any single charge of at least `value` bytes to the global tracker.
+    /// A charge is one tracker call and may batch a thread's deferred allocations, so it is not
+    /// necessarily one allocation. 0 disables; coerced to 0 when no TraceCollector is running.
     static void setMinAllocationSizeToLogStackTrace(UInt64 value);
     static UInt64 getMinAllocationSizeToLogStackTrace();
 

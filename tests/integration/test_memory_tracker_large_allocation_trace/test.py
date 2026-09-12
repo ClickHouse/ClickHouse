@@ -8,7 +8,7 @@ from helpers.cluster import ClickHouseCluster
 cluster = ClickHouseCluster(__file__)
 
 THRESHOLD = 64 * 1024 * 1024
-LOG_MARKER = "Single allocation of"
+LOG_MARKER = "Single charge of"
 # The Upgrade check fails a job on any <Error> record it does not excuse, so the level is contract.
 LOG_RECORD_PREFIX = "<Warning> MemoryTracker: "
 # One PODArray doubling past the threshold: reallocs of 64, 128 and 256 MiB, no limit in the way.

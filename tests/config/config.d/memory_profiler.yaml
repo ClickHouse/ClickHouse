@@ -1,5 +1,5 @@
 ---
 total_memory_profiler_step: 100Mi
-# 16x the largest single allocation ever seen traced in a stress run, and below the smallest
+# 16x the largest single charge ever seen traced in a stress run, and below the smallest
 # observed global-tracker drift step, so only a runaway global allocation reaches the log.
 min_allocation_size_to_log_stack_trace: 8Gi

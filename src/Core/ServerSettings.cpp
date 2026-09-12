@@ -439,9 +439,11 @@ A value of `0` (default) preserves the legacy behaviour: implicit `operator new`
 Note, to avoid side effects it is recommended to set value greater then `max_untracked_memory`.
 )", 0) \
     DECLARE(UInt64, min_allocation_size_to_log_stack_trace, 0, R"(
-Minimum size, in bytes, of a single allocation charged to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/operations/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
+Minimum size, in bytes, of a single charge to the global (server-wide) memory tracker for which a stack trace is captured, written to the server log at `Warning` level and inserted into [`system.trace_log`](/operations/system-tables/trace_log) with trace type `MemoryLargeAllocation`.
 
-This is a diagnostic for a global tracked total that has grown far beyond the process's real memory usage. In that state the server refuses every allocation, down to zero-byte ones, while using a fraction of its limit, and ordinary telemetry cannot attribute the step: allocations charged under a `MemoryTrackerBlockerInThread` are neither limit-checked nor traced, and the `system.trace_log` inserts that would carry the rest fail once the server is wedged. The server log keeps being written, so the stack trace reaches it.
+The size compared against the threshold, and reported, is what one tracker call charges, which is not necessarily one allocation: a thread defers its small allocations and flushes them as a single charge, so the reported size can exceed the allocation at the top of the reported stack by up to `max_untracked_memory`. Keeping the threshold well above `max_untracked_memory` keeps that difference immaterial.
+
+This is a diagnostic for a global tracked total that has grown far beyond the process's real memory usage. In that state the server refuses every allocation, down to zero-byte ones, while using a fraction of its limit, and ordinary telemetry cannot attribute the step: allocations charged under a `MemoryTrackerBlockerInThread` skip the limit check and the traces that accompany it, and the `system.trace_log` inserts that would carry the rest fail once the server is wedged. The server log keeps being written, so the stack trace reaches it.
 
 At most 10 traces are captured per server run, because capturing and symbolizing a stack is expensive and the trigger tends to repeat. Changing this setting at runtime, in either direction, does not raise that bound.
 
