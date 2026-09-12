@@ -24,6 +24,40 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+ASTPtr extractExplainOutputFormatFromInsert(const ASTPtr & query, IParser::Pos & pos, Expected & expected)
+{
+    auto * insert_query = query->as<ASTInsertQuery>();
+    if (!insert_query || !insert_query->select || insert_query->format.empty())
+        return {};
+
+    ASTPtr input_function;
+    insert_query->tryFindInputFunction(input_function);
+
+    /// preserve the input format for the `input` table function and `FROM INFILE`
+    if (insert_query->infile || input_function)
+        return {};
+
+    /// first FORMAT clause belongs to the source when there are 2 consecutive FORMATS
+    ParserKeyword format_parser(Keyword::FORMAT);
+    if (format_parser.checkWithoutMoving(pos, expected))
+        return {};
+
+    ASTPtr explain_output_format = make_intrusive<ASTIdentifier>(insert_query->format);
+    setIdentifierSpecial(explain_output_format);
+
+    /// do not rewind `pos`. `ParserInsertQuery` might have also consumed `SETTINGS` when
+    /// `allow_settings_after_format_in_insert` is enabled.
+    insert_query->format.clear();
+    insert_query->data = nullptr;
+    insert_query->end = nullptr;
+
+    return explain_output_format;
+}
+
+}
+
 bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 {
     ASTExplainQuery::ExplainKind kind = {};
@@ -94,10 +128,12 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserInsertQuery insert_p(end, allow_settings_after_format_in_insert);
     ParserSystemQuery system_p;
     ASTPtr query;
+    ASTPtr explain_output_format;
     if (kind == ASTExplainQuery::ExplainKind::FormattedQuery)
     {
         ASTPtr actions;
-        if (pos->type == TokenType::OpeningRoundBracket)
+        const bool parenthesized_source = pos->type == TokenType::OpeningRoundBracket;
+        if (parenthesized_source)
         {
             ++pos;
             ParserQuery source_parser(end, allow_settings_after_format_in_insert);
@@ -126,6 +162,11 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "EXPLAIN TEXT cannot format an INSERT query containing inline data");
         }
+
+        /// parentheses and actions explicitly delimit from the source. only bare form
+        /// without actions gives a trailing `FORMAT` to `EXPLAIN TEXT`
+        if (!parenthesized_source && !actions)
+          explain_output_format = extractExplainOutputFormatFromInsert(query, pos, expected);
 
         explain_query->setExplainedQuery(std::move(query));
 
@@ -194,52 +235,18 @@ bool ParserExplainQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
         insert_p.parse(pos, query, expected) ||
         system_p.parse(pos, query, expected))
     {
-        /// When the inner query is INSERT ... SELECT ... FORMAT <fmt>, the INSERT parser
-        /// consumes the trailing FORMAT clause as part of itself. But for EXPLAIN, the
-        /// FORMAT should apply to the EXPLAIN output, not to the inner INSERT.
-        /// We only do this when there is no second FORMAT keyword following -- if there
-        /// is one, the user wrote the double-FORMAT form explicitly and the first FORMAT
-        /// genuinely belongs to the INSERT.
-        /// We also keep the FORMAT on the INSERT when it describes the insert's input data,
-        /// i.e. when the data is read FROM INFILE or via the `input` table function -- in
-        /// those cases the format is required for the insert input, not the EXPLAIN output.
-        ASTPtr explain_output_format;
-        if (auto * insert_query = query->as<ASTInsertQuery>())
-        {
-            ASTPtr input_function;
-            insert_query->tryFindInputFunction(input_function);
-
-            if (insert_query->select && !insert_query->format.empty() && !insert_query->infile && !input_function)
-            {
-                ParserKeyword s_format(Keyword::FORMAT);
-                if (!s_format.checkWithoutMoving(pos, expected))
-                {
-                    /// We set the output format on the EXPLAIN query directly instead of rewinding
-                    /// `pos` and letting ParserQueryWithOutput re-parse it: a `pos` rewind is only
-                    /// correct when `FORMAT <name>` is the last thing the INSERT consumed, which is
-                    /// not the case when SETTINGS follow the FORMAT
-                    /// (allow_settings_after_format_in_insert).
-                    explain_output_format = make_intrusive<ASTIdentifier>(insert_query->format);
-                    setIdentifierSpecial(explain_output_format);
-
-                    insert_query->format.clear();
-                    insert_query->data = nullptr;
-                    insert_query->end = nullptr;
-                }
-            }
-        }
-
+        explain_output_format = extractExplainOutputFormatFromInsert(query, pos, expected);
         explain_query->setExplainedQuery(std::move(query));
-
-        /// Attach the moved FORMAT only after setExplainedQuery, so that the explained query
-        /// is added to the children first, as the rest of the code expects.
-        if (explain_output_format)
-            explain_query->set(explain_query->format_ast, std::move(explain_output_format));
     }
     else
     {
         return false;
     }
+
+    /// attach output option after explain query and its actions preserving
+    /// the canonical order of `children`
+    if (explain_output_format)
+      explain_query->set(explain_query->format_ast, std::move(explain_output_format));
 
     node = std::move(explain_query);
     return true;

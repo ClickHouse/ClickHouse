@@ -1,0 +1,8 @@
+{"text":"INSERT INTO t SELECT 1"}
+{"text":"INSERT INTO t SELECT 1 FORMAT CSV"}
+{"text":"INSERT INTO t SELECT 1 FORMAT CSV"}
+{"text":"INSERT INTO t SELECT 1 FORMAT CSV"}
+1
+1
+1
+12    1       1       1
