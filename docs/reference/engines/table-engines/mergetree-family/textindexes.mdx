@@ -97,7 +97,7 @@ CREATE TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfordelta' ]
                             )
 )
 ENGINE = MergeTree
@@ -136,7 +136,7 @@ ALTER TABLE table
                                 [, dictionary_block_size = D]
                                 [, dictionary_block_frontcoding_compression = B]
                                 [, posting_list_block_size = C]
-                                [, posting_list_codec = 'none' | 'bitpacking' ]
+                                [, posting_list_codec = 'none' | 'bitpacking' | 'pfordelta' ]
                             )
 
 ```
@@ -587,6 +587,7 @@ Optional parameter `posting_list_block_size` (default: 1048576) specifies the si
 Optional parameter `posting_list_codec` (default: `none`) specifies the codec for posting list:
 - `none` - the posting lists are stored without additional compression.
 - `bitpacking` - apply [differential (delta) coding](https://en.wikipedia.org/wiki/Delta_encoding), followed by [bit-packing](https://dev.to/madhav_baby_giraffe/bit-packing-the-secret-to-optimizing-data-storage-and-transmission-m70) (each within blocks of fixed-size). Slows down SELECT queries, not recommended at the moment.
+- `pfordelta` - apply differential (delta) coding, followed by [PForDelta](https://en.wikipedia.org/wiki/Delta_encoding) bit-packing (each within blocks of fixed size). Like `bitpacking`, but the per-block bit width is chosen to minimise the total size and the values that do not fit are stored separately as patched exceptions, so a single large gap no longer widens the whole block. Blocks whose deltas are all equal collapse to a constant.
 
 The advanced parameters above can alternatively be set at the table level through the corresponding MergeTree settings: [`text_index_dictionary_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_size), [`text_index_dictionary_block_frontcoding_compression`](/reference/settings/merge-tree-settings/text-index#text_index_dictionary_block_frontcoding_compression), [`text_index_posting_list_block_size`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_block_size), and [`text_index_posting_list_codec`](/reference/settings/merge-tree-settings/text-index#text_index_posting_list_codec).
 They apply to every text index of the table that does not specify the parameter explicitly.
@@ -1507,6 +1508,7 @@ The text index currently has the following limitations:
 The on-disk format version of text indexes is controlled by the table-level setting [`text_index_serialization_version`](/reference/settings/merge-tree-settings/text-index) (default: `v2_with_positions`).
 The setting is a preference rather than a hard constraint: if the configured version cannot represent an index, a newer version that can represent it is chosen automatically, so writing a text index never fails because of this setting.
 During a rolling upgrade, pin the format with the [`compatibility`](/reference/settings/session-settings/compatibility#compatibility) setting on the already upgraded servers: when it is set to a version older than the one that introduced the corresponding format, `text_index_serialization_version` reverts to an older value automatically and newer servers keep writing the format that older servers can still read.
+The posting list codec is not governed by this version: a part written with `posting_list_codec = 'pfordelta'` (or the `text_index_posting_list_codec` setting) cannot be read by servers that predate the codec, and neither `text_index_serialization_version` nor `compatibility` prevents it from being used, because a codec named for the index takes precedence over the version preference in the same way `support_phrase_search` does. Do not enable `pfordelta` until every server that may read the table has been upgraded.
 
 ## Text Indexes vs Bloom-Filter-Based Indexes {#text-index-vs-bloom-filter-indexes}
 

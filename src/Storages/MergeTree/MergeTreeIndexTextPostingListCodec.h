@@ -58,8 +58,8 @@ class SegmentedPostingListCodec
         {
             UInt64 v = 0;
             readVarUInt(v, in);
-            if (v != static_cast<uint8_t>(IPostingListCodec::Type::Bitpacking))
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: expected codec type Bitpacking, got {}", v);
+            if (!isValidPostingListBlockCodecType(v))
+                throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data: unknown posting list block codec type {}", v);
             codec_type = static_cast<IPostingListCodec::Type>(v);
 
             readVarUInt(v, in);
@@ -241,26 +241,43 @@ private:
     std::unique_ptr<IPostingListBlockCodec> block_codec;
 };
 
-/// Codec for serializing/deserializing a postings list to/from a binary stream.
-/// A codec for a postings list stored in a compact block-compressed format.
+/// Codec for serializing a postings list to/from a binary stream in a compact block-compressed format.
 ///
-/// Values are first delta-compressed then bigpacked, each within fixed-size blocks (physical chunks, controlled by BLOCK_SIZE).
-/// Each compressed block is stored as: [1 byte: bits-width][payload].
+/// Values are delta-compressed within fixed-size blocks (physical chunks, controlled by BLOCK_SIZE),
+/// and each block payload is produced by an IPostingListBlockCodec chosen by `getType`.
 ///
 /// Posting lists are additionally split into "segments" (logical chunks, controlled by postings_list_block_size)
 /// to simplify metadata and to support multiple ranges per token (min/max row id per segment).
 ///
+/// The framing is codec-independent, so `decode` is driven by the codec type in each segment header.
+///
 /// Assumes that input row ids are strictly increasing.
-class PostingListCodecBitpacking : public  IPostingListCodec
+class SegmentedPostingListCodecBase : public IPostingListCodec
 {
 public:
-    static const char * getName() { return "bitpacking"; }
-
-    PostingListCodecBitpacking() : IPostingListCodec(Type::Bitpacking) {}
+    explicit SegmentedPostingListCodecBase(Type type_) : IPostingListCodec(type_) {}
 
     void encode(const PostingList & postings, size_t max_rowids_in_segment, TokenPostingsInfo & info, WriteBuffer & out) const override;
     void decode(ReadBuffer & in, PostingList & postings, PaddedPODArray<char> & buffer) const override;
     void decode(ReadBuffer & in, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<char> & buffer) const override;
+};
+
+/// Each block is stored as [1 byte: bits-width][bit-packed payload], at the block's maximum delta width.
+class PostingListCodecBitpacking : public SegmentedPostingListCodecBase
+{
+public:
+    static const char * getName() { return "bitpacking"; }
+
+    PostingListCodecBitpacking() : SegmentedPostingListCodecBase(Type::Bitpacking) {}
+};
+
+/// Bit-packed at a size-minimising base width; outliers become patched exceptions, all-equal deltas a constant.
+class PostingListCodecPForDelta : public SegmentedPostingListCodecBase
+{
+public:
+    static const char * getName() { return "pfordelta"; }
+
+    PostingListCodecPForDelta() : SegmentedPostingListCodecBase(Type::PForDelta) {}
 };
 
 /// A codec that applies no compression: a posting list block is stored as

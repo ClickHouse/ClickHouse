@@ -2640,7 +2640,7 @@ void QueryFuzzer::fuzzIndexDeclaration(ASTIndexDeclaration & index)
     static const Strings simple_index_types = {"minmax", "set", "bloom_filter"};
     /// BF index types: require positional arguments — swap name only, keep args.
     static const std::unordered_set<String> bf_index_types = {"ngrambf_v1", "tokenbf_v1", "sparse_grams"};
-    static const Strings posting_list_codecs = {"none", "bitpacking"};
+    static const Strings posting_list_codecs = {"none", "bitpacking", "pfordelta"};
     /// vector_similarity index parameters (positional):
     ///   ('hnsw', distance, M, quantization, hnsw_max_connections_per_layer, hnsw_candidate_list_size_for_construction)
     static const Strings vector_similarity_distances = {"L2Distance", "cosineDistance"};

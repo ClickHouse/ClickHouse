@@ -7,6 +7,9 @@ from helpers.cluster import ClickHouseCluster
 # 'bitpacking', where DDL recovery is the only way to decode old segments.
 OLD_VERSION_TAG = "26.4"
 
+# 26.4 rejects a `v1_with_codec` part on its version check, before reaching the codec type.
+CODEC_AWARE_VERSION_TAG = "26.8"
+
 
 @pytest.fixture(scope="module")
 def started_cluster():
@@ -30,6 +33,14 @@ def started_cluster():
             with_installed_binary=True,
             stay_alive=True,
             user_configs=["configs/compatibility.xml"],
+        )
+        # Parses the header but does not know `pfordelta`.
+        cluster.add_instance(
+            "node_codec_aware",
+            image="clickhouse/clickhouse-server",
+            tag=CODEC_AWARE_VERSION_TAG,
+            with_installed_binary=True,
+            stay_alive=True,
         )
         cluster.start()
         yield cluster
@@ -447,6 +458,53 @@ def test_downgrade_after_writing_on_new_version(started_cluster):
         assert run_search_queries(node, table) == MIXED_EXPECTED
         assert node.query(NEW_TOKEN_QUERY.format(table=table)).strip() == "1"
         assert_index_used(node, table)
+
+        node.query(f"DROP TABLE {table} SYNC")
+    finally:
+        if new_version_active:
+            node.restart_with_original_version()
+
+
+def test_downgrade_after_writing_pfordelta(started_cluster):
+    """An unknown codec must be refused, not decoded - which is why `pfordelta` needs no version bump."""
+    node = started_cluster.instances["node_codec_aware"]
+    table = "text_index_downgrade_pfordelta"
+
+    create_and_populate(node, table, posting_list_codec=None)
+    assert run_search_queries(node, table) == expected_results()
+
+    node.restart_with_latest_version()
+    new_version_active = True
+    try:
+        assert run_search_queries(node, table) == expected_results()
+
+        # The table now mixes the original parts with parts naming an unknown codec.
+        node.query(
+            f"ALTER TABLE {table} MODIFY SETTING text_index_posting_list_codec = 'pfordelta'"
+        )
+
+        insert_new_part(node, table)
+        assert run_search_queries(node, table) == MIXED_EXPECTED
+        assert node.query(NEW_TOKEN_QUERY.format(table=table)).strip() == "1"
+        assert_index_used(node, table)
+
+        node.query(f"OPTIMIZE TABLE {table} FINAL")
+        assert_single_active_part(node, table)
+        assert run_search_queries(node, table) == MIXED_EXPECTED
+
+        # Reset it so the metadata loads and the failure below can only come from the part.
+        node.query(f"ALTER TABLE {table} RESET SETTING text_index_posting_list_codec")
+
+        node.restart_with_original_version()
+        new_version_active = False
+
+        error = node.query_and_get_error(
+            f"SELECT count() FROM {table} WHERE hasToken(s, 'common')"
+        )
+        assert "Unknown posting list codec type" in error, (
+            f"expected the old server to reject the `pfordelta` part on its codec check, "
+            f"got:\n{error}"
+        )
 
         node.query(f"DROP TABLE {table} SYNC")
     finally:
