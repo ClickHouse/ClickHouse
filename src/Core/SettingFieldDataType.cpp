@@ -1,6 +1,7 @@
 #include <Core/SettingFieldDataType.h>
 
 #include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/IDataType.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 
