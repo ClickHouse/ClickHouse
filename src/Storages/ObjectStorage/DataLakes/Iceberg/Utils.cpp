@@ -1,4 +1,5 @@
 
+#include <cctype>
 #include <charconv>
 #include <memory>
 #include <string>
@@ -23,6 +24,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTOrderByElement.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergTableStateSnapshot.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergWrites.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/StatelessMetadataFileGetter.h>
@@ -48,6 +50,15 @@
 
 #if USE_AVRO
 
+#include <Common/ProfileEvents.h>
+
+namespace ProfileEvents
+{
+    extern const Event IcebergMetadataFilesCacheSkipped;
+    extern const Event IcebergMetadataFilesCacheHits;
+    extern const Event IcebergMetadataFilesCacheMisses;
+}
+
 #include <Processors/Formats/Impl/AvroRowInputFormat.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
@@ -57,11 +68,11 @@
 
 #include <Databases/DataLake/Common.h>
 #include <Databases/DataLake/ICatalog.h>
+#include <Poco/URI.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/StorageID.h>
 #include <Storages/ObjectStorage/DataLakes/Common/Common.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeStorageSettings.h>
-#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadataFilesCache.h>
 #include <Storages/ObjectStorage/StorageObjectStorageSource.h>
 #include <Storages/ObjectStorage/Utils.h>
 
@@ -513,6 +524,90 @@ std::string normalizeUuid(const std::string & uuid)
     return result;
 }
 
+bool cachedLocationMatchesTableRoot(
+    std::string_view cached_location, std::string_view table_namespace, std::string_view table_root, std::string_view table_backend_type)
+{
+    while (table_root.ends_with('/'))
+        table_root.remove_suffix(1);
+    while (table_root.starts_with('/'))
+        table_root.remove_prefix(1);
+    if (table_namespace.empty() && table_root.empty())
+        return true;
+
+    /// Split `cached_location` into an optional scheme, an optional authority (bucket/container,
+    /// possibly in the authority-bearing form used by Spark/Azure, e.g.
+    /// "container@account.blob.core.windows.net"), and the key path. A location with no scheme is
+    /// an absolute/relative filesystem-style path, as written natively by ClickHouse for
+    /// namespace-less backends (HDFS/Local).
+    const Poco::URI uri{std::string(cached_location)};
+    const std::string & scheme = uri.getScheme();
+    const std::string authority = uri.getAuthority();
+    std::string_view path = uri.getPath();
+
+    /// Reject cross-backend collisions outright: a stale `catalog_uuid_hint` must not accept
+    /// another backend's cached `metadata.json` just because a bucket/container name or key path
+    /// happens to coincide (e.g. a Local table's schemeless location must never accept an
+    /// `s3://`/`hdfs://` location, and an S3 bucket must never accept a Azure `wasb://` location
+    /// merely because the leading authority component matches the bucket name). Scheme
+    /// equivalences (`file` -> Local, `s3a`/`gs`/`oss` -> S3, `wasb`/`abfss` -> Azure) come from
+    /// `DataLake::tryParseStorageTypeFromString`; a scheme it does not recognize names no known
+    /// backend and is rejected. A schemeless `cached_location` is exempted from this check: with
+    /// `write_full_path_in_iceberg_metadata` off (the default), ClickHouse itself writes a
+    /// schemeless `location` regardless of backend, so rejecting it here would defeat the
+    /// UUID-hint fast path for the default configuration on every non-Local backend.
+    if (!scheme.empty())
+    {
+        const auto location_backend = DataLake::tryParseStorageTypeFromString(scheme);
+        const auto table_backend = DataLake::tryParseStorageTypeFromString(std::string(table_backend_type));
+        if (!location_backend || !table_backend || *location_backend != *table_backend)
+            return false;
+    }
+
+    while (path.starts_with('/'))
+        path.remove_prefix(1);
+    while (path.ends_with('/'))
+        path.remove_suffix(1);
+
+    if (path != table_root)
+        return false;
+
+    /// A schemeless `cached_location` (ClickHouse's default write format, see above) carries no
+    /// authority to validate against `table_namespace` here. That used to be a problem when the
+    /// cache key was just uuid+path: two different tables in different buckets/containers but the
+    /// same key path could produce the same schemeless location. But the only caller of this
+    /// function probes the cache with a key that already includes the physical backend identity
+    /// (`IObjectStorageConfiguration::getDataSourceDescription`, which itself encodes the
+    /// bucket/container), so a cache hit here can only come from a write made by a table on the
+    /// exact same backend -- the bucket/container is already validated at the cache-key level, and
+    /// the exact `table_root` path match above is sufficient.
+    if (scheme.empty())
+        return true;
+
+    /// Namespace-less backends (HDFS/Local, where `getNamespace()` is always empty) have no
+    /// namespace to validate: `IcebergPathResolver` already accepts authority-bearing locations
+    /// such as `hdfs://namenode:8020/...` or `hdfs://user@nameservice/...` for these backends, so
+    /// requiring an empty authority here would reject valid cached entries and defeat the
+    /// UUID-hint fast path for every namespace-less table.
+    if (table_namespace.empty())
+        return true;
+
+    /// Compare the namespace exactly, not just the trailing path: a suffix-only check would
+    /// accept a same-named key living in a different bucket (e.g. a stale `catalog_uuid_hint`
+    /// colliding with another table's UUID whose `location` is `s3://other-bucket/<same key>`),
+    /// which must be rejected. Authority-bearing forms ("container@account...") are accepted as
+    /// long as the namespace is the leading component before '@'.
+    return authority == table_namespace || authority.starts_with(std::string(table_namespace) + "@");
+}
+
+std::string deriveTableNamespaceForLocationCheck(std::string_view configuration_namespace, std::string_view configuration_raw_uri)
+{
+    if (!configuration_namespace.empty())
+        return std::string(configuration_namespace);
+
+    const Poco::URI uri{std::string(configuration_raw_uri)};
+    return uri.getAuthority();
+}
+
 Poco::JSON::Object::Ptr getMetadataJSONObject(
     const String & metadata_file_path,
     ObjectStoragePtr object_storage,
@@ -520,7 +615,9 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     const ContextPtr & local_context,
     LoggerPtr log,
     CompressionMethod compression_method,
-    const std::optional<String> & table_uuid)
+    const std::optional<String> & table_uuid,
+    const TableStorageIdentity & table_identity,
+    String & raw_json_out)
 {
     auto create_fn = [&]()
     {
@@ -550,13 +647,33 @@ Poco::JSON::Object::Ptr getMetadataJSONObject(
     String metadata_json_str;
     if (metadata_cache && table_uuid.has_value())
         metadata_json_str = metadata_cache->getOrSetTableMetadata(
-            IcebergMetadataFilesCache::getKey(*table_uuid, metadata_file_path), create_fn);
+            IcebergMetadataFilesCache::getKey(table_identity.data_source_description, *table_uuid, metadata_file_path), create_fn);
     else
+    {
+        if (metadata_cache)
+            ProfileEvents::increment(ProfileEvents::IcebergMetadataFilesCacheSkipped);
         metadata_json_str = create_fn();
+    }
+
+    raw_json_out = std::move(metadata_json_str);
 
     Poco::JSON::Parser parser; /// For some reason base/base/JSON.h can not parse this json file
-    Poco::Dynamic::Var json = parser.parse(metadata_json_str);
+    Poco::Dynamic::Var json = parser.parse(raw_json_out);
     return json.extract<Poco::JSON::Object::Ptr>();
+}
+
+Poco::JSON::Object::Ptr getMetadataJSONObject(
+    const String & metadata_file_path,
+    ObjectStoragePtr object_storage,
+    IcebergMetadataFilesCachePtr metadata_cache,
+    const ContextPtr & local_context,
+    LoggerPtr log,
+    CompressionMethod compression_method,
+    const std::optional<String> & table_uuid,
+    const TableStorageIdentity & table_identity)
+{
+    String raw_json;
+    return getMetadataJSONObject(metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid, table_identity, raw_json);
 }
 
 /// Iceberg stores a decimal as its unscaled value in two's-complement big-endian form, in the
@@ -1179,6 +1296,7 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     IcebergMetadataFilesCachePtr metadata_cache,
     const ContextPtr & local_context,
     std::optional<String> table_uuid,
+    const TableStorageIdentity & table_identity,
     bool use_table_uuid_for_metadata_file_selection,
     bool force_fetch_latest_metadata)
 {
@@ -1221,8 +1339,68 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
 
             if (need_all_metadata_files_parsing)
             {
-                auto metadata_file_object = getMetadataJSONObject(
-                    metadata_file_path, object_storage, metadata_cache, local_context, log, compression_method, table_uuid);
+                /// `table_uuid` here is caller-supplied (e.g. `iceberg_metadata_table_uuid`) and not
+                /// yet validated against this specific metadata file's actual content. Probing the
+                /// content cache under it without inserting is safe (a stale/wrong supplied UUID
+                /// just misses); inserting under it before validating would poison the shared cache
+                /// entry for the real table that UUID belongs to. So probe under the supplied UUID,
+                /// validate the parsed `table-uuid` matches, and only insert under the *parsed* UUID.
+                /// `IcebergMetadataFilesCacheHits` / `Misses` are recorded once below, after the hit
+                /// is validated, mirroring the `catalog_uuid_hint` pattern in IcebergMetadata.cpp; a
+                /// probed-and-known UUID must never also count as `Skipped`.
+                Poco::JSON::Object::Ptr metadata_file_object;
+                bool content_cache_hit = false;
+                if (metadata_cache && table_uuid.has_value())
+                {
+                    String cached = metadata_cache->tryGetTableMetadata(
+                        IcebergMetadataFilesCache::getKey(table_identity.data_source_description, normalizeUuid(*table_uuid), metadata_file_path));
+                    if (!cached.empty())
+                    {
+                        Poco::JSON::Parser parser;
+                        auto candidate = parser.parse(cached).extract<Poco::JSON::Object::Ptr>();
+                        /// Matching `table-uuid` alone is not enough: the cache key is
+                        /// `data_source_description + uuid + metadata_file_path`, and
+                        /// `metadata_file_path` is relative, so two tables on the same backend
+                        /// sharing a metadata file name (e.g. both `metadata/v1.metadata.json`)
+                        /// still collide whenever the caller supplies the *other* table's UUID.
+                        /// Also require the cached `location` to name this very table, exactly as
+                        /// the `catalog_uuid_hint` path in `IcebergMetadata.cpp` does, so an
+                        /// unknown UUID under the current table path fails instead of selecting a
+                        /// candidate belonging to another table.
+                        if (candidate->has(Iceberg::f_table_uuid)
+                            && normalizeUuid(candidate->getValue<String>(Iceberg::f_table_uuid)) == normalizeUuid(*table_uuid)
+                            && candidate->has(Iceberg::f_location)
+                            && cachedLocationMatchesTableRoot(
+                                candidate->getValue<String>(Iceberg::f_location),
+                                table_identity.table_namespace,
+                                table_path,
+                                table_identity.backend_type))
+                        {
+                            content_cache_hit = true;
+                            metadata_file_object = candidate;
+                        }
+                    }
+                    ProfileEvents::increment(content_cache_hit
+                        ? ProfileEvents::IcebergMetadataFilesCacheHits
+                        : ProfileEvents::IcebergMetadataFilesCacheMisses);
+                }
+                if (!metadata_file_object)
+                {
+                    String raw_metadata_json;
+                    /// Pass `nullptr` as the cache here (rather than `metadata_cache`) when a probe
+                    /// already happened above: it suppresses getMetadataJSONObject's own
+                    /// `IcebergMetadataFilesCacheSkipped` accounting, which would otherwise
+                    /// double-count this fetch as a skip on top of the miss already recorded.
+                    /// When there was no `table_uuid` to probe with in the first place, pass the
+                    /// real cache through so the normal `Skipped` accounting applies.
+                    metadata_file_object = getMetadataJSONObject(
+                        metadata_file_path, object_storage, table_uuid.has_value() ? nullptr : metadata_cache, local_context, log, compression_method, /*table_uuid=*/std::nullopt, table_identity, raw_metadata_json);
+                    if (metadata_cache && metadata_file_object->has(Iceberg::f_table_uuid))
+                        metadata_cache->setTableMetadata(
+                            IcebergMetadataFilesCache::getKey(
+                                table_identity.data_source_description, normalizeUuid(metadata_file_object->getValue<String>(Iceberg::f_table_uuid)), metadata_file_path),
+                            std::move(raw_metadata_json));
+                }
                 if (table_uuid.has_value() && use_table_uuid_for_metadata_file_selection)
                 {
                     if (metadata_file_object->has(Iceberg::f_table_uuid))
@@ -1297,11 +1475,21 @@ static MetadataFileWithInfo getLatestMetadataFileAndVersion(
     if (force_fetch_latest_metadata)
         tolerated_staleness_ms = 0;
 
-    if (metadata_cache)
+    /// The explicit `iceberg_metadata_table_uuid` selection way picks a metadata file by filtering
+    /// this table's `metadata/` directory by `table-uuid`, so its result is only valid for that
+    /// exact (table path, UUID) pair. The latest-version cache references a cell by the table path
+    /// alone (see `IcebergMetadataFilesCache::getLatestVersionKey`), which would let a query with a
+    /// different `iceberg_metadata_table_uuid` under the same path reuse this selection. That
+    /// cannot be validated here, so this selection way neither probes nor populates the
+    /// latest-version cache and always scans `metadata/` -- which is what the setting asks for in
+    /// the first place.
+    const bool uuid_selects_metadata_file = table_uuid.has_value() && use_table_uuid_for_metadata_file_selection;
+
+    if (metadata_cache && !uuid_selects_metadata_file)
     {
         return metadata_cache->getOrSetLatestMetadataVersion(
+            table_identity.data_source_description,
             table_path,
-            table_uuid,
             load_fn,
             tolerated_staleness_ms
         )->latest_metadata;
@@ -1317,6 +1505,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     const ContextPtr & local_context,
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
+    const TableStorageIdentity & table_identity,
     CompressionMethod known_compression_method,
     bool force_fetch_latest_metadata,
     bool ignore_explicit_metadata_file_path)
@@ -1340,24 +1529,24 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].changed)
     {
         String explicit_table_uuid = data_lake_settings[DataLakeStorageSetting::iceberg_metadata_table_uuid].value;
-        if (table_uuid.has_value())
-        {
-            if (normalizeUuid(explicit_table_uuid) != table_uuid.value())
-            {
-                throw Exception(
-                    ErrorCodes::BAD_ARGUMENTS,
-                    "Explicit table UUID '{}' doesn't match the one from table properties '{}'",
-                    normalizeUuid(explicit_table_uuid),
-                    table_uuid.value());
-            }
-        }
+        /// NOTE: `table_uuid` here is `PersistentTableComponents::table_uuid`, i.e. the UUID
+        ///       observed when this `IcebergMetadata` object was first opened. It is never
+        ///       refreshed on a reused object: `IcebergMetadata::supportsUpdate` returns true
+        ///       and Iceberg does not override `IDataLakeMetadata::update`, so
+        ///       `DataLakeConfiguration::update` returns early without rebuilding the
+        ///       persistent components. Rejecting the query by comparing against it would
+        ///       therefore reject a *correct* `iceberg_metadata_table_uuid` whenever an
+        ///       external writer replaced the table at this path with a new `table-uuid`.
+        ///       `getLatestMetadataFileAndVersion` below filters `metadata/` by `table-uuid`
+        ///       against the files actually on storage, which is authoritative and current,
+        ///       so the mismatch is diagnosed there instead of from stale open-time state.
         LOG_TEST(
             log,
             "Explicit table UUID is specified {}, will read the latest metadata file for Iceberg table at path {}",
             explicit_table_uuid,
             table_path);
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), true, force_fetch_latest_metadata);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, normalizeUuid(explicit_table_uuid), table_identity, true, force_fetch_latest_metadata);
     }
     else if (data_lake_settings[DataLakeStorageSetting::iceberg_use_version_hint].value)
     {
@@ -1379,7 +1568,7 @@ MetadataFileWithInfo getLatestOrExplicitMetadataFileAndVersion(
 
     {
         return getLatestMetadataFileAndVersion(
-            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, false, force_fetch_latest_metadata);
+            object_storage, table_path, data_lake_settings, metadata_cache, local_context, table_uuid, table_identity, false, force_fetch_latest_metadata);
     }
 }
 
@@ -1393,6 +1582,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
     const ContextPtr & local_context,
     Poco::Logger * log,
     const std::optional<String> & table_uuid,
+    const TableStorageIdentity & table_identity,
     CompressionMethod known_compression_method,
     bool ignore_explicit_metadata_file_path)
 {
@@ -1405,6 +1595,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
             local_context,
             log,
             table_uuid,
+            table_identity,
             known_compression_method,
             /* force_fetch_latest_metadata */ true,
             ignore_explicit_metadata_file_path);
@@ -1433,6 +1624,7 @@ MetadataFileWithInfo getLatestMetadataFileAndVersionWithCatalog(
         local_context,
         log,
         table_uuid,
+        table_identity,
         known_compression_method,
         /* force_fetch_latest_metadata */ true,
         /* ignore_explicit_metadata_file_path */ false);

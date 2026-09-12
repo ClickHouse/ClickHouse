@@ -48,6 +48,7 @@ namespace DB::ErrorCodes
 
 namespace DB::Setting
 {
+    extern const SettingsBool use_iceberg_metadata_files_cache;
     extern const SettingsUInt64 iceberg_manifest_min_count_to_compact;
 }
 
@@ -55,6 +56,7 @@ namespace DB::DataLakeStorageSetting
 {
     extern const DataLakeStorageSettingsBool iceberg_use_version_hint;
 }
+
 
 namespace DB::Iceberg
 {
@@ -197,18 +199,24 @@ static Plan getPlan(
     Plan plan;
     plan.generator = FileNamesGenerator(persistent_table_components.path_resolver.getTableLocation(), false, compression_method, write_format);
 
-    const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+    const auto effective_cache = context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_table_components.metadata_cache : nullptr;
+    const auto [metadata_version, metadata_file_path, resolved_compression_method] = getLatestOrExplicitMetadataFileAndVersion(
         object_storage,
         persistent_table_components.table_path,
         data_lake_settings,
-        persistent_table_components.metadata_cache,
+        effective_cache,
         context,
         log.get(),
         persistent_table_components.table_uuid,
+        persistent_table_components.table_identity,
         persistent_table_components.metadata_compression_method);
 
+    /// Use `resolved_compression_method` (derived from the actual selected metadata file), not the
+    /// `compression_method` argument -- that one is the write-target codec for newly generated
+    /// files, which may differ from the codec of the metadata file being read here.
     Poco::JSON::Object::Ptr initial_metadata_object
-        = getMetadataJSONObject(metadata_file_path, object_storage, persistent_table_components.metadata_cache, context, log, compression_method, persistent_table_components.table_uuid);
+        = getMetadataJSONObject(metadata_file_path, object_storage, effective_cache, context, log, resolved_compression_method, persistent_table_components.table_uuid, persistent_table_components.table_identity);
 
     /// Exactly version 2: v1 lacks the sequence-number machinery the rewrite relies on, and
     /// a v3 table must not be accepted either -- writeMetadataFiles rebuilds the metadata
@@ -317,8 +325,7 @@ static void writeDataFiles(
     const IcebergPathResolver & path_resolver,
     const std::optional<FormatSettings> & format_settings,
     ContextPtr context,
-    const String & write_format,
-    CompressionMethod write_compression_method)
+    const String & write_format)
 {
     ColumnMapperPtr column_mapper;
     {
@@ -371,7 +378,11 @@ static void writeDataFiles(
             parser_shared_resources,
             std::make_shared<FormatFilterInfo>(nullptr, context, nullptr, nullptr, nullptr),
             true /* is_remote_fs */,
-            chooseCompressionMethod(data_file->data_object_info->getPath(), toContentEncodingName(write_compression_method)),
+            /// `write_compression_method` is the table's *metadata* codec; it says nothing about how a
+            /// data file is compressed. Passing it as the hint would defeat autodetection entirely --
+            /// `chooseCompressionMethod` only looks at the path when the hint is empty or `auto` -- and a
+            /// plain `.parquet` file would then be read as if it were `gzip`.
+            chooseCompressionMethod(data_file->data_object_info->getPath(), "auto"),
             false);
 
         auto write_buffer = object_storage->writeObject(
@@ -1313,15 +1324,17 @@ static void writeMetadataFiles(
     {
         std::string json_representation = stringifyJSON(metadata_object, 4);
 
-        auto buffer_metadata = object_storage->writeObject(
-            StoredObject(path_resolver.resolve(generated_metadata_info.path)),
-            WriteMode::Rewrite,
-            std::nullopt,
-            DBMS_DEFAULT_BUFFER_SIZE,
-            context->getWriteSettings());
-
-        buffer_metadata->write(json_representation.data(), json_representation.size());
-        buffer_metadata->finalize();
+        /// `generated_metadata_info.path` already carries the codec suffix the name generator was
+        /// seeded with, so the bytes must be compressed to match it -- a raw write would leave plain
+        /// JSON under a `vN.gz.metadata.json` name, which the next read fails to decompress.
+        Iceberg::writeMessageToFile(
+            json_representation,
+            path_resolver.resolve(generated_metadata_info.path),
+            object_storage,
+            context,
+            /* write_if_none_match */ "",
+            /* write_if_match */ "",
+            generated_metadata_info.compression_method);
     }
 }
 
@@ -1358,32 +1371,40 @@ void compactIcebergManifests(
     LOG_INFO(log, "Starting manifest-only compaction for Iceberg table");
 
     const size_t min_count_to_compact = context_->getSettingsRef()[DB::Setting::iceberg_manifest_min_count_to_compact];
+    const auto effective_cache = context_->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+        ? persistent_table_components.metadata_cache : nullptr;
 
     for (size_t attempt = 0; attempt < MAX_COMPACTION_RETRIES; ++attempt)
     {
         if (attempt > 0)
             LOG_INFO(log, "Retrying manifest compaction (attempt {}/{})", attempt + 1, MAX_COMPACTION_RETRIES);
 
-        const auto [metadata_version, metadata_file_path, _] = getLatestOrExplicitMetadataFileAndVersion(
+        const auto [metadata_version, metadata_file_path, resolved_compression_method] = getLatestOrExplicitMetadataFileAndVersion(
             object_storage_,
             persistent_table_components.table_path,
             data_lake_settings,
-            persistent_table_components.metadata_cache,
+            effective_cache,
             context_,
             log.get(),
             persistent_table_components.table_uuid,
+            persistent_table_components.table_identity,
             persistent_table_components.metadata_compression_method,
             /* force_fetch_latest_metadata */ true,
             /* ignore_explicit_metadata_file_path */ true);
 
+        /// Use `resolved_compression_method` (derived from the actual selected metadata file),
+        /// not the stale `persistent_table_components.metadata_compression_method` captured at
+        /// construction time -- an external writer may have changed the metadata compression
+        /// between queries on this reused `IcebergMetadata` instance.
         auto metadata_object = getMetadataJSONObject(
             metadata_file_path,
             object_storage_,
-            persistent_table_components.metadata_cache,
+            effective_cache,
             context_,
             log,
-            persistent_table_components.metadata_compression_method,
-            persistent_table_components.table_uuid);
+            resolved_compression_method,
+            persistent_table_components.table_uuid,
+            persistent_table_components.table_identity);
 
         /// Validate the format version on the freshly-fetched metadata (before the threshold early-return), since the table may have been upgraded to v3 by another writer after this table object was created.
         const Int32 format_version = metadata_object->getValue<Int32>(Iceberg::f_format_version);
@@ -1420,12 +1441,7 @@ void compactIcebergManifests(
                 table_id))
         {
             // Invalidate metadata cache so the next reader picks up the new state
-            if (persistent_table_components.metadata_cache)
-            {
-                persistent_table_components.metadata_cache->remove(persistent_table_components.table_path);
-                if (persistent_table_components.table_uuid)
-                    persistent_table_components.metadata_cache->remove(*persistent_table_components.table_uuid);
-            }
+            persistent_table_components.invalidateMetadataCache();
             LOG_INFO(log, "Successfully compacted manifest list");
             return;
         }
@@ -1465,9 +1481,12 @@ void compactIcebergTable(
             persistent_table_components.path_resolver,
             format_settings_,
             context_,
-            write_format,
-            persistent_table_components.metadata_compression_method);
+            write_format);
         writeMetadataFiles(plan, persistent_table_components.path_resolver, object_storage_, context_, sample_block_, write_format, persistent_table_components.table_path);
+        /// Invalidate before removing old files: a reader that races in between must miss the
+        /// cache and re-read the new metadata rather than hit a stale entry pointing at files
+        /// `clearOldFiles` is about to delete.
+        persistent_table_components.invalidateMetadataCache();
         clearOldFiles(object_storage_, old_files);
     }
 }

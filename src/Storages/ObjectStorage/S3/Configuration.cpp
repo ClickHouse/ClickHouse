@@ -131,7 +131,9 @@ String StorageS3Configuration::getDataSourceDescription() const
 
 String StorageS3Configuration::getDataSourceDescriptionForNamespace(const String & object_namespace) const
 {
-    return std::filesystem::path(url.uri.getHost() + std::to_string(url.uri.getPort())) / object_namespace;
+    /// A separator between host and port is required: without it, e.g. host "a1" port 23 and
+    /// host "a12" port 3 both normalize to "a123", aliasing two distinct endpoints.
+    return std::filesystem::path(url.uri.getHost() + ":" + std::to_string(url.uri.getPort())) / object_namespace;
 }
 
 std::string StorageS3Configuration::getPathInArchive() const

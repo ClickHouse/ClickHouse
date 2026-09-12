@@ -66,6 +66,7 @@ extern const char iceberg_slow_manifest_read[];
 namespace Setting
 {
 extern const SettingsIcebergMetadataLogLevel iceberg_metadata_log_level;
+extern const SettingsBool use_iceberg_metadata_files_cache;
 }
 
 namespace Iceberg
@@ -134,7 +135,9 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     auto log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
     bool use_iceberg_metadata_cache
-        = (persistent_table_components.metadata_cache && log_level < DB::IcebergMetadataLogLevel::ManifestFileMetadata);
+        = (persistent_table_components.metadata_cache
+           && local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+           && log_level < DB::IcebergMetadataLogLevel::ManifestFileMetadata);
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
@@ -162,7 +165,7 @@ Iceberg::ManifestFileCacheableInfo getManifestFile(
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
     {
         auto manifest_file = persistent_table_components.metadata_cache->getOrSetManifestFile(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
+            IcebergMetadataFilesCache::getKey(persistent_table_components.table_identity.data_source_description, persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
         return manifest_file;
     }
     return create_fn();
@@ -212,7 +215,9 @@ ManifestFileCacheKeys getManifestList(
     IcebergMetadataLogLevel log_level = local_context->getSettingsRef()[Setting::iceberg_metadata_log_level].value;
 
     bool use_iceberg_metadata_cache
-        = (persistent_table_components.metadata_cache && log_level < DB::IcebergMetadataLogLevel::ManifestListMetadata);
+        = (persistent_table_components.metadata_cache
+           && local_context->getSettingsRef()[Setting::use_iceberg_metadata_files_cache]
+           && log_level < DB::IcebergMetadataLogLevel::ManifestListMetadata);
 
     auto create_fn = [&, use_iceberg_metadata_cache]()
     {
@@ -335,7 +340,7 @@ ManifestFileCacheKeys getManifestList(
     ManifestFileCacheKeys manifest_file_cache_keys;
     if (use_iceberg_metadata_cache && persistent_table_components.table_uuid.has_value())
         manifest_file_cache_keys = persistent_table_components.metadata_cache->getOrSetManifestFileCacheKeys(
-            IcebergMetadataFilesCache::getKey(persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
+            IcebergMetadataFilesCache::getKey(persistent_table_components.table_identity.data_source_description, persistent_table_components.table_uuid.value(), filename.serialize()), create_fn);
     else
         manifest_file_cache_keys = create_fn();
     return manifest_file_cache_keys;
