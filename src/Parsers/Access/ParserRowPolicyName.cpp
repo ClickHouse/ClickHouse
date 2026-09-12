@@ -30,8 +30,15 @@ namespace
 
             bool wildcard = false;
             bool default_database = false;
-            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, res_table_name, wildcard, default_database)
-                || (res_database.empty() && res_table_name.empty() && !default_database))
+            if (!parseDatabaseAndTableNameOrAsterisks(pos, expected, res_database, res_table_name, wildcard, default_database))
+                return false;
+
+            /// RowPolicyName only carries exact database/table names or a database-wide '*'
+            /// (represented by an empty table name). A prefix wildcard like `db*.*` or
+            /// `table*` cannot be represented here, and silently narrowing it to the
+            /// non-wildcard form would leave prefix-matched objects without the intended
+            /// row policy. Reject it explicitly instead.
+            if (wildcard)
                 return false;
 
             if (res_table_name.empty())
