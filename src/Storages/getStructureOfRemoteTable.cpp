@@ -44,7 +44,8 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
     const Cluster::ShardInfo & shard_info,
     const StorageID & table_id,
     ContextPtr context,
-    const ASTPtr & table_func_ptr)
+    const ASTPtr & table_func_ptr,
+    bool for_query_execution)
 {
     String query;
     const Settings & settings = context->getSettingsRef();
@@ -64,7 +65,9 @@ static ColumnsDescription getStructureOfRemoteTableInShard(
     {
         if (shard_info.isLocal())
         {
-            context->checkAccess(AccessType::SHOW_COLUMNS, table_id);
+            /// Reading a table is authorized by the privilege on its data; resolving its structure for
+            /// introspection, or to persist the inferred columns, needs the privilege on its schema.
+            context->checkAccess(for_query_execution ? AccessType::SELECT : AccessType::SHOW_COLUMNS, table_id);
             auto storage_ptr = DatabaseCatalog::instance().getTable(table_id, context);
             auto metadata_snapshot = storage_ptr->getInMemoryMetadataPtr(context, false);
             return metadata_snapshot->getColumns();
@@ -157,7 +160,8 @@ ColumnsDescription getStructureOfRemoteTable(
     const Cluster & cluster,
     const StorageID & table_id,
     ContextPtr context,
-    const ASTPtr & table_func_ptr)
+    const ASTPtr & table_func_ptr,
+    bool for_query_execution)
 {
     const auto & shards_info = cluster.getShardsInfo();
 
@@ -168,7 +172,8 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         if (shard_info.isLocal())
         {
-            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
+            const auto & res = getStructureOfRemoteTableInShard(
+                cluster, shard_info, table_id, context, table_func_ptr, for_query_execution);
 
             /// Columns may be empty due to a race with concurrent DDL (e.g. REPLACE TABLE or lazy storage initialization).
             /// In that case, fall through to try remote shards.
@@ -183,7 +188,8 @@ ColumnsDescription getStructureOfRemoteTable(
     {
         try
         {
-            const auto & res = getStructureOfRemoteTableInShard(cluster, shard_info, table_id, context, table_func_ptr);
+            const auto & res = getStructureOfRemoteTableInShard(
+                cluster, shard_info, table_id, context, table_func_ptr, for_query_execution);
 
             /// Expect at least some columns.
             /// This is a hack to handle the empty block case returned by Connection when skip_unavailable_shards is set.
