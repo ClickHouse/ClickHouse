@@ -386,6 +386,19 @@ void ObjectStorageQueueTableMetadata::checkImmutableFieldsEquals(const ObjectSto
                 "Stored in ZooKeeper: {}, local: {}",
                 from_zk.getBucketsNum(), getBucketsNum());
         }
+
+        /// `tracked_files_limit` also gates `/failed` cleanup in ordered mode (see
+        /// sweep_failed_by_limit in ObjectStorageQueueMetadata.cpp, which applies to
+        /// any non-exclusive mode), so - like in unordered mode above - replicas must
+        /// agree on it: otherwise failed-node eviction timing would depend on which
+        /// replica happens to win the cleanup lock race, not on shared Keeper metadata.
+        if (tracked_files_limit != from_zk.tracked_files_limit)
+            throw Exception(
+                ErrorCodes::METADATA_MISMATCH,
+                "Existing table metadata in ZooKeeper differs in `tracked_files_limit`. "
+                "Stored in ZooKeeper: {}, local: {}",
+                from_zk.tracked_files_limit.load(),
+                tracked_files_limit.load());
     }
 
     /// Different versions serialize the same columns to a different text: the redundant parentheses

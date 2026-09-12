@@ -451,3 +451,111 @@ def test_flush_ordered_with_regex_partitioning(started_cluster):
 
     count = int(node.query(f"SELECT count() FROM {dst_table_name}"))
     assert count > 0, "Expected rows in destination table after flush, got 0"
+
+
+def test_flush_waits_on_live_retriable_marker(started_cluster):
+    """
+    Regression for: getPathState() was widened to return `PathState::Failed` for a
+    file that only has a live `/failed/<hash>.retriable` marker (i.e. mid-retry,
+    retries not yet exhausted). `waitForPathToBeProcessed()` used to treat every
+    `Failed` state as terminal and throw ABORTED immediately, so `SYSTEM FLUSH
+    OBJECT STORAGE QUEUE` aborted on the very first retryable exception instead of
+    waiting for the retry to succeed or for the retry budget to actually run out.
+
+    This test keeps `s3queue_loading_retries` high enough that the file cannot
+    exhaust its retries within the assertion window, waits until Keeper shows a
+    live (non-terminal) `.retriable` marker, then starts FLUSH and asserts it is
+    still running a few seconds later -- i.e. it did not throw immediately.
+    """
+    node = started_cluster.instances["instance"]
+    table_name = f"flush_retriable_{generate_random_string()}"
+    dst_table_name = f"{table_name}_dst"
+    files_path = f"{table_name}_data"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    file_path = f"{files_path}/bad_retriable.csv"
+
+    # Upload a file whose first column can never be parsed as UInt32, so every
+    # processing attempt fails and the retry counter keeps incrementing.
+    put_s3_file_content(started_cluster, file_path, b"not_a_number,1,2\n")
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            # High enough that retries cannot be exhausted within this test's
+            # short assertion window.
+            "s3queue_loading_retries": 1000,
+        },
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    def get_retry_state():
+        """Return (retries, is_terminal) for bad_retriable.csv's failed node, if any."""
+        failed_path = f"{keeper_path}/failed"
+        result = node.query(
+            f"SELECT name, value FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        if not result:
+            return None, False
+
+        import re
+
+        for line in result.split("\n"):
+            parts = line.split("\t")
+            if len(parts) != 2:
+                continue
+            node_name, node_value = parts
+            file_path_match = re.search(r'"file_path"\s*:\s*"([^"]*)"', node_value)
+            if not file_path_match or "bad_retriable.csv" not in file_path_match.group(1):
+                continue
+            is_terminal = not node_name.endswith(".retriable")
+            match = re.search(r'"retries"\s*:\s*(\d+)', node_value)
+            retries = int(match.group(1)) if match else None
+            return retries, is_terminal
+        return None, False
+
+    logging.info("Waiting for a live (non-terminal) .retriable marker...")
+    timeout = 60
+    for elapsed in range(timeout):
+        time.sleep(1)
+        retries, is_terminal = get_retry_state()
+        if retries is not None:
+            logging.info(f"[{elapsed}s] retries={retries}, terminal={is_terminal}")
+            if not is_terminal and retries is not None and retries >= 1:
+                break
+    else:
+        raise AssertionError(
+            f"TIMEOUT: no live .retriable marker with retries >= 1 seen within "
+            f"{timeout}s (last observed: {get_retry_state()})"
+        )
+
+    retries_seen, terminal_seen = get_retry_state()
+    assert not terminal_seen, (
+        "Precondition failed: file already reached terminal state before FLUSH "
+        "was started -- the test did not exercise the intended live-retry state."
+    )
+
+    t, flush_done, flush_errors = _run_flush_in_thread(node, table_name, file_path)
+    _wait_for_flush_running(node, table_name)
+
+    # Give the buggy code path (immediate ABORTED on any Failed state) ample time
+    # to surface. With the fix, FLUSH must still be waiting here since retries
+    # are nowhere near exhausted (1000).
+    time.sleep(5)
+    assert not flush_done.is_set(), (
+        "FLUSH returned while the file only had a live (non-exhausted) "
+        ".retriable marker -- it should still be waiting for the retry budget "
+        "to be exhausted or the file to succeed, not aborting on the first "
+        "retryable failure."
+    )
+    if flush_errors:
+        raise flush_errors[0]
+
+    logging.info(
+        "FLUSH correctly did not abort on a live .retriable marker; "
+        "leaving background thread to be reaped on cluster teardown."
+    )

@@ -2097,13 +2097,15 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     /// failed, return or throw immediately regardless of dependency/streaming guards.
     {
         std::string failure_message;
-        const auto state = file_metadata->getPathState(failure_message, nullptr);
+        UInt64 keeper_retries = 0;
+        const auto state = file_metadata->getPathState(failure_message, &keeper_retries);
         if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
         {
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
             return;
         }
-        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
+            && keeper_retries >= file_metadata->getMaxTries())
             throw Exception(ErrorCodes::ABORTED,
                 "Path '{}' failed to be processed by {}: {}",
                 path, getStorageID().getNameForLogs(), failure_message);
@@ -2180,14 +2182,16 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
         }
 
         std::string failure_message;
-        const auto state = file_metadata->getPathState(failure_message, nullptr);
+        UInt64 keeper_retries = 0;
+        const auto state = file_metadata->getPathState(failure_message, &keeper_retries);
 
         if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
         {
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
             return;
         }
-        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
+            && keeper_retries >= file_metadata->getMaxTries())
         {
             throw Exception(ErrorCodes::ABORTED,
                 "Path '{}' failed to be processed by {}: {}",

@@ -1,6 +1,7 @@
 import concurrent.futures
 import json
 import logging
+import re
 import threading
 import time
 import uuid
@@ -953,6 +954,137 @@ def test_failed_files_ttl_does_not_reset_retry_counter(started_cluster):
     # Cleanup
     node.query(f"DROP TABLE {table_name}")
     node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_success_clears_stale_retriable_marker(started_cluster):
+    """A file that fails a few times (leaving a live `.retriable` marker with a nonzero
+    retry count) and then succeeds must have that marker cleared as part of the same
+    success. Left behind, it would resurface with its stale retry count if the path
+    is ever reprocessed later (e.g. after /processed expires via TTL/limit), and could
+    even reject a fresh claim outright if loading_retries has since been lowered.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_success_clears_retriable_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    file_name = "flaky_then_ok.csv"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 5,
+            "polling_min_timeout_ms": 1000,
+            "polling_max_timeout_ms": 1000,
+        },
+    )
+
+    # Invalid content: the file will fail and accumulate a live `.retriable` marker.
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", b"not,valid,data\n")
+
+    create_mv(node, table_name, dst_table_name)
+
+    def retriable_retries():
+        result = node.query(
+            f"SELECT value FROM system.zookeeper WHERE path = '{failed_path}' "
+            f"AND name LIKE '%.retriable'"
+        ).strip()
+        for line in result.split("\n"):
+            if not line:
+                continue
+            match = re.search(r'"retries"\s*:\s*(\d+)', line)
+            if match:
+                return int(match.group(1))
+        return None
+
+    # Wait until at least one failure has happened and left a live .retriable marker.
+    retries_before_fix = None
+    for _ in range(60):
+        retries_before_fix = retriable_retries()
+        if retries_before_fix is not None and retries_before_fix >= 1:
+            break
+        time.sleep(1)
+    assert retries_before_fix is not None and retries_before_fix >= 1, (
+        f"expected a live .retriable marker with retries >= 1 before overwriting the "
+        f"file, got: {retries_before_fix}"
+    )
+
+    # Overwrite with valid content: the next retry attempt will succeed.
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", b"1,2,3\n")
+
+    processed_ready = False
+    for _ in range(60):
+        result = node.query(
+            f"SELECT count() FROM {dst_table_name}"
+        ).strip()
+        if result and int(result) > 0:
+            processed_ready = True
+            break
+        time.sleep(1)
+    assert processed_ready, "file never succeeded after being fixed"
+
+    # The .retriable marker must be gone now - cleared atomically with success.
+    remaining = node.query(
+        f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}' "
+        f"AND name LIKE '%.retriable'"
+    ).strip()
+    assert remaining == "", (
+        f"stale .retriable marker(s) survived a successful reprocess: {remaining}"
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_ordered_mode_rejects_mismatched_tracked_files_limit(started_cluster):
+    """Two ordered-mode tables attaching to the same keeper_path with different
+    tracked_files_limit values must fail to both attach, since tracked_files_limit
+    also gates /failed cleanup in ordered mode (not just unordered), so replicas
+    must agree on it - otherwise failed-node eviction timing would depend on which
+    replica wins the cleanup lock race rather than on shared Keeper metadata.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_ordered_limit_mismatch_{uuid.uuid4().hex[:8]}"
+    other_table_name = f"{table_name}_other"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_files_limit": 100,
+        },
+    )
+
+    error = create_table(
+        started_cluster,
+        node,
+        other_table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_files_limit": 200,
+        },
+        expect_error=True,
+    )
+    assert "tracked_files_limit" in error, \
+        f"Expected metadata mismatch error mentioning tracked_files_limit, got: {error}"
+
+    node.query(f"DROP TABLE {table_name}")
 
 
 def test_lowering_loading_retries_is_honored_after_restart(started_cluster):

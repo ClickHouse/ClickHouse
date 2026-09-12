@@ -313,6 +313,12 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
 
 bool ObjectStorageQueueIFileMetadata::isRetriableMarkerExhausted() const
 {
+    /// Exclusive mode does not use Keeper for failed/retriable state tracking
+    /// (failed_node_path is empty there; retries are tracked purely in-memory),
+    /// so skip the Keeper round-trip entirely instead of querying a meaningless path.
+    if (failed_node_path.empty())
+        return false;
+
     std::string data;
     bool exists = false;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
