@@ -1087,14 +1087,22 @@ public:
         /// below (ExpressionLayer sees the comma itself), but for the aliased path
         /// we must detect the pattern here — at the very first token of the new
         /// element — and return false so that `parseUtil` treats the comma as
-        /// trailing.
+        /// trailing.  This must only run when we were actually re-entered right
+        /// after such a separator (i.e. the previous token is a comma); otherwise
+        /// this is simply the first element of the whole list, where a leading
+        /// `from` is just an ordinary identifier (e.g. `WITH 1 AS from SELECT from`).
         if (allow_trailing_commas && isCurrentElementEmpty() && elements.empty())
         {
-            auto test_pos = pos;
-            Expected test_expected;
-            if (ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
-                if (!fromTokenIsColumnName(test_pos, test_expected))
-                    return false;
+            auto prev_pos = pos;
+            --prev_pos;
+            if (prev_pos->type == TokenType::Comma)
+            {
+                auto test_pos = pos;
+                Expected test_expected;
+                if (ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
+                    if (!fromTokenIsColumnName(test_pos, test_expected))
+                        return false;
+            }
         }
 
         if (pos->type == TokenType::Comma)

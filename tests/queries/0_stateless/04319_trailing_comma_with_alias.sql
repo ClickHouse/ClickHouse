@@ -12,6 +12,13 @@ SELECT 1 AS a, 2 AS b, FROM system.one;
 WITH 1 AS from SELECT from, FROM numbers(1);
 WITH 1 AS from SELECT from, from + from, FROM numbers(1);
 
+-- `from` as the very first (and possibly only) element of the list, with no
+-- preceding comma at all, is just an ordinary identifier, not a trailing-comma
+-- candidate.
+WITH 1 AS from SELECT from;
+WITH tuple(1) AS from SELECT from.1;
+WITH [1] AS from SELECT 0, from[1];
+
 -- FROM as a column, followed by trailing comma, table function
 WITH 1 AS from SELECT from, from + from, from IN [0], FROM numbers(1);
 
