@@ -6032,6 +6032,51 @@ bool ReadFromMergeTree::isSkipIndexAvailableForTopK(const String & sort_column) 
 }
 
 
+RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const
+{
+    if (analyzed_result_ptr || !indexes)
+        return getParts();
+
+    /// Reuse the execution filter's min-max-before-partition order. Do not run primary
+    /// key analysis or retain its result while the optimizer can still change filters.
+    IndexStats unused_stats;
+    return MergeTreeDataSelectExecutor::filterPartsByPartition(
+        getParts(), indexes->partition_pruner, indexes->minmax_idx_condition,
+        indexes->part_values, getStorageMetadata(), data, getContext(),
+        nullptr, getLogger("ReadFromMergeTree"), unused_stats);
+}
+
+IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
+    const Names & columns, const RangesInDataParts & parts) const
+{
+    const bool calculate_subcolumn_sizes
+        = getContext()->getSettingsRef()[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading];
+    IStorage::ColumnSizeByName result;
+    for (const auto & part : parts)
+    {
+        for (const auto & name : columns)
+        {
+            const auto column = part.data_part->tryGetColumn(name);
+            if (!column)
+                continue;
+
+            const auto size = column->isSubcolumn() && calculate_subcolumn_sizes
+                ? part.data_part->getSubcolumnSize(name)
+                : part.data_part->getColumnSize(column->getNameInStorage());
+            result[name].add(size);
+        }
+    }
+    return result;
+}
+
+ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(
+    const Names & required_columns, const RangesInDataParts & parts) const
+{
+    if (!getStorageMetadata()->hasStatistics() || !getContext()->getSettingsRef()[Setting::use_statistics])
+        return nullptr;
+    return data.getConditionSelectivityEstimator(parts, required_columns, getContext());
+}
+
 ConditionSelectivityEstimatorPtr ReadFromMergeTree::getConditionSelectivityEstimator(const Names & required_columns) const
 {
     return getConditionSelectivityEstimator(required_columns, analyzed_result_ptr);

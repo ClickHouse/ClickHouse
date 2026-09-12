@@ -225,8 +225,12 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
-    auto column_sizes = storage.getColumnSizes(
-        queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
+    RangesInDataParts prewhere_parts;
+    if (read_from_merge_tree_step)
+        prewhere_parts = read_from_merge_tree_step->getPartsForPrewhere();
+    auto column_sizes = read_from_merge_tree_step
+        ? read_from_merge_tree_step->getColumnSizesForPrewhere(queried_columns, prewhere_parts)
+        : storage.getColumnSizes(queried_columns, settings[Setting::allow_calculating_subcolumns_sizes_for_merge_tree_reading]);
     if (column_sizes.empty())
         return;
 
@@ -251,7 +255,7 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
     MergeTreeWhereOptimizer where_optimizer{
         std::move(column_compressed_sizes),
         storage_snapshot,
-        (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns) : nullptr,
+        (has_multiple_conditions && read_from_merge_tree_step) ? read_from_merge_tree_step->getConditionSelectivityEstimator(queried_columns, prewhere_parts) : nullptr,
         queried_columns,
         storage.supportedPrewhereColumns(),
         storage.supportedPrewhereColumnsIncludeSubcolumns(),
