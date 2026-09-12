@@ -77,7 +77,6 @@ static Optimization::ExtraSettings makeExtraSettings(const QueryPlanOptimization
         optimization_settings.use_skip_indexes_on_data_read,
         optimization_settings.read_in_order,
         optimization_settings.read_in_order_through_join,
-        optimization_settings.optimize_projection,
         optimization_settings.join_swap_table,
         optimization_settings.enable_group_by_top_k_optimization,
         optimization_settings.top_k_optimization_observation_rows,
