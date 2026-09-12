@@ -1,0 +1,9 @@
+-- the dependency closure is recomputed in order, together with the other columns
+1	5	100	6	60
+1	0	200	2	200
+-- a key column outside the closure keeps its stored value
+1	0	3	3	1
+-- a MATERIALIZED column made stale through another one cannot be silently kept
+0
+1	5	6	13
+1	5	6	13

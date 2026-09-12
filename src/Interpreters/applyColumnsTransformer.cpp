@@ -7,9 +7,9 @@
 #include <Common/Exception.h>
 #include <Common/re2.h>
 
+#include <algorithm>
 #include <map>
 #include <set>
-#include <stack>
 
 namespace DB
 {
@@ -36,6 +36,42 @@ std::shared_ptr<re2::RE2> getColumnsExceptMatcher(const ASTColumnsExceptTransfor
 namespace
 {
 
+bool lambdaArgumentShadowsName(const ASTFunction & lambda, const String & name)
+{
+    return std::ranges::contains(getASTLambdaArgumentNames(lambda), name);
+}
+
+void replaceLambdaArgument(ASTPtr & ast, const ASTPtr & replacement, const String & lambda_arg, bool is_masked = false)
+{
+    if (!ast)
+        return;
+
+    if (!is_masked)
+    {
+        if (auto arg_name = tryGetIdentifierName(ast); arg_name && *arg_name == lambda_arg)
+        {
+            ast = replacement->clone();
+            return;
+        }
+    }
+
+    if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        if (!function->arguments || function->arguments->children.size() != 2)
+            return;
+
+        replaceLambdaArgument(
+            function->arguments->children[1],
+            replacement,
+            lambda_arg,
+            is_masked || lambdaArgumentShadowsName(*function, lambda_arg));
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceLambdaArgument(child, replacement, lambda_arg, is_masked);
+}
+
 void applyColumnsApplyTransformer(const ASTColumnsApplyTransformer & transformer, ASTs & nodes)
 {
     for (auto & column : nodes)
@@ -54,22 +90,7 @@ void applyColumnsApplyTransformer(const ASTColumnsApplyTransformer & transformer
         if (transformer.lambda)
         {
             auto body = transformer.lambda->as<const ASTFunction &>().arguments->children.at(1)->clone();
-            std::stack<ASTPtr> stack;
-            stack.push(body);
-            while (!stack.empty())
-            {
-                auto ast = stack.top();
-                stack.pop();
-                for (auto & child : ast->children)
-                {
-                    if (auto arg_name = tryGetIdentifierName(child); arg_name && arg_name == transformer.lambda_arg)
-                    {
-                        child = column->clone();
-                        continue;
-                    }
-                    stack.push(child);
-                }
-            }
+            replaceLambdaArgument(body, column, transformer.lambda_arg);
             column = body;
         }
         else
@@ -142,18 +163,39 @@ void applyColumnsExceptTransformer(const ASTColumnsExceptTransformer & transform
 }
 
 
-void replaceChildren(ASTPtr & node, const ASTPtr & replacement, const String & name)
+/// Substitutes the pre-`REPLACE` expression of a column for the references to that column inside
+/// the replacement expression. Like `replaceLambdaArgument` above, the walk is lambda-scope-aware:
+/// an identifier bound by an enclosing lambda parameter of the same name is a different variable
+/// and must be left intact, and lambda parameter lists are never rewritten.
+void replaceColumnReferences(ASTPtr & ast, const ASTPtr & replacement, const String & name, bool is_masked = false)
 {
-    for (auto & child : node->children)
+    if (!ast)
+        return;
+
+    if (!is_masked)
     {
-        if (const auto * id = child->as<ASTIdentifier>())
+        if (const auto * id = ast->as<ASTIdentifier>(); id && id->shortName() == name)
         {
-            if (id->shortName() == name)
-                child = replacement->clone();
+            ast = replacement->clone();
+            return;
         }
-        else
-            replaceChildren(child, replacement, name);
     }
+
+    if (auto * function = ast->as<ASTFunction>(); function && function->name == "lambda")
+    {
+        if (!function->arguments || function->arguments->children.size() != 2)
+            return;
+
+        replaceColumnReferences(
+            function->arguments->children[1],
+            replacement,
+            name,
+            is_masked || lambdaArgumentShadowsName(*function, name));
+        return;
+    }
+
+    for (auto & child : ast->children)
+        replaceColumnReferences(child, replacement, name, is_masked);
 }
 
 
@@ -188,7 +230,7 @@ void applyColumnsReplaceTransformer(const ASTColumnsReplaceTransformer & transfo
             {
                 auto new_ast = replace_it->second->clone();
                 ast_with_alias->alias = ""; // remove the old alias as it's useless after replace transformation
-                replaceChildren(new_ast, column, replace_it->first);
+                replaceColumnReferences(new_ast, column, replace_it->first);
                 column = new_ast;
                 column->setAlias(replace_it->first);
                 replace_map.erase(replace_it);

@@ -47,15 +47,17 @@ DROP TABLE t_stats_affected_materialized;
 
 SELECT '-- CLEAR COLUMN recalculating MATERIALIZED columns';
 
--- CLEAR only recomputes MATERIALIZED columns derived from c. The metadata-only
--- change of unrelated e remains unapplied to existing rows and its statistics
--- stay aligned with the stored value.
+-- CLEAR recomputes every MATERIALIZED column the cleared column makes stale, so both `e` and `d`
+-- are rewritten here and their statistics are rebuilt at the current metadata type. A MATERIALIZED
+-- column that does not read `c` keeps its stored value and its statistics.
 DROP TABLE IF EXISTS t_stats_clear_column;
 CREATE TABLE t_stats_clear_column (id Int64, c Int64, e Enum8('a' = 1, 'b' = 2) MATERIALIZED 'a' STATISTICS(uniq, basic), d Int64 MATERIALIZED c + 1)
 ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 1;
 
 INSERT INTO t_stats_clear_column (id, c) VALUES (1, 10), (2, 20);
-ALTER TABLE t_stats_clear_column MODIFY COLUMN e Int8 MATERIALIZED 2;
+-- `e` has to read the cleared column, otherwise `CLEAR COLUMN` leaves it alone: only the
+-- MATERIALIZED columns the cleared column makes stale are recomputed.
+ALTER TABLE t_stats_clear_column MODIFY COLUMN e Int8 MATERIALIZED c + 2;
 ALTER TABLE t_stats_clear_column CLEAR COLUMN c;
 SELECT id, c, e, d FROM t_stats_clear_column ORDER BY id;
 SELECT `estimates.cardinality`, `estimates.min`, `estimates.max` FROM system.parts_columns

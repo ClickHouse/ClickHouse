@@ -3,7 +3,6 @@
 #include <Core/Names.h>
 #include <Interpreters/Context_fwd.h>
 #include <Common/COW.h>
-#include <Storages/ColumnDefault.h>
 
 #include <memory>
 
@@ -36,7 +35,7 @@ std::optional<ActionsDAG> evaluateMissingDefaults(
 
 /// Tries to convert columns in block to required_columns
 void performRequiredConversions(Block & block, const NamesAndTypesList & required_columns, ContextPtr context,
-    const ColumnDefaults & column_defaults, bool forbid_default_defaults = false);
+    const ColumnsDescription & columns, bool forbid_default_defaults = false);
 
 void fillMissingColumns(
     Columns & res_columns,

@@ -81,7 +81,13 @@ struct IndexDescription
 
     bool isImplicitlyCreated() const { return is_implicitly_created; }
 
-    void initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
+    /// Initializes expression-related fields and returns the expression list with
+    /// column matchers expanded but alias columns not yet replaced. The returned
+    /// list is used to persist `definition_ast`: matcher expansion must be frozen
+    /// at creation time, while alias references must stay in the definition so
+    /// that `recalculateWithNewColumns` re-resolves them against the current
+    /// `ALIAS` bodies.
+    ASTPtr initExpressionInfo(ASTPtr index_expression, const ColumnsDescription & columns, ContextPtr context);
 
     bool isSimpleSingleColumnIndex() const;
 };

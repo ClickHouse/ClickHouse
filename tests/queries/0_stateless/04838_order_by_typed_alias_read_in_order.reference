@@ -1,0 +1,12 @@
+-- b is toUInt8(a), so its order differs from the order of a
+255	255
+256	0
+257	1
+-- ORDER BY the alias must sort by the alias value
+256	0
+257	1
+255	255
+256	0
+255	255
+-- an alias whose expression already has the declared type still reads in order
+255	255
