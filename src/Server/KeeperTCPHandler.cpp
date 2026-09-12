@@ -35,6 +35,8 @@
 
 #    include <boost/algorithm/string/trim.hpp>
 
+#    include <sys/socket.h>
+
 
 #    ifdef POCO_HAVE_FD_EPOLL
 #        include <sys/epoll.h>
@@ -266,6 +268,19 @@ KeeperTCPHandler::KeeperTCPHandler(
     , last_op(std::make_unique<LastOp>(EMPTY_LAST_OP))
 {
     KeeperTCPHandler::registerConnection(this);
+
+    /// A handler accepted while the listener is stopping can register after the shutdown sweep.
+    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+    {
+        try
+        {
+            socket().shutdown();
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, "Failed to close late Keeper connection during TCP drain");
+        }
+    }
 }
 
 void KeeperTCPHandler::sendHandshake(bool has_leader, bool & use_compression)
@@ -405,6 +420,9 @@ void KeeperTCPHandler::runImpl()
     compressed_in.reset();
     compressed_out.reset();
 
+    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+        return;
+
     bool use_compression = false;
 
     if (in->eof())
@@ -451,6 +469,9 @@ void KeeperTCPHandler::runImpl()
         return;
     }
 
+    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+        return;
+
     if (keeper_dispatcher->isServerActive())
     {
         try
@@ -465,6 +486,14 @@ void KeeperTCPHandler::runImpl()
             sendHandshake(/* has_leader */ false, use_compression);
             return;
 
+        }
+
+        if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+        {
+            keeper_dispatcher->registerSession(
+                session_id,
+                [](const Coordination::ZooKeeperResponsePtr &, Coordination::ZooKeeperRequestPtr) { return false; });
+            return;
         }
 
         sendHandshake(/* has_leader */ true, use_compression);
@@ -502,6 +531,9 @@ void KeeperTCPHandler::runImpl()
     };
     keeper_dispatcher->registerSession(session_id, response_callback);
 
+    if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
+        return;
+
     Stopwatch logging_stopwatch;
     auto operation_max_ms = keeper_context->getCoordinationSettings()[CoordinationSetting::log_slow_connection_operation_threshold_ms];
     auto log_long_operation = [&](const String & operation)
@@ -521,7 +553,9 @@ void KeeperTCPHandler::runImpl()
 
         /// If the session is closed by shutdown, don't report it to keeper_dispatcher.
         /// It has separate logic to send Close requests for remaining sessions on shutdown.
-        if (!keeper_dispatcher->isShuttingDown())
+        if (!closing_for_shutdown.load(std::memory_order_acquire)
+            && !keeper_dispatcher->isTCPConnectionDrainStarted()
+            && !keeper_dispatcher->isShuttingDown())
         {
             try
             {
@@ -548,9 +582,9 @@ void KeeperTCPHandler::runImpl()
 
             PollResult result = poll_wrapper->poll(session_timeout, *in);
 
-            if (keeper_dispatcher->isShuttingDown())
+            if (keeper_dispatcher->isTCPConnectionDrainStarted() || keeper_dispatcher->isShuttingDown())
             {
-                LOG_DEBUG(log, "Server shutting down, closing session #{}", session_id);
+                LOG_DEBUG(log, "Keeper TCP drain started, closing session #{}", session_id);
                 break;
             }
 
@@ -708,7 +742,15 @@ bool KeeperTCPHandler::tryExecuteFourLetterWordCmd(int32_t command, ReadBuffer &
 
     try
     {
-        String res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
+        String res;
+        if (!keeper_dispatcher->tryBeginFourLetterCommand())
+            return false;
+
+        {
+            SCOPE_EXIT({ keeper_dispatcher->finishFourLetterCommand(); });
+
+            res = maybe_argument ? command_ptr->runWithArgument(*maybe_argument) : command_ptr->run();
+        }
         out->write(res.data(), res.size());
         out->next();
     }
@@ -979,6 +1021,28 @@ void KeeperTCPHandler::unregisterConnection(KeeperTCPHandler * conn)
 {
     std::lock_guard lock(conns_mutex);
     connections.erase(conn);
+}
+
+/// A TLS socket serialises every SSL-level operation, StreamSocket::shutdown() included, on a mutex that
+/// the handler thread holds for the whole of a blocking read, so the SSL path cannot interrupt that read.
+/// Shutting the descriptor down needs no lock, at the cost of closing TLS abortively: no close_notify.
+static void shutdownSocketDescriptor(const Poco::Net::StreamSocket & socket)
+{
+    const auto fd = socket.impl()->sockfd();
+    if (fd == POCO_INVALID_SOCKET)
+        return;
+
+    [[maybe_unused]] const int rc = ::shutdown(fd, SHUT_RDWR);
+}
+
+void KeeperTCPHandler::closeAllConnections()
+{
+    std::lock_guard lock(conns_mutex);
+    for (auto * conn : connections)
+    {
+        conn->closing_for_shutdown.store(true, std::memory_order_release);
+        shutdownSocketDescriptor(conn->socket());
+    }
 }
 
 void KeeperTCPHandler::dumpConnections(WriteBufferFromOwnString & buf, bool brief)

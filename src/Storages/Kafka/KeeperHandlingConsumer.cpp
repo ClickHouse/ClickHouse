@@ -114,11 +114,13 @@ KeeperHandlingConsumer::KeeperHandlingConsumer(
     const String & replica_name_,
     size_t idx_,
     const LoggerPtr & log_,
+    size_t num_consumers_,
     UInt64 partition_shard_num_,
     UInt64 shard_count_)
     : keeper_path(keeper_path_)
     , replica_name(replica_name_)
     , idx(idx_)
+    , num_consumers(std::max<size_t>(num_consumers_, 1))
     , partition_shard_num(partition_shard_num_)
     , shard_count(shard_count_)
     , kafka_consumer(kafka_consumer_)
@@ -422,7 +424,7 @@ void KeeperHandlingConsumer::lockTemporaryLocksLocked(
     {
         tmp_locks_quota = std::min(available_topic_partitions.size(), tmp_locks_quota + 1);
     }
-    LOG_INFO(log, "The replica can take {} temporary locks in the current round", tmp_locks_quota);
+    LOG_INFO(log, "The consumer can take {} temporary locks in the current round", tmp_locks_quota);
 
     if (tmp_locks_quota == 0)
         return;
@@ -450,9 +452,19 @@ void KeeperHandlingConsumer::updatePermanentLocksLocked(
 {
     LOG_TRACE(log, "Starting to update permanent locks");
     chassert(active_replica_count > 0 && "There should be at least one active replica, because we are active");
-    size_t can_lock_partitions = std::max<size_t>(topic_partitions_count / static_cast<size_t>(active_replica_count), 1);
 
-    LOG_TRACE(log, "The replica can have {} permanent locks after the current round", can_lock_partitions);
+    const size_t node_quota = std::max<size_t>(topic_partitions_count / active_replica_count, 1);
+    const size_t can_lock_partitions = computeConsumerQuota(node_quota);
+
+    LOG_TRACE(
+        log,
+        "The consumer can have {} permanent locks after the current round "
+        "(node_quota={}, active_replicas={}, num_consumers={}, idx={})",
+        can_lock_partitions,
+        node_quota,
+        active_replica_count,
+        num_consumers,
+        idx);
 
     if (can_lock_partitions == permanent_locks.size())
     {
@@ -491,6 +503,13 @@ void KeeperHandlingConsumer::updatePermanentLocksLocked(
             ++i;
         }
     }
+}
+
+size_t KeeperHandlingConsumer::computeConsumerQuota(size_t node_quota) const
+{
+    if (num_consumers <= 1)
+        return node_quota;
+    return node_quota / num_consumers + (idx < node_quota % num_consumers ? 1 : 0);
 }
 
 void KeeperHandlingConsumer::rollbackToCommittedOffsets()

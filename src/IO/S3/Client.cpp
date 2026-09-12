@@ -680,11 +680,8 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
     const auto & bucket = request.GetBucket();
     request.setApiMode(api_mode);
 
-    /// We have to use checksums for S3Express buckets, so the order of checks should be the following
     if (client_settings.is_s3express_bucket)
         request.setIsS3ExpressBucket();
-    else if (client_settings.disable_checksum)
-        request.disableChecksum();
 
     if (auto region = getRegionForBucket(bucket); !region.empty())
     {

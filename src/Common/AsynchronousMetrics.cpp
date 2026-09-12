@@ -1303,7 +1303,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
         "The difference in time the thread for calculation of the asynchronous metrics was scheduled to wake up and the time it was in fact, woken up."
         " A proxy-indicator of overall system latency and responsiveness." };
 
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
     MemoryStatisticsOS::Data memory_statistics_data = memory_stat.get();
 #endif
 
@@ -1498,7 +1498,7 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
 #endif
 
     /// Process process memory usage according to OS
-#if defined(OS_LINUX) || defined(OS_FREEBSD)
+#if defined(OS_LINUX) || defined(OS_FREEBSD) || defined(OS_SUNOS)
     {
         MemoryStatisticsOS::Data & data = memory_statistics_data;
 
@@ -1524,18 +1524,20 @@ void AsynchronousMetrics::update(TimePoint update_time, bool force_update)
             "When userspace page cache is disabled, this value equals MemoryResident."
         };
 
-#if !defined(OS_FREEBSD)
+#if !defined(OS_FREEBSD) && !defined(OS_SUNOS)
         new_values["MemoryShared"] = { data.shared,
             "The amount of memory used by the server process, that is also shared by another processes, in bytes."
             " ClickHouse does not use shared memory, but some memory can be labeled by OS as shared for its own reasons."
             " This metric does not make a lot of sense to watch, and it exists only for completeness reasons."};
 #endif
+#if !defined(OS_SUNOS)
         new_values["MemoryCode"] = { data.code,
             "The amount of virtual memory mapped for the pages of machine code of the server process, in bytes." };
         new_values["MemoryDataAndStack"] = { data.data_and_stack,
             "The amount of virtual memory mapped for the use of stack and for the allocated memory, in bytes."
             " It is unspecified whether it includes the per-thread stacks and most of the allocated memory, that is allocated with the 'mmap' system call."
             " This metric exists only for completeness reasons. I recommend to use the `MemoryResident` metric for monitoring."};
+#endif
 
         if (update_rss)
             MemoryTracker::updateRSS(data.resident);

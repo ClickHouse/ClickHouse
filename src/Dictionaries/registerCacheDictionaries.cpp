@@ -277,6 +277,26 @@ The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
 
 When searching for a dictionary, the cache is searched first. For each block of data, all keys that are not found in the cache or are outdated are requested from the source using `SELECT attrs... FROM db.table WHERE id IN (k1, k2, ...)`. The received data is then written to the cache.
 
+That applies to looking a key **up** - `dictGet` and the other dictionary functions. Reading the dictionary **as a table** with `SELECT ... FROM <dictionary>` is different: it returns the cells that happen to be resident in the cache at that moment and requests nothing from the source, because a cache keeps no record of which keys exist. A `WHERE` on the key is an ordinary filter over those resident cells, not a list of keys to fetch:
+
+```sql
+CREATE DICTIONARY cache_dict (id UInt64, data String) PRIMARY KEY id
+SOURCE(CLICKHOUSE(TABLE 'cache_src')) LIFETIME(MIN 0 MAX 900) LAYOUT(CACHE(SIZE_IN_CELLS 1000));
+
+-- nothing is cached yet, so nothing comes back and the source is not queried
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+0
+
+-- looking the keys up populates the cache
+SELECT dictGet('cache_dict', 'data', toUInt64(number + 1)) FROM numbers(3);
+
+-- and now the same read sees them
+SELECT count() FROM cache_dict WHERE id IN (1, 2, 3);
+3
+```
+
+So a cache dictionary is meant to be used through the dictionary functions. If you need `SELECT ... FROM <dictionary> WHERE key IN (...)` to fetch from the source, use the [direct](/sql-reference/statements/create/dictionary/layouts/direct) layout, which queries the source on every request and caches nothing; to read the whole dictionary as a table, use a layout that holds all of it, such as [flat](/sql-reference/statements/create/dictionary/layouts/flat) or [hashed](/sql-reference/statements/create/dictionary/layouts/hashed).
+
 If keys are not found in dictionary, then update cache task is created and added into update queue. Update queue properties can be controlled with settings `max_update_queue_size`, `update_queue_push_timeout_milliseconds`, `query_wait_timeout_milliseconds`, `max_threads_for_updates`.
 
 For cache dictionaries, the expiration [lifetime](/reference/statements/create/dictionary/lifetime) of data in the cache can be set. If more time than `lifetime` has passed since loading the data in a cell, the cell's value is not used and key becomes expired. The key is re-requested the next time it needs to be used. This behaviour can be configured with setting `allow_read_expired_keys`.
@@ -350,7 +370,8 @@ ClickHouse is not recommended as a source for this layout. Dictionary lookups re
     };
 
     factory.registerLayout("complex_key_cache", create_complex_key_cache_layout, true, true, Documentation{
-        .description = "Like `cache`, but supports composite keys.",
+        .description = "Like `cache`, but supports composite keys. Reading it as a table returns only the cells "
+                       "currently held in the cache and does not query the source; see `cache`.",
         .syntax = "LAYOUT(COMPLEX_KEY_CACHE(SIZE_IN_CELLS n))",
         .related = {"cache"}});
 
@@ -374,6 +395,8 @@ ClickHouse is not recommended as a source for this layout. Dictionary lookups re
 ## ssd_cache {#ssd_cache}
 
 Similar to `cache`, but stores data on SSD and index in RAM. All cache dictionary settings related to update queue can also be applied to SSD cache dictionaries.
+
+Like `cache`, this layout keeps no record of which keys exist, so reading it as a table with `SELECT ... FROM <dictionary>` returns only the cells currently held and does not query the source. See [cache](/sql-reference/statements/create/dictionary/layouts/cache).
 
 The dictionary key has the [UInt64](/reference/data-types/int-uint) type.
 

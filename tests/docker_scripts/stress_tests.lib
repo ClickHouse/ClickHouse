@@ -157,6 +157,15 @@ function configure()
 
     # since we run clickhouse from root
     sudo chown root: /var/lib/clickhouse
+
+    # Cores must land in the host-mounted /cores (stress_job.py collects only it).
+    # Written here, not in configure_limits: install.sh wipes config.d on every
+    # configure call, and the upgrade runner never calls configure_limits.
+    cat > /etc/clickhouse-server/config.d/core_path.xml <<EOL
+<clickhouse>
+    <core_path>/cores</core_path>
+</clickhouse>
+EOL
 }
 
 function configure_limits()
@@ -182,7 +191,12 @@ EOL
     # Similar to docker/test/fuzzer/query-fuzzer-tweaks-users.xml
     echo "Setting max_memory_usage_for_user=$max_users_mem and max_memory_usage for queries to 10G"
     # The heredoc delimiter is unquoted so that ${max_users_mem} expands. That also means backticks
-    # and $(...) would be evaluated, so keep them out of the XML comments below.
+    # and $(...) would be evaluated, and its XML comments cannot hold a double hyphen, so the
+    # rationale for the `allow_experimental_window_view` constraint below lives here: the upgrade
+    # check replays the previous release's test suite under its own binary, which still creates
+    # window views, and `clickhouse-test --upgrade-check` passes `--fake-drop`, so they stay in the
+    # metadata for the new binary to fail on. Keep it readonly, rather than set to `false`, until
+    # that suite stops creating them: assigning an obsolete setting makes the new binary warn.
     cat > /etc/clickhouse-server/users.d/stress_test_tweaks-users.xml <<EOL
 <clickhouse>
     <profiles>
@@ -227,19 +241,6 @@ EOL
                     <readonly/>
                 </max_ast_depth>
 
-                <!--
-                 `WINDOW VIEW` is removed, and the setting is an obsolete no-op here, but the upgrade
-                 check runs the *previous release's* test suite under the *previous release's* binary,
-                 which still accepts `CREATE WINDOW VIEW`. `clickhouse-test --upgrade-check` runs the
-                 client with `--fake-drop`, so those tests' `DROP TABLE` is ignored and the window view
-                 is left in the metadata, which the new binary then cannot load on the post-upgrade
-                 restart. Keep the setting unchangeable until the previous release no longer contains
-                 tests that create window views. The constraint alone is enough: it rejects any change
-                 with `SETTING_CONSTRAINT_VIOLATION`, and both binaries default the setting to `false`.
-                 Assigning the value in the profile instead would mark an obsolete setting as changed on
-                 the new binary, which adds an `Obsolete setting` entry to `system.warnings` that
-                 `01945_system_warnings` asserts is absent.
-                -->
                 <allow_experimental_window_view>
                     <readonly/>
                 </allow_experimental_window_view>
@@ -264,7 +265,6 @@ EOL
 
     cat > /etc/clickhouse-server/config.d/core.xml <<EOL
 <clickhouse>
-    <core_path>/cores</core_path>
 
     <remote_servers>
       <test_cluster_database_replicated>
@@ -404,6 +404,11 @@ function start_server()
         fi
         sleep 10
     done
+
+    # Positive evidence in the job log that the core limit is usable (the sudoers
+    # rlimit_core drop-in worked and the server re-raised its soft limit).
+    server_pid="$(cat /var/run/clickhouse-server/clickhouse-server.pid 2>/dev/null)" \
+        && grep -H "^Max core file size" "/proc/${server_pid}/limits" ||:
 }
 
 function check_server_start()

@@ -7,6 +7,7 @@
 #include <Core/SettingsTierType.h>
 #include <Core/SettingsWriteFormat.h>
 #include <base/types.h>
+#include <Common/FlatStringMap.h>
 #include <Common/SettingsChanges.h>
 #include <Common/VectorWithMemoryTracking.h>
 
@@ -177,7 +178,7 @@ struct Settings
     void markSettingsChangedByCompatibilityAsUnchanged();
 
     VectorWithMemoryTracking<String> getHints(const String & name) const;
-    String toString() const;
+    String toString(bool show_secrets) const;
 
     SettingsChanges changes() const;
     void applyChanges(const SettingsChanges & changes);
@@ -192,9 +193,9 @@ struct Settings
     VectorWithMemoryTracking<std::string_view> getChangedAndObsoleteNames() const;
     VectorWithMemoryTracking<std::string_view> getUnchangedNames() const;
 
-    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params) const;
-    void dumpToMapColumn(IColumn * column, bool changed_only = true) const;
-    std::map<String, String> changedToMap() const;
+    void dumpToSystemSettingsColumns(MutableColumnsAndConstraints & params, bool show_secrets) const;
+    void dumpToMapColumn(IColumn * column, bool changed_only, bool show_secrets) const;
+    FlatStringMap changedToFlatMap(bool show_secrets) const;
 
     void write(WriteBuffer & out, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT) const;
     void read(ReadBuffer & in, SettingsWriteFormat format = SettingsWriteFormat::DEFAULT);

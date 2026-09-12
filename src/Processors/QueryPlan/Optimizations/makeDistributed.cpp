@@ -790,7 +790,7 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     {
         /// Check if table is big enough for distributed read
         /// TODO: implement better logic for choosing number of parallel readers
-        auto analysis_result = read_from_merge_tree_step->selectRangesToRead();
+        auto analysis_result = read_from_merge_tree_step->getOrCreateAnalyzedResult();
         if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
             return;
 

@@ -28,6 +28,7 @@
 #include <Storages/ColumnsDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 
+#include <limits>
 #include <ranges>
 #include <unordered_set>
 
@@ -290,7 +291,15 @@ bool optimizeVectorSearchWithQuantizedCodes(
             "Setting 'vector_search_index_fetch_multiplier' must be greater than 0.0 and less than {}", MAX_FETCH_MULTIPLIER);
     size_t k_prime = n;
     if (fetch_multiplier > 1.0f)
-        k_prime = static_cast<size_t>(static_cast<double>(n) * static_cast<double>(fetch_multiplier));
+    {
+        /// Compare the product with the range of size_t while it is still a double: for a LIMIT close to the maximum of
+        /// UInt64 the product exceeds that range, and the conversion of such a value is undefined behavior (the same fix
+        /// as in the vector-similarity-index path).
+        const double scaled_limit = static_cast<double>(n) * static_cast<double>(fetch_multiplier);
+        k_prime = (scaled_limit >= static_cast<double>(std::numeric_limits<size_t>::max()))
+            ? std::numeric_limits<size_t>::max()
+            : static_cast<size_t>(scaled_limit);
+    }
     if (max_limit_for_lazy_materialization != 0)
         k_prime = std::min(k_prime, max_limit_for_lazy_materialization);
     k_prime = std::max(k_prime, n);

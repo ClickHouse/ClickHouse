@@ -8,6 +8,7 @@
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
+#include <Common/saturatedDuration.h>
 #include <Core/Settings.h>
 
 #include <Interpreters/evaluateConstantExpression.h>
@@ -992,7 +993,7 @@ static std::chrono::seconds getLockTimeout(ContextPtr context)
     Int64 lock_timeout = settings[Setting::lock_acquire_timeout].totalSeconds();
     if (settings[Setting::max_execution_time].totalSeconds() != 0 && settings[Setting::max_execution_time].totalSeconds() < lock_timeout)
         lock_timeout = settings[Setting::max_execution_time].totalSeconds();
-    return std::chrono::seconds{lock_timeout};
+    return saturatedSeconds(lock_timeout);
 }
 
 size_t StorageLog::getMaxReadStreams(size_t num_streams, ContextPtr local_context)

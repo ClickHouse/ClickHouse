@@ -80,9 +80,24 @@ namespace StreamingExchangeProtocol
         void write(WriteBuffer & out) const;
     };
 
-    /// Single receive that retries on EINTR. Returns bytes read, or 0 if the socket
-    /// would block. Throws Poco::Net::NetException on early EOF or other socket error;
-    /// `description` labels the call site in the exception message.
+    /// The peer address for messages; a socket whose peer is gone may not know it anymore.
+    String describePeer(const Poco::Net::StreamSocket & socket);
+
+    /// Throw for an errno from `recv` or `send`: `EXCHANGE_PEER_DISCONNECTED` when the other side of
+    /// the connection is gone, a generic network error otherwise. `what` names the operation.
+    [[noreturn]] void throwSocketError(int socket_errno, const Poco::Net::StreamSocket & socket, const String & what);
+
+    /// For a catch block around `receiveBytes` or `sendBytes`: rethrows the in-flight Poco exception,
+    /// as `EXCHANGE_PEER_DISCONNECTED` when the other side of the connection is gone.
+    [[noreturn]] void rethrowSocketException(const Poco::Net::StreamSocket & socket, const String & what);
+
+    /// Single receive that retries on EINTR. Returns the bytes read, 0 if the socket would block, or
+    /// -1 if the peer closed its side. `description` labels the call site in the exception message.
     ssize_t tryReceive(Poco::Net::StreamSocket & socket, char * buffer, size_t size, const String & description);
+
+    /// Send the whole buffer on a blocking socket, retrying on EINTR. A send that timed out stays a
+    /// timeout: Poco reports it without the errno that would tell the send deadline from the kernel's
+    /// connection timeout. `description` labels the call site in the exception message.
+    void sendAll(Poco::Net::StreamSocket & socket, const char * buffer, size_t size, const String & description);
 }
 }
