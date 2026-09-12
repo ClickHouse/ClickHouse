@@ -745,10 +745,14 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
 /// the function nodes, so the check descends into it with `allNodeFunctions`.
 static bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
 {
+    auto is_insensitive = [](const IFunctionBase & function)
+    {
+        return function.isDeterministicInScopeOfQuery() && !function.isStateful();
+    };
+
     for (const auto & node : dag.getNodes())
     {
-        if (!allNodeFunctions(node, [](const IFunctionBase & function)
-                { return function.isDeterministicInScopeOfQuery() && !function.isStateful(); }))
+        if (!allNodeFunctions(node, is_insensitive))
             return true;
     }
 
