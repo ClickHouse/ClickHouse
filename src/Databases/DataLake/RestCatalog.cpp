@@ -1952,12 +1952,20 @@ bool RestCatalog::updateMetadata(const String & namespace_name, const String & t
     }
     catch (const DB::HTTPException & ex)
     {
-        /// 409 Conflict: caller retries after re-reading the latest metadata tip.
+        /// A 409 Conflict is the Iceberg REST optimistic-concurrency signal: the commit was
+        /// definitively REJECTED (e.g. an assert-ref-snapshot-id requirement failed because a
+        /// concurrent writer advanced `main`). The new snapshot did not become live, so callers
+        /// may safely discard their artifacts and retry. Only this case is reported as `false`.
         if (ex.getHTTPStatus() == Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
         {
             LOG_DEBUG(log, "updateMetadata conflict for {}/{}: {}", namespace_name, table_name, ex.displayText());
             return false;
         }
+
+        /// Any other failure (5xx, exhausted retries, connection reset, ...) leaves the commit
+        /// result UNKNOWN: the catalog may have applied it even though we never saw a success
+        /// response. Returning `false` here would tell callers the commit failed and let them
+        /// delete artifacts that a now-live snapshot references. Fail closed: propagate the error.
         LOG_ERROR(log, "updateMetadata failed for {}/{}: {}", namespace_name, table_name, ex.displayText());
         throw DB::Exception(
             DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
