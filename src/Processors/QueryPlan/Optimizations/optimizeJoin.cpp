@@ -739,15 +739,16 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
 /// evaluate it on rows the original join order would have discarded. An expression whose result or whose
 /// side effects depend on how many times and on which rows it runs is therefore not safe to merge: a
 /// non-deterministic function draws independently in the two places, so the returned rows can violate the
-/// query's own `JOIN ON` condition, and a stateful function (`aiEmbed`, `timeSeriesStoreTags`, ...) makes
-/// extra external calls or mutates per-query state. A lambda without captures is constant-folded into a
-/// `COLUMN` node holding a `ColumnFunction`, which hides the functions of its body from a plain scan over
-/// the function nodes, so the check descends into it with `allNodeFunctions`.
+/// query's own `JOIN ON` condition, a stateful function (`aiEmbed`, `timeSeriesStoreTags`, ...) makes
+/// extra external calls or mutates per-query state, and a function with observable side effects (`sleep`)
+/// spends a different amount of time and accounts different profile events. A lambda without captures is
+/// constant-folded into a `COLUMN` node holding a `ColumnFunction`, which hides the functions of its body
+/// from a plain scan over the function nodes, so the check descends into it with `allNodeFunctions`.
 static bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
 {
     auto is_insensitive = [](const IFunctionBase & function)
     {
-        return function.isDeterministicInScopeOfQuery() && !function.isStateful();
+        return function.isDeterministicInScopeOfQuery() && !function.isStateful() && !function.hasObservableSideEffects();
     };
 
     for (const auto & node : dag.getNodes())

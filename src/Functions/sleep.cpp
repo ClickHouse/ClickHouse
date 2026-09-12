@@ -79,10 +79,9 @@ public:
     String getName() const override { return function_name; }
     bool isSuitableForConstantFolding() const override { return false; } /// Do not sleep during query analysis.
     /// What the function does is observable outside of its return value - it spends time, it can throw
-    /// `TOO_SLOW`, and it accounts `SleepFunctionMicroseconds` - and how much of that happens depends on
-    /// how many times and on how many rows it is evaluated. Optimizations that move, duplicate or drop an
-    /// expression consult this flag, so report it the same way the row-position-dependent functions do.
-    bool isStateful() const override { return true; }
+    /// `TOO_SLOW`, and it accounts `SleepFunctionCalls` / `SleepFunctionMicroseconds` - and how much of
+    /// that happens depends on how many times and on how many rows it is evaluated.
+    bool hasObservableSideEffects() const override { return true; }
     size_t getNumberOfArguments() const override { return 1; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
