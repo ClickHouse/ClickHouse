@@ -3909,10 +3909,13 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
     /// Once the read is ordered by the top-k sort column it delivers the rows the LIMIT wants first,
     /// so the threshold prewhere can only reject rows the sort has already passed, and every rejected
     /// row keeps the pipeline reading instead of letting the LIMIT cancel it.
-    if (query_info.prewhere_info && !result_sort_description.empty())
+    if (query_info.prewhere_info && top_k_filter_info && !result_sort_description.empty())
     {
         auto top_k_column = topKDynamicFilterColumn(*query_info.prewhere_info);
-        if (top_k_column && *top_k_column == result_sort_description.front().column_name)
+        /// Undo only a filter this read was stamped for: the internal function is not registered in
+        /// `FunctionFactory`, so an executable UDF can carry the same name.
+        if (top_k_column && *top_k_column == top_k_filter_info->column_name
+            && *top_k_column == result_sort_description.front().column_name)
         {
             /// A prewhere moves its own DAG's outputs to the front of the header, so reading the
             /// columns in the order the prewhere reported them keeps the header the steps above were
