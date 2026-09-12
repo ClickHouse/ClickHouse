@@ -1,0 +1,55 @@
+<!-- Sweeps isValidUTF8 across the lengths the dispatch turns on: 64, at and above which simdutf validates
+     the input whatever its content; then an 8-byte-at-a-time ASCII skip; then 16, at and above which what
+     the skip leaves also goes to simdutf, and below which the scalar loop runs. materialize() keeps the
+     argument out of constant folding, and run_all_queries keeps every length in every run. repeat() can
+     only produce multiples of the code point width, so a length that is not a multiple carries an explicit
+     ASCII tail. The mostly-ASCII rows with a non-ASCII tail shorter than 64 bytes are the shape that only
+     reaches simdutf while the ASCII skip stays behind the threshold, so they are what makes a hoisted skip
+     visible in this sweep. -->
+<test run_all_queries="1">
+    <!-- ASCII: the skip against master's byte-at-a-time loop below 64, simdutf on ASCII at and above it. -->
+    <query>SELECT isValidUTF8(materialize(repeat('a', 8))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 63))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 64))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 1023))) FROM numbers(300000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 65535))) FROM numbers(30000) FORMAT Null SETTINGS max_block_size = 3000</query>
+    <!-- 3-byte code points, dense over [56, 129]: simdutf takes a second padded block from 65 upwards, so
+         the per-byte cost peaks just above each multiple of 64. -->
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 18) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 21) || 'a')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 21) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 32))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 42) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 43))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xE6\x97\xA5', 341))) FROM numbers(300000) FORMAT Null</query>
+    <!-- 2-byte code points: the same boundaries at a different per-byte scalar cost. -->
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 28))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 32))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 32) || 'a')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 511) || 'a')) FROM numbers(300000) FORMAT Null</query>
+    <!-- 4-byte code points, the width where a code point costs the scalar loop most: 63 bytes and 64, one
+         on each side of the first threshold and both above the second. repeat() cannot make 63 from a
+         4-byte code point, so the 63-byte row carries a 3-byte ASCII tail. -->
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 15) || 'aaa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 16))) FROM numbers(3000000) FORMAT Null</query>
+    <!-- A leading ASCII run with a non-ASCII tail shorter than 64 bytes: 64 bytes behind an 8-byte head,
+         and 148 bytes behind a 96-byte head. An ASCII skip placed ahead of the first threshold strips both
+         to a sub-64-byte remainder, so these rows are what shows the order of the two. -->
+    <query>SELECT isValidUTF8(materialize(repeat('a', 8) || repeat('\xE6\x97\xA5', 18) || 'aa')) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('a', 96) || repeat('\xD0\xB0', 26))) FROM numbers(3000000) FORMAT Null</query>
+    <!-- Malformed at offset 0: the scalar loop rejects in constant time while simdutf always checks at
+         least one block, so this row is a bounded cost that any cutoff keeps above itself, never a crossover.
+         The alias is required: the folded argument would otherwise become the result column's name, and
+         the harness's client decodes header strings as strict UTF-8. -->
+    <query>SELECT isValidUTF8(materialize('\xFF' || repeat('a', 63))) AS v FROM numbers(3000000) FORMAT Null</query>
+    <!-- Between the 8-byte skip and one block, the band where the second cutoff decides. At a cutoff of
+         16 the 16- and 20-byte rows reach simdutf and the 12-byte row stays on the scalar loop; a cutoff
+         of 8 would take the 12-byte row as well, and one of 32 would leave all three on the loop. 16 bytes
+         is the shortest input this cutoff dispatches, so it is where one set too low shows first. The last
+         row is what dispatching a short input costs where the scalar loop would have rejected it at the
+         first byte, the sub-block counterpart of the 64-byte malformed row above. -->
+    <query>SELECT isValidUTF8(materialize(repeat('\xD0\xB0', 6))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 4))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize(repeat('\xF0\x9F\x98\x80', 5))) FROM numbers(3000000) FORMAT Null</query>
+    <query>SELECT isValidUTF8(materialize('\xFF' || repeat('a', 15))) AS v FROM numbers(3000000) FORMAT Null</query>
+</test>
