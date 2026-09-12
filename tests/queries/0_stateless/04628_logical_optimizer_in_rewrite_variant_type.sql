@@ -112,3 +112,71 @@ SELECT materialize(1) = 1 OR materialize(1) = NULL SETTINGS optimize_min_equalit
 
 DROP TABLE t_dt;
 DROP TABLE t_var;
+
+-- A `Variant` value also has to survive the trip into the set, and a `Field` cannot record which
+-- alternative it occupies: rebuilding the value from one re-selects an alternative by value, so a value
+-- stored as `UInt64` came back as `Date` and stopped matching the row it was built for. This shape is
+-- wrong at the DEFAULT setting, so re-enable it - line 11 turns it off for everything above.
+SET use_variant_default_implementation_for_comparisons = 1;
+
+DROP TABLE IF EXISTS t_var_disc;
+CREATE TABLE t_var_disc (id UInt32, a Array(Variant(Date, UInt64)), v Variant(Date, UInt64)) ENGINE = MergeTree ORDER BY id;
+INSERT INTO t_var_disc VALUES (1, [1::UInt64], 1::UInt64);
+
+-- No chain and no rewrite involved: `x IN (x, ...)` must agree with `x = x`.
+SELECT a = [1::UInt64]::Array(Variant(Date, UInt64)),
+       a IN ([1::UInt64]::Array(Variant(Date, UInt64)), [5::UInt64]::Array(Variant(Date, UInt64))) FROM t_var_disc;
+
+-- The OR chain the rewrite turns into that IN, against the un-rewritten form as ground truth.
+SELECT count() FROM t_var_disc WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)));
+SELECT count() FROM t_var_disc WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)))
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+-- ... and the rewrite still fires: it is now faithful rather than declined, so nothing is given up. A
+-- single-alternative Variant also keeps being rewritten, which lines 53-54 above already pin.
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_var_disc WHERE (a = [1::UInt64]::Array(Variant(Date, UInt64))) OR (a = [5::UInt64]::Array(Variant(Date, UInt64))) OR (a = [7::UInt64]::Array(Variant(Date, UInt64)))) WHERE explain ILIKE '%function_name: in%';
+
+-- A top-level Variant is exposed too: the nullability guard above only reaches that shape at
+-- use_variant_default_implementation_for_comparisons = 0.
+SELECT count() FROM t_var_disc WHERE (v = 1::UInt64::Variant(Date, UInt64)) OR (v = 5::UInt64::Variant(Date, UInt64)) OR (v = 7::UInt64::Variant(Date, UInt64));
+SELECT count() FROM t_var_disc WHERE (v = 1::UInt64::Variant(Date, UInt64)) OR (v = 5::UInt64::Variant(Date, UInt64)) OR (v = 7::UInt64::Variant(Date, UInt64))
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+-- ... and the rewrite fires for the top-level shape too, so the row above is the rewritten form's
+-- answer and not a silent decline:
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM t_var_disc WHERE (v = 1::UInt64::Variant(Date, UInt64)) OR (v = 5::UInt64::Variant(Date, UInt64)) OR (v = 7::UInt64::Variant(Date, UInt64))) WHERE explain ILIKE '%function_name: in%';
+
+-- The notEquals -> NOT IN seam, whose first conjunct is false, so no row may survive. Result only: a
+-- separate change screens a Variant comparison out of that merge, and the result is correct either way.
+SELECT count() FROM t_var_disc WHERE (a != [1::UInt64]::Array(Variant(Date, UInt64))) AND (a != [5::UInt64]::Array(Variant(Date, UInt64))) AND (a != [7::UInt64]::Array(Variant(Date, UInt64))) AND (id = 1);
+
+DROP TABLE t_var_disc;
+
+-- Keeping the constants' types is only enough when the constant already carries the expression's type.
+-- Where the conversion into (or out of) a multi-alternative Variant is not a named identity, the set
+-- element is rebuilt from a Field and the rewrite changes the answer, so the chain must be kept instead.
+-- Each result is asserted against the un-rewritten form at chain length 100 as ground truth.
+
+-- The constants are UInt8, so the set element a Field rebuilds occupies Date, not the UInt64 the row holds.
+SELECT count() FROM (SELECT materialize(1::UInt64::Variant(Date, UInt64)) AS v) WHERE v = 1 OR v = 5 OR v = 7;
+SELECT count() FROM (SELECT materialize(1::UInt64::Variant(Date, UInt64)) AS v) WHERE v = 1 OR v = 5 OR v = 7
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+-- ... asserted on the plan too, so the refusal itself is pinned and not just the answer:
+SELECT count() FROM (EXPLAIN QUERY TREE SELECT count() FROM (SELECT materialize(1::UInt64::Variant(Date, UInt64)) AS v) WHERE v = 1 OR v = 5 OR v = 7) WHERE explain ILIKE '%function_name: in%';
+
+-- Equal types are not enough either: these two Variant types are equal to IDataType::equals, which
+-- ignores a DateTime timezone, but the alternative is selected by the type name the constant spells.
+SELECT count() FROM (SELECT materialize([1::UInt64]::Variant(Array(DateTime('UTC')), Array(UInt64))) AS v)
+WHERE v = [1::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64)) OR v = [5::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64)) OR v = [7::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64));
+SELECT count() FROM (SELECT materialize([1::UInt64]::Variant(Array(DateTime('UTC')), Array(UInt64))) AS v)
+WHERE v = [1::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64)) OR v = [5::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64)) OR v = [7::UInt64]::Variant(Array(DateTime('Asia/Tokyo')), Array(UInt64))
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+
+-- The erasure is symmetric, and on the constant's side it admits a row instead of dropping one: a Date
+-- alternative's day number reads as seconds once the Field is converted to the DateTime column's type.
+SELECT count() FROM (SELECT materialize(toDateTime(1, 'UTC')) AS v) WHERE v = toDate(1)::Variant(Date, UInt64) OR v = toDate(5)::Variant(Date, UInt64) OR v = toDate(7)::Variant(Date, UInt64);
+SELECT count() FROM (SELECT materialize(toDateTime(1, 'UTC')) AS v) WHERE v = toDate(1)::Variant(Date, UInt64) OR v = toDate(5)::Variant(Date, UInt64) OR v = toDate(7)::Variant(Date, UInt64)
+SETTINGS optimize_min_equality_disjunction_chain_length = 100;
+
+-- A `Bool` is not a `Variant`, so an identity conversion of one keeps going through the `Field` path
+-- that clamps a raw byte, and `x IN (x, ...)` still agrees with `x = x`.
+SELECT reinterpret(toUInt8(2), 'Bool') = reinterpret(toUInt8(2), 'Bool'),
+       reinterpret(toUInt8(2), 'Bool') IN (reinterpret(toUInt8(2), 'Bool'), false);

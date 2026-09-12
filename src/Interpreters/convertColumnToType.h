@@ -18,10 +18,10 @@ namespace DB
   * column holding NULL — NOT as `ColumnPtr{}`.
   *
   * The purpose is to convert constants WITHOUT materializing a `Field`. Cases that can be done
-  * column-natively (currently: plain numeric-to-numeric in the default mode) go through
-  * `IColumn`/CAST; the rest still delegate to `convertFieldToType` (same behavior, just not yet
-  * `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against `convertFieldToType`,
-  * so more column-native fast paths can be added without changing results.
+  * column-natively (plain numeric-to-numeric, and an identity conversion of a `Variant`-carrying type)
+  * go through `IColumn`/CAST; the rest still delegate to `convertFieldToType` (same behavior, just not
+  * yet `Field`-free). The behavior is pinned by `gtest_convert_column_to_type` against
+  * `convertFieldToType`, so more column-native fast paths can be added without changing results.
   *
   * The equivalence holds for scalar `Bool` and for `Bool` nested under the structural carriers
   * `Array`/`Tuple`/`Map` (and under `Nullable`/`LowCardinality`), including tag-sensitive conversions
@@ -29,14 +29,17 @@ namespace DB
   * column is a plain `ColumnUInt8`, so `get` yields `UInt64`), so the delegation path re-tags `Bool`
   * values before calling `convertFieldToType`. The differential test pins these cases.
   *
-  * Known limitation: `Bool` nested under `Variant` (and therefore `Dynamic`/`JSON`) is NOT faithful.
-  * `ColumnVariant::get` erases the active alternative to the nested column's field (e.g. `UInt64` for a
-  * `Bool` alternative), and for an ambiguous variant such as `Variant(Bool, UInt8)` the reconstructed
-  * `Field` no longer records which alternative was active, so it cannot be recovered structurally the
-  * way the carriers above can. Making it faithful would require a `ColumnVariant`-aware path before the
-  * generic `get`. No current caller needs `Variant`-of-`Bool` textual conversion; note that the legacy
-  * `Field` path (`convertFieldToType` on `(*column)[0]`) has the exact same limitation, so migrating a
-  * caller from it to this helper does not change that behavior.
+  * Known limitation of a NON-IDENTITY conversion: `Bool` nested under `Variant` (and therefore
+  * `Dynamic`/`JSON`) is NOT faithful. `ColumnVariant::get` erases the active alternative to the nested
+  * column's field (e.g. `UInt64` for a `Bool` alternative), and for an ambiguous variant such as
+  * `Variant(Bool, UInt8)` the reconstructed `Field` no longer records which alternative was active, so
+  * it cannot be recovered structurally the way the carriers above can; that would need a
+  * `ColumnVariant`-aware path before the generic `get`. No current caller needs `Variant`-of-`Bool`
+  * textual conversion. An identity conversion of a `Variant`-carrying type is the one deliberate
+  * divergence from the legacy `Field` path: it returns the input column unchanged, so a `Variant`
+  * discriminator survives here and not there, and inside such a type a `Bool` alternative's raw byte is
+  * not clamped either, which is inherent to keeping the discriminator. Every other identity conversion
+  * goes through the `Field` path, so it clamps.
   */
 ColumnPtr convertColumnToTypeOrNull(
     const IColumn & value,

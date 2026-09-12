@@ -24,6 +24,9 @@ namespace
 /// (from_type, value, to_type, strict, convert_inexact_floats), the column twin returns null iff the
 /// Field version returns a Null Field, and otherwise its single value equals the Field result. This
 /// pins the contract so column-native fast paths can replace the delegation without changing results.
+/// One deliberate exception: an identity conversion of a `Variant`-carrying type returns the input
+/// column unchanged, so where a `Field` is lossy (a `Variant` discriminator) the two differ and the
+/// column twin is the correct one.
 struct Case
 {
     const char * from_type;

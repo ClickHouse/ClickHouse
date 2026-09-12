@@ -80,9 +80,9 @@ std::optional<ColumnPtr> tryConvertNumericColumnNative(
 /// active alternative to the nested column's field, and for an ambiguous variant (e.g.
 /// `Variant(Bool, UInt8)`) the reconstructed `Field` no longer says which alternative was active, so it
 /// cannot be recovered structurally here - a `ColumnVariant`-aware path before `get` would be needed.
-/// See the header for why this is acceptable (no caller needs it; the legacy `Field` path has the same
-/// limitation). Other tag-sensitive types (IPv4/IPv6/UUID/Decimal) have dedicated columns/`Field` types
-/// and round-trip through `get` already.
+/// See the header for why this is acceptable (no caller needs that textual conversion, and on this
+/// delegated path the legacy `Field` path has the same limitation). Other tag-sensitive types
+/// (IPv4/IPv6/UUID/Decimal) have dedicated columns/`Field` types and round-trip through `get` already.
 void retagBoolInField(Field & field, const DataTypePtr & type)
 {
     if (field.isNull())
@@ -127,6 +127,22 @@ void retagBoolInField(Field & field, const DataTypePtr & type)
     }
 }
 
+/// A `Field` does not record which `Variant` alternative a value occupies, so a value of such a type
+/// does not survive being rebuilt from one. Deliberately not shared with the near-twin in
+/// `LogicalExpressionOptimizerPass`, which keys on more than one alternative: that one asks whether a
+/// conversion is faithful, this one only whether a round trip may be skipped.
+bool typeCarriesVariantAlternative(const IDataType & type)
+{
+    if (type.hasDynamicStructure())
+        return true;
+
+    bool result = false;
+    auto check = [&](const IDataType & nested) { result |= WhichDataType(nested).isVariant(); };
+    check(type);
+    type.forEachChild(check);
+    return result;
+}
+
 }
 
 ColumnPtr convertColumnToTypeOrNull(
@@ -142,7 +158,17 @@ ColumnPtr convertColumnToTypeOrNull(
     /// Callers usually pass a `ColumnConst` (e.g. from `evaluateConstantExpressionAsColumn`); operate
     /// on the underlying full column so the fast path's CAST returns a plain (non-const) column and the
     /// `Field` fallback reads the value directly.
-    const ColumnPtr full = value.convertToFullColumnIfConst();
+    ColumnPtr full = value.convertToFullColumnIfConst();
+
+    /// An identity conversion of a `Variant`-carrying type must not round-trip through a `Field`: a
+    /// `Field` cannot record which alternative a value occupies, so rebuilding the column re-selects one.
+    /// Every other identity conversion still goes through the `Field` path, which also normalizes a value
+    /// a column can physically hold outside its type's domain (a raw `Bool` byte). The type names must
+    /// match as well as the types: `IDataType::equals` ignores an `AggregateFunction`'s serialization
+    /// version, which `ColumnAggregateFunction` insertion enforces through the type string.
+    if (from->equals(*to) && from->getName() == to->getName() && typeCarriesVariantAlternative(*from))
+        return full;
+
     const IColumn & unwrapped = *full;
 
     if (auto native = tryConvertNumericColumnNative(unwrapped, from, to, convert_inexact_floats))
