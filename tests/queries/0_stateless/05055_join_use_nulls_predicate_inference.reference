@@ -1,0 +1,87 @@
+-- LEFT JOIN, predicate on the right key only, join_use_nulls = 1: lk is inferred
+Condition: (_CAST(lk, \'Nullable(UInt64)\') in [80, 80])
+Condition: (toNullable(rk) in [80, 80])
+-- the same at join_use_nulls = 0, which already inferred it
+Condition: (lk in [80, 80])
+Condition: (rk in [80, 80])
+-- RIGHT JOIN, predicate on the left key only, join_use_nulls = 1: rk is inferred
+Condition: (toNullable(lk) in [80, 80])
+Condition: (_CAST(rk, \'Nullable(UInt64)\') in [80, 80])
+Type: INNER
+-- FULL JOIN converted to RIGHT, join_use_nulls = 1: lk is inferred, rk is filtered directly
+Condition: (_CAST(lk, \'Nullable(UInt64)\') in [80, 80])
+Condition: (toNullable(rk) in [80, 80])
+Type: RIGHT
+-- FULL JOIN converted to LEFT, join_use_nulls = 1: rk is inferred, lk is filtered directly
+Condition: (toNullable(lk) in [80, 80])
+Condition: (_CAST(rk, \'Nullable(UInt64)\') in [80, 80])
+Type: LEFT
+-- FULL JOIN converted to INNER, join_use_nulls = 1: each key is inferred next to its own predicate
+Condition: and((_CAST(lk, \'Nullable(UInt64)\') in [80, 80]), (toNullable(lk) in [80, 80]))
+Condition: and((_CAST(rk, \'Nullable(UInt64)\') in [80, 80]), (toNullable(rk) in [80, 80]))
+Type: INNER
+-- a predicate on a non-key column infers nothing, so lk stays unconstrained
+Condition: true
+Condition: true
+-- a LEFT JOIN that is not converted keeps its not-matched rows, so nothing may be inferred
+Condition: true
+Condition: true
+-- the join kind of that query, next to the one of the converted query above
+Type: LEFT
+Type: INNER
+-- results do not depend on join_use_nulls or on the conversion
+100	602000	3000
+100	602000	3000
+100	602000	3000
+100	602000	3000
+100	602000	3000
+100	602000	3000
+100	602000	3000
+100	602000	3000
+-- FULL JOIN converted to RIGHT: unmatched rows survive every setting
+100	602000	3000
+100	602000	3000
+100	602000	3000
+100	602000	3000
+-- FULL JOIN converted to LEFT
+100	602000	3000
+100	602000	3000
+100	602000	3000
+100	602000	3000
+-- FULL JOIN converted to INNER
+100	602000	3000
+100	602000	3000
+100	602000	3000
+100	602000	3000
+-- the left rows with no match, which a pushed down predicate would have dropped
+5000
+-- FULL JOIN converted to RIGHT: an unmatched right row satisfying the predicate still survives
+Type: RIGHT
+101	1	349500
+101	1	349500
+101	1	349500
+101	1	349500
+-- FULL JOIN converted to LEFT: an unmatched left row satisfying the predicate still survives
+Type: LEFT
+101	1	3000
+101	1	3000
+101	1	3000
+101	1	3000
+-- composite key whose second member cannot be inside Nullable: mlk is still inferred
+Condition: (_CAST(mlk, \'Nullable(UInt64)\') in [42, 42])
+Condition: (toNullable(mrk) in [42, 42])
+15	1
+15	1
+-- Tuple key: the left key is cast to the widened type, so the inferred predicate is pushed
+1
+-- and it prunes nothing: the left condition stays true
+Condition: true
+Condition: (toNullable(trk) in [(42, \'42\'), (42, \'42\')])
+-- Tuple key, join_use_nulls 1 then 0
+100
+100
+-- LowCardinality key, join_use_nulls = 1: clk is inferred
+Condition: (_CAST(clk, \'LowCardinality(Nullable(String))\') in [\'42\', \'42\'])
+Condition: (toNullable(crk) in [\'42\', \'42\'])
+100
+100

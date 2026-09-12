@@ -1,0 +1,177 @@
+-- Random settings limits: max_threads=(1, 3)
+-- Predicate inference into the opposite table of an outer join converted to inner, with join_use_nulls = 1.
+-- A predicate written on one side is inferred on the other through the equi-join condition, which lets the
+-- other table use its primary key. With join_use_nulls the converted join keeps the nullability it added to
+-- the inner side, so the inferred predicate has to be the opposite key cast to that nullable type.
+{#
+Every assertion is one of four shapes, so each is written once here and called with a query: `conditions` are
+the key conditions of a plan, which say what each table reads; `join_kind` is the join kind of a plan, which
+the conditions alone do not distinguish; `matrix` is one result over both join_use_nulls values times both
+conversion values; `results` is one result over both join_use_nulls values, at the conversion the SET sets.
+#}
+{% macro conditions(query) -%}
+SELECT substring(explain, position(explain, 'Condition:')) FROM (
+    EXPLAIN PLAN indexes = 1
+    {{ query }}
+) WHERE explain LIKE '%Condition:%';
+{%- endmacro %}
+{% macro join_kind(query) -%}
+SELECT trim(explain) FROM (
+    EXPLAIN actions = 1
+    {{ query }}
+) WHERE trim(explain) LIKE 'Type:%';
+{%- endmacro %}
+{% macro q(body, where, jun, select = 'SELECT count()') -%}
+{{ select }} FROM {{ body }} WHERE {{ where }} SETTINGS join_use_nulls = {{ jun }}
+{%- endmacro %}
+{% macro matrix(select, body, where) -%}
+{% for jun, convert in product([1, 0], [1, 0]) -%}
+{{ select }} FROM {{ body }} WHERE {{ where }}
+SETTINGS join_use_nulls = {{ jun }}, query_plan_convert_outer_join_to_inner_join = {{ convert }};
+{% endfor -%}
+{%- endmacro %}
+{% macro results(select, body, where) -%}
+{% for jun in [1, 0] -%}
+{{ q(body, where, jun, select) }};
+{% endfor -%}
+{%- endmacro %}
+
+SET enable_analyzer = 1;
+SET query_plan_convert_outer_join_to_inner_join = 1;
+SET query_plan_join_swap_table = 0;
+SET query_plan_optimize_join_order_limit = 0;
+SET query_plan_optimize_join_order_randomize = 0;
+SET explain_query_plan_default = 'legacy';
+DROP TABLE IF EXISTS t_infer_l; DROP TABLE IF EXISTS t_infer_r;
+
+-- Distinct key names make every `Condition:` line below say by itself which table it belongs to.
+CREATE TABLE t_infer_l (id UInt64, lk UInt64, lv UInt64) ENGINE = MergeTree ORDER BY lk;
+CREATE TABLE t_infer_r (id UInt64, rk UInt64, rv UInt64) ENGINE = MergeTree ORDER BY rk;
+-- The two key ranges overlap in [50, 119] only, so 5000 left rows have no match, which the `r.rk IS NULL`
+-- row further down counts, and 30 right rows have no match. The probed key 80 is matched on both sides, so
+-- no unmatched row of this fixture can satisfy a predicate on the key; the composite key fixture at the
+-- end of this section is where an unmatched row that does satisfy one is asserted.
+INSERT INTO t_infer_l SELECT number, number % 120, number FROM numbers(12000);
+INSERT INTO t_infer_r SELECT number, 50 + number, number FROM numbers(100);
+{% set left = 't_infer_l AS l LEFT JOIN t_infer_r AS r ON l.lk = r.rk' %}
+{% set right = 't_infer_l AS l RIGHT JOIN t_infer_r AS r ON l.lk = r.rk' %}
+{% set full = 't_infer_l AS l FULL JOIN t_infer_r AS r ON l.lk = r.rk' %}
+
+SELECT '-- LEFT JOIN, predicate on the right key only, join_use_nulls = 1: lk is inferred';
+{{ conditions(q(left, 'r.rk = 80', 1)) }}
+SELECT '-- the same at join_use_nulls = 0, which already inferred it';
+{{ conditions(q(left, 'r.rk = 80', 0)) }}
+SELECT '-- RIGHT JOIN, predicate on the left key only, join_use_nulls = 1: rk is inferred';
+{{ conditions(q(right, 'l.lk = 80', 1)) }}
+{{ join_kind(q(right, 'l.lk = 80', 1)) }}
+
+-- A predicate on the right key alone admits a right-only row, whose left side is null, so the left not
+-- matched rows may be dropped but the right ones may not: FULL becomes RIGHT. The join kind is read off the
+-- plan next to each condition, because the conditions alone do not distinguish RIGHT from INNER.
+SELECT '-- FULL JOIN converted to RIGHT, join_use_nulls = 1: lk is inferred, rk is filtered directly';
+{{ conditions(q(full, 'r.rk = 80', 1)) }}
+{{ join_kind(q(full, 'r.rk = 80', 1)) }}
+SELECT '-- FULL JOIN converted to LEFT, join_use_nulls = 1: rk is inferred, lk is filtered directly';
+{{ conditions(q(full, 'l.lk = 80', 1)) }}
+{{ join_kind(q(full, 'l.lk = 80', 1)) }}
+
+-- Null rejecting on both sides, so both kinds of not matched row may be dropped: FULL becomes INNER. This is
+-- the only shape in which both keys are converted and reachable at once, so both casts are built in one pass.
+SELECT '-- FULL JOIN converted to INNER, join_use_nulls = 1: each key is inferred next to its own predicate';
+{{ conditions(q(full, 'l.lk = 80 AND r.rk = 80', 1)) }}
+{{ join_kind(q(full, 'l.lk = 80 AND r.rk = 80', 1)) }}
+SELECT '-- a predicate on a non-key column infers nothing, so lk stays unconstrained';
+{{ conditions(q(left, 'r.rv = 80', 1)) }}
+SELECT '-- a LEFT JOIN that is not converted keeps its not-matched rows, so nothing may be inferred';
+{{ conditions(q(left, 'r.rk IS NULL', 1)) }}
+SELECT '-- the join kind of that query, next to the one of the converted query above';
+{{ join_kind(q(left, 'r.rk IS NULL', 1)) }}
+{{ join_kind(q(left, 'r.rk = 80', 1)) }}
+SELECT '-- results do not depend on join_use_nulls or on the conversion';
+{{ matrix('SELECT count(), sum(l.id), sum(r.id)', left, 'r.rk = 80') }}
+{{ matrix('SELECT count(), sum(l.id), sum(r.id)', right, 'l.lk = 80') }}
+
+-- The not preserved side of a FULL join contributes rows whose columns are null under join_use_nulls = 1 and
+-- default under 0, so `coalesce` is what makes the two settings comparable at all.
+{% set both_ids = 'SELECT count(), sum(coalesce(l.id, 0)), sum(coalesce(r.id, 0))' %}
+SELECT '-- FULL JOIN converted to RIGHT: unmatched rows survive every setting';
+{{ matrix(both_ids, full, 'r.rk = 80') }}
+SELECT '-- FULL JOIN converted to LEFT';
+{{ matrix(both_ids, full, 'l.lk = 80') }}
+SELECT '-- FULL JOIN converted to INNER';
+{{ matrix(both_ids, full, 'l.lk = 80 AND r.rk = 80') }}
+SELECT '-- the left rows with no match, which a pushed down predicate would have dropped';
+{{ q(left, 'r.rk IS NULL', 1) }};
+DROP TABLE t_infer_l; DROP TABLE t_infer_r;
+
+-- With a single equi-key, a predicate on a matched key filters every unmatched row out before it can be
+-- observed. A composite key separates the two: a row whose second member matches nothing is unmatched, while
+-- its first member still satisfies a predicate written on the first member. Such a row is what the side an
+-- outer join preserves must still emit, and what a filter pushed into that side would wrongly drop.
+DROP TABLE IF EXISTS t_infer_c_l; DROP TABLE IF EXISTS t_infer_c_r;
+CREATE TABLE t_infer_c_l (id UInt64, lk UInt64, lv UInt64) ENGINE = MergeTree ORDER BY lk;
+CREATE TABLE t_infer_c_r (id UInt64, rk UInt64, rv UInt64) ENGINE = MergeTree ORDER BY rk;
+-- Every row joins on `lv = rv = 0` except the two planted ones. Their second members, 998 and 999, each occur
+-- on one side only, so neither planted row has a match, and both carry the probed key 80 in the first member.
+INSERT INTO t_infer_c_l SELECT number, 50 + number % 70, 0 FROM numbers(7000);
+INSERT INTO t_infer_c_l VALUES (100000, 80, 998);
+INSERT INTO t_infer_c_r SELECT number, 50 + number, 0 FROM numbers(70);
+INSERT INTO t_infer_c_r VALUES (200000, 80, 999);
+{% set composite = 't_infer_c_l AS l FULL JOIN t_infer_c_r AS r ON l.lk = r.rk AND l.lv = r.rv' %}
+
+-- The witness is the preserved side's own column, which carries a real value under either join_use_nulls
+-- setting; the not preserved side is null at 1 and default at 0, which is what `coalesce` absorbs.
+SELECT '-- FULL JOIN converted to RIGHT: an unmatched right row satisfying the predicate still survives';
+{{ join_kind(q(composite, 'r.rk = 80', 1)) }}
+{{ matrix('SELECT count(), countIf(r.rv = 999), sum(coalesce(l.id, 0))', composite, 'r.rk = 80') }}
+SELECT '-- FULL JOIN converted to LEFT: an unmatched left row satisfying the predicate still survives';
+{{ join_kind(q(composite, 'l.lk = 80', 1)) }}
+{{ matrix('SELECT count(), countIf(l.lv = 998), sum(coalesce(r.id, 0))', composite, 'l.lk = 80') }}
+DROP TABLE t_infer_c_l; DROP TABLE t_infer_c_r;
+
+-- A side is reported as type changing as a whole, but join_use_nulls widens only the keys that can be
+-- inside Nullable. A key that cannot must keep the type it has, not be rejected as an illegal argument.
+DROP TABLE IF EXISTS t_infer_map_l; DROP TABLE IF EXISTS t_infer_map_r;
+CREATE TABLE t_infer_map_l (mlk UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY mlk;
+CREATE TABLE t_infer_map_r (mrk UInt64, m Map(String, UInt64)) ENGINE = MergeTree ORDER BY mrk;
+INSERT INTO t_infer_map_l SELECT number % 100, map('x', number % 7) FROM numbers(10000);
+INSERT INTO t_infer_map_r SELECT number, map('x', number % 7) FROM numbers(100);
+{% set map_join = 't_infer_map_l AS l LEFT JOIN t_infer_map_r AS r ON l.mlk = r.mrk AND l.m = r.m' %}
+-- The Map key is read back, so it stays in the join output where its type is looked up.
+SELECT '-- composite key whose second member cannot be inside Nullable: mlk is still inferred';
+{{ conditions(q(map_join, 'r.mrk = 42', 1, 'SELECT count(), uniqExact(r.m)')) }}
+{{ results('SELECT count(), uniqExact(r.m)', map_join, 'r.mrk = 42') }}
+DROP TABLE t_infer_map_l; DROP TABLE t_infer_map_r;
+
+-- A Tuple key is widened, and its cast is built, but Nullable(Tuple) is not usable as a key condition.
+-- The inferred predicate must still be correct where it is evaluated.
+DROP TABLE IF EXISTS t_infer_tup_l; DROP TABLE IF EXISTS t_infer_tup_r;
+CREATE TABLE t_infer_tup_l (tlk Tuple(UInt64, String)) ENGINE = MergeTree ORDER BY tlk;
+CREATE TABLE t_infer_tup_r (trk Tuple(UInt64, String)) ENGINE = MergeTree ORDER BY trk;
+INSERT INTO t_infer_tup_l SELECT (number % 100, toString(number % 100)) FROM numbers(10000);
+INSERT INTO t_infer_tup_r SELECT (number, toString(number)) FROM numbers(100);
+{% set tuple_join = 't_infer_tup_l AS l LEFT JOIN t_infer_tup_r AS r ON l.tlk = r.trk' %}
+-- Casting the left key to the widened type is what proves the inferred predicate reached the left input,
+-- since the condition below cannot show it.
+SELECT '-- Tuple key: the left key is cast to the widened type, so the inferred predicate is pushed';
+SELECT count() > 0 FROM (
+    EXPLAIN actions = 1
+    {{ q(tuple_join, "r.trk = (42, '42')", 1) }}
+) WHERE explain LIKE '%CAST(tlk %Nullable(Tuple(UInt64, String))%';
+SELECT '-- and it prunes nothing: the left condition stays true';
+{{ conditions(q(tuple_join, "r.trk = (42, '42')", 1)) }}
+SELECT '-- Tuple key, join_use_nulls 1 then 0';
+{{ results('SELECT count()', tuple_join, "r.trk = (42, '42')") }}
+DROP TABLE t_infer_tup_l; DROP TABLE t_infer_tup_r;
+
+-- A LowCardinality key is widened to LowCardinality(Nullable(...)), which is usable as a key condition.
+DROP TABLE IF EXISTS t_infer_lc_l; DROP TABLE IF EXISTS t_infer_lc_r;
+CREATE TABLE t_infer_lc_l (clk LowCardinality(String)) ENGINE = MergeTree ORDER BY clk;
+CREATE TABLE t_infer_lc_r (crk LowCardinality(String)) ENGINE = MergeTree ORDER BY crk;
+INSERT INTO t_infer_lc_l SELECT toString(number % 100) FROM numbers(10000);
+INSERT INTO t_infer_lc_r SELECT toString(number) FROM numbers(100);
+{% set lc_join = 't_infer_lc_l AS l LEFT JOIN t_infer_lc_r AS r ON l.clk = r.crk' %}
+SELECT '-- LowCardinality key, join_use_nulls = 1: clk is inferred';
+{{ conditions(q(lc_join, "r.crk = '42'", 1)) }}
+{{ results('SELECT count()', lc_join, "r.crk = '42'") }}
+DROP TABLE t_infer_lc_l; DROP TABLE t_infer_lc_r;
