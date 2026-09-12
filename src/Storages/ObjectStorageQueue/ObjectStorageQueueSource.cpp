@@ -77,6 +77,7 @@ namespace FailPoints
     extern const char object_storage_queue_cancel_in_generate[];
     extern const char object_storage_queue_sleep_in_generate[];
     extern const char object_storage_queue_fail_tags_fetch[];
+    extern const char object_storage_queue_pause_before_new_file_claim[];
 }
 
 namespace ErrorCodes
@@ -297,6 +298,8 @@ ObjectStorageQueueSource::FileIterator::next()
                     file_metadatas[i] = metadata->getFileMetadata(
                         new_batch[i]->getPath(),
                         /* bucket_info */ {}); /// No buckets for Unordered mode.
+
+                    FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_new_file_claim);
 
                     auto set_processing_result = file_metadatas[i]->prepareSetProcessingRequests(requests, processing_id);
                     if (set_processing_result.has_value())
@@ -1611,7 +1614,11 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         }
                         else
                         {
-                            file_metadata->prepareResetProcessingRequests(requests);
+                            /// This file is Processed (succeeded) but is not the bucket's
+                            /// max-processed file, so it never reaches prepareProcessedRequestsImpl.
+                            /// Clear any stale `.retriable` marker here so a successful file never
+                            /// leaves behind a retry counter from an earlier failed attempt.
+                            file_metadata->prepareResetProcessingRequests(requests, /* clear_retriable */true);
                         }
                         if (has_partitioning)
                             file_metadata->preparePartitionProcessedMap(file_map);

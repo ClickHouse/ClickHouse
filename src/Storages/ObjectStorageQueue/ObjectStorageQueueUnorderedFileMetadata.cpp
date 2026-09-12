@@ -128,6 +128,23 @@ void ObjectStorageQueueUnorderedFileMetadata::prepareProcessedRequestsImpl(
     requests.push_back(
         zkutil::makeCreateRequest(
             processed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
+
+    /// A prior failed attempt may have left a live `.retriable` marker with a nonzero
+    /// retry count. Left behind, it would outlive this success and resurface with a
+    /// stale retry count if the path is ever reprocessed (e.g. after `/processed`
+    /// expires via TTL/limit). Fold its removal into this same multi so it is cleared
+    /// atomically with success - not a separate request that could race or be skipped.
+    const auto retriable_node_path = failed_node_path + ".retriable";
+    Coordination::Stat retriable_stat;
+    std::string retriable_data;
+    bool retriable_exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        retriable_exists = zk_client->tryGet(retriable_node_path, retriable_data, &retriable_stat);
+    });
+    if (retriable_exists)
+        requests.push_back(zkutil::makeRemoveRequest(retriable_node_path, retriable_stat.version));
 }
 
 void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
@@ -179,9 +196,14 @@ void ObjectStorageQueueUnorderedFileMetadata::filterOutProcessedAndFailed(
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueUnorderedFileMetadata::getPathState(
-    std::string & failure_message) const
+    std::string & failure_message, UInt64 * retries_out) const
 {
-    const std::vector<std::string> paths = {processed_node_path, failed_node_path};
+    /// Check the terminal failed node and the retriable failed-marker together.
+    /// A live `.retriable` node still holds retry state (the retry count), so its
+    /// presence must not be treated as "no failed state left" - only the absence
+    /// of BOTH forms means the failure was actually cleaned up externally.
+    const std::string retriable_node_path = failed_node_path + ".retriable";
+    const std::vector<std::string> paths = {processed_node_path, failed_node_path, retriable_node_path};
 
     zkutil::ZooKeeper::MultiTryGetResponse responses;
     ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
@@ -207,7 +229,28 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueUnorderedFileMetada
     if (responses[1].error == Coordination::Error::ZOK)
     {
         if (!responses[1].data.empty())
-            failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+        {
+            const auto metadata = NodeMetadata::fromString(responses[1].data);
+            failure_message = metadata.last_exception;
+            if (retries_out)
+                *retries_out = metadata.retries;
+        }
+        return PathState::Failed;
+    }
+
+    if (responses[2].error == Coordination::Error::ZOK)
+    {
+        /// Only the retriable marker exists (terminal node not yet created, or already
+        /// swept while the retriable state is still live). Retry state is still held in
+        /// Keeper, so this must be reported as Failed, not Unknown - otherwise the caller
+        /// would treat it as "cleaned up externally" and grant an extra processing attempt.
+        if (!responses[2].data.empty())
+        {
+            const auto metadata = NodeMetadata::fromString(responses[2].data);
+            failure_message = metadata.last_exception;
+            if (retries_out)
+                *retries_out = metadata.retries;
+        }
         return PathState::Failed;
     }
 

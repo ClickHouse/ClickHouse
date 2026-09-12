@@ -35,9 +35,9 @@ public:
         const std::string & zookeeper_name_,
         LoggerPtr log_);
 
-    void prepareResetProcessingRequests(Coordination::Requests & requests) override;
+    void prepareResetProcessingRequests(Coordination::Requests & requests, bool clear_retriable) override;
 
-    PathState getPathState(std::string & failure_message) const override;
+    PathState getPathState(std::string & failure_message, UInt64 * retries_out) const override;
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;

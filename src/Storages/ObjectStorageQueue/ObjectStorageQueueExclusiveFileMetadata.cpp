@@ -89,7 +89,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     return std::pair{true, ObjectStorageQueueIFileMetadata::FileStatus::State::None};
 }
 
-void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coordination::Requests & /*requests*/)
+void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coordination::Requests & /*requests*/, bool /*clear_retriable*/)
 {
     releaseProcessingGuard();
 
@@ -115,7 +115,7 @@ void ObjectStorageQueueExclusiveFileMetadata::filterOutProcessedAndFailed(
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetadata::getPathState(
-    std::string & failure_message) const
+    std::string & failure_message, UInt64 * retries_out) const
 {
     const auto state = file_status->state.load();
 
@@ -124,6 +124,8 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueExclusiveFileMetada
         case FileStatus::State::Processed: return PathState::Processed;
         case FileStatus::State::Failed:
             failure_message = file_status->getException();
+            if (retries_out)
+                *retries_out = file_status->retries.load();
             return PathState::Failed;
         default:
             return PathState::Unknown;

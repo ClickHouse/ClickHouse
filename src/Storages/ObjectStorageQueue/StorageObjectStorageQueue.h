@@ -97,6 +97,10 @@ public:
         ContextPtr local_context,
         std::optional<std::chrono::steady_clock::time_point> deadline = std::nullopt) const;
 
+    /// Clear all failed files from this S3Queue table's Keeper metadata.
+    /// Called by SYSTEM DROP S3QUEUE FAILED FILES.
+    void dropFailedFiles();
+
     /// Rebuild the object-storage S3 client under `context`, re-resolving credentials, without detaching the
     /// table. Used by the server-internal log-pipeline bootstrap to re-apply the server-credential opt-in after
     /// a restart loaded the table with a restricted (anonymous) client. Safe to call while streaming: the client

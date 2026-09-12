@@ -19,6 +19,7 @@
 #include <Common/DimensionalMetrics.h>
 #include <Common/ThreadPool.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
+#include <Common/FailPoint.h>
 #include <Common/ZooKeeper/ZooKeeperWithFaultInjection.h>
 #include <Common/ZooKeeper/ZooKeeperRetries.h>
 #include <Common/randomSeed.h>
@@ -26,6 +27,11 @@
 #include <Interpreters/DDLTask.h>
 #include <shared_mutex>
 #include <Core/ServerUUID.h>
+#include <Core/UUID.h>
+#include <Poco/JSON/JSON.h>
+#include <Poco/JSON/Object.h>
+#include <Poco/JSON/Parser.h>
+#include <Poco/JSON/Stringifier.h>
 
 
 namespace ProfileEvents
@@ -49,6 +55,12 @@ namespace DimensionalMetrics
 namespace DB
 {
 
+namespace FailPoints
+{
+    extern const char object_storage_queue_pause_before_cleanup_lock_read[];
+    extern const char object_storage_queue_pause_before_partial_failure_publish[];
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -56,6 +68,8 @@ namespace ErrorCodes
     extern const int REPLICA_ALREADY_EXISTS;
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
+    extern const int NOT_IMPLEMENTED;
+    extern const int KEEPER_EXCEPTION;
 }
 
 namespace Setting
@@ -129,7 +143,17 @@ ObjectStorageQueueMetadata::ObjectStorageQueueMetadata(
     , zookeeper_path(zookeeper_path_)
     , keeper_multiread_batch_size(keeper_multiread_batch_size_)
     , cleanup_processed_files(isUnordered(mode) && table_metadata.hasTrackedFilesLimit())
-    , cleanup_failed_files(!isExclusive(mode) && table_metadata.hasTrackedFilesLimit())
+    /// Two independent reasons to sweep `/failed`, and either one on its own is enough: the
+    /// count-based `tracked_files_limit`, and the time-based `failed_files_ttl_sec`. They are separate
+    /// controls, so this is a union rather than a choice between them.
+    ///
+    /// `tracked_files_limit` alone, not `hasTrackedFilesLimit`: the latter is also true for
+    /// `tracked_files_ttl_sec`, which is the retention of `/processed` and says nothing about `/failed`.
+    /// Mirrors the per-run decision in `cleanupThreadFuncImpl`, so this coarse "could this table ever
+    /// need a sweep" answer cannot disagree with what a run actually does.
+    , cleanup_failed_files(
+          (!isExclusive(mode) && table_metadata.tracked_files_limit)
+          || (isUnordered(mode) && table_metadata.failed_files_ttl_sec))
     , cleanup_processing_files(!isExclusive(mode) && use_persistent_processing_nodes_ && persistent_processing_nodes_ttl_seconds_)
     , cleanup_interval_min_ms(cleanup_interval_min_ms_)
     , cleanup_interval_max_ms(cleanup_interval_max_ms_)
@@ -216,8 +240,11 @@ void ObjectStorageQueueMetadata::startup()
     if (startup_called.exchange(true))
          return;
 
+    /// Union of both guards: master narrowed this to the three flags, which are fixed at construction,
+    /// while `isUnordered(mode)` covers an unordered table whose cleanup settings are only turned on
+    /// later by `ALTER`. Dropping the mode term would leave such a table with no sweep at all.
     if (!cleanup_task
-        && (cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
+        && (isUnordered(mode) || cleanup_processed_files || cleanup_failed_files || cleanup_processing_files))
     {
         cleanup_task = Context::getGlobalContextInstance()->getSchedulePool()->createTask(
             StorageID::createEmpty(), "ObjectStorageQueueCleanupFunc",
@@ -472,6 +499,17 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 continue;
             }
             new_table_metadata.tracked_files_ttl_sec = value;
+        }
+        else if (change.name == "failed_files_ttl_sec")
+        {
+            const auto value = change.value.safeGet<UInt64>();
+            if (table_metadata.failed_files_ttl_sec == value)
+            {
+                LOG_TRACE(log, "Setting `failed_files_ttl_sec` already equals {}. "
+                        "Will do nothing", value);
+                continue;
+            }
+            new_table_metadata.failed_files_ttl_sec = value;
         }
         else if (change.name == "buckets")
         {
@@ -1297,8 +1335,10 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
 
     /// Create a lock so that with distributed processing
     /// multiple nodes do not execute cleanup in parallel.
+    /// Store "background_cleanup" in the lock value to distinguish from manual dropFailedFiles.
+    static constexpr const char * LOCK_OPERATION_BACKGROUND = "background_cleanup";
     auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
-        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), toString(getCurrentTime()));
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), LOCK_OPERATION_BACKGROUND);
 
     if (!ephemeral_node)
     {
@@ -1306,36 +1346,84 @@ void ObjectStorageQueueMetadata::cleanupThreadFuncImpl()
         return;
     }
 
-    /// Check the TTL as well: it is changeable at runtime and zero disables
-    /// the cleanup (otherwise every node would be treated as stale).
-    if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
-        cleanupPersistentProcessingNodes();
-
-    if (table_metadata.hasTrackedFilesLimit())
+    /// Everything below runs pinned to `zk_client`, the session that owns the lock, and is not retried.
+    /// A hardware error means that session may be gone - and the ephemeral lock with it - so the sweep
+    /// stops rather than deleting nodes on a session holding nothing. Releasing the lock is left to the
+    /// holder's destructor, which already tells the two cases apart: it removes the node while the
+    /// session is alive, and skips the removal once the session has expired, when the node is gone
+    /// anyway and the path may already have been taken by another replica. No outer retry is needed
+    /// here: unlike the user-facing drop, this task is periodic, so the next scheduled run is the retry.
+    try
     {
-        if (cleanup_processed_files)
-            cleanupTrackedNodes(zookeeper_path / "processed", "processed");
+        /// Check the TTL as well: it is changeable at runtime and zero disables
+        /// the cleanup (otherwise every node would be treated as stale).
+        if (cleanup_processing_files && persistent_processing_node_ttl_seconds)
+            cleanupPersistentProcessingNodes(zk_client);
 
-        if (cleanup_failed_files)
-            cleanupTrackedNodes(zookeeper_path / "failed", "failed");
+        /// Re-derived per run rather than taken from the members: `tracked_files_limit`,
+        /// `tracked_file_ttl_sec` and `failed_files_ttl_sec` are all alterable at runtime, so a decision
+        /// made once at construction would go stale. The members remain the coarse "could this table ever
+        /// need a sweep" answer that `startup` uses.
+        const bool sweep_processed = isUnordered(mode) && table_metadata.hasTrackedFilesLimit();
+        /// `/failed` has two independent controls, and each trims by its own criterion: the count-based
+        /// `tracked_files_limit`, and the time-based `failed_files_ttl_sec`. They are deliberately not
+        /// collapsed into one call - neither overrides the other, and a table may have either, both or
+        /// neither. Both passes run under the same cleanup lock this function already holds.
+        ///
+        /// The count pass is gated on `tracked_files_limit` alone rather than `hasTrackedFilesLimit`,
+        /// which is also true for `tracked_files_ttl_sec`. `tracked_files_ttl_sec` is the retention of
+        /// `/processed`; letting it enable a `/failed` pass would put the two sets back on one knob, and
+        /// would reach `cleanupTrackedNodes` with no limit and no TTL, which it asserts against.
+        const bool sweep_failed_by_limit = !isExclusive(mode) && table_metadata.tracked_files_limit;
+        const bool sweep_failed_by_ttl = isUnordered(mode) && table_metadata.failed_files_ttl_sec;
+
+        if (sweep_processed || sweep_failed_by_limit || sweep_failed_by_ttl)
+        {
+            if (sweep_processed)
+                cleanupTrackedNodes(zk_client, zookeeper_path / "processed", "processed", table_metadata.tracked_files_ttl_sec, table_metadata.tracked_files_limit);
+
+            /// Count-only, with no TTL of its own: `/failed` expires by `failed_files_ttl_sec` and by
+            /// nothing else. Passing `tracked_files_ttl_sec` here would keep `/processed` retention
+            /// trimming `/failed` behind the new setting's back, which is exactly what this setting
+            /// exists to separate - and for a table old enough to inherit the legacy fallback it would
+            /// scan the whole subtree twice per run with the same TTL.
+            if (sweep_failed_by_limit)
+                cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", /* ttl_seconds */0, table_metadata.tracked_files_limit);
+
+            if (sweep_failed_by_ttl)
+                cleanupTrackedNodes(zk_client, zookeeper_path / "failed", "failed", table_metadata.failed_files_ttl_sec, 0);
+
+            /// One reconciliation covers both passes: either may have removed terminal nodes, and the
+            /// cache has to stop claiming a file is Failed once its node is gone.
+            if (sweep_failed_by_limit || sweep_failed_by_ttl)
+                reconcileFailedFilesCache();
+        }
+    }
+    catch (const Coordination::Exception & e)
+    {
+        if (!Coordination::isHardwareError(e.code))
+            throw;
+
+        LOG_WARNING(log, "Keeper error while holding the cleanup lock: {}. The lock may no longer be ours, "
+                         "so this sweep is abandoned; the next scheduled run will retry.", e.displayText());
+        return;
     }
 
     LOG_TRACE(log, "Node limits check finished");
 }
 
 void ObjectStorageQueueMetadata::cleanupTrackedNodes(
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
     const std::string & nodes_path,
-    std::string_view description)
+    std::string_view description,
+    UInt64 ttl_seconds,
+    UInt64 nodes_limit)
 {
     LOG_TEST(log, "Checking {} nodes for tracking limits", description);
 
     Strings nodes;
     Coordination::Error code = {};
-    auto zk_retries = getKeeperRetriesControl(log);
-    zk_retries.retryLoop([&]
-    {
-        code = getZooKeeper()->tryGetChildren(nodes_path, nodes);
-    });
+    code = zk_client->tryGetChildren(nodes_path, nodes);
     if (code != Coordination::Error::ZOK)
     {
         if (code == Coordination::Error::ZNONODE)
@@ -1352,18 +1440,30 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         return;
     }
 
-    const bool check_nodes_limit = table_metadata.tracked_files_limit > 0;
-    const bool check_nodes_ttl = table_metadata.tracked_files_ttl_sec > 0;
+    const bool check_nodes_limit = nodes_limit > 0;
+    const bool check_nodes_ttl = ttl_seconds > 0;
     chassert(check_nodes_limit || check_nodes_ttl);
 
-    const bool nodes_limit_exceeded = nodes.size() > table_metadata.tracked_files_limit;
+    /// Only the nodes this sweep is allowed to delete count towards the limit. `/failed` also holds
+    /// `.retriable` markers, which the loop below deliberately never removes, so counting them would
+    /// measure the cap against a population it cannot trim. `/processed` has no such children, so
+    /// this is the plain child count there and nothing changes for it.
+    size_t removable_nodes_count = 0;
+    for (const auto & node : nodes)
+    {
+        if (!node.ends_with(".retriable"))
+            ++removable_nodes_count;
+    }
+
+    const bool nodes_limit_exceeded = removable_nodes_count > nodes_limit;
     if ((!nodes_limit_exceeded || !check_nodes_limit) && !check_nodes_ttl)
     {
-        LOG_TEST(log, "No limit exceeded (nodes: {}/{})", nodes.size(), table_metadata.tracked_files_limit.load());
+        LOG_TEST(log, "No limit exceeded (removable nodes: {}/{}, children: {})",
+                 removable_nodes_count, nodes_limit, nodes.size());
         return;
     }
 
-    LOG_TRACE(log, "Will check limits for {} {} nodes", nodes.size(), description);
+    LOG_TRACE(log, "Will check limits for {} {} nodes ({} removable)", nodes.size(), description, removable_nodes_count);
 
     struct Node
     {
@@ -1385,11 +1485,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         LOG_TEST(log, "Fetching info for {} paths", paths.size());
 
         zkutil::ZooKeeper::MultiTryGetResponse response;
-        zk_retries.resetFailures();
-        zk_retries.retryLoop([&]
-        {
-            response = getZooKeeper()->tryGet(paths);
-        });
+        response = zk_client->tryGet(paths);
 
         for (size_t i = 0; i < response.size(); ++i)
         {
@@ -1409,6 +1505,21 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     std::filesystem::path nodes_fs_path(nodes_path);
     for (const auto & node : nodes)
     {
+        /// Skip retry-state nodes - only terminal failed nodes are cleaned up here.
+        ///
+        /// The reason is the retry counter, not the node's lifetime: a `.retriable` node carries how
+        /// many attempts a file has already used, and deleting it mid-retry silently resets that count,
+        /// so a file that should have been given up on keeps being retried forever.
+        ///
+        /// These nodes are persistent, not ephemeral, and nothing here reaps them. The transition that
+        /// exhausts the retries removes the marker as it creates the terminal node, but two paths still
+        /// leave one behind: a file that fails and later succeeds, and `loading_retries` being altered
+        /// from a positive value to zero. Fixing those belongs to the success and failure transitions
+        /// rather than to this sweep, and is deliberately left to a separate change - it is a standalone
+        /// bug fix that predates the failed-files TTL work. Until it lands, such markers accumulate.
+        if (node.ends_with(".retriable"))
+            continue;
+
         paths.push_back(nodes_fs_path / node);
         if (paths.size() == keeper_multiread_batch_size)
             get_paths();
@@ -1427,8 +1538,8 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
 
     LOG_TEST(
         log, "Checking node limits (max size: {}, max age: {}) for {}",
-        table_metadata.tracked_files_limit.load(),
-        table_metadata.tracked_files_ttl_sec.load(),
+        nodes_limit,
+        ttl_seconds,
         get_nodes_str());
 
     static constexpr size_t keeper_multi_batch_size = 100;
@@ -1437,28 +1548,91 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
     remove_requests.reserve(keeper_multi_batch_size);
     remove_responses.reserve(keeper_multi_batch_size);
 
-    size_t nodes_to_remove = check_nodes_limit && nodes_limit_exceeded
-        ? nodes.size() - table_metadata.tracked_files_limit
+    /// Track file paths corresponding to remove requests for success-based cache invalidation.
+    /// Parallel to remove_requests: batch_file_paths[i] is the file_path for remove_requests[i].
+    std::vector<std::string> batch_file_paths;
+    batch_file_paths.reserve(keeper_multi_batch_size);
+
+    /// Snapshot generations before starting Keeper deletes
+    /// to prevent race where file re-fails with new generation before cache removal
+    std::unordered_map<std::string, uint64_t> generations_snapshot;
+    {
+        auto all_entries = local_file_statuses.dump();
+        for (const auto & entry : all_entries)
+        {
+            generations_snapshot[entry.mapped->path] = entry.mapped->generation.load();
+        }
+    }
+
+    /// Sized from what the loop below can actually delete, which is `sorted_nodes` - the terminal
+    /// nodes - and not from the raw child count. Counting `.retriable` markers here spent the budget
+    /// on nodes that were never candidates: with a limit of 1000, 1050 markers and one terminal node,
+    /// the raw count asked for 51 removals, the only eligible node was that single real failure, and
+    /// it was evicted while all 1050 markers stayed. The same arithmetic over-deletes whenever both
+    /// kinds are present - 1200 terminal and 500 retriable against a limit of 1000 asked for 700
+    /// removals and left 500 terminal nodes, half of what the cap promises to keep.
+    ///
+    /// `sorted_nodes` rather than a count of non-`.retriable` children, because a node that vanished
+    /// between the listing and its metadata read (logged above) is already gone and must not count
+    /// towards what still has to be deleted. Comparing before subtracting also keeps the guarded
+    /// quantity and the subtracted one the same value, which is what stops this unsigned subtraction
+    /// from ever wrapping.
+    size_t nodes_to_remove = check_nodes_limit && sorted_nodes.size() > nodes_limit
+        ? sorted_nodes.size() - nodes_limit
         : 0;
 
     const auto remove_nodes = [&](bool node_limit)
     {
-        zk_retries.retryLoop([&]
-        {
-            code = getZooKeeper()->tryMulti(remove_requests, remove_responses);
-        });
+        code = zk_client->tryMulti(remove_requests, remove_responses);
 
         if (code == Coordination::Error::ZOK)
         {
+            /// Full batch succeeded - clear cache for all requests in this batch
+            for (const auto & file_path : batch_file_paths)
+            {
+                using KeyType = UInt128;
+                using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                    [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
+                    {
+                        if (status->path == file_path)
+                        {
+                            auto it = generations_snapshot.find(file_path);
+                            if (it != generations_snapshot.end() && status->generation.load() == it->second)
+                                return true;
+                        }
+                        return false;
+                    }
+                ));
+            }
+
             if (node_limit)
                 nodes_to_remove -= remove_requests.size();
         }
         else
         {
+            /// Partial success: reconcile individual responses.
+            /// Clear cache only for nodes that were successfully deleted.
             for (size_t i = 0; i < remove_requests.size(); ++i)
             {
                 if (remove_responses[i]->error == Coordination::Error::ZOK)
                 {
+                    const auto & file_path = batch_file_paths[i];
+                    using KeyType = UInt128;
+                    using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                    local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                        [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
+                        {
+                            if (status->path == file_path)
+                            {
+                                auto it = generations_snapshot.find(file_path);
+                                if (it != generations_snapshot.end() && status->generation.load() == it->second)
+                                    return true;
+                            }
+                            return false;
+                        }
+                    ));
+
                     if (node_limit)
                         --nodes_to_remove;
                 }
@@ -1466,15 +1640,32 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
                 {
                     /// requests with ZRUNTIMEINCONSISTENCY were not processed because the multi request was aborted before
                     /// so we try removing it again without multi requests
-                    zk_retries.resetFailures();
-                    zk_retries.retryLoop([&]
+                    code = zk_client->tryRemove(remove_requests[i]->getPath());
+                    if (code == Coordination::Error::ZOK || code == Coordination::Error::ZNONODE)
                     {
-                        code = getZooKeeper()->tryRemove(remove_requests[i]->getPath());
-                    });
-                    if (code == Coordination::Error::ZOK)
-                    {
+                        /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
+                        /// before the multi aborted. Either way, the node is gone - clear cache.
+                        const auto & file_path = batch_file_paths[i];
+                        using KeyType = UInt128;
+                        using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+                        local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+                            [&generations_snapshot, &file_path](const KeyType &, const StatusPtr & status)
+                            {
+                                if (status->path == file_path)
+                                {
+                                    auto it = generations_snapshot.find(file_path);
+                                    if (it != generations_snapshot.end() && status->generation.load() == it->second)
+                                        return true;
+                                }
+                                return false;
+                            }
+                        ));
+
                         if (node_limit)
                             --nodes_to_remove;
+
+                        if (code == Coordination::Error::ZNONODE)
+                            LOG_TRACE(log, "Node `{}` already removed (likely by first attempt before multi aborted)", remove_requests[i]->getPath());
                     }
                     else
                     {
@@ -1489,6 +1680,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         }
 
         remove_requests.clear();
+        batch_file_paths.clear();
     };
 
     for (const auto & node : sorted_nodes)
@@ -1498,7 +1690,7 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
             LOG_TRACE(log, "Removing node at path {} ({}) because max files limit is reached",
                      node.metadata.file_path, node.zk_path);
 
-            local_file_statuses.remove(getMetadataCacheKey(node.metadata.file_path));
+            batch_file_paths.push_back(node.metadata.file_path);
             remove_requests.push_back(zkutil::makeRemoveRequest(node.zk_path, -1));
             /// we either reach max multi batch size OR we already added maximum amount of nodes we want to delete based on the node limit
             if (remove_requests.size() == keeper_multi_batch_size || remove_requests.size() == nodes_to_remove)
@@ -1507,12 +1699,12 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         else if (check_nodes_ttl)
         {
             UInt64 node_age = getCurrentTime() - node.metadata.last_processed_timestamp;
-            if (node_age >= table_metadata.tracked_files_ttl_sec)
+            if (node_age >= ttl_seconds)
             {
                 LOG_TRACE(log, "Removing node at path {} ({}) because file ttl is reached",
                         node.metadata.file_path, node.zk_path);
 
-                local_file_statuses.remove(getMetadataCacheKey(node.metadata.file_path));
+                batch_file_paths.push_back(node.metadata.file_path);
                 remove_requests.push_back(zkutil::makeRemoveRequest(node.zk_path, -1));
                 if (remove_requests.size() == keeper_multi_batch_size)
                     remove_nodes(/*node_limit=*/false);
@@ -1536,6 +1728,872 @@ void ObjectStorageQueueMetadata::cleanupTrackedNodes(
         remove_nodes(/*node_limit=*/false);
 }
 
+void ObjectStorageQueueMetadata::removeFromCacheIfGenerationMatches(
+    const std::string & file_path, const std::unordered_map<std::string, uint64_t> & failed_generations)
+{
+    using KeyType = UInt128;
+    using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+    local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+        [&failed_generations, &file_path](const KeyType &, const StatusPtr & status)
+        {
+            if (status->path == file_path && status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+            {
+                auto it = failed_generations.find(file_path);
+                if (it != failed_generations.end() && status->generation.load() == it->second)
+                    return true;
+            }
+            return false;
+        }
+    ));
+}
+
+
+size_t ObjectStorageQueueMetadata::removeStaleFailedCacheEntries(
+    const std::unordered_map<std::string, uint64_t> & failed_generations,
+    const std::function<bool(const std::string &)> & path_filter)
+{
+    size_t removed = 0;
+    using KeyType = UInt128;
+    using StatusPtr = ObjectStorageQueueIFileMetadata::FileStatusPtr;
+    local_file_statuses.remove(std::function<bool(const KeyType &, const StatusPtr &)>(
+        [&failed_generations, &path_filter, &removed](const KeyType & /* key */, const StatusPtr & status)
+        {
+            if (status->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed
+                && path_filter(status->path))
+            {
+                auto it = failed_generations.find(status->path);
+                if (it != failed_generations.end() && status->generation.load() == it->second)
+                {
+                    ++removed;
+                    return true;
+                }
+                return false;
+            }
+            return false;
+        }
+    ));
+    return removed;
+}
+
+void ObjectStorageQueueMetadata::reconcileFailedFilesCache()
+{
+    try
+    {
+    /// Reconcile local cache with Keeper state by removing cache entries
+    /// for files that no longer have /failed nodes in Keeper.
+    /// Used by losing replicas in ON CLUSTER execution to achieve cache consistency
+    /// after the winning replica completes the cleanup.
+
+    const std::string failed_path = zookeeper_path / "failed";
+    auto zk_client = getZooKeeper();
+    auto zk_retries = getKeeperRetriesControl(log);
+
+    /// Snapshot cache FIRST to establish consistent baseline before any Keeper checks.
+    /// Any file failing between this snapshot and subsequent Keeper checks will appear
+    /// in Keeper, preventing wrongful eviction based on stale Keeper snapshot.
+    std::unordered_map<std::string, uint64_t> failed_generations;
+    std::vector<std::tuple<std::string, std::string, std::string, uint64_t>> cache_entries;
+    {
+        auto all_entries = local_file_statuses.dump();
+        for (const auto & entry : all_entries)
+        {
+            if (entry.mapped->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+            {
+                failed_generations[entry.mapped->path] = entry.mapped->generation.load();
+
+                /// Also build cache_entries for non-empty branch
+                SipHash path_hash;
+                path_hash.update(entry.mapped->path);
+                auto node_name = toString(path_hash.get64());
+                auto failed_node_path = fs::path(failed_path) / node_name;
+                cache_entries.emplace_back(
+                    entry.mapped->path,
+                    failed_node_path.string(),
+                    failed_node_path.string() + ".retriable",
+                    entry.mapped->generation.load());
+            }
+        }
+    }
+
+    /// Now check Keeper AFTER cache snapshot
+    Strings keeper_failed_nodes;
+    Coordination::Error code = {};
+    zk_retries.retryLoop([&]
+    {
+        code = zk_client->tryGetChildren(failed_path, keeper_failed_nodes);
+    });
+
+    if (code == Coordination::Error::ZNONODE || (code == Coordination::Error::ZOK && keeper_failed_nodes.empty()))
+    {
+        /// No /failed path or empty /failed means all failed files were deleted.
+
+        /// Remove only entries whose generation still matches the snapshot
+        size_t removed = removeStaleFailedCacheEntries(failed_generations);
+        LOG_INFO(log, "Reconciled cache: removed {} Failed entries (no /failed nodes in Keeper)", removed);
+        return;
+    }
+
+    if (code != Coordination::Error::ZOK)
+    {
+        LOG_WARNING(log, "Failed to list /failed nodes for cache reconciliation: {}", magic_enum::enum_name(code));
+        return;
+    }
+
+    if (cache_entries.empty())
+    {
+        LOG_TRACE(log, "No Failed cache entries to reconcile");
+        return;
+    }
+
+    /// Check existence of both terminal and retriable nodes for each cache entry in batches.
+    /// Only remove cache entries if BOTH nodes are confirmed absent (ZNONODE).
+    /// This preserves actively-retrying files that have only .retriable nodes.
+    std::unordered_set<std::string> paths_to_remove;
+    const size_t batch_size = keeper_multiread_batch_size;
+
+    for (size_t i = 0; i < cache_entries.size(); i += batch_size)
+    {
+        size_t batch_end = std::min(i + batch_size, cache_entries.size());
+        std::vector<std::string> batch_paths;
+        batch_paths.reserve(2 * (batch_end - i));  // 2 paths per cache entry
+
+        for (size_t j = i; j < batch_end; ++j)
+        {
+            batch_paths.push_back(std::get<1>(cache_entries[j]));  // terminal node
+            batch_paths.push_back(std::get<2>(cache_entries[j]));  // retriable node
+        }
+
+        zkutil::ZooKeeper::MultiTryGetResponse response;
+        zk_retries.resetFailures();
+        zk_retries.retryLoop([&]
+        {
+            response = zk_client->tryGet(batch_paths);
+        });
+
+        for (size_t j = 0; j < response.size(); j += 2)
+        {
+            bool terminal_absent = (response[j].error == Coordination::Error::ZNONODE);
+            bool retriable_absent = (response[j + 1].error == Coordination::Error::ZNONODE);
+
+            /// Only mark for removal if BOTH terminal and retriable nodes are confirmed absent
+            if (terminal_absent && retriable_absent)
+            {
+                paths_to_remove.insert(std::get<0>(cache_entries[i + j / 2]));
+            }
+        }
+    }
+
+    /// Remove cache entries confirmed absent in Keeper
+    size_t removed = removeStaleFailedCacheEntries(failed_generations,
+        [&paths_to_remove](const std::string & path) { return paths_to_remove.contains(path); });
+    LOG_INFO(log, "Reconciled cache: removed {} Failed entries confirmed absent in Keeper", removed);
+}
+
+/// The cleanup lock's value tells a replica finding the lock held what is holding it. For a manual drop
+/// it is `manual_drop_failed:<command_id>`: the prefix distinguishes it from the background sweep's
+/// `background_cleanup`, and the id identifies the statement, so a waiter can tell one attempt of the
+/// command it waits for from a different command that happened to take the path next.
+    catch (...)
+    {
+        tryLogCurrentException(log, "Best-effort cache reconciliation failed");
+    }
+}
+
+static constexpr const char * LOCK_OPERATION_DROP_FAILED_PREFIX = "manual_drop_failed:";
+
+namespace
+{
+    /// The command id from a lock value, or empty when the value is not a manual drop's.
+    std::string extractDropCommandId(const std::string & lock_value)
+    {
+        const std::string_view prefix{LOCK_OPERATION_DROP_FAILED_PREFIX};
+        if (!lock_value.starts_with(prefix))
+            return {};
+        return lock_value.substr(prefix.size());
+    }
+}
+
+ObjectStorageQueueMetadata::WaitOutcome ObjectStorageQueueMetadata::waitForConcurrentDropToComplete(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const fs::path & zookeeper_cleanup_lock_path)
+{
+    /// Lock is held by another process. Check if it's another dropFailedFiles invocation.
+    /// When invoked via ON CLUSTER, multiple replicas attempt this concurrently;
+    /// if another dropFailedFiles holds the lock, treat it as idempotent success.
+    /// If the generic background cleanup holds the lock, it may not be cleaning failed files,
+    /// so we must fail and let the user retry.
+    try
+    {
+        /// The window this failpoint opens is the whole point of `LockVanished`: between our `tryCreate`
+        /// failing and this `get`, the holder can finish and release the lock, and then there is no
+        /// attempt left to bind to. It is microseconds wide in production, so a test cannot hit it by
+        /// racing for it.
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_cleanup_lock_read);
+
+        /// Bind to the command holding the lock, not to the lock node. A command retries by taking the
+        /// lock again, which gives the node a new `czxid`; binding to that would make every retry look
+        /// like a different operation and leave this waiter unable to accept the result of the very
+        /// command it is waiting for.
+        Coordination::Stat lock_stat;
+        std::string lock_value = zk_client->get(zookeeper_cleanup_lock_path, &lock_stat);
+        const std::string waited_command_id = extractDropCommandId(lock_value);
+
+        if (!waited_command_id.empty())
+        {
+            /// Another replica is executing the same operation. Wait for it to complete and take its
+            /// verdict from the result it publishes, rather than from a wall-clock timeout that could be
+            /// too short for large backlogs.
+            LOG_INFO(log, "Another replica is executing SYSTEM DROP S3QUEUE FAILED FILES, waiting for completion");
+
+            /// Wait for the lock to be released, then read the result the winner published under it.
+            ///
+            /// Liveness is taken from the lock itself, not from the `/failed` node count. The lock is
+            /// ephemeral, so a winner that dies takes it with it on session expiry and the `ZNONODE` path
+            /// below runs; a winner that is alive holds it. The node count cannot tell those apart: it is
+            /// written by every replica that fails a file, so deletions and fresh failures at similar
+            /// rates hold it flat while the winner is working normally - the same false positive that made
+            /// the loser reject a healthy winner's cleanup.
+            static constexpr size_t POLL_INTERVAL_MS = 100;
+            static constexpr size_t ABSOLUTE_MAX_WAIT_MS = 1800000;      /// 30 min absolute cap (safety net)
+
+            const size_t max_total_iterations = ABSOLUTE_MAX_WAIT_MS / POLL_INTERVAL_MS;
+
+            /// What one poll of the lock saw. The two ways a wait can end look identical from the lock
+            /// alone - either way it is no longer the awaited command's - but when the command left no
+            /// verdict behind they call for opposite answers, so the poll records which one it was.
+            enum class PollOutcome
+            {
+                /// The awaited command still holds the lock. Keep waiting.
+                StillHeld,
+                /// Nothing holds the lock. Says nothing about whether the command finished.
+                LockAbsent,
+                /// A different command holds the lock now, so the awaited one is definitely over.
+                DifferentCommand,
+            };
+
+            for (size_t i = 0; i < max_total_iterations; ++i)
+            {
+                sleepForMilliseconds(POLL_INTERVAL_MS);
+
+                PollOutcome poll_outcome = PollOutcome::StillHeld;
+                try
+                {
+                    /// Poll the lock. The command being waited on is over when the lock is gone, or when
+                    /// the value at that path names a different command - the path is reused, so a
+                    /// release and a re-acquisition inside one poll interval is invisible to a plain
+                    /// existence check, and continuing to wait would silently transfer this waiter onto
+                    /// an operation that started after it did and says nothing about it.
+                    ///
+                    /// The same command id means the command retried after losing its session. That is
+                    /// still the command being waited for, so keep waiting: its verdict is still coming.
+                    Coordination::Stat poll_stat;
+                    std::string poll_value;
+                    if (!zk_client->tryGet(zookeeper_cleanup_lock_path, poll_value, &poll_stat))
+                        poll_outcome = PollOutcome::LockAbsent;
+                    else if (extractDropCommandId(poll_value) != waited_command_id)
+                        poll_outcome = PollOutcome::DifferentCommand;
+                }
+                catch (const Coordination::Exception & poll_e)
+                {
+                    /// Transient during polling; the next iteration retries.
+                    LOG_TEST(log, "Transient Keeper error while polling the cleanup lock: {}", poll_e.displayText());
+                }
+
+                if (poll_outcome != PollOutcome::StillHeld)
+                {
+                    /// The attempt is over, which does not by itself mean it succeeded - it could have
+                    /// partially failed - so read the result it published.
+                    size_t terminal_failed_count = 0;
+                    if (verifyCleanupSucceeded(zk_client,
+                            fmt::format("Cleanup command finished after {}ms, verifying cleanup succeeded", (i + 1) * 100),
+                            waited_command_id, terminal_failed_count))
+                        return WaitOutcome::CommandCompleted;
+
+                    if (poll_outcome == PollOutcome::LockAbsent)
+                    {
+                        /// The lock is gone and the command left no verdict. Those two facts together
+                        /// cannot separate a command that died for good from one that is merely between
+                        /// attempts: losing the session releases the lock and publishes nothing, and the
+                        /// retry takes the lock again from a new session, so while that session is being
+                        /// re-established the path is simply empty. That gap is not the microsecond
+                        /// window the initial read guards against - it is as wide as session
+                        /// re-establishment, which a 100ms poll walks straight into.
+                        ///
+                        /// Guessing between the two is what the initial read already refuses to do, and
+                        /// the answer it reaches works here too: the lock is ephemeral and unheld, so
+                        /// nobody is doing the work, and taking it over is correct whether the
+                        /// predecessor finished, died, or is about to retry. Re-deleting an already
+                        /// deleted node is a no-op, so a redundant attempt costs correctness nothing -
+                        /// the same property `dropFailedFiles` relies on to retry an attempt at all.
+                        ///
+                        /// Throwing here instead reported failure for a command whose own retry then
+                        /// completed successfully: the winner succeeded while every waiter failed.
+                        LOG_INFO(log, "The cleanup lock is gone and the command left no result, so there is "
+                                      "no attempt left to wait on; retrying the drop from the start");
+                        return WaitOutcome::LockVanished;
+                    }
+
+                    /// A different command holds the lock and the one waited on published nothing. Unlike
+                    /// the case above there is no work to take over: the path is held, so this replica
+                    /// could not do the drop even if it wanted to, and the awaited verdict is gone for
+                    /// good - the marker is a single node kept in place, so a later command has
+                    /// overwritten it. Nothing here can be recovered, so report it.
+                    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                        "The replica holding the cleanup lock published no usable result and {} terminal failed nodes "
+                        "remain in /failed, so the cleanup cannot be confirmed. Please retry the command.",
+                        terminal_failed_count);
+                }
+
+                /// Hit absolute safety-net timeout
+                if (i == max_total_iterations - 1)
+                {
+                    throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                        "Cleanup did not complete within {} minute safety-net timeout. "
+                        "The winner may be processing an extremely large backlog. Please retry or investigate.",
+                        ABSOLUTE_MAX_WAIT_MS / 60000);
+                }
+            }
+        }
+    }
+    catch (const Coordination::Exception & e)
+    {
+        if (e.code == Coordination::Error::ZNONODE)
+        {
+            /// The lock node disappeared between our `tryCreate` and this `get`. There is no attempt to
+            /// bind to - its `Stat` was never read - and we do not even know whose lock it was, a manual
+            /// drop or the background sweep.
+            ///
+            /// Nothing here can be verified, and trying to was the bug: with no command id the only
+            /// observation left was "is `/failed` empty", which is a stronger postcondition than any
+            /// winner enforces. A winner deletes the snapshot it opened with and is not answerable for
+            /// files that fail afterwards, so a single new failure arriving after the winner's snapshot
+            /// made this waiter throw about a cleanup that had in fact succeeded - the ordinary
+            /// interleaving on a queue that is actively failing files, not a rare one.
+            ///
+            /// The answer is not a better verification but no verification: the lock is ephemeral and it
+            /// is gone, so nobody holds it and nobody is doing the work. Start the attempt over and try
+            /// to take it. Doing the drop ourselves is correct whether the previous holder was a drop
+            /// that finished, a drop that died, or the background sweep - and re-deleting an
+            /// already-deleted node is a no-op, so a redundant attempt costs correctness nothing.
+            LOG_INFO(log, "The cleanup lock was released before it could be read, so there is no attempt "
+                          "to wait on; retrying the drop from the start");
+            return WaitOutcome::LockVanished;
+        }
+
+        /// For other errors (connection issues, etc.), treat as a transient error. Unlike the
+        /// empty-command-id case below - where the lock genuinely belongs to something that is not
+        /// a drop command and retrying will not help - this is a transient Keeper read failure on
+        /// this replica: the winner may well complete (or have already completed) the cleanup
+        /// successfully regardless. Report it as KEEPER_EXCEPTION rather than LOGICAL_ERROR so that
+        /// DDLWorker retries this on the waiting replica for `... ON CLUSTER` instead of treating a
+        /// transient local read glitch as a terminal, non-retriable failure of the whole command.
+        LOG_WARNING(log, "Failed to read cleanup lock: {}. Will ask user to retry.", e.displayText());
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+            "Failed file cleanup cannot proceed: transient error reading the cleanup lock ({}). "
+            "Please retry.", e.displayText());
+    }
+
+    throw Exception(ErrorCodes::LOGICAL_ERROR,
+        "Failed file cleanup cannot proceed: another operation is holding the cleanup lock. "
+        "Please retry in a moment.");
+}
+void ObjectStorageQueueMetadata::publishDropResult(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+    const std::string & command_id, const std::string & attempt_id,
+    bool success, size_t snapshot_size, size_t deleted, const std::string & error)
+{
+    Poco::JSON::Object json;
+    /// What a waiter matches on: stable for the whole statement, including across its retries.
+    json.set("command_id", command_id);
+    /// Which attempt of that statement produced the result. Kept for the writer-side ownership check and
+    /// for diagnosis; a decimal string rather than a number, because `czxid` is 64-bit and JSON numbers
+    /// are not required to carry that range exactly.
+    json.set("attempt_id", attempt_id);
+    json.set("success", success);
+    json.set("snapshot_size", snapshot_size);
+    json.set("deleted", deleted);
+    json.set("error", error);
+
+    std::ostringstream oss;     // STYLE_CHECK_ALLOW_STD_STRING_STREAM
+    oss.exceptions(std::ios::failbit);
+    Poco::JSON::Stringifier::stringify(json, oss);
+
+    /// Overwritten in place, so the node stays single and needs no pruning. Keeper bumps its version on
+    /// every set, and that version is the attempt id a waiting replica compares against.
+    zk_client->createOrUpdate(zookeeper_path / "last_drop_result", oss.str(), zkutil::CreateMode::Persistent);
+}
+
+bool ObjectStorageQueueMetadata::verifyCleanupSucceeded(std::shared_ptr<ZooKeeperWithFaultInjection> zk_client, const std::string & context_msg,
+    const std::string & waited_command_id, size_t & out_terminal_failed_count)
+{
+    LOG_INFO(log, "{}", context_msg);
+
+    out_terminal_failed_count = 0;
+
+    /// The winner publishes what it actually did before releasing the lock, so ask it rather than
+    /// inferring the answer from `/failed`. Inference cannot work here: the winner deletes the snapshot
+    /// of terminal nodes it took when it started and is not responsible for files that fail afterwards,
+    /// while `/failed` has other writers, so "not empty" says nothing about whether the winner succeeded.
+    ///
+    /// The result is matched by command identity, not by "the marker moved since I started waiting".
+    /// Ordering cannot answer this: the lock path is reused, so a later and entirely unrelated command
+    /// publishes a newer result too, and adopting it would report a verdict about a cleanup this waiter
+    /// never waited for. Nor can the attempt's `czxid` answer it, since the command it waits for may
+    /// have retried and published under a different one.
+    /// Every caller now binds to a command before waiting: the one path that used to arrive here with no
+    /// id - the lock vanishing before it could be read - retries the whole attempt instead of trying to
+    /// verify something it cannot name.
+    chassert(!waited_command_id.empty());
+
+    std::string marker_value;
+    if (zk_client->tryGet(zookeeper_path / "last_drop_result", marker_value))
+    {
+        Poco::JSON::Parser parser;
+        auto json = parser.parse(marker_value).extract<Poco::JSON::Object::Ptr>();
+        chassert(json);
+
+        if (json->getValue<std::string>("command_id") == waited_command_id)
+        {
+            const bool success = json->getValue<bool>("success");
+            const size_t snapshot_size = json->getValue<size_t>("snapshot_size");
+            const size_t deleted = json->getValue<size_t>("deleted");
+
+            if (success)
+            {
+                LOG_INFO(log, "Winner replica reported success: dropped {} of {} failed files it had selected",
+                         deleted, snapshot_size);
+                reconcileFailedFilesCache();
+                return true;
+            }
+
+            /// A partial failure is the winner's own verdict, reported with the winner's own numbers.
+            throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+                "Failed file cleanup on the replica holding the lock did not complete: {}. "
+                "It dropped {} of the {} failed files it had selected. Please retry the command.",
+                json->getValue<std::string>("error"), deleted, snapshot_size);
+        }
+
+        /// The marker belongs to some other command: the one waited on either failed every attempt without
+        /// publishing, or another command has already overwritten its result - the marker is a single node
+        /// kept in place. That verdict is unrecoverable, so claim nothing about it and fall through to what
+        /// can still be observed directly.
+        LOG_INFO(log, "The drop result in Keeper was published by a different command, so it says nothing "
+                      "about the one this waiter waited for");
+    }
+
+    /// No usable result: the command died before publishing anything, or a later command has already
+    /// overwritten the marker - it is a single node kept in place. Either way the snapshot that attempt
+    /// worked on is unknown here, and the only statement still available is about `/failed` as a whole.
+    /// This is weaker than what a winner guarantees, so it can only ever confirm success, never diagnose
+    /// a failure; a non-empty `/failed` leaves the caller to report that the cleanup is unconfirmed.
+    LOG_INFO(log, "No drop result is available for the command that was waited on, falling back to checking /failed");
+
+    const std::string failed_path = zookeeper_path / "failed";
+    Strings remaining_failed_nodes;
+    Coordination::Error check_code = zk_client->tryGetChildren(failed_path, remaining_failed_nodes);
+
+    if (check_code != Coordination::Error::ZOK && check_code != Coordination::Error::ZNONODE)
+    {
+        /// Transient Keeper error during verification; safe to treat as unknown state
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+            "Failed to verify cleanup completion (Keeper error: {}). Please retry the command.",
+            magic_enum::enum_name(check_code));
+    }
+
+    /// Count only terminal failed nodes (exclude .retriable suffix nodes, which are preserved)
+    size_t terminal_failed_count = 0;
+    for (const auto & node : remaining_failed_nodes)
+    {
+        if (!node.ends_with(".retriable"))
+            ++terminal_failed_count;
+    }
+
+    out_terminal_failed_count = terminal_failed_count;
+
+    if (terminal_failed_count == 0)
+    {
+        /// Cleanup succeeded: no terminal failed nodes remain
+        reconcileFailedFilesCache();
+        LOG_INFO(log, "Verified cleanup completed successfully");
+        return true;
+    }
+
+    return false;
+}
+
+void ObjectStorageQueueMetadata::deleteFailedNodeBatch(
+    const Coordination::Requests & remove_requests,
+    const std::vector<std::string> & batch_file_paths,
+    const std::unordered_map<std::string, uint64_t> & failed_generations,
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+    std::string_view batch_description,
+    size_t report_batch_index,
+    size_t & total_deleted,
+    std::vector<std::string> & file_paths,
+    std::vector<std::pair<size_t, Coordination::Error>> & failed_batches)
+{
+    Coordination::Responses remove_responses;
+    /// Pinned to the session that owns the cleanup lock, and not retried: a hardware error here means the
+    /// session may be gone, and with it the lock. Retrying would delete nodes on a session that holds no
+    /// lock, racing whichever replica has legitimately taken it. The caller catches and restarts instead.
+    Coordination::Error code = zk_client->tryMulti(remove_requests, remove_responses);
+
+    if (code == Coordination::Error::ZOK)
+    {
+        /// Clear cache immediately for successfully deleted znodes
+        for (size_t k = batch_file_paths.size() - remove_requests.size(); k < batch_file_paths.size(); ++k)
+        {
+            const auto & file_path = batch_file_paths[k];
+            removeFromCacheIfGenerationMatches(file_path, failed_generations);
+            file_paths.push_back(file_path);
+        }
+        total_deleted += remove_requests.size();
+    }
+    else
+    {
+        /// Partial success: reconcile individual responses.
+        /// Some operations may have succeeded even if the multi request returned non-ZOK.
+        size_t batch_succeeded = 0;
+        size_t batch_start_idx = batch_file_paths.size() - remove_requests.size();
+
+        for (size_t k = 0; k < remove_requests.size(); ++k)
+        {
+            if (remove_responses[k]->error == Coordination::Error::ZOK)
+            {
+                /// This specific remove succeeded - update cache
+                const auto & file_path = batch_file_paths[batch_start_idx + k];
+                removeFromCacheIfGenerationMatches(file_path, failed_generations);
+                file_paths.push_back(file_path);
+                ++batch_succeeded;
+            }
+            else if (remove_responses[k]->error == Coordination::Error::ZRUNTIMEINCONSISTENCY)
+            {
+                /// Request was not processed because multi was aborted - retry individually, on the same
+                /// session for the same reason as above.
+                Coordination::Error retry_code = zk_client->tryRemove(remove_requests[k]->getPath());
+
+                if (retry_code == Coordination::Error::ZOK || retry_code == Coordination::Error::ZNONODE)
+                {
+                    /// ZOK: retry succeeded. ZNONODE: first attempt already deleted the node
+                    /// before the multi aborted. Either way, the node is gone - clear cache.
+                    const auto & file_path = batch_file_paths[batch_start_idx + k];
+                    removeFromCacheIfGenerationMatches(file_path, failed_generations);
+                    file_paths.push_back(file_path);
+                    ++batch_succeeded;
+
+                    if (retry_code == Coordination::Error::ZNONODE)
+                        LOG_TRACE(log, "Node `{}` already removed (likely by first attempt before multi aborted)",
+                                  remove_requests[k]->getPath());
+                }
+                else
+                {
+                    LOG_ERROR(log, "Failed to remove node `{}` after retry (code: {})",
+                        remove_requests[k]->getPath(), magic_enum::enum_name(retry_code));
+                }
+            }
+            else
+            {
+                LOG_ERROR(log, "Failed to remove node `{}` (code: {})",
+                    remove_requests[k]->getPath(), magic_enum::enum_name(remove_responses[k]->error));
+            }
+        }
+
+        total_deleted += batch_succeeded;
+
+        if (batch_succeeded < remove_requests.size())
+        {
+            LOG_WARNING(log, "{} remove of failed nodes: {}/{} succeeded, overall status: {}",
+                batch_description, batch_succeeded, remove_requests.size(), magic_enum::enum_name(code));
+            failed_batches.emplace_back(report_batch_index, code);
+        }
+    }
+}
+
+bool ObjectStorageQueueMetadata::stillHoldsCleanupLock(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+    const fs::path & zookeeper_cleanup_lock_path, const std::string & attempt_id) const
+{
+    Coordination::Stat lock_stat;
+    std::string lock_value;
+    if (!zk_client->tryGet(zookeeper_cleanup_lock_path, lock_value, &lock_stat))
+        return false;
+    return toString(lock_stat.czxid) == attempt_id;
+}
+
+void ObjectStorageQueueMetadata::dropFailedFiles()
+{
+    if (!isUnordered(mode))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "SYSTEM DROP S3QUEUE FAILED FILES is only supported for unordered mode tables. "
+            "Support for ordered mode will be added in a future release.");
+
+    /// The work under the cleanup lock is not retried operation by operation, because a Keeper session
+    /// error there may mean the ephemeral lock is gone; retrying would act on a session holding no lock.
+    /// The whole command is retried instead: a new attempt takes the lock again and starts from a fresh
+    /// listing. Re-deleting an already deleted node is a no-op, so an attempt costs correctness nothing.
+    ///
+    /// Two things send an attempt back here: losing the Keeper session while holding the lock, and
+    /// finding the lock already gone when going to read whose it was. The second is why a waiter never
+    /// has to guess whether an unnamed predecessor succeeded - it just takes the lock and does the work.
+    static constexpr size_t MAX_ATTEMPTS = 3;
+
+    /// Generated once for the whole statement, so every attempt takes the lock under the same identity.
+    /// A replica waiting on this command matches results by this id: were it per attempt, a retry would
+    /// look to the waiter like a different operation and its verdict would be rejected.
+    const std::string command_id = toString(UUIDHelpers::generateV4());
+
+    for (size_t attempt = 0; attempt < MAX_ATTEMPTS; ++attempt)
+    {
+        if (tryDropFailedFilesOnce(command_id))
+            return;
+
+        LOG_INFO(log, "Attempt {} of {} to drop failed files reached no verdict - it either lost its Keeper "
+                      "session before publishing a result, or the lock it meant to wait on was gone before "
+                      "it could be read - starting over", attempt + 1, MAX_ATTEMPTS);
+    }
+
+    throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+        "Could not drop failed files within {} attempts: each one either lost its Keeper session while "
+        "holding the cleanup lock, or lost the lock to another replica and then found it released again "
+        "before it could be read. Please retry the command.", MAX_ATTEMPTS);
+}
+
+bool ObjectStorageQueueMetadata::tryDropFailedFilesOnce(const std::string & command_id)
+{
+    const fs::path zookeeper_cleanup_lock_path = zookeeper_path / "cleanup_lock";
+    const auto zk_client = getZooKeeper();
+
+    /// Acquire the same distributed lock used by the periodic cleanup sweep
+    /// to prevent concurrent modification of failed files.
+    /// The lock value is `manual_drop_failed:<command_id>`: the prefix distinguishes a manual drop from
+    /// the generic background cleanup, and the id lets a waiting replica follow this statement across
+    /// the attempts it may make.
+    auto ephemeral_node = zkutil::EphemeralNodeHolder::tryCreate(
+        zookeeper_cleanup_lock_path, *zk_client->getKeeper(), LOCK_OPERATION_DROP_FAILED_PREFIX + command_id);
+
+    if (!ephemeral_node)
+    {
+        /// `LockVanished` is not a failure: it means nobody holds the lock any more, so there is neither
+        /// an attempt to wait on nor anyone doing the work. Reporting the attempt unfinished sends it
+        /// back to the retry loop, which tries to take the lock and drop the files itself.
+        if (waitForConcurrentDropToComplete(zk_client, zookeeper_cleanup_lock_path) == WaitOutcome::LockVanished)
+            return false;
+        return true;
+    }
+
+    /// Everything below runs pinned to `zk_client`, the session that owns the lock, and without retries.
+    /// A hardware error means that session may be gone - and the ephemeral lock with it - so the attempt
+    /// gives up rather than continuing on a session that holds nothing. Releasing the lock is left to the
+    /// holder's destructor, which removes the node while the session is alive and skips the removal once
+    /// it has expired - by which point the node is gone and the path may belong to another replica.
+    try
+    {
+        /// This attempt's identity, published with its result so a waiting replica can tell this attempt's
+        /// verdict from any other attempt's. `EphemeralNodeHolder` does not hand back the `Stat`, so the
+        /// `czxid` costs one extra read of the node just created - once per command.
+        ///
+        /// This read is already part of the locked region, which is why it sits inside the `try` rather
+        /// than before it: the session can expire between `tryCreate` and here just as easily as later
+        /// on, and that has to end the attempt and let the caller start a fresh one, not throw out of
+        /// the whole command and skip the remaining attempts.
+        Coordination::Stat lock_stat;
+        zk_client->get(zookeeper_cleanup_lock_path, &lock_stat);
+        const std::string attempt_id = toString(lock_stat.czxid);
+
+        return dropFailedFilesUnderLock(zk_client, ephemeral_node, zookeeper_cleanup_lock_path, command_id, attempt_id);
+    }
+    catch (const Coordination::Exception & e)
+    {
+        if (!Coordination::isHardwareError(e.code))
+            throw;
+
+        LOG_WARNING(log, "Keeper error while holding the cleanup lock: {}. The lock may no longer be ours, "
+                         "so this attempt is abandoned without publishing a result.", e.displayText());
+        return false;
+    }
+}
+
+bool ObjectStorageQueueMetadata::dropFailedFilesUnderLock(
+    const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client,
+    const zkutil::EphemeralNodeHolder::Ptr & ephemeral_node,
+    const fs::path & zookeeper_cleanup_lock_path,
+    const std::string & command_id,
+    const std::string & attempt_id)
+{
+    /// Publishing is the one write a waiting replica depends on, so the lock is re-checked immediately
+    /// before it. The window between the check and the write cannot be closed from here, but a stale
+    /// publish is the failure that matters most - it overwrites the legitimate holder's verdict.
+    auto publish_if_still_ours = [&](bool success, size_t snapshot_size, size_t deleted, const std::string & error)
+    {
+        if (!stillHoldsCleanupLock(zk_client, zookeeper_cleanup_lock_path, attempt_id))
+        {
+            LOG_WARNING(log, "The cleanup lock is no longer held by this attempt, so its result is not published");
+            ephemeral_node->setAlreadyRemoved();
+            return false;
+        }
+        publishDropResult(zk_client, command_id, attempt_id, success, snapshot_size, deleted, error);
+        return true;
+    };
+
+    const std::string failed_path = zookeeper_path / "failed";
+
+    /// Get list of failed file nodes
+    Strings failed_nodes;
+    Coordination::Error code = zk_client->tryGetChildren(failed_path, failed_nodes);
+
+    if (code == Coordination::Error::ZNONODE)
+    {
+        /// No failed path exists yet - nothing to drop.
+        /// Reconcile cache to clear any stale entries before returning.
+        LOG_TRACE(log, "Failed files path does not exist, nothing to drop");
+        if (!publish_if_still_ours(/* success */ true, /* snapshot_size */ 0, /* deleted */ 0, /* error */ ""))
+            return false;
+        reconcileFailedFilesCache();
+        return true;
+    }
+
+    if (code != Coordination::Error::ZOK)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to list failed files: {}", magic_enum::enum_name(code));
+
+    if (failed_nodes.empty())
+    {
+        /// No failed files to drop (or only .retriable nodes remain).
+        /// Reconcile cache to clear any stale entries before returning.
+        LOG_TRACE(log, "No failed files to drop");
+        if (!publish_if_still_ours(/* success */ true, /* snapshot_size */ 0, /* deleted */ 0, /* error */ ""))
+            return false;
+        reconcileFailedFilesCache();
+        return true;
+    }
+
+    LOG_TRACE(log, "Dropping {} failed files", failed_nodes.size());
+
+    /// Read metadata and delete only the specific nodes from our snapshot
+    /// to avoid race with concurrent failures
+    std::vector<std::string> file_paths;
+    file_paths.reserve(failed_nodes.size());
+
+    std::filesystem::path failed_fs_path(failed_path);
+
+    /// Process in batches for both reading metadata and deleting nodes
+    const size_t batch_size = keeper_multiread_batch_size;
+    static constexpr size_t keeper_multi_batch_size = 100;
+
+    /// Track failed deletions to report at the end
+    std::vector<std::pair<size_t, Coordination::Error>> failed_batches;
+    /// Track successful deletions for partial success reporting
+    size_t total_deleted = 0;
+
+    /// Snapshot generations of all Failed files before starting Keeper deletes
+    /// to prevent race where file re-fails with new generation before cache removal
+    std::unordered_map<std::string, uint64_t> failed_generations;
+    {
+        auto all_entries = local_file_statuses.dump();
+        for (const auto & entry : all_entries)
+        {
+            if (entry.mapped->state == ObjectStorageQueueIFileMetadata::FileStatus::State::Failed)
+                failed_generations[entry.mapped->path] = entry.mapped->generation.load();
+        }
+    }
+
+    for (size_t i = 0; i < failed_nodes.size(); i += batch_size)
+    {
+        size_t batch_end = std::min(i + batch_size, failed_nodes.size());
+        std::vector<std::string> batch_paths;
+        batch_paths.reserve(batch_end - i);
+
+        for (size_t j = i; j < batch_end; ++j)
+        {
+            /// Skip retry-state nodes - only drop terminal failed nodes.
+            /// See comment in cleanupTrackedNodes for rationale.
+            if (failed_nodes[j].ends_with(".retriable"))
+                continue;
+
+            batch_paths.push_back(failed_fs_path / failed_nodes[j]);
+        }
+
+        /// Read metadata for this batch
+        zkutil::ZooKeeper::MultiTryGetResponse response = zk_client->tryGet(batch_paths);
+
+        /// Delete nodes from this batch and collect file paths for immediate cache cleanup
+        Coordination::Requests remove_requests;
+        std::vector<std::string> batch_file_paths;
+        remove_requests.reserve(std::min(batch_paths.size(), keeper_multi_batch_size));
+        batch_file_paths.reserve(batch_paths.size());
+
+        for (size_t j = 0; j < response.size(); ++j)
+        {
+            const auto & zk_path = batch_paths[j];
+
+            if (response[j].error == Coordination::Error::ZNONODE)
+            {
+                LOG_TEST(log, "Failed file node already deleted: {}", zk_path);
+                continue;
+            }
+
+            if (response[j].error != Coordination::Error::ZOK)
+            {
+                LOG_ERROR(log, "Failed to fetch metadata for {}: {}", zk_path, magic_enum::enum_name(response[j].error));
+                continue;
+            }
+
+            auto metadata = ObjectStorageQueueIFileMetadata::NodeMetadata::fromString(response[j].data);
+            batch_file_paths.push_back(metadata.file_path);
+            LOG_TEST(log, "Read metadata for failed file: {}", metadata.file_path);
+
+            remove_requests.push_back(zkutil::makeRemoveRequest(zk_path, -1));
+
+            /// Execute batch removes when we hit the limit
+            if (remove_requests.size() >= keeper_multi_batch_size)
+            {
+                deleteFailedNodeBatch(
+                    remove_requests, batch_file_paths, failed_generations, zk_client,
+                    "Batch", i, total_deleted, file_paths, failed_batches);
+
+                remove_requests.clear();
+            }
+        }
+
+        /// Remove any remaining nodes in this batch
+        if (!remove_requests.empty())
+        {
+            deleteFailedNodeBatch(
+                remove_requests, batch_file_paths, failed_generations, zk_client,
+                "Final batch", i, total_deleted, file_paths, failed_batches);
+        }
+    }
+
+    /// Report failures after attempting all batches, but note partial success
+    if (!failed_batches.empty())
+    {
+        String error_msg = fmt::format(
+            "Failed to remove {} batch(es) of failed file nodes ({} nodes successfully deleted before failure):",
+            failed_batches.size(), total_deleted);
+        for (const auto & [batch_idx, err] : failed_batches)
+        {
+            error_msg += fmt::format(" [batch starting at index {} failed with {}]", batch_idx, magic_enum::enum_name(err));
+        }
+        /// Published before the throw, and so before the lock is released, so the replicas waiting on this
+        /// one are told the cleanup failed instead of having to guess it from what remains in `/failed`.
+        ///
+        /// A partial failure is a verdict once published, and the caller does not retry it: retrying
+        /// would either contradict a verdict already published or withhold one, and a waiting replica has
+        /// no way to reconcile that. But if we lost `cleanup_lock` before publishing, this attempt produced
+        /// no verdict at all - nothing to contradict - so it is safe (and necessary) to start over instead
+        /// of throwing terminally and stranding replicas waiting on this command_id.
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_partial_failure_publish);
+        if (!publish_if_still_ours(/* success */ false, failed_nodes.size(), total_deleted, error_msg))
+            return false;
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION, "{}", error_msg);
+    }
+
+    /// Published while the lock is still held: this replica deleted every terminal node of the snapshot it
+    /// took when it started, which is all it is responsible for. Files that failed after that snapshot are
+    /// not part of this attempt and must not make it look unsuccessful.
+    if (!publish_if_still_ours(/* success */ true, failed_nodes.size(), total_deleted, /* error */ ""))
+        return false;
+
+    reconcileFailedFilesCache();
+    LOG_INFO(log, "Successfully dropped {} failed files", file_paths.size());
+    return true;
+}
+
 void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
 {
     for (const auto & change : changes)
@@ -1551,18 +2609,14 @@ void ObjectStorageQueueMetadata::updateSettings(const SettingsChanges & changes)
     }
 }
 
-void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
+void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes(const std::shared_ptr<ZooKeeperWithFaultInjection> & zk_client)
 {
-    auto zk_retries = getKeeperRetriesControl(log);
     const fs::path zookeeper_persistent_processing_path = zookeeper_path / "processing";
 
     Strings persistent_processing_nodes;
 
     Coordination::Error code = {};
-    zk_retries.retryLoop([&]
-    {
-        code = getZooKeeper()->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);
-    });
+    code = zk_client->tryGetChildren(zookeeper_persistent_processing_path, persistent_processing_nodes);
     if (code != Coordination::Error::ZOK)
     {
         if (code == Coordination::Error::ZNONODE)
@@ -1590,11 +2644,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
     auto get_paths = [&]
     {
         zkutil::ZooKeeper::MultiTryGetResponse response;
-        zk_retries.resetFailures();
-        zk_retries.retryLoop([&]
-        {
-            response = getZooKeeper()->tryGet(get_batch);
-        });
+        response = zk_client->tryGet(get_batch);
 
         for (size_t i = 0; i < response.size(); ++i)
         {
@@ -1644,11 +2694,7 @@ void ObjectStorageQueueMetadata::cleanupPersistentProcessingNodes()
         const auto & node = node_with_version.first;
         const auto version = node_with_version.second;
         LOG_TRACE(log, "Removing stale processing node: {}", node);
-        zk_retries.resetFailures();
-        zk_retries.retryLoop([&]
-        {
-            code = getZooKeeper()->tryRemove(node, version);
-        });
+        code = zk_client->tryRemove(node, version);
         if (code == Coordination::Error::ZOK)
             ++removed;
         else if (code == Coordination::Error::ZNONODE || code == Coordination::Error::ZBADVERSION)

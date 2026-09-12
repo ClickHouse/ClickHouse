@@ -58,6 +58,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::setGetObjectTime(size_t elapse
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 {
+    ++generation;
     state = FileStatus::State::Processing;
     processing_start_time = now();
     processing_end_time = {};
@@ -68,12 +69,14 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onProcessing()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onProcessed()
 {
+    ++generation;
     state = FileStatus::State::Processed;
     chassert(processing_end_time);
 }
 
 void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & exception)
 {
+    ++generation;
     state = FileStatus::State::Failed;
     if (!processing_end_time)
         setProcessingEndTime();
@@ -83,6 +86,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::onFailed(const std::string & e
 
 void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 {
+    ++generation;
     state = FileStatus::State::None;
     processing_start_time = {};
     processing_end_time = {};
@@ -92,6 +96,7 @@ void ObjectStorageQueueIFileMetadata::FileStatus::reset()
 
 void ObjectStorageQueueIFileMetadata::FileStatus::updateState(State state_)
 {
+    ++generation;
     state = state_;
 }
 
@@ -306,18 +311,91 @@ bool ObjectStorageQueueIFileMetadata::checkProcessingOwnership(std::shared_ptr<Z
     return data == processor_info;
 }
 
+bool ObjectStorageQueueIFileMetadata::isRetriableMarkerExhausted() const
+{
+    /// Exclusive mode does not use Keeper for failed/retriable state tracking
+    /// (failed_node_path is empty there; retries are tracked purely in-memory),
+    /// so skip the Keeper round-trip entirely instead of querying a meaningless path.
+    if (failed_node_path.empty())
+        return false;
+
+    std::string data;
+    bool exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        exists = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->tryGet(
+            failed_node_path + ".retriable", data);
+    });
+
+    if (!exists)
+        return false;
+
+    UInt64 retries = 0;
+    if (!data.empty())
+        retries = NodeMetadata::fromString(data).retries;
+
+    return retries >= max_loading_retries;
+}
+
 bool ObjectStorageQueueIFileMetadata::trySetProcessing()
 {
     auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
-        || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed
-            && file_status->retries
-            && file_status->retries >= max_loading_retries))
+    if (state == FileStatus::State::Processing || state == FileStatus::State::Processed)
     {
-        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                 path, state, file_status->retries.load(), max_loading_retries);
+        LOG_TEST(log, "File {} has non-processable state `{}`",
+                 path, state);
         return false;
+    }
+
+    if (state == FileStatus::State::Failed)
+    {
+        /// Revalidate against Keeper: the cache already thinks this file Failed and
+        /// locally-tracked retries may be exhausted, but this could be stale info -
+        /// another replica may have cleaned the failure up via TTL or SYSTEM DROP.
+        /// We always compare against Keeper's live retry count, not the local cache,
+        /// so a lowered `loading_retries` is honored immediately.
+        std::string failure_message;
+        UInt64 keeper_retries = 0;
+        auto path_state = getPathState(failure_message, &keeper_retries);
+
+        if (path_state == PathState::Failed)
+        {
+            if (keeper_retries >= max_loading_retries)
+            {
+                LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
+                         path, keeper_retries, max_loading_retries);
+                return false;
+            }
+            /// Keeper's live retry count is under the current limit: allow processing
+            /// to proceed below (covers e.g. a cold cache observing an in-progress retry).
+        }
+        else if (path_state == PathState::Unknown)
+        {
+            /// No failed state left in Keeper - reset cache and allow processing.
+            LOG_TRACE(log, "File {} failed node was cleaned up externally, resetting cache state", path);
+            (*file_status).reset();
+        }
+        else if (path_state == PathState::Processed)
+        {
+            /// File is already processed - update cache and skip.
+            LOG_TEST(log, "File {} is already processed in Keeper, updating cache", path);
+            file_status->updateState(FileStatus::State::Processed);
+            return false;
+        }
+    }
+    else if (state == FileStatus::State::None)
+    {
+        /// Fresh file: skip the full Keeper revalidation above (the downstream
+        /// claim path already cheaply rechecks processed/failed). Only the live
+        /// `.retriable` marker is worth a dedicated check here, since nothing
+        /// else probes it and a newly-lowered `loading_retries` must still be
+        /// honored immediately even with a cold cache after a restart.
+        if (isRetriableMarkerExhausted())
+        {
+            LOG_TEST(log, "File {} has a retriable marker in Keeper with retries "
+                     "at or above the current limit", path);
+            return false;
+        }
     }
 
     /// An optimization for local parallel processing.
@@ -354,19 +432,61 @@ ObjectStorageQueueIFileMetadata::prepareSetProcessingRequests(Coordination::Requ
     }
 
     auto state = file_status->state.load();
-    if (state == FileStatus::State::Processing
-        || state == FileStatus::State::Processed
-        || (state == FileStatus::State::Failed
-            && file_status->retries
-            && file_status->retries >= max_loading_retries))
+    if (state == FileStatus::State::Processing || state == FileStatus::State::Processed)
     {
-        LOG_TEST(log, "File {} has non-processable state `{}` (retries: {}/{})",
-                path, state, file_status->retries.load(), max_loading_retries);
-
-        /// This is possible in case on the same server
-        /// there are more than one S3(Azure)Queue table processing the same keeper path.
-        LOG_TEST(log, "File {} is being processed on this server by another table on this server", path);
+        LOG_TEST(log, "File {} has non-processable state `{}`", path, state);
         return std::nullopt;
+    }
+
+    if (state == FileStatus::State::Failed)
+    {
+        /// Revalidate against Keeper: the cache already thinks this file Failed and
+        /// locally-tracked retries may be exhausted, but this could be stale info -
+        /// another replica may have cleaned the failure up via TTL or SYSTEM DROP.
+        /// We always compare against Keeper's live retry count, not the local cache,
+        /// so a lowered `loading_retries` is honored immediately.
+        std::string failure_message;
+        UInt64 keeper_retries = 0;
+        auto path_state = getPathState(failure_message, &keeper_retries);
+
+        if (path_state == PathState::Failed)
+        {
+            if (keeper_retries >= max_loading_retries)
+            {
+                LOG_TEST(log, "File {} has confirmed failed state in Keeper (retries: {}/{})",
+                         path, keeper_retries, max_loading_retries);
+                return std::nullopt;
+            }
+            /// Keeper's live retry count is under the current limit: allow processing
+            /// to proceed below (covers e.g. a cold cache observing an in-progress retry).
+        }
+        else if (path_state == PathState::Unknown)
+        {
+            /// No failed state left in Keeper - reset cache and allow processing.
+            LOG_TRACE(log, "File {} failed node was cleaned up externally, resetting cache state", path);
+            (*file_status).reset();
+        }
+        else if (path_state == PathState::Processed)
+        {
+            /// File is already processed - update cache and skip.
+            LOG_TEST(log, "File {} is already processed in Keeper, updating cache", path);
+            file_status->updateState(FileStatus::State::Processed);
+            return std::nullopt;
+        }
+    }
+    else if (state == FileStatus::State::None)
+    {
+        /// Fresh file: skip the full Keeper revalidation above (the downstream
+        /// claim-multi below already cheaply rechecks processed/failed). Only the
+        /// live `.retriable` marker is worth a dedicated check here, since nothing
+        /// else probes it and a newly-lowered `loading_retries` must still be
+        /// honored immediately even with a cold cache after a restart.
+        if (isRetriableMarkerExhausted())
+        {
+            LOG_TEST(log, "File {} has a retriable marker in Keeper with retries "
+                     "at or above the current limit", path);
+            return std::nullopt;
+        }
     }
 
     ProfileEvents::increment(ProfileEvents::ObjectStorageQueueTrySetProcessingRequests);
@@ -413,7 +533,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     });
 
     Coordination::Requests requests;
-    prepareResetProcessingRequests(requests);
+    prepareResetProcessingRequests(requests, /* clear_retriable */false);
 
     Coordination::Responses responses;
     Coordination::Error code = {};
@@ -461,10 +581,30 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         path, code, failed_path);
 }
 
-void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordination::Requests & requests)
+void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordination::Requests & requests, bool clear_retriable)
 {
     LOG_TEST(log, "Resetting processing for {}", path);
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+    if (!clear_retriable)
+        return;
+
+    /// Only reached for a file known to have succeeded (a bucket's non-max Processed
+    /// file in ordered mode), which never goes through prepareProcessedRequestsImpl and
+    /// would otherwise leave a stale `.retriable` marker (with its old retry count)
+    /// behind forever. Fold its removal into this same multi for the same atomicity
+    /// reason as in the success path in prepareProcessedRequestsImpl.
+    const auto retriable_node_path = failed_node_path + ".retriable";
+    Coordination::Stat retriable_stat;
+    std::string retriable_data;
+    bool retriable_exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        retriable_exists = zk_client->tryGet(retriable_node_path, retriable_data, &retriable_stat);
+    });
+    if (retriable_exists)
+        requests.push_back(zkutil::makeRemoveRequest(retriable_node_path, retriable_stat.version));
 }
 
 void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests,
@@ -503,7 +643,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequests(
     if (!reduce_retry_count)
     {
         processing_reset_without_failure = true;
-        prepareResetProcessingRequests(requests);
+        prepareResetProcessingRequests(requests, /* clear_retriable */false);
         return;
     }
 

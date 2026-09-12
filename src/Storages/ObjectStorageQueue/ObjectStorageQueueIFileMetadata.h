@@ -50,6 +50,7 @@ public:
         std::atomic<time_t> processing_end_time = 0;
         std::atomic<size_t> retries = 0;
         std::atomic<UInt64> get_object_time_ms = 0;
+        std::atomic<uint64_t> generation{0};  /// Incremented on every state transition, for eviction race detection
 
     private:
         mutable std::mutex last_exception_mutex;
@@ -133,7 +134,20 @@ public:
 
     /// Check Keeper to determine whether this file has already been processed or failed.
     /// Sets `failure_message` when the result is `Failed`.
-    virtual PathState getPathState(std::string & failure_message) const = 0;
+    /// If `retries_out` is non-null and the result is `Failed`, it is set to the retry
+    /// count stored in Keeper (from either the terminal failed node or a live `.retriable`
+    /// marker) so callers can revalidate a lowered `loading_retries` limit even when their
+    /// own in-memory cache is cold (e.g. after a restart or on a different replica).
+    virtual PathState getPathState(std::string & failure_message, UInt64 * retries_out) const = 0;
+
+    /// Cheap check for a fresh file (state == None): only probes the live
+    /// `.retriable` marker (a single Keeper read), which nothing in the
+    /// downstream claim path (claim-multi / claim loop) checks on its own.
+    /// Does NOT recheck processed/failed terminal nodes - the downstream
+    /// claim path already does that cheaply as part of its own Keeper call.
+    /// Returns true if the marker's stored retry count is at or above the
+    /// current `max_loading_retries` limit (file should not be claimed).
+    bool isRetriableMarkerExhausted() const;
 
     const std::string & getFailedNodePath() const { return failed_node_path; }
     const std::string & getProcessedNodePath() const { return processed_node_path; }
@@ -174,7 +188,11 @@ public:
         Coordination::Requests & requests,
         const std::string & processing_id);
     /// Prepare requests, required to reset file's processing state.
-    virtual void prepareResetProcessingRequests(Coordination::Requests & requests);
+    /// `clear_retriable`: also remove a live `.retriable` marker in the same multi.
+    /// Only safe when the file is known to have succeeded (e.g. a bucket's non-max
+    /// Processed file in ordered mode) - never set this for an actual failure reset,
+    /// or a file that is still genuinely retry-pending would lose its retry count.
+    virtual void prepareResetProcessingRequests(Coordination::Requests & requests, bool clear_retriable);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
     void finalizeProcessed();

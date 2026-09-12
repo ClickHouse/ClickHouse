@@ -393,6 +393,12 @@ bool ParserSystemQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, Expected & 
                 return false;
             break;
         }
+        case Type::DROP_S3QUEUE_FAILED_FILES:
+        {
+            if (!parseQueryWithOnClusterAndMaybeTable(res, pos, expected, /* require table = */ true, /* allow_string_literal = */ false))
+                return false;
+            break;
+        }
         case Type::ALLOCATE_MEMORY:
         {
             ASTPtr ast;
@@ -2059,6 +2065,57 @@ Blocks until the given file has been processed or permanently failed by the give
 ```sql
 SYSTEM FLUSH OBJECT STORAGE QUEUE [db.]table_name PATH 'path'
 ```
+
+## SYSTEM DROP S3QUEUE FAILED FILES {#drop-s3queue-failed-files}
+
+Manually clears terminal failed file entries from the ZooKeeper metadata of an S3Queue or AzureQueue table.
+
+**Syntax**
+
+```sql
+SYSTEM DROP S3QUEUE FAILED FILES [db.]table
+```
+
+**Description**
+
+Failed files are files that could not be processed due to parsing errors, schema mismatches, or other exceptions during S3Queue/AzureQueue ingestion. Their metadata is stored in ZooKeeper under the `/failed/` path and cached in memory.
+
+**What gets cleaned:**
+- **Terminal failed files** only: files that have exhausted all retries (when `s3queue_loading_retries` is reached or set to 0)
+- Files actively retrying (still within the retry budget) are preserved to maintain retry state
+
+This command:
+- Removes terminal failed file entries from ZooKeeper (the `/failed/` znodes without `.retriable` suffix)
+- Clears the corresponding entries from the in-memory metadata cache
+- Is idempotent (safe to run when there are no failed files)
+
+The operation acquires a distributed lock to prevent concurrent cleanup operations. If another cleanup is already in progress, the command will fail with an error message asking you to retry.
+
+<Note>
+This command is currently supported only for **unordered mode** S3Queue/AzureQueue tables. For ordered mode tables, it throws a `NOT_IMPLEMENTED` error. Support for ordered mode will be added in a future release.
+</Note>
+
+Terminal failed files can also be cleaned up automatically using the [`failed_files_ttl_sec`](/engines/table-engines/integrations/s3queue#failed_files_ttl_sec) table setting, which removes old terminal failed file entries based on a time-to-live.
+
+**Required Permission**
+
+Requires the `SYSTEM DROP S3QUEUE FAILED FILES` privilege:
+
+```sql
+GRANT SYSTEM DROP S3QUEUE FAILED FILES ON database.table TO user;
+```
+
+**Example**
+
+```sql
+-- View current failed files
+SELECT file_name, status, exception
+FROM system.s3queue_metadata_cache
+WHERE zookeeper_path = '/clickhouse/s3queue/my_table' AND status = 'Failed';
+
+-- Clear all failed files
+SYSTEM DROP S3QUEUE FAILED FILES default.my_s3queue_table;
+```
 )DOCS_MD",
         .syntax = R"(
 SYSTEM RELOAD CONFIG | USERS | FUNCTIONS | ASYNCHRONOUS METRICS
@@ -2078,6 +2135,7 @@ SYSTEM RESTART REPLICA | RESTORE REPLICA [db.]name
 SYSTEM REFRESH VIEW | WAIT VIEW | CANCEL VIEW [db.]name
 SYSTEM UNFREEZE WITH NAME 'backup_name'
 SYSTEM FLUSH OBJECT STORAGE QUEUE
+SYSTEM DROP S3QUEUE FAILED FILES [db.]table [ON CLUSTER cluster_name]
 )",
         .related = {"KILL", "OPTIMIZE", "ALTER", "SHOW", "ON CLUSTER"},
     });

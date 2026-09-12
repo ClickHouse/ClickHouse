@@ -450,16 +450,44 @@ bool ObjectStorageQueueOrderedFileMetadata::useBucketsForProcessing() const
 }
 
 ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueOrderedFileMetadata::getPathState(
-    std::string & failure_message) const
+    std::string & failure_message, UInt64 * retries_out) const
 {
     auto state = getProcessingStateFromKeeper(/*check_failed=*/true, log);
     if (state.is_failed)
     {
         failure_message = state.failure_message;
+        if (retries_out)
+            *retries_out = state.retries;
         return PathState::Failed;
     }
     if (state.is_processed)
         return PathState::Processed;
+
+    /// getProcessingStateFromKeeper() only probes the terminal failed node.
+    /// A live `.retriable` marker still holds retry state (the retry count), so its
+    /// presence must not be treated as "no failed state left" - only the absence of
+    /// BOTH forms means the failure was actually cleaned up externally. Without this
+    /// check, the caller would treat a live retriable marker as "cleaned up" and grant
+    /// an extra processing attempt instead of honoring the stored retry count.
+    std::string retriable_data;
+    bool retriable_exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        retriable_exists = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->tryGet(
+            failed_node_path + ".retriable", retriable_data);
+    });
+    if (retriable_exists)
+    {
+        if (!retriable_data.empty())
+        {
+            const auto metadata = NodeMetadata::fromString(retriable_data);
+            failure_message = metadata.last_exception;
+            if (retries_out)
+                *retries_out = metadata.retries;
+        }
+        return PathState::Failed;
+    }
+
     return PathState::Unknown;
 }
 
@@ -568,7 +596,11 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
     {
         ProcessingStateFromKeeper state(is_failed);
         if (is_failed && !responses[1].data.empty())
-            state.failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+        {
+            const auto failed_metadata = NodeMetadata::fromString(responses[1].data);
+            state.failure_message = failed_metadata.last_exception;
+            state.retries = failed_metadata.retries;
+        }
         return state;
     }
 
@@ -582,7 +614,11 @@ ObjectStorageQueueOrderedFileMetadata::getProcessingStateFromKeeper(
     ProcessingStateFromKeeper state(file_path, last_processed_path, is_failed);
     state.processed_bucket_version = responses[0].stat.version;
     if (is_failed && !responses[1].data.empty())
-        state.failure_message = NodeMetadata::fromString(responses[1].data).last_exception;
+    {
+        const auto failed_metadata = NodeMetadata::fromString(responses[1].data);
+        state.failure_message = failed_metadata.last_exception;
+        state.retries = failed_metadata.retries;
+    }
     return state;
 }
 
@@ -925,6 +961,23 @@ void ObjectStorageQueueOrderedFileMetadata::doPrepareProcessedRequests(
 
     if (created_processing_node)
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+    /// A prior failed attempt may have left a live `.retriable` marker with a nonzero
+    /// retry count. Left behind, it would outlive this success and resurface with a
+    /// stale retry count if the path is ever reprocessed (e.g. after `/processed`
+    /// expires via TTL/limit). Fold its removal into this same multi so it is cleared
+    /// atomically with success - not a separate request that could race or be skipped.
+    const auto retriable_node_path = failed_node_path + ".retriable";
+    Coordination::Stat retriable_stat;
+    std::string retriable_data;
+    bool retriable_exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        retriable_exists = zk_client->tryGet(retriable_node_path, retriable_data, &retriable_stat);
+    });
+    if (retriable_exists)
+        requests.push_back(zkutil::makeRemoveRequest(retriable_node_path, retriable_stat.version));
 }
 
 void ObjectStorageQueueOrderedFileMetadata::prepareProcessedRequestsImpl(

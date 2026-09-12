@@ -128,6 +128,7 @@ namespace ObjectStorageQueueSetting
     extern const ObjectStorageQueueSettingsBool parallel_inserts;
     extern const ObjectStorageQueueSettingsUInt64 buckets;
     extern const ObjectStorageQueueSettingsUInt64 tracked_file_ttl_sec;
+    extern const ObjectStorageQueueSettingsUInt64 failed_files_ttl_sec;
     extern const ObjectStorageQueueSettingsUInt64 tracked_files_limit;
     extern const ObjectStorageQueueSettingsString last_processed_path;
     extern const ObjectStorageQueueSettingsUInt64 loading_retries;
@@ -1418,6 +1419,7 @@ static const std::unordered_set<std::string_view> changeable_settings_unordered_
     "after_processing",
     "tracked_files_limit",
     "tracked_file_ttl_sec",
+    "failed_files_ttl_sec",
     "polling_min_timeout_ms",
     "polling_max_timeout_ms",
     "polling_backoff_ms",
@@ -1940,6 +1942,7 @@ ObjectStorageQueueSettings StorageObjectStorageQueue::getSettings() const
     settings[ObjectStorageQueueSetting::partition_regex] = table_metadata.partition_regex;
     settings[ObjectStorageQueueSetting::partition_component] = table_metadata.partition_component;
     settings[ObjectStorageQueueSetting::tracked_file_ttl_sec] = table_metadata.tracked_files_ttl_sec;
+    settings[ObjectStorageQueueSetting::failed_files_ttl_sec] = table_metadata.failed_files_ttl_sec;
     settings[ObjectStorageQueueSetting::tracked_files_limit] = table_metadata.tracked_files_limit;
     settings[ObjectStorageQueueSetting::buckets] = table_metadata.buckets;
 
@@ -2094,13 +2097,15 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     /// failed, return or throw immediately regardless of dependency/streaming guards.
     {
         std::string failure_message;
-        const auto state = file_metadata->getPathState(failure_message);
+        UInt64 keeper_retries = 0;
+        const auto state = file_metadata->getPathState(failure_message, &keeper_retries);
         if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
         {
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
             return;
         }
-        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
+            && keeper_retries >= file_metadata->getMaxTries())
             throw Exception(ErrorCodes::ABORTED,
                 "Path '{}' failed to be processed by {}: {}",
                 path, getStorageID().getNameForLogs(), failure_message);
@@ -2177,14 +2182,16 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
         }
 
         std::string failure_message;
-        const auto state = file_metadata->getPathState(failure_message);
+        UInt64 keeper_retries = 0;
+        const auto state = file_metadata->getPathState(failure_message, &keeper_retries);
 
         if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
         {
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
             return;
         }
-        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed)
+        if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
+            && keeper_retries >= file_metadata->getMaxTries())
         {
             throw Exception(ErrorCodes::ABORTED,
                 "Path '{}' failed to be processed by {}: {}",
@@ -2195,6 +2202,17 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
         event->tryWait(watch_timeout_ms);
         (*event).reset();
     }
+}
+
+void StorageObjectStorageQueue::dropFailedFiles()
+{
+    auto component_guard = Coordination::setCurrentComponent("StorageObjectStorageQueue::dropFailedFiles");
+
+    auto metadata = tryGetFilesMetadata();
+    if (!metadata)
+        throw Exception(ErrorCodes::TABLE_IS_DROPPED, "Table {} is dropped or detached", getStorageID());
+
+    metadata->dropFailedFiles();
 }
 
 }
