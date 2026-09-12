@@ -1044,6 +1044,102 @@ def test_success_clears_stale_retriable_marker(started_cluster):
     node.query(f"DROP TABLE {dst_table_name}")
 
 
+def test_ordered_mode_non_max_processed_file_clears_stale_retriable_marker(started_cluster):
+    """In ordered mode, only a bucket's max-processed file (by lexicographic path,
+    within a single commit batch) goes through prepareProcessedRequestsImpl, which
+    clears a live `.retriable` marker. Other Processed files in the same bucket go
+    through prepareResetProcessingRequests instead, which previously never cleared
+    `.retriable`, leaking a stale retry-count node forever for any successful file
+    that happens not to be its bucket's max path in the batch that commits it.
+
+    Forces both files into bucket 0 via `buckets: 1`. `a_flaky.csv` fails first
+    (alone, in its own batch) leaving a live `.retriable` marker, then is fixed and
+    committed in the same batch as `z_valid.csv` - whose lexicographically larger
+    path makes it the bucket's max-processed file, pushing `a_flaky.csv` through the
+    non-max (reset) branch this fix targets.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_ordered_non_max_retriable_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    flaky_file = "a_flaky.csv"
+    valid_file = "z_valid.csv"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "ordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "buckets": 1,
+            "s3queue_loading_retries": 5,
+            "polling_min_timeout_ms": 1000,
+            "polling_max_timeout_ms": 1000,
+        },
+    )
+
+    # Invalid content: this file will fail alone and accumulate a live `.retriable` marker.
+    put_s3_file_content(started_cluster, f"{files_path}/{flaky_file}", b"not,valid,data\n")
+
+    create_mv(node, table_name, dst_table_name)
+
+    def retriable_retries():
+        result = node.query(
+            f"SELECT value FROM system.zookeeper WHERE path = '{failed_path}' "
+            f"AND name LIKE '%.retriable'"
+        ).strip()
+        for line in result.split("\n"):
+            if not line:
+                continue
+            match = re.search(r'"retries"\s*:\s*(\d+)', line)
+            if match:
+                return int(match.group(1))
+        return None
+
+    retries_before_fix = None
+    for _ in range(60):
+        retries_before_fix = retriable_retries()
+        if retries_before_fix is not None and retries_before_fix >= 1:
+            break
+        time.sleep(1)
+    assert retries_before_fix is not None and retries_before_fix >= 1, (
+        f"expected a live .retriable marker with retries >= 1 before overwriting the "
+        f"file, got: {retries_before_fix}"
+    )
+
+    # Fix the flaky file AND add a lexicographically larger file at the same time,
+    # so the next poll commits both in the same batch - making z_valid.csv the
+    # bucket's max-processed file and pushing a_flaky.csv through the non-max branch.
+    put_s3_file_content(started_cluster, f"{files_path}/{flaky_file}", b"1,2,3\n")
+    put_s3_file_content(started_cluster, f"{files_path}/{valid_file}", b"4,5,6\n")
+
+    processed_ready = False
+    for _ in range(60):
+        result = node.query(f"SELECT count() FROM {dst_table_name}").strip()
+        if result and int(result) >= 2:
+            processed_ready = True
+            break
+        time.sleep(1)
+    assert processed_ready, "both files never succeeded after fixing the flaky one"
+
+    # The .retriable marker for the non-max (flaky) file must be gone now.
+    remaining = node.query(
+        f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}' "
+        f"AND name LIKE '%.retriable'"
+    ).strip()
+    assert remaining == "", (
+        f"stale .retriable marker(s) survived a successful non-max-file reprocess: {remaining}"
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
 def test_ordered_mode_rejects_mismatched_tracked_files_limit(started_cluster):
     """Two ordered-mode tables attaching to the same keeper_path with different
     tracked_files_limit values must fail to both attach, since tracked_files_limit

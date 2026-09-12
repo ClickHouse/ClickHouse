@@ -188,7 +188,11 @@ public:
         Coordination::Requests & requests,
         const std::string & processing_id);
     /// Prepare requests, required to reset file's processing state.
-    virtual void prepareResetProcessingRequests(Coordination::Requests & requests);
+    /// `clear_retriable`: also remove a live `.retriable` marker in the same multi.
+    /// Only safe when the file is known to have succeeded (e.g. a bucket's non-max
+    /// Processed file in ordered mode) - never set this for an actual failure reset,
+    /// or a file that is still genuinely retry-pending would lose its retry count.
+    virtual void prepareResetProcessingRequests(Coordination::Requests & requests, bool clear_retriable);
 
     /// Do some work after prepared requests to set file as Processed succeeded.
     void finalizeProcessed();

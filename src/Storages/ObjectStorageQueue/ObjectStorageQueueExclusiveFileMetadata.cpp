@@ -89,7 +89,7 @@ std::pair<bool, ObjectStorageQueueIFileMetadata::FileStatus::State> ObjectStorag
     return std::pair{true, ObjectStorageQueueIFileMetadata::FileStatus::State::None};
 }
 
-void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coordination::Requests & /*requests*/)
+void ObjectStorageQueueExclusiveFileMetadata::prepareResetProcessingRequests(Coordination::Requests & /*requests*/, bool /*clear_retriable*/)
 {
     releaseProcessingGuard();
 

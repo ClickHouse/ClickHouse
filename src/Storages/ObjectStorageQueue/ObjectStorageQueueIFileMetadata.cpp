@@ -533,7 +533,7 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
     });
 
     Coordination::Requests requests;
-    prepareResetProcessingRequests(requests);
+    prepareResetProcessingRequests(requests, /* clear_retriable */false);
 
     Coordination::Responses responses;
     Coordination::Error code = {};
@@ -581,10 +581,30 @@ void ObjectStorageQueueIFileMetadata::resetProcessing()
         path, code, failed_path);
 }
 
-void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordination::Requests & requests)
+void ObjectStorageQueueIFileMetadata::prepareResetProcessingRequests(Coordination::Requests & requests, bool clear_retriable)
 {
     LOG_TEST(log, "Resetting processing for {}", path);
     requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+
+    if (!clear_retriable)
+        return;
+
+    /// Only reached for a file known to have succeeded (a bucket's non-max Processed
+    /// file in ordered mode), which never goes through prepareProcessedRequestsImpl and
+    /// would otherwise leave a stale `.retriable` marker (with its old retry count)
+    /// behind forever. Fold its removal into this same multi for the same atomicity
+    /// reason as in the success path in prepareProcessedRequestsImpl.
+    const auto retriable_node_path = failed_node_path + ".retriable";
+    Coordination::Stat retriable_stat;
+    std::string retriable_data;
+    bool retriable_exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        auto zk_client = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name);
+        retriable_exists = zk_client->tryGet(retriable_node_path, retriable_data, &retriable_stat);
+    });
+    if (retriable_exists)
+        requests.push_back(zkutil::makeRemoveRequest(retriable_node_path, retriable_stat.version));
 }
 
 void ObjectStorageQueueIFileMetadata::prepareProcessedRequests(Coordination::Requests & requests,
@@ -623,7 +643,7 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequests(
     if (!reduce_retry_count)
     {
         processing_reset_without_failure = true;
-        prepareResetProcessingRequests(requests);
+        prepareResetProcessingRequests(requests, /* clear_retriable */false);
         return;
     }
 

@@ -1614,7 +1614,11 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                         }
                         else
                         {
-                            file_metadata->prepareResetProcessingRequests(requests);
+                            /// This file is Processed (succeeded) but is not the bucket's
+                            /// max-processed file, so it never reaches prepareProcessedRequestsImpl.
+                            /// Clear any stale `.retriable` marker here so a successful file never
+                            /// leaves behind a retry counter from an earlier failed attempt.
+                            file_metadata->prepareResetProcessingRequests(requests, /* clear_retriable */true);
                         }
                         if (has_partitioning)
                             file_metadata->preparePartitionProcessedMap(file_map);
