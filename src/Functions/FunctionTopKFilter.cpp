@@ -51,7 +51,7 @@ extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 class FunctionTopKFilter final : public IFunction
 {
 public:
-    static constexpr auto name = "__topKFilter";
+    static constexpr auto name = TOP_K_FILTER_FUNCTION_NAME;
 
     explicit FunctionTopKFilter(TopKThresholdTrackerPtr threshold_tracker_)
         : threshold_tracker(threshold_tracker_)
@@ -73,7 +73,7 @@ public:
         }
     }
 
-    String getName() const override { return name; }
+    String getName() const override { return String(name); }
 
     bool isVariadic() const override { return false; }
     bool isInjective(const ColumnsWithTypeAndName &) const override { return false; }

@@ -269,6 +269,52 @@ FROM (
 )
 WHERE explain ILIKE '%p_score%';
 
+-- A cheaper projection that does NOT order wins the chooser's ranking, because a useful sort order
+-- only breaks ties between candidates of equal cost. The read is then not in order and dynamic
+-- filtering must stay on (expected 1). The selected-projection and read-order assertions are what
+-- keep the first one honest: without them the arm also passes when no projection is selected at all.
+DROP TABLE IF EXISTS t_topk_cheaper_competitor;
+CREATE TABLE t_topk_cheaper_competitor (id UInt64, k UInt64, score UInt64, payload String CODEC(NONE))
+ENGINE = MergeTree ORDER BY (k, id)
+SETTINGS index_granularity = 8192, index_granularity_bytes = 4096, min_bytes_for_wide_part = 0;
+INSERT INTO t_topk_cheaper_competitor
+SELECT number, number % 128, sipHash64(number), repeat('x', 200) FROM numbers(32768);
+OPTIMIZE TABLE t_topk_cheaper_competitor FINAL;
+
+-- The wide payload and `index_granularity_bytes` make p_wide_ord cost the same 1929 marks as the
+-- parent, while p_narrow_noord stores only the two columns this query reads and costs 129.
+ALTER TABLE t_topk_cheaper_competitor ADD PROJECTION p_wide_ord (SELECT id, k, score, payload ORDER BY (score, id));
+ALTER TABLE t_topk_cheaper_competitor ADD PROJECTION p_narrow_noord (SELECT id, score ORDER BY (id));
+ALTER TABLE t_topk_cheaper_competitor MATERIALIZE PROJECTION p_wide_ord SETTINGS mutations_sync = 2;
+ALTER TABLE t_topk_cheaper_competitor MATERIALIZE PROJECTION p_narrow_noord SETTINGS mutations_sync = 2;
+
+SELECT id FROM t_topk_cheaper_competitor ORDER BY score, id LIMIT 5
+SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100;
+
+SELECT count() > 0 AS has_topk_filter
+FROM (
+    EXPLAIN projections = 1, actions = 1
+    SELECT id FROM t_topk_cheaper_competitor ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%__topKFilter%';
+
+SELECT count() > 0 AS competitor_selected
+FROM (
+    EXPLAIN projections = 1
+    SELECT id FROM t_topk_cheaper_competitor ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%p_narrow_noord%';
+
+SELECT count() > 0 AS competitor_in_order
+FROM (
+    EXPLAIN projections = 1
+    SELECT id FROM t_topk_cheaper_competitor ORDER BY score, id LIMIT 10
+    SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
+)
+WHERE explain ILIKE '%InOrder%';
+
 DROP TABLE t_topk_proj_rio;
 DROP TABLE t_topk_noproj;
 DROP TABLE t_topk_unmat;
@@ -276,3 +322,4 @@ DROP TABLE t_topk_mixed;
 DROP TABLE t_topk_sample;
 DROP TABLE t_topk_nulls;
 DROP TABLE t_topk_drift;
+DROP TABLE t_topk_cheaper_competitor;
