@@ -26,7 +26,6 @@ namespace DB
     DECLARE(Bool, use_insecure_imds_request, false, "", 0) \
     DECLARE(Bool, use_adaptive_timeouts, S3::DEFAULT_USE_ADAPTIVE_TIMEOUTS, "", 0) \
     DECLARE(Bool, is_virtual_hosted_style, false, "", 0) \
-    DECLARE(Bool, disable_checksum, S3::DEFAULT_DISABLE_CHECKSUM, "", 0) \
     DECLARE(Bool, gcs_issue_compose_request, false, "", 0) \
     DECLARE(S3UriStyle, uri_style, S3UriStyle::AUTO, "", 0)
 
