@@ -24,6 +24,7 @@
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <Columns/ColumnVector.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnsCommon.h>
@@ -31,8 +32,10 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeMap.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
 #include <Core/UUID.h>
@@ -671,6 +674,179 @@ MutableColumnPtr reinterpretFixedStringLeaf(const ColumnFixedString & fixed, con
     return out;
 }
 
+/// An integer or float alternative strictly wider than a `width`-byte decoded integer.
+bool variantElementWidensTo(const DataTypePtr & alternative, size_t width)
+{
+    const WhichDataType which(alternative);
+    if (which.isFloat32())
+        return width <= 2;
+    if (which.isFloat64())
+        return width <= 4;
+    return which.isInteger() && alternative->getSizeOfValueInMemory() > width;
+}
+
+/// The natural pairing of a decoded element with an alternative: the alternative it was itself inferred
+/// as. Decoded element names are unique (the decoder rejects a union whose children map to one ClickHouse
+/// type), so no two elements ever prefer the same alternative.
+bool variantElementPrefersType(const DataTypePtr & decoded, const DataTypePtr & alternative)
+{
+    return ArrowIPC::stripHint(alternative)->getName() == decoded->getName();
+}
+
+/// Whether a decoded `Variant` element can be repaired into a requested alternative: always its own decoded type, and
+/// otherwise only an alternative the ordinary (non-union) Arrow column path already reaches from a column decoded as
+/// `decoded`. An `Int8` or `UInt8` element is never re-declared as `Bool`, although the two compare equal: a value
+/// outside 0/1 would then render as `true`. The reverse is allowed, since a `Bool` element only holds 0 or 1. A
+/// composite is never substituted, since this walk keeps the decoded field names and a cast between tuples with
+/// differing names fills the target fields instead of rejecting them. `Date32` is never substituted,
+/// since the decoder decides from its own hint whether a day number is range-checked, saturated or copied verbatim,
+/// and this layer cannot supply one; a decoded `UInt16` may take `Date`, and a decoded `UInt32` or `DateTime` a
+/// `DateTime64`, since those decodes read no hint and every value they produce is in range at every scale, while the
+/// narrowing reverse is refused.
+bool variantElementMatchesType(const DataTypePtr & decoded, const DataTypePtr & alternative)
+{
+    const DataTypePtr to = ArrowIPC::stripHint(alternative);
+    const WhichDataType from(decoded);
+    const WhichDataType which(to);
+
+    /// An element that no conversion arm admits must still be able to claim its own alternative: otherwise it leaves
+    /// that alternative to a sibling, and the sibling is left ambiguous by an element that was never a candidate for
+    /// anything.
+    if (variantElementPrefersType(decoded, alternative))
+        return true;
+    if (isBool(decoded))
+        return which.isUInt8() || which.isEnum8() || variantElementWidensTo(to, 0);
+    if (from.isInt8() || from.isUInt8())
+        return which.isInt8() || (which.isUInt8() && !isBool(to)) || which.isEnum8() || variantElementWidensTo(to, 1);
+    if (from.isInt16() || from.isUInt16())
+        return which.isInt16() || which.isUInt16() || which.isEnum16() || variantElementWidensTo(to, 2)
+            || (from.isUInt16() && which.isDate());
+    if (from.isInt32() || from.isUInt32())
+        return which.isInt32() || which.isUInt32() || variantElementWidensTo(to, 4)
+            || (from.isUInt32() && (which.isIPv4() || which.isDateTime() || which.isDateTime64()));
+    if (from.isInt64() || from.isUInt64())
+        return which.isInt64() || which.isUInt64() || variantElementWidensTo(to, 8)
+            || (from.isInt64() && which.isInterval());
+    if (from.isFloat32())
+        return which.isFloat32() || which.isFloat64();
+    if (from.isFloat64())
+        return which.isFloat64();
+    if (from.isString())
+        return which.isStringOrFixedString() || ArrowIPC::rawByteWidth(which) != 0;
+    if (from.isFixedString())
+    {
+        const size_t n = assert_cast<const DataTypeFixedString &>(*decoded).getN();
+        if (which.isFixedString())
+            return assert_cast<const DataTypeFixedString &>(*to).getN() == n;
+        return which.isString() || (which.isUUID() && n == 16) || ArrowIPC::rawByteWidth(which) == n;
+    }
+    if (from.isUUID())
+        return which.isUUID() || which.isString();
+    if (from.isDecimal())
+        return which.isDecimal();
+    /// Another scale or time zone is what the flat column path returns for the same request.
+    if (from.isDateTime())
+        return which.isDateTime() || which.isDateTime64();
+    if (from.isDateTime64())
+        return which.isDateTime64();
+    if (from.isTime64())
+        return which.isTime64();
+    return false;
+}
+
+/// The alternative each element of a decoded `Variant` must be repaired into, in the decoded type's global
+/// order, null where nothing is forced. `Variant` sorts its alternatives, so the positional correspondence
+/// between Arrow union children and requested alternatives is lost and has to be reconstructed
+/// structurally: collect each element's admissible alternatives, keep the forced assignments (an element
+/// takes an alternative when it is its only remaining candidate), then tie-break by the natural pairing,
+/// one assignment per round. An element whose correspondence stays ambiguous is left unassigned, so no
+/// guess is ever made. Assignments that would leave two elements on one alternative name are finally
+/// dropped: the rebuilt `DataTypeVariant` deduplicates by name while the column keeps one element per Arrow
+/// union child, so a shared name would describe a column whose layout contradicts its type.
+DataTypes variantElementTargets(const DataTypeVariant & from, const DataTypeVariant & to)
+{
+    const DataTypes & elements = from.getVariants();
+    const DataTypes & alternatives = to.getVariants();
+    DataTypes targets(elements.size());
+
+    std::vector<std::vector<size_t>> candidates(elements.size());
+    for (size_t e = 0; e < elements.size(); ++e)
+        for (size_t a = 0; a < alternatives.size(); ++a)
+            if (variantElementMatchesType(elements[e], alternatives[a]))
+                candidates[e].push_back(a);
+
+    const auto preferred_candidates = [&](size_t e)
+    {
+        std::vector<size_t> preferred;
+        for (const size_t a : candidates[e])
+            if (variantElementPrefersType(elements[e], alternatives[a]))
+                preferred.push_back(a);
+        return preferred;
+    };
+    /// Erasing the taken alternative everywhere else is what keeps two elements off one alternative: it can
+    /// no longer be another element's candidate, forced or preferred.
+    const auto take = [&](size_t e, size_t a)
+    {
+        targets[e] = alternatives[a];
+        for (size_t other = 0; other < elements.size(); ++other)
+            if (other != e)
+                std::erase(candidates[other], a);
+    };
+
+    bool changed = true;
+    while (changed)
+    {
+        changed = false;
+        for (size_t e = 0; e < elements.size(); ++e)
+        {
+            if (targets[e] || candidates[e].size() != 1)
+                continue;
+            take(e, candidates[e].front());
+            changed = true;
+        }
+
+        if (changed)
+            continue;
+
+        for (size_t e = 0; e < elements.size() && !changed; ++e)
+        {
+            if (targets[e] || candidates[e].size() < 2)
+                continue;
+            /// No two elements can prefer one alternative: the preference is name equality and the decoded
+            /// element names are pairwise distinct, so a lone preference is never contested.
+            const std::vector<size_t> preferred = preferred_candidates(e);
+            if (preferred.size() != 1)
+                continue;
+            take(e, preferred.front());
+            changed = true;
+        }
+    }
+
+    /// Every duplicate pairs one assigned name with one decoded name, so each pass drops at least one
+    /// assignment and the loop terminates; the worst case is no assignment, which leaves the column as decoded.
+    for (bool dropped = true; dropped;)
+    {
+        dropped = false;
+        std::vector<bool> drop(elements.size(), false);
+        for (size_t e = 0; e < elements.size(); ++e)
+            for (size_t other = 0; targets[e] && other < elements.size(); ++other)
+                if (other != e && (targets[other] ? targets[other] : elements[other])->getName() == targets[e]->getName())
+                    drop[e] = true;
+        for (size_t e = 0; e < elements.size(); ++e)
+            if (drop[e])
+            {
+                targets[e] = nullptr;
+                dropped = true;
+            }
+    }
+
+    return targets;
+}
+
+std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
+    const ColumnPtr & col, const DataTypePtr & from_type, const DataTypeVariant & from_variant,
+    const DataTypeVariant & to_variant, bool case_insensitive);
+
 /// Recursively rewrite the raw-byte leaves (fixed_size_binary / binary) of a decoded column into the
 /// UUID / IPv6 / big-integer types the requested `to_type` asks for, descending through Nullable, Array,
 /// Tuple and Map so nested shapes convert too. Anything not recognised is returned unchanged for the
@@ -790,6 +966,14 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
         return {ColumnMap::create(new_nested), std::move(new_map_type)};
     }
 
+    if (const auto * from_variant = typeid_cast<const DataTypeVariant *>(from_no_null.get()))
+    {
+        const auto * to_variant = typeid_cast<const DataTypeVariant *>(ArrowIPC::stripHint(to_type).get());
+        if (!to_variant)
+            return {col, from_type};
+        return repairVariantElements(col, from_type, *from_variant, *to_variant, case_insensitive);
+    }
+
     /// Leaf. The target is the innermost requested type, `Nullable`/`LowCardinality`-transparent like
     /// every decoder hint (`LowCardinality(IPv6)` requests the same raw bytes as `IPv6`; the later cast
     /// restores the wrappers).
@@ -846,6 +1030,107 @@ std::pair<ColumnPtr, DataTypePtr> reinterpretRawBytes(
     if (nullable)
         result = ColumnNullable::create(result, nullable->getNullMapColumnPtr());
     return {std::move(result), with_source_nullability(to_leaf)};
+}
+
+/// Rebuild a decoded `Variant` column with each element under the alternative the requested `Variant`
+/// forces on it, or return the input unchanged when nothing is forced. A `Variant` -> `Variant` cast can
+/// only append alternatives, never substitute one, so nothing else can reconcile the two.
+std::pair<ColumnPtr, DataTypePtr> repairVariantElements(
+    const ColumnPtr & col, const DataTypePtr & from_type, const DataTypeVariant & from_variant,
+    const DataTypeVariant & to_variant, bool case_insensitive)
+{
+    const DataTypes & elements = from_variant.getVariants();
+    const DataTypes targets = variantElementTargets(from_variant, to_variant);
+    bool any_change = false;
+    for (size_t g = 0; g < elements.size() && !any_change; ++g)
+        any_change = targets[g] && targets[g]->getName() != elements[g]->getName();
+    if (!any_change)
+        return {col, from_type};
+
+    /// Repairing helps only when every element ends up under an alternative the request names, matched by
+    /// full name as the cast itself matches them: otherwise the cast rejects the read whatever this walk
+    /// does, and rebuilding would only change the type its message prints.
+    for (size_t g = 0; g < elements.size(); ++g)
+    {
+        if (targets[g])
+            continue;
+        bool requested = false;
+        for (const DataTypePtr & alternative : to_variant.getVariants())
+            requested |= alternative->getName() == elements[g]->getName();
+        if (!requested)
+            return {col, from_type};
+    }
+
+    const auto & variant_col = assert_cast<const ColumnVariant &>(*col);
+    const size_t num_elements = variant_col.getNumVariants();
+
+    /// Gather each element down to the rows that reference it, in row order. A dense Arrow union child keeps
+    /// every slot it declares, and the Arrow spec leaves the bytes of a slot no row selects undefined, so
+    /// those bytes must reach neither a width sniff nor a cast: either rejects a whole element over one row.
+    const ColumnVariant::Discriminators & local_discriminators = variant_col.getLocalDiscriminators();
+    const ColumnVariant::Offsets & offsets = variant_col.getOffsets();
+    const size_t rows = local_discriminators.size();
+    MutableColumns gathered(num_elements);
+    for (size_t local = 0; local < num_elements; ++local)
+        gathered[local] = variant_col.getVariantPtrByLocalDiscriminator(local)->cloneEmpty();
+    auto new_offsets_col = ColumnVariant::ColumnOffsets::create(rows);
+    ColumnVariant::Offsets & new_offsets = new_offsets_col->getData();
+    for (size_t row = 0; row < rows; ++row)
+    {
+        const ColumnVariant::Discriminator local = local_discriminators[row];
+        if (local == ColumnVariant::NULL_DISCRIMINATOR)
+        {
+            new_offsets[row] = 0;
+            continue;
+        }
+        /// Two rows may reference one slot, which legitimately duplicates the value: `ColumnVariant` needs
+        /// exactly one element value per row that selects the element.
+        new_offsets[row] = gathered[local]->size();
+        gathered[local]->insertFrom(*variant_col.getVariantPtrByLocalDiscriminator(local), offsets[row]);
+    }
+
+    Columns new_elements(num_elements);
+    DataTypes new_types(num_elements);
+    for (size_t local = 0; local < num_elements; ++local)
+    {
+        /// Element columns are in Arrow child order while the decoded alternatives are sorted by name.
+        const size_t global = variant_col.globalDiscriminatorByLocal(static_cast<ColumnVariant::Discriminator>(local));
+        const DataTypePtr & from_element = elements[global];
+        ColumnPtr element = std::move(gathered[local]);
+        DataTypePtr element_type = from_element;
+        if (const DataTypePtr & target = targets[global])
+        {
+            /// The ordinary recursion, so a raw-byte element converts exactly as the same bytes would in a
+            /// plain column. The gathered element holds only rows some union row references, and an element
+            /// lives in its own row space, so there are no undefined values and no ancestor nulls.
+            std::tie(element, element_type)
+                = reinterpretRawBytes(element, from_element, target, /*ancestor_nulls=*/nullptr, case_insensitive);
+            /// By name, not `equals`: `Bool` and `UInt8` compare equal yet the element must end up under
+            /// exactly the requested one.
+            if (element_type->getName() != target->getName())
+            {
+                element = castColumn({element, element_type, ""}, target);
+                element_type = target;
+            }
+        }
+        new_elements[local] = std::move(element);
+        new_types[local] = std::move(element_type);
+    }
+
+    auto new_variant_type = std::make_shared<DataTypeVariant>(new_types);
+    const DataTypes & new_alternatives = new_variant_type->getVariants();
+    chassert(new_alternatives.size() == new_types.size());
+    VectorWithMemoryTracking<ColumnVariant::Discriminator> new_local_to_global(num_elements);
+    for (size_t local = 0; local < num_elements; ++local)
+        for (size_t global = 0; global < new_alternatives.size(); ++global)
+            if (new_alternatives[global]->getName() == new_types[local]->getName())
+                new_local_to_global[local] = static_cast<ColumnVariant::Discriminator>(global);
+
+    /// Every row keeps the element it selected, at its gathered position; only the element columns, their
+    /// offsets and the type change.
+    auto new_column = ColumnVariant::create(
+        variant_col.getLocalDiscriminatorsPtr(), std::move(new_offsets_col), new_elements, new_local_to_global);
+    return {std::move(new_column), std::move(new_variant_type)};
 }
 
 }
