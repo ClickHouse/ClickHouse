@@ -3,6 +3,7 @@
 
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnsNumber.h>
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -709,13 +710,20 @@ Block ProjectionDescription::calculateByQuery(
 
     ASTPtr query_ast_copy = nullptr;
 
+    /// A normal projection with no WHERE runs at `QueryProcessingStage::FetchColumns`, which stops
+    /// before the WHERE step, so injecting `_row_exists = 1` into the query is silently ignored and
+    /// lightweight-deleted rows stay in the rebuilt projection (issue #111791). For that path the
+    /// deleted rows are dropped from the input block directly below instead.
+    const bool filter_deleted_rows_in_source
+        = block.has(RowExistsColumn::name) && type == ProjectionDescription::Type::Normal && !where_clause_ast;
+
     /// Only keep required columns
     Block source_block;
     for (const auto & column : required_columns)
         source_block.insert(block.getByName(column));
 
     /// Respect the _row_exists column.
-    if (block.has(RowExistsColumn::name))
+    if (block.has(RowExistsColumn::name) && !filter_deleted_rows_in_source)
     {
         query_ast_copy = query_ast->clone();
         auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
@@ -764,6 +772,16 @@ Block ProjectionDescription::calculateByQuery(
         }
 
         source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
+    }
+
+    /// Filter every source column (including `_part_offset`, so surviving rows keep their original
+    /// parent offsets) by the deletion mask. `_row_exists` may be const-folded, so materialize it.
+    if (filter_deleted_rows_in_source)
+    {
+        auto row_exists = block.getByName(RowExistsColumn::name).column->convertToFullColumnIfConst();
+        const auto & filter = assert_cast<const ColumnUInt8 &>(*row_exists).getData();
+        for (auto & col : source_block)
+            col.column = col.column->filter(filter, /*result_size_hint=*/ -1);
     }
 
     auto builder = InterpreterSelectQuery(
