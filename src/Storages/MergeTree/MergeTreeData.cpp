@@ -936,20 +936,20 @@ static void updateHashWithString(SipHash & hash, const String & value)
     hash.update(value);
 }
 
-/// Estimators are cached per (table, ordered part set with content checksums, requested
+/// Estimators are cached per (table UUID, ordered part set with content checksums, requested
 /// column set). Parts are immutable, so an equal key implies an equal estimator. The column
 /// names are sorted because call sites pass the same columns in different orders.
-/// The table schema is deliberately not part of the key: estimators are built purely from
-/// part contents (covered by the checksums), and statistics whose stored type no longer
-/// matches the table's current column type are excluded at estimation time by
-/// `isCompatibleStatistics` against the caller's metadata snapshot, exactly as on the
-/// uncached path.
-static UInt128 selectivityEstimatorCacheKey(const StorageID & table_id, const RangesInDataParts & parts, const Names & required_columns)
+/// The table name is deliberately not part of the key: it changes when a table without a UUID
+/// is renamed while its parts stay the same, which would only strand the entries warmed before
+/// the rename; the UUID survives a rename, and a table without one shares entries by content.
+/// Neither is the table schema: estimators are built purely from part contents (covered by the
+/// checksums), and statistics whose stored type no longer matches the table's current column
+/// type are excluded at estimation time by `isCompatibleStatistics` against the caller's
+/// metadata snapshot, exactly as on the uncached path.
+static UInt128 selectivityEstimatorCacheKey(const UUID & table_uuid, const RangesInDataParts & parts, const Names & required_columns)
 {
     SipHash hash;
-    hash.update(table_id.uuid);
-    updateHashWithString(hash, table_id.database_name);
-    updateHashWithString(hash, table_id.table_name);
+    hash.update(table_uuid);
     hash.update(parts.size());
     for (const auto & part : parts)
     {
@@ -1015,7 +1015,7 @@ ConditionSelectivityEstimatorPtr MergeTreeData::getConditionSelectivityEstimator
     /// built, so `SYSTEM DROP STATISTICS CACHE` cannot be undone by a query already in flight.
     auto stats_cache = getContext()->getPartStatisticsCache();
     return getContext()->getSelectivityEstimatorCache()->getOrSet(
-        selectivityEstimatorCacheKey(getStorageID(), parts, required_columns),
+        selectivityEstimatorCacheKey(getStorageID().uuid, parts, required_columns),
         [&] { return build(stats_cache.get()); });
 }
 

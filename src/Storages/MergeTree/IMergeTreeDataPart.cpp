@@ -1432,14 +1432,16 @@ ColumnsStatistics IMergeTreeDataPart::loadStatistics(const NameSet & required_co
 
 UInt128 IMergeTreeDataPart::getStatisticsCacheKey() const
 {
-    /// Must use `getRelativePathOfActivePart` (not the current relative path), like the other
-    /// part caches, so lookup and removal address the same entry after a rename.
-    /// The path alone is not enough: a part directory can be reused with different bytes (e.g.
-    /// files replaced between DETACH and ATTACH), and the entry of the old part object is only
-    /// removed when that object is destroyed, which a running query can delay past the load of
-    /// the new one. The content checksum makes such an entry unreachable, exactly like in the
-    /// selectivity estimator cache key.
-    return PartStatisticsCache::hash(getDataPartStorage().getDiskName() + ":" + getRelativePathOfActivePart(), checksums.getTotalChecksumUInt128());
+    /// Unlike the other part caches, the key does not contain the part path: `MergeTreeData::rename`
+    /// rewrites the path of every live part of a table without a UUID, which would strand the
+    /// entries warmed before the rename. The table UUID keeps the entries of tables apart and
+    /// survives a rename; a table without one has no rename-stable identity, so its parts share
+    /// entries by content, which the checksum makes exact: it covers the statistics files, so equal
+    /// checksums mean equal statistics. The checksum also makes the entry of an old part object
+    /// unreachable from a part directory reused with different bytes (e.g. files replaced between
+    /// DETACH and ATTACH), whose removal a running query can delay past the load of the new one,
+    /// exactly like in the selectivity estimator cache key.
+    return PartStatisticsCache::hash(storage.getStorageID().uuid, checksums.getTotalChecksumUInt128());
 }
 
 std::shared_ptr<const ColumnsStatistics> IMergeTreeDataPart::loadStatisticsWithCache(PartStatisticsCache * cache, const NameSet & required_columns) const

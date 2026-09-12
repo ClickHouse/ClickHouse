@@ -28,9 +28,9 @@ struct SelectivityEstimatorWeightFunction
 extern template class CacheBase<UInt128, ConditionSelectivityEstimator, UInt128TrivialHash, SelectivityEstimatorWeightFunction>;
 
 /** Cache of selectivity estimators built from the statistics of a set of data parts.
-  * Entries are keyed by (table, ordered part-name set, requested column set); parts are
-  * immutable, so an equal key implies an equal estimator, and entries for part sets that
-  * disappeared (merges, drops) age out by eviction.
+  * Entries are keyed by (table UUID, ordered part set with content checksums, requested column
+  * set); parts are immutable, so an equal key implies an equal estimator, and entries for part
+  * sets that disappeared (merges, drops) age out by eviction.
   */
 class SelectivityEstimatorCache : public CacheBase<UInt128, ConditionSelectivityEstimator, UInt128TrivialHash, SelectivityEstimatorWeightFunction>
 {

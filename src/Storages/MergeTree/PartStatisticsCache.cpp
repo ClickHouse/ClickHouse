@@ -23,10 +23,10 @@ PartStatisticsCache::PartStatisticsCache(const String & cache_policy, size_t max
 {
 }
 
-UInt128 PartStatisticsCache::hash(const String & part_path, UInt128 content_checksum)
+UInt128 PartStatisticsCache::hash(const UUID & table_uuid, UInt128 content_checksum)
 {
     SipHash hash;
-    hash.update(part_path.data(), part_path.size() + 1);
+    hash.update(table_uuid);
     hash.update(content_checksum);
     return hash.get128();
 }
