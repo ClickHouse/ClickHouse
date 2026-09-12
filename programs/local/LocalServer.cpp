@@ -312,12 +312,11 @@ Poco::Util::LayeredConfiguration & LocalServer::getClientConfiguration()
     return config();
 }
 
-void LocalServer::processError(std::string_view) const
+void LocalServer::processError(std::string_view query) const
 {
-    if (ignore_error)
-        return;
-
-    if (is_interactive)
+    /// `--ignore-error` asks to carry on with the next statement, not to hide what went wrong, so
+    /// the exception is reported here rather than rethrown - rethrowing it would end the run.
+    if (is_interactive || ignore_error)
     {
         String message;
         if (server_exception)
@@ -333,7 +332,10 @@ void LocalServer::processError(std::string_view) const
 #pragma clang diagnostic push
 #pragma clang diagnostic ignored "-Wdisabled-macro-expansion"
         fmt::print(stderr, "Received exception:\n{}\n", message);
-        fmt::print(stderr, "\n");
+        if (is_interactive)
+            fmt::print(stderr, "\n");
+        else
+            fmt::print(stderr, "(query: {})\n", query);
 #pragma clang diagnostic pop
     }
     else
