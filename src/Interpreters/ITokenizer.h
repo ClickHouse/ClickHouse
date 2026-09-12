@@ -195,6 +195,59 @@ private:
     size_t n;
 };
 
+namespace detail
+{
+
+/// Bit `i` of the result is set iff byte `i` of the `block_length` (<= `BLOCK_SIZE`) bytes at `block` is in
+/// `separators`. The whole block is read even past the end of the data, which is fine because the data
+/// passed to `forEachToken` is padded from the right with at least 15 bytes (as our Columns provide);
+/// the bits of the padding bytes are masked out.
+inline ALWAYS_INLINE UInt32 separatorBits(const ByteSetLookup & separators, const char * block, size_t block_length)
+{
+#if !defined(MEMORY_SANITIZER) /// MSan cannot see that the bits of the uninitialized padding bytes are discarded
+    UInt32 bits = separators.matchBlock(block);
+#else
+    UInt32 bits = 0;
+    for (size_t i = 0; i < block_length; ++i)
+        bits |= static_cast<UInt32>(separators.contains(block[i])) << i;
+#endif
+    if (block_length < ByteSetLookup::BLOCK_SIZE)
+        bits &= (1u << block_length) - 1;
+    return bits;
+}
+
+/// Calls `callback` for every maximal run of bytes outside `separators`; stops if it returns true.
+/// Walks the data in blocks and emits a token before every separator bit, so the work per block is
+/// proportional to the number of separators in it. Requires padded data, see `separatorBits`.
+template <typename Callback>
+void forEachTokenSplitByBytes(const ByteSetLookup & separators, const char * __restrict data, size_t length, Callback && callback)
+{
+    const char * end = data + length;
+    const char * token_start = data;
+
+    for (const char * block = data; block < end; block += ByteSetLookup::BLOCK_SIZE)
+    {
+        const size_t block_length = std::min<size_t>(end - block, ByteSetLookup::BLOCK_SIZE);
+        UInt32 separator_bits = separatorBits(separators, block, block_length);
+
+        while (separator_bits != 0)
+        {
+            const char * separator = block + std::countr_zero(separator_bits);
+            separator_bits &= separator_bits - 1;
+
+            if (separator > token_start && callback(token_start, separator - token_start))
+                return;
+
+            token_start = separator + 1;
+        }
+    }
+
+    if (token_start < end)
+        callback(token_start, end - token_start);
+}
+
+}
+
 /// Parser extracting tokens which consist of alphanumeric ASCII characters or Unicode characters (not necessarily alphanumeric)
 struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaTokenizer>
 {
@@ -213,82 +266,17 @@ struct SplitByNonAlphaTokenizer final : public ITokenizerHelper<SplitByNonAlphaT
 
     /// Non-alphanumeric ASCII bytes separate tokens; every other byte, including all bytes of
     /// UTF-8 sequences, belongs to a token.
-    static constexpr ByteSetLookup separator_chars = ByteSetLookup::fromPredicate([](char c) { return isASCII(c) && !isAlphaNumericASCII(c); });
+    static constexpr ByteSetLookup separator_chars = ByteSetLookup::fromPredicate([](char c)
+    {
+        return isASCII(c) && !isAlphaNumericASCII(c);
+    });
 
-    /// High-performance callback-based tokenizer with SIMD optimization.
+    /// Hot-path tokenizer used by the free `forEachToken` (index build, search, the `tokens` function).
     /// Assumes data is padded from the right with at least 15 bytes (as our Columns provide).
     template <Fn<bool(const char *, size_t)> Callback>
     void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
     {
-        const char * begin = data;
-        const char * end = data + length;
-        const char * pos = data;
-
-        while (pos < end)
-        {
-#if !defined(MEMORY_SANITIZER) /// We read uninitialized bytes and decide on the calculated mask
-            // NOTE: we assume that `data` string is padded from the right with 15 bytes.
-            const size_t haystack_length = ByteSetLookup::BLOCK_SIZE;
-            // Every bit represents if the character of the haystack belongs to a token (1) or separates tokens (0)
-            unsigned result_bitmask = ~separator_chars.matchBlock(pos) & 0xFFFFu;
-            const char * next_pos = std::min(end, pos + haystack_length);
-            while (pos < next_pos)
-            {
-                if (result_bitmask == 0)
-                {
-                    /// end of token started on previous haystack
-                    if (pos > begin)
-                    {
-                        if (callback(begin, pos - begin))
-                            return;
-                    }
-
-                    pos = next_pos;
-                    begin = pos;
-                    break;
-                }
-
-                const auto token_start_pos_in_current_haystack = std::countr_zero(result_bitmask);
-                /// end of token starting in one of previous haystacks
-                if (token_start_pos_in_current_haystack != 0)
-                {
-                    if (begin < pos)
-                    {
-                        if (callback(begin, pos - begin))
-                            return;
-                    }
-                    pos += token_start_pos_in_current_haystack;
-                    begin = pos;
-                }
-
-                const auto token_bytes_in_current_haystack = std::countr_zero(~(result_bitmask >> token_start_pos_in_current_haystack));
-                pos += token_bytes_in_current_haystack;
-
-                result_bitmask >>= token_start_pos_in_current_haystack + token_bytes_in_current_haystack;
-            }
-#else
-            if (isASCII(*pos) && !isAlphaNumericASCII(*pos))
-            {
-                /// Finish current token if any
-                if (pos > begin)
-                {
-                    if (callback(begin, pos - begin))
-                        return;
-                }
-
-                begin = ++pos;
-            }
-            else
-            {
-                ++pos;
-            }
-#endif
-        }
-
-        if (begin >= end)
-            return;
-
-        callback(begin, end - begin);
+        detail::forEachTokenSplitByBytes(separator_chars, data, length, callback);
     }
 };
 
@@ -310,15 +298,15 @@ struct SplitByStringTokenizer final : public ITokenizerHelper<SplitByStringToken
     void substringToTokens(const char * data, size_t length, VectorWithMemoryTracking<String> & tokens, bool is_prefix, bool is_suffix) const override;
 
     /// Hot-path tokenizer used by the free `forEachToken` (index build, search, the `tokens` function).
-    /// Unlike a per-token `nextInString` call, the scan state stays in registers across tokens, and with
-    /// multi-byte separators every 16-byte block is classified once, so `matchSeparator` runs only at the
-    /// bytes that can start a separator. Like `SplitByNonAlphaTokenizer`, assumes that `data` is padded
-    /// from the right with at least 15 bytes (as our Columns provide).
+    /// Unlike a per-token `nextInString` call, the scan state stays in registers across tokens, and every
+    /// 16-byte block is classified once, so with multi-byte separators `matchSeparator` runs only at the
+    /// bytes that can start a separator. Assumes data is padded from the right with at least 15 bytes
+    /// (as our Columns provide).
     template <Fn<bool(const char *, size_t)> Callback>
     void forEachTokenImpl(const char * __restrict data, size_t length, Callback && callback) const
     {
         if (all_separators_single_byte)
-            forEachTokenSingleByte(data, length, callback);
+            detail::forEachTokenSplitByBytes(separator_first_bytes, data, length, callback);
         else
             forEachTokenMultiByte(data, length, callback);
     }
@@ -340,27 +328,6 @@ private:
         return 0;
     }
 
-    /// Separators are exactly the bytes of `separator_first_bytes`: tokens are the maximal runs of other bytes.
-    template <typename Callback>
-    void forEachTokenSingleByte(const char * __restrict data, size_t length, Callback && callback) const
-    {
-        const char * pos = data;
-        const char * end = data + length;
-
-        while (pos < end)
-        {
-            pos = separator_first_bytes.find<false>(pos, end);
-            if (pos >= end)
-                return;
-
-            const char * token_start = pos;
-            pos = separator_first_bytes.find<true>(pos, end);
-
-            if (callback(token_start, pos - token_start))
-                return;
-        }
-    }
-
     /// Walks the string block by block; the candidate bits of a block are the positions holding a possible
     /// first byte of a separator, and only those are verified with `matchSeparator`. A matched separator may
     /// extend past the block: `resume` marks the first byte after it, and candidates before it are skipped.
@@ -374,16 +341,7 @@ private:
         while (block < end)
         {
             const size_t block_length = std::min<size_t>(end - block, ByteSetLookup::BLOCK_SIZE);
-#if !defined(MEMORY_SANITIZER) /// We read the padding bytes past `end`; their bits are masked out below
-            UInt32 candidates = separator_first_bytes.matchBlock(block);
-#else
-            UInt32 candidates = 0;
-            for (size_t i = 0; i < block_length; ++i)
-                candidates |= static_cast<UInt32>(separator_first_bytes.contains(block[i])) << i;
-#endif
-            if (block_length < ByteSetLookup::BLOCK_SIZE)
-                candidates &= (1u << block_length) - 1;
-
+            UInt32 candidates = detail::separatorBits(separator_first_bytes, block, block_length);
             const char * block_end = block + block_length;
             const char * resume = block;
 
@@ -417,7 +375,7 @@ private:
     /// The first bytes of all separators. Only positions holding one of them can start a separator.
     ByteSetLookup separator_first_bytes;
     /// If every separator is a single byte, `separator_first_bytes` is exactly the set of separators
-    /// and both separator runs and tokens are delimited by `ByteSetLookup::find` alone.
+    /// and the tokens are the maximal runs of bytes outside it.
     bool all_separators_single_byte = false;
 };
 
