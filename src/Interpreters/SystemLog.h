@@ -162,7 +162,7 @@ initial_address:                       ::ffff:127.0.0.1
 initial_port:                          40452
 initial_query_start_time:              2021-11-03 16:13:54
 initial_query_start_time_microseconds: 2021-11-03 16:13:54.952325
-interface:                             1
+interface:                             TCP
 os_user:                               sevirov
 client_hostname:                       clickhouse.eu-central1.internal
 client_name:                           ClickHouse
@@ -170,7 +170,7 @@ client_revision:                       54449
 client_version_major:                  21
 client_version_minor:                  10
 client_version_patch:                  1
-http_method:                           0
+http_method:                           UNKNOWN
 http_user_agent:
 http_referer:
 forwarded_for:
@@ -264,7 +264,7 @@ initial_user:                  default
 initial_query_id:              50a320fd-85a8-49b8-8761-98a86bcbacef
 initial_address:               ::ffff:127.0.0.1
 initial_port:                  33452
-interface:                     1
+interface:                     TCP
 os_user:                       bharatnc
 client_hostname:               tower
 client_name:                   ClickHouse
@@ -272,7 +272,7 @@ client_revision:               54437
 client_version_major:          20
 client_version_minor:          7
 client_version_patch:          2
-http_method:                   0
+http_method:                   UNKNOWN
 http_user_agent:
 quota_key:
 revision:                      54440
