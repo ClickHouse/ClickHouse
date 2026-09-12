@@ -100,6 +100,7 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -1954,6 +1955,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types
         getContext()->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
     }
+
+    /// Both a definition supplied to this interpreter directly (RESTORE re-parses one from a backup)
+    /// and one the branch above re-parsed from stored metadata arrive un-normalized: parsing fills
+    /// only `list_of_modes`, and the analyzer rejects `union_mode == UNION_DEFAULT`.
+    normalizeSetOperations(query_ptr, getContext());
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
     if (!create.attach_short_syntax && create.attach_as_replicated.has_value())
