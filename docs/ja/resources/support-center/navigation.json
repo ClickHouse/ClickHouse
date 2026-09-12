@@ -1,10 +1,11 @@
 {
   "groups": [
     {
-      "group": "ナレッジベース",
+      "group": "Knowledgebase",
       "pages": [
+        "ja/resources/support-center/home",
         {
-          "group": "パフォーマンス & 最適化",
+          "group": "Performance & optimization",
           "pages": [
             "ja/resources/support-center/knowledge-base/performance-optimization/insert-select-settings-tuning",
             "ja/resources/support-center/knowledge-base/performance-optimization/async-vs-optimize-read-in-order",
@@ -39,7 +40,7 @@
           ]
         },
         {
-          "group": "データのインポート & エクスポート",
+          "group": "Data import & export",
           "pages": [
             "ja/resources/support-center/knowledge-base/data-import-export/achieving-atomic-inserts",
             "ja/resources/support-center/knowledge-base/data-import-export/cannot-append-data-to-parquet-format",
@@ -59,19 +60,18 @@
           ]
         },
         {
-          "group": "構成 & 設定",
+          "group": "Configuration & settings",
           "pages": [
             "ja/resources/support-center/knowledge-base/configuration-settings/about-quotas-and-query-complexity",
             "ja/resources/support-center/knowledge-base/configuration-settings/alter-user-settings-exception",
             "ja/resources/support-center/knowledge-base/configuration-settings/change-the-prompt-in-clickhouse-client",
             "ja/resources/support-center/knowledge-base/configuration-settings/configure-a-user-setting",
-            "ja/resources/support-center/knowledge-base/configuration-settings/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
             "ja/resources/support-center/knowledge-base/configuration-settings/ignoring-incorrect-settings",
             "ja/resources/support-center/knowledge-base/configuration-settings/maximum-number-of-tables-and-databases"
           ]
         },
         {
-          "group": "インテグレーション & クライアントライブラリ",
+          "group": "Integrations & client libraries",
           "pages": [
             "ja/resources/support-center/knowledge-base/integrations/node-js-example",
             "ja/resources/support-center/knowledge-base/integrations/ODBC-authentication-failed-error-using-PowerBI-CH-connector",
@@ -83,8 +83,9 @@
           ]
         },
         {
-          "group": "トラブルシューティング & エラー",
+          "group": "Troubleshooting & errors",
           "pages": [
+            "ja/resources/support-center/troubleshooting/index",
             "ja/resources/support-center/troubleshooting/troubleshooting",
             "ja/resources/support-center/knowledge-base/troubleshooting/certificate-verify-failed-error",
             "ja/resources/support-center/knowledge-base/troubleshooting/configure-cap-ipc-lock-and-cap-sys-nice-in-docker",
@@ -95,11 +96,10 @@
             "ja/resources/support-center/knowledge-base/troubleshooting/part-intersects-previous-part",
             "ja/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot",
             "ja/resources/support-center/knowledge-base/troubleshooting/restore-replica-after-storage-failure"
-          ],
-          "root": "ja/resources/support-center/troubleshooting/index"
+          ]
         },
         {
-          "group": "テーブル & スキーマ",
+          "group": "Tables & schema",
           "pages": [
             "ja/resources/support-center/knowledge-base/tables-schema/add-column",
             "ja/resources/support-center/knowledge-base/tables-schema/delete-old-data",
@@ -112,7 +112,7 @@
           ]
         },
         {
-          "group": "クエリ & SQL",
+          "group": "Queries & SQL",
           "pages": [
             "ja/resources/support-center/knowledge-base/queries-sql/calculate-pi-using-sql",
             "ja/resources/support-center/knowledge-base/queries-sql/compare-resultsets",
@@ -126,7 +126,7 @@
           ]
         },
         {
-          "group": "materialized view & プロジェクション",
+          "group": "Materialized views & projections",
           "pages": [
             "ja/resources/support-center/knowledge-base/materialized-views/are-materialized-views-inserted-asynchronously",
             "ja/resources/support-center/knowledge-base/materialized-views/how-to-display-queries-using-mv",
@@ -135,7 +135,7 @@
           ]
         },
         {
-          "group": "監視 & デバッグ",
+          "group": "Monitoring & debugging",
           "pages": [
             "ja/resources/support-center/knowledge-base/monitoring-debugging/check-query-cache-in-use",
             "ja/resources/support-center/knowledge-base/monitoring-debugging/collect-and-draw-traces",
@@ -150,17 +150,18 @@
           ]
         },
         {
-          "group": "セキュリティ & アクセス制御",
+          "group": "Security & access control",
           "pages": [
             "ja/resources/support-center/knowledge-base/security/check-users-roles",
             "ja/resources/support-center/knowledge-base/security/common-rbac-queries",
             "ja/resources/support-center/knowledge-base/security/remove-default-user",
             "ja/resources/support-center/knowledge-base/security/row-column-policy",
+            "ja/resources/support-center/knowledge-base/security/set-role-not-persisting-in-sql-console",
             "ja/resources/support-center/knowledge-base/security/windows-active-directory-to-ch-roles"
           ]
         },
         {
-          "group": "データ管理",
+          "group": "Data management",
           "pages": [
             "ja/resources/support-center/knowledge-base/data-management/backing-up-a-specific-partition",
             "ja/resources/support-center/knowledge-base/data-management/calculate-ratio-of-zero-sparse-serialization",
@@ -172,22 +173,25 @@
           ]
         },
         {
-          "group": "セットアップとインストール",
+          "group": "Setup & installation",
           "pages": [
             "ja/resources/support-center/knowledge-base/setup-installation/difference-between-official-builds-and-3rd-party",
             "ja/resources/support-center/knowledge-base/setup-installation/enabling-ssl-with-lets-encrypt",
             "ja/resources/support-center/knowledge-base/setup-installation/how-to-increase-thread-pool-size",
             "ja/resources/support-center/knowledge-base/setup-installation/install-clickhouse-windows10",
             "ja/resources/support-center/knowledge-base/setup-installation/llvm-clang-up-to-date",
-            "ja/resources/support-center/knowledge-base/setup-installation/production"
+            "ja/resources/support-center/knowledge-base/setup-installation/production",
+            "ja/resources/support-center/knowledge-base/setup-installation/set-up-clickhouse-documentation-mcp-server"
           ]
         },
         {
-          "group": "一般・よくある質問",
+          "group": "General & FAQs",
           "pages": [
+            "ja/resources/support-center/knowledge-base/general-faqs/faq-index",
             {
-              "group": "全般",
+              "group": "General",
               "pages": [
+                "ja/resources/support-center/knowledge-base/general-faqs/index",
                 "ja/resources/support-center/knowledge-base/general-faqs/columnar-database",
                 "ja/resources/support-center/knowledge-base/general-faqs/concurrency",
                 "ja/resources/support-center/knowledge-base/general-faqs/cost-based",
@@ -204,42 +208,40 @@
                 "ja/resources/support-center/knowledge-base/general-faqs/updates",
                 "ja/resources/support-center/knowledge-base/general-faqs/who-is-using-clickhouse",
                 "ja/resources/support-center/knowledge-base/general-faqs/why-recommend-clickhouse-keeper-over-zookeeper"
-              ],
-              "root": "ja/resources/support-center/knowledge-base/general-faqs/index"
+              ]
             },
             {
-              "group": "ユースケース",
+              "group": "Use cases",
               "pages": [
+                "ja/resources/support-center/knowledge-base/general-faqs/use-cases-index",
                 "ja/resources/support-center/knowledge-base/general-faqs/key-value",
                 "ja/resources/support-center/knowledge-base/general-faqs/time-series",
                 "ja/resources/support-center/knowledge-base/general-faqs/use-clickhouse-for-log-analytics",
                 "ja/resources/support-center/knowledge-base/general-faqs/vector-search"
-              ],
-              "root": "ja/resources/support-center/knowledge-base/general-faqs/use-cases-index"
+              ]
             },
             {
-              "group": "インテグレーション",
+              "group": "Integration",
               "pages": [
+                "ja/resources/support-center/knowledge-base/integrations/index",
                 "ja/resources/support-center/knowledge-base/data-import-export/json-import",
                 "ja/resources/support-center/knowledge-base/integrations/oracle-odbc"
-              ],
-              "root": "ja/resources/support-center/knowledge-base/integrations/index"
+              ]
             },
             {
-              "group": "運用",
+              "group": "Operations",
               "pages": [
+                "ja/resources/support-center/knowledge-base/general-faqs/operations-index",
                 "ja/resources/support-center/knowledge-base/tables-schema/delete-old-data",
                 "ja/resources/support-center/knowledge-base/cloud-services/multi-region-replication",
                 "ja/resources/support-center/knowledge-base/setup-installation/production",
                 "ja/resources/support-center/knowledge-base/general-faqs/separate-storage"
-              ],
-              "root": "ja/resources/support-center/knowledge-base/general-faqs/operations-index"
+              ]
             }
-          ],
-          "root": "ja/resources/support-center/knowledge-base/general-faqs/faq-index"
+          ]
         },
         {
-          "group": "ヒントとコツ",
+          "group": "Tips & tricks",
           "pages": [
             "ja/resources/support-center/tips-and-tricks/community-wisdom",
             "ja/resources/support-center/tips-and-tricks/cost-optimization",
@@ -250,10 +252,9 @@
             "ja/resources/support-center/tips-and-tricks/too-many-parts"
           ]
         }
-      ],
-      "root": "ja/resources/support-center/home"
+      ]
     }
   ],
   "icon": "/images/icons/icon-support-center.svg",
-  "item": "サポートセンター"
+  "item": "Support center"
 }

@@ -27,6 +27,7 @@
 #include <Interpreters/SharedDatabaseCatalog.h>
 #endif
 #include <Parsers/ASTInsertQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <Planner/Utils.h>
 #include <Processors/QueryPlan/ParallelReplicasLocalPlan.h>
 #include <Processors/QueryPlan/QueryPlan.h>
@@ -51,6 +52,9 @@
 #include <Storages/getStructureOfRemoteTable.h>
 #include <Storages/removeGroupingFunctionSpecializations.h>
 
+#include <string_view>
+#include <unordered_set>
+
 
 namespace ProfileEvents
 {
@@ -66,7 +70,12 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
-    extern const SettingsUInt64 limit;
+    extern const SettingsBool http_allow_database_as_path;
+    extern const SettingsBool http_allow_filters_as_path;
+    extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
+    extern const SettingsBool http_allow_table_as_file;
+    extern const SettingsString implicit_table_at_top_level;
+    extern const SettingsDouble limit;
     extern const SettingsLoadBalancing load_balancing;
     extern const SettingsUInt64 max_concurrent_queries_for_user;
     extern const SettingsUInt64 max_distributed_depth;
@@ -77,7 +86,19 @@ namespace Setting
     extern const SettingsFloat max_skip_unavailable_shards_ratio;
     extern const SettingsMaxThreads max_threads;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
-    extern const SettingsUInt64 offset;
+    extern const SettingsDouble offset;
+    extern const SettingsDouble page;
+    extern const SettingsString format;
+    extern const SettingsString input_format;
+    extern const SettingsString output_format;
+    extern const SettingsString default_format;
+    extern const SettingsString compression;
+    extern const SettingsString database;
+    extern const SettingsString select;
+    extern const SettingsString order;
+    extern const SettingsString sort;
+    extern const SettingsString filter;
+    extern const SettingsString additional_result_filter;
     extern const SettingsBool optimize_skip_unused_shards;
     extern const SettingsUInt64 optimize_skip_unused_shards_nesting;
     extern const SettingsBool optimize_skip_unused_shards_rewrite_in;
@@ -89,6 +110,7 @@ namespace Setting
     extern const SettingsBool parallel_replicas_prefer_local_replica;
     extern const SettingsBool parallel_replicas_allow_view_over_mergetree;
     extern const SettingsMilliseconds queue_max_wait_ms;
+    extern const SettingsBool run_query_in_background;
     extern const SettingsBool skip_unavailable_shards;
     extern const SettingsSkipUnavailableShardsMode skip_unavailable_shards_mode;
     extern const SettingsOverflowMode timeout_overflow_mode;
@@ -135,6 +157,169 @@ namespace
 
 namespace ClusterProxy
 {
+
+void stripDatabaseSetting(Settings & settings)
+{
+    /// Also reset a `database` that is merely *marked* changed (e.g. explicitly reset to the
+    /// default with `SET database = ''`), so the inter-server packet does not carry it.
+    if (settings[Setting::database].changed || !settings[Setting::database].value.empty())
+    {
+        settings[Setting::database] = "";
+        settings[Setting::database].changed = false;
+    }
+}
+
+void stripInitiatorOnlySettings(Settings & settings)
+{
+    /// All of the settings below are interpreted only at the initiator: they either shape the
+    /// final query (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`,
+    /// `additional_result_filter`) or shape how the result is serialised to the user
+    /// (`format`, `output_format`, `default_format`, `compression`). Forwarding them to remote
+    /// shards is at best wasted work and at worst breaks distributed queries — `format = 'Null'`,
+    /// for example, sets `null_format = true` on each shard, suppressing TCP `sendData` and
+    /// producing empty blocks; `getStructureOfRemoteTable` then `continue`s without throwing
+    /// `NetException`, leaving `fail_messages` empty and surfacing as
+    /// `NO_REMOTE_SHARD_AVAILABLE. Log: ` with an empty body. The query-shaping settings would
+    /// similarly cause the per-shard subquery to be re-shaped a second time. Strip the settings
+    /// here so the inter-server `Settings` packet does not carry them. This is shared by the
+    /// `Distributed` fan-out and the `*Cluster` table functions (`IStorageCluster`), which both
+    /// materialize these settings on the initiator before reaching the remote servers.
+    if (settings[Setting::offset].changed || settings[Setting::offset] != 0)
+    {
+        settings[Setting::offset] = 0;
+        settings[Setting::offset].changed = false;
+    }
+    if (settings[Setting::limit].changed || settings[Setting::limit] != 0)
+    {
+        settings[Setting::limit] = 0;
+        settings[Setting::limit].changed = false;
+    }
+    if (settings[Setting::page].changed || settings[Setting::page] != 0)
+    {
+        settings[Setting::page] = 0;
+        settings[Setting::page].changed = false;
+    }
+    if (settings[Setting::select].changed || !settings[Setting::select].value.empty())
+    {
+        settings[Setting::select] = "";
+        settings[Setting::select].changed = false;
+    }
+    if (settings[Setting::order].changed || !settings[Setting::order].value.empty())
+    {
+        settings[Setting::order] = "";
+        settings[Setting::order].changed = false;
+    }
+    if (settings[Setting::sort].changed || !settings[Setting::sort].value.empty())
+    {
+        settings[Setting::sort] = "";
+        settings[Setting::sort].changed = false;
+    }
+    if (settings[Setting::filter].changed || !settings[Setting::filter].value.empty())
+    {
+        settings[Setting::filter] = "";
+        settings[Setting::filter].changed = false;
+    }
+    if (settings[Setting::additional_result_filter].changed || !settings[Setting::additional_result_filter].value.empty())
+    {
+        settings[Setting::additional_result_filter] = "";
+        settings[Setting::additional_result_filter].changed = false;
+    }
+    if (settings[Setting::format].changed || !settings[Setting::format].value.empty())
+    {
+        settings[Setting::format] = "";
+        settings[Setting::format].changed = false;
+    }
+    if (settings[Setting::input_format].changed || !settings[Setting::input_format].value.empty())
+    {
+        settings[Setting::input_format] = "";
+        settings[Setting::input_format].changed = false;
+    }
+    if (settings[Setting::output_format].changed || !settings[Setting::output_format].value.empty())
+    {
+        settings[Setting::output_format] = "";
+        settings[Setting::output_format].changed = false;
+    }
+    if (settings[Setting::default_format].changed || !settings[Setting::default_format].value.empty())
+    {
+        settings[Setting::default_format] = "";
+        settings[Setting::default_format].changed = false;
+    }
+    if (settings[Setting::compression].changed || !settings[Setting::compression].value.empty())
+    {
+        settings[Setting::compression] = "";
+        settings[Setting::compression].changed = false;
+    }
+
+    /// The HTTP/path-only settings are interpreted exclusively by the HTTP query-construction path on
+    /// the initiator (`http_allow_database_as_path`, `http_allow_table_as_file`,
+    /// `http_allow_filters_as_path`, `http_allow_filters_as_unrecognized_url_parameters`) or only
+    /// rewrite a FROM-less top-level query before it is wrapped (`implicit_table_at_top_level`, which
+    /// is already cleared for subqueries). They are irrelevant on a remote TCP query, and — for the
+    /// settings introduced here — forwarding them to an older shard during a rolling upgrade triggers
+    /// `UNKNOWN_SETTING`. Strip them in the shared helper so every remote path has the same contract.
+    if (settings[Setting::http_allow_database_as_path].changed || settings[Setting::http_allow_database_as_path])
+    {
+        settings[Setting::http_allow_database_as_path] = false;
+        settings[Setting::http_allow_database_as_path].changed = false;
+    }
+    if (settings[Setting::http_allow_table_as_file].changed || settings[Setting::http_allow_table_as_file])
+    {
+        settings[Setting::http_allow_table_as_file] = false;
+        settings[Setting::http_allow_table_as_file].changed = false;
+    }
+    if (settings[Setting::http_allow_filters_as_path].changed || settings[Setting::http_allow_filters_as_path])
+    {
+        settings[Setting::http_allow_filters_as_path] = false;
+        settings[Setting::http_allow_filters_as_path].changed = false;
+    }
+    if (settings[Setting::http_allow_filters_as_unrecognized_url_parameters].changed
+        || settings[Setting::http_allow_filters_as_unrecognized_url_parameters])
+    {
+        settings[Setting::http_allow_filters_as_unrecognized_url_parameters] = false;
+        settings[Setting::http_allow_filters_as_unrecognized_url_parameters].changed = false;
+    }
+    if (settings[Setting::implicit_table_at_top_level].changed || !settings[Setting::implicit_table_at_top_level].value.empty())
+    {
+        settings[Setting::implicit_table_at_top_level] = "";
+        settings[Setting::implicit_table_at_top_level].changed = false;
+    }
+
+    /// `database` is an initiator-only setting as well: `rewriteSelectQuery` may leave the remote
+    /// table unqualified (e.g. a `Distributed` table created with an empty database argument), and
+    /// the shard must resolve it against its own default database.
+    stripDatabaseSetting(settings);
+}
+
+/// Single source of truth for the initiator-only setting names. MUST list exactly the settings reset by
+/// `stripInitiatorOnlySettings` above. Used both to test membership (`isInitiatorOnlySettingName`) and to
+/// remove these settings from a query's own `SETTINGS` clause before that query *text* is forwarded to a
+/// shard: a forwarded query string — the optimized `parallel_distributed_insert_select` paths in
+/// `StorageDistributed`, and `IStorageCluster`'s `formatWithSecretsOneLine()` — would otherwise carry an
+/// initiator-only setting written in the user's `SETTINGS` clause, getting it re-applied or, for the
+/// settings new to the HTTP table-as-file feature, rejected as `UNKNOWN_SETTING` by an older shard during
+/// a rolling upgrade.
+constexpr std::string_view initiator_only_setting_names[] = {
+    "select", "order", "sort", "filter", "limit", "offset", "page", "additional_result_filter",
+    "format", "input_format", "output_format", "default_format", "compression",
+    "http_allow_database_as_path", "http_allow_table_as_file", "http_allow_filters_as_path",
+    "http_allow_filters_as_unrecognized_url_parameters", "implicit_table_at_top_level",
+    "database",
+};
+
+bool isInitiatorOnlySettingName(std::string_view name)
+{
+    for (std::string_view candidate : initiator_only_setting_names)
+        if (candidate == name)
+            return true;
+    return false;
+}
+
+void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query)
+{
+    /// `removeSettingsFromQuery` clears the names from every query-level `SETTINGS` carrier, covering both
+    /// the `name = value` (`changes`) and `name = DEFAULT` (`default_settings`) forms.
+    removeSettingsFromQuery(query, initiator_only_setting_names);
+}
 
 static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & cluster,
     bool is_remote_function,
@@ -224,16 +409,11 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::skip_unavailable_shards_mode].changed = true;
     }
 
-    if (settings[Setting::offset])
-    {
-        new_settings[Setting::offset] = 0;
-        new_settings[Setting::offset].changed = false;
-    }
-    if (settings[Setting::limit])
-    {
-        new_settings[Setting::limit] = 0;
-        new_settings[Setting::limit].changed = false;
-    }
+    /// Strip the initiator-only settings (query-shaping and result-serialisation) so the
+    /// inter-server `Settings` packet does not carry them; see `stripInitiatorOnlySettings`.
+    stripInitiatorOnlySettings(new_settings);
+
+    new_settings[Setting::run_query_in_background] = false;
 
     /// Setting additional_table_filters may be applied to Distributed table.
     /// In case if query is executed up to WithMergableState on remote shard, it is impossible to filter on initiator.
@@ -568,6 +748,43 @@ static ContextMutablePtr updateContextForParallelReplicas(const LoggerPtr & logg
         context_mutable->setSetting("parallel_replicas_support_projection", Field{false});
     }
 
+    if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
+    {
+        /// Replace 'max_execution_time' of this sub-query with 'max_execution_time_leaf' and 'timeout_overflow_mode'
+        /// with 'timeout_overflow_mode_leaf'
+        context_mutable->setSetting("max_execution_time", static_cast<Field>(settings[Setting::max_execution_time_leaf]));
+        context_mutable->setSetting("timeout_overflow_mode", static_cast<Field>(settings[Setting::timeout_overflow_mode_leaf]));
+
+        /// The substitution above only affects remote replicas: each of them builds its own 'QueryStatus'
+        /// from the settings shipped with the sub-query, so 'max_execution_time_leaf' is enforced there.
+        /// The local replica, however, executes inside the initiator's pipeline and shares the initiator's
+        /// 'QueryStatus', whose limits come from the original (outer) query and are not bounded by the leaf
+        /// timeout. As a result, with a local plan the leaf reading would not use the leaf timeout contract.
+        /// Disable the local plan when that contract is stricter than, or differs from, the initiator's timeout
+        /// contract so that all leaf reading happens on remote replicas where it is honored (see
+        /// 'leafTimeoutRequiresRemoteOnlyLeafReading').
+        if (settings[Setting::parallel_replicas_local_plan] && leafTimeoutRequiresRemoteOnlyLeafReading(settings))
+        {
+            LOG_TRACE(
+                logger,
+                "Disabling 'parallel_replicas_local_plan' because the leaf timeout contract differs from the "
+                "initiator's: the local replica shares the initiator's query status and cannot use the leaf "
+                "timeout separately");
+            context_mutable->setSetting("parallel_replicas_local_plan", Field{false});
+        }
+    }
+
+    /// Strip the initiator-only settings (the query-shaping and result-serialisation settings, and
+    /// `database`) before sending the query to the secondary replicas: they are materialized on the
+    /// initiator and must not be re-applied per replica (which would re-shape the already-shaped
+    /// per-replica query or break it, e.g. `format = 'Null'`). This mirrors the `Distributed`
+    /// fan-out and the `*Cluster` table functions; see `stripInitiatorOnlySettings`.
+    {
+        Settings new_settings = context_mutable->getSettingsCopy();
+        stripInitiatorOnlySettings(new_settings);
+        context_mutable->setSettings(new_settings);
+    }
+
     return context_mutable;
 }
 
@@ -859,6 +1076,13 @@ void executeQueryWithParallelReplicas(
     LOG_DEBUG(logger, "Executing read from {}, header {}, query ({}), stage {} with parallel replicas",
         storage_id.getNameForLogs(), header->dumpStructure(), query_ast->formatForLogging(), processed_stage);
 
+    /// Strip initiator-only settings from the query text forwarded to the replicas (same contract as the
+    /// `Distributed` fan-out): the AST carries them from a nested `SETTINGS` clause and, on the analyzer
+    /// path, from `QueryNode::settings_changes` materialized by `queryNodeToDistributedSelectQuery`
+    /// (`QueryNode::toAST`). The per-replica context packet is stripped in `updateContextForParallelReplicas`.
+    auto forwarded_query_ast = query_ast->clone();
+    stripInitiatorOnlySettingsFromQuery(forwarded_query_ast);
+
     auto [cluster, shard_num] = prepareClusterForParallelReplicas(logger, context);
     auto new_context = updateContextForParallelReplicas(logger, context, shard_num);
     auto [connection_pools, max_replicas_to_use] = prepareConnectionPoolsForParallelReplicas(logger, new_context, cluster);
@@ -913,7 +1137,7 @@ void executeQueryWithParallelReplicas(
         LOG_DEBUG(logger, "Local replica got replica number {}", local_replica_index);
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            query_ast,
+            forwarded_query_ast,
             query_tree,
             planner_context,
             cluster,
@@ -953,7 +1177,7 @@ void executeQueryWithParallelReplicas(
         connection_pools.resize(max_replicas_to_use);
 
         auto read_from_remote = std::make_unique<ReadFromParallelRemoteReplicasStep>(
-            query_ast,
+            forwarded_query_ast,
             query_tree,
             planner_context,
             cluster,
@@ -1177,6 +1401,22 @@ void executeQueryWithParallelReplicasCustomKey(
     executeQueryWithParallelReplicasCustomKey(query_plan, storage_id, query_info, columns, snapshot, processed_stage, header, context);
 }
 
+bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings)
+{
+    const auto leaf_timeout = settings[Setting::max_execution_time_leaf].totalMicroseconds();
+    if (leaf_timeout == 0)
+        return false;
+
+    /// The initiator's own 'max_execution_time' bounds the shared 'QueryStatus' and with it the local reading.
+    /// Only a leaf timeout stricter than that needs the local reading to be moved to remote replicas. When the
+    /// timeouts are equal, the overflow modes must also be equal: the shared query status uses the initiator's
+    /// `timeout_overflow_mode`, while remote replicas use `timeout_overflow_mode_leaf`.
+    const auto initiator_timeout = settings[Setting::max_execution_time].totalMicroseconds();
+    return initiator_timeout == 0 || leaf_timeout < initiator_timeout
+        || (leaf_timeout == initiator_timeout
+            && settings[Setting::timeout_overflow_mode] != settings[Setting::timeout_overflow_mode_leaf]);
+}
+
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context)
 {
     if (!context->canUseParallelReplicasOnInitiator())
@@ -1355,6 +1595,28 @@ LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan)
     return {};
 }
 
+/// Remove only 'max_execution_time' and 'timeout_overflow_mode' from the top-level query-text SETTINGS clauses of
+/// a query that is about to be sent to a remote replica. 'updateContextForParallelReplicas' substitutes
+/// 'max_execution_time_leaf' / 'timeout_overflow_mode_leaf' into 'max_execution_time' / 'timeout_overflow_mode' in
+/// the context that travels with the sub-query; a query text carrying the original (outer) values in its top-level
+/// SETTINGS would re-apply them on top of the context on the remote replica and defeat the leaf timeout. Every
+/// other query-level setting is intentionally left in the query text: the remote replica relies on them
+/// (e.g. 'max_block_size'), and - unlike the SELECT path, where 'rewriteSelectQuery' strips the whole clause - the
+/// INSERT SELECT sub-query does not re-ship every setting via the context, so stripping the whole clause would
+/// drop such settings on the remote replica.
+/// Only the top-level carriers are stripped ('removeSettingsFromQueryTopLevel'): a SETTINGS clause the user wrote
+/// inside a nested subquery (the documented leaf-node pattern 'view(SELECT ... SETTINGS max_execution_time = 10)')
+/// does not override the shipped context and must keep its user-authored timeout on the remote replica.
+/// Every occurrence is removed (not just the first), and a SETTINGS clause that becomes empty is detached, so the
+/// query text never re-serializes to a bare 'SETTINGS' keyword that fails to re-parse.
+/// The caller gates this on 'max_execution_time_leaf > 0' - without a leaf timeout the context carries the
+/// original values and the query text must stay untouched.
+static void removeLeafOverriddenTimeoutSettings(const ASTPtr & ast)
+{
+    static constexpr std::string_view leaf_timeout_settings[] = {"max_execution_time", "timeout_overflow_mode"};
+    removeSettingsFromQueryTopLevel(ast, leaf_timeout_settings);
+}
+
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,
     const ContextPtr & context,
@@ -1413,7 +1675,29 @@ std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
 
         auto new_query_ast = query_ast.clone();
         auto * insert_ast = new_query_ast->as<ASTInsertQuery>();
+        const auto old_select = insert_ast->select;
         insert_ast->select = std::move(select_ast);
+        for (auto & child : insert_ast->children)
+        {
+            if (child == old_select)
+            {
+                child = insert_ast->select;
+                break;
+            }
+        }
+        /// The per-shard context packet is stripped in `updateContextForParallelReplicas`, but the
+        /// forwarded query text still carries the INSERT's own `SETTINGS` — strip the initiator-only names
+        /// (both `changes` and `default_settings`) from it too.
+        stripInitiatorOnlySettingsFromQuery(new_query_ast);
+
+        /// When a leaf timeout is set, drop 'max_execution_time' / 'timeout_overflow_mode' from the top-level
+        /// SETTINGS of the query text (both on the INSERT itself and on the top-level SELECT) so that the leaf
+        /// values shipped with 'new_context' are authoritative on the remote replica; otherwise the original outer
+        /// values in the query text would override them. Other settings, SETTINGS clauses in nested subqueries,
+        /// and the whole query text when no leaf timeout is set are left intact so the remote replica still
+        /// receives them (see 'removeLeafOverriddenTimeoutSettings').
+        if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
+            removeLeafOverriddenTimeoutSettings(new_query_ast);
 
         WriteBufferFromOwnString buf;
         IAST::FormatSettings ast_format_settings(

@@ -7,6 +7,7 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/Prometheus/stepsInTimeSeriesRange.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/checkSharedSubqueriesAreMaterialized.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
@@ -469,23 +470,36 @@ namespace
 
         return builder.getSelectQuery();
     }
+
 }
 
 
 ASTPtr finalizeSQL(SQLQueryPiece && result, ConverterContext & context)
 {
+    ASTPtr res;
+
     switch (result.type)
     {
         case ResultType::SCALAR:
-            return finalizeScalarAsSQL(std::move(result), context);
+            res = finalizeScalarAsSQL(std::move(result), context);
+            break;
         case ResultType::STRING:
-            return finalizeStringAsSQL(std::move(result), context);
+            res = finalizeStringAsSQL(std::move(result), context);
+            break;
         case ResultType::INSTANT_VECTOR:
-            return finalizeInstantVectorAsSQL(std::move(result), context);
+            res = finalizeInstantVectorAsSQL(std::move(result), context);
+            break;
         case ResultType::RANGE_VECTOR:
-            return finalizeRangeVectorAsSQL(std::move(result), context);
+            res = finalizeRangeVectorAsSQL(std::move(result), context);
+            break;
     }
-    UNREACHABLE();
+
+    if (!res)
+        UNREACHABLE();
+
+    checkSharedSubqueriesAreMaterialized(res);
+
+    return res;
 }
 
 }

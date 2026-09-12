@@ -9,8 +9,13 @@
 #include <DataTypes/DataTypeFixedString.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
-#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/SerializationArray.h>
+#include <DataTypes/Serializations/SerializationMap.h>
+#include <DataTypes/Serializations/SerializationNullable.h>
+#include <DataTypes/Serializations/SerializationString.h>
+#include <DataTypes/Serializations/SerializationTuple.h>
+#include <DataTypes/Serializations/SerializationVariant.h>
 
 #include <Storages/IStorage.h>
 
@@ -18,6 +23,7 @@
 
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
+#include <Interpreters/convertFieldToType.h>
 
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/ConstantNode.h>
@@ -26,11 +32,15 @@
 #include <Analyzer/InDepthQueryTreeVisitor.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/TableNode.h>
 #include <Analyzer/Utils.h>
 
+#include <Common/SipHash.h>
 #include <Core/Settings.h>
 #include <IO/WriteHelpers.h>
+
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <stack>
 
@@ -55,15 +65,76 @@ struct ColumnContext
     ContextPtr context;
 };
 
+/// A column source is either a TableNode (`FROM t`) or a TableFunctionNode (`FROM file(...)`).
+/// Returns nullptr for anything else, and for an unresolved table function, which carries no storage.
+StoragePtr getStorageForColumnSource(const QueryTreeNodePtr & column_source)
+{
+    if (const auto * table_node = column_source->as<TableNode>())
+        return table_node->getStorage();
+    if (const auto * table_function_node = column_source->as<TableFunctionNode>(); table_function_node && table_function_node->isResolved())
+        return table_function_node->getStorage();
+    return nullptr;
+}
+
+/// TableFunctionNode::getStorageSnapshot throws when the function is unresolved, so the
+/// isResolved check is required, not defensive.
+StorageSnapshotPtr getStorageSnapshotForColumnSource(const QueryTreeNodePtr & column_source)
+{
+    if (const auto * table_node = column_source->as<TableNode>())
+        return table_node->getStorageSnapshot();
+    if (const auto * table_function_node = column_source->as<TableFunctionNode>(); table_function_node && table_function_node->isResolved())
+        return table_function_node->getStorageSnapshot();
+    return nullptr;
+}
+
+bool columnSourceHasFinal(const QueryTreeNodePtr & column_source)
+{
+    if (const auto * table_node = column_source->as<TableNode>())
+        return table_node->hasTableExpressionModifiers() && table_node->getTableExpressionModifiers()->hasFinal();
+    if (const auto * table_function_node = column_source->as<TableFunctionNode>())
+        return table_function_node->hasTableExpressionModifiers() && table_function_node->getTableExpressionModifiers()->hasFinal();
+    return false;
+}
+
+/// Keyed on the source NODE, not the StorageID: every `file()`/`s3()`/`url()` resolves to
+/// `_table_function.<name>`, so two such sources in one query would otherwise share a key.
+struct ColumnInSource
+{
+    const IQueryTreeNode * source = nullptr;
+    String column_name;
+
+    bool operator==(const ColumnInSource & rhs) const = default;
+};
+
+struct ColumnInSourceHash
+{
+    size_t operator()(const ColumnInSource & key) const
+    {
+        SipHash hash;
+        hash.update(reinterpret_cast<uintptr_t>(key.source));
+        hash.update(key.column_name);
+        return hash.get64();
+    }
+};
+
+template <typename Value>
+using ColumnInSourceMap = std::unordered_map<ColumnInSource, Value, ColumnInSourceHash>;
+using ColumnInSourceSet = std::unordered_set<ColumnInSource, ColumnInSourceHash>;
+
+ColumnInSource makeColumnInSource(const QueryTreeNodePtr & column_source, const String & column_name)
+{
+    return ColumnInSource{static_cast<const IQueryTreeNode *>(column_source.get()), column_name};
+}
+
 struct IdentifiersToOptimize
 {
     /// Identifiers where ALL uses are optimizable (count matches).
     /// Rewritten unconditionally in every clause.
-    std::unordered_set<Identifier> everywhere;
+    ColumnInSourceSet everywhere;
 
     /// Identifiers that also have plain column references, but have at least one
     /// transformable use in WHERE/PREWHERE. Rewritten ONLY inside WHERE/PREWHERE.
-    std::unordered_set<Identifier> filter_only;
+    ColumnInSourceSet filter_only;
 
     bool empty() const { return everywhere.empty() && filter_only.empty(); }
 };
@@ -77,40 +148,64 @@ using ChainedNodeToSubcolumnTransformer = std::function<void(
 /// Before columns to substream optimization, we need to make sure, that column with such name as substream does not exists, otherwise the optimize will use it instead of substream.
 bool sourceHasColumn(QueryTreeNodePtr column_source, const String & column_name)
 {
-    auto * table_node = column_source->as<TableNode>();
-    if (!table_node)
+    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+    if (!storage_snapshot)
         return {};
 
-    const auto & storage_snapshot = table_node->getStorageSnapshot();
     return storage_snapshot->tryGetColumn(GetColumnsOptions::All, column_name).has_value();
 }
 
-/// Sometimes we cannot optimize function to subcolumn because there is no such subcolumn in the table.
-/// For example, for column "a Array(Tuple(b UInt32))" function length(a.b) cannot be replaced to
-/// a.b.size0, because there is no such subcolumn, even though a.b has type Array(UInt32)
-bool canOptimizeToSubcolumn(QueryTreeNodePtr column_source, const String & subcolumn_name, bool is_regular_subcolumn = true)
+/// True when the source declares a top-level column whose name matches `column_name` up to case.
+/// A reader with case-insensitive column matching (e.g. `input_format_orc_case_insensitive_column_matching`)
+/// binds a flattened subcolumn name like `a.b` to such a column instead of the tuple element,
+/// so the rewrite must not fire.
+bool sourceHasColumnCaseInsensitive(const QueryTreeNodePtr & column_source, const String & column_name)
 {
-    auto * table_node = column_source->as<TableNode>();
-    if (!table_node)
-        return {};
+    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+    if (!storage_snapshot)
+        return false;
 
-    const auto & storage_snapshot = table_node->getStorageSnapshot();
-    auto get_options = GetColumnsOptions(GetColumnsOptions::All);
-    if (is_regular_subcolumn)
-        get_options = get_options.withRegularSubcolumns();
-    else
-        get_options = get_options.withSubcolumns();
-    return storage_snapshot->tryGetColumn(get_options, subcolumn_name).has_value();
+    for (const auto & column : storage_snapshot->getColumns(GetColumnsOptions::All))
+        if (boost::iequals(column.name, column_name))
+            return true;
+
+    return false;
 }
 
-/// For Nullable(T) where T has its own "null" subcolumn (e.g. Nullable(JSON)),
-/// col.null refers to the nested type's subcolumn rather than the Nullable null-map,
-/// so optimizations that rewrite isNull/isNotNull/count to use .null do not apply.
-bool nestedTypeHasNullSubcolumn(const DataTypePtr & type)
+using SubcolumnPredicate = std::function<bool(const ISerialization::SubstreamPath &)>;
+
+/// A rewrite means one specific subcolumn of the column - its array sizes, its null map, its Map
+/// keys, one Tuple element. Two independent things can make `<column>.<name>` not be it:
+///
+///  * subcolumn names are flat, so a Tuple element or a JSON path can claim the name with the same
+///    type: ``Tuple(`a.size` UInt64, `a` String)`` resolves `c.a.size` to the element, and
+///    declaration order decides the winner. Only the substreams path tells them apart.
+///  * an enclosing Nullable wraps the subcolumn without changing which substream it is:
+///    `Nullable(JSON(`a` Array(Int64)))` resolves `c.a.size0` to `Nullable(UInt64)`, while `length`
+///    must give 0 for a NULL row, not NULL. Reachable because `Array` and `Map` cannot be inside
+///    `Nullable`, so `c.a` is exposed as a bare `Array` while its own subcolumns are wrapped.
+///
+/// `expected_type` is the type the rewritten expression is declared to produce: a subcolumn that
+/// storage resolves to some other type is not the one the expression means.
+bool canOptimizeToExpectedSubcolumn(
+    const QueryTreeNodePtr & column_source,
+    const String & subcolumn_name,
+    const SubcolumnPredicate & is_expected_subcolumn,
+    const DataTypePtr & expected_type = nullptr)
 {
-    if (const auto * nullable_type = typeid_cast<const DataTypeNullable *>(type.get()))
-        return nullable_type->getNestedType()->hasSubcolumn("null");
-    return false;
+    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+    if (!storage_snapshot)
+        return false;
+
+    auto resolved = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), subcolumn_name);
+    if (!resolved || !resolved->isSubcolumn())
+        return false;
+
+    if (expected_type && !resolved->type->equals(*expected_type))
+        return false;
+
+    auto info = resolved->getTypeInStorage()->tryGetSubcolumnInfo(resolved->getSubcolumnName());
+    return info && is_expected_subcolumn(info->substreams_path);
 }
 
 void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
@@ -119,7 +214,8 @@ void optimizeFunctionStringLength(QueryTreeNodePtr & node, FunctionNode &, Colum
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
@@ -132,7 +228,8 @@ void optimizeFunctionStringEmpty(QueryTreeNodePtr &, FunctionNode & function_nod
     /// `argument` is String.
 
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -150,7 +247,8 @@ void optimizeFunctionLength(QueryTreeNodePtr & node, FunctionNode &, ColumnConte
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationArray::isArraySizesSubcolumn, column.type))
         return;
 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -164,19 +262,9 @@ void optimizeFunctionEmpty(QueryTreeNodePtr &, FunctionNode & function_node, Col
     /// `argument` may be Array or Map.
 
     NameAndTypePair column{ctx.column.name + ".size0", std::make_shared<DataTypeUInt64>()};
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationArray::isArraySizesSubcolumn, column.type))
         return;
-
-    /// If the .size0 subcolumn is actually Nullable (e.g. when the column type is Nullable(Array(...))),
-    /// skip the optimization. The hardcoded UInt64 type would mismatch the actual Nullable(UInt64),
-    /// causing a type mismatch exception at runtime in ExpressionActions::execute.
-    if (auto * table_node = ctx.column_source->as<TableNode>())
-    {
-        auto actual = table_node->getStorageSnapshot()->tryGetColumn(
-            GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
-        if (actual && actual->type->isNullable())
-            return;
-    }
 
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -207,7 +295,16 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
     auto tmp_key_column = key_type->createColumn();
     /// Verify that the constant value is compatible with the map's key type.
     if (!tmp_key_column->tryInsert(second_argument_constant_node->getValue()))
-        return;
+    {
+        /// A map with Enum keys can also be indexed by the name of the enum value,
+        /// so convert the name to the numeric value of the enum.
+        if (!isEnum(key_type) || second_argument_constant_node->getValue().getType() != Field::Types::String)
+            return;
+
+        Field enum_value = tryConvertFieldToType(second_argument_constant_node->getValue(), *key_type);
+        if (enum_value.isNull() || !tmp_key_column->tryInsert(enum_value))
+            return;
+    }
 
     /// Serialize the key to its text representation to construct the subcolumn name,
     /// e.g. the string key "foo" becomes the subcolumn suffix "key_foo".
@@ -217,9 +314,8 @@ void optimizeFunctionArrayElementForMap(QueryTreeNodePtr & node, FunctionNode & 
 
     /// The resulting subcolumn has the map's value type, e.g. `m.key_foo : V` for `Map(K, V)`.
     NameAndTypePair column{ctx.column.name + "." + subcolumn_name, data_type_map.getValueType()};
-    /// Use is_regular_subcolumn=false because key subcolumns are not declared as regular subcolumns
-    /// of the table schema — they are dynamic subcolumns.
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name, false))
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationMap::isKeyValueSubcolumn, column.type))
         return;
 
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
@@ -299,6 +395,39 @@ std::optional<NameAndTypePair> getSubcolumnForElement(const Field & value, const
     return NameAndTypePair{toString(index), std::make_shared<const DataTypeFixedString>((data_type_qbit.getStride() + 7) / 8)};
 }
 
+/// True when `element_name` and some nested path of `tuple` flatten to the same dotted name, so
+/// `<column>.<element_name>` no longer identifies one element: an exact element-name lookup binds
+/// the dotted element while a prefix walk over a file schema binds the nested one.
+bool tupleElementNameIsAmbiguousWhenFlattened(const DataTypeTuple & tuple, const String & element_name)
+{
+    std::string_view name = element_name;
+    for (size_t dot = name.find('.'); dot != std::string_view::npos; dot = name.find('.', dot + 1))
+    {
+        auto head = name.substr(0, dot);
+        auto tail = name.substr(dot + 1);
+        /// Case-insensitively, because a reader may match field names that way.
+        if (!head.empty() && !tail.empty()
+            && (tuple.tryGetPositionByName(head) || tuple.tryGetPositionByName(head, /*case_insensitive=*/true)))
+            return true;
+    }
+    return false;
+}
+
+/// True when the element name is a bare ordinal that is not guaranteed to occur in the file schema:
+/// an unnamed tuple names its elements "1", "2", ... while a source reading them from a file matches
+/// the flattened `<column>.<element>` by string. A source serving subcolumns from its own metadata does have it.
+bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const DataTypeTuple & tuple)
+{
+    if (tuple.hasExplicitNames())
+        return false;
+
+    auto storage = getStorageForColumnSource(column_source);
+    if (!storage)
+        return false;
+
+    return !storage->supportsOptimizationToSubcolumns();
+}
+
 template <typename DataType>
 void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
 {
@@ -320,7 +449,23 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         return;
 
     NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
-    if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+
+    if constexpr (std::is_same_v<DataType, DataTypeTuple>)
+        if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name)
+            || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
+            || tupleElementNameIsOrdinalOnly(ctx.column_source, data_type_concrete))
+            return;
+
+    /// ``Tuple(`t.a` UInt64, t Tuple(a UInt64))`` resolves `c.t.a` to the sibling, not to `t`.`a`.
+    SubcolumnPredicate is_expected_subcolumn;
+    if constexpr (std::is_same_v<DataType, DataTypeVariant>)
+        is_expected_subcolumn = [&](const auto & path) { return SerializationVariant::isElementSubcolumn(path, subcolumn->name); };
+    else
+        is_expected_subcolumn = [&](const auto & path) { return SerializationTuple::isElementSubcolumn(path, subcolumn->name); };
+
+    if (sourceHasColumn(ctx.column_source, column.name)
+        || !canOptimizeToExpectedSubcolumn(
+               ctx.column_source, column.name, is_expected_subcolumn, function_node.getResultType()))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
@@ -384,7 +529,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto key_type = std::make_shared<DataTypeArray>(data_type_map.getKeyType());
 
             NameAndTypePair column{ctx.column.name + ".keys", key_type};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationMap::isKeysSubcolumn, column.type))
                 return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
@@ -398,7 +544,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             auto value_type = std::make_shared<DataTypeArray>(data_type_map.getValueType());
 
             NameAndTypePair column{ctx.column.name + ".values", value_type};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationMap::isValuesSubcolumn, column.type))
                 return;
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
@@ -411,7 +558,8 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
             const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
 
             NameAndTypePair column{ctx.column.name + ".keys", std::make_shared<DataTypeArray>(data_type_map.getKeyType())};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationMap::isKeysSubcolumn, column.type))
                 return;
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -427,23 +575,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `count(nullable_argument)` with `sum(not(nullable_argument.null))`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
-
-            if (nestedTypeHasNullSubcolumn(ctx.column.type))
-                return;
-
-            /// When the column is inside a Nullable(Tuple(...)), the .null subcolumn/nullmap
-            /// in storage is Nullable(UInt8), not UInt8, because the type system wraps all
-            /// subcolumns of a Nullable(Tuple(...)) with the outer nullability. Using it with
-            /// a hardcoded UInt8 type causes a type mismatch at runtime. Skip the optimization.
-            if (auto * table_node = ctx.column_source->as<TableNode>())
-            {
-                auto actual = table_node->getStorageSnapshot()->tryGetColumn(
-                    GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
-                if (actual && actual->type->isNullable())
-                    return;
-            }
 
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -464,22 +598,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNull(nullable_argument)` with `nullable_argument.null`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
-
-            if (nestedTypeHasNullSubcolumn(ctx.column.type))
-                return;
-
-            /// For nested Nullable types (e.g. Nullable(Tuple(... Nullable(T) ...))),
-            /// the .null subcolumn in storage is Nullable(UInt8), not UInt8.
-            /// Using it with a hardcoded UInt8 type causes a type mismatch at runtime.
-            if (auto * table_node = ctx.column_source->as<TableNode>())
-            {
-                auto actual = table_node->getStorageSnapshot()->tryGetColumn(
-                    GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
-                if (actual && actual->type->isNullable())
-                    return;
-            }
 
             node = std::make_shared<ColumnNode>(column, ctx.column_source);
         },
@@ -490,20 +611,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {
             /// Replace `isNotNull(nullable_argument)` with `not(nullable_argument.null)`
             NameAndTypePair column{ctx.column.name + ".null", std::make_shared<DataTypeUInt8>()};
-            if (sourceHasColumn(ctx.column_source, column.name) || !canOptimizeToSubcolumn(ctx.column_source, column.name))
+            if (sourceHasColumn(ctx.column_source, column.name)
+                || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationNullable::isNullMapSubcolumn, column.type))
                 return;
-
-            if (nestedTypeHasNullSubcolumn(ctx.column.type))
-                return;
-
-            /// Same guard as isNull above: nested Nullable .null subcolumn may itself be Nullable.
-            if (auto * table_node = ctx.column_source->as<TableNode>())
-            {
-                auto actual = table_node->getStorageSnapshot()->tryGetColumn(
-                    GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column.name);
-                if (actual && actual->type->isNullable())
-                    return;
-            }
 
             auto & function_arguments_nodes = function_node.getArguments().getNodes();
 
@@ -617,11 +727,10 @@ void optimizeJSONArrayElement(
     /// Verify the Dynamic column is a subcolumn of a JSON column.
     /// Use getAllColumnAndSubcolumnPairs to handle nested cases like Tuple(json JSON).
     auto column_source = ctx.column_source;
-    auto * table_node = column_source->as<TableNode>();
-    if (!table_node)
+    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+    if (!storage_snapshot)
         return;
 
-    const auto & storage_snapshot = table_node->getStorageSnapshot();
     bool found_json_ancestor = false;
     auto pairs = Nested::getAllColumnAndSubcolumnPairs(ctx.column.name);
     for (auto it = pairs.rbegin(); it != pairs.rend(); ++it)
@@ -694,7 +803,7 @@ bool canOptimizeWithWherePrewhereOrGroupBy(const String & function_name)
 ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 {
     auto initial_source = column_node->getColumnSource();
-    if (!initial_source->as<TableNode>())
+    if (!initial_source->as<TableNode>() && !initial_source->as<TableFunctionNode>())
         return nullptr;
 
     while (column_node->hasExpression())
@@ -712,7 +821,17 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
     return column_node;
 }
 
-std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
+/// A storage may permit only tuple element rewrites while still refusing every other transformer
+/// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
+/// getTypedNodesForOptimization, so their decisions cannot diverge.
+bool storageAllowsTransformer(const IStorage & storage, TypeIndex type_id, const String & function_name)
+{
+    if (storage.supportsOptimizationToSubcolumns())
+        return true;
+    return storage.supportsOptimizationToTupleElementSubcolumns() && type_id == TypeIndex::Tuple && function_name == "tupleElement";
+}
+
+std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * function_node = node->as<FunctionNode>();
     if (!function_node)
@@ -736,12 +855,11 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     }
 
     auto column_source = first_argument_column_node->getColumnSource();
-    auto * table_node = column_source->as<TableNode>();
-    if (!table_node)
+    auto storage = getStorageForColumnSource(column_source);
+    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+    if (!storage || !storage_snapshot)
         return {};
 
-    const auto & storage = table_node->getStorage();
-    const auto & storage_snapshot = table_node->getStorageSnapshot();
     auto column = first_argument_column_node->getColumn();
 
     /// If view source is set we cannot optimize because it doesn't support moving functions to subcolumns.
@@ -750,21 +868,22 @@ std::tuple<FunctionNode *, ColumnNode *, TableNode *> getTypedNodesForOptimizati
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storage->supportsOptimizationToSubcolumns() || storage_snapshot->metadata->isVirtualColumn(column.name))
+    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName())
+        || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
     auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
     if (!column_in_table || !column_in_table->type->equals(*column.type))
         return {};
 
-    return std::make_tuple(function_node, first_argument_column_node, table_node);
+    return std::make_tuple(function_node, first_argument_column_node, column_source);
 }
 
 /// Like getTypedNodesForOptimization, but walks through first-argument
 /// function chains to find the underlying ColumnNode.
 /// Returns the outermost function, the underlying column, the table,
 /// and the chain of intermediate function nodes.
-std::tuple<FunctionNode *, ColumnNode *, TableNode *, std::vector<FunctionNode *>>
+std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr, std::vector<FunctionNode *>>
 getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
 {
     auto * function_node = node->as<FunctionNode>();
@@ -799,12 +918,11 @@ getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const Context
         return {};
 
     auto column_source = first_argument_column_node->getColumnSource();
-    auto * table_node = column_source->as<TableNode>();
-    if (!table_node)
+    auto storage = getStorageForColumnSource(column_source);
+    auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+    if (!storage || !storage_snapshot)
         return {};
 
-    const auto & storage = table_node->getStorage();
-    const auto & storage_snapshot = table_node->getStorageSnapshot();
     auto column = first_argument_column_node->getColumn();
 
     /// Same checks as getTypedNodesForOptimization.
@@ -812,14 +930,15 @@ getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const Context
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storage->supportsOptimizationToSubcolumns() || storage_snapshot->metadata->isVirtualColumn(column.name))
+    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName())
+        || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
     auto column_in_table = storage_snapshot->tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), column.name);
     if (!column_in_table || !column_in_table->type->equals(*column.type))
         return {};
 
-    return {function_node, first_argument_column_node, table_node, std::move(intermediates)};
+    return {function_node, first_argument_column_node, column_source, std::move(intermediates)};
 }
 
 /// First pass collects info about identifiers to determine which identifiers are allowed to optimize.
@@ -834,9 +953,9 @@ public:
         if (!getSettings()[Setting::optimize_functions_to_subcolumns])
             return;
 
-        if (auto * table_node = node->as<TableNode>())
+        if (node->as<TableNode>() || node->as<TableFunctionNode>())
         {
-            enterImpl(*table_node);
+            enterColumnSource(node);
             return;
         }
 
@@ -846,10 +965,10 @@ public:
             return;
         }
 
-        auto [function_node, first_argument_node, table_node] = getTypedNodesForOptimization(node, getContext());
-        if (function_node && first_argument_node && table_node)
+        auto [function_node, first_argument_node, column_source] = getTypedNodesForOptimization(node, getContext());
+        if (function_node && first_argument_node && column_source)
         {
-            enterImpl(*function_node, *first_argument_node, *table_node);
+            enterImpl(*function_node, *first_argument_node, column_source);
             return;
         }
 
@@ -862,10 +981,10 @@ public:
             return;
 
         /// Chained match (e.g. tupleElement over Dynamic through arrayElement).
-        auto [chain_func, chain_col, chain_table, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
-        if (chain_func && chain_col && chain_table)
+        auto [chain_func, chain_col, chain_source, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
+        if (chain_func && chain_col && chain_source)
         {
-            enterImpl(*chain_func, *chain_col, *chain_table, intermediates);
+            enterImpl(*chain_func, *chain_col, chain_source, intermediates);
             return;
         }
 
@@ -978,21 +1097,21 @@ public:
     }
 
 private:
-    std::unordered_set<Identifier> all_key_columns;
-    std::unordered_map<Identifier, UInt64> identifiers_count;
-    std::unordered_map<Identifier, UInt64> optimized_identifiers_count;
+    ColumnInSourceSet all_key_columns;
+    ColumnInSourceMap<UInt64> identifiers_count;
+    ColumnInSourceMap<UInt64> optimized_identifiers_count;
     /// Counts only uses of transformers from `transformers_safe_with_indexes`.
-    std::unordered_map<Identifier, UInt64> optimized_identifiers_index_safe_count;
+    ColumnInSourceMap<UInt64> optimized_identifiers_index_safe_count;
     /// Identifiers that have at least one use of a transformer from
     /// `transformers_optimize_in_filter_with_full_column` inside WHERE or PREWHERE.
     /// These are optimized even when the column is also read as a full column elsewhere.
-    std::unordered_set<Identifier> identifiers_with_filter_optimization;
+    ColumnInSourceSet identifiers_with_filter_optimization;
 
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
     std::vector<bool> in_where_prewhere_stack;
 
-    NameSet processed_tables;
+    std::unordered_set<const IQueryTreeNode *> processed_sources;
     bool can_wrap_result_columns_with_nullable = false;
     bool has_where_prewhere_or_group_by = false;
 
@@ -1001,36 +1120,29 @@ private:
     /// tupleElement(tupleElement(arrayElement(col, N), 'b'), 'c').
     std::unordered_set<const IQueryTreeNode *> chained_pattern_inner_nodes;
 
-    void enterImpl(const TableNode & table_node)
+    void enterColumnSource(const QueryTreeNodePtr & column_source)
     {
-        auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
+        auto storage_snapshot = getStorageSnapshotForColumnSource(column_source);
+        if (!storage_snapshot)
+            return;
 
-        /// If table occurs in query several times (e.g., in subquery), process only once
-        /// because we collect only static properties of the table, which are the same for each occurrence.
-        if (!processed_tables.emplace(table_name).second)
+        /// If the same node is visited several times, process only once because we collect
+        /// only static properties of the source, which are the same for each occurrence.
+        if (!processed_sources.emplace(column_source.get()).second)
             return;
 
         auto add_key_columns = [&](const auto & key_columns)
         {
             for (const auto & column_name : key_columns)
-            {
-                Identifier identifier({table_name, column_name});
-                all_key_columns.insert(identifier);
-            }
+                all_key_columns.insert(makeColumnInSource(column_source, column_name));
         };
 
-        const auto & metadata_snapshot = table_node.getStorageSnapshot()->metadata;
-        const auto & primary_key_columns = metadata_snapshot->getColumnsRequiredForPrimaryKey();
-        const auto & partition_key_columns = metadata_snapshot->getColumnsRequiredForPartitionKey();
-
-        add_key_columns(primary_key_columns);
-        add_key_columns(partition_key_columns);
+        const auto & metadata_snapshot = storage_snapshot->metadata;
+        add_key_columns(metadata_snapshot->getColumnsRequiredForPrimaryKey());
+        add_key_columns(metadata_snapshot->getColumnsRequiredForPartitionKey());
 
         for (const auto & index : metadata_snapshot->getSecondaryIndices())
-        {
-            const auto & index_columns = index.expression->getRequiredColumns();
-            add_key_columns(index_columns);
-        }
+            add_key_columns(index.expression->getRequiredColumns());
     }
 
     void enterImpl(const ColumnNode & column_node)
@@ -1039,26 +1151,21 @@ private:
             return;
 
         auto column_source = column_node.getColumnSource();
-        auto * table_node = column_source->as<TableNode>();
-        if (!table_node)
+        if (!column_source->as<TableNode>() && !column_source->as<TableFunctionNode>())
             return;
 
-        auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
-        Identifier qualified_name({table_name, column_node.getColumnName()});
-
-        ++identifiers_count[qualified_name];
+        ++identifiers_count[makeColumnInSource(column_source, column_node.getColumnName())];
     }
 
-    void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const TableNode & table_node)
+    void enterImpl(const FunctionNode & function_node, const ColumnNode & first_argument_column_node, const QueryTreeNodePtr & column_source)
     {
         /// For queries with FINAL converting function to subcolumn may alter
         /// special merging algorithms and produce wrong result of query.
-        if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+        if (columnSourceHasFinal(column_source))
             return;
 
         const auto & column = first_argument_column_node.getColumn();
-        auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
-        Identifier qualified_name({table_name, column.name});
+        auto qualified_name = makeColumnInSource(column_source, column.name);
 
         if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
             return;
@@ -1077,21 +1184,19 @@ private:
 
     void enterImpl(
         const FunctionNode & function_node, const ColumnNode & first_argument_column_node,
-        const TableNode & table_node, std::vector<FunctionNode *> & intermediates)
+        const QueryTreeNodePtr & column_source, std::vector<FunctionNode *> & intermediates)
     {
-        if (table_node.hasTableExpressionModifiers() && table_node.getTableExpressionModifiers()->hasFinal())
+        if (columnSourceHasFinal(column_source))
             return;
 
         const auto & column = first_argument_column_node.getColumn();
-        auto table_name = table_node.getStorage()->getStorageID().getFullTableName();
 
         if (has_where_prewhere_or_group_by && !canOptimizeWithWherePrewhereOrGroupBy(function_node.getFunctionName()))
             return;
 
         if (chained_node_transformers.contains({column.type->getTypeId(), function_node.getFunctionName()}))
         {
-            Identifier qualified_name({table_name, column.name});
-            ++optimized_identifiers_count[qualified_name];
+            ++optimized_identifiers_count[makeColumnInSource(column_source, column.name)];
 
             /// Mark intermediate nodes to prevent double-counting.
             for (auto * func : intermediates)
@@ -1108,7 +1213,7 @@ class FunctionToSubcolumnsVisitorSecondPass : public InDepthQueryTreeVisitorWith
 {
 private:
     IdentifiersToOptimize identifiers_to_optimize;
-    std::unordered_set<const TableNode *> outer_joined_tables;
+    std::unordered_set<const IQueryTreeNode *> outer_joined_tables;
 
     /// Stack tracking whether the current node is inside a WHERE or PREWHERE clause.
     /// One entry per QueryNode depth; true means we are inside WHERE/PREWHERE.
@@ -1120,7 +1225,7 @@ public:
 
     FunctionToSubcolumnsVisitorSecondPass(ContextPtr context_,
         IdentifiersToOptimize identifiers_to_optimize_,
-        std::unordered_set<const TableNode *> outer_joined_tables_)
+        std::unordered_set<const IQueryTreeNode *> outer_joined_tables_)
         : Base(std::move(context_))
         , identifiers_to_optimize(std::move(identifiers_to_optimize_))
         , outer_joined_tables(std::move(outer_joined_tables_))
@@ -1155,13 +1260,11 @@ public:
         /// Direct match: first argument is a ColumnNode.
         /// Restructured from "if (!match) return" to "if (match) { ... } return"
         /// so that failed direct matches fall through to the chained match below.
-        auto [function_node, first_argument_column_node, table_node] = getTypedNodesForOptimization(node, getContext());
-        if (function_node && first_argument_column_node && table_node)
+        auto [function_node, first_argument_column_node, column_source] = getTypedNodesForOptimization(node, getContext());
+        if (function_node && first_argument_column_node && column_source)
         {
             auto column = first_argument_column_node->getColumn();
-            auto table_name = table_node->getStorage()->getStorageID().getFullTableName();
-
-            Identifier qualified_name({table_name, column.name});
+            auto qualified_name = makeColumnInSource(column_source, column.name);
 
             /// For "filter_only" identifiers, only optimize when inside WHERE/PREWHERE.
             bool should_optimize = identifiers_to_optimize.everywhere.contains(qualified_name);
@@ -1177,9 +1280,10 @@ public:
             auto result_type = function_node->getResultType();
             auto transformer_it = node_transformers.find({column.type->getTypeId(), function_node->getFunctionName()});
 
-            if (transformer_it != node_transformers.end() && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(table_node)))
+            if (transformer_it != node_transformers.end()
+                && (transformer_it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(column_source.get())))
             {
-                ColumnContext ctx{std::move(column), first_argument_column_node->getColumnSource(), getContext()};
+                ColumnContext ctx{std::move(column), column_source, getContext()};
                 transformer_it->second(node, *function_node, ctx);
 
                 if (!result_type->equals(*node->getResultType()))
@@ -1189,22 +1293,20 @@ public:
         }
 
         /// Chained match: first argument is a chain of functions with a ColumnNode at the bottom.
-        auto [chain_func, chain_col, chain_table, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
-        if (chain_func && chain_col && chain_table)
+        auto [chain_func, chain_col, chain_source, intermediates] = getTypedNodesForChainedOptimization(node, getContext());
+        if (chain_func && chain_col && chain_source)
         {
             auto column = chain_col->getColumn();
-            auto table_name = chain_table->getStorage()->getStorageID().getFullTableName();
-            Identifier qualified_name({table_name, column.name});
 
-            if (!identifiers_to_optimize.everywhere.contains(qualified_name))
+            if (!identifiers_to_optimize.everywhere.contains(makeColumnInSource(chain_source, column.name)))
                 return;
 
             auto it = chained_node_transformers.find({column.type->getTypeId(), chain_func->getFunctionName()});
             if (it != chained_node_transformers.end()
-                && (it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(chain_table)))
+                && (it->first.first != TypeIndex::Nullable || !outer_joined_tables.contains(chain_source.get())))
             {
                 auto result_type = chain_func->getResultType();
-                ColumnContext ctx{std::move(column), chain_col->getColumnSource(), getContext()};
+                ColumnContext ctx{std::move(column), chain_source, getContext()};
                 it->second(node, *chain_func, ctx, intermediates);
 
                 if (!result_type->equals(*node->getResultType()))
@@ -1251,10 +1353,10 @@ public:
             return;
         }
 
-        if (const auto * table_node = node->as<TableNode>())
+        if (node->as<TableNode>() || node->as<TableFunctionNode>())
         {
             if (need_skip_subtree)
-                outer_joined_tables.insert(table_node);
+                outer_joined_tables.insert(node.get());
             return;
         }
     }
@@ -1278,7 +1380,7 @@ public:
 
     bool need_skip_subtree = false;
     std::stack<const JoinNode *> join_nodes_stack;
-    std::unordered_set<const TableNode *> outer_joined_tables;
+    std::unordered_set<const IQueryTreeNode *> outer_joined_tables;
 };
 
 }

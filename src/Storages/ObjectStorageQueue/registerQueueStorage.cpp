@@ -12,6 +12,7 @@
 #include <Storages/ObjectStorageQueue/StorageObjectStorageQueue.h>
 #include <Storages/StorageFactory.h>
 #include <Interpreters/Context.h>
+#include <Databases/DatabaseReplicatedHelpers.h>
 
 #if USE_AWS_S3
 #include <IO/S3Common.h>
@@ -40,6 +41,7 @@ namespace Setting
 
 namespace ObjectStorageQueueSetting
 {
+    extern const ObjectStorageQueueSettingsObjectStorageQueueMode mode;
     extern const ObjectStorageQueueSettingsBool use_hive_partitioning;
 }
 
@@ -131,6 +133,32 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
         }
     }
 
+    /// In `exclusive` mode there is no coordination through Keeper: each server keeps the list of
+    /// processed files only in its own memory. If two servers read the same path, both will read
+    /// every file and every row will be inserted twice. So each server needs its own path.
+    /// But `ON CLUSTER` queries and `Replicated` databases send the same `CREATE` text to all
+    /// servers. The `{replica}` macro solves this: one query text, a different path per server.
+    /// The other modes need the opposite (the same path on all servers, because files in Keeper are
+    /// named by file path), so this code runs only for `exclusive` mode.
+    if ((*queue_settings)[ObjectStorageQueueSetting::mode] == ObjectStorageQueueMode::EXCLUSIVE)
+    {
+        Macros::MacroExpansionInfo info;
+        info.expand_special_macros_only = true;
+
+        const auto database = DatabaseCatalog::instance().getDatabase(args.table_id.database_name);
+        const auto is_on_cluster = args.getLocalContext()->isDDLOrOnClusterInternal();
+        const auto is_replicated_database = is_on_cluster && database->getEngineName() == "Replicated";
+
+        if (is_replicated_database)
+            info.replica = getReplicatedDatabaseReplicaName(database);
+        else
+            info.replica = Context::getGlobalContextInstance()->getMacros()->tryGetValue("replica");
+
+        auto path = configuration->getPathForRead();
+        path.path = args.getContext()->getMacros()->expand(path.path, info);
+        configuration->setPathForRead(path);
+    }
+
     /// The S3 client is built once in the storage constructor and reused by background threads, so the
     /// constructor needs the effective `s3_allow_server_credentials_in_user_queries` value from the CREATE
     /// query. The storage itself must keep the persistent global context (`args.getContext()`): it is held
@@ -209,9 +237,9 @@ CREATE TABLE s3_queue_engine_table (name String, value UInt32)
     [max_processing_time_sec_before_commit = 0,]
 ```
 
-:::warning
+<Warning>
 Before `24.7`, it is required to use `s3queue_` prefix for all settings apart from `mode`, `after_processing` and `keeper_path`.
-:::
+</Warning>
 
 **Engine parameters**
 
@@ -251,13 +279,13 @@ SETTINGS
 
 To get a list of settings, configured for the table, use `system.s3_queue_settings` table. Available from `24.10`.
 
-:::note Setting Names (24.7+)
+<Note title="Setting Names (24.7+)">
 Starting from version 24.7, S3Queue settings can be specified with or without the `s3queue_` prefix:
 - **Modern syntax** (24.7+): `processing_threads_num`, `tracked_file_ttl_sec`, etc.
 - **Legacy syntax** (all versions): `s3queue_processing_threads_num`, `s3queue_tracked_file_ttl_sec`, etc.
 
 Both forms are supported in 24.7+. The examples on this page use the modern syntax with no prefix.
-:::
+</Note>
 
 ### Mode {#mode}
 
@@ -265,8 +293,11 @@ Possible values:
 
 - unordered — With unordered mode, the set of all already processed files is tracked with persistent nodes in ZooKeeper.
 - ordered — With ordered mode, the files are processed in lexicographic order. It means that if file named 'BBB' was processed at some point and later on a file named 'AA' is added to the bucket, it will be ignored. Only the max name (in lexicographic sense) of the successfully consumed file, and the names of files that will be retried after unsuccessful loading attempt are being stored in ZooKeeper.
+- exclusive - With exclusive mode, nothing is tracked in Zookeeper. Your S3 url (first parameter in `S3Queue()`) *must* resolve to a unique host or path. This mode is only useful for high-throughput and/or self-hosted scenarios.
 
 Default value: `ordered` in versions before 24.6. Starting with 24.6 there is no default value, the setting becomes required to be specified manually. For tables created on earlier versions the default value will remain `Ordered` for compatibility.
+
+When using `exclusive` mode, using the `{replica}` macro in the S3 url is supported.
 
 ### `after_processing` {#after_processing}
 
@@ -407,7 +438,7 @@ Default value: `10`.
 
 ### `processing_threads_num` {#processing_threads_num}
 
-Number of threads to perform processing. Applies only for `Unordered` mode.
+Number of threads to perform processing. Applies only for `Unordered` or `Exclusive` mode.
 
 Default value: Number of CPUs or 16.
 
@@ -416,9 +447,9 @@ Default value: Number of CPUs or 16.
 By default `processing_threads_num` will produce one `INSERT`, so it will only download files and parse in multiple threads.
 But this limits the parallelism, so for better throughput use `parallel_inserts=true`, this will allow to insert data in parallel (but keep in mind that it will result in higher number of generated data parts for MergeTree family).
 
-:::note
+<Note>
 `INSERT`s will be spawned with respect to `max_process*_before_commit` settings.
-:::
+</Note>
 
 Default value: `false`.
 
@@ -460,7 +491,7 @@ Default value: `30000`.
 
 ### `tracked_files_limit` {#tracked_files_limit}
 
-Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' mode.
+Allows to limit the number of Zookeeper nodes if the 'unordered' mode is used, does nothing for 'ordered' or 'exclusive' mode.
 If limit reached the oldest processed files will be deleted from ZooKeeper node and processed again.
 
 Possible values:
@@ -471,7 +502,7 @@ Default value: `1000`.
 
 ### `tracked_file_ttl_sec` {#tracked_file_ttl_sec}
 
-Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' mode.
+Maximum number of seconds to store processed files in ZooKeeper node (store forever by default) for 'unordered' mode, does nothing for 'ordered' or 'exclusive' mode.
 After the specified number of seconds, the file will be re-imported.
 
 Possible values:
@@ -517,7 +548,7 @@ Engine supports all s3 related settings. For more information about S3 settings 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
 The s3Queue table engine supports role-based access.
-Refer to the documentation [here](/cloud/data-sources/secure-s3) for steps to configure a role to access your bucket.
+Refer to the documentation [here](/products/cloud/guides/data-sources/accessing-s3-data-securely) for steps to configure a role to access your bucket.
 
 Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
 ```sql
@@ -550,7 +581,8 @@ The setting `(s3queue_)buckets` is available starting with version `24.6`.
 
 SELECT queries are forbidden by default on S3Queue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
-The S3Queue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
+The S3Queue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it. (Note: this setting doesn't make sense in `exclusive` mode and is ignored; `exclusive` mode always acts as if `commit_on_select` is `True`.)
+
 
 ## Description {#description}
 
@@ -779,7 +811,7 @@ CREATE TABLE test (name String, value UInt32)
 
 `AzureQueue` parameters are the same as `AzureBlobStorage` table engine supports. See parameters section [here](/reference/engines/table-engines/integrations/azureBlobStorage).
 
-Similar to the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage).
+Similar to the [AzureBlobStorage](/reference/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage).
 
 **Example**
 
@@ -840,7 +872,7 @@ SETTINGS
 
 SELECT queries are forbidden by default on AzureQueue tables. This follows the common queue pattern where data is read once and then removed from the queue. SELECT is forbidden to prevent accidental data loss.
 However, sometimes it might be useful. To do this, you need to set the setting `stream_like_engine_allow_direct_select` to `True`.
-The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it.
+The AzureQueue engine has a special setting for SELECT queries: `commit_on_select`. Set it to `False` to preserve data in the queue after reading, or `True` to remove it. (Note: this setting doesn't make sense in `exclusive` mode and is ignored; `exclusive` mode always acts as if `commit_on_select` is `True`.)
 
 ## Description {#description}
 
@@ -882,7 +914,7 @@ For more information about virtual columns see [here](/reference/engines/table-e
 
 Enable logging for the table via the table setting `enable_logging_to_queue_log=1`.
 
-Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
+Introspection capabilities are the same as the [S3Queue table engine](/reference/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
 1. Use the `system.azure_queue_metadata_cache` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue_metadata_cache` (it would contain information for `azure` tables as well).
 2. Use the `system.azure_queue_metadata` table to inspect the state stored in keeper directly: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents. This is the `AzureQueue` counterpart of `system.s3_queue_metadata`.
@@ -952,7 +984,7 @@ exception:
 
 ## Limitations {#limitations}
 
-`AzureQueue` shares the same implementation as `S3Queue` and has the same [limitations](/engines/table-engines/integrations/s3queue#limitations). In particular, a device-level power loss of the ClickHouse node can silently lose consumed rows: a file is recorded as processed in Keeper (and, with `after_processing = 'delete'`, its source blob removed) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). For the recommended materialized-view consumption path, setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table narrows this window substantially.
+`AzureQueue` shares the same implementation as `S3Queue` and has the same [limitations](/reference/engines/table-engines/integrations/s3queue#limitations). In particular, a device-level power loss of the ClickHouse node can silently lose consumed rows: a file is recorded as processed in Keeper (and, with `after_processing = 'delete'`, its source blob removed) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). For the recommended materialized-view consumption path, setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table narrows this window substantially.
 )DOCS_MD",
             .syntax = "ENGINE = AzureQueue(connection_string | storage_account_url, container_name, blobpath, [account_name, account_key,] format [, compression]) SETTINGS mode = '...', ...",
             .related = {"S3Queue", "AzureBlobStorage"}});

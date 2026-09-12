@@ -2,10 +2,13 @@
 
 #include <Common/ColumnsHashingImpl.h>
 #include <Common/SipHash.h>
+#include <Common/typeid_cast.h>
 #include <bit>
+#include <limits>
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnTuple.h>
 #include <Interpreters/AggregationCommon.h>
 #include <base/types.h>
 
@@ -618,7 +621,68 @@ struct HashMethodKeysFixed
     }
 };
 
-/// For the case when there is one string key.
+/// Bitwise comparator of rows over fixed-width contiguous key columns, flattening tuples
+/// element-wise. Bitwise equality of all collected slices implies key equality; the converse
+/// does not hold (e.g. `-0.` and `0.` are equal values with different bytes), but a false
+/// negative only costs falling back to the full key calculation. Unusable (and empty) if some
+/// key column has no such raw representation.
+class FixedSizeKeySlices
+{
+public:
+    FixedSizeKeySlices() = default;
+
+    explicit FixedSizeKeySlices(const ColumnRawPtrs & key_columns)
+    {
+        for (const auto * column : key_columns)
+        {
+            if (!collect(*column))
+            {
+                slices.clear();
+                return;
+            }
+        }
+        usable = true;
+    }
+
+    bool isUsable() const { return usable; }
+
+    /// The comparator must be usable and both rows must be valid.
+    ALWAYS_INLINE bool rowsEqual(size_t row, size_t other_row) const
+    {
+        for (const auto & [data, size] : slices)
+        {
+            if (memcmp(data + row * size, data + other_row * size, size) != 0)
+                return false;
+        }
+        return true;
+    }
+
+private:
+    bool collect(const IColumn & column)
+    {
+        if (const auto * tuple = typeid_cast<const ColumnTuple *>(&column))
+        {
+            for (size_t i = 0; i < tuple->tupleSize(); ++i)
+            {
+                if (!collect(tuple->getColumn(i)))
+                    return false;
+            }
+            return true;
+        }
+        if (column.valuesHaveFixedSize() && column.isFixedAndContiguous())
+        {
+            slices.emplace_back(column.getRawData().data(), column.sizeOfValueIfFixed());
+            return true;
+        }
+        return false;
+    }
+
+    std::vector<std::pair<const char *, size_t>> slices;
+    bool usable = false;
+};
+
+/// For the case when the key is a 128-bit hash of all key columns (the fallback method for
+/// keys with no fixed-width packed representation, e.g. a `Tuple` column).
 template <typename Value, typename Mapped, bool use_cache = true, bool need_offset = false>
 struct HashMethodHashed
     : public columns_hashing_impl::HashMethodBase<HashMethodHashed<Value, Mapped, use_cache, need_offset>, Value, Mapped, use_cache, need_offset>
@@ -634,12 +698,52 @@ struct HashMethodHashed
 
     ColumnRawPtrs key_columns;
 
+    /// The consecutive-keys cache alone cannot skip the key calculation for this method: its
+    /// check needs the key, and here the key is the hash itself. Clustered inputs (e.g. sorted
+    /// by a primary key prefix) arrive in runs of equal consecutive rows, so additionally
+    /// compare the raw key bytes with the last processed row and reuse the cached result on
+    /// equality, skipping the hashing entirely.
+    FixedSizeKeySlices key_slices;
+    static constexpr size_t no_last_row = std::numeric_limits<size_t>::max();
+    size_t last_row = no_last_row;
+
     HashMethodHashed(ColumnRawPtrs key_columns_, const Sizes &, const HashMethodContextPtr &)
-        : key_columns(std::move(key_columns_)) {}
+        : key_columns(std::move(key_columns_))
+    {
+        if constexpr (use_cache)
+            key_slices = FixedSizeKeySlices(key_columns);
+    }
 
     ALWAYS_INLINE Key getKeyHolder(size_t row, Arena &) const
     {
         return hash128(row, key_columns.size(), key_columns);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE typename Base::EmplaceResult emplaceKey(Data & data, size_t row, Arena & pool)
+    {
+        if constexpr (use_cache)
+        {
+            /// An emplace can reuse the cache only when the key is known to be in the table.
+            if (last_row != no_last_row && this->cache.found && key_slices.rowsEqual(row, last_row))
+                return Base::getCachedEmplaceResult();
+            if (key_slices.isUsable())
+                last_row = row;
+        }
+        return Base::emplaceKey(data, row, pool);
+    }
+
+    template <typename Data>
+    ALWAYS_INLINE typename Base::FindResult findKey(Data & data, size_t row, Arena & pool)
+    {
+        if constexpr (use_cache)
+        {
+            if (last_row != no_last_row && !this->cache.empty && key_slices.rowsEqual(row, last_row))
+                return Base::getCachedFindResult();
+            if (key_slices.isUsable())
+                last_row = row;
+        }
+        return Base::findKey(data, row, pool);
     }
 };
 

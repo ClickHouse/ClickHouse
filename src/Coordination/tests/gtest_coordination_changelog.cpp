@@ -4,7 +4,12 @@
 #include <Coordination/tests/gtest_coordination_common.h>
 
 #include <Coordination/KeeperLogStore.h>
+#include <base/defines.h>
+#include <Common/CurrentThread.h>
+#include <Common/MemoryTracker.h>
 #include <Common/Stopwatch.h>
+#include <Common/ThreadStatus.h>
+#include <Common/scope_guard_safe.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/FailPoint.h>
 #include <Common/ProfileEvents.h>
@@ -12,8 +17,9 @@
 #include <Poco/AutoPtr.h>
 #include <Poco/Util/MapConfiguration.h>
 
+#include <algorithm>
 #include <atomic>
-#include <barrier>
+#include <cstring>
 #include <future>
 #include <thread>
 
@@ -49,6 +55,7 @@ namespace ProfileEvents
     extern const Event KeeperLogsReadAheadPlanEpochMismatches;
     extern const Event KeeperLogsEntryReadFromCommitReadAhead;
     extern const Event KeeperLogsEntryReadFromLatestCache;
+    extern const Event KeeperChangelogStartupReadEntries;
 }
 
 
@@ -169,6 +176,125 @@ TEST(ChangelogValidRuns, ForwardGapAfterCompactionStartsNewRun)
     EXPECT_EQ(runs.end_index, 1601u);
     EXPECT_EQ(runs.end_position, 40u);
 }
+
+/// Not built under ASan, TSan or MSan: their runtimes replace `operator new`, so
+/// `Memory::trackMemory` never runs and the tracker has nothing to report.
+#if !defined(ADDRESS_SANITIZER) && !defined(THREAD_SANITIZER) && !defined(MEMORY_SANITIZER)
+
+/// The cache's accounting is only worth having if it matches what the allocator actually hands out.
+/// Add a few entries to a `LogEntryStorage` on a thread of its own and compare the size it charges
+/// against a memory tracker parented to that thread. `Memory::trackMemory` sizes an allocation
+/// through the same `getActualAllocationSize` that `cachedLogEntryBytes` uses, so the two agree to
+/// within tens of bytes whether or not the allocator rounds to size classes, and any future drift in
+/// what a cached entry really costs shows up here.
+TEST(CachedLogEntryBytes, MatchesTrackedAllocation)
+{
+    struct Measurement
+    {
+        Int64 tracked = 0;
+        size_t charged = 0;
+        size_t expected = 0;
+    };
+
+    /// Every entry gets the same term, so `log_term_infos` does not grow while measuring.
+    const auto make_entry = [](size_t payload_size)
+    {
+        auto payload = nuraft::buffer::alloc(payload_size);
+        /// `buffer::alloc` leaves the payload uninitialized while `log_entry` checksums it, which
+        /// MSan reports. Real entries always carry written content; the contents are irrelevant here,
+        /// only the allocation is.
+        memset(payload->data_begin(), 0, payload_size);
+        return nuraft::cs_new<nuraft::log_entry>(/*term=*/1, payload, nuraft::log_val_type::app_log);
+    };
+
+    /// Entries must live and die on the measuring thread: a free elsewhere is charged to that other
+    /// thread's tracker, and an own `ThreadStatus` keeps this independent of whatever
+    /// `current_thread` the rest of `unit_tests_dbms` has set up.
+    const auto measure = [&](size_t payload_size, size_t count)
+    {
+        Measurement measurement;
+
+        std::thread measured([&]
+        {
+            /// Built before the tracker is attached, so its own allocations are not measured.
+            auto keeper_context = makeKeeperContext(/*use_lsmt_storage=*/false);
+            DB::LogEntryStorage storage(
+                DB::LogFileSettings{.latest_logs_cache_size_threshold = 0},
+                DB::ReadAheadSettings{},
+                keeper_context);
+
+            /// The first entry of a fresh storage also pays for the first block of `log_term_infos`,
+            /// a `std::deque` whose block is 4 KiB no matter how many entries follow. That cost is
+            /// per storage rather than per entry, so it is paid here, outside the measured window.
+            storage.addEntry(1, make_entry(payload_size));
+            DB::KeeperLogInfo log_info_before;
+            storage.getKeeperLogInfo(log_info_before);
+
+            DB::ThreadStatus thread_status;
+            auto & thread_tracker = DB::CurrentThread::get().memory_tracker;
+            MemoryTracker scope_tracker(
+                &total_memory_tracker, VariableContext::Process, /*log_peak_memory_usage_in_destructor=*/false);
+            MemoryTracker * prev_parent = thread_tracker.getParent();
+            Int64 prev_untracked_limit = DB::CurrentThread::get().untracked_memory_limit;
+
+            /// Whatever the `ThreadStatus` constructor deferred must not land on `scope_tracker`.
+            DB::CurrentThread::flushUntrackedMemory();
+            SCOPE_EXIT_SAFE({
+                DB::CurrentThread::flushUntrackedMemory();
+                DB::CurrentThread::get().untracked_memory_limit = prev_untracked_limit;
+                thread_tracker.setParent(prev_parent);
+            });
+
+            /// Without this these small allocations are batched below the default 4 MiB and never
+            /// reach the tracker at all.
+            DB::CurrentThread::get().untracked_memory_limit = 1;
+            thread_tracker.setParent(&scope_tracker);
+
+            for (size_t i = 0; i < count; ++i)
+            {
+                auto entry = make_entry(payload_size);
+                measurement.expected += DB::cachedLogEntryBytes(entry);
+                storage.addEntry(2 + i, entry);
+            }
+
+            DB::CurrentThread::flushUntrackedMemory();
+            measurement.tracked = scope_tracker.get();
+
+            DB::KeeperLogInfo log_info_after;
+            storage.getKeeperLogInfo(log_info_after);
+            measurement.charged = log_info_after.latest_logs_cache_size - log_info_before.latest_logs_cache_size;
+        });
+        measured.join();
+
+        return measurement;
+    };
+
+    /// The two sides cannot agree exactly at these counts, because the accounting charges one bucket
+    /// slot per entry while `unordered_map` allocates its bucket array in steps: a single entry can
+    /// be charged 8 bytes it has not allocated yet, and the entry that triggers a rehash allocates
+    /// more than it is charged. Both are tens of bytes, far below the hundreds per entry that
+    /// payload-only accounting used to miss.
+    constexpr Int64 unaccounted_slack = 128;
+
+    for (size_t payload_size : {64UL, 500UL, 4096UL})
+    {
+        for (size_t count : {1UL, 2UL, 3UL})
+        {
+            SCOPED_TRACE(fmt::format("payload_size={} count={}", payload_size, count));
+
+            const Measurement measurement = measure(payload_size, count);
+
+            /// The storage charges exactly what `cachedLogEntryBytes` says, nothing else.
+            EXPECT_EQ(measurement.charged, measurement.expected);
+
+            EXPECT_LE(std::abs(measurement.tracked - static_cast<Int64>(measurement.charged)), unaccounted_slack)
+                << "cache charges " << measurement.charged << " bytes while the allocator handed out "
+                << measurement.tracked;
+        }
+    }
+}
+
+#endif
 
 TEST_P(CoordinationTestWithCompression, ChangelogTestSimple)
 {
@@ -649,6 +775,16 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtPreviousFile)
 
     auto e1 = getLogEntry("helloworld", 5555);
     changelog.write_at(7, e1);
+
+    /// writeAt must unlink superseded segments before the rewrite can be appended/acked (#112101).
+    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + this->extension));
+    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + this->extension));
+    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + this->extension));
+
     changelog.end_of_append_batch(0, 0);
     EXPECT_EQ(changelog.size(), 7);
     EXPECT_EQ(changelog.start_index(), 1);
@@ -656,15 +792,6 @@ TEST_P(CoordinationTestWithCompression, ChangelogTestWriteAtPreviousFile)
     EXPECT_EQ(changelog.last_entry()->get_term(), 5555);
 
     waitDurableLogs(changelog);
-
-    EXPECT_TRUE(fs::exists("./logs/changelog_1_5.bin" + this->extension));
-    EXPECT_TRUE(fs::exists("./logs/changelog_6_10.bin" + this->extension));
-
-    EXPECT_FALSE(fs::exists("./logs/changelog_11_15.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_16_20.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_21_25.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_26_30.bin" + this->extension));
-    EXPECT_FALSE(fs::exists("./logs/changelog_31_35.bin" + this->extension));
 
     DB::KeeperLogStore changelog_read(
         DB::LogFileSettings{.force_sync = true, .compress_logs = this->enable_compression, .rotate_interval = 5},
@@ -3038,7 +3165,9 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadExhaustedLatestCacheHandoff
     constexpr uint64_t cached_tail = 20;
     const std::string payload = "commit_ra_cache_pad_entry"; // fixed-size payload, so the threshold below
                                                               // deterministically admits `cached_tail` entries
-    const uint64_t threshold = cached_tail * payload.size();
+    // The cache charges resident bytes per entry, not payload bytes, so size the threshold with the
+    // same accounting the cache uses.
+    const uint64_t threshold = cached_tail * DB::cachedLogEntryBytes(getLogEntry(payload, 1));
 
     const DB::LogFileSettings settings{
         .force_sync = false,
@@ -3062,7 +3191,11 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadExhaustedLatestCacheHandoff
         waitDurableLogs(writer);
     }
 
+    // Forced serial startup read: this test depends on the old behavior of fully populating
+    // latest_logs_cache, whereas the parallel path only seeds the last entry (see
+    // StartupReadCacheIndependence).
     DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+    changelog.setForceSerialStartupReadForTesting(true);
     changelog.init(0, 0);
 
     const uint64_t latest_cache_before = ProfileEvents::global_counters[ProfileEvents::KeeperLogsEntryReadFromLatestCache];
@@ -4026,7 +4159,7 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadIdleReaderEvictedAfterCacheHitCat
     constexpr uint64_t total = 100;
     constexpr uint64_t cached_tail = 20;
     const std::string payload = "peer_idle_evict_pad_entry";
-    const uint64_t threshold = cached_tail * payload.size();
+    const uint64_t threshold = cached_tail * DB::cachedLogEntryBytes(getLogEntry(payload, 1));
 
     const DB::LogFileSettings settings{
         .force_sync = false,
@@ -4056,7 +4189,11 @@ TYPED_TEST(CoordinationChangelogTest, ReadAheadIdleReaderEvictedAfterCacheHitCat
         waitDurableLogs(writer);
     }
 
+    // Forced serial startup read: this test depends on the old behavior of fully populating
+    // latest_logs_cache, whereas the parallel path only seeds the last entry (see
+    // StartupReadCacheIndependence).
     DB::KeeperLogStore changelog(settings, DB::FlushSettings(), readahead_settings, this->keeper_context);
+    changelog.setForceSerialStartupReadForTesting(true);
     changelog.init(0, 0);
 
     constexpr int32_t peer_id = 4;
@@ -4096,7 +4233,7 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadIdleReaderEvictedViaRefresh
     constexpr uint64_t total = 100;
     constexpr uint64_t cached_tail = 20;
     const std::string payload = "commit_idle_evict_pad_entry";
-    const uint64_t threshold = cached_tail * payload.size();
+    const uint64_t threshold = cached_tail * DB::cachedLogEntryBytes(getLogEntry(payload, 1));
 
     const DB::LogFileSettings settings{
         .force_sync = false,
@@ -4145,5 +4282,116 @@ TYPED_TEST(CoordinationChangelogTest, CommitReadAheadIdleReaderEvictedViaRefresh
     EXPECT_EQ(entry2->get_term(), 2u);
     EXPECT_TRUE(changelog.hasCommitReaderForTests());
 }
+
+// Tests: parallel startup read (log_startup_read_max_streams / log_startup_read_buffer_size).
+
+// A file that disappears between directory discovery and the actual read must abort startup with
+// an exception on every dispatch path, not be silently treated as empty/missing.
+TYPED_TEST(CoordinationChangelogTest, StartupReadOpenFailureAbortsStartup)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "compressed changelogs always dispatch to serial";
+
+    for (bool delete_last_file : {true, false})
+    {
+        SCOPED_TRACE(std::string("delete_last_file=") + (delete_last_file ? "true" : "false"));
+
+        ChangelogDirTest test("./logs");
+        this->setLogDirectory("./logs");
+
+        const DB::LogFileSettings settings{
+            .force_sync = false,
+            .compress_logs = false,
+            .rotate_interval = 10,
+        };
+
+        {
+            DB::Changelog writer(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+            writer.readChangelogAndInitWriter(0, 0);
+            for (uint64_t i = 1; i <= 30; ++i)
+                writer.appendEntry(i, getLogEntry("entry_" + std::to_string(i), i));
+            writer.flush();
+        }
+
+        const std::vector<std::string> all_files{"./logs/changelog_1_10.bin", "./logs/changelog_11_20.bin", "./logs/changelog_21_30.bin"};
+        for (const auto & path : all_files)
+            ASSERT_TRUE(fs::exists(path)) << path;
+
+        const std::string & file_to_delete = delete_last_file ? all_files[2] : all_files[1];
+
+        /// Construct readers (directory discovery) before the file disappears.
+        DB::LogFileSettings serial_via_streams_settings = settings;
+        serial_via_streams_settings.startup_read_max_streams = 1;
+
+        DB::Changelog default_dispatch_reader(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        DB::Changelog force_serial_reader(this->log, settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        force_serial_reader.setForceSerialStartupReadForTesting(true);
+        DB::Changelog streams_one_reader(
+            this->log, serial_via_streams_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+
+        fs::remove(file_to_delete);
+
+        EXPECT_THROW(default_dispatch_reader.readChangelogAndInitWriter(0, 0), DB::Exception);
+        EXPECT_THROW(force_serial_reader.readChangelogAndInitWriter(0, 0), DB::Exception);
+        EXPECT_THROW(streams_one_reader.readChangelogAndInitWriter(0, 0), DB::Exception);
+
+        for (const auto & path : all_files)
+            if (path != file_to_delete)
+                EXPECT_TRUE(fs::exists(path)) << path << " must survive a failed startup read";
+    }
+}
+
+
+// A stale out-of-scope compressed file must not force the serial fallback.
+TYPED_TEST(CoordinationChangelogTest, StartupReadOutOfScopeCompressionDoesNotForceSerial)
+{
+    if (this->enable_compression)
+        GTEST_SKIP() << "test doesn't depend on the fixture's compression parameter; avoid running it twice";
+
+    ChangelogDirTest test("./logs");
+    this->setLogDirectory("./logs");
+
+    /// Write compressed files, then continue uncompressed past them.
+    {
+        const DB::LogFileSettings compressed_settings{.force_sync = false, .compress_logs = true, .rotate_interval = 10};
+        DB::Changelog writer(this->log, compressed_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t i = 1; i <= 20; ++i)
+            writer.appendEntry(i, getLogEntry("entry_" + std::to_string(i), i));
+        writer.flush();
+    }
+    ASSERT_TRUE(fs::exists("./logs/changelog_1_10.bin.zstd"));
+    ASSERT_TRUE(fs::exists("./logs/changelog_11_20.bin.zstd"));
+
+    const DB::LogFileSettings uncompressed_settings{.force_sync = false, .compress_logs = false, .rotate_interval = 10};
+    {
+        DB::Changelog writer(this->log, uncompressed_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+        writer.readChangelogAndInitWriter(0, 0);
+        for (uint64_t i = 21; i <= 50; ++i)
+            writer.appendEntry(i, getLogEntry("entry_" + std::to_string(i), i));
+        writer.flush();
+    }
+    ASSERT_TRUE(fs::exists("./logs/changelog_21_30.bin"));
+    ASSERT_TRUE(fs::exists("./logs/changelog_31_40.bin"));
+    ASSERT_TRUE(fs::exists("./logs/changelog_41_50.bin"));
+
+    /// start_to_read_from = 26, so both compressed files are out of scope.
+    const uint64_t before = ProfileEvents::global_counters[ProfileEvents::KeeperChangelogStartupReadEntries];
+    DB::Changelog parallel_reader(this->log, uncompressed_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    parallel_reader.readChangelogAndInitWriter(25, 0);
+    EXPECT_GT(ProfileEvents::global_counters[ProfileEvents::KeeperChangelogStartupReadEntries], before)
+        << "an out-of-scope compressed file must not force the serial fallback";
+
+    DB::Changelog reference(this->log, uncompressed_settings, DB::FlushSettings(), DB::ReadAheadSettings{}, this->keeper_context);
+    reference.setForceSerialStartupReadForTesting(true);
+    reference.readChangelogAndInitWriter(25, 0);
+
+    ASSERT_EQ(reference.size(), parallel_reader.size());
+    ASSERT_EQ(reference.getStartIndex(), parallel_reader.getStartIndex());
+    ASSERT_EQ(reference.getNextEntryIndex(), parallel_reader.getNextEntryIndex());
+    for (uint64_t i = reference.getStartIndex(); i < reference.getNextEntryIndex(); ++i)
+        EXPECT_EQ(reference.termAt(i), parallel_reader.termAt(i)) << "index " << i;
+}
+
 
 #endif

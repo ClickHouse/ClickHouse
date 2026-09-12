@@ -10,10 +10,16 @@
 #include <Common/CurrentThread.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
 
 #include <exception>
 
+
+namespace ProfileEvents
+{
+    extern const Event SetsBuiltFromSubquery;
+}
 
 namespace DB
 {
@@ -34,15 +40,15 @@ CreatingSetsTransform::~CreatingSetsTransform()
 {
     if (promise_to_build)
     {
-        /// set_exception can also throw
+        /// An unfulfilled promise means the build was abandoned, not that it failed: publish the
+        /// retryable "no set" outcome. `work` resets the promise after storing a real error.
         try
         {
-            promise_to_build->set_exception(std::make_exception_ptr(
-                Exception(ErrorCodes::UNKNOWN_EXCEPTION, "Failed to build set, most likely pipeline executor was stopped")));
+            promise_to_build->set_value(nullptr);
         }
         catch (...)
         {
-            tryLogCurrentException(log, "Failed to set_exception for promise");
+            tryLogCurrentException(log, "Failed to set_value for promise");
         }
     }
 
@@ -72,6 +78,16 @@ CreatingSetsTransform::CreatingSetsTransform(
 {
 }
 
+IProcessor::Status CreatingSetsTransform::prepare()
+{
+    /// work() runs without the executor's graph lock, so it must not change port state; that happens here.
+    /// The base class closes the input only on the path that still expects to generate output.
+    if (finished_input)
+        input.close();
+
+    return IAccumulatingTransform::prepare();
+}
+
 void CreatingSetsTransform::work()
 {
     try
@@ -80,10 +96,7 @@ void CreatingSetsTransform::work()
             init();
 
         if (done_with_set && done_with_table)
-        {
             finishConsume();
-            input.close();
-        }
 
         IAccumulatingTransform::work();
     }
@@ -251,6 +264,7 @@ Chunk CreatingSetsTransform::generate()
         });
 
         set_and_key->set->finishInsert();
+        ProfileEvents::increment(ProfileEvents::SetsBuiltFromSubquery);
         if (promise_to_build)
         {
             promise_to_build->set_value(set_and_key->set);
