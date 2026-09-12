@@ -37,6 +37,18 @@ inline T ALWAYS_INLINE maskFloatingPoint(T x, bool keep)
     return x;
 }
 
+#if defined(__aarch64__)
+/// Lanes of a 128-bit NEON vector holding accumulator elements.
+template <typename T>
+static constexpr size_t neonLanes = 16 / sizeof(T);
+
+/// Equal source and accumulator width is required because a narrower source would need a
+/// widening convert per lane, which costs more than the vectorization saves.
+template <typename T, typename Value>
+static constexpr bool neonPlainAccumulable
+    = std::is_same_v<T, Float64> && std::is_arithmetic_v<Value> && sizeof(Value) == sizeof(T);
+#endif
+
 
 /**
     Calculating univariate central moments
@@ -96,6 +108,46 @@ struct VarMoments
     })
     )
 
+#if defined(__aarch64__)
+    /// The vectors span exactly unroll_count rows, so lane (v, j) accumulates the same rows as
+    /// scalar partial v * lanes + j and the reduction below visits them in the same order.
+    /// That equality is required, not incidental: FP addition is not associative, so any other
+    /// grouping would return different low-order digits than the scalar kernel.
+    template <typename Value>
+    void NO_INLINE addManyNeon(const Value * __restrict ptr, size_t row_begin, size_t row_end)
+    {
+        static constexpr size_t lanes = neonLanes<T>;
+        static constexpr size_t vectors = unroll_count / lanes;
+        static_assert(vectors * lanes == unroll_count);
+
+        using Vector = T __attribute__((ext_vector_type(lanes)));
+        using SourceVector = Value __attribute__((ext_vector_type(lanes)));
+
+        Vector partials[_level][vectors]{};
+        size_t i = row_begin;
+        for (; i + unroll_count <= row_end; i += unroll_count)
+        {
+            for (size_t v = 0; v < vectors; ++v)
+            {
+                SourceVector raw;
+                std::memcpy(&raw, ptr + i + v * lanes, sizeof(raw));
+                Vector x = __builtin_convertvector(raw, Vector);
+                partials[0][v] += x;
+                partials[1][v] += x * x;
+                if constexpr (_level >= 3) partials[2][v] += x * x * x;
+                if constexpr (_level >= 4) partials[3][v] += x * x * x * x;
+            }
+        }
+        m[0] += static_cast<T>(i - row_begin);
+        for (size_t k = 1; k <= _level; ++k)
+            for (size_t v = 0; v < vectors; ++v)
+                for (size_t j = 0; j < lanes; ++j)
+                    m[k] += partials[k - 1][v][j];
+        for (; i < row_end; ++i)
+            add(static_cast<T>(ptr[i]));
+    }
+#endif
+
     template <typename Value>
     void addMany(const Value * __restrict ptr, size_t row_begin, size_t row_end)
     {
@@ -103,6 +155,14 @@ struct VarMoments
         if (isArchSupported(TargetArch::x86_64_v4))
         {
             addManyImpl_x86_64_v4(ptr, row_begin, row_end);
+            return;
+        }
+#endif
+
+#if defined(__aarch64__)
+        if constexpr (neonPlainAccumulable<T, Value>)
+        {
+            addManyNeon(ptr, row_begin, row_end);
             return;
         }
 #endif
