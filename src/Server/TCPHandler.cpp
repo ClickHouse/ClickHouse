@@ -2795,6 +2795,11 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
     /// Settings
     ///
 
+    /// Must be set before the version-gated compatibility decisions below read it: `query_kind` is a
+    /// handler member that lives as long as the connection, so until it is assigned it still holds
+    /// the *previous* query's kind on this connection (and `NO_QUERY` for the first one).
+    query_kind = state->query_context->getClientInfo().query_kind;
+
     /// FIXME: Remove when allow_experimental_analyzer will become obsolete.
     /// Analyzer became Beta in 24.3 and started to be enabled by default.
     /// We have to disable it for ourselves to make sure we don't have different settings on
@@ -2812,7 +2817,6 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         passed_settings.set("optimize_const_name_size", -1);
 
     auto settings_changes = passed_settings.changes();
-    query_kind = state->query_context->getClientInfo().query_kind;
     if (query_kind == ClientInfo::QueryKind::INITIAL_QUERY)
     {
         /// Throw an exception if the passed settings violate the constraints.
