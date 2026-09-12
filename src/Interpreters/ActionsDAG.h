@@ -195,6 +195,10 @@ public:
         NodeRawConstPtrs children,
         std::string result_name);
     const Node & addCast(const Node & node_to_cast, const DataTypePtr & cast_type, std::string result_name, ContextPtr context);
+    /// Convert a node used as a condition to `result_type` keeping its truth value, e.g. 256 and 0.5
+    /// stay true where a bare cast to `UInt8` would make them false. `context` is only needed to turn
+    /// a NULL into false, which happens when `result_type` cannot hold a NULL.
+    const Node & addBooleanCondition(const Node & node, const DataTypePtr & result_type, ContextPtr context);
     /// Same as `addCast`, but the values that cannot be represented in the destination type exactly
     /// are converted to NULL instead of being wrapped around, saturated or leading to an exception.
     /// The result type is always Nullable, so `cast_type` must be allowed inside Nullable.
