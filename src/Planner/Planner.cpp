@@ -1512,8 +1512,11 @@ void addLimitByStep(
     QueryPlan & query_plan,
     const LimitByAnalysisResult & limit_by_analysis_result,
     const QueryAnalysisResult & query_analysis_result,
-    bool do_not_skip_offset)
+    bool do_not_skip_offset,
+    const Settings & settings)
 {
+    const LimitByStep::ExternalSettings external_settings(settings);
+
     /// Constness of LIMIT BY limit is validated during query analysis stage
     UInt64 limit_by_length = query_analysis_result.limit_by_length;
     UInt64 limit_by_offset = query_analysis_result.limit_by_offset;
@@ -1538,7 +1541,8 @@ void addLimitByStep(
     if (!is_limit_negative && !is_offset_negative) [[likely]]
     {
         /// LIMIT N [OFFSET M] BY cols - standard positive case
-        auto step = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names);
+        auto step = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), limit_by_length, limit_by_offset, column_names, external_settings);
         query_plan.addStep(std::move(step));
     }
     else if (is_limit_negative && is_offset_negative)
@@ -1555,7 +1559,7 @@ void addLimitByStep(
         if (limit_by_offset > 0)
         {
             auto step1 = std::make_unique<LimitByStep>(
-                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
+                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names, external_settings);
             query_plan.addStep(std::move(step1));
         }
         auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
@@ -1570,7 +1574,8 @@ void addLimitByStep(
         auto step1 = std::make_unique<NegativeLimitByStep>(
             query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_by_offset, column_names);
         query_plan.addStep(std::move(step1));
-        auto step2 = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_by_length, 0, column_names);
+        auto step2 = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), limit_by_length, 0, column_names, external_settings);
         query_plan.addStep(std::move(step2));
     }
 }
@@ -1804,7 +1809,12 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
         /// We don't apply LIMIT BY on remote nodes at all in the old infrastructure.
         /// https://github.com/ClickHouse/ClickHouse/blob/67c1e89d90ef576e62f8b1c68269742a3c6f9b1e/src/Interpreters/InterpreterSelectQuery.cpp#L1697-L1705
         /// Let's be optimistic and only don't skip offset (it will be skipped on the initiator).
-        addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, true /*do_not_skip_offset*/);
+        addLimitByStep(
+            query_plan,
+            limit_by_analysis_result,
+            query_analysis_result,
+            true /*do_not_skip_offset*/,
+            planner_context->getQueryContext()->getSettingsRef());
     }
 
     /// Do not apply PreLimit at first stage for LIMIT BY and `exact_rows_before_limit`,
@@ -3024,7 +3034,12 @@ void Planner::buildPlanForQueryNode()
                 select_query_options,
                 "Before LIMIT BY",
                 useful_sets);
-            addLimitByStep(query_plan, limit_by_analysis_result, query_analysis_result, false /*do_not_skip_offset*/);
+            addLimitByStep(
+                query_plan,
+                limit_by_analysis_result,
+                query_analysis_result,
+                false /*do_not_skip_offset*/,
+                planner_context->getQueryContext()->getSettingsRef());
         }
 
         /// WITH FILL / INTERPOLATE must run only on the finalizing node, over the merged stream,

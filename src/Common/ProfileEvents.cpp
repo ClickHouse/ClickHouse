@@ -441,6 +441,10 @@
     M(ExternalJoinMerge, "Number of times temporary files were merged for JOIN in external memory.", ValueType::Number) \
     M(ExternalJoinCompressedBytes, "Number of compressed bytes written for JOIN in external memory.", ValueType::Bytes) \
     M(ExternalJoinUncompressedBytes, "Amount of data (uncompressed, before compression) written for JOIN in external memory.", ValueType::Bytes) \
+    M(ExternalLimitByWritePart, "Number of times a temporary file was written to disk for `LIMIT BY` in external memory.", ValueType::Number) \
+    M(ExternalLimitByMerge, "Number of times temporary files were merged for `LIMIT BY` in external memory.", ValueType::Number) \
+    M(ExternalLimitByCompressedBytes, "Number of compressed bytes written for `LIMIT BY` in external memory.", ValueType::Bytes) \
+    M(ExternalLimitByUncompressedBytes, "Amount of data (uncompressed, before compression) written for `LIMIT BY` in external memory.", ValueType::Bytes) \
     \
     M(IcebergPartitionPrunedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
     M(IcebergPartitionPrunedManifestFiles, "Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list", ValueType::Number) \

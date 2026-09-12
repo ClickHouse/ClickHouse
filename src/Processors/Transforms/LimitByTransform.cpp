@@ -33,104 +33,18 @@ extern const char limit_by_sorted_stream_transform_mid_loop_pause[];
 extern const char limit_by_transform_mid_loop_pause[];
 }
 
-namespace
-{
-
-/// Compute the exclusive end of the kept per-group interval `[offset, offset + length)`.
-UInt64 computeGroupLimitEnd(UInt64 length, UInt64 offset)
-{
-    if (length > std::numeric_limits<UInt64>::max() - offset)
-        return std::numeric_limits<UInt64>::max();
-    return length + offset;
-}
-
-struct GroupingKeys
-{
-    Names names;
-    std::vector<size_t> positions;
-};
-
-/// Collect grouping keys whose header-sample column is not `ColumnConst`.
-/// Constant columns do not help distinguish groups because they have the same value on every row.
-GroupingKeys filterNonConstKeys(const SharedHeader & header, const Names & column_names)
-
-{
-    GroupingKeys non_const_keys;
-    non_const_keys.names.reserve(column_names.size());
-    non_const_keys.positions.reserve(column_names.size());
-    for (const auto & column_name : column_names)
-    {
-        auto position = header->getPositionByName(column_name);
-        const auto & column = header->getByPosition(position).column;
-        if (!(column && isColumnConst(*column)))
-        {
-            non_const_keys.names.emplace_back(column_name);
-            non_const_keys.positions.emplace_back(position);
-        }
-    }
-    return non_const_keys;
-}
-
-AggregateDataPtr mappedFromGroupIndex(size_t group_index)
-{
-    return reinterpret_cast<AggregateDataPtr>(static_cast<uintptr_t>(group_index) + 1);
-}
-
-size_t groupIndexFromMapped(AggregateDataPtr mapped)
-{
-    return static_cast<size_t>(reinterpret_cast<uintptr_t>(mapped) - 1);
-}
-
-/// Return the chunk-local portion of a same-group run that falls into
-/// the kept per-group interval `[group_offset, group_limit_end)`.
-/// `run_start_row` and `run_row_count` describe the run inside the current chunk.
-/// `group_rows_seen_before_run` is the total number of rows already seen for this
-/// group before the run starts. `length == 0` means the run contributes no rows.
-ChunkRowRange shrinkRunToLimitWindow(
-    UInt64 run_start_row, UInt64 run_row_count, UInt64 group_rows_seen_before_run, UInt64 group_offset, UInt64 group_limit_end)
-{
-    /// Rows from this run consumed by the group's OFFSET prefix.
-    const UInt64 offset_rows_in_run
-        = group_rows_seen_before_run < group_offset ? std::min(group_offset - group_rows_seen_before_run, run_row_count) : 0;
-
-    /// The group's row count after skipping the OFFSET-covered prefix of this run.
-    const UInt64 group_rows_seen_after_offset = group_rows_seen_before_run + offset_rows_in_run;
-
-    /// Remaining rows this group can still contribute before reaching the limit end.
-    const UInt64 remaining_rows_until_limit_end
-        = group_rows_seen_after_offset < group_limit_end ? group_limit_end - group_rows_seen_after_offset : 0;
-
-    const UInt64 rows_kept_from_run = std::min(run_row_count - offset_rows_in_run, remaining_rows_until_limit_end);
-
-    chassert(offset_rows_in_run + rows_kept_from_run <= run_row_count);
-
-    return {run_start_row + offset_rows_in_run, rows_kept_from_run};
-}
-
-}
 
 
 LimitByTransform::LimitByTransform(SharedHeader header, UInt64 group_length_, UInt64 group_offset_, const Names & column_names)
     : ISimpleTransform(header, header, true)
     , group_offset(group_offset_)
     , group_limit_end(computeGroupLimitEnd(group_length_, group_offset_))
+    , mapping(*header, column_names)
 {
-    auto grouping_keys = filterNonConstKeys(header, column_names);
-    grouping_key_positions = std::move(grouping_keys.positions);
-
-    data.keys_size = grouping_keys.names.size();
-    auto type = AggregatedDataVariants::chooseMethod(*header, grouping_keys.names, data.key_sizes);
-    data.init(type);
-
-    ColumnsHashing::HashMethodContextSettings ctx_settings;
-    ctx_settings.max_threads = 1;
-    hash_method_context = AggregatedDataVariants::createCache(type, ctx_settings);
 }
 
-void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
+void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, UInt64 group_rows_seen_before_run)
 {
-    chassert(group_idx < group_counts.size());
-    const UInt64 group_rows_seen_before_run = group_counts[group_idx];
     if (group_rows_seen_before_run >= group_limit_end)
         return;
 
@@ -138,71 +52,6 @@ void LimitByTransform::processRun(UInt64 run_start_row, UInt64 run_row_count, si
 
     if (slice.length > 0)
         output_slices.push_back(slice);
-
-    group_counts[group_idx] = group_rows_seen_before_run + run_row_count;
-}
-
-/// LimitBy stores a group index in the cell's mapped slot, so it cannot use a set method. `chooseMethod`
-/// never returns one here; this overload exists only because the dispatch macro is generated over every
-/// `AggregatedDataVariants::Type`, including the set ones that `GROUP BY` without aggregates uses.
-template <typename Method>
-requires SetAggregationMethod<Method>
-void LimitByTransform::consumeImpl(Method &, const ColumnRawPtrs &, UInt64)
-{
-    throw Exception(ErrorCodes::LOGICAL_ERROR, "LimitByTransform does not support void-mapped aggregation methods");
-}
-
-template <typename Method>
-requires MapAggregationMethod<Method>
-void LimitByTransform::consumeImpl(Method & hash_method, const ColumnRawPtrs & grouping_key_columns, UInt64 row_count)
-{
-    typename Method::State state(grouping_key_columns, data.key_sizes, hash_method_context);
-
-    UInt64 current_run_start_row = 0;
-    size_t current_run_group_idx = 0;
-
-    FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
-
-    for (UInt64 row_idx = 0; row_idx < row_count; ++row_idx)
-    {
-        if (isCancelled())
-        {
-            LOG_TEST(getLogger("LimitByTransform"), "Cancelled during row processing");
-            stopReading();
-            return;
-        }
-
-        if (row_idx == 5)
-            FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
-
-        auto key_emplace_result = state.emplaceKey(hash_method.data, row_idx, *data.aggregates_pool);
-        size_t row_group_idx = 0;
-        if (key_emplace_result.isInserted()) /// New grouping key
-        {
-            /// Assign a stable index into `group_counts` to the grouping key we just inserted.
-            row_group_idx = group_counts.size();
-            group_counts.push_back(0);
-            key_emplace_result.setMapped(mappedFromGroupIndex(row_group_idx));
-        }
-        else /// Existing grouping key
-        {
-            row_group_idx = groupIndexFromMapped(key_emplace_result.getMapped());
-
-            chassert(row_group_idx < group_counts.size());
-        }
-
-        if (row_idx == 0)
-            current_run_group_idx = row_group_idx;
-        else if (row_group_idx != current_run_group_idx) /// Local run ended
-        {
-            processRun(current_run_start_row, row_idx - current_run_start_row, current_run_group_idx);
-            current_run_group_idx = row_group_idx;
-            current_run_start_row = row_idx;
-        }
-    }
-
-    /// Flush the final run, which extends to the end of the chunk.
-    processRun(current_run_start_row, row_count - current_run_start_row, current_run_group_idx);
 }
 
 void LimitByTransform::transform(Chunk & chunk)
@@ -227,14 +76,16 @@ void LimitByTransform::transform(Chunk & chunk)
 
     /// `filterNonConstKeys` removed all grouping keys, so every row in this chunk
     /// belongs to one logical group and can be processed as one run.
-    if (data.type == AggregatedDataVariants::Type::without_key)
+    if (mapping.isTrivial())
     {
-        if (group_counts.empty())
-            group_counts.push_back(0);
-        processRun(0, row_count, 0);
+        processRun(0, row_count, trivial_group_rows_seen);
+        if (trivial_group_rows_seen < group_limit_end)
+            trivial_group_rows_seen += row_count;
     }
     else
     {
+        const auto & grouping_key_positions = mapping.getKeys().positions;
+
         Columns normalized_grouping_key_columns;
         normalized_grouping_key_columns.reserve(grouping_key_positions.size());
         ColumnRawPtrs grouping_key_columns;
@@ -245,20 +96,33 @@ void LimitByTransform::transform(Chunk & chunk)
             grouping_key_columns.push_back(normalized_grouping_key_columns.back().get());
         }
 
-        /// `consumeImpl` maps rows to groups and splits the chunk into runs.
-        switch (data.type)
-        {
-#define M(NAME, IS_TWO_LEVEL) \
-    case AggregatedDataVariants::Type::NAME: \
-        consumeImpl(*data.NAME, grouping_key_columns, row_count); \
-        break;
-            APPLY_FOR_AGGREGATED_VARIANTS(M)
-#undef M
+        FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_pause);
 
-            case AggregatedDataVariants::Type::EMPTY:
-            case AggregatedDataVariants::Type::without_key:
-                throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected AggregatedDataVariants type in LimitByTransform::transform");
-        }
+        /// `mapChunk` maps rows to groups and splits the chunk into runs.
+        mapping.mapChunk(
+            grouping_key_columns,
+            row_count,
+            [&](UInt64 run_start_row, UInt64 run_row_count, size_t group_idx)
+            {
+                const UInt64 group_rows_seen_before_run = mapping.getRowsSeen(group_idx);
+                processRun(run_start_row, run_row_count, group_rows_seen_before_run);
+                if (group_rows_seen_before_run < group_limit_end)
+                    mapping.setRowsSeen(group_idx, group_rows_seen_before_run + run_row_count);
+            },
+            [&](UInt64 row_idx)
+            {
+                if (isCancelled())
+                {
+                    LOG_TEST(getLogger("LimitByTransform"), "Cancelled during row processing");
+                    stopReading();
+                    return false;
+                }
+
+                if (row_idx == 5)
+                    FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_mid_loop_pause);
+
+                return true;
+            });
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::limit_by_transform_after_loop_pause);
@@ -291,7 +155,7 @@ LimitBySortedStreamTransform::LimitBySortedStreamTransform(
     key_names.reserve(sorted_columns_descr.size());
     for (const auto & column_description : sorted_columns_descr)
         key_names.push_back(column_description.column_name);
-    grouping_key_positions = filterNonConstKeys(header, key_names).positions;
+    grouping_key_positions = filterNonConstKeys(*header, key_names).positions;
 
     previous_chunk_last_grouping_key_columns.reserve(grouping_key_positions.size());
     for (size_t position : grouping_key_positions)

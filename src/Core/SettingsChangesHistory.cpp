@@ -101,6 +101,8 @@ const VersionToSettingsChangesMap & getSettingsChangesHistory()
             {"use_iceberg_manifest_list_partition_pruning", false, true, "New setting to skip Iceberg manifest files whose manifest-list partition summaries cannot match the query filter, without reading them."},
             {"enable_time_series_table", false, false, "The `TimeSeries` table engine and the `promql` dialect were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_table`."},
             {"enable_time_series_aggregate_functions", false, false, "The `timeSeries*` aggregate functions were moved to the private preview tier. Added an alias for setting `allow_experimental_time_series_aggregate_functions`."},
+            {"max_bytes_before_external_limit_by", 0, 0, "New setting for the absolute memory threshold at which the hash-based `LIMIT BY` spills to disk. It is disabled on its own; automatic spilling is driven by `max_bytes_ratio_before_external_limit_by`."},
+            {"max_bytes_ratio_before_external_limit_by", 0., 0.5, "New setting that lets the hash-based `LIMIT BY` spill to disk once the query uses this fraction of the available memory. previous_value=0 so `compatibility` with versions before 26.9 keeps `LIMIT BY` in memory."},
         });
         addSettingsChanges(settings_changes_history, "26.8",
         {
