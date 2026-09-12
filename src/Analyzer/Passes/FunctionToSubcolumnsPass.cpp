@@ -224,8 +224,8 @@ using SubcolumnPredicate = std::function<bool(const ISerialization::SubstreamPat
 ///    a `JSON j` with a path `m` answers `j.m.key_k` while a physical `` `j.m` Map `` answers `j.m`,
 ///    because resolution takes the shortest prefix that can answer it.
 ///
-/// `expected_type` is passed only by the rewrites that hardcode it. The element rewrites take it
-/// from the type definition, where an enclosing Nullable legitimately wraps it in storage.
+/// `expected_type` is the type the rewritten expression is declared to produce: a subcolumn that
+/// storage resolves to some other type is not the one the expression means.
 bool canOptimizeToExpectedSubcolumn(
     const ColumnContext & ctx,
     const String & subcolumn_name,
@@ -506,7 +506,7 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         is_expected_subcolumn = [&](const auto & path) { return SerializationTuple::isElementSubcolumn(path, subcolumn->name); };
 
     if (sourceHasColumn(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx, column.name, is_expected_subcolumn))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, is_expected_subcolumn, function_node.getResultType()))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
 }
