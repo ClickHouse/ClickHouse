@@ -15,6 +15,8 @@
 
 #include <boost/container/devector.hpp>
 
+class MemoryTracker;
+
 
 namespace DB
 {
@@ -80,6 +82,7 @@ private:
     /// Concurrency control related
     SlotAllocationPtr cpu_slots;
     AcquiredSlotPtr single_thread_cpu_slot; // cpu slot for single-thread mode to work using executeStep()
+
     std::unique_ptr<ThreadPool> pool;
     std::mutex spawn_mutex;
 

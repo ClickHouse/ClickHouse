@@ -136,6 +136,73 @@ AllocationTrace CurrentMemoryTracker::allocThrow(Int64 size)
     return allocImpl(size, enforce_memory_limit);
 }
 
+MemoryTracker * CurrentMemoryTracker::allocGlobal(Int64 size)
+{
+    /// Find the outermost process-level tracker (if any): when a thread group is nested
+    /// under another one, real allocations overwrite `query_tracker` at every Process
+    /// level while recursing to the total tracker. Use the same tracker for global
+    /// overcommit decisions, so a reservation that crosses the server memory limit waits
+    /// for or kills the selected query exactly like a real allocation from this thread
+    /// would.
+    /// Nothing is charged on the query tracker chain itself.
+    MemoryTracker * process_tracker = nullptr;
+    for (auto * tracker = DB::CurrentThread::getMemoryTracker(); tracker; tracker = tracker->getParent())
+    {
+        if (tracker->level == VariableContext::Process)
+            process_tracker = tracker;
+    }
+
+    /// The reservations counter must be raised before the charge: if an external correction
+    /// of the total tracker (`MemoryTracker::updateAllocated`) interleaves, the reservation
+    /// is counted twice until the next correction, which errs on the safe side (the tracked
+    /// amount stays an upper bound), while the opposite order could leave the corrected
+    /// amount below the actual usage after `freeGlobal`.
+    MemoryTracker::global_speculative_reservations.fetch_add(size, std::memory_order_relaxed);
+
+    /// Credit the reservation to the query before the overcommit decision inside `allocImpl`:
+    /// a real allocation enters the query tracker's `amount` before the total tracker ranks
+    /// the queries, so without this credit the reserving query would be ranked short of the
+    /// very bytes that trip the limit and the kill could shift to another query.
+    if (process_tracker)
+        process_tracker->addSpeculativeReservation(size);
+
+    try
+    {
+        /// The returned trace is intentionally dropped: no actual allocation backs
+        /// this reservation, so it must not be reported to the allocation profiler.
+        std::ignore = total_memory_tracker.allocImpl(
+            size,
+            /*enforce_memory_limit=*/ true,
+            process_tracker,
+            /*_sample_probability=*/ -1.0,
+            /*enable_profiler=*/ false);
+    }
+    catch (...)
+    {
+        if (process_tracker)
+            process_tracker->subSpeculativeReservation(size);
+        MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_relaxed);
+        throw;
+    }
+
+    return process_tracker;
+}
+
+void CurrentMemoryTracker::freeGlobal(Int64 size, MemoryTracker * credited_query_tracker)
+{
+    /// Drop the total charge before its query-ranking credit. This keeps a query's
+    /// overcommit ratio inclusive of its reservation for as long as that reservation
+    /// can still make another allocation exceed the server-wide limit.
+    std::ignore = total_memory_tracker.free(size);
+
+    if (credited_query_tracker)
+        credited_query_tracker->subSpeculativeReservation(size);
+
+    /// Lower the reservations counter last, so an interleaved external correction can only
+    /// overcount.
+    MemoryTracker::global_speculative_reservations.fetch_sub(size, std::memory_order_relaxed);
+}
+
 void CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(UInt64 value)
 {
     min_allocation_size_to_throw_on_memory_limit.store(

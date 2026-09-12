@@ -344,7 +344,7 @@ void ExecutorTasks::resume(size_t)
     ++total_slots;
 }
 
-void ExecutorTasks::processAsyncTasks()
+void ExecutorTasks::processAsyncTasks(const std::function<void()> & before_async_job)
 {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     {
@@ -352,6 +352,9 @@ void ExecutorTasks::processAsyncTasks()
         std::unique_lock lock(mutex);
         while (auto task = async_task_queue.wait(lock))
         {
+            if (before_async_job)
+                before_async_job();
+
             auto * node = static_cast<ExecutingGraph::Node *>(task.data);
             node->processor()->onAsyncJobReady();
 
