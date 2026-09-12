@@ -26,4 +26,7 @@ SELECT 'group by the alias', b, count() FROM t_05209_merge GROUP BY b ORDER BY b
 SELECT 'order by the alias', a, b FROM t_05209_merge ORDER BY b DESC, a LIMIT 2;
 SELECT 'the function alias alone', a, d FROM t_05209_merge ORDER BY a LIMIT 2;
 SELECT 'merge over the local table', a, b, c, d FROM merge(currentDatabase(), '^t_05209$') ORDER BY a LIMIT 2;
-SELECT 'old analyzer', a, b, c, d FROM t_05209_merge ORDER BY a LIMIT 2 SETTINGS enable_analyzer = 0;
+-- `optimize_respect_aliases = 0` is pinned because the old analyzer then refuses this shape outright
+-- with `Missing columns: 'b' 'c' 'd'`, on master as well as here: it asks the `Merge` table for the
+-- source column alone and still references the alias columns.
+SELECT 'old analyzer', a, b, c, d FROM t_05209_merge ORDER BY a LIMIT 2 SETTINGS enable_analyzer = 0, optimize_respect_aliases = 1;
