@@ -16,14 +16,17 @@ private:
     bool allow_execute_as = true;
     bool allow_in_parallel_with = true;
 
+    bool parse_output_options = true;
+
     const char * getName() const override { return "Query"; }
     bool parseImpl(Pos & pos, ASTPtr & node, Expected & expected) override;
 
 public:
-    explicit ParserQuery(const char * end_, bool allow_settings_after_format_in_insert_ = false, bool implicit_select_ = false)
+    explicit ParserQuery(const char * end_, bool allow_settings_after_format_in_insert_ = false, bool implicit_select_ = false, bool parse_output_options_ = true)
         : end(end_)
         , allow_settings_after_format_in_insert(allow_settings_after_format_in_insert_)
         , implicit_select(implicit_select_)
+        , parse_output_options(parse_output_options_)
     {
     }
 };

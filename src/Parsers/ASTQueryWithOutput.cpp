@@ -7,6 +7,7 @@
 #include <Parsers/ASTJSONHelpers.h>
 #include <Parsers/ASTJSONReadHelpers.h>
 
+#include <algorithm>
 
 namespace DB
 {
@@ -200,6 +201,28 @@ bool ASTQueryWithOutput::resetOutputASTIfExist(IAST & ast)
 bool ASTQueryWithOutput::hasOutputOptions() const
 {
     return out_file || format_ast || settings_ast || compression || compression_level;
+}
+
+void ASTQueryWithOutput::normalizeOutputOptions()
+{
+    auto is_output_option = [&](const ASTPtr & child)
+    {
+        return std::any_of(
+            output_option_members.begin(),
+            output_option_members.end(),
+            [&](auto member)
+            {
+                return (this->*member) && (this->*member).get() == child.get();
+            });
+    };
+
+    children.erase(std::remove_if(children.begin(), children.end(), is_output_option), children.end());
+
+    for (auto member : output_option_members)
+    {
+        if (this->*member)
+            children.push_back(this->*member);
+    }
 }
 
 }

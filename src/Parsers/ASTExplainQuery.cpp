@@ -1,4 +1,6 @@
 #include <Parsers/ASTExplainQuery.h>
+#include <Parsers/ASTExplainTextAction.h>
+#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTTableOverrides.h>
@@ -19,6 +21,7 @@ void ASTExplainQuery::writeJSON(WriteBuffer & out) const
     w.writeString("kind", toString(kind));
     w.writeChild("settings", ast_settings);
     w.writeChild("query", query);
+    w.writeChild("actions", actions);
     w.writeChild("table_function", table_function);
     w.writeChild("table_override", table_override);
     writeOutputOptionsJSON(w);
@@ -40,6 +43,22 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     if (query_child)
         setExplainedQuery(std::move(query_child));
 
+    auto actions_child = r.readChildOfType<ASTExpressionList>("actions");
+    if (actions_child)
+    {
+        const auto & action_list = actions_child->as<const ASTExpressionList &>();
+        if (action_list.getSeparator() != ',' || action_list.children.empty())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "EXPLAIN TEXT requires a non-empty comma-separated action list during AST JSON deserialization");
+        for (const auto & action : action_list.children)
+        {
+            if (!action->as<ASTExplainTextAction>())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "EXPLAIN TEXT action list can contain only ASTExplainTextAction nodes during AST JSON deserialization");
+        }
+        setActions(std::move(actions_child));
+    }
+
     auto table_function_child = r.readChildOfType<ASTFunction>("table_function");
     if (table_function_child)
         setTableFunction(std::move(table_function_child));
@@ -47,6 +66,10 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     auto table_override_child = r.readChildOfType<ASTTableOverride>("table_override");
     if (table_override_child)
         setTableOverride(std::move(table_override_child));
+
+    if (kind != ExplainKind::FormattedQuery && getActions())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "'actions' are only valid for EXPLAIN TEXT during AST JSON deserialization");
 
     /// Enforce the exact parser-produced child set per kind, rejecting forbidden extras as well:
     /// `EXPLAIN TABLE OVERRIDE` dereferences the table function and override but never parses an
@@ -56,6 +79,17 @@ void ASTExplainQuery::readJSON(const Poco::JSON::Object & json)
     /// `InterpreterExplainQuery` silently ignores it.
     switch (kind)
     {
+        case ExplainKind::FormattedQuery:
+            if (!getExplainedQuery())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN TEXT requires an explained query during AST JSON deserialization");
+            if (getSettings())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN TEXT cannot carry leading kind-specific settings during AST JSON deserialization");
+            if (getTableFunction() || getTableOverride())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "EXPLAIN TEXT cannot carry 'table_function' or 'table_override' during AST JSON deserialization");
+            break;
         case ExplainKind::TableOverride:
             if (!getTableFunction() || !getTableOverride())
                 throw Exception(ErrorCodes::BAD_ARGUMENTS,

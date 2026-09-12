@@ -3578,6 +3578,22 @@ void QueryFuzzer::callTableAsParameterizedView(ASTTableExpression & table)
 
 void QueryFuzzer::fuzzExplainQuery(ASTExplainQuery & explain)
 {
+    if (explain.getKind() == ASTExplainQuery::ExplainKind::FormattedQuery)
+    {
+        /// fuzz the source while maintaining the typed action list and
+        /// absence of leading kind-specific settings required by `EXPLAIN TEXT`
+        const auto & explained_query = explain.getExplainedQuery();
+        if (explained_query)
+        {
+            ASTPtr fuzzed_query = explained_query;
+            fuzz(fuzzed_query);
+
+            if (fuzzed_query != explained_query)
+                explain.replaceExplainedQuery(std::move(fuzzed_query));
+        }
+        return;
+    }
+
     explain.setExplainKind(fuzzExplainKind(explain.getKind()));
 
     bool settings_have_fuzzed = false;
@@ -3630,6 +3646,7 @@ void QueryFuzzer::fuzzExplainSettings(ASTSetQuery & settings_ast, ASTExplainQuer
 
     static const std::unordered_map<ASTExplainQuery::ExplainKind, DB::Strings> settings_by_kind = {
         {ASTExplainQuery::ExplainKind::ParsedAST, {"graph", "optimize"}},
+        {ASTExplainQuery::ExplainKind::FormattedQuery, {}},
         {ASTExplainQuery::ExplainKind::AnalyzedSyntax, {"oneline", "run_query_tree_passes", "query_tree_passes", "single_record"}},
         {ASTExplainQuery::QueryTree, {"run_passes", "dump_tree", "dump_passes", "dump_ast", "passes"}},
         {ASTExplainQuery::ExplainKind::QueryPlan,

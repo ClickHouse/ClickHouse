@@ -8,6 +8,7 @@
 #include <Processors/Sources/SourceFromSingleChunk.h>
 #include <DataTypes/DataTypeString.h>
 #include <Interpreters/InDepthNodeVisitor.h>
+#include <Interpreters/ExplainTextRewrite.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
@@ -92,6 +93,7 @@ namespace Setting
     extern const SettingsUInt64 query_plan_max_step_description_length;
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsBool make_distributed_plan;
+    extern const SettingsBool print_pretty_type_names;
     extern const SettingsBool use_concurrency_control;
     extern const SettingsExplainQueryPlanDefault explain_query_plan_default;
 }
@@ -445,7 +447,7 @@ Block InterpreterExplainQuery::getSampleBlock(const ASTExplainQuery::ExplainKind
 
     Block res;
     ColumnWithTypeAndName col;
-    col.name = "explain";
+    col.name = kind == ASTExplainQuery::FormattedQuery ? "text" : "explain";
     col.type = std::make_shared<DataTypeString>();
     col.column = col.type->createColumn();
     res.insert(col);
@@ -984,11 +986,34 @@ QueryPipeline InterpreterExplainQuery::executeImpl()
         explain_query_context->setSetting("use_query_condition_cache", false);
     }
 
-    InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
+    if (ast.getKind() == ASTExplainQuery::FormattedQuery)
+    {
+        /// apply only outer settings
+        /// source query is text to rewrite
+        if (ast.settings_ast)
+            InterpreterSetQuery(ast.settings_ast, explain_query_context).executeForCurrentContext(/* ignore_setting_constraints= */ false);
+    }
+    else
+    {
+        InterpreterSetQuery::applySettingsFromQuery(query, explain_query_context);
+    }
     query_context = std::move(explain_query_context);
 
     switch (ast.getKind())
     {
+        case ASTExplainQuery::FormattedQuery:
+        {
+            auto rewritten = rewriteExplainTextQuery(ast.getExplainedQuery(), ast.getActions());
+
+            IAST::FormatSettings format_settings(rewritten.one_line);
+            /// preserve source secrets and match `formatQuery` so rewritten query keeps its original meaning
+            format_settings.show_secrets = true;
+            format_settings.print_pretty_type_names = query_context->getSettingsRef()[Setting::print_pretty_type_names];
+
+            rewritten.query->format(buf, format_settings);
+            single_record = true;
+            break;
+        }
         case ASTExplainQuery::ParsedAST:
         {
             auto settings = checkAndGetSettings<QueryASTSettings>(ast.getSettings());
