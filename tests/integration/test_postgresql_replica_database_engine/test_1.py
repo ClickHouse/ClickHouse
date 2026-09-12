@@ -857,6 +857,272 @@ def test_drop_database_while_enumerating_tables(started_cluster):
     assert instance.query("SELECT 1") == "1\n"
 
 
+def test_materialized_postgresql_remote_table_name_sql_injection(started_cluster):
+    # `PostgreSQLReplicationHandler` embeds the remote table name into `CREATE PUBLICATION ... FOR
+    # TABLE ONLY ...` as a quoted identifier. `doubleQuoteString` escapes an embedded `"` as `\"`,
+    # which PostgreSQL does not accept as an escape inside a quoted identifier: the identifier ends at
+    # that quote and the remainder is executed as SQL over the simple-query protocol, as the role
+    # ClickHouse connects with. Plain `CREATE TABLE ... ENGINE = MaterializedPostgreSQL(...)` DDL
+    # reaches it: https://github.com/ClickHouse/ClickHouse/issues/118954
+    #
+    # Every scenario asserts PostgreSQL-side state, so scenario 1 fails on an unfixed server rather
+    # than merely observing a different error message.
+    ip = started_cluster.postgres_ip
+    port = started_cluster.postgres_port
+    conn = get_postgres_conn(ip=ip, port=port, database=True)
+    cursor = conn.cursor()
+
+    def as_clickhouse_literal(name):
+        return name.replace("\\", "\\\\").replace("'", "''")
+
+    def marker_count():
+        cursor.execute(
+            "SELECT count(*) FROM pg_tables WHERE tablename = 'injected_marker'"
+        )
+        return cursor.fetchall()[0][0]
+
+    # Every scenario sets `materialized_postgresql_use_unique_replication_consumer_identifier`, which
+    # makes the replication slot the ClickHouse UUID. Otherwise the slot name embeds the remote table
+    # name and `checkReplicationSlot` rejects anything outside [a-z0-9_] before the publication is
+    # created, which is what both hides the injection and makes a legitimately odd name unusable.
+    def create_materialized_table(ch_table, remote_name_literal):
+        instance.query(f"DROP TABLE IF EXISTS {ch_table} SYNC")
+        ddl = f"""
+            CREATE TABLE {ch_table} (key Int32, value Int32)
+            ENGINE = MaterializedPostgreSQL('{ip}:{port}', 'postgres_database', '{remote_name_literal}', 'postgres', '{pg_pass}')
+            ORDER BY key
+            SETTINGS materialized_postgresql_use_unique_replication_consumer_identifier = 1
+            """
+        return instance.query_and_get_answer_with_error(ddl)
+
+    def wait_for_rows(ch_table, expected):
+        deadline = time.monotonic() + 120
+        last = None
+        while time.monotonic() < deadline:
+            try:
+                last = instance.query(f"SELECT count() FROM {ch_table}").strip()
+                if last == str(expected):
+                    return
+            except Exception as e:
+                last = str(e)
+            time.sleep(1)
+        raise AssertionError(
+            f"{ch_table} did not reach {expected} rows within 120 seconds, last: {last}"
+        )
+
+    def check_replicates(ch_table, remote_name):
+        # Doubling the `"` is what PostgreSQL accepts inside a quoted identifier, and the property the
+        # fix teaches ClickHouse, so the test has to spell these names the same way.
+        quoted = '"' + remote_name.replace('"', '""') + '"'
+        cursor.execute(f"DROP TABLE IF EXISTS {quoted}")
+        cursor.execute(
+            f"CREATE TABLE {quoted} (key integer PRIMARY KEY, value integer)"
+        )
+        cursor.execute(
+            f"INSERT INTO {quoted} SELECT i, i FROM generate_series(0, 49) AS i"
+        )
+        create_materialized_table(ch_table, as_clickhouse_literal(remote_name))
+        # The snapshot load quotes the relation for `SELECT ... FROM ONLY ...`.
+        wait_for_rows(ch_table, 50)
+        cursor.execute(
+            f"INSERT INTO {quoted} SELECT i, i FROM generate_series(50, 99) AS i"
+        )
+        # Ongoing replication quotes it again, into the publication the consumer subscribes to.
+        wait_for_rows(ch_table, 100)
+
+    ch_tables = [
+        "pg_inj_name",
+        "pg_inj_quote_ctl",
+        "pg_inj_backslash_ctl",
+        "pg_inj_nul",
+    ]
+    cols_table = "pg_inj_cols"
+    cols_quoted_name_table = 'pg_inj_cols_q"n'
+    quoted_name = '"' + cols_quoted_name_table.replace('"', '""') + '"'
+    outer_table = "pg_inj_outer"
+    target_table = "pg_inj_target"
+    try:
+        cursor.execute("DROP TABLE IF EXISTS injected_marker")
+
+        # 1. Injection through the remote table name.
+        payload = 'a"; CREATE TABLE injected_marker(x integer); --'
+        create_materialized_table(ch_tables[0], as_clickhouse_literal(payload))
+        assert marker_count() == 0, (
+            "the remote table name was executed as SQL by PostgreSQL: the publication statement was "
+            "built with an identifier quoter that escapes a quote with a backslash"
+        )
+
+        # 2. Control: a remote table whose name contains a double quote still replicates, so the fix
+        #    escapes such a name rather than rejecting it.
+        check_replicates(ch_tables[1], 'ctl_quote_a"b')
+
+        # 3. Control: a remote table whose name contains a backslash replicates, so the backslash
+        #    reaches PostgreSQL literally instead of being doubled into a different relation name.
+        check_replicates(ch_tables[2], "ctl_backslash_a\\b")
+
+        # 4. A NUL in the remote table name creates nothing. `\0` below is a ClickHouse escape
+        #    sequence, so the name really carries a NUL; with the quote doubled the statement always
+        #    ends inside an open identifier, whatever libpq does with the NUL.
+        create_materialized_table(
+            ch_tables[3], 'nul_a\\0"; CREATE TABLE injected_marker(x integer); --'
+        )
+        assert (
+            marker_count() == 0
+        ), "a remote table name containing a NUL byte reached PostgreSQL as executable SQL"
+
+        # 5. `getTableAllowedColumns` re-parses the quoted `materialized_postgresql_tables_list`, so a
+        #    requested column named `a"b` has to survive the doubling instead of collapsing onto `ab`,
+        #    which is a different real column here.
+        cursor.execute(f'DROP TABLE IF EXISTS "{cols_table}"')
+        cursor.execute(
+            f'CREATE TABLE "{cols_table}" (key integer PRIMARY KEY, "a""b" integer, ab integer)'
+        )
+        cursor.execute(
+            f'INSERT INTO "{cols_table}" SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i'
+        )
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                f"materialized_postgresql_tables_list = '{cols_table}(key, a\"b)'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, cols_table)
+        wait_for_rows(f"`test_database`.`{cols_table}`", 5)
+
+        replicated = instance.query(
+            "SELECT name FROM system.columns WHERE database = 'test_database'"
+            f" AND table = '{cols_table}'"
+        ).splitlines()
+        assert 'a"b' in replicated, (
+            'the column named a"b is missing, so the allowed-columns list did not carry the name '
+            f"through: {replicated}"
+        )
+        assert "ab" not in replicated, (
+            'the column named ab was replicated instead of a"b: the allowed-columns list dropped the '
+            f"identifier delimiters and both names collapsed onto ab: {replicated}"
+        )
+        assert instance.query(
+            f'SELECT key, `a"b` FROM `test_database`.`{cols_table}` ORDER BY key'
+        ) == "".join(f"{i}\t{100 + i}\n" for i in range(5))
+
+        # 6. The same allowed-columns list is keyed by the table, and the list is written with the
+        #    relation name quoted, so the lookup has to use that spelling too. Resolving to "no
+        #    restriction" is not a safe default: the nested table would take `extra` while the
+        #    publication keeps the requested subset, and a Relation message short of a column without a
+        #    default makes the consumer drop the table from replication.
+        pg_manager.drop_materialized_db()
+        cursor.execute(f"DROP TABLE IF EXISTS {quoted_name}")
+        cursor.execute(
+            f"CREATE TABLE {quoted_name} "
+            "(key integer PRIMARY KEY, val integer, extra integer NOT NULL)"
+        )
+        cursor.execute(
+            f"INSERT INTO {quoted_name} SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i"
+        )
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                f"materialized_postgresql_tables_list = '{cols_quoted_name_table}(key, val)'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, cols_quoted_name_table)
+        wait_for_rows(f"`test_database`.`{cols_quoted_name_table}`", 5)
+
+        replicated = sorted(
+            instance.query(
+                "SELECT name FROM system.columns WHERE database = 'test_database'"
+                f" AND table = '{cols_quoted_name_table}'"
+            ).splitlines()
+        )
+        assert replicated == ["_sign", "_version", "key", "val"], (
+            "the requested column subset was not applied to a relation whose name carries a quote, so "
+            f"the nested table does not match the publication: {replicated}"
+        )
+
+        cursor.execute(f"INSERT INTO {quoted_name} VALUES (5, 105, 905)")
+        # Ongoing replication is where a nested table wider than the publication stops: the snapshot
+        # rows are already there, and the row inserted afterwards is the one that never arrives.
+        wait_for_rows(f"`test_database`.`{cols_quoted_name_table}`", 6)
+
+        # 7. A requested column can be spelled exactly like another listed relation, so the lookup has to
+        #    compare whole elements of the list rather than any occurrence of the name. Here pg_inj_outer
+        #    asks for a column named pg_inj_target, and it is listed before pg_inj_target's own element.
+        #    Plain names, no schema setting: this shape needs no quote and no non-default setting.
+        pg_manager.drop_materialized_db()
+        cursor.execute(f'DROP TABLE IF EXISTS "{outer_table}"')
+        cursor.execute(f'DROP TABLE IF EXISTS "{target_table}"')
+        cursor.execute(
+            f'CREATE TABLE "{outer_table}" (key integer PRIMARY KEY, '
+            f'"{target_table}" integer, extra integer, not_requested integer)'
+        )
+        cursor.execute(
+            f'CREATE TABLE "{target_table}" '
+            "(key integer PRIMARY KEY, val integer, extra integer NOT NULL)"
+        )
+        cursor.execute(
+            f'INSERT INTO "{outer_table}" SELECT i, 200 + i, 800 + i, 700 + i'
+            " FROM generate_series(0, 4) AS i"
+        )
+        cursor.execute(
+            f'INSERT INTO "{target_table}" SELECT i, 100 + i, 900 + i FROM generate_series(0, 4) AS i'
+        )
+        pg_manager.create_materialized_db(
+            ip=ip,
+            port=port,
+            settings=[
+                "materialized_postgresql_tables_list = "
+                f"'{outer_table}(key, {target_table}, extra), {target_table}(key, val)'",
+                "materialized_postgresql_backoff_min_ms = 100",
+                "materialized_postgresql_backoff_max_ms = 100",
+            ],
+        )
+        assert_nested_table_is_created(instance, outer_table)
+        assert_nested_table_is_created(instance, target_table)
+        wait_for_rows(f"`test_database`.`{target_table}`", 5)
+
+        # The element carrying the colliding column keeps its own subset, which a scan that steps over
+        # too much would lose: not_requested exists in PostgreSQL and is not in the list.
+        replicated = sorted(
+            instance.query(
+                "SELECT name FROM system.columns WHERE database = 'test_database'"
+                f" AND table = '{outer_table}'"
+            ).splitlines()
+        )
+        assert replicated == ["_sign", "_version", "extra", "key", "pg_inj_target"], (
+            "the column subset requested for the element that carries the colliding column was "
+            f"not applied: {replicated}"
+        )
+
+        replicated = sorted(
+            instance.query(
+                "SELECT name FROM system.columns WHERE database = 'test_database'"
+                f" AND table = '{target_table}'"
+            ).splitlines()
+        )
+        assert replicated == ["_sign", "_version", "key", "val"], (
+            f"the column subset requested for {target_table} was not applied: the column of the same "
+            f"name in an earlier element was matched instead of the relation: {replicated}"
+        )
+
+        cursor.execute(f'INSERT INTO "{target_table}" VALUES (5, 105, 905)')
+        wait_for_rows(f"`test_database`.`{target_table}`", 6)
+    finally:
+        for ch_table in ch_tables:
+            instance.query(f"DROP TABLE IF EXISTS {ch_table} SYNC")
+        pg_manager.drop_materialized_db()
+        cursor.execute(f'DROP TABLE IF EXISTS "{cols_table}"')
+        cursor.execute(f"DROP TABLE IF EXISTS {quoted_name}")
+        cursor.execute(f'DROP TABLE IF EXISTS "{outer_table}"')
+        cursor.execute(f'DROP TABLE IF EXISTS "{target_table}"')
+        cursor.execute("DROP TABLE IF EXISTS injected_marker")
+
+
 if __name__ == "__main__":
     cluster.start()
     input("Cluster created, press any key to destroy...")
