@@ -96,10 +96,11 @@ TEST(JoinSpillTriggerPlanSetting, RefusedTowardsOldPeersWhenTheContractsDiverge)
             pre_setting_version),
         Exception);
 
-    /// The same threshold reaches an old peer through the preference list too.
+    /// The same threshold reaches an old peer through the preference list too, as long as `grace_hash` is the
+    /// first entry that can run.
     EXPECT_THROW(
         serializeAt(
-            makeJoinSettings({{"join_algorithm", "hash,grace_hash"}, {"max_bytes_before_external_join", 1000000u}}),
+            makeJoinSettings({{"join_algorithm", "full_sorting_merge,grace_hash"}, {"max_bytes_before_external_join", 1000000u}}),
             pre_setting_version),
         Exception);
 
@@ -148,4 +149,27 @@ TEST(JoinSpillTriggerPlanSetting, AllowedTowardsOldPeersWhenBothContractsAgree)
     /// The default `join_algorithm` does not list `grace_hash`, so the default settings pass the gate even though
     /// `max_bytes_ratio_before_external_join` is non-zero out of the box.
     EXPECT_NO_THROW(serializeAt(makeJoinSettings({}), pre_setting_version));
+
+    /// A trailing `grace_hash` that no step can reach: `hash`, `parallel_hash`, `prefer_partial_merge` and `auto`
+    /// all end in a hash join for whatever the earlier algorithms did not take, so the list never gets to
+    /// `grace_hash` - not here, and not on an old peer walking the same list. Both sides build the same join,
+    /// with or without a spill threshold, so the plan may be downgraded.
+    for (const auto & algorithms : {"hash,grace_hash", "parallel_hash,grace_hash", "prefer_partial_merge,grace_hash",
+                                    "auto,grace_hash", "direct,hash,grace_hash"})
+    {
+        EXPECT_NO_THROW(
+            serializeAt(makeJoinSettings({{"join_algorithm", algorithms}, {"max_bytes_before_external_join", 1000000u}}),
+                        pre_setting_version))
+            << algorithms;
+        EXPECT_NO_THROW(
+            serializeAt(makeJoinSettings({{"join_algorithm", algorithms}, {"max_bytes_ratio_before_external_join", 0.0}}),
+                        pre_setting_version))
+            << algorithms;
+
+        /// The size limits still diverge whatever the list looks like.
+        EXPECT_THROW(
+            serializeAt(makeJoinSettings({{"join_algorithm", algorithms}, {"max_rows_in_join", 100u}}), pre_setting_version),
+            Exception)
+            << algorithms;
+    }
 }

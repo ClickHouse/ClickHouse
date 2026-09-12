@@ -139,7 +139,8 @@ struct JoinSettings
     /// Whether these settings make the join behave differently from a peer that still treats
     /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger, and still runs `grace_hash`
     /// without a spill threshold. Such a plan must not be serialized for a peer that predates
-    /// `legacy_join_size_limits_trigger_spilling`.
+    /// `legacy_join_size_limits_trigger_spilling`. A `grace_hash` that no step can reach - one listed
+    /// behind an algorithm that always produces a join - does not count, both sides run the same join.
     bool spillBehaviorDiffersFromLegacy() const;
 
     /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),

@@ -1,4 +1,3 @@
-#include <algorithm>
 #include <vector>
 #include <Interpreters/JoinOperator.h>
 #include <Core/ProtocolDefines.h>
@@ -263,6 +262,20 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
 }
 
+/// `join_algorithm` is an ordered preference list, and these entries always produce a join for any step that
+/// reaches them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` / `ConcurrentHashJoin` /
+/// `SpillingHashJoin` (`src/Interpreters/ExpressionAnalyzer.cpp`, `src/Planner/PlannerJoins.cpp`). Whatever follows
+/// such an entry in the list is never consulted, on this side or on an older peer, which walks the same list with
+/// the same order.
+static bool alwaysProducesJoin(JoinAlgorithm algorithm)
+{
+    return algorithm == JoinAlgorithm::HASH
+        || algorithm == JoinAlgorithm::PARALLEL_HASH
+        || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
+        || algorithm == JoinAlgorithm::DEFAULT
+        || algorithm == JoinAlgorithm::AUTO;
+}
+
 bool JoinSettings::spillBehaviorDiffersFromLegacy() const
 {
     /// The receiver was asked for the old contract anyway, which is what a peer that predates the name does.
@@ -278,7 +291,17 @@ bool JoinSettings::spillBehaviorDiffersFromLegacy() const
     /// here at all - the join demotes it to the next entry of the preference list, or refuses the query when it
     /// is listed alone - while there it still builds a standalone `GraceHashJoin` whose only spill trigger is the
     /// (unset) size limits.
-    return std::find(join_algorithms.begin(), join_algorithms.end(), JoinAlgorithm::GRACE_HASH) != join_algorithms.end();
+    ///
+    /// Only a `grace_hash` that a step can actually reach counts: behind an entry that always produces a join it
+    /// is dead weight in the list, and both sides run the very same hash join instead.
+    for (auto algorithm : join_algorithms)
+    {
+        if (algorithm == JoinAlgorithm::GRACE_HASH)
+            return true;
+        if (alwaysProducesJoin(algorithm))
+            return false;
+    }
+    return false;
 }
 
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
