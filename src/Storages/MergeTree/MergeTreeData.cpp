@@ -3018,7 +3018,7 @@ void MergeTreeData::loadDataParts(bool skip_sanity_checks, std::optional<std::un
                 if (unexpected)
                 {
                     LOG_DEBUG(log, "loadDataParts: Part {} is broken, but it's not expected to be in parts set, "
-                              " will not count it as suspicious broken part", res.part->name);
+                              "will not count it as suspicious broken part", res.part->name);
                     ++suspicious_broken_unexpected_parts;
                 }
                 else
@@ -4544,7 +4544,7 @@ void MergeTreeData::clearPartsFromFilesystemImplMaybeInParallel(const DataPartsV
 
     if (parts_to_remove.size() != sum_of_ranges + excluded_parts.size())
         throw Exception(ErrorCodes::LOGICAL_ERROR,
-                        "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts"
+                        "Number of parts to remove was not equal to number of parts in independent ranges and excluded parts "
                         "({} != {} + {}), it's a bug", parts_to_remove.size(), sum_of_ranges, excluded_parts.size());
 }
 
@@ -7023,11 +7023,16 @@ void MergeTreeData::removePartsFromWorkingSet(MergeTreeTransaction * txn, const 
 
     auto remove_time = clear_without_timeout ? 0 : time(nullptr);
 
+    /// Write the removal metadata of the whole batch before touching the part states: without a
+    /// transaction a partially applied batch cannot be rolled back, see NonTransactionalRemovalLocks.
+    NonTransactionalRemovalLocks removal_locks;
+    for (const DataPartPtr & part : remove)
+        if (part->version->getInfo().creation_csn != Tx::RolledBackCSN)
+            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn, removal_locks);
+    removal_locks.store();
+
     for (const DataPartPtr & part : remove)
     {
-        if (part->version->getInfo().creation_csn != Tx::RolledBackCSN)
-            MergeTreeTransaction::removeOldPart(shared_from_this(), part, txn);
-
         if (part->getState() == MergeTreeDataPartState::Active)
         {
             removePartContributionToColumnAndSecondaryIndexSizes(part);
@@ -7086,6 +7091,37 @@ void MergeTreeData::removePartsFromWorkingSet(
 void MergeTreeData::removePartsInRangeFromWorkingSet(MergeTreeTransaction * txn, const MergeTreePartInfo & drop_range, DataPartsLock & lock)
 {
     removePartsInRangeFromWorkingSetAndGetPartsToRemoveFromZooKeeper(txn, drop_range, lock, /*create_empty_part*/ true);
+}
+
+void MergeTreeData::checkPartsCanBeRemovedNonTransactionally(const DataPartsVector & parts, NonTransactionalRemovalKind kind) const
+{
+    for (const auto & part : parts)
+    {
+        auto & version = *part->version;
+
+        if (kind == NonTransactionalRemovalKind::Republish)
+        {
+            if (!version.isCreationCommitted())
+                throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                    "Cannot non-transactionally move object {} whose creation_tid {} is not committed",
+                    version.getObjectName(), version.getInfo().creation_tid);
+        }
+        else if (version.isCreatedByUncommittedTransaction())
+        {
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {} whose creation_tid {} has not committed yet",
+                version.getObjectName(), version.getInfo().creation_tid);
+        }
+
+        /// The other way the later removal can be refused: another transaction is already removing the
+        /// part, so `lockRemovalTID` will not give up the lock. A part that is *already* removed is not
+        /// a problem -- the removal skips it -- but one that is merely locked is. Both this check and
+        /// the removal run under the same parts lock, so the answer cannot change in between.
+        if (!version.getInfo().isRemoved() && version.isRemovalTIDLocked())
+            throw Exception(ErrorCodes::SERIALIZATION_ERROR,
+                "Cannot non-transactionally remove object {}, it is locked for removal by another transaction",
+                version.getObjectName());
+    }
 }
 
 DataPartsVector MergeTreeData::grabActivePartsToRemoveForDropRange(
@@ -11185,9 +11221,8 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
         std::vector<DataPartsVector> covered_parts_for_commit;
         covered_parts_for_commit.reserve(precommitted_parts.size());
 
-        /// Track covered parts locked by non-transactional operations for cleanup on failure.
-        /// For transactional operations, MergeTreeTransaction rollback handles unlocking.
-        DataPartsVector locked_parts_to_cleanup;
+        std::vector<DataPartPtr> covering_parts;
+        covering_parts.reserve(precommitted_parts.size());
 
         for (const auto & part : precommitted_parts)
         {
@@ -11214,17 +11249,25 @@ MergeTreeData::DataPartsVector MergeTreeData::Transaction::commit(DataPartsLock 
                 std::move(covered_outdated_parts.begin(), covered_outdated_parts.end(), std::back_inserter(covered_parts));
             }
 
-            /// Call addNewPartAndRemoveCovered only if there's no covering part.
-            /// If there's a covering part, the precommitted part will be marked as obsolete in NOEXCEPT_SCOPE below.
-            if (!covering_part)
-            {
-                MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts, txn);
-                /// Track successfully locked parts for cleanup in case a later iteration fails.
-                if (!txn)
-                    locked_parts_to_cleanup.insert(locked_parts_to_cleanup.end(), covered_parts.begin(), covered_parts.end());
-            }
-
+            covering_parts.push_back(std::move(covering_part));
             covered_parts_for_commit.push_back(std::move(covered_parts));
+        }
+
+        /// Remove the covered parts. Skip when a covering part exists -- NOEXCEPT_SCOPE below
+        /// marks the precommitted part obsolete instead.
+        /// Without a transaction the whole batch is locked first and written afterwards, so that a
+        /// conflict on one covered part cannot leave the previous ones durably removed by a
+        /// statement that ends up failing. See NonTransactionalRemovalLocks.
+        {
+            NonTransactionalRemovalLocks removal_locks;
+            size_t idx = 0;
+            for (const auto & part : precommitted_parts)
+            {
+                if (!covering_parts[idx])
+                    MergeTreeTransaction::addNewPartAndRemoveCovered(data.shared_from_this(), part, covered_parts_for_commit[idx], txn, removal_locks);
+                ++idx;
+            }
+            removal_locks.store();
         }
 
 

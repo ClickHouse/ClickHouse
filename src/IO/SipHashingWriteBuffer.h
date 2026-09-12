@@ -20,7 +20,10 @@ public:
     /// writing into the buffer directly.
     static constexpr size_t window_bytes = 32768;
 
-    explicit SipHashingWriteBuffer(SipHash & hash_) : BufferWithOwnMemory<WriteBuffer>(window_bytes), hash(hash_) { }
+    /// `existing_memory` (when non-null) is a caller-owned window of `size` bytes: the buffer then
+    /// allocates nothing.
+    explicit SipHashingWriteBuffer(SipHash & hash_, size_t size = window_bytes, char * existing_memory = nullptr)
+        : BufferWithOwnMemory<WriteBuffer>(size, existing_memory), hash(hash_) { }
 
     /// This buffer may be destroyed with a stream still half-written: nothing reads the discarded
     /// bytes, so abandoning one costs nothing and callers need not finalize. `~WriteBuffer` asserts
