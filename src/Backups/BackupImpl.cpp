@@ -331,12 +331,18 @@ void BackupImpl::openArchive()
         if (!reader->fileExists(archive_name))
             throw Exception(ErrorCodes::BACKUP_NOT_FOUND, "Backup {} not found", backup_name_for_logging);
         size_t archive_size = reader->getFileSize(archive_name);
-        /// The archive is reopened through this factory as many times as it is read, and every one
-        /// of those reads is bounded by the size taken here, so a blob replaced under an open backup
-        /// is refused rather than read as a mix of two archives.
+        /// The archive is reopened through this factory as many times as it is read - the `tar` and
+        /// `7z` readers reopen it for every `fileExists` and every `readFile`, and the `zip` reader
+        /// whenever it needs another handle - so the size alone does not keep the session on one
+        /// archive: a blob replaced in place by another archive of the same size would be read as
+        /// the first archive for one file and as the second for the next. The generation of the
+        /// archive is therefore named once here, and every reopen is pinned to it: an archive
+        /// replaced under the open backup is refused with `FILE_CHANGED_DURING_READ`.
+        String archive_generation = reader->getFileGeneration(archive_name);
         archive_reader = createArchiveReader(
             archive_name,
-            [my_reader = reader, archive_name, archive_size] { return my_reader->readFile(archive_name, archive_size); },
+            [my_reader = reader, archive_name, archive_size, archive_generation]
+            { return my_reader->readFilePinnedToGeneration(archive_name, archive_size, archive_generation); },
             archive_size);
         archive_reader->setPassword(archive_params.password);
     }

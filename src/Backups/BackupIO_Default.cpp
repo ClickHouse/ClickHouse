@@ -17,6 +17,14 @@ namespace ErrorCodes
     extern const int FAILED_TO_SYNC_BACKUP_OR_RESTORE;
 }
 
+std::unique_ptr<ReadBufferFromFileBase> IBackupReader::readFilePinnedToGeneration(
+    const String & file_name, std::optional<size_t> expected_file_size, const String & /*generation*/)
+{
+    /// A reader that names no generation is a reader whose files cannot be replaced under an open
+    /// backup, so there is nothing to pin the read to.
+    return readFile(file_name, expected_file_size);
+}
+
 std::unique_ptr<WriteBuffer> IBackupWriter::writeFileIfNotExists(const String & file_name)
 {
     return writeFile(file_name);

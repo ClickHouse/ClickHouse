@@ -156,7 +156,8 @@ public:
         ETagBehaviour etags_ = {},
         std::optional<size_t> blob_size_after_first_ = {},
         bool refuse_range_past_the_data_ = false,
-        bool blob_missing_ = false)
+        bool blob_missing_ = false,
+        bool a_blob_is_at_the_key_a_write_creates_ = false)
         : max_response_size(max_response_size_)
         , served_size(served_size_)
         , blob_size(blob_size_)
@@ -167,6 +168,7 @@ public:
         , blob_size_after_first(blob_size_after_first_)
         , refuse_range_past_the_data(refuse_range_past_the_data_)
         , blob_missing(blob_missing_)
+        , a_blob_is_at_the_key_a_write_creates(a_blob_is_at_the_key_a_write_creates_)
     {
     }
 
@@ -261,6 +263,17 @@ public:
 
         if (request.GetMethod() == Azure::Core::Http::HttpMethod::Put)
         {
+            /// A create-if-absent write asks the endpoint to accept the blob only while the key is
+            /// free. A real endpoint answers `409 Conflict` when a blob is at the key, and that is
+            /// what makes a restore of a rollback unable to replace a generation somebody else
+            /// wrote, however long ago the restore looked at the key.
+            if (auto if_none_match = request.GetHeader("if-none-match"); if_none_match.HasValue() && if_none_match.Value() == "*")
+            {
+                saw_create_if_absent = true;
+                if (a_blob_is_at_the_key_a_write_creates)
+                    return conflict();
+            }
+
             const auto & query = request.GetUrl().GetQueryParameters();
             const auto comp = query.find("comp");
             if (comp == query.end() || comp->second != "blocklist")
@@ -337,6 +350,10 @@ public:
     /// Everything the endpoint has been asked to store, in upload order.
     const std::string & uploadedData() const { return uploaded; }
 
+    /// Whether any write asked the endpoint to accept it only while the key was free
+    /// (`If-None-Match: *`).
+    bool sawCreateIfAbsent() const { return saw_create_if_absent; }
+
     /// The generation of the source (its `ETag` at that moment) that each native copy transferred.
     const std::vector<std::string> & nativelyCopiedGenerations() const { return natively_copied_generations; }
 
@@ -363,6 +380,18 @@ private:
         auto failure = std::make_unique<Azure::Core::Http::RawResponse>(
             1, 1, Azure::Core::Http::HttpStatusCode::PreconditionFailed, "The condition specified using HTTP conditional header(s) is not met.");
         failure->SetHeader("Content-Length", "0");
+        failure->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
+        return failure;
+    }
+
+    /// How Azure refuses a write that asked for a key that is free (`If-None-Match: *`) while a blob
+    /// is at it.
+    static std::unique_ptr<Azure::Core::Http::RawResponse> conflict()
+    {
+        auto failure = std::make_unique<Azure::Core::Http::RawResponse>(
+            1, 1, Azure::Core::Http::HttpStatusCode::Conflict, "The specified blob already exists.");
+        failure->SetHeader("Content-Length", "0");
+        failure->SetHeader("x-ms-error-code", "BlobAlreadyExists");
         failure->SetBodyStream(std::make_unique<LyingBodyStream>(std::vector<uint8_t>{}, 0));
         return failure;
     }
@@ -407,7 +436,9 @@ private:
     std::optional<size_t> blob_size_after_first;
     bool refuse_range_past_the_data;
     bool blob_missing;
+    bool a_blob_is_at_the_key_a_write_creates;
     size_t responses_sent = 0;
+    bool saw_create_if_absent = false;
     std::string uploaded;
     std::vector<std::string> natively_copied_generations;
     std::vector<std::string> source_if_match_headers;
@@ -2291,6 +2322,54 @@ TEST(AzureBackupReader, ReadUnchangedBlob)
     assertCountsUpFromZero(data);
 }
 
+/// An archive-backed backup is read through a factory that reopens the archive blob for every
+/// handle the archive reader needs, so the reopens have to land on the generation the session
+/// started on. A blob replaced by another archive of the very same size is refused, which is what
+/// the size alone cannot do.
+TEST(AzureBackupReader, ReopenOfAReplacedArchiveIsRefused)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        /* max_response_size */ 40, /* served_size */ 100, /* blob_size */ 100, /* send_etag */ true, /* reported_length */ std::nullopt,
+        /* ignore_range */ false,
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = ETagBehaviour::second_generation,
+                      .honour_if_match = true});
+    auto reader = backupReaderOver(transport);
+
+    const String generation = reader->getFileGeneration("archive");
+    ASSERT_EQ(generation, ETagBehaviour::first_generation);
+
+    std::optional<int> error_code;
+    try
+    {
+        reader->readFilePinnedToGeneration("archive", /*expected_file_size=*/ 100, generation);
+    }
+    catch (const DB::Exception & e)
+    {
+        error_code = e.code();
+    }
+
+    ASSERT_TRUE(error_code.has_value());
+    ASSERT_EQ(*error_code, DB::ErrorCodes::FILE_CHANGED_DURING_READ);
+}
+
+/// The same reopen of an archive that nobody has touched: it goes through, and the bytes it reads
+/// are the ones of the generation the session started on. This keeps the test above from passing
+/// for the wrong reason - by refusing every reopen.
+TEST(AzureBackupReader, ReopenOfAnUnchangedArchiveIsAllowed)
+{
+    auto transport = std::make_shared<MisbehavingRangeTransport>(
+        /* max_response_size */ 40, /* served_size */ 100, /* blob_size */ 100, /* send_etag */ true, /* reported_length */ std::nullopt,
+        /* ignore_range */ false, ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
+    auto reader = backupReaderOver(transport);
+
+    const String generation = reader->getFileGeneration("archive");
+    auto buffer = reader->readFilePinnedToGeneration("archive", /*expected_file_size=*/ 100, generation);
+    std::string data;
+    ASSERT_NO_THROW(DB::readStringUntilEOF(data, *buffer));
+    ASSERT_EQ(data.size(), static_cast<size_t>(100));
+    assertCountsUpFromZero(data);
+}
+
 /// A copy inside the backup (the writer deduplicating a file against one it already wrote) is
 /// pinned to the generation of the source that the `HEAD` before the copy saw.
 TEST(AzureBackupWriter, CopyInsideBackupPinnedToSourceGeneration)
@@ -2987,16 +3066,22 @@ TEST(AzurePlainRewritableMove, ASourceWithoutAnETagIsRefused)
 
 /// Rolling back a `plain_rewritable` operation after its remote delete succeeded. The key is free
 /// by then, so another writer can recreate it, and the blob it puts there is a generation this
-/// transaction has never seen. The rollback asks before it writes: a key that something is at may
-/// not be restored over.
+/// transaction has never seen. The restore may not write over that blob - and asking whether the
+/// key is free would not be enough, because the answer is stale as soon as it is given, so the
+/// restore is a write the endpoint accepts only while the key is free.
 TEST(AzurePlainRewritableRollback, ARecreatedKeyIsNotRestoredOver)
 {
     auto transport = std::make_shared<MisbehavingRangeTransport>(
         100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
-        ETagBehaviour{.etag = ETagBehaviour::second_generation, .etag_after_first = "", .honour_if_match = true});
+        ETagBehaviour{.etag = ETagBehaviour::second_generation, .etag_after_first = "", .honour_if_match = true},
+        /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false, /* blob_missing */ false,
+        /* a_blob_is_at_the_key_a_write_creates */ true);
     auto object_storage = objectStorageOver(transport);
 
-    ASSERT_FALSE(DB::aRollbackMayWriteOver(*object_storage, "blob"));
+    ASSERT_FALSE(DB::restoreTheSavedBlobWithoutWritingOver(
+        *object_storage, "tmp_blob", "blob", DB::ReadSettings{}, DB::WriteSettings{}));
+    ASSERT_TRUE(transport->sawCreateIfAbsent());
+    ASSERT_TRUE(transport->uploadedData().empty());
 }
 
 /// The same rollback when the key really is free: nobody recreated the blob this transaction
@@ -3006,11 +3091,13 @@ TEST(AzurePlainRewritableRollback, AFreeKeyIsRestored)
 {
     auto transport = std::make_shared<MisbehavingRangeTransport>(
         100, 100, 100, /* send_etag */ true, /* reported_length */ std::nullopt, /* ignore_range */ false,
-        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true},
-        /* blob_size_after_first */ std::nullopt, /* refuse_range_past_the_data */ false, /* blob_missing */ true);
+        ETagBehaviour{.etag = ETagBehaviour::first_generation, .etag_after_first = "", .honour_if_match = true});
     auto object_storage = objectStorageOver(transport);
 
-    ASSERT_TRUE(DB::aRollbackMayWriteOver(*object_storage, "blob"));
+    ASSERT_TRUE(DB::restoreTheSavedBlobWithoutWritingOver(
+        *object_storage, "tmp_blob", "blob", DB::ReadSettings{}, DB::WriteSettings{}));
+    ASSERT_TRUE(transport->sawCreateIfAbsent());
+    ASSERT_EQ(transport->uploadedData().size(), static_cast<size_t>(100));
 }
 
 /// A move whose copy to the destination succeeded is rolled back: the blob the copy wrote has to be

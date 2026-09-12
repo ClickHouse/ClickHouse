@@ -1769,13 +1769,15 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                 /// Resetting the processing means the path is read again from offset 0 on a later
                 /// pass. That is only free while the file has emitted nothing: rows of the
                 /// generation that was replaced may already be in the destination table, and
-                /// replaying the path from the start would insert them a second time. The
-                /// shutdown path above declines to abort a partially read file for the same
-                /// reason, and allows it only where `deduplication_v2` drops the replayed rows.
-                /// Without that, the file keeps the ordinary failure handling: the retry budget is
-                /// charged, and the path ends up `failed` rather than ingested twice.
-                const bool a_replay_would_duplicate_rows
-                    = file_metadata->getFileStatus()->processed_rows > 0 && !is_deduplication_v2;
+                /// replaying the path from the start would insert them a second time.
+                /// `deduplication_v2` does not make that replay safe here, unlike the shutdown path
+                /// above: its chunk token is `object_etag:chunk_offset`, and the replay reads the
+                /// generation that took the key over, so the token of every replayed chunk names
+                /// the new generation and matches nothing that the replaced generation inserted.
+                /// A file that has emitted rows therefore keeps the ordinary failure handling: the
+                /// retry budget is charged and the path ends up `failed`, rather than ingested as a
+                /// mix of the two generations.
+                const bool a_replay_would_duplicate_rows = file_metadata->getFileStatus()->processed_rows > 0;
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_during_read,

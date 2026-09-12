@@ -33,20 +33,6 @@ namespace DB
 /// `HEAD` is a generation this operation has never named.
 StoredObject pinToTheGenerationThatIsThereNow(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
 
-/// A rollback of one of the operations below may only put a blob back where the blob it saved aside
-/// came from, so it may only write over a key that nobody has taken over in the meantime. Once the
-/// execute side has deleted the source, the key is free, and another writer that recreates it holds
-/// a generation that this transaction has never seen: copying the saved blob over it would be
-/// exactly the loss that the generation pinning of the execute side exists to prevent. So the
-/// rollback asks what is at the key now and refuses to run when something is, and it then leaves
-/// the blob it saved aside in the bucket, so that the generation this transaction took away is
-/// still there to be recovered by hand.
-///
-/// Only Azure is asked, because only Azure carries the generation of an object through these
-/// operations; the other object storages delete and restore by path on the execute side too, and
-/// this is not the place to change that.
-bool aRollbackMayWriteOver(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
-
 /// Names the generation of a blob that was just written, so that a rollback that takes it back out
 /// is pinned to it (`removeObjectIfExists` sends it as `If-Match`) and cannot take away a
 /// generation that somebody else has written since. The `HEAD` runs right after the write, so the
@@ -60,6 +46,25 @@ bool aRollbackMayWriteOver(IObjectStorage & object_storage, const std::filesyste
 /// fail closed rather than fall back to one. For every other object storage the object is returned
 /// as it was and not a single extra request is made.
 std::optional<StoredObject> nameTheGenerationThatWasJustWritten(IObjectStorage & object_storage, const std::filesystem::path & remote_path);
+
+/// Puts the blob that a rollback saved aside at `remote_tmp_path` back at `remote_path`, without
+/// ever writing over what is at that key. Asking whether the key is free and then copying over it
+/// are two requests, and a writer that recreates the key in between the two would be overwritten by
+/// the copy - the very loss the pinning of the execute side exists to prevent. So on Azure the
+/// restore is a create-if-absent write (`If-None-Match: *`), which the endpoint refuses when a blob
+/// is at the key, and the bytes are read pinned to the generation of the saved blob.
+///
+/// Returns whether the blob was restored. A restore that did not happen - the key was taken over,
+/// the saved blob cannot be named, the write did not go through - is reported rather than retried
+/// blind, and the caller then leaves the saved blob in the bucket, so that the generation this
+/// transaction took away is still there to be recovered by hand. Every other object storage
+/// restores by key, the way its execute side deletes and writes by key.
+bool restoreTheSavedBlobWithoutWritingOver(
+    IObjectStorage & object_storage,
+    const std::filesystem::path & remote_tmp_path,
+    const std::filesystem::path & remote_path,
+    const ReadSettings & read_settings,
+    const WriteSettings & write_settings);
 
 class MetadataStorageFromPlainObjectStorageValidatePreconditionsOperation final : public IMetadataOperation
 {

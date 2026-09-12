@@ -189,7 +189,19 @@ UInt64 BackupReaderAzureBlobStorage::getFileSize(const String & file_name)
     return object_metadata.size_bytes;
 }
 
+String BackupReaderAzureBlobStorage::getFileGeneration(const String & file_name)
+{
+    String key = fs::path(blob_path) / file_name;
+    return headBackupBlob(*object_storage, key).etag;
+}
+
 std::unique_ptr<ReadBufferFromFileBase> BackupReaderAzureBlobStorage::readFile(const String & file_name, std::optional<size_t> expected_file_size)
+{
+    return readFilePinnedToGeneration(file_name, expected_file_size, /* generation */ "");
+}
+
+std::unique_ptr<ReadBufferFromFileBase> BackupReaderAzureBlobStorage::readFilePinnedToGeneration(
+    const String & file_name, std::optional<size_t> expected_file_size, const String & generation)
 {
     String key = fs::path(blob_path) / file_name;
     ObjectMetadata metadata = headBackupBlob(*object_storage, key);
@@ -200,6 +212,17 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderAzureBlobStorage::readFile(c
     /// before a single byte is read, the same way the native copy refuses it.
     if (expected_file_size)
         checkBackupBlobSize(key, metadata, *expected_file_size);
+
+    /// A caller that names a generation has read other bytes of this blob already - the `.backup`
+    /// entry of an archive, read through a buffer that is long gone by the time the archive reader
+    /// opens the next handle - and every later read has to land on the same generation. A blob that
+    /// holds another generation now is refused, including when it is of the very same size.
+    if (!generation.empty()
+        && AzureBlobStorage::normalizeETag(metadata.etag) != AzureBlobStorage::normalizeETag(generation))
+        throw Exception(ErrorCodes::FILE_CHANGED_DURING_READ,
+            "Blob {} of the backup was replaced while the backup was open: its `ETag` is {} instead of {}",
+            key, metadata.etag, generation);
+
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client, key, read_settings, settings->max_single_read_retries,
         settings->max_single_download_retries,
@@ -209,7 +232,7 @@ std::unique_ptr<ReadBufferFromFileBase> BackupReaderAzureBlobStorage::readFile(c
         /* blob_storage_log */ nullptr,
         connection_params.getContainer(),
         /* known_object_size */ metadata.size_bytes,
-        /* expected_etag */ metadata.etag);
+        /* expected_etag */ generation.empty() ? metadata.etag : generation);
 }
 
 void BackupReaderAzureBlobStorage::copyFileToDisk(const String & path_in_backup, size_t file_size, bool encrypted_in_backup,
