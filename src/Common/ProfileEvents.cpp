@@ -1625,6 +1625,10 @@ The server successfully detected this situation and will download merged part fr
     M(VortexFilterPushdownConjunctsDropped, "Number of top-level WHERE conjuncts that could not be translated for a Vortex scan and are only applied by ClickHouse afterwards", ValueType::Number) \
     M(VortexScanSplits, "Number of splits delivered by Vortex scans", ValueType::Number) \
     M(VortexScanEmptySplits, "Number of Vortex scan splits whose rows were all dropped by the pushed-down filter", ValueType::Number) \
+    M(VortexReadRequests, "Number of read requests a Vortex scan issued through the ClickHouse read buffer", ValueType::Number) \
+    M(VortexReadBytes, "Number of bytes a Vortex scan read through the ClickHouse read buffer", ValueType::Bytes) \
+    M(VortexConvertMicroseconds, "Time spent turning the Arrow arrays a Vortex scan delivers into ClickHouse columns", ValueType::Microseconds) \
+    M(VortexReadWaitMicroseconds, "Time the pipeline spent waiting for a Vortex scan to deliver the next split", ValueType::Microseconds) \
     M(FilterTransformPassedRows, "Number of rows that passed the filter in the query", ValueType::Number) \
     M(FilterTransformPassedBytes, "Number of bytes that passed the filter in the query", ValueType::Bytes) \
     \

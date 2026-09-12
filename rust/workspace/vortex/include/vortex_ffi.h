@@ -173,6 +173,11 @@ struct FFI_VortexScanOptions
     /// running ahead of the caller; the reads underneath are bounded separately by
     /// `io_concurrency` and `coalesce_max_read_bytes`.
     uint32_t max_splits_in_flight;
+    /// Whether a split the filter emptied is still handed to `on_chunk` as a null array. It only
+    /// tells the caller that the file order moved on, so a caller that does not restore the file
+    /// order has nothing to do with it - and on a selective scan almost every split is empty, so
+    /// reporting them costs far more than the rows do.
+    bool report_empty_splits;
 };
 
 /// The callbacks a scan reports to. Both run on the caller's own threads, possibly several at a
@@ -187,8 +192,8 @@ struct FFI_VortexScanCallbacks
     /// Delivers one chunk: an Arrow struct array in the scan's schema, together with the position
     /// of its split in the file. The array is borrowed for the duration of the call - the callback
     /// takes the data out of it (or releases it) before returning, and must not keep the pointer.
-    /// A null array means the split matched no rows; it is still reported so that the caller can
-    /// restore the file order. Returning non-zero stops the scan; it is the only way `on_chunk` has
+    /// A null array means the split matched no rows; it is reported only when
+    /// `report_empty_splits` is set, so that a caller restoring the file order can see the gap. Returning non-zero stops the scan; it is the only way `on_chunk` has
     /// to stop it, and it surfaces from `on_finish` as an error.
     int32_t (*on_chunk)(void *context, ArrowArray *array, uint64_t split_index);
     /// Reports the end of the scan, exactly once: null if every split was delivered, otherwise

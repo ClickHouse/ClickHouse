@@ -5,6 +5,7 @@
 #include <IO/ReadBuffer.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
 
 #include <arrow/c/bridge.h>
 #include <arrow/io/interfaces.h>
@@ -14,6 +15,12 @@
 #include <algorithm>
 
 #include <vortex_ffi.h>
+
+namespace ProfileEvents
+{
+extern const Event VortexReadRequests;
+extern const Event VortexReadBytes;
+}
 
 namespace DB
 {
@@ -55,6 +62,8 @@ extern "C" int32_t vortexFFIReadCallback(void * context, uint64_t offset, uint64
                 length,
                 offset);
         ctx->bytes_read.fetch_add(length, std::memory_order_relaxed);
+        ProfileEvents::increment(ProfileEvents::VortexReadRequests);
+        ProfileEvents::increment(ProfileEvents::VortexReadBytes, length);
         return 0;
     }
     catch (...)

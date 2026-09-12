@@ -16,6 +16,7 @@
 #include <Common/Exception.h>
 #include <Common/assert_cast.h>
 #include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
 #include <Common/setThreadName.h>
 #include <Common/threadPoolCallbackRunner.h>
 
@@ -33,6 +34,8 @@ namespace ProfileEvents
 {
 extern const Event VortexScanSplits;
 extern const Event VortexScanEmptySplits;
+extern const Event VortexConvertMicroseconds;
+extern const Event VortexReadWaitMicroseconds;
 }
 
 namespace DB
@@ -250,6 +253,9 @@ int32_t VortexBlockInputFormat::onChunk(::ArrowArray * array, UInt64 split_index
 
         if (array)
         {
+            Stopwatch convert_watch;
+            SCOPE_EXIT({ ProfileEvents::increment(ProfileEvents::VortexConvertMicroseconds, convert_watch.elapsedMicroseconds()); });
+
             /// The array is borrowed for the duration of this callback; importing it moves the
             /// data out and marks the struct released, which is how it is handed back.
             auto batch = arrow::ImportRecordBatch(array, scan_schema);
@@ -485,6 +491,9 @@ void VortexBlockInputFormat::prepareReader()
     FFI_VortexScanOptions options{};
 
     preserve_order = format_settings.vortex.preserve_order || plan.rows_to_read;
+    /// A split the filter emptied only tells us that the file order moved on, and on a selective
+    /// scan nearly every split is empty - so ask for them only when the order is what we restore.
+    options.report_empty_splits = preserve_order;
 
     if (plan.rows_to_read)
     {
@@ -676,7 +685,10 @@ Chunk VortexBlockInputFormat::read()
         /// The timeout is a safety net: the protocol between the notifications and the drivers
         /// should never leave a runnable task without a driver, but a bug there has to cost a stall
         /// rather than a query that never returns.
-        if (delivery_cv.wait_for(lock, PROGRESS_CHECK_PERIOD) != std::cv_status::timeout)
+        Stopwatch wait_watch;
+        const auto wait_status = delivery_cv.wait_for(lock, PROGRESS_CHECK_PERIOD);
+        ProfileEvents::increment(ProfileEvents::VortexReadWaitMicroseconds, wait_watch.elapsedMicroseconds());
+        if (wait_status != std::cv_status::timeout)
             continue;
 
         const bool idle = running_drivers[static_cast<size_t>(FFI_VortexTaskQueue::CPU)].load(std::memory_order_relaxed) == 0

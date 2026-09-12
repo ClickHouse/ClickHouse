@@ -659,6 +659,12 @@ pub struct FFI_VortexScanOptions {
     /// running ahead of the caller; the reads underneath are bounded separately by
     /// `io_concurrency` and `coalesce_max_read_bytes`.
     pub max_splits_in_flight: u32,
+
+    /// Whether a split the filter emptied is still handed to `on_chunk` as a null array. It only
+    /// tells the caller that the file order moved on, so a caller that does not restore the file
+    /// order has nothing to do with it - and on a selective scan almost every split is empty, so
+    /// reporting them costs far more than the rows do.
+    pub report_empty_splits: bool,
 }
 
 /// The callbacks a scan reports to. Both run on the caller's own threads, possibly several at a
@@ -674,8 +680,8 @@ pub struct FFI_VortexScanCallbacks {
     /// Delivers one chunk: an Arrow struct array in the scan's schema, together with the position
     /// of its split in the file. The array is borrowed for the duration of the call - the callback
     /// takes the data out of it (or releases it) before returning, and must not keep the pointer.
-    /// A null array means the split matched no rows; it is still reported so that the caller can
-    /// restore the file order. Returning non-zero stops the scan; it is the only way `on_chunk` has
+    /// A null array means the split matched no rows; it is reported only when
+    /// `report_empty_splits` is set, so that a caller restoring the file order can see the gap. Returning non-zero stops the scan; it is the only way `on_chunk` has
     /// to stop it, and it surfaces from `on_finish` as an error.
     pub on_chunk: unsafe extern "C" fn(
         context: *mut c_void,
@@ -699,11 +705,15 @@ struct ScanCallbacks {
     context: usize,
     on_chunk: unsafe extern "C" fn(*mut c_void, *mut FFI_ArrowArray, u64) -> i32,
     on_finish: unsafe extern "C" fn(*mut c_void, *const c_char),
+    report_empty_splits: bool,
 }
 
 impl ScanCallbacks {
     fn deliver(&self, array: Option<FFI_ArrowArray>, split_index: u64) -> VortexResult<()> {
         let empty = array.is_none();
+        if empty && !self.report_empty_splits {
+            return Ok(());
+        }
         let result = match array {
             None => unsafe {
                 (self.on_chunk)(
@@ -813,6 +823,7 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
 
             let mut schema = reader.schema.clone();
             let mut max_splits_in_flight = DEFAULT_MAX_SPLITS_IN_FLIGHT;
+            let mut report_empty_splits = false;
 
             if !options.is_null() {
                 let options = &*options;
@@ -905,6 +916,8 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                 if options.max_splits_in_flight != 0 {
                     max_splits_in_flight = options.max_splits_in_flight as usize;
                 }
+
+                report_empty_splits = options.report_empty_splits;
             }
 
             let callbacks = {
@@ -913,6 +926,7 @@ pub unsafe extern "C" fn vortex_ffi_scan_create(
                     context: callbacks.context as usize,
                     on_chunk: callbacks.on_chunk,
                     on_finish: callbacks.on_finish,
+                    report_empty_splits,
                 }
             };
 
@@ -1907,6 +1921,8 @@ mod tests {
             row_selection_len: 0,
             row_index_column: false,
             max_splits_in_flight: 0,
+            // The tests below assert on the split sequence, so they ask for the empty ones too.
+            report_empty_splits: true,
         }
     }
 
