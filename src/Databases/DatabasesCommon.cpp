@@ -708,34 +708,38 @@ void DatabaseWithOwnTablesBase::shutdown()
     /// and rethrow it once all cleanup has run.
     std::exception_ptr first_error;
 
-    /// Prepare phase runs sequentially. Some tables flush into other tables here (e.g. a Buffer
-    /// table flushes to its destination in flushAndPrepareForShutdown); doing this in parallel
-    /// could write into a table that has already entered shutdown-prepared read-only mode and
-    /// silently drop rows. This phase is cheap relative to the shutdown drain below.
-    for (const auto & kv : tables_snapshot)
-    {
-        auto table_id = kv.second->getStorageID();
-        try
+    /// Prepare runs sequentially and twice. Sequentially, because tables flush into each other here
+    /// (a Buffer flushes to its destination in flushAndPrepareForShutdown) and doing it in parallel
+    /// could write into a table already in shutdown-prepared read-only mode and drop rows. Twice,
+    /// because a destination prepared before its source (Buffer -> Buffer, name order) keeps the rows
+    /// in memory, and StorageBuffer has no shutdown()/destructor flush — the second pass re-flushes
+    /// them, as the old flushAndShutdown() did, before the parallel drain drops them.
+    for (size_t pass = 0; pass < 2; ++pass)
+        for (const auto & kv : tables_snapshot)
         {
-            fiu_do_on(FailPoints::database_catalog_throw_on_table_prepare_shutdown,
+            auto table_id = kv.second->getStorageID();
+            try
             {
-                if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
-                    throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while preparing to shut down table {}", table_id.getNameForLogs());
-            });
-            kv.second->flushAndPrepareForShutdown();
+                fiu_do_on(FailPoints::database_catalog_throw_on_table_prepare_shutdown,
+                {
+                    if (!DatabaseCatalog::isPredefinedDatabase(table_id.database_name))
+                        throw Exception(ErrorCodes::FAULT_INJECTED, "Injecting fault while preparing to shut down table {}", table_id.getNameForLogs());
+                });
+                kv.second->flushAndPrepareForShutdown();
+            }
+            catch (...)
+            {
+                if (!first_error)
+                    first_error = std::current_exception();
+                tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table_id.getNameForLogs()));
+            }
         }
-        catch (...)
-        {
-            if (!first_error)
-                first_error = std::current_exception();
-            tryLogCurrentException(log, fmt::format("Failed to prepare to shut down table {}", table_id.getNameForLogs()));
-        }
-    }
 
     /// Shutdown phase runs in parallel. IStorage::shutdown is the expensive, table-independent work
     /// (ZooKeeper sessions, interserver endpoints, background pools) and is documented safe to call
-    /// concurrently. Prepare already ran above, so call shutdown() directly rather than
-    /// flushAndShutdown() — that avoids re-running the prepare/flush and racing dependent tables.
+    /// concurrently. Prepare (including the re-flush) already ran above, so call shutdown() directly
+    /// rather than flushAndShutdown(): the flush is done, and re-running it here in parallel could
+    /// race dependent tables.
     if (!tables_snapshot.empty())
     {
         Stopwatch watch;

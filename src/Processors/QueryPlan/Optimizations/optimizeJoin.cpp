@@ -12,6 +12,7 @@
 #include <Interpreters/HashJoin/HashJoin.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/JoinExpressionActions.h>
+#include <Interpreters/JoinUtils.h>
 #include <Interpreters/MergeJoin.h>
 #include <Interpreters/TableJoin.h>
 
@@ -847,17 +848,32 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 /// The set is intentionally small and conservative -- an unknown function is treated as opaque
 /// (contributes nothing), which can only make CD-A miss a valid reordering, never admit an invalid
 /// one. It excludes NULL-blocking functions on purpose (`coalesce`, `ifNull`, `assumeNotNull`, ...).
-static bool isNullPropagatingFunction(const String & name)
+static bool isNullPropagatingFunction(const ActionsDAG::Node & node)
 {
     static const std::unordered_set<std::string_view> names = {
         /// comparisons (the atoms of equi/theta-join predicates)
         "equals", "notEquals", "less", "greater", "lessOrEquals", "greaterOrEquals",
         /// arithmetic that may wrap a column inside a comparison, e.g. `a.x + 1 = b.y`
         "plus", "minus", "multiply", "divide", "modulo", "negate",
-        /// a CAST of NULL is NULL
         "CAST", "_CAST",
     };
-    return names.contains(name);
+    const auto & name = node.function_base->getName();
+    if (!names.contains(name))
+        return false;
+    /// A cast to a non-`Nullable` type raises `CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN` rather than
+    /// returning `NULL`; a cast to `Variant`/`Dynamic` returns `NULL` but a join on such a key
+    /// matches `NULL` to `NULL`. Neither shape rejects a null-extended row, so neither counts.
+    if (name == "CAST" || name == "_CAST")
+        return isNullableOrLowCardinalityNullable(node.result_type);
+    return true;
+}
+
+/// An outer join pads an unmatched row with a top-level NULL only for a type its nullability
+/// conversion can wrap. `Array`/`Map` are padded with the type default (`[]`, `map()`) instead, and
+/// `Variant`/`Dynamic` with an internal NULL: both match another such key rather than rejecting it.
+static bool nullExtensionIsNull(const DataTypePtr & type)
+{
+    return isNullableOrLowCardinalityNullable(type) || JoinCommon::canBecomeNullable(type);
 }
 
 /// Relations R such that `node` evaluates to NULL when all of R's columns are NULL ("strict" on R).
@@ -868,13 +884,15 @@ static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpress
     {
         case ActionsDAG::ActionType::INPUT:
         case ActionsDAG::ActionType::PLACEHOLDER:
+            if (!nullExtensionIsNull(node->result_type))
+                return {};
             /// A leaf column reference is null exactly on its own relation.
             return JoinActionRef(node, actions).getSourceRelations();
         case ActionsDAG::ActionType::ALIAS:
             return node->children.empty() ? BitSet{} : strictOnRelations(node->children.front(), actions);
         case ActionsDAG::ActionType::FUNCTION:
         {
-            if (!node->function_base || !isNullPropagatingFunction(node->function_base->getName()))
+            if (!node->function_base || !isNullPropagatingFunction(*node))
                 return {};
             BitSet result;
             for (const auto * child : node->children)
@@ -889,8 +907,8 @@ static BitSet strictOnRelations(const ActionsDAG::Node * node, const JoinExpress
 }
 
 /// Relations R such that the boolean `node` is false or unknown when all of R's columns are NULL
-/// (null-rejecting, Definition 1 of the paper). Conservative: when unsure it returns a subset of
-/// the true answer, which only widens a TES downstream and so keeps CD-A correct.
+/// (null-rejecting). Conservative: when unsure it returns a subset of the true answer, which only
+/// tightens the reordering constraints downstream and so stays correct.
 static BitSet predicateNullRejectingRelations(const ActionsDAG::Node * node, const JoinExpressionActions & actions)
 {
     if (node->type == ActionsDAG::ActionType::ALIAS && !node->children.empty())
@@ -1230,6 +1248,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Global expression actions DAG is not set");
 
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
+    const UInt64 cluster_id = ++optimization_settings.join_reorder_next_cluster_id;
 
     auto optimized = optimizeJoinOrder(std::move(query_graph), optimization_settings);
     auto sequence = getJoinTreePostOrderSequence(optimized);
@@ -1557,7 +1576,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate);
+            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
 
             auto & new_node = nodes.emplace_back();
 

@@ -114,6 +114,16 @@ getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context,
 bool isSuitableForInsertSelectWithParallelReplicas(const ASTPtr & select, const ContextPtr & context);
 bool canUseParallelReplicasOnInitiator(const ContextPtr & context);
 
+/// Whether 'max_execution_time_leaf' requires all leaf reading of a parallel-replicas query to happen on
+/// remote replicas. The local replica executes inside the initiator's pipeline and shares the initiator's
+/// 'QueryStatus', so it cannot be bounded by the leaf timeout separately - the leaf timeout is substituted
+/// into 'max_execution_time' only for remote replicas, which build their own 'QueryStatus' from the shipped
+/// settings. Remote-only reading is therefore needed exactly when the leaf timeout is stricter than the
+/// initiator's own 'max_execution_time': when the initiator's timeout is at most the leaf timeout, it already
+/// bounds the local reading at least as tightly (a profile that caps both settings to the same value, like the
+/// one used by the Fast test job, must not disable the local plan for every query).
+bool leafTimeoutRequiresRemoteOnlyLeafReading(const Settings & settings);
+
 /// Builds the `_shard_num` scalar shipped to a shard, recording which shard numbering the number belongs
 /// to: `Cluster::getShardScopeIdentity`, not the name, since a derived cluster keeps the name and may
 /// renumber the shards. Both live in one block so that overwriting `_shard_num` replaces number and

@@ -2,37 +2,43 @@
 title: 'Replica-aware routing'
 slug: /manage/replica-aware-routing
 description: 'Route related requests to the same ClickHouse Cloud replica for temporary tables, sessions, cache reuse, and read-after-write consistency'
-keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session affinity', 'temporary tables', 'read-after-write consistency']
+keywords: ['cloud', 'sticky endpoints', 'sticky', 'endpoints', 'sticky routing', 'routing', 'replica aware routing', 'X-ClickHouse-Replica-Tag', 'session affinity', 'temporary tables', 'read-after-write consistency', 'sni', 'tls-sni-override']
 doc_type: 'guide'
 ---
 
-import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
-<PrivatePreviewBadge/>
-<EnterprisePlanFeatureBadge feature="Replica-aware routing" support="true"/>
+<BetaBadge/>
+<EnterprisePlanFeatureBadge feature="Replica-aware routing"/>
 
 Replica-aware routing (also known as sticky sessions, sticky routing, or session affinity) routes related requests to the same ClickHouse replica. Use it when you need [temporary tables](/reference/statements/create/table/temporary-table) or [named session state](/concepts/features/interfaces/http#using-clickhouse-sessions-in-the-http-protocol) to stay reachable across queries, when you want related queries to reuse the same replica's local caches, or when you need [read-after-write consistency](#read-after-write-consistency) across a write and its follow-up reads.
 
 It's best-effort and doesn't guarantee isolation. The proxy maps each routing value to one replica. The mapping remains stable while the number of replicas remains unchanged; scaling the service can map the value to a different replica.
 
-<Warning>
-**Requires the HTTP interface**
+Replica-aware routing is available over both interfaces:
 
-Replica-aware routing is applied at the proxy layer over the [HTTP/HTTPS interface](/concepts/features/interfaces/http) using the `X-ClickHouse-Replica-Tag` header.
+- Over [HTTP/HTTPS](#http-based-routing), using the `X-ClickHouse-Replica-Tag` header.
+- Over the [native protocol](#native-protocol-routing), using a TLS Server Name Indication (SNI) override.
 
-Replica-aware routing is **currently unavailable over the native protocol** (native port, e.g. the [clickhouse-go](/integrations/language-clients/go/index) driver in its default native mode). Native-protocol clients must switch to HTTP and send the routing value on every request.
-</Warning>
+Both are enabled separately and use the same consistent hashing behind the proxy.
 
 ## Prerequisites {#prerequisites}
 
 - Your service needs **2 or more replicas**. On a single-replica service, there's nothing to pin to.
-- Available on **Enterprise** by default when the feature is GA.
+- An **Enterprise** tier service.
 - Supported on standard ClickHouse Cloud services. [BYOC](/products/cloud/guides/infrastructure/deployment-options/byoc/overview) isn't supported yet.
 
 ## Configuring replica-aware routing {#configuring-replica-aware-routing}
 
-Open a [support](https://clickhouse.com/support/program) ticket and ask to enable HTTP-based sticky replica routing. Include your service ID and why you need it (temporary tables, session state, cache reuse, or read-after-write consistency). No restart is required.
+Enterprise customers enable replica-aware routing from the service settings page in the ClickHouse Cloud console. Open your service, go to **Settings**, and turn on the toggle for the interface you want:
+
+- One toggle enables HTTP-based routing on the `X-ClickHouse-Replica-Tag` header.
+- A separate toggle enables native-protocol routing on the SNI override.
+
+Enable either or both. No restart is required, and it can take under a minute to take effect.
+
+The toggles are rolling out across Enterprise tier plans. If they aren't on your service yet, open a [support](https://clickhouse.com/support/program) ticket with your service ID to have the feature turned on earlier.
 
 ## HTTP-based routing {#http-based-routing}
 
@@ -56,21 +62,73 @@ For clickhouse-go (v2), set `Protocol: clickhouse.HTTP` and pass the header with
 `X-ClickHouse-Replica-Tag` provides replica affinity without creating a ClickHouse HTTP session. Concurrent requests can reuse the same tag without encountering `SESSION_IS_LOCKED`.
 </Info>
 
-### Read-after-write consistency {#read-after-write-consistency}
+## Native-protocol routing {#native-protocol-routing}
 
-On a multi-replica service, a write on one replica may not be visible on the others until replication catches up. Send your write with an `X-ClickHouse-Replica-Tag` header, then reuse the same header value on follow-up reads. The proxy routes both to the same replica, so you read your own write even while other replicas are still behind. This pattern works for workloads that write and then immediately read back the same data, such as interactive applications or ETL jobs that validate inserts before moving on.
+Over the [native protocol](/interfaces/tcp), pass the routing value as a TLS server name of the form `<routing-value>.sticky.<host>`. Connect to your regular service hostname as usual. [ClickHouse Client](/interfaces/client) takes the routing value through `--tls-sni-override`:
+
+```bash
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query 'SELECT hostName()'
+```
+
+`--host` is your regular service hostname, `--secure` turns on TLS, and `--tls-sni-override` carries the routing value. TLS is required. No extra certificate or DNS entry is needed.
+
+## Read-after-write consistency {#read-after-write-consistency}
+
+On a multi-replica service, a write on one replica may not be visible on the others until replication catches up. Send your write with a routing value, then reuse that same value on follow-up reads. The proxy routes both to the same replica, so you read your own write even while other replicas are still behind. This pattern works for workloads that write and then immediately read back the same data, such as interactive applications or ETL jobs that validate inserts before moving on.
+
+It also helps after a schema change that hasn't yet replicated, since reusing the routing value keeps inserts on a replica that already has the new schema.
+
+Over HTTP, reuse the header value:
+
+```bash
+# Write, tagged with a routing value
+echo "INSERT INTO events VALUES (now(), 'signup')" | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+
+# Read it back on the same replica, using the same value
+echo 'SELECT count() FROM events' | curl \
+  -H 'X-ClickHouse-Replica-Tag: my-workload-1' \
+  -H 'X-ClickHouse-User: default' \
+  -H 'X-ClickHouse-Key: <password>' \
+  'https://<host>:8443/' -d @-
+```
+
+Over the native protocol, reuse the SNI override:
+
+```bash
+# Write with a routing value
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query "INSERT INTO events VALUES (now(), 'signup')"
+
+# Read it back on the same replica, using the same value
+clickhouse client \
+  --host <host> \
+  --secure \
+  --tls-sni-override my-workload-1.sticky.<host> \
+  --query 'SELECT count() FROM events'
+```
 
 For broader guarantees across all replicas, you can also set [`select_sequential_consistency`](/reference/settings/session-settings#select_sequential_consistency) to `1` on ClickHouse Cloud.
 
-### Check which replica you hit {#check-which-replica}
+## Check which replica you hit {#check-which-replica}
 
-Run the `SELECT hostName()` example again with the same `X-ClickHouse-Replica-Tag` value. You should get the same hostname while the number of replicas remains unchanged. A different header value may map to a different replica.
+Run one of the `SELECT hostName()` examples again with the same routing value. You should get the same hostname while the number of replicas remains unchanged. A different routing value may map to a different replica.
 
 ## Limitations of replica-aware routing {#limitations-of-replica-aware-routing}
 
 ### Stickiness changes when the replica count changes {#replica-aware-routing-does-not-guarantee-isolation}
 
-Scaling out or in changes the routing hash ring. Requests sharing the same routing value may then land on a different replica. If you rely on temporary tables or session-level settings, be ready to recreate them after a remap.
+Scaling out or in changes the routing hash ring. Requests sharing the same routing value may then land on a different replica. If you rely on temporary tables or session-level settings, be ready to recreate them after a remap. `SELECT hostName()` always tells you which replica you're on.
 
 ### Replica-aware routing isn't workload isolation {#not-workload-isolation}
 
@@ -78,17 +136,22 @@ Sticky routing only controls *which* replica handles a request. That replica may
 
 ### Private networking {#private-networking}
 
-HTTP-based routing works with [private networking](/products/cloud/guides/security/connectivity/private-networking) on your normal service hostname. No extra DNS entries are required.
+Both HTTP-based and native-protocol routing work with [private networking](/products/cloud/guides/security/connectivity/private-networking) on your normal service hostname. No extra DNS entries are required.
 
-### Replica-aware routing requires the HTTP protocol {#replica-aware-routing-requires-http}
+### Native-protocol routing requires TLS {#native-protocol-routing-requires-tls}
 
-Sticky routing is keyed on the `X-ClickHouse-Replica-Tag` HTTP header. The native binary protocol doesn't carry this value for the HTTP proxy to hash on, so replica-aware routing isn't available over the native protocol. Native-protocol clients must move the relevant workload to the HTTP interface to use this feature.
+Native-protocol routing needs TLS, so pass `--secure`. An unencrypted native connection keeps normal load balancing.
 
 ## Troubleshooting {#troubleshooting}
 
 **Queries still land on different replicas with the same routing value**
 
-- Confirm that every request includes the `X-ClickHouse-Replica-Tag` header.
-- Confirm that every request uses exactly the same routing value.
+- Confirm the toggle for the interface you're using is enabled on the service settings page. The HTTP and native methods are enabled separately.
+- Over HTTP, confirm that every request includes the `X-ClickHouse-Replica-Tag` header, and that every request uses exactly the same value.
+- Over the native protocol, confirm that `--secure` is set and that `--tls-sni-override` has the form `<routing-value>.sticky.<host>`.
 - Wait briefly after enablement. It can take under a minute to take effect.
 - Check whether the number of replicas recently changed; remapping is expected after scaling. Use `SELECT hostName()` to discover the new mapping.
+
+**Certificate errors over the native protocol**
+
+- Confirm `--host` is your regular service hostname, and that the routing value is passed through `--tls-sni-override` rather than `--host`.
