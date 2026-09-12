@@ -1,0 +1,44 @@
+-- INSERT: a commit that landed upstream must be reported as committed
+9
+45
+yes
+data files: 3
+avro files: 6
+9
+45
+-- DELETE: the mutation commit path has the same shape
+4
+18
+yes
+data files: 3
+-- DELETE, unknown outcome: the mutation unwind must not delete the rewritten files
+unknown status reported
+yes
+data files: 3
+avro files: 6
+18
+18
+-- OPTIMIZE: manifest compaction commits through the same seam
+yes
+data files: 8
+36
+36
+-- OPTIMIZE, unknown outcome: the compaction unwind must not delete the consolidated manifests
+unknown status reported
+yes
+data files: 8
+36
+36
+-- Unknown outcome: throws, and leaves every staged file in place
+unknown status reported
+data files: 3
+avro files: 6
+9
+45
+-- version hint: a hint that names no version must not unwind the commit
+data files: 2
+3
+-- control: with no failpoint armed, sequential commits still work
+4
+10
+data files: 4
