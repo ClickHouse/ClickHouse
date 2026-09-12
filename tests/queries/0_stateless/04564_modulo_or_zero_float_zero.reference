@@ -1,0 +1,4 @@
+Floating zero divisors return zero and not NaN
+1	1	1	1	1	1	1	1
+A regular floating-point remainder is unchanged
+1
