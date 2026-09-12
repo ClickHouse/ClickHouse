@@ -2813,6 +2813,18 @@ void Planner::buildPlanForQueryNode()
                   */
                 auto & window_analysis_result = expression_analysis_result.getWindow();
                 if (window_analysis_result.before_window_actions)
+                {
+                    /// When the result is a mergeable state, this is the last step of the stage, so its output
+                    /// is the header sent to the initiator. A block with no columns cannot express how many
+                    /// rows it holds, so keep a placeholder column to carry the row count across the boundary.
+                    auto & before_window_dag = window_analysis_result.before_window_actions->dag;
+                    if (!query_processing_info.isFinalizingStage() && before_window_dag.getOutputs().empty())
+                    {
+                        auto marker_type = std::make_shared<DataTypeUInt8>();
+                        before_window_dag.getOutputs().push_back(&before_window_dag.materializeNode(
+                            before_window_dag.addColumn(marker_type->createColumnConst(0, 0u), marker_type, "__row_count_marker")));
+                    }
+
                     addExpressionStep(
                         planner_context,
                         query_plan,
@@ -2821,6 +2833,7 @@ void Planner::buildPlanForQueryNode()
                         select_query_options,
                         "Before WINDOW",
                         useful_sets);
+                }
             }
             else
             {
