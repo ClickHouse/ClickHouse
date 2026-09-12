@@ -64,7 +64,8 @@ if __name__ == "__main__":
         thread.join()
         thread_result = "OK"
     except RuntimeError as e:
-        thread_result = str(e)
+        # One field, so that the row still parses and the assertion is the one that fails.
+        thread_result = str(e).replace(" ", "_")
 
     print(
         "\t".join([mode, getxattr_result, clone_result, clone3_result, thread_result])
