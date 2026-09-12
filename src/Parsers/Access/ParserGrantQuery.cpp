@@ -546,6 +546,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM VIRTUAL PARTS UPDATE`
     - `SYSTEM WAIT LOADING PARTS`
   - [`TABLE ENGINE`](#table-engine)
+  - [`FUNCTION`](#function)
   - [`TRUNCATE`](#truncate)
   - `UNDROP TABLE`
 - [`NONE`](#none)
@@ -1008,6 +1009,40 @@ Some table engines with external sources may require `READ`/`WRITE` permissions 
 For example, for the AzureBlobStorage table engine, following grant may be required.
 
 - `GRANT READ, WRITE ON AZURE TO john`
+
+### FUNCTION {#function}
+
+Allows executing a specified SQL function. Applies to ordinary functions and user-defined functions
+(SQL, executable, and WebAssembly) listed in the
+[`functions_requiring_grant`](https://github.com/ClickHouse/ClickHouse/blob/master/programs/server/config.xml)
+server setting (not table functions). By default the list is empty and any user can call any function.
+The check runs when the function is resolved. A SQL user-defined function that calls a listed function
+also requires a grant for that inner function.
+
+Aliases: `EXECUTE FUNCTION`, `USE FUNCTION`.
+
+**Examples**
+
+- `GRANT FUNCTION ON decrypt TO john`
+- `GRANT FUNCTION ON * TO john`
+- `REVOKE FUNCTION ON decrypt FROM john`
+
+<Note>
+By default, for backward compatibility, calling a function does not require a grant.
+To restrict selected functions, list their names (as in `system.functions`) in
+`access_control_improvements.functions_requiring_grant` in config.xml:
+
+```xml
+<functions_requiring_grant>
+    <function>decrypt</function>
+    <function>tryDecrypt</function>
+    <function>aes_decrypt_mysql</function>
+</functions_requiring_grant>
+```
+
+After that, `decrypt` requires `GRANT FUNCTION ON decrypt`. Users with `GRANT ALL` keep access because `ALL` includes `FUNCTION ON *`.
+Functions not listed in the setting stay unrestricted.
+</Note>
 
 ### ALL {#all}
 

@@ -18,18 +18,29 @@
 #include <Access/AccessChangesNotifier.h>
 #include <Access/AccessBackup.h>
 #include <Access/resolveSetting.h>
+#include <Access/Common/AccessType.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <base/range.h>
 #include <IO/Operators.h>
 #include <Common/Exception.h>
 #include <Common/re2.h>
 
 #include <Poco/AccessExpireCache.h>
+#include <Poco/String.h>
+#include <boost/algorithm/string/classification.hpp>
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/split.hpp>
+#include <boost/algorithm/string/trim.hpp>
 #include <filesystem>
+#include <atomic>
+#include <functional>
+#include <memory>
 #include <mutex>
+#include <string_view>
+#include <unordered_set>
 
 
 namespace DB
@@ -47,6 +58,53 @@ namespace ErrorCodes
 
 namespace
 {
+    /// Process-wide so `FunctionFactory` can skip the grant check with a relaxed atomic load
+    /// and without locking `Context`. There is one `AccessControl` per server process.
+    std::atomic<bool> functions_requiring_grant_enabled{false};
+    std::mutex functions_requiring_grant_mutex;
+
+    struct TransparentStringHash
+    {
+        using is_transparent = void;
+        size_t operator()(std::string_view sv) const noexcept { return std::hash<std::string_view>{}(sv); }
+        size_t operator()(const String & s) const noexcept { return std::hash<std::string_view>{}(s); }
+    };
+    using FunctionNameSet = std::unordered_set<String, TransparentStringHash, std::equal_to<>>;
+
+    std::shared_ptr<const FunctionNameSet> functions_requiring_grant_names = std::make_shared<const FunctionNameSet>();
+
+    Strings parseFunctionsRequiringGrant(const Poco::Util::AbstractConfiguration & config)
+    {
+        const String prefix = "access_control_improvements.functions_requiring_grant";
+        Strings names;
+        if (!config.has(prefix))
+            return names;
+
+        Poco::Util::AbstractConfiguration::Keys keys;
+        config.keys(prefix, keys);
+        if (!keys.empty())
+        {
+            for (const auto & key : keys)
+            {
+                const String value = config.getString(prefix + "." + key);
+                if (!value.empty())
+                    names.push_back(value);
+            }
+            return names;
+        }
+
+        const String raw = config.getString(prefix, "");
+        Strings parts;
+        boost::split(parts, raw, boost::is_any_of(","));
+        for (auto & part : parts)
+        {
+            boost::trim(part);
+            if (!part.empty())
+                names.push_back(std::move(part));
+        }
+        return names;
+    }
+
     void checkForUsersNotInMainConfig(
         const Poco::Util::AbstractConfiguration & config,
         const std::string & config_path,
@@ -309,6 +367,7 @@ void AccessControl::setupFromMainConfig(const Poco::Util::AbstractConfiguration 
 
     /// The default values of the following improvements are false because we need to be compatible with earlier access configurations
     setTableEnginesRequireGrant(config_.getBool("access_control_improvements.table_engines_require_grant", false));
+    setFunctionsRequiringGrantFromConfig(config_);
     setEnableReadWriteGrants(config_.getBool("access_control_improvements.enable_read_write_grants", false));
     setThrowOnUnmatchedRowPolicies(config_.getBool("access_control_improvements.throw_on_unmatched_row_policies", false));
 
@@ -810,6 +869,67 @@ void AccessControl::setEnableReadWriteGrants(bool enable_read_write_grants_)
 bool AccessControl::isEnabledReadWriteGrants() const
 {
     return enable_read_write_grants;
+}
+
+bool AccessControl::hasFunctionsRequiringGrant() noexcept
+{
+    return functions_requiring_grant_enabled.load(std::memory_order_relaxed);
+}
+
+void AccessControl::setFunctionsRequiringGrantFromConfig(const Poco::Util::AbstractConfiguration & config)
+{
+    setFunctionsRequiringGrant(parseFunctionsRequiringGrant(config));
+}
+
+void AccessControl::setFunctionsRequiringGrant(const Strings & function_names)
+{
+    auto names = std::make_shared<FunctionNameSet>();
+    for (const auto & name : function_names)
+    {
+        if (name.empty())
+            continue;
+        names->emplace(name);
+        names->emplace(Poco::toLower(name));
+    }
+
+    const bool enabled = !names->empty();
+    {
+        std::lock_guard lock(functions_requiring_grant_mutex);
+        functions_requiring_grant_names = std::move(names);
+    }
+    functions_requiring_grant_enabled.store(enabled, std::memory_order_release);
+}
+
+void AccessControl::checkFunctionGrant(const ContextPtr & context, std::string_view function_name)
+{
+    if (!hasFunctionsRequiringGrant() || !context)
+        return;
+    if (functionRequiresGrant(function_name))
+        context->checkAccess(AccessType::FUNCTION, function_name);
+}
+
+bool AccessControl::functionRequiresGrant(std::string_view function_name)
+{
+    if (!functions_requiring_grant_enabled.load(std::memory_order_acquire))
+        return false;
+
+    std::shared_ptr<const FunctionNameSet> names;
+    {
+        std::lock_guard lock(functions_requiring_grant_mutex);
+        names = functions_requiring_grant_names;
+    }
+    if (names->contains(function_name))
+        return true;
+
+    /// Config names are stored both as written and in lowercase. Canonical
+    /// function names from `FunctionFactory` are usually already lowercase
+    /// ASCII, so skip the allocation unless we see an uppercase letter.
+    for (char c : function_name)
+    {
+        if (c >= 'A' && c <= 'Z')
+            return names->contains(Poco::toLower(String{function_name}));
+    }
+    return false;
 }
 
 std::shared_ptr<const ContextAccess> AccessControl::getContextAccess(const ContextAccessParams & params) const
