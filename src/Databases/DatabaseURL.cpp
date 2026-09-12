@@ -443,21 +443,48 @@ void registerDatabaseURL(DatabaseFactory & factory)
         .is_external = true,
         .source_access_type = AccessTypeObjects::Source::URL,
     }, Documentation{
-        .description = "A database that treats table names as URLs and exposes the data they point to as tables. "
-                       "Relative names are resolved against the optional base URL. The URL scheme selects the backend: "
-                       "`file://` reads local files, `s3://` (and `gs://`, `gcs://`, `oss://`) reads object storage, "
-                       "`az://`/`azure://`/`abfss://` reads Azure Blob Storage, `hdfs://` reads HDFS, and `http://`/`https://` "
-                       "and other schemes are read by the URL engine, so files, web and object storage URLs are handled uniformly. "
-                       "The database stores no tables of its own; resolving a table requires read access to the corresponding "
-                       "source (e.g. `GRANT READ ON URL`), because the structure of the table is inferred from the data, "
-                       "and `INSERT` writes to the underlying source and additionally requires the "
-                       "corresponding write source grant (e.g. `GRANT WRITE ON S3`). "
-                       "clickhouse-local uses it (inside the Overlay database, with the `file://` base URL) as the default "
-                       "database, so a plain table name resolves to a file in the current directory, while queries like "
-                       "`SELECT * FROM 'https://example.com/data.csv'` read from the URL. "
-                       "A base URL scopes the database to a location: after "
-                       "`CREATE DATABASE web ENGINE = URL('https://example.com/data/')`, the query "
-                       "``SELECT * FROM web.`daily.csv` `` reads `https://example.com/data/daily.csv`.",
+        .description = R"DOCS_MD(
+The `URL` database engine treats table names as URLs and exposes the data at those URLs as tables. It uses the [`url`](/reference/functions/table-functions/url) table function, which dispatches each URL to the appropriate backend, such as `file`, `s3`, HDFS, Azure Blob Storage, or HTTP.
+
+## Creating a database {#creating-a-database}
+
+```sql
+CREATE DATABASE web_data
+ENGINE = URL([base_url]);
+```
+
+When `base_url` is specified, relative table names are resolved against it. Without a base URL, every table name must be a complete URL.
+
+## Usage {#usage}
+
+```sql
+CREATE DATABASE web_data
+ENGINE = URL('https://example.com/data/');
+
+SELECT * FROM web_data.`daily.csv`;
+```
+
+The database owns no table definitions. Each table is resolved from its URL when it is used, so its schema is inferred from the current data. Table names can also use a full URL, for example `web_data.`s3://bucket/data/events.parquet``.
+
+## Access control {#access-control}
+
+Creating this database requires `READ` and `WRITE` source grants on `URL`, regardless of [`table_engines_require_grant`](/reference/settings/server-settings/settings/other#table_engines_require_grant). Reading a table also requires a `READ` source grant for the resolved backend; writing requires the matching `WRITE` grant. For example:
+
+```sql
+GRANT READ, WRITE ON URL TO user_name;
+GRANT READ, WRITE ON S3 TO user_name;
+```
+
+For a database with a `file://` base URL, a user needs `READ ON FILE`. On ClickHouse server, local files are additionally restricted to [`user_files_path`](/reference/settings/server-settings/settings#user_files_path).
+
+See the [`SOURCES` privileges](/reference/statements/grant#sources) for version and compatibility details.
+
+## See also {#see-also}
+
+- [`url` table function](/reference/functions/table-functions/url)
+- [Filesystem database engine](/reference/engines/database-engines/filesystem)
+- [S3 database engine](/reference/engines/database-engines/s3)
+)DOCS_MD",
         .syntax = "ENGINE = URL([base_url])",
         .examples = {{
             "Reading files of the user_files directory through a database with a `file://` base URL",

@@ -23,15 +23,19 @@ In addition, you can explore [Query Performance Insights](https://clickhouse.com
 
 ### What backup options are available? {#backup-options}
 
-ClickHouse Managed Postgres includes automatic daily backups with continuous WAL archiving, enabling point-in-time recovery to any moment within a 7-day retention window. Backups are stored in S3.
+ClickHouse Managed Postgres includes automatic daily backups with continuous WAL archiving, enabling point-in-time recovery to any moment within a 7-day retention window. Backups are stored in object storage.
 
 For complete details on backup frequency, retention, and how to perform point-in-time recovery, see the [Backup and restore](/products/managed-postgres/backup-and-restore) documentation.
 
 ## Infrastructure and automation {#infrastructure-and-automation}
 
+### Which cloud providers are supported? {#supported-cloud-providers}
+
+ClickHouse Managed Postgres is available on AWS in public beta. GCP is in Private Preview. You can sign up for the GCP Private Preview waitlist [here](https://clickhouse.com/cloud/postgres#gcp-waitlist) and read the [announcement](https://clickhouse.com/blog/postgres-managed-by-clickhouse-gcp-private-preview) to learn more. See [Supported cloud providers](/products/managed-postgres/overview#supported-cloud-providers) for details.
+
 ### Is Terraform support available for ClickHouse Managed Postgres? {#terraform-support}
 
-Terraform support for ClickHouse Managed Postgres isn't currently available. We recommend using the ClickHouse Cloud console or [OpenAPI](/products/managed-postgres/openapi) to create and manage your instances.
+Yes. You can create and manage ClickHouse Managed Postgres services with the ClickHouse Terraform provider using the `clickhouse_postgres_service` resource. See the [Terraform reference](/products/managed-postgres/terraform) for details. You can also use the ClickHouse Cloud console or [OpenAPI](/products/managed-postgres/openapi) to create and manage your instances.
 
 ## Extensions and configuration {#extensions-and-configuration}
 

@@ -113,6 +113,44 @@ bool isSameSetting(const String & left, const String & right)
     return resolve(left) == resolve(right);
 }
 
+/// Removes the settings with the given names from the `SETTINGS` clause of a table definition.
+void resetSettings(SettingsChanges & settings_from_storage, const std::set<String> & settings_resets)
+{
+    for (const auto & setting_name : settings_resets)
+    {
+        auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
+        auto it = std::remove_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
+
+        if (it != settings_from_storage.end())
+        {
+            settings_from_storage.erase(it, settings_from_storage.end());
+        }
+        else
+        {
+            /// Intentionally ignore if there is no such setting name
+            LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
+        }
+    }
+}
+
+/// Splits a parsed `SETTINGS` clause into changes and resets.
+/// The parser keeps `name = DEFAULT` entries apart from `changes`, and such an entry means a reset.
+void parseSettingsChangesAndResets(const ASTSetQuery & set_query, SettingsChanges & settings_changes, std::set<String> & settings_resets)
+{
+    settings_changes = set_query.changes;
+
+    for (const auto & setting_name : set_query.default_settings)
+    {
+        auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
+        if (std::ranges::any_of(settings_changes, same_setting))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Setting {} is both modified and reset in one command", backQuote(setting_name));
+
+        auto insertion = settings_resets.emplace(setting_name);
+        if (!insertion.second)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Duplicate setting name {}", backQuote(setting_name));
+    }
+}
+
 AlterCommand::RemoveProperty removePropertyFromString(const String & property)
 {
     if (property.empty())
@@ -565,7 +603,7 @@ std::optional<AlterCommand> AlterCommand::parse(const ASTAlterCommand * command_
         AlterCommand command;
         command.ast = command_ast->clone();
         command.type = AlterCommand::MODIFY_SETTING;
-        command.settings_changes = command_ast->settings_changes->as<ASTSetQuery &>().changes;
+        parseSettingsChangesAndResets(command_ast->settings_changes->as<ASTSetQuery &>(), command.settings_changes, command.settings_resets);
         return command;
     }
     if (command_ast->type == ASTAlterCommand::MODIFY_DATABASE_SETTING)
@@ -1186,6 +1224,8 @@ void AlterCommand::apply(
         }
 
         auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
+        resetSettings(settings_from_storage, settings_resets);
+
         for (const auto & change : settings_changes)
         {
             auto same_setting = [&change](const SettingChange & c) { return isSameSetting(c.name, change.name); };
@@ -1238,22 +1278,7 @@ void AlterCommand::apply(
         if (!metadata.settings_changes)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot reset settings, because table does not have settings changes");
 
-        auto & settings_from_storage = metadata.settings_changes->as<ASTSetQuery &>().changes;
-        for (const auto & setting_name : settings_resets)
-        {
-            auto same_setting = [&setting_name](const SettingChange & c) { return isSameSetting(c.name, setting_name); };
-            auto it = std::remove_if(settings_from_storage.begin(), settings_from_storage.end(), same_setting);
-
-            if (it != settings_from_storage.end())
-            {
-                settings_from_storage.erase(it, settings_from_storage.end());
-            }
-            else
-            {
-                /// Intentionally ignore if there is no such setting name
-                LOG_TEST(getLogger("AlterCommands"), "No such setting name {}, will ignore", setting_name);
-            }
-        }
+        resetSettings(metadata.settings_changes->as<ASTSetQuery &>().changes, settings_resets);
     }
     else if (type == RENAME_COLUMN)
     {
@@ -2076,6 +2101,13 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
         /// doesn't depend on how the same logical alter is spelled.
         if (command.column_statistics_decl != nullptr && !table->supportsStatistics())
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Engine {} doesn't support statistics", table->getName());
+
+        /// A `CHECK` constraint whose expression changes the number of rows cannot be checked at insert
+        /// time - see `ConstraintsDescription::assertConstraintPreservesRowCount`. `CREATE TABLE` enforces
+        /// the same invariant in `InterpreterCreateQuery::getTableProperties`, so an alter must not be a
+        /// way around it.
+        if (command.type == AlterCommand::ADD_CONSTRAINT || command.type == AlterCommand::MODIFY_CONSTRAINT)
+            ConstraintsDescription::assertConstraintPreservesRowCount(command.constraint_decl);
 
         const auto & column_name = command.column_name;
         if (command.type == AlterCommand::ADD_COLUMN)
