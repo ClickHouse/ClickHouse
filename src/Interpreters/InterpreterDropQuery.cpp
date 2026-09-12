@@ -328,12 +328,22 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             table->checkTableCanBeDropped(context_);
 
             TableExclusiveLockHolder table_excl_lock;
-            /// We don't need any lock for ReplicatedMergeTree and for simple MergeTree
+            TableLockHolder table_shared_lock;
+            /// MergeTree removes its data under its own locks, but the storage still must not be
+            /// dropped or moved to another database meanwhile, the same as for ALTER TABLE ... DROP PARTITION.
             /// For the rest of tables types exclusive lock is needed
-            if (!std::dynamic_pointer_cast<MergeTreeData>(table))
+            if (std::dynamic_pointer_cast<MergeTreeData>(table))
+                table_shared_lock = table->lockForShare(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
+            else
                 table_excl_lock = table->lockExclusively(context_->getCurrentQueryId(), context_->getSettingsRef()[Setting::lock_acquire_timeout]);
 
             auto metadata_snapshot = table->getInMemoryMetadataPtr(context_, false);
+
+            /// Only a replicated truncate is safe to run concurrently, and it may wait long enough to stall other DDL.
+            /// The share lock is what replaces the guard, so the guard is dropped only while holding it.
+            if (database->getUUID() != UUIDHelpers::Nil && table_shared_lock && table->supportsReplication())
+                ddl_guard.reset();
+
             /// Drop table data, don't touch metadata
             table->truncate(current_query_ptr, metadata_snapshot, context_, table_excl_lock);
         }
@@ -852,10 +862,9 @@ AccessRightsElements InterpreterDropQuery::getRequiredAccessForDDLOnCluster() co
 
     if (!drop.table)
     {
-        if (drop.kind == ASTDropQuery::Kind::Detach)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
-        else if (drop.kind == ASTDropQuery::Kind::Drop)
-            required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
+        /// `DROP`, `DETACH` and `TRUNCATE` of a database are all authorized by `DROP DATABASE`,
+        /// which is the single privilege `executeToDatabaseImpl` requires for each of them.
+        required_access.emplace_back(AccessType::DROP_DATABASE, drop.getDatabase());
     }
     else if (drop.is_dictionary)
     {
