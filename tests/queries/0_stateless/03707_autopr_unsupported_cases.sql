@@ -74,7 +74,7 @@ WITH collected AS
         ProfileEvents['RuntimeDataflowStatisticsInputBytes'] AS input_bytes,
         ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] AS output_bytes
     FROM system.query_log
-    WHERE (event_date >= yesterday()) AND (event_time >= now() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (type = 'QueryFinish')
+    WHERE (event_date >= yesterday()) AND (event_time >= now() - INTERVAL '15 MINUTES') AND (current_database = currentDatabase()) AND (is_initial_query) AND (type = 'QueryFinish')
 )
 SELECT * FROM
 (

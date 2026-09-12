@@ -2667,11 +2667,16 @@ void Planner::buildPlanForQueryNode()
         const auto & table_expression_nodes = extractTableExpressions(query_node_typed.getJoinTreeNodeTyped(), true, true);
         for (const auto & it : table_expression_nodes)
         {
-            auto * table_node = it->as<TableNode>();
-            if (!table_node)
+            const std::optional<TableExpressionModifiers> * modifiers_ptr = nullptr;
+            if (const auto * table_node = it->as<TableNode>())
+                modifiers_ptr = &table_node->getTableExpressionModifiers();
+            else if (const auto * table_function_node = it->as<TableFunctionNode>())
+                modifiers_ptr = &table_function_node->getTableExpressionModifiers();
+
+            if (!modifiers_ptr)
                 continue;
 
-            const auto & modifiers = table_node->getTableExpressionModifiers();
+            const auto & modifiers = *modifiers_ptr;
             /// A follower must keep the setting on for its own read-side `STREAM` refusal to fire.
             if (modifiers.has_value()
                 && (modifiers->hasFinal()

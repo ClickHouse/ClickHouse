@@ -85,8 +85,13 @@ SETTINGS parallel_replicas_plan_based = 0, parallel_replicas_local_plan = 0;
 -- serialized plan. Those run under their own query id and the initiator still returns the right rows
 -- without them, so the result comparisons above cannot see them fail. A callback missing at plan
 -- construction time is logged before the query starts, so both exception types count.
+-- Count only the failure this test is about. A coordinator cancels the arms it no longer needs - which the
+-- slowdown failpoint above makes routine - and a cancelled arm surfaces differently depending on where it
+-- was when the cancel landed: as a cancellation before it started, or as a connection reset while it was
+-- writing back. Counting every exception would be counting that teardown. The regression is a missing
+-- callback, which is a `LOGICAL_ERROR`.
 SYSTEM FLUSH LOGS query_log;
-SELECT count() AS failed_queries
+SELECT countIf(exception_code = 49) AS failed_queries -- LOGICAL_ERROR
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
   AND current_database = currentDatabase()

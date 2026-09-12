@@ -158,7 +158,11 @@ void executeQuery(
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool is_remote_function);
+    bool is_remote_function,
+    /// Send the initiator's current database, so an unqualified name in the forwarded query - a table
+    /// function argument, which the `QueryTree -> AST` conversion does not qualify - resolves the way the
+    /// user wrote it. Only for a parallel-replicas fan-out; a `Distributed` shard must keep its own.
+    bool forward_current_database = false);
 
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,

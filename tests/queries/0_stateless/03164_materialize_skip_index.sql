@@ -52,6 +52,6 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT count(), sum(ProfileEvents['MergeTreeDataWriterSkipIndicesCalculationMicroseconds'])
 FROM system.query_log
-WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase()
+WHERE event_date >= yesterday() AND event_time >= now() - 600 AND current_database = currentDatabase() AND is_initial_query
     AND query LIKE 'INSERT INTO t_skip_index_insert SELECT%'
     AND type = 'QueryFinish';

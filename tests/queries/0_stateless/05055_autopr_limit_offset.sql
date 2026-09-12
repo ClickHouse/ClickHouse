@@ -47,14 +47,14 @@ SELECT
     ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0 AS input_stats_collected,
     ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0 AS output_stats_collected
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment = '05055_autopr_offset_query') AND (type = 'QueryFinish')
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment = '05055_autopr_offset_query') AND (type = 'QueryFinish')
 FORMAT TSVWithNames;
 
 -- Query 1 reuses query 0's statistics and must decide against parallel replicas, because every replica
 -- would ship its own `LIMIT 300000` worth of rows.
 SELECT log_comment, ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0 AS stats_collected, ProfileEvents['ParallelReplicasUsedCount'] > 0 AS pr_used
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment LIKE '05055_autopr_limit_query_%') AND (type = 'QueryFinish')
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment LIKE '05055_autopr_limit_query_%') AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
 
@@ -63,7 +63,7 @@ SELECT log_comment,
        ProfileEvents['RuntimeDataflowStatisticsInputBytes'] > 0 AS input_stats_collected,
        ProfileEvents['RuntimeDataflowStatisticsOutputBytes'] > 0 AS output_stats_collected
 FROM system.query_log
-WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (log_comment IN ('05055_autopr_negative_limit', '05055_autopr_negative_offset', '05055_autopr_fractional')) AND (type = 'QueryFinish')
+WHERE (event_date >= yesterday()) AND (event_time >= (NOW() - toIntervalMinute(15))) AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment IN ('05055_autopr_negative_limit', '05055_autopr_negative_offset', '05055_autopr_fractional')) AND (type = 'QueryFinish')
 ORDER BY log_comment
 FORMAT TSVWithNames;
 

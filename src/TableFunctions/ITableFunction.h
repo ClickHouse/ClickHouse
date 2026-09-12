@@ -2,6 +2,7 @@
 
 #include <Parsers/IAST_fwd.h>
 #include <Storages/IStorage_fwd.h>
+#include <Interpreters/StorageID.h>
 #include <Storages/ColumnsDescription.h>
 #include <Access/Common/AccessType.h>
 #include <Common/FunctionDocumentation.h>
@@ -59,6 +60,25 @@ public:
     virtual VectorWithMemoryTracking<size_t> skipAnalysisForArguments(const QueryTreeNodePtr & /*query_node_table_function*/, ContextPtr /*context*/) const { return {}; }
 
     virtual void parseArguments(const ASTPtr & /*ast_function*/, ContextPtr /*context*/) {}
+
+    /** If this table function is nothing but a stable reference to a table that already exists, returns the
+      * `StorageID` of that table. "Stable" means the call denotes the same table on every server of a
+      * cluster - so a server that receives the call resolves it to its own copy of that table - and that
+      * evaluating it has no effect beyond looking the table up. `timeSeriesSamples(db, ts)` is such a
+      * reference: it names the samples table of the `TimeSeries` table `db.ts`, and every replica has one.
+      *
+      * The returned id is the *user-visible* table the call names (`db.ts`), not whatever internal table it
+      * currently resolves to.
+      *
+      * Returns an empty `StorageID` for a table function that produces a storage of its own (`s3`, `numbers`,
+      * `view`, `merge`), which is the default. Parallel replicas use this to decide whether a table function
+      * can anchor a distributed read: the read is coordinated across replicas that each resolve the call
+      * locally, so it is only correct for a stable reference. Such a read is always sent as query text, even
+      * under `parallel_replicas_plan_based`, because a shipped plan fragment can only name the storage the
+      * call resolved to on the initiator. It is only a predicate - the read is still addressed by the
+      * storage it resolved to, see `getStorageIDForParallelReplicas`.
+      */
+    virtual StorageID getReferencedTableID() const { return StorageID::createEmpty(); }
 
     /// Returns actual table structure probably requested from remote server, may fail
     virtual ColumnsDescription getActualTableStructure(ContextPtr /*context*/, bool is_insert_query) const = 0;

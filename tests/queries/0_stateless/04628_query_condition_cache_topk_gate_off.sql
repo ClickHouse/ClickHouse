@@ -60,7 +60,7 @@ SELECT
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
+    AND current_database = currentDatabase() AND is_initial_query
     AND log_comment IN ('04628_prime', '04628_topk_after_prime', '04628_plain_reuse')
 ORDER BY event_time_microseconds;
 
@@ -98,7 +98,7 @@ SELECT
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
+    AND current_database = currentDatabase() AND is_initial_query
     AND log_comment IN ('04628_si_prime', '04628_si_topk_after_prime', '04628_si_plain_reuse')
 ORDER BY event_time_microseconds;
 
@@ -126,7 +126,7 @@ SELECT
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
+    AND current_database = currentDatabase() AND is_initial_query
     AND log_comment IN ('04628_pw_prime', '04628_pw_topk_after_prime', '04628_pw_plain_reuse')
 ORDER BY event_time_microseconds;
 
@@ -151,7 +151,7 @@ SELECT
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
+    AND current_database = currentDatabase() AND is_initial_query
     AND log_comment IN ('04628_pw_topk_write_1', '04628_pw_topk_write_2')
 ORDER BY event_time_microseconds;
 
@@ -177,7 +177,7 @@ SELECT
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600
     AND type = 'QueryFinish'
-    AND current_database = currentDatabase()
+    AND current_database = currentDatabase() AND is_initial_query
     AND log_comment IN ('04628_topk_write_1', '04628_topk_write_2')
 ORDER BY event_time_microseconds;
 

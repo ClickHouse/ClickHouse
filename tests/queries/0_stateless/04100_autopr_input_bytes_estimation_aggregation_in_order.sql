@@ -69,7 +69,7 @@ FROM (
         greatest(compressed_bytes, statistics_input_bytes) / least(compressed_bytes, statistics_input_bytes) AS ratio
     FROM system.query_log
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
-      AND (current_database = currentDatabase()) AND (log_comment LIKE 'agg_in_order_%') AND (type = 'QueryFinish')
+      AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment LIKE 'agg_in_order_%') AND (type = 'QueryFinish')
     ORDER BY event_time_microseconds
 )
 WHERE ratio > 2;
@@ -94,7 +94,7 @@ FROM (
         greatest(expected, statistics_output_bytes) / least(expected, statistics_output_bytes) AS ratio
     FROM system.query_log
     WHERE (event_date >= yesterday()) AND (event_time >= NOW() - INTERVAL '15 MINUTES')
-      AND (current_database = currentDatabase()) AND (log_comment LIKE 'agg_in_order_%') AND (type = 'QueryFinish')
+      AND (current_database = currentDatabase()) AND (is_initial_query) AND (log_comment LIKE 'agg_in_order_%') AND (type = 'QueryFinish')
     ORDER BY event_time_microseconds
 )
 WHERE ratio > 2;

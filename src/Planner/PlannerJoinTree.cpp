@@ -1616,7 +1616,8 @@ bool allowParallelReplicasForJoinTree(const QueryTreeNodePtr & join_tree_node, c
 
         const auto * left_table_function = left_table_expr->as<TableFunctionNode>();
         if (left_table_function)
-            return parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
+            return !left_table_function->getReferencedTableID().empty()
+                && parallelReplicasEnabledForStorage(left_table_function->getStorage(), context, query_settings);
 
         // check if left one is not subquery
         return left_table_expr->getNodeType() != QueryTreeNodeType::QUERY
@@ -2527,22 +2528,25 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                     /// It is just a safety check needed until we have a proper sending plan to replicas.
                     /// If we have a non-trivial storage like View it might create its own Planner inside read(), run findTableForParallelReplicas()
                     /// and find some other table that might be used for reading with parallel replicas. It will lead to errors.
-                    /// The chosen table and union children are TableNodes, so a table function matches
-                    /// neither and equality against them is meaningless when table_node is null.
+                    /// The chosen table is a `TableNode`, or a `TableFunctionNode` that only references a
+                    /// table, so compare against whichever of the two this table expression is.
+                    const ITableExpressionNode * table_expression_node
+                        = table_node ? static_cast<const ITableExpressionNode *>(table_node) : table_function_node;
                     const bool no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode
                         = query_context->canUseParallelReplicasOnFollower()
-                        && (!table_node || table_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table);
+                        && (!table_expression_node
+                            || table_expression_node != planner_context->getGlobalPlannerContext()->parallel_replicas_table);
                     if (no_tables_or_another_table_chosen_for_reading_with_parallel_replicas_mode)
                     {
                         bool disable_parallel_replicas_for_storage = true;
                         ContextPtr updated_context = effective_context;
                         if (const UnionNode * table_union
-                            = table_node ? planner_context->getGlobalPlannerContext()->parallel_replicas_table_union : nullptr)
+                            = table_expression_node ? planner_context->getGlobalPlannerContext()->parallel_replicas_table_union : nullptr)
                         {
                             SelectQueryOptions options;
                             for (const auto & child : table_union->getQueries().getNodes())
                             {
-                                if (table_node == findTableForParallelReplicas(child, options))
+                                if (table_expression_node == findTableForParallelReplicas(child, options))
                                 {
                                     disable_parallel_replicas_for_storage = false;
                                     break;
@@ -2632,8 +2636,14 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                             query_plan = std::move(query_plan_parallel_replicas);
                         }
                     }
+                    /// A table function drives the read only when it is a stable reference to a table: the
+                    /// query shipped to the replicas contains the call, and each replica must resolve it to its
+                    /// own copy of the same table. A table function that builds a storage of its own resolves to
+                    /// something local to this server, so it stays on a single replica even when that storage
+                    /// happens to be a `MergeTree`.
                     else if (
                         ClusterProxy::canUseParallelReplicasOnInitiator(query_context)
+                        && (!table_function_node || !table_function_node->getReferencedTableID().empty())
                         && allowParallelReplicasForJoinTree(parent_join_tree, query_context, settings))
                     {
                         // (1) find read step
@@ -2692,7 +2702,16 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                         // (3) if parallel replicas still enabled - replace reading step
                         if (reading_node && planner_context->getQueryContext()->canUseParallelReplicasOnInitiator())
                         {
-                            if (!settings[Setting::parallel_replicas_plan_based])
+                            /// A stable-reference table function takes the query-text path even when the
+                            /// plan-based mode is on. That mode ships a `ReadFromMergeTree` fragment, which
+                            /// carries the id of the storage the call resolved to here - a hidden inner table
+                            /// named after a UUID this server assigned - so a replica that assigned a
+                            /// different one cannot find it. Carrying the call in the fragment instead needs a
+                            /// query-plan serialization version; sending the query text needs nothing, and the
+                            /// replicas resolve the call themselves and coordinate exactly as they do without
+                            /// the plan-based mode. (Only a stable reference reaches here: the branch
+                            /// condition above admits no other table function.)
+                            if (!settings[Setting::parallel_replicas_plan_based] || table_function_node)
                             {
                                 till_stage = QueryProcessingStage::WithMergeableState;
                                 QueryPlan query_plan_parallel_replicas;
@@ -2714,6 +2733,11 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
                                 /// plan. Deciding whether to use parallel replicas and where to place the
                                 /// local/remote boundary is done later, as an analysis of the whole plan
                                 /// (QueryPlanOptimizations::applyParallelReplicas), which inserts the split step.
+                                ///
+                                /// A read through a stable-reference table function never gets here - it is
+                                /// sent as query text above - because the fragment this builds would name the
+                                /// storage the call resolved to on this server. Teaching the fragment to carry
+                                /// the call instead needs a query-plan serialization version.
                                 QueryPlan query_plan_parallel_replicas;
                                 storage->read(
                                     query_plan_parallel_replicas,

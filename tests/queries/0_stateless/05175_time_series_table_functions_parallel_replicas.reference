@@ -1,0 +1,40 @@
+-- one-argument form
+m1
+m2
+1
+2
+3
+m1	gauge
+m2	counter
+-- every row is returned once
+2
+3
+2
+-- the same with a local plan
+2
+3
+-- the same with serialize_query_plan
+2
+3
+3
+-- the same without the analyzer
+2
+3
+-- the read is announced to the other replicas
+3
+1
+-- plan-based mode
+3
+2
+-- custom key
+3
+2
+-- FINAL
+2
+-- table functions on the right side of a JOIN
+3
+2
+1
+1
+-- a table function that is not a plain table reference
+2

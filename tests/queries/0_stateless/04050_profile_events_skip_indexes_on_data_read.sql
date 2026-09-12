@@ -35,13 +35,13 @@ SELECT COUNT(*) FROM test WHERE v > 900000 SETTINGS log_comment = 'test_data_rea
 SYSTEM FLUSH LOGS query_log;
 
 SELECT ProfileEvents['SelectedMarks'], ProfileEvents['SelectedRanges'] FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_data_read_1';
+WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND log_comment='test_data_read_1';
 
 SELECT ProfileEvents['SelectedMarks'], ProfileEvents['SelectedRanges'] FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_data_read_2';
+WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND log_comment='test_data_read_2';
 
 SELECT ProfileEvents['SelectedMarks'], ProfileEvents['SelectedRanges'] FROM system.query_log
-WHERE current_database = currentDatabase() AND type = 'QueryFinish' AND log_comment='test_data_read_3';
+WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish' AND log_comment='test_data_read_3';
 
 DROP TABLE test;
 
