@@ -12,6 +12,7 @@
 #include <Columns/ColumnCompressed.h>
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnsCommon.h>
+#include <Columns/ColumnsView.h>
 #include <Columns/MaskOperations.h>
 #include <Columns/findEqualRangeEndAssumeSorted.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -34,6 +35,15 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
+namespace
+{
+
+const IColumn * getNullableNestedSourceColumn(const IColumn * source_column, const void *)
+{
+    return assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr().get();
+}
+
+}
 
 ColumnNullable::ColumnNullable(MutableColumnPtr && nested_column_, MutableColumnPtr && null_map_)
     : nested_column(std::move(nested_column_)), null_map(std::move(null_map_))
@@ -793,19 +803,17 @@ size_t ColumnNullable::capacity() const
     return getNullMapData().capacity();
 }
 
-void ColumnNullable::prepareForSquashing(const VectorWithMemoryTracking<ColumnPtr> & source_columns, size_t factor)
+void ColumnNullable::prepareForSquashing(const ColumnsView & source_columns, size_t factor)
 {
     size_t new_size = size();
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-    {
-        const auto & source_nullable_column = assert_cast<const ColumnNullable &>(*source_column);
-        new_size += source_nullable_column.size();
-        nested_source_columns.push_back(source_nullable_column.getNestedColumnPtr());
-    }
+    source_columns.forEach(
+        [&](const IColumn * source_column)
+        {
+            const auto & source_nullable_column = assert_cast<const ColumnNullable &>(*source_column);
+            new_size += source_nullable_column.size();
+        });
 
-    nested_column->prepareForSquashing(nested_source_columns, factor);
+    nested_column->prepareForSquashing(source_columns.project(getNullableNestedSourceColumn), factor);
     getNullMapData().reserve(new_size * factor);
 }
 
@@ -1029,13 +1037,9 @@ ColumnPtr ColumnNullable::getNestedColumnWithDefaultOnNull() const
     return res;
 }
 
-void ColumnNullable::chooseDynamicStructureForMerge(const VectorWithMemoryTracking<ColumnPtr> & source_columns, std::optional<size_t> max_dynamic_subcolumns)
+void ColumnNullable::chooseDynamicStructureForMerge(const ColumnsView & source_columns, std::optional<size_t> max_dynamic_subcolumns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
-    nested_column->chooseDynamicStructureForMerge(nested_source_columns, max_dynamic_subcolumns);
+    nested_column->chooseDynamicStructureForMerge(source_columns.project(getNullableNestedSourceColumn), max_dynamic_subcolumns);
 }
 
 void ColumnNullable::takeExactDynamicStructureFrom(const IColumn & source)
@@ -1049,13 +1053,9 @@ bool ColumnNullable::dynamicStructureEquals(const IColumn & rhs) const
     return nested_column->dynamicStructureEquals(rhs_nested_column);
 }
 
-void ColumnNullable::takeOrCalculateStatisticsFrom(const VectorWithMemoryTracking<ColumnPtr> & source_columns)
+void ColumnNullable::takeOrCalculateStatisticsFrom(const ColumnsView & source_columns)
 {
-    VectorWithMemoryTracking<ColumnPtr> nested_source_columns;
-    nested_source_columns.reserve(source_columns.size());
-    for (const auto & source_column : source_columns)
-        nested_source_columns.push_back(assert_cast<const ColumnNullable &>(*source_column).getNestedColumnPtr());
-    nested_column->takeOrCalculateStatisticsFrom(nested_source_columns);
+    nested_column->takeOrCalculateStatisticsFrom(source_columns.project(getNullableNestedSourceColumn));
 }
 
 void ColumnNullable::fillFromRowRefsWithRowStore(const DataTypePtr & type, size_t source_field_offset, size_t source_field_size, const UInt64 * row_refs_begin, const UInt64 * row_refs_end, const RowDataStore * const * block_row_stores, PaddedPODArray<UInt8> *)
