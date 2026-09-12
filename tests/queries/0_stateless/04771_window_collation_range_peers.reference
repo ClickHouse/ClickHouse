@@ -1,0 +1,10 @@
+count	4	4
+rank	1	1
+dense_rank	1	1
+nullable	4	4
+low_cardinality	4	4
+multiple_keys	4	4
+descending	4	4
+cross_block	4	4
+groups	4	4
+no_collation	2	4
