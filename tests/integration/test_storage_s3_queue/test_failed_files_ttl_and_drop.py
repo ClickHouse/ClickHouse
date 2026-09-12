@@ -7,9 +7,10 @@ import time
 import uuid
 
 import pytest
-from kazoo.exceptions import NodeExistsError
+from kazoo.exceptions import NodeExistsError, NoNodeError
 
 from helpers.cluster import ClickHouseCluster
+from helpers.network import PartitionManager
 from helpers.s3_queue_common import (
     generate_random_files,
     put_s3_file_content,
@@ -2713,3 +2714,130 @@ def test_drop_failed_files_retries_partial_failure_if_lock_lost_before_publish(s
     drop_thread.join()
 
     assert len(zk.get_children(failed_path)) == 0
+
+
+def test_transient_keeper_error_while_waiting_is_retriable(started_cluster):
+    """A replica that loses the `cleanup_lock` race and then hits a transient network-level
+    failure while reading the lock (not a vanished/ZNONODE case - a genuine connection drop)
+    must surface a retriable `KEEPER_EXCEPTION`, not `LOGICAL_ERROR`.
+
+    Unlike `test_drop_failed_files_survives_lock_vanishing_before_it_is_read`, the lock here is
+    never deleted - it stays held throughout. The only thing that fails is the network path to
+    Keeper for the waiting replica's read, simulated with `PartitionManager.drop_instance_zk_connections`
+    (REJECT, not DROP - an immediate refusal rather than a silent packet loss that would wait out a
+    TCP retransmission timeout) so the failure is a real connection-level fault, not an injected or
+    mocked exception. `DDLWorker` treats `KEEPER_EXCEPTION` as retriable and `LOGICAL_ERROR` as
+    terminal, so this is the difference between `... ON CLUSTER` eventually succeeding and failing
+    the client outright.
+    """
+    node1 = started_cluster.instances["instance"]
+    node2 = started_cluster.instances["instance2"]
+
+    table_name = f"test_transient_keeper_err_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    mv_name = f"{table_name}_mv"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_lock_path = f"{keeper_path}/cleanup_lock"
+
+    for node in (node1, node2):
+        create_table(
+            started_cluster,
+            node,
+            table_name,
+            "unordered",
+            files_path,
+            additional_settings={
+                "keeper_path": keeper_path,
+                "s3queue_loading_retries": 0,
+                "failed_files_ttl_sec": 0,
+                "tracked_files_limit": 0,
+            },
+        )
+
+    put_s3_file_content(started_cluster, f"{files_path}/failed_0.csv", b"not,valid,numbers\n")
+
+    for node in (node1, node2):
+        create_mv(node, table_name, dst_table_name)
+
+    def failed_znodes():
+        result = node1.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return int(result) if result else 0
+
+    def wait_for(predicate, timeout_sec=120):
+        deadline = time.monotonic() + timeout_sec
+        while time.monotonic() < deadline:
+            if predicate():
+                return True
+            time.sleep(0.5)
+        return False
+
+    assert wait_for(lambda: failed_znodes() >= 1), f"expected 1 failed znode, got {failed_znodes()}"
+
+    for node in (node1, node2):
+        node.query(f"DROP TABLE {mv_name}")
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    def take_cleanup_lock():
+        try:
+            zk.create(cleanup_lock_path, TEST_DROP_LOCK_VALUE, ephemeral=True)
+            return True
+        except NodeExistsError:
+            return False
+
+    assert wait_for(take_cleanup_lock, timeout_sec=60), "could not acquire cleanup_lock for the test"
+
+    node2.query(f"SYSTEM ENABLE FAILPOINT {PAUSE_BEFORE_CLEANUP_LOCK_READ_FAILPOINT}")
+
+    drop_result = {}
+
+    def run_drop():
+        try:
+            node2.query(f"SYSTEM DROP S3QUEUE FAILED FILES default.{table_name}")
+        except Exception as e:  # noqa: BLE001 - reported through the assertion below
+            drop_result["error"] = e
+
+    drop_thread = threading.Thread(target=run_drop)
+    drop_thread.start()
+    pm = PartitionManager()
+    try:
+        _wait_failpoint_paused(node2, PAUSE_BEFORE_CLEANUP_LOCK_READ_FAILPOINT)
+
+        # The lock stays held throughout - only node2's path to Keeper breaks. REJECT gives an
+        # immediate, genuine connection-level fault rather than an injected/mocked exception.
+        pm.drop_instance_zk_connections(node2, action="REJECT")
+        node2.query(f"SYSTEM DISABLE FAILPOINT {PAUSE_BEFORE_CLEANUP_LOCK_READ_FAILPOINT}")
+
+        # Do not restore connectivity until the drop attempt has actually finished failing -
+        # restoring too early could let an internal reconnect succeed and mask the bug this test targets.
+        drop_thread.join(timeout=300)
+    finally:
+        pm.restore_instance_zk_connections(node2, action="REJECT")
+        if drop_thread.is_alive():
+            drop_thread.join(timeout=60)
+
+    assert "error" in drop_result, (
+        "expected the drop to fail with a retriable KEEPER_EXCEPTION when the waiting replica's "
+        "path to Keeper breaks, but it succeeded"
+    )
+    error_text = str(drop_result["error"])
+    assert "KEEPER_EXCEPTION" in error_text, (
+        f"expected a KEEPER_EXCEPTION (retriable), got a different error: {error_text}"
+    )
+    assert "another operation is holding the cleanup lock" not in error_text, (
+        f"got the old non-retriable LOGICAL_ERROR text instead of KEEPER_EXCEPTION: {error_text}"
+    )
+
+    # The lock was never released by anyone (there was no winner in this test) - clean it up ourselves.
+    try:
+        zk.delete(cleanup_lock_path)
+    except NoNodeError:
+        pass
+
+    for node in (node1, node2):
+        node.query(f"DROP TABLE IF EXISTS {table_name}")
+        node.query(f"DROP TABLE IF EXISTS {dst_table_name}")

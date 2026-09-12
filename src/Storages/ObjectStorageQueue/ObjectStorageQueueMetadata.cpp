@@ -2078,8 +2078,17 @@ ObjectStorageQueueMetadata::WaitOutcome ObjectStorageQueueMetadata::waitForConcu
             return WaitOutcome::LockVanished;
         }
 
-        /// For other errors (connection issues, etc.), treat as a transient error.
+        /// For other errors (connection issues, etc.), treat as a transient error. Unlike the
+        /// empty-command-id case below - where the lock genuinely belongs to something that is not
+        /// a drop command and retrying will not help - this is a transient Keeper read failure on
+        /// this replica: the winner may well complete (or have already completed) the cleanup
+        /// successfully regardless. Report it as KEEPER_EXCEPTION rather than LOGICAL_ERROR so that
+        /// DDLWorker retries this on the waiting replica for `... ON CLUSTER` instead of treating a
+        /// transient local read glitch as a terminal, non-retriable failure of the whole command.
         LOG_WARNING(log, "Failed to read cleanup lock: {}. Will ask user to retry.", e.displayText());
+        throw Exception(ErrorCodes::KEEPER_EXCEPTION,
+            "Failed file cleanup cannot proceed: transient error reading the cleanup lock ({}). "
+            "Please retry.", e.displayText());
     }
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
