@@ -20,8 +20,10 @@
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/MergeTreeTransaction.h>
 #include <Interpreters/PreparedSets.h>
+#include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Interpreters/parseIdentifiersOrStringLiteralsWithSettings.h>
+#include <Parsers/IAST.h>
 #include <Processors/Merges/AggregatingSortedTransform.h>
 #include <Processors/Merges/CoalescingSortedTransform.h>
 #include <Processors/Merges/CollapsingSortedTransform.h>
@@ -172,6 +174,123 @@ namespace ErrorCodes
     extern const int SUPPORT_IS_DISABLED;
     extern const int TIMEOUT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+}
+
+namespace
+{
+
+/// Resolve a source-column identifier used inside a `DEFAULT` expression to the name of the
+/// storage column it reads through. Physical columns and their subcolumns resolve directly; a
+/// subcolumn read through an `ALIAS` column (whose subcolumns are not registered) is resolved by
+/// finding the longest existing column name that is a dotted prefix of the identifier. Iterating
+/// over the actual column names (rather than peeling one dotted segment) correctly handles both
+/// nested subcolumns and legal quoted column names that themselves contain dots (e.g.
+/// `` `x.y` ALIAS m `` referenced as `` `x.y`.keys ``). Returns an empty string if nothing matches.
+String resolveDefaultDependencyToStorage(const String & required_name, const ColumnsDescription & columns_desc)
+{
+    /// `withSubcolumns` resolves subcolumns of *physical* columns (e.g. `m.keys` -> `m`).
+    if (auto resolved = columns_desc.tryGetColumn(
+            GetColumnsOptions(GetColumnsOptions::All).withSubcolumns(), required_name))
+        return resolved->getNameInStorage();
+
+    /// Subcolumns of `ALIAS` columns are not registered (`ColumnsDescription::addSubcolumns` skips
+    /// `ColumnDefaultKind::Alias`), so an identifier like `m_alias.keys` with `m_alias ALIAS m` does
+    /// not resolve above. Find the longest existing column name that is a dotted prefix of the
+    /// identifier so the alias expansion below still reaches the physical dependency, even for alias
+    /// names that contain dots themselves.
+    String storage_name;
+    for (const auto & column : columns_desc.getAll())
+    {
+        if (required_name.size() > column.name.size()
+            && required_name.starts_with(column.name)
+            && required_name[column.name.size()] == '.'
+            && column.name.size() > storage_name.size())
+            storage_name = column.name;
+    }
+    return storage_name;
+}
+
+/// Collect the physical storage columns that a column's `DEFAULT` expression semantically
+/// depends on. It uses the same scope-aware dependency analysis as default evaluation
+/// (see `addDefaultRequiredExpressionsRecursively` / `evaluateMissingDefaults`):
+/// `RequiredSourceColumnsVisitor` correctly ignores lambda formal parameters, so
+/// `arrayMap(x -> f(x), col)` depends on `col`, not on a column named `x`. Each source column is
+/// resolved to its storage column name (e.g. the subcolumn `m.keys` resolves to the `Map` column
+/// `m`), including subcolumns read through an alias (e.g. `m_alias.keys` with `m_alias ALIAS m`
+/// resolves to `m`).
+///
+/// The dependency closure is transitive through intermediate columns that will be re-evaluated
+/// during the merge, so that a default depending on an expired column *through* another column is
+/// still detected:
+/// - `ALIAS` columns are never physically stored, so they are always expanded into the physical
+///   columns their expression reads (and are not themselves reported).
+/// - An ordinary `DEFAULT`/`MATERIALIZED` column that is missing from at least one source part will
+///   be recomputed from its expression for that part's rows during the merge, so its dependencies
+///   are expanded too (and the column itself is still reported). A chain such as
+///   `tmp DEFAULT m.keys`, `n.b DEFAULT tmp` with `m` expired therefore reports `m`, so `n.b` is
+///   expired as well. Missing defaults are evaluated per part (see
+///   `IMergeTreeReader::evaluateMissingDefaults`), so the recursion must stop only for columns
+///   stored in *every* source part, not for columns stored in at least one of them: an intermediate
+///   materialized in one part (e.g. by a partially applied mutation) and missing in another is still
+///   recomputed for the rows of the latter.
+/// Columns stored in all source parts are read as stored (never recomputed), so their own
+/// dependencies are not followed. Over-approximating is safe: an extra dependency only moves a
+/// column from being materialized at merge time to being recomputed at read time.
+NameSet collectDefaultStorageDependencies(
+    const ASTPtr & default_expression,
+    const ColumnsDescription & columns_desc,
+    const NameSet & columns_present_in_all_parts)
+{
+    NameSet result;
+    NameSet visited_columns;
+
+    std::vector<ASTPtr> to_visit;
+    to_visit.push_back(default_expression);
+
+    while (!to_visit.empty())
+    {
+        /// Clone defensively so the shared column-description AST is never touched, mirroring
+        /// how `evaluateMissingDefaults` analyses a cloned copy of the default expression.
+        auto expression = to_visit.back()->clone();
+        to_visit.pop_back();
+
+        RequiredSourceColumnsVisitor::Data columns_context;
+        RequiredSourceColumnsVisitor(columns_context).visit(expression);
+
+        for (const auto & required_name : columns_context.requiredColumns())
+        {
+            String storage_name = resolveDefaultDependencyToStorage(required_name, columns_desc);
+            if (storage_name.empty())
+                continue;
+
+            auto dependency_default = columns_desc.getDefault(storage_name);
+
+            /// An `ALIAS` column is not physically stored, so it never appears in `expired_columns`.
+            /// Expand it into the physical columns its expression reads instead. `visited_columns`
+            /// guards against cycles in (mutually) recursive definitions.
+            if (dependency_default && dependency_default->kind == ColumnDefaultKind::Alias && dependency_default->expression)
+            {
+                if (visited_columns.emplace(storage_name).second)
+                    to_visit.push_back(dependency_default->expression);
+                continue;
+            }
+
+            /// A physical column that is not stored in every source part is recomputed from its own
+            /// `DEFAULT`/`MATERIALIZED` expression during the merge (for the rows of the parts where
+            /// it is missing), so follow its dependencies too: the subcolumn we started from
+            /// transitively reads whatever this expression reads.
+            if (dependency_default && dependency_default->expression
+                && !columns_present_in_all_parts.contains(storage_name)
+                && visited_columns.emplace(storage_name).second)
+                to_visit.push_back(dependency_default->expression);
+
+            result.emplace(std::move(storage_name));
+        }
+    }
+
+    return result;
+}
+
 }
 
 /// Transform that builds statistics for columns and doesn't change the chunk.
@@ -777,11 +896,28 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
         NameSet columns_present_in_parts;
         columns_present_in_parts.reserve(global_ctx->storage_columns.size());
 
+        /// Number of source parts each column is stored in, to tell "present in at least one source
+        /// part" apart from "present in every source part".
+        std::unordered_map<String, size_t> column_part_counts;
+
         /// Collect all column names that actually exist in the source parts
         for (const auto & part : global_ctx->future_part->parts)
         {
             for (const auto & col : part->getColumns())
+            {
                 columns_present_in_parts.emplace(col.name);
+                ++column_part_counts[col.name];
+            }
+        }
+
+        /// A column stored in every source part is read as stored for all rows of the merged part.
+        /// A column stored only in some of them is recomputed from its default for the rows of the
+        /// parts where it is missing, because missing defaults are evaluated per part.
+        NameSet columns_present_in_all_parts;
+        for (const auto & [column_name, part_count] : column_part_counts)
+        {
+            if (part_count == global_ctx->future_part->parts.size())
+                columns_present_in_all_parts.emplace(column_name);
         }
 
         /// The only live values of a column may sit in the patch parts selected for this merge: a
@@ -836,6 +972,59 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
                 && !columns_desc.getDefault(storage_column.name))
                 global_ctx->new_data_part->expired_columns.emplace(storage_column.name);
         }
+
+        /// Partial fix for (1) above: for Nested subcolumns whose DEFAULT transitively depends on
+        /// an already-expired column, also expire them — vertical merge cannot materialize them
+        /// correctly, and the wrong array dimensions corrupt shared Nested offsets.
+        /// See https://github.com/ClickHouse/ClickHouse/issues/86123
+        {
+            auto & expired_columns = global_ctx->new_data_part->expired_columns;
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                for (const auto & storage_column : global_ctx->storage_columns)
+                {
+                    if (expired_columns.contains(storage_column.name))
+                        continue;
+
+                    /// A column stored in a base part, patch part, or pending rename target cannot
+                    /// be expired: that would drop its live values. Such a column is materialized
+                    /// during the merge, and for the parts where it is missing the values recomputed
+                    /// from its DEFAULT are reconciled with the shared Nested offsets those parts
+                    /// store (see `reconcileEvaluatedDefaultWithSharedOffsets`), so the mixed case
+                    /// does not corrupt the shared offsets either.
+                    if (columns_present_in_parts.contains(storage_column.name)
+                        || columns_present_in_patch_parts.contains(storage_column.name)
+                        || renamed_column_targets.contains(storage_column.name))
+                        continue;
+
+                    auto split = Nested::splitName(storage_column.name);
+                    if (split.second.empty())
+                        continue;
+
+                    auto col_default = columns_desc.getDefault(storage_column.name);
+                    if (!col_default || !col_default->expression)
+                        continue;
+
+                    /// Determine the physical storage columns the DEFAULT expression actually reads.
+                    /// This uses scope-aware dependency analysis (lambda parameters excluded) and
+                    /// expands `ALIAS` columns, so both false positives (a lambda parameter that
+                    /// happens to share a name with an expired column) and false negatives (a
+                    /// dependency reached through an alias) are avoided.
+                    for (const auto & dependency : collectDefaultStorageDependencies(col_default->expression, columns_desc, columns_present_in_all_parts))
+                    {
+                        if (expired_columns.contains(dependency))
+                        {
+                            expired_columns.emplace(storage_column.name);
+                            global_ctx->columns_expired_by_unmaterializable_default.emplace(storage_column.name);
+                            changed = true;
+                            break;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     /// Determine whether projections and minmax indexes need to be updated during merge,
@@ -869,20 +1058,117 @@ bool MergeTask::ExecuteAndFinalizeHorizontalPart::prepare() const
     const auto & expired_columns = global_ctx->new_data_part->expired_columns;
     if (!expired_columns.empty())
     {
-        global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(expired_columns);
+        /// Columns read out of the merged block by the consumers rebuilt during this merge:
+        /// projections and skip indexes. `merge_required_columns` does not cover them - it is
+        /// snapshotted before their inputs are added to the merged column set.
+        NameSet columns_required_by_rebuilt_consumers;
+        {
+            const auto all_storage_columns = global_ctx->storage_columns.getNameSet();
+            const auto all_virtual_columns = global_ctx->virtual_columns.getNameSet();
+
+            auto add_required_columns = [&](const Names & names)
+            {
+                for (const auto & name : names)
+                    columns_required_by_rebuilt_consumers.emplace(getColumnNameInStorage(name, all_storage_columns, all_virtual_columns));
+            };
+
+            for (const auto * projection : global_ctx->projections_to_rebuild)
+                add_required_columns(projection->getRequiredColumns());
+
+            for (const auto & index : global_ctx->merging_skip_indexes)
+                add_required_columns(index.expression->getRequiredColumns());
+
+            for (const auto & index : global_ctx->text_indexes_to_merge)
+                add_required_columns(index.expression->getRequiredColumns());
+
+            /// Single-column skip indexes are built in the vertical stage from the gathered column.
+            for (const auto & [column_name, _] : global_ctx->skip_indexes_by_column)
+                columns_required_by_rebuilt_consumers.emplace(column_name);
+        }
+
+        /// A column expired because its `DEFAULT` cannot be materialized here is not dropped from
+        /// the merge when one of those consumers needs it: nothing else would produce it, and the
+        /// TTL step must not (see below). Reading it instead goes through
+        /// `reconcileEvaluatedDefaultWithSharedOffsets`, which makes the values consistent with the
+        /// offsets the source parts store, so the rebuild sees a well-formed value. The column stays
+        /// in `new_data_part->expired_columns`, so `removeEmptyColumnsFromPart` still drops its
+        /// files from the written `Wide` part and the value is recomputed on read.
+        NameSet columns_kept_for_rebuilt_consumers;
+        NameSet columns_to_drop_from_merge;
+        for (const auto & name : expired_columns)
+        {
+            if (global_ctx->columns_expired_by_unmaterializable_default.contains(name)
+                && columns_required_by_rebuilt_consumers.contains(name))
+                columns_kept_for_rebuilt_consumers.emplace(name);
+            else
+                columns_to_drop_from_merge.emplace(name);
+        }
+
+        /// Such a column has to be produced in the horizontal stage. The vertical stage writes every
+        /// gathered column through its own output stream, which drops the files of an expired column
+        /// and takes it out of the part's column list right away, and the final `finalizePart` would
+        /// then fail to enumerate its streams. Move it, together with the per-column skip indexes
+        /// built from it, the same way `extractMergingAndGatheringColumns` does for a column that
+        /// another merged consumer needs.
+        if (!columns_kept_for_rebuilt_consumers.empty())
+        {
+            const auto gathering_column_names = global_ctx->gathering_columns.getNameSet();
+            NameSet columns_to_move;
+            for (const auto & name : columns_kept_for_rebuilt_consumers)
+            {
+                if (gathering_column_names.contains(name))
+                    columns_to_move.emplace(name);
+            }
+
+            if (!columns_to_move.empty())
+            {
+                for (const auto & name : columns_to_move)
+                {
+                    auto it = global_ctx->skip_indexes_by_column.find(name);
+                    if (it == global_ctx->skip_indexes_by_column.end())
+                        continue;
+
+                    for (auto & index : it->second)
+                        global_ctx->merging_skip_indexes.push_back(std::move(index));
+
+                    global_ctx->skip_indexes_by_column.erase(it);
+                }
+
+                global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(columns_to_move);
+
+                /// Keep the order of `storage_columns`, which both lists are derived from.
+                const auto merging_column_names = global_ctx->merging_columns.getNameSet();
+                NamesAndTypesList merging_columns;
+                for (const auto & column : global_ctx->storage_columns)
+                {
+                    if (merging_column_names.contains(column.name) || columns_to_move.contains(column.name))
+                        merging_columns.push_back(column);
+                }
+                global_ctx->merging_columns = std::move(merging_columns);
+            }
+        }
+
+        global_ctx->gathering_columns = global_ctx->gathering_columns.eraseNames(columns_to_drop_from_merge);
 
         auto filter_columns = [&](const NamesAndTypesList & input, NamesAndTypesList & expired_out)
         {
             NamesAndTypesList result;
             for (const auto & column : input)
             {
-                bool is_expired = expired_columns.contains(column.name);
+                bool is_dropped = columns_to_drop_from_merge.contains(column.name);
                 bool is_required_for_merge = global_ctx->merge_required_columns.contains(column.name);
 
-                if (is_expired)
+                /// The TTL step fills expired columns with the value of their `DEFAULT`, so that
+                /// skip indexes and projections rebuilt during the merge see the value the table
+                /// logically reads. A column expired because its `DEFAULT` cannot be materialized
+                /// here must be left out of that: evaluating it is what writes array sizes that
+                /// disagree with the shared `Nested` offsets, and the expression is not even
+                /// resolvable there when it reads an `ALIAS` column. Such a column is either kept on
+                /// the merge path above, or recomputed on read, where the full context is available.
+                if (is_dropped && !global_ctx->columns_expired_by_unmaterializable_default.contains(column.name))
                     expired_out.push_back(column);
 
-                if (!is_expired || is_required_for_merge)
+                if (!is_dropped || is_required_for_merge)
                     result.push_back(column);
             }
 

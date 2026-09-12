@@ -63,7 +63,30 @@ public:
         Columns & res_columns, bool & should_evaluate_missing_defaults, size_t num_rows,
         const NameSet & previous_step_columns = {}) const;
     /// Evaluate defaulted columns if necessary.
-    void evaluateMissingDefaults(Block additional_columns, Columns & res_columns) const;
+    /// @columns_evaluated_from_defaults, when given, is the running set of columns that earlier
+    /// reader-chain steps produced from a `DEFAULT` expression rather than read from the part. Such
+    /// a column is not a valid source of the current shared `Nested` offsets, so it is excluded
+    /// here; the columns this step evaluates from defaults are added to it in turn.
+    void evaluateMissingDefaults(
+        Block additional_columns, Columns & res_columns, NameSet * columns_evaluated_from_defaults = nullptr) const;
+
+    /// Apply a reader-chain filter to the cached shared Nested offsets before the matching
+    /// missing defaults are evaluated.
+    void filterSharedOffsetsOfMissingDefaults(const ColumnPtr & filter, size_t result_size) const;
+
+    /// Returns the shared `Nested` offsets to reconcile a missing default-bearing column against.
+    /// Prefers the offsets of a sibling subcolumn already materialized in @block over the ones
+    /// cached from the part, because patches and on-fly mutations may have changed them in between.
+    /// A sibling read by the current step (@current_step_columns) is preferred over one carried over
+    /// from an earlier step, since only the current step's columns are guaranteed to reflect the
+    /// patches and on-fly mutations applied by the steps in between.
+    Columns refreshSharedOffsetsFromSibling(
+        const String & column_name,
+        const Columns & cached_offsets,
+        const Block & block,
+        const NameSet & materialized_columns,
+        const NameSet & current_step_columns,
+        size_t num_rows) const;
 
     /// If part metadata is not equal to storage metadata,
     /// then try to perform conversions of columns.
@@ -177,6 +200,13 @@ protected:
     std::optional<ColumnForOffsets> findColumnForOffsets(const NameAndTypePair & column) const;
 
     NameSet partially_read_columns;
+
+    /// Shared Nested offsets read from the part for requested columns that are missing from it but
+    /// have a default expression. Filled by fillMissingColumns and consumed by the paired
+    /// evaluateMissingDefaults call (both run on the same rows within one read step) to keep the
+    /// evaluated defaults consistent with the array sizes the part already stores. Mutable because
+    /// both methods are const.
+    mutable std::unordered_map<String, Columns> shared_offsets_of_missing_defaults;
 
     /// Alter conversions, which must be applied on fly if required
     AlterConversionsPtr alter_conversions;
