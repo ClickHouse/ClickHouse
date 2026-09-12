@@ -6,6 +6,7 @@ t1	MergeTree
 v1	View
 t2	TableProxy
 0
+al	Alias
 mv	MaterializedView
 src	TableProxy
 dict
