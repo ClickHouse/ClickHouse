@@ -70,6 +70,7 @@
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <QueryPipeline/narrowPipe.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/buildQueryTreeForShard.h>
 #include <Storages/ColumnDefault.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ReadInOrderOptimizer.h>
@@ -1390,7 +1391,7 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
             {
                 /// Source tables could have different but convertible types, like numeric types of different width.
                 /// We must return streams with structure equals to structure of Merge table.
-                convertAndFilterSourceStream(*common_header, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
+                convertAndFilterSourceStream(*common_header, query_info, modified_query_info, nested_storage_snapshot, aliases, row_policy_data_opt, context, child, is_smallest_column_requested);
 
                 for (const auto & filter_info : pushed_down_filters)
                 {
@@ -1509,6 +1510,13 @@ QueryTreeNodePtr replaceTableExpressionAndRemoveJoin(
         query_node->getLimit() = {};
     if (query_node->hasOffset())
         query_node->getOffset() = {};
+    /// The `LIMIT AFTER`/`UNTIL` boundaries select rows relative to that ORDER BY as well, and may refer
+    /// to columns of the removed joined table.
+    query_node->setIsLimitAfterAll(false);
+    if (query_node->hasLimitAfter())
+        query_node->getLimitAfter() = {};
+    if (query_node->hasLimitUntil())
+        query_node->getLimitUntil() = {};
 
     auto & projection = modified_query_node->getProjection().getNodes();
     projection.clear();
@@ -2157,6 +2165,7 @@ void StorageMerge::alter(
 
 void ReadFromMerge::convertAndFilterSourceStream(
     const Block & header,
+    const SelectQueryInfo & outer_query_info,
     SelectQueryInfo & modified_query_info,
     const StorageSnapshotPtr & snapshot,
     const Aliases & aliases,
@@ -2221,6 +2230,29 @@ void ReadFromMerge::convertAndFilterSourceStream(
       * execution names in the output header may be different.
       * The same happens with StorageDistributed, even in the case of FetchColumns.
       */
+
+    /** A child that computes the whole query can return fewer columns than expected: its `ActionsDAG`
+      * deduplicates projection items that expand to the same expression, and `Distributed` inlines the
+      * `ALIAS` columns of the child table before sending the query, so `b UInt64 ALIAS a` selected next
+      * to `a` becomes one column. The names of the collapsed columns are gone from the child's header,
+      * and the reconciliation below matches by name or by position, neither of which can rebuild them -
+      * `addMissingDefaults` would then fill them with the default value of the type.
+      * Fan the collapsed columns back out first, the same way a direct read of such a child does
+      * (see `buildShardCollapseFanOut`, used by the planner for a `Distributed` table read).
+      */
+    if (child.plan.getCurrentHeader()->columns() < header.columns())
+    {
+        /// The translation between an `ALIAS` column's own name and its inlined expression is read from
+        /// the outer query tree and its planner context: those are what the expected `header` is named
+        /// after, and the child's derived planner context holds no column identifiers of its own.
+        if (auto fan_out_actions_dag = buildShardCollapseFanOut(
+                outer_query_info.query_tree, outer_query_info.planner_context, *child.plan.getCurrentHeader(), header))
+        {
+            auto fan_out_step = std::make_unique<ExpressionStep>(child.plan.getCurrentHeader(), std::move(*fan_out_actions_dag));
+            fan_out_step->setStepDescription("Reconstruct deduplicated duplicate-ALIAS columns");
+            child.plan.addStep(std::move(fan_out_step));
+        }
+    }
 
     /** Convert types of columns according to the resulting Merge table.
       * And convert column names to the expected ones.

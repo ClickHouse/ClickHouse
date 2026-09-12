@@ -100,6 +100,7 @@
 #include <Compression/CompressionFactory.h>
 
 #include <Interpreters/InterpreterDropQuery.h>
+#include <Interpreters/MutationsInterpreter.h>
 #include <Interpreters/QueryLog.h>
 #include <Interpreters/QueryMetadataCache.h>
 #include <Interpreters/FunctionNameNormalizer.h>
@@ -888,6 +889,19 @@ void throwIfTableFunctionCannotBeUsedToCreateTable(const ASTPtr & table_function
 InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTablePropertiesAndNormalizeCreateQuery(
     ASTCreateQuery & create, LoadingStrictnessLevel mode)
 {
+    /// CLONE AS only makes sense with a source table: the partition-attach step performed after table
+    /// creation needs real partitions to copy. Reject CLONE AS SELECT / CLONE AS table_function for a
+    /// fresh CREATE and for a user-supplied full ATTACH definition (an ATTACH that carries an explicit
+    /// schema, so `attach_short_syntax` is false and it goes through the create-like path). Short ATTACH
+    /// (`ATTACH TABLE t;`) and SECONDARY_CREATE (`DatabaseReplicated` internal queries, `RESTORE`) stay
+    /// permissive so previously-validated metadata that persisted these forms still loads. Server startup
+    /// does not reach this function (tables are loaded via `createTableFromAST`), so it is unaffected.
+    const bool is_fresh_create = mode <= LoadingStrictnessLevel::CREATE;
+    const bool is_full_user_attach = mode == LoadingStrictnessLevel::ATTACH && !create.attach_short_syntax;
+    if ((is_fresh_create || is_full_user_attach) && create.is_clone_as && create.as_table.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "CLONE AS requires a source table name, not a SELECT query or table function");
+
     /// Set the table engine if it was not specified explicitly.
     setEngine(create);
 
@@ -1621,10 +1635,16 @@ void InterpreterCreateQuery::setEngine(ASTCreateQuery & create) const
                 return;
             }
         }
+        else if (as_create.is_time_series_table)
+        {
+            /// Only the engine is inherited here: the settings and the inner tables are copied by normalizeTimeSeriesDefinition.
+            storage_def = make_intrusive<ASTStorage>();
+            storage_def->set(storage_def->engine, as_create.storage->engine->clone());
+            create.is_time_series_table = true;
+        }
         else if (as_create.storage)
         {
             storage_def = boost::static_pointer_cast<ASTStorage>(as_create.storage->ptr());
-            create.is_time_series_table = as_create.is_time_series_table;
         }
         else
         {
@@ -1935,6 +1955,11 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
         /// Otherwise server will be unable to start for some old-format of IPv6/IPv4 types
         getContext()->setSetting("cast_ipv4_ipv6_default_on_conversion_error", 1);
     }
+
+    /// Both a definition supplied to this interpreter directly (RESTORE re-parses one from a backup)
+    /// and one the branch above re-parsed from stored metadata arrive un-normalized: parsing fills
+    /// only `list_of_modes`, and the analyzer rejects `union_mode == UNION_DEFAULT`.
+    normalizeSetOperations(query_ptr, getContext());
 
     /// TODO throw exception if !create.attach_short_syntax && !create.attach_from_path && !internal
     if (!create.attach_short_syntax && create.attach_as_replicated.has_value())
@@ -3578,8 +3603,7 @@ void InterpreterCreateQuery::prepareOnClusterQuery(ASTCreateQuery & create, Cont
 
     /// With an old DDL entry format the query is shipped un-normalized, so hosts running different releases
     /// of ClickHouse would pin different latest versions. Pin the initiator's one here, like the UUIDs above.
-    /// A query with an AS clause is left alone: the hosts take the settings, including the version, from the other table.
-    if (create.is_time_series_table && create.as_table.empty() && !hasExplicitTimeSeriesSettingVersion(create))
+    if (create.is_time_series_table && !hasExplicitTimeSeriesSettingVersion(create))
         setTimeSeriesSettingVersion(create, TimeSeriesVersion::LATEST);
 
     /// For cross-replication cluster we cannot use UUID in replica path.

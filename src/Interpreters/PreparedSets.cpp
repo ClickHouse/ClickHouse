@@ -134,8 +134,10 @@ SetPtr FutureSet::getOrderedSetIfAlreadyBuilt(const ContextPtr & context)
 }
 
 
-FutureSetFromStorage::FutureSetFromStorage(Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_)
-    : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_)) {}
+FutureSetFromStorage::FutureSetFromStorage(
+    Hash hash_, ASTPtr ast_, SetPtr set_, std::optional<StorageID> storage_id_, bool is_mutable_during_query_)
+    : hash(hash_), ast(std::move(ast_)), storage_id(std::move(storage_id_)), set(std::move(set_))
+    , is_mutable_during_query(is_mutable_during_query_) {}
 SetPtr FutureSetFromStorage::get() const { return set; }
 FutureSet::Hash FutureSetFromStorage::getHash() const { return hash; }
 DataTypes FutureSetFromStorage::getTypes() const { return set->getElementsTypes(); }
@@ -801,7 +803,8 @@ FutureSetFromTuplePtr PreparedSets::addFromTuple(const Hash & key, ASTPtr ast, C
 
 FutureSetFromStoragePtr PreparedSets::addFromStorage(const Hash & key, ASTPtr ast, SetPtr set_, StorageID storage_id)
 {
-    auto from_storage = std::make_shared<FutureSetFromStorage>(key, std::move(ast), std::move(set_), std::move(storage_id));
+    auto from_storage = std::make_shared<FutureSetFromStorage>(
+        key, std::move(ast), std::move(set_), std::move(storage_id), /*is_mutable_during_query_=*/ true);
     auto [it, inserted] = sets_from_storage.emplace(key, from_storage);
 
     if (!inserted)
