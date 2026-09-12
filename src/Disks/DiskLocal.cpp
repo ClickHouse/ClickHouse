@@ -80,6 +80,41 @@ UInt64 getTotalSpaceByName(const String & name, const String & disk_path, UInt64
     return total_size - keep_free_space_bytes;
 }
 
+/// Create a directory tree and make every level it creates durable. `mkdir` only writes the new
+/// entry into the parent directory, so it is the parent that has to be fsync'd; synchronizing the
+/// new directory itself would persist its contents, not its own existence.
+void createDirectoriesDurably(const String & path, LoggerPtr log)
+{
+    /// A disk root is not required to be absolute, so anchor it; only trailing separators are
+    /// stripped. Do NOT normalize: `lexically_normal` resolves `..` lexically and would then name
+    /// a different directory than `mkdir` touched whenever a symlink precedes `..`.
+    auto anchored = fs::absolute(path).string();
+    while (anchored.size() > 1 && anchored.back() == '/')
+        anchored.pop_back();
+
+    /// Must be collected before creating: afterwards nothing is missing any more.
+    std::vector<fs::path> created_levels;
+    for (fs::path p = anchored; !p.empty() && p != p.root_path() && !fs::exists(p); p = p.parent_path())
+        created_levels.push_back(p);
+
+    fs::create_directories(path);
+
+    /// Each created level's owning parent, independently: one level's failure must not stop the
+    /// others. `open(parent, O_DIRECTORY)` needs read permission while creating a subdirectory does
+    /// not, so a hardened (e.g. 0311) ancestor is logged and skipped instead of failing the disk.
+    for (const auto & level : created_levels)
+    {
+        try
+        {
+            LocalDirectorySyncGuard sync_guard(level.parent_path().string());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("Cannot fsync directory {} after creating {}", level.parent_path().string(), level.string()));
+        }
+    }
+}
+
 }
 
 std::mutex DiskLocal::reservation_mutex;
@@ -749,7 +784,7 @@ void DiskLocal::checkAccessImpl(const String & path)
 
 void DiskLocal::setup()
 {
-    fs::create_directories(disk_path);
+    createDirectoriesDurably(disk_path, logger);
 }
 
 void DiskLocal::startupImpl()
