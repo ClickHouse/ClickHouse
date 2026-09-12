@@ -190,8 +190,12 @@ namespace
     }
 
     /// Reads the name of a wrapped disk & the path on the wrapped disk and then finds that disk in a disk map.
-    void getDiskAndPathFromConfig(const Poco::Util::AbstractConfiguration & config, const String & config_prefix, const DisksMap & map,
-                                  DiskPtr & out_disk, String & out_path)
+    void getDiskAndPathFromConfig(
+        const Poco::Util::AbstractConfiguration & config,
+        const String & config_prefix,
+        const DisksMap & map,
+        DiskPtr & out_disk,
+        String & out_path)
     {
         String disk_name = config.getString(config_prefix + ".disk", "");
         if (disk_name.empty())
@@ -208,6 +212,38 @@ namespace
         out_path = config.getString(config_prefix + ".path", "");
         if (!out_path.empty() && (out_path.back() != '/'))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Disk path must ends with '/', but '{}' doesn't.", quoteString(out_path));
+
+        /// The path must be relative to the wrapped disk's root. An absolute path would escape the delegate:
+        /// `DiskLocal` joins paths with `fs::path(delegate_root) / out_path`, and `fs::path::operator/` discards
+        /// the left-hand side when the right-hand side is absolute, so the files would land outside the delegate.
+        /// It also makes storage namespace identity unreliable, because disks over different delegates would appear
+        /// distinct while operating on the same underlying files. Rejecting absolute paths keeps the delegate's root
+        /// as a prefix of the effective path.
+        if (!out_path.empty() && (out_path.front() == '/'))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Disk path must be relative to the wrapped disk, but '{}' is absolute.",
+                quoteString(out_path));
+
+        /// Normalize the effective path before checking that it stays under the delegate's root. For local disks,
+        /// canonicalize the paths to resolve existing symlink components too. `weakly_canonical` also works when
+        /// the encrypted disk's trailing directories do not exist yet.
+        fs::path delegate_root = fs::path(out_disk->getPath()).lexically_normal();
+        fs::path effective_path = fs::path(out_disk->getPath() + out_path).lexically_normal();
+        if (out_disk->getDataSourceDescription().type == DataSourceType::Local)
+        {
+            delegate_root = fs::weakly_canonical(delegate_root);
+            effective_path = fs::weakly_canonical(effective_path);
+        }
+
+        if (const auto relative_to_root = effective_path.lexically_relative(delegate_root);
+            relative_to_root.empty() || *relative_to_root.begin() == "..")
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Disk path '{}' must stay within the wrapped disk's root '{}'.",
+                quoteString(out_path),
+                quoteString(out_disk->getPath()));
+
     }
 
     /// Parses the settings of an encrypted disk from the configuration.
