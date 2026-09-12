@@ -43,20 +43,19 @@ FROM (
 WHERE explain ILIKE '%InOrder%';
 
 -- Dropping the prewhere reorders the columns the read must return, and a projection read is fed from
--- an analysis made before that: an order carried only on the plan side is repaired by a converting
--- transform inserted between the read step and its source, so the source must follow the step
--- directly (expected 1). `read_in_order_use_virtual_row = 0` because a virtual-row producer also sits
--- at that position, and only the repair transform is under test here.
+-- an analysis made before that, so the source itself has to report the new order with the sort column
+-- first (expected 1); an order carried only on the plan side is repaired by a transform above the
+-- source and leaves the source's own header at the analysis order.
 WITH p AS (
     SELECT rowNumberInAllBlocks() AS n, explain
     FROM (
-        EXPLAIN PIPELINE
+        EXPLAIN PIPELINE header = 1
         SELECT id, cityHash64(payload) FROM t_topk_proj_rio ORDER BY score, id LIMIT 10
-        SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100, read_in_order_use_virtual_row = 0
+        SETTINGS optimize_read_in_order = 1, optimize_use_projections = 1, use_top_k_dynamic_filtering = 1, query_plan_max_limit_for_top_k_optimization = 100
     )
 )
-SELECT (SELECT min(n) FROM p WHERE explain ILIKE '%MergeTreeSelect%')
-     - (SELECT max(n) FROM p WHERE explain ILIKE '%(ReadFromMergeTree)%') AS steps_to_projection_source;
+SELECT (SELECT explain FROM p WHERE n = (SELECT min(n) FROM p WHERE explain ILIKE '%MergeTreeSelect%') + 1)
+       ILIKE '%Header: score %' AS source_returns_sort_column_first;
 
 -- Sanity: with no projection able to serve the order (ORDER BY score without a matching
 -- projection covering all read columns), dynamic filtering must STILL be applied so the
