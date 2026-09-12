@@ -1294,7 +1294,8 @@ void addDistinctStep(QueryPlan & query_plan,
     const Names & column_names,
     const QueryNode & query_node,
     bool before_order,
-    bool pre_distinct)
+    bool pre_distinct,
+    bool is_subquery)
 {
     const Settings & settings = planner_context->getQueryContext()->getSettingsRef();
 
@@ -1332,12 +1333,21 @@ void addDistinctStep(QueryPlan & query_plan,
 
     SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
+    /// The final DISTINCT may be followed by a limit, offset, or LIMIT BY that selects rows according
+    /// to its input order. `limit_hint` covers the usual positive integer LIMIT case, but negative
+    /// and fractional limits and offsets are applied only after the full result is read. The same
+    /// operators can be applied by an outer query, where they are not visible in `query_node`. Do
+    /// not let parallel DISTINCT reorder the input of either case.
+    const bool has_order_sensitive_post_distinct_limit
+        = !pre_distinct && (query_node.hasLimit() || query_node.hasOffset() || query_node.hasLimitBy() || is_subquery);
+
     auto distinct_step = std::make_unique<DistinctStep>(
         query_plan.getCurrentHeader(),
         limits,
         limit_hint_for_distinct,
         column_names,
-        pre_distinct);
+        pre_distinct,
+        has_order_sensitive_post_distinct_limit);
 
     if (pre_distinct)
         distinct_step->setStepDescription("Preliminary DISTINCT");
@@ -1788,7 +1798,8 @@ void addPreliminarySortOrDistinctOrLimitStepsIfNeeded(
             expressions_analysis_result.getProjection().projection_column_names,
             query_node,
             false /*before_order*/,
-            false /*pre_distinct*/);
+            false /*pre_distinct*/,
+            select_query_options.is_subquery);
     }
 
     if (expressions_analysis_result.hasLimitBy())
@@ -2547,6 +2558,21 @@ void Planner::buildPlanForUnionNode()
         /// Add distinct transform
         SizeLimits limits(settings[Setting::max_rows_in_distinct], settings[Setting::max_bytes_in_distinct], settings[Setting::distinct_overflow_mode]);
 
+        /// `SETTINGS limit` and `offset` are applied after the final set-operation DISTINCT.
+        /// They consume its stream order, so this DISTINCT must not repartition its input.
+        Field settings_limit;
+        Field settings_offset;
+        settings.tryGet("limit", settings_limit);
+        settings.tryGet("offset", settings_offset);
+        const bool has_settings_limit_offset = select_query_options.subquery_depth == 0
+            && !select_query_options.settings_limit_offset_done
+            && (settings_limit.safeGet<Float64>() > 0 || settings_offset.safeGet<Float64>() > 0);
+
+        /// The same order-sensitive trimming can also be applied by an outer query - an `OFFSET`, a
+        /// negative or fractional `LIMIT`, or a `LIMIT BY` over the derived table - and it is not
+        /// visible here. Keep the final set-operation DISTINCT of a subquery single-stream as well.
+        const bool has_order_sensitive_post_distinct_limit = has_settings_limit_offset || select_query_options.is_subquery;
+
         /// UNION concatenates its branches' streams instead of merging them, so a preliminary DISTINCT
         /// runs in parallel and shrinks what the final single-stream DISTINCT must merge. INTERSECT/EXCEPT
         /// already narrow their output to one stream, so a preliminary step there is pure overhead.
@@ -2569,7 +2595,8 @@ void Planner::buildPlanForUnionNode()
             limits,
             0 /*limit hint*/,
             query_plan.getCurrentHeader()->getNames(),
-            false /*pre distinct*/);
+            false /*pre distinct*/,
+            has_order_sensitive_post_distinct_limit);
         if (add_pre_distinct)
             distinct_step->setStepDescription("DISTINCT");
         query_plan.addStep(std::move(distinct_step));
@@ -2960,7 +2987,8 @@ void Planner::buildPlanForQueryNode()
                         expression_analysis_result.getProjection().projection_column_names,
                         query_node,
                         true /*before_order*/,
-                        true /*pre_distinct*/);
+                        true /*pre_distinct*/,
+                        false /*is_subquery*/);
                 }
 
                 if (expression_analysis_result.hasSort())
@@ -3063,7 +3091,8 @@ void Planner::buildPlanForQueryNode()
                     expression_analysis_result.getProjection().projection_column_names,
                     query_node,
                     true /*before_order*/,
-                    true /*pre_distinct*/);
+                    true /*pre_distinct*/,
+                    false /*is_subquery*/);
             }
 
             if (expression_analysis_result.hasSort())
@@ -3124,7 +3153,8 @@ void Planner::buildPlanForQueryNode()
                 expression_analysis_result.getProjection().projection_column_names,
                 query_node,
                 false /*before_order*/,
-                false /*pre_distinct*/);
+                false /*pre_distinct*/,
+                select_query_options.is_subquery);
         }
 
         if (!query_processing_info.isFromAggregationState() && expression_analysis_result.hasLimitBy())

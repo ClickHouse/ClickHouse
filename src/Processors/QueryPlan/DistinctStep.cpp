@@ -6,8 +6,11 @@
 #include <Processors/Transforms/DistinctSortedStreamTransform.h>
 #include <Processors/Transforms/DistinctTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
+#include <QueryPipeline/scatterByPartition.h>
 #include <IO/Operators.h>
+#include <Columns/IColumn.h>
 #include <Common/JSONBuilder.h>
+#include <Core/ColumnNumbers.h>
 #include <Core/SortDescription.h>
 
 namespace DB
@@ -51,7 +54,8 @@ DistinctStep::DistinctStep(
     const SizeLimits & set_size_limits_,
     UInt64 limit_hint_,
     const Names & columns_,
-    bool pre_distinct_)
+    bool pre_distinct_,
+    bool has_order_sensitive_post_distinct_limit_)
     : ITransformingStep(
             input_header_,
             input_header_,
@@ -60,6 +64,7 @@ DistinctStep::DistinctStep(
     , limit_hint(limit_hint_)
     , columns(columns_)
     , pre_distinct(pre_distinct_)
+    , has_order_sensitive_post_distinct_limit(has_order_sensitive_post_distinct_limit_)
 {
 }
 
@@ -73,14 +78,99 @@ void DistinctStep::updateLimitHint(UInt64 hint)
         limit_hint = std::max(hint, limit_hint);
 }
 
+/// The columns the DISTINCT is computed on, derived exactly as `DistinctTransform` derives them:
+/// an empty list of columns means every column of the header, and constant columns are not part of the key.
+static ColumnNumbers getKeyColumnPositions(const Block & header, const Names & columns)
+{
+    const size_t num_columns = columns.empty() ? header.columns() : columns.size();
+
+    ColumnNumbers key_column_positions;
+    key_column_positions.reserve(num_columns);
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        const size_t position = columns.empty() ? i : header.getPositionByName(columns[i]);
+        const auto & column = header.getByPosition(position).column;
+        if (column && !isColumnConst(*column))
+            key_column_positions.push_back(position);
+    }
+
+    return key_column_positions;
+}
+
+bool DistinctStep::scatterStreamsByHash(QueryPipelineBuilder & pipeline) const
+{
+    if (!parallel_distinct)
+        return false;
+
+    /// The order-sensitivity guard of this step did not survive serialization, so it is not known
+    /// whether reordering the output is allowed.
+    if (!order_guard_state_is_known)
+        return false;
+
+    /// With a sorted input the transform below deduplicates range by range of equal values, holding one
+    /// range at a time instead of a hash table of everything. Scattering the rows would destroy the order
+    /// it relies on, and each stream would need a hash table of its own again.
+    if (!distinct_sort_desc.empty())
+        return false;
+
+    /// With a limit the transform stops as soon as it has enough values, so the single stream is not the
+    /// bottleneck it is otherwise. Keeping it also keeps the values that a `LIMIT` without `ORDER BY`
+    /// returns: the first ones in the order the input arrives, rather than an arbitrary subset.
+    if (limit_hint != 0 || has_order_sensitive_post_distinct_limit)
+        return false;
+
+    /// Every input chunk is split across all partitions, so the work the scatter adds grows with their
+    /// number: measured against the un-scattered pipeline on `SELECT DISTINCT number FROM
+    /// numbers_mt(4e7)`, the total CPU time grows by 8% at 4 partitions, 20% at 16 and 96% at 96.
+    /// Past a point that outweighs deduplicating in more threads, so do not follow `max_threads` up.
+    static constexpr size_t max_partitions = 16;
+    static constexpr size_t max_scatter_streams = 16;
+
+    /// Repartitioning wires `num_streams * num_partitions` connections. Narrow the input just as
+    /// `ShuffleSendStep` does, so a wide pipeline cannot create an excessive scatter mesh.
+    if (pipeline.getNumStreams() > max_scatter_streams)
+        pipeline.resize(max_scatter_streams);
+
+    const size_t num_streams = pipeline.getNumStreams();
+    const size_t num_partitions = std::min(pipeline.getNumThreads(), max_partitions);
+    if (num_streams <= 1 || num_partitions <= 1)
+        return false;
+
+    auto key_column_positions = getKeyColumnPositions(*pipeline.getSharedHeader(), columns);
+    if (key_column_positions.empty())
+        return false;
+
+    scatterByPartition(pipeline, num_partitions, key_column_positions);
+    return true;
+}
+
 void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings & settings)
 {
     /// The final distinct deduplicates across the whole input, so it needs all data in a single
     /// stream; the pre-distinct only reduces the data, deduplicating each stream independently.
     /// However, when the input streams carry disjoint sets of the DISTINCT key values, each stream
     /// can be deduplicated independently, so we keep the streams and skip merging them into one.
-    if (!pre_distinct && !skip_stream_merging)
-        pipeline.resize(1);
+    /// A step that lost its order-guard state in serialization does not know whether reordering its
+    /// output is allowed, so it merges the streams even when they are disjoint (`applyStreamDisjointness`
+    /// already refuses to mark such a step, this is the same decision on the pipeline side).
+    bool scattered = false;
+    if (!pre_distinct
+        && (!skip_stream_merging || limit_hint != 0 || has_order_sensitive_post_distinct_limit || !order_guard_state_is_known))
+    {
+        /// The streams may also be made disjoint on the spot: repartitioning them by the hash of the
+        /// DISTINCT columns routes equal key values into the same stream, which is all the deduplication
+        /// below needs to run in parallel.
+        scattered = scatterStreamsByHash(pipeline);
+        if (!scattered)
+            pipeline.resize(1);
+    }
+
+    /// The scattered streams hold disjoint parts of one DISTINCT set, and `max_rows_in_distinct` and
+    /// `max_bytes_in_distinct` limit the size of the whole of it, so the transforms below add up their
+    /// sizes here and check the limits against the total.
+    DistinctSharedSetSizePtr shared_set_size;
+    if (scattered && (set_size_limits.max_rows != 0 || set_size_limits.max_bytes != 0))
+        shared_set_size = std::make_shared<DistinctSharedSetSize>();
 
     /// The preliminary deduplication is best-effort (a deduplicating consumer follows), so on
     /// mostly-unique input the transform may abandon it and free its hash table - unless a limit
@@ -99,8 +189,14 @@ void DistinctStep::transformPipeline(QueryPipelineBuilder & pipeline, const Buil
             if (!distinct_sort_desc.empty())
                 return std::make_shared<DistinctSortedStreamTransform>(header, set_size_limits, limit_hint, distinct_sort_desc, columns);
 
-            return std::make_shared<DistinctTransform>(header, set_size_limits, limit_hint, columns, allow_abandoning);
+            return std::make_shared<DistinctTransform>(
+                header, set_size_limits, limit_hint, columns, shared_set_size, allow_abandoning);
         });
+
+    /// The step is declared to return a single stream. Collecting the scattered streams back costs
+    /// nothing - they are already deduplicated, and no two of them hold the same key value.
+    if (scattered)
+        pipeline.resize(1);
 }
 
 void DistinctStep::describeActions(FormatSettings & settings) const
@@ -156,6 +252,9 @@ void DistinctStep::serialize(Serialization & ctx) const
 {
     /// Let's not serialize limit_hint.
     /// Ideally, we can get if from a query plan optimization on the follower.
+    /// The same holds for `has_order_sensitive_post_distinct_limit`; because neither is restored,
+    /// `deserialize` disables both parallel paths of the final `DISTINCT` on the follower: the hash
+    /// scatter and skipping the merge of partition-disjoint streams.
 
     writeVarUInt(columns.size(), ctx.out);
     for (const auto & column : columns)
@@ -178,8 +277,14 @@ QueryPlanStepPtr DistinctStep::deserialize(Deserialization & ctx, bool pre_disti
     size_limits.max_bytes = ctx.settings[QueryPlanSerializationSetting::max_bytes_in_distinct];
     size_limits.overflow_mode = ctx.settings[QueryPlanSerializationSetting::distinct_overflow_mode];
 
-    return std::make_unique<DistinctStep>(
+    auto step = std::make_unique<DistinctStep>(
         ctx.input_headers.front(), size_limits, 0, column_names, pre_distinct_);
+    /// Neither `limit_hint` nor `has_order_sensitive_post_distinct_limit` is serialized, so the guard
+    /// against reordering the output of the final `DISTINCT` cannot be reconstructed here. The follower
+    /// optimizes this fragment again, and both `scatterStreamsByHash` and `applyStreamDisjointness`
+    /// refuse to parallelize a step whose guard state is unknown.
+    step->forgetOrderGuardState();
+    return step;
 }
 
 QueryPlanStepPtr DistinctStep::deserializeNormal(Deserialization & ctx)

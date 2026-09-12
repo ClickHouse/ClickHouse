@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/NegativeLimitByStep.h>
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/UnionStep.h>
+#include <Processors/QueryPlan/ReadFromCommonBufferStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
 
@@ -39,6 +40,32 @@ struct SortingProperty
     SortDescription sort_description = {};
     SortScope sort_scope = SortScope::Stream;
 };
+
+
+/// A `ReadFromCommonBufferStep` may be read only after every `SaveSubqueryResultToBufferStep` filling its
+/// `ChunkBuffer` is done, otherwise it throws `Trying to extract chunk from ChunkBuffer before all inputs
+/// are finished`. Nothing in the pipeline enforces that: the writers are the build side of the
+/// decorrelation join and the reader sits in its probe side, so the ordering holds only as long as the
+/// probe side is not pulled early - and a reader that ends up on the build side of a nested join is pulled
+/// as soon as execution starts. Adding parallelism above such a reader widens that window, so do not
+/// scatter a DISTINCT that reads from a buffered common subplan (see https://github.com/ClickHouse/ClickHouse/issues/119375).
+static bool readsFromCommonBuffer(const QueryPlan::Node * node)
+{
+    std::vector<const QueryPlan::Node *> stack{node};
+    while (!stack.empty())
+    {
+        const auto * current = stack.back();
+        stack.pop_back();
+
+        if (typeid_cast<const ReadFromCommonBufferStep *>(current->step.get()))
+            return true;
+
+        for (const auto * child : current->children)
+            stack.push_back(child);
+    }
+
+    return false;
+}
 
 static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * properties, const QueryPlanOptimizationSettings & optimization_settings)
 {
@@ -74,6 +101,14 @@ static SortingProperty applyOrder(QueryPlan::Node * parent, SortingProperty * pr
         {
             distinct_step->applyOrder(getCollationAwareSortPrefixInColumns(properties->sort_description, distinct_step->getColumnNames()));
         }
+
+        /// Nothing downstream relies on the order the final DISTINCT produces unless its input is
+        /// globally sorted (the case right below), so everywhere else it is free to deduplicate its
+        /// input streams in parallel, which reorders them.
+        if (optimization_settings.parallel_distinct && !distinct_step->isPreliminary()
+            && properties->sort_scope != SortingProperty::SortScope::Global
+            && !readsFromCommonBuffer(parent))
+            distinct_step->enableParallelDistinct();
 
         /// Distinct never breaks global order
         if (properties->sort_scope == SortingProperty::SortScope::Global)

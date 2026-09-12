@@ -16,14 +16,18 @@ SELECT 'optimize_skip_unused_shards';
 SELECT DISTINCT id FROM dist_01213 WHERE id = 1 SETTINGS optimize_skip_unused_shards=1;
 -- check that querying all shards is ok
 SELECT 'optimize_skip_unused_shards lack of WHERE (optimize_distributed_group_by_sharding_key=0)';
-SELECT DISTINCT id FROM dist_01213 SETTINGS optimize_skip_unused_shards=1, optimize_distributed_group_by_sharding_key=0;
+SELECT DISTINCT id FROM dist_01213 ORDER BY id SETTINGS optimize_skip_unused_shards=1, optimize_distributed_group_by_sharding_key=0, allow_parallel_distinct=0;
 -- with optimize_distributed_group_by_sharding_key=1 there will be 4 rows,
 -- since DISTINCT will be done on each shard separatelly, and initiator will
 -- not do anything (since we use optimize_skip_unused_shards=1 that must
 -- guarantee that the data had been INSERTed according to sharding key,
 -- which is not our case, since we use one local table).
 SELECT 'optimize_skip_unused_shards lack of WHERE (optimize_distributed_group_by_sharding_key=1)';
-SELECT DISTINCT id FROM dist_01213 SETTINGS optimize_skip_unused_shards=1, optimize_distributed_group_by_sharding_key=1;
+SELECT count(), min(id), max(id) FROM
+(
+    SELECT DISTINCT id FROM dist_01213
+)
+SETTINGS optimize_skip_unused_shards=1, optimize_distributed_group_by_sharding_key=1, allow_parallel_distinct=0;
 
 DROP TABLE local_01213;
 DROP TABLE dist_01213;
