@@ -276,7 +276,10 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         other_db.ensurePopulated();
 
     if (!inside_database)
+    {
         other_db.createDirectories();
+        other_db.waitDatabaseStarted();
+    }
 
     String old_metadata_path = getObjectMetadataPath(table_name);
     String new_metadata_path = to_database.getObjectMetadataPath(to_table_name);
@@ -365,6 +368,12 @@ void DatabaseAtomic::renameTable(ContextPtr local_context, const String & table_
         other_table->checkTableCanBeRenamed(other_table_new_id);
         assert_can_move_mat_view(other_table);
     }
+
+    /// Check the destination `max_tables` quota only after the source table has been resolved
+    /// and validated, so that a full destination does not mask `UNKNOWN_TABLE` and other
+    /// source-side errors. An exchange does not change the number of tables.
+    if (!inside_database && !exchange)
+        other_db.checkTablesLimitUnlocked();
 
     /// Table renaming actually begins here
     auto txn = local_context->getZooKeeperMetadataTransaction();
@@ -915,10 +924,10 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
         .description = R"DOCS_MD(
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse.
 
-:::note
+<Note>
 On ClickHouse Cloud, the [`Shared` database engine](/products/cloud/features/infrastructure/shared-catalog#shared-database-engine) is used by default and also supports
 the above mentioned operations.
-:::
+</Note>
 
 ## Creating a database {#creating-a-database}
 
@@ -946,9 +955,9 @@ For example:
 CREATE TABLE name UUID '28f1c61c-2970-457a-bffe-454156ddcfef' (n UInt64) ENGINE = ...;
 ```
 
-:::note
+<Note>
 You can use the [show_table_uuid_in_table_create_query_if_not_nil](/reference/settings/session-settings/show#show_table_uuid_in_table_create_query_if_not_nil) setting to display the UUID with the `SHOW CREATE` query.
-:::
+</Note>
 
 ### RENAME TABLE {#rename-table}
 
@@ -984,6 +993,30 @@ For example:
 CREATE TABLE db (n UInt64) ENGINE = Atomic SETTINGS disk=disk(type='local', path='/var/lib/clickhouse-disks/db_disk');
 ```
 If unspecified, the disk defined in `database_disk.disk` is used by default.
+
+### Limiting the number of tables {#limiting-the-number-of-tables}
+
+The `max_tables` setting limits how many tables the database may contain. `0` (the default) means unlimited. Every table-like object counts toward the limit: an ordinary table, a view, a materialized view, and a dictionary created with `CREATE DICTIONARY`. When the limit is reached, `CREATE TABLE`, `CREATE DICTIONARY` and `ATTACH TABLE` throw a `TOO_MANY_TABLES` exception.
+
+```sql
+CREATE DATABASE db ENGINE = Atomic SETTINGS max_tables = 100;
+```
+
+The limit can be changed for an existing database with `ALTER DATABASE`:
+
+```sql
+ALTER DATABASE db MODIFY SETTING max_tables = 200;
+```
+
+Lowering the limit below the current number of tables does not drop any tables. It only prevents new ones from being created until the count drops below the limit again.
+
+`CREATE OR REPLACE TABLE` briefly creates the replacement under a temporary name before swapping it in, so replacing a table while the database is exactly at `max_tables` fails with `TOO_MANY_TABLES` even though the final table count would not grow. Moving an object into the database with `RENAME TABLE` or `RENAME DICTIONARY` is also subject to the limit.
+
+A materialized view created without a `TO` clause has a hidden inner table that counts toward the limit as a table of its own.
+
+The limit is checked before an operation starts, so it is best-effort: concurrent queries can push the database slightly over it.
+
+The setting is available for the on-disk database engines that keep their tables in memory and their metadata in local `.sql` files: `Atomic` and `Ordinary`. It is not supported by the `Replicated` engine.
 
 ## See also {#see-also}
 

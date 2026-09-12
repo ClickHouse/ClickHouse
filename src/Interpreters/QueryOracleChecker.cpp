@@ -1,5 +1,7 @@
 #include <Interpreters/QueryOracleChecker.h>
 
+#include <AggregateFunctions/AggregateFunctionFactory.h>
+
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
@@ -81,6 +83,11 @@ const std::unordered_set<String> non_deterministic_functions = {
     "now", "now64", "today", "yesterday",
     "rowNumberInBlock", "blockNumber", "blockSize",
     "runningDifference", "runningDifferenceStartingWithFirstValue",
+    /// `neighbor` and `runningAccumulate` read across rows in physical block
+    /// order (offset neighbours / a running state), so any rewrite that reorders,
+    /// repartitions or reblocks the input (TLP partitions, NoREC, DQP setting
+    /// toggles, multi-thread reads) changes their per-row output legitimately.
+    "neighbor", "runningAccumulate",
     "currentDatabase", "queryID", "serverUUID",
     "getSetting", "fuzzBits", "throwIf",
     /// `indexHint` filters at granule granularity: the rows that survive it
@@ -102,8 +109,18 @@ const std::unordered_set<String> non_deterministic_functions = {
     /// Non-deterministic or approximate aggregate functions.
     "any", "anyLast", "anyHeavy",
     "anyRespectNulls", "anyLastRespectNulls",
+    /// `anyRespectNulls` / `anyLastRespectNulls` are aliases; these are the
+    /// names they are registered under and are equally valid in a query.
+    "any_respect_nulls", "anyLast_respect_nulls",
     "first_value", "last_value",
     "topK", "topKWeighted",
+    /// `approx_top_k` / `approx_top_sum` are the space-saving counterparts of
+    /// `topK`: which elements survive the bounded counter table, and the counts
+    /// reported for them, depend on the order values arrive in and on how the
+    /// partial states are merged. `QueryFuzzer`'s aggregate swap list offers
+    /// `approx_top_k` for any single-argument aggregate, so omitting it here let
+    /// the TLP Aggregate oracle report false mismatches on master CI.
+    "approx_top_k", "approx_top_sum",
     "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
     /// Approximate quantile/median functions: State/Merge gives different results
     /// than direct computation due to approximate merging algorithms. Block both
@@ -118,7 +135,23 @@ const std::unordered_set<String> non_deterministic_functions = {
     "quantileDD", "quantilesDD",
     "quantileTiming", "quantileTimingWeighted",
     "quantilesTiming", "quantilesTimingWeighted",
-    "quantileDeterministic", "quantilesDeterministic",
+    /// `quantileDeterministic` / `quantilesDeterministic` are deliberately NOT listed:
+    /// `ReservoirSamplerDeterministic` retains a sample purely by `hash & skip_mask == 0`,
+    /// `merge` raises `skip_degree` to the maximum of the two states and re-thins everything
+    /// (`setSkipDegree` calls `thinOut`), and the final degree is the smallest one whose
+    /// retained count fits `max_sample_size` - a function of the hash multiset alone. So the
+    /// merged sample equals the directly accumulated one no matter how the rows were
+    /// partitioned, which is exactly the property the oracle needs. Verified over 1M rows
+    /// (and over a duplicate-heavy set containing `nan` / `inf`) that direct evaluation,
+    /// `max_threads` fan-out, and a `State`/`Merge` over 3, 7, 31, 997 and 9991 partitions
+    /// all agree, including through the version-0 state serialization that drops
+    /// `skip_degree`: the samples are filtered again at the final degree, so nothing that
+    /// should survive is lost.
+    /// The exact families below stay listed: `QuantileExact` selects with `::nth_element`
+    /// over the concatenated array, and that selection is order-dependent for values that
+    /// compare equal but format differently. Concretely, over 100000 rows alternating
+    /// `-0.` and `0.`, `quantileExact(0.5)` (and `*Low` / `*High`) print `-0` when computed
+    /// directly and `0` when merged from three partial states.
     "quantileExact", "quantileExactWeighted",
     "quantilesExact", "quantilesExactWeighted",
     "quantileExactLow", "quantileExactHigh",
@@ -126,6 +159,12 @@ const std::unordered_set<String> non_deterministic_functions = {
     "quantileExactExclusive", "quantileExactInclusive",
     "quantilesExactExclusive", "quantilesExactInclusive",
     "quantileInterpolatedWeighted", "quantilesInterpolatedWeighted",
+    /// `quantilePrometheusHistogram` accumulates the cumulative bucket value per
+    /// bucket bound, and that value may be a `Float64` — so the per-bucket sums
+    /// are order-dependent, unlike the `UInt64`-weighted
+    /// `quantileExactWeightedInterpolated`, which stays exact and is therefore
+    /// deliberately NOT listed here.
+    "quantilePrometheusHistogram", "quantilesPrometheusHistogram",
     /// Order-dependent or floating-point aggregates whose State/Merge path
     /// can differ from direct computation. `sum` / `sumWithOverflow` are
     /// blocked because floating-point addition is non-associative — the
@@ -138,13 +177,22 @@ const std::unordered_set<String> non_deterministic_functions = {
     "stddevPop", "stddevSamp", "stddevPopStable", "stddevSampStable",
     "varPop", "varSamp", "varPopStable", "varSampStable",
     "covarPop", "covarSamp", "covarPopStable", "covarSampStable", "corr", "corrStable",
+    "corrMatrix", "covarPopMatrix", "covarSampMatrix",
     "avg", "avgWeighted",
     "skewPop", "skewSamp", "kurtPop", "kurtSamp",
-    "sum", "sumWithOverflow", "sumKahan",
+    "sum", "sumWithOverflow", "sumKahan", "sumCount",
+    /// Per-key sums over maps and arrays add the same floating-point values in
+    /// a merge-order-dependent order, exactly like `sum` above.
+    "sumMappedArrays", "sumMapWithOverflow",
+    "sumMapFiltered", "sumMapFilteredWithOverflow",
     "stochasticLinearRegression", "stochasticLogisticRegression",
     "initializeAggregation",
     /// Order-dependent aggregate functions.
     "groupArray", "groupUniqArray", "groupArrayInsertAt",
+    /// `groupArrayIntersect` emits the surviving set in hash-table iteration
+    /// order, which depends on the insertion history — same reason as
+    /// `groupUniqArray`. The *set* matches, the array order does not.
+    "groupArrayIntersect",
     "groupArrayMovingSum", "groupArrayMovingAvg",
     "groupArraySorted", "groupArrayLast",
     /// `argMin`/`argMax`/`groupConcat` are order-dependent on ties: the
@@ -163,13 +211,21 @@ const std::unordered_set<String> non_deterministic_functions = {
     /// plan-changing rewrite (DQP setting toggle, State/Merge, subquery wrap)
     /// then legitimately differs from direct evaluation.
     "largestTriangleThreeBuckets",
+    /// `boundingRatio` divides by the gap between the leftmost and rightmost
+    /// points: on ties in the x argument which point wins is merge-order
+    /// dependent, and the ratio is a Float64 either way.
+    "boundingRatio",
+    /// `mergedJSONPatch` keeps the last write per path ordered by the sort key,
+    /// so tied keys resolve differently depending on the merge order.
+    "mergedJSONPatch",
     /// Depends on physical data layout, not values.
     "estimateCompressionRatio",
     /// Statistical hypothesis-test / correlation aggregates: they return
     /// floating-point statistics or p-values computed with rank/tie handling
     /// and non-associative summation, so the State/Merge, DQP and
     /// subquery-rewrite paths legitimately differ from direct evaluation.
-    "mannWhitneyUTest", "studentTTest", "welchTTest", "meanZTest",
+    "mannWhitneyUTest", "studentTTest", "studentTTestOneSample", "welchTTest", "meanZTest",
+    "analysisOfVariance",
     "kolmogorovSmirnovTest", "rankCorr", "theilsU", "cramersV",
     "cramersVBiasCorrected", "contingency", "categoricalInformationValue",
 };
@@ -229,6 +285,25 @@ String stripAggregateCombinators(String name)
     return name;
 }
 
+/// Resolve an aggregate function alias to the name it was registered under.
+/// ClickHouse aliases plenty of aggregates whose `State`/`Merge` rewrite is
+/// unsafe for the oracle — `min_by`/`max_by` for `argMin`/`argMax`, `array_agg`
+/// for `groupArray`, `lttb` for `largestTriangleThreeBuckets`, every `median*`
+/// for the matching `quantile*`, `approx_top_count` for `approx_top_k`, `anova`
+/// for `analysisOfVariance`, `STDDEV_POP`/`VAR_SAMP`/`COVAR_POP` for the
+/// `stddev*`/`var*`/`covar*` families — and listing each alias by hand is the
+/// kind of bookkeeping that rots silently: one missing spelling is one false
+/// oracle mismatch reddening master CI. Resolve through the factory instead:
+/// `getAliasToOrName` consults both alias maps, so a case-insensitive alias
+/// resolves through any spelling of it (`StdDev_Pop` as much as `STDDEV_POP`),
+/// and a name that is not an alias comes back unchanged. Over-matching a
+/// spelling ClickHouse would not resolve at all only skips one more query,
+/// which is safe.
+String resolveAggregateAlias(const String & name)
+{
+    return AggregateFunctionFactory::instance().getAliasToOrName(name);
+}
+
 /// True if `name`, after removing zero or more combinator suffixes, names an
 /// entry of `non_deterministic_functions` (matched case-insensitively).
 /// Membership must be tested at EVERY stripping stage, not only at the
@@ -236,11 +311,37 @@ String stripAggregateCombinators(String name)
 /// word, e.g. `groupUniqArrayOrNull` strips to `groupUniqArray` (a set
 /// member), but one more iteration eats the literal `Array` and produces
 /// `groupUniq`, which the set does not contain.
+bool namesUnsafeFunctionAfterStripping(String name)
+{
+    while (true)
+    {
+        if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
+            return true;
+        if (!stripLongestCombinatorSuffix(name))
+            return false;
+    }
+}
+
+/// As above, but a name is also unsafe when the aggregate function it is an
+/// alias of is.
 bool isOracleUnsafeFunctionName(String name)
 {
     while (true)
     {
         if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
+            return true;
+        /// The raw spelling is tested first and separately, never replaced by
+        /// the canonical one: the set is free to name a function by whichever
+        /// spelling reads best, so resolving before the lookup would turn a
+        /// listed alias into an unlisted canonical and lose the match.
+        /// The alias is resolved at every stripping stage rather than once up
+        /// front, because the combinators the fuzzer appends hide the alias
+        /// from the factory (`min_byIf` is not a registered name, `min_by` is).
+        /// The expansion is then stripped in turn: an alias may well expand to
+        /// a name that itself carries a combinator, as `array_concat_agg` does
+        /// to `groupArrayArray` (`groupArray` plus `Array`).
+        if (const String canonical = resolveAggregateAlias(name);
+            canonical != name && namesUnsafeFunctionAfterStripping(canonical))
             return true;
         if (!stripLongestCombinatorSuffix(name))
             return false;
@@ -963,6 +1064,32 @@ void scanAggregatesSafe(const ASTPtr & ast, SafeAggregateScan & out)
         if (func->isWindowFunction())
             out.window_functions.push_back(ast);
     }
+
+    /// `SELECT * APPLY any` (or `APPLY x -> any(x)`) aggregates every expanded
+    /// column, but the aggregate is not an `ASTFunction` in the AST: the
+    /// transformer keeps a bare function name (or a lambda that is not among its
+    /// children). Missing it routes an aggregating query into the non-aggregate
+    /// oracles, where a partition over an empty WHERE still yields the one row
+    /// every aggregate returns on no input — a false mismatch. Record the
+    /// transformer itself as an aggregate: `hasAggregates` then reports it, and
+    /// `checkTLPAggregate` rejects it because it is not a rewritable function.
+    if (const auto * apply = ast->as<ASTColumnsApplyTransformer>())
+    {
+        if (apply->lambda)
+        {
+            SafeAggregateScan lambda_scan;
+            scanAggregatesSafe(apply->lambda, lambda_scan);
+            if (!lambda_scan.aggregates.empty())
+                out.aggregates.push_back(ast);
+            out.window_functions.insert(
+                out.window_functions.end(), lambda_scan.window_functions.begin(), lambda_scan.window_functions.end());
+        }
+        else if (!apply->func_name.empty() && AggregateFunctionFactory::instance().isAggregateFunctionName(apply->func_name))
+        {
+            out.aggregates.push_back(ast);
+        }
+    }
+
     for (const auto & child : ast->children)
         scanAggregatesSafe(child, out);
 }
@@ -1005,6 +1132,10 @@ bool QueryOracleChecker::isSafeForOracle(const ASTSelectQuery & select)
     if (select.limitLength())
         return false;
     if (select.limitBy())
+        return false;
+    /// A `LIMIT AFTER`/`UNTIL` range selects rows by their position in the ordered result, so it is
+    /// order-sensitive in the same way as `LIMIT`.
+    if (select.limitAfter() || select.limitUntil())
         return false;
     /// Bare `OFFSET` (without `LIMIT`) is order-sensitive: `stripOrderAndLimit`
     /// deletes it for the reference/rewrite runs, so if a rewrite changes rows
@@ -1074,11 +1205,14 @@ void QueryOracleChecker::stripOrderAndLimit(ASTSelectQuery & select)
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY, {});
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_LENGTH, {});
     select.setExpression(ASTSelectQuery::Expression::LIMIT_BY_OFFSET, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_AFTER, {});
+    select.setExpression(ASTSelectQuery::Expression::LIMIT_UNTIL, {});
     select.setExpression(ASTSelectQuery::Expression::INTERPOLATE, {});
     select.setExpression(ASTSelectQuery::Expression::SETTINGS, {});
     select.order_by_all = false;
     select.limit_with_ties = false;
     select.limit_by_all = false;
+    select.limit_after_all = false;
 }
 
 
@@ -1533,7 +1667,8 @@ bool QueryOracleChecker::checkTLPDistinct(const ASTSelectQuery & select, const C
         return false;
     if (hasArrayJoinFunction(select.clone()))
         return false;
-    if (select.limitLength() || select.limitBy() || select.limitOffset() || select.prewhere() || select.qualify())
+    if (select.limitLength() || select.limitBy() || select.limitOffset() || select.limitAfter() || select.limitUntil()
+        || select.prewhere() || select.qualify())
         return false;
     if (!select.tables())
         return false;
@@ -2196,6 +2331,10 @@ bool QueryOracleChecker::checkIdentityWhere(const ASTSelectQuery & select, const
     /// equivalent predicates can legitimately pick different rows among ties.
     if (select.limitBy())
         return false;
+    /// A `LIMIT AFTER`/`UNTIL` range selects rows by their position among ordered rows, so ties
+    /// make it just as order-sensitive.
+    if (select.limitAfter() || select.limitUntil())
+        return false;
     /// `OFFSET` (without `LIMIT`) skips a prefix of the result. For non-unique
     /// `ORDER BY` keys, the rewritten WHERE may legitimately reorder tied rows,
     /// so the same `OFFSET` skips a different prefix and the comparison fails
@@ -2311,7 +2450,7 @@ bool QueryOracleChecker::checkSubqueryWrap(const ASTSelectQuery & select, const 
     /// LIMIT handling and, worse, comparing different semantics than the seed.
     /// Even LIMIT with ORDER BY is unsafe: on non-unique sort keys the engine
     /// may legitimately pick different rows among ties on each side.
-    if (select.limitLength() || select.limitBy() || select.limitOffset())
+    if (select.limitLength() || select.limitBy() || select.limitOffset() || select.limitAfter() || select.limitUntil())
         return false;
 
     /// Skip WITH TOTALS / ROLLUP / CUBE / GROUPING SETS — the wrapping changes
@@ -2553,162 +2692,49 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     bool any_check_performed = false;
 
+    /// Run one oracle under a uniform guard: its own mismatch
+    /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the
+    /// reproduction settings by the outer handler below; any other execution
+    /// error means the rewrite was not comparable on this query (e.g. a
+    /// function the rewrite cannot analyse), so it is swallowed and the
+    /// remaining oracles still run. `name` reproduces the per-oracle log wording.
+    auto run_oracle = [&](std::string_view name, auto && check_fn)
+    {
+        try
+        {
+            if (check_fn())
+                any_check_performed = true;
+        }
+        catch (const Exception & e)
+        {
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+                throw;
+            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
+        }
+        catch (...)
+        {
+            LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, getCurrentExceptionMessage(false));
+        }
+    };
+
     try
     {
-
-    /// TLP WHERE oracle
-    try
-    {
-        if (checkTLPWhere(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "TLP WHERE oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "TLP WHERE oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// NoREC oracle
-    try
-    {
-        if (checkNoREC(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "NoREC oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "NoREC oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// TLP Aggregate oracle (uses State/Merge combinators for any aggregate)
-    try
-    {
-        if (checkTLPAggregate(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "TLP Aggregate oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "TLP Aggregate oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// TLP DISTINCT oracle (uses UNION DISTINCT instead of UNION ALL)
-    try
-    {
-        if (checkTLPDistinct(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "TLP DISTINCT oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "TLP DISTINCT oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// TLP GROUP BY oracle (set comparison for non-aggregate GROUP BY)
-    try
-    {
-        if (checkTLPGroupBy(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "TLP GROUP BY oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "TLP GROUP BY oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// TLP HAVING oracle (partitions on HAVING instead of WHERE)
-    try
-    {
-        if (checkTLPHaving(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "TLP HAVING oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "TLP HAVING oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// DQP oracle (differential query plans — same query, different optimizer settings)
-    try
-    {
-        if (checkDQP(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "DQP oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "DQP oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// Identity WHERE oracle (rewrites WHERE into equivalent forms — NOT(NOT p), p AND 1, p OR 0)
-    try
-    {
-        if (checkIdentityWhere(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "Identity WHERE oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "Identity WHERE oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
-    /// Subquery wrap oracle (wraps original as subquery and verifies identical result)
-    try
-    {
-        if (checkSubqueryWrap(*select, context))
-            any_check_performed = true;
-    }
-    catch (const Exception & e)
-    {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
-            throw;
-        LOG_TRACE(logger, "Subquery wrap oracle execution error (skipping): {}", e.message());
-    }
-    catch (...)
-    {
-        LOG_TRACE(logger, "Subquery wrap oracle execution error (skipping): {}", getCurrentExceptionMessage(false));
-    }
-
+        run_oracle("TLP WHERE", [&] { return checkTLPWhere(*select, context); });
+        run_oracle("NoREC", [&] { return checkNoREC(*select, context); });
+        /// TLP Aggregate oracle (uses State/Merge combinators for any aggregate).
+        run_oracle("TLP Aggregate", [&] { return checkTLPAggregate(*select, context); });
+        /// TLP DISTINCT oracle (uses UNION DISTINCT instead of UNION ALL).
+        run_oracle("TLP DISTINCT", [&] { return checkTLPDistinct(*select, context); });
+        /// TLP GROUP BY oracle (set comparison for non-aggregate GROUP BY).
+        run_oracle("TLP GROUP BY", [&] { return checkTLPGroupBy(*select, context); });
+        /// TLP HAVING oracle (partitions on HAVING instead of WHERE).
+        run_oracle("TLP HAVING", [&] { return checkTLPHaving(*select, context); });
+        /// DQP oracle (differential query plans — same query, different optimizer settings).
+        run_oracle("DQP", [&] { return checkDQP(*select, context); });
+        /// Identity WHERE oracle (rewrites WHERE into equivalent forms — NOT(NOT p), p AND 1, p OR 0).
+        run_oracle("Identity WHERE", [&] { return checkIdentityWhere(*select, context); });
+        /// Subquery wrap oracle (wraps original as subquery and verifies identical result).
+        run_oracle("Subquery wrap", [&] { return checkSubqueryWrap(*select, context); });
     }
     catch (Exception & e)
     {

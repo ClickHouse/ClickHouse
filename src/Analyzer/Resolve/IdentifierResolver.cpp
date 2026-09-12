@@ -7,6 +7,8 @@
 #include <Functions/FunctionHelpers.h>
 
 #include <Interpreters/MaterializedCTE.h>
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
 #include <Storages/IStorage.h>
 #include <Storages/MaterializedView/RefreshSet.h>
 #include <Storages/MaterializedView/RefreshTask.h>
@@ -373,10 +375,51 @@ std::shared_ptr<TableNode> IdentifierResolver::tryResolveTableIdentifier(const I
     return result;
 }
 
+/// Resolving a table identifier through the database catalog binds it to a storage and makes the
+/// table's metadata (column names and types) part of the resolved query tree. That metadata can
+/// reach the user without the query ever being planned: for example, `EXPLAIN QUERY TREE` and
+/// `EXPLAIN SYNTAX` dump the resolved tree without building a query plan, so the `SELECT` access
+/// check the planner performs for the tables the query reads is never reached
+/// (https://github.com/ClickHouse/ClickHouse/issues/78938). Check access at the moment the
+/// metadata is obtained: the user must be allowed to see at least one column of the table.
+/// Any grant on a column implies `SHOW_COLUMNS` on it, so this is weaker than every `SELECT`
+/// check the planner performs later for the columns the query actually reads, and a query that
+/// can be executed can always be analyzed. Table expressions constructed programmatically
+/// (e.g. by `MutationsInterpreter`) do not pass through here and keep their own access semantics.
+static void checkAccessToTableMetadata(const TableNode & table_node, const ContextPtr & context)
+{
+    /// Temporary tables of the current session are always accessible.
+    if (!table_node.getTemporaryTableName().empty())
+        return;
+
+    const auto & storage_id = table_node.getStorageID();
+    if (!storage_id.hasDatabase())
+        return;
+
+    /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
+    /// `SELECT` is checked in addition to `SHOW_COLUMNS` because the implicit `SELECT` on the
+    /// `system` and `information_schema` databases is granted after implications are derived.
+    const auto access_rights = context->getAccess()->getAccessRightsWithImplicit();
+    for (const auto & column : table_node.getStorageSnapshot()->metadata->getColumns())
+    {
+        if (access_rights->isGranted(AccessType::SELECT, storage_id.database_name, storage_id.table_name, column.name)
+            || access_rights->isGranted(AccessType::SHOW_COLUMNS, storage_id.database_name, storage_id.table_name, column.name))
+            return;
+    }
+
+    /// Not a single column of the table is visible to the user. Report the denial through the
+    /// standard check, so the message and the query log get the table-level requirement without
+    /// naming any column.
+    context->checkAccess(AccessType::SELECT, storage_id);
+}
+
 IdentifierResolveResult IdentifierResolver::tryResolveTableIdentifierFromDatabaseCatalog(const Identifier & table_identifier, const ContextPtr & context)
 {
     if (auto result = tryResolveTableIdentifier(table_identifier, context))
+    {
+        checkAccessToTableMetadata(*result, context);
         return { .resolved_identifier = std::move(result), .resolve_place = IdentifierResolvePlace::DATABASE_CATALOG };
+    }
 
     return {};
 }
@@ -1117,6 +1160,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
     {
         auto expr = from_cross_join_node.getTableExpressionTypedAt(i);
         auto identifier = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, expr, scope);
+        if (identifier.ambiguous_in_join_tree)
+            return identifier;
         if (!identifier)
             continue;
 
@@ -1153,6 +1198,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromCrossJoin(co
         }
         else if (!prefer_left_table)
         {
+            if (identifier_lookup.allow_ambiguous_join_tree_identifier)
+                return IdentifierResolveResult::ambiguousInJoinTree();
+
             throw Exception(ErrorCodes::AMBIGUOUS_IDENTIFIER,
                 "JOIN {} ambiguous identifier '{}'. In scope {}",
                 table_expression_node->formatASTForErrorMessage(),
@@ -1388,6 +1436,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         }
     }
 
+    bool ambiguous_in_join_tree = false;
     auto try_resolve_identifier_from_join_tree_node = [&](const TableExpressionNodePtr & join_tree_node, bool may_be_override_by_using_column)
     {
         /// scope.join_using_columns holds raw pointers to this stack-local map. The pop must run
@@ -1403,6 +1452,7 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         SCOPE_EXIT({ if (pushed) scope.join_using_columns.pop_back(); });
 
         auto res = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, join_tree_node, scope);
+        ambiguous_in_join_tree |= res.ambiguous_in_join_tree;
 
         return std::move(res.resolved_identifier);
     };
@@ -1437,6 +1487,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
     if (!binds_left || binds_right)
         right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
 
+    if (ambiguous_in_join_tree)
+        return IdentifierResolveResult::ambiguousInJoinTree();
+
     /** The alias / table-name qualifier can restrict resolution to one side while the identifier is
       * actually a database-qualified reference (`db.table.column`) to the pruned side (the same token
       * is the table name of one side and the database name of the other). The database-qualified
@@ -1450,6 +1503,9 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
             right_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getRightTableExpressionNodeTyped(), join_kind != JoinKind::Right);
         else if (binds_right && qualifierBindsToJoinSubtree(from_join_node.getLeftTableExpressionNodeTyped(), identifier_lookup.identifier, scope, /*database_qualified=*/ true))
             left_resolved_identifier = try_resolve_identifier_from_join_tree_node(from_join_node.getLeftTableExpressionNodeTyped(), join_kind == JoinKind::Right);
+
+        if (ambiguous_in_join_tree)
+            return IdentifierResolveResult::ambiguousInJoinTree();
     }
 
     if (!identifier_lookup.isExpressionLookup())
@@ -1652,6 +1708,10 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromJoin(const I
         {
             resolved_side = JoinTableSide::Left;
             resolved_identifier = left_resolved_identifier;
+        }
+        else if (identifier_lookup.allow_ambiguous_join_tree_identifier)
+        {
+            return IdentifierResolveResult::ambiguousInJoinTree();
         }
         else
         {
@@ -1881,6 +1941,8 @@ IdentifierResolveResult IdentifierResolver::tryResolveIdentifierFromArrayJoin(co
 {
     const auto & from_array_join_node = table_expression_node->as<const ArrayJoinNode &>();
     auto resolve_result = tryResolveIdentifierFromJoinTreeNode(identifier_lookup, from_array_join_node.getTableExpressionNodeTyped(), scope);
+    if (resolve_result.ambiguous_in_join_tree)
+        return resolve_result;
 
     if (scope.table_expressions_in_resolve_process.contains(table_expression_node.get()) || !identifier_lookup.isExpressionLookup())
         return resolve_result;

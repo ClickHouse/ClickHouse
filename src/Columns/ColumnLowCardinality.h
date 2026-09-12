@@ -114,8 +114,6 @@ public:
 
     void deserializeAndInsertFromArena(ReadBuffer & in, const IColumn::SerializationSettings * settings) override;
 
-    void skipSerializedInArena(ReadBuffer & in) const override;
-
     void updateHashWithValue(size_t n, SipHash & hash) const override
     {
         getDictionary().updateHashWithValue(getIndexes().getUInt(n), hash);
@@ -270,6 +268,11 @@ public:
         return getIndexes().getNumberOfDefaultRows();
     }
 
+    bool hasOnlyTypeDefaults() const override
+    {
+        return getIndexes().hasOnlyTypeDefaults();
+    }
+
     void getIndicesOfNonDefaultRows(Offsets & indices, size_t from, size_t limit) const override
     {
         getIndexes().getIndicesOfNonDefaultRows(indices, from, limit);
@@ -401,8 +404,8 @@ private:
 
     template <typename IndexColumn>
     void updatePermutationWithIndexType(
-        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
-        IColumn::Permutation & res, EqualRanges & equal_ranges) const;
+        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & rank_by_index,
+        bool has_value_equal_entries, IColumn::Permutation & res, EqualRanges & equal_ranges) const;
 };
 
 bool isColumnLowCardinalityNullable(const IColumn & column);

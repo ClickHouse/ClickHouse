@@ -249,14 +249,14 @@ SortingStep::SortingStep(
     const SharedHeader & input_header,
     SortDescription prefix_description_,
     SortDescription result_description_,
-    size_t max_block_size_,
+    const Settings & settings_,
     UInt64 limit_)
     : ITransformingStep(input_header, input_header, getTraits(limit_))
     , type(Type::FinishSorting)
     , prefix_description(std::move(prefix_description_))
     , result_description(std::move(result_description_))
     , limit(limit_)
-    , sort_settings(max_block_size_)
+    , sort_settings(settings_)
 {
 }
 
@@ -280,10 +280,11 @@ void SortingStep::updateOutputHeader()
     output_header = input_headers.front();
 }
 
-void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_)
+void SortingStep::updateLimitByHint(Names limit_by_columns_, UInt64 limit_by_group_length_, bool limit_by_always_read_till_end_)
 {
     limit_by_columns = std::move(limit_by_columns_);
     limit_by_group_length = limit_by_group_length_;
+    limit_by_always_read_till_end = limit_by_always_read_till_end_;
 }
 
 void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, const SortDescription & stream_sort_desc)
@@ -300,7 +301,8 @@ void SortingStep::addPerStreamLimitByIfNeeded(QueryPipelineBuilder & pipeline, c
         {
             if (stream_type != QueryPipelineBuilder::StreamType::Main)
                 return nullptr;
-            return std::make_shared<LimitBySortedStreamTransform>(header, limit_by_group_length, 0, sort_prefix);
+            return std::make_shared<LimitBySortedStreamTransform>(
+                header, limit_by_group_length, 0, sort_prefix, limit_by_always_read_till_end);
         });
 }
 
@@ -754,8 +756,7 @@ void SortingStep::serialize(Serialization & ctx) const
     serializeSortDescription(partition_by_description, ctx.out);
 
     /// `FinishSorting` arises in distributed plans when `applyOrder` sees the step's input is already
-    /// sorted by a prefix (e.g. the output of a pushed-down window); read-in-order distributed reads
-    /// are rejected earlier, so the buffering/virtual-row flags can only come from that conversion.
+    /// sorted by a prefix (e.g. the output of a pushed-down window, or a ReadInOrder distributed read).
     /// The bits are meaningful only for `FinishSorting` (the reader applies them only when the finish
     /// bit is set), so a plain full sort always writes a plain 0.
     UInt8 flags = 0;
@@ -849,6 +850,7 @@ QueryPlanStepPtr SortingStep::clone() const
     cloned->threshold_tracker = threshold_tracker;
     cloned->limit_by_columns = limit_by_columns;
     cloned->limit_by_group_length = limit_by_group_length;
+    cloned->limit_by_always_read_till_end = limit_by_always_read_till_end;
     return cloned;
 }
 
