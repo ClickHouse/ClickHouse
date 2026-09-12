@@ -253,17 +253,27 @@ SinkToStoragePtr StorageAlias::write(
 void StorageAlias::alter(
     const AlterCommands & params,
     ContextPtr local_context,
-    AlterLockHolder & table_lock_holder)
+    AlterLockHolder & /*table_lock_holder*/,
+    DDLGuardPtr & ddl_guard)
 {
     auto target_storage = getTargetTable(TargetAccess{local_context, AccessType::ALTER});
 
-    /// ALTER through alias on a table in a Replicated database is not supported
-    /// when the alias and target are in different databases. This is because the
-    /// DDL worker path is bypassed and metadata changes won't be replicated to
-    /// other replicas in ZooKeeper. If both are in the same Replicated database,
-    /// the DDL worker handles the ALTER correctly.
+    /// Read under the alias guard: a concurrent RENAME of the alias can change it after the release.
+    auto alias_database_name = getStorageID().database_name;
+
+    /// The forwarded ALTER writes the target's metadata, so guard the target, not the alias.
+    /// Release the alias guard first to avoid stalling against a RENAME/EXCHANGE that locks both
+    /// names. The alias stays alive: the share lock from InterpreterAlterQuery blocks DROP.
+    ddl_guard.reset();
+    auto target_ddl_guard = DatabaseCatalog::instance().getDDLGuardForStorage(
+        target_storage, local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+
+    /// ALTER through alias on a table in a Replicated database is not supported when the alias
+    /// and target are in different databases, because the DDL worker path is bypassed and the
+    /// metadata change would not be replicated. Check under the target's guard, so a concurrent
+    /// RENAME cannot move the target into a Replicated database after the check.
     auto target_storage_id = target_storage->getStorageID();
-    if (getStorageID().database_name != target_storage_id.database_name)
+    if (alias_database_name != target_storage_id.database_name)
     {
         auto target_db = DatabaseCatalog::instance().tryGetDatabase(target_storage_id.database_name);
         if (target_db && target_db->getEngineName() == "Replicated")
@@ -276,7 +286,8 @@ void StorageAlias::alter(
         }
     }
 
-    target_storage->alter(params, local_context, table_lock_holder);
+    auto target_alter_lock = target_storage->lockForAlter(local_context->getSettingsRef()[Setting::lock_acquire_timeout]);
+    target_storage->alter(params, local_context, target_alter_lock, target_ddl_guard);
 }
 
 void StorageAlias::truncate(
