@@ -7,6 +7,8 @@
 
 #include <initializer_list>
 
+#include <optional>
+
 
 namespace DB
 {
@@ -42,6 +44,12 @@ public:
     ASTPtr arguments;
     /// parameters - for parametric aggregate function. Example: quantile(0.9)(x) - what in first parens are 'parameters'.
     ASTPtr parameters;
+
+    /// Aggregate function combinator: ORDER BY inside function arguments.
+    /// Example: groupArray(x ORDER BY y DESC LIMIT 10)
+    bool order_by_combinator = false;
+    ASTPtr order_by_combinator_columns;
+    std::optional<UInt64> order_by_combinator_limit;
 
     /// Preserves the information that it was parsed as an operator. This is needed for better formatting the AST back to query.
     bool isOperator() const { return flags<ASTFunctionFlags>().is_operator; }
