@@ -4050,7 +4050,8 @@ It can be combined again by `exponentialTimeDecayedSum`, including as a
         {},
         {},
         {},
-        assertExperimentalTimeDecayAggregateFunctionEnabled});
+        assertExperimentalTimeDecayAggregateFunctionEnabled,
+        false});
 
     FunctionDocumentation::Description exponentialTimeDecayedMax_description = R"(
 Returns the maximum of the computed exponentially smoothed moving average at index `t` in time with that at `t-1`.
@@ -4254,7 +4255,8 @@ FROM
                 name, argument_types, parameters);
         },
         properties,
-        assertExperimentalTimeDecayAggregateFunctionEnabled});
+        assertExperimentalTimeDecayAggregateFunctionEnabled,
+        false});
 
     FunctionDocumentation::Description exponentialTimeDecayedAvg_description = R"(
 The aggregate-function form returns the average of values weighted by exponential decay relative to the greatest time argument.
@@ -4366,7 +4368,8 @@ FROM
                 name, argument_types, parameters);
         },
         properties,
-        assertExperimentalTimeDecayAggregateFunctionEnabled});
+        assertExperimentalTimeDecayAggregateFunctionEnabled,
+        false});
 
     factory.registerFunction("nonNegativeDerivative", {[](const std::string & name,
            const DataTypes & argument_types, const Array & parameters, const Settings *)
