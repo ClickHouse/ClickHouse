@@ -51,6 +51,11 @@ ALTER TABLE test_skip_index_alter_replicated MODIFY COLUMN value Float64;
 -- and the primary-key analysis correctly excludes the incompatible index per part.
 SELECT count() FROM test_skip_index_alter_replicated WHERE value = 300.0 SETTINGS force_data_skipping_indices = 'idx_value', use_skip_indexes_on_data_read = 1, max_rows_to_read = 0;
 
+-- Same read with both apply flags off. `apply_patch_parts` defaults to true, so the query
+-- above requests alter mutations unconditionally; only this one depends on the pending-alter
+-- gate being resolved inside ReplicatedMergeTreeQueue::getMutationsSnapshot.
+SELECT count() FROM test_skip_index_alter_replicated WHERE value = 300.0 SETTINGS force_data_skipping_indices = 'idx_value', use_skip_indexes_on_data_read = 1, max_rows_to_read = 0, apply_mutations_on_fly = 0, apply_patch_parts = 0;
+
 SYSTEM START MERGES test_skip_index_alter_replicated;
 OPTIMIZE TABLE test_skip_index_alter_replicated FINAL SETTINGS mutations_sync = 2;
 
