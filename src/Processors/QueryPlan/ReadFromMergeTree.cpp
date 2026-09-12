@@ -15,6 +15,7 @@
 #include <DataTypes/IDataType.h>
 #include <DataTypes/NestedUtils.h>
 #include <Formats/FormatSettings.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <IO/Operators.h>
 #include <IO/ReadBufferFromString.h>
@@ -131,7 +132,7 @@ size_t countPartitions(const RangesInDataParts & parts_with_ranges)
 }
 
 /// check if a DAG node only depends on sorting key columns
-/// (ActionsDAG version of isExpressionOverSortingKey)
+/// (ActionsDAG version of isDeterministicExpressionOverSortingKey, minus determinism - see isNodeDeterministic)
 bool isNodeOverSortingKey(const ActionsDAG::Node * node, const NameSet & sorting_key_set)
 {
     if (sorting_key_set.contains(node->result_name))
@@ -150,6 +151,12 @@ bool isNodeDeterministic(const ActionsDAG::Node * node)
 {
     if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && !node->function_base->isDeterministic())
         return false;
+
+    /// a folded lambda hides its body behind a constant column
+    if (node->type == ActionsDAG::ActionType::COLUMN && node->column
+        && !allColumnFunctions(*node->column, [](const IFunctionBase & function) { return function.isDeterministic(); }))
+        return false;
+
     for (const auto * child : node->children)
         if (!isNodeDeterministic(child))
             return false;
