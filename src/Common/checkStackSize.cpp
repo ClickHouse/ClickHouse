@@ -20,6 +20,15 @@
 #   include <pthread_np.h>
 #endif
 
+#if defined(__FILC__)
+extern "C"
+{
+void * zthread_self();
+void * zthread_stack_limit(void * thread);
+void * zthread_stack_top(void * thread);
+}
+#endif
+
 
 namespace DB
 {
@@ -58,7 +67,12 @@ static NO_INLINE size_t getStackSize(void ** out_address)
     size_t size = 0;
     void * address = nullptr;
 
-#if defined(OS_DARWIN)
+#if defined(__FILC__)
+    void * thread = zthread_self();
+    address = zthread_stack_limit(thread);
+    void * top = zthread_stack_top(thread);
+    size = reinterpret_cast<uintptr_t>(top) - reinterpret_cast<uintptr_t>(address);
+#elif defined(OS_DARWIN)
     // pthread_get_stacksize_np() returns a value too low for the main thread on
     // OSX 10.9, http://mail.openjdk.java.net/pipermail/hotspot-dev/2013-October/011369.html
     //
@@ -138,7 +152,6 @@ static NO_INLINE size_t getStackSize(void ** out_address)
 
 void checkStackSize()
 {
-#if !defined(__FILC__)
     /// Not implemented for coroutines.
     if (StackfulCoroutine::getCurrentCoroutine())
         return;
@@ -178,5 +191,4 @@ void checkStackSize()
     /// Just check if we have eat more than a STACK_SIZE_FREE_RATIO of stack size already.
     if (unlikely(stack_size > max_stack_size_allowed))
         throwTooDeepRecursion(stack_bounds.address, frame_address, stack_size, stack_bounds.max_size);
-#endif
 }
