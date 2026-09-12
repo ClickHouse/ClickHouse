@@ -207,7 +207,9 @@ private:
             PreformattedMessage & out_disable_reason,
             bool optimize_skip_merged_partitions = false);
 
-    void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
+    /// `force_sync` fsyncs the covering parts and the parent table directory before returning, so the
+    /// commit is durable once the caller acknowledges.
+    void renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction, bool force_sync = false);
 
     /// Make part state outdated and queue it to remove without timeout
     /// If force, then stop merges and block them until part state became outdated. Throw exception if part doesn't exists
