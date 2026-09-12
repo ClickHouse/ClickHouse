@@ -1,0 +1,11 @@
+a source-side grant alone does not read through the facade, inlined or not
+ACCESS_DENIED
+ACCESS_DENIED
+a facade-side grant alone does not either
+ACCESS_DENIED
+ACCESS_DENIED
+reading the source view directly still works for the source-granted user
+30
+with both grants, inlined and non-inlined reads agree
+30
+30
