@@ -1,0 +1,19 @@
+-- Case 1: text index
+0
+idx_txt	text	1
+1
+-- Case 2: materialize_skip_indexes_on_merge = 0 is respected
+0
+idx_set	set	0
+idx_txt	text	0
+1
+-- Case 3: inert index
+1
+0
+i0	hypothesis	0
+idx_txt	text	1
+1
+-- Case 4: default TTL settings
+0
+1
+1
