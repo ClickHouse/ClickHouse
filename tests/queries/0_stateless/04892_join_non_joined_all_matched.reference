@@ -1,0 +1,20 @@
+hash_right_all_matched
+2	0
+hash_full_all_matched
+3	0	1
+hash_right_nullmap
+3	1
+hash_right_unmatched
+3	1
+hash_full_unmatched
+4	1	1
+parallel_right_all_matched
+2	0
+parallel_full_all_matched
+3	0	1
+parallel_right_nullmap
+3	1
+parallel_right_unmatched
+3	1
+parallel_full_unmatched
+4	1	1

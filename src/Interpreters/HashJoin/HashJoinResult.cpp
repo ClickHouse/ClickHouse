@@ -1,7 +1,15 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnReplicated.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
+
+namespace ProfileEvents
+{
+extern const Event HashJoinProbeMicroseconds;
+extern const Event HashJoinProbeGatherMicroseconds;
+}
 
 namespace DB
 {
@@ -269,18 +277,22 @@ Block HashJoinResult::generateBlock(
         columns = std::move(state->columns);
     }
 
-    if (properties.is_join_get)
     {
-        lazy_output.buildJoinGetOutput(
-            state->rows_to_reserve, columns,
-            off_data + state->row_ref_begin, off_data + state->row_ref_end);
-    }
-    else
-    {
-        rows_added = lazy_output.buildOutput(
-            state->rows_to_reserve, state->block, state->offsets, columns,
-            off_data + state->row_ref_begin, off_data + state->row_ref_end,
-            state->state_row_offset, state->state_row_limit, state->state_bytes_limit);
+        ProfileEventTimeIncrement<Microseconds> gather_watch(ProfileEvents::HashJoinProbeGatherMicroseconds);
+
+        if (properties.is_join_get)
+        {
+            lazy_output.buildJoinGetOutput(
+                state->rows_to_reserve, columns,
+                off_data + state->row_ref_begin, off_data + state->row_ref_end);
+        }
+        else
+        {
+            rows_added = lazy_output.buildOutput(
+                state->rows_to_reserve, state->block, state->offsets, columns,
+                off_data + state->row_ref_begin, off_data + state->row_ref_end,
+                state->state_row_offset, state->state_row_limit, state->state_bytes_limit);
+        }
     }
 
     IColumn::Offsets offsets;
@@ -407,6 +419,8 @@ void HashJoinResult::setNextBlock(ScatteredBlock && block)
 
 IJoinResult::JoinResultBlock HashJoinResult::next()
 {
+    ProfileEventTimeIncrement<Microseconds> probe_watch(ProfileEvents::HashJoinProbeMicroseconds);
+
     ScatteredBlock * next_block_ptr = next_scattered_block ? &next_scattered_block.value() : nullptr;
     if (current_row_state)
     {

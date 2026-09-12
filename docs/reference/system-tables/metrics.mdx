@@ -370,18 +370,6 @@ Total number of CPU slot requests are being scheduled currently
 
 Value of soft limit on number of CPU slots
 
-### ConcurrentHashJoinPoolThreads {#concurrenthashjoinpoolthreads}
-
-Number of threads in the thread pool for concurrent hash join.
-
-### ConcurrentHashJoinPoolThreadsActive {#concurrenthashjoinpoolthreadsactive}
-
-Number of threads in the thread pool for concurrent hash join running a task.
-
-### ConcurrentHashJoinPoolThreadsScheduled {#concurrenthashjoinpoolthreadsscheduled}
-
-Number of queued or active jobs in the thread pool for concurrent hash join.
-
 ### ConcurrentQueryAcquired {#concurrentqueryacquired}
 
 Total number of acquired query slots
@@ -817,6 +805,18 @@ Total count of sessions stored in the session pool for http hosts
 ### HTTPConnectionsTotal {#httpconnectionstotal}
 
 Total count of all sessions: stored in the pool and actively used right now for http hosts
+
+### HashJoinDestroyThreads {#hashjoindestroythreads}
+
+Number of threads in the thread pool for destroying a large HashJoin's stored blocks and arenas.
+
+### HashJoinDestroyThreadsActive {#hashjoindestroythreadsactive}
+
+Number of threads in the thread pool for destroying a large HashJoin's stored blocks and arenas running a task.
+
+### HashJoinDestroyThreadsScheduled {#hashjoindestroythreadsscheduled}
+
+Number of queued or active jobs in the thread pool for destroying a large HashJoin's stored blocks and arenas.
 
 ### HashedDictionaryThreads {#hasheddictionarythreads}
 

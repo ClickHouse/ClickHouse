@@ -1,4 +1,4 @@
--- Previously, due to a bug in `ConcurrentHashJoin::onBuildPhaseFinish()` we reserved much less space in `used_flags` than needed.
+-- Previously, due to a bug in `HashJoin::onBuildPhaseFinish()` we reserved much less space in `used_flags` than needed.
 -- This test just checks that we won't crash.
 SET enable_analyzer=1;
 SELECT

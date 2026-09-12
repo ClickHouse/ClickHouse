@@ -374,6 +374,7 @@ static struct InitFiu
     ONCE(mysql_output_format_cancel_mid_loop) \
     ONCE(postgresql_output_format_cancel_mid_loop) \
     ONCE(hash_join_throw_after_data_release) \
+    ONCE(join_switcher_throw_after_hash_release) \
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
     REGULAR(smt_takeover_fake_hardware_error_after_set) \

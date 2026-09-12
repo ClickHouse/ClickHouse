@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <Common/HashTable/HashTable.h>
 
 namespace DB
@@ -400,6 +401,30 @@ public:
     /// For example, when aggregator merges single level aggregation state in parallel.
     void ALWAYS_INLINE disableMinMaxOptimization() { disable_min_max_optimization = true; }
 
+    /// Re-derives the bounds after `disableMinMaxOptimization`, so call once no writer is left. An
+    /// empty table keeps the `max < min` state that makes iteration find nothing.
+    void restoreMinMaxOptimization()
+    {
+        if (!disable_min_max_optimization)
+            return;
+
+        min = NUM_CELLS - 1;
+        max = 0;
+        if (buf)
+        {
+            for (size_t i = 0; i < NUM_CELLS; ++i)
+            {
+                if (!buf[i].isZero(*this))
+                {
+                    min = std::min(i, min);
+                    max = std::max(i, max);
+                }
+            }
+        }
+        disable_min_max_optimization = false;
+        only_emplace_was_used_to_insert_data = true;
+    }
+
     const Cell * ALWAYS_INLINE firstPopulatedCell() const
     {
         const Cell * ptr = buf;
@@ -428,7 +453,7 @@ public:
         {
             if (!ptr->isZero(*this))
             {
-                DB::writeVarUInt(ptr - buf);
+                DB::writeVarUInt(ptr - buf, wb);
                 ptr->write(wb);
             }
         }
