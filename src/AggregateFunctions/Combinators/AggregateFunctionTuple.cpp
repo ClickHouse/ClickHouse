@@ -90,6 +90,30 @@ size_t AggregateFunctionTuple::getVersionFromRevision(size_t revision) const
     return version;
 }
 
+/// `-Tuple` is a pass-through combinator: it stores the nested states inside its own state and
+/// forwards the version to every one of them in `serialize` / `deserialize`. So, like the other
+/// pass-through combinators, its state type has to spell the version out - otherwise a fresh
+/// state column is created at the default version and every local round trip of the column
+/// (`groupArray` over the states, sorting, views) writes the nested states in the legacy layout.
+/// The version is the same maximum over the nested functions that `getDefaultVersion` takes,
+/// but computed from the versions the nested functions spell out in their own state types.
+DataTypePtr AggregateFunctionTuple::getStateType() const
+{
+    std::optional<size_t> version;
+    for (const auto & func : nested_functions)
+    {
+        /// `getStateType` returns a fresh `DataTypePtr` by value, so it has to be held in a named
+        /// variable - a temporary would be destroyed at the end of the full expression.
+        const DataTypePtr nested_state_type = func->getStateType();
+        const auto * nested_state = typeid_cast<const DataTypeAggregateFunction *>(nested_state_type.get());
+        if (!nested_state)
+            continue;
+        if (auto nested_version = nested_state->getVersionIfExplicit())
+            version = std::max(version.value_or(0), *nested_version);
+    }
+    return std::make_shared<DataTypeAggregateFunction>(shared_from_this(), argument_types, parameters, version);
+}
+
 void AggregateFunctionTuple::create(AggregateDataPtr __restrict place) const
 {
     size_t i = 0;
