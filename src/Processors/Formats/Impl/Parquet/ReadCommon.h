@@ -18,8 +18,6 @@ struct ReadOptions
 {
     FormatSettings format;
 
-    bool seekable_read = true;
-
     bool schema_inference_force_nullable = false;
     bool schema_inference_force_not_nullable = false;
 
