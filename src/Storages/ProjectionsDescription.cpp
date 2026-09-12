@@ -551,7 +551,17 @@ void ProjectionDescription::fillProjectionDescriptionByQuery(
     metadata.add_minmax_index_for_block_offset_column = projection_settings[MergeTreeSetting::add_minmax_index_for_block_offset_column];
     metadata.addImplicitIndicesForVirtualColumns(query_context);
     for (const auto & column : metadata.columns)
+    {
+        /// A projection stores the ALIAS parent columns it selects, but inherits the parent's default,
+        /// so the column keeps its ALIAS kind, and the alias expression is written in terms of the
+        /// parent's columns, which the projection may not carry. Analyzing an index over such a column
+        /// against the projection's own columns can then fail with `UNKNOWN_IDENTIFIER`, and whether
+        /// it does depends on the session's `optimize_respect_aliases`, which would make the projection
+        /// metadata nondeterministic. Skip these columns; the parent table still indexes them.
+        if (column.default_desc.kind == ColumnDefaultKind::Alias)
+            continue;
         metadata.addImplicitIndicesForColumn(column, query_context);
+    }
 
     result.metadata = std::make_shared<StorageInMemoryMetadata>(metadata);
 }

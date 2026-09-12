@@ -8,6 +8,10 @@
 -- twin of this test is `tpch_join_order_plans_aggregation_pushdown`.
 SET cascades_aggregation_pushdown = 0;
 
+-- Pin the implicit min-max indices off: with `add_minmax_index_for_numeric_columns = 1` the Q20 distributed plan
+-- prunes a coordinator-selected `lineitem` part by the skip index of `l_partkey` on the worker and fails with
+-- `NO_SUCH_DATA_PART`, see https://github.com/ClickHouse/ClickHouse/pull/115514. Drop this pin once that fix is merged.
+
 DROP TABLE IF EXISTS region;
 DROP TABLE IF EXISTS nation;
 DROP TABLE IF EXISTS part;
@@ -22,44 +26,44 @@ DROP TABLE IF EXISTS lineitem;
 CREATE TABLE region (
     r_regionkey Int32, r_name String, r_comment String
 ) ENGINE = MergeTree() ORDER BY r_regionkey
-  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240, add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE nation (
     n_nationkey Int32, n_name String, n_regionkey Int32, n_comment String
 ) ENGINE = MergeTree() ORDER BY n_nationkey
-  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240, add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE part (
     p_partkey Int32, p_name String, p_mfgr String, p_brand String,
     p_type String, p_size Int32, p_container String,
     p_retailprice Decimal(15,2), p_comment String
 ) ENGINE = MergeTree() ORDER BY p_partkey
-  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240, add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE supplier (
     s_suppkey Int32, s_name String, s_address String, s_nationkey Int32,
     s_phone String, s_acctbal Decimal(15,2), s_comment String
 ) ENGINE = MergeTree() ORDER BY s_suppkey
-  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240, add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE partsupp (
     ps_partkey Int32, ps_suppkey Int32, ps_availqty Int32,
     ps_supplycost Decimal(15,2), ps_comment String
 ) ENGINE = MergeTree() ORDER BY (ps_partkey, ps_suppkey)
-  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240, add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE customer (
     c_custkey Int32, c_name String, c_address String, c_nationkey Int32,
     c_phone String, c_acctbal Decimal(15,2), c_mktsegment String, c_comment String
 ) ENGINE = MergeTree() ORDER BY c_custkey
-  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240, add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE orders (
     o_orderkey Int32, o_custkey Int32, o_orderstatus String,
     o_totalprice Decimal(15,2), o_orderdate Date, o_orderpriority String,
     o_clerk String, o_shippriority Int32, o_comment String
 ) ENGINE = MergeTree() ORDER BY o_orderkey
-  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240, add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE lineitem (
     l_orderkey Int32, l_partkey Int32, l_suppkey Int32, l_linenumber Int32,
@@ -68,7 +72,7 @@ CREATE TABLE lineitem (
     l_shipdate Date, l_commitdate Date, l_receiptdate Date,
     l_shipinstruct String, l_shipmode String, l_comment String
 ) ENGINE = MergeTree() ORDER BY (l_orderkey, l_linenumber)
-  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240;
+  SETTINGS auto_statistics_types = '', min_bytes_for_wide_part = 10737418240, add_minmax_index_for_numeric_columns = 0;
 
 -- One sentinel row per table prevents 0-row short-circuit optimizations.
 INSERT INTO region    VALUES (1, 'A', '');

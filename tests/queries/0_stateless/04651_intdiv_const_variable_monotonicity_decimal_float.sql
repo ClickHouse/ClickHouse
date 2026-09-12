@@ -3,6 +3,12 @@
 -- `getMonotonicityForRange` is strictly negative, strictly positive or spans zero, so the
 -- randomizer (`randint(1, 65536)`) would make these probes non-deterministic. It is pinned
 -- per DDL below as well.
+--
+-- `add_minmax_index_for_numeric_columns` is pinned to 0 per DDL as well: these probes measure
+-- primary-key pruning alone. With an implicit min-max index on the key column the condition
+-- becomes exactly resolvable by a skip index, so the plan collapses into
+-- `ReadFromPreparedSource (_exact_count_projection)` and the `Granules: N/M` line the case 8
+-- rows look for disappears from `EXPLAIN indexes = 1`.
 
 -- Every query prints 1 when the count read through the primary key equals the full-scan
 -- ground truth from an identical `ENGINE = Memory` table.
@@ -40,15 +46,15 @@ DROP TABLE IF EXISTS m_cv_nul;
 -- exempt -- those shapes are carriers of the direction defect and must be FIXED, not rejected.
 -- ---------------------------------------------------------------------------------------------
 -- (i) Decimal VARIABLE (the divisor)
-CREATE TABLE t_cv_d32p (a Decimal32(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_d32p (a Decimal32(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_d32p (a Decimal32(0)) ENGINE = Memory;
 INSERT INTO t_cv_d32p VALUES (10), (20), (30), (40);
 INSERT INTO m_cv_d32p VALUES (10), (20), (30), (40);
-CREATE TABLE t_cv_d32n (a Decimal32(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_d32n (a Decimal32(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_d32n (a Decimal32(0)) ENGINE = Memory;
 INSERT INTO t_cv_d32n VALUES (-40), (-30), (-20), (-10);
 INSERT INTO m_cv_d32n VALUES (-40), (-30), (-20), (-10);
-CREATE TABLE t_cv_d64p (a Decimal64(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_d64p (a Decimal64(0)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_d64p (a Decimal64(0)) ENGINE = Memory;
 INSERT INTO t_cv_d64p VALUES (10), (20), (30), (40);
 INSERT INTO m_cv_d64p VALUES (10), (20), (30), (40);
@@ -61,7 +67,7 @@ SELECT 'c5i signed pos', (SELECT count() FROM t_cv_d32p WHERE intDiv(toInt32(-10
 
 -- (ii) Decimal CONSTANT: the divisor is truncated to the decimal's native width, so the quotient
 -- is periodic with period `2^32` and not even monotonic.
-CREATE TABLE t_cv_u64 (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8;
+CREATE TABLE t_cv_u64 (a UInt64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 8, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_u64 (a UInt64) ENGINE = Memory;
 INSERT INTO t_cv_u64 VALUES (1), (2), (10), (4294967297), (4294967307), (8589934594), (8589934604), (12884901891);
 INSERT INTO m_cv_u64 VALUES (1), (2), (10), (4294967297), (4294967307), (8589934594), (8589934604), (12884901891);
@@ -72,11 +78,11 @@ SELECT 'c5ii d32 const ge', (SELECT count() FROM t_cv_u64 WHERE intDiv(toDecimal
 SELECT 'c5ii divide const', (SELECT count() FROM t_cv_u64 WHERE divide(toDecimal32(1000, 0), a) = 1000) = (SELECT count() FROM m_cv_u64 WHERE divide(toDecimal32(1000, 0), a) = 1000);
 
 -- (iii) Decimal/Float PAIR -- exempt from the rejection, and a live carrier of the direction defect.
-CREATE TABLE t_cv_f64n (a Float64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_f64n (a Float64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_f64n (a Float64) ENGINE = Memory;
 INSERT INTO t_cv_f64n VALUES (-40), (-30), (-20), (-10);
 INSERT INTO m_cv_f64n VALUES (-40), (-30), (-20), (-10);
-CREATE TABLE t_cv_f64p (a Float64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_f64p (a Float64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_f64p (a Float64) ENGINE = Memory;
 INSERT INTO t_cv_f64p VALUES (10), (20), (30), (40);
 INSERT INTO m_cv_f64p VALUES (10), (20), (30), (40);
@@ -94,7 +100,7 @@ SELECT 'c5iii f/dec mirror', (SELECT count() FROM t_cv_d32n WHERE divide(toFloat
 -- undefined row away, turning `ILLEGAL_DIVISION` into a silent answer. Asserted on the plan
 -- (case 8 form) rather than on the error, because the runner randomizes settings that can make a
 -- different error surface first.
-CREATE TABLE t_cv_dhole (a Int64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4;
+CREATE TABLE t_cv_dhole (a Int64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 4, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_cv_dhole VALUES (4294967290), (4294967293), (4294967296), (4294967300), (4294967305), (4294967310), (4294967320), (4294967330);
 
 SELECT 'c5iv d0 hole intDiv', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM t_cv_dhole WHERE intDiv(toDecimal32(0, 0), a) = 5) WHERE explain ILIKE '%Granules: 2/2%';
@@ -107,14 +113,14 @@ SELECT 'c7 float64 intDiv', (SELECT count() FROM t_cv_f64n WHERE intDiv(toInt32(
 SELECT 'c7 float64 divide', (SELECT count() FROM t_cv_f64n WHERE divide(toInt32(-1000), a) = 25) = (SELECT count() FROM m_cv_f64n WHERE divide(toInt32(-1000), a) = 25);
 
 SET allow_suspicious_low_cardinality_types = 1;
-CREATE TABLE t_cv_lc (a LowCardinality(Int32)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+CREATE TABLE t_cv_lc (a LowCardinality(Int32)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE m_cv_lc (a LowCardinality(Int32)) ENGINE = Memory;
 INSERT INTO t_cv_lc VALUES (-40), (-30), (-20), (-10);
 INSERT INTO m_cv_lc VALUES (-40), (-30), (-20), (-10);
 
 SELECT 'c7 lowcardinality', (SELECT count() FROM t_cv_lc WHERE intDiv(toInt32(-1000), a) = 25) = (SELECT count() FROM m_cv_lc WHERE intDiv(toInt32(-1000), a) = 25);
 
-CREATE TABLE t_cv_nul (a Nullable(Int32)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, allow_nullable_key = 1;
+CREATE TABLE t_cv_nul (a Nullable(Int32)) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0, allow_nullable_key = 1;
 CREATE TABLE m_cv_nul (a Nullable(Int32)) ENGINE = Memory;
 INSERT INTO t_cv_nul VALUES (-40), (-30), (-20), (-10);
 INSERT INTO m_cv_nul VALUES (-40), (-30), (-20), (-10);
