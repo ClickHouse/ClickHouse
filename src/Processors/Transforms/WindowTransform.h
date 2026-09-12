@@ -321,14 +321,16 @@ public:
     RowNumber prev_frame_start;
     RowNumber prev_frame_end;
 
-    // Comparison function for RANGE OFFSET frames. We choose the appropriate
-    // overload once, based on the type of the ORDER BY column. Choosing it for
-    // each row would be slow.
-    std::function<int(
+    // Comparison functions for RANGE OFFSET frames. We choose the appropriate
+    // overload once, based on the type of the ORDER BY column and the kind of
+    // the offset. Choosing it for each row would be slow.
+    using CompareValuesWithOffset = std::function<int(
         const IColumn * compared_column, size_t compared_row,
         const IColumn * reference_column, size_t reference_row,
         const Field & offset,
-        bool offset_is_preceding)> compare_values_with_offset;
+        bool offset_is_preceding)>;
+    CompareValuesWithOffset compare_values_with_begin_offset;
+    CompareValuesWithOffset compare_values_with_end_offset;
 };
 
 }
