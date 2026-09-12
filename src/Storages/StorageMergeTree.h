@@ -208,11 +208,14 @@ private:
             bool optimize_skip_merged_partitions = false);
 
     /// Returns the parts that the new empty parts covered, i.e. the parts this call removed.
-    DataPartsVector renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction);
+    /// With `clone_to_detached`, the covered parts are copied to `detached/` as part of the same
+    /// operation, under the parts lock that decides the removal -- see the body for why the copy
+    /// cannot be made either before or after it.
+    DataPartsVector renameAndCommitEmptyParts(
+        MutableDataPartsVector & new_parts, Transaction & transaction, bool clone_to_detached, ContextPtr query_context);
 
-    /// Copy the parts to `detached/`. Must run after the removal is committed: cloning first would
-    /// leave an orphan copy behind whenever the removal is still refused, and every retry of the
-    /// statement would add another `_tryN` directory next to it.
+    /// Copy the parts to `detached/`. The caller is responsible for the ordering against the removal
+    /// of those parts: see `renameAndCommitEmptyParts` and `dropPartsImpl`.
     void clonePartsToDetached(const DataPartsVector & parts, ContextPtr query_context);
 
     /// Make part state outdated and queue it to remove without timeout

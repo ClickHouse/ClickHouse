@@ -2861,10 +2861,13 @@ static std::pair<StorageMergeTree::MutableDataPartsVector, std::vector<scope_gua
 }
 
 
-DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVector & new_parts, Transaction & transaction)
+DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(
+    MutableDataPartsVector & new_parts, Transaction & transaction, bool clone_to_detached, ContextPtr query_context)
 {
     DataPartsVector covered_parts;
+    DataPartsVector removed_parts;
     size_t next_part_index = 0;
+    bool batch_precommitted = false;
 
     auto timeout_ms = getContext()->getSettingsRef()[Setting::lock_acquire_timeout].totalMilliseconds();
     Stopwatch watch;
@@ -2887,11 +2890,33 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
                 std::move(covered_parts_by_one_part.begin(), covered_parts_by_one_part.end(), std::back_inserter(covered_parts));
                 ++next_part_index;
             }
+
+            /// Only the precommit renames above are retried; from here on an exception is final.
+            batch_precommitted = true;
+
+            transaction.renameParts();
+
+            /// Everything below still runs under the `part_lock` that was held while `covered_parts` was
+            /// computed, so it is exactly the set `commit` is about to remove: no part can be added to it
+            /// or taken out of it in between. That is what makes this order safe for `DETACH`:
+            ///  * the removal is refused, if it has to be, before anything is copied, so a refused
+            ///    statement leaves no orphan copy in `detached/` and no `_tryN` buildup on retries;
+            ///  * the copy is made while the parts are still in the working set, so an I/O error during
+            ///    the copy (`ENOSPC`, say) fails the statement with the data still in place, instead of
+            ///    leaving the partition removed and only partially present under `detached/`.
+            /// `StorageReplicatedMergeTree` clones inside the removal's parts lock for the same reason.
+            if (clone_to_detached)
+            {
+                checkPartsCanBeRemovedNonTransactionally(covered_parts, NonTransactionalRemovalKind::Discard);
+                clonePartsToDetached(covered_parts, query_context);
+            }
+
+            removed_parts = transaction.commit(part_lock);
             break;
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
+            if (batch_precommitted || e.code() != ErrorCodes::PART_IS_TEMPORARILY_LOCKED)
                 throw;
 
             if (Int64(watch.elapsedMilliseconds()) >= timeout_ms)
@@ -2905,15 +2930,9 @@ DataPartsVector StorageMergeTree::renameAndCommitEmptyParts(MutableDataPartsVect
         sleepForMilliseconds(200);
     } while (true);
 
-    transaction.renameParts();
-
-    /// `covered_parts` above is only the precommit selection: `commit` reacquires the parts lock and
-    /// recomputes the covered set, so it is the only authoritative answer to "what was removed".
-    /// Everything below -- and the clone to `detached/` made by the callers -- must use that answer,
-    /// otherwise a concurrently appearing covering part makes us report, undelay and detach a part
-    /// that is still active.
-    DataPartsVector removed_parts = transaction.commit();
-
+    /// `covered_parts` is the precommit selection while `removed_parts` is what `commit` recomputed,
+    /// which is the only authoritative answer to "what was removed". The two agree here because the
+    /// parts lock was held across both, but everything below still uses the authoritative one.
     LOG_INFO(log, "Removed {} parts out of the {} selected by covering them with empty {} parts. With txn {}.",
              removed_parts.size(), covered_parts.size(), new_parts.size(), transaction.getTID());
 
@@ -2984,7 +3003,7 @@ void StorageMergeTree::truncate(const ASTPtr &, const StorageMetadataPtr &, Cont
                      transaction.getTID());
 
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            renameAndCommitEmptyParts(new_data_parts, transaction);
+            renameAndCommitEmptyParts(new_data_parts, transaction, /*clone_to_detached=*/ false, query_context);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3041,8 +3060,8 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
 
             /// `renameAndCommitEmptyParts` below can refuse to remove the part. Find that out before
             /// anything is written, so that the usual case fails without any side effect at all.
-            /// It is only a fast path, not a reservation: the removal itself is what decides, so the
-            /// clone to `detached/` is made after it, out of `covered_parts`.
+            /// It is only a fast path, not a reservation: the removal itself is what decides, which is
+            /// why `renameAndCommitEmptyParts` repeats the check under its own parts lock.
             checkPartsCanBeRemovedNonTransactionally({part}, NonTransactionalRemovalKind::Discard);
 
             {
@@ -3053,10 +3072,7 @@ void StorageMergeTree::dropPart(const String & part_name, bool detach, ContextPt
                          transaction.getTID());
 
                 auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-                auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
-
-                if (detach)
-                    clonePartsToDetached(removed_parts, query_context);
+                renameAndCommitEmptyParts(new_data_parts, transaction, /*clone_to_detached=*/ detach, query_context);
 
                 PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
@@ -3155,8 +3171,8 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
                 parts = getVisibleDataPartsVectorInPartition(query_context, partition_id);
             }
 
-            /// Same as in `dropPart`: refuse before anything is written, and clone to `detached/`
-            /// only once the removal has gone through.
+            /// Same as in `dropPart`: a fast path that refuses before anything is written, while the
+            /// decisive check is made by `renameAndCommitEmptyParts` under its own parts lock.
             checkPartsCanBeRemovedNonTransactionally(parts, NonTransactionalRemovalKind::Discard);
 
             auto future_parts = initCoverageWithNewEmptyParts(parts);
@@ -3168,10 +3184,7 @@ void StorageMergeTree::dropPartition(const ASTPtr & partition, bool detach, Cont
 
 
             auto [new_data_parts, tmp_dir_holders] = createEmptyDataParts(*this, future_parts, txn);
-            auto removed_parts = renameAndCommitEmptyParts(new_data_parts, transaction);
-
-            if (detach)
-                clonePartsToDetached(removed_parts, query_context);
+            renameAndCommitEmptyParts(new_data_parts, transaction, /*clone_to_detached=*/ detach, query_context);
 
             PartLog::addNewParts(query_context, PartLog::createPartLogEntries(new_data_parts, watch.elapsed(), profile_events_scope.getSnapshot()));
 
