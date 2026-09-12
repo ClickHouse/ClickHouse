@@ -52,6 +52,11 @@ MutableColumnPtr SerializationArray::wrapColumnForDeserialization(MutableColumnP
         nested->wrapColumnForDeserialization(array.getData().cloneEmpty()), array.getOffsetsPtr()->cloneEmpty());
 }
 
+bool SerializationArray::isArraySizesSubcolumn(const SubstreamPath & path)
+{
+    return !path.empty() && path.back().type == Substream::ArraySizes;
+}
+
 static constexpr size_t MAX_ARRAY_SIZE = 1ULL << 30;
 static constexpr size_t MAX_ARRAYS_SIZE = 1ULL << 40;
 
