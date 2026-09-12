@@ -1,5 +1,7 @@
 #include <Core/UUID.h>
 #include <Common/CurrentThread.h>
+#include <Common/ZooKeeper/ZooKeeperPathUtils.h>
+#include <Common/quoteString.h>
 #include <DataTypes/DataTypeString.h>
 
 #include <atomic>
@@ -76,6 +78,9 @@ namespace Setting
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_query_size;
+    extern const SettingsUInt64 keeper_max_retries;
+    extern const SettingsUInt64 keeper_retry_initial_backoff_ms;
+    extern const SettingsUInt64 keeper_retry_max_backoff_ms;
     extern const SettingsDistributedDDLOutputMode distributed_ddl_output_mode;
     extern const SettingsInt64 distributed_ddl_task_timeout;
     extern const SettingsBool throw_on_unsupported_query_inside_transaction;
@@ -134,6 +139,7 @@ namespace FailPoints
     extern const char database_replicated_pause_after_reading_log_pointer[];
     extern const char database_replicated_pause_after_snapshot_identity_check[];
     extern const char database_replicated_throw_on_stop_replication[];
+    extern const char database_replicated_create_replica_nodes_lose_response[];
 }
 
 static constexpr const char * REPLICATED_DATABASE_MARK = "DatabaseReplicated";
@@ -208,7 +214,8 @@ DatabaseReplicated::DatabaseReplicated(
     const String & shard_name_,
     const String & replica_name_,
     DatabaseReplicatedSettings db_settings_,
-    ContextPtr context_)
+    ContextPtr context_,
+    const ZooKeeperRetriesInfo & create_query_zookeeper_retries_info_)
     : DatabaseAtomic(name_, metadata_path_, uuid, "DatabaseReplicated (" + name_ + ")", context_)
     , zookeeper_name(zookeeper_name_)
     , zookeeper_path(normalizeZooKeeperPath(zookeeper_path_))
@@ -216,6 +223,7 @@ DatabaseReplicated::DatabaseReplicated(
     , replica_name(replica_name_)
     , replica_path(fs::path(zookeeper_path) / "replicas" / getFullReplicaName(shard_name, replica_name))
     , db_settings(std::move(db_settings_))
+    , create_query_zookeeper_retries_info(create_query_zookeeper_retries_info_)
     , tables_metadata_digest(0)
 {
     LOG_INFO(log, "DatabaseReplicatedSettings {}", db_settings.toString());
@@ -634,6 +642,21 @@ void DatabaseReplicated::fillClusterAuthInfo(String collection_name)
     cluster_auth_info.cluster_secure_connection = collection->getOrDefault<bool>("cluster_secure_connection", false);
 }
 
+String DatabaseReplicated::getFullZooKeeperPath() const
+{
+    if (zookeeper_name == zkutil::DEFAULT_ZOOKEEPER_NAME)
+        return zookeeper_path;
+    return zookeeper_name + ":" + zookeeper_path;
+}
+
+ZooKeeperRetriesInfo DatabaseReplicated::takeCreateQueryZooKeeperRetriesInfo()
+{
+    std::lock_guard lock{create_query_zookeeper_retries_info_mutex};
+    ZooKeeperRetriesInfo result;
+    std::swap(result, create_query_zookeeper_retries_info);
+    return result;
+}
+
 void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessLevel mode)
 {
     try
@@ -643,14 +666,32 @@ void DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase(LoadingStrictnessL
             throw Exception(ErrorCodes::NO_ZOOKEEPER, "Can't create replicated database without ZooKeeper");
         }
 
-        auto current_zookeeper = getZooKeeper();
-        if (mode < LoadingStrictnessLevel::ATTACH && !current_zookeeper->exists(zookeeper_path))
+        auto init = [&]
         {
-            /// Create new database, multiple nodes can execute it concurrently
-            createDatabaseNodesInZooKeeper(current_zookeeper);
-        }
+            auto current_zookeeper = getZooKeeper();
+            if (mode < LoadingStrictnessLevel::ATTACH && !current_zookeeper->exists(zookeeper_path))
+            {
+                /// Create new database, multiple nodes can execute it concurrently
+                createDatabaseNodesInZooKeeper(current_zookeeper);
+            }
 
-        initDatabaseReplica(current_zookeeper, mode);
+            initDatabaseReplica(current_zookeeper, mode);
+        };
+
+        /// Retries only for CREATE: a hardware error can leave the replica nodes half-created, and both
+        /// helpers above reuse their own nodes on re-entry, so another attempt completes the creation.
+        /// ATTACH and startup must not retry here: they defer to DatabaseReplicatedDDLWorker, which
+        /// re-invokes this with ATTACH from its own loop.
+        auto retries_info = mode == LoadingStrictnessLevel::CREATE ? takeCreateQueryZooKeeperRetriesInfo() : ZooKeeperRetriesInfo{};
+        if (retries_info.max_retries > 0)
+        {
+            ZooKeeperRetriesControl retries_ctl{"DatabaseReplicated::tryConnectToZooKeeperAndInitDatabase", log, retries_info};
+            retries_ctl.retryLoop(init);
+        }
+        else
+        {
+            init();
+        }
     }
     catch (...)
     {
@@ -700,12 +741,17 @@ void DatabaseReplicated::initDatabaseReplica(const ZooKeeperPtr & current_zookee
             if (uuid_in_keeper != db_uuid)
                 throw Exception(
                     ErrorCodes::REPLICA_ALREADY_EXISTS,
-                    "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'",
+                    "Replica {} of shard {} of replicated database at {} already exists. Replica host ID: '{}', current host ID: '{}'. "
+                    "If it is a leftover of a failed database creation and no other server uses it, remove it with "
+                    "SYSTEM DROP DATABASE REPLICA {} FROM SHARD {} FROM ZKPATH {}",
                     replica_name,
                     shard_name,
                     zookeeper_path,
                     replica_host_id,
-                    host_id);
+                    host_id,
+                    quoteString(replica_name),
+                    quoteString(shard_name),
+                    quoteString(getFullZooKeeperPath()));
 
             // After restarting, InterserverIOAddress might change (e.g: config updated, `getFQDNOrHostName` returns a different one)
             // If the UUID in the keeper is the same as the current server UUID, we will update the host_id in keeper
@@ -941,8 +987,11 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
             {
                 throw Exception(
                     ErrorCodes::REPLICA_ALREADY_EXISTS,
-                    "Replica node {} in ZooKeeper already exists and contains unexpected value: {}",
-                    quoteString(check_paths[i]), quoteString(check_responses[i].data));
+                    "Replica node {} in ZooKeeper already exists and contains unexpected value: {}. "
+                    "If it is a leftover of a failed database creation and no other server uses it, remove it with "
+                    "SYSTEM DROP DATABASE REPLICA {} FROM SHARD {} FROM ZKPATH {}",
+                    quoteString(check_paths[i]), quoteString(check_responses[i].data),
+                    quoteString(replica_name), quoteString(shard_name), quoteString(getFullZooKeeperPath()));
             }
         }
 
@@ -970,6 +1019,14 @@ void DatabaseReplicated::createReplicaNodesInZooKeeper(const zkutil::ZooKeeperPt
 
         Coordination::Responses ops_responses;
         const auto code = current_zookeeper->tryMulti(ops, ops_responses);
+
+        /// Emulates a committed transaction whose response was lost, which is the ambiguous state the
+        /// reuse branch above exists to resolve.
+        fiu_do_on(FailPoints::database_replicated_create_replica_nodes_lose_response,
+        {
+            if (code == Coordination::Error::ZOK)
+                throw Coordination::Exception(Coordination::Error::ZCONNECTIONLOSS, "Fault injected (after creating replica nodes)");
+        });
 
         if (code == Coordination::Error::ZOK)
         {
@@ -3040,6 +3097,20 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
         if (engine_define->settings)
             database_replicated_settings.loadFromQuery(*engine_define);
 
+        /// Built here rather than in the database itself, which only keeps the global context and so
+        /// would ignore this query's keeper_max_retries (including an explicit 0). Only CREATE takes it
+        /// back, and it holds the query's process list element, so leave it empty for every other mode.
+        ZooKeeperRetriesInfo create_query_zk_retries_info;
+        if (args.mode == LoadingStrictnessLevel::CREATE)
+        {
+            const auto & query_settings = args.context->getSettingsRef();
+            create_query_zk_retries_info = ZooKeeperRetriesInfo{
+                query_settings[Setting::keeper_max_retries],
+                query_settings[Setting::keeper_retry_initial_backoff_ms],
+                query_settings[Setting::keeper_retry_max_backoff_ms],
+                args.context->getProcessListElementSafe()};
+        }
+
         return std::make_shared<DatabaseReplicated>(
             args.database_name,
             args.metadata_path,
@@ -3048,7 +3119,8 @@ void registerDatabaseReplicated(DatabaseFactory & factory)
             zookeeper_path,
             shard_name,
             replica_name,
-            std::move(database_replicated_settings), args.context);
+            std::move(database_replicated_settings), args.context,
+            create_query_zk_retries_info);
     };
     factory.registerDatabase("Replicated", create_fn, {.supports_arguments = true, .supports_settings = true}, Documentation{
         .description = R"DOCS_MD(
