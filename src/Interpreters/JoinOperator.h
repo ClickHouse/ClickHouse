@@ -136,6 +136,11 @@ struct JoinSettings
 
     void updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const;
 
+    /// Whether these settings make the join behave differently from a peer that still treats
+    /// `max_rows_in_join` / `max_bytes_in_join` as the spill trigger. Such a plan must not be
+    /// serialized for a peer that predates `legacy_join_size_limits_trigger_spilling`.
+    bool spillBehaviorDiffersFromLegacy() const;
+
     /// Returns the effective threshold for converting a hash join into a grace hash join (spilling to disk),
     /// combining the absolute `max_bytes_before_external_join` and the ratio `max_bytes_ratio_before_external_join`
     /// (the smaller of the two applies). Returns 0 if neither is set, meaning no automatic spilling.

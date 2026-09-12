@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <vector>
 #include <Interpreters/JoinOperator.h>
 #include <Core/ProtocolDefines.h>
@@ -26,6 +27,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
     extern const int INCORRECT_DATA;
     extern const int BAD_ARGUMENTS;
+    extern const int NOT_IMPLEMENTED;
 }
 
 namespace Setting
@@ -261,6 +263,22 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
     min_rows_ratio_for_hash_join_row_store = settings[QueryPlanSerializationSetting::min_rows_ratio_for_hash_join_row_store];
 }
 
+bool JoinSettings::spillBehaviorDiffersFromLegacy() const
+{
+    /// The receiver was asked for the old contract anyway, which is what a peer that predates the name does.
+    if (legacy_join_size_limits_trigger_spilling)
+        return false;
+
+    /// Hard caps here, a spill trigger there.
+    if (max_rows_in_join != 0 || max_bytes_in_join != 0)
+        return true;
+
+    /// Standalone `grace_hash` spills at `max_bytes_before_external_join` here, and ignores it there.
+    const bool grace_hash_requested
+        = std::find(join_algorithms.begin(), join_algorithms.end(), JoinAlgorithm::GRACE_HASH) != join_algorithms.end();
+    return grace_hash_requested && (max_bytes_before_external_join != 0 || max_bytes_ratio_before_external_join != 0);
+}
+
 void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings, UInt64 version) const
 {
     settings[QueryPlanSerializationSetting::join_algorithm] = join_algorithms;
@@ -311,9 +329,20 @@ void JoinSettings::updatePlanSettings(QueryPlanSerializationSettings & settings,
     settings[QueryPlanSerializationSetting::enable_lazy_columns_replication] = enable_lazy_columns_replication;
     settings[QueryPlanSerializationSetting::enable_software_prefetch_in_join] = enable_software_prefetch_in_join;
     /// `QueryPlanSerializationSettings` is a strict named schema, so this name may go on the wire only
-    /// towards a peer whose version knows it; an older peer already behaves as legacy mode.
+    /// towards a peer whose version knows it. Dropping it is not enough to make a downgraded plan safe:
+    /// a peer below that version keeps the old contract for the settings it does know, so a plan that
+    /// depends on the unified spill trigger has to be refused rather than executed with the old meaning.
     if (version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS)
         settings[QueryPlanSerializationSetting::legacy_join_size_limits_trigger_spilling] = legacy_join_size_limits_trigger_spilling;
+    else if (spillBehaviorDiffersFromLegacy())
+        throw Exception(
+            ErrorCodes::NOT_IMPLEMENTED,
+            "Cannot serialize a join step whose spilling depends on `max_rows_in_join` / `max_bytes_in_join` being hard caps "
+            "or on `grace_hash` taking its spill threshold from `max_bytes_before_external_join` for serialization version {}; "
+            "version {} or newer is required. Set `legacy_join_size_limits_trigger_spilling = 1` to run the whole query with "
+            "the old spill contract instead",
+            version,
+            DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LEGACY_JOIN_SIZE_LIMITS);
     settings[QueryPlanSerializationSetting::use_hash_table_stats_for_join_reordering] = use_hash_table_stats_for_join_reordering;
 
     settings[QueryPlanSerializationSetting::enable_join_fixed_hash_table_conversion] = enable_join_fixed_hash_table_conversion;
