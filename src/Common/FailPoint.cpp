@@ -44,8 +44,7 @@ static struct InitFiu
     REGULAR(replicated_sends_sleep_before_file_send) \
     REGULAR(use_delayed_remote_source) \
     ONCE(remote_query_executor_cancel_before_send) \
-    PAUSEABLE_ONCE(remote_query_executor_receive_packet_pause) \
-    PAUSEABLE_ONCE(remote_query_executor_finish_drain_pause) \
+    ONCE(remote_query_executor_cancel_and_drain_in_receive_window) \
     PAUSEABLE_ONCE(distributed_sink_pause_before_push) \
     ONCE(connection_stale_on_establish) \
     REGULAR(cluster_discovery_faults) \
@@ -81,6 +80,7 @@ static struct InitFiu
     ONCE(s3_read_buffer_throw_expired_token) \
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
+    REGULAR(file_read_inject_version_token_mismatch) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
     REGULAR(azure_inject_auth_failure_on_request) \
@@ -158,7 +158,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(smt_select_sequential_consistency_before_keeper_fence) \
     PAUSEABLE_ONCE(smt_select_sequential_consistency_after_keeper_get) \
     PAUSEABLE_ONCE(delta_lake_metadata_iterate_pause) \
-    PAUSEABLE_ONCE(delta_lake_write_commit_pause) \
+    ONCE(delta_lake_write_cancel_in_commit_window) \
     PAUSEABLE_ONCE(query_metric_log_pause_before_finish) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(replicated_table_remove_zk_before_final_multi) \
@@ -167,7 +167,6 @@ static struct InitFiu
     PAUSEABLE_ONCE(rmt_mutation_prune_pause_before_zk_partition_list) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_get_children) \
     PAUSEABLE_ONCE(kafka2_remove_zk_before_final_multi) \
-    PAUSEABLE_ONCE(nats_pause_before_building_insert_pipeline) \
     PAUSEABLE_ONCE(keeper_map_delete_pause_before_multi) \
     PAUSEABLE_ONCE(paimon_incremental_read_pause_before_is_active_remove) \
     PAUSEABLE(dummy_pausable_failpoint) \
@@ -198,6 +197,7 @@ static struct InitFiu
     REGULAR(refresh_mv_force_scheduling_feature_flags_missing) \
     REGULAR(refresh_mv_force_coordination_version_conflict) \
     REGULAR(refresh_mv_force_coordination_running_znode_lost) \
+    PAUSEABLE_ONCE(refresh_mv_pause_after_executor_published) \
     PAUSEABLE(refresh_mv_pause_before_exchange) \
     PAUSEABLE(refresh_mv_pause_after_interrupt_check) \
     REGULAR(refresh_mv_skip_execution) \
@@ -212,6 +212,7 @@ static struct InitFiu
     REGULAR(claim_inject_stale_part_dir) \
     PAUSEABLE(infinite_sleep) \
     PAUSEABLE(async_insert_flush_pause_in_executor) \
+    PAUSEABLE_ONCE(completed_pipeline_pause_before_teardown) \
     PAUSEABLE(system_replicas_schedule_requests_pause) \
     PAUSEABLE(stop_moving_part_before_swap_with_active) \
     REGULAR(replicated_merge_tree_all_replicas_stale) \
@@ -310,7 +311,6 @@ static struct InitFiu
     ONCE(database_iceberg_gcs) \
     REGULAR(rmt_delay_execute_drop_range) \
     REGULAR(rmt_delay_commit_part) \
-    PAUSEABLE_ONCE(rmt_pause_before_commit_local_part) \
     ONCE(local_object_storage_network_error_during_remove) \
     REGULAR(lightweight_show_tables) \
     REGULAR(smt_part_update_duplicated_part) \
@@ -370,9 +370,9 @@ static struct InitFiu
     PAUSEABLE_ONCE(limit_by_transform_after_loop_pause) \
     PAUSEABLE_ONCE(limit_by_sorted_stream_transform_mid_loop_pause) \
     PAUSEABLE_ONCE(limit_by_transform_mid_loop_pause) \
-    PAUSEABLE_ONCE(aggregating_in_order_transform_mid_loop_pause) \
-    PAUSEABLE_ONCE(mysql_output_format_mid_loop_pause) \
-    PAUSEABLE_ONCE(postgresql_output_format_mid_loop_pause) \
+    ONCE(aggregating_in_order_transform_cancel_mid_loop) \
+    ONCE(mysql_output_format_cancel_mid_loop) \
+    ONCE(postgresql_output_format_cancel_mid_loop) \
     ONCE(hash_join_throw_after_data_release) \
     ONCE(stored_columns_index_throw_on_add) \
     REGULAR(smt_force_takeover_predicate_true) \
