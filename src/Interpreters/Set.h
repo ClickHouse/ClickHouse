@@ -235,13 +235,25 @@ public:
 
     bool hasMonotonicFunctionsChain() const;
 
-    BoolMask checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point = false) const;
+    /// `chain_application_failed`, when given, is set to true if a monotonic function chain could not be applied to some
+    /// analysed range, so the returned mask is a mere over-approximation.
+    /// See KeyCondition::applyMonotonicFunctionsChainToRange.
+    BoolMask checkInRange(
+        const Ranges & key_ranges,
+        const DataTypes & data_types,
+        bool single_point = false,
+        bool * chain_application_failed = nullptr) const;
 
     /// Optimized overload. Instead of all/prefix of key columns, any subsequence of key column information (in order) can be given.
     /// `key_col_to_sparse_pos` maps key index to position in `sparse_hyperrectangle`, or -1 if not tracked.
     /// If some key column >= `key_col_to_sparse_pos`.size(), it is considered as not tracked.
     /// See KeyCondition::checkInRange for explanation of relevant parameters.
-    BoolMask checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point = false) const;
+    BoolMask checkInRange(
+        const std::vector<int> & key_col_to_sparse_pos,
+        const Ranges & sparse_key_ranges,
+        const DataTypes & sparse_data_types,
+        bool single_point = false,
+        bool * chain_application_failed = nullptr) const;
 
     const Columns & getOrderedSet() const { return ordered_set; }
 

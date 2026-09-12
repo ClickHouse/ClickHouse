@@ -789,7 +789,12 @@ MergeTreeSetIndex::FieldValueRanges & MergeTreeSetIndex::getFieldValueRangesBuff
   * 1: the intersection of the set and the range is non-empty
   * 2: the range contains elements not in the set
   */
-BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_sparse_pos, const Ranges & sparse_key_ranges, const DataTypes & sparse_data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(
+    const std::vector<int> & key_col_to_sparse_pos,
+    const Ranges & sparse_key_ranges,
+    const DataTypes & sparse_data_types,
+    bool single_point,
+    bool * chain_application_failed) const
 {
     auto get_sparse_info = [&](size_t key_column) -> std::pair<bool, size_t>
     {
@@ -828,7 +833,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
             sparse_key_ranges[sparse_pos],
             indexes_mapping[i].functions,
             sparse_data_types[sparse_pos],
-            single_point);
+            single_point,
+            chain_application_failed);
 
         if (!new_range)
             return {true, true};
@@ -948,7 +954,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const std::vector<int> & key_col_to_spa
     return {can_be_true, true};
 }
 
-BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTypes & data_types, bool single_point) const
+BoolMask MergeTreeSetIndex::checkInRange(
+    const Ranges & key_ranges, const DataTypes & data_types, bool single_point, bool * chain_application_failed) const
 {
     size_t tuple_size = indexes_mapping.size();
 
@@ -963,7 +970,8 @@ BoolMask MergeTreeSetIndex::checkInRange(const Ranges & key_ranges, const DataTy
             key_ranges[indexes_mapping[i].key_index],
             indexes_mapping[i].functions,
             data_types[indexes_mapping[i].key_index],
-            single_point);
+            single_point,
+            chain_application_failed);
 
         if (!new_range)
             return {true, true};
