@@ -7,6 +7,14 @@ SET enable_parallel_replicas=1, automatic_parallel_replicas_mode=2, parallel_rep
 SET max_bytes_before_external_group_by=0, max_bytes_ratio_before_external_group_by=0;
 SET use_query_condition_cache=0;
 
+-- Aggregating each partition independently skips the merge phase where the global
+-- `max_rows_to_group_by` limit is enforced, so both passes that set it (`optimizeAggregationPerPartition`
+-- and `applyStreamDisjointness`) fall back to normal aggregation whenever that limit is set. The
+-- stateless test profile (`tests/config/users.d/limits.yaml`) sets a high `max_rows_to_group_by` as a
+-- safety net, which would leave the `oba_skip_merging_*` queries below on the ordinary merging
+-- pipeline and make them assert nothing about the path they name.
+SET max_rows_to_group_by = 0;
+
 -- Every aggregation path under test needs more than one aggregating stream, and `max_threads` is
 -- randomized in CI. `group_by_two_level_threshold` is randomized too and decides single- vs two-level
 -- aggregation, so each query below pins it to the level it means to exercise.
