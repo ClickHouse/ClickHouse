@@ -1,0 +1,6 @@
+-- DateTime64: the UInt64 bound depends on the scale
+0
+1
+-- Time64: the UInt64 bound is 999:59:59
+0
+1
