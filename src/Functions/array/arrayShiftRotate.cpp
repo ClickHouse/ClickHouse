@@ -1,6 +1,9 @@
 #include <limits>
 #include <Columns/ColumnArray.h>
+#include <Columns/ColumnNullable.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeNothing.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/getLeastSupertype.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
@@ -43,6 +46,7 @@ public:
 
     bool isVariadic() const override { return strategy == ShiftRotateStrategy::Shift; }
     size_t getNumberOfArguments() const override { return strategy == ShiftRotateStrategy::Rotate ? 2 : 0; }
+    bool useDefaultImplementationForNulls() const override { return strategy == ShiftRotateStrategy::Rotate; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -54,6 +58,10 @@ public:
 
             if (arguments.size() > 3)
                 throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Function {} requires at most three arguments.", getName());
+
+            if (arguments[0]->onlyNull() || arguments[1]->onlyNull()
+                || (arguments.size() == 3 && arguments[2]->onlyNull()))
+                return makeNullable(std::make_shared<DataTypeNothing>());
         }
 
         const DataTypePtr & first_arg = arguments[0];
@@ -64,7 +72,7 @@ public:
                 arguments[0]->getName(),
                 getName());
 
-        if (!isNativeInteger(arguments[1]))
+        if (!isNativeInteger(removeNullable(arguments[1])))
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                 "Illegal type {} of argument of function {}, expected Native Integer",
@@ -91,6 +99,9 @@ public:
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
     {
+        if (result_type->onlyNull())
+            return result_type->createColumnConstWithDefaultValue(input_rows_count);
+
         ColumnPtr column_array_ptr = arguments[0].column;
         const auto * column_array = checkAndGetColumn<ColumnArray>(column_array_ptr.get());
 
@@ -105,6 +116,14 @@ public:
         }
 
         ColumnPtr shift_num_column = arguments[1].column;
+        if (arguments[1].type->isNullable())
+        {
+            auto materialized_shift_num_column = shift_num_column->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+            if (const auto * nullable_shift_num_column = checkAndGetColumn<ColumnNullable>(materialized_shift_num_column.get()))
+                shift_num_column = nullable_shift_num_column->getNestedColumnWithDefaultOnNull();
+            else
+                shift_num_column = columnGetNested(arguments[1]).column;
+        }
 
         if constexpr (strategy == ShiftRotateStrategy::Shift)
         {
