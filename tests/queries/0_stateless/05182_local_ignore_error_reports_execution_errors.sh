@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+# The errors below are counted on stderr, where the server log of the failing query would land
+# as well and be counted a second time.
+CLICKHOUSE_CLIENT_SERVER_LOGS_LEVEL=none
+
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
