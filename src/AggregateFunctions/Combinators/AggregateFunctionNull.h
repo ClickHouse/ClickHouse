@@ -227,6 +227,23 @@ public:
             nested_function->serialize(nestedPlace(place), buf, version);
     }
 
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        if (auto nested_bound = nested_function->getSerializedSizeBound(version))
+            return (serialize_flag ? sizeof(bool) : 0) + *nested_bound;
+        return std::nullopt;
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        bool flag = getFlag(place);
+        if constexpr (serialize_flag)
+            writeBinary(flag, dst);
+        if (flag)
+            dst = nested_function->serializeToMemory(nestedPlace(place), dst, version);
+        return dst;
+    }
+
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
     {
         bool flag = true;
