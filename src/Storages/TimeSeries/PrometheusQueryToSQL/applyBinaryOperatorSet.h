@@ -16,4 +16,6 @@ void checkArgumentTypesForSetBinaryOperator(
 /// Build a compact per-step presence mask for a vector grid.
 ASTPtr makePresenceMask(ASTPtr values);
 
+ASTPtr makePresenceArray(ASTPtr values);
+
 }
