@@ -196,7 +196,14 @@ def main():
     setup_results.append(Result(name="Download master binary", status=Result.Status.OK))
 
     master_run = run_scenarios(master_binary, "master", scenarios)
-    pr_run = run_scenarios(pr_binary, "pr", scenarios)
+    # The merge-base profiler predates mark-cache initialization, so keep the
+    # compared runs on the same cache contract until that change reaches master.
+    pr_run = run_scenarios(
+        pr_binary,
+        "pr",
+        scenarios,
+        extra_args=("--no-mark-caches",),
+    )
     if master_run["error"] or pr_run["error"]:
         setup_results.append(
             make_error_result(
