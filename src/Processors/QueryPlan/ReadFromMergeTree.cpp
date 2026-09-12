@@ -264,6 +264,7 @@ namespace Setting
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool allow_asynchronous_read_from_io_pool_for_merge_tree;
     extern const SettingsBool allow_calculating_subcolumns_sizes_for_merge_tree_reading;
+    extern const SettingsBool use_statistics;
     extern const SettingsBool allow_prefetched_read_pool_for_local_filesystem;
     extern const SettingsBool allow_prefetched_read_pool_for_remote_filesystem;
     extern const SettingsBool compile_sort_description;
@@ -6054,16 +6055,16 @@ IStorage::ColumnSizeByName ReadFromMergeTree::getColumnSizesForPrewhere(
     IStorage::ColumnSizeByName result;
     for (const auto & part : parts)
     {
-        for (const auto & name : columns)
+        for (const auto & column_name : columns)
         {
-            const auto column = part.data_part->tryGetColumn(name);
+            const auto column = part.data_part->tryGetColumn(column_name);
             if (!column)
                 continue;
 
             const auto size = column->isSubcolumn() && calculate_subcolumn_sizes
-                ? part.data_part->getSubcolumnSize(name)
+                ? part.data_part->getSubcolumnSize(column_name)
                 : part.data_part->getColumnSize(column->getNameInStorage());
-            result[name].add(size);
+            result[column_name].add(size);
         }
     }
     return result;
