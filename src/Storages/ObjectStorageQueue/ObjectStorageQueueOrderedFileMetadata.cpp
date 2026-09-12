@@ -460,6 +460,27 @@ ObjectStorageQueueIFileMetadata::PathState ObjectStorageQueueOrderedFileMetadata
     }
     if (state.is_processed)
         return PathState::Processed;
+
+    /// getProcessingStateFromKeeper() only probes the terminal failed node.
+    /// A live `.retriable` marker still holds retry state (the retry count), so its
+    /// presence must not be treated as "no failed state left" - only the absence of
+    /// BOTH forms means the failure was actually cleaned up externally. Without this
+    /// check, the caller would treat a live retriable marker as "cleaned up" and grant
+    /// an extra processing attempt instead of honoring the stored retry count.
+    std::string retriable_data;
+    bool retriable_exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        retriable_exists = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->tryGet(
+            failed_node_path + ".retriable", retriable_data);
+    });
+    if (retriable_exists)
+    {
+        if (!retriable_data.empty())
+            failure_message = NodeMetadata::fromString(retriable_data).last_exception;
+        return PathState::Failed;
+    }
+
     return PathState::Unknown;
 }
 
