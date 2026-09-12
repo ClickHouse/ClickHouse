@@ -1,0 +1,22 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <broken_s3>
+                <type>s3</type>
+                <endpoint>http://resolver:8087/root/data/</endpoint>
+                <access_key_id>minio</access_key_id>
+                <secret_access_key>ClickHouse_Minio_P@ssw0rd</secret_access_key>
+                <skip_access_check>1</skip_access_check>
+                <!-- A budget the test could exhaust would make the oracle a wall-clock race. -->
+                <s3_max_single_read_retries>1000000</s3_max_single_read_retries>
+                <s3_retry_attempts>1000000</s3_retry_attempts>
+                <s3_validate_request_settings>0</s3_validate_request_settings>
+            </broken_s3>
+        </disks>
+        <policies>
+            <broken_s3>
+                <volumes><main><disk>broken_s3</disk></main></volumes>
+            </broken_s3>
+        </policies>
+    </storage_configuration>
+</clickhouse>
