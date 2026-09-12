@@ -225,6 +225,11 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
 
     const auto & queried_columns = source_step_with_filter->requiredSourceColumns();
 
+    /// Candidate parallel-replica plans have not applied filters yet. Defer `PREWHERE`
+    /// optimization until the pruned part snapshot is available.
+    if (read_from_merge_tree_step && !read_from_merge_tree_step->getIndexes() && !read_from_merge_tree_step->getAnalyzedResult())
+        return;
+
     RangesInDataParts prewhere_parts;
     if (read_from_merge_tree_step)
         prewhere_parts = read_from_merge_tree_step->getPartsForPrewhere();
