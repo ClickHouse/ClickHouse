@@ -160,7 +160,7 @@ public:
     }
 
     void addBatch(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
-        const IColumn ** columns, Arena *, ssize_t if_argument_pos = -1) const override
+        const IColumn ** columns, Arena *, ssize_t if_argument_pos) const override
     {
         addBatchUniq<&Data::Set::insert>(row_begin, row_end, places, place_offset, columns, if_argument_pos,
             [&](size_t row) { return Traits::hash(Traits::value(*columns[0], row)); },

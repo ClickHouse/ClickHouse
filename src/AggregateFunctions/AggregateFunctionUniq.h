@@ -567,7 +567,7 @@ public:
     }
 
     void addBatch(size_t row_begin, size_t row_end, AggregateDataPtr * places, size_t place_offset,
-        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos = -1) const override
+        const IColumn ** columns, Arena * arena, ssize_t if_argument_pos) const override
     {
         if constexpr (std::is_same_v<Data, AggregateFunctionUniqUniquesHashSetData>)
         {
