@@ -109,12 +109,6 @@ std::optional<ResolvedName> substreamPathOf(const NameAndTypePair & column)
 /// subcolumn first, a dynamic path under a declared column only after. The order is part of the
 /// answer, since a registered static subcolumn wins over a shorter dynamic root that also claims
 /// the name.
-///
-/// The dynamic stage walks the declared columns rather than the name's dot splits, which is what
-/// `ColumnsDescription::tryGetColumn` does once dynamic subcolumns are enabled. Both reach the same
-/// root - shortest declared prefix that owns the remainder - but a name can embed a folded constant,
-/// so splitting it costs O(length^2) allocated bytes, and index analysis runs before any data is
-/// read and observes no cancellation.
 std::optional<ResolvedName> resolveName(const ColumnsDescription & columns, const String & name)
 {
     if (auto column = columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), name))

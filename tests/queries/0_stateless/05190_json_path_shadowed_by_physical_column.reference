@@ -24,3 +24,7 @@
 15 flatten count	1
 17 Nullable(JSON) still prunes	1	1
 17 Nullable(JSON) count	1
+19 isNotNull	1
+19 isNotNull unindexed	1
+20 typed path under JSONAllValues still prunes	1	1
+20 typed path count	1

@@ -251,6 +251,43 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM t_nullable_json WHERE c.dyn = 'hel
 SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 SELECT '17 Nullable(JSON) count', count() FROM t_nullable_json WHERE c.dyn = 'hello';
 
+-- ===========================================================================================
+-- 19: the isNotNull route, which reaches the matcher from two condition classes no other arm
+-- covers. It exists only with optimize_functions_to_subcolumns off, because the rewrite turns the
+-- function into a null-map read before index analysis; and the claimant must be Nullable, or the
+-- route early-outs on the argument type.
+-- ===========================================================================================
+
+DROP TABLE IF EXISTS t_isnotnull;
+CREATE TABLE t_isnotnull (j JSON, `j.some.path` Nullable(String),
+    INDEX idx JSONAllPaths(j) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO t_isnotnull VALUES ('{"other":"v"}', 'hello');
+
+SELECT '19 isNotNull', count() FROM t_isnotnull WHERE isNotNull(`j.some.path`)
+SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT '19 isNotNull unindexed', count() FROM t_isnotnull WHERE isNotNull(`j.some.path`)
+SETTINGS optimize_functions_to_subcolumns = 0, use_skip_indexes = 0;
+
+-- ===========================================================================================
+-- 20: a typed path under JSONAllValues, the one typed-path shape whose granules can be pruned.
+-- JSONAllPaths emits a non-Nullable typed path for every row, so arms 6b and 8 can only assert
+-- index eligibility; here the value itself is indexed, so the pruning is observable.
+-- ===========================================================================================
+
+DROP TABLE IF EXISTS t_typed_values;
+CREATE TABLE t_typed_values (j JSON(a String),
+    INDEX idx JSONAllValues(j) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
+ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
+INSERT INTO t_typed_values VALUES ('{"a":"hello"}');
+INSERT INTO t_typed_values VALUES ('{"a":"other"}');
+
+SELECT '20 typed path under JSONAllValues still prunes',
+       countIf(trim(explain) ILIKE 'Name: idx'), countIf(trim(explain) ILIKE 'Granules: 1/2')
+FROM (EXPLAIN indexes = 1 SELECT count() FROM t_typed_values WHERE j.a = 'hello')
+SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
+SELECT '20 typed path count', count() FROM t_typed_values WHERE j.a = 'hello';
+
 DROP TABLE IF EXISTS t_shadow_text;
 DROP TABLE IF EXISTS t_shadow_ngrambf;
 DROP TABLE IF EXISTS t_shadow_bf;
@@ -268,3 +305,5 @@ DROP TABLE IF EXISTS t_null_map;
 DROP TABLE IF EXISTS t_type_hint;
 DROP TABLE IF EXISTS t_flatten;
 DROP TABLE IF EXISTS t_nullable_json;
+DROP TABLE IF EXISTS t_isnotnull;
+DROP TABLE IF EXISTS t_typed_values;

@@ -134,6 +134,14 @@ if [ $((resolved * 100)) -gt $((control * MAX_RATIO_PERCENT)) ]; then
          "more than ${MAX_RATIO_PERCENT}% of the same query without a JSONAllPaths index (${control} bytes)" >&2
     exit 1
 fi
+
+# The ratio above is a one-sided oracle: it only fires when the dotted arm allocates MORE. A name
+# that stopped being matched at all would allocate less and pass, so assert the match still happens.
+$CLICKHOUSE_CLIENT -q "
+    SELECT 'dotted subcolumn indexed',
+           countIf(trim(explain) ILIKE 'Name: jx'), countIf(trim(explain) ILIKE 'Granules: 0/1000')
+    FROM (EXPLAIN indexes = 1 SELECT count() FROM withjson WHERE ${DOTTED_SUBCOLUMN})
+"
 echo "dotted subcolumn OK"
 
 # A dotted constant must not change which granules are read, and a real JSON subcolumn filter on
