@@ -24,10 +24,23 @@
 #include <Common/RemoteHostFilter.h>
 #include <Common/config_version.h>
 
+#include <condition_variable>
 #include <filesystem>
+#include <mutex>
 
 namespace DB
 {
+
+/// Identifies an exception produced by stopping one HTTP request after its owner was cancelled.
+/// This marker belongs to the request, not to every reader sharing its Cancellation.
+class ReadInterruptedException final : public Exception
+{
+public:
+    explicit ReadInterruptedException(std::exception_ptr original_exception_ = nullptr);
+
+private:
+    std::exception_ptr original_exception;
+};
 
 class ReadWriteBufferFromHTTP : public SeekableReadBuffer, public WithFileName, public WithFileSize, public IReadBufferMetadataProvider
 {
@@ -45,6 +58,68 @@ public:
     using OutStreamCallback = std::function<void(std::ostream &)>;
     using NextCallback = std::function<void(size_t)>;
     using RedirectCallback = std::function<void(const Poco::URI &, const Poco::URI &)>;
+
+    /** A one-shot flag which the code that reads from the buffer sets when it does not need the data
+      * anymore, for example when the query pipeline it reads for is being torn down. The buffer only
+      * uses it to stop retrying: unlike a predicate it can be waited on, which makes the backoff
+      * between the retry attempts interruptible, so a cancellation does not have to be waited out.
+      */
+    class Cancellation
+    {
+    public:
+        /// Called from a cancellation handler, which is not allowed to throw. `softly` means the
+        /// cancellation is one after which the query must still succeed with what it has already
+        /// read (see StorageURLSource::cancel): the code in between the requests may then report
+        /// the interruption with a cancellation error of its own, which the owner of this flag
+        /// discards. After a hard teardown - the query is killed, the pipeline has already failed
+        /// elsewhere, or the client has disconnected - a synthesized error could mask the failure
+        /// that really happened, so nothing is allowed to invent one, see
+        /// StorageURLSource::getFirstAvailableURIAndReadBuffer.
+        void cancel(bool softly) noexcept
+        {
+            {
+                std::lock_guard lock(mutex);
+                /// A hard cancellation is final even after a soft one: ExecutingGraph::cancel
+                /// upgrades PartialResult to the reason of a later hard cancellation and delivers
+                /// the upgrade here, after which the query fails and nothing may report the
+                /// interruption as a cancellation anymore. The opposite downgrade does not exist,
+                /// so the read stays soft only while every reason so far has been soft.
+                cancelled_softly = cancelled ? (cancelled_softly && softly) : softly;
+                cancelled = true;
+            }
+            changed.notify_all();
+        }
+
+        /// Returns true if the read has been cancelled, either already or before the time has passed.
+        bool waitForCancellation(std::chrono::milliseconds duration)
+        {
+            std::unique_lock lock(mutex);
+            return changed.wait_for(lock, duration, [this] { return cancelled; });
+        }
+
+        /// A non-blocking check for the code in between the requests, which must not go on making
+        /// more of them after the read has been cancelled.
+        bool isCancelled()
+        {
+            std::lock_guard lock(mutex);
+            return cancelled;
+        }
+
+        /// Whether the read has been cancelled softly, see cancel.
+        bool isCancelledSoftly()
+        {
+            std::lock_guard lock(mutex);
+            return cancelled_softly;
+        }
+
+    private:
+        std::mutex mutex;
+        std::condition_variable changed;
+        bool cancelled = false;
+        bool cancelled_softly = false;
+    };
+
+    using CancellationPtr = std::shared_ptr<Cancellation>;
 
     const Poco::URI & getCurrentURI() const { return current_uri; }
 
@@ -115,11 +190,31 @@ private:
 
     LoggerPtr log;
 
+    /// Set by the code that reads from this buffer when it does not need the data anymore. Retrying an
+    /// HTTP request stops as soon as it is set, see doWithRetries.
+    CancellationPtr cancellation;
+
     bool withPartialContent() const;
 
     void prepareRequest(Poco::Net::HTTPRequest & request, std::optional<HTTPRange> range) const;
 
-    void doWithRetries(std::function<void()> && callable, std::function<void()> on_retry = nullptr, bool mute_logging = false) const;
+    void doWithRetries(
+        std::function<void()> && callable,
+        std::function<void()> on_retry = nullptr,
+        bool mute_logging = false,
+        bool stop_before_first_attempt_when_cancelled = true) const;
+
+    /// Waits before the next retry attempt. Returns true if the read has been cancelled while waiting.
+    bool waitBeforeRetry(size_t milliseconds) const;
+
+    /// Whether the code that reads from this buffer has cancelled the read, see doWithRetries.
+    bool isReadCancelled() const;
+
+    /// For the catch blocks of the helpers which treat the failure of a metadata request as an
+    /// answer: rethrows the exception being handled when it is the interruption of a request the
+    /// cancellation has abandoned - nothing may go on requesting after it. Must be called from a
+    /// catch block.
+    void rethrowIfReadInterrupted() const;
 
     CallResult  callImpl(
         Poco::Net::HTTPResponse & response,
@@ -164,6 +259,7 @@ private:
         size_t max_redirects_,
         bool enable_url_encoding_,
         OutStreamCallback out_stream_callback_,
+        CancellationPtr cancellation_,
         std::optional<size_t> out_stream_fixed_content_length_,
         bool use_external_buffer_,
         bool http_skip_not_found_url_,
@@ -228,6 +324,7 @@ class BuilderRWBufferFromHTTP
     bool use_external_buffer = false;
     bool http_skip_not_found_url = false;
     HTTPHeaderEntries http_header_entries{};
+    ReadWriteBufferFromHTTP::CancellationPtr cancellation;
     bool delay_initialization = true;
 
 public:
@@ -256,6 +353,7 @@ public:
     setterMember(withOutCallbackFixedContentLength, out_stream_fixed_content_length)
     setterMember(withRedirectCallback, redirect_callback)
     setterMember(withHeaders, http_header_entries)
+    setterMember(withCancellation, cancellation)
     setterMember(withExternalBuf, use_external_buffer)
     setterMember(withDelayInit, delay_initialization)
     setterMember(withSkipNotFound, http_skip_not_found_url)

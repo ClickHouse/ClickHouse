@@ -41,8 +41,10 @@
 
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/ClusterFunctionReadTask.h>
+#include <Interpreters/ProcessList.h>
 
 #include <Common/CurrentThread.h>
+#include <Common/FailPoint.h>
 #include <Common/HTTPHeaderFilter.h>
 #include <Common/OpenTelemetryTraceContext.h>
 #include <Common/parseRemoteDescription.h>
@@ -50,6 +52,8 @@
 #include <Common/ProfileEvents.h>
 #include <Common/thread_local_rng.h>
 #include <Common/logger_useful.h>
+
+#include <base/EnumReflection.h>
 
 #include <TableFunctions/TableFunctionURL.h>
 
@@ -75,6 +79,17 @@ namespace ProfileEvents
 
 namespace DB
 {
+namespace FailPoints
+{
+    extern const char storage_url_pause_before_empty_file_probe[];
+    extern const char storage_url_pause_between_metadata_probes[];
+    extern const char storage_url_pause_before_read_buffer_creation[];
+    extern const char storage_url_pause_before_input_format_initialization[];
+    extern const char storage_url_pause_after_pull[];
+    extern const char storage_url_pause_before_handling_interrupted_read_error[];
+    extern const char storage_url_pause_before_handling_option_error[];
+}
+
 namespace Setting
 {
     extern const SettingsBool allow_experimental_url_wildcard_from_index_pages;
@@ -92,6 +107,7 @@ namespace Setting
     extern const SettingsUInt64 output_format_compression_level;
     extern const SettingsUInt64 output_format_compression_zstd_window_log;
     extern const SettingsSnappyMode snappy_mode;
+    extern const SettingsOverflowMode timeout_overflow_mode;
     extern const SettingsBool use_cache_for_count_from_files;
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
@@ -431,6 +447,23 @@ StorageURLSource::StorageURLSource(
     {
         std::vector<String> current_uri_options;
         std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> uri_and_buf;
+        auto stop_if_query_cancelled = [&]
+        {
+            /// QueryStatus is marked before its cancellation is delivered to the processors, so
+            /// check it as well as the source-local cancellation before starting new I/O.
+            CurrentThread::checkIfNotCancelled();
+
+            /// `checkTimeLimit` returns false for a soft timeout with the `break` overflow mode.
+            /// Record it in the source-local token immediately instead of waiting for a processor
+            /// to observe it, so no new `eof`, metadata, or input-format I/O can start meanwhile.
+            if (auto query_status = getContext()->getProcessListElementSafe(); query_status && !query_status->checkTimeLimit())
+            {
+                cancellation->cancel(true);
+                return true;
+            }
+
+            return cancellation->isCancelled();
+        };
         do
         {
             current_uri_options = (*uri_iterator)();
@@ -449,15 +482,46 @@ StorageURLSource::StorageURLSource(
                 credentials,
                 headers,
                 glob_url,
-                current_uri_options.size() == 1);
+                current_uri_options.size() == 1,
+                cancellation);
+
+            /// A hard teardown of the pipeline noticed between the failover options returns no
+            /// buffer instead of an error, see getFirstAvailableURIAndReadBuffer. No one needs the
+            /// data anymore: end the stream.
+            if (!uri_and_buf.second)
+                return false;
+
+            /// `ReadBuffer::eof` may start the first HTTP GET. Do not let a cancellation that
+            /// arrived after choosing the buffer start that request.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_empty_file_probe);
+            if (stop_if_query_cancelled())
+                return false;
 
             /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
         }
         while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
 
+        /// A cancellation which has arrived while the URI was being chosen - after the loop above
+        /// passed its checks, see getFirstAvailableURIAndReadBuffer - must not start the requests
+        /// below for the metadata of a file no one is left to read: end the stream. Both kinds of
+        /// the cancellation converge here: after a soft one the query succeeds with what it has
+        /// already read, and after a hard teardown the failure or the kill is reported elsewhere.
+        if (stop_if_query_cancelled())
+            return false;
+
         curr_uri = uri_and_buf.first;
         current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
         read_buf = std::move(uri_and_buf.second);
+
+        FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_between_metadata_probes);
+
+        /// The two probes above and below share the metadata of one HEAD request, but when that
+        /// request has failed with a network error, the probe of the modification time has nothing
+        /// to remember, and the probe of the file size would send a fresh HEAD - which a cancellation
+        /// that has arrived in between must prevent the same way the check above prevents the first one.
+        if (stop_if_query_cancelled())
+            return false;
+
         current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
 
         if (auto file_progress_callback = getContext()->getFileProgressCallback())
@@ -480,6 +544,12 @@ StorageURLSource::StorageURLSource(
         }
         else
         {
+            /// `getInput` may construct a `ParallelReadBuffer`, whose workers start range GETs
+            /// immediately. Do not construct it after a cancellation.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_input_format_initialization);
+            if (stop_if_query_cancelled())
+                return false;
+
             // TODO: Pass max_parsing_threads and max_download_threads adjusted for num_streams.
             input_format = FormatFactory::instance().getInput(
                 format,
@@ -539,11 +609,111 @@ Chunk StorageURLSource::generate()
             break;
         }
 
-        if (!reader && !initialize())
-            return {};
-
         Chunk chunk;
-        if (reader->pull(chunk))
+        bool pulled = false;
+        try
+        {
+            if (!reader && !initialize())
+                return {};
+
+            /// Re-check after initialize: some of its helpers swallow the errors of the requests they
+            /// make - a failover probe, or the HEAD request for the file metadata whose absence is not
+            /// an error - so a cancellation which interrupted one of them can come out of initialize
+            /// as a normal completion. Do not pull a chunk no one needs.
+            CurrentThread::checkIfNotCancelled();
+            if (isCancelled())
+            {
+                reader->cancel();
+                break;
+            }
+
+            pulled = reader->pull(chunk);
+
+            /// `pull` may complete after the source was cancelled. Do not return this chunk:
+            /// `ISource::prepare` pushes the result before it notices cancellation.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_after_pull);
+            CurrentThread::checkIfNotCancelled();
+
+            /// `checkIfNotCancelled` observes a hard `max_execution_time` only once CancellationChecker
+            /// has turned it into a kill, and the executor polls the time limit only before a step,
+            /// so a deadline which passed while `pull` was running is not seen by either yet. Ask the
+            /// query status directly, the same way as initialize does: `checkTimeLimit` throws for
+            /// the `throw` overflow mode and returns false for `break`, after which the query returns
+            /// what it has already read and no one needs this chunk either.
+            if (auto query_status = getContext()->getProcessListElementSafe(); query_status && !query_status->checkTimeLimit())
+            {
+                cancellation->cancel(true);
+                reader->cancel();
+                break;
+            }
+
+            if (isCancelled())
+            {
+                reader->cancel();
+                break;
+            }
+        }
+        catch (const ReadInterruptedException &)
+        {
+            /// A window for the tests which arrange a cancellation upgrade - see below - to land
+            /// between the throw and the checks here.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_handling_interrupted_read_error);
+
+            /// The reason delivered to the source may understate a kill: the executor polls
+            /// QueryStatus::checkTimeLimitSoft, which returns false for a killed query, and cancels
+            /// the pipeline with CancelledByTimeout. When that poll wins the race against the
+            /// processor broadcast of the kill itself, ExecutingGraph::cancel keeps the poll's
+            /// reason - only PartialResult is upgraded - and the source never sees a hard reason.
+            /// The process list knows better: a killed (or hard timed out) query fails with the
+            /// proper cancellation error here instead of discarding the error of its interrupted
+            /// read as if its result were partial.
+            CurrentThread::checkIfNotCancelled();
+
+            /// The check is against the effective cancellation: a soft cancellation which a later
+            /// hard one has overridden - ExecutingGraph::cancel upgrades PartialResult to the later
+            /// reason and cancel here runs once more - does not allow discarding the error.
+            if (!cancellation->isCancelledSoftly())
+            {
+                /// The exception at hand is only the interruption of the cancelled read - the last
+                /// HTTP error rethrown by ReadWriteBufferFromHTTP::doWithRetries when the
+                /// cancellation woke up its retry backoff, or the cancellation error synthesized
+                /// between the failover options - possibly constructed under a soft state which the
+                /// hard cancellation has overridden only afterwards. Under a hard cancellation the
+                /// query fails for a reason of its own - the error of the peer whose failure tore
+                /// the pipeline down, the kill reported by the check above, or a disconnected
+                /// client with no one left to report to - and rethrowing the error of the
+                /// interrupted read could mask that reason, so end the stream with nothing to say.
+                tryLogCurrentException(
+                    getLogger("StorageURLSource"),
+                    "The read was interrupted by a hard cancellation; the stream ends and the query fails with the error which caused the cancellation",
+                    LogsLevel::information);
+
+                if (reader)
+                    reader->cancel();
+                break;
+            }
+
+            /// The query does not need any more data and must succeed with what it has already read:
+            /// a soft `max_execution_time` with the `break` overflow mode, or a consumer that has
+            /// enough data - see cancel. A failure of the interrupted read must not fail the query,
+            /// so end the stream instead.
+            tryLogCurrentException(
+                getLogger("StorageURLSource"),
+                "The read was interrupted by a cancellation after which the query returns its partial result, discarding the error",
+                LogsLevel::information);
+
+            if (reader)
+                reader->cancel();
+            break;
+        }
+        catch (...)
+        {
+            /// A cancellation in one ParallelReadBuffer worker must not suppress an unrelated
+            /// parse or decompression error from another worker.
+            throw;
+        }
+
+        if (pulled)
         {
             UInt64 num_rows = chunk.getNumRows();
             total_rows_in_file += num_rows;
@@ -598,7 +768,15 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        /// `pull` returns `false` both at the real end of the file and when the read was cancelled -
+        /// for example, by the soft `max_execution_time` with the `break` overflow mode, with which
+        /// the query succeeds with its partial result - see cancel. The rows read by an interrupted
+        /// read are not the row count of the file and must not poison the count cache. The inner
+        /// pipeline has no process list element of its own, so every cancellation which can reach
+        /// it is recorded either on this source or in its cancellation flag.
+        const bool read_whole_file = !isCancelled() && !cancellation->isCancelled();
+
+        if (read_whole_file && input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
@@ -614,6 +792,42 @@ Chunk StorageURLSource::generate()
 
 void StorageURLSource::onFinish() { parser_shared_resources->finishStream(); }
 
+void StorageURLSource::cancel(CancelReason reason) noexcept
+{
+    /// Stop retrying the HTTP requests and wake up the backoff between the attempts, so that the read
+    /// stops as soon as it is cancelled instead of when the whole backoff has expired. Whatever the
+    /// reason, no one is left to wait for the remaining attempts. The interrupted read then ends with
+    /// its last error, see doWithRetries, and the reasons only differ in what that comes out as:
+    ///
+    /// - A hard teardown propagates an exception: the query is killed or timed out with the `throw`
+    ///   overflow mode (CancelledByUser - such a timeout arrives here as this reason, through
+    ///   CancellationChecker and QueryStatus::cancelQuery), the pipeline has already failed elsewhere
+    ///   (Exception), or is torn down by a caller which does not report a reason, such as
+    ///   BlockIO::onCancelOrConnectionLoss on a client disconnect (Unknown).
+    ///
+    /// - A query whose consumer simply does not need any more data must still succeed with what it has
+    ///   already read, so the error of the interrupted read is discarded in generate:
+    ///   CancelReason::PartialResult, and CancelReason::CancelledByTimeout when `max_execution_time`
+    ///   uses the `break` overflow mode - a query which is not killed and returns what it has read so far.
+    ///
+    /// The reasons of the repeated calls may differ: ExecutingGraph::cancel upgrades PartialResult
+    /// to the reason of a later hard cancellation and cancels the processors once more, after which
+    /// the query fails and the error of the interrupted read must not be discarded anymore. The flag
+    /// keeps the effective kind - hard overrides soft, see Cancellation::cancel - and generate reads
+    /// it from there, so the discarding follows the upgrade.
+    const bool soft = reason == CancelReason::PartialResult
+        || (reason == CancelReason::CancelledByTimeout
+            && getContext()->getSettingsRef()[Setting::timeout_overflow_mode] == OverflowMode::BREAK);
+    cancellation->cancel(soft);
+
+    /// The behavior above depends on which of the sometimes repeated cancellations have arrived so
+    /// far, so leave a trace of each - also for the tests which arrange a particular order and need
+    /// to see the delivery.
+    LOG_DEBUG(getLogger("StorageURLSource"), "The read has been cancelled, reason: {}", magic_enum::enum_name(reason));
+
+    ISource::cancel(reason);
+}
+
 std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource::getFirstAvailableURIAndReadBuffer(
     std::vector<String>::const_iterator & option,
     const std::vector<String>::const_iterator & end,
@@ -625,15 +839,65 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
     Poco::Net::HTTPBasicCredentials & credentials,
     const HTTPHeaderEntries & headers,
     bool glob_url,
-    bool delay_initialization)
+    bool delay_initialization,
+    ReadWriteBufferFromHTTP::CancellationPtr cancellation)
 {
     String first_exception_message;
     ReadSettings read_settings = context_->getReadSettings();
 
     size_t options = std::distance(option, end);
     std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> last_skipped_empty_res;
+
+    /// A cancellation which lands where no request is in flight for it to interrupt - between the
+    /// options, after an empty file has been skipped or a probe has failed, and after the last option
+    /// has failed - stops the choosing of the URI here instead. Returns true when the caller must
+    /// return no buffer; throws for a killed query and for a soft cancellation.
+    auto stop_if_cancelled = [&]() -> bool
+    {
+        /// Do not go on probing the failover options if the query has been killed meanwhile.
+        CurrentThread::checkIfNotCancelled();
+
+        /// `checkTimeLimit` returns false for a soft timeout with the `break` overflow mode.
+        /// Latch it before the last guard preceding `BuilderRWBufferFromHTTP::create`: its
+        /// constructor can start the first request of a failover option immediately.
+        /// The schema inference reads with no cancellation token of their own, and `checkTimeLimit`
+        /// throws for a hard timeout, so check it whether there is a token to latch it in or not.
+        if (auto query_status = context_->getProcessListElementSafe();
+            query_status && !query_status->checkTimeLimit() && cancellation)
+            cancellation->cancel(true);
+
+        /// The check above is a no-op for the cancellations which do not kill the query. So check the
+        /// flag itself, in both of its kinds:
+        ///
+        /// - After a soft cancellation - the `max_execution_time` timeout with the `break` overflow
+        ///   mode, or a consumer which has enough data - the query must still succeed with what it
+        ///   has already read, so report the interruption with a cancellation error, which the
+        ///   source discards, see generate.
+        ///
+        /// - A hard teardown which does not kill the query - the pipeline has already failed
+        ///   elsewhere, or the client has disconnected - must not be reported with a synthesized
+        ///   error like that: generate would not discard it, and it could reach the user in place of
+        ///   the failure that really happened, and neither may we report the aggregate error of the
+        ///   options below, for the same reason. Return no buffer instead: no one is left who needs
+        ///   the data, so the caller ends the stream, see initialize.
+        if (cancellation && cancellation->isCancelled())
+        {
+            if (cancellation->isCancelledSoftly())
+            {
+                throw ReadInterruptedException();
+            }
+
+            return true;
+        }
+
+        return false;
+    };
+
     for (; option != end; ++option)
     {
+        if (stop_if_cancelled())
+            return {};
+
         bool skip_url_not_found_error = glob_url && read_settings.http_settings.skip_not_found_url_for_globs && option == std::prev(end);
         auto request_uri = Poco::URI(*option, context_->getSettingsRef()[Setting::enable_url_encoding]);
 
@@ -646,6 +910,13 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
 
         try
         {
+            /// When initialization is not delayed, the buffer constructor starts the first request.
+            /// Check once more immediately before construction, so a cancellation that lands after
+            /// the loop-top check cannot start a request for this failover option.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_read_buffer_creation);
+            if (stop_if_cancelled())
+                return {};
+
             auto res = BuilderRWBufferFromHTTP(request_uri)
                            .withConnectionGroup(HTTPConnectionGroupType::STORAGE)
                            .withMethod(http_method)
@@ -659,9 +930,10 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
                            .withSkipNotFound(skip_url_not_found_error)
                            .withHeaders(headers)
                            .withDelayInit(delay_initialization)
+                           .withCancellation(cancellation)
                            .create(credentials);
 
-            if (context_->getSettingsRef()[Setting::engine_url_skip_empty_files] && res->eof() && option != std::prev(end))
+            if (context_->getSettingsRef()[Setting::engine_url_skip_empty_files] && option != std::prev(end) && res->eof())
             {
                 last_skipped_empty_res = {request_uri, std::move(res)};
                 continue;
@@ -671,6 +943,46 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
         }
         catch (...)
         {
+            /// Probing the next failover option only makes sense while someone still wants the data.
+            /// The error of a request whose read has been cancelled - for example, the last HTTP error
+            /// rethrown when the cancellation woke up the retry backoff, see doWithRetries - must
+            /// propagate instead: the source discards it or fails with it depending on the reason of
+            /// the cancellation, see generate. It is marked as the interruption of the read here too:
+            /// the request may have failed just before the cancellation arrived, in which case its
+            /// error is unmarked, but not probing the remaining options because of the cancellation
+            /// makes it the error the read is interrupted with. The check precedes the single-option
+            /// fast path below for the same reason: the rethrown error of the lone option must not
+            /// mask a cancellation which landed while it was unwinding.
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_handling_option_error);
+
+            if (cancellation && cancellation->isCancelled())
+            {
+                throw ReadInterruptedException(std::current_exception());
+            }
+
+            /// The readers which pass no cancellation flag - among them the schema inference of
+            /// `url`, which chooses the URI with this same loop - have only the query status to
+            /// tell them the query is gone. The terminal check inside doWithRetries does not cover
+            /// a kill or a hard timeout landing while the error of the request unwinds to this
+            /// catch, so ask the query status once more before the error is reported.
+            CurrentThread::checkIfNotCancelled();
+
+            /// `checkIfNotCancelled` only observes a query which has already been killed, and the
+            /// asynchronous CancellationChecker kills a query whose `max_execution_time` has run out
+            /// with the `throw` overflow mode only on its own schedule. Ask the query status about the
+            /// time limit directly as well, the same way as stop_if_cancelled above: it throws the
+            /// timeout error for the `throw` overflow mode, so that a hard timeout expiring while the
+            /// error of the request unwinds is reported as itself instead of as the stale HTTP error.
+            /// With the `break` overflow mode it returns false instead of throwing, and the timeout is
+            /// latched in the flag - for the readers which have one - as a soft cancellation, whose
+            /// interrupted read the source discards, see generate.
+            if (auto query_status = context_->getProcessListElementSafe();
+                query_status && !query_status->checkTimeLimit() && cancellation)
+            {
+                cancellation->cancel(true);
+                throw ReadInterruptedException(std::current_exception());
+            }
+
             if (options == 1)
                 throw;
 
@@ -682,6 +994,12 @@ std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> StorageURLSource:
             continue;
         }
     }
+
+    /// A cancellation after the last option has failed, with no request left for it to interrupt, must
+    /// not be reported with the aggregate error below either - the same window as between the options,
+    /// with the same two outcomes.
+    if (stop_if_cancelled())
+        return {};
 
     /// If all options are unreachable except empty ones that we skipped,
     /// return last empty result. It will be skipped later.
