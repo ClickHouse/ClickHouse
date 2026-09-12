@@ -3,6 +3,8 @@
 -- modes as a join must not change which rows they return, so a float key keeps the set-operation step
 -- whenever an algorithm that a merge join can be reached through is enabled.
 
+SET enable_analyzer = 1;
+
 SELECT 'a float key keeps -0.0 apart from 0.0';
 SELECT count() FROM (SELECT 0.0::Float64 AS x INTERSECT DISTINCT SELECT -0.0::Float64) SETTINGS join_algorithm = 'partial_merge';
 SELECT count() FROM (SELECT 0.0::Float64 AS x INTERSECT DISTINCT SELECT -0.0::Float64) SETTINGS join_algorithm = 'prefer_partial_merge';
