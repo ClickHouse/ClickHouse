@@ -263,6 +263,15 @@ public:
                 arguments[1].type->getName());
         }
 
+        const auto is_supported_type = [](const DataTypePtr & type)
+        {
+            const WhichDataType column_type(type->getColumnType());
+            return column_type.isInteger() || column_type.isFloat() || column_type.isStringOrFixedString();
+        };
+
+        if (!is_supported_type(source_nested))
+            throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Unsupported type {}. Consider arrayFilter(x -> NOT has (exclude), source)", arguments[0].type->getName());
+
         return arguments[0].type;
     }
 
