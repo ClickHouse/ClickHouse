@@ -42,14 +42,14 @@ namespace
 DataTypePtr originEnum()
 {
     return std::make_shared<DataTypeEnum8>(DataTypeEnum8::Values{
-        {"default", static_cast<Int8>(TableSettingOrigin::Default)},
-        {"config", static_cast<Int8>(TableSettingOrigin::Config)},
-        {"compatibility", static_cast<Int8>(TableSettingOrigin::Compatibility)},
-        {"definition", static_cast<Int8>(TableSettingOrigin::Definition)},
-        {"named_collection", static_cast<Int8>(TableSettingOrigin::NamedCollection)},
-        {"shared_metadata", static_cast<Int8>(TableSettingOrigin::SharedMetadata)},
-        {"runtime", static_cast<Int8>(TableSettingOrigin::Runtime)},
-        {"other", static_cast<Int8>(TableSettingOrigin::Other)},
+        {"default", static_cast<Int8>(SettingOrigin::Default)},
+        {"config", static_cast<Int8>(SettingOrigin::Config)},
+        {"compatibility", static_cast<Int8>(SettingOrigin::Compatibility)},
+        {"definition", static_cast<Int8>(SettingOrigin::Definition)},
+        {"named_collection", static_cast<Int8>(SettingOrigin::NamedCollection)},
+        {"shared_metadata", static_cast<Int8>(SettingOrigin::SharedMetadata)},
+        {"runtime", static_cast<Int8>(SettingOrigin::Runtime)},
+        {"other", static_cast<Int8>(SettingOrigin::Other)},
     });
 }
 
@@ -157,7 +157,7 @@ public:
     {
     }
 
-    String getName() const override { return "TableSettings"; }
+    String getName() const override { return "SettingDescriptions"; }
 
 protected:
     Chunk generate() override
@@ -214,9 +214,9 @@ protected:
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(setting.default_value);
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.origin != TableSettingOrigin::Default);
+                        res_columns[res_index++]->insert(setting.origin != SettingOrigin::Default);
                     if (column_mask[src_index++])
-                        res_columns[res_index++]->insert(setting.description);
+                        res_columns[res_index++]->insert(setting.comment);
                     if (column_mask[src_index++])
                         res_columns[res_index++]->insert(setting.min_value ? Field(*setting.min_value) : Field());
                     if (column_mask[src_index++])

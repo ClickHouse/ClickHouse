@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/TableSetting.h>
+#include <Storages/SettingDescription.h>
 
 #if USE_YTSAURUS
 #include <Core/BaseSettingsFwdMacros.h>

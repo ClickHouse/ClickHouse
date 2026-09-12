@@ -1323,7 +1323,7 @@ Here is a list of functions supporting a `TimeSeries` table as an argument:
         .syntax = "ENGINE = TimeSeries()"});
 }
 
-TableSettings StorageTimeSeries::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageTimeSeries::getTableSettings(ContextPtr query_context) const
 {
     return attributeSettingsStatedInDefinition(storage_settings.get()->enumerateSettings(), query_context);
 }

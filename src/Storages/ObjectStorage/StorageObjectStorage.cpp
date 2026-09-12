@@ -1148,7 +1148,7 @@ bool StorageObjectStorage::scheduleDataProcessingJob(BackgroundJobsAssignee & as
     return configuration->scheduleDataProcessingJob(assignee, *this);
 }
 
-TableSettings StorageObjectStorage::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageObjectStorage::getTableSettings(ContextPtr query_context) const
 {
     /// The settings belong to the configuration rather than to this storage. A data lake
     /// configuration keeps them; plain object storage - `S3`, `GCS`, `AzureBlobStorage`, `HDFS` -

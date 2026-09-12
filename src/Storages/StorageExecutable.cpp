@@ -745,7 +745,7 @@ ClickHouse will maintain 4 processes on-demand when your client queries the `sen
         .related = {"Executable"}});
 }
 
-TableSettings StorageExecutable::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageExecutable::getTableSettings(ContextPtr query_context) const
 {
     return attributeSettingsStatedInDefinition(settings->enumerateSettings(), query_context);
 }

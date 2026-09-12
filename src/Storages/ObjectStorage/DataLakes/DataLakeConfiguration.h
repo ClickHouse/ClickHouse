@@ -434,7 +434,7 @@ public:
         return true;
     }
 
-    TableSettings enumerateSettings() const override
+    SettingDescriptions enumerateSettings() const override
     {
         return settings->enumerateSettings();
     }

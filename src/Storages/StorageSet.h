@@ -80,7 +80,7 @@ public:
     String getName() const override { return "Set"; }
 
     /// See `IStorage::settingsNotRetainedByEngine`.
-    TableSettings getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
+    SettingDescriptions getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
 
     /// Access the insides.
     SetPtr getSet() const;

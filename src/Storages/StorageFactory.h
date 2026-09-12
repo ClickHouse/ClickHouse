@@ -9,7 +9,7 @@
 #include <Storages/registerStorages.h>
 #include <Access/Common/AccessType.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/TableSetting.h>
+#include <Storages/SettingDescription.h>
 #include <unordered_map>
 
 
@@ -41,7 +41,7 @@ public:
     /// table's - so the two tables describe a setting identically.
     /// Engines that share a settings struct but draw on different server-level instances register
     /// different functions - see the replicated `MergeTree` variants.
-    using EnumerateEngineSettingsFn = TableSettings(*)(ContextPtr context);
+    using EnumerateEngineSettingsFn = SettingDescriptions(*)(ContextPtr context);
 
     struct Arguments
     {

@@ -43,7 +43,7 @@ public:
     String getName() const override { return "PostgreSQL"; }
 
     /// See `IStorage::settingsNotRetainedByEngine`.
-    TableSettings getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
+    SettingDescriptions getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
 
     bool isExternalDatabase() const override { return true; }
 

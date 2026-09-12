@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/TableSetting.h>
+#include <Storages/SettingDescription.h>
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsEnums.h>
@@ -44,9 +44,9 @@ struct DistributedSettings
 
     static bool hasBuiltin(std::string_view name);
     /// Every setting of this instance, for `system.table_settings`. The caller refines `origin`.
-    TableSettings enumerateSettings() const;
+    SettingDescriptions enumerateSettings() const;
     /// The engine's own settings, for `system.engine_settings`.
-    static TableSettings enumerateEngineSettings(ContextPtr context);
+    static SettingDescriptions enumerateEngineSettings(ContextPtr context);
 
 private:
     std::unique_ptr<DistributedSettingsImpl> impl;

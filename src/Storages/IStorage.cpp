@@ -297,8 +297,8 @@ NameSet IStorage::getSettingNamesStatedInDefinition(ContextPtr context) const
     return names;
 }
 
-TableSettings IStorage::attributeSettingsStatedInDefinition(
-    TableSettings settings, ContextPtr context, const SettingNameNormalizer & normalize) const
+SettingDescriptions IStorage::attributeSettingsStatedInDefinition(
+    SettingDescriptions settings, ContextPtr context, const SettingNameNormalizer & normalize) const
 {
     auto stated_in_definition = getSettingNamesStatedInDefinition(context);
     if (normalize)
@@ -322,26 +322,26 @@ TableSettings IStorage::attributeSettingsStatedInDefinition(
             || std::any_of(setting.aliases.begin(), setting.aliases.end(),
                            [&](std::string_view alias) { return stated_in_definition.contains(String{alias}); });
         if (stated)
-            setting.origin = TableSettingOrigin::Definition;
+            setting.origin = SettingOrigin::Definition;
     }
     return settings;
 }
 
-TableSettings IStorage::getTableSettings(ContextPtr context) const
+SettingDescriptions IStorage::getTableSettings(ContextPtr context) const
 {
     /// Only what the table's own `SETTINGS` clause states. Values come from the AST, so unlike an
     /// override backed by a settings struct there is no accessor to give a type-faithful rendering,
     /// nor a default, type, description or tier to report.
     const auto changes = getSettingsStatedInDefinition(getStorageID(), context);
 
-    TableSettings result;
+    SettingDescriptions result;
     result.reserve(changes.size());
     for (const auto & change : changes)
     {
-        TableSetting described;
+        SettingDescription described;
         described.name = change.name;
         described.value = convertFieldToString(change.value);
-        described.origin = TableSettingOrigin::Definition;
+        described.origin = SettingOrigin::Definition;
 
         /// Through the same helper the settings-struct path uses, and for the same reason: whether a
         /// value is redacted must not depend on which of the two built the row. A definition can

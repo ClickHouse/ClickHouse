@@ -29,7 +29,7 @@ public:
     std::string getName() const override { return "QueryRunner"; }
 
     /// See `IStorage::settingsNotRetainedByEngine`.
-    TableSettings getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
+    SettingDescriptions getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
 
     SinkToStoragePtr write(const ASTPtr & query, const StorageMetadataPtr & metadata_snapshot, ContextPtr context, bool async_insert) override;
 

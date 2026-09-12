@@ -103,7 +103,7 @@ public:
 
     const KafkaSettings & getKafkaSettings() const { return *kafka_settings; }
 
-    TableSettings getTableSettings(ContextPtr query_context) const override;
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     /// Returns the existing OAuth context, or installs `candidate` if none exists yet. Thread-safe.
     std::shared_ptr<AWSMSKIAMAuth::OAuthBearerTokenRefreshContext>

@@ -11,7 +11,7 @@
 #include <Storages/ColumnDependency.h>
 #include <Storages/ColumnSize.h>
 #include <Storages/IStorage_fwd.h>
-#include <Storages/TableSetting.h>
+#include <Storages/SettingDescription.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/VirtualColumnsDescription.h>
 #include <Storages/TableLockHolder.h>
@@ -270,7 +270,7 @@ public:
     /// running. Those last two are why this is a method on the storage rather than a static
     /// enumeration of the settings type - see `StorageObjectStorageQueue`, which reconstructs its
     /// settings from Keeper.
-    virtual TableSettings getTableSettings(ContextPtr context) const;
+    virtual SettingDescriptions getTableSettings(ContextPtr context) const;
 
     /// The settings the table's own `SETTINGS` clause names, for an override of
     /// `getTableSettings` refining `origin`: a setting stated there came from the definition,
@@ -292,10 +292,10 @@ public:
     /// from the query context, a named collection or a connection pool default. An engine that is
     /// advertised by `system.engine_settings` and cannot answer for a table reports nothing here
     /// rather than a partial truth. Reporting them properly is its own piece of work.
-    static TableSettings settingsNotRetainedByEngine() { return {}; }
+    static SettingDescriptions settingsNotRetainedByEngine() { return {}; }
 
-    TableSettings attributeSettingsStatedInDefinition(
-        TableSettings settings, ContextPtr context, const SettingNameNormalizer & normalize = {}) const;
+    SettingDescriptions attributeSettingsStatedInDefinition(
+        SettingDescriptions settings, ContextPtr context, const SettingNameNormalizer & normalize = {}) const;
 
     /// Update storage metadata. Used in ALTER or initialization of Storage.
     /// Metadata object is multiversion, so this method can be called without

@@ -61,7 +61,7 @@ public:
         size_t max_block_size,
         size_t num_streams) override;
 
-    TableSettings getTableSettings(ContextPtr query_context) const override;
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
 private:
     const String cypress_path;

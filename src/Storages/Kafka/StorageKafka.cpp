@@ -229,7 +229,7 @@ StorageKafka::StorageKafka(
     });
 }
 
-TableSettings StorageKafka::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageKafka::getTableSettings(ContextPtr query_context) const
 {
     auto settings = kafka_settings->enumerateSettings();
 
@@ -245,7 +245,7 @@ TableSettings StorageKafka::getTableSettings(ContextPtr query_context) const
         if (const auto collection = NamedCollectionFactory::instance().tryGet(collection_name))
             for (auto & setting : settings)
                 if (collection->has(setting.name))
-                    setting.origin = TableSettingOrigin::NamedCollection;
+                    setting.origin = SettingOrigin::NamedCollection;
     }
 
     /// Last, because the `SETTINGS` clause is applied last and so wins over the collection.

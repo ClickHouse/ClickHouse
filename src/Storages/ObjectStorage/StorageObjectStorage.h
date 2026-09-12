@@ -121,7 +121,7 @@ public:
 
     bool isDataLake() const override { return configuration->isDataLakeConfiguration(); }
 
-    TableSettings getTableSettings(ContextPtr query_context) const override;
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
     bool isIcebergStorage() const { return configuration->isIcebergConfiguration(); }
 

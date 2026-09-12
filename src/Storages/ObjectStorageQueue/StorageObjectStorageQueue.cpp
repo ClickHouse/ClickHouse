@@ -2197,7 +2197,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     }
 }
 
-TableSettings StorageObjectStorageQueue::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query_context) const
 {
     /// This storage keeps no settings object: `getSettings` rebuilds one, and the values it puts in
     /// come from three places - the table metadata in Keeper, which every replica shares; the
@@ -2211,8 +2211,8 @@ TableSettings StorageObjectStorageQueue::getTableSettings(ContextPtr query_conte
     /// against the table metadata instead. Recover the distinction by value.
     for (auto & setting : settings)
         setting.origin = setting.value == setting.default_value
-            ? TableSettingOrigin::Default
-            : TableSettingOrigin::Other;
+            ? SettingOrigin::Default
+            : SettingOrigin::Other;
 
     /// The definition may spell a setting the way this engine used to accept it - with the
     /// `s3queue_` prefix, or as `enable_logging_to_s3queue_log` - because `loadFromQuery` rewrites
@@ -2230,7 +2230,7 @@ TableSettings StorageObjectStorageQueue::getTableSettings(ContextPtr query_conte
             continue;
 
         const auto mode = std::find_if(settings.begin(), settings.end(),
-            [](const TableSetting & s) { return s.name == "partitioning_mode"; });
+            [](const SettingDescription & s) { return s.name == "partitioning_mode"; });
         if (mode == settings.end())
             break;
 
@@ -2264,7 +2264,7 @@ TableSettings StorageObjectStorageQueue::getTableSettings(ContextPtr query_conte
 
     for (auto & setting : settings)
         if (held_in_shared_metadata.contains(setting.name))
-            setting.origin = TableSettingOrigin::SharedMetadata;
+            setting.origin = SettingOrigin::SharedMetadata;
 
     return settings;
 }

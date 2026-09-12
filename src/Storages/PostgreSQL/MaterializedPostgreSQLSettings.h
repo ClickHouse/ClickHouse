@@ -1,6 +1,6 @@
 #pragma once
 
-#include <Storages/TableSetting.h>
+#include <Storages/SettingDescription.h>
 
 #include "config.h"
 

@@ -136,7 +136,7 @@ public:
     void setMaterializedCTE(MaterializedCTEPtr materialized_cte_) { materialized_cte = materialized_cte_; }
     MaterializedCTEPtr getMaterializedCTE() const { return materialized_cte.lock(); }
 
-    TableSettings getTableSettings(ContextPtr query_context) const override;
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
 private:
     static VirtualColumnsDescription createVirtuals();

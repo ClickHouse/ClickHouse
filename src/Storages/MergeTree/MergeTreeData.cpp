@@ -14059,7 +14059,7 @@ String replaceFileNameToHashIfNeeded(const String & file_name, const MergeTreeSe
 }
 
 
-TableSettings MergeTreeData::getTableSettings(ContextPtr query_context) const
+SettingDescriptions MergeTreeData::getTableSettings(ContextPtr query_context) const
 {
     auto settings = getSettings()->enumerateSettings();
 
@@ -14078,14 +14078,14 @@ TableSettings MergeTreeData::getTableSettings(ContextPtr query_context) const
 
     for (auto & setting : settings)
     {
-        if (setting.origin != TableSettingOrigin::Other)
+        if (setting.origin != SettingOrigin::Other)
             continue;
 
         /// Config before compatibility, because the config section is applied second and wins.
         if (provenance.set_in_config.contains(setting.name))
-            setting.origin = TableSettingOrigin::Config;
+            setting.origin = SettingOrigin::Config;
         else if (provenance.set_by_compatibility.contains(setting.name))
-            setting.origin = TableSettingOrigin::Compatibility;
+            setting.origin = SettingOrigin::Compatibility;
     }
 
     /// The bounds a profile puts on these settings, reported exactly as

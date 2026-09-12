@@ -85,7 +85,7 @@ public:
     String getName() const override { return "MaterializedPostgreSQL"; }
 
     /// See `IStorage::settingsNotRetainedByEngine`.
-    TableSettings getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
+    SettingDescriptions getTableSettings(ContextPtr) const override { return settingsNotRetainedByEngine(); }
 
     void shutdown(bool is_drop) override;
 

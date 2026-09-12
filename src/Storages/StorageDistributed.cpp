@@ -2855,7 +2855,7 @@ bool StorageDistributed::initializeDiskOnConfigChange(const std::set<String> & n
 
     return true;
 }
-TableSettings StorageDistributed::getTableSettings(ContextPtr query_context) const
+SettingDescriptions StorageDistributed::getTableSettings(ContextPtr query_context) const
 {
     auto settings = distributed_settings->enumerateSettings();
 
@@ -2864,12 +2864,12 @@ TableSettings StorageDistributed::getTableSettings(ContextPtr query_context) con
     /// anything the config changed and the definition does not restate came from the config.
     NameSet changed_by_config;
     for (const auto & configured : query_context->getDistributedSettings().enumerateSettings())
-        if (configured.origin != TableSettingOrigin::Default)
+        if (configured.origin != SettingOrigin::Default)
             changed_by_config.insert(configured.name);
 
     for (auto & setting : settings)
-        if (setting.origin == TableSettingOrigin::Other && changed_by_config.contains(setting.name))
-            setting.origin = TableSettingOrigin::Config;
+        if (setting.origin == SettingOrigin::Other && changed_by_config.contains(setting.name))
+            setting.origin = SettingOrigin::Config;
 
     return attributeSettingsStatedInDefinition(std::move(settings), query_context);
 }

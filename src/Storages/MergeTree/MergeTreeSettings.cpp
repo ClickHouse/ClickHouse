@@ -3298,7 +3298,7 @@ bool MergeTreeSettings::isPartFormatSetting(const String & name)
 namespace
 {
 
-TableSettings enumerateServerEffective(const MergeTreeSettings & settings, ContextPtr context)
+SettingDescriptions enumerateServerEffective(const MergeTreeSettings & settings, ContextPtr context)
 {
     /// What the engine actually uses on this server: the `merge_tree` config section and the
     /// `compatibility` setting are already applied to these, and it is the instance
@@ -3310,18 +3310,18 @@ TableSettings enumerateServerEffective(const MergeTreeSettings & settings, Conte
 
 }
 
-TableSettings MergeTreeSettings::enumerateEngineSettings(ContextPtr context)
+SettingDescriptions MergeTreeSettings::enumerateEngineSettings(ContextPtr context)
 {
     return enumerateServerEffective(context->getMergeTreeSettings(), context);
 }
 
-TableSettings MergeTreeSettings::enumerateReplicatedEngineSettings(ContextPtr context)
+SettingDescriptions MergeTreeSettings::enumerateReplicatedEngineSettings(ContextPtr context)
 {
     /// The replicated family reads an additional `replicated_merge_tree` config section, so its
     /// settings differ from the rest of the family and it registers its own function.
     return enumerateServerEffective(context->getReplicatedMergeTreeSettings(), context);
 }
-void MergeTreeSettings::applyConstraints(TableSettings & settings, const SettingsConstraints & constraints) const
+void MergeTreeSettings::applyConstraints(SettingDescriptions & settings, const SettingsConstraints & constraints) const
 {
     for (auto & setting : settings)
     {
@@ -3345,7 +3345,7 @@ void MergeTreeSettings::applyConstraints(TableSettings & settings, const Setting
     }
 }
 
-TableSettings MergeTreeSettings::enumerateSettings() const
+SettingDescriptions MergeTreeSettings::enumerateSettings() const
 {
     return enumerateSettingsFromImpl(*impl);
 }

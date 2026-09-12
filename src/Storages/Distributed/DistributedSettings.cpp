@@ -109,13 +109,13 @@ bool DistributedSettings::hasBuiltin(std::string_view name)
     return DistributedSettingsImpl::hasBuiltin(name);
 }
 
-TableSettings DistributedSettings::enumerateEngineSettings(ContextPtr context)
+SettingDescriptions DistributedSettings::enumerateEngineSettings(ContextPtr context)
 {
     /// The `distributed` config section is applied to these, so they can differ from the compiled
     /// defaults, and this is the instance a new table starts from.
     return context->getDistributedSettings().enumerateSettings();
 }
-TableSettings DistributedSettings::enumerateSettings() const
+SettingDescriptions DistributedSettings::enumerateSettings() const
 {
     return enumerateSettingsFromImpl(*impl);
 }

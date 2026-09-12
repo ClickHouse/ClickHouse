@@ -123,7 +123,7 @@ public:
 
     void setSettings(std::unique_ptr<RocksDBSettings> && settings_) { storage_settings.set(std::move(settings_)); }
 
-    TableSettings getTableSettings(ContextPtr query_context) const override;
+    SettingDescriptions getTableSettings(ContextPtr query_context) const override;
 
 private:
     SinkToStoragePtr getSink(ContextPtr context, const StorageMetadataPtr & metadata_snapshot);

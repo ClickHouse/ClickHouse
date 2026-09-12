@@ -107,9 +107,9 @@ void StorageSystemEngineSettings::fillData(MutableColumns & res_columns, Context
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(setting.default_value);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(setting.origin != TableSettingOrigin::Default);
+                res_columns[res_index++]->insert(setting.origin != SettingOrigin::Default);
             if (columns_mask[src_index++])
-                res_columns[res_index++]->insert(setting.description);
+                res_columns[res_index++]->insert(setting.comment);
             if (columns_mask[src_index++])
                 res_columns[res_index++]->insert(setting.min_value ? Field(*setting.min_value) : Field());
             if (columns_mask[src_index++])

@@ -62,14 +62,14 @@ void SystemMergeTreeSettings<replicated>::fillData(MutableColumns & res_columns,
         : MergeTreeSettings::enumerateEngineSettings(context);
 
     /// A row per name the setting answers to, as `system.settings` does.
-    auto add_row = [&](std::string_view name, const TableSetting & setting, std::string_view alias_for)
+    auto add_row = [&](std::string_view name, const SettingDescription & setting, std::string_view alias_for)
     {
         size_t i = 0;
         res_columns[i++]->insert(name);
         res_columns[i++]->insert(setting.value);
         res_columns[i++]->insert(setting.default_value);
-        res_columns[i++]->insert(setting.origin != TableSettingOrigin::Default);
-        res_columns[i++]->insert(setting.description);
+        res_columns[i++]->insert(setting.origin != SettingOrigin::Default);
+        res_columns[i++]->insert(setting.comment);
         res_columns[i++]->insert(setting.min_value ? Field(*setting.min_value) : Field());
         res_columns[i++]->insert(setting.max_value ? Field(*setting.max_value) : Field());
 
