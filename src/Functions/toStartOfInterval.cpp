@@ -69,6 +69,27 @@ Int64 toWholeSecondsFloor(Int64 t, const libdivide::divider<Int64, libdivide::BR
     return t < 0 && whole * scale_multiplier != t ? whole - 1 : whole;
 }
 
+/// Seconds per unit of the fixed-length units, nothing for the calendar ones, whose length depends on where
+/// they start. Their buckets with an `origin` are `origin + k * num_units * unit_seconds`, i.e. arithmetic on
+/// the difference from the origin: the `DateLUTImpl` helpers must not see that difference, as they would align
+/// it to the local midnight of the time point it is not.
+template <IntervalKind::Kind unit>
+constexpr std::optional<Int64> fixedUnitSeconds()
+{
+    if constexpr (unit == IntervalKind::Kind::Second)
+        return 1;
+    else if constexpr (unit == IntervalKind::Kind::Minute)
+        return 60;
+    else if constexpr (unit == IntervalKind::Kind::Hour)
+        return 3600;
+    else if constexpr (unit == IntervalKind::Kind::Day)
+        return 86'400;
+    else if constexpr (unit == IntervalKind::Kind::Week)
+        return 7 * 86'400;
+    else
+        return std::nullopt;
+}
+
 class FunctionToStartOfInterval final : public IFunction
 {
 private:
@@ -348,12 +369,14 @@ private:
 
         if (origin_column.column) // Overload: Origin
         {
-            const bool is_small_interval = (unit == IntervalKind::Kind::Nanosecond || unit == IntervalKind::Kind::Microsecond || unit == IntervalKind::Kind::Millisecond);
+            constexpr bool is_small_interval = (unit == IntervalKind::Kind::Nanosecond || unit == IntervalKind::Kind::Microsecond || unit == IntervalKind::Kind::Millisecond);
             const bool is_result_date = isDateOrDate32(result_type);
 
             /// For large intervals the result scale equals the argument scale: seconds for the non-DateTime64
             /// argument types and scale_multiplier for DateTime64 arguments.
             const Int64 result_scale = (isDateTime64(result_type) && !is_small_interval) ? scale_multiplier : 1;
+
+            constexpr std::optional<Int64> unit_seconds = fixedUnitSeconds<unit>();
 
             static constexpr Int64 SECONDS_PER_DAY = 86'400;
 
@@ -364,7 +387,7 @@ private:
                 if (origin > time_arg)
                     throw Exception(ErrorCodes::BAD_ARGUMENTS, "The origin must be before the end date / date with time");
 
-                if (is_small_interval)
+                if constexpr (is_small_interval)
                 {
                     result_data[i] = static_cast<typename ResultDataType::FieldType>(
                         ToStartOfInterval<unit>::execute(time_arg, num_units, time_zone, scale_multiplier, origin));
@@ -378,15 +401,26 @@ private:
                 }
 
                 /// The time and origin arguments have the same scale, so their difference is expressed in the
-                /// argument scale, which for large intervals equals result_scale. ToStartOfInterval returns
-                /// the offset as a whole number of interval units.
+                /// argument scale, which for large intervals equals result_scale.
                 Int64 time_diff = 0;
                 if (common::subOverflow(time_arg, origin, time_diff))
                     throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
                         "The difference between the time argument ({}) and the origin ({}) of function {} does not fit into Int64",
                         time_arg, origin, getName());
 
-                Int64 offset = ToStartOfInterval<unit>::execute(time_diff, num_units, time_zone, result_scale, origin);
+                /// A whole number of interval units, in seconds.
+                Int64 offset = 0;
+                if constexpr (unit_seconds.has_value())
+                {
+                    Int64 interval_seconds = 0;
+                    if (common::mulOverflow(num_units, *unit_seconds, interval_seconds))
+                        throw Exception(ErrorCodes::DECIMAL_OVERFLOW,
+                            "The length of the {} interval ({} units) of function {} does not fit into Int64",
+                            IntervalKind(unit).toString(), num_units, getName());
+                    offset = time_diff / result_scale / interval_seconds * interval_seconds;
+                }
+                else
+                    offset = ToStartOfInterval<unit>::execute(time_diff, num_units, time_zone, result_scale, origin);
 
                 /// The offset is a whole number of seconds or days, convert it to the result scale.
                 offset *= result_scale;

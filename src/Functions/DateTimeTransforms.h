@@ -1028,7 +1028,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Second>
     {
         return time_zone.toStartOfSecondInterval(t, seconds);
     }
-    static Int64 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
+    static Int64 execute(Int64 t, Int64 seconds, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfSecondInterval(scaleDivideFloor(t, scale_multiplier), seconds);
     }
@@ -1049,7 +1049,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Minute>
     {
         return time_zone.toStartOfMinuteInterval(t, minutes);
     }
-    static Int64 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
+    static Int64 execute(Int64 t, Int64 minutes, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfMinuteInterval(scaleDivideFloor(t, scale_multiplier), minutes);
     }
@@ -1070,7 +1070,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Hour>
     {
         return time_zone.toStartOfHourInterval(t, hours);
     }
-    static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
+    static Int64 execute(Int64 t, Int64 hours, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfHourInterval(scaleDivideFloor(t, scale_multiplier), hours);
     }
@@ -1092,7 +1092,7 @@ struct ToStartOfInterval<IntervalKind::Kind::Day>
     {
         return static_cast<UInt32>(time_zone.toStartOfDayInterval(time_zone.toDayNum(t), days));
     }
-    static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> /*origin*/ = std::nullopt)
+    static Int64 execute(Int64 t, Int64 days, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
         return time_zone.toStartOfDayInterval(time_zone.toDayNum(scaleDivideFloor(t, scale_multiplier)), days);
     }
@@ -1113,14 +1113,9 @@ struct ToStartOfInterval<IntervalKind::Kind::Week>
     {
         return time_zone.toStartOfWeekInterval(time_zone.toDayNum(t), weeks);
     }
-    static Int64 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier, std::optional<Int64> origin = std::nullopt)
+    static Int64 execute(Int64 t, Int64 weeks, const DateLUTImpl & time_zone, Int64 scale_multiplier)
     {
-        if (!origin.has_value())
-            return time_zone.toStartOfWeekInterval(time_zone.toDayNum(scaleDivideFloor(t, scale_multiplier)), weeks);
-        Int64 days = 0;
-        if (common::mulOverflow(weeks, static_cast<Int64>(7), days))
-            throw DB::Exception(ErrorCodes::DECIMAL_OVERFLOW, "Numeric overflow");
-        return ToStartOfInterval<IntervalKind::Kind::Day>::execute(t, days, time_zone, scale_multiplier, origin);
+        return time_zone.toStartOfWeekInterval(time_zone.toDayNum(scaleDivideFloor(t, scale_multiplier)), weeks);
     }
 };
 
