@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Common/StringUtils.h>
+#include <Common/formatIPv6.h>
 #include <Functions/URL/protocol.h>
 #include <base/find_symbols.h>
 
@@ -79,6 +80,7 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
 
     bool has_open_bracket = false;
     bool has_end_bracket = false;
+    bool has_dot_inside_brackets = false;
     if (pos < end && *pos == '[') /// IPv6 [2001:db8::1]:80
     {
         has_open_bracket = true;
@@ -95,8 +97,15 @@ exloop: if ((scheme_end - pos) > 2 && *pos == ':' && *(pos + 1) == '/' && *(pos 
         switch (*pos) /// NOLINT(bugprone-switch-missing-default-case)
         {
         case '.':
+            /// A dot inside an IP-literal can belong to it: RFC 3986 lets an `IPv6address` end in an
+            /// `IPv4address` (`ls32`), as in `[::ffff:192.168.0.1]` or `[64:ff9b::192.0.2.33]`. Such a
+            /// host is returned whole at the closing bracket and validated there, so there is no dot to
+            /// remember for it.
             if (has_open_bracket)
-                return std::string_view{};
+            {
+                has_dot_inside_brackets = true;
+                continue;
+            }
             if (has_at_symbol || colon_pos == nullptr)
                 dot_pos = pos;
             break;
@@ -173,7 +182,19 @@ done:
     /// A complete IP-literal is the host as it stands, whether or not a userinfo preceded it: it has no
     /// dot to look for, and the colon that follows it belongs to the port.
     if (has_open_bracket && has_end_bracket)
-        return std::string_view(start_of_host, pos - start_of_host);
+    {
+        std::string_view host(start_of_host, pos - start_of_host);
+        /// A dot is only allowed in an IP-literal as part of the `IPv4address` an `IPv6address` may end
+        /// in, so a dotted literal has to be one of those to be a host at all: `[::ffff:192.168.0.1]`
+        /// is a host, `[2001::db.81]` is not. Hex-only literals are returned unvalidated, as before.
+        if (has_dot_inside_brackets)
+        {
+            unsigned char ipv6_bytes[IPV6_BINARY_LENGTH];
+            if (!parseIPv6Whole(host.data(), host.data() + host.size(), ipv6_bytes))
+                return std::string_view{};
+        }
+        return host;
+    }
     if (!has_at_symbol)
         pos = colon_pos ? colon_pos : pos;
     return checkAndReturnHost(pos, dot_pos, start_of_host);
