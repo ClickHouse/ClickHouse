@@ -19,7 +19,7 @@ INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.src VALUES (2);
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.u (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
-INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.u VALUES (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (99, 0);
+INSERT INTO {CLICKHOUSE_DATABASE_1:Identifier}.u VALUES (1, 0), (2, 0), (3, 0), (4, 0), (5, 0), (6, 0), (8, 0), (99, 0);
 
 CREATE TABLE {CLICKHOUSE_DATABASE_1:Identifier}.t (id UInt64, v UInt64) ENGINE = MergeTree ORDER BY id
     SETTINGS enable_block_number_column = 1, enable_block_offset_column = 1;
@@ -61,6 +61,18 @@ UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
     SET v = (WITH src AS (SELECT 7 AS id) SELECT (SELECT max(id) FROM src SETTINGS compatibility = '20.3'))
     WHERE id = 3 SETTINGS enable_analyzer = 1;
 SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 3;
+
+-- A clause is read per arm of a union: the arm carrying it names a table there, resolved in the
+-- updated database (2), while the arm without it keeps reading the alias (7 * 1000). The two arms
+-- are weighted differently so that reading the clause for the wrong arm, for both arms or for
+-- neither answers 2007, 2002 and 7007 rather than the expected value.
+UPDATE {CLICKHOUSE_DATABASE_1:Identifier}.u
+    SET v = (WITH src AS (SELECT 7 AS id) SELECT sum(m) FROM (
+                 SELECT max(id) * 1000 AS m FROM src
+                 UNION ALL
+                 SELECT max(id) AS m FROM src SETTINGS enable_global_with_statement = 0))
+    WHERE id = 8 SETTINGS enable_analyzer = 1;
+SELECT v FROM {CLICKHOUSE_DATABASE_1:Identifier}.u WHERE id = 8;
 
 -- With the setting at its default the alias IS visible in the subquery, so the same reference reads
 -- the common table expression (7) and must not be qualified as a table.
