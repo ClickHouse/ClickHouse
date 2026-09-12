@@ -379,6 +379,8 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
         UInt64 structure_version = 0;
         readBinaryLittleEndian(structure_version, *structure_stream);
         auto structure_state = std::make_shared<DeserializeBinaryBulkStateDynamicStructure>(structure_version);
+        /// A variant name that declares no time zone, `DateTime` or `DateTime64(s)`, pins none, so the two
+        /// name-keyed branches below build such a type per read instead of taking one from a thread-local cache.
         if (structure_state->structure_version.value == SerializationVersion::FLATTENED)
         {
             /// Read the flattened list of types.
@@ -395,7 +397,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 else
                 {
                     readStringBinary(data_type_name, *structure_stream);
-                    structure_state->flattened_data_types.push_back(getDataTypesCache().getType(data_type_name));
+                    structure_state->flattened_data_types.push_back(getSimpleDataTypesCache().getType(data_type_name));
                 }
             }
 
@@ -432,7 +434,7 @@ ISerialization::DeserializeBinaryBulkStatePtr SerializationDynamic::deserializeD
                 for (size_t i = 0; i != structure_state->num_dynamic_types; ++i)
                 {
                     readStringBinary(data_type_name, *structure_stream);
-                    variants.push_back(getDataTypesCache().getType(data_type_name));
+                    variants.push_back(getSimpleDataTypesCache().getType(data_type_name));
                 }
             }
             /// Add shared variant, Dynamic column should always have it.
