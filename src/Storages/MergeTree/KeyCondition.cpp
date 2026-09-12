@@ -2569,6 +2569,26 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
     const bool transform_input_has_nan
         = !transform_applied && anyFieldSatisfies((*transform_input_column)[0], isNaNField);
 
+    /// A `String` constant does not name a value in its own domain: the comparison converts the spelling
+    /// into the type of the other side and compares there (`executeWithConstString` in
+    /// `FunctionsComparison.h`), so it is that conversion, not the spelling, that the predicate is about.
+    /// Rendering the normalized constant back into a string judges the spelling instead - `'2023-02-01
+    /// 12:00:00'` comes back as `'2023-02-01 12:00:00.000'` while naming exactly the same key point - so
+    /// ask the conversion the comparison itself uses whether the normalization is the value the predicate
+    /// names. A string-ish key column is left to the round trip: two string-ish types are compared as
+    /// bytes (`executeString`), where the padding a `FixedString` adds really does change the compared
+    /// value.
+    if (!cast_is_exact && !transform_applied)
+    {
+        const DataTypePtr comparison_type = removeLowCardinalityAndNullable(dag.input_type);
+
+        if (isStringOrFixedString(removeLowCardinalityAndNullable(out_type)) && !isStringOrFixedString(comparison_type))
+        {
+            const Field compared_value = tryConvertFieldToType(out_value, *comparison_type, out_type.get(), {});
+            cast_is_exact = !compared_value.isNull() && compared_value == (*transform_input_column)[0];
+        }
+    }
+
     ColumnPtr transformed_const_column = transform_input_column;
     DataTypePtr transformed_const_type = transform_input_type;
 
