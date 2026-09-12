@@ -396,7 +396,28 @@ void DiskLocal::replaceFile(const String & from_path, const String & to_path)
 
 void DiskLocal::renameExchange(const std::string & old_path, const std::string & new_path)
 {
-    DB::renameExchange(fs::path(disk_path) / old_path, fs::path(disk_path) / new_path);
+    fs::path old_file = fs::path(disk_path) / old_path;
+    fs::path new_file = fs::path(disk_path) / new_path;
+
+    if (DB::renameExchangeIfSupported(old_file, new_file))
+        return;
+
+    /// The filesystem does not support atomically exchanging two files (`renameat2` with
+    /// `RENAME_EXCHANGE` fails with `EINVAL`), as observed on some FUSE filesystems and on
+    /// Docker Desktop `virtiofs` bind mounts on macOS. Fall back to a non-atomic swap. NOTE
+    /// it's not crash-safe, but such filesystems cannot provide an atomic exchange anyway.
+    /// Only the `Atomic` database metadata swap uses this method (see
+    /// `DatabaseAtomic::renameTable`), and it already relies on non-atomic fallbacks for
+    /// `CREATE`/`RENAME`/`ALTER` on the same filesystems; `DiskObjectStorage::renameExchange`
+    /// does the same. The shared `DB::renameExchange` helper stays fail-closed for other
+    /// callers.
+    LOG_WARNING(
+        logger,
+        "Filesystem of disk {} does not support an atomic file exchange (renameat2 with "
+        "RENAME_EXCHANGE); exchanging {} and {} with a non-atomic fallback, which is not "
+        "crash-safe.",
+        name, old_file.string(), new_file.string());
+    DB::renameExchangeNonAtomic(old_file, new_file);
 }
 
 bool DiskLocal::renameExchangeIfSupported(const std::string & old_path, const std::string & new_path)
