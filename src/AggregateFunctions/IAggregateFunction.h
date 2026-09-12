@@ -90,6 +90,10 @@ public:
     /// Get main function name.
     virtual String getName() const = 0;
 
+    /// Returns true if the function handles NULL values internally in its state.
+    /// Used by combinators (like -Distinct) to determine if NULLs need special forwarding.
+    virtual bool preservesNulls() const { return false; }
+
     /// Get the data type of internal state. By default it is AggregateFunction(name(params), argument_types...).
     virtual DataTypePtr getStateType() const;
 
@@ -436,6 +440,17 @@ public:
     virtual AggregateFunctionPtr getOwnNullAdapter(
         const AggregateFunctionPtr & /*nested_function*/, const DataTypes & /*arguments*/,
         const Array & /*params*/, const AggregateFunctionProperties & /*properties*/) const
+    {
+        return nullptr;
+    }
+
+    /// Allows aggregate functions to provide a custom null adapter when combined with -If suffix,
+    /// preserving distinct null-map and condition masks instead of merging them into a single flag.
+    virtual AggregateFunctionPtr getOwnNullAdapterIf(
+        const AggregateFunctionPtr & /*nested_function*/,
+        const DataTypes & /*arguments*/,
+        const Array & /*params*/,
+        const AggregateFunctionProperties & /*properties*/) const
     {
         return nullptr;
     }

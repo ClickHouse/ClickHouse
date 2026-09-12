@@ -4,6 +4,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 #include <AggregateFunctions/KeyHolderHelpers.h>
 #include <IO/ReadHelpersArena.h>
+#include <Common/Exception.h>
 #include <Common/HashTable/HashMap.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/assert_cast.h>
@@ -13,6 +14,10 @@ namespace DB
 {
 struct Settings;
 
+namespace ErrorCodes
+{
+    extern const int NOT_IMPLEMENTED;
+}
 
 template <typename T>
 struct AggregateFunctionDistinctSingleNumericData
@@ -390,6 +395,34 @@ public:
         /// (`<true, true>`) by default and are not silently forced into the legacy adapter.
         if (nested_func->getName() == "sumCount")
             return std::make_shared<AggregateFunctionNullUnary<false, false>>(nested_function, arguments, params);
+
+        if (nested_func->preservesNulls())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Aggregate function combinator '-Distinct' does not support '{}' when NULL handling is enabled, "
+                "because '-Distinct' cannot currently forward NULL values to the nested function",
+                nested_func->getName());
+        }
+
+        return nullptr;
+    }
+
+    AggregateFunctionPtr getOwnNullAdapterIf(
+        const AggregateFunctionPtr & /*nested_function*/,
+        const DataTypes & /*arguments*/,
+        const Array & /*params*/,
+        const AggregateFunctionProperties & /*properties*/) const override
+    {
+        if (nested_func->preservesNulls())
+        {
+            throw Exception(
+                ErrorCodes::NOT_IMPLEMENTED,
+                "Aggregate function combinator '-Distinct' does not support '{}' when NULL handling is enabled, "
+                "because '-Distinct' cannot currently forward NULL values to the nested function",
+                nested_func->getName());
+        }
+
         return nullptr;
     }
 };
