@@ -210,93 +210,170 @@ std::string makeRegexpPatternFromGlobs(const std::string & initial_str_with_glob
 
 namespace
 {
-void expandSelectorGlobImpl(const std::string & path, std::vector<std::string> & for_match_paths_expanded)
-{
-    std::string_view path_view(path);
-    std::string_view matched;
 
+/// Bounds on the `{a,b,c}` selector glob expansion below.
+///
+/// The expansion is a Cartesian product: `{a,b}{c,d}{e,f}...` produces as many paths as the product
+/// of the group sizes, so a pattern of a few hundred bytes is enough to ask for more paths than
+/// could ever be listed. The expansion happens while a table function is being resolved, where the
+/// query is not cancellable and is not stopped by `max_memory_usage`, so it has to bound itself.
+constexpr size_t MAX_SELECTOR_GLOBS = 1000;
+constexpr size_t MAX_EXPANDED_PATHS = 100000;
+constexpr size_t MAX_EXPANDED_BYTES = 64 * 1024 * 1024;
+
+/// Whether `path` has no `{a,b,c}` selector glob left to enumerate. A `{N..M}` range glob anywhere
+/// in the path also stops the enumeration: ranges are turned into a regexp by
+/// `makeRegexpPatternFromGlobs` instead of being expanded into separate paths.
+bool noSelectorGlobsToExpand(std::string_view path)
+{
     /// enum_regexp does not match elements of one char, e.g. {a}.tsv
-    auto definitely_no_selector_globs = path.find_first_of("{}") == std::string::npos;
+    bool definitely_no_selector_globs = path.find_first_of("{}") == std::string_view::npos;
     if (!definitely_no_selector_globs)
     {
         auto left_bracket_pos = path.find_first_of('{');
         auto right_bracket_pos = path.find_first_of('}');
 
         auto is_this_enum_of_one_char =
-            left_bracket_pos != std::string::npos
-            && right_bracket_pos != std::string::npos
+            left_bracket_pos != std::string_view::npos
+            && right_bracket_pos != std::string_view::npos
             && (right_bracket_pos - left_bracket_pos) == 2;
 
         definitely_no_selector_globs = !is_this_enum_of_one_char;
     }
 
-    auto is_this_range_glob = RE2::PartialMatch(path_view, Regexps::instance().range_regex, &matched);
-    auto is_this_enum_glob = RE2::PartialMatch(path_view, Regexps::instance().enum_regex, &matched);
+    if (!definitely_no_selector_globs)
+        return false;
 
-    /// No (more) selector globs found, quit
-    ///
     /// range_glob regex is stricter than enum_glob, so we need to check
     /// if whatever matched enum_glob is also range_glob. If it does match it too -- this is a range glob.
-    if ((!is_this_enum_glob || (is_this_range_glob && is_this_enum_glob)) && definitely_no_selector_globs)
-    {
-        for_match_paths_expanded.push_back(path);
-        return;
-    }
-
-    std::vector<size_t> anchor_positions;
-    bool opened = false;
-    bool closed = false;
-
-    // Looking for first occurrence of {} selector: write down positions of {, } and all intermediate commas
-    for (auto it = path.begin(); it != path.end(); ++it)
-    {
-        if (*it == '{')
-        {
-            if (opened)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected '{{' found in path '{}' at position {}.", path, it - path.begin());
-            anchor_positions.push_back(std::distance(path.begin(), it));
-            opened = true;
-        }
-        else if (*it == '}')
-        {
-            if (!opened)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected '}}' found in path '{}' at position {}.", path, it - path.begin());
-            anchor_positions.push_back(std::distance(path.begin(), it));
-            closed = true;
-            break;
-        }
-        else if (*it == ',')
-        {
-            if (!opened)
-                throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                                "Unexpected ',' found in path '{}' at position {}.", path, std::distance(path.begin(), it));
-            anchor_positions.push_back(std::distance(path.begin(), it));
-        }
-    }
-    if (!opened || !closed)
-        throw Exception(ErrorCodes::BAD_ARGUMENTS,
-                        "Invalid {{}} glob in path {}.", path);
-
-    /// generate result: prefix/{a,b,c}/suffix -> [prefix/a/suffix, prefix/b/suffix, prefix/c/suffix]
-    std::string common_prefix = path.substr(0, anchor_positions.front());
-    std::string common_suffix = path.substr(anchor_positions.back() + 1);
-    for (size_t i = 1; i < anchor_positions.size(); ++i)
-    {
-        std::string current_selection =
-                path.substr(anchor_positions[i-1] + 1, (anchor_positions[i] - anchor_positions[i-1] - 1));
-
-        std::string expanded_matcher = common_prefix + current_selection + common_suffix;
-        expandSelectorGlobImpl(expanded_matcher, for_match_paths_expanded);
-    }
+    bool is_this_enum_glob = RE2::PartialMatch(path, Regexps::instance().enum_regex);
+    bool is_this_range_glob = RE2::PartialMatch(path, Regexps::instance().range_regex);
+    return !is_this_enum_glob || is_this_range_glob;
 }
+
+/// One `{a,b,c}` selector glob of a path, together with the literal text preceding it.
+/// Both are views into the path.
+struct SelectorGlob
+{
+    std::string_view literal_before;
+    std::vector<std::string_view> alternatives;
+};
+
 }
 
 std::vector<std::string> expandSelectionGlob(const std::string & path)
 {
+    /// Split the path into its `{a,b,c}` selector globs and the literal text in between, looking at
+    /// one glob at a time, from left to right. What is a glob does not depend on the alternatives
+    /// picked for the globs before it, so the path is split once and not once per expanded path.
+    std::vector<SelectorGlob> globs;
+    std::string_view tail(path);
+
+    /// The number of paths the globs seen so far expand to, a running Cartesian product.
+    size_t num_paths = 1;
+
+    while (!noSelectorGlobsToExpand(tail))
+    {
+        if (globs.size() >= MAX_SELECTOR_GLOBS)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "The path has more than {} '{{}}' globs to expand.", MAX_SELECTOR_GLOBS);
+
+        /// The offset of `tail` in `path`, to report positions in the path the user has written.
+        const size_t tail_offset = path.size() - tail.size();
+
+        /// Looking for the first occurrence of a {} selector: write down the positions of {, } and
+        /// all intermediate commas.
+        std::vector<size_t> anchor_positions;
+        bool opened = false;
+        bool closed = false;
+
+        for (size_t i = 0; i < tail.size(); ++i)
+        {
+            if (tail[i] == '{')
+            {
+                if (opened)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Unexpected '{{' found in path '{}' at position {}.", path, tail_offset + i);
+                anchor_positions.push_back(i);
+                opened = true;
+            }
+            else if (tail[i] == '}')
+            {
+                if (!opened)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Unexpected '}}' found in path '{}' at position {}.", path, tail_offset + i);
+                anchor_positions.push_back(i);
+                closed = true;
+                break;
+            }
+            else if (tail[i] == ',')
+            {
+                if (!opened)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "Unexpected ',' found in path '{}' at position {}.", path, tail_offset + i);
+                anchor_positions.push_back(i);
+
+                /// Refuse an oversized group while it is being scanned, and not after it has been
+                /// materialized: otherwise a single selector with an enormous number of
+                /// alternatives - a whole file passed as a path by `file(file(...))` - still costs
+                /// memory proportional to its number of commas before the limit below is reached.
+                /// After `k` commas the group has at least `k + 1` alternatives, and
+                /// `anchor_positions` holds the '{' and those `k` commas.
+                if (num_paths > MAX_EXPANDED_PATHS / anchor_positions.size())
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                                    "The '{{}}' globs in the path expand to more than {} paths.", MAX_EXPANDED_PATHS);
+            }
+        }
+        if (!opened || !closed)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid {{}} glob in path {}.", path);
+
+        SelectorGlob glob;
+        glob.literal_before = tail.substr(0, anchor_positions.front());
+        for (size_t i = 1; i < anchor_positions.size(); ++i)
+            glob.alternatives.push_back(
+                tail.substr(anchor_positions[i - 1] + 1, anchor_positions[i] - anchor_positions[i - 1] - 1));
+
+        /// Refuse a combinatorial explosion before generating anything.
+        if (num_paths > MAX_EXPANDED_PATHS / glob.alternatives.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "The '{{}}' globs in the path expand to more than {} paths.", MAX_EXPANDED_PATHS);
+        num_paths *= glob.alternatives.size();
+
+        globs.push_back(std::move(glob));
+        tail = tail.substr(anchor_positions.back() + 1);
+    }
+
+    /// generate result: prefix/{a,b,c}/suffix -> [prefix/a/suffix, prefix/b/suffix, prefix/c/suffix]
     std::vector<std::string> result;
-    expandSelectorGlobImpl(path, result);
+    result.reserve(num_paths);
+
+    std::vector<size_t> alternative_indices(globs.size(), 0);
+    size_t expanded_bytes = 0;
+
+    for (size_t path_index = 0; path_index < num_paths; ++path_index)
+    {
+        std::string expanded;
+        expanded.reserve(path.size());  /// An expanded path is never longer than the pattern.
+        for (size_t i = 0; i < globs.size(); ++i)
+            expanded.append(globs[i].literal_before).append(globs[i].alternatives[alternative_indices[i]]);
+        expanded.append(tail);
+
+        expanded_bytes += expanded.size();
+        if (expanded_bytes > MAX_EXPANDED_BYTES)
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                            "The '{{}}' globs in the path expand to more than {} bytes of paths.", MAX_EXPANDED_BYTES);
+
+        result.push_back(std::move(expanded));
+
+        /// The last glob changes fastest, so that the paths are generated in the order of the pattern.
+        for (size_t i = globs.size(); i-- > 0;)
+        {
+            if (++alternative_indices[i] < globs[i].alternatives.size())
+                break;
+            alternative_indices[i] = 0;
+        }
+    }
+
     return result;
 }
 }
