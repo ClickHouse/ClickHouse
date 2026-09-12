@@ -735,28 +735,6 @@ static void addRenamedColumnToColumnsSubstreams(
         new_columns_substreams.addSubstreamToLastColumn(ISerialization::getFileNameForRenamedColumnStream(old_name, new_name, substream));
 }
 
-static bool isDeletedMaskUpdated(const MutationCommand & command, const NameSet & storage_columns_set)
-{
-    if (storage_columns_set.contains(RowExistsColumn::name))
-        return false;
-
-    if (command.type == MutationCommand::READ_COLUMN)
-        return command.read_for_patch && command.column_name == RowExistsColumn::name;
-
-    if (command.type == MutationCommand::UPDATE)
-    {
-        auto alter = command.ast();
-        if (!alter || !alter->update_assignments)
-            return false;
-        return std::ranges::any_of(alter->update_assignments->children, [](const ASTPtr & child)
-        {
-            return child->as<ASTAssignment &>().column_name == RowExistsColumn::name;
-        });
-    }
-
-    return false;
-}
-
 /// Get the columns list of the resulting part in the same order as storage_columns.
 static std::tuple<NamesAndTypesList, SerializationInfoByName, ColumnsSubstreams>
 getColumnsForNewDataPart(
@@ -779,9 +757,7 @@ getColumnsForNewDataPart(
     ColumnsDescription part_columns(source_part->getColumns());
     NamesAndTypesList system_columns;
 
-    bool deleted_mask_updated = false;
     bool affects_all_columns = false;
-    bool supports_lightweight_deletes = source_part->supportLightweightDeleteMutate();
 
     NameSet storage_columns_set;
     for (const auto & [name, _] : storage_columns)
@@ -790,9 +766,6 @@ getColumnsForNewDataPart(
     for (const auto & command : all_commands)
     {
         affects_all_columns |= command.affectsAllColumns();
-
-        if (supports_lightweight_deletes)
-            deleted_mask_updated |= isDeletedMaskUpdated(command, storage_columns_set);
 
         /// If we don't have this column in source part, than we don't need to materialize it
         if (!part_columns.has(command.column_name))
@@ -850,7 +823,7 @@ getColumnsForNewDataPart(
 
         bool need_column = false;
         if (name == RowExistsColumn::name)
-            need_column = deleted_mask_updated || (part_columns.has(name) && !affects_all_columns);
+            need_column = updated_header.has(name) || (part_columns.has(name) && !affects_all_columns);
         else if (name == BlockNumberColumn::name || name == BlockOffsetColumn::name)
             need_column = part_columns.has(name) || updated_header.has(name);
         else
