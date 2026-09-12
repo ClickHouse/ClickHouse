@@ -62,6 +62,10 @@ public:
     /// into a single stream.
     void skipStreamMerging() { skip_stream_merging = true; }
 
+    /// The planner advertises the global order of the input as surviving this step (see `applyOrder`), so
+    /// the final DISTINCT must not scatter the streams, which would keep only a per-partition order.
+    void keepGlobalOrder() { keep_global_order = true; }
+
 private:
     void updateOutputHeader() override;
 
@@ -71,6 +75,7 @@ private:
     bool pre_distinct;
     SortDescription distinct_sort_desc;
     bool skip_stream_merging = false;
+    bool keep_global_order = false;
 };
 
 }

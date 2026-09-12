@@ -1,0 +1,17 @@
+(Distinct)
+DistinctTransform × 4
+ScatterByPartitionTransform × 4 1 → 4
+SimpleSquashingTransform × 4
+(Distinct)
+DistinctTransform × 4
+a merged input is not squashed
+(Distinct)
+DistinctTransform
+(Distinct)
+DistinctTransform × 4
+results
+2000	1999000
+2000	1999000
+8000	4996000	9942689636259957552
+8000	4996000	9942689636259957552
+5000	12497500

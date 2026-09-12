@@ -27,5 +27,5 @@ FROM
     FROM transactions_data
     WHERE status = 'good'
 )
-ORDER BY grade_name_id ASC;
+ORDER BY grade_name_id ASC, flag ASC NULLS FIRST;
 

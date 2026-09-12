@@ -1,0 +1,13 @@
+1000000	0
+1000000	0
+999000	0
+  (Sorting)
+  Resize 4 → 1
+    MergeSortingTransform × 4
+        PartialSortingTransform × 4
+            (Distinct)
+            DistinctTransform × 4
+              Resize × 4 4 → 1
+                ScatterByPartitionTransform × 4 1 → 4
+                    (Distinct)
+                    DistinctTransform × 4
