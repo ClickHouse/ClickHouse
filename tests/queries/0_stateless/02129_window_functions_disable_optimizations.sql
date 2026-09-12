@@ -13,6 +13,12 @@ SELECT
     sum(a * b) OVER (ORDER BY number ASC) AS s
 FROM numbers(10);
 
+-- A windowed sum must not be rewritten into `sum(x) + literal * count(x)`: that form is a plain
+-- aggregate and cannot carry `OVER`. The pin is needed because the old analyzer still rewrites it.
+SELECT sum(number + 1) OVER (ORDER BY number ASC) AS s
+FROM numbers(10)
+SETTINGS enable_analyzer = 1;
+
 SET optimize_aggregators_of_group_by_keys=1;
 
 SELECT
