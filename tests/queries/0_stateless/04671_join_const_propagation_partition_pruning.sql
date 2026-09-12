@@ -32,7 +32,6 @@ WHERE t.d >= toDate('2025-06-01') AND t.d <= toDate('2025-06-10')
 SETTINGS max_rows_to_read = 150;
 
 SELECT 'pruned parts';
-SET explain_query_plan_default = 'legacy';
 SELECT trimLeft(explain) FROM (
     EXPLAIN indexes = 1
     WITH bounds AS (SELECT toDate('2025-06-01') AS lo, toDate('2025-06-10') AS hi)
@@ -40,7 +39,6 @@ SELECT trimLeft(explain) FROM (
     FROM t_join_const_prune AS t
     JOIN bounds ON t.d >= bounds.lo AND t.d <= bounds.hi
 ) WHERE explain LIKE '%Parts: %';
-SET explain_query_plan_default = 'pretty';
 
 -- The bound reaches index analysis next to the equi key, so only the two 2026 partitions are read.
 SELECT 'equi key plus bounds in JOIN ON';

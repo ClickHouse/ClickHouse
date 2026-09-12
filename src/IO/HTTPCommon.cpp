@@ -70,8 +70,7 @@ bool isRetriableHTTPError(const Poco::Net::HTTPResponse::HTTPStatus http_status)
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_FORBIDDEN,
         Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_IMPLEMENTED,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED,
-        Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT};
+        Poco::Net::HTTPResponse::HTTPStatus::HTTP_METHOD_NOT_ALLOWED};
 
     return std::all_of(
         non_retriable_errors.begin(), non_retriable_errors.end(), [&](const auto status) { return http_status != status; });

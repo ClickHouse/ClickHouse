@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Common/DateLUTImpl.h>
 #include <DataTypes/DataTypeDate.h>
 #include <DataTypes/DataTypeDateTime.h>
@@ -32,8 +31,6 @@ ColumnsDescription FilesystemCacheLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname"},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"event_date", std::make_shared<DataTypeDate>(), "Event date"},
         {"event_time", std::make_shared<DataTypeDateTime>(), "Event time"},
         {"query_id", std::make_shared<DataTypeString>(), "Id of the query"},
@@ -55,8 +52,6 @@ void FilesystemCacheLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time).toUnderType());
     columns[i++]->insert(event_time);
 

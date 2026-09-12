@@ -61,7 +61,6 @@ def generate_config(azurite_port):
         <log_storage_disk>log_azure_plain</log_storage_disk>
         <latest_log_storage_disk>log_local</latest_log_storage_disk>
         <snapshot_storage_disk>snapshot_local</snapshot_storage_disk>
-        <data_storage_path>/var/lib/clickhouse/coordination/data</data_storage_path>
         <raft_configuration>
             <server>
                 <id>1</id>

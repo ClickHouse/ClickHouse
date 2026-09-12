@@ -13,8 +13,6 @@ namespace
 struct SliceFromLeftConstantOffsetBoundedSelectArraySource
     : public ArraySourceSelector<SliceFromLeftConstantOffsetBoundedSelectArraySource>
 {
-    static constexpr bool supports_replicated_source = true;
-
     template <typename Source>
     static void selectSource(bool is_const, bool is_nullable, Source && source, size_t & offset, ssize_t & length, ColumnArray::MutablePtr & result)
     {
@@ -33,8 +31,6 @@ struct SliceFromLeftConstantOffsetBoundedSelectArraySource
 
             if (is_const)
                 sliceFromLeftConstantOffsetBounded(static_cast<ConstSource<NullableSource> &>(source), sink, offset, length);
-            else if (source.isReplicated())
-                sliceFromLeftConstantOffsetBounded(static_cast<ReplicatedSource<NullableSource> &>(source), sink, offset, length);
             else
                 sliceFromLeftConstantOffsetBounded(static_cast<NullableSource &>(source), sink, offset, length);
         }
@@ -45,8 +41,6 @@ struct SliceFromLeftConstantOffsetBoundedSelectArraySource
 
             if (is_const)
                 sliceFromLeftConstantOffsetBounded(static_cast<ConstSource<SourceType> &>(source), sink, offset, length);
-            else if (source.isReplicated())
-                sliceFromLeftConstantOffsetBounded(static_cast<ReplicatedSource<SourceType> &>(source), sink, offset, length);
             else
                 sliceFromLeftConstantOffsetBounded(source, sink, offset, length);
         }
