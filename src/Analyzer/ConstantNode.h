@@ -98,6 +98,10 @@ public:
         return constant_value.getType();
     }
 
+    /// True when the result type alone already decides `requiresCastCall`, so the value does not
+    /// have to be materialized as a `Field` just to infer its type.
+    static bool requiresCastCallForResultType(const DataTypePtr & data_type);
+
     /// Check if conversion to AST requires wrapping with _CAST function.
     static bool requiresCastCall(const DataTypePtr & field_type, const DataTypePtr & data_type);
 
