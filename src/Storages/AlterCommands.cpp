@@ -2058,6 +2058,31 @@ void AlterCommands::prepare(const StorageInMemoryMetadata & metadata, bool share
 }
 
 
+/// The advice appended to a "cannot remove <kind>" error, chosen per kind because `REMOVE` does not
+/// accept every one of them. Deliberately a `switch` with no `default`, so that a new
+/// `ColumnDefaultKind` is a compile error here rather than a sentence naming a syntax that does not
+/// exist: that is how `defaultKindToGetKind` in `ColumnsDescription.cpp` was kept correct when
+/// `Ephemeral` was added, while this message was not.
+static String removePropertyHint(ColumnDefaultKind kind, const String & column_name)
+{
+    switch (kind)
+    {
+        case ColumnDefaultKind::Default:
+        case ColumnDefaultKind::Materialized:
+        case ColumnDefaultKind::Alias:
+            /// `ParserAlterQuery` accepts exactly these three of the four kinds after `REMOVE`.
+            return "Use REMOVE " + toString(kind) + " to delete it";
+        case ColumnDefaultKind::Ephemeral:
+            /// There is no `REMOVE EPHEMERAL`, and nothing for it to strip: an `EPHEMERAL` column is
+            /// neither stored nor readable, it exists only as an input to other columns' default
+            /// expressions at `INSERT` time. Name the two operations that do exist instead.
+            return "EPHEMERAL is not removable as a property: use DROP COLUMN " + backQuote(column_name)
+                + " to delete the column, or MODIFY COLUMN to replace it with a DEFAULT or MATERIALIZED expression";
+    }
+    throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid ColumnDefaultKind");
+}
+
+
 void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
 {
     const auto metadata = table->getInMemoryMetadataPtr(context, false);
@@ -2196,22 +2221,25 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove DEFAULT from column {}, because column default type is {}. Use REMOVE {} to delete it",
-                            backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                        "Cannot remove DEFAULT from column {}, because column default type is {}. {}",
+                        backQuote(column_name), toString(column_default->kind),
+                        removePropertyHint(column_default->kind, column_name));
                 }
                 if (command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED && column_default->kind != ColumnDefaultKind::Materialized)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove MATERIALIZED from column {}, because column default type is {}. Use REMOVE {} to delete it",
-                        backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                        "Cannot remove MATERIALIZED from column {}, because column default type is {}. {}",
+                        backQuote(column_name), toString(column_default->kind),
+                        removePropertyHint(column_default->kind, column_name));
                 }
                 if (command.to_remove == AlterCommand::RemoveProperty::ALIAS && column_default->kind != ColumnDefaultKind::Alias)
                 {
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "Cannot remove ALIAS from column {}, because column default type is {}. Use REMOVE {} to delete it",
-                        backQuote(column_name), toString(column_default->kind), toString(column_default->kind));
+                        "Cannot remove ALIAS from column {}, because column default type is {}. {}",
+                        backQuote(column_name), toString(column_default->kind),
+                        removePropertyHint(column_default->kind, column_name));
                 }
             }
 

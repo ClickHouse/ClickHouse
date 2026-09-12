@@ -1,0 +1,17 @@
+-- REMOVE DEFAULT on an EPHEMERAL column
+Cannot remove DEFAULT from column `value`, because column default type is EPHEMERAL. EPHEMERAL is not removable as a property: use DROP COLUMN `value` to delete the column, or MODIFY COLUMN to replace it with a DEFAULT or MATERIALIZED expression
+names REMOVE EPHEMERAL: 0
+-- REMOVE MATERIALIZED on an EPHEMERAL column
+Cannot remove MATERIALIZED from column `value`, because column default type is EPHEMERAL. EPHEMERAL is not removable as a property: use DROP COLUMN `value` to delete the column, or MODIFY COLUMN to replace it with a DEFAULT or MATERIALIZED expression
+names REMOVE EPHEMERAL: 0
+-- REMOVE ALIAS on an EPHEMERAL column
+Cannot remove ALIAS from column `value`, because column default type is EPHEMERAL. EPHEMERAL is not removable as a property: use DROP COLUMN `value` to delete the column, or MODIFY COLUMN to replace it with a DEFAULT or MATERIALIZED expression
+names REMOVE EPHEMERAL: 0
+-- DROP COLUMN on an EPHEMERAL column, then columns left named value
+0
+-- MODIFY COLUMN replacing EPHEMERAL, then its default_kind
+DEFAULT
+-- the three kinds REMOVE accepts keep their advice
+Use REMOVE DEFAULT to delete it
+Use REMOVE MATERIALIZED to delete it
+Use REMOVE ALIAS to delete it
