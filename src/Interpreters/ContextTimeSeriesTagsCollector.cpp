@@ -1531,55 +1531,59 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags(co
     if (groups_.empty())
         return {};
 
-    auto tags_vector = getTagsByGroup(groups_);
-    chassert(tags_vector.size() == groups_.size());
-
     VectorWithMemoryTracking<Group> res;
     res.resize(groups_.size());
 
-    size_t num_new_tags = 0;
-
-    auto [min_group_it, max_group_it] = std::minmax_element(groups_.begin(), groups_.end());
-    Group min_group = *min_group_it;
-    Group group_range = *max_group_it - min_group;
-
-    /// Groups are dense integer indices, and a block usually contains a compact range of them.
-    /// Avoid a large lookup array when a block contains only a sparse subset of all known groups.
-    constexpr size_t max_dense_range_to_input_size_ratio = 4;
-    bool use_dense_mapping = group_range / groups_.size() < max_dense_range_to_input_size_ratio;
-
-    if (use_dense_mapping)
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> tags_vector;
     {
-        const size_t not_found = groups_.size();
-        VectorWithMemoryTracking<size_t> indices_by_group;
-        indices_by_group.resize(static_cast<size_t>(group_range) + 1, not_found);
+        VectorWithMemoryTracking<Group> unique_groups;
 
-        for (size_t i = 0; i != groups_.size(); ++i)
+        auto [min_group_it, max_group_it] = std::minmax_element(groups_.begin(), groups_.end());
+        Group min_group = *min_group_it;
+        Group group_range = *max_group_it - min_group;
+
+        /// Groups are dense integer indices, and a block usually contains a compact range of them.
+        /// Avoid a large lookup array when a block contains only a sparse subset of all known groups.
+        constexpr size_t max_dense_range_to_input_size_ratio = 4;
+        bool use_dense_mapping = group_range / groups_.size() < max_dense_range_to_input_size_ratio;
+
+        if (use_dense_mapping)
         {
-            size_t & index = indices_by_group[groups_[i] - min_group];
-            if (index == not_found)
+            const size_t not_found = groups_.size();
+            VectorWithMemoryTracking<size_t> indices_by_group;
+            indices_by_group.resize(static_cast<size_t>(group_range) + 1, not_found);
+
+            for (size_t i = 0; i != groups_.size(); ++i)
             {
-                index = num_new_tags;
-                tags_vector[num_new_tags++] = transform_func(tags_vector[i]);
+                size_t & index = indices_by_group[groups_[i] - min_group];
+                if (index == not_found)
+                {
+                    index = unique_groups.size();
+                    unique_groups.push_back(groups_[i]);
+                }
+                res[i] = index;
             }
-            res[i] = index;
         }
-    }
-    else
-    {
-        std::unordered_map<Group, size_t> indices_by_group;
-
-        for (size_t i = 0; i != groups_.size(); ++i)
+        else
         {
-            Group group = groups_[i];
-            auto [it, inserted] = indices_by_group.try_emplace(group, num_new_tags);
-            if (inserted)
-                tags_vector[num_new_tags++] = transform_func(tags_vector[i]);
-            res[i] = it->second;
+            std::unordered_map<Group, size_t> indices_by_group;
+
+            for (size_t i = 0; i != groups_.size(); ++i)
+            {
+                Group group = groups_[i];
+                auto [it, inserted] = indices_by_group.try_emplace(group, unique_groups.size());
+                if (inserted)
+                    unique_groups.push_back(group);
+                res[i] = it->second;
+            }
         }
+
+        tags_vector = getTagsByGroup(unique_groups);
+        chassert(tags_vector.size() == unique_groups.size());
     }
 
-    tags_vector.resize(num_new_tags);
+    for (auto & tags : tags_vector)
+        tags = transform_func(tags);
 
     auto new_groups = getGroupForTags(tags_vector);
 
@@ -1671,43 +1675,124 @@ VectorWithMemoryTracking<Group> ContextTimeSeriesTagsCollector::transformTags2(c
 {
     chassert(groups1.size() == groups2.size());
 
-    auto tags_vector1 = getTagsByGroup(groups1);
-    auto tags_vector2 = getTagsByGroup(groups2);
-    chassert(tags_vector1.size() == groups1.size());
-    chassert(tags_vector2.size() == groups2.size());
+    size_t num_unique_pairs = 0;
 
-    std::unordered_map<std::pair<Group, Group>, size_t, boost::hash<std::pair<Group, Group>>> indices_in_result_vector;
-    size_t num_new_tags = 0;
+    VectorWithMemoryTracking<Group> res;
+    res.resize(groups1.size());
 
-    for (size_t i = 0; i != groups1.size(); ++i)
     {
-        Group group1 = groups1[i];
-        Group group2 = groups2[i];
-        auto it = indices_in_result_vector.find(std::make_pair(group1, group2));
-        if (it == indices_in_result_vector.end())
+        std::unordered_map<std::pair<Group, Group>, size_t, boost::hash<std::pair<Group, Group>>> indices_in_result_vector;
+
+        for (size_t i = 0; i != groups1.size(); ++i)
         {
-            const auto & tags1 = tags_vector1[i];
-            const auto & tags2 = tags_vector2[i];
-            auto new_tags = transform_func(tags1, tags2);
-            indices_in_result_vector[std::make_pair(group1, group2)] = num_new_tags;
-            tags_vector1[num_new_tags++] = new_tags;
+            auto [it, inserted] = indices_in_result_vector.try_emplace(std::make_pair(groups1[i], groups2[i]), num_unique_pairs);
+            if (inserted)
+                ++num_unique_pairs;
+            res[i] = it->second;
         }
     }
 
-    tags_vector1.resize(num_new_tags);
+    if (num_unique_pairs == groups1.size())
+    {
+        auto tags_vector1 = getTagsByGroup(groups1);
+        auto tags_vector2 = getTagsByGroup(groups2);
+        chassert(tags_vector1.size() == groups1.size());
+        chassert(tags_vector2.size() == groups2.size());
 
-    auto new_groups = getGroupForTags(tags_vector1);
+        for (size_t i = 0; i != groups1.size(); ++i)
+            tags_vector1[i] = transform_func(tags_vector1[i], tags_vector2[i]);
 
-    VectorWithMemoryTracking<Group> res;
-    res.reserve(groups1.size());
+        auto new_groups = getGroupForTags(tags_vector1);
+        for (auto & index : res)
+            index = new_groups.at(index);
+        return res;
+    }
 
+    /// When only a small fraction of pairs are repeated, materializing all input tags is cheaper than
+    /// building the additional component maps below. Keep the pair deduplication result and transform
+    /// only the first row of each pair.
+    constexpr size_t max_duplicate_pair_ratio_denominator = 10;
+    const size_t num_duplicate_pairs = groups1.size() - num_unique_pairs;
+    if (num_duplicate_pairs <= groups1.size() / max_duplicate_pair_ratio_denominator)
+    {
+        auto tags_vector1 = getTagsByGroup(groups1);
+        auto tags_vector2 = getTagsByGroup(groups2);
+        chassert(tags_vector1.size() == groups1.size());
+        chassert(tags_vector2.size() == groups2.size());
+
+        VectorWithMemoryTracking<TagNamesAndValuesPtr> new_tags_vector;
+        new_tags_vector.reserve(num_unique_pairs);
+
+        size_t next_pair_index = 0;
+        for (size_t i = 0; i != groups1.size(); ++i)
+        {
+            if (res[i] == next_pair_index)
+            {
+                new_tags_vector.push_back(transform_func(tags_vector1[i], tags_vector2[i]));
+                ++next_pair_index;
+            }
+        }
+        chassert(new_tags_vector.size() == num_unique_pairs);
+
+        auto new_groups = getGroupForTags(new_tags_vector);
+        for (auto & index : res)
+            index = new_groups.at(index);
+
+        return res;
+    }
+
+    /// Pair indexes are assigned in first-seen order. This second scan recovers the first row of each
+    /// pair without keeping the pair hash map alive while constructing the component maps below.
+    VectorWithMemoryTracking<std::pair<Group, Group>> unique_pairs;
+    unique_pairs.reserve(num_unique_pairs);
+
+    size_t next_pair_index = 0;
     for (size_t i = 0; i != groups1.size(); ++i)
     {
-        Group group1 = groups1[i];
-        Group group2 = groups2[i];
-        auto new_group = new_groups.at(indices_in_result_vector.at(std::make_pair(group1, group2)));
-        res.push_back(new_group);
+        if (res[i] == next_pair_index)
+        {
+            unique_pairs.emplace_back(groups1[i], groups2[i]);
+            ++next_pair_index;
+        }
     }
+    chassert(unique_pairs.size() == num_unique_pairs);
+
+    VectorWithMemoryTracking<TagNamesAndValuesPtr> new_tags_vector;
+    {
+        VectorWithMemoryTracking<Group> unique_groups1;
+        VectorWithMemoryTracking<Group> unique_groups2;
+        std::unordered_map<Group, size_t> indices_by_group1;
+        std::unordered_map<Group, size_t> indices_by_group2;
+
+        for (auto & [group1, group2] : unique_pairs)
+        {
+            auto [it1, inserted1] = indices_by_group1.try_emplace(group1, unique_groups1.size());
+            if (inserted1)
+                unique_groups1.push_back(group1);
+            group1 = it1->second;
+
+            auto [it2, inserted2] = indices_by_group2.try_emplace(group2, unique_groups2.size());
+            if (inserted2)
+                unique_groups2.push_back(group2);
+            group2 = it2->second;
+        }
+
+        auto tags_vector1 = getTagsByGroup(unique_groups1);
+        auto tags_vector2 = getTagsByGroup(unique_groups2);
+        chassert(tags_vector1.size() == unique_groups1.size());
+        chassert(tags_vector2.size() == unique_groups2.size());
+
+        new_tags_vector.resize(unique_pairs.size());
+        for (size_t i = 0; i != unique_pairs.size(); ++i)
+        {
+            const auto [group1, group2] = unique_pairs[i];
+            new_tags_vector[i] = transform_func(tags_vector1[group1], tags_vector2[group2]);
+        }
+    }
+
+    auto new_groups = getGroupForTags(new_tags_vector);
+    for (auto & index : res)
+        index = new_groups.at(index);
 
     return res;
 }
