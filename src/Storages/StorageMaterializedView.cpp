@@ -1072,10 +1072,10 @@ bool StorageMaterializedView::isRemote() const
     return false;
 }
 
-bool StorageMaterializedView::readsThroughMergeTable() const
+bool StorageMaterializedView::readRequiresAnalyzedQuery() const
 {
     if (auto table = tryGetTargetTable())
-        return table->readsThroughMergeTable();
+        return table->readRequiresAnalyzedQuery();
     return false;
 }
 

@@ -292,10 +292,10 @@ bool StorageBuffer::isRemote() const
     return destination && destination->isRemote();
 }
 
-bool StorageBuffer::readsThroughMergeTable() const
+bool StorageBuffer::readRequiresAnalyzedQuery() const
 {
     auto destination = getDestinationTable();
-    return destination && destination->readsThroughMergeTable();
+    return destination && destination->readRequiresAnalyzedQuery();
 }
 
 void StorageBuffer::read(

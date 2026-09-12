@@ -27,7 +27,7 @@ public:
     std::string getName() const override { return "MaterializedView"; }
     bool isView() const override { return true; }
     bool isRemote() const override;
-    bool readsThroughMergeTable() const override;
+    bool readRequiresAnalyzedQuery() const override;
 
     bool hasInnerTable() const { return has_inner_table; }
 

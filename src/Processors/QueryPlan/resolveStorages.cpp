@@ -210,7 +210,7 @@ static QueryPlanResourceHolder replaceReadingFromTable(QueryPlan::Node & node, Q
     /// The `SelectQueryInfo` built above has no query: the step carries only a table name and the
     /// table expression modifiers. Reads that need one get a `SELECT` over that table synthesized
     /// and re-analyzed below; the rest read the storage directly.
-    const bool read_via_interpreter = storage->isRemote() || storage->readsThroughMergeTable();
+    const bool read_via_interpreter = storage->readRequiresAnalyzedQuery();
 
     ASTPtr query;
     if (read_via_interpreter)
