@@ -41,8 +41,9 @@ SELECT 'sorted input is not scattered';
 DROP TABLE IF EXISTS t_parallel_distinct_sorted;
 CREATE TABLE t_parallel_distinct_sorted (a UInt64) ENGINE = MergeTree ORDER BY a;
 INSERT INTO t_parallel_distinct_sorted SELECT number % 1000 FROM numbers(100000);
--- The read pipeline above the DISTINCT (virtual rows, in-order merges) depends on the settings, so only the transforms matter.
-SELECT trimLeft(explain) FROM (EXPLAIN PIPELINE SELECT DISTINCT a FROM t_parallel_distinct_sorted ORDER BY a SETTINGS optimize_distinct_in_order = 1)
+-- The read pipeline above the DISTINCT (virtual rows, in-order merges, the number of streams) depends on the
+-- settings, so only the transforms matter.
+SELECT replaceRegexpOne(trimLeft(explain), ' × \\d+$', '') FROM (EXPLAIN PIPELINE SELECT DISTINCT a FROM t_parallel_distinct_sorted ORDER BY a SETTINGS optimize_distinct_in_order = 1)
 WHERE explain LIKE '%Distinct%' OR explain LIKE '%Scatter%';
 
 DROP TABLE t_parallel_distinct;
