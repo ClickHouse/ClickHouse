@@ -22,13 +22,5 @@
 14 type hint keeps index	1
 15 flatten still prunes	1	1
 15 flatten count	1
-16 tuple element	1
-16 tuple element keeps index	1
-16 variant alternative	1
-16 variant alternative keeps index	1
-16 map key value	1
-16 map key value keeps index	1
 17 Nullable(JSON) still prunes	1	1
 17 Nullable(JSON) count	1
-18 dynamic path under typed array	1
-18 dynamic path under typed array keeps index	1

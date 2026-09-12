@@ -36,9 +36,9 @@ const ColumnsDescription & getColumnsToMatchJSONSubcolumn(const StorageMetadataP
 /// "JSONAllValues").
 ///
 /// A name is accepted only if `columns` resolves it to a subcolumn of the same storage column as the
-/// index's JSON column, reached from it by JSON path steps alone, and the returned path is read off
-/// that resolution. A column may legally be named `` `j.a` `` beside a `JSON` column `j`, so the
-/// rendered name says neither whose name it is nor which path it denotes.
+/// index's JSON column, reached from it by JSON path steps and then by descents that still read the
+/// value stored at that path. A column may legally be named `` `j.a` `` beside a `JSON` column `j`,
+/// so the rendered name does not say whose name it is; the path itself is read off the rendered name.
 ///
 /// Returns nullopt if:
 ///   - No matching index column is found in the header

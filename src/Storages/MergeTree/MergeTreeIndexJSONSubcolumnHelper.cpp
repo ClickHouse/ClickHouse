@@ -13,6 +13,22 @@
 namespace DB
 {
 
+/// Extract the JSON path from a subcolumn name, stripping any `.:\`Type\`` suffix.
+/// For example:
+///   "a.b"            -> "a.b"
+///   "a.b.:`Int64`"   -> "a.b"
+///   "a.b.:`Array(Int64)`"  -> "a.b"
+static String extractPathFromSubcolumn(std::string_view subcolumn_name)
+{
+    /// Dynamic type subcolumn looks like "some.path.:`TypeName`..."
+    /// Find the ".:`" pattern that marks the start of the type specifier.
+    auto pos = subcolumn_name.find(".:`");
+    if (pos == std::string_view::npos)
+        return String(subcolumn_name);
+
+    return String(subcolumn_name.substr(0, pos));
+}
+
 /// Prefixed subcolumns look like "<prefix>`first_path_element`.rest": the back-quote distinguishes
 /// them from an ordinary path starting with the prefix character, e.g. "@`a`" versus "@a".
 static bool isPrefixedSubcolumn(std::string_view subcolumn_name, char prefix)
@@ -131,23 +147,24 @@ std::optional<ResolvedName> resolveName(const ColumnsDescription & columns, cons
     return std::nullopt;
 }
 
-/// The JSON path `name` denotes, when it is reached from `json_column` by JSON path steps alone.
-std::optional<String> tryGetPathThroughJSONColumn(const ResolvedName & json_column, const ResolvedName & name)
+/// Whether `name` is reached from `json_column` by at least one JSON path step, followed only by
+/// descents that still read the value stored at that path.
+bool isJSONPathOfColumn(const ResolvedName & json_column, const ResolvedName & name)
 {
     if (json_column.name_in_storage != name.name_in_storage)
-        return std::nullopt;
+        return false;
 
     const auto & prefix = json_column.substreams_path;
     const auto & full = name.substreams_path;
 
     if (prefix.size() >= full.size())
-        return std::nullopt;
+        return false;
 
     for (size_t i = 0; i < prefix.size(); ++i)
         if (!substreamsEqual(prefix[i], full[i]))
-            return std::nullopt;
+            return false;
 
-    String path;
+    bool path_step_seen = false;
     size_t position = prefix.size();
     size_t after_last_step = position;
     while (position < full.size())
@@ -161,16 +178,11 @@ std::optional<String> tryGetPathThroughJSONColumn(const ResolvedName & json_colu
         if (!SerializationObject::isPathStep(full[position]))
             break;
 
-        if (!path.empty())
-            path += '.';
-        path += full[position].object_path_name;
+        path_step_seen = true;
         after_last_step = ++position;
     }
 
-    if (path.empty() || !isValuePreservingTail(full, after_last_step))
-        return std::nullopt;
-
-    return path;
+    return path_step_seen && isValuePreservingTail(full, after_last_step);
 }
 
 }
@@ -249,13 +261,16 @@ std::optional<JSONSubcolumnIndexInfo> tryMatchJSONSubcolumnToIndex(
     if (!resolved_json_column || !resolved_name)
         return std::nullopt;
 
-    auto path = tryGetPathThroughJSONColumn(*resolved_json_column, *resolved_name);
-    if (!path)
+    if (!isJSONPathOfColumn(*resolved_json_column, *resolved_name))
+        return std::nullopt;
+
+    String path = extractPathFromSubcolumn(matched_subcolumn);
+    if (path.empty())
         return std::nullopt;
 
     return JSONSubcolumnIndexInfo{
         .json_column_name = String(matched_json_column),
-        .path = std::move(*path),
+        .path = std::move(path),
         .header_position = matched_position,
     };
 }

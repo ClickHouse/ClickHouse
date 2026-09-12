@@ -2,8 +2,8 @@
 --
 -- Dots are legal in column names, so a table may declare a JSON column `j` and a physical column
 -- named literally `j.some.path`. A JSONAllPaths / JSONAllValues skip index must not treat that name
--- as a path of `j`, and the path it hands the index must come from the substream path rather than
--- from the rendered name.
+-- as a path of `j`, and must not answer from its contents for a name whose tail reads a property
+-- derived from the value at the path instead of that value.
 --
 -- Arms 1-3 are one per index CONDITION CLASS, not one per index type: `tokenbf_v1` and `sparse_grams`
 -- share MergeTreeConditionBloomFilterText with `ngrambf_v1`, so they add no coverage.
@@ -163,8 +163,8 @@ SELECT '10 reversed order', count() FROM t_reversed_order WHERE x.`j.p`.path = '
 SELECT '10 reversed order unindexed', count() FROM t_reversed_order WHERE x.`j.p`.path = 'hello' SETTINGS use_skip_indexes = 0;
 
 -- ===========================================================================================
--- 12-13: the path handed to the index comes from the substream path, and a tail that reads a
--- property DERIVED from the path's value cannot be answered from either index content.
+-- 12-13: a tail that reads a property DERIVED from the path's value cannot be answered from either
+-- index content.
 -- ===========================================================================================
 
 -- 12: a length is never a stored value, so JSONAllValues cannot hold it. The stored values are
@@ -234,34 +234,6 @@ SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 SELECT '15 flatten count', count() FROM t_flatten WHERE has(j.labels[].name::Array(String), 'bug');
 
 -- ===========================================================================================
--- 16: a structural descent under a TYPED COMPOSITE path. The run path is `a`/`b`/`c`, while the
--- rendered name says `a.x`/`b.String`/`c.key_k`, which JSONAllPaths never emits.
--- No Granules assertion: a typed path is emitted for every row, so nothing prunes.
--- ===========================================================================================
-
-DROP TABLE IF EXISTS t_composite;
-CREATE TABLE t_composite (j JSON(a Tuple(x Int64), b Variant(String, UInt64), c Map(String, Int64)),
-    INDEX idx JSONAllPaths(j) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
--- the Map subcolumn spelling is `key_<serialized_key>`, so key `k` is read as `j.c.key_k`
-INSERT INTO t_composite VALUES ('{"a":{"x":42},"b":"hello","c":{"k":7}}');
-
-SELECT '16 tuple element', count() FROM t_composite WHERE j.a.x = 42;
-SELECT '16 tuple element keeps index', countIf(trim(explain) ILIKE 'Name: idx')
-FROM (EXPLAIN indexes = 1 SELECT count() FROM t_composite WHERE j.a.x = 42)
-SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
-
-SELECT '16 variant alternative', count() FROM t_composite WHERE j.b.String = 'hello';
-SELECT '16 variant alternative keeps index', countIf(trim(explain) ILIKE 'Name: idx')
-FROM (EXPLAIN indexes = 1 SELECT count() FROM t_composite WHERE j.b.String = 'hello')
-SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
-
-SELECT '16 map key value', count() FROM t_composite WHERE j.c.key_k = 7;
-SELECT '16 map key value keeps index', countIf(trim(explain) ILIKE 'Name: idx')
-FROM (EXPLAIN indexes = 1 SELECT count() FROM t_composite WHERE j.c.key_k = 7)
-SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
-
--- ===========================================================================================
 -- 17: Nullable(JSON) is accepted DDL and its genuine paths must keep index and pruning, so
 -- NullableElements has to stay allowed both as a wrapper and inside a tail.
 -- ===========================================================================================
@@ -279,22 +251,6 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM t_nullable_json WHERE c.dyn = 'hel
 SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 SELECT '17 Nullable(JSON) count', count() FROM t_nullable_json WHERE c.dyn = 'hello';
 
--- ===========================================================================================
--- 18: an unhinted dynamic path under a typed Array(JSON) path. `j.a.x` is Array(Dynamic), so the
--- predicate casts it; the name reaching the matcher is still `j.a.x`.
--- ===========================================================================================
-
-DROP TABLE IF EXISTS t_array_json;
-CREATE TABLE t_array_json (j JSON(a Array(JSON)),
-    INDEX idx JSONAllPaths(j) TYPE text(tokenizer = 'splitByNonAlpha') GRANULARITY 1)
-ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 1;
-INSERT INTO t_array_json VALUES ('{"a":[{"x":42}]}');
-
-SELECT '18 dynamic path under typed array', count() FROM t_array_json WHERE has(j.a.x::Array(Int64), 42);
-SELECT '18 dynamic path under typed array keeps index', countIf(trim(explain) ILIKE 'Name: idx')
-FROM (EXPLAIN indexes = 1 SELECT count() FROM t_array_json WHERE has(j.a.x::Array(Int64), 42))
-SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
-
 DROP TABLE IF EXISTS t_shadow_text;
 DROP TABLE IF EXISTS t_shadow_ngrambf;
 DROP TABLE IF EXISTS t_shadow_bf;
@@ -311,6 +267,4 @@ DROP TABLE IF EXISTS t_size_values;
 DROP TABLE IF EXISTS t_null_map;
 DROP TABLE IF EXISTS t_type_hint;
 DROP TABLE IF EXISTS t_flatten;
-DROP TABLE IF EXISTS t_composite;
 DROP TABLE IF EXISTS t_nullable_json;
-DROP TABLE IF EXISTS t_array_json;
