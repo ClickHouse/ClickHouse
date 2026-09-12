@@ -351,6 +351,13 @@ std::future<MarkCache::MappedPtr> MergeTreeMarksLoader::loadMarksAsync()
             if (is_canceled)
             {
                 ProfileEvents::increment(ProfileEvents::LoadingMarksTasksCanceled);
+                /// `is_canceled` is set only by the destructor, which then waits for this task and drops the
+                /// future without reading it, so nothing ever observes this exception - it only stops the task
+                /// from doing work that has become useless. Keep it out of `system.errors`, where it would look
+                /// like a failure: since `load_marks_asynchronously` is enabled by default, this happens on any
+                /// server whenever a reader is dropped before its marks are needed. `LoadingMarksTasksCanceled`
+                /// above is the counter for this event.
+                Exception::SuppressErrorCodesScope suppress_error_codes;
                 throw Exception(ErrorCodes::ASYNC_LOAD_CANCELED, "Background task for loading marks was canceled");
             }
 
