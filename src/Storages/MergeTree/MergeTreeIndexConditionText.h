@@ -97,7 +97,8 @@ public:
         TokenizerPtr tokenizer_,
         MergeTreeIndexTextPreprocessorPtr preprocessor_,
         MergeTreeIndexTextPostprocessorPtr postprocessor_,
-        bool has_positions_);
+        bool has_positions_,
+        NameSet columns_shadowing_map_subcolumns_);
 
     ~MergeTreeIndexConditionText() override = default;
     static bool isSupportedFunction(const String & function_name);
@@ -115,6 +116,8 @@ public:
 
     /// Create text search query for the function node if it is suitable for optimization.
     TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
+    /// Whether the index can answer the predicate of the function node.
+    bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
     /// Returns generated virtual column name for the replacement of related function node.
     std::optional<String> replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name);
     TextSearchQueryPtr getSearchQueryForVirtualColumn(const String & column_name) const;
@@ -161,6 +164,10 @@ private:
 
     bool traverseAtomNode(const RPNBuilderTreeNode & node, RPNElement & out) const;
 
+    /// Whether the function accepts a tokenizer definition as its third argument and the given node
+    /// is a constant one that denotes the index tokenizer.
+    bool tokenizerArgumentMatchesIndex(const String & function_name, const RPNBuilderTreeNode & node) const;
+
     bool traverseFunctionNode(
         const RPNBuilderFunctionTreeNode & function_node,
         const RPNBuilderTreeNode & index_column_node,
@@ -185,7 +192,10 @@ private:
     /// Builds the OR-list of token sets for a `match`-style regexp, folding the required substring
     /// into every alternative. Returns an empty list when the regexp imposes no token requirement.
     std::vector<VectorWithMemoryTracking<String>> regexpToTokensForQueries(const String & regexp_string) const;
-    std::vector<OptimizedRegularExpression> stringLikeToPatterns(const Field & field, bool case_insensitive = false) const;
+    /// Supports '%needle%', 'needle%' and '%needle'. See isInfixPattern for which of them is exact.
+    /// `allow_arbitrary_patterns` needs a non-nullable value: an exact read of a NULL raises in the fallback (#113332).
+    std::vector<OptimizedRegularExpression>
+    stringLikeToPatterns(const Field & field, bool case_insensitive, bool allow_arbitrary_patterns) const;
 
     bool tryPrepareSetForTextSearch(const RPNBuilderTreeNode & lhs, const RPNBuilderTreeNode & rhs, const String & function_name, RPNElement & out) const;
 
@@ -198,6 +208,7 @@ private:
 
     Block header;
     std::optional<String> normalized_index_column_name;
+    NameSet columns_shadowing_map_subcolumns;
     /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
     /// share mutable parsing state; null otherwise.
     std::shared_ptr<const ITokenizer> owned_tokenizer;

@@ -130,6 +130,9 @@ public:
     void sendQuery(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {});
     void sendQueryUnlocked(ClientInfo::QueryKind query_kind = ClientInfo::QueryKind::SECONDARY_QUERY, AsyncCallback async_callback = {}) TSA_REQUIRES(was_cancelled_mutex);
 
+    /// Stage used when a remote replica is too old to receive the query plan and the executor sends SQL instead.
+    void setQueryPlanFallbackStage(QueryProcessingStage::Enum stage_) { query_plan_fallback_stage = stage_; }
+
     int sendQueryAsync();
 
     struct ReadResult
@@ -273,6 +276,7 @@ private:
     /// Temporary tables needed to be sent to remote servers
     Tables external_tables;
     QueryProcessingStage::Enum stage;
+    QueryProcessingStage::Enum query_plan_fallback_stage = QueryProcessingStage::Complete;
 
     std::optional<Extension> extension;
     /// Initiator identifier for distributed task processing
@@ -295,12 +299,6 @@ private:
       * read all packets before EndOfStream
       */
     bool finished = false;
-
-    /** Test-only. True only while this executor's reading thread is parked at the
-      * `remote_query_executor_receive_packet_pause` failpoint, so that the drain pause in
-      * `finish` cannot be satisfied by a sibling shard. False unless the failpoints are enabled.
-      */
-    std::atomic_bool in_receive_packet_window = false;
 
     /** Cancel query request was sent to all replicas because data is not needed anymore
       * This behaviour may occur when:

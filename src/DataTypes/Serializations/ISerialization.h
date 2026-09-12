@@ -12,6 +12,7 @@
 #include <Formats/MarkInCompressedFile.h>
 #include <Storages/MergeTree/MergeTreeDataPartType.h>
 
+#include <absl/functional/function_ref.h>
 #include <boost/noncopyable.hpp>
 #include <map>
 #include <unordered_map>
@@ -276,6 +277,11 @@ public:
             ObjectSharedDataCopyValues,
             ObjectStructure,
 
+            MapKeyValue,
+            ObjectDistinctPaths,
+            ObjectSubObject,
+            ObjectCombinedPath,
+
             Bucket,
             MapBucketsInfo,
             MapBucketIndexes,
@@ -532,6 +538,12 @@ public:
         /// even for streams that will be used later for data deserialization.
         bool release_all_prefixes_streams = false;
 
+        /// Set for a column that its caller discards after reading it only partially and refills
+        /// with defaults - the MergeTree readers, see `IMergeTreeReader::fillMissingColumns`. Only
+        /// such a column may be read with its sizes stream present while its elements stream is
+        /// missing: a `Nested` column added by `ALTER`, read from parts written before it.
+        bool partially_read_columns_are_refilled = false;
+
         /// Returns true if all marks for the given substream have at most
         /// `max_transitions` distinct consecutive positions.
         /// Used by `SerializationLowCardinality` as a cheap prefilter before
@@ -776,7 +788,7 @@ protected:
 
     /// Look up the pool by hash; on cache miss call the creator to build
     /// the object.  The creator is invoked at most once and only on miss.
-    static SerializationPtr pooled(UInt128 hash, std::function<ISerialization *()> creator);
+    static SerializationPtr pooled(UInt128 hash, absl::FunctionRef<ISerialization *()> creator);
 
     void addSubstreamAndCallCallback(SubstreamPath & path, const StreamCallback & callback, Substream substream) const;
 

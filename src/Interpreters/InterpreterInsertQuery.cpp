@@ -15,7 +15,6 @@
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterSelectWithUnionQuery.h>
-#include <Interpreters/InterpreterWatchQuery.h>
 #include <Interpreters/MarkTableIdentifiersVisitor.h>
 #include <Interpreters/QueryAliasesVisitor.h>
 #include <Interpreters/QueryLog.h>
@@ -46,7 +45,6 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageMaterializedView.h>
-#include <Storages/WindowView/StorageWindowView.h>
 #include <TableFunctions/TableFunctionFactory.h>
 #include <Common/logger_useful.h>
 #include <Common/checkStackSize.h>
@@ -220,8 +218,6 @@ Block InterpreterInsertQuery::getSampleBlock(
     /// If the query does not include information about columns
     if (!query.columns)
     {
-        if (auto * window_view = dynamic_cast<StorageWindowView *>(table.get()))
-            return window_view->getInputHeader();
         if (no_destination)
             return metadata_snapshot->getSampleBlockWithVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::All);
         return metadata_snapshot->getSampleBlockNonMaterialized();
@@ -707,6 +703,8 @@ static bool isInsertSelectTrivialEnoughForDistributedExecution(const ASTInsertQu
             && !select_query->orderBy()
             && !select_query->limitBy()
             && !select_query->limitLength()
+            && !select_query->limitAfter()
+            && !select_query->limitUntil()
             && !hasAggregateFunctions(select_query));
     }
     return false;
@@ -747,16 +745,33 @@ std::optional<QueryPipeline> InterpreterInsertQuery::buildInsertSelectPipelinePa
     if (settings[Setting::parallel_replicas_local_plan] && settings[Setting::parallel_replicas_insert_select_local_pipeline]
         && settings[Setting::parallel_replicas_prefer_local_replica])
     {
-        auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
-        auto coordinator = parallel_replicas_info.coordinator;
-        auto local_replica_index = parallel_replicas_info.local_replica_index;
-        return ClusterProxy::executeInsertSelectWithParallelReplicas(
-            query,
-            context,
-            std::move(local_pipeline),
-            std::move(coordinator),
-            std::move(parallel_replicas_info.connection_pools),
-            local_replica_index);
+        /// The local pipeline executes inside the initiator's pipeline and shares the initiator's 'QueryStatus',
+        /// so it cannot be bounded by 'max_execution_time_leaf' (the leaf timeout is substituted into
+        /// 'max_execution_time' only for remote replicas, which build their own 'QueryStatus' from the shipped
+        /// settings). Skip the local pipeline when the leaf timeout contract differs from the initiator's timeout
+        /// contract so that all leaf reading happens on remote replicas — the same approach as for SELECT in
+        /// 'updateContextForParallelReplicas'.
+        if (ClusterProxy::leafTimeoutRequiresRemoteOnlyLeafReading(settings))
+        {
+            LOG_TRACE(
+                logger,
+                "Not using the local insert select pipeline because the leaf timeout contract differs from the "
+                "initiator's: the local pipeline shares the initiator's query status and cannot use the leaf "
+                "timeout separately");
+        }
+        else
+        {
+            auto [local_pipeline, parallel_replicas_info] = buildLocalInsertSelectPipelineForParallelReplicas(query, table, context);
+            auto coordinator = parallel_replicas_info.coordinator;
+            auto local_replica_index = parallel_replicas_info.local_replica_index;
+            return ClusterProxy::executeInsertSelectWithParallelReplicas(
+                query,
+                context,
+                std::move(local_pipeline),
+                std::move(coordinator),
+                std::move(parallel_replicas_info.connection_pools),
+                local_replica_index);
+        }
     }
 
     return ClusterProxy::executeInsertSelectWithParallelReplicas(query, context);

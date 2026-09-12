@@ -199,13 +199,13 @@ SELECT naiveBayesClassifier('language', 'How are you?');
 
 تُطبِّق نموذج تعلّم آلي مُدرَّبًا على سمات الإدخال لتوليد تنبؤات.
 
-**الصيغة**
+**بنية**
 
 ```sql
 evalMLMethod(model, x1[, x2, ...])
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `model` — نموذج تعلّم آلي مُدرَّب. [`AggregateFunctionState`](/ar/reference/data-types/aggregatefunction)
 * `x1, x2, ...` — قيم السمات المستخدمة للتنبؤ. [`Float*`](/ar/reference/data-types/float) أو [`(U)Int*`](/ar/reference/data-types/int-uint)
@@ -219,22 +219,39 @@ evalMLMethod(model, x1[, x2, ...])
 **مثال على الاستخدام**
 
 ```sql title=Query
+CREATE TABLE trips (pickup_datetime DateTime('UTC'), trip_distance Float64, total_amount Float64) ENGINE = Memory;
+
+-- A fare of 3, plus 2.5 for every unit of distance.
+INSERT INTO trips
+SELECT toDateTime('2020-01-01 00:00:00', 'UTC') + number * 60, number % 10 + 1, 2.5 * (number % 10 + 1) + 3
+FROM numbers(1000);
+
+-- One model per year of the data.
+CREATE TABLE models ENGINE = Memory AS
 SELECT
-evalMLMethod(model, trip_distance),
-total_amount
+    toYear(pickup_datetime) AS year,
+    stochasticLinearRegressionState(0.01, 0.0, 10, 'SGD')(total_amount, trip_distance) AS model
+FROM trips
+GROUP BY year;
+
+SELECT
+    trip_distance,
+    round(evalMLMethod(model, trip_distance), 2) AS predicted,
+    total_amount
 FROM trips
 LEFT JOIN models ON year = toYear(pickup_datetime)
+ORDER BY pickup_datetime
 LIMIT 5
 ```
 
 ```response title=Response
-┌─evalMLMethod(model, trip_distance)─┬─total_amount─┐
-│ 8.087692004204174                  │ 5.4          │
-│ 7.861181608305352                  │ 4.6          │
-│ 26.661544467907536                 │ 23.4         │
-│ 8.767223191900637                  │ 5.8          │
-│ 10.80581675499003                  │ 9            │
-└────────────────────────────────────┴──────────────┘
+┌─trip_distance─┬─predicted─┬─total_amount─┐
+│             1 │      4.05 │          5.5 │
+│             2 │      6.79 │            8 │
+│             3 │      9.53 │         10.5 │
+│             4 │     12.28 │           13 │
+│             5 │     15.02 │         15.5 │
+└───────────────┴───────────┴──────────────┘
 ```
 
 <div id="naivebayesclassifier">
@@ -255,7 +272,7 @@ LIMIT 5
 naiveBayesClassifier(dictionary_name, input_text)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `dictionary_name` — اسم قاموس يستخدم التخطيط NAIVE&#95;BAYES. [`String`](/ar/reference/data-types/string)
 * `input_text` — النص المراد تصنيفه. [`String`](/ar/reference/data-types/string)
@@ -269,11 +286,23 @@ naiveBayesClassifier(dictionary_name, input_text)
 **تصنيف النص**
 
 ```sql title=Query
-SELECT naiveBayesClassifier('model', 'some text');
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+SELECT naiveBayesClassifier('sentiment', 'a good and great film') AS class_id;
 ```
 
 ```response title=Response
-0
+┌─class_id─┐
+│        0 │
+└──────────┘
 ```
 
 <div id="naiveBayesClassifierWithAllProbs">
@@ -282,19 +311,19 @@ SELECT naiveBayesClassifier('model', 'some text');
 
 أُضيفت في: v26.7.0
 
-تُصنِّف نص الإدخال باستخدام قاموس [`NAIVE_BAYES`](/ar/reference/statements/create/dictionary/layouts/naive-bayes) وتُرجِع جميع الفئات مع احتمالاتها، مرتبة من الأكثر احتمالًا إلى الأقل.
+تُصنِّف نص مُدخل باستخدام قاموس [`NAIVE_BAYES`](/ar/reference/statements/create/dictionary/layouts/naive-bayes) وتُرجِع جميع الفئات مع احتمالاتها، مرتبة من الأكثر احتمالًا إلى الأقل.
 
 <Note>
   هذه الدالة غير حتمية: قد تُرجِع نتائج مختلفة للوسيطات نفسها.
 </Note>
 
-**الصيغة**
+**بنية**
 
 ```sql
 naiveBayesClassifierWithAllProbs(dictionary_name, input_text)
 ```
 
-**المعاملات**
+**وسيطات الدالة**
 
 * `dictionary_name` — اسم قاموس ذي تخطيط NAIVE&#95;BAYES. [`String`](/ar/reference/data-types/string)
 * `input_text` — النص المراد تصنيفه. [`String`](/ar/reference/data-types/string)
@@ -308,11 +337,23 @@ naiveBayesClassifierWithAllProbs(dictionary_name, input_text)
 **كل احتمالات الفئات**
 
 ```sql title=Query
-SELECT naiveBayesClassifierWithAllProbs('model', 'some text');
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+SELECT arrayMap(p -> (p.1, round(p.2, 4)), naiveBayesClassifierWithAllProbs('sentiment', 'a good and great film')) AS predictions;
 ```
 
 ```response title=Response
-[(0,0.85),(1,0.15)]
+┌─predictions─────────────┐
+│ [(0,0.9677),(1,0.0323)] │
+└─────────────────────────┘
 ```
 
 <div id="naiveBayesClassifierWithProb">
@@ -333,7 +374,7 @@ SELECT naiveBayesClassifierWithAllProbs('model', 'some text');
 naiveBayesClassifierWithProb(dictionary_name, input_text)
 ```
 
-**الوسائط**
+**وسيطات الدالة**
 
 * `dictionary_name` — اسم قاموس بتخطيط NAIVE&#95;BAYES. [`String`](/ar/reference/data-types/string)
 * `input_text` — النص المراد تصنيفه. [`String`](/ar/reference/data-types/string)
@@ -347,11 +388,24 @@ Tuple يتكوّن من (class&#95;id, probability). [`Tuple(UInt32, Float64)`](
 **التصنيف مع الاحتمال**
 
 ```sql title=Query
-SELECT naiveBayesClassifierWithProb('model', 'some text');
+-- A dictionary built from the token counts of two classes: 0 for a positive review, 1 for a negative one.
+CREATE TABLE review_tokens (ngram String, class_id UInt32, count UInt64) ENGINE = Memory;
+INSERT INTO review_tokens VALUES ('good', 0, 5), ('great', 0, 4), ('excellent', 0, 3), ('bad', 1, 5), ('awful', 1, 4), ('terrible', 1, 3);
+
+CREATE DICTIONARY sentiment (ngram String, class_id UInt32 DEFAULT 0, count UInt64 DEFAULT 0)
+PRIMARY KEY ngram
+SOURCE(CLICKHOUSE(TABLE 'review_tokens'))
+LAYOUT(NAIVE_BAYES(class_attribute 'class_id' n 1 mode 'token'))
+LIFETIME(0);
+
+WITH naiveBayesClassifierWithProb('sentiment', 'a good and great film') AS p
+SELECT (p.1, round(p.2, 4)) AS prediction;
 ```
 
 ```response title=Response
-(0,0.85)
+┌─prediction─┐
+│ (0,0.9677) │
+└────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

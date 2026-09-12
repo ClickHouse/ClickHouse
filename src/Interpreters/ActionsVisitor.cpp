@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <memory>
 
 #include <Common/assert_cast.h>
@@ -63,6 +64,7 @@
 #include <Core/ConstantValue.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/interpretSubquery.h>
+#include <Interpreters/FunctionSecretArgumentsFinderActionsDAG.h>
 #include <Interpreters/misc.h>
 #include <Parsers/QueryParameterVisitor.h>
 
@@ -771,6 +773,14 @@ void ScopeStack::addFunction(
     const auto & node = stack[level].actions_dag.addFunction(function, std::move(children), std::move(result_name));
     stack[level].index->addNode(&node);
 
+    {
+        auto & mutable_node = const_cast<ActionsDAG::Node &>(node);
+        bool node_has_secret = FunctionSecretArgumentsFinderActionsDAG(node).getResult().hasSecrets();
+        bool child_has_secret = std::any_of(
+            node.children.begin(), node.children.end(), [](const ActionsDAG::Node * child) { return child->is_masked_secret; });
+        mutable_node.is_masked_secret = node_has_secret || (node.column && child_has_secret);
+    }
+
     for (size_t j = level + 1; j < stack.size(); ++j)
     {
         const auto & input = stack[j].actions_dag.addInput({node.column, node.result_type, node.result_name});
@@ -1467,6 +1477,7 @@ void ActionsMatcher::visit(const ASTFunction & node, const ASTPtr & ast, Data & 
         auto user_defined_function = UserDefinedSQLFunctionFactory::instance().tryGet(node.name);
         if (user_defined_function && user_defined_function->as<ASTCreateWasmFunctionQuery>())
         {
+            UserDefinedWebAssemblyFunctionFactory::checkWebAssemblyIsAvailable(current_context);
             function_builder = UserDefinedWebAssemblyFunctionFactory::instance().tryGet(node.name, current_context);
             is_user_defined_wasm_function = function_builder != nullptr;
         }

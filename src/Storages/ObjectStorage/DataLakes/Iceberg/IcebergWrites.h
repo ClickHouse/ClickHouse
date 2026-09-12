@@ -96,7 +96,10 @@ void generateManifestFile(
     /// Optional per-file manifest-entry lineage parallel to `data_file_names`; when non-empty entries are written as EXISTING keeping their original snapshot-id and sequence number, else as ADDED by the new snapshot.
     const std::vector<DataFileEntryLineage> & per_file_entry_lineage = {},
     /// Optional schema to serialize into the manifest's Avro `schema` header; when null the table's current schema is used.
-    Poco::JSON::Object::Ptr schema_to_serialize = nullptr);
+    Poco::JSON::Object::Ptr schema_to_serialize = nullptr,
+    /// Optional freshly-computed per-file statistics parallel to `data_file_names`; when set each entry's stats
+    /// describe only its own data file, else the shared `data_file_statistics` is used for every entry.
+    const std::vector<const DataFileStatistics *> * per_file_fresh_statistics = nullptr);
 
 /// Per manifest-list entry file/row counts and lineage for rewritten manifests.
 struct ManifestListEntryCounts
@@ -132,7 +135,8 @@ void generateManifestList(
     const std::vector<ManifestListEntryCounts> & entry_counts = {},
     const std::unordered_set<String> & carry_forward_manifest_paths = {},
     const std::vector<Int64> & entry_partition_spec_ids = {},
-    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {});
+    const std::vector<std::vector<std::pair<Field, DataTypePtr>>> & entry_partition_summaries = {},
+    const std::vector<Int64> & entry_row_counts = {});
 
 class IcebergStorageSink final : public SinkToStorage
 {
