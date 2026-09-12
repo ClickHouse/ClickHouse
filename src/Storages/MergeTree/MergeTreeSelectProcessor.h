@@ -138,6 +138,8 @@ public:
 
     Block getHeader() const { return result_header; }
 
+    bool hasVirtualRowConversions() const { return virtual_row_conversions != nullptr; }
+
     /// Reads a single MergeTreeReadTask in a stateless manner.
     /// Can be called concurrently and is used, for example, by SingleProjectionIndexReader.
     ChunkAndProgress readCurrentTask(MergeTreeReadTask & current_task, IMergeTreeSelectAlgorithm & task_algorithm) const;

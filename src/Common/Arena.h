@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <vector>
@@ -88,7 +89,11 @@ private:
 
     /// Last contiguous MemoryChunk of memory.
     MemoryChunk head;
-    size_t allocated_bytes = 0;
+    /// Atomic so that `allocatedBytes` may be read by a thread that does not own the arena (e.g. the memory
+    /// accounting of a column that shares this arena) while the owner keeps allocating. Only the size counter
+    /// gets this guarantee - the arena's contents and every other method remain single-owner. Updated only in
+    /// `addMemoryChunk`, so the atomic costs nothing on the allocation fast path.
+    std::atomic<size_t> allocated_bytes = 0;
     size_t used_bytes = 0;
     size_t page_size;
 
@@ -153,7 +158,7 @@ private:
             head.swap(*chunk);
             head.prev = std::move(chunk);
         }
-        allocated_bytes += head.size();
+        allocated_bytes.fetch_add(head.size(), std::memory_order_relaxed);
     }
 
     friend class ArenaAllocator;
@@ -335,8 +340,9 @@ public:
         return res;
     }
 
-    /// Size of all MemoryChunks in bytes.
-    size_t allocatedBytes() const { return allocated_bytes; }
+    /// Size of all MemoryChunks in bytes. Safe to call from a thread that does not own the arena: the value is
+    /// a consistent snapshot, though a concurrently growing arena may exceed it by the time it is used.
+    size_t allocatedBytes() const { return allocated_bytes.load(std::memory_order_relaxed); }
 
     /// Total space actually used (not counting padding or space unused by caller allocations) in all MemoryChunks in bytes.
     size_t usedBytes() const { return used_bytes; }
