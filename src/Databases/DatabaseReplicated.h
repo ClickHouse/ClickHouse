@@ -158,8 +158,12 @@ public:
 
     void renameDatabase(ContextPtr query_context, const String & new_name) override;
 
+    /// With @unexpected_form_is_not_an_error, metadata that parses but is not in the form this
+    /// database writes yields nullptr instead of throwing LOGICAL_ERROR. Only the metadata dump
+    /// passes true: a LOGICAL_ERROR aborts at construction in the builds it runs in.
     static ASTPtr parseQueryFromMetadataInZooKeeper(
-        ContextPtr context_, const String & database_name_, const String & zookeeper_path_, const String & node_name, const String & query);
+        ContextPtr context_, const String & database_name_, const String & zookeeper_path_, const String & node_name, const String & query,
+        bool unexpected_form_is_not_an_error = false);
 
     friend struct DatabaseReplicatedTask;
     friend class DatabaseReplicatedDDLWorker;
@@ -218,8 +222,9 @@ private:
                                                                int64_t expected_max_log_ptr_czxid = 0) const;
 
     static ASTPtr parseQueryFromMetadata(
-        ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description);
-    ASTPtr parseQueryFromMetadataOnDisk(const String & table_name) const;
+        ContextPtr context_, const String & database_name_, const String & table_name, const String & query, const String & description,
+        bool unexpected_form_is_not_an_error = false);
+    ASTPtr parseQueryFromMetadataOnDisk(const String & table_name, bool unexpected_form_is_not_an_error = false) const;
     String readMetadataFile(const String & table_name) const;
 
     ClusterPtr getClusterImpl(bool all_groups = false) const;
@@ -244,6 +249,20 @@ private:
 
     /// For debug purposes only, don't use in production code
     void tryCompareLocalAndZooKeeperTablesAndDumpDiffForDebugOnly(const ContextPtr & local_context) const;
+    /// Reports one table's digest term and its local-vs-coordinator metadata bytes; a null map
+    /// means no coordinator snapshot, so only the local side is reported. Best effort: catches every
+    /// catchable failure. A LOGICAL_ERROR still aborts in these builds by design.
+    void dumpTableRawMetadataDiffForOneTable(
+        const String & table_name,
+        bool is_digest_carrier,
+        const std::map<String, String> * table_name_to_metadata_in_zk) const;
+    /// Supplementary AST rendering for one table, run only after every byte report.
+    /// Best effort in the same sense as above.
+    void dumpTableAstDiffForOneTable(
+        const String & table_name,
+        bool is_digest_carrier,
+        const ContextPtr & local_context,
+        const std::map<String, String> & table_name_to_metadata_in_zk) const;
 
     void waitDatabaseStarted() const override;
     void stopLoading() override;
