@@ -352,6 +352,11 @@ private:
     bool isTableReadonly() const;
     void assertNotReadonly() const;
 
+    /// Starts every background worker that a writable table runs. Called on startup of a writable
+    /// table and again when `table_readonly` is turned back off, so that a table that was attached
+    /// read-only regains merges, moves, cleanup, and outdated part loading without a restart.
+    void startBackgroundWorkers();
+
     friend class MergeTreeSink;
     friend class MergeTreeSinkPatch;
     friend class MergeTreeData;

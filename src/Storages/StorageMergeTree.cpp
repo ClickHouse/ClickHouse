@@ -259,13 +259,7 @@ void StorageMergeTree::startup()
     try
     {
         if (!readonly)
-        {
-            cleanup_thread.start();
-            background_operations_assignee.start();
-            background_streaming_assignee.start();
-            startBackgroundMovesIfNeeded();
-            startOutdatedAndUnexpectedDataPartsLoadingTask();
-        }
+            startBackgroundWorkers();
         /// Statistics refresh only reads parts and must also run for read-only tables.
         startStatisticsCache();
     }
@@ -810,6 +804,18 @@ void StorageMergeTree::alter(
     {
         /// Some additional changes in settings
         auto new_storage_settings = getSettings();
+
+        /// A table that started read-only has no background workers at all: `startup` skipped them.
+        /// `table_readonly` is documented to be toggleable back, so restore them here instead of
+        /// requiring a server restart. `isTableReadonly` stays true for a static storage, which
+        /// must never run them.
+        if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
+        {
+            /// The same one-off cleanup a writable `startup` performs.
+            clearEmptyParts();
+            clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
+            startBackgroundWorkers();
+        }
 
         if ((*old_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window] != (*new_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window])
         {
@@ -3901,6 +3907,15 @@ void StorageMergeTree::startBackgroundMovesIfNeeded()
 {
     if (areBackgroundMovesNeeded())
         background_moves_assignee.start();
+}
+
+void StorageMergeTree::startBackgroundWorkers()
+{
+    cleanup_thread.start();
+    background_operations_assignee.start();
+    background_streaming_assignee.start();
+    startBackgroundMovesIfNeeded();
+    startOutdatedAndUnexpectedDataPartsLoadingTask();
 }
 
 std::unique_ptr<MergeTreeSettings> StorageMergeTree::getDefaultSettings() const

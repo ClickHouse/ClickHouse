@@ -2458,7 +2458,10 @@ is enabled.
 
 The in-memory statistics cache still refreshes periodically. Set `refresh_statistics_interval = 0` to disable this background task too.
 
-The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). It is not supported for `ReplicatedMergeTree`.
+The setting can always be toggled back with `ALTER TABLE ... MODIFY SETTING table_readonly = 0` (or `RESET SETTING`). The background workers
+that a read-only table never started are started at that point, so merges, mutations, moves, TTL, and cleanup resume without a server restart.
+One thing is not restored: a table that was *attached* while read-only does not enumerate its outdated (inactive) parts, so those parts are not
+removed from the filesystem until the server is restarted. It is not supported for `ReplicatedMergeTree`.
 )", 0) \
     DECLARE(Bool, materialize_projections_on_insert, true, R"(
 When enabled, INSERTs create new parts with projections.
