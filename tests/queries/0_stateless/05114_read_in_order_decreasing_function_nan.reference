@@ -1,0 +1,134 @@
+a monotonically decreasing function of the key
+-3
+-2
+-1
+nan
+-3
+-2
+-1
+nan
+under LIMIT, where the wrong order also returns wrong rows
+-3
+-2
+-3
+-2
+the order a backward read satisfies exactly
+nan
+-3
+-2
+-1
+nan
+-3
+-2
+-1
+1
+and the opposite one, which neither read direction satisfies
+nan
+-1
+-2
+-3
+nan
+-1
+-2
+-3
+the key itself, which was always read in order
+1
+2
+3
+nan
+3
+2
+1
+nan
+1
+2
+3
+nan
+an increasing function of the key
+2
+3
+4
+nan
+2
+3
+4
+nan
+and a key column declared DESC
+-3
+-2
+-1
+nan
+-3
+-2
+-1
+nan
+3
+2
+1
+nan
+3
+2
+1
+nan
+a later key rejected on its own
+1	nan
+1	0
+1	1
+1	2
+1	3
+1	5
+2	1
+1	nan
+1	0
+1	1
+1	2
+1	3
+1	5
+2	1
+1	nan
+1	0
+1	1
+1	nan
+1	0
+1	1
+1	-5
+1	-5
+a LowCardinality float key
+-3
+-2
+-1
+nan
+-3
+-2
+-1
+nan
+-3
+-2
+-3
+-2
+the legacy read-in-order optimizer
+-3
+-2
+-1
+nan
+-3
+-2
+-1
+nan
+-3
+-2
+-3
+-2
+nan
+1
+2
+3
+nan
+1
+2
+3
+1
+2
+3
+nan
+1
