@@ -746,6 +746,10 @@ struct ZooKeeperRequestFromLogReader
                 request_from_log.request = list_request;
                 break;
             }
+            case Coordination::OpNum::ListWithOptions:
+                throw DB::Exception(
+                    DB::ErrorCodes::BAD_ARGUMENTS,
+                    "ListWithOptions cannot be replayed because system.zookeeper_log does not store its options");
             case Coordination::OpNum::Exists:
             {
                 auto exists_request = std::make_shared<Coordination::ZooKeeperExistsRequest>();

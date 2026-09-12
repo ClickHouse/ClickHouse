@@ -1055,7 +1055,11 @@ void KeeperStorage::updateWatches(
         if (resp->error == Coordination::Error::ZOK)
         {
             static constexpr std::array list_requests{
-                Coordination::OpNum::List, Coordination::OpNum::SimpleList, Coordination::OpNum::FilteredList, Coordination::OpNum::FilteredListWithStatsAndData};
+                Coordination::OpNum::List,
+                Coordination::OpNum::SimpleList,
+                Coordination::OpNum::FilteredList,
+                Coordination::OpNum::FilteredListWithStatsAndData,
+                Coordination::OpNum::ListWithOptions};
 
             auto watch_type = std::ranges::contains(list_requests, req->getOpNum()) ? WatchType::LIST_WATCH : WatchType::WATCH;
 

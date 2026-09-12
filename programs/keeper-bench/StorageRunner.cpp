@@ -1,8 +1,10 @@
 #include <StorageRunner.h>
 
+#include <array>
 #include <chrono>
 #include <iomanip>
 #include <iostream>
+#include <ranges>
 #include <sstream>
 
 #include <Common/Exception.h>
@@ -29,8 +31,15 @@ namespace
     bool isListResponseOp(Coordination::OpNum op)
     {
         using enum Coordination::OpNum;
-        return op == List || op == SimpleList || op == FilteredList || op == FilteredListWithStatsAndData
-            || op == ListRecursive;
+        static constexpr std::array list_response_ops{
+            List,
+            SimpleList,
+            FilteredList,
+            FilteredListWithStatsAndData,
+            ListRecursive,
+            ListWithOptions,
+        };
+        return std::ranges::contains(list_response_ops, op);
     }
 
     size_t countListEntries(const Coordination::ZooKeeperResponse & response, Coordination::OpNum op_num)
@@ -38,6 +47,8 @@ namespace
         if (!isListResponseOp(op_num))
             return 0;
         if (const auto * list = dynamic_cast<const Coordination::ZooKeeperListResponse *>(&response))
+            return list->names.size();
+        if (const auto * list = dynamic_cast<const Coordination::ZooKeeperListWithOptionsResponse *>(&response))
             return list->names.size();
         return 0;
     }
@@ -140,6 +151,7 @@ size_t StorageRunner::opIndex(Coordination::OpNum op_num)
         case ListRecursive: return 18;
         case Sync: return 19;
         case Heartbeat: return 20;
+        case ListWithOptions: return 21;
         default: return 0;
     }
 }
@@ -171,6 +183,7 @@ namespace
             case 18: return "listrecursive"sv;
             case 19: return "sync"sv;
             case 20: return "heartbeat"sv;
+            case 21: return "listwithoptions"sv;
             default: return "other"sv;
         }
     }
