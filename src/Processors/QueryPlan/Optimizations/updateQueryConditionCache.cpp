@@ -1,10 +1,21 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Core/Settings.h>
 #include <Functions/IFunction.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Interpreters/Context.h>
 #include <Storages/VirtualColumnUtils.h>
 
 #include <boost/functional/hash.hpp>
+
+namespace DB
+{
+namespace Setting
+{
+    extern const SettingsTimezone session_timezone;
+}
+}
 
 namespace DB::QueryPlanOptimizations
 {
@@ -126,7 +137,11 @@ void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationS
                 boost::hash_combine(condition_hash, top_k_filter_info->condition_hash);
 
             String condition = filter_actions_dag->getNames()[0];
-            filter_step->setConditionForQueryConditionCache(condition_hash, condition);
+            filter_step->setConditionForQueryConditionCache(
+                condition_hash,
+                condition,
+                QueryConditionCache::resolveTimeZone(
+                    read_from_merge_tree->getContext()->getSettingsRef()[Setting::session_timezone].value));
             return;
         }
     }

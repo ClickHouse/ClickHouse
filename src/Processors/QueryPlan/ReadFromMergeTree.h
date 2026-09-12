@@ -351,7 +351,7 @@ public:
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
 
-    /// The query condition cache is keyed by (table UUID, part name, condition hash), so it must not
+    /// The query condition cache is keyed by (table UUID, part name, condition hash, time zone), so it must not
     /// see filters whose value can change while that key stays the same: non-deterministic virtual
     /// columns (query-wide part numbering, catalog names, disk placement).
     static bool filterDependsOnNonDeterministicVirtuals(const VirtualColumnsDescription & virtuals, const SelectQueryInfo & query_info_);

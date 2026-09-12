@@ -63,6 +63,10 @@ struct MergeTreeReaderSettings
     bool is_compressed = true;
     /// If we should write/read to/from the query condition cache.
     bool use_query_condition_cache = false;
+    /// The time zone a PREWHERE condition is evaluated in, part of the query condition cache key.
+    /// Only meaningful together with `use_query_condition_cache`, which is only ever set by
+    /// `createFromContext`, i.e. when a session exists to resolve the zone from.
+    String query_condition_cache_time_zone;
     /// Force reading complete granules, even when the readers could read incomplete granules.
     bool force_read_complete_granules = false;
     bool use_deserialization_prefixes_cache = false;

@@ -1,6 +1,7 @@
 #include <Formats/FormatFilterInfo.h>
 #include <Common/Exception.h>
 #include <Core/Settings.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
 #include <Storages/MergeTree/KeyCondition.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
@@ -25,6 +26,7 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsTimezone session_timezone;
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
@@ -74,7 +76,10 @@ FormatFilterInfo::FormatFilterInfo(
     {
         const auto & outputs = filter_actions_dag->getOutputs();
         if (outputs.size() == 1 && VirtualColumnUtils::isDeterministic(outputs[0]))
+        {
             condition_hash = filter_actions_dag->getHash();
+            condition_time_zone = QueryConditionCache::resolveTimeZone(context_->getSettingsRef()[Setting::session_timezone].value);
+        }
     }
 }
 

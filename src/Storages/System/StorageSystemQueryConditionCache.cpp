@@ -17,7 +17,7 @@ ColumnsDescription StorageSystemQueryConditionCache::getColumnsDescription()
 {
     return ColumnsDescription
     {
-        {"key_hash", std::make_shared<DataTypeUInt128>(), "Hash of (table_uuid, part_name, condition_hash)."},
+        {"key_hash", std::make_shared<DataTypeUInt128>(), "Hash of (table_uuid, part_name, condition_hash, time_zone)."},
 #if defined(DEBUG_OR_SANITIZER_BUILD)
         {"table_uuid", std::make_shared<DataTypeUUID>(), "The table UUID. (debug and sanitizer builds only)"},
         {"part_name", std::make_shared<DataTypeString>(), "The part name. (debug and sanitizer builds only)"},
