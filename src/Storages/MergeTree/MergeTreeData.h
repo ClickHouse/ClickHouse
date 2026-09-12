@@ -2161,8 +2161,8 @@ protected:
     BackgroundSchedulePoolTaskHolder refresh_stats_task;
 
     /// Hash of the active part names at the last completed statistics prewarm. Touched only by
-    /// `refreshStatistics`, which never runs concurrently with itself: the task is deactivated
-    /// (and joined) before it is recreated or the table is destroyed.
+    /// `refreshStatistics`, which never runs concurrently with itself, and by `startStatisticsCache`
+    /// after it has deactivated (and joined) the task, before recreating it.
     std::optional<UInt128> prewarmed_parts_hash;
 
     void startStatisticsCache();

@@ -3296,6 +3296,9 @@ void MergeTreeData::startStatisticsCache()
     UInt64 refresh_statistics_seconds = (*settings)[MergeTreeSetting::refresh_statistics_interval].totalSeconds();
     if (refresh_stats_task)
         refresh_stats_task->deactivate();
+    /// A recreated task prewarms once even if the part set is unchanged since the last prewarm:
+    /// the caches may have been dropped while the task was disabled.
+    prewarmed_parts_hash.reset();
     if (refresh_statistics_seconds)
     {
         LOG_INFO(log, "Start to refresh statistics");

@@ -312,6 +312,47 @@ def test_prewarm_runs_once_per_part_set():
         "SELECT count() FROM once_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='once-after-insert' FORMAT Null"
     )
 
+def test_reenabled_interval_prewarms_unchanged_table():
+    # Re-enabling the background refresh recreates its task, which must prewarm the cache again
+    # although the part set is unchanged since the last prewarm: the caches may have been dropped
+    # while the task was disabled, and nothing else would refill them on a stable table.
+    _create_tbl(ch1, "reenable_tbl", 1)
+    since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
+    # A skipped tick proves the prewarm has completed for the current part set.
+    for _ in range(50):
+        _query(ch1, "SYSTEM FLUSH LOGS text_log")
+        skipped = int(_query(ch1, f"""
+            SELECT count() FROM system.text_log
+            WHERE logger_name LIKE '{TEST_DB}.reenable_tbl%'
+              AND message LIKE 'The parts in this storage did not change%'
+              AND event_time_microseconds >= toDateTime64('{since}', 6)
+            FORMAT TabSeparated
+        """).strip())
+        if skipped:
+            break
+        time.sleep(0.2)
+    assert skipped, "the statistics prewarm never reported an unchanged part set"
+    _query_retry(ch1, "ALTER TABLE reenable_tbl MODIFY SETTING refresh_statistics_interval = 0")
+    _query(ch1, "SYSTEM DROP STATISTICS CACHE")
+    since = _query(ch1, "SELECT now64(6) FORMAT TabSeparated").strip()
+    _query_retry(ch1, "ALTER TABLE reenable_tbl MODIFY SETTING refresh_statistics_interval = 1")
+    for _ in range(50):
+        _query(ch1, "SYSTEM FLUSH LOGS text_log")
+        refreshed = int(_query(ch1, f"""
+            SELECT count() FROM system.text_log
+            WHERE logger_name LIKE '{TEST_DB}.reenable_tbl%'
+              AND message = 'Refreshing statistics'
+              AND event_time_microseconds >= toDateTime64('{since}', 6)
+            FORMAT TabSeparated
+        """).strip())
+        if refreshed:
+            break
+        time.sleep(0.2)
+    assert refreshed, "the statistics prewarm did not run after the refresh interval was re-enabled"
+    _query(ch1, "SELECT count() FROM reenable_tbl WHERE v>0.99 AND k>0 SETTINGS use_statistics_cache=1, log_comment='reenable-post' FORMAT Null")
+    assert _profile_event(ch1, "reenable-post", "PartStatisticsCacheMisses") == 0
+    assert _profile_event(ch1, "reenable-post", "PartStatisticsCacheHits") > 0
+
 def test_mutation_optimize_replace_drop_keep_hit():
     _create_src_tbl(ch1, "mut_tbl", 1)
     _wait_hit(
