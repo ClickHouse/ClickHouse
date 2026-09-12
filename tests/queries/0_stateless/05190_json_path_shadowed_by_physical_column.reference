@@ -28,3 +28,7 @@
 19 isNotNull unindexed	1
 20 typed path under JSONAllValues still prunes	1	1
 20 typed path count	1
+21 dotted JSON column name	1
+21 dotted JSON column name unindexed	1
+22 shortest prefix owns the name	1
+22 shortest prefix owns the name unindexed	1

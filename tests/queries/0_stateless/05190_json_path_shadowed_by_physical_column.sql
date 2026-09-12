@@ -288,6 +288,32 @@ FROM (EXPLAIN indexes = 1 SELECT count() FROM t_typed_values WHERE j.a = 'hello'
 SETTINGS explain_query_plan_default = 'legacy', enable_parallel_replicas = 0;
 SELECT '20 typed path count', count() FROM t_typed_values WHERE j.a = 'hello';
 
+-- ===========================================================================================
+-- 21-22: the two faces of issue #119592, in the reporter's own shapes. 21 indexes a JSON column
+-- whose own name contains a dot; 22 is the only arm where two top-level columns can own the name,
+-- so it is the only one that pins which of them the name resolves to.
+-- ===========================================================================================
+
+DROP TABLE IF EXISTS t_dotted_json;
+CREATE TABLE t_dotted_json (id UInt64, `j.a` JSON, `j.a.b` String,
+    INDEX idx JSONAllPaths(`j.a`) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_dotted_json VALUES (1, '{"x": "1"}', 'hello'), (2, '{"y": "2"}', 'other');
+
+SELECT '21 dotted JSON column name', count() FROM t_dotted_json WHERE `j.a.b` = 'hello';
+SELECT '21 dotted JSON column name unindexed', count() FROM t_dotted_json WHERE `j.a.b` = 'hello'
+SETTINGS use_skip_indexes = 0;
+
+DROP TABLE IF EXISTS t_shortest_prefix;
+CREATE TABLE t_shortest_prefix (id UInt64, j JSON, `j.a` JSON,
+    INDEX idx JSONAllPaths(`j.a`) TYPE bloom_filter GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO t_shortest_prefix VALUES (1, '{"a": {"b": "hello"}}', '{"x": "1"}'), (2, '{"z": "2"}', '{"y": "2"}');
+
+SELECT '22 shortest prefix owns the name', count() FROM t_shortest_prefix WHERE j.a.b = 'hello';
+SELECT '22 shortest prefix owns the name unindexed', count() FROM t_shortest_prefix WHERE j.a.b = 'hello'
+SETTINGS use_skip_indexes = 0;
+
 DROP TABLE IF EXISTS t_shadow_text;
 DROP TABLE IF EXISTS t_shadow_ngrambf;
 DROP TABLE IF EXISTS t_shadow_bf;
@@ -307,3 +333,5 @@ DROP TABLE IF EXISTS t_flatten;
 DROP TABLE IF EXISTS t_nullable_json;
 DROP TABLE IF EXISTS t_isnotnull;
 DROP TABLE IF EXISTS t_typed_values;
+DROP TABLE IF EXISTS t_dotted_json;
+DROP TABLE IF EXISTS t_shortest_prefix;
