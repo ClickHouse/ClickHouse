@@ -138,7 +138,7 @@ public:
     /// count stored in Keeper (from either the terminal failed node or a live `.retriable`
     /// marker) so callers can revalidate a lowered `loading_retries` limit even when their
     /// own in-memory cache is cold (e.g. after a restart or on a different replica).
-    virtual PathState getPathState(std::string & failure_message, UInt64 * retries_out = nullptr) const = 0;
+    virtual PathState getPathState(std::string & failure_message, UInt64 * retries_out) const = 0;
 
     const std::string & getFailedNodePath() const { return failed_node_path; }
     const std::string & getProcessedNodePath() const { return processed_node_path; }

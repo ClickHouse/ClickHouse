@@ -2097,7 +2097,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
     /// failed, return or throw immediately regardless of dependency/streaming guards.
     {
         std::string failure_message;
-        const auto state = file_metadata->getPathState(failure_message);
+        const auto state = file_metadata->getPathState(failure_message, nullptr);
         if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
         {
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
@@ -2180,7 +2180,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
         }
 
         std::string failure_message;
-        const auto state = file_metadata->getPathState(failure_message);
+        const auto state = file_metadata->getPathState(failure_message, nullptr);
 
         if (state == ObjectStorageQueueIFileMetadata::PathState::Processed)
         {

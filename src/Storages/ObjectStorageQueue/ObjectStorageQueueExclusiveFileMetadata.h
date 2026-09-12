@@ -37,7 +37,7 @@ public:
 
     void prepareResetProcessingRequests(Coordination::Requests & requests) override;
 
-    PathState getPathState(std::string & failure_message, UInt64 * retries_out = nullptr) const override;
+    PathState getPathState(std::string & failure_message, UInt64 * retries_out) const override;
 
 private:
     std::pair<bool, FileStatus::State> setProcessingImpl() override;
