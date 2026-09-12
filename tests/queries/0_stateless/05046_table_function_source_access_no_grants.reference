@@ -1,0 +1,28 @@
+=== arming: the user cannot see either source table ===
+0
+0
+=== structure, no grants ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+=== select, no grants ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+=== alias, SHOW COLUMNS on the alias but not on its target ===
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+ACCESS_DENIED
+=== create as table function, no grants on the source ===
+ACCESS_DENIED

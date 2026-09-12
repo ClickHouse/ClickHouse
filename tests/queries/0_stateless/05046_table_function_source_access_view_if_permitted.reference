@@ -1,0 +1,20 @@
+=== static structures stay readable with no grants ===
+part_name
+token
+dictionary_compression
+cardinality
+num_posting_blocks
+has_embedded_postings
+has_raw_postings
+has_compressed_postings
+part_name
+ranges
+=== the UUID form is unchanged by this fix ===
+ACCESS_DENIED
+=== viewIfPermitted delegation is a no-op for a function with no source ===
+1
+ACCESS_DENIED
+UInt8
+ACCESS_DENIED
+=== the column mismatch diagnostic is unchanged (default user) ===
+requires a SELECT query with the result columns matching a table function after 'ELSE'
