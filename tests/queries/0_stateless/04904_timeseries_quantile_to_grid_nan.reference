@@ -1,0 +1,10 @@
+-- a NaN sample is kept and sorts before every real value
+[1,1]
+[1,1]
+-- phi = 0 selects the NaN that sorts first, phi = 1 selects the largest real value
+[1,nan]
+[1,2]
+[1,nan]
+-- a window with only NaN samples yields NaN, a window without samples stays NULL
+[nan,nan,NULL]
+[nan,nan,NULL]

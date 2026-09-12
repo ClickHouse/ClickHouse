@@ -1,0 +1,12 @@
+predict_linear with a fixed @, range query: the fit at 1700000100, +60s, repeated:
+[('instance','host1')]	[56.666666666666664,56.666666666666664,56.666666666666664,56.666666666666664]
+predict_linear with a fixed @: exactly one distinct value across all steps:
+1
+predict_linear with a fixed @ at the evaluation time: no shift, 40:
+[('instance','host1')]	40
+predict_linear with a fixed @, instant query 100s later:
+[('instance','host1')]	56.666666666666664
+quantile_over_time with a fixed @, range query: the median of 10/20/30, repeated:
+[('instance','host1')]	[20,20,20,20]
+quantile_over_time with a fixed @: exactly one distinct value across all steps:
+1
