@@ -1579,6 +1579,54 @@ bool KeyCondition::isRelaxed() const
     });
 }
 
+/// Whether a float is reachable by descending `Tuple` elements and the `Nullable` / `LowCardinality`
+/// wrappers. `Array` and `Map` are not descended: an equal-type comparison of those is `compareAt`-based
+/// and orders a NaN exactly where the index does, so their bounds and their rows already agree.
+static bool floatReachableThroughTupleElements(const DataTypePtr & type)
+{
+    const auto unwrapped = removeLowCardinalityAndNullable(type);
+    if (WhichDataType(unwrapped).isFloat())
+        return true;
+
+    const auto * tuple = typeid_cast<const DataTypeTuple *>(unwrapped.get());
+    if (!tuple)
+        return false;
+
+    const auto & elements = tuple->getElements();
+    return std::any_of(elements.begin(), elements.end(), floatReachableThroughTupleElements);
+}
+
+static bool typeCanHideNaNInsideTuple(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    const auto unwrapped = removeLowCardinalityAndNullable(type);
+    return typeid_cast<const DataTypeTuple *>(unwrapped.get()) && floatReachableThroughTupleElements(unwrapped);
+}
+
+/// A NaN inside a `Tuple` orders above only the values that share its prefix, so it can sit strictly
+/// between two granule bounds that hold none, while every row comparison against it is false, and the
+/// bounds therefore cannot answer `can_be_false` for a range atom over such a key column. Only a range
+/// that reaches the top of the order can hold such a value: one bounded above by an ordinary value
+/// excludes it, because a row whose first differing position holds a NaN compares greater than the
+/// constant. `can_be_true` is left alone, so every pruning decision is unchanged.
+void KeyCondition::relaxRangeAtomsOverNaNHidingTupleColumns(const DataTypes & key_types)
+{
+    for (auto & element : rpn)
+    {
+        if (element.function != RPNElement::FUNCTION_IN_RANGE || element.key_columns.size() != 1)
+            continue;
+
+        const size_t key_column = element.getKeyColumn();
+        if (key_column >= key_types.size() || !typeCanHideNaNInsideTuple(key_types[key_column]))
+            continue;
+
+        if (element.range.right.isPositiveInfinity())
+            element.relaxed = true;
+    }
+}
+
 bool KeyCondition::addCondition(const String & column, const Range & range)
 {
     if (!key_columns.contains(column))
