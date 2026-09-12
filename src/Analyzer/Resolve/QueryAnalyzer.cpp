@@ -2895,6 +2895,20 @@ ProjectionNames QueryAnalyzer::resolveMatcher(QueryTreeNodePtr & matcher_node, I
                     query_node->getLimitByNode() = limit_by_node;
                 }
 
+                if (query_node->hasLimitAfter())
+                {
+                    auto limit_after_node = query_node->getLimitAfter();
+                    replace_identifiers_in_node(limit_after_node);
+                    query_node->getLimitAfter() = limit_after_node;
+                }
+
+                if (query_node->hasLimitUntil())
+                {
+                    auto limit_until_node = query_node->getLimitUntil();
+                    replace_identifiers_in_node(limit_until_node);
+                    query_node->getLimitUntil() = limit_until_node;
+                }
+
                 if (query_node->hasWindow())
                 {
                     auto window_node = query_node->getWindowNode();
@@ -5255,7 +5269,8 @@ void QueryAnalyzer::resolveCrossJoin(QueryTreeNodePtr & cross_join_node, Identif
     }
 }
 
-static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns)
+static bool getColumnsFromTableExpression(
+    const QueryTreeNodePtr & root_table_expression, NameSet & existing_columns, VirtualsKind virtuals_kind = VirtualsKind::None)
 {
     std::stack<const IQueryTreeNode *> nodes_to_process;
     nodes_to_process.push(root_table_expression.get());
@@ -5272,7 +5287,9 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
                 const auto * table_node = table_expression->as<TableNode>();
                 chassert(table_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::All)
+                                              .withSubcolumns()
+                                              .withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
                 for (const auto & column : table_node->getStorageSnapshot()->getColumns(get_column_options))
                     existing_columns.insert(column.name);
 
@@ -5283,7 +5300,9 @@ static bool getColumnsFromTableExpression(const QueryTreeNodePtr & root_table_ex
                 const auto * table_function_node = table_expression->as<TableFunctionNode>();
                 chassert(table_function_node);
 
-                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                auto get_column_options = GetColumnsOptions(GetColumnsOptions::AllPhysical)
+                                              .withSubcolumns()
+                                              .withVirtuals(virtuals_kind, VirtualsMaterializationPlace::All);
                 for (const auto & column : table_function_node->getStorageSnapshot()->getColumns(get_column_options))
                     existing_columns.insert(column.name);
 
@@ -5573,8 +5592,9 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
             if (resolved_nodes.size() == 1)
             {
                 /// Added column should not conflict with existing column names
+                /// Virtual columns are resolvable names for this source too, so the new name must avoid them as well
                 NameSet existing_columns;
-                if (!getColumnsFromTableExpression(left_table_expression, existing_columns))
+                if (!getColumnsFromTableExpression(left_table_expression, existing_columns, VirtualsKind::All))
                     return nullptr;
 
                 NameAndTypePair column_name_type(identifier_full_name_, resolved_nodes.front()->getResultType());
@@ -5772,7 +5792,10 @@ void QueryAnalyzer::resolveJoin(QueryTreeNodePtr & join_node, IdentifierResolveS
                 && is_inner_or_semi
                 && !is_asof_inequality_key)
             {
-                if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(expression_types[0], expression_types[1]))
+                /// A conversion of the whole key column into this type runs before the join, so it must
+                /// hold every source value: `is_nullable` at the top level, the flag inside a Tuple.
+                if (auto subtype = JoinCommon::tryGetCommonSubtypeForJoinKeys(
+                        expression_types[0], expression_types[1], /* force_support_conversion= */ true))
                 {
                     bool is_nullable = isNullableOrLowCardinalityNullable(expression_types[0]) || isNullableOrLowCardinalityNullable(expression_types[1]);
                     common_type = is_nullable ? makeNullable(subtype) : subtype;
@@ -6513,6 +6536,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
     if (query_node_typed.hasLimit())
         visitor.visit(query_node_typed.getLimit());
 
+    if (query_node_typed.hasLimitAfter())
+        visitor.visit(query_node_typed.getLimitAfter());
+
+    if (query_node_typed.hasLimitUntil())
+        visitor.visit(query_node_typed.getLimitUntil());
+
     if (query_node_typed.hasOffset())
         visitor.visit(query_node_typed.getOffset());
 
@@ -6715,6 +6744,12 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         resolveExpressionNode(query_node_typed.getLimit(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
         convertLimitOffsetExpression(query_node_typed.getLimit(), "LIMIT", scope);
     }
+
+    if (query_node_typed.hasLimitAfter())
+        resolveExpressionNode(query_node_typed.getLimitAfter(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
+
+    if (query_node_typed.hasLimitUntil())
+        resolveExpressionNode(query_node_typed.getLimitUntil(), scope, false /*allow_lambda_expression*/, false /*allow_table_expression*/);
 
     if (query_node_typed.hasOffset())
     {
