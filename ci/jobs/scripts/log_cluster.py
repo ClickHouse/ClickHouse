@@ -304,13 +304,18 @@ class LogCluster:
             print("ERROR: LogCluster not ready")
         return False
 
-    def select(self, query, retries=8, timeout=60):
-        """Run a read-only query and return the response body, or None on failure.
+    def select(self, query, retries=8, timeout=60, body_failed=None):
+        """Run a read-only query and return the response, or None if none arrived.
 
-        Unlike do_query (INSERT transport, discards the body), this returns the
-        result text. Retries transient (>=500 and connection) errors with a
-        growing backoff: the shared cluster goes through minutes-long
-        server-wide memory-pressure spikes (Code 241 for every query).
+        Unlike do_query (INSERT transport, discards the body), this hands back
+        the response itself: the caller reads the body on success, and the
+        status code and body on failure. Retries transient (>=500 and
+        connection) errors with a growing backoff: the shared cluster goes
+        through minutes-long server-wide memory-pressure spikes (Code 241 for
+        every query). body_failed, when given, reads a response the status
+        calls successful and says whether its body reports a failure anyway;
+        those get the same backoff, because the status is committed before the
+        result starts streaming, so such a failure struck mid-query.
         """
         # The query goes in the body: queries with long IN lists exceed the
         # server's URI length limit as a parameter.
@@ -338,7 +343,13 @@ class LogCluster:
                     timeout=timeout,
                 )
                 if response.ok:
-                    return response.text
+                    if not (body_failed and body_failed(response)):
+                        return response
+                    print(
+                        f"WARNING: LogCluster select got {response.status_code} with a failure in the body"
+                    )
+                    time.sleep(5 * (retry + 1))
+                    continue
                 print(
                     f"WARNING: LogCluster select failed with code {response.status_code}"
                 )
@@ -354,7 +365,7 @@ class LogCluster:
             print(
                 f"ERROR: Failed to select from LogCluster, query:\n {query}\n    reason:\n {response.text}"
             )
-        return None
+        return response
 
 
 class LogClusterBuildProfileQueries:
