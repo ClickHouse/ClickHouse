@@ -1762,14 +1762,14 @@ Contains information about maximums for all intervals of all quotas. Any number 
 Quota usage by the current user: how much is used and how much is left.
 
 .see_also
-- [SHOW QUOTA](/reference/statements/show#show-quota))
+- [SHOW QUOTA](/reference/statements/show#show-quota)
 )DOCS_MD");
     attach<StorageSystemQuotasUsage>(context, system_database, "quotas_usage", R"DOCS_MD(
 .description
 Quota usage by all users.
 
 .see_also
-- [SHOW QUOTA](/reference/statements/show#show-quota))
+- [SHOW QUOTA](/reference/statements/show#show-quota)
 )DOCS_MD");
     attach<StorageSystemUserDirectories>(context, system_database, "user_directories", R"DOCS_MD(
 .description
@@ -2424,7 +2424,7 @@ res:       /lib/x86_64-linux-gnu/libc-2.27.so
 .see_also
 - [Introspection Functions](/reference/functions/regular-functions/introspection) — Which introspection functions are available and how to use them.
 - [system.trace_log](/reference/system-tables/trace_log) — Contains stack traces collected by the sampling query profiler.
-- [arrayMap](/reference/functions/regular-functions/array-functions#arrayMap)) — Description and usage example of the `arrayMap` function.
+- [arrayMap](/reference/functions/regular-functions/array-functions#arrayMap) — Description and usage example of the `arrayMap` function.
 - [arrayFilter](/reference/functions/regular-functions/array-functions#arrayFilter) — Description and usage example of the `arrayFilter` function.
 )DOCS_MD");
 #endif

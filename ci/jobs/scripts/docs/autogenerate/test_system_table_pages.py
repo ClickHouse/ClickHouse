@@ -194,6 +194,16 @@ def main():
     assert "statements" in table_names
 
     structured_comments = "\n".join(documents.values())
+    unbalanced_markdown_link_lines = [
+        f"{table_name}: {line}"
+        for table_name, documentation in documents.items()
+        for line in documentation.splitlines()
+        if "](" in line and line.count("(") != line.count(")")
+    ]
+    assert not unbalanced_markdown_link_lines, (
+        "Structured system-table comments contain Markdown links with unbalanced parentheses: "
+        + "; ".join(unbalanced_markdown_link_lines)
+    )
     # Validate the section markers per document, not only in aggregate: an aggregate count stays
     # correct when one page loses `.description` while another gains a duplicate.
     field_counts = {field: 0 for field in EXPECTED_FIELD_COUNTS}

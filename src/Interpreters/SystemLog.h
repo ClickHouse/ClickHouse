@@ -228,7 +228,7 @@ The flushing period of data is set in `flush_interval_milliseconds` parameter of
 
 ClickHouse does not delete data from the table automatically. See [Introduction](/reference/system-tables/overview#system-tables-introduction) for more details.
 
-You can use the [log_queries_probability](/reference/settings/session-settings/log-queries#log_queries_probability)) setting to reduce the number of queries, registered in the `query_thread_log` table.
+You can use the [log_queries_probability](/reference/settings/session-settings/log-queries#log_queries_probability) setting to reduce the number of queries, registered in the `query_thread_log` table.
 
 .examples
 ```sql
@@ -755,7 +755,7 @@ The flushing period of data is set in `flush_interval_milliseconds` parameter of
 
 ClickHouse does not delete data from the table automatically. See [Introduction](/reference/system-tables/overview#system-tables-introduction) for more details.
 
-You can use the [log_queries_probability](/reference/settings/session-settings/log-queries#log_queries_probability)) setting to reduce the number of queries, registered in the `query_views_log` table.
+You can use the [log_queries_probability](/reference/settings/session-settings/log-queries#log_queries_probability) setting to reduce the number of queries, registered in the `query_views_log` table.
 
 .examples
 ```sql title="Query"
