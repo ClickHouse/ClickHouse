@@ -37,4 +37,14 @@ SELECT count() FROM t_extract_common_pk WHERE k = 1 OR (k = 1 AND n = 1) SETTING
 EXPLAIN indexes = 1
 SELECT count() FROM t_extract_common_pk WHERE (k = 1 AND n = 1) OR k = 1 SETTINGS optimize_extract_common_expressions = 1;
 
+-- The widening is only value-preserving, not type-preserving, so it must not be dropped where
+-- the enclosing function observes the argument's type. `isNullable(CAST(k, 'Nullable(UInt32)'))`
+-- is 1 for every row: if index analysis dropped the CAST here it would re-fold `isNullable` over
+-- the bare `UInt32` key to 0, turn the always-true predicate into `0 = 1` and skip all granules.
+SELECT count() FROM t_extract_common_pk WHERE isNullable(CAST(k, 'Nullable(UInt32)')) = 1;
+
+SELECT count() FROM t_extract_common_pk WHERE k < 1000 AND isNullable(CAST(k, 'Nullable(UInt32)')) = 1;
+
+SELECT count() FROM t_extract_common_pk WHERE toTypeName(CAST(k, 'Nullable(UInt32)')) = 'Nullable(UInt32)';
+
 DROP TABLE t_extract_common_pk;

@@ -581,7 +581,10 @@ static ASTPtr cloneASTWithInversionPushDown(const ASTPtr node, const bool need_i
     return need_inversion ? makeASTOperator("not", cloned_node) : cloned_node;
 }
 
-static bool isTrivialCast(const ActionsDAG::Node & node)
+/// `value_is_truth_tested` tells whether the consumer of this node only truth-tests its value
+/// (`boolean_context`), so neither the value itself nor its type is observed. It gates the
+/// `Nullable`-widening case below, which is the only one that changes the node's result type.
+static bool isTrivialCast(const ActionsDAG::Node & node, bool value_is_truth_tested)
 {
     /// Recognize both the user-facing `CAST` and the analyzer-internal `_CAST` here; they
     /// produce the same node shape and our caller treats them identically. Without `_CAST`
@@ -604,13 +607,21 @@ static bool isTrivialCast(const ActionsDAG::Node & node)
     if (source_type->getName() == type_name)
         return true;
 
-    /// A CAST that only wraps a non-nullable type into Nullable of that very same
-    /// underlying type can never turn a non-NULL value into NULL, so it is value-preserving
-    /// and safe to drop for index analysis purposes, exactly like a same-type trivial CAST.
-    /// Such casts are inserted by query rewrites (e.g. optimize_extract_common_expressions)
-    /// that must keep a WHERE/PREWHERE/JOIN ON expression's static result type unchanged,
-    /// even though only the expression's truthiness matters there.
-    if (!source_type->isNullable() && node.result_type->isNullable()
+    /// A CAST that only wraps a non-nullable type into `Nullable` of that very same underlying
+    /// type can never turn a non-NULL value into NULL, so it preserves every row's value.
+    /// Such casts are inserted by query rewrites (e.g. `optimize_extract_common_expressions`)
+    /// that must keep a WHERE/PREWHERE/JOIN ON expression's static result type unchanged, even
+    /// though only the expression's truthiness matters there.
+    ///
+    /// Unlike a same-type cast, it is value-preserving but NOT type-preserving, so it may only be
+    /// dropped where the consumer merely truth-tests the result. In a value position the enclosing
+    /// function would be re-resolved over the narrower argument type, and a function whose constant
+    /// result is derived from the argument's type alone (`isNullable`, `toTypeName`, ... - see
+    /// `IFunctionBase::getConstantResultForNonConstArguments`) would then fold to a different
+    /// constant than the original DAG did. For `isNullable(_CAST(k, 'Nullable(UInt32)')) = 1` that
+    /// turns an always-true predicate into `equals(0, 1)`, i.e. an always-false `KeyCondition` that
+    /// prunes every granule.
+    if (value_is_truth_tested && !source_type->isNullable() && node.result_type->isNullable()
         && removeNullable(node.result_type)->equals(*source_type))
         return true;
 
@@ -887,7 +898,8 @@ static bool predicateIsBooleanResult(const ActionsDAG::Node * predicate, bool al
     const ActionsDAG::Node * unwrapped = predicate;
     while (unwrapped->type == ActionsDAG::ActionType::ALIAS
            || (unwrapped->type == ActionsDAG::ActionType::FUNCTION
-               && (unwrapped->function_base->getName() == "materialize" || isTrivialCast(*unwrapped))))
+               && (unwrapped->function_base->getName() == "materialize"
+                   || isTrivialCast(*unwrapped, /* value_is_truth_tested */ true))))
     {
         if (unwrapped->children.empty())
             return false;
@@ -1257,7 +1269,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                 /// Without this, we could add an extra `not()` here (double inversion), e.g. `NOT materialize(x = 0)` -> `not(notEquals(x, 0))`.
                 handled_inversion = true;
             }
-            else if (isTrivialCast(node))
+            else if (isTrivialCast(node, /* value_is_truth_tested */ boolean_context))
             {
                 /// Remove trivial cast and keep its first argument.
                 res = &cloneDAGWithInversionPushDown(*node.children.front(), inverted_dag, inputs_mapping, context, need_inversion, boolean_context);
