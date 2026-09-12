@@ -227,11 +227,27 @@ struct ModuloImpl
 
             throwIfDivisionLeadsToFPE(IntegerAType(a), IntegerBType(b));
 
-            if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
-            {
-                using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
-                using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
+            using CastA = std::conditional_t<std::is_same_v<IntegerAType, UInt8>, uint8_t, IntegerAType>;
+            using CastB = std::conditional_t<std::is_same_v<IntegerBType, UInt8>, uint8_t, IntegerBType>;
 
+            /// `%` is evaluated after the usual arithmetic conversions, which make it unsigned as soon
+            /// as the unsigned operand is at least as wide as the signed one (`Int32 % UInt32`,
+            /// `UInt64 % Int64`, `Int128 % UInt128`), so a negative operand wraps to a large positive
+            /// value before the remainder is taken. Compute in a signed type instead, the same way
+            /// `DivideIntegralImpl::apply` above does; that is why `intDiv` was correct on operand
+            /// types where this was not. The declared `ResultType` is wide enough to hold the signed
+            /// result. NOTE: an unsigned operand above the signed maximum still wraps, exactly as it does
+            /// for `intDiv`.
+            if constexpr (is_integer<IntegerAType> && is_integer<IntegerBType>
+                && (is_signed_v<IntegerAType> || is_signed_v<IntegerBType>))
+            {
+                using SignedCastA = make_signed_t<CastA>;
+                using SignedCastB = std::conditional_t<sizeof(IntegerAType) <= sizeof(IntegerBType), make_signed_t<CastB>, SignedCastA>;
+
+                return static_cast<Result>(static_cast<SignedCastA>(IntegerAType(a)) % static_cast<SignedCastB>(IntegerBType(b)));
+            }
+            else if constexpr (is_big_int_v<IntegerAType> || is_big_int_v<IntegerBType>)
+            {
                 CastA int_a(a);
                 CastB int_b(b);
 

@@ -3122,8 +3122,9 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 && is_integer<T0> && is_integer<T1>
                 && (sizeof(T0) >= sizeof(T1) || (is_unsigned_v<T0> && is_unsigned_v<T1>));
 
-            /// Modulo is computed in the type of the wider operand (`ModuloImpl` casts the other
-            /// operand into it), so pre-converting the operands to it is exact except when the
+            /// Modulo is computed in the signed type of the wider operand when either operand is
+            /// signed, and in the wider type otherwise (`ModuloImpl`), so pre-converting the
+            /// operands to that type is exact except when the
             /// division-by-minimal-signed-number check would move to a wider type: a narrower
             /// signed dividend with a signed divisor, or a sign-flipping conversion of the dividend
             /// to an equally sized signed divisor type.
@@ -3256,8 +3257,11 @@ ColumnPtr executeStringInteger(const ColumnsWithTypeAndName & arguments, const A
                 }
                 else
                 {
-                    /// `ModuloImpl` computes in the type of the wider operand.
-                    using CommonType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
+                    /// `ModuloImpl` casts both operands to the signed type of the wider operand
+                    /// size when either operand is signed, and computes in the wider type
+                    /// otherwise - the same rule as `DivideIntegralImpl` above.
+                    using WiderType = std::conditional_t<(sizeof(T0) > sizeof(T1)), T0, T1>;
+                    using CommonType = std::conditional_t<is_signed_v<T0> || is_signed_v<T1>, make_signed_t<WiderType>, WiderType>;
                     return execute_via_common_type.template operator()<DataTypeNumber<CommonType>>();
                 }
             }
