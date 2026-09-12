@@ -1,14 +1,36 @@
 #include <Server/DistributedQuery/StreamingExchangeProtocol.h>
 
+#include <Columns/ColumnString.h>
 #include <Common/Exception.h>
+#include <Common/ProfileEvents.h>
+#include <Common/Stopwatch.h>
+#include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedWriteBuffer.h>
+#include <Core/Block.h>
+#include <Core/ProtocolDefines.h>
+#include <DataTypes/DataTypeString.h>
+#include <Formats/NativeReader.h>
+#include <Formats/NativeWriter.h>
+#include <IO/ReadBufferFromMemory.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+#include <Processors/Chunk.h>
+#include <Processors/Transforms/AggregatingTransform.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/Net/StreamSocket.h>
 
 #include <algorithm>
 #include <climits>
 #include <cerrno>
+#include <cstddef>
+#include <cstring>
+
+namespace ProfileEvents
+{
+    extern const Event StreamingExchangeSerializedBytes;
+    extern const Event StreamingExchangeSerializeMicroseconds;
+    extern const Event StreamingExchangeDeserializeMicroseconds;
+}
 
 namespace DB
 {
@@ -16,6 +38,8 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int EXCHANGE_PEER_DISCONNECTED;
+    extern const int NOT_IMPLEMENTED;
+    extern const int UNEXPECTED_PACKET_FROM_CLIENT;
 }
 
 namespace StreamingExchangeProtocol
@@ -61,6 +85,166 @@ namespace
         return socket_errno == ECONNRESET || socket_errno == ECONNABORTED || socket_errno == EPIPE
             || socket_errno == ENETRESET || socket_errno == ENOTCONN || socket_errno == ETIMEDOUT;
     }
+}
+
+size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out)
+{
+    Stopwatch watch;
+    const size_t packet_offset = out.count();
+    PacketHeader packet_header{.packet_type = PacketType::Data, .bytes_size = 0};
+    out.write(reinterpret_cast<const char *>(&packet_header), sizeof(packet_header));
+
+    const bool final_chunk = chunk.empty();
+    auto agg_info = chunk.getChunkInfos().get<AggregatedChunkInfo>();
+    UInt64 flags = 0;
+    if (final_chunk)
+        flags |= 1;
+    if (agg_info)
+        flags |= 2;
+    writeVarUInt(flags, out);
+    writeVarUInt(chunk.getNumRows(), out);
+    writeVarUInt(chunk.getNumColumns(), out);
+    /// chunk_num has no BlockInfo field; carry it in the exchange framing so memory-bound merging
+    /// can restore chunk order on the receiver.
+    if (agg_info)
+        writeVarUInt(agg_info->chunk_num, out);
+
+    if (chunk.getNumColumns() > 0)
+    {
+        /// The exchange stream uses the server default codec: `network_compression_method` is a
+        /// per-query setting and the sender has no query settings at hand. This is safe: each
+        /// compressed frame is self-describing (the receiver auto-detects the codec via
+        /// `CompressedReadBuffer`), and the exchange is a transient, same-version channel -
+        /// the handshake rejects peers on a different protocol version, so a stream is never read
+        /// back by a node expecting a different codec.
+        CompressedWriteBuffer compressed_buf(out);
+        try
+        {
+            NativeWriter writer(compressed_buf, DBMS_TCP_PROTOCOL_VERSION, header);
+            Block block = header->cloneWithColumns(chunk.getColumns());
+            /// Carry the remaining aggregation metadata in block.info, the same way partial-aggregation
+            /// results are transported for distributed/parallel reads.
+            if (agg_info)
+            {
+                block.info.bucket_num = agg_info->bucket_num;
+                block.info.is_overflows = agg_info->is_overflows;
+                block.info.out_of_order_buckets = agg_info->out_of_order_buckets;
+            }
+            writer.write(block);
+            writer.flush();
+            compressed_buf.finalize();
+            ProfileEvents::increment(ProfileEvents::StreamingExchangeSerializedBytes, compressed_buf.count());
+        }
+        catch (...)
+        {
+            compressed_buf.cancel();
+            throw;
+        }
+    }
+
+    ProfileEvents::increment(ProfileEvents::StreamingExchangeSerializeMicroseconds, watch.elapsedMicroseconds());
+    return packet_offset;
+}
+
+void finishDataPacket(char * packet, size_t packet_bytes)
+{
+    const size_t packet_data_size = packet_bytes - sizeof(PacketHeader);
+
+    /// The receiver rejects Data packets above this limit; fail here with a clear, local error
+    /// instead of sending one the peer would reject. Splitting large chunks is not implemented yet.
+    if (packet_data_size > MAX_DATA_PACKET_BODY_BYTES)
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+            "Exchange data packet of {} bytes exceeds the maximum {}; splitting large chunks is not implemented",
+            packet_data_size, MAX_DATA_PACKET_BODY_BYTES);
+
+    /// memcpy: the header may sit at an unaligned offset of the buffer.
+    static_assert(sizeof(PacketHeader::bytes_size) == sizeof(packet_data_size));
+    memcpy(packet + offsetof(PacketHeader, bytes_size), &packet_data_size, sizeof(packet_data_size));
+}
+
+const SharedHeader & packetStreamHeader()
+{
+    static const SharedHeader header = std::make_shared<const Block>(
+        Block{ColumnWithTypeAndName(ColumnString::create(), std::make_shared<DataTypeString>(), "__streaming_exchange_packet")});
+    return header;
+}
+
+DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size, const String & stream_name)
+{
+    ReadBufferFromMemory in(body, body_size);
+    UInt64 flags = 0;
+    readVarUInt(flags, in);
+    DataPacketPrefix prefix;
+    prefix.end_of_stream = flags & 1;
+    readVarUInt(prefix.num_rows, in);
+    UInt64 num_columns = 0;
+    readVarUInt(num_columns, in);
+    if (flags & 2)
+    {
+        UInt64 chunk_num = 0;
+        readVarUInt(chunk_num, in);
+    }
+
+    if (prefix.end_of_stream && (prefix.num_rows != 0 || num_columns != 0 || !in.eof()))
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Final data packet on exchange stream {} is not the empty end-of-stream marker: {} rows, {} columns, {} bytes after the fields",
+            stream_name, prefix.num_rows, num_columns, in.available());
+    return prefix;
+}
+
+DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const String & stream_name)
+{
+    UInt64 flags = 0;
+    readVarUInt(flags, body);
+    const bool end_of_stream = flags & 1;
+    const bool has_aggregated_chunk_info = flags & 2;
+    UInt64 num_rows = 0;
+    readVarUInt(num_rows, body);
+    UInt64 num_columns = 0;
+    readVarUInt(num_columns, body);
+    UInt64 chunk_num = 0;
+    if (has_aggregated_chunk_info)
+        readVarUInt(chunk_num, body);
+
+    /// The end-of-stream packet is empty. One carrying rows or columns would have them dropped once
+    /// the stream is finished, so reject it as a protocol violation.
+    if (end_of_stream && (num_rows != 0 || num_columns != 0))
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Final data packet on exchange stream {} is not the empty end-of-stream marker: {} rows, {} columns",
+            stream_name, num_rows, num_columns);
+
+    /// A data packet must carry exactly the header's columns, or values would be dropped while the
+    /// row count is kept. A header-less stream (e.g. SELECT count()) sends rows with zero columns.
+    if (num_rows != 0 && num_columns != header.columns())
+        throw Exception(ErrorCodes::UNEXPECTED_PACKET_FROM_CLIENT,
+            "Data packet on exchange stream {} carries {} rows with {} columns, but the stream header has {} columns",
+            stream_name, num_rows, num_columns, header.columns());
+
+    DataPacket packet;
+    packet.end_of_stream = end_of_stream;
+    if (num_columns != 0)
+    {
+        Stopwatch watch;
+        CompressedReadBuffer compressed_buf(body);
+        NativeReader reader(compressed_buf, header, DBMS_TCP_PROTOCOL_VERSION);
+        Block block = reader.read();
+        ProfileEvents::increment(ProfileEvents::StreamingExchangeDeserializeMicroseconds, watch.elapsedMicroseconds());
+        packet.chunk = Chunk(block.getColumns(), num_rows);
+        if (has_aggregated_chunk_info)
+        {
+            auto info = std::make_shared<AggregatedChunkInfo>();
+            info->bucket_num = block.info.bucket_num;
+            info->is_overflows = block.info.is_overflows;
+            info->out_of_order_buckets = block.info.out_of_order_buckets;
+            info->chunk_num = chunk_num;
+            packet.chunk.getChunkInfos().add(std::move(info));
+        }
+    }
+    else if (num_rows == 0)
+        packet.chunk = Chunk(header.cloneEmptyColumns(), 0);
+    else
+        packet.chunk = Chunk(Columns{}, num_rows);
+    return packet;
 }
 
 String describePeer(const Poco::Net::StreamSocket & socket)

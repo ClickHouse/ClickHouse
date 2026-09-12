@@ -1,6 +1,8 @@
 #pragma once
 
 #include <base/types.h>
+#include <Core/Block_fwd.h>
+#include <Processors/Chunk.h>
 
 namespace Poco::Net
 {
@@ -79,6 +81,43 @@ namespace StreamingExchangeProtocol
         void read(ReadBuffer & in);
         void write(WriteBuffer & out) const;
     };
+
+    /// Appends one Data packet for `chunk` to `out`: the packet header, the flags, the row and column
+    /// counts, the aggregation chunk number when the chunk carries one, and the compressed Native block
+    /// with the columns of `header`. A chunk without rows and columns becomes the end-of-stream packet.
+    /// The body size in the packet header is known only after the block is serialized; the caller
+    /// fills it in with `finishDataPacket` once it can address the written bytes. Returns the offset
+    /// of the packet in `out`.
+    size_t writeDataPacket(const Chunk & chunk, const SharedHeader & header, WriteBuffer & out);
+
+    /// Writes the body size into the header of the packet that starts at `packet` and is
+    /// `packet_bytes` long in total.
+    void finishDataPacket(char * packet, size_t packet_bytes);
+
+    /// The header of a stream of packets: one `String` column with one packet per row. The
+    /// serializer and a source that hands out packets output it; the deserializer takes it.
+    const SharedHeader & packetStreamHeader();
+
+    /// The fields of a Data packet body that come before the block, read without deserializing the
+    /// block. A source that hands packets on drops the end-of-stream marker after this read, so the
+    /// marker is checked completely here: no rows, no columns and nothing after the fields.
+    struct DataPacketPrefix
+    {
+        bool end_of_stream = false;
+        UInt64 num_rows = 0;
+    };
+    DataPacketPrefix readDataPacketPrefix(const char * body, size_t body_size, const String & stream_name);
+
+    /// One parsed Data packet body. The end-of-stream packet has a chunk without rows.
+    struct DataPacket
+    {
+        Chunk chunk;
+        bool end_of_stream = false;
+    };
+    /// Parses a Data packet body written by `writeDataPacket`: the flags, the counts, the aggregation
+    /// chunk number and the compressed Native block with the columns of `header`. `stream_name` is
+    /// for messages.
+    DataPacket readDataPacketBody(ReadBuffer & body, const Block & header, const String & stream_name);
 
     /// The peer address for messages; a socket whose peer is gone may not know it anymore.
     String describePeer(const Poco::Net::StreamSocket & socket);
