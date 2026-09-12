@@ -7,6 +7,8 @@
 
 #include <DataTypes/IDataType.h>
 
+#include <Functions/FunctionsMiscellaneous.h>
+
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HashJoin/HashJoin.h>
@@ -732,6 +734,27 @@ static bool hasOutputShadowingInputName(const ActionsDAG & dag)
     return false;
 }
 
+/// Merging puts the expression into the join graph, where reordering can leave it computed twice from the
+/// raw inputs - once for the join key that decides matching and once for the output column - and can also
+/// evaluate it on rows the original join order would have discarded. An expression whose result or whose
+/// side effects depend on how many times and on which rows it runs is therefore not safe to merge: a
+/// non-deterministic function draws independently in the two places, so the returned rows can violate the
+/// query's own `JOIN ON` condition, and a stateful function (`aiEmbed`, `timeSeriesStoreTags`, ...) makes
+/// extra external calls or mutates per-query state. A lambda without captures is constant-folded into a
+/// `COLUMN` node holding a `ColumnFunction`, which hides the functions of its body from a plain scan over
+/// the function nodes, so the check descends into it with `allNodeFunctions`.
+static bool isSensitiveToEvaluationCount(const ActionsDAG & dag)
+{
+    for (const auto & node : dag.getNodes())
+    {
+        if (!allNodeFunctions(node, [](const IFunctionBase & function)
+                { return function.isDeterministicInScopeOfQuery() && !function.isStateful(); }))
+            return true;
+    }
+
+    return false;
+}
+
 /// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
 /// allows it and the expression cannot be applied twice by the name-based merge.
 static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
@@ -739,12 +762,7 @@ static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_e
     if (!merge_expression_into_join)
         return false;
 
-    /// Merging puts the expression into the join graph, where reordering can leave it computed twice
-    /// from the raw inputs - once for the join key that decides matching and once for the output
-    /// column. A non-deterministic expression then draws independently in the two places, so the
-    /// returned rows can violate the query's own `JOIN ON` condition. This is the same notion of
-    /// non-determinism the plan-time join conversions guard against, so it uses the shared helper.
-    if (dagContainsNonDeterministicFunction(dag))
+    if (isSensitiveToEvaluationCount(dag))
         return false;
 
     return !hasOutputShadowingInputName(dag);

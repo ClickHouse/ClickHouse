@@ -42,6 +42,24 @@ SELECT
     (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, t_merge_expr_1.a % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 1))
  != (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, t_merge_expr_1.a % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 0)) AS deterministic_merged;
 
+-- The gate must also reject expressions that are deterministic in the scope of the query but whose
+-- evaluation count matters. A lambda without captures is constant-folded into a column holding a
+-- `ColumnFunction`, so the non-determinism of `rand` inside it is invisible to a scan over the
+-- function nodes of the expression; a stateful function such as `timeSeriesExtractTag` reports
+-- `isDeterministicInScopeOfQuery` but reads per-query state and must not run on rows the original
+-- join order discards. Each case is paired with a same-shape expression that is still merged, so the
+-- assertion cannot pass by rejecting everything.
+SELECT 'lambda and stateful';
+SELECT
+    (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, arraySum(x -> rand(x), materialize([1])) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 1))
+ != (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, arraySum(x -> rand(x), materialize([1])) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 0)) AS lambda_nondeterministic_merged,
+    (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, arraySum(x -> x + 1, materialize([1])) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 1))
+ != (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, arraySum(x -> x + 1, materialize([1])) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 0)) AS lambda_deterministic_merged,
+    (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, length(ifNull(timeSeriesExtractTag(t_merge_expr_1.a, 'x'), '')) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 1))
+ != (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, length(ifNull(timeSeriesExtractTag(t_merge_expr_1.a, 'x'), '')) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 0)) AS stateful_merged,
+    (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, length(ifNull(toString(t_merge_expr_1.a), '')) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 1))
+ != (SELECT groupArray(explain) FROM (EXPLAIN SELECT * FROM (SELECT t_merge_expr_1.a AS a, length(ifNull(toString(t_merge_expr_1.a), '')) % 2 AS r FROM t_merge_expr_1 JOIN t_merge_expr_2 ON t_merge_expr_1.a = t_merge_expr_2.b) s JOIN t_merge_expr_3 ON s.r = t_merge_expr_3.k SETTINGS query_plan_merge_expression_into_join = 0)) AS stateless_analogue_merged;
+
 DROP TABLE t_merge_expr_1;
 DROP TABLE t_merge_expr_2;
 DROP TABLE t_merge_expr_3;
