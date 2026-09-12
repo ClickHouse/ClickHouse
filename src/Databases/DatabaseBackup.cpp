@@ -19,6 +19,7 @@
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ParserCreateQuery.h>
 
@@ -57,12 +58,14 @@ namespace DB
 
 namespace Setting
 {
-    extern const SettingsUInt64 max_parser_backtracks;
-    extern const SettingsUInt64 max_parser_depth;
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsSetOperationMode except_default_mode;
     extern const SettingsSetOperationMode intersect_default_mode;
     extern const SettingsSetOperationMode union_default_mode;
+    extern const SettingsUInt64 max_parser_depth;
+    extern const SettingsUInt64 max_parser_backtracks;
+    extern const SettingsUInt64 max_ast_depth;
+    extern const SettingsUInt64 max_ast_elements;
 }
 
 namespace ErrorCodes
@@ -72,6 +75,7 @@ namespace ErrorCodes
     extern const int INCORRECT_FILE_NAME;
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
     extern const int CANNOT_GET_CREATE_TABLE_QUERY;
+    extern const int BAD_ARGUMENTS;
 }
 
 namespace
@@ -462,19 +466,16 @@ ASTPtr DatabaseBackup::getCreateQueryFromMetadata(const String & table_name, boo
 
 ASTPtr DatabaseBackup::getCreateDatabaseQueryImpl() const
 {
-    const auto & settings = getContext()->getSettingsRef();
-
+    /// The locator must stay a nested function: a string literal is opaque to secret masking, which
+    /// then has to hide the whole argument, and this text is what the metadata file keeps.
     const String query = fmt::format("CREATE DATABASE {} ENGINE = Backup({}, {})",
-        backQuoteIfNeed(database_name), quoteString(config.database_name), quoteString(config.backup_info.toString()));
+        backQuoteIfNeed(database_name), quoteString(config.database_name), config.backup_info.toString());
 
+    /// Parsed without size, depth or backtrack limits, as a definition read back from storage is: this
+    /// is a rendering of an AST that parsed once already, under the limits of whichever session wrote
+    /// it, and applying this context's limits to it would throw instead of showing the database.
     ParserCreateQuery parser;
-    ASTPtr ast = parseQuery(parser,
-        query.data(),
-        query.data() + query.size(),
-        "",
-        0,
-        settings[Setting::max_parser_depth],
-        settings[Setting::max_parser_backtracks]);
+    ASTPtr ast = parseQuery(parser, query.data(), query.data() + query.size(), "", 0, 0, 0);
 
     if (!comment.empty())
     {
@@ -493,7 +494,14 @@ std::vector<std::pair<ASTPtr, StoragePtr>> DatabaseBackup::getTablesForBackup(co
 namespace
 {
 
-DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
+/// The locator form an older server persisted: the text of the function, quoted as a single string.
+bool isLegacyStringLocator(const ASTPtr & locator)
+{
+    const auto * literal = locator->as<ASTLiteral>();
+    return literal && literal->value.getType() == Field::Types::Which::String;
+}
+
+DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr context, DatabaseBackup::LocatorSource locator_source)
 {
     if (engine_args.size() != 2)
         throw Exception::createRuntime(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
@@ -501,21 +509,78 @@ DatabaseBackup::Configuration parseArguments(ASTs engine_args, ContextPtr)
 
     DatabaseBackup::Configuration result;
 
-    result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
-    result.backup_info = BackupInfo::fromAST(*engine_args[1]);
+    /// `checkAndGetLiteralArgument` formats the argument it rejects, and a locator written in this
+    /// position would format its credentials in plaintext.
+    try
+    {
+        result.database_name = checkAndGetLiteralArgument<String>(engine_args[0], "database_name");
+    }
+    catch (const Exception &)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Argument 'database_name' must be a string literal");
+    }
+    result.backup_info = BackupInfo::fromAST(
+        *(locator_source == DatabaseBackup::LocatorSource::Query
+              ? DatabaseBackup::normalizeLegacyLocatorFromQuery(engine_args[1], context)
+              : DatabaseBackup::normalizeLegacyLocator(engine_args[1])));
 
     return result;
 }
 
 }
 
-void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context)
+static ASTPtr normalizeLegacyLocatorWithLimits(const ASTPtr & locator, size_t max_parser_depth, size_t max_parser_backtracks)
 {
-    /// A locator we cannot parse opens nothing: creation rejects it, so there is nothing to authorize.
-    if (engine_args.size() == 2 && !engine_args[1]->as<ASTFunction>())
+    if (!isLegacyStringLocator(locator))
+        return locator;
+
+    try
+    {
+        /// `BackupInfo::toAST` stamps the `BACKUP_NAME` kind, which renders a key-value argument as
+        /// `equals(k, v)`, so a node built that way would not compare equal to a live definition.
+        ParserIdentifierWithOptionalParameters locator_parser;
+        ASTPtr parsed = parseQuery(
+            locator_parser, locator->as<ASTLiteral>()->value.safeGet<String>(), 0, max_parser_depth, max_parser_backtracks);
+        /// Only a function is a locator; an identifier or a scalar parses but opens nothing.
+        BackupInfo::fromAST(*parsed);
+        return parsed;
+    }
+    catch (...)
+    {
+        /// Quoting the locator here would print the credentials it carries.
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cannot parse the locator of a Backup database");
+    }
+}
+
+ASTPtr DatabaseBackup::normalizeLegacyLocator(const ASTPtr & locator)
+{
+    return normalizeLegacyLocatorWithLimits(locator, 0, 0);
+}
+
+ASTPtr DatabaseBackup::normalizeLegacyLocatorFromQuery(const ASTPtr & locator, const ContextPtr & query_context)
+{
+    const Settings & settings = query_context->getSettingsRef();
+    ASTPtr parsed
+        = normalizeLegacyLocatorWithLimits(locator, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+    /// The statement reached the tree limits carrying the locator as one string literal, so they were
+    /// checked against a tree this locator was not yet part of.
+    if (settings[Setting::max_ast_depth])
+        parsed->checkDepth(settings[Setting::max_ast_depth]);
+    if (settings[Setting::max_ast_elements])
+        parsed->checkSize(settings[Setting::max_ast_elements]);
+
+    return parsed;
+}
+
+void DatabaseBackup::parseAndAuthorizeLocator(const ASTs & engine_args, ContextPtr query_context, LocatorSource locator_source)
+{
+    /// A locator that is neither a function nor the legacy string form opens nothing: creation rejects
+    /// it, so there is nothing to authorize.
+    if (engine_args.size() == 2 && !engine_args[1]->as<ASTFunction>() && !isLegacyStringLocator(engine_args[1]))
         return;
 
-    auto config = parseArguments(engine_args, query_context);
+    auto config = parseArguments(engine_args, query_context, locator_source);
     BackupFactory::instance().checkSourceAccess(config.backup_info, query_context, IBackup::OpenMode::READ);
 }
 
@@ -531,13 +596,16 @@ void registerDatabaseBackup(DatabaseFactory & factory)
         if (engine->arguments)
             engine_args = engine->arguments->children;
 
-        auto config = parseArguments(engine_args, args.context);
+        const bool from_existing_metadata
+            = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax;
+        auto config = parseArguments(
+            engine_args,
+            args.context,
+            from_existing_metadata ? DatabaseBackup::LocatorSource::StoredDefinition : DatabaseBackup::LocatorSource::Query);
 
         /// Authorize only a newly introduced definition: one read back from this server's metadata was
         /// already validated, and a context with no user cannot be checked per user.
         const bool has_real_user = args.context->getAccess()->getUserID().has_value();
-        const bool from_existing_metadata
-            = isLoadingFromExistingMetadata(args.mode) || args.create_query.attach_short_syntax;
         if (has_real_user && !from_existing_metadata)
             BackupFactory::instance().checkSourceAccess(config.backup_info, args.context, IBackup::OpenMode::READ);
 

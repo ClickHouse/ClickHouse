@@ -1056,6 +1056,62 @@ def test_database_backup_engine_s3():
     node.query("DROP DATABASE IF EXISTS backup_db_s3_2")
 
 
+def test_database_backup_engine_azure_display_surfaces():
+    """A live `Backup` database over an `AzureBlobStorage` locator: `account_key` must not reach
+    `SHOW CREATE DATABASE` or `system.databases.engine_full`. Only `S3` locators are reconstructed
+    argument by argument, so an Azure one keeps its engine name and arity and hides every argument."""
+    azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]
+    azure_account_name = "devstoreaccount1"
+    azure_account_key = "Eby8vdM02xNOcqFlqUwJPLlmEtlCDXJ1OUzFT50uSRZ6IFsuFq2UVErCz4I6tq/K1SZFPTOtr/KBHBeksoGMGw=="
+
+    # A backup destination is write-once and the container is emptied only when the cluster starts,
+    # so give every run its own blob path: a repeat inside one session hits BACKUP_ALREADY_EXISTS.
+    blob = "db_backup_azure_surfaces_" + "".join(
+        random.choice(string.ascii_lowercase) for _ in range(8)
+    )
+    locator = (
+        f"AzureBlobStorage('{azure_storage_account_url}', '{cluster.azurite_container}', "
+        f"'{blob}', '{azure_account_name}', '{azure_account_key}')"
+    )
+    masked_locator = (
+        "AzureBlobStorage('[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]', '[HIDDEN]')"
+    )
+    surfaces = [
+        "SHOW CREATE DATABASE backup_db_azure_view",
+        "SELECT engine_full FROM system.databases WHERE name = 'backup_db_azure_view'",
+    ]
+
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_src SYNC")
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_view SYNC")
+    node.query("CREATE DATABASE backup_db_azure_src")
+    node.query(
+        "CREATE TABLE backup_db_azure_src.t (x int) ENGINE = MergeTree ORDER BY x"
+    )
+    node.query("INSERT INTO backup_db_azure_src.t SELECT * FROM numbers(10)")
+    node.query(f"BACKUP DATABASE backup_db_azure_src TO {locator} FORMAT Null")
+    node.query(
+        f"CREATE DATABASE backup_db_azure_view ENGINE = Backup('backup_db_azure_src', {locator})"
+    )
+
+    # TSVRaw so the locator is compared as written rather than through TSV escaping.
+    for surface in surfaces:
+        shown = node.query(f"{surface} FORMAT TSVRaw")
+        assert masked_locator in shown, shown
+        assert azure_account_key not in shown, shown
+
+    # The key is in the locator, so its absence above is masking rather than an argument that the
+    # regenerated definition never carried.
+    for surface in surfaces:
+        shown = node.query(f"{surface} {show_secrets}=1 FORMAT TSVRaw")
+        assert azure_account_key in shown, shown
+
+    # The masked surfaces belong to a working database, not to one that failed to open.
+    assert node.query("SELECT count() FROM backup_db_azure_view.t") == "10\n"
+
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_view SYNC")
+    node.query("DROP DATABASE IF EXISTS backup_db_azure_src SYNC")
+
+
 def test_backup_table_azure_named_collection():
     """Test that secrets in Azure named collection backups are masked in system.backups and logs."""
     azure_storage_account_url = cluster.env_variables["AZURITE_STORAGE_ACCOUNT_URL"]

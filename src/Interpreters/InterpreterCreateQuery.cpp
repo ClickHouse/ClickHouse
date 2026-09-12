@@ -3680,7 +3680,8 @@ BlockIO InterpreterCreateQuery::execute()
             /// run with no user by default.
             if (is_create_database && create.storage && create.storage->engine
                 && create.storage->engine->name == "Backup" && create.storage->engine->arguments)
-                DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, getContext());
+                DatabaseBackup::parseAndAuthorizeLocator(
+                    create.storage->engine->arguments->children, getContext(), DatabaseBackup::LocatorSource::Query);
 
             /// This branch ships the query text as written, and `OLDEST_VERSION` also ships no settings,
             /// so a worker there would resolve `toTime` with its own default.

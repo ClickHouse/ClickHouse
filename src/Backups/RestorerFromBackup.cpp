@@ -324,7 +324,8 @@ void RestorerFromBackup::checkAccessForObjectsFoundInBackup() const
                     const auto & create = database_info.create_database_query->as<const ASTCreateQuery &>();
                     if (create.storage && create.storage->engine && create.storage->engine->name == "Backup"
                         && create.storage->engine->arguments)
-                        DatabaseBackup::parseAndAuthorizeLocator(create.storage->engine->arguments->children, context);
+                        DatabaseBackup::parseAndAuthorizeLocator(
+                            create.storage->engine->arguments->children, context, DatabaseBackup::LocatorSource::StoredDefinition);
                 }
             }
 
