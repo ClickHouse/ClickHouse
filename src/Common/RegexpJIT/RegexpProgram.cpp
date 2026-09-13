@@ -34,6 +34,7 @@ public:
         : pattern(pattern_)
         , case_insensitive(flags_.case_insensitive)
         , dot_all(flags_.dot_all)
+        , utf8(flags_.utf8)
     {
     }
 
@@ -77,6 +78,7 @@ private:
     int optionals_count = 0;
     bool case_insensitive = false;
     bool dot_all = false;
+    bool utf8 = false;
     bool failed = false;
 
     char peek(size_t ahead = 0) const { return pos + ahead < pattern.size() ? pattern[pos + ahead] : '\0'; }
@@ -297,6 +299,15 @@ private:
     /// stay equivalent to RE2's code-point matching (UTF-8 is self-synchronizing).
     bool applyQuantifier(Op & op)
     {
+        /// In UTF-8 mode RE2 matches whole code points, and an invalid byte (e.g. `0xFF`) is not a code
+        /// point at all: `.`, `[^a]`, `\D`, `\W` and `\S` match nothing there, while a 256-entry byte
+        /// set matches it. The self-synchronizing argument that makes the two equivalent only holds for
+        /// a haystack that is valid UTF-8, and nothing here knows the haystack, so a set that can match a
+        /// non-ASCII byte is out of the subset. An ASCII-only set is byte/code-point equivalent on any
+        /// haystack, and so are literal bytes (comparing the UTF-8 encoding is comparing the code points).
+        if (utf8 && !op.set.isAsciiOnly())
+            return false;
+
         const bool allow_fixed = op.set.isAsciiOnly();
         char q = peek();
         if (q == '*')
