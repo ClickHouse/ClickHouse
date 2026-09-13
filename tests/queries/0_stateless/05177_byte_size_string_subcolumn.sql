@@ -25,8 +25,8 @@ SELECT byteSize(s)
 FROM t_byte_size_string_subcolumn;
 
 -- A top-level column whose name matches the String size subcolumn up to case must
--- block the rewrite. This uses MergeTree because file() does not support this
--- function-to-subcolumn optimization and would not reach the guard.
+-- block all String.size rewrites. This uses MergeTree because file() does not
+-- support this function-to-subcolumn optimization and would not reach the guard.
 DROP TABLE IF EXISTS t_byte_size_string_subcolumn_shadowed;
 
 CREATE TABLE t_byte_size_string_subcolumn_shadowed
@@ -41,6 +41,30 @@ SELECT count() FROM
 (
     EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
     SELECT byteSize(s)
+    FROM t_byte_size_string_subcolumn_shadowed
+)
+WHERE explain LIKE '%s.size%';
+
+SELECT count() FROM
+(
+    EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+    SELECT length(s)
+    FROM t_byte_size_string_subcolumn_shadowed
+)
+WHERE explain LIKE '%s.size%';
+
+SELECT count() FROM
+(
+    EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+    SELECT empty(s)
+    FROM t_byte_size_string_subcolumn_shadowed
+)
+WHERE explain LIKE '%s.size%';
+
+SELECT count() FROM
+(
+    EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
+    SELECT notEmpty(s)
     FROM t_byte_size_string_subcolumn_shadowed
 )
 WHERE explain LIKE '%s.size%';
