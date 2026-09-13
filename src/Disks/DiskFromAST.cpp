@@ -4,7 +4,6 @@
 #include <Common/SipHash.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Disks/getDiskConfigurationFromAST.h>
-#include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Disks/DiskSelector.h>
 #include <Disks/IDisk.h>
 #include <Parsers/ASTExpressionList.h>
@@ -19,6 +18,9 @@
 #include <Common/ZooKeeper/ZooKeeperNodeCache.h>
 
 #include <algorithm>
+#include <filesystem>
+
+namespace fs = std::filesystem;
 
 namespace DB
 {
@@ -28,8 +30,9 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
 }
 
-/// A location on the local filesystem that a disk defined in SQL addresses has to be inside the
-/// directory configured as `custom_local_disks_base_directory`.
+/// A location on the local filesystem that a disk defined in SQL names has to be inside the directory
+/// configured as `custom_local_disks_base_directory`. A relative path is resolved against the
+/// directory of the server, which is what the disk itself does with it.
 static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr & context)
 {
     static constexpr auto custom_local_disks_base_dir_in_config = "custom_local_disks_base_directory";
@@ -41,7 +44,9 @@ static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr &
             "Base path for custom local disks must be defined in config file by `{}`",
             custom_local_disks_base_dir_in_config);
 
-    if (!pathStartsWith(path, disk_path_expected_prefix))
+    auto absolute_path = fs::path(path).is_absolute() ? fs::path(path) : fs::path(context->getPath()) / path;
+
+    if (!pathStartsWith(absolute_path.string(), disk_path_expected_prefix))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Path `{}` of the custom local disk must be inside `{}` directory",
@@ -49,22 +54,27 @@ static void checkCustomDiskPathIsAllowed(const String & path, const ContextPtr &
             disk_path_expected_prefix);
 }
 
-static void checkCustomDiskLocalPaths(IDisk & disk, const ContextPtr & context)
+/// Locations on the local filesystem that the disk definition names itself. A definition that refers
+/// to a disk of the server configuration (`disk = '<name>'`, as a `cache` or `encrypted` disk does)
+/// inherits the path of that disk, which the administrator chose and the query did not.
+static void checkCustomDiskDefinitionPaths(const Poco::Util::AbstractConfiguration & config, const ContextPtr & context)
 {
-    /// `backup` is the disk of `BACKUP`/`RESTORE`, whose path comes from the server configuration.
-    if (disk.getName() == "backup")
-        return;
+    const auto disk_type = config.getString("type", "");
+    const auto object_storage_type = config.getString("object_storage_type", "");
 
-    if (!disk.isRemote())
-        checkCustomDiskPathIsAllowed(disk.getPath(), context);
-    /// `isRemote` is not the question to ask here: `DiskObjectStorage` answers it `true`
-    /// unconditionally, including when its backing object storage is the local filesystem
-    /// (`object_storage_type = local`), where the argument the query passed as `path` is a plain
-    /// directory. The metadata of such a disk is kept either inside that directory (the `plain` and
-    /// `plain_rewritable` metadata storages) or under `<clickhouse path>/disks/<name>/`, which the
-    /// check of the disk name keeps inside the directory the server manages itself.
-    else if (disk.getDataSourceDescription().object_storage_type == ObjectStorageType::Local)
-        checkCustomDiskPathIsAllowed(disk.getObjectStorage()->getCommonKeyPrefix(), context);
+    /// `local_blob_storage` is the compatibility spelling of `object_storage` over `local`; the
+    /// object storage types backed by the local filesystem all start with `local`.
+    const bool names_local_object_storage
+        = disk_type == "local_blob_storage" || (disk_type == "object_storage" && object_storage_type.starts_with("local"));
+
+    if (names_local_object_storage && config.has("path"))
+        checkCustomDiskPathIsAllowed(config.getString("path"), context);
+
+    /// The metadata of a disk is written to the local filesystem whenever `metadata_path` is given.
+    /// Its default, `<clickhouse path>/disks/<name>/`, needs no check of its own: the check of the
+    /// disk name keeps it inside the directory that the server manages itself.
+    if (config.has("metadata_path"))
+        checkCustomDiskPathIsAllowed(config.getString("metadata_path"), context);
 }
 
 static std::string getOrCreateCustomDisk(
@@ -152,21 +162,23 @@ static std::string getOrCreateCustomDisk(
         disk_name = DiskSelector::TMP_INTERNAL_DISK_PREFIX + toString(disk_settings_hash);
     }
 
-    /// `metadata_path` names a directory on the local filesystem, and unlike the default
-    /// (`<clickhouse path>/disks/<name>/`) it is chosen by the query, so it is confined the same way
-    /// the data of a local disk is.
-    if (!attach && config->has("metadata_path"))
-        checkCustomDiskPathIsAllowed(config->getString("metadata_path"), context);
+    /// Checked before the disk is created, so that a rejected definition creates no directory and
+    /// leaves no disk behind for the statements that follow.
+    if (!attach)
+        checkCustomDiskDefinitionPaths(*config, context);
 
     auto disk = context->getOrCreateDisk(disk_name, [&](const DisksMap & disks_map) -> DiskPtr {
         auto result = DiskFactory::instance().create(
             disk_name, *config, /* config_path */"", context, disks_map, /* attach */attach, /* custom_disk */true);
         /// Mark that disk can be used without storage policy.
         result->markDiskAsCustom(disk_settings_hash);
-        /// Checked before the disk is registered: a disk rejected here must not stay usable by the
-        /// statements that follow, and `getOrCreateDisk` adds the disk to the map only if this returns.
-        if (!attach)
-            checkCustomDiskLocalPaths(*result, context);
+
+        /// A disk of the local filesystem that is not an object storage answers with the directory it
+        /// was given. Checked here rather than after `getOrCreateDisk` returns, so that a rejected
+        /// disk is not registered and usable by the statements that follow.
+        if (!attach && !result->isRemote() && result->getName() != "backup")
+            checkCustomDiskPathIsAllowed(result->getPath(), context);
+
         return result;
     });
 

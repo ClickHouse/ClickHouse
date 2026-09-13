@@ -27,3 +27,12 @@ SELECT * FROM t_05216;
 SELECT count() FROM system.disks WHERE name = '05216_ok';
 
 DROP TABLE t_05216;
+
+-- A disk that refers to a disk of the server configuration keeps working: the location it uses is
+-- the one the administrator configured, not one this query named.
+CREATE TABLE t_05216_cache (x UInt64) ENGINE = MergeTree ORDER BY x
+SETTINGS disk = disk(type = cache, name = '05216_cache', path = '05216_cache/', max_size = '1Mi', disk = 'local_disk');
+INSERT INTO t_05216_cache VALUES (2);
+SELECT * FROM t_05216_cache;
+
+DROP TABLE t_05216_cache;
