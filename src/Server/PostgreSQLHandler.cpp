@@ -863,19 +863,13 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         chassert(io.pipeline.pushing());
         auto executor = std::make_unique<PushingPipelineExecutor>(io.pipeline);
 
-        String format;
-        switch (copy_query->format)
-        {
-        case ASTCopyQuery::Formats::TSV:
-            format = "TSV";
-            break;
-        case ASTCopyQuery::Formats::CSV:
-            format = "CSV";
-            break;
-        case ASTCopyQuery::Formats::Binary:
-            format = "RowBinary";
-            break;
-        }
+        const String format = getFormatName(*copy_query);
+
+        /// `COPY ... FROM` data carries the column names only when `HEADER` was asked for, which the
+        /// format name above already accounts for. Header auto-detection would otherwise take a first
+        /// data row that happens to look like the column names for a header and drop it.
+        query_context->setSetting("input_format_tsv_detect_header", false);
+        query_context->setSetting("input_format_csv_detect_header", false);
 
         const Settings & settings = query_context->getSettingsRef();
 
@@ -961,7 +955,7 @@ bool PostgreSQLHandler::processCopyQuery(const String & query)
         message_transport->send(PostgreSQLProtocol::Messaging::CopyOutResponse(static_cast<Int32>(io.pipeline.getHeader().columns())));
         VectorWithMemoryTracking<char> result_buf;
         WriteBufferFromVectorImpl<decltype(result_buf)> output_buffer(result_buf);
-        auto format_ptr = FormatFactory::instance().getOutputFormat(toString(copy_query->format), output_buffer, io.pipeline.getHeader(), query_context);
+        auto format_ptr = FormatFactory::instance().getOutputFormat(getFormatName(*copy_query), output_buffer, io.pipeline.getHeader(), query_context);
         auto executor = std::make_unique<PullingPipelineExecutor>(io.pipeline);
         Block block;
         while (executor->pull(block))
