@@ -35,9 +35,9 @@ ColumnsDescription sharedSettingColumns()
             "Values the current user's settings constraints forbid, empty when none are. "
             "Only `MergeTree` settings can be constrained."},
         {"readonly", std::make_shared<DataTypeUInt8>(),
-            "1 if a settings constraint makes the setting read-only, 0 if none does. Only `MergeTree` settings can be "
-            "constrained. This says nothing about whether the engine accepts `ALTER TABLE ... MODIFY SETTING`, nor "
-            "about the user's `ALTER` privileges."},
+            "1 if the setting cannot be changed: a settings constraint of the current user makes it read-only, or the "
+            "engine does not allow changing it on an existing table (for example `index_granularity`); 0 otherwise. "
+            "Only `MergeTree` settings are ever read-only. It says nothing about the user's `ALTER` privileges."},
         {"type", std::make_shared<DataTypeString>(), "Setting type (implementation specific string value)."},
         {"is_obsolete", std::make_shared<DataTypeUInt8>(), "Shows whether a setting is obsolete."},
         {"tier", getSettingsTierEnum(), R"(

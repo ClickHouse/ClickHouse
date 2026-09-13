@@ -72,7 +72,8 @@ struct SettingDescription
     std::optional<String> min_value;
     std::optional<String> max_value;
     std::vector<String> disallowed_values;
-    /// Whether a settings constraint makes the setting read-only.
+    /// Whether the setting cannot be changed: a settings constraint makes it read-only, or the engine
+    /// refuses to change it on an existing table (`MergeTreeSettings::isReadonlySetting`).
     bool readonly = false;
     /// The value with its credential hidden, when the setting holds one. Filled during enumeration,
     /// which is the last place the raw `Field` is available - a value can be an AST rather than a
