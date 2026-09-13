@@ -1162,13 +1162,6 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
                         mapper,
                         keep_in_reader ? row_level_filter : nullptr,
                         keep_in_reader ? prewhere_info : nullptr);
-                    /// `mapper` is scoped to the schema this specific file was written under, so it
-                    /// maps field_id -> the column name *that file* used. Keep the current/query-side
-                    /// mapper around too (see `current_schema_column_mapper` doc comment) for readers
-                    /// that need to resolve query-side filter column names (e.g. GeoParquet spatial
-                    /// pruning) back to a field_id.
-                    result->current_schema_column_mapper = format_filter_info->column_mapper;
-                    return result;
                 }
             }
 
