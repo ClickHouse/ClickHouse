@@ -269,6 +269,26 @@ TEST(ParserQuery, PipeOperatorAggregateAcceptsTrailingCommaBeforeGroupBy)
     EXPECT_THROW(parseQuery(bad_parser, bad_query, "", 0, 0, 0), DB::Exception);
 }
 
+/// Unlike `FROM`/`FORMAT`/`SETTINGS`, expression-bearing clauses (`WHERE`, `GROUP BY`, ...)
+/// take an arbitrary expression as their first token, which can legitimately be a bare
+/// identifier spelled like one of `SELECT_LIST_END_KEYWORDS`. The clause-vs-column
+/// disambiguation must not misdetect the clause keyword itself as a column just because its own
+/// argument happens to look like another one of these keywords.
+TEST(ParserQuery, ExpressionClauseArgumentShapedLikeAnotherKeywordIsStillTheClause)
+{
+    const std::vector<String> queries = {
+        "WITH 1 AS from SELECT 1 AS a, GROUP BY from",
+        "WITH 1 AS settings SELECT 1 AS a, WHERE settings",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+    }
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry

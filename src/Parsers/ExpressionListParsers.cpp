@@ -1058,17 +1058,27 @@ static bool selectListEndKeywordIsColumnName(Keyword matched_keyword, IParser::P
     if (matched_keyword == Keyword::FORMAT && test_pos->type == TokenType::OpeningRoundBracket)
         return true;
 
-    /// None of these clauses can be immediately empty: each requires at least one token of its
-    /// own content before another clause can start. So any clause-starting keyword showing up
-    /// right here - the same one again (e.g. `SELECT from FROM t`) or a different one
-    /// (e.g. `SELECT name, settings FROM t`, where `settings` is a column of `system.projections`) -
-    /// means the first match was actually a column.
-    for (Keyword kw : SELECT_LIST_END_KEYWORDS)
+    /// `FROM`, `FORMAT` and `SETTINGS` each take a fixed, non-expression body (a table
+    /// reference, a format name, a list of `name = value` pairs) that can never itself start
+    /// with one of `SELECT_LIST_END_KEYWORDS`, and none of the three clauses can be immediately
+    /// empty. So a clause-starting keyword showing up right here - the same one again (e.g.
+    /// `SELECT from FROM t`) or a different one (e.g. `SELECT name, settings FROM t`, where
+    /// `settings` is a column of `system.projections`) - means the first match was actually a
+    /// column. This check is deliberately NOT extended to expression-bearing clauses (`WHERE`,
+    /// `PREWHERE`, `GROUP BY`, `HAVING`, `ORDER BY`, `LIMIT`, `OFFSET`, `WINDOW`, `QUALIFY`):
+    /// their first token is an arbitrary expression, which can legitimately be a bare identifier
+    /// spelled like one of these keywords (e.g. `WITH 1 AS from SELECT 1 AS a, GROUP BY from`
+    /// groups by the column `from` - misdetecting `GROUP BY` itself as a column there would
+    /// break the query).
+    if (matched_keyword == Keyword::FROM || matched_keyword == Keyword::FORMAT || matched_keyword == Keyword::SETTINGS)
     {
-        auto kw_pos = test_pos;
-        Expected kw_expected;
-        if (ParserKeyword(kw).ignore(kw_pos, kw_expected))
-            return true;
+        for (Keyword kw : SELECT_LIST_END_KEYWORDS)
+        {
+            auto kw_pos = test_pos;
+            Expected kw_expected;
+            if (ParserKeyword(kw).ignore(kw_pos, kw_expected))
+                return true;
+        }
     }
 
     /// Explicit alias not followed by a table-ref-like token
