@@ -142,6 +142,8 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
     offset_at_start_of_lut = tz.lookup(tz.lookup(lut_start).pre).offset;
     offset_is_whole_number_of_hours_during_epoch = true;
     offset_is_whole_number_of_minutes_during_epoch = true;
+    offset_is_whole_number_of_hours_in_lut = true;
+    offset_is_whole_number_of_minutes_in_lut = true;
     offset_is_fixed = true;
     offset_is_fixed_during_epoch = true;
     offset_minute_of_hour_is_constant_during_epoch = true;
@@ -218,16 +220,24 @@ DateLUTImpl::DateLUTImpl(std::string_view time_zone_) // NOLINT(cppcoreguideline
         else
             values.days_in_month = i != 0 ? lut[i - 1].days_in_month : 31;
 
-        if (offset_is_whole_number_of_hours_during_epoch && start_of_day > 0 && start_of_day % 3600)
-            offset_is_whole_number_of_hours_during_epoch = false;
+        if (offset_is_whole_number_of_hours_in_lut && start_of_day % 3600)
+            offset_is_whole_number_of_hours_in_lut = false;
 
-        if (offset_is_whole_number_of_minutes_during_epoch && start_of_day > 0 && start_of_day % 60)
-            offset_is_whole_number_of_minutes_during_epoch = false;
+        if (offset_is_whole_number_of_minutes_in_lut && start_of_day % 60)
+            offset_is_whole_number_of_minutes_in_lut = false;
 
-        /// The epoch-scoped flags are derived from the local days that can contain a non-negative time point;
-        /// west of UTC that day starts before the epoch.
+        /// The epoch-scoped flags are derived from the local days that can contain a non-negative time point.
+        /// Either side of UTC that day begins before the epoch, so the bound cannot be tightened to zero: west
+        /// of UTC it is local 1969-12-31 (`America/New_York`'s starts at -68400), east of UTC the day holding
+        /// the epoch itself (`Asia/Kolkata`'s local 1970-01-01 starts at -19800).
         if (start_of_day > -86400)
         {
+            if (offset_is_whole_number_of_hours_during_epoch && start_of_day % 3600)
+                offset_is_whole_number_of_hours_during_epoch = false;
+
+            if (offset_is_whole_number_of_minutes_during_epoch && start_of_day % 60)
+                offset_is_whole_number_of_minutes_during_epoch = false;
+
             Time time_of_day = start_of_day % 86400;
             if (time_of_day < 0)
                 time_of_day += 86400;
