@@ -90,7 +90,8 @@ class IcebergSchemaProcessor
 public:
     /// Where a schema copy being registered comes from. metadata.json is the authoritative source;
     /// the 'schema' key of a manifest file header is only a snapshot of the table schema at the time
-    /// the manifest was written and may be ignored if it conflicts with the metadata.json copy.
+    /// the manifest was written and loses any conflict with the metadata.json copy of the same
+    /// schema-id, whichever of the two was read first.
     enum class SchemaSource
     {
         Metadata,
@@ -141,6 +142,23 @@ private:
     mutable std::map<std::pair<Int32, std::string>, Int32> clickhouse_ids_by_source_names TSA_GUARDED_BY(mutex);
     std::optional<Int32> current_schema_id TSA_GUARDED_BY(mutex) = 0;
     std::unordered_map<Int64, Int32> schema_id_by_snapshot TSA_GUARDED_BY(mutex);
+
+    /// Schema-ids whose registered copy was taken from a manifest file header with
+    /// `iceberg_tolerate_conflicting_manifest_schemas` enabled and has not been confirmed by
+    /// metadata.json yet. Such a copy is provisional: a conflicting metadata.json copy of the same
+    /// id replaces it instead of failing, because manifest-walking entrypoints (the
+    /// `remove_orphan_files` and `expire_snapshots` commands, mutation validation) reach a manifest
+    /// file header on a table object whose shared processor is still empty, and a degraded header
+    /// registered there would otherwise poison the table object for every later read.
+    std::unordered_set<Int32> provisional_manifest_schema_ids TSA_GUARDED_BY(mutex);
+
+    /// Registers `schema_ptr` under `schema_id`, first dropping a previously registered provisional
+    /// copy of the same id when asked. Field names are validated before anything is dropped or
+    /// written, so a malformed schema cannot leave the id without a schema at all.
+    void addSchemaImpl(const Poco::JSON::Object::Ptr & schema_ptr, Int32 schema_id, bool replace_provisional) TSA_REQUIRES(mutex);
+
+    /// Drops the schema registered for `schema_id` together with everything derived from it.
+    void dropSchemaImpl(Int32 schema_id) TSA_REQUIRES(mutex);
 
     NamesAndTypesList getSchemaType(const Poco::JSON::Object::Ptr & schema);
     DataTypePtr getComplexTypeFromObject(const Poco::JSON::Object::Ptr & type, String & current_full_name, bool is_subfield_of_root);
