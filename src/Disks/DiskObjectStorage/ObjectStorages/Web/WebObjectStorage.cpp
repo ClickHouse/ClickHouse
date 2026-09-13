@@ -79,7 +79,7 @@ WebObjectStorage::WebObjectStorage(
     HTTPHeaderEntries headers_,
     size_t max_directories_to_read_)
     : WebObjectStorage(
-        URLShards{{URL{.base_url = url_, .query_fragment = query_fragment_}}},
+        URLShards{{URL{.base_url = url_, .query_fragment = query_fragment_, .path_override = std::nullopt}}},
         context_,
         std::move(headers_),
         max_directories_to_read_)
@@ -230,7 +230,9 @@ std::unique_ptr<ReadBufferFromFileBase> WebObjectStorage::readObject( /// NOLINT
     bool use_external_buffer,
     bool /* restrict_seek */) const
 {
-    auto urls = object.read_source_index ? buildURLs(object.remote_path, *object.read_source_index) : buildURLs(object.remote_path);
+    auto urls = object.resolved_url
+        ? std::vector<String>{*object.resolved_url}
+        : (object.read_source_index ? buildURLs(object.remote_path, *object.read_source_index) : buildURLs(object.remote_path));
     /// The async reader (`AsynchronousBoundedReadBuffer` -> `ThreadPoolRemoteFSReader`) reads into an
     /// external buffer regardless of the number of failover URLs, and asserts that the wrapped reader
     /// honors it. The caller (`ReadPipeline`) passes `use_external_buffer` accordingly even when
@@ -425,14 +427,44 @@ std::optional<ObjectMetadata> WebObjectStorage::tryGetObjectMetadata(const Relat
 
     std::exception_ptr last_exception;
     bool has_not_found = false;
-    auto urls = path.read_source_index ? buildURLs(path.getPath(), *path.read_source_index) : buildURLs(path.getPath());
-    for (const auto & url : urls)
+
+    if (path.resolved_url)
+    {
+        auto metadata = get_metadata_from_uri(Poco::URI(*path.resolved_url, enable_url_encoding));
+        if (!metadata)
+            return std::nullopt;
+        metadata->resolved_url = *path.resolved_url;
+        return metadata;
+    }
+
+    std::vector<const URL *> url_options;
+    if (path.read_source_index)
+    {
+        if (*path.read_source_index >= url_shards.size())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid URL shard index: {}", *path.read_source_index);
+        for (const auto & option : url_shards[*path.read_source_index])
+            url_options.push_back(&option);
+    }
+    else
+    {
+        for (const auto & shard : url_shards)
+            for (const auto & option : shard)
+                url_options.push_back(&option);
+    }
+
+    for (const auto * url_option : url_options)
     {
         try
         {
-            auto metadata = get_metadata_from_uri(Poco::URI(url, enable_url_encoding));
+            const auto resolved_url = buildURL(*url_option, path.getPath());
+            auto metadata = get_metadata_from_uri(Poco::URI(resolved_url, enable_url_encoding));
             if (metadata)
+            {
+                if (url_option->path_override)
+                    metadata->resolved_path = *url_option->path_override;
+                metadata->resolved_url = resolved_url;
                 return metadata;
+            }
             has_not_found = true;
         }
         catch (...)
@@ -521,7 +553,11 @@ std::vector<String> WebObjectStorage::buildURLs(const std::string & path, size_t
 
 std::string WebObjectStorage::buildURL(const URL & url_option, const std::string & path)
 {
-    if (path.empty())
+    /// `path` is the logical object identity shared by the shard. A path-level failover option can
+    /// override only the concrete request path while keeping scheduling, caching, and task identity
+    /// attached to that logical object.
+    const auto & effective_path = url_option.path_override ? *url_option.path_override : path;
+    if (effective_path.empty())
         return url_option.base_url + url_option.query_fragment;
 
     Poco::URI base_uri(url_option.base_url, false);
@@ -529,7 +565,7 @@ std::string WebObjectStorage::buildURL(const URL & url_option, const std::string
     if (!base_path.ends_with('/'))
         base_path += '/';
 
-    Poco::URI path_uri(stripLeadingSlashes(path), false);
+    Poco::URI path_uri(stripLeadingSlashes(effective_path), false);
     base_uri.setPath(base_path + stripLeadingSlashes(path_uri.getPath()));
 
     Poco::URI source_uri(url_option.base_url + url_option.query_fragment, false);

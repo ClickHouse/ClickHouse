@@ -27,4 +27,9 @@ bool hasSupportedArchiveExtension(std::string_view path);
 
 std::pair<std::string, std::optional<std::string>> getURIAndArchivePattern(const std::string & source);
 
+/// A `::` after `?` or `#` is an archive separator only when the URL path itself looks like
+/// a supported archive path. This keeps `/api?x=::1` literal while allowing
+/// `/archive.zip?token=x::member.csv` without requiring spaces around `::`.
+std::pair<std::string, std::optional<std::string>> getURLAndArchivePattern(const std::string & source);
+
 }

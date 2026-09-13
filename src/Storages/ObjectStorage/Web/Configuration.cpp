@@ -267,7 +267,7 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
     String url = raw_url;
     archive_pattern.reset();
     if (context->getSettingsRef()[Setting::allow_archive_path_syntax])
-        std::tie(url, archive_pattern) = getURIAndArchivePattern(raw_url);
+        std::tie(url, archive_pattern) = getURLAndArchivePattern(raw_url);
 
     const auto scheme_pos = url.find("://");
     const auto authority_start = scheme_pos == String::npos ? 0 : scheme_pos + 3;
@@ -284,45 +284,85 @@ void StorageWebConfiguration::setNamespaceFromURL(ContextPtr context)
     while (path.path.starts_with('/'))
         path.path.erase(0, 1);
 
-    /// Only the authority part of the URL is passed to `parseURLShardsWithFailover`, so a `|`
-    /// failover template inside the path (e.g. `http://host/data/{bad|good}/**/part*.tsv`) would
-    /// be left untouched and treated as a literal by the glob matcher, silently changing the
-    /// `url` semantics. Reject it explicitly instead.
-    if (path.path.contains('|'))
+    /// Explicit and locally-expanded paths can preserve path-level failover by storing each concrete
+    /// path as an option of the same logical URL shard. HTTP index-page listing cannot preserve that
+    /// grouping, so combining path failover with `*` / `**` remains unsupported.
+    const bool has_path_failover = path.path.contains('|');
+    if (has_path_failover && path.path.contains('*'))
         throw Exception(
             ErrorCodes::BAD_ARGUMENTS,
             "Failover patterns ('|') in the path are not supported when expanding `url` wildcards "
-            "via HTTP index pages; use it only in the host part of the URL");
+            "via HTTP index pages; use it only in paths that do not require index listing");
 
+    /// Comma/range alternatives become union shards, while `|` alternatives stay grouped as
+    /// failover options inside each shard. Without path failover, leave path expansion to the file
+    /// iterator as before, so existing index-listing and direct-key behavior remains unchanged.
+    URLShardsWithFailover path_shards_with_failover{{path.path}};
+    if (has_path_failover)
+        path_shards_with_failover = parseURLShardsWithFailover(path.path, max_addresses, "url");
+
+    /// Authority/query and path templates are expanded independently. Bound both the logical-shard
+    /// Cartesian product and the total number of concrete failover URLs before materializing either.
+    if (!path_shards_with_failover.empty()
+        && url_shards_with_failover.size() > max_addresses / path_shards_with_failover.size())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'url': first argument generates too many result addresses");
+
+    size_t total_url_options = 0;
+    for (const auto & failover_url_options : url_shards_with_failover)
+    {
+        for (const auto & failover_path_options : path_shards_with_failover)
+        {
+            if (!failover_path_options.empty() && failover_url_options.size() > max_addresses / failover_path_options.size())
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'url': first argument generates too many result addresses");
+
+            const size_t options_count = failover_url_options.size() * failover_path_options.size();
+            if (options_count > max_addresses - total_url_options)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Table function 'url': first argument generates too many result addresses");
+            total_url_options += options_count;
+        }
+    }
+
+    /// Combine every authority/query union shard with every path union shard. Alternatives from
+    /// either side are multiplied within one `URLOptions` vector, preserving failover rather than
+    /// accidentally turning path alternatives into separately scheduled union tasks.
     url_shards.clear();
-    url_shards.reserve(url_shards_with_failover.size());
+    url_shards.reserve(url_shards_with_failover.size() * path_shards_with_failover.size());
 
     for (const auto & failover_url_options : url_shards_with_failover)
     {
-        WebObjectStorage::URLOptions url_shard;
-        url_shard.reserve(failover_url_options.size());
-
-        for (const auto & url_option : failover_url_options)
+        for (const auto & failover_path_options : path_shards_with_failover)
         {
-            Poco::URI uri(url_option, false);
+            WebObjectStorage::URLOptions url_shard;
+            url_shard.reserve(failover_url_options.size() * failover_path_options.size());
 
-            if (url_shards.empty() && url_shard.empty())
+            for (const auto & url_option : failover_url_options)
             {
-                namespace_prefix = uri.getHost();
-                if (uri.getPort())
-                    namespace_prefix += ":" + std::to_string(uri.getPort());
+                Poco::URI uri(url_option, false);
+
+                if (url_shards.empty() && url_shard.empty())
+                {
+                    namespace_prefix = uri.getHost();
+                    if (uri.getPort())
+                        namespace_prefix += ":" + std::to_string(uri.getPort());
+                }
+
+                String query_fragment;
+                if (!uri.getRawQuery().empty())
+                    query_fragment = "?" + uri.getRawQuery();
+                if (!uri.getFragment().empty())
+                    query_fragment += "#" + uri.getFragment();
+
+                for (const auto & path_option : failover_path_options)
+                {
+                    url_shard.push_back({
+                        .base_url = uri.getScheme() + "://" + uri.getAuthority() + "/",
+                        .query_fragment = query_fragment,
+                        .path_override = has_path_failover ? std::optional<String>{path_option} : std::nullopt});
+                }
             }
 
-            String query_fragment;
-            if (!uri.getRawQuery().empty())
-                query_fragment = "?" + uri.getRawQuery();
-            if (!uri.getFragment().empty())
-                query_fragment += "#" + uri.getFragment();
-
-            url_shard.push_back({.base_url = uri.getScheme() + "://" + uri.getAuthority() + "/", .query_fragment = std::move(query_fragment)});
+            url_shards.push_back(std::move(url_shard));
         }
-
-        url_shards.push_back(std::move(url_shard));
     }
 }
 

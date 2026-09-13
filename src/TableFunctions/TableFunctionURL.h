@@ -12,6 +12,7 @@ namespace DB
 {
 
 class Context;
+class StorageWebConfiguration;
 
 /* url(source, [format, structure, compression]) - creates a temporary storage from url.
  */
@@ -90,6 +91,15 @@ protected:
     void parseArgumentsImpl(ASTs & args, const ContextPtr & context) override;
 
     StoragePtr executeImpl(const ASTPtr & ast_function, ContextPtr context, const std::string & table_name, ColumnsDescription cached_columns, bool is_insert_query) const override;
+
+    void checkExperimentalURLWildcardFromIndexPages(const ContextPtr & context) const;
+
+    std::shared_ptr<StorageWebConfiguration> createWebObjectStorageConfiguration(
+        const String & source,
+        const String & format_,
+        const String & structure_,
+        const String & compression_method_,
+        ContextPtr context) const;
 
     StorageURL::Configuration configuration;
 

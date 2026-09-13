@@ -150,6 +150,13 @@ struct ObjectMetadata
     bool etag_is_strong = true;
     ObjectAttributes tags;
     ObjectAttributes attributes;
+    /// Concrete path selected by an object-storage failover probe. It is normally unset because
+    /// most storages read the requested path directly; Web storage uses it when path-level failover
+    /// resolves a logical object to a different URL path.
+    std::optional<String> resolved_path;
+    /// Concrete URL selected by a Web failover metadata probe. It pins the later data read to the
+    /// same endpoint so metadata, virtual columns, and bytes all describe one object generation.
+    std::optional<String> resolved_url;
 
     /// `etag` may be used as a content-cache key (filesystem cache, page cache, Parquet
     /// metadata cache) only when it is present and a strong content identifier. A weak
@@ -166,6 +173,9 @@ struct RelativePathWithMetadata
     std::optional<size_t> read_source_index;
     std::optional<String> path_for_glob_matching;
     std::optional<String> path_for_deduplication;
+    /// Concrete URL selected for this logical Web object. It is carried through distributed tasks
+    /// and pins metadata/data requests to the same failover option.
+    std::optional<String> resolved_url;
     bool derive_file_name_from_url_path = false;
     /// Object metadata: size, modification time, etc.
     std::optional<ObjectMetadata> metadata;

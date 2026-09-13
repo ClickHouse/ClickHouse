@@ -58,6 +58,7 @@
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 #include <Common/parseGlobs.h>
+#include <Common/parseRemoteDescription.h>
 #include <Storages/ObjectStorage/IObjectIterator.h>
 #if ENABLE_DISTRIBUTED_CACHE
 #include <DistributedCache/DistributedCacheRegistry.h>
@@ -188,6 +189,11 @@ namespace
             hash.update(url.base_url);
             hash.update('\0');
             hash.update(url.query_fragment);
+            hash.update('\0');
+            /// Two shards can share the same origin/query but point to different path failover sets.
+            /// Include every concrete override so they cannot share cached bytes or metadata.
+            if (url.path_override)
+                hash.update(*url.path_override);
             hash.update('\0');
         }
 
@@ -455,15 +461,121 @@ std::shared_ptr<IObjectIterator> StorageObjectStorageSource::createFileIterator(
     /// builds filter values from the listed outer archive objects, not from the entry virtual paths,
     /// so pushing an entry-level predicate there would wrongly discard every archive. Such archive
     /// forms still need the regular filter step after `ArchiveIterator` has created entry object infos.
+    const bool is_locally_expanded_web_path
+        = match_web_paths_only && reading_path.path.find_first_of("*?") == String::npos;
     const bool is_explicit_archive_member = is_archive && !configuration->isPathInArchiveWithGlobs()
-        && (!reading_path.hasGlobs() || (!match_web_paths_only && hasExactlyOneBracketsExpansion(reading_path.path)));
+        && (!reading_path.hasGlobs()
+            || (!match_web_paths_only && hasExactlyOneBracketsExpansion(reading_path.path))
+            || is_locally_expanded_web_path);
     const auto * path_filter_predicate = is_archive && !is_explicit_archive_member ? nullptr : predicate;
+
+    /// Web URL shards use `read_source_index` to distinguish union shards from failover options.
+    /// For fixed paths and locally-expandable `{...}` paths, build indexed keys directly instead
+    /// of listing an HTTP index page or dropping the source identity in `KeysIterator`.
+    if (is_locally_expanded_web_path)
+    {
+        const auto & web_object_storage = assert_cast<const WebObjectStorage &>(*object_storage);
+        const auto & url_shards = web_object_storage.getURLShards();
+        /// `StorageWebConfiguration` has already expanded path unions when path-level failover is
+        /// present. In that case each URL shard is one logical object and its `URLOptions` carry the
+        /// concrete failover paths, so create exactly one indexed key per shard instead of expanding
+        /// the original path again and converting failover into union.
+        const bool has_path_overrides = !url_shards.empty() && !url_shards.front().empty()
+            && url_shards.front().front().path_override.has_value();
+
+        RelativePathsWithMetadata indexed_paths;
+        if (has_path_overrides)
+        {
+            indexed_paths.reserve(url_shards.size());
+            for (size_t source_index = 0; source_index < url_shards.size(); ++source_index)
+            {
+                chassert(!url_shards[source_index].empty() && url_shards[source_index].front().path_override.has_value());
+                indexed_paths.emplace_back(
+                    std::make_shared<RelativePathWithMetadata>(*url_shards[source_index].front().path_override, source_index));
+            }
+        }
+        else
+        {
+            const auto expanded_paths = reading_path.hasGlobs()
+                ? parseRemoteDescription(
+                    reading_path.path,
+                    0,
+                    reading_path.path.size(),
+                    ',',
+                    query_settings.list_object_keys_size,
+                    "url")
+                : Strings{reading_path.path};
+
+            const size_t max_expanded_elements = query_settings.list_object_keys_size;
+            /// Host/query shards and path selectors are expanded independently, but every indexed key
+            /// is their Cartesian product. Bound that final product before reserving or materializing it.
+            if (!expanded_paths.empty() && url_shards.size() > max_expanded_elements / expanded_paths.size())
+            {
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Table function 'url': first argument generates too many result addresses");
+            }
+
+            indexed_paths.reserve(url_shards.size() * expanded_paths.size());
+            for (size_t source_index = 0; source_index < url_shards.size(); ++source_index)
+            {
+                for (const auto & expanded_path : expanded_paths)
+                    indexed_paths.emplace_back(std::make_shared<RelativePathWithMetadata>(expanded_path, source_index));
+            }
+        }
+
+        ExpressionActionsPtr deferred_filter_actions;
+        if (auto filter_dag = VirtualColumnUtils::createPathAndFileFilterDAG(
+                path_filter_predicate, virtual_columns, local_context, hive_columns))
+        {
+            Strings filter_paths;
+            filter_paths.reserve(indexed_paths.size());
+            for (const auto & indexed_path : indexed_paths)
+            {
+                auto filter_path = formatObjectPath(
+                    *configuration, indexed_path->relative_path, /*include_connection_info=*/false);
+                if (is_explicit_archive_member)
+                    filter_path += fmt::format("::{}", configuration->getPathInArchive());
+                filter_paths.push_back(std::move(filter_path));
+            }
+
+            std::vector<String> archive_member_names;
+            if (is_explicit_archive_member)
+                archive_member_names.assign(indexed_paths.size(), configuration->getPathInArchive());
+
+            /// Path failover resolves the visible path only after metadata probing selects a working
+            /// option. Keep its filter deferred even when all sets are already available; evaluating
+            /// it against the first (possibly missing) path would hide a working fallback.
+            if (!has_path_overrides && VirtualColumnUtils::buildSetsForDAG(*filter_dag, local_context))
+            {
+                auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                VirtualColumnUtils::filterByPathOrFile(
+                    indexed_paths, filter_paths, actions, virtual_columns, hive_columns, local_context,
+                    /*format_settings=*/std::nullopt,
+                    is_explicit_archive_member ? &archive_member_names : nullptr);
+            }
+            else
+            {
+                deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            }
+        }
+
+        /// Hard-code `skip_object_metadata` to false here because archive reading needs correct object
+        /// metadata: fixed archive paths must not keep skipping metadata fetch, otherwise whole-archive
+        /// distribution may end up with a wrong archive size.
+        iterator = std::make_unique<KeysIterator>(
+            indexed_paths, object_storage, virtual_columns, is_archive ? nullptr : read_keys,
+            query_settings.ignore_non_existent_file, /*skip_object_metadata=*/false, with_tags,
+            file_progress_callback, deferred_filter_actions, hive_columns, configuration->getNamespace(), local_context,
+            is_explicit_archive_member ? configuration->getPathInArchive() : String{},
+            /*filter_after_metadata=*/has_path_overrides);
+    }
     /// `KeysIterator` carries only path strings and drops `read_source_index`. For web URL shards the
     /// same relative path can come from different expanded URL options (e.g. `http://{h1,h2}/data/**`),
     /// so losing the source index would make `WebObjectStorage::readObject` treat all shards as failover
     /// for that path and silently miss rows. Always use `GlobIterator` for web listings, which preserves
     /// the source index.
-    if (!match_web_paths_only && reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
+    else if (!match_web_paths_only && reading_path.hasGlobs() && hasExactlyOneBracketsExpansion(reading_path.path))
     {
         auto paths = expandSelectionGlob(reading_path.path);
         ExpressionActionsPtr deferred_filter_actions;
@@ -1282,7 +1394,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
         else if (const auto * object_info_in_archive = dynamic_cast<const ArchiveIterator::ObjectInfoInArchive *>(object_info.get()))
         {
             ProfileEvents::increment(ProfileEvents::ObjectStorageReadObjects);
-            compression_method = chooseCompressionMethod(configuration->getPathInArchive(), configuration->compression_method);
+            /// The configured member path can be a glob without a compression suffix. Infer `auto`
+            /// from the concrete member selected by `ArchiveIterator`, e.g. `compressed.csv.gz`.
+            compression_method = chooseCompressionMethod(object_info_in_archive->path_in_archive, configuration->compression_method);
             const auto & archive_reader = object_info_in_archive->archive_reader;
             read_buf = archive_reader->readFile(object_info_in_archive->path_in_archive, /*throw_on_not_found=*/true);
         }
@@ -1834,6 +1948,7 @@ std::unique_ptr<ReadBufferFromFileBase> createReadBuffer(
     /// shows a useful name rather than an empty string.
     const auto stored_object_size = is_size_known ? object_size : StoredObject::UnknownSize;
     StoredObject stored_object(object_info.getPath(), object_info.getPath(), stored_object_size, object_info.read_source_index);
+    stored_object.resolved_url = object_info.resolved_url;
 
     /// Pin the read to the object generation seen here (etag from the LIST/HEAD): a GET with a
     /// different ETag means an in-place overwrite, reported as S3_OBJECT_CHANGED_DURING_READ
@@ -2143,6 +2258,18 @@ ObjectInfoPtr StorageObjectStorageSource::GlobIterator::nextUnlocked(size_t /* p
     return object_infos[index++];
 }
 
+namespace
+{
+RelativePathsWithMetadata makeRelativePathsWithMetadata(const Strings & keys)
+{
+    RelativePathsWithMetadata result;
+    result.reserve(keys.size());
+    for (const auto & key : keys)
+        result.emplace_back(std::make_shared<RelativePathWithMetadata>(key));
+    return result;
+}
+}
+
 StorageObjectStorageSource::KeysIterator::KeysIterator(
     const Strings & keys_,
     ObjectStoragePtr object_storage_,
@@ -2156,7 +2283,41 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     NamesAndTypesList hive_columns_,
     String object_namespace_,
     ContextPtr context_,
-    String archive_member_path_)
+    String archive_member_path_,
+    bool filter_after_metadata_)
+    : KeysIterator(
+        makeRelativePathsWithMetadata(keys_),
+        std::move(object_storage_),
+        virtual_columns_,
+        read_keys_,
+        ignore_non_existent_files_,
+        skip_object_metadata_,
+        with_tags_,
+        std::move(file_progress_callback_),
+        std::move(deferred_filter_actions_),
+        std::move(hive_columns_),
+        std::move(object_namespace_),
+        std::move(context_),
+        std::move(archive_member_path_),
+        filter_after_metadata_)
+{
+}
+
+StorageObjectStorageSource::KeysIterator::KeysIterator(
+    const RelativePathsWithMetadata & keys_,
+    ObjectStoragePtr object_storage_,
+    const NamesAndTypesList & virtual_columns_,
+    ObjectInfos * read_keys_,
+    bool ignore_non_existent_files_,
+    bool skip_object_metadata_,
+    bool with_tags_,
+    std::function<void(FileProgress)> file_progress_callback_,
+    ExpressionActionsPtr deferred_filter_actions_,
+    NamesAndTypesList hive_columns_,
+    String object_namespace_,
+    ContextPtr context_,
+    String archive_member_path_,
+    bool filter_after_metadata_)
     : object_storage(object_storage_)
     , virtual_columns(virtual_columns_)
     , file_progress_callback(file_progress_callback_)
@@ -2169,15 +2330,13 @@ StorageObjectStorageSource::KeysIterator::KeysIterator(
     , object_namespace(std::move(object_namespace_))
     , context(std::move(context_))
     , archive_member_path(std::move(archive_member_path_))
+    , filter_after_metadata(filter_after_metadata_)
 {
     if (read_keys_)
     {
         /// TODO: should we add metadata if we anyway fetch it if file_progress_callback is passed?
-        for (auto && key : keys)
-        {
-            auto object_info = std::make_shared<ObjectInfo>(key);
-            read_keys_->emplace_back(object_info);
-        }
+        for (const auto & key : keys)
+            read_keys_->emplace_back(std::make_shared<ObjectInfo>(*key));
     }
 }
 
@@ -2189,15 +2348,12 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         if (current_index >= keys.size())
             return nullptr;
 
-        auto key = keys[current_index];
+        const auto & key = keys[current_index];
 
-        /// The filter could not be applied when the iterator was created, because a set in it was not
-        /// ready yet (see `createFileIterator`); it is ready now, when the pipeline runs. Filter before
-        /// fetching the metadata: probing a filtered-out nonexistent key would throw FILE_DOESNT_EXIST.
-        if (deferred_filter_actions)
+        auto is_filtered_out = [&](const RelativePathWithMetadata & candidate)
         {
-            std::vector<String> filtered_keys({key});
-            std::vector<String> filter_paths({joinPathUnderPrefix(object_namespace, key)});
+            std::vector<String> filtered_keys({candidate.relative_path});
+            std::vector<String> filter_paths({joinPathUnderPrefix(object_namespace, candidate.relative_path)});
             if (!archive_member_path.empty())
                 filter_paths.front() += fmt::format("::{}", archive_member_path);
             std::vector<String> archive_member_names;
@@ -2207,31 +2363,45 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
                 filtered_keys, filter_paths, deferred_filter_actions, virtual_columns, hive_columns, context,
                 /*format_settings=*/std::nullopt,
                 archive_member_path.empty() ? nullptr : &archive_member_names);
-            if (filtered_keys.empty())
-            {
-                if (emit_profile_events)
-                    ProfileEvents::increment(ProfileEvents::ObjectStoragePredicateFilteredObjects);
-                continue;
-            }
-        }
+            if (!filtered_keys.empty())
+                return false;
+
+            if (emit_profile_events)
+                ProfileEvents::increment(ProfileEvents::ObjectStoragePredicateFilteredObjects);
+            return true;
+        };
+
+        /// Most deferred filters must run before metadata I/O so a filtered-out missing object is not
+        /// probed. Path-level failover is the exception: its visible path is known only after one URL
+        /// option succeeds, so filtering that task against the first candidate would be incorrect.
+        if (deferred_filter_actions && !filter_after_metadata && is_filtered_out(*key))
+            continue;
 
         ObjectMetadata object_metadata{};
         if (!skip_object_metadata)
         {
             if (ignore_non_existent_files)
             {
-                auto metadata = object_storage->tryGetObjectMetadata(key, with_tags);
+                auto metadata = object_storage->tryGetObjectMetadata(*key, with_tags);
                 if (!metadata)
                     continue;
                 object_metadata = *metadata;
             }
             else
-                object_metadata = object_storage->getObjectMetadata(key, with_tags);
+                object_metadata = object_storage->getObjectMetadata(*key, with_tags);
         }
         else
         {
             object_metadata.is_fetched = false;
         }
+
+        auto relative_path = *key;
+        if (object_metadata.resolved_path)
+            relative_path.relative_path = *object_metadata.resolved_path;
+        relative_path.resolved_url = object_metadata.resolved_url;
+
+        if (deferred_filter_actions && filter_after_metadata && is_filtered_out(relative_path))
+            continue;
 
         if (file_progress_callback)
             file_progress_callback(FileProgress(0, object_metadata.size_bytes));
@@ -2239,7 +2409,8 @@ ObjectInfoPtr StorageObjectStorageSource::KeysIterator::next(size_t /* processor
         if (emit_profile_events)
             ProfileEvents::increment(ProfileEvents::ObjectStorageListedObjects);
 
-        return std::make_shared<ObjectInfo>(RelativePathWithMetadata(key, object_metadata));
+        relative_path.metadata = std::move(object_metadata);
+        return std::make_shared<ObjectInfo>(std::move(relative_path));
     }
 }
 
@@ -2349,16 +2520,22 @@ ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::next(size_t)
     if (!path_in_archive.has_value())
         return object_info;
 
-    return createObjectInfoInArchive(path_to_archive, path_in_archive.value(), object_info->relative_path_with_metadata.read_source_index);
+    return createObjectInfoInArchive(
+        path_to_archive,
+        path_in_archive.value(),
+        object_info->relative_path_with_metadata.read_source_index,
+        object_info->relative_path_with_metadata.resolved_url);
 }
 
 ObjectInfoPtr StorageObjectStorageSource::ReadTaskIterator::createObjectInfoInArchive(
     const std::string & path_to_archive,
     const std::string & path_in_archive,
-    std::optional<size_t> read_source_index)
+    std::optional<size_t> read_source_index,
+    const std::optional<String> & resolved_url)
 {
     auto archive_object = std::make_shared<ObjectInfo>(RelativePathWithMetadata{path_to_archive, std::optional<ObjectMetadata>{}});
     archive_object->relative_path_with_metadata.read_source_index = read_source_index;
+    archive_object->relative_path_with_metadata.resolved_url = resolved_url;
     if (!archive_object->getObjectMetadata())
         archive_object->setObjectMetadata(object_storage->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
 
@@ -2406,6 +2583,7 @@ StorageObjectStorageSource::ArchiveIterator::ObjectInfoInArchive::ObjectInfoInAr
     : archive_object(archive_object_), path_in_archive(path_in_archive_), archive_reader(archive_reader_), file_info(file_info_)
 {
     relative_path_with_metadata.read_source_index = archive_object->relative_path_with_metadata.read_source_index;
+    relative_path_with_metadata.resolved_url = archive_object->relative_path_with_metadata.resolved_url;
 }
 
 StorageObjectStorageSource::ArchiveIterator::ArchiveIterator(
@@ -2445,6 +2623,26 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
     IArchiveReader::FileInfo current_file_info{};
     while (true)
     {
+        if (ignore_archive_globs)
+        {
+            archive_object = archives_iterator->next(processor);
+            if (!archive_object)
+                return {};
+
+            if (!archive_object->getObjectMetadata())
+                archive_object->setObjectMetadata(
+                    object_storage->getObjectMetadata(archive_object->relative_path_with_metadata, /*with_tags=*/ false));
+
+            archive_reader = createArchiveReader(archive_object);
+            auto first_file = archive_reader->firstFile();
+            if (!first_file)
+                continue;
+
+            path_in_archive = first_file->getFileName();
+            current_file_info = first_file->getFileInfo();
+            break;
+        }
+
         if (filter)
         {
             if (!file_enumerator)
@@ -2464,7 +2662,7 @@ ObjectInfoPtr StorageObjectStorageSource::ArchiveIterator::next(size_t processor
                 if (!file_enumerator)
                     continue;
             }
-            else if (!file_enumerator->nextFile() || ignore_archive_globs)
+            else if (!file_enumerator->nextFile())
             {
                 file_enumerator.reset();
                 continue;

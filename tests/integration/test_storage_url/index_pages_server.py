@@ -1,7 +1,10 @@
+import base64
+import gzip
 import sys
 import json
 import re
 import io
+import tarfile
 import zipfile
 from urllib.parse import urlparse
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -12,6 +15,17 @@ def make_zip_file(entries):
     with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
         for name, data in entries:
             archive.writestr(name, data)
+    return buffer.getvalue()
+
+
+def make_tar_file(entries, mode="w"):
+    buffer = io.BytesIO()
+    with tarfile.open(fileobj=buffer, mode=mode) as archive:
+        for name, data in entries:
+            encoded = data if isinstance(data, bytes) else data.encode("utf-8")
+            info = tarfile.TarInfo(name)
+            info.size = len(encoded)
+            archive.addfile(info, io.BytesIO(encoded))
     return buffer.getvalue()
 
 
@@ -56,15 +70,45 @@ DATA_PARTS = {
     "/data/auth_failover/part1.tsv": "23\n",
     "/data/apache_sort/subdir/part1.tsv": "7\n",
     "/data/apache_sort/subdir/part2.tsv": "11\n",
+    "/data/api": "5\n",
+    "/data/data.zip::v1": "7\n",
 }
 
+SIMPLE_ENTRIES = [
+    ("eod.csv", "1\n2\n"),
+    ("compressed.csv.gz", gzip.compress(b"4\n5\n")),
+    ("ignored.tsv", "100\n"),
+]
+SIMPLE_ARCHIVES = {
+    "/data/simple_archive.zip": make_zip_file(SIMPLE_ENTRIES),
+    "/data/header_archive.zip": make_zip_file(SIMPLE_ENTRIES),
+    "/data/simple_archive.tar": make_tar_file(SIMPLE_ENTRIES),
+    "/data/simple_archive.tar.gz": make_tar_file(SIMPLE_ENTRIES, "w:gz"),
+    "/data/multi_member_archive.zip": make_zip_file(
+        [("ignored.csv", "100\n"), ("first.tsv", "1\n"), ("second.tsv", "2\n")]
+    ),
+    "/data/archive_braces/a.zip": make_zip_file([("value.tsv", "11\n")]),
+    "/data/archive_braces/b.zip": make_zip_file([("value.tsv", "22\n")]),
+    "/data/archive_failover/archivegood.zip": make_zip_file([("value.tsv", "17\n")]),
+    "/data/archive_failover/archive0good.zip": make_zip_file([("value.tsv", "10\n")]),
+    "/data/archive_failover/archive1good.zip": make_zip_file([("value.tsv", "20\n")]),
+    "/data/archive_pin/archiveprimary.zip": make_zip_file([("value.tsv", "100\n")]),
+    "/data/archive_pin/archivemirror.zip": make_zip_file([("value.tsv", "7\n")]),
+}
+SEVEN_ZIP_ARCHIVE = base64.b64decode(
+    "N3q8ryccAAR6+uLAhgAAAAAAAAAhAAAAAAAAALNtaxHgABsAGF0AGIsG6KncZB+qxtE07L6V51NQRUvIscAAAAAAgTMHrg/QD"
+    "rA8nz9HQQuzhjUvF/0mFycUGU6ZumpcFLtQ0sTFIPi7UL/aV1HJNT56yK3q4JtBV8pMBzjLgkmaOMy/z9sEjvZCcm7XHnG8B"
+    "k1QveQQyHhtaNJQfEr2+FEaIAAAABcGIAEJZgAHCwEAASMDAQEFXQAQAAAMgIYKAQLspfoAAA=="
+)
 SHARD_0_ARCHIVE = make_zip_file([("value.tsv", "101\n")])
 SHARD_1_ARCHIVE = make_zip_file([("value.tsv", "202\n"), ("padding.txt", "x" * 1024)])
 UNKNOWN_SIZE_ARCHIVE = make_zip_file([("value.tsv", "47\n")])
+WRITTEN_DATA = {}
 
 
 class RequestHandler(BaseHTTPRequestHandler):
     request_counts = {}
+    pin_primary_failures_remaining = 2
 
     def log_message(self, format, *args):
         pass
@@ -86,6 +130,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         if self.path == "/__reset__":
             self.request_counts.clear()
+            type(self).pin_primary_failures_remaining = 2
             self.send_response(200)
             self.send_header("Content-Type", "text/plain")
             self.send_header("Content-Length", "2")
@@ -109,7 +154,25 @@ class RequestHandler(BaseHTTPRequestHandler):
         next_level = len(levels)
         return f"<a href=\"{next_level}/\">{next_level}/</a>\n"
 
+    def _temporarily_reject_pin_primary(self, parsed_url):
+        if parsed_url.path != "/data/archive_pin/archiveprimary.zip":
+            return False
+
+        cls = type(self)
+        if cls.pin_primary_failures_remaining == 0:
+            return False
+
+        cls.pin_primary_failures_remaining -= 1
+        self.send_response(404)
+        self.end_headers()
+        return True
+
     def _archive_data_for_request(self, parsed_url):
+        if parsed_url.path in SIMPLE_ARCHIVES:
+            return SIMPLE_ARCHIVES[parsed_url.path]
+        if parsed_url.path == "/data/simple_archive.7z":
+            return SEVEN_ZIP_ARCHIVE
+
         if parsed_url.path != "/data/archive_identity/archive.zip":
             return None
 
@@ -118,6 +181,14 @@ class RequestHandler(BaseHTTPRequestHandler):
         if parsed_url.query == "shard=1":
             return SHARD_1_ARCHIVE
         return None
+
+    def _reject_archive_request_without_header(self, parsed_url):
+        if parsed_url.path != "/data/header_archive.zip" or self.headers.get("X-Test-Header") == "1":
+            return False
+
+        self.send_response(403)
+        self.end_headers()
+        return True
 
     def _page_cache_identity_tsv_for_request(self, parsed_url):
         # Two web sources (`?shard=0` / `?shard=1`) expose the same object path with the same ETag
@@ -131,6 +202,35 @@ class RequestHandler(BaseHTTPRequestHandler):
             return b"202\n"
         return None
 
+    def _send_archive_data(self, archive_data):
+        range_header = self.headers.get("Range")
+        if range_header:
+            match = re.fullmatch(r"bytes=(\d+)-(\d*)", range_header)
+            if not match:
+                self.send_response(416)
+                self.end_headers()
+                return
+            start = int(match.group(1))
+            end = int(match.group(2)) if match.group(2) else len(archive_data) - 1
+            end = min(end, len(archive_data) - 1)
+            if start > end:
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{len(archive_data)}")
+                self.end_headers()
+                return
+            response_data = archive_data[start : end + 1]
+            self.send_response(206)
+            self.send_header("Content-Range", f"bytes {start}-{end}/{len(archive_data)}")
+        else:
+            response_data = archive_data
+            self.send_response(200)
+
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(response_data)))
+        self.send_header("Accept-Ranges", "bytes")
+        self.end_headers()
+        self.wfile.write(response_data)
+
     def do_HEAD(self):
         if self._handle_control():
             return
@@ -138,6 +238,16 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         self._record_request("HEAD", path)
+        if self._temporarily_reject_pin_primary(parsed):
+            return
+        if self._reject_archive_request_without_header(parsed):
+            return
+        if path in WRITTEN_DATA:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(WRITTEN_DATA[path])))
+            self.end_headers()
+            return
         page_cache_identity_tsv = self._page_cache_identity_tsv_for_request(parsed)
         if page_cache_identity_tsv is not None:
             self.send_response(200)
@@ -263,6 +373,18 @@ class RequestHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         self._record_request("GET", path)
+        if self._temporarily_reject_pin_primary(parsed):
+            return
+        if self._reject_archive_request_without_header(parsed):
+            return
+        if path in WRITTEN_DATA:
+            data = WRITTEN_DATA[path]
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain")
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            return
         page_cache_identity_tsv = self._page_cache_identity_tsv_for_request(parsed)
         if page_cache_identity_tsv is not None:
             self.send_response(200)
@@ -578,11 +700,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
         archive_data = self._archive_data_for_request(parsed)
         if archive_data is not None:
-            self.send_response(200)
-            self.send_header("Content-Type", "application/zip")
-            self.send_header("Content-Length", str(len(archive_data)))
-            self.end_headers()
-            self.wfile.write(archive_data)
+            self._send_archive_data(archive_data)
             return
         if path == "/data/unknown_size_archive/archive.zip":
             self.send_response(200)
@@ -592,6 +710,27 @@ class RequestHandler(BaseHTTPRequestHandler):
             return
 
         self.send_response(404)
+        self.end_headers()
+
+    def _read_request_body(self):
+        if self.headers.get("Transfer-Encoding", "").lower() == "chunked":
+            body = b""
+            while True:
+                size = int(self.rfile.readline().strip(), 16)
+                if size == 0:
+                    self.rfile.readline()
+                    return body
+                body += self.rfile.read(size)
+                self.rfile.readline()
+
+        length = int(self.headers.get("Content-Length", "0"))
+        return self.rfile.read(length)
+
+    def do_POST(self):
+        path = urlparse(self.path).path
+        WRITTEN_DATA[path] = self._read_request_body()
+        self.send_response(200)
+        self.send_header("Content-Length", "0")
         self.end_headers()
 
     def _send_html(self, body):
