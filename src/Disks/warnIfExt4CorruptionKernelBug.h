@@ -31,9 +31,17 @@ public:
     ~Ext4CorruptionKernelBugWarningBatch();
     void commit();
 
+    /// What the probes recorded, and whether a determined ext4 hit is among it: such a hit takes
+    /// precedence over later undetermined probes, but only for as long as it is itself kept.
+    struct Recorded
+    {
+        std::vector<PreformattedMessage> messages;
+        bool ext4 = false;
+    };
+
 private:
-    std::vector<PreformattedMessage> staged;
-    std::vector<PreformattedMessage> * outer;
+    Recorded staged;
+    Recorded * outer;
 };
 
 /// Publishes whatever the probes above recorded, logging it and storing it for `system.warnings`,

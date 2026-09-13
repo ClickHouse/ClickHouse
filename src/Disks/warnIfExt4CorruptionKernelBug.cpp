@@ -24,26 +24,41 @@ namespace
     /// Guarded on its own so recording never touches the context's lock.
     std::mutex pending_warnings_mutex;
     std::vector<PreformattedMessage> pending_warnings;
+    /// Set once an ext4 hit is committed, never cleared: its published warning stays in place.
+    std::atomic<bool> committed_ext4{false};
 
     /// The batch the current thread stages into while one is open on it.
-    thread_local std::vector<PreformattedMessage> * staging = nullptr;
+    thread_local Ext4CorruptionKernelBugWarningBatch::Recorded * staging = nullptr;
 
     /// Only reached on Linux; the probe below is compiled out elsewhere.
-    [[maybe_unused]] void recordWarning(PreformattedMessage message)
+    [[maybe_unused]] void recordWarning(PreformattedMessage message, bool ext4)
     {
         if (staging)
         {
-            staging->push_back(std::move(message));
+            staging->messages.push_back(std::move(message));
+            if (ext4)
+                staging->ext4 = true;
             return;
         }
         std::lock_guard lock(pending_warnings_mutex);
         pending_warnings.push_back(std::move(message));
+        if (ext4)
+            committed_ext4 = true;
+    }
+
+    /// Whether an ext4 hit is kept by whatever the current probe records into: staged or committed.
+    [[maybe_unused]] bool ext4Recorded()
+    {
+        return (staging && staging->ext4) || committed_ext4;
     }
 }
 
 Ext4CorruptionKernelBugWarningBatch::Ext4CorruptionKernelBugWarningBatch()
     : outer(std::exchange(staging, &staged))
 {
+    /// An ext4 hit staged by the enclosing batch is kept exactly when this batch's commit is.
+    if (outer)
+        staged.ext4 = outer->ext4;
 }
 
 Ext4CorruptionKernelBugWarningBatch::~Ext4CorruptionKernelBugWarningBatch()
@@ -53,18 +68,22 @@ Ext4CorruptionKernelBugWarningBatch::~Ext4CorruptionKernelBugWarningBatch()
 
 void Ext4CorruptionKernelBugWarningBatch::commit()
 {
-    auto begin = std::make_move_iterator(staged.begin());
-    auto end = std::make_move_iterator(staged.end());
+    auto begin = std::make_move_iterator(staged.messages.begin());
+    auto end = std::make_move_iterator(staged.messages.end());
     if (outer)
     {
-        outer->insert(outer->end(), begin, end);
+        outer->messages.insert(outer->messages.end(), begin, end);
+        if (staged.ext4)
+            outer->ext4 = true;
     }
     else
     {
         std::lock_guard lock(pending_warnings_mutex);
         pending_warnings.insert(pending_warnings.end(), begin, end);
+        if (staged.ext4)
+            committed_ext4 = true;
     }
-    staged.clear();
+    staged.messages.clear();
 }
 
 size_t flushExt4CorruptionKernelBugWarning(const Context & context)
@@ -104,24 +123,23 @@ void warnIfAffectedByExt4CorruptionKernelBug([[maybe_unused]] const String & dir
         if (candidate.empty() || !fs::is_directory(candidate, ec))
             return;
 
-        /// A determined ext4 hit must not be downgraded by a later undetermined probe.
-        static std::atomic<bool> reported_ext4{false};
         const String fs_type = getDirectoryFilesystemType(candidate.string());
         if (fs_type == "ext4")
         {
-            reported_ext4 = true;
             recordWarning(PreformattedMessage::create(
                 "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and {} ({}) resides on ext4. "
                 "Consider upgrading the kernel.",
-                description, directory));
+                description, directory), /* ext4 */ true);
         }
-        else if (fs_type.empty() && !reported_ext4)
+        else if (fs_type.empty() && !ext4Recorded())
         {
-            /// An unreadable /proc/self/mounts must not trade the false alarm for a blind spot.
+            /// A determined ext4 hit must not be downgraded by a later undetermined probe, but a hit
+            /// dropped with its batch must not hide one: an unreadable /proc/self/mounts must not
+            /// trade the false alarm for a blind spot.
             recordWarning(PreformattedMessage::create(
                 "This Linux kernel has a known ext4 filesystem corruption bug (fixed in 4.16.4) and the filesystem of {} ({}) "
                 "could not be determined. Consider upgrading the kernel.",
-                description, directory));
+                description, directory), /* ext4 */ false);
         }
     }
     catch (...) /// Ok: a failed probe must not break disk construction. // NOLINT(bugprone-empty-catch)
