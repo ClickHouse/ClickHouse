@@ -192,6 +192,7 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         }
     }
     auto table_path = configuration->getPathForRead().path;
+    auto root_derivation = IcebergPathResolver::deriveTableRoot(table_location, table_path, metadata_file_path);
     return PersistentTableComponents{
         .schema_processor = std::make_shared<IcebergSchemaProcessor>(context_->getSettingsRef()[Setting::allow_experimental_geo_types_in_iceberg]),
         .metadata_cache = cache_ptr,
@@ -200,7 +201,9 @@ Iceberg::PersistentTableComponents IcebergMetadata::initializePersistentTableCom
         .metadata_compression_method = compression_method,
         .table_path = table_path,
         .table_uuid = table_uuid,
-        .path_resolver = IcebergPathResolver(table_location, table_path, configuration->getTypeName(), configuration->getNamespace()),
+        .path_resolver = IcebergPathResolver(
+            table_location, root_derivation.table_root, configuration->getTypeName(), configuration->getNamespace()),
+        .table_root_was_derived = root_derivation.relation == IcebergPathResolver::RootRelation::AdoptedDescendant,
     };
 }
 
@@ -435,6 +438,8 @@ IcebergMetadata::getIcebergDataSnapshot(Poco::JSON::Object::Ptr metadata_object,
 bool IcebergMetadata::optimize(
     const StorageMetadataPtr & metadata_snapshot, ContextPtr context, const std::optional<FormatSettings> & format_settings)
 {
+    checkTableRootIsQueriedPath("OPTIMIZE");
+
     if (context->getSettingsRef()[Setting::allow_experimental_iceberg_compaction])
     {
         const auto sample_block = std::make_shared<const Block>(metadata_snapshot->getSampleBlock());
@@ -537,7 +542,7 @@ IcebergMetadata::getState(const ContextPtr & local_context, const String & metad
 
     insertRowToLogTable(
         local_context,
-        dumpMetadataObjectToString(metadata_object),
+        [&] { return dumpMetadataObjectToString(metadata_object); },
         DB::IcebergMetadataLogLevel::Metadata,
         persistent_components.path_resolver.getTableRoot(),
         Iceberg::IcebergPathFromMetadata::deserialize(metadata_path),
@@ -610,8 +615,25 @@ void IcebergMetadata::mutate(
         catalog);
 }
 
+void IcebergMetadata::checkTableRootIsQueriedPath(std::string_view operation) const
+{
+    if (!persistent_components.table_root_was_derived)
+        return;
+
+    throw Exception(
+        ErrorCodes::NOT_IMPLEMENTED,
+        "{} is not supported for an Iceberg table whose directory '{}' is below the queried path '{}'. "
+        "Query the table directory itself instead of naming a deeper metadata file with the "
+        "iceberg_metadata_file_path setting.",
+        operation,
+        persistent_components.path_resolver.getTableRoot(),
+        persistent_components.table_path);
+}
+
 void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 {
+    checkTableRootIsQueriedPath("Mutation");
+
     for (const auto & command : commands)
         if (command.type != MutationCommand::DELETE && command.type != MutationCommand::UPDATE)
             throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Iceberg supports only DELETE and UPDATE mutations");
@@ -619,6 +641,8 @@ void IcebergMetadata::checkMutationIsPossible(const MutationCommands & commands)
 
 void IcebergMetadata::checkAlterIsPossible(const AlterCommands & commands)
 {
+    checkTableRootIsQueriedPath("ALTER");
+
     for (const auto & command : commands)
     {
         if (command.type != AlterCommand::Type::ADD_COLUMN && command.type != AlterCommand::Type::DROP_COLUMN
@@ -681,6 +705,7 @@ Pipe IcebergMetadata::executeCommand(
                 "To allow its usage, enable setting allow_experimental_expire_snapshots");
         }
 
+        checkTableRootIsQueriedPath("expire_snapshots");
         return Iceberg::executeExpireSnapshots(
             args, context, object_storage_, data_lake_settings, persistent_components,
             write_format, catalog_, storage_id.getTableName());
@@ -695,6 +720,7 @@ Pipe IcebergMetadata::executeCommand(
                 "To allow its usage, enable setting allow_iceberg_remove_orphan_files");
         }
 
+        checkTableRootIsQueriedPath("remove_orphan_files");
         return Iceberg::executeRemoveOrphanFiles(
             args, context, object_storage_, data_lake_settings, persistent_components);
     }
@@ -743,6 +769,7 @@ void IcebergMetadata::createInitial(
     if (local_context->getSettingsRef()[Setting::write_full_path_in_iceberg_metadata].value)
         location_path
             = configuration_ptr->getTypeName() + "://" + configuration_ptr->getNamespace() + "/" + configuration_ptr->getRawPath().path;
+
     auto [metadata_content_object, metadata_content] = createEmptyMetadataFile(
         location_path, *columns, partition_by, order_by, local_context, configuration_ptr->getDataLakeSettings()[DataLakeStorageSetting::iceberg_format_version]);
     auto compression_method_str = local_context->getSettingsRef()[Setting::iceberg_metadata_compression_method].value;
@@ -753,6 +780,15 @@ void IcebergMetadata::createInitial(
         compression_suffix = "." + compression_suffix;
 
     auto filename = fmt::format("{}metadata/v1{}.metadata.json", configuration_ptr->getRawPath().path, compression_suffix);
+
+    if (catalog)
+    {
+        /// Register the namespace before any files are written (but after all local
+        /// validation, so a rejected CREATE leaves no trace in the catalog): a catalog
+        /// that shares its storage view with the data (e.g. SeaweedFS) refuses to create
+        /// a namespace over the plain directory those files would leave behind.
+        catalog->createNamespaceIfNotExists(DataLake::parseTableName(table_id_.getTableName()).first, location_path);
+    }
 
     try
     {
@@ -1048,26 +1084,58 @@ std::optional<size_t> IcebergMetadata::totalRows(ContextPtr local_context) const
     }
 
 
-    /// All these "hints" with total rows or bytes are optional both in
-    /// metadata files and in manifest files, so we try all of them one by one
-    if (auto total_rows = actual_data_snapshot->getTotalRows(); total_rows.has_value())
-    {
-        ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
-        return total_rows;
-    }
-
-    Int64 result = 0;
+    /// Row counts stored in the metadata layers above the manifest files are not used as
+    /// data sources, because writers derive them instead of measuring them against the data:
+    /// - the snapshot summary's `total-records` is maintained incrementally (parent total
+    ///   plus this commit's delta), so a single corrupted commit anywhere in the table
+    ///   history silently poisons every later snapshot -- observed in the wild, making
+    ///   SELECT count() disagree with a full scan of the very same table;
+    /// - the manifest-list per-entry `added_rows_count`/`existing_rows_count` are stamped
+    ///   from snapshot summary fields by some writers (ClickHouse itself among them): a
+    ///   rewritten manifest list can list every manifest with `added_rows_count = 0` taken
+    ///   from a compaction snapshot's `added-records = 0`, so trusting these counts turned
+    ///   count() into 0 on a perfectly healthy table.
+    /// The manifest files are the ground truth: the per-data-file `record_count` is a
+    /// required field in every format version, so summing it over the live data files is
+    /// exact, at the cost of opening the manifest files (served from the Iceberg metadata
+    /// cache on repeated queries).
+    UInt64 result = 0;
     for (const auto & manifest_list_entry : actual_data_snapshot->manifest_list_entries)
     {
         auto manifest_file_ptr = getManifestFileEntriesHandle(
             object_storage, persistent_components, local_context, log, manifest_list_entry, actual_table_state_snapshot.schema_id);
-        auto data_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
-        auto position_deletes_count = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::POSITION_DELETE);
-        if (!data_count.has_value() || !position_deletes_count.has_value())
+
+        /// Live delete files make an exact metadata-only count impossible:
+        /// - the record count of an equality delete file is the number of delete predicates,
+        ///   not the number of data rows they match;
+        /// - position delete records may be duplicated across delete files (the scan
+        ///   deduplicates matching (file_path, pos) pairs) and may reference data files that
+        ///   are no longer part of the snapshot, so subtracting their raw record count can
+        ///   miscount in both directions.
+        /// Bail out to a real scan, which applies the delete transformers and counts the
+        /// surviving rows exactly.
+        if (!manifest_file_ptr.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE).empty()
+            || !manifest_file_ptr.getFilesWithoutDeleted(FileContentType::POSITION_DELETE).empty())
             return {};
 
-        result += data_count.value() - position_deletes_count.value();
+        /// nullopt means a corrupted manifest file with a negative `record_count`: fail
+        /// closed to a real scan instead of returning a wrong count.
+        auto manifest_rows = manifest_file_ptr.getRowsCountInAllFilesExcludingDeleted(FileContentType::DATA);
+        if (!manifest_rows.has_value())
+            return {};
+        result += *manifest_rows;
     }
+
+    const auto summary_total_rows = actual_data_snapshot->getTotalRows();
+    if (summary_total_rows.has_value() && *summary_total_rows != static_cast<size_t>(result))
+        LOG_WARNING(
+            log,
+            "Iceberg snapshot summary of table {} claims {} total rows, but its manifest files describe {} rows. "
+            "The snapshot summary is inconsistent with the table data (possibly a corrupted commit in the table "
+            "history), using the row count from the manifest files",
+            persistent_components.table_location,
+            *summary_total_rows,
+            result);
 
     ProfileEvents::increment(ProfileEvents::IcebergTrivialCountOptimizationApplied);
     return result;
@@ -1299,6 +1367,7 @@ SinkToStoragePtr IcebergMetadata::write(
 {
     if (context->getSettingsRef()[Setting::allow_insert_into_iceberg])
     {
+        checkTableRootIsQueriedPath("INSERT");
         return std::make_shared<IcebergStorageSink>(object_storage, configuration, format_settings, sample_block, context, catalog, persistent_components, table_id);
     }
     else
@@ -1314,6 +1383,19 @@ void IcebergMetadata::drop(ContextPtr context)
 {
     if (context->getSettingsRef()[Setting::iceberg_delete_data_on_drop].value)
     {
+        /// Skipped rather than refused: this runs after the table is already marked as dropped, so
+        /// throwing here only makes `DatabaseCatalog` retry the drop forever.
+        if (persistent_components.table_root_was_derived)
+        {
+            LOG_WARNING(
+                log,
+                "Keeping the data of the Iceberg table at '{}': it is below the queried path '{}', which also covers "
+                "other tables. Drop it while querying the table directory itself to delete the data.",
+                persistent_components.path_resolver.getTableRoot(),
+                persistent_components.table_path);
+            return;
+        }
+
         auto files = listFiles(*object_storage, persistent_components.table_path, persistent_components.table_path, "");
         for (const auto & file : files)
             object_storage->removeObjectIfExists(StoredObject(file));

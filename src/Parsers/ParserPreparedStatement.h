@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Parsers/IAST.h>
 #include <Parsers/IParserBase.h>
 
@@ -13,6 +14,8 @@ public:
 
     String function_name;
     String function_body;
+    /// Ordered parameter OIDs for the extended `Bind` path.
+    VectorWithMemoryTracking<Int32> parameter_types;
 
     String getID(char) const override { return "PreparedStatement"; }
 

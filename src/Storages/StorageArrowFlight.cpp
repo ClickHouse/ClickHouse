@@ -5,6 +5,7 @@
 
 #if USE_ARROWFLIGHT
 #include <Common/Logger.h>
+#include <Common/RemoteHostFilter.h>
 #include <Common/parseAddress.h>
 #include <Interpreters/Context.h>
 #include <Core/Settings.h>
@@ -71,6 +72,11 @@ StorageArrowFlight::Configuration StorageArrowFlight::getConfiguration(ASTs & ar
             configuration.password = checkAndGetLiteralArgument<String>(args[3], "password");
         }
     }
+
+    /// Enforce <remote_url_allow_hosts> before any connection is established.
+    context_->getGlobalContext()->getRemoteHostFilter().checkHostAndPort(
+        configuration.host, std::to_string(configuration.port));
+
     return configuration;
 }
 

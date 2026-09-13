@@ -262,6 +262,11 @@ DB::Names GlueCatalog::getTablesForDatabase(const std::string & db_name, size_t 
         }
         else
         {
+            /// The database is absent from Glue, so it contributes no tables. The error names the database, so
+            /// any pages already collected belong to a database that is gone and are dropped too.
+            if (outcome.GetError().GetErrorType() == Aws::Glue::GlueErrors::ENTITY_NOT_FOUND)
+                return {};
+
             throw DB::Exception(DB::ErrorCodes::DATALAKE_DATABASE_ERROR, "Exception calling GetTables {}", outcome.GetError().GetMessage());
         }
         if (limit != 0 && result.size() >= limit)
@@ -284,14 +289,21 @@ DB::Names GlueCatalog::getTables() const
     return result;
 }
 
+DataLake::ICatalog::Namespaces GlueCatalog::getNamespaces() const
+{
+    /// Glue databases are flat — they cannot contain nested namespaces.
+    return getDatabases("");
+}
+
+DB::Names GlueCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    return getTablesForDatabase(namespace_name);
+}
+
 bool GlueCatalog::existsTable(const std::string & database_name, const std::string & table_name) const
 {
-    Aws::Glue::Model::GetTableRequest request;
-    request.SetDatabaseName(database_name);
-    request.SetName(table_name);
-
-    auto outcome = glue_client->GetTable(request);
-    return outcome.IsSuccess();
+    TableMetadata metadata;
+    return tryGetTableMetadata(database_name, table_name, metadata);
 }
 
 bool GlueCatalog::tryGetTableMetadata(
@@ -592,20 +604,25 @@ String GlueCatalog::resolveMetadataPathFromTableLocation(const String & table_lo
     }
 }
 
-void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name) const
+void GlueCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & /*location*/) const
 {
     Aws::Glue::Model::CreateDatabaseRequest create_request;
     Aws::Glue::Model::DatabaseInput db_input;
     db_input.SetName(namespace_name);
     create_request.SetDatabaseInput(db_input);
 
-    glue_client->CreateDatabase(create_request);
+    auto outcome = glue_client->CreateDatabase(create_request);
+    if (!outcome.IsSuccess() && outcome.GetError().GetErrorType() != Aws::Glue::GlueErrors::ALREADY_EXISTS)
+    {
+        throw DB::Exception(
+            DB::ErrorCodes::DATALAKE_DATABASE_ERROR,
+            "Exception calling CreateDatabase for namespace {}: {}",
+            namespace_name, outcome.GetError().GetMessage());
+    }
 }
 
 void GlueCatalog::createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr /*metadata_content*/) const
 {
-    createNamespaceIfNotExists(namespace_name);
-
     Aws::Glue::Model::CreateTableRequest request;
     request.SetDatabaseName(namespace_name);
 

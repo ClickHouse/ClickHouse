@@ -893,11 +893,9 @@ bool RestCatalog::empty() const
     {
         if (found_table)
             return true;
-
-        const auto tables = getTables(namespace_name, /* limit */1);
+        const auto tables = listTablesInNamespace(namespace_name, /* limit */1);
         if (!tables.empty())
             found_table = true;
-
         return found_table;
     };
 
@@ -922,7 +920,7 @@ DB::Names RestCatalog::getTables() const
             runner.enqueueAndKeepTrack(
             [=, &tables, &mutex, this]
             {
-                auto tables_in_namespace = getTables(current_namespace);
+                auto tables_in_namespace = listTablesInNamespace(current_namespace);
                 std::lock_guard lock(mutex);
                 std::move(tables_in_namespace.begin(), tables_in_namespace.end(), std::back_inserter(tables));
             });
@@ -941,6 +939,24 @@ DB::Names RestCatalog::getTables() const
     return tables;
 }
 
+RestCatalog::Namespaces RestCatalog::getNamespaces() const
+{
+    /// Enumerate the whole namespace tree (every node at every level). Used by
+    /// the `getTables(const TableNameFilter &)` namespace push-down.
+    Namespaces namespaces;
+    getNamespacesRecursive(
+        /* base_namespace */"", /// Empty base namespace means starting from root.
+        namespaces,
+        /* stop_condition */{},
+        /* execute_func */{});
+    return namespaces;
+}
+
+DB::Names RestCatalog::listTablesInNamespaceDirect(const std::string & namespace_name) const
+{
+    return listTablesInNamespace(namespace_name);
+}
+
 void RestCatalog::getNamespacesRecursive(
     const std::string & base_namespace,
     Namespaces & result,
@@ -949,7 +965,7 @@ void RestCatalog::getNamespacesRecursive(
 {
     checkStackSize();
 
-    auto namespaces = getNamespaces(base_namespace);
+    auto namespaces = listChildNamespaces(base_namespace);
     result.reserve(result.size() + namespaces.size());
     result.insert(result.end(), namespaces.begin(), namespaces.end());
 
@@ -983,7 +999,7 @@ Poco::URI::QueryParameters RestCatalog::createParentNamespaceParams(const std::s
     return {{"parent", parent_param}};
 }
 
-RestCatalog::Namespaces RestCatalog::getNamespaces(const std::string & base_namespace) const
+RestCatalog::Namespaces RestCatalog::listChildNamespaces(const std::string & base_namespace) const
 {
     const auto state_snapshot = state.get();
 
@@ -1118,7 +1134,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
         /// just burns O(pages) REST calls per parent namespace without ever
         /// contributing to the result. Treat the first page as terminal by
         /// leaving `next_page_token` empty (already cleared at function entry)
-        /// so the outer `getNamespaces` loop returns immediately.
+        /// so the outer `listChildNamespaces` loop returns immediately.
         const bool biglake_drops_all_entries
             = getCatalogType() == DB::DatabaseDataLakeCatalogType::ICEBERG_BIGLAKE
             && !base_namespace.empty();
@@ -1138,7 +1154,7 @@ RestCatalog::Namespaces RestCatalog::parseNamespaces(DB::ReadBuffer & buf, const
     }
 }
 
-DB::Names RestCatalog::getTables(const std::string & base_namespace, size_t limit) const
+DB::Names RestCatalog::listTablesInNamespace(const std::string & base_namespace, size_t limit) const
 {
     const auto state_snapshot = state.get();
 
@@ -1425,6 +1441,22 @@ void RestCatalog::sendRequest(const CatalogState & catalog_state, const String &
 void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, const String & location) const
 {
     const auto state_snapshot = state.get();
+
+    /// Check existence first: creation may be denied to a principal that is still
+    /// allowed to use a pre-provisioned namespace.
+    const std::string check_endpoint
+        = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name)).generic_string();
+    try
+    {
+        sendRequest(*state_snapshot, check_endpoint, /* request_body */ nullptr, Poco::Net::HTTPRequest::HTTP_GET, /* ignore_result */ true);
+        return;
+    }
+    catch (const DB::HTTPException & e)
+    {
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_NOT_FOUND)
+            throw;
+    }
+
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT).generic_string();
 
     Poco::JSON::Object::Ptr request_body = new Poco::JSON::Object;
@@ -1443,16 +1475,16 @@ void RestCatalog::createNamespaceIfNotExists(const String & namespace_name, cons
     {
         sendRequest(*state_snapshot, endpoint, request_body);
     }
-    catch (...)
+    catch (const DB::HTTPException & e)
     {
-        DB::tryLogCurrentException(log);
+        /// Lost the race to a concurrent creator.
+        if (e.getHTTPStatus() != Poco::Net::HTTPResponse::HTTPStatus::HTTP_CONFLICT)
+            throw;
     }
 }
 
 void RestCatalog::createTable(const String & namespace_name, const String & table_name, const String & /*new_metadata_path*/, Poco::JSON::Object::Ptr metadata_content) const
 {
-    createNamespaceIfNotExists(namespace_name, metadata_content->getValue<String>("location"));
-
     const auto state_snapshot = state.get();
     const std::string endpoint = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables").generic_string();
 

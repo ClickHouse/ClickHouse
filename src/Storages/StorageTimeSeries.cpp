@@ -287,6 +287,21 @@ void StorageTimeSeries::dropInnerTableIfAny(bool sync, ContextPtr local_context)
     }
 }
 
+void StorageTimeSeries::checkTableSizeBelowDropLimit(ContextPtr query_context) const
+{
+    if (!hasInnerTables())
+        return;
+
+    for (auto target_kind : getTargetKinds())
+    {
+        if (!isInnerTable(target_kind))
+            continue;
+
+        if (auto inner_table = tryGetTargetTable(target_kind, query_context))
+            inner_table->checkTableSizeBelowDropLimit(query_context);
+    }
+}
+
 void StorageTimeSeries::truncate(const ASTPtr &, const StorageMetadataPtr &, ContextPtr local_context, TableExclusiveLockHolder &)
 {
     if (!hasInnerTables())
