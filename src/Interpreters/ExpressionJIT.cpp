@@ -106,7 +106,7 @@ public:
         if (input_rows_count)
         {
             std::vector<ColumnData> columns(arguments.size() + 1);
-            Columns columns_backup;
+            std::vector<ColumnPtr> columns_backup;
 
             for (size_t i = 0; i < arguments.size(); ++i)
             {
@@ -385,14 +385,6 @@ static bool isCompilableFunction(const ActionsDAG::Node & node, const std::unord
 
         const auto & type = argument_types[i];
         if (!canBeNativeType(*type))
-        {
-            return false;
-        }
-
-        /// Declared argument types can disagree with the children: a DAG rewrite may repoint a child
-        /// without updating `function_base`, and an alias carries its own copy of the type, which a
-        /// rewrite can leave behind. Compilation lowers the type the argument actually holds.
-        if (i < node.children.size() && !canBeNativeType(*removeAliasIfNecessary(node.children[i])->result_type))
         {
             return false;
         }

@@ -1,9 +1,0 @@
--- forged container length is rejected --
-Exceeded size limit
--- forged string length is rejected --
-Exceeded size limit
--- a valid file is still read --
-a	UInt64					
-b	String					
--- a wide but legal file is still read --
-1

@@ -10,7 +10,6 @@
 #include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTCreateSQLFunctionQuery.h>
-#include <Parsers/ASTCreateFunctionWithDriverQuery.h>
 #include <Parsers/ASTCreateWasmFunctionQuery.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -91,10 +90,6 @@ ASTPtr UserDefinedSQLFunctionVisitor::tryToReplaceFunction(const ASTFunction & f
     auto * create_function_query = user_defined_function->as<ASTCreateSQLFunctionQuery>();
 
     if (!create_function_query && user_defined_function->as<ASTCreateWasmFunctionQuery>())
-        return nullptr;
-
-    /// Driver-created executable functions are resolved through `UserDefinedExecutableFunctionFactory`.
-    if (!create_function_query && user_defined_function->as<ASTCreateFunctionWithDriverQuery>())
         return nullptr;
 
     if (!create_function_query)

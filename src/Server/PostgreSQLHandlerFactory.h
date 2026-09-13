@@ -31,7 +31,7 @@ private:
     /// If set, overrides the `default_session_user` server setting for this listener.
     std::optional<String> default_session_user;
 
-    VectorWithMemoryTracking<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> auth_methods;
+    std::vector<std::shared_ptr<PostgreSQLProtocol::PGAuthentication::AuthenticationMethod>> auth_methods;
 
 public:
     explicit PostgreSQLHandlerFactory(
@@ -41,8 +41,7 @@ public:
         const std::string & conf_name_,
 #endif
         const ProfileEvents::Event & read_event_ = ProfileEvents::end(),
-        const ProfileEvents::Event & write_event_ = ProfileEvents::end(),
-        std::optional<String> default_session_user_ = {});
+        const ProfileEvents::Event & write_event_ = ProfileEvents::end());
 
     Poco::Net::TCPServerConnection * createConnectionImpl(const Poco::Net::StreamSocket & socket, TCPServer & server) override;
 };

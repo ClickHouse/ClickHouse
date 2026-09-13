@@ -1,5 +1,6 @@
 #pragma once
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
+#include <Processors/ISimpleTransform.h>
 #include <Storages/ObjectStorage/StorageObjectStorageConfiguration.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/StorageID.h>
@@ -16,9 +17,6 @@ namespace ErrorCodes
 {
 extern const int LOGICAL_ERROR;
 }
-
-struct FileBucketInfo;
-using FileBucketInfoPtr = std::shared_ptr<FileBucketInfo>;
 
 struct ObjectInfo
 {
@@ -55,12 +53,7 @@ struct ObjectInfo
 
     FileBucketInfoPtr file_bucket_info;
 
-    /// Lazy materialization: if set, read only these rows of the file.
-    /// Sorted absolute row indexes within the file, see FormatFilterInfo::rows_to_read.
-    std::shared_ptr<const PaddedPODArray<UInt64>> rows_to_read;
-
-    String getIdentifier(bool include_file_bucket_info = true) const;
-    String getIdentifierForPath(const String & path, bool include_file_bucket_info = true) const;
+    String getIdentifier() const;
 };
 
 using ObjectInfoPtr = std::shared_ptr<ObjectInfo>;
@@ -93,7 +86,7 @@ public:
         const DB::ActionsDAG & filter_,
         const NamesAndTypesList & virtual_columns_,
         const NamesAndTypesList & hive_partition_columns_,
-        StorageObjectStorageConfigurationPtr configuration_,
+        const std::string & object_namespace_,
         const ContextPtr & context_,
         std::function<void(FileProgress)> file_progress_callback_ = {});
 
@@ -109,7 +102,7 @@ public:
 
 private:
     const ObjectIterator iterator;
-    const StorageObjectStorageConfigurationPtr configuration;
+    const std::string object_namespace;
     const NamesAndTypesList virtual_columns;
     const NamesAndTypesList hive_partition_columns;
     const std::shared_ptr<ExpressionActions> filter_actions;

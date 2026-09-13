@@ -10,11 +10,8 @@ namespace ErrorCodes
     extern const int CANNOT_PARSE_ESCAPE_SEQUENCE;
 }
 
-String likePatternToRegexp(std::string_view pattern, bool * has_end_anchor)
+String likePatternToRegexp(std::string_view pattern)
 {
-    if (has_end_anchor)
-        *has_end_anchor = false;
-
     String res;
     res.reserve(pattern.size() * 2);
 
@@ -87,62 +84,8 @@ String likePatternToRegexp(std::string_view pattern, bool * has_end_anchor)
         ++pos;
     }
 
-    if (has_end_anchor)
-        *has_end_anchor = true;
-
     res += '$';
     return res;
-}
-
-bool likePatternIsSubstring(std::string_view pattern, String & res)
-{
-    /// TODO: ignore multiple leading or trailing %
-    if (pattern.size() < 2 || !pattern.starts_with('%') || !pattern.ends_with('%'))
-        return false;
-
-    res.clear();
-    res.reserve(pattern.size() - 2);
-
-    const char * pos = pattern.data() + 1;
-    const char * const end = pattern.data() + pattern.size() - 1;
-
-    while (pos < end)
-    {
-        switch (*pos)
-        {
-            case '%':
-            case '_':
-                return false;
-            case '\\':
-                ++pos;
-                if (pos == end)
-                    /// pattern ends with \% --> trailing % is to be taken literally and pattern doesn't qualify for substring search
-                    return false;
-
-                switch (*pos)
-                {
-                    /// Known LIKE escape sequences:
-                    case '%':
-                    case '_':
-                    case '\\':
-                        res += *pos;
-                        break;
-                    /// For all other escape sequences, the backslash loses its special meaning
-                    default:
-                        res += '\\';
-                        res += *pos;
-                        break;
-                }
-
-                break;
-            default:
-                res += *pos;
-                break;
-        }
-        ++pos;
-    }
-
-    return true;
 }
 
 String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char escape_char)
@@ -207,27 +150,6 @@ String likePatternWithCustomEscapeToLikePattern(std::string_view pattern, char e
     }
 
     return res;
-}
-
-bool likePatternHasUnknownBackslashEscape(std::string_view pattern)
-{
-    const char * pos = pattern.data();
-    const char * const end = pattern.data() + pattern.size();
-
-    while (pos < end)
-    {
-        if (*pos == '\\')
-        {
-            ++pos;
-            if (pos == end)
-                return true;
-            if (*pos != '%' && *pos != '_' && *pos != '\\')
-                return true;
-        }
-        ++pos;
-    }
-
-    return false;
 }
 
 }

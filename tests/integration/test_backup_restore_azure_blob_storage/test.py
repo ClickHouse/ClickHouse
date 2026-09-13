@@ -739,15 +739,10 @@ def test_backup_restore_correct_block_ids(cluster):
         node,
         """
         DROP TABLE IF EXISTS test_simple_merge_tree;
-        -- Pin the default codec to `LZ4` for the whole part: the test splits `data.bin` into fixed-size
-        -- upload blocks and asserts a minimum block count, so the compressed part size must not depend on
-        -- the server default codec. This is a compact part, so `data.bin` is the combined stream of all
-        -- columns; pinning only a per-column `CODEC` would leave the `key` column on the server default
-        -- (`ZSTD(3)`), which compresses it smaller and drops the block count below the threshold.
         CREATE TABLE test_simple_merge_tree(key UInt64, data String)
         Engine = MergeTree()
         ORDER BY tuple()
-        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'basic', default_compression_codec = 'LZ4'""",
+        SETTINGS storage_policy='blob_storage_policy', serialization_info_version = 'basic'""",
     )
     data_query = "SELECT number, repeat('a', 100) FROM numbers(1000)"
     azure_query(
@@ -876,28 +871,6 @@ def test_backup_restore_on_merge_tree_with_checksum_data_file_name(cluster):
     assert azure_query(node, "SELECT * from test_restored") == "1\ta\n"
     azure_query(node, "DROP TABLE test")
     azure_query(node, "DROP TABLE test_restored")
-
-
-def test_backup_zip_not_supported(cluster):
-    # Zip backups require seeking, which makes each read a separate HTTP request
-    # on object storage. They must be rejected early with a clear error (issue #53483).
-    node = cluster.instances["node"]
-    azure_query(node, "DROP TABLE IF EXISTS test_zip_not_supported")
-    azure_query(
-        node,
-        f"CREATE TABLE test_zip_not_supported (key UInt64, data String) Engine = AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', 'test_zip_not_supported.csv', 'CSV')",
-    )
-    azure_query(node, "INSERT INTO test_zip_not_supported VALUES (1, 'a')")
-    backup_destination = f"AzureBlobStorage('{cluster.env_variables['AZURITE_CONNECTION_STRING']}', 'cont', '{new_backup_name()}.zip')"
-    error = azure_query(
-        node,
-        f"BACKUP TABLE test_zip_not_supported TO {backup_destination}",
-        expect_error=True,
-    )
-    assert (
-        "Zip archive format is not supported for AzureBlobStorage backups" in error
-    ), error
-    azure_query(node, "DROP TABLE test_zip_not_supported")
 
 
 def get_profile_event_count(node, event):

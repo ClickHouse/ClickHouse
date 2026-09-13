@@ -1,5 +1,6 @@
 import logging
 
+from kafka import KafkaAdminClient
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -25,7 +26,9 @@ def kafka_cluster():
 
 
 def test_system_kafka_consumers_grant(kafka_cluster, max_retries=20):
-    admin_client = k.get_admin_client(kafka_cluster)
+    admin_client = KafkaAdminClient(
+        bootstrap_servers="localhost:{}".format(kafka_cluster.kafka_port)
+    )
 
     k.kafka_create_topic(admin_client, "visible")
     k.kafka_create_topic(admin_client, "hidden")

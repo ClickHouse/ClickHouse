@@ -8,9 +8,7 @@
 #include <Core/UUID.h>
 #include <Parsers/IAST_fwd.h>
 
-#include <chrono>
 #include <mutex>
-#include <optional>
 #include <unordered_map>
 
 
@@ -49,16 +47,11 @@ struct ZooKeeperRetriesInfo;
 class BackupsWorker
 {
 public:
-    using TimePoint = std::chrono::steady_clock::time_point;
-
     BackupsWorker(ContextMutablePtr global_context, size_t num_backup_threads, size_t num_restore_threads);
     ~BackupsWorker();
 
     /// Waits until all tasks have been completed.
     void shutdown();
-
-    /// Makes start() refuse new operations from now on. Never reset.
-    void stopAcceptingNewOperations();
 
     /// Starts executing a BACKUP or RESTORE query. Returns ID of the operation.
     /// For asynchronous operations the function throws no exceptions on failure usually,
@@ -77,11 +70,7 @@ public:
     BackupStatus cancel(const BackupOperationID & backup_or_restore_id, bool wait_ = true);
 
     /// Cancels all running backup and restore operations.
-    /// Returns false if `deadline` was reached while some of them were still running.
-    bool cancelAll(bool wait_ = true, std::optional<TimePoint> deadline = {});
-
-    /// Returns true if some operation has not reached a final status yet. Never waits.
-    bool hasUnfinishedOperations() const;
+    void cancelAll(bool wait_ = true);
 
     BackupOperationInfo getInfo(const BackupOperationID & id) const;
     std::vector<BackupOperationInfo> getAllInfos() const;
@@ -134,6 +123,7 @@ private:
         RestoreSettings restore_settings,
         std::shared_ptr<IRestoreCoordination> restore_coordination,
         ContextMutablePtr context,
+        const ContextPtr & query_context,
         bool on_cluster,
         const ClusterPtr & cluster);
 
@@ -146,21 +136,11 @@ private:
         size_t only_shard_num, size_t only_replica_num, ContextMutablePtr context, const AccessRightsElements & access_to_check,
         const ZooKeeperRetriesInfo & retries_info) const;
 
+    /// Run data restoring tasks which insert data to tables.
+    void restoreTablesData(const BackupOperationID & restore_id, BackupPtr backup, DataRestoreTasks && tasks, ThreadPool & thread_pool, QueryStatusPtr process_list_element);
+
     std::pair<bool, BackupStatus> addInfo(const BackupOperationID & id, const String & name, const String & base_backup_name, const String & query_id,
-                                          bool internal, QueryStatusPtr process_list_element, BackupStatus status, std::map<String, String> settings);
-
-    /// Waits for one operation. `reached_final_status` is set to false if `deadline` was reached first.
-    BackupStatus waitImpl(const BackupOperationID & backup_or_restore_id, bool rethrow_exception,
-                          std::optional<TimePoint> deadline, bool & reached_final_status);
-
-    /// `infos_mutex` must be locked.
-    std::vector<BackupOperationID> getUnfinishedOperations() const;
-
-    /// Waits for each of `operations`. Returns false and logs the stragglers if `deadline` was reached.
-    bool waitForOperations(const std::vector<BackupOperationID> & operations, std::optional<TimePoint> deadline);
-
-    /// Stores the settings effectively used by the backup engine's reader/writer for the given operation.
-    void setEngineSettings(const BackupOperationID & id, std::map<String, String> engine_settings);
+                                          bool internal, QueryStatusPtr process_list_element, BackupStatus status);
 
     void setStatus(const BackupOperationID & id, BackupStatus status, bool throw_if_error = true);
     void setStatusSafe(const String & id, BackupStatus status) { setStatus(id, status, false); }
@@ -191,10 +171,6 @@ private:
     };
 
     std::unordered_map<BackupOperationID, ExtendedOperationInfo> infos;
-
-    /// Guarded by `infos_mutex`, so that it is read in the same critical section as the `infos`
-    /// insertion it gates: once set, nothing can be added to `infos` afterwards.
-    bool refuse_new_operations = false;
 
     std::condition_variable status_changed;
     std::atomic<size_t> num_active_backups = 0;

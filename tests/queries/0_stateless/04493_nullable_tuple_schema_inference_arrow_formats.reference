@@ -2,9 +2,6 @@
 -- unless the Nullable(Tuple) type is allowed by allow_experimental_nullable_tuple_type, because otherwise
 -- DESCRIBE would return a type that CREATE TABLE rejects. The struct null map is propagated
 -- into the tuple elements instead, as it worked before Nullable(Tuple) was supported.
--- Dropping the struct null map turns a NULL row into a visible one, whose element values the Arrow spec
--- leaves undefined; the Arrow readers therefore show the type defaults there (ORC, whose null map does
--- reach the elements, shows NULLs) rather than whatever the producer left under the null slot.
 -- The Parquet queries with input_format_parquet_use_native_reader_v3 = 0 exercise the legacy
 -- Arrow-based Parquet reader in releases that still have it; in newer releases the setting is
 -- obsolete and they run on the native reader.
@@ -27,8 +24,8 @@ s	Tuple(\n    a Int64,\n    b String)
 n	Tuple(\n    x Int64,\n    t Tuple(\n        y Int64,\n        z String))					
 SELECT * FROM file(currentDatabase() || '_04493.arrow', 'Arrow') ORDER BY id;
 0	(0,'x')	(0,(0,'y'))
-1	(0,'')	(100,(1000,'y'))
-2	(20,'x')	(0,(0,''))
+1	(10,'x')	(100,(1000,'y'))
+2	(20,'x')	(200,(2000,'y'))
 CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.arrow', 'Arrow');
 SELECT count() FROM test_04493;
 3
@@ -40,8 +37,8 @@ s	Tuple(\n    a Int64,\n    b String)
 n	Tuple(\n    x Int64,\n    t Tuple(\n        y Int64,\n        z String))					
 SELECT * FROM file(currentDatabase() || '_04493.arrowstream', 'ArrowStream') ORDER BY id;
 0	(0,'x')	(0,(0,'y'))
-1	(0,'')	(100,(1000,'y'))
-2	(20,'x')	(0,(0,''))
+1	(10,'x')	(100,(1000,'y'))
+2	(20,'x')	(200,(2000,'y'))
 CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.arrowstream', 'ArrowStream');
 SELECT count() FROM test_04493;
 3
@@ -56,6 +53,19 @@ SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') ORDER BY id;
 1	(NULL,NULL)	(100,(1000,'y'))
 2	(20,'x')	(NULL,(NULL,NULL))
 CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC');
+SELECT count() FROM test_04493;
+3
+DROP TABLE test_04493;
+-- ORC (legacy Arrow-based reader)
+DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
+id	Nullable(Int64)					
+s	Tuple(\n    a Nullable(Int64),\n    b Nullable(String))					
+n	Tuple(\n    x Nullable(Int64),\n    t Tuple(\n        y Nullable(Int64),\n        z Nullable(String)))					
+SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') ORDER BY id SETTINGS input_format_orc_use_fast_decoder = 0;
+0	(0,'x')	(0,(0,'y'))
+1	(NULL,NULL)	(100,(1000,'y'))
+2	(20,'x')	(NULL,(NULL,NULL))
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
 SELECT count() FROM test_04493;
 3
 DROP TABLE test_04493;
@@ -95,7 +105,7 @@ DESCRIBE file(currentDatabase() || '_04493.arrowstream', 'ArrowStream');
 id	Int64					
 s	Nullable(Tuple(a Int64, b String))					
 n	Nullable(Tuple(x Int64, t Tuple(y Int64, z String)))					
-DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC');
+DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
 id	Nullable(Int64)					
 s	Nullable(Tuple(a Nullable(Int64), b Nullable(String)))					
 n	Nullable(Tuple(x Nullable(Int64), t Nullable(Tuple(y Nullable(Int64), z Nullable(String)))))					
