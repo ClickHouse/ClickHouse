@@ -456,7 +456,13 @@ void DatabaseAtomic::commitCreateTable(const ASTCreateQuery & query, const Stora
     catch (...)
     {
         db_disk->removeFileIfExists(table_metadata_tmp_path);
-        DatabaseCatalog::instance().removeTableDataFromDisk(table->getStorageID(), table);
+        // Cleanup table data from disk for CREATE TABLE. For ATTACH TABLE, we
+        // should not perform this cleanup as the table data directory may contain
+        // actual data for a table which was detached previously (this can happen,
+        // for instance, with the "ATTACH TABLE ... UUID <previously detached table uuid> ..."
+        // query).
+        if (!query.attach)
+            DatabaseCatalog::instance().removeTableDataFromDisk(table->getStorageID(), table);
         throw;
     }
     if (table->storesDataOnDisk())
