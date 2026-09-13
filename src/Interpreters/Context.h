@@ -30,6 +30,7 @@
 
 #include "config.h"
 
+#include <chrono>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -158,6 +159,7 @@ class BackupLog;
 class BlobStorageLog;
 class DeadLetterQueue;
 class HypotheticalObjectStore;
+class SessionQueryIdsHistory;
 class IAsynchronousReader;
 class IOUringReader;
 struct MergeTreeSettings;
@@ -426,6 +428,8 @@ protected:
     String http_combined_filter;
 
     TemporaryTablesMapping external_tables_mapping;
+    /// History of query ids for `system.session_query_ids`, lives on the session context.
+    mutable std::shared_ptr<SessionQueryIdsHistory> session_query_ids_history;
     mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
     /// Query scalars
     Scalars scalars;
@@ -1089,6 +1093,9 @@ public:
     std::shared_ptr<TemporaryTableHolder> findExternalTable(const String & table_name) const;
     std::shared_ptr<TemporaryTableHolder> removeExternalTable(const String & table_name);
 
+    /// Per-session history of query ids for `system.session_query_ids`.
+    SessionQueryIdsHistory & getSessionQueryIdsHistory() const;
+
     HypotheticalObjectStore & getHypotheticalObjectStore() const;
 
     Scalars getScalars() const;
@@ -1311,8 +1318,18 @@ public:
 #endif
 
     BackupsWorker & getBackupsWorker() const;
+
+    /// Makes further BACKUP and RESTORE queries fail instead of starting a new operation.
+    void stopAcceptingNewBackupsAndRestores() const;
+
     void waitAllBackupsAndRestores() const;
-    void cancelAllBackupsAndRestores() const;
+
+    /// Returns false if `deadline` was reached while some operation was still running.
+    bool cancelAllBackupsAndRestores(std::optional<std::chrono::steady_clock::time_point> deadline = {}) const;
+
+    /// Returns true if some backup or restore has not reached a final status yet. Never waits.
+    bool hasUnfinishedBackupsAndRestores() const;
+
     std::shared_ptr<BackupsInMemoryHolder> getBackupsInMemory();
     std::shared_ptr<const BackupsInMemoryHolder> getBackupsInMemory() const;
 
@@ -1536,7 +1553,8 @@ public:
 #endif
     void initializeKeeperDispatcher(bool start_async) const;
     void signalKeeperDispatcherShutdown() const;
-    void shutdownKeeperDispatcher(bool closed_all_connections) const;
+    void shutdownKeeperDispatcherBeforeConnectionsFinish() const;
+    void shutdownKeeperDispatcherAfterConnectionsFinish(bool closed_all_connections) const;
     void updateKeeperConfiguration(const Poco::Util::AbstractConfiguration & config) const;
 
     /// Set auxiliary zookeepers configuration at server starting or configuration reloading.
