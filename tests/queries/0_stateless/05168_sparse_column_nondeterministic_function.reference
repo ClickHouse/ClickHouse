@@ -1,0 +1,11 @@
+the column is stored sparse
+1
+a draw per row
+1
+1
+1
+the same for a LowCardinality argument
+1
+a deterministic function still reads the sparse column once per value
+50051000
+1001
