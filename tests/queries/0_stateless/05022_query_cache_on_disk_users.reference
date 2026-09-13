@@ -1,0 +1,7 @@
+-- A non-shared entry written by user A is not served to user B, and user B stores its own entry
+-- A shared entry written by user A is served to user B
+user A, first run of the non-shared query, hits: 0
+user B, first run of the non-shared query, hits: 0
+user B, second run of the non-shared query, hits: 1
+user A, first run of the shared query, hits: 0
+user B, first run of the shared query, hits: 1

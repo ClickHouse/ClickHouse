@@ -1,0 +1,12 @@
+<clickhouse>
+    <!-- A result of one byte is impossible, so nothing may be stored in the query cache while this limit is in effect. -->
+    <query_cache>
+        <max_entry_size_in_bytes>1</max_entry_size_in_bytes>
+    </query_cache>
+    <filesystem_caches>
+        <cache_for_query_results>
+            <path>cache_for_query_results/</path>
+            <max_size>100Mi</max_size>
+        </cache_for_query_results>
+    </filesystem_caches>
+</clickhouse>
