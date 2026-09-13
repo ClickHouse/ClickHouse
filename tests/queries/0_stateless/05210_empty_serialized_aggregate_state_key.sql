@@ -1,29 +1,17 @@
--- An aggregate function state can serialize to zero bytes: a Resample range with begin >= end holds
--- no nested states, and a matrix aggregate function called with no arguments holds no cells. Such a
--- state is a valid (empty) hash table key.
+-- An aggregate function state must never serialize to zero bytes: a column of states is read back one
+-- state at a time, with no length in front of any of them. Two parameterisations held nothing, so they
+-- are rejected where the function is created.
 
-SELECT length(countResampleMergeDistinct(10, 5, 1)(s))
-FROM (SELECT countResampleState(10, 5, 1)(number, number) AS s FROM numbers(10) GROUP BY number);
+-- An empty Resample range, both ways of writing one.
+SELECT countResample(10, 5, 1)(number, number) FROM numbers(10); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT countResample(5, 5, 1)(number, number) FROM numbers(10); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- The state type is rejected too, so such a column cannot be declared.
+SELECT CAST('' AS AggregateFunction(countResample(10, 5, 1), UInt64, UInt64)); -- { serverError ARGUMENT_OUT_OF_BOUND }
+-- Controls: a non-empty range keeps working, including the smallest one.
+SELECT countResample(1, 5, 1)(number, number) FROM numbers(10);
+SELECT countResample(4, 5, 1)(number, number) FROM numbers(10);
 
-SELECT length(groupUniqArray(s))
-FROM (SELECT countResampleState(10, 5, 1)(number, number) AS s FROM numbers(10) GROUP BY number);
-
--- max_threads = 1 keeps all ten rows in one aggregate state, so groupArrayIntersect reaches its
--- subsequent-rows loop and not only its first-row loop. The control below is pinned to match.
-SELECT length(groupArrayIntersect(a))
-FROM (SELECT [countResampleState(10, 5, 1)(number, number)] AS a FROM numbers(10) GROUP BY number)
-SETTINGS max_threads = 1;
-
--- Controls: a non-empty range must keep working.
-SELECT countResampleMergeDistinct(1, 5, 1)(s)
-FROM (SELECT countResampleState(1, 5, 1)(number, number) AS s FROM numbers(10) GROUP BY number);
-
-SELECT length(groupUniqArray(s))
-FROM (SELECT countResampleState(1, 5, 1)(number, number) AS s FROM numbers(10) GROUP BY number);
-
-SELECT length(groupArrayIntersect(a))
-FROM (SELECT [countResampleState(1, 5, 1)(number, number)] AS a FROM numbers(10) GROUP BY number)
-SETTINGS max_threads = 1;
-
--- A zero-byte state that does not come from the Resample combinator.
-SELECT length(groupUniqArray(s)) FROM (SELECT covarSampMatrixState() AS s FROM numbers(3));
+-- A matrix aggregate function needs at least one argument; all three kinds share one creator.
+SELECT covarSampMatrix() FROM numbers(3); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
+-- Control: one argument keeps working.
+SELECT length(covarSampMatrix(number)) FROM numbers(3);
