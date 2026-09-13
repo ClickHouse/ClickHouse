@@ -33,14 +33,16 @@ echo "-- settings the shared metadata is authoritative for"
 # `loading_retries` is named in the definition above and still reports `shared_metadata`: the value a
 # replica uses comes from Keeper, so saying `definition` would name a source the engine does not
 # consult. This is the one place a source outranks the table's own clause.
-# `keeper_path` is deliberately not printed with its value: it carries this test's database name,
-# which differs on every run, so the value cannot go into a reference.
 $CLICKHOUSE_CLIENT -q "
 SELECT name, value, source FROM system.table_settings
 WHERE database = currentDatabase() AND table = 'smd_tbl'
   AND name IN ('mode', 'loading_retries', 'after_processing')
 ORDER BY name"
 
+echo "-- keeper_path names where the shared metadata lives, but is not part of it"
+# The table metadata in Keeper does not store it and no `ALTER` can change it: the storage keeps the
+# path it was created with, so the definition is its source. Not printed with its value, which carries
+# this test's database name and so differs on every run.
 $CLICKHOUSE_CLIENT -q "
 SELECT name, value = '${KEEPER_PATH}' AS value_is_the_one_asked_for, source
 FROM system.table_settings

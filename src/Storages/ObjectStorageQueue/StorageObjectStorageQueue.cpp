@@ -2257,7 +2257,7 @@ SettingDescriptions StorageObjectStorageQueue::getTableSettings(ContextPtr query
     /// for this hook: `getSettings` returns the never-written field, so a table created with
     /// `parallel_inserts = 1` reports `0`, with `source = 'definition'` from the `CREATE` query.
     static const NameSet held_in_shared_metadata{
-        "mode", "after_processing", "keeper_path", "loading_retries", "processing_threads_num",
+        "mode", "after_processing", "loading_retries", "processing_threads_num",
         "last_processed_path", "bucketing_mode", "partitioning_mode",
         "partition_regex", "partition_component", "tracked_file_ttl_sec", "tracked_files_limit",
         "buckets"};

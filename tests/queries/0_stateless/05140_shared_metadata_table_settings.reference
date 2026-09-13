@@ -2,10 +2,12 @@
 after_processing	keep	shared_metadata
 loading_retries	42	shared_metadata
 mode	unordered	shared_metadata
-keeper_path	1	shared_metadata
+-- keeper_path names where the shared metadata lives, but is not part of it
+keeper_path	1	definition
 -- a setting the queue does not keep there is still attributed normally
 parallel_inserts	default
 polling_min_timeout_ms	default
 -- every source this table reports
 default
+definition
 shared_metadata
