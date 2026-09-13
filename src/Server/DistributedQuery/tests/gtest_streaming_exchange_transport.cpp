@@ -299,6 +299,59 @@ TEST(StreamingExchangeTransport, EveryPacketShapeCrossesTheSocket)
     }
 }
 
+/// A stream without columns, for example the input of a `count()`, carries only row counts: its
+/// packets have rows and no block, and the end-of-stream marker has neither. All four pairings of
+/// the two sides must carry the rows over the socket and still tell the marker apart by the row count.
+TEST(StreamingExchangeTransport, RowsWithoutColumnsCrossTheSocket)
+{
+    MainThreadStatus::getInstance();
+
+    constexpr size_t streams = 2;
+    constexpr size_t chunks_per_stream = 3;
+    constexpr size_t rows_per_chunk = 1000;
+    auto header = std::make_shared<const Block>();
+
+    for (bool sink_takes_packets : {false, true})
+    {
+        for (bool source_hands_packets : {false, true})
+        {
+            SCOPED_TRACE(fmt::format("sink_takes_packets={} source_hands_packets={}", sink_takes_packets, source_hands_packets));
+
+            std::vector<Chunks> chunks_per_stream_list(streams);
+            for (auto & chunks : chunks_per_stream_list)
+                for (size_t index = 0; index < chunks_per_stream; ++index)
+                    chunks.emplace_back(Columns{}, rows_per_chunk);
+
+            LoopbackExchange exchange;
+            auto sending = makeSendingPipeline(header, std::move(chunks_per_stream_list), exchange, sink_takes_packets);
+            auto sink = std::make_shared<CollectingSink>(header);
+            auto receiving = makeReceivingPipeline(header, exchange.server.port(), source_hands_packets, sink);
+
+            const UInt64 packets_sent_before = eventCount(ProfileEvents::StreamingExchangePacketsSent);
+            const UInt64 packets_received_before = eventCount(ProfileEvents::StreamingExchangePacketsReceived);
+
+            std::optional<int> sending_code;
+            std::thread sender([&] { sending_code = run(sending, streams); });
+            const auto receiving_code = run(receiving, 2);
+            sender.join();
+
+            EXPECT_EQ(sending_code, std::nullopt);
+            EXPECT_EQ(receiving_code, std::nullopt);
+            /// One packet per chunk and the marker.
+            EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsSent) - packets_sent_before, streams * chunks_per_stream + 1);
+            EXPECT_EQ(eventCount(ProfileEvents::StreamingExchangePacketsReceived) - packets_received_before, streams * chunks_per_stream + 1);
+
+            size_t rows = 0;
+            for (const auto & chunk : sink->chunks)
+            {
+                EXPECT_EQ(chunk.getNumColumns(), 0u);
+                rows += chunk.getNumRows();
+            }
+            EXPECT_EQ(rows, streams * chunks_per_stream * rows_per_chunk);
+        }
+    }
+}
+
 /// A receiver that does not drain stalls the sender at its pending-bytes cap through the socket.
 /// The receiver is held back until the sender has certainly hit the cap; then everything must
 /// still arrive, with nothing lost and nobody stuck.
