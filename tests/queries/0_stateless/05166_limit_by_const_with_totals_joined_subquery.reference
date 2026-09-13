@@ -1,0 +1,28 @@
+{
+	"meta":
+	[
+		{
+			"name": "n",
+			"type": "UInt64"
+		},
+		{
+			"name": "s",
+			"type": "UInt64"
+		},
+		{
+			"name": "k",
+			"type": "String"
+		}
+	],
+
+	"data":
+	[
+		[0, 3, "grp"]
+	],
+
+	"totals": [0, 15, "grp"],
+
+	"rows": 1,
+
+	"rows_before_limit_at_least": 1
+}
