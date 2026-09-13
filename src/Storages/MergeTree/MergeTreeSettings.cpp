@@ -253,12 +253,24 @@ bytes) with some gap to avoid filesystem errors.
     Minimal number of rows to use full type of storage for data part instead of packed
     )", 0) \
     DECLARE(UInt64, compact_parts_max_bytes_to_buffer, 128 * 1024 * 1024, R"(
-Only available in ClickHouse Cloud. Maximal number of bytes to write in a
-single stripe in compact parts
+Maximal number of uncompressed bytes in a stripe of a Compact part.
+
+The data of a Compact part is written in stripes. Inside a stripe, the columns are written one after
+another: all granules of the first column, then all granules of the second column, and so on. So the
+data of one column is contiguous inside a stripe, and a query that reads a subset of columns reads
+fewer and larger ranges of the data file. Rows are buffered until they form a stripe: a stripe is
+written when the buffered data reaches either this limit or `compact_parts_max_granules_to_buffer`
+granules. Larger stripes make the reading of a subset of columns cheaper (especially on object
+storage, where every range is a request), but need more memory while writing and make the reading of
+all columns of a single granule more scattered.
+
+Stripes are used only if `compress_per_column_in_compact_parts` is enabled (default); otherwise all
+columns of a granule share a compressed block and every granule is written as a separate stripe.
 )", 0) \
     DECLARE(NonZeroUInt64, compact_parts_max_granules_to_buffer, 128, R"(
-Only available in ClickHouse Cloud. Maximal number of granules to write in a
-single stripe in compact parts
+Maximal number of granules in a stripe of a Compact part. See `compact_parts_max_bytes_to_buffer`.
+With the value `1`, every granule is written as a separate stripe: all columns of a granule are
+adjacent in the data file.
 )", 0) \
     DECLARE(UInt64, compact_parts_merge_max_bytes_to_prefetch_part, 16 * 1024 * 1024, R"(
 Only available in ClickHouse Cloud. Maximal size of compact part to read it
