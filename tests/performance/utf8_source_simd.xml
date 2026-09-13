@@ -1,0 +1,19 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <query>SELECT sum(length(leftUTF8(concat(repeat('a', 127), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(rightUTF8(concat(repeat('a', 127), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(substringUTF8(concat(repeat('a', 127), toString(number % 10)), 33, 64))) FROM numbers(1000000) FORMAT Null</query>
+
+    <query>SELECT sum(length(leftUTF8(if(number % 1000 = 0, concat(repeat('a', 126), unhex('C3A9')), concat(repeat('a', 127), toString(number % 10))), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(rightUTF8(if(number % 1000 = 0, concat(repeat('a', 126), unhex('C3A9')), concat(repeat('a', 127), toString(number % 10))), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(substringUTF8(if(number % 1000 = 0, concat(repeat('a', 126), unhex('C3A9')), concat(repeat('a', 127), toString(number % 10))), 33, 64))) FROM numbers(1000000) FORMAT Null</query>
+
+    <query>SELECT sum(length(leftUTF8(concat(repeat(unhex('E4BDA0'), 64), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(rightUTF8(concat(repeat(unhex('E4BDA0'), 64), toString(number % 10)), 64))) FROM numbers(1000000) FORMAT Null</query>
+
+    <query>SELECT sum(length(overlayUTF8(concat(repeat('a', 127), toString(number % 10)), 'x', 33, 64))) FROM numbers(1000000) FORMAT Null</query>
+    <query>SELECT sum(length(overlayUTF8(if(number % 1000 = 0, concat(repeat('a', 126), unhex('C3A9')), concat(repeat('a', 127), toString(number % 10))), 'x', 33, 64))) FROM numbers(1000000) FORMAT Null</query>
+</test>
