@@ -10,11 +10,13 @@
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/DataTypeMap.h>
 #include <Columns/ColumnsNumber.h>
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnMap.h>
 #include <Core/NamesAndTypes.h>
 #include <arrow/api.h>
 #include <arrow/status.h>
@@ -42,6 +44,7 @@ static NamesAndTypesList getHeaderForParquetMetadata()
         {"metadata_size", std::make_shared<DataTypeUInt64>()},
         {"total_uncompressed_size", std::make_shared<DataTypeUInt64>()},
         {"total_compressed_size", std::make_shared<DataTypeUInt64>()},
+        {"key_value_metadata", std::make_shared<DataTypeMap>(std::make_shared<DataTypeString>(), std::make_shared<DataTypeString>())},
         {"columns",
          std::make_shared<DataTypeArray>(
              std::make_shared<DataTypeTuple>(
@@ -115,7 +118,7 @@ static void checkHeader(const Block & header)
             throw Exception(
                 ErrorCodes::BAD_ARGUMENTS,
                 "Unexpected column: {}. ParquetMetadata format allows only the next columns: num_columns, num_rows, num_row_groups, "
-                "format_version, metadata_size, total_uncompressed_size, total_compressed_size, columns, row_groups", name);
+                "format_version, metadata_size, total_uncompressed_size, total_compressed_size, key_value_metadata, columns, row_groups", name);
 
         if (!it->second->equals(*type))
             throw Exception(
@@ -217,17 +220,24 @@ Chunk ParquetMetadataInputFormat::read()
             assert_cast<ColumnUInt64 &>(*column).insertValue(total_compressed_size);
             res.addColumn(std::move(column));
         }
-        /// columns
+        /// key_value_metadata
         else if (name == names[7])
         {
             auto column = types[7]->createColumn();
+            fillKeyValueMetadata(metadata, column);
+            res.addColumn(std::move(column));
+        }
+        /// columns
+        else if (name == names[8])
+        {
+            auto column = types[8]->createColumn();
             fillColumnsMetadata(metadata, column);
             res.addColumn(std::move(column));
         }
         /// row_groups
-        else if (name == names[8])
+        else if (name == names[9])
         {
-            auto column = types[8]->createColumn();
+            auto column = types[9]->createColumn();
             fillRowGroupsMetadata(metadata, column);
             res.addColumn(std::move(column));
         }
@@ -235,6 +245,25 @@ Chunk ParquetMetadataInputFormat::read()
 
     done = true;
     return res;
+}
+
+void ParquetMetadataInputFormat::fillKeyValueMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column)
+{
+    auto & map_column = assert_cast<ColumnMap &>(*column);
+    auto & key_column = assert_cast<ColumnString &>(map_column.getNestedData().getColumn(0));
+    auto & value_column = assert_cast<ColumnString &>(map_column.getNestedData().getColumn(1));
+    /// If a Parquet file doesn't contain any key-value metadata, the result is an empty map.
+    if (const auto & key_value_metadata = metadata->key_value_metadata())
+    {
+        for (int64_t i = 0; i != key_value_metadata->size(); ++i)
+        {
+            const auto & key = key_value_metadata->key(i);
+            key_column.insertData(key.data(), key.size());
+            const auto & value = key_value_metadata->value(i);
+            value_column.insertData(value.data(), value.size());
+        }
+    }
+    map_column.getNestedColumn().getOffsets().push_back(key_column.size());
 }
 
 void ParquetMetadataInputFormat::fillColumnsMetadata(const std::shared_ptr<parquet::FileMetaData> & metadata, MutableColumnPtr & column)
@@ -525,6 +554,7 @@ Special format for reading Parquet file metadata (https://parquet.apache.org/doc
 - `format_version` - parquet format version, always 1.0 or 2.6
 - `total_uncompressed_size` - total uncompressed bytes size of the data, calculated as the sum of total_byte_size from all row groups
 - `total_compressed_size` - total compressed bytes size of the data, calculated as the sum of total_compressed_size from all row groups
+- `key_value_metadata` - the map with custom key-value metadata from the file (empty if the file doesn't contain any key-value metadata)
 - `columns` - the list of columns metadata with the next structure:
   - `name` - column name
   - `path` - column path (differs from name for nested column)
@@ -574,6 +604,7 @@ FORMAT PrettyJSONEachRow
     "metadata_size": "577",
     "total_uncompressed_size": "282436",
     "total_compressed_size": "26633",
+    "key_value_metadata": {},
     "columns": [
         {
             "name": "number",
