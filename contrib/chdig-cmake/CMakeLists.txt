@@ -1,8 +1,7 @@
 set(ENABLE_CHDIG_DEFAULT ${ENABLE_RUST})
 # SANITIZE            - Some issues with undefined symbols
-# NO_ARMV81_OR_HIGHER - Disabled because ring assumes that Neon is available with ARM
 # OS_FREEBSD          - linking issues (undefined reference to `getrandom' and CityHash128())
-if (ENABLE_CHDIG_DEFAULT AND (SANITIZE OR NO_ARMV81_OR_HIGHER OR OS_FREEBSD))
+if (ENABLE_CHDIG_DEFAULT AND (SANITIZE OR OS_FREEBSD))
     message(STATUS "Environment is not compatible with chdig. Disabling.")
     set(ENABLE_CHDIG_DEFAULT OFF)
 endif()
