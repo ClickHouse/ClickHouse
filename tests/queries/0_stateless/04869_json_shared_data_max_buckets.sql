@@ -1,3 +1,8 @@
+-- Tags: long
+-- long: 256 shared-data buckets are 256 substreams in every wide part, and where the metadata of
+-- the database lives in Keeper each of their files is a transaction - the test then takes minutes
+-- there, over the 180 s the flaky check allows an untagged test.
+
 -- Test bucketed shared data of JSON and Array(JSON) columns at the maximum allowed number of
 -- buckets (256): every path must be written into the same bucket the sub-column reader looks it up in.
 
