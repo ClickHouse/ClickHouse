@@ -28,7 +28,7 @@ SELECT count() FROM
 (
     EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
     SELECT byteSize(s)
-    FROM file('nonexistent_05177.orc', ORC, '`S.SIZE` UInt64, s String')
+    FROM file('nonexistent_05177.csv', CSV, '`S.SIZE` UInt64, s String')
 )
 WHERE explain LIKE '%s.size%';
 
