@@ -10001,7 +10001,7 @@ void StorageReplicatedMergeTree::movePartitionToShard(
 
         /// canUsePartInMerges is overlapping with dropPart, let's try to use the same code.
         if (auto result = merge_predicate->canUsePartInMerges(part); !result.has_value())
-            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", result.error().text);
+            throw Exception(ErrorCodes::PART_IS_TEMPORARILY_LOCKED, "Part is busy, reason: {}", result.error().format().text);
     }
 
     {
@@ -10268,9 +10268,9 @@ bool StorageReplicatedMergeTree::dropPartImpl(
         if (auto result = merge_predicate->canUsePartInMerges(part); !result.has_value())
         {
             if (throw_if_noop)
-                throw Exception(result.error(), ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
+                throw Exception(result.error().format(), ErrorCodes::PART_IS_TEMPORARILY_LOCKED);
             else
-                LOG_DEBUG(log, "Cannot drop part: '{}'", result.error().text);
+                LOG_DEBUG(log, "Cannot drop part: '{}'", result.error().format().text);
 
             return false;
         }
