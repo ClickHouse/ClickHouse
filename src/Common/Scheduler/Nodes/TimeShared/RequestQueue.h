@@ -184,9 +184,11 @@ public:
         requests.erase(requests.iterator_to(*request));
         // Cancellation: undo the virtual runtime this request projected onto its query at push, so the
         // query is not billed for service it never received (which would delay its future requests).
-        // vruntime is a running sum of per-request increments, so subtracting this one yields the
-        // correct value regardless of cancel order — the fixed keys of still-queued requests are
-        // untouched; only future pushes see the corrected sum.
+        // This is exact for the query's most recent projection (the common case — one pending request
+        // cancelled). A non-tail cancel does not re-key the query's already-queued later requests, so
+        // they keep their higher keys while a subsequent request of the same query is keyed from the
+        // lowered runtime and may run ahead of them — a bounded, within-query reordering. (The drained
+        // finish-correction folded into the projection is not restored either; kept simple.)
         request->scheduling.state->vruntime -= request->scheduling.vruntime_increment;
         return true;
     }
