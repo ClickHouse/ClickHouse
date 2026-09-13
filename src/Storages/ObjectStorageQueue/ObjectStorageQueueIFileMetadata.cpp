@@ -601,8 +601,19 @@ void ObjectStorageQueueIFileMetadata::addClearRetriableRequestIfExists(Coordinat
     if (failed_node_path.empty())
         return;
 
-    std::optional<Coordination::Stat> stat = retriable_node_stat_cache;
-    if (!stat)
+    /// retriable_node_stat_cache is a nested optional: the outer optional
+    /// records whether this file was checked at all by the caller's batched
+    /// lookup, and the inner optional records whether the marker existed.
+    /// Only an unchecked cache (outer nullopt) triggers the fallback read - a
+    /// known "checked, marker absent" result (outer has_value(), inner
+    /// nullopt) must NOT re-read Keeper, or the whole point of batching is
+    /// defeated for the common case where no marker exists.
+    std::optional<Coordination::Stat> stat;
+    if (retriable_node_stat_cache.has_value())
+    {
+        stat = *retriable_node_stat_cache;
+    }
+    else
     {
         /// Cache not populated by the caller (e.g. called outside
         /// ObjectStorageQueueSource's batched commit loop) - fall back to a
