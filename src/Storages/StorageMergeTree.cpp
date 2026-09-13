@@ -815,13 +815,14 @@ void StorageMergeTree::alter(
         /// must never run them.
         if ((*old_storage_settings)[MergeTreeSetting::table_readonly] && !isTableReadonly() && !shutdown_called)
         {
+            /// The writable setting is already committed. A cleanup error must not leave workers stopped.
+            startBackgroundWorkers();
             /// Preserve `SYSTEM STOP CLEANUP` while restoring writable startup work.
             if (!cleanup_thread.isCleanupCancelled())
             {
                 clearEmptyParts();
                 clearOldTemporaryDirectories(0, ROOT_TEMPORARY_DIRECTORY_PREFIXES_FOR_RECOVERY);
             }
-            startBackgroundWorkers();
         }
 
         if ((*old_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window] != (*new_storage_settings)[MergeTreeSetting::non_replicated_deduplication_window])
