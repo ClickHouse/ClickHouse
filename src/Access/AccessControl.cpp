@@ -19,7 +19,6 @@
 #include <Access/AccessBackup.h>
 #include <Access/resolveSetting.h>
 #include <Backups/BackupEntriesCollector.h>
-#include <Backups/RestorerFromBackup.h>
 #include <Core/Settings.h>
 #include <base/range.h>
 #include <IO/Operators.h>
@@ -664,12 +663,6 @@ See also /etc/clickhouse-server/users.xml on the server where ClickHouse is inst
             "{}: Authentication failed: password is incorrect, or there is no user with such name",
             std::vector<std::string>{credentials.getUserName()}}, error_code);
     }
-}
-
-void AccessControl::restoreFromBackup(RestorerFromBackup & restorer, const String & data_path_in_backup)
-{
-    MultipleAccessStorage::restoreFromBackup(restorer, data_path_in_backup);
-    changes_notifier->sendNotifications();
 }
 
 void AccessControl::setExternalAuthenticatorsConfig(const Poco::Util::AbstractConfiguration & config)
