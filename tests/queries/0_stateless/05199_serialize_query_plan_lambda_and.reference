@@ -1,0 +1,18 @@
+the plan is shipped
+mapExists	3
+two comparisons	8
+three comparisons	8
+a captured column	9
+arrayExists	8
+arrayMap	8
+a constant that fits UInt8	1
+OR instead of AND	10
+the same, plan not shipped
+mapExists	3
+two comparisons	8
+three comparisons	8
+a captured column	9
+arrayExists	8
+arrayMap	8
+a constant that fits UInt8	1
+OR instead of AND	10
