@@ -28,7 +28,30 @@ public:
     virtual bool fileExists(const String & file_name) = 0;
     virtual UInt64 getFileSize(const String & file_name) = 0;
 
-    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name) = 0;
+    /// `expected_file_size` is the size the backup metadata recorded for the file, when the caller
+    /// knows it. A reader whose object storage can have the blob replaced under it (Azure) refuses
+    /// to read a blob of another size, because such a blob is not the one the backup wrote; the
+    /// others ignore it. Nothing is passed for a read whose size is not recorded anywhere, such as
+    /// the `.backup` metadata file itself.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFile(const String & file_name, std::optional<size_t> expected_file_size) = 0;
+
+    /// Names the generation of `file_name` that is in the storage now, for a reader whose files can
+    /// be replaced under an open backup (Azure, where a blob is rewritten in place, and S3, where an
+    /// object of an unversioned bucket is). A backup read through several buffers - an archive,
+    /// which is reopened for every handle the archive reader needs - takes this token once and
+    /// passes it to every one of those reads, so that the whole session reads one generation of the
+    /// archive or fails, instead of taking whatever generation each reopen is answered with. Empty
+    /// where a file cannot change identity under an open backup, which is also the case of an S3
+    /// URI that names a version: such a read is pinned by the version itself.
+    virtual String getFileGeneration(const String & /*file_name*/) { return {}; }
+
+    /// Reads `file_name` pinned to the generation named by `generation` (a token of
+    /// getFileGeneration()): a file that does not hold that generation any more is refused rather
+    /// than read - with `FILE_CHANGED_DURING_READ` on Azure and `S3_OBJECT_CHANGED_DURING_READ` on
+    /// S3, whose `If-Match` failure has a code of its own. An empty token pins nothing, which is
+    /// what a reader of a storage where a file cannot be replaced in place has to offer.
+    virtual std::unique_ptr<ReadBufferFromFileBase> readFilePinnedToGeneration(
+        const String & file_name, std::optional<size_t> expected_file_size, const String & generation);
 
     /// The function copyFileToDisk() can be much faster than reading the file with readFile() and then writing it to some disk.
     /// (especially for S3 where it can use CopyObject to copy objects inside S3 instead of downloading and uploading them).

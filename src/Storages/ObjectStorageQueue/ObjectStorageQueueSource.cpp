@@ -89,14 +89,46 @@ namespace ErrorCodes
     extern const int TOO_MANY_PARTS;
     extern const int TABLE_IS_READ_ONLY;
     extern const int TABLE_IS_BEING_RESTARTED;
+    extern const int INCORRECT_DATA;
     extern const int OBJECT_STORAGE_QUEUE_POST_PROCESSING_FAILED;
+    extern const int FILE_CHANGED_DURING_READ;
+}
+
+bool afterProcessingNeedsIngestedGeneration(ObjectStorageType storage_type, ObjectStorageQueueAction after_processing)
+{
+    return storage_type == ObjectStorageType::Azure
+        && (after_processing == ObjectStorageQueueAction::MOVE || after_processing == ObjectStorageQueueAction::DELETE);
+}
+
+bool useIngestedGenerationOfTheListedObject(RelativePathWithMetadata & object_info)
+{
+    /// Only the generation that the listing itself reported may be used. A `HEAD` made here would
+    /// run after the object was listed and claimed in Keeper, so it could return a generation `B`
+    /// that replaced the listed generation `A` in the meantime; the file would then be ingested,
+    /// moved or deleted as `B` and marked processed by path, and `A` - the generation the queue
+    /// actually accepted - would be skipped forever. When the listing carries no generation, the
+    /// caller fails the file closed instead.
+    if (!object_info.metadata || object_info.metadata->etag.empty())
+        return false;
+
+    /// The read of this object has to serve the generation named by the listing, independently of
+    /// `s3_validate_etag_on_read`: that setting decides whether a plain read is protected from a
+    /// torn read, while here the generation the read serves is the generation the move or the
+    /// delete acts on afterwards.
+    object_info.require_read_pinned_to_generation = true;
+    return true;
 }
 
 ObjectStorageQueueSource::ObjectStorageQueueObjectInfo::ObjectStorageQueueObjectInfo(
     const ObjectInfo & object_info, ObjectStorageQueueMetadata::FileMetadataPtr file_metadata_)
-    : ObjectInfo(RelativePathWithMetadata{object_info.getPath(), object_info.getObjectMetadata()})
+    /// Copies the whole carrier, so that everything the iterator learned about the object - its
+    /// generation and the requirement to pin the read to it - reaches `createReadBuffer`.
+    : ObjectInfo(object_info.relative_path_with_metadata)
     , file_metadata(file_metadata_)
 {
+    /// The path the queue tracks the file by is the rendered one (an archive renders it out of the
+    /// carrier's own `relative_path`), as it was before the whole carrier was copied.
+    relative_path_with_metadata.relative_path = object_info.getPath();
 }
 
 ObjectStorageQueueSource::FileIterator::FileIterator(
@@ -644,6 +676,16 @@ ObjectInfoPtr ObjectStorageQueueSource::FileIterator::next(size_t processor)
             file_metadata->resetProcessing();
             continue;
         }
+
+        /// An Azure `MOVE` after processing copies and deletes the very generation that was
+        /// ingested, and an Azure `DELETE` deletes it, so that generation must be known before the
+        /// read is opened, and the read is then pinned to it. It is the generation the listing
+        /// reported, and only that one - a `HEAD` made now could name a generation that replaced
+        /// it after it was listed. A file whose listing carries no generation is still returned:
+        /// the source refuses to read it and fails it, so that it is never committed as processed
+        /// and then moved or deleted as whatever generation exists by then.
+        if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), metadata->getTableMetadata().after_processing))
+            useIngestedGenerationOfTheListedObject(object_info->relative_path_with_metadata);
 
         return std::make_shared<ObjectStorageQueueObjectInfo>(*object_info, std::move(file_metadata));
     }
@@ -1284,10 +1326,47 @@ Chunk ObjectStorageQueueSource::generateImpl()
 
             processed_files.emplace_back(file_metadata);
 
-            if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata();
-                object_metadata && object_metadata->is_last_modified_known)
+            if (auto object_metadata = reader.getObjectInfo()->getObjectMetadata(); object_metadata)
             {
-                processed_files.back().last_modified = object_metadata->last_modified.epochTime();
+                if (object_metadata->is_last_modified_known)
+                    processed_files.back().last_modified = object_metadata->last_modified.epochTime();
+
+                /// Remember which generation of the object is being read, for the post-processing.
+                processed_files.back().bytes_size = object_metadata->size_bytes;
+                processed_files.back().etag = object_metadata->etag;
+            }
+
+            /// Fail closed: a file whose generation is unknown (the listing carried no `ETag`)
+            /// is not read when the post-processing
+            /// has to act on the ingested generation, because it could then only move or delete
+            /// whatever generation exists at post-processing time. It is failed like a file whose
+            /// read failed, so it is never committed as processed.
+            const auto after_processing = files_metadata->getTableMetadata().after_processing.load();
+            if (afterProcessingNeedsIngestedGeneration(object_storage->getType(), after_processing)
+                && processed_files.back().etag.empty())
+            {
+                const auto message = fmt::format(
+                    "The generation (`ETag`) of the object {} is not reported by the listing of the endpoint, "
+                    "while `after_processing = '{}'` on Azure has to act on exactly the generation that was ingested. "
+                    "The file is not read",
+                    file_metadata->getPath(), ObjectStorageQueueTableMetadata::actionToString(after_processing));
+                LOG_ERROR(log, "{}. Will set the file as failed", message);
+
+                processed_files.back().state = FileState::ErrorOnRead;
+                processed_files.back().exception_during_read = message;
+                processed_files.back().exception_during_read_code = ErrorCodes::INCORRECT_DATA;
+
+                if (mode == ObjectStorageQueueMode::ORDERED)
+                {
+                    /// Stop processing and commit what is already processed,
+                    /// because we must preserve order.
+                    return {};
+                }
+
+                /// Continue processing. This failed file will be committed along with processed files.
+                reader = {};
+                progress->processed_files -= 1;
+                continue;
             }
 
             /// Tags are not fetched during listing (it lists with with_tags = false), so populate
@@ -1584,14 +1663,14 @@ void ObjectStorageQueueSource::prepareCommitRequests(
     size_t processed_count = 0;
     if (!insert_succeeded && reduce_retry_count)
     {
-        for (const auto & [file_state, file_metadata_, exception_during_read_, exception_during_read_code_, last_modified_] : processed_files)
-            if (file_state == FileState::Processed)
+        for (const auto & processed_file : processed_files)
+            if (processed_file.state == FileState::Processed)
                 ++processed_count;
     }
 
     for (size_t i = 0; i < processed_files.size(); ++i)
     {
-        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_] = processed_files[i];
+        const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code, last_modified_, bytes_size, etag] = processed_files[i];
         switch (file_state)
         {
             case FileState::Processed:
@@ -1620,7 +1699,11 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     {
                         file_metadata->prepareProcessedRequests(requests);
                     }
-                    successful_files.push_back(StoredObject(file_metadata->getPath()));
+                    /// The post-processing acts on the generation that was ingested, not on
+                    /// whatever the path holds by then.
+                    StoredObject ingested_generation(file_metadata->getPath(), /* local_path */ "", bytes_size);
+                    ingested_generation.etag = etag;
+                    successful_files.push_back(std::move(ingested_generation));
                 }
                 else
                 {
@@ -1672,10 +1755,33 @@ void ObjectStorageQueueSource::prepareCommitRequests(
                     {storage_id.getDatabaseName(), storage_id.getTableName(), "read", String(ErrorCodes::getName(exception_during_read_code))});
 
                 chassert(!exception_during_read.empty());
+                /// A read pinned to the generation that the listing reported fails with
+                /// `FILE_CHANGED_DURING_READ` when that generation is not in the bucket any more:
+                /// the object was rewritten between the listing and the read. That is a race over
+                /// which generation this table is looking at, not a file that cannot be read, and
+                /// the newer generation at the same key has never been ingested. Charging it to the
+                /// per-path retry budget would eventually create the terminal `failed` node for the
+                /// path, and both queue modes then skip every later generation at that key - the
+                /// rewritten object would be dropped for good. So the processing is reset without a
+                /// failure instead, and the newer generation is picked up on a later pass.
+                const bool the_generation_was_rewritten = exception_during_read_code == ErrorCodes::FILE_CHANGED_DURING_READ;
+
+                /// Resetting the processing means the path is read again from offset 0 on a later
+                /// pass. That is only free while the file has emitted nothing: rows of the
+                /// generation that was replaced may already be in the destination table, and
+                /// replaying the path from the start would insert them a second time.
+                /// `deduplication_v2` does not make that replay safe here, unlike the shutdown path
+                /// above: its chunk token is `object_etag:chunk_offset`, and the replay reads the
+                /// generation that took the key over, so the token of every replayed chunk names
+                /// the new generation and matches nothing that the replaced generation inserted.
+                /// A file that has emitted rows therefore keeps the ordinary failure handling: the
+                /// retry budget is charged and the path ends up `failed`, rather than ingested as a
+                /// mix of the two generations.
+                const bool a_replay_would_duplicate_rows = file_metadata->getFileStatus()->processed_rows > 0;
                 file_metadata->prepareFailedRequests(
                     requests,
                     exception_during_read,
-                    /* reduce_retry_count */true);
+                    /* reduce_retry_count */!the_generation_was_rewritten || a_replay_would_duplicate_rows);
                 break;
             }
         }
@@ -1721,7 +1827,7 @@ void ObjectStorageQueueSource::finalizeCommit(
     bool respect_post_processing_failed_paths = mode == ObjectStorageQueueMode::EXCLUSIVE;
 
     std::exception_ptr finalize_exception;
-    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified] : processed_files)
+    for (const auto & [file_state, file_metadata, exception_during_read, exception_during_read_code_, last_modified, bytes_size_, etag_] : processed_files)
     {
         try
         {
@@ -1795,7 +1901,13 @@ void ObjectStorageQueueSource::finalizeCommit(
                 case FileState::ErrorOnRead:
                 {
                     chassert(!exception_during_read.empty());
-                    file_metadata->finalizeFailed(exception_during_read);
+                    /// A read of a generation that was rewritten before it could be read only
+                    /// released the processing node (see `prepareCommitRequests`), so that the
+                    /// newer generation is read on a later pass rather than being failed by path.
+                    if (file_metadata->wasProcessingResetWithoutFailure())
+                        file_metadata->finalizeResetProcessing();
+                    else
+                        file_metadata->finalizeFailed(exception_during_read);
 
                     if (file_metadata->wasPermanentlyFailed())
                         DimensionalMetrics::add(
@@ -1811,7 +1923,10 @@ void ObjectStorageQueueSource::finalizeCommit(
             /// the next iteration. Skip the log entry so they do not show up as Failed
             /// in `system.s3queue_log`. They will be logged on their next attempt with
             /// the actual outcome (Processed, or genuinely Failed).
-            if (!insert_succeeded && file_metadata->wasProcessingResetWithoutFailure())
+            /// A read whose pinned generation was rewritten is reset for retry as well, and that
+            /// one can happen while the insert of the rest of the batch succeeds, so the state of
+            /// the insert does not decide it.
+            if (file_metadata->wasProcessingResetWithoutFailure())
                 continue;
 
             appendLogElement(
@@ -1857,6 +1972,9 @@ void ObjectStorageQueueSource::commit(bool insert_succeeded, const std::string &
     if (mode != ObjectStorageQueueMode::EXCLUSIVE && requests.empty() && successful_objects.empty())
         return;
 
+    /// As in `StorageObjectStorageQueue::commit`: an object that is no longer the generation that
+    /// was ingested (`FILE_CHANGED_DURING_READ`) throws out of the post-processing below, and the
+    /// batch is not committed - neither as processed nor as failed.
     UnorderedSetWithMemoryTracking<String> post_processing_failed_paths;
 
     if (!successful_objects.empty())
