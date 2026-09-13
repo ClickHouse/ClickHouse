@@ -55,6 +55,14 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
     if (!sorting || sorting_node->children.size() != 1)
         return 0;
 
+    /// The per-bucket selection retunes the aggregation's final conversion by the `LIMIT` above it.
+    /// When the aggregation belongs to a `SQL SECURITY DEFINER` / `NONE` view, that `LIMIT` is the
+    /// invoker's, and the processing inside the view must not depend on the invoker's query.
+    /// Fail closed on any marked step of the chain, like `tryOptimizeGroupByTopK`.
+    /// See IQueryPlanStep::isSecurityBarrier.
+    if (limit->isSecurityBarrier() || sorting->isSecurityBarrier())
+        return 0;
+
     const size_t n = sorting->getLimit();
     if (n == 0 || n > max_bucket_top_k)
         return 0;
@@ -69,6 +77,9 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
     QueryPlan::Node * node = sorting_node->children.front();
     while (const auto * expression = typeid_cast<ExpressionStep *>(node->step.get()))
     {
+        if (expression->isSecurityBarrier())
+            return 0;
+
         /// An `arrayJoin` between the aggregation and the sort changes row multiplicity per group,
         /// and over an empty array it produces no row at all. The best n groups of a bucket are then
         /// no longer a superset of the rows the limit needs, and the groups pruned inside the bucket
@@ -85,7 +96,7 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
     }
 
     auto * aggregating = typeid_cast<AggregatingStep *>(node->step.get());
-    if (!aggregating)
+    if (!aggregating || aggregating->isSecurityBarrier())
         return 0;
 
     const auto & params = aggregating->getParams();
