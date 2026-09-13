@@ -14,6 +14,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     DROP TABLE IF EXISTS t_codec_access;
     DROP TABLE IF EXISTS t_codec_access_log;
     DROP TABLE IF EXISTS t_codec_access_hidden;
+    DROP TABLE IF EXISTS t_codec_access_partial;
     DROP TABLE IF EXISTS t_codec_access_dst;
 
     -- Explicit codecs, CI randomises the server-level default compression codec.
@@ -145,9 +146,60 @@ ${CLICKHOUSE_CLIENT} --user="${username}" --query \
     "EXPLAIN PIPELINE SELECT * FROM mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_log);" 2>&1 |
     grep -o "ACCESS_DENIED\|BAD_ARGUMENTS" | uniq
 
+# A table function that `canBeUsedToCreateTable` refuses for `CREATE TABLE ... AS f(...)` can still reach a
+# persisted definition nested in an argument of another one: both `remote(..., f(...))` and
+# `ENGINE = Remote(..., f(...))` keep it in `remote_table_function_ptr`. When the cluster has a local shard,
+# both forms resolve the nested function under the creating user's context, through
+# `getStructureOfRemoteTableInShard` -> `getActualTableStructureWithAccess`, which is the seam this change adds
+# the check to. So the carrier is closed by the check on the source table rather than by the veto, and the arms
+# below pin which privilege refuses it, one per tier and one per form. Everything the carrier itself needs is
+# granted first, so that what refuses is the source table and not the carrier; `CREATE TABLE` is granted on the
+# destination name alone, because a grant on the database would imply `SHOW TABLES` on the hidden table too.
+
+${CLICKHOUSE_CLIENT} -m --query "
+    CREATE TABLE t_codec_access_partial (a UInt64 CODEC(LZ4), b UInt64 CODEC(LZ4))
+    ENGINE = MergeTree ORDER BY tuple()
+    SETTINGS min_bytes_for_wide_part = 0;
+
+    INSERT INTO t_codec_access_partial SELECT number, number FROM numbers(1000);
+
+    GRANT CREATE TABLE, DROP TABLE ON t_codec_access_dst TO ${username};
+    GRANT READ, WRITE ON REMOTE TO ${username};
+    GRANT TABLE ENGINE ON Remote TO ${username};
+    GRANT TABLE ENGINE ON Distributed TO ${username};
+    GRANT SELECT(a) ON t_codec_access_partial TO ${username};
+"
+
+# Reports the privilege the carrier demanded and the error code, one line each, from a single attempt.
+carrier_as_user() {
+    local out
+    out=$(${CLICKHOUSE_CLIENT} --user="${username}" --query "$1" 2>&1)
+    echo "${out}" | grep -o "grant SHOW TABLES\|grant SELECT" | uniq
+    echo "${out}" | grep -o "ACCESS_DENIED\|BAD_ARGUMENTS" | uniq
+}
+
+echo "Nested in remote(...), with SELECT on a single column of the source table"
+carrier_as_user "CREATE TABLE t_codec_access_dst AS remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_partial));"
+
+echo "Nested in a Remote table engine, with SELECT on a single column of the source table"
+carrier_as_user "CREATE TABLE t_codec_access_dst ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_partial));"
+
+# The check on the name runs on this path too, so a carrier is not an existence oracle either.
+
+echo "Nested in remote(...), over a hidden source table"
+carrier_as_user "CREATE TABLE t_codec_access_dst AS remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_hidden));"
+
+echo "Nested in a Remote table engine, over a hidden source table"
+carrier_as_user "CREATE TABLE t_codec_access_dst ENGINE = Remote('127.0.0.1:${CLICKHOUSE_PORT_TCP}', mergeTreeCodecBlockCounts(currentDatabase(), t_codec_access_hidden));"
+
+echo "Number of tables the refused carriers left behind"
+${CLICKHOUSE_CLIENT} --query \
+    "SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 't_codec_access_dst';"
+
 ${CLICKHOUSE_CLIENT} -m --query "
     DROP USER ${username};
     DROP TABLE t_codec_access;
     DROP TABLE t_codec_access_log;
     DROP TABLE t_codec_access_hidden;
+    DROP TABLE t_codec_access_partial;
 "

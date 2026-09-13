@@ -36,3 +36,17 @@ EXPLAIN PLAN of a hidden source table
 ACCESS_DENIED
 EXPLAIN PIPELINE of a non-MergeTree source table
 BAD_ARGUMENTS
+Nested in remote(...), with SELECT on a single column of the source table
+grant SELECT
+ACCESS_DENIED
+Nested in a Remote table engine, with SELECT on a single column of the source table
+grant SELECT
+ACCESS_DENIED
+Nested in remote(...), over a hidden source table
+grant SHOW TABLES
+ACCESS_DENIED
+Nested in a Remote table engine, over a hidden source table
+grant SHOW TABLES
+ACCESS_DENIED
+Number of tables the refused carriers left behind
+0
