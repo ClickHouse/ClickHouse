@@ -18,6 +18,10 @@ SELECT info.partition_id, info.prefix, info.suffix, info.min_block, info.max_blo
 WITH mergeTreePartInfo('broken-on-start_1_2_3_0_try100', true) AS info
 SELECT info.partition_id, info.prefix, info.suffix, info.min_block, info.max_block, info.level, info.mutation;
 
+SELECT mergeTreePartInfo('all_1_1_0_try', true); -- { serverError 36 }
+
+SELECT mergeTreePartInfo('broken-on-start_1_2_3_0_tryfoo', true); -- { serverError 36 }
+
 WITH mergeTreePartInfo('broken_1_2_3_4') AS info
 SELECT info.partition_id, info.prefix, info.suffix, info.min_block, info.max_block, info.level, info.mutation;
 

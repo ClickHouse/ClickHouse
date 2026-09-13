@@ -22,6 +22,9 @@
 
 #include <Common/register_objects.h>
 
+#include <algorithm>
+#include <cctype>
+
 namespace DB
 {
 
@@ -58,6 +61,13 @@ MergeTreePartInfo constructPartInfo(std::string_view data)
     throwInvalidPartName(data);
 }
 
+bool isTryNSuffix(std::string_view suffix)
+{
+    return suffix.size() > 3
+        && suffix.starts_with("try")
+        && std::all_of(suffix.begin() + 3, suffix.end(), [](unsigned char c) { return std::isdigit(c); });
+}
+
 /// Tries to parse part name format: "<prefix>_<part_name>_<tryN>".
 UnpackedPartSegments unpackPartName(std::string_view data, bool is_detached = false)
 {
@@ -74,9 +84,10 @@ UnpackedPartSegments unpackPartName(std::string_view data, bool is_detached = fa
         throwInvalidPartName(data);
 
     /// Process suffix first because it can be easily determined.
-    if (data.substr(last_delimiter + 1).starts_with("try"))
+    const auto suffix = data.substr(last_delimiter + 1);
+    if (suffix.starts_with("try") && (!is_detached || isTryNSuffix(suffix)))
     {
-        unpacked.suffix = data.substr(last_delimiter + 1);
+        unpacked.suffix = suffix;
         right = last_delimiter;
         number_of_segments -= 1;
     }
