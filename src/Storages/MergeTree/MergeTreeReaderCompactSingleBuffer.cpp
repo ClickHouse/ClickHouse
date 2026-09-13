@@ -115,6 +115,8 @@ try
     if (initialized)
         return;
 
+    /// Bound the request by physical columns. `JSON`/`Dynamic` subcolumn streams depend on
+    /// per-granule deserialization prefixes, which have not been read at this point.
     size_t last_column_position = 0;
     for (const auto & position : column_positions)
         if (position)
