@@ -146,6 +146,7 @@ namespace ErrorCodes
     extern const int NOT_IMPLEMENTED;
     extern const int NO_SUCH_COLUMN_IN_TABLE;
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
+    extern const int BACKUP_DAMAGED;
 }
 
 namespace FailPoints
@@ -1552,10 +1553,6 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
         /// Don't scare people with broken part error if it's retryable.
         if (!isRetryableException(std::current_exception()))
         {
-            auto message = getCurrentExceptionMessage(true);
-            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
-                getDataPartStorage().getFullPath(), message);
-
             if (Exception * e = current_exception_cast<Exception *>())
             {
                 /// Probably there is something wrong with files of this part.
@@ -1574,7 +1571,15 @@ void IMergeTreeDataPart::loadColumnsChecksumsIndexes(bool require_columns_checks
                     e->addMessage("Part contains files: {}", files_in_part);
                 if (isEmpty())
                     e->addMessage("Part is empty");
+
+                /// Set proper error code for restoring invalid parts
+                if (fileName(getDataPartStorage().getPartDirectory()).starts_with("tmp_restore_"))
+                    e->resetCode(ErrorCodes::BACKUP_DAMAGED);
             }
+
+            auto message = getCurrentExceptionMessage(true);
+            LOG_ERROR(storage.log, "Part {} is broken and needs manual correction. Reason: {}",
+                getDataPartStorage().getFullPath(), message);
         }
 
         throw;
