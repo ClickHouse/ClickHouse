@@ -137,7 +137,11 @@ bool ParserAlterCommand::parseImpl(Pos & pos, ASTPtr & node, Expected & expected
     ParserToken parser_opening_round_bracket(TokenType::OpeningRoundBracket);
     ParserToken parser_closing_round_bracket(TokenType::ClosingRoundBracket);
 
-    ParserCompoundIdentifier parser_name;
+    /// Object names in `ALTER` commands (columns, indices, projections, constraints, and the `AFTER`
+    /// position) accept query parameters, e.g. `ALTER TABLE t RENAME COLUMN {c:Identifier} TO {c2:Identifier}`.
+    /// The parameter is an `ASTIdentifier` child resolved in place by `ReplaceQueryParameterVisitor`
+    /// before the query is interpreted.
+    ParserCompoundIdentifier parser_name(/* table_name_with_optional_uuid = */ false, /* allow_query_parameter = */ true);
     ParserStringLiteral parser_string_literal;
     ParserStringAndSubstitution parser_string_and_substituion;
     ParserCompoundColumnDeclaration parser_col_decl(/* require_type = */ true, /* allow_null_modifiers = */ true);
