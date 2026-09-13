@@ -4,7 +4,7 @@
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import assert_logs_contain_with_retry, wait_condition
+from helpers.test_tools import assert_eq_with_retry, assert_logs_contain_with_retry, wait_condition
 
 cluster = ClickHouseCluster(__file__)
 node1 = cluster.add_instance("node1", with_zookeeper=True, stay_alive=True)
@@ -102,3 +102,34 @@ def test_readonly_toggle_preserves_stopped_cleanup(start_cluster):
         )
     finally:
         node1.query("DROP TABLE readonly_toggle_cleanup SYNC")
+
+
+def test_writable_workers_after_cleanup_error(start_cluster):
+    node1.query(
+        "CREATE TABLE readonly_cleanup_error (x UInt64) ENGINE = MergeTree ORDER BY tuple() "
+        "SETTINGS disk = 'default', table_readonly = 1, "
+        "cleanup_delay_period = 3600, max_cleanup_delay_period = 3600"
+    )
+    data_path = node1.query(
+        "SELECT data_paths[1] FROM system.tables "
+        "WHERE database = currentDatabase() AND name = 'readonly_cleanup_error'"
+    ).strip()
+    bad_dir = data_path + "tmp_merge_cleanup_error"
+    try:
+        node1.exec_in_container(["mkdir", bad_dir])
+        node1.exec_in_container(["ln", "-s", "loop", bad_dir + "/loop"])
+        node1.exec_in_container(["touch", "-d", "2000-01-01 UTC", bad_dir])
+        error = node1.query_and_get_error(
+            "ALTER TABLE readonly_cleanup_error MODIFY SETTING table_readonly = 0"
+        )
+        assert "Too many levels of symbolic links" in error
+        node1.exec_in_container(["rm", bad_dir + "/loop"])
+
+        node1.query("INSERT INTO readonly_cleanup_error VALUES (0)")
+        node1.query(
+            "ALTER TABLE readonly_cleanup_error UPDATE x = 1 WHERE 1 SETTINGS mutations_sync = 0"
+        )
+        assert_eq_with_retry(node1, "SELECT x FROM readonly_cleanup_error", "1")
+    finally:
+        node1.exec_in_container(["rm", "-rf", bad_dir])
+        node1.query("DROP TABLE readonly_cleanup_error SYNC")
