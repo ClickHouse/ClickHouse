@@ -117,7 +117,8 @@ void TableFunctionPostgreSQL::parseArguments(const ASTPtr & ast_function, Contex
         }
     }
 
-    configuration.emplace(StoragePostgreSQL::getConfiguration(args, context, &postgresql_settings));
+    configuration.emplace(StoragePostgreSQL::getConfiguration(
+        args, context, &postgresql_settings, globCaller(fmt::format("Table function '{}'", name))));
 
     /// Applied after getConfiguration, so that the explicit SETTINGS clause wins over the values
     /// stored in a named collection.
