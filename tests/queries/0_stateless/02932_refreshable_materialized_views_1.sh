@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-# Tags: atomic-database
+# Tags: atomic-database, long
+# long: the refresh schedules this waits on put it right at the 180s cap the flaky check
+#   applies to untagged tests, so it tips over on some runs.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
