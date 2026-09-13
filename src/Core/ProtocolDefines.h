@@ -114,7 +114,11 @@ static constexpr auto DBMS_MERGE_TREE_PART_INFO_VERSION = 1;
 /// join for a small probe side. Estimates themselves are not part of the plan format, so a receiver
 /// that took either decision again would take it from an empty estimate and could decide
 /// differently from the sender.
-static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 16;
+/// Version 17 adds the `always_read_till_end` flag to `LimitByStep`.
+/// Version 18 registers the `Filling` step and adds the `WITH FILL` bounds (`FROM`, `TO`, `STEP`,
+/// `STALENESS` and the column alias) to a serialized sort description, so a plan with
+/// `ORDER BY ... WITH FILL` can be shipped in full.
+static constexpr auto DBMS_QUERY_PLAN_SERIALIZATION_VERSION = 18;
 /// The parallel-replicas remote plan is serialized once (at DBMS_QUERY_PLAN_SERIALIZATION_VERSION) and
 /// that one blob is reused for every replica, so a replica below this version must be excluded up front
 /// rather than sent a blob it cannot parse. Tied to DBMS_QUERY_PLAN_SERIALIZATION_VERSION itself so a
@@ -146,6 +150,12 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_RANGE
 /// First query-plan serialization version that carries the estimate-derived decisions of
 /// `JoinStepLogical`: the join order, and the runtime filter pass's small-probe decision.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS = 16;
+/// First query-plan serialization version that carries the `always_read_till_end` flag on `LimitByStep`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_LIMIT_BY_ALWAYS_READ_TILL_END = 17;
+/// First query-plan serialization version that registers a "Filling" step and carries the `WITH FILL`
+/// bounds in a serialized sort description. Gates `FillingStep::serialize` and the fill payload in
+/// `serializeSortDescription`.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_FILLING_STEP = 18;
 /// Version 1 added the initiator's settings changes to the task.
 /// Version 2 added per-stream streaming-exchange ports to exchange_stream_sources.
 /// Version 3 added the error code of a failed task to its status reply.
