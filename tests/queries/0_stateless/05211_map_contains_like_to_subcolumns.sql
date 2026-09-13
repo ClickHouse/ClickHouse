@@ -114,27 +114,84 @@ WHERE mapContainsValueLike(m, pattern)
 ORDER BY id
 SETTINGS optimize_functions_to_subcolumns = 0;
 
--- Expression patterns must keep their input-row evaluation scope. If the expression were moved
--- into the synthesized lambda, rand() could be evaluated once per Map element instead.
-SELECT countIf(mapContainsKeyLike(m, if(rand() % 2 = 0, 'a%', 'b%'))) = count()
-FROM t_map_contains_like_subcolumns
-WHERE id >= 10
-SETTINGS optimize_functions_to_subcolumns = 1;
+-- A physical pattern column is safe to capture and should still be optimized.
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_subcolumns
+    WHERE mapContainsKeyLike(m, pattern)
+)
+WHERE explain LIKE '%m.keys%';
 
-SELECT countIf(mapContainsValueLike(m, if(rand() % 2 = 0, '1%', '2%'))) = count()
-FROM t_map_contains_like_subcolumns
-WHERE id >= 10
-SETTINGS optimize_functions_to_subcolumns = 1;
+SELECT count() > 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_subcolumns
+    WHERE mapContainsValueLike(m, pattern)
+)
+WHERE explain LIKE '%m.values%';
 
-SELECT countIf(mapContainsKeyLike(m, if(rand() % 2 = 0, 'a%', 'b%'))) = count()
-FROM t_map_contains_like_subcolumns
-WHERE id >= 10
-SETTINGS optimize_functions_to_subcolumns = 0;
+-- Expression patterns must not be moved into the synthesized lambda. This is a structural
+-- check, so it does not depend on the output of a non-deterministic function.
+SELECT count() = 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_subcolumns
+    WHERE mapContainsKeyLike(m, if(rand() % 2 = 0, 'a%', 'b%'))
+)
+WHERE explain LIKE '%m.keys%';
 
-SELECT countIf(mapContainsValueLike(m, if(rand() % 2 = 0, '1%', '2%'))) = count()
-FROM t_map_contains_like_subcolumns
-WHERE id >= 10
-SETTINGS optimize_functions_to_subcolumns = 0;
+SELECT count() = 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT id
+    FROM t_map_contains_like_subcolumns
+    WHERE mapContainsValueLike(m, if(rand() % 2 = 0, '1%', '2%'))
+)
+WHERE explain LIKE '%m.values%';
+
+-- Expression-backed ALIAS columns must also stay outside the synthesized lambda in PREWHERE.
+DROP TABLE IF EXISTS t_map_contains_like_alias;
+
+CREATE TABLE t_map_contains_like_alias
+(
+    d UInt8,
+    m Map(String, String),
+    pattern String ALIAS toString(intDiv(1, d))
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+
+INSERT INTO t_map_contains_like_alias (d, m) VALUES (0, {});
+
+SELECT count() = 0
+FROM
+(
+    EXPLAIN actions = 1
+    SELECT d
+    FROM t_map_contains_like_alias
+    PREWHERE mapContainsKeyLike(m, pattern)
+)
+WHERE explain LIKE '%m.keys%';
+
+SELECT count()
+FROM t_map_contains_like_alias
+PREWHERE mapContainsKeyLike(m, pattern)
+SETTINGS optimize_functions_to_subcolumns = 0; -- { serverError ILLEGAL_DIVISION }
+
+SELECT count()
+FROM t_map_contains_like_alias
+PREWHERE mapContainsKeyLike(m, pattern)
+SETTINGS optimize_functions_to_subcolumns = 1; -- { serverError ILLEGAL_DIVISION }
+
+DROP TABLE t_map_contains_like_alias;
 
 -- LowCardinality Map elements and patterns stay on the original Map LIKE implementation.
 SELECT countIf(mapContainsKeyLike(m_key_lc, 'ser%')) = 2
