@@ -641,6 +641,21 @@ BINARIES_WITH_LONG_RETENTION = [
 ]
 
 
+def with_long_retention_tags(artifacts):
+    """Tag the long-retention binaries among `artifacts`, leaving the rest as is.
+
+    The tags feed the job digest, so workflows sharing a build cache entry have to
+    apply the same ones. They cannot overwrite each other's uploads: the S3 prefix
+    carries the workflow and the job name as well as the branch and the commit.
+    """
+    return [
+        artifact.add_tags({"retention": "long"})
+        if artifact.name in BINARIES_WITH_LONG_RETENTION
+        else artifact
+        for artifact in artifacts
+    ]
+
+
 class ArtifactConfigs:
     clickhouse_binaries = Artifact.Config(
         name="...",
