@@ -304,7 +304,7 @@ void registerStatementHypotheticalProjection(StatementFactory & factory)
         .description = R"DOCS_MD(
 Hypothetical projections are virtual, session-scoped projections that you can attach to a `MergeTree` family table without actually building or storing them. They exist only inside the current session and are listed by [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif).
 
-`EXPLAIN WHATIF` does not estimate the benefit of a hypothetical projection yet — it reports each one with `status: not_applicable`. Defining them is useful today for validating a definition against the table without materializing it, and for tooling that reads [`system.hypothetical_projections`](/reference/system-tables/hypothetical_projections).
+`EXPLAIN WHATIF` estimates normal (sorted) hypothetical projections: how many marks and rows the projection read would touch for a query, and whether the optimizer would choose it over the base table. Not every projection is estimated: aggregate projections and projections with a `WHERE` clause are two such cases, and a candidate that is not estimated is listed with the reason why. See [`EXPLAIN WHATIF`](/reference/statements/explain#explain-whatif) for the full list. The session's hypothetical projections are also visible in [`system.hypothetical_projections`](/reference/system-tables/hypothetical_projections).
 
 ## CREATE HYPOTHETICAL PROJECTION {#create-hypothetical-projection}
 
@@ -355,9 +355,9 @@ Clears every hypothetical projection defined in the current session, regardless 
 
 ## Required privileges {#required-privileges}
 
-`CREATE HYPOTHETICAL PROJECTION` requires `ALTER ADD PROJECTION` on the table — the same privilege the real `ALTER TABLE ... ADD PROJECTION` needs — because it validates the definition against the table's columns. It reads no table data, so `SELECT` on the projection's columns is not required yet; when `EXPLAIN WHATIF` starts estimating projections it will read those columns and column-level `SELECT` will be required then, as it already is for [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#required-privileges).
+`CREATE HYPOTHETICAL PROJECTION` requires `ALTER ADD PROJECTION` on the table — the same privilege the real `ALTER TABLE ... ADD PROJECTION` needs — because it validates the definition against the table's columns. `EXPLAIN WHATIF` requires column-level `SELECT` on the projection's columns to estimate it, as it already does for [`CREATE HYPOTHETICAL INDEX`](/reference/statements/hypothetical-index#required-privileges).
 
-`DROP HYPOTHETICAL PROJECTION` requires the same privilege, so that naming a table in a drop cannot reveal whether it exists or is eligible. `DROP ALL HYPOTHETICAL PROJECTIONS` names no table and requires no privilege.
+`DROP HYPOTHETICAL PROJECTION` requires the same privilege, so that naming a table in a drop cannot reveal whether it exists or is eligible, and `EXPLAIN WHATIF` re-checks it before validating a stored definition against the table. `DROP ALL HYPOTHETICAL PROJECTIONS` names no table and requires no privilege.
 
 ## See also {#see-also}
 

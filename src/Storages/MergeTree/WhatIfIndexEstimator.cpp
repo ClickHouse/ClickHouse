@@ -17,11 +17,10 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
-#include <Parsers/ASTAlterQuery.h>
-#include <Interpreters/InterpreterHypotheticalObjectQuery.h>
 #include <Storages/ProjectionsDescription.h>
 #include <Storages/MergeTree/WhatIfEmpiricalEstimator.h>
 #include <Storages/MergeTree/WhatIfFilterAnalysis.h>
+#include <Storages/MergeTree/WhatIfProjectionEstimator.h>
 #include <Storages/MergeTree/WhatIfSettings.h>
 #include <Storages/MergeTree/WhatIfStatisticalEstimator.h>
 
@@ -78,37 +77,6 @@ StoragePtr tryResolveSingleTable(const ASTPtr & query, const ContextPtr & contex
     return joined_tables.getLeftTableStorage();
 }
 
-/// projections are stored but not estimated yet, so report them instead of dropping them.
-/// whoever adds the estimate must also require SELECT on the projection's columns, the way
-/// evaluateIndex does, since it will read them
-void appendProjectionCandidates(
-    WhatIfResult & result, const HypotheticalObjectStore & store, const MergeTreeData & data, const ContextPtr & context)
-{
-    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
-    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
-    {
-        WhatIfCandidateResult r;
-        r.name = projection.name;
-        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "projection (aggregate)" : "projection (normal)";
-        r.status = WhatIfCandidateResult::NotApplicable;
-        r.not_applicable_reason = "EXPLAIN WHATIF does not estimate hypothetical projections yet";
-
-        /// re-run the same ADD PROJECTION validation as CREATE did, so both a dropped column and a
-        /// later MODIFY SETTING that disables the projection's features surface as drift
-        try
-        {
-            checkHypotheticalProjectionIsAddable(data, metadata, projection.definition_ast, /*if_not_exists=*/false, context);
-        }
-        catch (const Exception &)
-        {
-            r.not_applicable_reason = "Hypothetical projection can no longer be added to this table: "
-                + getCurrentExceptionMessage(false);
-        }
-
-        result.candidates.push_back(std::move(r));
-    }
-}
-
 /// only when the store held nothing for this table
 void appendNoCandidatesRow(WhatIfResult & result)
 {
@@ -136,7 +104,17 @@ WhatIfResult buildResultWithoutScan(
         r.not_applicable_reason = reason;
         result.candidates.push_back(std::move(r));
     }
-    appendProjectionCandidates(result, store, data, context);
+    auto metadata = data.getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
+    {
+        WhatIfCandidateResult r;
+        r.name = projection.name;
+        r.type = projection.type == ProjectionDescription::Type::Aggregate ? "aggregate projection" : "normal projection";
+        r.status = WhatIfCandidateResult::NotApplicable;
+        r.not_applicable_reason = reason;
+        refreshHypotheticalProjection(projection, data, metadata, context, r.not_applicable_reason);
+        result.candidates.push_back(std::move(r));
+    }
     if (result.candidates.empty())
         appendNoCandidatesRow(result);
     return result;
@@ -162,7 +140,10 @@ void stripWhatIfControlledSettings(IAST * node, std::vector<String> & removed_fo
                         return true;
                     }
                     /// keep the estimate local, use_skip_indexes_on_data_read: avoid over-reporting marks
-                    return change.name == "enable_parallel_replicas"
+                    return change.name == "force_optimize_projection"
+                        || change.name == "force_optimize_projection_name"
+                        || change.name == "preferred_optimize_projection_name"
+                        || change.name == "enable_parallel_replicas"
                         || change.name == "allow_experimental_parallel_reading_from_replicas"
                         || change.name == "use_skip_indexes_on_data_read";
                 });
@@ -337,7 +318,11 @@ WhatIfResult estimateHypotheticalIndexes(
     local_context->setSetting("enable_parallel_replicas", Field{UInt64{0}});
     local_context->setSetting("use_skip_indexes_on_data_read", Field{UInt64{0}});
     /// Grab the forced index names, drop them for baseline planning, re-check them at the end
-    local_context->resetSettingsToDefaultValue({"force_data_skipping_indices"});
+    local_context->resetSettingsToDefaultValue(
+        {"force_data_skipping_indices",
+         "force_optimize_projection",
+         "force_optimize_projection_name",
+         "preferred_optimize_projection_name"});
 
     auto select_query_copy = select_query->clone();
     std::vector<String> forced_strings;
@@ -405,7 +390,9 @@ WhatIfResult estimateHypotheticalIndexes(
             }
 
             return buildResultWithoutScan(
-                *mt, store, "The query is answered without reading the table's parts, so an index on them would not be read",
+                *mt,
+                store,
+                "The query is answered without reading the table's parts, so an index on them would not be read",
                 local_context);
         }
 
@@ -454,6 +441,7 @@ WhatIfResult estimateHypotheticalIndexes(
     result.table = data.getStorageID().getTableName();
     result.baseline_parts = analysis.selected_parts;
     result.baseline_marks = analysis.selected_marks;
+    result.baseline_rows = analysis.selected_rows;
 
     /// The average row size is the parent table's, so it says nothing about rows selected from a
     /// projection. Leave it at 0 and the formatter omits the line rather than printing a wrong one
@@ -573,7 +561,9 @@ WhatIfResult estimateHypotheticalIndexes(
         result.candidates.push_back(std::move(combined));
     }
 
-    appendProjectionCandidates(result, store, data, context);
+    for (const auto & projection : store.getProjectionsForTable(data.getStorageID()))
+        result.candidates.push_back(
+            evaluateProjection(projection, read_step, analysis, baseline_parts, settings, plan.getRootNode(), plan_context));
 
     if (result.candidates.empty())
         appendNoCandidatesRow(result);

@@ -1,0 +1,230 @@
+--- point query on the projection key, three parts ---
+hypothetical:
+marks: 10
+rows: 1000
+status: applicable
+marks: 3
+rows: 300
+read_ratio: 0.30x
+verdict: chosen
+reason: 3 marks would be read instead of 10 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_b)
+Granules: 3
+--- range on the projection key ---
+hypothetical:
+marks: 10
+rows: 1000
+status: applicable
+marks: 3
+rows: 300
+read_ratio: 0.30x
+verdict: chosen
+reason: 3 marks would be read instead of 10 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_b)
+Granules: 3
+--- composite key, leading column ---
+hypothetical:
+marks: 10
+rows: 1000
+status: applicable
+marks: 3
+rows: 300
+read_ratio: 0.30x
+verdict: chosen
+reason: 3 marks would be read instead of 10 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_ba)
+Granules: 3
+--- base PK already prunes to one granule, the projection cannot beat it ---
+hypothetical:
+marks: 1
+rows: 100
+status: applicable
+marks: 1
+rows: 100
+read_ratio: 1.00x
+verdict: not chosen
+reason: the same 1 mark would be read, and the query has no ORDER BY to serve
+source: empirical
+real:
+ReadFromMergeTree (default.t_real)
+Granules: 1
+--- a tie with an ORDER BY the projection order cannot serve ---
+verdict: not chosen
+reason: the same 1 mark would be read, and the projection order does not serve the ORDER BY
+--- key over a computed expression ---
+hypothetical:
+marks: 10
+rows: 1000
+status: applicable
+marks: 3
+rows: 300
+read_ratio: 0.30x
+verdict: chosen
+reason: 3 marks would be read instead of 10 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_c)
+Granules: 3
+--- the projection's own index_granularity is used ---
+hypothetical:
+marks: 100
+rows: 10000
+status: applicable
+marks: 3
+rows: 150
+read_ratio: 0.03x
+verdict: chosen
+reason: 3 marks would be read instead of 100 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_g)
+Granules: 3
+--- no filter, the projection serves the ORDER BY ---
+hypothetical:
+marks: 10
+rows: 1000
+status: applicable
+marks: 10
+rows: 1000
+read_ratio: 1.00x
+verdict: chosen
+reason: the same 10 marks would be read, and the projection order serves the ORDER BY
+source: empirical
+real:
+ReadFromMergeTree (p_b)
+Granules: 10
+reason: Query has no filter predicate, and reading in order is disabled
+reason: Query has no filter predicate, and reading in order is disabled
+reason: Query has no filter predicate, and reading in order is disabled
+--- the INDEX form, which the optimizer serves the read from ---
+hypothetical:
+marks: 10
+rows: 1000
+status: applicable
+marks: 3
+rows: 300
+read_ratio: 0.30x
+verdict: chosen
+reason: 3 marks would be read instead of 10 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_idx)
+Granules: 3
+--- a row count that is not a multiple of the granule ---
+real projection part marks:	3
+hypothetical:
+marks: 3
+rows: 250
+status: applicable
+marks: 1
+rows: 100
+read_ratio: 0.33x
+verdict: chosen
+reason: 1 mark would be read instead of 3 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_r)
+Granules: 1
+--- Compact parts, where a wide column the projection does not store must not inflate its marks ---
+real projection part marks:	5
+hypothetical:
+marks: 89
+rows: 2050
+status: applicable
+marks: 4
+rows: 2050
+read_ratio: 0.04x
+verdict: chosen
+reason: 4 marks would be read instead of 89 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_c)
+Granules: 4
+--- a projection that reads more marks than the base table is not chosen ---
+marks: 1
+marks: 3
+read_ratio: 3.00x
+verdict: not chosen
+reason: 3 marks would be read instead of 1 from the base table
+real: read from the base table
+--- a near-tie on an adaptive-granularity part is not called ---
+marks: 3
+marks: 3
+read_ratio: 1.00x
+verdict: too close to call
+reason: 3 marks against 3 from the base table, and the adaptive-granularity model can miss by up to 1 mark
+--- an ORDER BY tie-break inside the margin is not called either ---
+marks: 3
+marks: 3
+read_ratio: 1.00x
+verdict: too close to call
+reason: 3 marks against 3 from the base table, and the adaptive-granularity model can miss by up to 1 mark
+--- a baseline already served by a real projection is reported as such ---
+status: not_applicable
+reason: The query is already served from projection \'p_ab\', EXPLAIN WHATIF estimates candidates against the base table read only
+--- a sort key over a subcolumn ---
+hypothetical:
+marks: 10
+rows: 1000
+status: applicable
+marks: 1
+rows: 100
+read_ratio: 0.10x
+verdict: chosen
+reason: 1 mark would be read instead of 10 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_s)
+Granules: 1
+--- a byte-driven projection index counts the parent offset it stores ---
+hypothetical:
+marks: 120
+rows: 5000
+status: applicable
+marks: 3
+rows: 192
+read_ratio: 0.03x
+verdict: chosen
+reason: 3 marks would be read instead of 120 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_i)
+Granules: 3
+--- a merged part whose rows differ in width along the projection key ---
+b >= 4000: within a granule of the real count: 1
+b < 2000: within a granule of the real count: 1
+--- a materialized lightweight delete ---
+rows the rebuilt projection kept:	1000
+hypothetical:
+marks: 10
+rows: 1000
+status: applicable
+marks: 3
+rows: 300
+read_ratio: 0.30x
+verdict: chosen
+reason: 3 marks would be read instead of 10 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_d)
+Granules: 3
+--- a full projection scan that is cheaper than the base read ---
+hypothetical:
+marks: 162
+rows: 5000
+status: applicable
+marks: 4
+rows: 5000
+read_ratio: 0.02x
+verdict: chosen
+reason: 4 marks would be read instead of 162 from the base table
+source: empirical
+real:
+ReadFromMergeTree (p_n)
+Granules: 4
