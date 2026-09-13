@@ -44,6 +44,7 @@ Vamos examinar a seção do arquivo &#39;users.xml&#39; que define as cotas.
             <execution_time>0</execution_time>
         </interval>
     </default>
+</quotas>
 ```
 
 Por padrão, a QUOTA acompanha o consumo de recursos a cada hora, sem limitar o uso.
@@ -153,6 +154,7 @@ As QUOTAs podem usar o recurso &quot;QUOTA key&quot; para contabilizar recursos 
         <keyed_by_forwarded_ip />.
     -->
     <keyed />
+</web_global>
 ```
 
 Você também pode definir QUOTAs com base no hash normalizado da consulta, para que cada padrão de consulta distinto tenha seu próprio bucket de QUOTA independente. Na configuração XML, isso é escrito como `<keyed_by_normalized_query_hash />`:

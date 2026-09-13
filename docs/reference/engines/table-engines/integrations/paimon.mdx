@@ -92,16 +92,14 @@ CREATE TABLE paimon_cached
 ENGINE = PaimonS3(paimon_conf, filename = 'paimon_all_types');
 ```
 
-<Info>
-**`use_paimon_metadata_files_cache` lifecycle**
-
+<Note title="`use_paimon_metadata_files_cache` lifecycle">
 How `use_paimon_metadata_files_cache` is applied depends on how the Paimon table is accessed:
 
 - **Table functions** (e.g. `SELECT ... FROM paimonS3(...)`): the cache decision is evaluated per query, so you can pass `SETTINGS use_paimon_metadata_files_cache = 1` directly in the `SELECT`.
 - **Persistent table engines** (`PaimonS3`, `PaimonAzure`, `PaimonHDFS`, `PaimonLocal`, and the `Paimon` alias): the cache decision is latched once when the table's metadata is initialized and is stored in immutable persistent components; the metadata update path deliberately does not re-read the setting. Therefore, passing `SETTINGS use_paimon_metadata_files_cache = 1` in a `SELECT` against an already-initialized persistent table has no effect — the previously latched decision keeps being used. To change it, set `use_paimon_metadata_files_cache` before the table's metadata is initialized, or `DROP` and re-`CREATE` the table with the desired value.
 
 The server-level cache capacity (`paimon_metadata_files_cache_size`) is *not* latched: it is a runtime setting that can be changed via `SYSTEM RELOAD CONFIG` and takes effect immediately even for already-initialized tables.
-</Info>
+</Note>
 
 ## Incremental read examples {#incremental-read-examples}
 

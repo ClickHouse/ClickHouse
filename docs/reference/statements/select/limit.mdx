@@ -300,11 +300,11 @@ SELECT number FROM numbers(10) ORDER BY number LIMIT AFTER number IN (2, 6) ALL 
 
 Without `n` and without `UNTIL`, every opened range runs to the end of the stream, so `AFTER start_expr ALL` returns the same rows as `AFTER start_expr`.
 
-:::note
+<Note>
 - `WITH TIES`, fractional/negative `LIMIT`/`OFFSET`, and `OFFSET` are not supported together with `AFTER`/`UNTIL`.
 - Preliminary `LIMIT` pushdown is disabled when `AFTER`/`UNTIL` is used.
 - `AFTER` and `UNTIL` are recognized as keywords only when a boundary expression follows them, so an identifier named `after` or `until` still works as a row count (`LIMIT after`, `LIMIT after BY x`). When both readings are possible the keyword wins: `LIMIT after(2)` is the range `LIMIT AFTER (2)`; write `LIMIT (after(2))` to call a function named `after`.
-:::
+</Note>
 
 `UNTIL` alone returns the rows from the start of the stream up to the first row where the condition is true:
 
