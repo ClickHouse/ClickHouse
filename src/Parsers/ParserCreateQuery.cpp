@@ -1467,7 +1467,7 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
     else
         is_ordinary_view = true;
 
-    if (!replace_view && !is_materialized_view && s_temporary.ignore(pos, expected))
+    if (!is_materialized_view && s_temporary.ignore(pos, expected))
     {
         is_temporary = true;
     }
@@ -3508,10 +3508,10 @@ ClickHouse supports **temporary views** with the following characteristics (matc
 ### Syntax {#temporary-views-syntax}
 
 ```sql
-CREATE TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
+CREATE [OR REPLACE] TEMPORARY VIEW [IF NOT EXISTS] view_name AS <select_query>
 ```
 
-`OR REPLACE` is **not** supported for temporary views (to match temporary tables). If you need to “replace” a temporary view, drop it and create it again.
+`OR REPLACE` and `IF NOT EXISTS` are mutually exclusive. `CREATE OR REPLACE TEMPORARY VIEW` creates the view if it does not exist yet, or replaces its definition if it does.
 
 ### Examples {#temporary-views-examples}
 
@@ -3543,7 +3543,6 @@ DROP TEMPORARY VIEW IF EXISTS tview;  -- temporary views are dropped with TEMPOR
 
 ### Disallowed / limitations {#temporary-views-limitations}
 
-* `CREATE OR REPLACE TEMPORARY VIEW ...` → **not allowed** (use `DROP` + `CREATE`).
 * `CREATE TEMPORARY MATERIALIZED VIEW ...` → **not allowed**.
 * `CREATE TEMPORARY VIEW db.view AS ...` → **not allowed** (no database qualifier).
 * `CREATE TEMPORARY VIEW view ON CLUSTER 'name' AS ...` → **not allowed** (temporary objects are session-local).

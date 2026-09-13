@@ -2145,7 +2145,7 @@ BlockIO InterpreterCreateQuery::createTable(ASTCreateQuery & create)
     if (need_add_to_database && !database)
         throw Exception(ErrorCodes::UNKNOWN_DATABASE, "Database {} does not exist", backQuoteIfNeed(database_name));
 
-    if (create.isTemporary() && create.replace_table)
+    if (create.isTemporary() && (create.replace_table || create.replace_view))
     {
         chassert(!ddl_guard);
         return doCreateOrReplaceTemporaryTable(create, properties, mode);
@@ -3142,7 +3142,7 @@ BlockIO InterpreterCreateQuery::doCreateOrReplaceTemporaryTable(ASTCreateQuery &
     /// Bare `REPLACE` requires the target to exist (`updateExternalTable` throws `UNKNOWN_TABLE`);
     /// `CREATE OR REPLACE` accepts either state. Both calls are thread-safe.
     auto session_context = getContext()->getSessionContext();
-    if (create.create_or_replace)
+    if (create.create_or_replace || create.replace_view)
         session_context->addOrUpdateExternalTable(temporary_table_name, std::move(temporary_table));
     else
         session_context->updateExternalTable(temporary_table_name, std::move(temporary_table));
@@ -3723,10 +3723,12 @@ AccessRightsElements InterpreterCreateQuery::getRequiredAccess() const
     }
     else if (create.isView())
     {
-        if (create.replace_view)
-            required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
-        else if (create.isTemporary())
+        /// Temporary views live in the session namespace, not in a database, so `CREATE OR REPLACE`
+        /// of one needs only the global temporary-view privilege, the same as a plain create.
+        if (create.isTemporary())
             required_access.emplace_back(AccessType::CREATE_TEMPORARY_VIEW);
+        else if (create.replace_view)
+            required_access.emplace_back(AccessType::DROP_VIEW | AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
         else
             required_access.emplace_back(AccessType::CREATE_VIEW, create.getDatabase(), create.getTable());
     }

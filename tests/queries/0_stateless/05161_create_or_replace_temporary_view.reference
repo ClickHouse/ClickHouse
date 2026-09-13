@@ -1,0 +1,15 @@
+1	a
+1
+1	A
+2	B
+CREATE TEMPORARY VIEW tview
+(
+    `id` UInt32,
+    `u` String
+)
+AS SELECT
+    id,
+    upper(val) AS u
+FROM t_src
+42
+42
