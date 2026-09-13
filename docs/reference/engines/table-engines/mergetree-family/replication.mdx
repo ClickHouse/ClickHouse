@@ -301,8 +301,8 @@ This query can be used to get the table's data path. If table has many data path
 SELECT data_paths FROM system.tables WHERE table = 'table_name' AND database = 'database_name';
 ```
 
-For an `Atomic` database, the converted `ReplicatedMergeTree` table uses the values of the `default_replica_path` and `default_replica_name` settings.
-For an `Ordinary` database, it always uses `/clickhouse/tables/{database}/{table}` as its Keeper path and `default_replica_name` as its replica name.
+Note that ReplicatedMergeTree table will be created with values of `default_replica_path` and `default_replica_name` settings.
+For an `Ordinary` database, the conversion generates a UUID and expands `default_replica_path` once with it.
 To create a converted table on other replicas, you will need to explicitly specify its path in the first argument of the `ReplicatedMergeTree` engine. The following query can be used to get its path.
 
 ```sql

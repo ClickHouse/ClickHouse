@@ -1,3 +1,5 @@
+import re
+
 import pytest
 
 from helpers.cluster import ClickHouseCluster
@@ -59,12 +61,10 @@ def check_tables(engine):
     )
 
     if engine == "ReplicatedMergeTree":
-        assert (
-            q(
-                ch1,
-                "SELECT zookeeper_path FROM system.replicas WHERE table = 'mt'",
-            ).strip()
-            == f"/clickhouse/tables/{database_name}/mt"
+        zookeeper_path = q(ch1, "SELECT zookeeper_path FROM system.replicas WHERE table = 'mt'").strip()
+        assert re.fullmatch(
+            r"/clickhouse/tables/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/01",
+            zookeeper_path,
         )
 
 

@@ -87,16 +87,6 @@ extern const DatabaseMetadataDiskSettingsUInt64 max_tables;
 
 static constexpr const char * const CONVERT_TO_REPLICATED_FLAG_NAME = "convert_to_replicated";
 
-static String getReplicaPath(const ASTCreateQuery & create_query, ContextPtr local_context)
-{
-    if (create_query.uuid == UUIDHelpers::Nil)
-    {
-        return "/clickhouse/tables/{database}/{table}";
-    }
-
-    return local_context->getServerSettings()[ServerSetting::default_replica_path];
-}
-
 DatabaseOrdinary::DatabaseOrdinary(
     const String & name_, const String & metadata_path_, ContextPtr context_, DatabaseMetadataDiskSettings database_metadata_disk_settings_)
     : DatabaseOrdinary(
@@ -143,7 +133,7 @@ static void checkReplicaPathExists(ASTCreateQuery & create_query, ContextPtr loc
     info.expand_special_macros_only = false;
 
     auto component_guard = Coordination::setCurrentComponent("DatabaseOrdinary::checkReplicaPathExists");
-    String replica_path = getReplicaPath(create_query, local_context);
+    String replica_path = local_context->getServerSettings()[ServerSetting::default_replica_path];
     String zookeeper_path = local_context->getMacros()->expand(replica_path, info);
     if (local_context->getZooKeeper()->exists(zookeeper_path))
         throw Exception(
@@ -160,7 +150,7 @@ void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_quer
     /// with '/' applies to a genuinely new table, not to a template this server has long been expanding.
     const auto & server_settings = local_context->getServerSettings();
     TableZnodeInfo::resolve(
-        getReplicaPath(create_query, local_context),
+        server_settings[ServerSetting::default_replica_path],
         server_settings[ServerSetting::default_replica_name],
         StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid),
         create_query,
@@ -169,7 +159,7 @@ void DatabaseOrdinary::checkReplicaPathIsSafe(const ASTCreateQuery & create_quer
         /*validate_substitutions=*/true);
 }
 
-void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated)
+void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, ContextPtr local_context, bool replicated, bool ordinary_database)
 {
     auto * storage = create_query.storage;
     auto args = make_intrusive<ASTExpressionList>();
@@ -179,7 +169,15 @@ void DatabaseOrdinary::setMergeTreeEngine(ASTCreateQuery & create_query, Context
     if (replicated)
     {
         const auto & server_settings = local_context->getServerSettings();
-        String replica_path = getReplicaPath(create_query, local_context);
+        String replica_path = server_settings[ServerSetting::default_replica_path];
+        if (ordinary_database)
+        {
+            Macros::MacroExpansionInfo info;
+            info.table_id = StorageID(create_query.getDatabase(), create_query.getTable(), create_query.uuid);
+            info.expand_special_macros_only = false;
+            replica_path = local_context->getMacros()->expand(replica_path, info);
+        }
+
         String replica_name = server_settings[ServerSetting::default_replica_name];
 
         args->children.push_back(make_intrusive<ASTLiteral>(replica_path));
@@ -252,10 +250,20 @@ void DatabaseOrdinary::convertMergeTreeToReplicatedIfNeeded(ASTPtr ast, const Qu
 
     LOG_INFO(log, "Found {} flag for table {}. Will try to change it's engine in metadata to replicated.", CONVERT_TO_REPLICATED_FLAG_NAME, backQuote(qualified_name.getFullName()));
 
+    const bool ordinary_database = getUUID() == UUIDHelpers::Nil;
+    if (ordinary_database)
+    {
+        create_query.uuid = UUIDHelpers::generateV4();
+        create_query.has_uuid = true;
+    }
     checkReplicaPathIsSafe(create_query, getContext());
     checkReplicaPathExists(create_query, getContext());
-    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true);
-
+    setMergeTreeEngine(create_query, getContext(), /*replicated*/ true, ordinary_database);
+    if (ordinary_database)
+    {
+        create_query.uuid = UUIDHelpers::Nil;
+        create_query.has_uuid = false;
+    }
     /// Write changes to metadata
     String table_metadata_path = full_path;
     String table_metadata_tmp_path = table_metadata_path + ".tmp";
