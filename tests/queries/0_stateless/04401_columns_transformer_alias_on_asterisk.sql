@@ -91,8 +91,14 @@ SELECT * APPLY (x -> x, 'p_'), * APPLY (x -> x, 'q_') FROM (SELECT 1 AS a) FORMA
 SELECT * APPLY (x -> (x AS z)), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT *, * APPLY (x -> (x AS z)) FROM (SELECT 1 AS a) FORMAT TSVWithNames;
 SELECT * APPLY (x -> (x AS z), 'p_'), * FROM (SELECT 1 AS a) FORMAT TSVWithNames;
--- The prefix survives an EXPLAIN QUERY TREE round-trip.
+-- Inside its own chain that alias is the name a later transformer reads, and an identity lambda
+-- after it keeps it.
+SELECT * APPLY (x -> (x AS z)) APPLY toString FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+SELECT * APPLY (x -> (x AS z)) APPLY (y -> y) FROM (SELECT 1 AS a) FORMAT TSVWithNames;
+-- The prefix reaches the resolved projection name, and survives the query tree to AST conversion
+-- that `dump_ast` and a distributed query both go through.
 SELECT count() FROM (EXPLAIN QUERY TREE SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a)) WHERE explain ILIKE '%f_a%';
+SELECT count() FROM (EXPLAIN QUERY TREE run_passes = 0, dump_tree = 0, dump_ast = 1 SELECT * APPLY (toString, 'f_') FROM (SELECT 1 AS a)) WHERE explain ILIKE '%APPLY (toString(), ''f_'')%';
 
 -- An INSERT column list expands the transformers outside the query tree, so a named
 -- transformer over a bare matcher must be rejected there too.
