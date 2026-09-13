@@ -36,5 +36,8 @@ m2	counter
 2
 1
 1
+-- a parameterized view still reads with parallel replicas
+1000
+1
 -- a table function that is not a plain table reference
 2

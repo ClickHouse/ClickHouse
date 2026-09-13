@@ -104,11 +104,30 @@ SELECT count() FROM mt AS l INNER JOIN timeSeriesSelector(ts, 'm1', toDateTime64
 SELECT count() FROM mt AS l INNER JOIN prometheusQuery(ts, 'm1', toDateTime64(10, 3)) AS r ON l.x = toUInt64(r.value);
 SELECT count() FROM mt AS l INNER JOIN (SELECT toUInt64(arrayMax(x -> x.2, time_series)) AS x FROM prometheusQueryRange(ts, 'm1', toDateTime64(0, 3), toDateTime64(10, 3), INTERVAL 1 SECOND)) AS r ON l.x = r.x;
 
+-- A parameterized view is also resolved as a table function node, but one carrying no `ITableFunction`
+-- and therefore no referenced table, so the gate above does not admit it as an anchor. It still reads with
+-- parallel replicas, because the view's own read descends into a planner where the table underneath it is
+-- an ordinary table - which is what this pins.
+SELECT '-- a parameterized view still reads with parallel replicas';
+CREATE TABLE pv_src (id String, x UInt64) ENGINE = MergeTree ORDER BY id;
+INSERT INTO pv_src SELECT if(number % 3 = 0, 'a', 'b'), number FROM numbers(3000);
+CREATE VIEW pv AS SELECT count() AS c FROM pv_src WHERE id = {pid:String};
+SELECT * FROM pv(pid = 'a') SETTINGS parallel_replicas_allow_view_over_mergetree = 1;
+SYSTEM FLUSH LOGS query_log;
+SELECT ProfileEvents['ParallelReplicasQueryCount'] > 0
+FROM system.query_log
+WHERE current_database = currentDatabase() AND is_initial_query AND type = 'QueryFinish'
+  AND query LIKE '%pv(pid%' AND query NOT LIKE '%system.query_log%'
+ORDER BY event_time_microseconds DESC
+LIMIT 1;
+
 -- A table function that builds a storage of its own is not a reference to a table that every replica
 -- has, so it must not drive the read. `timeSeriesSelector` reads through the `TimeSeries` table but
 -- returns a storage of its own, so it stays on a single replica and still returns each row once.
 SELECT '-- a table function that is not a plain table reference';
 SELECT count() FROM (SELECT * FROM timeSeriesSelector(ts, 'm1', toDateTime64(0, 3), toDateTime64(10, 3))) SETTINGS optimize_trivial_count_query = 0;
 
+DROP VIEW pv;
+DROP TABLE pv_src;
 DROP TABLE mt;
 DROP TABLE ts;
