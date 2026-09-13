@@ -3118,7 +3118,30 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeA
                 "Function {} is not supported for JSON type, use arrayElement instead",
                 getName());
 
-        const auto * key_col = checkAndGetColumnConst<ColumnString>(arguments[1].column.get());
+        /// A NULL literal key follows the convention of the default adapter, as for every other source type.
+        if (arguments[1].type->onlyNull())
+            return makeNullable(std::make_shared<DataTypeNothing>());
+
+        /// A `Nullable(String)` key is accepted like for `Array` and `Map`: the key itself must still be a
+        /// constant, so it is resolved through its nested column. A constant NULL key cannot name a path
+        /// and gives a NULL of no particular type; `executeImpl` returns the NULL constant for it as well.
+        const bool key_is_nullable = arguments[1].type->isNullable();
+        ColumnWithTypeAndName key_argument = arguments[1];
+        if (key_is_nullable)
+        {
+            if (!key_argument.column)
+                throw Exception(
+                    ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                    "Second argument of function {} with JSON type must be a constant String",
+                    getName());
+
+            if (isColumnConst(*key_argument.column) && key_argument.column->onlyNull())
+                return makeNullable(std::make_shared<DataTypeNothing>());
+
+            key_argument = columnGetNested(key_argument);
+        }
+
+        const auto * key_col = checkAndGetColumnConst<ColumnString>(key_argument.column.get());
         if (!key_col)
             throw Exception(
                 ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
@@ -3139,7 +3162,9 @@ DataTypePtr FunctionArrayElement<mode>::getReturnTypeImpl(const ColumnsWithTypeA
         /// For a `Nullable(JSON)` source, promote the path so it can represent the outer NULLs, using the
         /// same rule as the subcolumn path (`json.a`) and `tupleElement`: a `Dynamic` path stays `Dynamic`
         /// and carries them itself, a wrappable typed path becomes `Nullable(T)`.
-        if (source_is_nullable)
+        /// A `Nullable(String)` key promotes the result in the same way, as the other source types do for
+        /// a nullable index: `executeImpl` evaluates the nested key and wraps the result back.
+        if (source_is_nullable || key_is_nullable)
             element_type = makeExtractedSubcolumnsNullableOrLowCardinalityNullableSafe(element_type);
 
         return element_type;
@@ -3609,7 +3634,7 @@ The first argument may also be:
 
 - a [`Map`](/sql-reference/data-types/map): `m['key']` returns the value stored for `key`, or the default value of the value type when the key is absent.
 - a [`QBit`](/sql-reference/data-types/qbit): `q[n]` reconstructs the n-th vector element at the full precision of the QBit element type, reading only the bit planes of the stride group that contains it.
-- a [`JSON`](/sql-reference/data-types/newjson) or a `Nullable(JSON)`: `json['key']` returns the value stored at the path `key`, which must be a constant string, exactly as the dot syntax `json.key` does. For a `Nullable(JSON)` the outer `NULL` rows give a `NULL` path value. Nested access can be chained: `json['a']['b']`.
+- a [`JSON`](/sql-reference/data-types/newjson) or a `Nullable(JSON)`: `json['key']` returns the value stored at the path `key`, which must be a constant string, exactly as the dot syntax `json.key` does. For a `Nullable(JSON)` the result follows the same nullability rules as `json.key`: a path that can represent `NULL` (`Dynamic`, or a typed path that can be wrapped into `Nullable`) gives `NULL` for the outer `NULL` rows, while a non-nullable typed path such as `Array` or `Map` keeps its default value there. The key may also be a constant `Nullable(String)`; a `NULL` key gives `NULL`. Nested access can be chained: `json['a']['b']`.
     )";
     FunctionDocumentation::Syntax syntax = "arrayElement(arr, n)";
     FunctionDocumentation::Arguments arguments = {
