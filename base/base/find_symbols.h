@@ -686,14 +686,22 @@ inline const char * find_first_symbols_dispatch(const char * begin, const char *
 #if defined(__AVX2__)
     if constexpr (sizeof...(symbols) >= 1 && sizeof...(symbols) <= 4)
     {
-        if (end - begin >= 1024) [[unlikely]]
+        if (end - begin >= 16)
         {
-            constexpr size_t prefix_size = 512;
-            const char * const prefix_end = begin + prefix_size;
-            for (const char * pos = begin; pos != prefix_end; pos += 16)
-                if (const char * found = find_first_symbols_sse2_block<positive, symbols...>(pos))
-                    return found;
-            return find_first_symbols_avx2<positive, return_mode, symbols...>(prefix_end, end);
+            if (const char * found = find_first_symbols_sse2_block<positive, symbols...>(begin))
+                return found;
+
+            if (end - begin >= 1024) [[unlikely]]
+            {
+                constexpr size_t prefix_size = 512;
+                const char * const prefix_end = begin + prefix_size;
+                for (const char * pos = begin + 16; pos != prefix_end; pos += 16)
+                    if (const char * found = find_first_symbols_sse2_block<positive, symbols...>(pos))
+                        return found;
+                return find_first_symbols_avx2<positive, return_mode, symbols...>(prefix_end, end);
+            }
+
+            return find_first_symbols_sse2<positive, return_mode, symbols...>(begin + 16, end);
         }
     }
 #endif
