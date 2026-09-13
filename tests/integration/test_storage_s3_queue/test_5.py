@@ -2543,4 +2543,3 @@ def test_failed_commit_after_success_select(started_cluster):
         assert 0 == int(node.query(f"SELECT count() FROM {table_name}"))
     finally:
         node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_fail_commit_after_success")
-

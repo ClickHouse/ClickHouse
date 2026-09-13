@@ -1092,7 +1092,7 @@ void ObjectStorageQueueMetadata::unregisterNonActive(const StorageID & storage_i
                     const auto drop_code = zk_client->tryMulti(drop_requests, drop_responses, /* check_session_valid */true);
                     if (drop_code == Coordination::Error::ZOK)
                         drop_lock->setAlreadyRemoved();
-                    else if (drop_code == Coordination::Error::ZNONODE || drop_code == Coordination::Error::ZNOTEMPTY)
+                    else if (drop_code == Coordination::Error::ZNONODE)
                         LOG_WARNING(log, "Metadata in {} was not removed completely: {}", zookeeper_path.string(), drop_code);
                     else
                         zkutil::KeeperMultiException::check(drop_code, drop_requests, drop_responses);

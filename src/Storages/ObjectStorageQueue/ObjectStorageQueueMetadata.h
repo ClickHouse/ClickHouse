@@ -144,9 +144,9 @@ public:
     ///     under a persistent node "zookeeper_path / registry".
     ///     This is needed to be able to know when we would have to delete all metadata in keeper.
     ///     Metadata can be deleted only by the last registered table.
-    ///     FIXME: actually a race condition is possible here
-    ///     (when we checked that we are the last table and started deleting the metadata
-    ///     while someone else registered after we checked :/ )
+    ///     A deletion excludes concurrent registrations: the atomic path checks the registry
+    ///     version it counted, and the non-atomic one holds "zookeeper_path / drop" for the whole
+    ///     removal, which registerNonActive refuses to register under.
     ///
     /// active = true:
     ///     We also want to register nodes only for a period when they are active.
