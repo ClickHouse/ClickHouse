@@ -350,6 +350,14 @@ struct AddDaysImpl
 {
     static constexpr auto name = "addDays";
 
+    /// Kept out of line: in a fixed-offset time zone every row takes the arithmetic shortcut, so the
+    /// table walk must not be inlined into that loop.
+    static NO_INLINE NO_SANITIZE_UNDEFINED UInt32 addDaysThroughLUT(
+        UInt32 t, Int64 delta, const DateLUTImpl & time_zone)
+    {
+        return static_cast<UInt32>(time_zone.addDays(t, delta));
+    }
+
     template <bool fixed_offset>
     static NO_SANITIZE_UNDEFINED DateTime64 executeWithOffsetMode(
         DateTime64 t, Int64 delta, const DateLUTImpl & time_zone, const DateLUTImpl &, UInt16 scale)
@@ -384,6 +392,7 @@ struct AddDaysImpl
         {
             if (time_zone.dayShiftStaysWithinLUT(t, delta))
                 return static_cast<UInt32>(t + delta * DATE_SECONDS_PER_DAY);
+            return addDaysThroughLUT(t, delta, time_zone);
         }
         return static_cast<UInt32>(time_zone.addDays(t, delta));
     }
@@ -490,6 +499,7 @@ struct AddWeeksImpl
         {
             if (weeksToDays(delta, days) && time_zone.dayShiftStaysWithinLUT(t, days))
                 return static_cast<UInt32>(t + days * DATE_SECONDS_PER_DAY);
+            return AddDaysImpl::addDaysThroughLUT(t, days, time_zone);
         }
         else
             weeksToDays(delta, days);
@@ -698,6 +708,15 @@ struct SubtractIntervalImpl : public Transform
         return Transform::execute(t, negated, time_zone, utc_time_zone, scale);
     }
 
+    /// Reached only for `delta == INT64_MIN`, where the negation wraps. Kept out of line: the table
+    /// walk must not be inlined into a fixed-offset loop whose other rows take the shortcut.
+    template <typename T>
+    static NO_INLINE auto executeNegationOverflow(
+        T t, Int64 negated, const DateLUTImpl & time_zone, const DateLUTImpl & utc_time_zone, UInt16 scale)
+    {
+        return Transform::template executeWithOffsetMode<false>(t, negated, time_zone, utc_time_zone, scale);
+    }
+
     template <bool fixed_offset, typename T>
     auto executeWithOffsetMode(
         T t,
@@ -708,7 +727,7 @@ struct SubtractIntervalImpl : public Transform
     {
         Int64 negated = 0;
         if (!negate(delta, negated))
-            return Transform::template executeWithOffsetMode<false>(t, negated, time_zone, utc_time_zone, scale);
+            return executeNegationOverflow(t, negated, time_zone, utc_time_zone, scale);
         return Transform::template executeWithOffsetMode<fixed_offset>(t, negated, time_zone, utc_time_zone, scale);
     }
 

@@ -496,7 +496,42 @@ Features:
 
 </Accordion>
 
+<Accordion title="Beekeeper Studio">
+
+[Beekeeper Studio](https://www.beekeeperstudio.io/) is a free, open-source SQL editor and database manager with support for ClickHouse.
+
+Features:
+
+- Modern SQL editor with autocomplete and multi-tab query execution.
+- Schema browser for tables, views, and columns.
+- Save and organize favorite queries.
+- Cross-platform desktop app (Windows, macOS, Linux), plus a self-hosted/web edition.
+
+[Beekeeper Studio and ClickHouse guide](https://docs.beekeeperstudio.io/user_guide/connecting/clickhouse/) · [GitHub](https://github.com/beekeeper-studio/beekeeper-studio)
+
+</Accordion>
+
 ## Commercial {#commercial}
+
+<Accordion title="ADQM Notebook">
+
+[ADQM Notebook](https://docs.arenadata.io/en/ADQM/current/notebook.html) is a notebook-style SQL workspace included in the Enterprise edition of [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), the column-oriented DBMS built on ClickHouse by Arenadata. It extends the built-in ClickHouse web interface with multi-cell notebooks, interactive results, query plan analysis, and a cluster-wide schema browser, and is available out of the box at `/notebook` on the HTTP port (`8123`) of an ADQM host, next to `/play`, or through Chproxy.
+
+Features:
+
+- SQL and Markdown cells, up to five statements per cell, and memory, time, and thread limits per notebook or cell.
+- SQL editor with syntax highlighting, autocompletion, `{{variable}}` substitution, and `Beautify SQL`.
+- Results as a sortable, searchable grid with per-column NULL share, unique count, and value range.
+- Line, area, and bar charts; downloads as CSV, TSV, JSON, JSONLines, or Parquet.
+- Estimated and actual query plans, `EXPLAIN PIPELINE` and logical views, and findings with suggested fixes.
+- Query statistics from `system.query_log` with a per-node breakdown; run history for the last five runs.
+- Databases panel for the local host or the whole cluster with column statistics and ready-made queries.
+- Dependency graph of tables, views, materialized views, dictionaries, and projections.
+- Live view of running queries with a `KILL` button.
+- Access through Chproxy as a single entry point to the cluster, with queries balanced across all hosts.
+- Auto-save, JSON export and import, notebook storage on the ClickHouse server, and sharing by link.
+
+</Accordion>
 
 <Accordion title="ProbeDeck">
 
@@ -655,4 +690,21 @@ Features:
 - Inline data editing in result tables with batched save, plus CSV/JSON/SQL export and import using ClickHouse's native formats.
 - Connection options: HTTP/HTTPS, SSH tunnel for private clusters behind a firewall, optional read-only mode for safe production browsing.
 - Works with ClickHouse Cloud and self-hosted.
+</Accordion>
+
+<Accordion title="ADQM Control">
+
+[ADQM Control](https://docs.arenadata.io/en/ADQMCONTROL/current/concept/overview.html) (Arenadata QuickMarts Control) is an observability platform for ClickHouse clusters deployed as [Arenadata QuickMarts (ADQM)](https://docs.arenadata.io/en/ADQM/current/introduction/intro.html), the column-oriented DBMS built on ClickHouse by Arenadata. It combines host metrics from Prometheus with data about hosts, tables, and queries collected from the cluster to show how tables grow, how queries behave, and where hosts are under pressure, across one or many ADQM clusters. ADQM Control is deployed as a separate cluster with [Arenadata Cluster Manager (ADCM)](https://github.com/arenadata/adcm) and stores collected data in PostgreSQL.
+
+Features:
+
+- Heat map of host states for the selected ADQM cluster.
+- Related alerts grouped into incidents by time, with adjustable sensitivity.
+- Table size, rows, and request counts over time, with skew and imbalance metrics across hosts.
+- Per-column compressed and uncompressed size, compression savings, and codec, with graphs.
+- Complete query history with status, exception codes, duration, memory, and rows and bytes read and written.
+- Query filters by text, table, user, host, duration, status, and exception-code presets.
+- Query graphs by duration, user, and kind; per-host load graphs with anomaly detection.
+- Threshold alerts on host resources that explain the problem and recommend a fix.
+
 </Accordion>

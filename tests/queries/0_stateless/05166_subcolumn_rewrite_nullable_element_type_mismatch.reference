@@ -1,0 +1,45 @@
+nested tuple element
+1	10	UInt64
+2	0	UInt64
+3	30	UInt64
+1	10	UInt64
+2	0	UInt64
+3	30	UInt64
+nested tuple element, ordinal
+1	10
+2	0
+3	30
+1	10
+2	0
+3	30
+nested tuple element, aggregated
+40
+40
+nested tuple element, already nullable
+1	1
+2	\N
+3	\N
+1	1
+2	\N
+3	\N
+1
+1
+variant element
+1	5	Nullable(Int64)
+2	\N	Nullable(Int64)
+3	\N	Nullable(Int64)
+1	5	Nullable(Int64)
+2	\N	Nullable(Int64)
+3	\N	Nullable(Int64)
+plain tuple element
+1	10	5
+2	20	\N
+1	10	5
+2	20	\N
+rewrite fired
+0
+0
+1
+1
+1
+1
