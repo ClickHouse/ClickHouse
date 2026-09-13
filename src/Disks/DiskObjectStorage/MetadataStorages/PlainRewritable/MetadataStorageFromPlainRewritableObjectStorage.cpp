@@ -142,6 +142,21 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
             if (!remote_path.has_value())
                 continue;
 
+            if (do_not_load_unchanged_directories && !file->metadata->etag.empty())
+            {
+                if (const auto known_path = local_paths_by_remote_directory.find(*remote_path);
+                    known_path != local_paths_by_remote_directory.end())
+                {
+                    if (auto known_info = read_snapshot->getDirectoryRemoteInfo(known_path->second);
+                        known_info && known_info->remote_path == *remote_path && known_info->etag == file->metadata->etag)
+                    {
+                        std::lock_guard guard(remote_layout_mutex);
+                        remote_layout[known_path->second] = std::move(*known_info);
+                        continue;
+                    }
+                }
+            }
+
             /// Passing by reference:
             /// log: Created before runner, so it will be destroyed after
             /// settings: Same as log
@@ -248,7 +263,14 @@ void MetadataStorageFromPlainRewritableObjectStorage::load(bool is_initial_load,
     runner.waitForAllToFinishAndRethrowFirstError();
 
     LOG_DEBUG(log, "Loaded metadata for {} directories", remote_layout.size());
+
+    std::unordered_map<std::string, std::string> new_local_paths;
+    new_local_paths.reserve(remote_layout.size());
+    for (const auto & [local_path, info] : remote_layout)
+        new_local_paths.emplace(info.remote_path, local_path);
+
     fs.applyLayout(std::move(remote_layout));
+    local_paths_by_remote_directory = std::move(new_local_paths);
     previous_refresh.restart();
 }
 

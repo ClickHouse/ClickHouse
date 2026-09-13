@@ -10,6 +10,7 @@
 #include <Disks/DiskObjectStorage/ObjectStorages/StoredObject.h>
 
 #include <memory>
+#include <unordered_map>
 
 namespace DB
 {
@@ -88,6 +89,8 @@ private:
     std::shared_ptr<PlainRewritableLayout> layout;
 
     std::mutex load_mutex;
+    /// Paths from the last completed load. Validate them against the current snapshot before reuse.
+    std::unordered_map<std::string, std::string> local_paths_by_remote_directory;
     AtomicStopwatch previous_refresh;
 };
 
