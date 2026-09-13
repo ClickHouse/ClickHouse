@@ -9842,7 +9842,17 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
     /// parts that `updateLightweightImpl` reads, rather than merely serving as an optimization
     /// hint. Besides explicit subqueries, `IN` accepts tables and table functions; the analyzer
     /// turns all three forms into prepared sets. Conservatively leave such commands unpruned.
-    auto contains_deferred_set = [](const ASTPtr & ast, const auto & self) -> bool
+    ///
+    /// A deferred set can also hide behind a column name: a column default (`ALIAS`, `DEFAULT`
+    /// or `MATERIALIZED`) may itself contain `partition_key IN some_table`, and the analysis
+    /// below deliberately expands such columns against the storage (`collectSourceColumns` with
+    /// `keep_alias_columns = false`), so the set still reaches `collectSets` while the raw
+    /// predicate mentions only the column name. Follow an identifier into its column default to
+    /// see it. A column default cannot reference itself, but keep the set of visited columns
+    /// anyway, so that malformed metadata cannot make the recursion unbounded.
+    const auto & columns_description = metadata_snapshot->getColumns();
+    std::unordered_set<String> visited_columns;
+    auto contains_deferred_set = [&](const ASTPtr & ast, const auto & self) -> bool
     {
         if (ast->as<ASTSubquery>())
             return true;
@@ -9853,7 +9863,15 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
             if (arguments.size() >= 2)
             {
                 const auto & right_argument = arguments[1];
-                if (right_argument->as<ASTTableIdentifier>())
+                /// A parsed `IN some_table` carries a plain `ASTIdentifier`, while an already
+                /// resolved one carries an `ASTTableIdentifier`; both spellings have to be listed,
+                /// because `IAST::as` is an exact-type cast rather than a `dynamic_cast`, and
+                /// `MarkTableIdentifiersVisitor` rewrites the node in place - including inside a
+                /// column default expression that the storage metadata keeps. Nothing else can
+                /// stand there: the right-hand side of `IN` is a set, a tuple, a subquery, a table
+                /// or a table function, so an identifier always names a table whose contents the
+                /// analyzer turns into a prepared set.
+                if (right_argument->as<ASTIdentifier>() || right_argument->as<ASTTableIdentifier>())
                     return true;
 
                 /// A non-literal function in the right-hand side may be a table function. It is
@@ -9875,6 +9893,17 @@ std::optional<std::set<String>> MergeTreeData::getPartitionIdsPrunedByPredicate(
                 };
 
                 if (right_argument->as<ASTFunction>() && !is_literal_enumeration(right_argument, is_literal_enumeration))
+                    return true;
+            }
+        }
+
+        if (const auto * identifier = ast->as<ASTIdentifier>())
+        {
+            const auto column_name = identifier->name();
+            if (const auto column_default = columns_description.getDefault(column_name);
+                column_default && column_default->expression && visited_columns.emplace(column_name).second)
+            {
+                if (self(column_default->expression, self))
                     return true;
             }
         }
