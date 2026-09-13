@@ -90,7 +90,22 @@ NameSet IMergedBlockOutputStream::removeEmptyColumnsFromPart(
     const String mrk_extension = data_part->getMarksFileExtension();
     for (const auto & column_name : columns_to_remove)
     {
-        auto serialization = data_part->tryGetSerialization(column_name);
+        /// A column the part does not hold has no files to remove. Its serialization must not be
+        /// looked up by name either: a column named like a subcolumn of another column (`a.size0`
+        /// next to an `Array` column `a`) resolves to that subcolumn's serialization once the column
+        /// itself is gone from the part, and the streams enumerated from it are the other column's -
+        /// removing them would take the array's offsets away and leave the part unreadable.
+        auto column_it = std::find_if(
+            columns.begin(), columns.end(), [&](const auto & column) { return column.name == column_name; });
+
+        if (column_it == columns.end())
+            continue;
+
+        auto info_it = serialization_infos.find(column_name);
+        auto serialization = info_it == serialization_infos.end()
+            ? IDataType::getSerialization(*column_it, serialization_infos.getSettings())
+            : IDataType::getSerialization(*column_it, *info_it->second);
+
         if (!serialization)
             continue;
 

@@ -1379,6 +1379,21 @@ static NameToNameVector collectFilesForRenames(
     NameToNameVector rename_vector;
     NameSet collected_names;
 
+    /// The serialization of a column the source part physically holds, or nothing when the part does
+    /// not hold it. The name must not be looked up in the part's serializations in the latter case: a
+    /// column named like a subcolumn of another column (`a.size0` next to an `Array` column `a`)
+    /// resolves to that subcolumn's serialization when the column itself is not stored in the part
+    /// (it is there only as a missing-column marker), and the streams enumerated from it are the
+    /// other column's - removing or renaming them would take the array's offsets away and leave the
+    /// part unreadable.
+    const auto & source_part_columns = source_part->getColumns();
+    auto try_get_serialization_of_stored_column = [&](const String & column_name) -> SerializationPtr
+    {
+        if (!source_part_columns.contains(column_name))
+            return nullptr;
+        return source_part->tryGetSerialization(column_name);
+    };
+
     auto add_rename = [&rename_vector, &collected_names] (const std::string & file_rename_from, const std::string & file_rename_to)
     {
         if (collected_names.emplace(file_rename_from).second)
@@ -1481,7 +1496,7 @@ static NameToNameVector collectFilesForRenames(
                     }
                 };
 
-                if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
                     serialization->enumerateStreams(callback);
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
@@ -1544,7 +1559,7 @@ static NameToNameVector collectFilesForRenames(
                         }
                     };
 
-                    if (auto serialization = source_part->tryGetSerialization(command.column_name))
+                    if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
                         serialization->enumerateStreams(callback);
                 }
             }
