@@ -53,7 +53,23 @@ void SharedMutex::unlock()
 
 void SharedMutex::lock_shared()
 {
-    UInt64 value = state.load();
+    /// Take a reader slot optimistically. Unlike a compare-exchange this cannot
+    /// fail, so concurrent readers never retry against each other; the hardware
+    /// queues the increments on the line instead. With many readers the retries
+    /// were themselves the contention, so the read path used to get worse as
+    /// readers were added rather than merely staying flat.
+    UInt64 value = state.fetch_add(1);
+    if (likely(!(value & writers)))
+        return;
+
+    /// A writer holds the lock or is waiting for readers to drain, so withdraw.
+    /// Withdrawing can make this the last reader the writer was waiting for, so
+    /// it has to be woken exactly as unlock_shared() would.
+    value = state.fetch_sub(1) - 1;
+    if (value == writers)
+        futexWakeLowerOne(state);
+
+    value = state.load();
     while (true)
     {
         if (unlikely(value & writers))
