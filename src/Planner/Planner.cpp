@@ -247,7 +247,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
 
     /// `table_nodes` also holds the nested query and union scopes, and the settings may be set only in one
     /// of them, so the top-level context alone is not enough to tell whether the estimation will run.
-    const bool parallel_replicas_estimation_enabled = std::ranges::any_of(table_nodes, [](const TableExpressionNodePtr & scope)
+    const bool parallel_replicas_estimation_enabled = std::ranges::any_of(table_nodes, [](const QueryTreeNodePtr & scope)
     {
         const auto * scope_query = scope->as<QueryNode>();
         const auto * scope_union = scope->as<UnionNode>();
