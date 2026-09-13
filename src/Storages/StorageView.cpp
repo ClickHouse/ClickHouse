@@ -39,6 +39,7 @@
 #include <Core/ServerSettings.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
+#include <Core/SettingsFields.h>
 
 #include <QueryPipeline/Pipe.h>
 #include <Processors/Transforms/MaterializingTransform.h>
@@ -743,19 +744,48 @@ StoragePtr StorageView::tryGetUnderlyingDistributed(const StorageSnapshotPtr & s
     return underlying;
 }
 
-bool StorageView::hasAdditionalTableFilter(const StorageID & storage_id, const String & alias, const ContextPtr & context)
+bool StorageView::additionalTableFiltersApplyTo(
+    const Field & additional_table_filters, const std::vector<StorageID> & table_ids, const String & alias, const String & current_database)
 {
-    const auto & additional_filters = context->getSettingsRef()[Setting::additional_table_filters].value;
-    for (const auto & additional_filter : additional_filters)
+    /// The setting accepts a map literal as well as its string form; `SettingFieldMap` is what
+    /// applies either to a context, so it is also what decides whether the value is well-formed.
+    Map filters;
+    try
     {
-        const auto & table = additional_filter.safeGet<Tuple>().at(0).safeGet<String>();
-        if (table == alias
-            || (table == storage_id.getTableName() && context->getCurrentDatabase() == storage_id.getDatabaseName())
-            || table == storage_id.getFullNameNotQuoted())
+        filters = SettingFieldMap(additional_table_filters).value;
+    }
+    catch (const Exception &)
+    {
+        /// Not a map of string to string: cannot be proven to apply to no table, so it counts as applying.
+        return true;
+    }
+
+    for (const auto & additional_filter : filters)
+    {
+        if (additional_filter.getType() != Field::Types::Tuple)
             return true;
+        const auto & tuple = additional_filter.safeGet<Tuple>();
+        if (tuple.size() != 2 || tuple[0].getType() != Field::Types::String)
+            return true;
+
+        const auto & table = tuple[0].safeGet<String>();
+        if (!alias.empty() && table == alias)
+            return true;
+        for (const auto & table_id : table_ids)
+        {
+            if ((table == table_id.getTableName() && current_database == table_id.getDatabaseName())
+                || table == table_id.getFullNameNotQuoted())
+                return true;
+        }
     }
 
     return false;
+}
+
+bool StorageView::hasAdditionalTableFilter(const StorageID & storage_id, const String & alias, const ContextPtr & context)
+{
+    return additionalTableFiltersApplyTo(
+        context->getSettingsRef()[Setting::additional_table_filters].value, {storage_id}, alias, context->getCurrentDatabase());
 }
 
 void StorageView::readImpl(
@@ -1069,7 +1099,11 @@ bool StorageView::isSecurityBarrier(const StorageInMemoryMetadata & metadata, co
 /// produces are accepted; any other change - including one that resets a setting to its default,
 /// which may undo a limit of the definer's profile - fails closed. Query parameters bind values
 /// into the query text, so a clause carrying them is not a pure tuning clause either.
-bool StorageView::settingsClauseCanHideRows(const ASTPtr & settings_ast)
+/// `additional_table_filters` is special: its entries are keyed by table, so a clause whose entries
+/// provably name none of the tables the query reads hides nothing. The caller that has resolved
+/// the source table decides that through `additional_table_filters_apply`; without it the setting
+/// fails closed.
+bool StorageView::settingsClauseCanHideRows(const ASTPtr & settings_ast, const std::function<bool(const Field &)> & additional_table_filters_apply)
 {
     if (!settings_ast)
         return false;
@@ -1118,8 +1152,17 @@ bool StorageView::settingsClauseCanHideRows(const ASTPtr & settings_ast)
         return true;
 
     for (const auto & change : set_query->changes)
+    {
+        if (change.name == "additional_table_filters")
+        {
+            if (!additional_table_filters_apply || additional_table_filters_apply(change.value))
+                return true;
+            continue;
+        }
+
         if (!execution_only_settings.contains(change.name))
             return true;
+    }
 
     for (const auto & name : set_query->default_settings)
         if (!execution_only_settings.contains(name))
@@ -1141,11 +1184,14 @@ bool StorageView::effectiveContextCanHideRows(const ContextPtr & context)
     if (settings[Setting::limit] != 0 || settings[Setting::offset] != 0)
         return true;
 
-    /// `additional_result_filter` grows a filter step on top of the inner query's result
-    /// (the inner interpreter runs at subquery depth 0), and `additional_table_filters`
-    /// filter the tables it reads. Both hide rows just like clauses of the view's AST.
-    /// Fail closed without matching the filtered table names against the view's sources.
-    if (!settings[Setting::additional_result_filter].value.empty() || !settings[Setting::additional_table_filters].value.empty())
+    /// `additional_result_filter` grows a filter step on top of the inner query's result (the
+    /// inner interpreter runs at subquery depth 0), so it hides rows of any query just like a
+    /// clause of the view's AST. `additional_table_filters` is deliberately absent: its entries
+    /// are keyed by table and hide rows only of a query that reads one of those tables, so
+    /// `canHideRows` matches them against the source table once it has resolved it. Checking the
+    /// setting here would make every `SQL SECURITY DEFINER` view whose definer profile filters
+    /// some unrelated table a barrier for no semantic reason.
+    if (!settings[Setting::additional_result_filter].value.empty())
         return true;
 
     /// `final` makes every source read of the inner query a `FINAL` read, which hides the
@@ -1217,18 +1263,16 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
     if (!select)
         return true;
 
-    /// `GROUP BY ALL` uses a flag instead of a non-empty `groupBy` expression list, and a query
-    /// setting may introduce a limit or otherwise change which rows the view exposes. Both must
-    /// fail closed just like their explicit counterparts - but a clause of pure execution tuning
-    /// (`SETTINGS max_threads = 1`) must not turn a projection-only view into a barrier.
-    /// `LIMIT n AFTER expr UNTIL expr` selects a range of the sorted result, so it hides every row
-    /// outside that range exactly like `LIMIT` / `OFFSET` do.
+    /// `GROUP BY ALL` uses a flag instead of a non-empty `groupBy` expression list, so it must
+    /// fail closed just like its explicit counterpart. `LIMIT n AFTER expr UNTIL expr` selects a
+    /// range of the sorted result, so it hides every row outside that range exactly like
+    /// `LIMIT` / `OFFSET` do. The `SETTINGS` clause of the query is checked below, once the
+    /// source table it may filter is known.
     if (select->distinct
         || select->where() || select->prewhere() || select->having() || select->qualify()
         || select->groupBy() || select->group_by_all
         || select->limitLength() || select->limitOffset() || select->limitByLength() || select->limitByOffset()
-        || select->limitAfter() || select->limitUntil()
-        || settingsClauseCanHideRows(select->settings()))
+        || select->limitAfter() || select->limitUntil())
         return true;
 
     /// `ARRAY JOIN` drops rows with an empty array (and `LEFT ARRAY JOIN` is not worth
@@ -1250,9 +1294,18 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
             /*has_distinct=*/ select->distinct))
         return true;
 
+    /// A query setting may introduce a limit or otherwise change which rows the view exposes, so a
+    /// `SETTINGS` clause fails closed just like the explicit clauses above - but a clause of pure
+    /// execution tuning (`SETTINGS max_threads = 1`) must not turn a projection-only view into a
+    /// barrier. An `additional_table_filters` entry hides rows only of a query that reads the
+    /// table it names, so it is matched against the source table below; a query whose source is
+    /// not a single plainly named table (no `FROM`, a subquery) has no such table to match it
+    /// against and fails closed on it.
+    const auto & settings_clause = select->settings();
+
     const auto & tables = select->tables();
     if (!tables || tables->children.empty())
-        return false;   /// A `SELECT` without `FROM` reads nothing it could hide.
+        return settingsClauseCanHideRows(settings_clause);   /// A `SELECT` without `FROM` reads nothing it could hide.
 
     /// Any `JOIN` changes which rows are observable below the view.
     if (tables->children.size() != 1)
@@ -1272,6 +1325,10 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
 
     if (table_expression->subquery)
     {
+        /// The clause applies to the nested query as well, whose source this level does not see.
+        if (settingsClauseCanHideRows(settings_clause))
+            return true;
+
         const auto & subquery_children = table_expression->subquery->children;
         return subquery_children.empty() || canHideRows(subquery_children.front(), context);
     }
@@ -1313,6 +1370,22 @@ bool StorageView::canHideRows(const ASTPtr & inner_query, const ContextPtr & con
         if (!table)
             return true;
     }
+
+    /// An `additional_table_filters` entry keyed by the source table - by the name the view's
+    /// query uses, by its alias, or by the storage a proxy / `Alias` table forwards the read to -
+    /// is applied to the source read exactly like a `WHERE` of the view's query. The entry may
+    /// come from the effective context (a definer profile) or from the `SETTINGS` clause of the
+    /// view's own query; both are matched the way the interpreters match them, so that an entry
+    /// for an unrelated table does not turn a projection-only view into a barrier.
+    const std::vector<StorageID> source_table_ids = {table_id, table->getStorageID()};
+    const String source_alias = identifier->tryGetAlias();
+    const auto additional_table_filters_apply = [&](const Field & additional_table_filters)
+    {
+        return additionalTableFiltersApplyTo(additional_table_filters, source_table_ids, source_alias, context->getCurrentDatabase());
+    };
+    if (settingsClauseCanHideRows(settings_clause, additional_table_filters_apply)
+        || additional_table_filters_apply(context->getSettingsRef()[Setting::additional_table_filters].value))
+        return true;
 
     /// A view can hide rows of its own, and these engines read other tables, which may be views.
     const auto & engine = table->getName();

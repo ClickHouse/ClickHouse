@@ -1492,10 +1492,14 @@ void pushOrderByIntoView(
         /// `prefer_column_name_to_alias` written in the view definition; it does not see
         /// settings inherited through a `SQL SECURITY DEFINER` view's definer profile.
         /// Any setting of that context that hides rows - a `limit`/`offset`, an extra
-        /// filter, `final`, a limit with a non-throwing overflow mode - constrains which
+        /// result filter, `final`, a limit with a non-throwing overflow mode - constrains which
         /// rows the view exposes just like an inner clause would, so re-sorting and
         /// truncating around it changes the result. Reuse the very set that
         /// `StorageView::canHideRows` rejects, so that the two guards cannot drift apart.
+        /// `additional_table_filters` is not part of that set: an entry of the definer profile
+        /// keyed by the view's source table is applied at the source read, below the injected
+        /// `ORDER BY ... LIMIT`, exactly like a `WHERE` of the view's query (which the pushdown
+        /// allows), and `parseAdditionalFilterAstIfNeeded` below forwards it to the shards.
         if (StorageView::effectiveContextCanHideRows(view_context))
             return;
 

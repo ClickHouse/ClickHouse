@@ -1,5 +1,7 @@
 #pragma once
 
+#include <functional>
+
 #include <Interpreters/Context_fwd.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/IAST_fwd.h>
@@ -74,6 +76,15 @@ public:
     /// below its own filtering. See `IQueryPlanStep::isSecurityBarrier`.
     static bool isSecurityBarrier(const StorageInMemoryMetadata & metadata, const ContextPtr & context);
 
+    /// Whether one of the `additional_table_filters` entries applies to a table expression, with
+    /// the matching rule of the interpreters: an entry is keyed by the alias of the table
+    /// expression, by the bare table name (of a table in the current database) or by the
+    /// qualified `database.table` name. Every table the read may end up at is passed, so a proxy
+    /// or an `Alias` table lists both itself and the storage that serves the read. Only a
+    /// well-formed value (a map of string to string) can be proven not to apply; anything else
+    /// counts as applying.
+    static bool additionalTableFiltersApplyTo(const Field & additional_table_filters, const std::vector<StorageID> & table_ids, const String & alias, const String & current_database);
+
     /// Whether `additional_table_filters` has a predicate that applies to this view. Such a
     /// predicate is evaluated in the view's output namespace and can hide rows just like a row
     /// policy attached to the view.
@@ -83,14 +94,20 @@ public:
     /// filter, `final`, an identifier-resolution switch, ...). Only settings that provably tune
     /// execution alone are accepted; anything else, including a reset to a default, fails closed.
     /// It is the AST-side counterpart of `effectiveContextCanHideRows`.
-    static bool settingsClauseCanHideRows(const ASTPtr & settings_ast);
+    /// `additional_table_filters` is the one setting whose effect depends on what the query reads:
+    /// a caller that knows the source table of the query passes `additional_table_filters_apply`,
+    /// which decides whether the value of the clause matches that source (see
+    /// `additionalTableFiltersApplyTo`); without it the setting fails closed like any other.
+    static bool settingsClauseCanHideRows(
+        const ASTPtr & settings_ast, const std::function<bool(const Field &)> & additional_table_filters_apply = {});
 
     /// Whether the effective security context of the view hides rows by itself, through settings
-    /// inherited from a `SQL SECURITY DEFINER` view's definer profile (a `limit`, an extra filter,
-    /// `final`, a limit with a non-throwing overflow mode, ...). Fails closed like `canHideRows`,
-    /// of which it is the settings-only part. Only settings that hide rows of *any* query belong
-    /// here; the ones whose effect depends on the shape of the query are in
-    /// `shapeDependentOverflowCanHideRows`.
+    /// inherited from a `SQL SECURITY DEFINER` view's definer profile (a `limit`, an extra result
+    /// filter, `final`, a limit with a non-throwing overflow mode, ...). Fails closed like
+    /// `canHideRows`, of which it is the settings-only part. Only settings that hide rows of *any*
+    /// query belong here; the ones whose effect depends on the shape of the query are in
+    /// `shapeDependentOverflowCanHideRows`, and `additional_table_filters`, whose effect depends
+    /// on what the query reads, is matched against the source table by `canHideRows` itself.
     static bool effectiveContextCanHideRows(const ContextPtr & context);
 
     /// Whether the effective security context hides rows through a limit with a non-throwing
