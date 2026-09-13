@@ -332,7 +332,7 @@ ObjectInfoPtr IcebergIterator::next(size_t)
         IcebergDataObjectInfoPtr object_info
             = std::make_shared<IcebergDataObjectInfo>(
                 manifest_file_entry,
-                persistent_components.path_resolver.resolve(manifest_file_entry->parsed_entry->file_path_key),
+                manifest_file_entry->file_path,
                 table_state_snapshot->schema_id,
                 Iceberg::getIdentityPartitionColumnValues(*manifest_file_entry, *persistent_components.schema_processor));
         for (const auto & position_delete :

@@ -181,7 +181,7 @@ Plan getPlan(
 
                 IcebergDataObjectInfoPtr data_object_info = std::make_shared<IcebergDataObjectInfo>(
                     data_file,
-                    persistent_table_components.path_resolver.resolve(data_file->parsed_entry->file_path_key),
+                    data_file->file_path,
                     0,
                     Iceberg::getIdentityPartitionColumnValues(*data_file, *persistent_table_components.schema_processor));
                 /// One DataFilePlan per source *data file*, keyed by the data file's own path.
