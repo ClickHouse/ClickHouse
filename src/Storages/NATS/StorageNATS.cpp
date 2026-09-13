@@ -343,11 +343,36 @@ void StorageNATS::initializeConsumersFunc()
 
 void StorageNATS::createConsumersConnection()
 {
+    /// The NATS client library closes a connection for good once the server has rejected the same
+    /// credentials on two consecutive reconnect attempts - a rotated password and an expired token
+    /// both take that path - and it never reopens a closed connection. Build a new one, otherwise
+    /// the table would stay silently idle until it is detached and attached again.
+    if (consumers_connection && consumers_connection->isClosed())
+    {
+        LOG_INFO(
+            log,
+            "The NATS client library closed the connection to {}, creating a new one",
+            consumers_connection->connectionInfoForLog());
+
+        dropConsumers();
+        consumers_connection.reset();
+    }
+
     if (consumers_connection)
         return;
 
     auto connect_future = event_handler.createConnection(configuration);
     consumers_connection = connect_future.get();
+}
+
+void StorageNATS::dropConsumers()
+{
+    unsubscribeConsumers();
+
+    /// A consumer subscribes through the connection it was created with, so it cannot outlive it.
+    const size_t num_consumers_to_drop = num_created_consumers.exchange(0);
+    for (size_t i = 0; i < num_consumers_to_drop; ++i)
+        popConsumer();
 }
 
 void StorageNATS::createConsumers()
@@ -717,6 +742,18 @@ bool StorageNATS::checkDependencies(const StorageID & table_id)
 void StorageNATS::threadFunc()
 {
     auto table_id = getStorageID();
+
+    /// A closed connection is dead for good, and this task only waits for one to reconnect. Hand
+    /// the table back to the initialization task, which builds a new connection and new consumers.
+    if (!shutdown_called && consumers_connection && consumers_connection->isClosed())
+    {
+        LOG_INFO(log, "The connection to {} is closed, reinitializing the consumers",
+            consumers_connection->connectionInfoForLog());
+
+        unsubscribeConsumers();
+        initialize_consumers_task->scheduleAfter(RESCHEDULE_MS);
+        return;
+    }
 
     bool consumers_queues_are_empty = false;
 
