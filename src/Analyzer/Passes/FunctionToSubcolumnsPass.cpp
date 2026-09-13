@@ -286,7 +286,7 @@ void optimizeFunctionStringByteSize(QueryTreeNodePtr & node, FunctionNode & func
     NameAndTypePair column{ctx.column.name + ".size", std::make_shared<DataTypeUInt64>()};
     if (sourceHasColumn(ctx.column_source, column.name)
         || sourceHasColumnCaseInsensitive(ctx.column_source, column.name)
-        || !canOptimizeToExpectedSubcolumn(ctx.column_source, column.name, SerializationString::isStringSizesSubcolumn, column.type))
+        || !canOptimizeToExpectedSubcolumn(ctx, column.name, SerializationString::isStringSizesSubcolumn, column.type))
         return;
 
     /// `byteSize(String)` includes the storage representation's per-row
