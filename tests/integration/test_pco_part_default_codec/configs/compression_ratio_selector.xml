@@ -1,0 +1,15 @@
+<clickhouse>
+    <!-- A ratio-based `<compression>` selector: parts making up at least half of the table's active
+         size use `ZSTD(3)`, and smaller ratios fall through to the factory default (`LZ4`). Used to
+         check that sanitizing an unsuitable part default codec on the metadata-load path evaluates
+         this selector as if the part were already active: the part is not counted in the active total
+         while its metadata loads, so without adding its size back a lone attached part would compute
+         ratio `0` and always match only the smallest-ratio case. -->
+    <compression>
+        <case>
+            <min_part_size_ratio>0.5</min_part_size_ratio>
+            <method>zstd</method>
+            <level>3</level>
+        </case>
+    </compression>
+</clickhouse>

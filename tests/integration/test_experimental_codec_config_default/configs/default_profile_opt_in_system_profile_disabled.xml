@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <enable_zxc_codec>1</enable_zxc_codec>
+        </default>
+        <system>
+            <enable_zxc_codec>0</enable_zxc_codec>
+        </system>
+    </profiles>
+</clickhouse>

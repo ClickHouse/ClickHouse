@@ -510,6 +510,9 @@ public:
     /// as a part with no `checksums.txt` at all.
     bool checksums_were_regenerated = false;
 
+    /// The codec read from the part metadata before `default_codec` is sanitized for future writes.
+    CompressionCodecPtr on_disk_default_codec;
+
     mutable std::unique_ptr<VersionMetadata> version;
 
     /// Version of part metadata (columns, pk and so on). Managed properly only for replicated merge tree.
@@ -969,9 +972,15 @@ private:
     void calculateColumnsSizesOnDisk() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
     void calculateSecondaryIndicesSizesOnDisk() const TSA_REQUIRES(columns_and_secondary_indices_sizes_mutex);
 
-    /// Load default compression codec from file default_compression_codec.txt
+    /// Read the default compression codec from file default_compression_codec.txt
     /// if it not exists tries to deduce codec from compressed column without
-    /// any specifial compression.
+    /// any specifial compression. Sets `default_codec` to what the part records
+    /// on disk, without checking that it can be used for the writes to come.
+    void readDefaultCompressionCodec();
+
+    /// `readDefaultCompressionCodec` plus the sanitization of the result for future writes: keeps the
+    /// value read from disk in `on_disk_default_codec` and replaces `default_codec` when it cannot be
+    /// applied to the untyped streams a part write feeds it into.
     void loadDefaultCompressionCodec();
     void loadPatchPartIndex();
 

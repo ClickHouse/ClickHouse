@@ -1933,6 +1933,11 @@ public:
     String getDefaultProfileName() const;
     String getSystemProfileName() const;
 
+    /// The server-level policy for settings inherited from configuration is governed by the live default
+    /// profile, not by the settings of whichever session happens to touch the configuration-inherited value.
+    /// Returns the effective settings of the current default profile.
+    Settings getDefaultProfileSettings();
+
     /// Base path for format schemas
     String getFormatSchemaPath() const;
     void setFormatSchemaPath(const String & path);

@@ -712,8 +712,13 @@ struct ContextSharedPart : boost::noncopyable
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
-    /// Rules for selecting the compression settings, depending on the size of the part.
+    /// Rules for selecting the compression settings, depending on the size of the part. Empty while
+    /// the `<compression>` configuration names a gated codec, because such a selector is only valid
+    /// for the policy it was validated against; see `Context::chooseCompressionCodec`.
     mutable std::unique_ptr<CompressionCodecSelector> compression_codec_selector TSA_GUARDED_BY(mutex);
+    /// Bumped every time the configuration is replaced, so a policy read outside the lock can be
+    /// detected as stale and re-read instead of being baked into a freshly built selector.
+    mutable UInt64 compression_codec_selector_generation TSA_GUARDED_BY(mutex) = 0;
     /// Storage disk chooser for MergeTree engines
     mutable std::shared_ptr<const DiskSelector> merge_tree_disk_selector TSA_GUARDED_BY(storage_policies_mutex);
     /// Storage policy chooser for MergeTree engines
@@ -969,6 +974,8 @@ struct ContextSharedPart : boost::noncopyable
 
         std::lock_guard lock(mutex);
         config = config_value;
+        compression_codec_selector.reset();
+        ++compression_codec_selector_generation;
         access_control->setExternalAuthenticatorsConfig(*config_value);
     }
 
@@ -7333,20 +7340,60 @@ void Context::setDashboardsConfig(const Poco::Util::AbstractConfiguration & conf
 
 CompressionCodecPtr Context::chooseCompressionCodec(size_t part_size, double part_size_ratio) const
 {
-    std::lock_guard lock(shared->mutex);
-
-    if (!shared->compression_codec_selector)
+    /// The selector is shared by every part write, so the codec gates must come from the server-level
+    /// policy (the default profile), not from the settings of whichever query happens to trigger the
+    /// build.
+    ///
+    /// The policy is read *without* holding `shared->mutex`: reading it goes through `AccessControl`,
+    /// which takes that same non-recursive mutex (and may do IO), so reading it under the lock
+    /// deadlocks the very first `MergeTree` part write of the process. The generation counter detects
+    /// a configuration reload racing with that read, in which case the policy is re-read, so the
+    /// selector is never built from a policy older than the configuration it is built for.
+    while (true)
     {
-        constexpr auto config_name = "compression";
-        const auto & config = shared->getConfigRefWithLock(lock);
+        UInt64 generation = 0;
 
-        if (config.has(config_name))
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>(config, "compression");
-        else
-            shared->compression_codec_selector = std::make_unique<CompressionCodecSelector>();
+        {
+            SharedLockGuard lock(shared->mutex);
+            if (shared->compression_codec_selector)
+                return shared->compression_codec_selector->choose(part_size, part_size_ratio);
+            generation = shared->compression_codec_selector_generation;
+        }
+
+        const Settings default_profile_settings = getGlobalContext()->getDefaultProfileSettings();
+
+        {
+            std::lock_guard lock(shared->mutex);
+
+            if (shared->compression_codec_selector)
+                return shared->compression_codec_selector->choose(part_size, part_size_ratio);
+
+            if (shared->compression_codec_selector_generation != generation)
+                continue;
+
+            constexpr auto config_name = "compression";
+            const auto & config = shared->getConfigRefWithLock(lock);
+
+            auto selector = config.has(config_name)
+                ? std::make_unique<CompressionCodecSelector>(
+                      config, config_name, CodecValidationSettings(default_profile_settings))
+                : std::make_unique<CompressionCodecSelector>();
+
+            /// A selector a gate decision went into is deliberately not cached. The default profile
+            /// can change with nothing that would invalidate a cached selector: `ALTER SETTINGS
+            /// PROFILE` on the default profile updates `AccessControl` directly, and a users-directory
+            /// refresh does the same, so neither reaches a configuration-reload hook. A cached
+            /// selector would then keep putting a codec the policy no longer allows into every new
+            /// part. Deriving it per part write costs a default-profile read, and only a
+            /// `<compression>` configuration that actually names a gated codec pays it - an ordinary
+            /// one is resolved once and reused for the lifetime of the configuration.
+            if (selector->dependsOnCodecGates())
+                return selector->choose(part_size, part_size_ratio);
+
+            shared->compression_codec_selector = std::move(selector);
+            return shared->compression_codec_selector->choose(part_size, part_size_ratio);
+        }
     }
-
-    return shared->compression_codec_selector->choose(part_size, part_size_ratio);
 }
 
 
@@ -7908,6 +7955,17 @@ void Context::setDefaultProfiles(const Poco::Util::AbstractConfiguration & confi
 String Context::getDefaultProfileName() const
 {
     return shared->default_profile_name;
+}
+
+Settings Context::getDefaultProfileSettings()
+{
+    /// `getSettingsRef` on the global context contains the `system_profile` snapshot. Construct
+    /// the effective settings from the current `default_profile` instead, so `SYSTEM RELOAD USERS`
+    /// changes this server-level policy without restarting the server.
+    Settings default_profile_settings;
+    default_profile_settings.applyChanges(
+        getAccessControl().getSettingsProfileInfo(getAccessControl().getID<SettingsProfile>(getDefaultProfileName()))->settings);
+    return default_profile_settings;
 }
 
 String Context::getSystemProfileName() const

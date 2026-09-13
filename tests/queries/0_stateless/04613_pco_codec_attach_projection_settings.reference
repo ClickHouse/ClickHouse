@@ -1,0 +1,8 @@
+marks	1000
+marks_after_alter	1000
+marks_settings	{}
+primary_key	1000
+primary_key_after_alter	1000
+marks_sz3	1000
+mixed	1000
+mixed_settings	{'index_granularity':'4096'}
