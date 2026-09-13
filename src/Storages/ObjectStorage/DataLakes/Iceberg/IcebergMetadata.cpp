@@ -320,6 +320,16 @@ void IcebergMetadata::backgroundMetadataPrefetcherThread()
     }
 }
 
+/// Every schema-id the table metadata describes is registered before any manifest file is read, so
+/// that a schema-id is always resolved through the table metadata rather than through whichever
+/// copy of the schema happened to be read first.
+static void addAllTableMetadataSchemas(const Poco::JSON::Object::Ptr & metadata_object, IcebergSchemaProcessor & schema_processor)
+{
+    if (!metadata_object->isArray(f_schemas))
+        return;
+    schema_processor.addTableMetadataSchemas(metadata_object->getArray(f_schemas));
+}
+
 Int32 IcebergMetadata::parseTableSchema(
     const Poco::JSON::Object::Ptr & metadata_object,
     IcebergSchemaProcessor & schema_processor,
@@ -333,7 +343,8 @@ Int32 IcebergMetadata::parseTableSchema(
     if (format_version == 2)
     {
         auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-        schema_processor.addIcebergTableSchema(schema);
+        addAllTableMetadataSchemas(metadata_object, schema_processor);
+        schema_processor.addIcebergTableSchema(schema, Iceberg::SchemaSource::TableMetadata);
         return current_schema_id;
     }
     else
@@ -341,7 +352,8 @@ Int32 IcebergMetadata::parseTableSchema(
         try
         {
             auto [schema, current_schema_id] = parseTableSchemaV1Method(metadata_object);
-            schema_processor.addIcebergTableSchema(schema);
+            addAllTableMetadataSchemas(metadata_object, schema_processor);
+            schema_processor.addIcebergTableSchema(schema, Iceberg::SchemaSource::TableMetadata);
             return current_schema_id;
         }
         catch (const Exception & first_error)
@@ -351,7 +363,8 @@ Int32 IcebergMetadata::parseTableSchema(
             try
             {
                 auto [schema, current_schema_id] = parseTableSchemaV2Method(metadata_object);
-                schema_processor.addIcebergTableSchema(schema);
+                addAllTableMetadataSchemas(metadata_object, schema_processor);
+                schema_processor.addIcebergTableSchema(schema, Iceberg::SchemaSource::TableMetadata);
                 LOG_WARNING(
                     metadata_logger,
                     "Iceberg table schema was parsed using v2 specification, but it was impossible to parse it using v1 "
@@ -382,10 +395,11 @@ static Poco::JSON::Object::Ptr traverseMetadataAndFindNecessarySnapshotObject(
     if (metadata_object->has(f_last_column_id) && !metadata_object->isNull(f_last_column_id))
         schema_processor->updateLastColumnId(metadata_object->getValue<Int32>(f_last_column_id));
     auto schemas = metadata_object->get(f_schemas).extract<Poco::JSON::Array::Ptr>();
+    schema_processor->addTableMetadataSchemas(schemas);
     for (UInt32 j = 0; j < schemas->size(); ++j)
     {
         auto schema = schemas->getObject(j);
-        schema_processor->addIcebergTableSchema(schema);
+        schema_processor->addIcebergTableSchema(schema, Iceberg::SchemaSource::TableMetadata);
     }
     Poco::JSON::Object::Ptr current_snapshot = nullptr;
     auto snapshots = metadata_object->get(f_snapshots).extract<Poco::JSON::Array::Ptr>();

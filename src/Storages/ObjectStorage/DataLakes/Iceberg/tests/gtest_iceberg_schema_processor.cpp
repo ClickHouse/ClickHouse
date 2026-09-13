@@ -141,7 +141,7 @@ TEST(IcebergSchemaProcessor, InitialSchemaTypeWithStringLiteralArgumentThrows)
 {
     auto schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"MyType('Hello ( world )')"}]})json");
     IcebergSchemaProcessor processor;
-    EXPECT_THROW(processor.addIcebergTableSchema(schema), DB::Exception);
+    EXPECT_THROW(processor.addIcebergTableSchema(schema, SchemaSource::TableMetadata), DB::Exception);
 }
 
 /// The primitive parser must accept the same inner-whitespace spellings that the
@@ -171,28 +171,119 @@ TEST(IcebergSchemaProcessor, DecimalTypeWhitespaceIsInsensitive)
     auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(20,0)"}]})json");
     auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(20, 0)"}]})json");
     IcebergSchemaProcessor processor;
-    processor.addIcebergTableSchema(first);
-    EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
+    processor.addIcebergTableSchema(first, SchemaSource::TableMetadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(second, SchemaSource::TableMetadata));
 }
 
-/// A genuinely different type bound to the same schema-id must still be rejected.
-TEST(IcebergSchemaProcessor, RebindingSchemaIdToDifferentTypeStillRejected)
+/// A newer table metadata file that binds a schema-id to different fields wins over the schema
+/// cached from an older one: the table metadata is the source of truth and data files are resolved
+/// by field id, so the read applies the schema the table currently declares (issue #107316).
+TEST(IcebergSchemaProcessor, NewerTableMetadataRebindingSchemaIdWins)
 {
     auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(20,0)"}]})json");
     auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(20,2)"}]})json");
     IcebergSchemaProcessor processor;
-    processor.addIcebergTableSchema(first);
-    EXPECT_THROW(processor.addIcebergTableSchema(second), DB::Exception);
+    processor.addIcebergTableSchema(first, SchemaSource::TableMetadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(second, SchemaSource::TableMetadata));
+
+    auto schema = processor.getClickHouseTableSchemaById(0);
+    ASSERT_EQ(schema->size(), 1u);
+    EXPECT_EQ(schema->front().type->getName(), "Nullable(Decimal(20, 2))");
 }
 
-/// A renamed field bound to the same schema-id must still be rejected (issue #107316).
-TEST(IcebergSchemaProcessor, RebindingSchemaIdToRenamedFieldStillRejected)
+TEST(IcebergSchemaProcessor, NewerTableMetadataRenamingFieldWins)
 {
     auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"long"}]})json");
     auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c9","required":false,"type":"long"}]})json");
     IcebergSchemaProcessor processor;
-    processor.addIcebergTableSchema(first);
-    EXPECT_THROW(processor.addIcebergTableSchema(second), DB::Exception);
+    processor.addIcebergTableSchema(first, SchemaSource::TableMetadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(second, SchemaSource::TableMetadata));
+
+    auto schema = processor.getClickHouseTableSchemaById(0);
+    ASSERT_EQ(schema->size(), 1u);
+    EXPECT_EQ(schema->front().name, "c9");
+}
+
+/// The copy of a schema embedded in a manifest file is the one its writer serialized at write time.
+/// It must not override the table metadata, and disagreeing with it must not make the table
+/// unreadable: the id is resolved through the table metadata either way.
+TEST(IcebergSchemaProcessor, ManifestSchemaDoesNotOverrideTableMetadata)
+{
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"long"}]})json");
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c9","required":false,"type":"string"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_metadata, SchemaSource::TableMetadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(from_manifest, SchemaSource::ManifestFile));
+
+    auto schema = processor.getClickHouseTableSchemaById(0);
+    ASSERT_EQ(schema->size(), 1u);
+    EXPECT_EQ(schema->front().name, "c0");
+    EXPECT_EQ(schema->front().type->getName(), "Nullable(Int64)");
+}
+
+/// The table metadata wins even when the manifest was read first, which is the usual order for the
+/// historical schema-ids of a table: only the current schema comes from the metadata on a plain read.
+TEST(IcebergSchemaProcessor, TableMetadataOverridesSchemaReadFromManifestEarlier)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c9","required":false,"type":"string"}]})json");
+    auto from_metadata = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"long"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_manifest, SchemaSource::ManifestFile);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(from_metadata, SchemaSource::TableMetadata));
+
+    auto schema = processor.getClickHouseTableSchemaById(0);
+    ASSERT_EQ(schema->size(), 1u);
+    EXPECT_EQ(schema->front().name, "c0");
+    EXPECT_EQ(schema->front().type->getName(), "Nullable(Int64)");
+}
+
+/// A schema-id the table metadata does not describe is still learned from the manifest file.
+TEST(IcebergSchemaProcessor, ManifestSchemaFillsSchemaIdMissingFromTableMetadata)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":7,"fields":[{"id":1,"name":"c0","required":false,"type":"long"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_manifest, SchemaSource::ManifestFile);
+
+    auto schema = processor.getClickHouseTableSchemaById(7);
+    ASSERT_EQ(schema->size(), 1u);
+    EXPECT_EQ(schema->front().name, "c0");
+}
+
+/// A manifest file's schema-id is the Avro metadata key, not the `schema-id` member of the schema
+/// JSON it embeds: writers serialize a schema object that carries the default 0 there. The schema
+/// must be registered under the id the caller resolved, otherwise it shadows an unrelated schema-id.
+TEST(IcebergSchemaProcessor, ManifestSchemaIdOverrideWins)
+{
+    auto from_manifest = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"long"}]})json");
+    IcebergSchemaProcessor processor;
+    processor.addIcebergTableSchema(from_manifest, SchemaSource::ManifestFile, /*schema_id_override=*/3);
+
+    EXPECT_TRUE(processor.hasClickHouseTableSchemaById(3));
+    EXPECT_FALSE(processor.hasClickHouseTableSchemaById(0));
+}
+
+/// Within one table metadata file a schema-id denotes exactly one schema, so two different schemas
+/// sharing an id there are malformed metadata: nothing can resolve which one applies.
+TEST(IcebergSchemaProcessor, DuplicateSchemaIdInOneTableMetadataRejected)
+{
+    Poco::JSON::Parser parser;
+    auto schemas = parser
+                       .parse(R"json([{"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"long"}]},
+                                      {"schema-id":0,"fields":[{"id":1,"name":"c9","required":false,"type":"long"}]}])json")
+                       .extract<Poco::JSON::Array::Ptr>();
+    IcebergSchemaProcessor processor;
+    EXPECT_THROW(processor.addTableMetadataSchemas(schemas), DB::Exception);
+}
+
+TEST(IcebergSchemaProcessor, RepeatedIdenticalSchemaIdInOneTableMetadataAccepted)
+{
+    Poco::JSON::Parser parser;
+    auto schemas = parser
+                       .parse(R"json([{"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(20,0)"}]},
+                                      {"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(20, 0)"}]}])json")
+                       .extract<Poco::JSON::Array::Ptr>();
+    IcebergSchemaProcessor processor;
+    EXPECT_NO_THROW(processor.addTableMetadataSchemas(schemas));
 }
 
 /// The whitespace-insensitive comparison must reach into list/map wrappers: the nested
@@ -205,8 +296,8 @@ TEST(IcebergSchemaProcessor, ListElementDecimalWhitespaceIsInsensitive)
     auto second = parseSchema(
         R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":{"type":"list","element-id":2,"element-required":false,"element":"decimal(20, 0)"}}]})json");
     IcebergSchemaProcessor processor;
-    processor.addIcebergTableSchema(first);
-    EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
+    processor.addIcebergTableSchema(first, SchemaSource::TableMetadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(second, SchemaSource::TableMetadata));
 }
 
 /// Same for map key/value primitive types (here map<decimal, decimal>).
@@ -217,8 +308,8 @@ TEST(IcebergSchemaProcessor, MapKeyValueDecimalWhitespaceIsInsensitive)
     auto second = parseSchema(
         R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":{"type":"map","key-id":2,"key":"decimal(20, 0)","value-id":3,"value-required":false,"value":"decimal(10, 2)"}}]})json");
     IcebergSchemaProcessor processor;
-    processor.addIcebergTableSchema(first);
-    EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
+    processor.addIcebergTableSchema(first, SchemaSource::TableMetadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(second, SchemaSource::TableMetadata));
 }
 
 /// The Iceberg geography/geometry primitives carry parameters too, e.g.
@@ -230,8 +321,8 @@ TEST(IcebergSchemaProcessor, GeographyTypeWhitespaceIsInsensitive)
     auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C,A)"}]})json");
     auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C, A)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
-    processor.addIcebergTableSchema(first);
-    EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
+    processor.addIcebergTableSchema(first, SchemaSource::TableMetadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(second, SchemaSource::TableMetadata));
 }
 
 /// A geo type string carrying leading/trailing whitespace must map to its alias just like the
@@ -243,8 +334,8 @@ TEST(IcebergSchemaProcessor, GeographyTypeEdgeWhitespaceIsInsensitive)
     auto first = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":" geography(C,A) "}]})json");
     auto second = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"geography(C, A)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
-    processor.addIcebergTableSchema(first);
-    EXPECT_NO_THROW(processor.addIcebergTableSchema(second));
+    processor.addIcebergTableSchema(first, SchemaSource::TableMetadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(second, SchemaSource::TableMetadata));
 }
 
 /// Schema-evolution path: renaming a geo field across two schema-ids while only changing the
@@ -256,8 +347,8 @@ TEST(IcebergSchemaProcessor, RenameGeoFieldAcrossSchemaIdsWithWhitespaceIsRename
     auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"a","required":false,"type":"geography(C,A)"}]})json");
     auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"b","required":false,"type":"geography(C, A)"}]})json");
     IcebergSchemaProcessor processor(/*allow_geo_parser_=*/true);
-    processor.addIcebergTableSchema(old_schema);
-    processor.addIcebergTableSchema(new_schema);
+    processor.addIcebergTableSchema(old_schema, SchemaSource::TableMetadata);
+    processor.addIcebergTableSchema(new_schema, SchemaSource::TableMetadata);
 
     auto dag = processor.getSchemaTransformationDagByIds(0, 1);
     ASSERT_TRUE(dag);
@@ -273,7 +364,7 @@ TEST(IcebergSchemaProcessor, InitialSchemaDecimalInnerWhitespaceAccepted)
 {
     auto schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal( 20, 0 )"}]})json");
     IcebergSchemaProcessor processor;
-    EXPECT_NO_THROW(processor.addIcebergTableSchema(schema));
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(schema, SchemaSource::TableMetadata));
 }
 
 /// Schema-evolution across two schema-ids where a decimal widens (allowed conversion) while its
@@ -284,8 +375,8 @@ TEST(IcebergSchemaProcessor, WidenDecimalAcrossSchemaIdsWithInnerWhitespace)
     auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(10,2)"}]})json");
     auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal( 20, 2 )"}]})json");
     IcebergSchemaProcessor processor;
-    processor.addIcebergTableSchema(old_schema);
-    processor.addIcebergTableSchema(new_schema);
+    processor.addIcebergTableSchema(old_schema, SchemaSource::TableMetadata);
+    processor.addIcebergTableSchema(new_schema, SchemaSource::TableMetadata);
 
     auto dag = processor.getSchemaTransformationDagByIds(0, 1);
     ASSERT_TRUE(dag);
@@ -294,16 +385,21 @@ TEST(IcebergSchemaProcessor, WidenDecimalAcrossSchemaIdsWithInnerWhitespace)
     EXPECT_EQ(outputs[0]->result_type->getName(), "Nullable(Decimal(20, 2))");
 }
 
-/// A genuinely different nested type inside a list wrapper must still be rejected.
-TEST(IcebergSchemaProcessor, RebindingListElementToDifferentTypeStillRejected)
+/// A genuinely different nested type inside a list wrapper is a rebinding too, so the newest table
+/// metadata wins there as well.
+TEST(IcebergSchemaProcessor, NewerTableMetadataRebindingListElementWins)
 {
     auto first = parseSchema(
         R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":{"type":"list","element-id":2,"element-required":false,"element":"decimal(20,0)"}}]})json");
     auto second = parseSchema(
         R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":{"type":"list","element-id":2,"element-required":false,"element":"decimal(20,2)"}}]})json");
     IcebergSchemaProcessor processor;
-    processor.addIcebergTableSchema(first);
-    EXPECT_THROW(processor.addIcebergTableSchema(second), DB::Exception);
+    processor.addIcebergTableSchema(first, SchemaSource::TableMetadata);
+    EXPECT_NO_THROW(processor.addIcebergTableSchema(second, SchemaSource::TableMetadata));
+
+    auto schema = processor.getClickHouseTableSchemaById(0);
+    ASSERT_EQ(schema->size(), 1u);
+    EXPECT_EQ(schema->front().type->getName(), "Array(Nullable(Decimal(20, 2)))");
 }
 
 /// Spacing normalization only removes whitespace adjacent to the delimiters '(', ')', '[', ']', ','.
@@ -325,7 +421,7 @@ TEST(IcebergSchemaProcessor, InitialSchemaDecimalMalformedInnerTokenWhitespaceTh
 {
     auto schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(2 0,0)"}]})json");
     IcebergSchemaProcessor processor;
-    EXPECT_THROW(processor.addIcebergTableSchema(schema), DB::Exception);
+    EXPECT_THROW(processor.addIcebergTableSchema(schema, SchemaSource::TableMetadata), DB::Exception);
 }
 
 /// Trailing garbage after the scale token must be rejected. Canonicalizing spacing does not remove
@@ -341,7 +437,7 @@ TEST(IcebergSchemaProcessor, InitialSchemaDecimalTrailingGarbageInScaleThrows)
 {
     auto schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(20,0 0)"}]})json");
     IcebergSchemaProcessor processor;
-    EXPECT_THROW(processor.addIcebergTableSchema(schema), DB::Exception);
+    EXPECT_THROW(processor.addIcebergTableSchema(schema, SchemaSource::TableMetadata), DB::Exception);
 }
 
 /// A new schema-id introduced during evolution is parsed at add time (getSimpleType runs on every
@@ -352,8 +448,8 @@ TEST(IcebergSchemaProcessor, SchemaEvolutionDecimalTrailingGarbageInScaleThrows)
     auto old_schema = parseSchema(R"json({"schema-id":0,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(10,2)"}]})json");
     auto new_schema = parseSchema(R"json({"schema-id":1,"fields":[{"id":1,"name":"c0","required":false,"type":"decimal(20,2 2)"}]})json");
     IcebergSchemaProcessor processor;
-    processor.addIcebergTableSchema(old_schema);
-    EXPECT_THROW(processor.addIcebergTableSchema(new_schema), DB::Exception);
+    processor.addIcebergTableSchema(old_schema, SchemaSource::TableMetadata);
+    EXPECT_THROW(processor.addIcebergTableSchema(new_schema, SchemaSource::TableMetadata), DB::Exception);
 }
 
 /// A missing scale ("decimal(20,)") or a sign-only scale ("decimal(20,+)") is malformed metadata and
