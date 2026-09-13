@@ -315,6 +315,10 @@ public:
     /// Get schema meta info for a specific schema_id.
     std::pair<Int32, String> getTableSchemaInfoById(Int32 schema_id) const;
     std::optional<std::pair<Int64, String>> getLatestTableSnapshotInfo();
+    /// Smallest snapshot id still present in the warehouse. Snapshots below it were
+    /// expired by Paimon; ids in [earliest, latest] are contiguous and must be readable.
+    /// Returns nullopt when the table has no snapshots at all.
+    std::optional<Int64> getEarliestSnapshotId();
     PaimonSnapshot getSnapshot(const std::pair<Int64, String> & snapshot_meta_info);
     PaimonManifest getDataManifest(String manifest_path, const PaimonTableSchema & table_schema, const String & partition_default_name, bool disable_filesystem_cache = false);
     std::pair<std::vector<PaimonManifestFileMeta>, size_t> getManifestMeta(String manifest_list_path, bool disable_filesystem_cache = false);
