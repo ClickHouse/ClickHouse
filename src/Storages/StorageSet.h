@@ -87,6 +87,10 @@ public:
     std::optional<UInt64> totalRows(ContextPtr query_context) const override;
     std::optional<UInt64> totalBytes(ContextPtr query_context) const override;
 
+    /// `read` is not supported, but the number of rows is known exactly, so a bare `count` can still
+    /// be answered from `totalRows` instead of failing. `StorageJoin` does the same.
+    bool supportsTrivialCountOptimization(const StorageSnapshotPtr &, ContextPtr) const override { return true; }
+
 private:
     /// Allows to concurrently truncate the set and work (read/fill) the existing set.
     mutable std::mutex mutex;

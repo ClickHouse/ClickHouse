@@ -21,7 +21,6 @@ protected:
     ColumnPtr executeDryRunImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const final;
 
     bool useDefaultImplementationForNulls() const final { return function->useDefaultImplementationForNulls(); }
-    bool isNullPropagating(const DataTypePtr & result_type) const final { return function->isNullPropagating(result_type); }
     bool useDefaultImplementationForNothing() const final { return function->useDefaultImplementationForNothing(); }
     bool useDefaultImplementationForConstants() const final { return function->useDefaultImplementationForConstants(); }
     bool useDefaultImplementationForLowCardinalityColumns() const final { return function->useDefaultImplementationForLowCardinalityColumns(); }
@@ -83,6 +82,7 @@ public:
     }
 
     bool isStateful() const override { return function->isStateful(); }
+    bool hasObservableSideEffects() const override { return function->hasObservableSideEffects(); }
     bool isSpatialPredicate() const override { return function->isSpatialPredicate(); }
 
 
