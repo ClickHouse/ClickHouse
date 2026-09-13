@@ -16,17 +16,17 @@ TAIL="../$(basename "${USER_FILES_PATH}")/nul_${CLICKHOUSE_DATABASE}"
 
 echo "-- a path with an embedded NUL is rejected"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT * FROM deltaLakeLocal('${USER_FILES_PATH}/../probe_${CLICKHOUSE_DATABASE}\0/${TAIL}')
-" 2>&1 | grep -c "PATH_ACCESS_DENIED"
+    SELECT * FROM deltaLakeLocal('${USER_FILES_PATH}/../probe_${CLICKHOUSE_DATABASE}\0/${TAIL}') -- { serverError PATH_ACCESS_DENIED }
+"
 
 echo "-- the same for icebergLocal"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT * FROM icebergLocal('${USER_FILES_PATH}/../probe_${CLICKHOUSE_DATABASE}\0/${TAIL}')
-" 2>&1 | grep -c "PATH_ACCESS_DENIED"
+    SELECT * FROM icebergLocal('${USER_FILES_PATH}/../probe_${CLICKHOUSE_DATABASE}\0/${TAIL}') -- { serverError PATH_ACCESS_DENIED }
+"
 
 echo "-- a path inside user_files is still accepted (and fails for its own reason)"
 mkdir -p "${USER_FILES_PATH}/nul_${CLICKHOUSE_DATABASE}"
 ${CLICKHOUSE_CLIENT} --query "
-    SELECT * FROM deltaLakeLocal('${USER_FILES_PATH}/nul_${CLICKHOUSE_DATABASE}')
-" 2>&1 | grep -c "DELTA_KERNEL_ERROR"
+    SELECT * FROM deltaLakeLocal('${USER_FILES_PATH}/nul_${CLICKHOUSE_DATABASE}') -- { serverError DELTA_KERNEL_ERROR }
+"
 rmdir "${USER_FILES_PATH}/nul_${CLICKHOUSE_DATABASE}"
