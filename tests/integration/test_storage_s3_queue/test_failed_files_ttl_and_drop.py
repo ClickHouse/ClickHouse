@@ -3437,3 +3437,93 @@ def test_system_drop_failed_files_azure_queue(started_cluster):
     # Cleanup
     node.query(f"DROP TABLE {table_name}")
     node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_wait_for_path_reads_loading_retries_live(started_cluster):
+    """`waitForPathToBeProcessed()` must react to `ALTER TABLE ... MODIFY SETTING s3queue_loading_retries`
+    made while a `SYSTEM FLUSH OBJECT STORAGE QUEUE ... PATH` wait is already in progress, not to a
+    retry-limit value captured when the wait started.
+
+    A file is failed once (one retry) against a generous initial limit (5), so the wait's first
+    terminality check finds it still retryable and would otherwise proceed to watch for further
+    Keeper changes. The pause failpoint parks the wait right before that check runs. While parked,
+    the limit is lowered to 1 - at or below the file's already-recorded retry count - which should
+    make the wait's next check of the (now live) limit see the file as terminal. Disabling the
+    failpoint lets that check run: if it still used the value captured when the wait started, it
+    would see the original, higher limit and keep waiting instead of raising promptly.
+    """
+    node = started_cluster.instances["instance"]
+    table_name = f"test_wait_live_retries_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    file_name = "bad_one.csv"
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "s3queue_loading_retries": 5,
+            "failed_files_ttl_sec": 0,
+            "tracked_files_limit": 0,
+        },
+    )
+
+    put_s3_file_content(started_cluster, f"{files_path}/{file_name}", b"invalid,data,here\n")
+
+    create_mv(node, table_name, dst_table_name)
+
+    def failed_znode_count():
+        result = node.query(
+            f"SELECT count() FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        return int(result) if result else 0
+
+    failed_ready = False
+    for _ in range(60):
+        if failed_znode_count() == 1:
+            failed_ready = True
+            break
+        time.sleep(1)
+    assert failed_ready, "expected the file to reach a Failed state before the retry limit is hit"
+
+    node.query("SYSTEM ENABLE FAILPOINT object_storage_queue_pause_before_wait_retry_check")
+
+    flush_errors = []
+
+    def run_flush():
+        try:
+            node.query(
+                f"SYSTEM FLUSH OBJECT STORAGE QUEUE default.{table_name} "
+                f"PATH '{files_path}/{file_name}'"
+            )
+        except Exception as exc:
+            flush_errors.append(exc)
+
+    flush_thread = threading.Thread(target=run_flush)
+    flush_thread.start()
+
+    node.query(
+        "SYSTEM WAIT FAILPOINT object_storage_queue_pause_before_wait_retry_check PAUSE"
+    )
+
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING s3queue_loading_retries=1")
+    node.query("SYSTEM DISABLE FAILPOINT object_storage_queue_pause_before_wait_retry_check")
+
+    flush_thread.join(timeout=30)
+    assert not flush_thread.is_alive(), (
+        "SYSTEM FLUSH did not return after the retry limit was lowered mid-wait - "
+        "the terminality check is still reading a stale limit instead of the live one"
+    )
+    assert len(flush_errors) == 1, f"expected exactly one ABORTED error, got: {flush_errors}"
+    assert "failed to be processed" in str(flush_errors[0]), (
+        f"expected a 'failed to be processed' ABORTED error, got: {flush_errors[0]}"
+    )
+
+    node.query(f"DROP TABLE IF EXISTS {table_name}")
+    node.query(f"DROP TABLE IF EXISTS {dst_table_name}")
