@@ -1212,6 +1212,25 @@ void StorageLog::updateTotalRows(const WriteLock &)
         total_rows = 0;
 }
 
+bool StorageLog::hasNothingToBackUp() const
+{
+    if (!num_data_files)
+        return true;
+
+    /// Recorded bytes in any column mean there is something to preserve, whatever the row signal says:
+    /// a leading column can serialize to nothing while a later one holds the rows, and a table whose
+    /// marks file went missing still has its data on disk.
+    for (const auto & data_file : data_files)
+        if (file_checker.getFileSize(data_file.path))
+            return false;
+
+    /// No column occupies bytes, which is legitimate for a column of empty aggregate states. For `Log`
+    /// the marks are then what say whether there are rows; `TinyLog` keeps none and cannot tell.
+    return !use_marks_file
+        || data_files[INDEX_WITH_REAL_ROW_COUNT].marks.empty()
+        || data_files[INDEX_WITH_REAL_ROW_COUNT].marks.back().rows == 0;
+}
+
 std::optional<UInt64> StorageLog::totalRows(ContextPtr) const
 {
     if (use_marks_file && marks_loaded)
@@ -1238,7 +1257,7 @@ void StorageLog::backupData(BackupEntriesCollector & backup_entries_collector, c
     if (!lock)
         throw Exception(ErrorCodes::TIMEOUT_EXCEEDED, "Lock timeout exceeded");
 
-    if (!num_data_files || !file_checker.getFileSize(data_files[INDEX_WITH_REAL_ROW_COUNT].path))
+    if (hasNothingToBackUp())
         return;
 
     fs::path data_path_in_backup_fs = data_path_in_backup;
