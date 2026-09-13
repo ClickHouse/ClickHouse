@@ -59,7 +59,7 @@ MergeTreePartInfo constructPartInfo(std::string_view data)
 }
 
 /// Tries to parse part name format: "<prefix>_<part_name>_<tryN>".
-UnpackedPartSegments unpackPartName(std::string_view data)
+UnpackedPartSegments unpackPartName(std::string_view data, bool is_detached = false)
 {
     UnpackedPartSegments unpacked;
 
@@ -91,25 +91,27 @@ UnpackedPartSegments unpackPartName(std::string_view data)
     }
     case 5: /// prefix_partition_min_max_level or partition_min_max_level_mutation
     {
-        /// Prefer a known detached prefix over the ambiguous mutated part format.
-        for (std::string_view known_prefix : DetachedPartInfo::DETACH_REASONS)
+        if (is_detached)
         {
-            if (data.starts_with(known_prefix)
-                && known_prefix.size() < right
-                && data[known_prefix.size()] == '_')
+            for (std::string_view known_prefix : DetachedPartInfo::DETACH_REASONS)
             {
-                if (auto info = tryParseMergeTreePartInfo(data.substr(
-                        known_prefix.size() + 1, right - known_prefix.size() - 1)))
+                if (data.starts_with(known_prefix)
+                    && known_prefix.size() < right
+                    && data[known_prefix.size()] == '_')
                 {
-                    unpacked.prefix = known_prefix;
-                    unpacked.part_info = std::move(info.value());
-                    break;
+                    if (auto info = tryParseMergeTreePartInfo(data.substr(
+                            known_prefix.size() + 1, right - known_prefix.size() - 1)))
+                    {
+                        unpacked.prefix = known_prefix;
+                        unpacked.part_info = std::move(info.value());
+                        break;
+                    }
                 }
             }
-        }
 
-        if (!unpacked.prefix.empty())
-            break;
+            if (!unpacked.prefix.empty())
+                break;
+        }
 
         if (auto info = tryParseMergeTreePartInfo(data.substr(0, right)))
         {
@@ -142,6 +144,11 @@ UnpackedPartSegments unpackPartName(std::string_view data)
 bool isAnyStringType(const IDataType & data_type)
 {
     return isStringOrFixedString(removeLowCardinality(data_type.getPtr()));
+}
+
+bool isBoolType(const IDataType & data_type)
+{
+    return data_type.getName() == "Bool";
 }
 
 class FunctionMergeTreePartCoverage final : public IFunction
@@ -202,13 +209,19 @@ public:
     bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForSparseColumns() const override { return false; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return false; }
-    size_t getNumberOfArguments() const override { return 1; }
+    bool isVariadic() const override { return true; }
+    size_t getNumberOfArguments() const override { return 0; }
+    ColumnNumbers getArgumentsThatAreAlwaysConstant() const override { return {1}; }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
-        validateFunctionArguments(*this, arguments, FunctionArgumentDescriptors{
+        FunctionArgumentDescriptors mandatory_args{
             {"part_name", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isAnyStringType), nullptr, "String or FixedString or LowCardinality String"}
-        });
+        };
+        FunctionArgumentDescriptors optional_args{
+            {"is_detached", static_cast<FunctionArgumentDescriptor::TypeValidator>(&isBoolType), isColumnConst, "const Bool"}
+        };
+        validateFunctionArguments(*this, arguments, mandatory_args, optional_args);
 
         DataTypes types = {
             std::make_shared<DataTypeString>(),
@@ -236,6 +249,7 @@ public:
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
     {
         const ColumnPtr & input_column = arguments[0].column;
+        const bool is_detached = arguments.size() == 2 && arguments[1].column->getBool(0);
 
         auto partition_column = ColumnString::create();
         auto prefix_column = ColumnString::create();
@@ -247,7 +261,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const auto [part_info, prefix, suffix] = unpackPartName(input_column->getDataAt(i));
+            const auto [part_info, prefix, suffix] = unpackPartName(input_column->getDataAt(i), is_detached);
 
             partition_column->insertData(part_info.getPartitionId().data(), part_info.getPartitionId().size());
             prefix_column->insertData(prefix.data(), prefix.size());
@@ -306,9 +320,10 @@ SELECT isMergeTreePartCoveredBy(rhs, lhs), isMergeTreePartCoveredBy(lhs, rhs);
     FunctionDocumentation::Description description_info = R"(
 Function that helps to cut the useful values out of the `MergeTree` part name.
     )";
-    FunctionDocumentation::Syntax syntax_info = "mergeTreePartInfo(part_name)";
+    FunctionDocumentation::Syntax syntax_info = "mergeTreePartInfo(part_name[, is_detached])";
     FunctionDocumentation::Arguments arguments_info = {
-        {"part_name", "Name of part to unpack.", {"String"}}
+        {"part_name", "Name of part to unpack.", {"String"}},
+        {"is_detached", "If true, parse the name as a detached part. This is needed for names which are also valid regular part names.", {"const Bool"}}
     };
     FunctionDocumentation::ReturnedValue returned_value_info = {"Returns a Tuple with subcolumns: `partition_id`, `min_block`, `max_block`, `level`, `mutation`.", {"Tuple"}};
     FunctionDocumentation::Examples examples_info = {
