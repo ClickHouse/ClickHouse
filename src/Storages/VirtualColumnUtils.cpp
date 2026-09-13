@@ -531,12 +531,11 @@ void addRequestedFileLikeStorageVirtualsToChunk(
                 chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
             }
         }
-        else if (virtual_column.name == "_headers")
+        /// Only the sources that read an HTTP response supply the map; for any other source a
+        /// `_headers` virtual is a Hive path key, which the loop's Hive branch materializes.
+        else if (virtual_column.name == "_headers" && virtual_values.headers)
         {
-            if (virtual_values.headers)
-                chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.headers)->convertToFullColumnIfConst());
-            else
-                chunk.addColumn(virtual_column.type->createColumnConstWithDefaultValue(chunk.getNumRows())->convertToFullColumnIfConst());
+            chunk.addColumn(virtual_column.type->createColumnConst(chunk.getNumRows(), *virtual_values.headers)->convertToFullColumnIfConst());
         }
         else if (virtual_column.name == "_data_lake_snapshot_version")
         {
