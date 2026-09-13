@@ -659,8 +659,9 @@ protected:
 
     /// The effective values of the settings of this session as the server reports them, asked one
     /// by one and cached - see `serverEffectiveSettingValue`. A `nullopt` value means the server
-    /// does not know that setting. Not guarded by `USE_CLIENT_AI`: `help` needs the dialect
-    /// question in every build.
+    /// does not know that setting. A `SET` of a setting drops the answer about it, and a
+    /// `SET profile` drops all of them: it changes a set of settings the client is not told.
+    /// Not guarded by `USE_CLIENT_AI`: `help` needs the dialect question in every build.
     std::map<String, std::optional<String>> server_effective_setting_values;
     /// Set while such a question is in flight. It is an internal query itself, and those ask the
     /// question before they are sent, so it must not be asked again while being answered.

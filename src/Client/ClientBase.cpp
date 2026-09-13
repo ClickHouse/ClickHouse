@@ -3174,9 +3174,23 @@ void ClientBase::processParsedSingleQuery(
             if (changes_setting("profile"))
             {
                 dialect_may_be_changed_by_profile = true;
+                /// A profile changes an unknown set of settings and the client is not told which,
+                /// so no cached answer about the effective value of a setting survives it - see
+                /// `serverEffectiveSettingValue`. Without this, a value asked about before the
+                /// profile was applied would still be used after it.
+                server_effective_setting_values.clear();
 #if USE_CLIENT_AI
                 ai_query_log_access_permanently_disabled = true;
 #endif
+            }
+            else
+            {
+                /// The cached answers are the effective values as of the moment the server was
+                /// asked, so the settings this statement changes have to be asked again.
+                for (const auto & change : changes)
+                    server_effective_setting_values.erase(change.name);
+                for (const auto & name : set_query->default_settings)
+                    server_effective_setting_values.erase(name);
             }
 
             /// Query parameters inside SET queries should be also saved on the client side
@@ -5063,11 +5077,13 @@ bool ClientBase::sessionMayDisplaySecrets()
     if (!value.has_value())
         return true;
 
-    /// Otherwise the value of the client is the effective one when the settings of the server reach
-    /// the client at all; when they do not, the one the server reported is.
-    if (client_context->getSettingsRef()[Setting::apply_settings_from_server])
-        return false;
-
+    /// Otherwise the answer of the server decides, and the local value is not consulted at all.
+    /// It used to be, for a session with `apply_settings_from_server = 1`, on the grounds that the
+    /// settings of the server reach such a client anyway - but a `SET profile` is applied on the
+    /// server without being reported back, so after one the local value is stale in exactly the
+    /// direction that matters, and the shortcut answered "it does not display secrets" for a
+    /// session that does. Asking costs nothing here: every caller has already asked whether the
+    /// server knows the setting, and both questions share one cached answer.
     return *value != "0";
 }
 
