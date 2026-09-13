@@ -2,6 +2,7 @@
 #include <DataTypes/DataTypeString.h>
 
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeMap.h>
@@ -471,10 +472,13 @@ bool tupleElementNameIsOrdinalOnly(const QueryTreeNodePtr & column_source, const
 }
 
 template <typename DataType>
-void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+void optimizeElementOfType(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx, const DataType & data_type_concrete, const DataTypePtr & subcolumn_type_override)
 {
     /// Replace `tupleElement(tuple_argument, string_literal)`, `tupleElement(tuple_argument, integer_literal)` with `tuple_argument.column_name`.
     /// Replace `variantElement(variant_argument, string_literal)` with `variant_argument.column_name`.
+    ///
+    /// `data_type_concrete` is the type the element is looked up in. It is the column type itself, or the
+    /// tuple inside a `Nullable(Tuple(...))` column, whose subcolumn is then typed as `subcolumn_type_override`.
 
     auto & function_arguments_nodes = function_node.getArguments().getNodes();
     if (function_arguments_nodes.size() != 2)
@@ -484,13 +488,12 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
     if (!second_argument_constant_node)
         return;
 
-    const auto & data_type_concrete = assert_cast<const DataType &>(*ctx.column.type);
     auto subcolumn = getSubcolumnForElement(second_argument_constant_node->getValue(), data_type_concrete);
 
     if (!subcolumn)
         return;
 
-    NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn->type};
+    NameAndTypePair column{ctx.column.name + "." + subcolumn->name, subcolumn_type_override ? subcolumn_type_override : subcolumn->type};
 
     if constexpr (std::is_same_v<DataType, DataTypeTuple>)
         if (tupleElementNameIsAmbiguousWhenFlattened(data_type_concrete, subcolumn->name)
@@ -509,6 +512,28 @@ void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & funct
         || !canOptimizeToExpectedSubcolumn(ctx, column.name, is_expected_subcolumn, function_node.getResultType()))
         return;
     node = std::make_shared<ColumnNode>(column, ctx.column_source);
+}
+
+template <typename DataType>
+void optimizeTupleOrVariantElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    optimizeElementOfType(node, function_node, ctx, assert_cast<const DataType &>(*ctx.column.type), nullptr);
+}
+
+/// Replace `tupleElement(nullable_tuple_argument, literal)` with `nullable_tuple_argument.column_name`.
+///
+/// The element read as a subcolumn of a `Nullable(Tuple(...))` column carries the enclosing null map
+/// (see `applyParentNullMapToExtractedSubcolumn`), and `tupleElement` folds that null map into its
+/// result the same way, so both are `NULL` in a row whose whole tuple is `NULL`. The subcolumn is
+/// typed as the function result, and the rewrite is refused when storage resolves it to another type.
+void optimizeNullableTupleElement(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    const auto & data_type_nullable = assert_cast<const DataTypeNullable &>(*ctx.column.type);
+    const auto * data_type_tuple = typeid_cast<const DataTypeTuple *>(data_type_nullable.getNestedType().get());
+    if (!data_type_tuple)
+        return;
+
+    optimizeElementOfType(node, function_node, ctx, *data_type_tuple, function_node.getResultType());
 }
 
 void optimizeDistinctJSONPaths(QueryTreeNodePtr & node, FunctionNode &, ColumnContext & ctx)
@@ -670,6 +695,9 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
         {TypeIndex::Tuple, "tupleElement"}, optimizeTupleOrVariantElement<DataTypeTuple>,
     },
     {
+        {TypeIndex::Nullable, "tupleElement"}, optimizeNullableTupleElement,
+    },
+    {
         {TypeIndex::Variant, "variantElement"}, optimizeTupleOrVariantElement<DataTypeVariant>,
     },
     {
@@ -708,6 +736,7 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
 {
     {TypeIndex::Map, "arrayElement"},
     {TypeIndex::Tuple, "tupleElement"},
+    {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
     {TypeIndex::QBit, "tupleElement"},
 };
@@ -874,11 +903,12 @@ ColumnNode * resolveTrivialAliasChain(ColumnNode * column_node)
 /// A storage may permit only tuple element rewrites while still refusing every other transformer
 /// (see IStorage::supportsOptimizationToTupleElementSubcolumns). Applied by both passes through
 /// getTypedNodesForOptimization, so their decisions cannot diverge.
-bool storageAllowsTransformer(const IStorage & storage, TypeIndex type_id, const String & function_name)
+bool storageAllowsTransformer(const IStorage & storage, const IDataType & type, const String & function_name)
 {
     if (storage.supportsOptimizationToSubcolumns())
         return true;
-    return storage.supportsOptimizationToTupleElementSubcolumns() && type_id == TypeIndex::Tuple && function_name == "tupleElement";
+    /// A `Nullable(Tuple(...))` element is a tuple element as well; `QBit` is not.
+    return storage.supportsOptimizationToTupleElementSubcolumns() && function_name == "tupleElement" && isTuple(removeNullable(type.getPtr()));
 }
 
 std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesForOptimization(const QueryTreeNodePtr & node, const ContextPtr & context)
@@ -918,7 +948,7 @@ std::tuple<FunctionNode *, ColumnNode *, TableExpressionNodePtr> getTypedNodesFo
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName())
+    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName())
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 
@@ -980,7 +1010,7 @@ getTypedNodesForChainedOptimization(const QueryTreeNodePtr & node, const Context
     if (view_source && view_source->getStorageID().getFullNameNotQuoted() == storage->getStorageID().getFullNameNotQuoted())
         return {};
 
-    if (!storageAllowsTransformer(*storage, column.type->getTypeId(), function_node->getFunctionName())
+    if (!storageAllowsTransformer(*storage, *column.type, function_node->getFunctionName())
         || storage_snapshot->metadata->isVirtualColumn(column.name))
         return {};
 

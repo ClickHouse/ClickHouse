@@ -64,9 +64,10 @@ SELECT key, tupleElement(t.inner, 'x'), variantElement(t.v, 'Int64') FROM t_plai
 SELECT key, tupleElement(t.inner, 'x'), variantElement(t.v, 'Int64') FROM t_plain_tuple_element ORDER BY key SETTINGS optimize_functions_to_subcolumns = 1;
 
 -- The answers above are equal whether or not a rewrite happened, so assert which rewrites fire.
--- `t.inner` is `Nullable(Tuple(...))`, and `FunctionToSubcolumnsPass` keys its transformers on
--- `Tuple`, so no `tupleElement` over it is rewritten. `t.v` is a `Variant`, which cannot be inside
--- `Nullable`, so it stays bare and its rewrite fires, as do both rewrites on the plain tuple.
+-- `t.inner` is `Nullable(Tuple(...))`: its element subcolumns carry the enclosing null map exactly as
+-- `tupleElement` folds it into its result, so the rewrite fires for the named, the ordinal and the
+-- already-`Nullable` element. `t.v` is a `Variant`, which cannot be inside `Nullable`, so it stays
+-- bare and its rewrite fires, as do both rewrites on the plain tuple.
 
 SELECT 'rewrite fired';
 SELECT count() > 0 FROM (EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1 SELECT tupleElement(t.inner, 'x') FROM t_nullable_tuple_element SETTINGS optimize_functions_to_subcolumns = 1) WHERE explain ILIKE '%t.inner.x%';

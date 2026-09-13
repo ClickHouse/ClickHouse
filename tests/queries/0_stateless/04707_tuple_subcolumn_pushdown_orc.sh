@@ -45,10 +45,9 @@ run_and_report top_level '' 'id = 11111'
 run_and_report tuple_element 'id Int64, tup Tuple(`1` Int64, `2` String)' 'tup.1 = 11111'
 run_and_report tuple_element_ci 'id Int64, TUP Tuple(`1` Int64, `2` String)' 'TUP.1 = 11111' 'input_format_orc_case_insensitive_column_matching = 1'
 
-# A struct is inferred as `Nullable(Tuple(...))`, and `tupleElement` over a `Nullable(Tuple(...))`
-# column is not rewritten to a subcolumn read, so the predicate never becomes a key of the ORC
-# search argument and the whole file is read.
-echo '-- an inferred Nullable(Tuple(...)) element does not reach the search argument'
+# A struct is inferred as `Nullable(Tuple(...))`; `tupleElement` over it is rewritten to a subcolumn
+# read as well, so the inferred shape prunes like the explicit one.
+echo '-- an inferred Nullable(Tuple(...)) element prunes too'
 run_and_report tuple_element_inferred '' 'tup.1 = 11111'
 
 echo '-- refused as key names: only named tuple elements have their own statistics'
