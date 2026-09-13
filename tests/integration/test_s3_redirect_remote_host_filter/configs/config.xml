@@ -9,4 +9,12 @@
     <!-- Keep retries low so the test fails fast. -->
     <s3_retry_attempts>1</s3_retry_attempts>
     <s3_max_redirects>1</s3_max_redirects>
+    <s3>
+        <region_test>
+            <endpoint>http://resolver:8080/region-</endpoint>
+            <access_key_id>test_key</access_key_id>
+            <secret_access_key>test_secret</secret_access_key>
+            <region>us-east-1</region>
+        </region_test>
+    </s3>
 </clickhouse>

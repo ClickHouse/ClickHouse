@@ -5,6 +5,7 @@
 # that target against RemoteHostFilter (like the Poco 307 path already does) instead of
 # blindly following it. Without the fix the s3() query reaches the disallowed host
 # (SSRF to internal services / cloud metadata); with the fix it fails with UNACCEPTABLE_URL.
+import json
 import logging
 import os
 import time
@@ -162,5 +163,34 @@ def test_head_redirect_is_not_cached_after_network_error(cluster):
         for _ in range(2):
             assert node.query_and_get_error(f"SELECT * FROM {table}")
         assert _initial_requests(cluster, "network") == "4"
+    finally:
+        node.query(f"DROP TABLE {table}")
+
+
+@pytest.mark.parametrize("bucket", ["region-error", "region-head"])
+def test_region_discovery_preserves_custom_endpoint(cluster, bucket):
+    node = cluster.instances["node"]
+    table = "s3_" + bucket.replace("-", "_")
+    node.query(
+        f"CREATE TABLE {table} (x UInt8) "
+        f"ENGINE = S3('http://resolver:8080/{bucket}/key.csv', 'CSV')"
+    )
+    try:
+        for max_redirects in (1, 0):
+            node.query(
+                f"INSERT INTO {table} SELECT 1 "
+                f"SETTINGS s3_truncate_on_insert=1, s3_max_redirects={max_redirects}"
+            )
+        requests = json.loads(
+            cluster.exec_in_container(
+                cluster.get_container_id("resolver"),
+                ["curl", "-sS", f"http://resolver:8080/region_requests/{bucket}"],
+            )
+        )["requests"]
+        expected = [["PUT", "resolver:8080", "us-east-1"]]
+        if bucket == "region-head":
+            expected.append(["HEAD", "resolver:8080", "us-east-1"])
+        expected.extend([["PUT", "resolver:8080", "eu-west-1"]] * 2)
+        assert requests == expected
     finally:
         node.query(f"DROP TABLE {table}")

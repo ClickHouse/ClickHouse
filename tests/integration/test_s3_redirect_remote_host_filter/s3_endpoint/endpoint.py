@@ -11,6 +11,7 @@
 # asserts never happens. The `cache` and `head` buckets redirect to an allow-listed alias;
 # `virtual` allow-lists the attacker-provided host but not the different bucket host
 # that the AWS SDK constructs for the retry.
+import re
 import socket
 
 from bottle import request, response, route, run
@@ -26,6 +27,7 @@ VIRTUAL_HOSTED_RETRY_TARGET = "virtual.s3.resolver:8080"
 
 followed_redirect = {"hit": False}
 initial_requests = {"cache": 0, "network": 0}
+region_requests = {"region-error": [], "region-head": []}
 
 
 @route("/forbidden_hit/<_path:path>", ["GET", "POST", "PUT", "HEAD", "DELETE"])
@@ -46,9 +48,32 @@ def get_initial_requests(bucket):
     return str(initial_requests.get(bucket, 0))
 
 
+@route("/region_requests/<bucket>")
+def get_region_requests(bucket):
+    return {"requests": region_requests[bucket]}
+
+
 @route("/<_bucket>", ["GET", "POST", "PUT", "HEAD", "DELETE"])
 @route("/<_bucket>/<_path:path>", ["GET", "POST", "PUT", "HEAD", "DELETE"])
 def server(_bucket, _path=""):
+    if _bucket in region_requests:
+        region = re.search(
+            r"Credential=test_key/\d+/([^/]+)/s3/aws4_request",
+            request.headers["Authorization"],
+        ).group(1)
+        region_requests[_bucket].append([request.method, request.headers["Host"], region])
+        if request.method == "HEAD":
+            response.set_header("x-amz-bucket-region", "eu-west-1")
+            return ""
+        if region != "eu-west-1":
+            response.status = 400
+            response.content_type = "application/xml"
+            # Omitting `Region` forces ClickHouse to discover it through `HeadBucket`.
+            region_xml = "<Region>eu-west-1</Region>" if _bucket == "region-error" else ""
+            return f"<Error><Code>AuthorizationHeaderMalformed</Code>{region_xml}</Error>"
+        response.set_header("ETag", '"etag"')
+        return ""
+
     if request.urlparts.netloc == VIRTUAL_HOSTED_RETRY_TARGET:
         followed_redirect["hit"] = True
         return "followed"
