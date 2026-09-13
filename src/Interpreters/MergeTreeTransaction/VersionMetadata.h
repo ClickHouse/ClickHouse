@@ -86,23 +86,9 @@ public:
     /// persists to storage, then updates in-memory state. Optionally logs the event to system log if context is provided.
     void setAndStoreCreationTID(const TransactionID & tid, TransactionInfoContext * context);
 
-    /// Returns true if the object was created by a transaction that has not committed yet.
-    /// An unset `creation_csn` is not enough to tell: it is written lazily, so an already
-    /// committed transaction can leave it unset until some later operation stamps it. The
-    /// transaction log is consulted in that case.
-    bool isCreatedByUncommittedTransaction() const;
-
-    /// Returns true if the object's creation is committed, that is, it has a real commit CSN.
-    /// Stricter than `!isCreatedByUncommittedTransaction()`: a creation that was rolled back is not
-    /// committed. Use it when the data is about to be republished somewhere a commit cannot be taken
-    /// back, such as the destination of `MOVE PARTITION TO TABLE`.
-    bool isCreationCommitted() const;
-
     /// Sets `removal_tid` when a transaction starts removing the data part.
     /// Gets current info, updates `removal_tid` (and sets `removal_csn` to `NonTransactionalCSN` if non-transactional),
     /// persists to storage, then updates in-memory state.
-    /// Throws `SERIALIZATION_ERROR` for a non-transactional `tid` when the object was created by a
-    /// transaction that has not committed yet: such a removal is not representable on disk.
     void setAndStoreRemovalTID(const TransactionID & tid);
 
     /// Locks the data part for removal by the given transaction.
@@ -176,13 +162,6 @@ public:
     String getObjectName() const;
 
     inline static constexpr auto TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt";
-
-    /// Temporary file written before the atomic rename to `TXN_VERSION_METADATA_FILE_NAME`.
-    /// May legitimately linger on a part (for example, hardlinked onto a mutated part from its
-    /// source during a merge/mutation race on object storage), in which case it must be cleaned
-    /// up together with the main file. If only this file is present (no final file), the creating
-    /// transaction never committed, so the part must be treated as rolled back.
-    inline static constexpr auto TMP_TXN_VERSION_METADATA_FILE_NAME = "txn_version.txt.tmp";
 
 protected:
     /// Loads `VersionInfo` from persistent storage with error handling.

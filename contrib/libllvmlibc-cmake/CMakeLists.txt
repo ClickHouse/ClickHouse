@@ -5,10 +5,7 @@ if (NOT (ARCH_AMD64 OR ARCH_AARCH64))
     return()
 endif()
 
-# Memory functions: mem_functions.cpp provides the weak memcmp/memcpy/memmove/
-# memset/bcmp; the strong memmem lives in memmem.cpp (added below).
 set(SRCS
-    "${CMAKE_CURRENT_SOURCE_DIR}/string/mem_functions.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/acos.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asin.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/asinf.cpp"
@@ -30,11 +27,7 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/fmodl.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/frexp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/frexpl.cpp"
-    # hypot deliberately omitted: llvm-libc's is a correctly-rounded
-    # digit-recurrence loop that ignores LIBC_MATH_HAS_SKIP_ACCURATE_PASS and
-    # measures ~22x slower than the platform one (91 ns vs 4.2 ns per call on
-    # Neoverse-V2); the libc hypot (musl, or glibc in dynamic builds) wins the
-    # link instead.
+    "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/hypot.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexp.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexpf.cpp"
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/ldexpl.cpp"
@@ -61,13 +54,6 @@ set(SRCS
     "${LIBLLVMLIBC_SOURCE_DIR}/src/math/generic/truncl.cpp"
 )
 
-# memmem is exported strong, so under sanitizers it would win the link over
-# compiler-rt's weak `memmem` interceptor and bypass its range checks. Skip it
-# there and let the interceptor wrap the system memmem, as before this PR.
-if (NOT SANITIZE)
-    list (APPEND SRCS "${CMAKE_CURRENT_SOURCE_DIR}/string/memmem.cpp")
-endif ()
-
 set(LIBC_NAMESPACE "__llvm_libc")
 set(LLVMLIBC_DEFS_COMMON
     LIBC_MATH_HAS_NO_ERRNO=1
@@ -80,10 +66,6 @@ if (ARCH_AMD64)
     add_library(libllvmlibc ${SRCS})
     set_target_properties(libllvmlibc PROPERTIES FOLDER "contrib/libllvmlibc-cmake")
 
-    # Without -fno-builtin, clang's loop-idiom pass rewrites the mem* inner loops
-    # into calls to the very functions being defined (infinite recursion).
-    target_compile_options(libllvmlibc PRIVATE -ffreestanding -fno-builtin)
-
     if (X86_ARCH_LEVEL VERSION_LESS 3)
         # Compat build: SSE2 baseline
         target_compile_definitions(libllvmlibc PRIVATE
@@ -94,26 +76,8 @@ if (ARCH_AMD64)
             LIBC_TARGET_CPU_HAS_FPU_FLOAT=1
             LIBC_TARGET_CPU_HAS_FPU_DOUBLE=1
         )
-    elseif (X86_ARCH_LEVEL VERSION_LESS 4)
-        # v3: single library with AVX/AVX2/FMA
-        target_compile_definitions(libllvmlibc PRIVATE
-            ${LLVMLIBC_DEFS_COMMON}
-            LIBC_NAMESPACE=${LIBC_NAMESPACE}
-            LIBC_COPT_PUBLIC_PACKAGING=1
-            LIBC_TARGET_CPU_HAS_SSE2=1
-            LIBC_TARGET_CPU_HAS_SSE4_2=1
-            LIBC_TARGET_CPU_HAS_FPU_FLOAT=1
-            LIBC_TARGET_CPU_HAS_FPU_DOUBLE=1
-            LIBC_TARGET_CPU_HAS_FMA=1
-            LIBC_TARGET_CPU_HAS_FMA_FLOAT=1
-            LIBC_TARGET_CPU_HAS_FMA_DOUBLE=1
-            LIBC_TARGET_CPU_HAS_NEAREST_INT=1
-            LIBC_TARGET_CPU_HAS_AVX=1
-            LIBC_TARGET_CPU_HAS_AVX2=1
-        )
     else()
-        # v4: AVX-512 (F/BW/DQ/CD/VL). -mprefer-vector-width=512 forces clang to
-        # emit ZMM for __builtin_memcpy_inline rather than defaulting to YMM.
+        # v3+: single library with AVX/AVX2/FMA
         target_compile_definitions(libllvmlibc PRIVATE
             ${LLVMLIBC_DEFS_COMMON}
             LIBC_NAMESPACE=${LIBC_NAMESPACE}
@@ -128,10 +92,7 @@ if (ARCH_AMD64)
             LIBC_TARGET_CPU_HAS_NEAREST_INT=1
             LIBC_TARGET_CPU_HAS_AVX=1
             LIBC_TARGET_CPU_HAS_AVX2=1
-            LIBC_TARGET_CPU_HAS_AVX512_F=1
-            LIBC_TARGET_CPU_HAS_AVX512_BW=1
         )
-        target_compile_options(libllvmlibc PRIVATE -mprefer-vector-width=512)
     endif()
 
     target_include_directories(libllvmlibc SYSTEM BEFORE
@@ -143,9 +104,6 @@ elseif (ARCH_AARCH64)
     # Uses LIBC_COPT_PUBLIC_PACKAGING to emit public C symbols directly
     add_library(libllvmlibc ${SRCS})
     set_target_properties(libllvmlibc PROPERTIES FOLDER "contrib/libllvmlibc-cmake")
-
-    # -fno-builtin: prevent loop-idiom self-calls in mem* (see the ARCH_AMD64 branch).
-    target_compile_options(libllvmlibc PRIVATE -ffreestanding -fno-builtin)
     target_compile_definitions(libllvmlibc PRIVATE
         ${LLVMLIBC_DEFS_COMMON}
         LIBC_NAMESPACE=${LIBC_NAMESPACE}

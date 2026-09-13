@@ -1,9 +1,8 @@
 #pragma once
 
-#if defined(OS_LINUX) || defined(OS_DARWIN)
+#ifdef OS_LINUX
 
 #include <Poco/Net/StreamSocket.h>
-#include <Common/EventFD.h>
 #include <Common/Logger.h>
 #include <atomic>
 #include <future>
@@ -12,15 +11,14 @@ namespace DB
 {
 
 /// Represents a connection that may not be established yet.
-/// Provides a file descriptor that can be polled (epoll on Linux, kqueue on macOS) to wait
-/// asynchronously for the connection, backed by `EventFD` (a native eventfd on Linux, a
-/// self-pipe on macOS).
+/// Provides an eventfd that can be used with epoll to wait asynchronously for the connection.
 class FutureConnection
 {
 public:
     FutureConnection();
+    ~FutureConnection();
 
-    /// Get the notification file descriptor to register with the poller.
+    /// Get the eventfd file descriptor for epoll (creates it lazily if needed)
     int getEventFd() const;
 
     /// Check if the connection is ready (non-blocking)
@@ -41,7 +39,9 @@ public:
     void cancel(std::exception_ptr exception);
 
 private:
-    /// Wake the poller via the notification fd after the promise is completed.
+    static int createEventFd();
+
+    /// Wake the epoll waiter via the eventfd after the promise is completed.
     void notifyWaiter() const;
 
     std::promise<Poco::Net::Socket> promise;
@@ -49,9 +49,7 @@ private:
     /// Guards the single allowed promise completion: setSocket and cancel race (the peer connecting
     /// vs. query teardown), and the loser must be a no-op rather than throw "promise already set".
     std::atomic<bool> satisfied{false};
-    /// Pollable wakeup fd: `event_fd.fd` is registered with the poller, and completion writes to it.
-    /// One kernel fd on Linux (eventfd), a self-pipe pair on macOS.
-    EventFD event_fd;
+    int event_fd;
     LoggerPtr log = getLogger("FutureConnection");
 };
 

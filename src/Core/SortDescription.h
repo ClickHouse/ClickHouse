@@ -3,7 +3,6 @@
 
 #include <Core/Field.h>
 #include <Common/IntervalKind.h>
-#include <Common/VectorWithMemoryTracking.h>
 #include <DataTypes/IDataType.h>
 #include <Columns/Collator.h>
 
@@ -135,9 +134,9 @@ struct SortColumnDescriptionWithColumnIndex
 class CompiledSortDescriptionFunctionHolder;
 
 /// Description of the sorting rule for several columns.
-using SortDescriptionWithPositions = VectorWithMemoryTracking<SortColumnDescriptionWithColumnIndex>;
+using SortDescriptionWithPositions = std::vector<SortColumnDescriptionWithColumnIndex>;
 
-class SortDescription : public VectorWithMemoryTracking<SortColumnDescription>
+class SortDescription : public std::vector<SortColumnDescription>
 {
 public:
     /// Can be safely cast into JITSortDescriptionFunc
@@ -173,12 +172,6 @@ void dumpSortDescription(const SortDescription & description, ExplainFormatSetti
 std::string dumpSortDescription(const SortDescription & description);
 
 JSONBuilder::ItemPtr explainSortDescription(const SortDescription & description);
-
-/// The `WITH FILL` rules that `FillingRow` and `FillingTransform` rely on: a step that does not advance
-/// the row (zero, or pointing away from the sort direction) would make them generate rows without end.
-/// Returns the violated rule, or an empty string when `fill` is usable for a column sorted in
-/// `direction`. Both planners check the same rules through this function.
-String checkFillDescription(const FillColumnDescription & fill, int direction);
 
 class WriteBuffer;
 class ReadBuffer;

@@ -6,7 +6,6 @@
 
 #include <Core/ExternalResultDescription.h>
 #include <Core/Field.h>
-#include <Common/UnorderedMapWithMemoryTracking.h>
 
 
 namespace DB
@@ -23,10 +22,10 @@ struct PostgreSQLArrayInfo
 void insertPostgreSQLValue(
         IColumn & column, std::string_view value,
         ExternalResultDescription::ValueType type, DataTypePtr data_type,
-        const UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> & array_info, size_t idx);
+        const std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t idx);
 
 void preparePostgreSQLArrayInfo(
-        UnorderedMapWithMemoryTracking<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type);
+        std::unordered_map<size_t, PostgreSQLArrayInfo> & array_info, size_t column_idx, DataTypePtr data_type);
 
 void insertDefaultPostgreSQLValue(IColumn & column, const IColumn & sample_column);
 

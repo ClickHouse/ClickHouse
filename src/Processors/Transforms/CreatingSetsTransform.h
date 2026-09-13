@@ -38,7 +38,6 @@ public:
 
     String getName() const override { return "CreatingSetsTransform"; }
 
-    Status prepare() override;
     void work() override;
     void consume(Chunk chunk) override;
     Chunk generate() override;

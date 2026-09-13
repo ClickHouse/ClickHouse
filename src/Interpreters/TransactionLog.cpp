@@ -23,8 +23,6 @@
 namespace DB
 {
 
-std::atomic<Int64> TransactionLog::async_tables_loading_job_number{0};
-
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -44,13 +42,12 @@ try
     if (!system_log)
         return;
 
-    system_log->add([&](TransactionsInfoLogElement & element)
-    {
-        element.type = type;
-        element.tid = tid;
-        element.csn = csn;
-        element.fillCommonFields(nullptr);
-    });
+    TransactionsInfoLogElement elem;
+    elem.type = type;
+    elem.tid = tid;
+    elem.csn = csn;
+    elem.fillCommonFields(nullptr);
+    system_log->add(std::move(elem));
 }
 catch (...)
 {
@@ -480,6 +477,8 @@ CSN TransactionLog::commitTransaction(const MergeTreeTransactionPtr & txn, bool 
         /// Do not allow exceptions between commit point and the and of transaction finalization
         /// (otherwise it may stuck in COMMITTING state holding snapshot).
         NOEXCEPT_SCOPE_STRICT({
+            /// FIXME Transactions: Sequential node numbers in ZooKeeper are Int32, but 31 bit is not enough for production use
+            /// (overflow is possible in a several weeks/months of active usage)
             allocated_csn = deserializeCSN(csn_path_created.substr(zookeeper_path_log.size() + 1));
         });
     }

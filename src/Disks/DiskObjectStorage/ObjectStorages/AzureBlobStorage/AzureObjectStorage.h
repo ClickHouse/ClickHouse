@@ -85,15 +85,9 @@ public:
 
     void removeObjectIfExists(const StoredObject & object) override;
 
-    void removeObjectsIfExist( /// NOLINT
-        const StoredObjects & objects,
-        StoredObjects * successful_objects = nullptr) override;
+    void removeObjectsIfExist(const StoredObjects & objects) override;
 
-    void tagObjects( /// NOLINT
-        const StoredObjects & objects,
-        const std::string & tag_key,
-        const std::string & tag_value,
-        StoredObjects * successful_objects = nullptr) override;
+    void tagObjects(const StoredObjects & objects, const std::string & tag_key, const std::string & tag_value) override;
 
     ObjectMetadata getObjectMetadata(const std::string & path, bool with_tags) const override;
 
@@ -140,14 +134,12 @@ private:
         const StoredObject & object,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
         bool if_exists,
-        BlobStorageLogWriterPtr blob_storage_log,
-        StoredObjects * successful_objects = nullptr);
+        BlobStorageLogWriterPtr blob_storage_log);
 
     void removeObjectsBatchIfExists(
         const StoredObjects & objects,
         const std::shared_ptr<const AzureBlobStorage::ContainerClient> & client_ptr,
-        BlobStorageLogWriterPtr blob_storage_log,
-        StoredObjects * successful_objects = nullptr);
+        BlobStorageLogWriterPtr blob_storage_log);
 
     std::unique_ptr<Azure::Storage::Files::DataLake::DataLakeFileClient> buildDataLakeFileClient(const String & blob_path) const;
 

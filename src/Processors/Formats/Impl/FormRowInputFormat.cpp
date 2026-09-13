@@ -215,11 +215,6 @@ void registerFormSchemaReader(FormatFactory & factory)
     {
         return std::make_shared<FormSchemaReader>(buffer, settings);
     });
-    factory.registerAdditionalInfoForSchemaCacheGetter("Form", [](const FormatSettings & settings)
-    {
-        /// Raw matches the rule readRowAndGetNamesAndDataTypesForFormRow infers with.
-        return getAdditionalFormatInfoByEscapingRule(settings, FormatSettings::EscapingRule::Raw);
-    });
 }
 
 }

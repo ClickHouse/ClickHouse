@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
 
-import base64
 import datetime
 import decimal
-import hashlib
 import logging
 import os
 import random
@@ -205,118 +203,6 @@ def test_psql_client(started_cluster):
         ]
     )
 
-
-def test_psql_describe(started_cluster):
-    node = cluster.instances["node"]
-
-    started_cluster.copy_file_to_container(
-        started_cluster.postgres_id,
-        os.path.join(SCRIPT_DIR, "queries", "query8.sql"),
-        "/query8.sql",
-    )
-
-    cmd_prefix = [
-        "/usr/bin/psql",
-        f"sslmode=require host={node.hostname} port={server_port} user=user_with_sha256 dbname=default password=abacaba",
-    ]
-    # -F same as --field-separator
-    cmd_prefix += ["--no-align", "-F", " "]
-
-    res = started_cluster.exec_in_container(
-        started_cluster.postgres_id, cmd_prefix + ["-f", "/query8.sql"], shell=True
-    )
-    logging.debug(res)
-    # \d lists the tables of the current database (with their types and owner),
-    # \dt lists only the tables. The exact psql chrome (headers, row counts)
-    # varies between psql versions, so check the rows themselves.
-    assert "db_psql_describe t_described table user_with_sha256" in res
-    assert "db_psql_describe v_described view user_with_sha256" in res
-    # The view must not be listed by \dt: expect exactly one more listing of the
-    # table (from \dt) than of the view (only from \d).
-    assert res.count("t_described table") == 2
-    assert res.count("v_described view") == 1
-
-
-def test_query_error_keeps_connection(started_cluster):
-    node = cluster.instances["node"]
-
-    ch = py_psql.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        dbname="default",
-    )
-    cur = ch.cursor()
-
-    # A failed query must not tear the connection down: the server sends
-    # ErrorResponse and returns to the ReadyForQuery state, like PostgreSQL.
-    with pytest.raises(Exception) as exc:
-        cur.execute("SELECT this is not valid SQL")
-    assert "Query execution failed" in str(exc.value)
-
-    cur.execute("SELECT 1")
-    assert int(cur.fetchone()[0]) == 1
-
-    # Same for an error from query execution (not parsing).
-    with pytest.raises(Exception) as exc:
-        cur.execute("SELECT throwIf(1)")
-
-    cur.execute("SELECT 2")
-    assert int(cur.fetchone()[0]) == 2
-
-    ch.close()
-
-
-def test_prepared_query_error_keeps_connection(started_cluster):
-    node = cluster.instances["node"]
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        dbname="default",
-    )
-    cur = ch.cursor()
-
-    # An error in the extended protocol keeps the connection usable after its
-    # `Sync`, which psycopg sends before reporting the failed operation.
-    with pytest.raises(Exception):
-        cur.execute("SELECT throwIf(1)", prepare=True)
-
-    cur.execute("SELECT 1", prepare=True)
-    assert int(cur.fetchone()[0]) == 1
-    ch.close()
-
-
-def test_prepared_query_error_after_output_closes_connection(started_cluster):
-    node = cluster.instances["node"]
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        dbname="default",
-    )
-    cur = ch.cursor()
-
-    # When an extended-protocol `Execute` fails after some result bytes were
-    # already sent, the output stream may be cut in the middle of a protocol
-    # message, so the server must tear the connection down instead of
-    # returning to the `ReadyForQuery` state.
-    with pytest.raises(Exception):
-        cur.execute(
-            "SELECT throwIf(number = 100000) FROM numbers(1000000)", prepare=True
-        )
-
-    with pytest.raises(Exception):
-        cur.execute("SELECT 1", prepare=True)
-
-    ch.close()
-
-
 def test_psql_client_secure(started_cluster):
     node = cluster.instances["node_secure"]
 
@@ -400,133 +286,21 @@ def test_new_user(started_cluster):
     cur.execute(f"DROP DATABASE {db_id}")
 
 
-def test_scram_user_with_multiple_auth_methods(started_cluster):
-    # A user that has a non-password authentication method (e.g. ssh_key) in addition to
-    # scram_sha256_password must still be able to authenticate over the PostgreSQL protocol
-    # with the password, regardless of the order of the methods.
-    node = cluster.instances["node"]
-
-    ssh_key = "AAAAC3NzaC1lZDI1NTE5AAAAIAKI0BUOuCJvCglpUyvIuJhF3cOlzzVcG53LTOHznXYL"
-
-    # Two live verifiers that share one explicit salt are representable on the wire: the salt sent in
-    # `AuthenticationSASLContinue` is the same for both, and the client proof is checked against every
-    # stored salted password of the user.
-    shared_salt = "c2FsdHNhbHRzYWx0c2FsdA=="
-    shared_salt_hashes = [
-        hashlib.pbkdf2_hmac(
-            "sha256", password.encode(), base64.b64decode(shared_salt), 4096
-        ).hex()
-        for password in ("p123", "other_password")
-    ]
-
-    # The same password stored twice as `scram_sha256_password` gets two different random salts. Only one of them can
-    # be sent on the wire, so the fail-close ambiguity scan of the access layer cannot match the other method and the
-    # configuration must be refused instead of logging in with weaker checks than the native protocol.
-    expired_shared_salt_hash = hashlib.pbkdf2_hmac(
-        "sha256", b"p123", base64.b64decode(shared_salt), 4096
-    ).hex()
-
-    users = {
-        "user_scram_then_ssh": f"scram_sha256_password BY 'p123', ssh_key BY KEY '{ssh_key}' TYPE 'ssh-ed25519'",
-        "user_ssh_then_scram": f"ssh_key BY KEY '{ssh_key}' TYPE 'ssh-ed25519', scram_sha256_password BY 'p123'",
-        "user_scram_then_sha256": "scram_sha256_password BY 'p123', sha256_password BY 'other_password'",
-        "user_two_scram": "scram_sha256_password BY 'p123', scram_sha256_password BY 'other_password'",
-        "user_plaintext_and_two_scram": "plaintext_password BY 'p123', scram_sha256_password BY 'p123', scram_sha256_password BY 'other_password'",
-        "user_expired_then_live_scram": "scram_sha256_password BY 'expired' VALID UNTIL '2010-01-01', scram_sha256_password BY 'p123'",
-        "user_shared_password_expired_scram": "scram_sha256_password BY 'p123' VALID UNTIL '2010-01-01', scram_sha256_password BY 'p123'",
-        "user_shared_password_limited_scram": "scram_sha256_password BY 'p123' GRANTS (SELECT ON system.numbers), scram_sha256_password BY 'p123'",
-        "user_expired_only_scram": "scram_sha256_password BY 'p123' VALID UNTIL '2010-01-01'",
-        "user_plaintext_and_expired_scram": "plaintext_password BY 'p123', scram_sha256_password BY 'old' VALID UNTIL '2010-01-01'",
-        "user_two_scram_same_salt": (
-            f"scram_sha256_hash BY '{shared_salt_hashes[0]}' SALT '{shared_salt}', "
-            f"scram_sha256_hash BY '{shared_salt_hashes[1]}' SALT '{shared_salt}'"
-        ),
-        "user_expired_and_live_same_salt": (
-            f"scram_sha256_hash BY '{expired_shared_salt_hash}' SALT '{shared_salt}' VALID UNTIL '2010-01-01', "
-            f"scram_sha256_hash BY '{expired_shared_salt_hash}' SALT '{shared_salt}'"
-        ),
-    }
-
-    # PostgreSQL SCRAM cannot represent these configurations: either it cannot choose between the salts of several
-    # live verifiers, or a method that would narrow the session (`VALID UNTIL`, `GRANTS`) cannot be matched by a
-    # client proof bound to the salt that is sent on the wire.
-    unsupported_configuration_users = {
-        "user_two_scram",
-        "user_expired_then_live_scram",
-        "user_shared_password_expired_scram",
-        "user_shared_password_limited_scram",
-    }
-
-    # The exchange runs, but no method can accept the credential: the only verifier has expired, or the shared salt
-    # lets the fail-close scan match the expired method and expire the whole login.
-    invalid_credentials_users = {
-        "user_expired_only_scram",
-        "user_expired_and_live_same_salt",
-    }
-
-    try:
-        for name, methods in users.items():
-            node.query(f"CREATE USER {name} IDENTIFIED WITH {methods}", password="123")
-            node.query(f"GRANT SELECT ON system.one TO {name}", password="123")
-
-            if name in unsupported_configuration_users:
-                with pytest.raises(py_psql.OperationalError, match="Authentication configuration is not supported"):
-                    py_psql.connect(
-                        host=node.ip_address,
-                        port=server_port,
-                        user=name,
-                        password="p123",
-                        database="system",
-                    )
-                continue
-
-            if name in invalid_credentials_users:
-                with pytest.raises(py_psql.OperationalError, match="Invalid user or password"):
-                    py_psql.connect(
-                        host=node.ip_address,
-                        port=server_port,
-                        user=name,
-                        password="p123",
-                        database="system",
-                    )
-                continue
-
-            ch = py_psql.connect(
-                host=node.ip_address,
-                port=server_port,
-                user=name,
-                password="p123",
-                database="system",
-            )
-            cur = ch.cursor()
-            cur.execute("SELECT 1;")
-            assert cur.fetchall() == [(1,)]
-            ch.close()
-
-            with pytest.raises(py_psql.OperationalError):
-                py_psql.connect(
-                    host=node.ip_address,
-                    port=server_port,
-                    user=name,
-                    password="wrong_password",
-                    database="system",
-                )
-
-        with pytest.raises(py_psql.OperationalError, match="Authentication configuration is not supported"):
-            py_psql.connect(
-                host=node.ip_address,
-                port=server_port,
-                user="user_with_scram_and_otp",
-                password="abacaba",
-                database="system",
-            )
-    finally:
-        for name in users:
-            node.query(f"DROP USER IF EXISTS {name}", password="123")
-
-
 def test_python_client(started_cluster):
     node = cluster.instances["node"]
+
+    with pytest.raises(py_psql.OperationalError) as exc_info:
+        ch = py_psql.connect(
+            host=node.ip_address,
+            port=server_port,
+            user="default",
+            password="123",
+            database="",
+        )
+        cur = ch.cursor()
+        cur.execute("select name from tables;")
+
+    assert exc_info.value.args == ("SSL connection has been closed unexpectedly\n",)
 
     ch = py_psql.connect(
         host=node.ip_address,
@@ -536,13 +310,6 @@ def test_python_client(started_cluster):
         database="",
     )
     cur = ch.cursor()
-
-    # A failed query returns an error and keeps the connection usable
-    # (as in PostgreSQL) instead of closing the connection.
-    with pytest.raises(py_psql.errors.SqlRoutineException) as exc_info:
-        cur.execute("select name from tables;")
-
-    assert "Unknown table expression identifier" in str(exc_info.value)
 
     cur.execute("select 1 as a, 2 as b")
     assert (cur.description[0].name, cur.description[1].name) == ("a", "b")
@@ -1044,27 +811,16 @@ def test_extended_query_ready_for_query_and_describe(started_cluster):
     sock.close()
 
 
-def test_malformed_extended_message_recovers(started_cluster):
-    # Reject malformed extended messages without desynchronizing recovery.
+def test_bind_negative_count_recovers(started_cluster):
+    # Reject negative `Bind` counts without desynchronizing recovery.
     node = started_cluster.instances["node"]
 
     def sync():
         return _fe("S", b"")
 
-    # Put a complete-looking `Sync` frame after each invalid count, but include it in the
-    # malformed message's declared payload. Recovery must ignore it and wait for the real `Sync`.
-    def parse_neg_num_params():
-        b = b"\x00" + b"SELECT 1\x00" + struct.pack("!h", -1) + sync()
-        return _fe("P", b)
-
-    # Negative parameter-format-code count.
-    def bind_neg_param_formats():
-        b = b"\x00" + b"\x00" + struct.pack("!h", -1) + sync()
-        return _fe("B", b)
-
-    # Negative parameter count.
+    # `num_params = -1`.
     def bind_neg_num_params():
-        b = b"\x00" + b"\x00" + struct.pack("!H", 0) + struct.pack("!h", -1) + sync()
+        b = b"\x00" + b"\x00" + struct.pack("!H", 0) + struct.pack("!h", -1)
         return _fe("B", b)
 
     # Negative result-format-code count.
@@ -1075,62 +831,22 @@ def test_malformed_extended_message_recovers(started_cluster):
             + struct.pack("!H", 0)
             + struct.pack("!H", 0)
             + struct.pack("!h", -1)
-            + sync()
         )
         return _fe("B", b)
 
-    # `Describe` must not read the following `Sync` as its missing payload.
-    def describe_incomplete_payload():
-        return _fe("D", b"")
-
-    # A named portal is rejected after deserialization. The embedded `Sync` must
-    # remain in the `Execute` payload until recovery reaches the real `Sync`.
-    def execute_named_portal():
-        b = b"named\x00" + struct.pack("!I", 0) + sync()
-        return _fe("E", b)
-
-    # An invalid close target is rejected after deserialization for the same reason.
-    def close_invalid_target():
-        return _fe("C", b"X\x00" + sync())
-
-    for make_message in (
-        parse_neg_num_params,
-        bind_neg_param_formats,
-        bind_neg_num_params,
-        bind_neg_result_formats,
-        describe_incomplete_payload,
-        execute_named_portal,
-        close_invalid_target,
-    ):
+    for make_bind in (bind_neg_num_params, bind_neg_result_formats):
         sock, read_until_ready = _pg_raw_extended_query_session(node)
-        sock.sendall(make_message() + sync())
+        sock.sendall(make_bind() + sync())
         types = read_until_ready()
-        assert "E" in types, f"malformed message must be rejected, got {types}"
+        assert "E" in types, f"malformed Bind must be rejected, got {types}"
         assert types.count("Z") == 1, (
-            f"malformed message must emit one ReadyForQuery per real Sync, got {types}"
+            f"malformed Bind must emit one ReadyForQuery per Sync, got {types}"
         )
         # The same connection must stay usable (stream stayed aligned).
         sock.sendall(_fe("Q", b"SELECT 7\x00"))
         types = read_until_ready()
-        assert "C" in types, f"connection must stay alive after malformed message, got {types}"
+        assert "C" in types, f"connection must stay alive after malformed Bind, got {types}"
         sock.close()
-
-
-def test_incomplete_simple_query_payload_recovers(started_cluster):
-    # A length-only `Query` must not wait for or consume the next frontend message.
-    node = started_cluster.instances["node"]
-    sock, read_until_ready = _pg_raw_extended_query_session(node)
-    sock.sendall(_fe("Q", b""))
-    types = read_until_ready()
-    assert "E" in types, f"incomplete Query must be rejected, got {types}"
-    assert types.count("Z") == 1, (
-        f"incomplete Query must emit one ReadyForQuery, got {types}"
-    )
-
-    sock.sendall(_fe("Q", b"SELECT 7\x00"))
-    types = read_until_ready()
-    assert "C" in types, f"connection must stay usable after incomplete Query, got {types}"
-    sock.close()
 
 
 def test_flush_error_discards_until_sync(started_cluster):
@@ -1954,19 +1670,12 @@ def test_restricted_user_cannot_bypass_grants(started_cluster):
     )
     cur = restricted.cursor()
 
-    # The internal compatibility views should be accessible without direct
-    # grants on their `system.*` sources.
+    # The internal pg_type view should be accessible.
     # ClickHouse currently sends scalar values over the PostgreSQL protocol in
     # text mode, so result[0] arrives as a string from psycopg.
     cur.execute("SELECT count() FROM pg_type")
     result = cur.fetchone()
     assert int(result[0]) > 0
-
-    cur.execute("SELECT count() FROM pg_namespace")
-    assert int(cur.fetchone()[0]) > 0
-
-    cur.execute("SELECT count() FROM pg_class")
-    assert int(cur.fetchone()[0]) > 0
 
     # SELECT should work
     cur.execute("SELECT 1")
@@ -2409,298 +2118,3 @@ def test_restricted_user_catalog_visibility(started_cluster):
     cur.execute("DROP DATABASE IF EXISTS pg_visible_db")
     cur.execute("DROP DATABASE IF EXISTS pg_hidden_db")
     ch.close()
-
-
-def test_catalog_qualifier_is_case_insensitive(started_cluster):
-    """PostgreSQL folds unquoted identifiers to lower case, so a bare `PG_CATALOG`
-    qualifier names the same schema as `pg_catalog` and must be stripped as well.
-    A quoted identifier keeps its case in PostgreSQL, so `"PG_CATALOG"` is a
-    different (and non-existent) schema and must not be rewritten."""
-    node = started_cluster.instances["node"]
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-
-    for qualifier in ["pg_catalog", "PG_CATALOG", "Pg_Catalog", '"pg_catalog"']:
-        cur.execute(f"SELECT count() FROM {qualifier}.pg_namespace")
-        assert int(cur.fetchall()[0][0]) > 0, qualifier
-
-        cur.execute(f"SELECT {qualifier}.pg_table_is_visible(1)")
-        assert str(cur.fetchall()[0][0]) in ("1", "True"), qualifier
-
-    # A quoted qualifier in a different case is a different schema in PostgreSQL,
-    # and there is no such database here.
-    with pytest.raises(psycopg.errors.Error):
-        cur.execute('SELECT count() FROM "PG_CATALOG".pg_namespace')
-
-    ch.close()
-
-
-def test_catalog_oids_are_unique(started_cluster):
-    """The synthesized oids of the emulated catalog are used as join keys by
-    PostgreSQL clients, so they have to be unique: `pg_class.relnamespace` must
-    resolve to exactly one `pg_namespace` row, and no two relations may share
-    an oid."""
-    node = started_cluster.instances["node"]
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    cur.execute("CREATE DATABASE IF NOT EXISTS pg_oids_db")
-    for i in range(16):
-        cur.execute(f"CREATE DATABASE IF NOT EXISTS pg_oids_extra_{i}")
-        cur.execute(
-            f"CREATE TABLE IF NOT EXISTS pg_oids_db.t_{i} (id Int32) ENGINE = Memory"
-        )
-    ch.close()
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-        dbname="pg_oids_db",
-    )
-    cur = ch.cursor()
-
-    cur.execute("SELECT oid, nspname FROM pg_namespace")
-    namespaces = cur.fetchall()
-    oids = [int(row[0]) for row in namespaces]
-    assert len(oids) == len(set(oids))
-
-    cur.execute("SELECT oid, relname FROM pg_class WHERE relname != ''")
-    relations = cur.fetchall()
-    relation_oids = [int(row[0]) for row in relations]
-    assert len(relation_oids) == len(set(relation_oids))
-    assert len(relations) == 16
-    # The oid spaces of namespaces and relations must not overlap either.
-    assert not (set(oids) & set(relation_oids))
-
-    # The join psql performs behind `\d` must match exactly one namespace per relation.
-    cur.execute(
-        "SELECT c.relname, n.nspname FROM pg_class AS c "
-        "JOIN pg_namespace AS n ON n.oid = c.relnamespace WHERE c.relname != ''"
-    )
-    joined = cur.fetchall()
-    assert len(joined) == 16
-    assert {row[1] for row in joined} == {"pg_oids_db"}
-
-    ch.close()
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    cur.execute("DROP DATABASE IF EXISTS pg_oids_db")
-    for i in range(16):
-        cur.execute(f"DROP DATABASE IF EXISTS pg_oids_extra_{i}")
-    ch.close()
-
-
-def test_catalog_table_oids_differ_across_databases(started_cluster):
-    """A session can switch the current database with `USE`, and `pg_class` then lists
-    the tables of the new one. Two same-named tables in two databases are different
-    objects, so their oids must differ - otherwise an oid a client remembered in the
-    first database silently resolves to the other table after the switch."""
-    node = started_cluster.instances["node"]
-
-    databases = ["pg_oids_qualified_a", "pg_oids_qualified_b"]
-
-    def connect(dbname=None):
-        return psycopg.connect(
-            host=node.ip_address,
-            port=server_port,
-            user="default",
-            password="123",
-            **({"dbname": dbname} if dbname else {}),
-        )
-
-    ch = connect()
-    cur = ch.cursor()
-    for database in databases:
-        cur.execute(f"DROP DATABASE IF EXISTS {database}")
-        cur.execute(f"CREATE DATABASE {database}")
-        cur.execute(f"CREATE TABLE {database}.events (id Int32) ENGINE = Memory")
-    ch.close()
-
-    oids = []
-    for database in databases:
-        ch = connect(database)
-        cur = ch.cursor()
-        cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
-        oids.append(int(cur.fetchall()[0][0]))
-        ch.close()
-
-    assert oids[0] != oids[1]
-
-    # The same, inside a single session that switches the database with `USE`:
-    # the oid remembered before the switch must not name the other table after it.
-    ch = connect(databases[0])
-    cur = ch.cursor()
-    cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
-    remembered = int(cur.fetchall()[0][0])
-    cur.execute(f"USE {databases[1]}")
-    cur.execute("SELECT oid FROM pg_class WHERE relname = 'events'")
-    after_switch = int(cur.fetchall()[0][0])
-    ch.close()
-
-    assert remembered != after_switch
-    assert {remembered, after_switch} == set(oids)
-
-    ch = connect()
-    cur = ch.cursor()
-    for database in databases:
-        cur.execute(f"DROP DATABASE IF EXISTS {database}")
-    ch.close()
-
-
-def test_catalog_oids_are_stable(started_cluster):
-    """An oid identifies an object, and PostgreSQL clients are allowed to remember
-    one and use it in a later query, so the oid of a database or a table must not
-    change when unrelated objects appear."""
-    node = started_cluster.instances["node"]
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_db")
-    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_aaa")
-    cur.execute("CREATE DATABASE pg_stable_oids_db")
-    cur.execute("CREATE TABLE pg_stable_oids_db.zzz (id Int32) ENGINE = Memory")
-    ch.close()
-
-    def read_oids():
-        ch = psycopg.connect(
-            host=node.ip_address,
-            port=server_port,
-            user="default",
-            password="123",
-            dbname="pg_stable_oids_db",
-        )
-        cur = ch.cursor()
-        cur.execute("SELECT oid FROM pg_namespace WHERE nspname = 'pg_stable_oids_db'")
-        namespace_oid = int(cur.fetchall()[0][0])
-        cur.execute("SELECT oid, relnamespace FROM pg_class WHERE relname = 'zzz'")
-        row = cur.fetchall()[0]
-        ch.close()
-        return namespace_oid, int(row[0]), int(row[1])
-
-    before = read_oids()
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    # Both names sort before the existing ones, which is what a scheme numbering
-    # the objects by their position in the sorted list of names would shift.
-    cur.execute("CREATE DATABASE pg_stable_oids_aaa")
-    cur.execute("CREATE TABLE pg_stable_oids_db.aaa (id Int32) ENGINE = Memory")
-    ch.close()
-
-    assert read_oids() == before
-
-    ch = psycopg.connect(
-        host=node.ip_address,
-        port=server_port,
-        user="default",
-        password="123",
-    )
-    cur = ch.cursor()
-    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_db")
-    cur.execute("DROP DATABASE IF EXISTS pg_stable_oids_aaa")
-    ch.close()
-
-
-def test_catalog_oids_do_not_depend_on_a_colliding_peer(started_cluster):
-    """The oid of an object is a pure function of its name, so it must not change even
-    when another name whose hash lands in the same slot appears or disappears. These two
-    names are a real collision of the namespace oids: `sipHash64(name) % 2000000000`
-    is 7242078 for both."""
-    node = started_cluster.instances["node"]
-    colliding = ["collision_probe_121841", "collision_probe_264544"]
-
-    def sql(query, dbname=None):
-        ch = psycopg.connect(
-            host=node.ip_address,
-            port=server_port,
-            user="default",
-            password="123",
-            **({"dbname": dbname} if dbname else {}),
-        )
-        cur = ch.cursor()
-        for statement in query:
-            cur.execute(statement)
-        rows = cur.fetchall() if cur.description else None
-        ch.close()
-        return rows
-
-    sql([f"DROP DATABASE IF EXISTS {name}" for name in colliding])
-    sql(
-        [
-            f"CREATE DATABASE {colliding[0]}",
-            f"CREATE TABLE {colliding[0]}.{colliding[0]} (id Int32) ENGINE = Memory",
-            f"CREATE TABLE {colliding[0]}.{colliding[1]} (id Int32) ENGINE = Memory",
-        ]
-    )
-
-    def read_oids():
-        namespace = sql(
-            [f"SELECT oid FROM pg_namespace WHERE nspname = '{colliding[0]}'"],
-            dbname=colliding[0],
-        )
-        relation = sql(
-            [
-                f"SELECT oid, relnamespace FROM pg_class WHERE relname = '{colliding[0]}'"
-            ],
-            dbname=colliding[0],
-        )
-        return int(namespace[0][0]), int(relation[0][0]), int(relation[0][1])
-
-    # The first name is alone in its slot here - only its colliding peer as a table exists.
-    before = read_oids()
-
-    # Creating the colliding database must not renumber the object that is already there.
-    sql([f"CREATE DATABASE {colliding[1]}"])
-    assert read_oids() == before
-
-    # Neither must dropping it again.
-    sql([f"DROP DATABASE {colliding[1]}"])
-    assert read_oids() == before
-
-    # The accepted cost of that stability: while both colliding databases exist,
-    # `pg_namespace` emits the same oid for both of them, so the join behind `\d`
-    # cannot tell them apart. Uniqueness and stability are not both achievable in a
-    # bounded oid space without a persistent oid counter, and stability wins - see the
-    # comment above the view. This asserts the trade-off rather than a correct join.
-    sql([f"CREATE DATABASE {colliding[1]}"])
-    joined = sql(
-        [
-            "SELECT c.relname, n.nspname FROM pg_class AS c "
-            "JOIN pg_namespace AS n ON n.oid = c.relnamespace "
-            "WHERE c.relname != '' ORDER BY c.relname, n.nspname"
-        ],
-        dbname=colliding[0],
-    )
-    assert {row[0] for row in joined} == set(colliding)
-    assert {row[1] for row in joined} == set(colliding)
-
-    sql([f"DROP DATABASE IF EXISTS {name}" for name in colliding])

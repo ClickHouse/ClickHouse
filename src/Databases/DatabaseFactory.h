@@ -48,9 +48,6 @@ public:
         /// True when the database is created by the server itself (e.g. loading metadata on startup) rather
         /// than by a user query. Lets an engine distinguish an internal reload from a user `ATTACH DATABASE`.
         bool internal = false;
-        /// True only when the server replays a definition it stored itself, during startup metadata loading.
-        /// `internal` does not imply it: wrappers such as `PARALLEL WITH` run user statements as internal ones.
-        bool is_metadata_replay = false;
     };
 
     struct EngineFeatures
@@ -78,7 +75,7 @@ public:
         Documentation documentation;
     };
 
-    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE, bool internal = false, bool is_metadata_replay = false);
+    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE, bool internal = false);
 
     using DatabaseEngines = std::unordered_map<std::string, Creator>;
 
@@ -95,9 +92,9 @@ public:
     /// Returns true if the given database engine accesses external data sources.
     bool isDatabaseExternal(const String & engine_name) const;
 
-    VectorWithMemoryTracking<String> getAllRegisteredNames() const override
+    std::vector<String> getAllRegisteredNames() const override
     {
-        VectorWithMemoryTracking<String> result;
+        std::vector<String> result;
         auto getter = [](const auto & pair) { return pair.first; };
         std::transform(database_engines.begin(), database_engines.end(), std::back_inserter(result), getter);
         return result;
@@ -106,7 +103,7 @@ public:
 private:
     DatabaseEngines database_engines;
 
-    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal, bool is_metadata_replay);
+    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal);
 
     /// validate validates the database engine that's specified in the create query for
     /// engine arguments, settings and table overrides.

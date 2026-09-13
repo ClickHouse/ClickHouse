@@ -10,7 +10,6 @@
 #include <Common/MemoryStatisticsOS.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Coordination/CoordinationSettings.h>
-#include <Core/ServerUUID.h>
 #include <IO/Operators.h>
 #include <Poco/ConsoleChannel.h>
 #include <Poco/Logger.h>
@@ -178,17 +177,14 @@ namespace
 
 void StorageRunner::setupStorage()
 {
-    DB::UUID some_uuid(1337);
-    DB::ServerUUID::set(some_uuid);
     auto settings = std::make_shared<DB::CoordinationSettings>();
     settings->loadFromConfig("storage.coordination_settings", *config_ptr);
     keeper_context = std::make_shared<DB::KeeperContext>(/*standalone_keeper=*/true, settings);
-    keeper_context->initializeDiskSelector(*config_ptr);
-    keeper_context->initializeDataDisk("storage", *config_ptr);
     keeper_context->setLocalLogsPreprocessed();
+    keeper_context->setRocksDBOptions();
     keeper_context->setServerState(DB::KeeperContext::Phase::RUNNING);
 
-    storage = Storage::create(tick_time_ms, /*superdigest=*/"", keeper_context);
+    storage = std::make_unique<Storage>(tick_time_ms, /*superdigest=*/"", keeper_context);
 
     /// Allocate one session for setup and one per generator thread.
     /// All subsequent requests from a generator use its dedicated session.
@@ -216,7 +212,7 @@ void StorageRunner::setupStorage()
         int64_t zxid = next_zxid.fetch_add(1);
         try
         {
-            storage->preprocessRequest(request, setup_session_id, 0, zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+            storage->preprocessRequest(request, setup_session_id, 0, zxid);
             auto responses = storage->processRequest(request, setup_session_id, zxid);
             for (const auto & response : responses)
             {
@@ -248,7 +244,7 @@ void StorageRunner::setupStorage()
         for (const auto & [tag_name, paths] : benchmark_context.getTaggedPaths())
             std::cerr << "  \"" << tag_name << "\": " << paths.size() << " paths" << std::endl;
     }
-    std::cerr << "Populated " << storage->getStorageStats().nodes_count << " znodes.\n" << std::endl;
+    std::cerr << "Populated " << storage->getNodesCount() << " znodes.\n" << std::endl;
 }
 
 void StorageRunner::startGenerators()
@@ -364,7 +360,7 @@ void StorageRunner::preprocessThread()
         try
         {
             std::shared_lock lock(state_machine_storage_mutex);
-            storage->preprocessRequest(item.request, item.session_id, /*time=*/0, item.zxid, /*check_acl=*/true, /*digest=*/std::nullopt, /*log_idx=*/0);
+            storage->preprocessRequest(item.request, item.session_id, /*time=*/0, item.zxid);
         }
         catch (...)
         {
@@ -562,7 +558,7 @@ void StorageRunner::printStats(const std::string & header, double seconds, const
     uint64_t znode_count = 0;
     {
         std::lock_guard lock(state_machine_storage_mutex);
-        znode_count = storage ? storage->getStorageStats().nodes_count : 0;
+        znode_count = storage ? storage->getNodesCount() : 0;
     }
 
     std::stringstream out; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
@@ -615,9 +611,6 @@ void StorageRunner::runBenchmark()
     shared_context = DB::Context::createShared();
     global_context = DB::Context::createGlobal(shared_context.get());
     global_context->makeGlobalContext();
-    /// Set the config before setApplicationType: it loads server settings from the context's
-    /// config, and keeper-bench has no Poco::Util::Application to provide a global one.
-    global_context->setConfig(config_ptr);
     global_context->setApplicationType(DB::Context::ApplicationType::KEEPER);
 
     setupStorage();
@@ -638,7 +631,6 @@ void StorageRunner::runBenchmark()
     Stopwatch period_watch;
     size_t period_idx = 0;
     bool period_had_snapshot = false;
-    std::unique_ptr<DB::KeeperNodesReadView> view_for_snapshot;
     while (!shutdown.load(std::memory_order_relaxed))
     {
         std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -658,12 +650,14 @@ void StorageRunner::runBenchmark()
                 std::lock_guard lock(state_machine_storage_mutex);
                 if (snapshot_enabled.load())
                 {
-                    view_for_snapshot.reset();
+                    storage->disableSnapshotMode();
+                    storage->clearGarbageAfterSnapshot();
                     snapshot_enabled.store(false);
                 }
                 else
                 {
-                    view_for_snapshot = storage->issueReadView();
+                    auto version = storage->container.snapshotSizeWithVersion().second;
+                    storage->enableSnapshotMode(version);
                     snapshot_enabled.store(true);
                 }
             }
@@ -685,11 +679,12 @@ void StorageRunner::runBenchmark()
     if (commit_thread_handle->joinable())
         commit_thread_handle->join();
 
-    /// Retire the read view before the storage is destroyed: SnapshotableHashTable's
-    /// destructor asserts that no read views are outstanding.
+    /// Disable snapshot mode before the storage is destroyed: SnapshotableHashTable's
+    /// destructor asserts !snapshot_mode via clearOutdatedNodes.
     if (snapshot_enabled.load())
     {
-        view_for_snapshot.reset();
+        storage->disableSnapshotMode();
+        storage->clearGarbageAfterSnapshot();
         snapshot_enabled.store(false);
     }
 
