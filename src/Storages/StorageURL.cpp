@@ -14,6 +14,8 @@
 
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InterpreterSelectQueryAnalyzer.h>
+#include <Interpreters/InterpreterSelectWithUnionQuery.h>
 #include <Access/Common/AccessType.h>
 #include <Access/Common/AccessFlags.h>
 #include <Databases/LoadingStrictnessLevel.h>
@@ -22,15 +24,19 @@
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTSubquery.h>
 
 #include <IO/ConnectionTimeouts.h>
 #include <IO/WriteBufferFromHTTP.h>
+#include <IO/NullWriteBuffer.h>
+#include <IO/WriteBufferFromOStream.h>
 
 #include <Formats/FormatFactory.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sources/NullSource.h>
 #include <Processors/Transforms/AddingDefaultsTransform.h>
@@ -60,6 +66,8 @@
 #include <IO/HTTPHeaderEntries.h>
 
 #include <algorithm>
+#include <mutex>
+#include <optional>
 #include <boost/algorithm/string/case_conv.hpp>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
@@ -96,6 +104,7 @@ namespace Setting
     extern const SettingsInt64 zstd_window_log_max;
     extern const SettingsBool use_hive_partitioning;
     extern const SettingsUInt64 max_streams_for_files_processing_in_cluster_functions;
+    extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsString url_base;
 }
 
@@ -105,6 +114,7 @@ namespace ErrorCodes
     extern const int NETWORK_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int CANNOT_EXTRACT_TABLE_STRUCTURE;
+    extern const int FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT;
     extern const int LOGICAL_ERROR;
     extern const int SUPPORT_IS_DISABLED;
 }
@@ -129,6 +139,115 @@ static const std::unordered_set<std::string_view> optional_configuration_keys = 
     "headers.header.name",
     "headers.header.value",
 };
+
+namespace
+{
+    /// Interpret the `body(...)` subquery. Executes it as a subquery (as `interpretSubquery` does),
+    /// and clears the session `limit`/`offset` settings, which apply only to top-level queries.
+    /// With top-level semantics the payload would depend on which send interprets the query: the
+    /// old planner folds these settings into the stored AST in place (so the schema-inference
+    /// request, the actual read, and any retries each mutate the AST again and the body drifts),
+    /// and the analyzer folds them into the query tree only when they are still set in the
+    /// interpreting context (so schema inference would truncate the body while the read would not).
+    QueryPipelineBuilder buildBodyQueryPipeline(const ASTPtr & body_query, const ContextPtr & context)
+    {
+        auto body_context = Context::createCopy(context);
+        body_context->setSetting("limit", UInt64(0));
+        body_context->setSetting("offset", UInt64(0));
+        auto subquery_options = SelectQueryOptions{}.subquery();
+        /// Interpreters rewrite the query they are given in place, and the stored body AST is shared
+        /// between all the requests a single read sends (schema inference, the read itself, retries,
+        /// and one request per URL of a glob, which may run in parallel). Interpret a private copy.
+        ASTPtr query = body_query->clone();
+        if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
+        {
+            /// The analyzer accepts the `ASTSubquery` wrapper directly (it unwraps it internally).
+            return InterpreterSelectQueryAnalyzer(query, body_context, subquery_options).buildQueryPipeline();
+        }
+
+        /// The old planner's `InterpreterSelectWithUnionQuery` expects an `ASTSelectWithUnionQuery`,
+        /// not the `ASTSubquery` wrapper that is stored for the body. Unwrap it here.
+        if (const auto * subquery = query->as<ASTSubquery>())
+            query = subquery->children.at(0);
+        return InterpreterSelectWithUnionQuery(query, body_context, subquery_options).buildQueryPipeline();
+    }
+
+    /// Holds the pipeline built for the output-format preflight, so that the first request the read
+    /// sends can reuse it instead of planning the body query a second time. The callback is shared
+    /// by every `StorageURLSource` of a read, and sources of a glob URL run in parallel, so the
+    /// hand-over has to be atomic: exactly one invocation takes the pipeline, all the others build
+    /// their own.
+    struct PreflightedBodyPipeline
+    {
+        std::mutex mutex;
+        std::optional<QueryPipelineBuilder> pipeline TSA_GUARDED_BY(mutex);
+
+        explicit PreflightedBodyPipeline(QueryPipelineBuilder pipeline_) : pipeline(std::move(pipeline_)) {}
+
+        std::optional<QueryPipelineBuilder> take()
+        {
+            std::lock_guard lock(mutex);
+            auto taken = std::move(pipeline);
+            pipeline.reset();
+            return taken;
+        }
+
+        Block getHeader()
+        {
+            std::lock_guard lock(mutex);
+            return pipeline->getHeader();
+        }
+    };
+}
+
+std::function<void(std::ostream &)> IStorageURLBase::Body::makeCallback(const ContextPtr & context) const
+{
+    if (empty())
+        return nullptr;
+
+    if (!query)
+    {
+        return [s = *literal](std::ostream & os)
+        {
+            os.write(s.data(), s.size());
+        };
+    }
+
+    const String body_format = format.empty() ? "JSONLines" : format;
+
+    /// Preflight the output-format construction before returning the callback. The callback itself
+    /// runs only after `ReadWriteBufferFromHTTP` has already sent the request to the remote server,
+    /// and some formats pass the name-level checks done while parsing `body(...)` but throw in their
+    /// constructor (for example, `AvroConfluent` without `output_format_avro_confluent_subject`).
+    /// The preflight needs the real body header, because other formats reject an empty one (for
+    /// example, `Npy` requires exactly one column). Plan the body subquery once here and hand the
+    /// prepared pipeline over to the callback, so that planning a subquery reading from a table
+    /// function contacts its source no more often than evaluating the body alone would.
+    /// Redirects and retries invoke the callback again, and a read of a glob URL shares the callback
+    /// between sources that may run in parallel; a pipeline can be executed only once, so exactly one
+    /// invocation takes the prepared one and every other invocation builds its own.
+    auto prepared_pipeline = std::make_shared<PreflightedBodyPipeline>(buildBodyQueryPipeline(query, context));
+    {
+        NullWriteBuffer null_buf;
+        auto preflight_format = context->getOutputFormat(body_format, null_buf, materializeBlock(prepared_pipeline->getHeader()));
+    }
+
+    return [body_query = query, body_format, context, prepared_pipeline](std::ostream & os)
+    {
+        auto prepared = prepared_pipeline->take();
+        QueryPipelineBuilder builder = prepared.has_value() ? std::move(*prepared) : buildBodyQueryPipeline(body_query, context);
+
+        WriteBufferFromOStream out_buf(os);
+        auto out_format = context->getOutputFormat(body_format, out_buf, materializeBlock(builder.getHeader()));
+        out_format->setAutoFlush();
+
+        auto pipeline = QueryPipelineBuilder::getPipeline(std::move(builder));
+        pipeline.complete(std::move(out_format));
+        CompletedPipelineExecutor executor(pipeline);
+        executor.execute();
+        out_buf.finalize();
+    };
+}
 
 namespace
 {
@@ -189,7 +308,8 @@ IStorageURLBase::IStorageURLBase(
     const ConstraintsDescription & constraints_,
     const String & comment,
     const String & compression_method_,
-    const HTTPHeaderEntries & headers_,
+    HTTPHeaderEntries headers_,
+    Body body_,
     const String & http_method_,
     ASTPtr partition_by_,
     bool distributed_processing_)
@@ -198,7 +318,8 @@ IStorageURLBase::IStorageURLBase(
     , compression_method(chooseCompressionMethod(Poco::URI(uri_).getPath(), compression_method_))
     , format_name(format_name_)
     , format_settings(format_settings_)
-    , headers(headers_)
+    , headers(std::move(headers_))
+    , body(std::move(body_))
     , http_method(http_method_)
     , partition_by(partition_by_)
     , distributed_processing(distributed_processing_)
@@ -212,16 +333,16 @@ IStorageURLBase::IStorageURLBase(
     {
         ColumnsDescription columns;
         if (format_name == "auto")
-            std::tie(columns, format_name) = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_);
+            std::tie(columns, format_name) = getTableStructureAndFormatFromData(uri, compression_method, headers, body, format_settings, context_);
         else
-            columns = getTableStructureFromData(format_name, uri, compression_method, headers, format_settings, context_);
+            columns = getTableStructureFromData(format_name, uri, compression_method, headers, body, format_settings, context_);
 
         storage_metadata.setColumns(columns);
     }
     else
     {
         if (format_name == "auto")
-            format_name = getTableStructureAndFormatFromData(uri, compression_method, headers, format_settings, context_).second;
+            format_name = getTableStructureAndFormatFromData(uri, compression_method, headers, body, format_settings, context_).second;
 
         /// We don't allow special columns in URL storage.
         if (!columns_.hasOnlyOrdinary())
@@ -423,6 +544,7 @@ StorageURLSource::StorageURLSource(
     , format_filter_info(std::move(format_filter_info_))
     , headers(getHeaders(headers_))
     , need_only_count(need_only_count_)
+    , has_request_body(static_cast<bool>(callback))
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
 {
@@ -465,7 +587,7 @@ StorageURLSource::StorageURLSource(
 
         QueryPipelineBuilder builder;
         std::optional<size_t> num_rows_from_cache = std::nullopt;
-        if (need_only_count && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
+        if (need_only_count && !has_request_body && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files])
             num_rows_from_cache = tryGetNumRowsFromCache(curr_uri.toString(), current_file_last_modified);
 
         if (num_rows_from_cache)
@@ -598,7 +720,7 @@ Chunk StorageURLSource::generate()
             return chunk;
         }
 
-        if (input_format && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
+        if (input_format && !has_request_body && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
@@ -869,7 +991,8 @@ private:
 
 std::string IStorageURLBase::getReadMethod() const
 {
-    return Poco::Net::HTTPRequest::HTTP_GET;
+    /// Sending a body promotes the request from GET to POST.
+    return body.empty() ? Poco::Net::HTTPRequest::HTTP_GET : Poco::Net::HTTPRequest::HTTP_POST;
 }
 
 std::vector<std::pair<std::string, std::string>> IStorageURLBase::getReadURIParams(
@@ -887,11 +1010,11 @@ std::function<void(std::ostream &)> IStorageURLBase::getReadPOSTDataCallback(
     const Names & /*column_names*/,
     const ColumnsDescription & /* columns_description */,
     const SelectQueryInfo & /*query_info*/,
-    const ContextPtr & /*context*/,
+    const ContextPtr & context,
     QueryProcessingStage::Enum & /*processed_stage*/,
     size_t /*max_block_size*/) const
 {
-    return nullptr;
+    return body.makeCallback(context);
 }
 
 namespace
@@ -904,9 +1027,16 @@ namespace
             std::optional<String> format_,
             const CompressionMethod & compression_method_,
             const HTTPHeaderEntries & headers_,
+            const IStorageURLBase::Body & body_,
             const std::optional<FormatSettings> & format_settings_,
             const ContextPtr & context_)
-            : WithContext(context_), format(std::move(format_)), compression_method(compression_method_), headers(headers_), format_settings(format_settings_)
+            : WithContext(context_)
+            , format(std::move(format_))
+            , compression_method(compression_method_)
+            , headers(headers_)
+            , body_callback(body_.makeCallback(context_))
+            , http_method(body_.empty() ? Poco::Net::HTTPRequest::HTTP_GET : Poco::Net::HTTPRequest::HTTP_POST)
+            , format_settings(format_settings_)
         {
             url_options_to_check.reserve(urls_to_check_.size());
             for (const auto & url : urls_to_check_)
@@ -987,8 +1117,8 @@ namespace
                     url_options_to_check[current_index].cend(),
                     getContext(),
                     {},
-                    Poco::Net::HTTPRequest::HTTP_GET,
-                    {},
+                    http_method,
+                    body_callback,
                     getHTTPTimeouts(getContext()),
                     credentials,
                     headers,
@@ -1008,6 +1138,12 @@ namespace
 
         void setNumRowsToLastFile(size_t num_rows) override
         {
+            /// The inferred schema and the row count depend on the request body, but the schema
+            /// cache key does not account for it, so caching would cross-contaminate entries for
+            /// different bodies. Skip the cache entirely for body-carrying (POST) requests.
+            if (body_callback)
+                return;
+
             if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
@@ -1017,6 +1153,10 @@ namespace
 
         void setSchemaToLastFile(const ColumnsDescription & columns) override
         {
+            /// See setNumRowsToLastFile: do not cache schemas that depend on a request body.
+            if (body_callback)
+                return;
+
             if (!getContext()->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return;
 
@@ -1042,8 +1182,8 @@ namespace
                 url_options_to_check[current_index - 1].cend(),
                 getContext(),
                 {},
-                Poco::Net::HTTPRequest::HTTP_GET,
-                {},
+                http_method,
+                body_callback,
                 getHTTPTimeouts(getContext()),
                 credentials,
                 headers,
@@ -1059,6 +1199,12 @@ namespace
         std::optional<ColumnsDescription> tryGetColumnsFromCache(const Strings & urls)
         {
             auto context = getContext();
+            /// The response (and thus the inferred schema) depends on the request body, but the
+            /// schema cache key does not include it, so a cached schema for the same URL with a
+            /// different body would be wrong. Never read from the cache for body-carrying requests.
+            if (body_callback)
+                return std::nullopt;
+
             if (!context->getSettingsRef()[Setting::schema_inference_use_cache_for_url])
                 return std::nullopt;
 
@@ -1067,7 +1213,7 @@ namespace
             {
                 auto get_last_mod_time = [&]() -> std::optional<time_t>
                 {
-                    auto last_mod_time = StorageURL::tryGetLastModificationTime(url, headers, credentials, context);
+                    auto last_mod_time = StorageURL::tryGetLastModificationTime(url, headers, body_callback, credentials, context);
                     /// Some URLs could not have Last-Modified header, in this case we cannot be sure that
                     /// data wasn't changed after adding it's schema to cache. Use schema from cache only if
                     /// special setting for this case is enabled.
@@ -1108,6 +1254,8 @@ namespace
         std::optional<String> format;
         const CompressionMethod & compression_method;
         const HTTPHeaderEntries & headers;
+        std::function<void(std::ostream &)> body_callback;
+        std::string http_method;
         Poco::Net::HTTPBasicCredentials credentials;
         const std::optional<FormatSettings> & format_settings;
     };
@@ -1118,6 +1266,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     const String & uri,
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
+    const Body & body,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
@@ -1137,7 +1286,7 @@ std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndForma
     else
         urls_to_check = {uri};
 
-    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, format_settings, context);
+    URLReadBufferIterator read_buffer_iterator(urls_to_check, format, compression_method, headers, body, format_settings, context);
     if (format)
         return {readSchemaFromFormat(*format, format_settings, read_buffer_iterator, context), *format};
     return detectFormatAndReadSchema(format_settings, read_buffer_iterator, context);
@@ -1148,20 +1297,22 @@ ColumnsDescription IStorageURLBase::getTableStructureFromData(
     const String & uri,
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
+    const Body & body,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
-    return getTableStructureAndFormatFromDataImpl(format, uri, compression_method, headers, format_settings, context).first;
+    return getTableStructureAndFormatFromDataImpl(format, uri, compression_method, headers, body, format_settings, context).first;
 }
 
 std::pair<ColumnsDescription, String> IStorageURLBase::getTableStructureAndFormatFromData(
     const String & uri,
     CompressionMethod compression_method,
     const HTTPHeaderEntries & headers,
+    const Body & body,
     const std::optional<FormatSettings> & format_settings,
     const ContextPtr & context)
 {
-    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, format_settings, context);
+    return getTableStructureAndFormatFromDataImpl(std::nullopt, uri, compression_method, headers, body, format_settings, context);
 }
 
 bool IStorageURLBase::supportsSubsetOfColumns(const ContextPtr & context) const
@@ -1582,6 +1733,7 @@ SchemaCache & IStorageURLBase::getSchemaCache(const ContextPtr & context)
 std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
     const String & url,
     const HTTPHeaderEntries & headers,
+    const std::function<void(std::ostream &)> & write_body_callback,
     const Poco::Net::HTTPBasicCredentials & credentials,
     const ContextPtr & context)
 {
@@ -1597,6 +1749,7 @@ std::optional<time_t> IStorageURLBase::tryGetLastModificationTime(
                    .withBufSize(settings[Setting::max_read_buffer_size])
                    .withRedirects(settings[Setting::max_http_get_redirects])
                    .withHeaders(headers)
+                   .withOutCallback(write_body_callback)
                    .create(credentials);
 
     return buf->tryGetLastModificationTime();
@@ -1612,7 +1765,8 @@ StorageURL::StorageURL(
     const String & comment,
     const ContextPtr & context_,
     const String & compression_method_,
-    const HTTPHeaderEntries & headers_,
+    HTTPHeaderEntries headers_,
+    Body body_,
     const String & http_method_,
     ASTPtr partition_by_,
     bool distributed_processing_)
@@ -1626,7 +1780,8 @@ StorageURL::StorageURL(
         constraints_,
         comment,
         compression_method_,
-        headers_,
+        std::move(headers_),
+        std::move(body_),
         http_method_,
         partition_by_,
         distributed_processing_)
@@ -1685,15 +1840,20 @@ FormatSettings StorageURL::getFormatSettingsFromArgs(const StorageFactory::Argum
     return format_settings;
 }
 
-size_t StorageURL::evalArgsAndCollectHeaders(
-    ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments)
+size_t StorageURL::evalArgsAndCollectHeadersAndBody(
+    ASTs & url_function_args,
+    HTTPHeaderEntries & header_entries,
+    Body & body_entry,
+    const ContextPtr & context,
+    bool evaluate_arguments)
 {
     ASTs::iterator headers_it = url_function_args.end();
+    ASTs::iterator body_it = url_function_args.end();
 
     for (auto arg_it = url_function_args.begin(); arg_it != url_function_args.end(); ++arg_it)
     {
-        const auto * headers_ast_function = (*arg_it)->as<ASTFunction>();
-        if (headers_ast_function && headers_ast_function->name == "headers")
+        const auto * ast_as_function = (*arg_it)->as<ASTFunction>();
+        if (ast_as_function && ast_as_function->name == "headers")
         {
             if (headers_it != url_function_args.end())
                 throw Exception(
@@ -1701,7 +1861,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
                     "URL table function can have only one key-value argument: headers=(). {}",
                     bad_arguments_error_message);
 
-            const auto * headers_function_args_expr = assert_cast<const ASTExpressionList *>(headers_ast_function->arguments.get());
+            const auto * headers_function_args_expr = assert_cast<const ASTExpressionList *>(ast_as_function->arguments.get());
             auto headers_function_args = headers_function_args_expr->children;
 
             for (auto & header_arg : headers_function_args)
@@ -1714,9 +1874,7 @@ size_t StorageURL::evalArgsAndCollectHeaders(
                 auto header_args = header_args_expr->children;
                 if (header_args.size() != 2)
                     throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS,
-                        "Headers argument is incorrect: expected 2 arguments, got {}",
-                        header_args.size());
+                        ErrorCodes::BAD_ARGUMENTS, "Headers argument is incorrect: expected 2 arguments, got {}", header_args.size());
 
                 auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(header_args[0], context);
                 auto arg_name_value = ast_literal->as<ASTLiteral>()->value;
@@ -1737,19 +1895,111 @@ size_t StorageURL::evalArgsAndCollectHeaders(
             continue;
         }
 
-        if (headers_ast_function && headers_ast_function->name == "equals")
+        if (ast_as_function && ast_as_function->name == "body")
+        {
+            if (body_it != url_function_args.end())
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "URL table function can have only one body=() argument. {}",
+                    bad_arguments_error_message);
+
+            const auto * body_function_args_expr = assert_cast<const ASTExpressionList *>(ast_as_function->arguments.get());
+            const auto & body_function_args = body_function_args_expr->children;
+
+            if (body_function_args.empty() || body_function_args.size() > 2)
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "URL table function body=() argument expects 1 or 2 arguments: body(content[, format]). {}",
+                    bad_arguments_error_message);
+
+            const auto & input_argument = body_function_args[0];
+            if (input_argument->as<ASTSubquery>())
+            {
+                /// Defer execution: keep the parsed query, evaluate it only when a request is being sent.
+                body_entry.query = input_argument;
+                if (body_function_args.size() == 2)
+                {
+                    auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(body_function_args[1], context);
+                    auto format_value = ast_literal->as<ASTLiteral>()->value;
+                    if (format_value.getType() != Field::Types::Which::String)
+                        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as format argument of body()");
+                    body_entry.format = format_value.safeGet<String>();
+
+                    /// Validate the output format of body() eagerly, while parsing the arguments, so that
+                    /// an invalid format fails before any HTTP request is created. Otherwise the format is
+                    /// first checked inside the request callback (see `Body::makeCallback`), which runs only
+                    /// after `ReadWriteBufferFromHTTP` has already sent the `POST` to the remote server, so an
+                    /// invalid local argument would produce remote side effects. An empty format means the
+                    /// default (`JSONLines`), which is applied in `Body::makeCallback`, so skip it here.
+                    if (!body_entry.format.empty())
+                    {
+                        FormatFactory::instance().checkFormatName(body_entry.format);
+                        if (!FormatFactory::instance().isOutputFormat(body_entry.format))
+                            throw Exception(
+                                ErrorCodes::FORMAT_IS_NOT_SUITABLE_FOR_OUTPUT,
+                                "Format '{}' specified in the body() argument of the url table function is not suitable for output",
+                                body_entry.format);
+                    }
+                }
+            }
+            else
+            {
+                if (body_function_args.size() != 1)
+                    throw Exception(
+                        ErrorCodes::BAD_ARGUMENTS,
+                        "URL table function body=() with a constant string accepts a single argument; format applies to subqueries only");
+
+                auto ast_literal = evaluateConstantExpressionOrIdentifierAsLiteral(input_argument, context);
+                auto literal_value = ast_literal->as<ASTLiteral>()->value;
+                if (literal_value.getType() != Field::Types::Which::String)
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "Expected string as body argument");
+                body_entry.literal = literal_value.safeGet<String>();
+            }
+
+            body_it = arg_it;
+            continue;
+        }
+
+        if (ast_as_function && ast_as_function->name == "equals")
             continue;
 
         if (evaluate_arguments)
             (*arg_it) = evaluateConstantExpressionOrIdentifierAsLiteral((*arg_it), context);
     }
 
-    if (headers_it == url_function_args.end())
-        return url_function_args.size();
+    /// Move recognised key-value style arguments to the end so `ITableFunctionFileLike`
+    /// sees only positional URL/format/structure arguments. Keep order: ..., body, headers.
+    const bool has_body = body_it != url_function_args.end();
+    const bool has_headers = headers_it != url_function_args.end();
 
-    std::rotate(headers_it, std::next(headers_it), url_function_args.end());
-    return url_function_args.size() - 1;
+    if (has_body && has_headers)
+    {
+        const ptrdiff_t body_index = body_it - url_function_args.begin();
+        const ptrdiff_t headers_index = headers_it - url_function_args.begin();
+        ASTPtr body_node = std::move(*body_it);
+        ASTPtr headers_node = std::move(*headers_it);
+        url_function_args.erase(url_function_args.begin() + std::max(body_index, headers_index));
+        url_function_args.erase(url_function_args.begin() + std::min(body_index, headers_index));
+        url_function_args.push_back(std::move(body_node));
+        url_function_args.push_back(std::move(headers_node));
+        return url_function_args.size() - 2;
+    }
+
+    if (has_headers)
+    {
+        std::rotate(headers_it, std::next(headers_it), url_function_args.end());
+        return url_function_args.size() - 1;
+    }
+
+    if (has_body)
+    {
+        std::rotate(body_it, std::next(body_it), url_function_args.end());
+        return url_function_args.size() - 1;
+    }
+
+    return url_function_args.size();
 }
+
 
 void StorageURL::processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection)
 {
@@ -2234,11 +2484,11 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
     if (auto named_collection = tryGetNamedCollectionWithOverrides(args, local_context, true, nullptr, table_id))
     {
         StorageURL::processNamedCollectionResult(configuration, *named_collection);
-        evalArgsAndCollectHeaders(args, configuration.headers, local_context, false);
+        evalArgsAndCollectHeadersAndBody(args, configuration.headers, configuration.body, local_context, false);
     }
     else
     {
-        size_t count = evalArgsAndCollectHeaders(args, configuration.headers, local_context);
+        size_t count = evalArgsAndCollectHeadersAndBody(args, configuration.headers, configuration.body, local_context);
 
         if (count == 0 || count > 3)
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, bad_arguments_error_message);
@@ -2249,6 +2499,16 @@ StorageURL::Configuration StorageURL::getConfiguration(ASTs & args, const Contex
         if (count == 3)
             configuration.compression_method = checkAndGetLiteralArgument<String>(args[2], "compression_method");
     }
+
+    /// `body(...)` is a `url` table function feature only: it forms the HTTP request body of a `SELECT`.
+    /// `getConfiguration` is the parser for the persistent `ENGINE = URL(...)`, which has no place for it
+    /// (its `INSERT` already streams the inserted rows as the body, and the engine syntax is documented as
+    /// `URL(URL [,Format] [,CompressionMethod])`). Reject the argument here instead of silently accepting
+    /// it and later issuing an undocumented `POST` on `SELECT`.
+    if (!configuration.body.empty())
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "The 'body' argument is supported only by the 'url' table function, not by the persistent 'URL' table engine.");
 
     /// Resolve relative URLs against the url_base setting.
     /// For the URL engine, the resolved URL is later materialized into the engine args
@@ -2627,6 +2887,7 @@ void registerStorageURL(StorageFactory & factory)
                     context,
                     config.compression_method,
                     config.headers,
+                    config.body,
                     config.http_method,
                     partition_by,
                     /* distributed_processing */ false);
@@ -2746,6 +3007,8 @@ respectively. For processing `POST` requests, the remote server must support
 [Chunked transfer encoding](https://en.wikipedia.org/wiki/Chunked_transfer_encoding).
 
 You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/reference/settings/session-settings/max#max_http_get_redirects) setting.
+
+When used with the `url` table function, the request can carry an HTTP request body produced by a constant string or a `SELECT` subquery. See the [body argument](/sql-reference/table-functions/url#sending-a-body) of the `url` table function for details.
 
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 

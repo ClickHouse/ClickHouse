@@ -61,6 +61,8 @@ respectively. For processing `POST` requests, the remote server must support
 
 You can limit the maximum number of HTTP GET redirect hops using the [max_http_get_redirects](/reference/settings/session-settings/max#max_http_get_redirects) setting.
 
+When used with the `url` table function, the request can carry an HTTP request body produced by a constant string or a `SELECT` subquery. See the [body argument](/reference/functions/table-functions/url#sending-a-body) of the `url` table function for details.
+
 ## Wildcards with HTTP index pages {#wildcards-with-http-index-pages}
 
 When [allow_experimental_url_wildcard_from_index_pages](/reference/settings/session-settings/allow-experimental#allow_experimental_url_wildcard_from_index_pages) is enabled, the `URL` table engine can expand wildcards by fetching HTTP index pages and extracting links from them.
