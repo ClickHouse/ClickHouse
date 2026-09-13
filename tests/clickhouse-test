@@ -6018,14 +6018,7 @@ def do_run_tests(
 
         batch_size = len(test_suite.parallel_tests) // jobs
 
-        processes = []
-        for i in range(jobs):
-            if args.no_self_parallel:
-                queue = worker_queues[i]
-                queue_size = len(queue)
-            else:
-                queue = shared_queue
-                queue_size = batch_size
+        def start_worker(process_index, queue, queue_size):
             process = multiprocessing.Process(
                 target=run_tests_process,
                 args=(
@@ -6039,7 +6032,7 @@ def do_run_tests(
                         stop_testing,
                         workers_to_shed,
                         restarted_tests,
-                        i,  # process index
+                        process_index,
                         total_failures_shared,
                         progress_counter,
                         total_tests,
@@ -6049,15 +6042,53 @@ def do_run_tests(
             )
             processes.append(process)
             process.start()
+            return process
+
+        processes = []
+        for i in range(jobs):
+            if args.no_self_parallel:
+                start_worker(i, worker_queues[i], len(worker_queues[i]))
+            else:
+                start_worker(i, shared_queue, batch_size)
 
         # How often (seconds) to query server memory usage.
         MEMORY_CHECK_INTERVAL = 5.0
-        # After shedding a worker, wait this long before the next check to give
-        # memory time to drop before potentially shedding another worker.
+        # After changing the worker count, wait this long before the next check to
+        # give memory time to settle before changing it again.
         MEMORY_SHED_COOLDOWN = 30.0
         # Fraction of max_server_memory_usage at which we start shedding workers.
         MEMORY_PRESSURE_THRESHOLD = 0.8
+        # Fraction at or below which a worker shed earlier is started again. The
+        # gap to MEMORY_PRESSURE_THRESHOLD is what keeps the pool stable: with a
+        # single threshold, a fraction hovering around it sheds one more worker
+        # every cooldown and puts none of them back, so the pool drains to its
+        # floor however brief each excursion above the threshold is. Five points
+        # of the limit is a wide enough band to be a real drop in usage rather
+        # than noise (~4.5 GiB on a sanitizer job, whose limit is 0.7 of a 128
+        # GiB host) while still narrow enough to reach in the band this actually
+        # oscillates in - the observed runs hover just above the shed threshold,
+        # not far below it.
+        MEMORY_RECOVERY_THRESHOLD = 0.75
+        # Shedding is a one-way door when every worker owns its queue: a worker
+        # that stops takes its remaining tests with it, and starting it again
+        # would re-run the ones it already did. Those runs (--no-self-parallel is
+        # only used together with --flaky-check) are bounded by a time limit and
+        # not by a test count, so a pool that drains only costs reruns, and it may
+        # drain to a single worker as it always has. A shared queue instead has to
+        # finish a fixed set of tests within the job's own timeout, and dropping
+        # from `jobs` to one worker multiplies what is left of the run by `jobs` -
+        # turning a server that survived into a job killed mid-suite. Keep half of
+        # the pool there: halving the load is the largest cut whose worst case,
+        # paid from the very first test, still fits a budget sized at twice the
+        # median run.
+        MIN_WORKERS = 1 if args.no_self_parallel else max(1, jobs // 2)
         last_memory_check = time()
+        # Shed requests issued so far, and how many of the workers that honoured
+        # one have been started again. `workers_to_shed` only counts the requests
+        # no worker has picked up yet, so `shed_requests - workers_to_shed.value`
+        # is the number of workers that actually stopped.
+        shed_requests = 0
+        workers_restored = 0
 
         hung_check_monitor = HungCheckMonitor(args)
 
@@ -6065,29 +6096,83 @@ def do_run_tests(
             sleep(0.1)
             sys.stdout.flush()
 
-            # Periodically check memory pressure and reduce concurrency if needed.
-            # In normal mode workers share a single queue, so shedding one
-            # does not lose work.  In --flaky-check mode each worker has its
-            # own queue, so its remaining tests will not run — acceptable under
-            # memory pressure.
+            # Periodically check memory pressure and follow it in both
+            # directions: shed a worker while the server is close to its limit,
+            # and start a shed one again once it is not. In normal mode workers
+            # share a single queue, so shedding one does not lose work and any
+            # worker can pick up where it left off. In --no-self-parallel mode
+            # each worker has its own queue, so its remaining tests will not run
+            # and it is never started again - acceptable under memory pressure.
             now = time()
-            if now - last_memory_check >= MEMORY_CHECK_INTERVAL and len(processes) > 1:
+            if now - last_memory_check >= MEMORY_CHECK_INTERVAL:
                 last_memory_check = now
                 memory_fraction = get_server_memory_fraction(args)
+                pool_changed = False
                 if memory_fraction is not None and memory_fraction > MEMORY_PRESSURE_THRESHOLD:
                     # Cap outstanding shed requests so we never drain the pool
-                    # to zero: only increment if the number of workers that will
-                    # still be running after all pending sheds is greater than 1.
+                    # past its floor. `jobs + workers_restored - shed_requests` is
+                    # how many workers are left once every request issued has been
+                    # honoured, and it is exact: a worker claims a request (and so
+                    # commits to stopping) by decrementing `workers_to_shed`, but
+                    # it stays in `processes` until it has actually exited, so a
+                    # cap read off `len(processes)` lags by that window and lets
+                    # one more request through - enough, when they come in a
+                    # streak, to drain the pool below the floor and even to zero,
+                    # ending the run with tests left unrun.
                     with workers_to_shed.get_lock():
-                        if len(processes) - workers_to_shed.value > 1:
+                        if jobs + workers_restored - shed_requests > MIN_WORKERS:
                             workers_to_shed.value += 1
+                            shed_requests += 1
+                            pool_changed = True
                             print(
                                 f"Server memory at {memory_fraction:.0%} of limit — "
                                 f"signalling one worker to stop after its current test "
                                 f"({len(processes)} tracked, {workers_to_shed.value} pending shed)"
                             )
-                    # Use a longer cooldown so memory has time to drop before
-                    # we consider shedding another worker.
+                elif (
+                    memory_fraction is not None
+                    and memory_fraction <= MEMORY_RECOVERY_THRESHOLD
+                    and not args.no_self_parallel
+                    and not stop_testing.is_set()
+                ):
+                    # Read the queue length outside the lock: it is a manager
+                    # proxy, so `len` is a round trip to another process, and the
+                    # lock is on a worker's path between two tests.
+                    queue_left = len(shared_queue)
+                    with workers_to_shed.get_lock():
+                        workers_stopped = shed_requests - workers_to_shed.value
+                        if workers_to_shed.value > 0:
+                            # Nobody has picked this request up yet: withdrawing
+                            # it is cheaper than letting a worker stop and then
+                            # starting another one in its place.
+                            workers_to_shed.value -= 1
+                            shed_requests -= 1
+                            pool_changed = True
+                            print(
+                                f"Server memory back at {memory_fraction:.0%} of limit — "
+                                f"withdrawing a shed request that no worker has taken "
+                                f"({len(processes)} tracked, {workers_to_shed.value} pending shed)"
+                            )
+                        elif workers_stopped > workers_restored and queue_left > 0:
+                            workers_restored += 1
+                            # The process index only names this worker's profile
+                            # file, so give the replacement one of its own rather
+                            # than reuse the index of a worker that may still be
+                            # writing. `jobs + 1` belongs to the sequential runner
+                            # below, hence the offset past it.
+                            start_worker(
+                                jobs + 1 + workers_restored, shared_queue, batch_size
+                            )
+                            pool_changed = True
+                            print(
+                                f"Server memory back at {memory_fraction:.0%} of limit — "
+                                f"starting a worker in place of a shed one "
+                                f"({len(processes)} tracked, "
+                                f"{workers_stopped - workers_restored} still shed)"
+                            )
+                if pool_changed:
+                    # Use a longer cooldown so memory has time to settle before
+                    # we consider changing the pool again.
                     last_memory_check = time() + MEMORY_SHED_COOLDOWN - MEMORY_CHECK_INTERVAL
 
             # Stop the whole run once the global time limit is reached. This is
