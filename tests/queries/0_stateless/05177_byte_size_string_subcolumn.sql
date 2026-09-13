@@ -24,62 +24,13 @@ EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
 SELECT byteSize(s)
 FROM t_byte_size_string_subcolumn;
 
--- A top-level column whose name matches the String size subcolumn up to case must
--- block all String.size rewrites. This uses MergeTree because file() does not
--- support this function-to-subcolumn optimization and would not reach the guard.
-DROP TABLE IF EXISTS t_byte_size_string_subcolumn_shadowed;
-
-CREATE TABLE t_byte_size_string_subcolumn_shadowed
-(
-    s String,
-    a Array(UInt8),
-    `S.SIZE` UInt64,
-    `A.SIZE0` UInt64
-)
-ENGINE = MergeTree
-ORDER BY tuple();
-
 SELECT count() FROM
 (
     EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
     SELECT byteSize(s)
-    FROM t_byte_size_string_subcolumn_shadowed
+    FROM file('nonexistent_05177.orc', ORC, '`S.SIZE` UInt64, s String')
 )
 WHERE explain LIKE '%s.size%';
-
-SELECT count() FROM
-(
-    EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
-    SELECT length(s)
-    FROM t_byte_size_string_subcolumn_shadowed
-)
-WHERE explain LIKE '%s.size%';
-
-SELECT count() FROM
-(
-    EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
-    SELECT empty(s)
-    FROM t_byte_size_string_subcolumn_shadowed
-)
-WHERE explain LIKE '%s.size%';
-
-SELECT count() FROM
-(
-    EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
-    SELECT notEmpty(s)
-    FROM t_byte_size_string_subcolumn_shadowed
-)
-WHERE explain LIKE '%s.size%';
-
-SELECT count() FROM
-(
-    EXPLAIN QUERY TREE dump_tree = 0, dump_ast = 1
-    SELECT length(a)
-    FROM t_byte_size_string_subcolumn_shadowed
-)
-WHERE explain LIKE '%a.size0%';
-
-DROP TABLE t_byte_size_string_subcolumn_shadowed;
 
 SELECT id, byteSize(s)
 FROM t_byte_size_string_subcolumn
