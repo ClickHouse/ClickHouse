@@ -6086,7 +6086,8 @@ def do_run_tests(
         # Shed requests issued so far, and how many of the workers that honoured
         # one have been started again. `workers_to_shed` only counts the requests
         # no worker has picked up yet, so `shed_requests - workers_to_shed.value`
-        # is the number of workers that actually stopped.
+        # is the number of workers that have taken one and are therefore
+        # committed to stopping.
         shed_requests = 0
         workers_restored = 0
 
@@ -6110,17 +6111,42 @@ def do_run_tests(
                 pool_changed = False
                 if memory_fraction is not None and memory_fraction > MEMORY_PRESSURE_THRESHOLD:
                     # Cap outstanding shed requests so we never drain the pool
-                    # past its floor. `jobs + workers_restored - shed_requests` is
-                    # how many workers are left once every request issued has been
-                    # honoured, and it is exact: a worker claims a request (and so
-                    # commits to stopping) by decrementing `workers_to_shed`, but
-                    # it stays in `processes` until it has actually exited, so a
-                    # cap read off `len(processes)` lags by that window and lets
-                    # one more request through - enough, when they come in a
-                    # streak, to drain the pool below the floor and even to zero,
-                    # ending the run with tests left unrun.
+                    # past its floor. Two counts bound how many workers are left
+                    # once every request issued has been honoured, and each is
+                    # blind to something the other sees, so the cap is the
+                    # smaller of them:
+                    #
+                    #  * `jobs + workers_restored - shed_requests` counts a
+                    #    worker that has claimed a request - and so committed to
+                    #    stopping - but has not exited yet. A live count does
+                    #    not: a worker claims by decrementing `workers_to_shed`,
+                    #    yet stays in `processes` until it is actually gone, so a
+                    #    cap read off that alone lags by the window in between
+                    #    and lets one more request through - enough, when they
+                    #    come in a streak, to take the pool one below its
+                    #    minimum and at the limit to zero, which ends the
+                    #    `while processes:` loop with part of the suite never
+                    #    run.
+                    #
+                    #  * `len(processes) - workers_to_shed.value` counts the
+                    #    workers that exited on their own (the reap at the end of
+                    #    each iteration drops one as soon as it is gone), which
+                    #    `jobs` does not. With `--no-self-parallel` the tests are
+                    #    dealt out by hash, so a worker whose share comes out
+                    #    empty exits immediately: under `--flaky-check`, the only
+                    #    user of that mode, every rerun of a selected test hashes
+                    #    into the same queue, and with few enough tests selected
+                    #    the rest of the pool is gone before the first memory
+                    #    check. The other count still reads the whole configured
+                    #    fan-out there and would stop the single worker carrying
+                    #    the run - leaving its queue unrun with nothing to report
+                    #    it, since a shed worker is not a failure.
                     with workers_to_shed.get_lock():
-                        if jobs + workers_restored - shed_requests > MIN_WORKERS:
+                        workers_left = min(
+                            jobs + workers_restored - shed_requests,
+                            len(processes) - workers_to_shed.value,
+                        )
+                        if workers_left > MIN_WORKERS:
                             workers_to_shed.value += 1
                             shed_requests += 1
                             pool_changed = True
