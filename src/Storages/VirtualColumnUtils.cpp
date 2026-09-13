@@ -41,6 +41,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/FunctionsLogical.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Functions/IFunctionAdaptors.h>
 #include <Functions/indexHint.h>
@@ -671,6 +672,11 @@ static bool canEvaluateSubtree(const ActionsDAG::Node * node, const Block * allo
     return true;
 }
 
+/// Both walks below have to look at more than the `FUNCTION` nodes of this DAG. Constant folding turns a
+/// lambda whose captures are all constant into a `COLUMN` node holding a `ColumnFunction` carrier, and the
+/// interesting call - the one that takes the lambda argument - lives in that lambda's own `ActionsDAG`, not
+/// here. `allNodeFunctions` walks the carrier (and the lambdas nested in it) for exactly that reason.
+
 bool isDeterministic(const ActionsDAG::Node * node)
 {
     for (const auto * child : node->children)
@@ -679,16 +685,11 @@ bool isDeterministic(const ActionsDAG::Node * node)
             return false;
     }
 
-    if (node->type == ActionsDAG::ActionType::COLUMN)
-        return node->isDeterministic();
-
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministic())
+    /// For a `COLUMN` node this also rejects a constant folded from a non-deterministic expression (`now`).
+    if (!node->isDeterministic())
         return false;
 
-    return true;
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministic(); });
 }
 
 bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
@@ -699,13 +700,7 @@ bool isDeterministicInScopeOfQuery(const ActionsDAG::Node * node)
             return false;
     }
 
-    if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return true;
-
-    if (!node->function_base->isDeterministicInScopeOfQuery())
-        return false;
-
-    return true;
+    return allNodeFunctions(*node, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); });
 }
 
 /// `splitFilterNodeForAllowedInputs` owns no DAG: it collects new nodes in `additional_nodes`.
