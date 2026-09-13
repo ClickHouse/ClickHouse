@@ -204,7 +204,7 @@ FROM ontime;
     FunctionDocumentation::Category category_anyHeavy = FunctionDocumentation::Category::AggregateFunction;
     FunctionDocumentation documentation_anyHeavy = {description_anyHeavy, syntax_anyHeavy, arguments_anyHeavy, {}, returned_value_anyHeavy, examples_anyHeavy, introduced_in_anyHeavy, category_anyHeavy};
 
-    AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true};
+    AggregateFunctionProperties default_properties = {.returns_default_when_only_null = false, .is_order_dependent = true, .support_variant_argument = true};
     factory.registerFunction("anyHeavy", {createAggregateFunctionAnyHeavy, documentation_anyHeavy, default_properties});
 }
 

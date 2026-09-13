@@ -2,13 +2,21 @@
 
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/IAggregateFunction.h>
+#include <AggregateFunctions/AggregateFunctionVariantNull.h>
 #include <Common/tests/gtest_global_register.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeNothing.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypesNumber.h>
 
 using namespace DB;
+
+namespace DB::Setting
+{
+extern const SettingsBool aggregate_functions_skip_variant_nulls;
+}
 
 static AggregateFunctionPtr resolve(const String & name, const DataTypes & arguments, double level)
 {
@@ -42,4 +50,22 @@ TEST(AggregateFunctionNothingPlaceholder, StateRepresentationIgnoresParameters)
 
     EXPECT_TRUE(tuple_a->haveSameStateRepresentation(*tuple_b));
     EXPECT_TRUE(tuple_b->haveSameStateRepresentation(*tuple_a));
+}
+
+/// Background callers resolve aggregate functions with their supplied storage settings and no query context.
+/// The outer Variant NULL wrapper of a combinator must honor those settings just as the leaf resolver does.
+TEST(AggregateFunctionVariantNull, CombinatorUsesPassedSettingsWithoutQueryContext)
+{
+    tryRegisterAggregateFunctions();
+
+    DataTypes arguments{std::make_shared<DataTypeVariant>(DataTypes{std::make_shared<DataTypeUInt64>()})};
+    Settings settings;
+    settings[Setting::aggregate_functions_skip_variant_nulls] = false;
+
+    AggregateFunctionProperties properties;
+    auto function = AggregateFunctionFactory::instance().get(
+        "countOrNull", NullsAction::EMPTY, arguments, {}, properties,
+        AggregateFunctionStateVariant::Aggregation, false, false, &settings);
+
+    EXPECT_EQ(typeid_cast<const AggregateFunctionVariantNull *>(function.get()), nullptr);
 }
