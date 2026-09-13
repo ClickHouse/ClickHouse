@@ -310,9 +310,9 @@ public:
 #if USE_PROMETHEUS_PROTOBUFS
         /// Unsupported content types and encodings get 415 Unsupported Media Type.
         const String content_type = request.get("Content-Type", "");
-        const bool is_v2 = content_type.find("proto=io.prometheus.write.v2.Request") != String::npos;
+        const bool is_v2 = content_type.contains("proto=io.prometheus.write.v2.Request");
         const bool is_protobuf = (content_type == "application/x-protobuf") || content_type.starts_with("application/x-protobuf;");
-        if (!is_protobuf || (content_type.find("proto=") != String::npos && !is_v2))
+        if (!is_protobuf || (content_type.contains("proto=") && !is_v2))
             throw Exception(ErrorCodes::UNSUPPORTED_MEDIA_TYPE,
                 "HTTP header Content-Type has unsupported value '{}' (must be 'application/x-protobuf' or "
                 "'application/x-protobuf;proto=io.prometheus.write.v2.Request')", content_type);
