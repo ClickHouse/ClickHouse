@@ -1,0 +1,27 @@
+control	2
+window	2
+window	2
+window with a column	0	2
+window with a column	0	2
+every shard is remote	2
+every shard is remote	2
+three shards	3
+three shards	3
+three shards	3
+several rows per shard	6	21
+rank	2	1
+cluster	2
+cluster	2
+filter above the window	8
+without block marshalling	2
+without block marshalling	2
+without compression	2
+without compression	2
+synchronous socket	2
+synchronous socket	2
+hedged requests	2
+hedged requests	2
+old analyzer	2
+old analyzer	2
+old analyzer, every shard is remote	2
+old analyzer, every shard is remote	2
