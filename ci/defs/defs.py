@@ -558,6 +558,26 @@ class ArtifactNames:
 
 LLVM_FT_NUM_BATCHES = 3
 LLVM_IT_NUM_BATCHES = 8
+# Batch count of the two ASan integration-test flavors, which run the whole integration suite
+# on `AMD_MEDIUM` with three xdist workers against a two-hour pytest `--session-timeout`.
+#
+# Eight, not six: the suite measures about 112000 test-seconds, so six batches put the heaviest
+# shard at 119.7 of the 120 available minutes - no margin at all, however well they are
+# balanced - and `amd_asan_ubsan, db disk, old analyzer` timed out 133 times in the three weeks
+# after it went to six. Eight brings the heaviest shard to 82 minutes, 68% of the budget.
+#
+# Batches are the right lever rather than a longer timeout: the aggregate compute is unchanged,
+# since the work is the same and only the parallelism differs, so the only cost is one more
+# per-batch setup - and the job gets its answer 25% sooner.
+#
+# Both flavors must keep the same count: they run the same suite with the same worker count
+# against the same budget, so a count that does not fit one does not fit the other.
+#
+# To re-measure, score the packing of `get_optimal_test_batch` against per-module
+# `sum(test_duration_ms)` from CIDB rather than against its own `TEST_DURATIONS` table - that
+# table currently sums to 97000 test-seconds against a measured 112000, so it reports every
+# shard as evenly packed while the measured spread across six is 1.24.
+ASAN_IT_NUM_BATCHES = 8
 # The old-analyzer + s3 + DBReplicated parallel variant runs the whole stateless
 # suite un-batched and is the slowest job in CI (main run alone ~1h40m-2h10m
 # under coverage instrumentation). It is split into batches so each shard
