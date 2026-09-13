@@ -9,6 +9,7 @@
 #include <memory>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3Settings.h>
+#include <Common/logger_useful.h>
 #include <Common/MultiVersion.h>
 #include <Common/ObjectStorageKeyGenerator.h>
 #include <IO/ReadBufferFromS3.h>
