@@ -20,8 +20,11 @@ SETTINGS disk = disk(name = '05216_outside_absolute', type = object_storage, obj
 CREATE TABLE t_05216 (x UInt64) ENGINE = MergeTree ORDER BY x
 SETTINGS disk = disk(name = '05216_outside_metadata', type = object_storage, object_storage_type = local, path = '05216_metadata/', metadata_path = '../user_files/05216_metadata/'); -- { serverError BAD_ARGUMENTS }
 
--- A disk rejected by those checks must not stay usable by the statements that follow.
-SELECT count() FROM system.disks WHERE name LIKE '%05216%';
+-- A disk rejected by those checks must not stay usable by the statements that follow. Named one by
+-- one rather than by a pattern: the disks that the statements below create on purpose stay
+-- registered for the lifetime of the server, including for a second run of this test.
+SELECT count() FROM system.disks
+WHERE name IN ('../user_scripts/05216', '05216_outside_data', '05216_outside_absolute', '05216_outside_metadata');
 
 -- A disk inside the base directory keeps working.
 CREATE TABLE t_05216 (x UInt64) ENGINE = MergeTree ORDER BY x
