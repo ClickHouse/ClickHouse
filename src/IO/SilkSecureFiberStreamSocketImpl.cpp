@@ -257,6 +257,13 @@ SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(Poco::Net::Context::Ptr
 {
 }
 
+SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(int accepted_fd, Poco::Net::Context::Ptr context)
+    : SecureFiberStreamSocketImpl(new FiberStreamSocketImpl(accepted_fd), context)
+{
+    /// Arm the server-side handshake; it runs on the first I/O over the silk fiber BIO.
+    acceptSSL();
+}
+
 SecureFiberStreamSocketImpl::SecureFiberStreamSocketImpl(FiberStreamSocketImpl * underlying_, Poco::Net::Context::Ptr context)
     : Poco::Net::SecureStreamSocketImpl(underlying_, context)
     , underlying(underlying_)
