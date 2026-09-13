@@ -1,0 +1,9 @@
+rows left	9996
+with the index	10
+without the index	10
+without rescoring	10
+with rescoring	10
+the index answer	[780,781,2236,2237,3787,3788,5243,5244,6794,6795]
+the bruteforce answer	[780,781,2236,2237,3787,3788,5243,5244,6794,6795]
+a deleted cluster	3
+a pending delete	10
