@@ -153,6 +153,7 @@ static struct InitFiu
     PAUSEABLE_ONCE(object_storage_queue_pause_before_cleanup_lock_read) \
     PAUSEABLE_ONCE(object_storage_queue_pause_before_new_file_claim) \
     PAUSEABLE_ONCE(object_storage_queue_pause_before_partial_failure_publish) \
+    PAUSEABLE_ONCE(object_storage_queue_pause_before_wait_retry_check) \
     PAUSEABLE_ONCE(replicated_merge_tree_insert_retry_pause) \
     ONCE(replicated_merge_tree_restore_attach_retry) \
     PAUSEABLE_ONCE(finish_set_quorum_failed_parts) \

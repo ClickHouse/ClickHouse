@@ -98,6 +98,7 @@ namespace FailPoints
     extern const char object_storage_queue_fail_after_insert[];
     extern const char object_storage_queue_fail_startup[];
     extern const char object_storage_queue_pause_after_commit[];
+    extern const char object_storage_queue_pause_before_wait_retry_check[];
 }
 
 namespace ServerSetting
@@ -2110,6 +2111,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
         /// is passed from SYSTEM FLUSH OBJECT STORAGE QUEUE), so a stale threshold could
         /// make this either hang forever against a now-terminal file (limit lowered) or
         /// abort early on a still-retryable marker (limit raised).
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_wait_retry_check);
         if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
             && keeper_retries >= metadata->getTableMetadata().loading_retries.load())
             throw Exception(ErrorCodes::ABORTED,
@@ -2197,6 +2199,7 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
             return;
         }
         /// Same reasoning as above: read the live limit, not the stale file_metadata snapshot.
+        FailPointInjection::pauseFailPoint(FailPoints::object_storage_queue_pause_before_wait_retry_check);
         if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
             && keeper_retries >= metadata->getTableMetadata().loading_retries.load())
         {
