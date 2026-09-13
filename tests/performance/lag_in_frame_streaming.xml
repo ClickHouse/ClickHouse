@@ -1,0 +1,57 @@
+<test>
+    <!--
+        Benchmark for the StreamingLagTransform optimisation.
+        Compares lagInFrame with the optimisation off (sort + WindowTransform)
+        vs on (single streaming pass), measuring the memory and time trade-off.
+    -->
+
+    <create_query>
+        CREATE TABLE lag_perf_t
+        (
+            MetricName LowCardinality(String),
+            TimeUnix   UInt64,
+            Count      UInt64,
+            Attributes Map(LowCardinality(String), String)
+        ) ENGINE = MergeTree()
+        ORDER BY (MetricName, TimeUnix)
+        SETTINGS index_granularity = 8192
+    </create_query>
+
+    <fill_query>
+        INSERT INTO lag_perf_t
+        SELECT
+            concat('metric_', toString(number % 50)),
+            number * 1000,
+            number,
+            map('k1', toString(number % 20))
+        FROM numbers_mt(10000000)
+    </fill_query>
+
+    <!-- Baseline: standard FinishSortingTransform + WindowTransform path -->
+    <query>
+        SELECT sum(prev_count)
+        FROM (
+            SELECT lagInFrame(Count)
+                OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix)
+                AS prev_count
+            FROM lag_perf_t
+        )
+        SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 0
+        FORMAT Null
+    </query>
+
+    <!-- Optimised: StreamingLagTransform path -->
+    <query>
+        SELECT sum(prev_count)
+        FROM (
+            SELECT lagInFrame(Count)
+                OVER (PARTITION BY MetricName, Attributes ORDER BY TimeUnix)
+                AS prev_count
+            FROM lag_perf_t
+        )
+        SETTINGS query_plan_reuse_storage_ordering_for_window_functions = 1, max_threads = 4
+        FORMAT Null
+    </query>
+
+    <drop_query>DROP TABLE IF EXISTS lag_perf_t</drop_query>
+</test>
