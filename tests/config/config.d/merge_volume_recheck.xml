@@ -1,0 +1,13 @@
+<clickhouse>
+    <storage_configuration>
+        <policies>
+            <merge_volume_recheck>
+                <volumes>
+                    <main>
+                        <disk>default</disk>
+                    </main>
+                </volumes>
+            </merge_volume_recheck>
+        </policies>
+    </storage_configuration>
+</clickhouse>

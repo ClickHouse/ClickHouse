@@ -27,7 +27,7 @@ struct PartProperties
     const std::set<std::string> projection_names = {};
 
     const bool all_ttl_calculated_if_any = false;
-    const bool is_in_volume_where_merges_avoid = false;
+    bool is_in_volume_where_merges_avoid = false;
 
     /// Size of data part in bytes.
     const size_t size = 0;
