@@ -178,4 +178,8 @@ static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_COLUMNS = 1'000'000uz;
 /// a row count read from the wire as `UInt64`.
 static constexpr auto DEFAULT_NATIVE_BINARY_MAX_NUM_ROWS = 1'000'000'000ULL;
 
+static constexpr UInt64 MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS = 599;
+static constexpr UInt64 MAX_SCHEMA_REGISTRY_RETRIES = 20;
+static constexpr UInt64 MAX_SCHEMA_REGISTRY_INITIAL_BACKOFF_MS = 60000;
+
 }
