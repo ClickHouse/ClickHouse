@@ -1828,6 +1828,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ParserToken s_comma(TokenType::Comma);
     ParserDictionaryAttributeDeclarationList attributes_p;
     ParserDictionary dictionary_p;
+    ParserSQLSecurity sql_security_p;
 
     bool if_not_exists = false;
     bool replace = false;
@@ -1836,6 +1837,7 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     ASTPtr name;
     ASTPtr attributes;
     ASTPtr dictionary;
+    ASTPtr sql_security;
     String cluster_str;
 
     bool attach = false;
@@ -1889,6 +1891,11 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
             return false;
     }
 
+    /// `ASTCreateQuery::formatQueryImpl` emits the clause between the dictionary definition and
+    /// `COMMENT`, so it must be accepted in exactly that position: otherwise metadata written by the
+    /// server does not re-parse on restart.
+    sql_security_p.parse(pos, sql_security, expected);
+
     auto comment = parseComment(pos, expected);
 
     auto query = make_intrusive<ASTCreateQuery>();
@@ -1915,6 +1922,9 @@ bool ParserCreateDictionaryQuery::parseImpl(IParser::Pos & pos, ASTPtr & node, E
     query->set(query->dictionary_attributes_list, attributes);
     query->set(query->dictionary, dictionary);
     query->cluster = cluster_str;
+
+    if (sql_security)
+        query->set(query->sql_security, sql_security);
 
     if (comment)
         query->set(query->comment, comment);
@@ -3637,6 +3647,7 @@ SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
 LIFETIME({MIN min_val MAX max_val | max_val})
 SETTINGS(setting_name = setting_value, setting_name = setting_value, ...)
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY DEFINER]
 COMMENT 'Comment'
 ```
 
@@ -3649,7 +3660,29 @@ COMMENT 'Comment'
 | [`LIFETIME`](/reference/statements/create/dictionary/lifetime) | Sets the refresh interval for the dictionary. |
 | [`ON CLUSTER`](/reference/statements/distributed-ddl) | Creates the dictionary on a cluster. Optional. |
 | `SETTINGS` | Additional dictionary settings. Optional. |
+| `DEFINER` / `SQL SECURITY` | Runs the dictionary's source query as the given user instead of with credentials stored in `SOURCE`. Optional. See below. |
 | `COMMENT` | Adds a text comment to the dictionary. Optional. |
+
+### DEFINER and SQL SECURITY {#definer-and-sql-security}
+
+`DEFINER` names the user whose privileges the dictionary uses when it loads its data, so no
+credential has to be written into `SOURCE`.
+
+```sql
+CREATE DICTIONARY dict (id UInt64, value String)
+PRIMARY KEY id
+SOURCE(CLICKHOUSE(DB 'db' TABLE 'source_table'))
+LAYOUT(HASHED())
+LIFETIME(MIN 0 MAX 300)
+DEFINER = dict_owner;
+```
+
+Naming a user other than yourself requires the `SET DEFINER` privilege. A user that is the definer of an existing dictionary cannot be dropped.
+
+The clause is supported only for a `CLICKHOUSE` source pointing at the same server. Any other source
+authenticates against a foreign system with its own credentials.
+
+`DEFINER` is the only accepted security type. The settings the load runs under are bounded by the definer's own settings constraints.
 
 ## Creating a dictionary with a configuration file {#creating-a-dictionary-with-a-configuration-file}
 
@@ -3699,6 +3732,7 @@ SOURCE(SOURCE_NAME([param1 value1 ... paramN valueN]))
 LAYOUT(LAYOUT_NAME([param_name param_value]))
 LIFETIME({MIN min_val MAX max_val | max_val})
 SETTINGS(setting_name = setting_value, ...)
+[DEFINER = { user | CURRENT_USER }] [SQL SECURITY DEFINER]
 COMMENT 'Comment'
 )",
         .parent = "CREATE",

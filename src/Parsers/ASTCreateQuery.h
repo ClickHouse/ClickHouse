@@ -172,7 +172,9 @@ public:
 
     NameToNameMap getQueryParameters() const;
 
-    bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view; }
+    /// A window view is excluded: `ParserCreateWindowViewQuery` instantiates no `ParserSQLSecurity`,
+    /// so a clause on that shape would be formatted into metadata its own parser cannot read back.
+    bool supportSQLSecurity() const { return is_ordinary_view || is_materialized_view || is_dictionary; }
 
     QueryKind getQueryKind() const override { return QueryKind::Create; }
 
