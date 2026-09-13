@@ -342,19 +342,19 @@ TEST(SerializationInfoByName, DowngradesWithoutEligibleSubcolumns)
     auto uint_type = DataTypeFactory::instance().get("UInt64");
     EXPECT_EQ(
         SerializationInfoByName(NamesAndTypesList{{"n", uint_type}}, settings).getVersion(),
-        MergeTreeSerializationInfoVersion::BASIC);
+        MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
 
     settings.string_serialization_version = MergeTreeStringSerializationVersion::WITH_SIZE_STREAM;
     EXPECT_EQ(
         SerializationInfoByName(NamesAndTypesList{{"n", uint_type}}, settings).getVersion(),
-        MergeTreeSerializationInfoVersion::WITH_TYPES);
+        MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
 
     settings.string_serialization_version = MergeTreeStringSerializationVersion::SINGLE_STREAM;
     auto ineligible_json = DataTypeFactory::instance().get(
         "JSON(x JSON(max_dynamic_paths=0), max_dynamic_paths=0)");
     EXPECT_EQ(
         SerializationInfoByName(NamesAndTypesList{{"j", ineligible_json}}, settings).getVersion(),
-        MergeTreeSerializationInfoVersion::BASIC);
+        MergeTreeSerializationInfoVersion::WITH_MISSING_COLUMNS);
 
     auto eligible_json = DataTypeFactory::instance().get("JSON(x String, max_dynamic_paths=0)");
     SerializationInfoByName eligible_infos(NamesAndTypesList{{"j", eligible_json}}, settings);
