@@ -8,16 +8,19 @@ DROP TABLE IF EXISTS t_adaptive_repl_right;
 
 -- The granularity settings decide how many rows a reader emits per block, and the join makes its
 -- replication decision per block, so they are pinned here: the runner randomizes them and only
--- injects the ones a CREATE does not already set.
+-- injects the ones a CREATE does not already set. A granule is one key window (see below), so a
+-- joined block holds 2048 or 6144 rows: every staged batch stays under
+-- `adaptive_seal_direct_records` (8K), above which a batch is published as-is and the coalescing
+-- asserted below is never entered.
 CREATE TABLE t_adaptive_repl_left (k UInt64, g UInt64, s String, u UInt128, nv Nullable(UInt64))
     ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+    SETTINGS index_granularity = 2048, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
              ratio_of_defaults_for_sparse_serialization = 1.0, use_const_adaptive_granularity = 0,
-             merge_max_block_size = 8192;
+             merge_max_block_size = 2048;
 CREATE TABLE t_adaptive_repl_right (k UInt64) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+    SETTINGS index_granularity = 2048, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
              ratio_of_defaults_for_sparse_serialization = 1.0, use_const_adaptive_granularity = 0,
-             merge_max_block_size = 8192;
+             merge_max_block_size = 2048;
 
 INSERT INTO t_adaptive_repl_left
 SELECT number, number, concat('s_', toString(number)), toUInt128(number) * 7, if(number % 5 = 0, NULL, number * 3)
@@ -44,13 +47,17 @@ SET group_by_two_level_threshold_bytes = 500000000;
 SET collect_hash_table_stats_during_aggregation = 0;
 SET enable_lazy_columns_replication = 1;
 SET max_threads = 4;
-SET max_block_size = 4096;
+SET max_block_size = 2048;
 SET query_plan_join_swap_table = 0;
 SET log_queries = 1;
 SET log_profile_events = 1;
 
 -- The mix also depends on where the join output blocks break and on how many right rows each
--- block carries, so the settings that reshape those blocks are pinned as well.
+-- block carries, so the settings that reshape those blocks are pinned as well. The join squashes
+-- its output up to `min_joined_block_size_rows` by default, which would merge a whole thread's
+-- share into a few 40K-80K row blocks and put every staged batch over the direct-publish bar.
+SET min_joined_block_size_rows = 0;
+SET min_joined_block_size_bytes = 0;
 SET max_joined_block_size_rows = 65409;
 SET joined_block_split_single_row = 0;
 SET join_output_by_rowlist_perkey_rows_threshold = 5;
