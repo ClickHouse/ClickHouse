@@ -1293,13 +1293,21 @@ def test_table_engine():
     )
     assert "enable_nullable_tuple_type" in error
 
+    # With default settings (the type is generally available), the same CREATE succeeds, persists
+    # `meta` as Nullable(Tuple(...)), and the column round-trips through INSERT/SELECT, NULL included.
     node.query(
         f"CREATE TABLE bq_writable ENGINE = BigQuery('{PROJECT}', '{DATASET}', 'writable', "
-        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')",
-        settings={"enable_nullable_tuple_type": 1},
+        f"access_token = '{ACCESS_TOKEN}', base_url = '{BASE_URL}')"
     )
-    node.query("INSERT INTO bq_writable (id, name) VALUES (42, 'x')")
-    assert node.query("SELECT id, name FROM bq_writable") == "42\tx\n"
+    create = node.query("SHOW CREATE TABLE bq_writable")
+    assert "`meta` Nullable(Tuple(a Nullable(Int64)))" in create, create
+    node.query(
+        "INSERT INTO bq_writable (id, name, meta) VALUES (42, 'x', NULL), (43, 'y', tuple(7))"
+    )
+    assert (
+        node.query("SELECT id, name, meta FROM bq_writable ORDER BY id FORMAT TSV")
+        == "42\tx\t\\N\n43\ty\t(7)\n"
+    )
     node.query("DROP TABLE bq_writable")
 
 
