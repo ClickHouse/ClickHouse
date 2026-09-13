@@ -144,6 +144,11 @@ public:
 
     void push(ResourceRequest * request) override
     {
+        // A request arriving to an empty queue starts a new busy period: roll system virtual time to
+        // the max finish tag reached so far, so a query idle across the boundary (or a fresh query)
+        // does not start behind a stale system time and monopolise the resource until it catches up.
+        if (requests.empty())
+            system_vruntime = std::max(system_vruntime, max_vruntime);
         auto & state = *request->scheduling.state;
         double effective_weight = updateEffectiveWeight(*request->scheduling.context, state);
         // Charge the declared cost plus any pending real-vs-estimate correction — folded here from
@@ -152,6 +157,7 @@ public:
         ResourceCost charge = state.drainVruntimeCorrection(request->scheduling.cost);
         double vstart = std::max(system_vruntime, state.vruntime);
         state.vruntime = vstart + static_cast<double>(charge) / effective_weight;
+        max_vruntime = std::max(max_vruntime, state.vruntime);
         request->scheduling.key = {vstart, next_seq++};
         requests.insert(*request);
     }
@@ -258,6 +264,10 @@ private:
 
     const CostUnit unit;
     double system_vruntime = 0.0;
+    // Max finish tag assigned so far (max `vstart + charge/weight` over pushed requests). At a
+    // busy-period boundary system virtual time rolls forward to this (SFQ rollover; mirrors
+    // FairPolicy.h's `max_vruntime`), so an idle/fresh query cannot start at a stale, lower time.
+    double max_vruntime = 0.0;
     UInt64 next_seq = 0;
     Set requests;
 };

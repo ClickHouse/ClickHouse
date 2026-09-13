@@ -136,6 +136,26 @@ TEST(RequestQueue, FairSingleQueryFifo)
     EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3}));
 }
 
+/// SFQ busy-period rollover: after a query runs alone and the queue drains, a query arriving in the
+/// next busy period must not get a free head-start at a stale, lower system virtual time and
+/// monopolise the resource until it catches up.
+TEST(RequestQueue, FairRollsVirtualTimeAtBusyPeriodEnd)
+{
+    Fixture f(SchedulerAlgorithm::Fair);
+    auto * a = f.makeQuery(1.0);
+    auto * b = f.makeQuery(1.0);
+    // A runs one expensive request alone (its vruntime advances to 100); the queue then drains.
+    f.enqueue(100, a, 100);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{100}));
+    // Fresh query B interleaves with A rather than monopolising. Without the rollover B would run
+    // both of its requests before A ({1, 3, 2, 4}); with it they interleave.
+    f.enqueue(1, b, 1);
+    f.enqueue(2, a, 1);
+    f.enqueue(3, b, 1);
+    f.enqueue(4, a, 1);
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 2, 3, 4}));
+}
+
 /// The fair-only vruntime correction drain: folds the pending real-vs-estimate delta into the charge,
 /// clamps to a non-negative charge (vruntime never moves backward) and carries any unspent negative
 /// remainder forward so the charge converges to real cost long-term.
@@ -261,9 +281,10 @@ TEST(RequestQueue, FairWeightLoweringByIoBytes)
     f.enqueue(3, fresh, 1); // F1
     f.enqueue(4, fresh, 1); // F2
     f.enqueue(5, fresh, 1); // F3
-    // The halved weight pushes heavy's second post-threshold request (id 2) to the back; without
-    // the lowering it would land ahead of F3 (id 5).
-    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{3, 1, 4, 5, 2}));
+    // The halved weight delays heavy's second post-threshold request (id 2) behind the fresh query's
+    // F2 (id 4); at full weight it would be served 3rd, ahead of F2. (`fresh` joins at the rolled
+    // system virtual time, so it does not get a head-start for heavy's earlier solo request.)
+    EXPECT_EQ(f.dequeueIds(), (std::vector<int>{1, 3, 4, 2, 5}));
 }
 
 /// fair, three equal-weight queries are interleaved round-robin.
