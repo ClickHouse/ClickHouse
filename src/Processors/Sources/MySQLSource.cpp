@@ -328,7 +328,8 @@ namespace
                     size_t n = value.size();
                     /// A `BIT` column holds at most 64 bits, so a value of it never needs more than
                     /// eight bytes. The length comes from the wire and is not otherwise validated,
-                    /// so a malicious or broken server could overflow `val` below.
+                    /// so a longer value from a malicious or broken server is rejected here instead
+                    /// of being decoded into a truncated number.
                     if (n > sizeof(UInt64))
                         throw Exception(ErrorCodes::INCORRECT_DATA,
                             "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
