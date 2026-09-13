@@ -484,6 +484,28 @@ void FailPointInjection::disableFailPoint(const String & fail_point_name)
     fiu_disable(fail_point_name.c_str());
 }
 
+void FailPointInjection::disableAllFailPoints()
+{
+    std::lock_guard lock(mu);
+
+    /// Wake whoever is blocked on a pauseable failpoint first, the same way
+    /// `disableFailPoint` does: after this call nothing may still be parked.
+    for (auto & [_, channel] : fail_point_wait_channels)
+    {
+        ++channel->resume_epoch;
+        channel->disabled = true;
+        channel->resume_cv.notify_all();
+        channel->pause_cv.notify_all();
+    }
+    fail_point_wait_channels.clear();
+
+    /// `fiu_disable` on a failpoint that is not enabled is a no-op, so walk the whole
+    /// registry rather than asking `fiu_status` which of them to skip.
+#define M(NAME) fiu_disable(FailPoints::NAME);
+    APPLY_FOR_FAILPOINTS(M, M, M, M)
+#undef M
+}
+
 void FailPointInjection::notifyFailPoint(const String & fail_point_name)
 {
     /// Reported separately from the missing channel below, so a typo is not described as a
@@ -605,6 +627,10 @@ void FailPointInjection::notifyPauseAndWaitForResume(const String &)
 }
 
 void FailPointInjection::disableFailPoint(const String &)
+{
+}
+
+void FailPointInjection::disableAllFailPoints()
 {
 }
 

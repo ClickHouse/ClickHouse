@@ -1153,6 +1153,16 @@ BlockIO InterpreterSystemQuery::execute()
             result = Unfreezer(getContext()).systemUnfreeze(query.backup_name);
             break;
         }
+        case Type::DISABLE_ALL_FAILPOINTS:
+        {
+            /// Outside the `USE_LIBFIU` guard below on purpose: this statement asks for a
+            /// server that injects nothing, which a build without libfiu already is. Failing
+            /// it would only make every caller - a test harness, above all - special-case a
+            /// build flag to ask for a state that already holds.
+            getContext()->checkAccess(AccessType::SYSTEM_FAILPOINT);
+            FailPointInjection::disableAllFailPoints();
+            break;
+        }
 #if USE_LIBFIU
         case Type::ENABLE_FAILPOINT:
         {
@@ -3216,6 +3226,7 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
+        case Type::DISABLE_ALL_FAILPOINTS:
         case Type::RESET_COVERAGE:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
