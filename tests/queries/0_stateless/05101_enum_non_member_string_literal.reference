@@ -1,0 +1,42 @@
+equals	0
+equals	0
+equals	0
+equals	0
+notEquals	2
+notEquals	2
+notEquals	2
+notEquals	2
+less	0
+less	0
+greaterOrEquals	0
+greaterOrEquals	0
+in	1
+in	1
+notIn	1
+notIn	1
+fixedString	0
+fixedString	0
+perRow	a	0	1	0	0
+perRow	b	0	1	0	0
+member	1
+member	1
+member	1
+bloomFilter equals	0
+bloomFilter notEquals	2
+bloomFilter has	0
+bloomFilter indexOf	0
+bloomFilter hasAny	0
+bloomFilter hasAll	0
+bloomFilter mapContainsValue	0
+bloomFilter arrayJoin	0
+bloomFilter mapEquals	0
+bloomFilter mapEquals	0
+bloomFilter mapNotEquals	2
+bloomFilter mapNotEquals	2
+bloomFilter member	1
+bloomFilter member	1
+bloomFilter member	1
+bloomFilter member	1
+bloomFilter member	1
+bloomFilter member	1
+bloomFilter member	1

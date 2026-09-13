@@ -4488,6 +4488,12 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 return false;
                         }
 
+                        /// Converting a string literal that is not a member of the enum throws, which would
+                        /// fail a query only because the column happens to be in the key. Decline the atom and
+                        /// let the predicate be evaluated, as it is for a column outside the key.
+                        if (stringConstantIsNotAnEnumMember(const_value, *key_expr_type_not_null))
+                            return false;
+
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                         if (const_value.isNull())
                             return false;

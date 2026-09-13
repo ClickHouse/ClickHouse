@@ -91,4 +91,15 @@ Field tryConvertFieldToType(const Field & from_value, const IDataType & to_type,
 /// floating-point value like CAST.
 Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_type, const IDataType * from_type_hint = nullptr, const FormatSettings & format_settings = {}, bool convert_inexact_floats = false);
 
+/// Is the constant a string literal that names no member of `type` (when `type` is an `Enum`)?
+///
+/// Such a literal converts to no value of the enum, and a comparison with it evaluates as if the constant
+/// were unconvertible: `false`, or `true` for `!=`, see `FunctionComparison::executeWithConstString`.
+/// `convertFieldToType` instead throws `UNKNOWN_ELEMENT_OF_ENUM` for it, so index analysis - which converts
+/// the constant to the indexed type to build a bound or a hash - has to check this first and decline the
+/// atom, or an otherwise valid query would fail only because the column happens to be in a key or covered
+/// by a skip index. With `validate_enum_literals_in_operators = 1` the comparison itself throws, so the
+/// query fails consistently whatever the physical layout is.
+bool stringConstantIsNotAnEnumMember(const Field & const_value, const IDataType & type);
+
 }
