@@ -282,9 +282,7 @@ def kill_query(
     id = backup_id if backup_id is not None else restore_id
     query_kind = "Backup" if backup_id is not None else "Restore"
     operation_name = "backup" if backup_id is not None else "restore"
-    print(
-        f"{get_node_name(node)}: Cancelling {operation_name} {id} at {format_current_time()}"
-    )
+    print(f"{get_node_name(node)}: Cancelling {operation_name} {id} at {format_current_time()}")
     filter_for_is_initial_query = (
         f" AND (is_initial_query = {is_initial_query})"
         if is_initial_query is not None
@@ -436,12 +434,7 @@ class NoTrashChecker:
 def wait_for_backups_to_finish():
     for _ in range(30):
         if not any(
-            int(
-                node.query(
-                    "SELECT count() FROM system.processes WHERE query_kind = 'Backup'"
-                )
-            )
-            > 0
+            int(node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")) > 0
             for node in nodes
         ):
             break
@@ -449,17 +442,14 @@ def wait_for_backups_to_finish():
 
     backup_process_counts = {
         get_node_name(node): int(
-            node.query(
-                "SELECT count() FROM system.processes WHERE query_kind = 'Backup'"
-            )
+            node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")
         )
         for node in nodes
     }
     total_backup_processes = sum(backup_process_counts.values())
-    assert (
-        total_backup_processes == 0
-    ), "Backup queries still running after pre-test wait: " + ", ".join(
-        f"{name}={count}" for name, count in backup_process_counts.items()
+    assert total_backup_processes == 0, (
+        "Backup queries still running after pre-test wait: "
+        + ", ".join(f"{name}={count}" for name, count in backup_process_counts.items())
     )
 
 
