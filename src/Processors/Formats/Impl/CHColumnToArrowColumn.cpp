@@ -1586,7 +1586,11 @@ namespace DB
             }
             default:
                 if (settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::THROW)
-                    throw Exception(ErrorCodes::UNKNOWN_TYPE, "Internal type '{}' of a column '{}' is not supported for conversion into {} data format.", column_type->getFamilyName(), column_name, format_name);
+                    throw Exception(
+                        ErrorCodes::UNKNOWN_TYPE,
+                        "Internal type '{}' of a column '{}' is not supported for conversion into {} data format. Set "
+                        "output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column",
+                        column_type->getFamilyName(), column_name, format_name);
                 fillArrowArrayWithOpaqueColumnData(column, column_type, null_bytemap, format_name, settings, array_builder, start, end);
         }
 
@@ -1873,8 +1877,10 @@ namespace DB
         }
 
         if (settings.output_unsupported_types == FormatSettings::ArrowUnsupportedTypes::THROW)
-            throw Exception(ErrorCodes::UNKNOWN_TYPE,
-                "The type '{}' of a column '{}' is not supported for conversion into {} data format.",
+            throw Exception(
+                ErrorCodes::UNKNOWN_TYPE,
+                "The type '{}' of a column '{}' is not supported for conversion into {} data format. Set "
+                "output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column",
                 column_type->getName(), column_name, format_name);
         /// One serialized value per row, as `utf8` or `binary`; see `fillArrowArrayWithOpaqueColumnData`.
         if (out_opaque_type_name)

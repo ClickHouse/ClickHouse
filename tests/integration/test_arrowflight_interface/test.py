@@ -737,10 +737,11 @@ def test_doget_text_mode_replaces_invalid_utf8():
     assert b"\xff" in as_binary.column("d").to_pylist()[0]
 
 
-# `throw` rejects the query rather than inventing a representation, and names the column the query used.
-# A container child carries an Arrow field name fixed by the format - `item` for a list, `key`/`value` for a
-# map - which says nothing about where the offending type came from, so quoting it would leave the user of a
-# `SELECT *` guessing. A tuple element is qualified, matching how the values are named while being written.
+# `throw` rejects the query rather than inventing a representation, and says both which column was at fault
+# and how to accept it. A container child carries an Arrow field name fixed by the format - `item` for a
+# list, `key`/`value` for a map - which says nothing about where the offending type came from, so quoting it
+# would leave the user of a `SELECT *` guessing. A tuple element is qualified, matching how the values are
+# named while being written. The hint is worded exactly as the native Arrow IPC writer words it.
 def test_doget_throw_mode_names_the_query_column():
     node.query(
         "CREATE TABLE mytable (id Int64, plain Array(JSON), nested Tuple(j JSON)) ORDER BY id"
@@ -757,8 +758,13 @@ def test_doget_throw_mode_names_the_query_column():
             client.get_flight_info(descriptor, options)
         return str(caught.value)
 
-    assert "column 'plain'" in rejected("plain")
-    assert "column 'nested.j'" in rejected("nested")
+    hint = (
+        "Set output_format_arrow_unsupported_types to 'text' or 'binary' to write it as an opaque column"
+    )
+    for column, expected in [("plain", "column 'plain'"), ("nested", "column 'nested.j'")]:
+        message = rejected(column)
+        assert expected in message, message
+        assert hint in message, message
 
 
 # The opaque payload is produced by the query's own format settings, so a setting that changes how a value
