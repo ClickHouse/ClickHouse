@@ -1,0 +1,29 @@
+<test>
+    <settings>
+        <max_threads>1</max_threads>
+    </settings>
+
+    <create_query>DROP TABLE IF EXISTS reverse_string_mixed</create_query>
+    <create_query>CREATE TABLE reverse_string_mixed (s String, f FixedString(256)) ENGINE = Memory</create_query>
+    <fill_query>
+        INSERT INTO reverse_string_mixed
+        SELECT if(number % 5 = 0, '', repeat('x', number % 1024)), toFixedString(repeat('x', 256), 256)
+        FROM numbers(500000)
+    </fill_query>
+
+    <query>SELECT reverse(materialize(repeat('x', 8))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 16))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 32))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 64))) FROM numbers(5000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 256))) FROM numbers(2000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(repeat('x', 1024))) FROM numbers(500000) FORMAT Null</query>
+
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 8), 8))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 32), 32))) FROM numbers(10000000) FORMAT Null</query>
+    <query>SELECT reverse(materialize(toFixedString(repeat('x', 256), 256))) FROM numbers(2000000) FORMAT Null</query>
+
+    <query>SELECT reverse(s) FROM reverse_string_mixed FORMAT Null</query>
+    <query>SELECT reverse(f) FROM reverse_string_mixed FORMAT Null</query>
+
+    <drop_query>DROP TABLE reverse_string_mixed</drop_query>
+</test>
