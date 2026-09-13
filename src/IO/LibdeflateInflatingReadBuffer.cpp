@@ -91,7 +91,8 @@ bool LibdeflateInflatingReadBuffer::fillInput()
     in->nextIfAtEnd();
     /// Copy a bounded amount per call so in_buf stays small even when the nested buffer exposes a
     /// lot at once (e.g. a memory-mapped file): the rest stays in the nested buffer for next time.
-    /// libdeflate consumes whole DEFLATE blocks, so the leftover we must keep is at most one block.
+    /// libdeflate consumes input up to the last decoded symbol, so the leftover we must keep is a
+    /// few bytes inside a Huffman block, and at most one stored block or block header otherwise.
     const size_t avail = std::min<size_t>(in->buffer().end() - in->position(), INPUT_CHUNK);
     if (avail == 0)
     {
@@ -290,11 +291,11 @@ bool LibdeflateInflatingReadBuffer::decompressImpl()
                 window_nbytes = new_win;
 
                 /// Decompress into the output region after the window, accumulating across as many
-                /// libdeflate calls as needed. Output produced at a non-final block boundary
-                /// (LIBDEFLATE_STREAM_NEED_INPUT) is deliberately NOT exposed yet: the stream may end at
-                /// the very next block, and its trailer must be validated before the final bytes reach the
-                /// caller. We expose the accumulated output only when the buffer fills at a block boundary
-                /// (the stream is then provably incomplete, so more output follows) or once the final block
+                /// libdeflate calls as needed. Output produced when the input runs out
+                /// (LIBDEFLATE_STREAM_NEED_INPUT) is deliberately NOT exposed yet: the stream may end
+                /// very soon after, and its trailer must be validated before the final bytes reach the
+                /// caller. We expose the accumulated output only when the buffer fills mid-stream (the
+                /// suspended item did not fit, so more output provably follows) or once the final block
                 /// is decoded and its trailer verified. This mirrors ZlibInflatingReadBuffer, which has
                 /// validated the trailer by the time it hands back the final bytes, so a reader that
                 /// consumes an exact byte count with readStrict (and never calls nextImpl again) cannot
@@ -338,11 +339,12 @@ bool LibdeflateInflatingReadBuffer::decompressImpl()
 
                     if (r == LIBDEFLATE_STREAM_NEED_INPUT)
                     {
-                        /// At a non-final block boundary with the input exhausted. With end_of_input=true
-                        /// the decoder never returns NEED_INPUT, so this means more input must exist; if the
-                        /// nested stream is already at EOF the data is truncated. Otherwise pull more input
-                        /// (or mark EOF, so the retry passes end_of_input=true and the final block finishes)
-                        /// and keep accumulating into the same buffer.
+                        /// Input exhausted; everything up to the last decoded symbol (or block boundary) was
+                        /// consumed, so the retry never re-decodes more than a constant amount. With
+                        /// end_of_input=true the decoder never returns NEED_INPUT, so this means more input
+                        /// must exist; if the nested stream is already at EOF the data is truncated.
+                        /// Otherwise pull more input (or mark EOF, so the retry passes end_of_input=true and
+                        /// the final block finishes) and keep accumulating into the same buffer.
                         if (input_eof)
                             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Unexpected end of {} stream", gzip ? "gzip" : "zlib");
                         fillInput();
@@ -353,23 +355,20 @@ bool LibdeflateInflatingReadBuffer::decompressImpl()
                     {
                         if (produced == 0)
                         {
-                            /* A single DEFLATE block's uncompressed size exceeds the whole output buffer.
-                             * libdeflate's streaming decoder only suspends at block boundaries, so the whole
-                             * block must be buffered before any of its output is exposed: grow the buffer (the
-                             * 32 KiB window at the front is preserved) and retry. We grow geometrically and
-                             * don't impose an artificial ceiling; the buffer is allocated through ClickHouse's
-                             * tracked allocator, so a crafted single-block decompression bomb runs into the
-                             * query/server memory limit and throws MEMORY_LIMIT_EXCEEDED, exactly like any
-                             * other oversized allocation. Every mainstream gzip/zlib/deflate encoder bounds its
-                             * blocks to well under a megabyte of uncompressed data (zlib flushes roughly every
-                             * lit_bufsize symbols, libdeflate's SOFT_MAX_BLOCK_LENGTH is 300000 bytes, etc.),
-                             * so a real-world stream never reaches this grow path; only a hand-crafted one does. */
+                            /* The streaming decoder suspends at symbol boundaries, so no progress at all
+                             * means a single indivisible item - one match (<= 258 bytes) or one stored
+                             * block (<= 64 KiB) - exceeds the whole free output region. That can only
+                             * happen when the caller passed a tiny buf_size; growth is bounded by those
+                             * item sizes, not by anything an attacker controls. Grow geometrically (the
+                             * 32 KiB window at the front is preserved) and retry; the buffer is allocated
+                             * through ClickHouse's tracked allocator, so even that bounded growth stays
+                             * subject to the query/server memory limits. */
                             memory.resize(std::max(memory.size() + out_capacity, memory.size() * 2));
                             continue;
                         }
-                        /// Output buffer full at a block boundary: the stream is provably incomplete (the
-                        /// final block was not reached), so more output follows and it is safe to expose
-                        /// what we have without a trailer check. The window carries to the next call.
+                        /// Output buffer full mid-stream: the suspended item itself did not fit, so more
+                        /// output provably follows and it is safe to expose what we have without a
+                        /// trailer check. The window carries to the next call.
                         produced_end = window_nbytes + produced;
                         break;
                     }
