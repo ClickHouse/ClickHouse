@@ -17,3 +17,11 @@ the true sum	499500
 per index, single thread	4570
 per index, many threads	4570
 the true per index sum	4570
+zero rows, one state	{1:5,2:5,3:0,4:0,5:-5}
+zero rows, merged	{1:5,2:5,3:0,4:0,5:-5}
+equal to zero, one state	{3:1,4:1}
+equal to zero, merged	{3:1,4:1}
+not equal to zero, one state	{1:1,2:1,5:1}
+not equal to zero, merged	{1:1,2:1,5:1}
+less than zero, one state	{5:1}
+less than zero, merged	{5:1}

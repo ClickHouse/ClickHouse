@@ -352,6 +352,17 @@ public:
         return bm;
     }
 
+    /// Whether any bit slice holds the index, that is, whether its value is not zero. `lookup` is the
+    /// index mapped through `make_unsigned`, the domain in which `rb_contains` compares it.
+    bool hasNonZeroValue(UInt64 lookup) const
+    {
+        const UInt32 total_bit_num = getTotalBitNum();
+        for (size_t i = 0; i < total_bit_num; ++i)
+            if (getDataArrayAt(i)->rb_contains(lookup))
+                return true;
+        return false;
+    }
+
     void deepCopyFrom(const BSINumericIndexedVector & rhs)
     {
         integer_bit_num = rhs.integer_bit_num;
@@ -1723,17 +1734,25 @@ public:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "IndexType must be at most 32 bits in BSI format");
         }
 
+        /// `rb_contains` compares in the unsigned domain of the bitmap element type, so map the
+        /// index through `make_unsigned` instead of sign-extending it to the storage width.
+        const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
+
         if (value == 0)
         {
-            zero_indexes->add(index);
+            /// Adding zero leaves the value alone, but it does make the index exist. `zero_indexes` is
+            /// exactly the set of present indexes whose value is zero - that is what
+            /// `pointwiseAddInplace` recomputes when it merges two states, and `pointwiseEqual` against
+            /// a zero scalar answers straight out of it - so an index that already carries a non-zero
+            /// value has to stay out of it. Otherwise a `0` row after a `5` row would report the index
+            /// as both `5` and equal to zero, and the answer would again depend on how the rows were
+            /// split between the states.
+            if (!hasNonZeroValue(lookup))
+                zero_indexes->add(index);
             return;
         }
 
         const UInt32 total_bit_num = getTotalBitNum();
-
-        /// `rb_contains` compares in the unsigned domain of the bitmap element type, so map the
-        /// index through `make_unsigned` instead of sign-extending it to the storage width.
-        const UInt64 lookup = static_cast<std::make_unsigned_t<IndexType>>(index);
 
         /** This converts a floating-point value into a fixed-point representation, then store it in data_array using bit-sliced index.
           * - When value is an UInt/Int, fraction_bit_num is usually set to 0. So when integer_bit_num is set to the number of

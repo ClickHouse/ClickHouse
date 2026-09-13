@@ -41,3 +41,30 @@ SELECT 'the true sum', sum(v) FROM t_05210;
 SELECT 'per index, single thread', numericIndexedVectorGetValue(groupNumericIndexedVectorState(k, v), 7) FROM t_05210 SETTINGS max_threads = 1;
 SELECT 'per index, many threads', numericIndexedVectorGetValue(groupNumericIndexedVectorState(k, v), 7) FROM t_05210 SETTINGS max_threads = 8, max_block_size = 7;
 SELECT 'the true per index sum', sum(v) FROM t_05210 WHERE k = 7;
+
+-- `zero_indexes` holds exactly the indexes whose accumulated value is zero, which is what merging two
+-- states recomputes, and what `numericIndexedVectorPointwiseEqual` against `0` and the signed
+-- comparisons answer straight out of. A `0` row for an index that already carries a value must
+-- therefore not be recorded there, or those operators contradict the bit slices and, once more, the
+-- answer depends on how the rows were split between the states.
+DROP TABLE IF EXISTS t_05210_zero;
+CREATE TABLE t_05210_zero (i UInt32, k UInt32, v Int64) ENGINE = MergeTree ORDER BY i;
+INSERT INTO t_05210_zero VALUES (1, 1, 5), (2, 1, 0), (3, 2, 0), (4, 2, 5), (5, 3, 0), (6, 4, 5), (7, 4, -5), (8, 5, -5), (9, 5, 0);
+
+SELECT 'zero rows, one state', numericIndexedVectorToMap(groupNumericIndexedVectorState(k, v)) FROM t_05210_zero SETTINGS max_threads = 1;
+SELECT 'zero rows, merged', numericIndexedVectorToMap(groupNumericIndexedVectorMergeState(s))
+FROM (SELECT groupNumericIndexedVectorState(k, v) AS s FROM t_05210_zero GROUP BY i);
+
+SELECT 'equal to zero, one state', numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(groupNumericIndexedVectorState(k, v), 0)) FROM t_05210_zero SETTINGS max_threads = 1;
+SELECT 'equal to zero, merged', numericIndexedVectorToMap(numericIndexedVectorPointwiseEqual(groupNumericIndexedVectorMergeState(s), 0))
+FROM (SELECT groupNumericIndexedVectorState(k, v) AS s FROM t_05210_zero GROUP BY i);
+
+SELECT 'not equal to zero, one state', numericIndexedVectorToMap(numericIndexedVectorPointwiseNotEqual(groupNumericIndexedVectorState(k, v), 0)) FROM t_05210_zero SETTINGS max_threads = 1;
+SELECT 'not equal to zero, merged', numericIndexedVectorToMap(numericIndexedVectorPointwiseNotEqual(groupNumericIndexedVectorMergeState(s), 0))
+FROM (SELECT groupNumericIndexedVectorState(k, v) AS s FROM t_05210_zero GROUP BY i);
+
+SELECT 'less than zero, one state', numericIndexedVectorToMap(numericIndexedVectorPointwiseLess(groupNumericIndexedVectorState(k, v), 0)) FROM t_05210_zero SETTINGS max_threads = 1;
+SELECT 'less than zero, merged', numericIndexedVectorToMap(numericIndexedVectorPointwiseLess(groupNumericIndexedVectorMergeState(s), 0))
+FROM (SELECT groupNumericIndexedVectorState(k, v) AS s FROM t_05210_zero GROUP BY i);
+
+DROP TABLE t_05210_zero;
