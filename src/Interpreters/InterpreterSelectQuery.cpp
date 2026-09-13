@@ -17,6 +17,7 @@
 #include <Parsers/ASTInterpolateElement.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
+#include <Interpreters/ExpressionContainsArrayJoin.h>
 #include <Parsers/ASTSelectIntersectExceptQuery.h>
 #include <Parsers/ASTTablesInSelectQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -1768,6 +1769,21 @@ static bool limitAlwaysReadsTillEnd(const ASTSelectQuery & query, const Settings
     return hasWithTotalsInAnySubqueryInFromClause(query);
 }
 
+/// LIMIT BY can be pushed into the sorted-stream pipeline before the final merge, so a direct
+/// WITH TOTALS query must drain its input even when it has ORDER BY. The final LIMIT has a weaker
+/// condition because sorting itself may already consume the full input before LIMIT runs.
+static bool limitByAlwaysReadsTillEnd(const ASTSelectQuery & query, const Settings & settings)
+{
+    if (settings[Setting::exact_rows_before_limit]
+        && (query.limitLength() || query.limitAfter() || query.limitUntil()))
+        return true;
+
+    if (query.group_by_with_totals)
+        return true;
+
+    return hasWithTotalsInAnySubqueryInFromClause(query);
+}
+
 template <size_t size>
 ALWAYS_INLINE void executeExpression(QueryPlan & query_plan, const ActionsAndProjectInputsFlagPtr & expression, const char (&description)[size])
 {
@@ -2774,7 +2790,7 @@ UInt64 InterpreterSelectQuery::maxBlockSizeByLimit() const
     /// would truncate input BEFORE expansion, so hard consumers of `trivial_limit` (StorageLoop,
     /// system.zeros, generateRandom) could drop output rows that the LIMIT should keep. See
     /// issue #82279 and the sibling guard in `numbersLikeUtils::shouldPushdownLimit`.
-    if (astContainsArrayJoinFunction(query.select()) || query.arrayJoinExpressionList().first)
+    if (expressionContainsArrayJoin(query.select()) || query.arrayJoinExpressionList().first)
         return 0;
 
     if (!query.distinct
@@ -3604,10 +3620,13 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
     if (fractional_limit > 0 || fractional_offset > 0)
         throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Fractional LIMIT/OFFSET with LIMIT BY is not supported yet");
 
+    const bool always_read_till_end = limitByAlwaysReadsTillEnd(query, context->getSettingsRef());
+
     if (!is_limit_length_negative && !is_limit_offset_negative) [[likely]]
     {
         /// LIMIT N [OFFSET M] BY cols - standard positive case
-        auto limit_by = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, limit_offset, columns);
+        auto limit_by = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), limit_length, limit_offset, columns, always_read_till_end);
         query_plan.addStep(std::move(limit_by));
     }
     else if (is_limit_length_negative && is_limit_offset_negative)
@@ -3624,7 +3643,7 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
         if (limit_offset > 0)
         {
             auto step1 = std::make_unique<LimitByStep>(
-                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns);
+                query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns, always_read_till_end);
             query_plan.addStep(std::move(step1));
         }
         auto step2 = std::make_unique<NegativeLimitByStep>(query_plan.getCurrentHeader(), limit_length, 0, columns);
@@ -3639,7 +3658,8 @@ void InterpreterSelectQuery::executeLimitBy(QueryPlan & query_plan)
         auto step1 = std::make_unique<NegativeLimitByStep>(
             query_plan.getCurrentHeader(), std::numeric_limits<UInt64>::max(), limit_offset, columns);
         query_plan.addStep(std::move(step1));
-        auto step2 = std::make_unique<LimitByStep>(query_plan.getCurrentHeader(), limit_length, 0, columns);
+        auto step2 = std::make_unique<LimitByStep>(
+            query_plan.getCurrentHeader(), limit_length, 0, columns, always_read_till_end);
         query_plan.addStep(std::move(step2));
     }
 }

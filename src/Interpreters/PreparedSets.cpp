@@ -60,6 +60,11 @@ bool hasCorrelatedExpressions(QueryPlan::Node * node)
 
 }
 
+bool planHasCorrelatedExpressions(const QueryPlan & plan)
+{
+    return hasCorrelatedExpressions(plan.getRootNode());
+}
+
 namespace Setting
 {
     extern const SettingsUInt64 max_bytes_in_set;
