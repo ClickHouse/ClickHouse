@@ -164,7 +164,7 @@ public:
                 parent_node->attachChild(self); // This call is the only reason we have `recursive_mutex`
                 // Drop any activation a concurrent finishRequest queued under the old limit; otherwise it
                 // would re-activate us under the new (lower) limit and admit one request over the bound.
-                cancelActivation();
+                event_queue->cancelActivation(this);
             }
         }
     }
