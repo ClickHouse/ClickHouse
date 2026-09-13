@@ -25,6 +25,18 @@ WITH 1 AS from SELECT from, from + from, from IN [0], FROM numbers(1);
 -- Double trailing comma should fail
 SELECT 1 AS a,, FROM system.one; -- { clientError SYNTAX_ERROR }
 
+-- Non-FROM clause boundaries after a trailing comma: `WHERE`, `GROUP BY`, `ORDER BY` and
+-- `SETTINGS` are just as ambiguous with a column name as `FROM` is, since none of them are
+-- reserved words at the lexer level (aliased last column).
+SELECT 1 AS a, WHERE 1;
+SELECT 1 AS a, GROUP BY 1;
+SELECT 1 AS a, ORDER BY 1;
+SELECT 1 AS a, SETTINGS max_threads = 1;
+
+-- Same non-FROM boundaries, but with a non-aliased last column (the pre-existing path).
+WITH 1 AS to SELECT to, WHERE 1;
+WITH 1 AS to SELECT to, SETTINGS max_threads = 1;
+
 -- Implicit-SELECT queries (no `SELECT` keyword at all): the very first list
 -- element is parsed starting at the first token of the whole query, i.e.
 -- there is no previous token at all. This must not crash/hang.

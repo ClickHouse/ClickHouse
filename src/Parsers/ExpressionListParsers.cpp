@@ -1016,24 +1016,48 @@ struct ParserExpressionImpl
     Action tryParseOperator(Layers & layers, IParser::Pos & pos, Expected & expected);
 };
 
-/// Given test_pos already advanced past a `FROM` keyword, returns true if that
-/// FROM was a column identifier rather than the start of a FROM clause.
-/// Used by ExpressionLayer to distinguish trailing commas from column lists.
-static bool fromTokenIsColumnName(IParser::Pos test_pos, Expected test_expected)
+/// Keywords that can legitimately start a clause immediately after the SELECT expression list
+/// ends. None of these are reserved at the lexer level (they are plain `BareWord` tokens like
+/// any identifier), so `ParserExpression` is always willing to parse them as a column instead.
+/// Used by `ExpressionLayer` to disambiguate a trailing comma (`SELECT ..., WHERE x`) from a
+/// column literally named like the keyword (`SELECT ..., where`).
+static constexpr Keyword SELECT_LIST_END_KEYWORDS[] = {
+    Keyword::FROM,
+    Keyword::PREWHERE,
+    Keyword::WHERE,
+    Keyword::GROUP_BY,
+    Keyword::HAVING,
+    Keyword::WINDOW,
+    Keyword::QUALIFY,
+    Keyword::ORDER_BY,
+    Keyword::LIMIT,
+    Keyword::OFFSET,
+    Keyword::SETTINGS,
+    Keyword::FORMAT,
+    Keyword::INTO_OUTFILE,
+    Keyword::UNION,
+    Keyword::EXCEPT,
+    Keyword::INTERSECT,
+};
+
+/// Given test_pos already advanced past `matched_keyword`, returns true if that keyword was
+/// actually a column identifier rather than the start of its clause.
+static bool selectListEndKeywordIsColumnName(Keyword matched_keyword, IParser::Pos test_pos, Expected test_expected)
 {
     if (!test_pos.isValid() || test_pos->type == TokenType::Semicolon)
         return false;
 
-    /// Comma after FROM → FROM is a column name (e.g. `SELECT from, FROM t`)
+    /// Comma right after the keyword → it is a column name (e.g. `SELECT where, WHERE 1`)
     if (test_pos->type == TokenType::Comma)
         return true;
 
-    /// Second FROM → first FROM is a column name (e.g. `SELECT from FROM t`)
-    if (ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
+    /// The same keyword again right after → the first occurrence was a column name
+    /// (e.g. `SELECT from FROM t`)
+    if (ParserKeyword(matched_keyword).ignore(test_pos, test_expected))
         return true;
 
-    /// Explicit alias after FROM not followed by a table-ref token
-    /// → FROM is a column name (e.g. `SELECT from AS x FROM t`, but not
+    /// Explicit alias not followed by a table-ref-like token
+    /// → it is a column name (e.g. `SELECT from AS x FROM t`, but not
     ///   `SELECT a, FROM alias_func(...)`)
     {
         auto alias_pos = test_pos;
@@ -1046,12 +1070,26 @@ static bool fromTokenIsColumnName(IParser::Pos test_pos, Expected test_expected)
         }
     }
 
-    /// Operator after FROM → FROM is a column name in an expression
+    /// Operator right after the keyword → it is a column name in an expression
     /// (e.g. `SELECT from + 1, FROM t`)
     for (const auto & [op_str, _] : ParserExpressionImpl::operators_table)
         if (parseOperator(test_pos, op_str, test_expected))
             return true;
 
+    return false;
+}
+
+/// True if the tokens starting at `pos` are one of `SELECT_LIST_END_KEYWORDS` and are not
+/// actually a column name (see `selectListEndKeywordIsColumnName`).
+static bool nextIsSelectListEndKeyword(IParser::Pos pos)
+{
+    for (Keyword kw : SELECT_LIST_END_KEYWORDS)
+    {
+        auto test_pos = pos;
+        Expected test_expected;
+        if (ParserKeyword(kw).ignore(test_pos, test_expected) && !selectListEndKeywordIsColumnName(kw, test_pos, test_expected))
+            return true;
+    }
     return false;
 }
 
@@ -1083,11 +1121,11 @@ public:
         ///
         /// When an aliased expression like `1 AS a` precedes a trailing comma,
         /// `ParserList::parseUtil` consumes the comma as a separator and then calls
-        /// `parse_element()` starting at `FROM`.  The non-aliased path is handled
-        /// below (ExpressionLayer sees the comma itself), but for the aliased path
-        /// we must detect the pattern here — at the very first token of the new
-        /// element — and return false so that `parseUtil` treats the comma as
-        /// trailing.  This must only run when we were actually re-entered right
+        /// `parse_element()` starting at the next clause keyword (e.g. `FROM`, `WHERE`).
+        /// The non-aliased path is handled below (ExpressionLayer sees the comma itself),
+        /// but for the aliased path we must detect the pattern here — at the very first
+        /// token of the new element — and return false so that `parseUtil` treats the
+        /// comma as trailing. This must only run when we were actually re-entered right
         /// after such a separator (i.e. the previous token is a comma); otherwise
         /// this is simply the first element of the whole list, where a leading
         /// `from` is just an ordinary identifier (e.g. `WITH 1 AS from SELECT from`).
@@ -1095,14 +1133,8 @@ public:
         {
             auto prev_pos = pos;
             --prev_pos;
-            if (prev_pos->type == TokenType::Comma)
-            {
-                auto test_pos = pos;
-                Expected test_expected;
-                if (ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
-                    if (!fromTokenIsColumnName(test_pos, test_expected))
-                        return false;
-            }
+            if (prev_pos->type == TokenType::Comma && nextIsSelectListEndKeyword(pos))
+                return false;
         }
 
         if (pos->type == TokenType::Comma)
@@ -1114,6 +1146,7 @@ public:
 
             /// We support trailing commas at the end of the column declaration:
             ///  - SELECT a, b, c, FROM table
+            ///  - SELECT a, b, c, WHERE x (and other clause keywords, see SELECT_LIST_END_KEYWORDS)
             ///  - SELECT 1,
             ///  - FROM table |> SELECT a, b, c, |> LIMIT 1
 
@@ -1123,20 +1156,14 @@ public:
             ///  3. SELECT to, from AS alias FROM table
             ///  4. SELECT to, from + to, from IN [1,2,3], FROM table
 
-            Expected test_expected;
             auto test_pos = pos;
             ++test_pos;
 
             /// End of query, or the end of a pipe operator: the `|>` token cannot continue an expression list,
             /// so a comma in front of it is unambiguously a trailing comma.
-            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon && test_pos->type != TokenType::PipeOperator)
-            {
-                if (!ParserKeyword(Keyword::FROM).ignore(test_pos, test_expected))
-                    return true;
-
-                if (fromTokenIsColumnName(test_pos, test_expected))
-                    return true;
-            }
+            if (test_pos.isValid() && test_pos->type != TokenType::Semicolon && test_pos->type != TokenType::PipeOperator
+                && !nextIsSelectListEndKeyword(test_pos))
+                return true;
 
             ++pos;
             return true;
