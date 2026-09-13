@@ -188,6 +188,71 @@ TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
     }
 }
 
+/// In implicit-SELECT mode (no `SELECT` keyword, e.g. `clickhouse-local`'s `1 + 2`), the very
+/// first element of the SELECT expression list starts at the very first token of the whole
+/// query, i.e. there is no previous token at all. `ExpressionLayer`'s trailing-comma-before-alias
+/// lookahead used to decrement a copy of the token iterator without checking for this,
+/// underflowing `TokenIterator::index` (an unsigned `size_t`) to `SIZE_MAX` and corrupting the
+/// shared token cache used to compute where the statement ends - which broke splitting
+/// multi-statement input. This must parse cleanly, not hang or misparse.
+TEST(ParserQuery, ImplicitSelectTrailingCommaDoesNotUnderflow)
+{
+    const std::vector<String> queries = {
+        "1 AS from",
+        "1 AS from, FROM numbers(1)",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size(), /*allow_settings_after_format_in_insert*/ false, /*implicit_select*/ true);
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+
+        String formatted = ast->formatWithSecretsOneLine();
+        ASTPtr reparsed = parseQuery(parser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "reparse of: " << formatted;
+        EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "roundtrip of: " << query;
+    }
+}
+
+/// `FORMAT` is one of the clause-starting keywords the trailing-comma-before-alias lookahead
+/// treats as ending the SELECT list (see `SELECT_LIST_END_KEYWORDS`), but it is also a real
+/// function (`format(pattern, args...)`), unlike the other keywords in that list. A call to it
+/// right after a comma must still parse as a column, not be mistaken for the `FORMAT` clause.
+TEST(ParserQuery, AliasedFormatFunctionCallIsNotFormatClause)
+{
+    const std::vector<String> queries = {
+        "SELECT number AS i, format('test {} kek {}', toString(number), toString(number + 10)) AS a, 1 AS b FROM system.numbers LIMIT 1",
+        "SELECT number AS i, toString(number) AS a, format('test {} kek {}', toString(number), toString(number + 10)) b FROM system.numbers LIMIT 1",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+    }
+}
+
+/// None of `SELECT_LIST_END_KEYWORDS` can be immediately followed by another one of them with
+/// no argument in between, so a bare column literally named after one of them (e.g. `settings`,
+/// the column of `system.projections`) followed directly by a *different* clause-starting
+/// keyword must still parse as a column, not be mistaken for its own clause.
+TEST(ParserQuery, ColumnNamedAfterClauseKeywordFollowedByAnotherClause)
+{
+    const std::vector<String> queries = {
+        "SELECT name, settings FROM system.projections WHERE database = currentDatabase()",
+        "SELECT format, status, rows, data_kind, format FROM system.asynchronous_insert_log ORDER BY format",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+    }
+}
+
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry

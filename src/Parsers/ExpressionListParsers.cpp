@@ -1051,10 +1051,25 @@ static bool selectListEndKeywordIsColumnName(Keyword matched_keyword, IParser::P
     if (test_pos->type == TokenType::Comma)
         return true;
 
-    /// The same keyword again right after → the first occurrence was a column name
-    /// (e.g. `SELECT from FROM t`)
-    if (ParserKeyword(matched_keyword).ignore(test_pos, test_expected))
+    /// `FORMAT` is also a real function (`format(pattern, args...)`), unlike the other
+    /// keywords here. The `FORMAT` clause is always `FORMAT <name>`, never followed by `(`,
+    /// so an opening bracket right after unambiguously means this was a function call
+    /// (e.g. `SELECT 1 AS a, format('{}', 1) FROM t`, not the FORMAT clause).
+    if (matched_keyword == Keyword::FORMAT && test_pos->type == TokenType::OpeningRoundBracket)
         return true;
+
+    /// None of these clauses can be immediately empty: each requires at least one token of its
+    /// own content before another clause can start. So any clause-starting keyword showing up
+    /// right here - the same one again (e.g. `SELECT from FROM t`) or a different one
+    /// (e.g. `SELECT name, settings FROM t`, where `settings` is a column of `system.projections`) -
+    /// means the first match was actually a column.
+    for (Keyword kw : SELECT_LIST_END_KEYWORDS)
+    {
+        auto kw_pos = test_pos;
+        Expected kw_expected;
+        if (ParserKeyword(kw).ignore(kw_pos, kw_expected))
+            return true;
+    }
 
     /// Explicit alias not followed by a table-ref-like token
     /// → it is a column name (e.g. `SELECT from AS x FROM t`, but not
