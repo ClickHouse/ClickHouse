@@ -63,17 +63,38 @@ def start_fake_broker():
     raise Exception("The fake NATS broker did not start")
 
 
+def consumed():
+    return int(instance.query("SELECT count() FROM test.destination"))
+
+
 def wait_for_consumed_above(consumed_before, time_limit_sec=120):
     deadline = time.monotonic() + time_limit_sec
     while time.monotonic() < deadline:
-        consumed = int(instance.query("SELECT count() FROM test.destination"))
-        if consumed > consumed_before:
-            return consumed
+        if consumed() > consumed_before:
+            return
         time.sleep(0.5)
 
     raise Exception(
         "The table consumed no message beyond the {} it had".format(consumed_before)
     )
+
+
+def wait_for_consumption_to_stop(time_limit_sec=60):
+    """Returns the number of consumed messages once it has stopped growing.
+
+    A streaming cycle which was in flight when the broker dropped the connection still inserts
+    what it had, so the count is only a usable baseline once it has settled.
+    """
+    previous = None
+    deadline = time.monotonic() + time_limit_sec
+    while time.monotonic() < deadline:
+        current = consumed()
+        if current == previous:
+            return current
+        previous = current
+        time.sleep(3)
+
+    raise Exception("The table kept consuming while the broker was rejecting its credentials")
 
 
 def test_nats_credentials_rejected_after_rotation(started_cluster):
@@ -90,7 +111,8 @@ def test_nats_credentials_rejected_after_rotation(started_cluster):
                      nats_format = 'JSONEachRow',
                      nats_username = 'clickhouse',
                      nats_password = 'the_original_one',
-                     nats_reconnect_wait = 500;
+                     nats_reconnect_wait = 500,
+                     nats_startup_connect_tries = 1;
 
         CREATE TABLE test.destination (key UInt64, value UInt64)
             ENGINE = MergeTree ORDER BY key;
@@ -115,11 +137,7 @@ def test_nats_credentials_rejected_after_rotation(started_cluster):
     # before the fix the event loop adapter segfaulted there, taking the whole server down.
     assert instance.query("SELECT 1") == "1\n"
 
-    consumed_before = int(instance.query("SELECT count() FROM test.destination"))
-    time.sleep(5)
-    assert (
-        int(instance.query("SELECT count() FROM test.destination")) == consumed_before
-    ), "The table kept consuming while the broker was rejecting its credentials"
+    consumed_before = wait_for_consumption_to_stop()
 
     # The rotation is rolled back. Nothing in the client library reopens a closed connection, so
     # the table has to notice and build a new one, otherwise it would stay idle until it is
