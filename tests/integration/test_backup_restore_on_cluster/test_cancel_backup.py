@@ -282,7 +282,9 @@ def kill_query(
     id = backup_id if backup_id is not None else restore_id
     query_kind = "Backup" if backup_id is not None else "Restore"
     operation_name = "backup" if backup_id is not None else "restore"
-    print(f"{get_node_name(node)}: Cancelling {operation_name} {id} at {format_current_time()}")
+    print(
+        f"{get_node_name(node)}: Cancelling {operation_name} {id} at {format_current_time()}"
+    )
     filter_for_is_initial_query = (
         f" AND (is_initial_query = {is_initial_query})"
         if is_initial_query is not None
@@ -410,8 +412,16 @@ class NoTrashChecker:
                         + "')"
                     )
                 )
+            acceptable_errors = set(self.expect_errors) | set(self.allow_errors)
+            if "QUERY_WAS_CANCELLED" in acceptable_errors:
+                # Killing a query tears down its reading pipeline; a not-yet-started asynchronous
+                # marks-loading task then throws ASYNC_LOAD_CANCELED ("Background task for loading
+                # marks was canceled") inside the load_marks_threadpool. The exception never reaches
+                # the client but is still counted in system.errors, so it is a normal side effect
+                # of the cancellation the scenario expects, not trash.
+                acceptable_errors.add("ASYNC_LOAD_CANCELED")
             for error in errors:
-                assert (error in self.expect_errors) or (error in self.allow_errors)
+                assert error in acceptable_errors
                 all_errors.update(errors)
 
         not_found_expected_errors = set(self.expect_errors).difference(all_errors)
@@ -426,7 +436,12 @@ class NoTrashChecker:
 def wait_for_backups_to_finish():
     for _ in range(30):
         if not any(
-            int(node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")) > 0
+            int(
+                node.query(
+                    "SELECT count() FROM system.processes WHERE query_kind = 'Backup'"
+                )
+            )
+            > 0
             for node in nodes
         ):
             break
@@ -434,14 +449,17 @@ def wait_for_backups_to_finish():
 
     backup_process_counts = {
         get_node_name(node): int(
-            node.query("SELECT count() FROM system.processes WHERE query_kind = 'Backup'")
+            node.query(
+                "SELECT count() FROM system.processes WHERE query_kind = 'Backup'"
+            )
         )
         for node in nodes
     }
     total_backup_processes = sum(backup_process_counts.values())
-    assert total_backup_processes == 0, (
-        "Backup queries still running after pre-test wait: "
-        + ", ".join(f"{name}={count}" for name, count in backup_process_counts.items())
+    assert (
+        total_backup_processes == 0
+    ), "Backup queries still running after pre-test wait: " + ", ".join(
+        f"{name}={count}" for name, count in backup_process_counts.items()
     )
 
 
