@@ -1,0 +1,3 @@
+before-rename ok rows=1
+clusters old=0 new=1
+after-rename ok rows=1

@@ -792,6 +792,8 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
         }
         database_name = new_name;
 
+        onDatabaseRenamed();
+
         for (auto & table : tables)
         {
             auto table_id = table.second->getStorageID();
