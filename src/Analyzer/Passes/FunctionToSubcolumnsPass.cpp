@@ -10,6 +10,7 @@
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeFunction.h>
 #include <DataTypes/NestedUtils.h>
 #include <DataTypes/Serializations/SerializationArray.h>
 #include <DataTypes/Serializations/SerializationMap.h>
@@ -33,6 +34,7 @@
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Identifier.h>
 #include <Analyzer/InDepthQueryTreeVisitor.h>
+#include <Analyzer/LambdaNode.h>
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/TableFunctionNode.h>
@@ -605,6 +607,52 @@ void optimizeFunctionHasForMap(QueryTreeNodePtr &, FunctionNode & function_node,
     }
 }
 
+template <size_t map_element>
+void optimizeFunctionMapContainsLike(QueryTreeNodePtr & node, FunctionNode & function_node, ColumnContext & ctx)
+{
+    auto & function_arguments_nodes = function_node.getArguments().getNodes();
+    if (function_arguments_nodes.size() != 2)
+        return;
+
+    const auto & data_type_map = assert_cast<const DataTypeMap &>(*ctx.column.type);
+    auto map_element_type = map_element == 0 ? data_type_map.getKeyType() : data_type_map.getValueType();
+    /// The Map LIKE adapter removes LowCardinality before calling LIKE. Keep that path for now;
+    /// passing a LowCardinality type directly to the lambda would change function resolution.
+    if (WhichDataType(map_element_type).isLowCardinality()
+        || WhichDataType(function_arguments_nodes[1]->getResultType()).isLowCardinality())
+        return;
+
+    auto subcolumn_type = std::make_shared<DataTypeArray>(map_element_type);
+
+    NameAndTypePair subcolumn{ctx.column.name + (map_element == 0 ? ".keys" : ".values"), subcolumn_type};
+    if (sourceHasColumnCaseInsensitive(ctx.column_source, subcolumn.name)
+        || !canOptimizeToExpectedSubcolumn(
+            ctx,
+            subcolumn.name,
+            map_element == 0 ? SerializationMap::isKeysSubcolumn : SerializationMap::isValuesSubcolumn,
+            subcolumn.type))
+        return;
+
+    auto lambda_arguments = std::make_shared<LambdaArgumentsNode>(Names{"x"});
+    lambda_arguments->resolve(DataTypes{map_element_type});
+
+    auto lambda_element = std::make_shared<ColumnNode>(NameAndTypePair{"x", map_element_type}, lambda_arguments);
+
+    auto like_function = std::make_shared<FunctionNode>("like");
+    like_function->markAsOperator();
+    like_function->getArguments().getNodes() = {std::move(lambda_element), std::move(function_arguments_nodes[1])};
+    resolveOrdinaryFunctionNodeByName(*like_function, "like", ctx.context);
+
+    auto lambda_type = std::make_shared<DataTypeFunction>(DataTypes{map_element_type}, like_function->getResultType());
+    auto lambda = std::make_shared<LambdaNode>(std::move(lambda_arguments), std::move(like_function), true, std::move(lambda_type));
+
+    auto array_exists = std::make_shared<FunctionNode>("arrayExists");
+    array_exists->getArguments().getNodes() = {std::move(lambda), std::make_shared<ColumnNode>(subcolumn, ctx.column_source)};
+    resolveOrdinaryFunctionNodeByName(*array_exists, "arrayExists", ctx.context);
+
+    node = std::move(array_exists);
+}
+
 std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transformers =
 {
     {
@@ -692,6 +740,12 @@ std::map<std::pair<TypeIndex, String>, NodeToSubcolumnTransformer> node_transfor
 
             resolveOrdinaryFunctionNodeByName(function_node, "has", ctx.context);
         },
+    },
+    {
+        {TypeIndex::Map, "mapContainsKeyLike"}, optimizeFunctionMapContainsLike<0>,
+    },
+    {
+        {TypeIndex::Map, "mapContainsValueLike"}, optimizeFunctionMapContainsLike<1>,
     },
     {
         {TypeIndex::Nullable, "count"},
@@ -813,6 +867,10 @@ std::set<std::pair<TypeIndex, String>> transformers_optimize_in_filter_with_full
     {TypeIndex::Map, "notHas"},
     {TypeIndex::Map, "mapKeys"},
     {TypeIndex::Map, "mapValues"},
+    /// Splitting a Map LIKE predicate to its searched subcolumn is safe even when
+    /// the full Map is read separately, for example by SELECT.
+    {TypeIndex::Map, "mapContainsKeyLike"},
+    {TypeIndex::Map, "mapContainsValueLike"},
     {TypeIndex::Tuple, "tupleElement"},
     {TypeIndex::Nullable, "tupleElement"},
     {TypeIndex::Variant, "variantElement"},
