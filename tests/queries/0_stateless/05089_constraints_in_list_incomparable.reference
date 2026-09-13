@@ -1,0 +1,17 @@
+an IN list over the constrained column
+3
+3
+a NOT IN list
+47
+47
+a tuple IN list
+1
+1
+an IN list under OR next to a comparison
+12
+12
+the same through the old analyzer
+3
+the constraint still applies
+1
+1
