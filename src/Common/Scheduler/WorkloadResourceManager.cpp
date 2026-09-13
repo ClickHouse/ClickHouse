@@ -101,9 +101,8 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Parent node '{}' for creating workload '{}' does not exist in resource '{}'",
             info.parent, info.name, resource_name);
 
-    if (info.parent.empty() && root_node)
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "The second root workload '{}' is not allowed (current root '{}') in resource '{}'",
-            info.name, dynamic_cast<ISchedulerNode &>(*root_node).basename, resource_name);
+    // Note: multiple root workloads (workloads without a parent) are allowed. Independent roots form
+    // a forest of trees, all combined under this resource's single scheduler (see below).
 
     executeInSchedulerThread([&, this]
     {
@@ -112,8 +111,11 @@ void WorkloadResourceManager::Resource::createNode(const NodeInfo & info)
             node_for_workload[info.parent]->attachWorkloadChild(workload_node);
         else
         {
-            root_node = workload_node;
+            // Root workload (no parent). Multiple roots of a resource form a forest and are all
+            // attached directly to the resource's single scheduler, which processes them round-robin
+            // (see TimeSharedScheduler / SpaceSharedScheduler). The scheduler never enforces a limit.
             scheduler->attachChild(scheduler_node);
+            root_nodes[info.name] = workload_node;
         }
         node_for_workload[info.name] = workload_node;
 
@@ -143,9 +145,9 @@ void WorkloadResourceManager::Resource::deleteNode(const NodeInfo & info)
             node_for_workload[info.parent]->detachWorkloadChild(n);
         else
         {
-            chassert(n == root_node);
-            scheduler->removeChild(&dynamic_cast<ISchedulerNode &>(*root_node));
-            root_node.reset();
+            // Root workload: detach it from the resource's scheduler (see createNode()).
+            scheduler->removeChild(&dynamic_cast<ISchedulerNode &>(*n));
+            root_nodes.erase(info.name);
         }
 
         node_for_workload.erase(info.name);
@@ -218,10 +220,10 @@ void WorkloadResourceManager::Resource::updateCurrentVersion()
 {
     auto previous_version = current_version;
 
-    // Create a full list of constraints and queues in the current hierarchy
+    // Create a full list of constraints and queues in the current hierarchy (all forest roots)
     current_version = std::make_shared<Version>();
-    if (root_node)
-        root_node->addRawPointerNodes(current_version->nodes);
+    for (const auto & [name, root] : root_nodes)
+        root->addRawPointerNodes(current_version->nodes);
 
     // See details in version control section of description in WorkloadResourceManager.h
     if (previous_version)

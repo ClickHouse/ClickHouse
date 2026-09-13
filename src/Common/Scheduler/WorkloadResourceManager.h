@@ -41,7 +41,10 @@ namespace DB
  * Let's consider how a single resource is implemented. Every workload is represented by corresponding WorkloadNode.
  * Every WorkloadNode manages its own subtree of ISchedulerNode objects (see details in WorkloadNode.h)
  * WorkloadNode for workload w/o children has a queue, which provide a ResourceLink for consumption.
- * Parent of the root workload for a resource is the scheduler with its own thread.
+ * A resource may have several root workloads (workloads without a parent) forming a forest of trees.
+ * All roots are attached directly to the resource's single scheduler, which has its own thread and
+ * processes the roots round-robin (both TimeSharedScheduler and SpaceSharedScheduler hold multiple
+ * children). The scheduler itself never enforces a limit; trees are independent with their own limits.
  * So every resource has its dedicated thread for processing of resource request and other events (see EventQueue).
  *
  * Here is an example of SQL and corresponding hierarchy of scheduler nodes:
@@ -245,7 +248,9 @@ private:
         // TODO(serxa): consider using resource_manager->mutex + scheduler thread for updates and mutex only for reading to avoid slow acquire/release of classifier
         /// These field should be accessed only by the scheduler thread
         std::unordered_map<String, WorkloadNodePtr> node_for_workload;
-        WorkloadNodePtr root_node;
+        /// Root workloads of this resource (workloads with no parent). Multiple roots form a forest;
+        /// each is attached directly to the scheduler, which processes them round-robin.
+        std::unordered_map<String, WorkloadNodePtr> root_nodes;
         VersionPtr current_version;
     };
 

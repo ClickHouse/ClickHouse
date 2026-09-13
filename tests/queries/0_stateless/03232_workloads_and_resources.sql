@@ -11,7 +11,7 @@ create workload production in all settings priority = 1, weight = 9;
 create workload development in all settings priority = 1, weight = 1;
 
 -- Test that illegal actions are not allowed
-create workload another_root; -- {serverError BAD_ARGUMENTS}
+-- Note: a second root workload is now allowed (workloads form a forest); see 03588_multiple_root_workloads.
 create workload self_ref in self_ref; -- {serverError BAD_ARGUMENTS}
 drop workload all; -- {serverError BAD_ARGUMENTS}
 create workload invalid in 03232_write; -- {serverError BAD_ARGUMENTS}

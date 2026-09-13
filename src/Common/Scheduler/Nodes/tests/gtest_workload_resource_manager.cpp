@@ -351,6 +351,47 @@ TEST(SchedulerWorkloadResourceManager, Smoke)
     }
 }
 
+// Multiple independent root workloads (a forest). A second root sharing a resource used to be
+// rejected ("The second root is not allowed"); now each root is its own tree and all roots of a
+// resource are combined under its single scheduler (a time-shared scheduler round-robins them).
+TEST(SchedulerWorkloadResourceManager, MultipleRoots)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE res1 (WRITE DISK disk, READ DISK disk)");
+    t.query("CREATE WORKLOAD root_a SETTINGS max_io_requests = 10");
+    t.query("CREATE WORKLOAD a_child IN root_a SETTINGS weight = 3");
+    t.query("CREATE WORKLOAD root_b SETTINGS max_io_requests = 10");
+    t.query("CREATE WORKLOAD b_child IN root_b");
+
+    ClassifierPtr c_a = t.manager->acquire("a_child");
+    ClassifierPtr c_b = t.manager->acquire("b_child");
+
+    // Both independent trees consume the shared resource.
+    for (int i = 0; i < 10; i++)
+    {
+        ResourceGuard g_a(ResourceGuard::Metrics::getIOWrite(), c_a->get("res1"), 1, ResourceGuard::Lock::Defer);
+        g_a.lock();
+        g_a.consume(1);
+        g_a.unlock();
+
+        ResourceGuard g_b(ResourceGuard::Metrics::getIOWrite(), c_b->get("res1"), 1, ResourceGuard::Lock::Defer);
+        g_b.lock();
+        g_b.consume(1);
+        g_b.unlock();
+    }
+
+    // Dropping one whole tree leaves the other working.
+    t.query("DROP WORKLOAD a_child");
+    t.query("DROP WORKLOAD root_a");
+
+    ClassifierPtr c_b2 = t.manager->acquire("b_child");
+    ResourceGuard g(ResourceGuard::Metrics::getIOWrite(), c_b2->get("res1"), 1, ResourceGuard::Lock::Defer);
+    g.lock();
+    g.consume(1);
+    g.unlock();
+}
+
 TEST(SchedulerWorkloadResourceManager, Fairness)
 {
     // Total cost for A and B cannot differ for more than 1 (every request has cost equal to 1).
@@ -2341,6 +2382,38 @@ TEST(SchedulerWorkloadResourceManager, MemoryReservationIncreaseDecrease)
         a1.waitSync();
         a2.waitSync();
         a3.waitSync();
+    }
+}
+
+// Multiple independent root workloads on a space-shared resource (MEMORY RESERVATION). A
+// space-shared scheduler holds a single child, so the forest roots are combined under one shared
+// FairAllocation multiplexer. Each root still enforces its own limit independently.
+TEST(SchedulerWorkloadResourceManager, MultipleRootsMemoryReservation)
+{
+    ResourceTest t;
+
+    t.query("CREATE RESOURCE memory (MEMORY RESERVATION)");
+    t.query("CREATE WORKLOAD root_a SETTINGS max_memory = 100");
+    t.query("CREATE WORKLOAD root_b SETTINGS max_memory = 100");
+
+    ClassifierPtr c_a = t.manager->acquire("root_a");
+    ClassifierPtr c_b = t.manager->acquire("root_b");
+
+    for (int i = 0; i < 3; i++)
+    {
+        ResourceLink link_a = c_a->get("memory");
+        ResourceLink link_b = c_b->get("memory");
+
+        // Both trees allocate and resize concurrently within their own per-root limits.
+        TestAllocation a(link_a, "A", 80);
+        TestAllocation b(link_b, "B", 80);
+        a.waitSync();
+        b.waitSync();
+
+        a.setSize(20);
+        b.setSize(60);
+        a.waitSync();
+        b.waitSync();
     }
 }
 
