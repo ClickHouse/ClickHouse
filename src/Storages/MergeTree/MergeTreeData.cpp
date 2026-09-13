@@ -1496,8 +1496,36 @@ namespace
 ExpressionActionsPtr getCombinedIndicesExpression(
     const KeyDescription & key,
     const MergeTreeIndices & indices,
+    const ColumnsDescription & columns,
+    const VirtualColumnsDescription & virtuals,
     ContextPtr context)
 {
+    const auto has_lambda = [](const ExpressionActionsPtr & expression)
+    {
+        return std::ranges::any_of(expression->getActionsDAG().getNodes(), [](const auto & node)
+        {
+            return node.result_type && WhichDataType(node.result_type).isFunction();
+        });
+    };
+
+    if (has_lambda(key.expression)
+        || std::ranges::any_of(indices, [&](const auto & index)
+        {
+            return has_lambda(index->index.expression);
+        }))
+    {
+        /// Captured lambda bodies retain their analysis-time execution settings. Rebuild them
+        /// with the storage context, just as we rebuild the outer `ExpressionActions` below.
+        auto combined_expr_list = key.expression_list_ast->clone();
+        for (const auto & index : indices)
+            for (const auto & expression : index->index.expression_list_ast->children)
+                combined_expr_list->children.push_back(expression->clone());
+
+        auto syntax_result = TreeRewriter(context).analyze(
+            combined_expr_list, VirtualColumnUtils::getColumnsWithVirtualsForAnalysis(columns, virtuals));
+        return ExpressionAnalyzer(combined_expr_list, syntax_result, context).getActions(false);
+    }
+
     if (indices.empty())
         return std::make_shared<ExpressionActions>(key.expression->getActionsDAG().clone(), ExpressionActionsSettings(context));
 
@@ -1569,13 +1597,15 @@ NamesAndTypesList MergeTreeData::getMinMaxColumns(const KeyDescription & partiti
 ExpressionActionsPtr
 MergeTreeData::getPrimaryKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getPrimaryKey(), indices, getContext());
+    return getCombinedIndicesExpression(
+        metadata_snapshot->getPrimaryKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
 ExpressionActionsPtr
 MergeTreeData::getSortingKeyAndSkipIndicesExpression(const StorageMetadataPtr & metadata_snapshot, const MergeTreeIndices & indices) const
 {
-    return getCombinedIndicesExpression(metadata_snapshot->getSortingKey(), indices, getContext());
+    return getCombinedIndicesExpression(
+        metadata_snapshot->getSortingKey(), indices, metadata_snapshot->columns, metadata_snapshot->virtuals, getContext());
 }
 
 void MergeTreeData::checkPartitionKeyAndInitMinMax(const KeyDescription & new_partition_key)
