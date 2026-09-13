@@ -269,13 +269,15 @@ SELECT 'hasPhrase ngrams', indexed, scanned FROM (
            (SELECT groupArray(id) FROM (SELECT id FROM tab WHERE hasPhrase(doc, 'bcd', 'ngrams(3)') ORDER BY id SETTINGS use_skip_indexes = 0)) AS scanned
 ) WHERE indexed != scanned;
 
--- A gram that spans a separator is not representable as a postprocessed token, and both forms must
--- agree on rejecting it, under either direct-read mode, rather than one of them answering from the
--- index. The phrase does not occur literally, so the rejection is not masking a match.
-SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)') SETTINGS query_plan_direct_read_from_text_index = 1; -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasPhrase(doc, 'cd e') SETTINGS query_plan_direct_read_from_text_index = 0; -- { serverError BAD_ARGUMENTS }
-SELECT id FROM tab WHERE hasPhrase(doc, 'cd e') SETTINGS query_plan_direct_read_from_text_index = 1; -- { serverError BAD_ARGUMENTS }
+-- A gram that spans a separator is not representable as a postprocessed token. The phrase does not
+-- occur literally either, so both forms answer that nothing matches, under either direct-read mode.
+-- (These four used to be rejected with BAD_ARGUMENTS, because the rewrite rejoined the postprocessed
+-- tokens into a string for `hasPhrase` to re-tokenize and a token holding a separator broke that
+-- round trip; the token sequences are compared directly now.)
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e', 'ngrams(3)') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e') SETTINGS query_plan_direct_read_from_text_index = 0;
+SELECT id FROM tab WHERE hasPhrase(doc, 'cd e') SETTINGS query_plan_direct_read_from_text_index = 1;
 SELECT id FROM tab WHERE position(doc, 'cd e') > 0 ORDER BY id;
 
 DROP TABLE tab;

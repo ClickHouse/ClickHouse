@@ -194,11 +194,12 @@ SELECT arraySort(groupArray(id)) FROM tab WHERE hasPhrase(message, 'xyz') SETTIN
 
 DROP TABLE tab;
 
-SELECT '7. Separator-emitting postprocessor: rejected consistently on both read paths.';
+SELECT '7. Separator-emitting postprocessor: answered consistently on both read paths.';
 
 -- concat appends ' x', so a token becomes e.g. 'foo x', which contains a separator. The index stores it
--- whole, but the row-scan rejoin would re-split it and disagree, so the query is rejected with
--- BAD_ARGUMENTS at query-plan time regardless of query_plan_direct_read_from_text_index.
+-- whole, and the row-scan now compares the postprocessed token sequences instead of rejoining them into
+-- a string for hasPhrase to re-tokenize, so both read paths agree with the data. (This used to be
+-- rejected with BAD_ARGUMENTS at query-plan time, because the rejoin would have re-split that token.)
 CREATE TABLE tab
 (
     id UInt32,
@@ -210,8 +211,8 @@ SETTINGS allow_experimental_text_index_phrase_search = 1;
 
 INSERT INTO tab VALUES (1, 'foo bar');
 
-SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 1;  -- { serverError BAD_ARGUMENTS }
-SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 0;  -- { serverError BAD_ARGUMENTS }
+SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 1;
+SELECT count() FROM tab WHERE hasPhrase(message, 'foo bar') SETTINGS query_plan_direct_read_from_text_index = 0;
 
 DROP TABLE tab;
 
