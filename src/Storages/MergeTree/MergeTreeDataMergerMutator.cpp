@@ -83,6 +83,10 @@ PartsRanges splitByMergePredicate(PartsRange && range, const MergePredicatePtr &
             PartProperties & prev_part = mergeable_range.back();
             PartProperties & current_part = *current_it;
 
+            /// Partition boundaries always end a range. Avoid formatting a rejection for each boundary.
+            if (prev_part.info.getPartitionId() != current_part.info.getPartitionId())
+                return mergeable_range;
+
             /// If we cannot merge with previous part we need to close this range.
             if (auto result = merge_predicate->canMergeParts(prev_part, current_part); !result.has_value())
             {

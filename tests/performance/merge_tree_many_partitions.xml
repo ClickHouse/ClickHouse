@@ -9,6 +9,8 @@
     <fill_query>INSERT INTO bad_partitions SELECT * FROM numbers(10000)</fill_query>
 
     <query>SELECT count() FROM bad_partitions</query>
+    <!-- One part per partition: measure merge selection without executing a merge. -->
+    <query>OPTIMIZE TABLE bad_partitions SETTINGS optimize_throw_if_noop = 0</query>
 
     <drop_query>DROP TABLE IF EXISTS bad_partitions</drop_query>
 </test>
