@@ -3507,21 +3507,39 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
 
     /// Through a read-only `Overlay` facade the view that actually runs is the underlying
     /// source view, so reading requires grants on both the facade name and the source name: the
-    /// facade must not widen access. The exact columns the query reads are checked by the planner
-    /// against both names (`checkAccessRights` on the synthesized storage, which keeps the facade
-    /// name and carries the source id), but resolution alone already puts the view's schema into
-    /// the query tree (e.g. `EXPLAIN QUERY TREE`), so the same metadata contract as for a plain
-    /// table resolved through a facade (`checkAccessToTableMetadata`) applies here: at least one
-    /// column of the view must be visible on both names. A user granted only some columns keeps
-    /// working, exactly as for a parameterized view outside a facade. The source is only probed,
-    /// never named: the denial is reported for the facade name, as written in the query.
+    /// facade must not widen access (checked below, once the view's columns are known).
     const StorageID facade_id{database_name, table_name};
     auto overlay_source_id = DatabaseOverlay::getSourceTableIdForReadonlyFacade(facade_id, original_view);
+
+    auto query = original_view_metadata->getSelectQuery().inner_query->clone();
+    StorageView::replaceQueryParametersIfParameterizedView(query, param_values);
+
+    ASTCreateQuery create;
+    create.set(create.select, query);
+
+    auto sql_security = make_intrusive<ASTSQLSecurity>();
+    sql_security->type = original_view_metadata->sql_security_type;
+    if (original_view_metadata->definer)
+        sql_security->definer = make_intrusive<ASTUserNameWithHost>(*original_view_metadata->definer);
+    create.set(create.sql_security, sql_security);
+
+    auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
+    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
+    ColumnsDescription columns(sample_block->getNamesAndTypesList());
+
+    /// The exact columns the query reads are checked by the planner against both names
+    /// (`checkAccessRights` on the synthesized storage, which keeps the facade name and carries
+    /// the source id), but resolution alone already puts the view's schema into the query tree
+    /// (e.g. `EXPLAIN QUERY TREE`), so the same metadata contract as for a plain table resolved
+    /// through a facade (`checkAccessToTableMetadata`) applies here: at least one column of the
+    /// view must be visible on both names. A user granted only some columns keeps working,
+    /// exactly as for a parameterized view outside a facade. The columns are those of the
+    /// synthesized view: a parameterized view stores none in its own metadata. The source is
+    /// only probed, never named: the denial is reported for the facade name, as written.
     if (overlay_source_id)
     {
         /// Probe the raw rights so that probing does not pollute `used_privileges` of the query log.
         const auto access_rights = getQueryContext()->getAccess()->getAccessRightsWithImplicit();
-        const auto & columns = original_view_metadata->getColumns();
         auto has_visible_column = [&](const StorageID & id)
         {
             for (const auto & column : columns)
@@ -3542,23 +3560,9 @@ StoragePtr Context::buildParameterizedViewStorage(const String & database_name, 
                 facade_id.getFullTableName());
     }
 
-    auto query = original_view_metadata->getSelectQuery().inner_query->clone();
-    StorageView::replaceQueryParametersIfParameterizedView(query, param_values);
-
-    ASTCreateQuery create;
-    create.set(create.select, query);
-
-    auto sql_security = make_intrusive<ASTSQLSecurity>();
-    sql_security->type = original_view_metadata->sql_security_type;
-    if (original_view_metadata->definer)
-        sql_security->definer = make_intrusive<ASTUserNameWithHost>(*original_view_metadata->definer);
-    create.set(create.sql_security, sql_security);
-
-    auto view_context = original_view_metadata->getSQLSecurityOverriddenContext(shared_from_this());
-    auto sample_block = InterpreterSelectQueryAnalyzer::getSampleBlock(query, view_context);
-    auto res = std::make_shared<StorageView>(StorageID(database_name, table_name),
+    auto res = std::make_shared<StorageView>(facade_id,
                                                 create,
-                                                ColumnsDescription(sample_block->getNamesAndTypesList()),
+                                                std::move(columns),
             /* comment */ "",
             /* is_parameterized_view */ true);
     /// The synthesized view keeps the facade name as its own id, so record the source view id

@@ -10,7 +10,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # trivial queries such as `SELECT count()`), while the other columns stay denied. Resolving the
 # view (also for `EXPLAIN QUERY TREE`, which never reaches the planner) requires at least one
 # visible column on both names, so a whole-facade grant without any source-side column is denied,
-# and the denial names the facade only.
+# and the denial names the facade only. The view runs as its definer, so the users below need
+# grants on the view names only, exactly as in `05076_additional_table_filters_column_access`.
 
 SUF="${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
@@ -29,7 +30,7 @@ ${CLICKHOUSE_CLIENT} -m --query "
     CREATE DATABASE ${DB_SRC};
     CREATE TABLE ${DB_SRC}.t (id UInt32, s String, secret String) ENGINE = MergeTree ORDER BY id;
     INSERT INTO ${DB_SRC}.t VALUES (1, 'a', 'x'), (2, 'b', 'y'), (150, 'big', 'z');
-    CREATE VIEW ${DB_SRC}.v AS SELECT id, s, secret FROM ${DB_SRC}.t WHERE id >= {min:UInt32};
+    CREATE VIEW ${DB_SRC}.v SQL SECURITY DEFINER DEFINER = CURRENT_USER AS SELECT id, s, secret FROM ${DB_SRC}.t WHERE id >= {min:UInt32};
 
     CREATE DATABASE ${DB_OVL} ENGINE = Overlay('${DB_SRC}');
 
@@ -47,16 +48,19 @@ ${CLICKHOUSE_CLIENT} -m --query "
     GRANT SHOW TABLES ON ${DB_SRC}.* TO ${USER_FACADE};
 "
 
-# Prints the query result, or the error code, or `denied without naming the source` when the denial
-# does not mention the source database.
-function run
+# Prints the query result or the error code. A column-level denial for a user who already holds a
+# grant on the source view may name the source (the planner reports the missing columns per name,
+# as it would for a direct read of the source); a resolution-time denial for a user without any
+# source-side column must not, so `run_hidden` reports whether the source database was named.
+function run_impl
 {
-    local user="$1"
-    local query="$2"
+    local report_naming="$1"
+    local user="$2"
+    local query="$3"
     local out
     out=$(${CLICKHOUSE_CLIENT} --user "${user}" --enable_analyzer 1 --query "${query}" 2>&1)
     if echo "${out}" | grep -q 'ACCESS_DENIED'; then
-        if echo "${out}" | grep -q "${DB_SRC}"; then
+        if [ "${report_naming}" = 1 ] && echo "${out}" | grep -q "${DB_SRC}"; then
             echo "ACCESS_DENIED naming the source"
         else
             echo "ACCESS_DENIED"
@@ -68,13 +72,23 @@ function run
     fi
 }
 
+function run
+{
+    run_impl 0 "$1" "$2"
+}
+
+function run_hidden
+{
+    run_impl 1 "$1" "$2"
+}
+
 # `EXPLAIN QUERY TREE` output is long: report only whether the view resolved.
 function explain
 {
     local user="$1"
     local query="$2"
     local out
-    out=$(run "${user}" "EXPLAIN QUERY TREE ${query}")
+    out=$(run_hidden "${user}" "EXPLAIN QUERY TREE ${query}")
     if echo "${out}" | grep -q 'ACCESS_DENIED\|UNKNOWN_FUNCTION\|UNKNOWN_TABLE'; then
         echo "${out}"
     elif echo "${out}" | grep -q 'TABLE_FUNCTION\|TABLE id'; then
@@ -99,7 +113,7 @@ run "${USER_SPLIT}" "SELECT id FROM ${DB_OVL}.v(min = 0)"
 run "${USER_SPLIT}" "SELECT s FROM ${DB_OVL}.v(min = 0)"
 
 echo "whole-facade grant without a source-side column: denied, the source is not named"
-run "${USER_FACADE}" "SELECT count() FROM ${DB_OVL}.v(min = 0)"
+run_hidden "${USER_FACADE}" "SELECT count() FROM ${DB_OVL}.v(min = 0)"
 explain "${USER_FACADE}" "SELECT id FROM ${DB_OVL}.v(min = 0)"
 explain "${USER_FACADE}" "SELECT secret FROM ${DB_OVL}.t"
 
