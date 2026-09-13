@@ -15037,15 +15037,22 @@ async function cancel()
     progressEl.clear();
 }
 
+/// Offer the connection's login to the browser's password manager, so it can be autofilled on the next
+/// visit. `PasswordCredential` rejects an empty `id` (as it rejects an empty password) with a
+/// `TypeError`, and the browser may not implement it at all (Firefox has no `PasswordCredential`), so
+/// both cases are checked up front instead of throwing out of every Run. An empty `user` field
+/// authenticates as the server's default user (the HTTP interface uses `default` when no `user` is
+/// given), or as the user embedded in the server URL's userinfo (`http://alice@host:8123/`, see
+/// `effectiveConnectionUser`), so the login is saved under that effective name; autofilling it back into
+/// the `user` field later is equivalent to leaving the field empty.
 function storeCredentials() {
-    if (password_elem.value) {
-        const cred = new PasswordCredential({
-            id: user_elem.value,
-            password: password_elem.value,
-            name: url_elem.value,
-        });
-        navigator.credentials.store(cred);
-    }
+    if (!password_elem.value || typeof PasswordCredential !== 'function') return;
+    const cred = new PasswordCredential({
+        id: effectiveConnectionUser(url_elem.value, user_elem.value) || 'default',
+        password: password_elem.value,
+        name: url_elem.value,
+    });
+    navigator.credentials.store(cred);
 }
 
 /// The "Run" / "Run one" button submits the form; handle it here.
