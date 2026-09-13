@@ -29,6 +29,7 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
     using TimestampType = TimestampType_;
     using IntervalType = IntervalType_;
     using ValueType = ValueType_;
+    using ResultType = ValueType_;
 
     static String getName()
     {
@@ -155,16 +156,16 @@ struct AggregateFunctionTimeseriesLinearRegressionTraits
     /// in a window reaches this value; below it, recomputing the window each grid point is cheaper. The
     /// `timeseries_to_grid_two_stack_vs_recompute` example measures the crossover by driving the real finalize over
     /// a larger-than-cache dataset (so recompute pays the same per-point cache misses as the real query) and puts
-    /// it around 8-10 populated buckets per window, matching an end-to-end A/B. Sparse data needs no margin here:
-    /// the density factor in `getStackSizeForTwoStacks` already converts `buckets_per_window` to the populated average.
-    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 10;
+    /// it at 4 populated buckets per window. Sparse data needs no margin here: the density factor in
+    /// `getStackSizeForTwoStacks` already converts `buckets_per_window` to the populated average.
+    static constexpr size_t AVG_POPULATED_BPW_TO_ENABLE_TWO_STACKS = 4;
 
     /// Hard cap: regardless of average density, use two-stacks once a window can hold this many buckets. The
     /// density estimate in `getStackSizeForTwoStacks` is an average, but density is not uniform - a low average
     /// can still hide a locally dense window whose recompute folds far more buckets than the average. Beyond this
     /// capacity we stop trusting the average and bound the worst case: at this size a fully dense window already
     /// makes recompute ~2x slower than two-stacks (measured by the `timeseries_to_grid_two_stack_vs_recompute` example).
-    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 20;
+    static constexpr size_t BPW_TO_FORCE_TWO_STACKS = 12;
 };
 
 

@@ -20,7 +20,9 @@
 #include <Storages/TableLockHolder.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/FixedHashMap.h>
+#include <Common/HashTable/FixedHashSet.h>
 #include <Common/HashTable/HashMap.h>
+#include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashTableTraits.h>
 #include <Common/HashTable/TwoLevelHashMap.h>
 
@@ -38,6 +40,22 @@ namespace JoinStuff
 /// Flags needed to implement RIGHT and FULL JOINs.
 class JoinUsedFlags;
 }
+
+/// Which flavour of the join maps a join runs on.
+///  - `Default` is the smallest map the strictness allows: `HashJoin::MapsOne`, which stores a single
+///    right row per key, wherever one row is enough (LEFT ANY/SEMI/ANTI), `HashJoin::MapsAll` otherwise.
+///  - `All` forces `HashJoin::MapsAll`, which stores every right row of a key. It is required when there
+///    is a mixed inequal condition in the join condition, for example `t1.a = t2.a AND t1.b > t2.b`: we
+///    select all matched rows from the map and filter them by `t1.b > t2.b`.
+///  - `Set` is `HashJoin::MapsSet`, which stores no right row at all. It is only valid for joins whose
+///    result never contains a value taken from a right row, so the map only has to answer whether a key
+///    is present. See `HashJoin::canUseSetMaps` for when it is picked.
+enum class JoinMapsKind : uint8_t
+{
+    Default,
+    All,
+    Set,
+};
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
 class HashJoinMethods;
@@ -130,6 +148,9 @@ public:
     {
         return getTotals().empty() && getTotalRowCount() == 0;
     }
+
+    /// The left side is streamed through once, each row emitted in input order.
+    bool preservesLeftBlockOrder() const override { return true; }
 
     std::shared_ptr<IJoin> clone(const std::shared_ptr<TableJoin> & table_join_,
         SharedHeader,
@@ -324,42 +345,74 @@ public:
     }
 
     /** Different data structures, that are used to perform JOIN.
+      *
+      * A join whose result never contains a value taken from a right row - see `MapGetter` - does not
+      * need the mapped part of a cell at all: the table only has to answer whether a key is present.
+      * Such a join instantiates the maps with `VoidMapped`, which selects the set counterpart of every
+      * table below, so a cell holds the key alone.
       */
+    template <typename Key, typename Mapped, typename Hash>
+    using JoinHashMap = std::conditional_t<std::is_same_v<Mapped, VoidMapped>, HashSet<Key, Hash>, HashMap<Key, Mapped, Hash>>;
+
+    template <typename Key, typename Mapped>
+    using JoinHashMapWithSavedHash
+        = std::conditional_t<std::is_same_v<Mapped, VoidMapped>, HashSetWithSavedHash<Key>, HashMapWithSavedHash<Key, Mapped>>;
+
+    template <typename Key, typename Mapped, typename Hash>
+    using JoinTwoLevelHashMap
+        = std::conditional_t<std::is_same_v<Mapped, VoidMapped>, TwoLevelHashSet<Key, Hash>, TwoLevelHashMap<Key, Mapped, Hash>>;
+
+    template <typename Key, typename Mapped>
+    using JoinTwoLevelHashMapWithSavedHash = std::conditional_t<
+        std::is_same_v<Mapped, VoidMapped>,
+        TwoLevelHashSetWithSavedHash<Key>,
+        TwoLevelHashMapWithSavedHash<Key, Mapped>>;
+
+    template <typename Key, typename Mapped>
+    using JoinFixedHashMap = std::conditional_t<std::is_same_v<Mapped, VoidMapped>, FixedHashSet<Key>, FixedHashMap<Key, Mapped>>;
+
+    template <typename Key, typename Mapped, size_t size_bits>
+    using JoinFixedHashMapWithSizeBits = std::conditional_t<
+        std::is_same_v<Mapped, VoidMapped>,
+        FixedHashSetWithSizeBits<Key, size_bits>,
+        FixedHashMapWithSizeBits<Key, Mapped, size_bits>>;
+
     template <typename Mapped>
     struct MapsTemplate
     {
         /// NOLINTBEGIN(bugprone-macro-parentheses)
         using MappedType = Mapped;
-        std::shared_ptr<FixedHashMap<UInt8, Mapped>>                          key8;
-        std::shared_ptr<FixedHashMap<UInt16, Mapped>>                         key16;
-        std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           key32;
-        std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_string;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
-        std::shared_ptr<HashMap<UInt32, Mapped, HashCRC32<UInt32>>>           keys32;
-        std::shared_ptr<HashMap<UInt64, Mapped, HashCRC32<UInt64>>>           keys64;
-        std::shared_ptr<HashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
-        std::shared_ptr<HashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
-        std::shared_ptr<HashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_string;
-        std::shared_ptr<HashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_fixed_string;
-        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
-        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
-        std::shared_ptr<TwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
-        std::shared_ptr<TwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_keys32;
-        std::shared_ptr<TwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_keys64;
-        std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
-        std::shared_ptr<TwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
-        std::shared_ptr<TwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 8>>          range8_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 16>>         range16_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 17>>         range17_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt32, Mapped, 18>>         range18_key32;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 8>>          range8_key64;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 16>>         range16_key64;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 17>>         range17_key64;
-        std::shared_ptr<FixedHashMapWithSizeBits<UInt64, Mapped, 18>>         range18_key64;
+        static constexpr bool has_mapped = !std::is_same_v<Mapped, VoidMapped>;
+        std::shared_ptr<JoinFixedHashMap<UInt8, Mapped>>                          key8;
+        std::shared_ptr<JoinFixedHashMap<UInt16, Mapped>>                         key16;
+        std::shared_ptr<JoinHashMap<UInt32, Mapped, HashCRC32<UInt32>>>           key32;
+        std::shared_ptr<JoinHashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
+        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>              key_string;
+        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
+        std::shared_ptr<JoinHashMap<UInt32, Mapped, HashCRC32<UInt32>>>           keys32;
+        std::shared_ptr<JoinHashMap<UInt64, Mapped, HashCRC32<UInt64>>>           keys64;
+        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
+        std::shared_ptr<JoinHashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
+        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
+        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_string;
+        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_fixed_string;
+        std::shared_ptr<JoinTwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_key32;
+        std::shared_ptr<JoinTwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_key64;
+        std::shared_ptr<JoinTwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_string;
+        std::shared_ptr<JoinTwoLevelHashMapWithSavedHash<std::string_view, Mapped>>      two_level_key_fixed_string;
+        std::shared_ptr<JoinTwoLevelHashMap<UInt32, Mapped, HashCRC32<UInt32>>>   two_level_keys32;
+        std::shared_ptr<JoinTwoLevelHashMap<UInt64, Mapped, HashCRC32<UInt64>>>   two_level_keys64;
+        std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128HashCRC32>>   two_level_keys128;
+        std::shared_ptr<JoinTwoLevelHashMap<UInt256, Mapped, UInt256HashCRC32>>   two_level_keys256;
+        std::shared_ptr<JoinTwoLevelHashMap<UInt128, Mapped, UInt128TrivialHash>> two_level_hashed;
+        std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt32, Mapped, 8>>          range8_key32;
+        std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt32, Mapped, 16>>         range16_key32;
+        std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt32, Mapped, 17>>         range17_key32;
+        std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt32, Mapped, 18>>         range18_key32;
+        std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 8>>          range8_key64;
+        std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 16>>         range16_key64;
+        std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 17>>         range17_key64;
+        std::shared_ptr<JoinFixedHashMapWithSizeBits<UInt64, Mapped, 18>>         range18_key64;
 
         void create(Type which, size_t reserve)
         {
@@ -417,8 +470,9 @@ public:
     using MapsOne = MapsTemplate<RowRef>;
     using MapsAll = MapsTemplate<RowRefList>;
     using MapsAsof = MapsTemplate<AsofRowRefs>;
+    using MapsSet = MapsTemplate<VoidMapped>;
 
-    using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof>;
+    using MapsVariant = std::variant<MapsOne, MapsAll, MapsAsof, MapsSet>;
 
     struct NullMapHolder
     {
@@ -650,6 +704,9 @@ private:
     /// Rows emitted from hash-table matches across all probe threads (excludes default/miss rows).
     size_t hash_table_matches = 0;
 
+    /// Whether the maps store keys alone, see `JoinMapsKind::Set`. Decided once, before they are created.
+    bool use_set_maps = false;
+
     /// Identifier to distinguish different HashJoin instances in logs
     /// Several instances can be created, for example, in GraceHashJoin to handle different buckets
     String instance_log_id;
@@ -668,7 +725,31 @@ private:
 
     bool preferUseMapsAll() const;
 
+    bool canUseSetMaps() const;
+
+public:
+    bool mustKeepRightBlocks() const;
+
+    /// Called by the algorithm that wraps this join, before it feeds it anything, when it may take
+    /// the right blocks back out with `releaseJoinedBlocks`. Off by default: a join nobody wraps
+    /// keeps no block a set map does not need, and whether some algorithm merely appears in
+    /// `join_algorithm` says nothing about what was instantiated.
+    void keepRightBlocksForAnotherAlgorithm() { right_blocks_may_be_taken = true; }
+
+    /// Called once that algorithm can no longer take them - it has settled on this join. A join that
+    /// stores only the keys reads nothing from them, so they can go.
+    void dropRightBlocksKeptForAnotherAlgorithm();
+
+private:
+
+    /// The maps flavour this join runs on. All the dispatch entry points take it.
+    JoinMapsKind getMapsKind() const;
+
     bool isUsedByAnotherAlgorithm() const;
+
+    /// Whether a wrapping algorithm said it may take the right blocks. See
+    /// `keepRightBlocksForAnotherAlgorithm`.
+    bool right_blocks_may_be_taken = false;
     bool canRemoveColumnsFromLeftBlock() const;
 
     void validateAdditionalFilterExpression(std::shared_ptr<ExpressionActions> additional_filter_expression);
