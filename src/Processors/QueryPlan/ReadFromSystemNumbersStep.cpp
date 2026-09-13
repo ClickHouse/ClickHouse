@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/ReadFromSystemNumbersStep.h>
 #include <Processors/QueryPlan/QueryPlanStepRegistry.h>
 #include <Processors/QueryPlan/Serialization.h>
+#include <Interpreters/ActionsDAG.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
 #include <Processors/QueryPlan/numbersLikeUtils.h>
@@ -467,10 +468,10 @@ bool ReadFromSystemNumbersStep::isSerializable() const
 {
     const auto & numbers_storage = storage->as<const StorageSystemNumbers &>();
 
-    /// The generated domain has to be reproducible on the replica from the serialized parameters
-    /// alone. A source filter prunes that domain, and an unbounded read depends on the pruning to
-    /// terminate, so a read that has either stays local instead.
-    return numbers_storage.limit.has_value() && !filter_actions_dag;
+    /// The generated domain has to be reproducible on the replica. The source filter is shipped
+    /// along with the table's parameters, so a filtered read is fine; an unbounded one is not,
+    /// because nothing then bounds what the replica generates.
+    return numbers_storage.limit.has_value();
 }
 
 
@@ -491,6 +492,8 @@ void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
         flags |= 2;
     if (limit.has_value())
         flags |= 4;
+    if (filter_actions_dag)
+        flags |= 8;
     writeIntBinary(flags, ctx.out);
 
     /// A LIMIT pushed into the read is only a hint - the plan keeps its own limiting steps - but
@@ -499,6 +502,13 @@ void ReadFromSystemNumbersStep::serialize(Serialization & ctx) const
         writeBinaryLittleEndian(static_cast<UInt64>(*limit), ctx.out);
 
     writeBinaryLittleEndian(static_cast<UInt64>(max_block_size), ctx.out);
+
+    /// The filter is what prunes the generated domain: `numbers(1e12) WHERE number = 5` generates a
+    /// single value with it and the whole domain without it. The plan keeps its own filtering step,
+    /// so dropping it here would still answer correctly - it would just make the replica generate
+    /// arbitrarily more rows than the initiator does.
+    if (filter_actions_dag)
+        filter_actions_dag->serialize(ctx.out, ctx.registry);
 }
 
 
@@ -532,6 +542,11 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
     UInt64 max_block_size = 0;
     readBinaryLittleEndian(max_block_size, ctx.in);
 
+    std::shared_ptr<const ActionsDAG> filter;
+    if (flags & 8)
+        filter = std::make_shared<const ActionsDAG>(
+            ActionsDAG::deserialize(ctx.in, ctx.registry, ctx.context, ctx.max_type_complexity));
+
     auto storage = std::make_shared<StorageSystemNumbers>(
         StorageID{"system", "numbers"}, multithreaded, column_name, storage_limit, offset, step, descending);
     /// The handle's conversion to `StorageMetadataPtr` is deleted for rvalues, so keep it alive here.
@@ -547,6 +562,8 @@ QueryPlanStepPtr ReadFromSystemNumbersStep::deserialize(Deserialization & ctx)
 
     if (pushed_down_limit.has_value())
         step_ptr->setLimit(*pushed_down_limit);
+
+    step_ptr->filter_actions_dag = std::move(filter);
 
     ctx.storage_holders.push_back(std::move(storage));
     return step_ptr;
