@@ -185,7 +185,7 @@ std::vector<String> Client::loadWarningMessages()
     /// effective `dialect` of the authenticated user, which a profile may default to Kusto or PRQL.
     /// Sending the value a user already has is a no-op for setting constraints, so this does not trip a
     /// profile that pins `dialect` as read-only to `clickhouse`.
-    Settings probe_settings = settingsWithoutCompatibilityDerived().value_or(client_context->getSettingsRef());
+    Settings probe_settings = settingsWithoutClientSideDefaults().value_or(client_context->getSettingsRef());
     probe_settings.set("dialect", String("clickhouse"));
 
     connection->sendQuery(connection_parameters.timeouts,
@@ -581,11 +581,11 @@ void Client::connect()
     UInt64 server_version_patch = 0;
 
     /// Capture the client local time zone before the branch below may switch the process default
-    /// to the server time zone. `serverTimezoneInstance()` reads the process default directly and
-    /// ignores `session_timezone`; `instance()` would fold in an explicit `--session_timezone` and
-    /// cache the wrong zone. `connect()` can run again on reconnect, so only capture once.
+    /// to the server time zone. `serverTimezone` reads the process default directly and
+    /// ignores `session_timezone`; `getTimeZone` would fold in an explicit `--session_timezone` and
+    /// cache the wrong zone. `connect` can run again on reconnect, so only capture once.
     if (client_local_timezone.empty())
-        client_local_timezone = DateLUT::serverTimezoneInstance().getTimeZone();
+        client_local_timezone = DateLUT::serverTimezone().getName();
 
     if (hosts_and_ports.empty())
     {
@@ -998,9 +998,10 @@ void Client::connect()
 #endif
     }
 
+    server_default_timezone = connection->getServerTimezone(connection_parameters.timeouts);
     if (!client_context->getSettingsRef()[Setting::use_client_time_zone])
     {
-        const auto & time_zone = connection->getServerTimezone(connection_parameters.timeouts);
+        const auto & time_zone = server_default_timezone;
         if (!time_zone.empty())
         {
             try

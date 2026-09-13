@@ -51,6 +51,9 @@ ${RESTRICTED} --query "SELECT secret FROM (SELECT * FROM ${TABLE} SETTINGS addit
 echo "-- a readonly user can read a view whose inner query carries a SETTINGS clause"
 ${RESTRICTED} --query "SELECT c FROM ${VIEW}"
 
+echo "-- an explicit timezone override is still rejected"
+${RESTRICTED} --session_timezone Asia/Kolkata --query "SELECT 1" 2>&1 | grep -c -F "Cannot modify 'session_timezone' setting in readonly mode"
+
 echo "-- the session is still readonly"
 ${RESTRICTED} --query "CREATE TABLE ${CLICKHOUSE_DATABASE}.should_not_exist_05020 (x UInt64) ENGINE = MergeTree ORDER BY x" 2>&1 | grep -c -F "Cannot execute query in readonly mode"
 

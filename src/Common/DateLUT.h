@@ -18,33 +18,63 @@ class DateLUTImpl;
 class DateLUT : private boost::noncopyable
 {
 public:
+    class TimeZone
+    {
+    public:
+        ~TimeZone();
+
+        const std::string & getName() const { return name; }
+        const DateLUTImpl & getLUT() const;
+
+    private:
+        friend class DateLUT;
+
+        explicit TimeZone(std::string_view time_zone)
+            : name(time_zone)
+        {
+        }
+
+        const std::string name;
+        mutable std::atomic<const DateLUTImpl *> impl{nullptr};
+    };
+
+    static const TimeZone & getTimeZone();
+
+    static const TimeZone & getTimeZone(std::string_view time_zone)
+    {
+        if (time_zone.empty())
+            return getTimeZone();
+
+        return getInstance().getTimeZoneImpl(time_zone);
+    }
+
+    static const TimeZone & serverTimezone() { return *getInstance().default_time_zone.load(std::memory_order_acquire); }
+
     /// Return DateLUTImpl instance for session timezone.
     /// session_timezone is a session-level setting.
     /// If setting is not set, returns the server timezone.
     static const DateLUTImpl & instance();
 
-    static ALWAYS_INLINE const DateLUTImpl & instance(std::string_view time_zone)
-    {
-        if (time_zone.empty())
-            return instance();
-
-        const auto & date_lut = getInstance();
-        return date_lut.getImplementation(time_zone);
-    }
+    static ALWAYS_INLINE const DateLUTImpl & instance(std::string_view time_zone) { return getTimeZone(time_zone).getLUT(); }
 
     /// Return singleton DateLUTImpl for the server time zone.
     /// It may be set using 'timezone' server setting.
-    static ALWAYS_INLINE const DateLUTImpl & serverTimezoneInstance()
+    static ALWAYS_INLINE const DateLUTImpl & serverTimezoneInstance() { return serverTimezone().getLUT(); }
+
+    static ALWAYS_INLINE const DateLUTImpl & utcTimezoneInstance()
     {
-        const auto & date_lut = getInstance();
-        return *date_lut.default_impl.load(std::memory_order_acquire);
+        /// Cache the UTC table globally and lazily: it is immutable, independent of session/server timezones,
+        /// and owned by the process-lifetime `DateLUT` singleton. Thread-safe static initialization lets all threads
+        /// reuse the reference without a mutex and timezone-map lookup per value.
+        static const auto & time_zone = instance("UTC");
+        return time_zone;
     }
 
     static void setDefaultTimezone(std::string_view time_zone)
     {
         auto & date_lut = getInstance();
-        const auto & impl = date_lut.getImplementation(time_zone);
-        date_lut.default_impl.store(&impl, std::memory_order_release);
+        const auto & selected_time_zone = date_lut.getTimeZoneImpl(time_zone);
+        date_lut.default_time_zone.store(&selected_time_zone, std::memory_order_release);
     }
 
 protected:
@@ -53,16 +83,25 @@ protected:
 private:
     static DateLUT & getInstance();
 
-    const DateLUTImpl & getImplementation(std::string_view time_zone) const;
+    const TimeZone & getTimeZoneImpl(std::string_view time_zone) const;
+    const DateLUTImpl & getImplementation(const TimeZone & time_zone) const;
 
-    using DateLUTImplPtr = std::unique_ptr<DateLUTImpl>;
+    using TimeZonePtr = std::unique_ptr<TimeZone>;
 
-    /// Time zone name -> implementation.
-    mutable std::unordered_map<std::string, DateLUTImplPtr> impls;
+    /// Time zone name -> validated identity and lazily initialized implementation.
+    mutable std::unordered_map<std::string, TimeZonePtr> time_zones;
     mutable std::mutex mutex;
 
-    std::atomic<const DateLUTImpl *> default_impl;
+    std::atomic<const TimeZone *> default_time_zone;
 };
+
+inline const DateLUTImpl & DateLUT::TimeZone::getLUT() const
+{
+    if (const auto * initialized = impl.load(std::memory_order_acquire))
+        return *initialized;
+
+    return DateLUT::getInstance().getImplementation(*this);
+}
 
 inline UInt64 timeInMilliseconds(std::chrono::time_point<std::chrono::system_clock> timepoint)
 {

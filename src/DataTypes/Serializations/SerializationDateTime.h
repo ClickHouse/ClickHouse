@@ -7,10 +7,12 @@
 namespace DB
 {
 
-class SerializationDateTime final : public SerializationNumber<UInt32>, public TimezoneMixin
+class SerializationDateTime final : public SerializationNumber<UInt32>
 {
 private:
     explicit SerializationDateTime(const TimezoneMixin & time_zone_);
+
+    const DateLUTImpl & time_zone;
 
 public:
     static UInt128 getHash(const TimezoneMixin & time_zone_);
@@ -32,11 +34,6 @@ public:
     void deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     bool tryDeserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const override;
     void serializeTextHive(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings &) const override;
-
-private:
-    /// Needed for ISO output and for the `best_effort` date/time input formats. Not in `TimezoneMixin`, so that
-    /// merely naming a `DateTime` type does not build a UTC lookup table; see the note there.
-    const DateLUTImpl & utc_time_zone;
 };
 
 class SerializationTime final : public SerializationNumber<Int32>

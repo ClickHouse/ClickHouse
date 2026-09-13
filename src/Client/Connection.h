@@ -47,7 +47,7 @@ class NativeWriter;
 /// The codec for the compressed packets this side originates (e.g. `INSERT` data and external tables
 /// sent by the client). Reads the network compression settings by value, regardless of their `changed`
 /// flags — in particular, values derived from `compatibility` apply even though they are not serialized
-/// to the server (see `ClientBase::settingsWithoutCompatibilityDerived`). With no settings, the built-in
+/// to the server (see `ClientBase::settingsWithoutClientSideDefaults`). With no settings, the built-in
 /// default codec is used.
 CompressionCodecPtr chooseNetworkCompressionCodec(const Settings * settings);
 

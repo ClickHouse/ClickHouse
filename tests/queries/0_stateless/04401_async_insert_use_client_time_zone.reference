@@ -5,3 +5,6 @@ set_async	1500036000
 set_sync	1500036000
 settings_async	1500036000
 reset_async matches server tz	1
+query-local server timezone matches default
+query-local sync uses server tz	1	1
+query-local sync restores client tz	1	1

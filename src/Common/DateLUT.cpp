@@ -1,21 +1,32 @@
 #include <Common/DateLUT.h>
 
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadStatus.h>
 #include <Common/DateLUTImpl.h>
+#include <Common/Exception.h>
+#include <Common/ThreadStatus.h>
 #include <Common/filesystemHelpers.h>
-#include <Core/Settings.h>
 
 #include <Poco/DigestStream.h>
 #include <Poco/Exception.h>
 #include <Poco/SHA1Engine.h>
+
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wimplicit-int-conversion"
+#include <cctz/time_zone.h>
+#pragma clang diagnostic pop
 
 #include <filesystem>
 #include <fstream>
 
 namespace DB
 {
+namespace ErrorCodes
+{
+extern const int BAD_ARGUMENTS;
+}
+
 namespace Setting
 {
     extern const SettingsTimezone session_timezone;
@@ -165,6 +176,11 @@ std::string determineDefaultTimeZone()
 
 const DateLUTImpl & DateLUT::instance()
 {
+    return getTimeZone().getLUT();
+}
+
+const DateLUT::TimeZone & DateLUT::getTimeZone()
+{
     const auto & date_lut = getInstance();
 
     std::optional<std::string> timezone_from_context;
@@ -186,42 +202,62 @@ const DateLUTImpl & DateLUT::instance()
     }
 
     if (timezone_from_context.has_value() && !timezone_from_context->empty())
-        return date_lut.getImplementation(*timezone_from_context);
+        return date_lut.getTimeZoneImpl(*timezone_from_context);
 
-    return serverTimezoneInstance();
+    return serverTimezone();
 }
 
 DateLUT::DateLUT()
 {
-    /// Initialize the pointer to the default DateLUTImpl.
-    std::string default_time_zone = determineDefaultTimeZone();
-    default_impl.store(&getImplementation(default_time_zone), std::memory_order_release);
+    /// Capture the default timezone without constructing its calendar lookup table.
+    const auto default_timezone_name = determineDefaultTimeZone();
+    default_time_zone.store(&getTimeZoneImpl(default_timezone_name), std::memory_order_release);
 }
 
+DateLUT::TimeZone::~TimeZone()
+{
+    delete impl.load(std::memory_order_relaxed);
+}
 
-const DateLUTImpl & DateLUT::getImplementation(std::string_view time_zone) const
+const DateLUT::TimeZone & DateLUT::getTimeZoneImpl(std::string_view time_zone) const
 {
     std::lock_guard lock(mutex);
 
-    auto [it, inserted] = impls.emplace(time_zone, nullptr);
+    auto [it, inserted] = time_zones.emplace(time_zone, nullptr);
     if (inserted)
     {
         try
         {
-            it->second = std::unique_ptr<DateLUTImpl>(new DateLUTImpl(time_zone));
+            cctz::time_zone validated_time_zone;
+            if (!DateLUTImpl::isSupportedTimeZoneName(it->first) || !cctz::load_time_zone(it->first, &validated_time_zone))
+                throw DB::Exception(DB::ErrorCodes::BAD_ARGUMENTS, "Cannot load time zone {}", time_zone);
+            it->second = std::unique_ptr<TimeZone>(new TimeZone(time_zone));
         }
         catch (...)
         {
-            /// `DateLUTImpl` construction throws for an unknown time zone. Erase the just-inserted
+            /// Timezone validation throws for an unknown time zone. Erase the just-inserted
             /// empty slot; otherwise a stream of distinct invalid time zone names (which can come from
             /// untrusted input, e.g. binary type decoding or `toDateTime(x, '<garbage>')`) would grow
             /// this cache without bound, since entries are never evicted.
-            impls.erase(it);
+            time_zones.erase(it);
             throw;
         }
     }
 
     return *it->second;
+}
+
+const DateLUTImpl & DateLUT::getImplementation(const TimeZone & time_zone) const
+{
+    std::lock_guard lock(mutex);
+
+    const auto * impl = time_zone.impl.load(std::memory_order_relaxed);
+    if (!impl)
+    {
+        impl = new DateLUTImpl(time_zone.name);
+        time_zone.impl.store(impl, std::memory_order_release);
+    }
+    return *impl;
 }
 
 DateLUT & DateLUT::getInstance()

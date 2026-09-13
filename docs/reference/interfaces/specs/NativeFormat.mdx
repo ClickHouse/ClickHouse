@@ -317,7 +317,7 @@ Each feature sits behind a `DBMS_MIN_REVISION_WITH_*` threshold. The writer emit
 | Parallel block marshalling (`DETACHED`) | `DBMS_MIN_REVISON_WITH_PARALLEL_BLOCK_MARSHALLING` | `54478` | Columns are never wrapped in a `ColumnBLOB`; no `DETACHED` / `DETACHED_OVER_SPARSE` kinds appear (see [kind_stack](#kind-stack-and-sparse-encoding)). |
 | `DateTime(tz)` type parameter | `DBMS_MIN_REVISION_WITH_TIME_ZONE_PARAMETER_IN_DATETIME_DATA_TYPE` | `54337` | The timezone parameter is dropped from the `type` string — `DateTime('UTC')` is announced as bare `DateTime`. |
 
-That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped. Aggregate-function *state* versions are the exception at revision `0`: there is no peer to derive a version for — the stream is written and read back by whoever produced it (a `StripeLog` data file, a `Set`/`Join` backup, a `Native` format file) — so the writer keeps a version pinned on the type (spelling it out in the type string as usual) instead of downgrading the state to version `0`, and only a type that pins no version is written at version `0`.
+That makes revision `0` the most conservative encoding for almost everything: the stream carries no `BlockInfo`, no `has_custom_serialization` byte, V1 `Dynamic`/`JSON`, no aggregate-function version, and a bare `DateTime` with the timezone parameter dropped when type names are text-encoded. Binary-encoded types retain the `DateTime` timezone parameter even at revision `0`. Aggregate-function *state* versions are the exception at revision `0`: there is no peer to derive a version for — the stream is written and read back by whoever produced it (a `StripeLog` data file, a `Set`/`Join` backup, a `Native` format file) — so the writer keeps a version pinned on the type (spelling it out in the type string as usual) instead of downgrading the state to version `0`, and only a type that pins no version is written at version `0`.
 
 `LowCardinality` is the one exception, and an important one. The writer's check is `remove_low_cardinality || (client_revision && client_revision < DBMS_MIN_REVISION_WITH_LOW_CARDINALITY_TYPE)`. The trick is the leading `client_revision &&`: when the revision is exactly `0`, the whole condition short-circuits to false.
 
@@ -500,7 +500,7 @@ Both encode dates as integer day counts relative to the Unix epoch `1970-01-01`.
 
 #### DateTime {#datetime}
 
-Wire-compatible with `UInt32`: a Unix timestamp in seconds, 4 bytes little-endian. The type may appear as `DateTime` or `DateTime('Timezone')`; the timezone affects display only and is not part of the wire value. Two `DateTime` columns with different timezone parameters produce identical bytes for the same instant. A decoder strips the `(...)` parameter suffix and processes the column as `UInt32`.
+Wire-compatible with `UInt32`: a Unix timestamp in seconds, 4 bytes little-endian. The type may appear as `DateTime` or `DateTime('Timezone')`; the timezone affects display only and is not part of the wire value. Two `DateTime` columns with different timezone parameters produce identical bytes for the same instant. A decoder can process the value bytes as `UInt32` without materializing a timezone lookup table, while retaining the original `DateTime` type and its timezone parameter as metadata.
 
 `DateTime('UTC')` value `2024-03-15 14:30:00 UTC` (timestamp `1710513000`):
 
@@ -519,7 +519,9 @@ Wire-compatible with `UInt32`: a Unix timestamp in seconds, 4 bytes little-endia
 | 6     | 1 microsecond   | µs          |
 | 9     | 1 nanosecond    | ns          |
 
-The type appears as `DateTime64(s)` (implicit server-default timezone) or `DateTime64(s, 'TimezoneName')` (explicit timezone, display only). Negative values represent ticks before the epoch.
+The type appears as `DateTime64(s)` (implicit server-default timezone) or `DateTime64(s, 'TimezoneName')` (explicit timezone, display only). Negative values represent ticks before the epoch. Decoding these ticks requires no timezone lookup table; the scale and timezone parameter remain part of the datatype metadata.
+
+ClickHouse's `NativeReader` uses timezone-free serializers for top-level `DateTime` and `DateTime64` columns without custom serialization. Nested datetime types, including `Array`, `Nullable`, `Tuple`, and `LowCardinality` wrappers, still use their ordinary serializers and may initialize timezone lookup tables. This implementation limitation does not change the wire representation.
 
 `DateTime64(3, 'UTC')` value `2024-01-15 12:30:45.123 UTC` (1705321845123 ms):
 
