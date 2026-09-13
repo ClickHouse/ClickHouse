@@ -30,10 +30,18 @@ bool isEmptySetQuery(const ASTSetQuery & set_query)
 /// Erase *all* matches, not just the first: ParserSetQuery appends one entry per occurrence, so a
 /// repeated `max_rows_to_read = 0, max_rows_to_read = 0` would otherwise leave the second copy behind.
 template <typename Predicate>
-void stripNamesFromSetQuery(ASTSetQuery & set_query, Predicate && is_stripped)
+void stripMatchingNamesFromSetQuery(ASTSetQuery & set_query, Predicate && is_stripped)
 {
     std::erase_if(set_query.changes, [&](const SettingChange & change) { return is_stripped(change.name); });
     std::erase_if(set_query.default_settings, [&](const String & name) { return is_stripped(name); });
+}
+
+bool isNameIn(std::string_view name, std::span<const std::string_view> setting_names)
+{
+    for (const auto & candidate : setting_names)
+        if (candidate == name)
+            return true;
+    return false;
 }
 
 template <typename Visitor>
@@ -55,18 +63,17 @@ void visitAllNodes(const ASTPtr & ast, Visitor && visit)
 
 }
 
+void stripNamesFromSetQuery(ASTSetQuery & set_query, std::span<const std::string_view> setting_names)
+{
+    stripMatchingNamesFromSetQuery(set_query, [&](std::string_view name) { return isNameIn(name, setting_names); });
+}
+
 void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_view> setting_names)
 {
     if (!ast)
         return;
 
-    auto is_stripped = [&](std::string_view name)
-    {
-        for (const auto & stripped : setting_names)
-            if (stripped == name)
-                return true;
-        return false;
-    };
+    auto is_stripped = [&](std::string_view name) { return isNameIn(name, setting_names); };
 
     /// Strip the named settings from each SETTINGS clause and, if a clause becomes empty, detach it from
     /// its owner. The strip alone is not enough: the owner formatters print `SETTINGS ` whenever the slot
@@ -92,7 +99,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 if (auto settings = select_query->settings())
                     if (auto * set_query = settings->as<ASTSetQuery>())
                     {
-                        stripNamesFromSetQuery(*set_query, is_stripped);
+                        stripMatchingNamesFromSetQuery(*set_query, is_stripped);
                         if (isEmptySetQuery(*set_query))
                             select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
                     }
@@ -104,7 +111,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 if (insert_query->settings_ast)
                     if (auto * set_query = insert_query->settings_ast->as<ASTSetQuery>())
                     {
-                        stripNamesFromSetQuery(*set_query, is_stripped);
+                        stripMatchingNamesFromSetQuery(*set_query, is_stripped);
                         if (isEmptySetQuery(*set_query))
                             insert_query->reset(insert_query->settings_ast);
                     }
@@ -118,7 +125,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 /// context, so it must be stripped (and pruned to avoid a bare `SETTINGS`).
                 if (storage->settings)
                 {
-                    stripNamesFromSetQuery(*storage->settings, is_stripped);
+                    stripMatchingNamesFromSetQuery(*storage->settings, is_stripped);
                     if (isEmptySetQuery(*storage->settings))
                         storage->reset(storage->settings);
                 }
@@ -137,7 +144,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 if (query_with_output->settings_ast)
                     if (auto * set_query = query_with_output->settings_ast->as<ASTSetQuery>())
                     {
-                        stripNamesFromSetQuery(*set_query, is_stripped);
+                        stripMatchingNamesFromSetQuery(*set_query, is_stripped);
                         if (isEmptySetQuery(*set_query))
                             query_with_output->reset(query_with_output->settings_ast);
                     }
@@ -152,7 +159,7 @@ void removeSettingsFromQuery(const ASTPtr & ast, std::span<const std::string_vie
                 if (backup_query->settings)
                     if (auto * set_query = backup_query->settings->as<ASTSetQuery>())
                     {
-                        stripNamesFromSetQuery(*set_query, is_stripped);
+                        stripMatchingNamesFromSetQuery(*set_query, is_stripped);
                         if (isEmptySetQuery(*set_query))
                             backup_query->settings.reset();
                     }
@@ -165,14 +172,6 @@ void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::st
     if (!ast)
         return;
 
-    auto is_stripped = [&](std::string_view name)
-    {
-        for (const auto & stripped : setting_names)
-            if (stripped == name)
-                return true;
-        return false;
-    };
-
     /// Walk only the first-order structure of the query - the INSERT clause, the union tree of the
     /// top-level SELECT, and each first-order SELECT's own SETTINGS clause. Unlike removeSettingsFromQuery,
     /// this never descends into `children` generically, so SETTINGS clauses inside table expressions,
@@ -183,7 +182,7 @@ void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::st
         if (insert_query->settings_ast)
             if (auto * set_query = insert_query->settings_ast->as<ASTSetQuery>())
             {
-                stripNamesFromSetQuery(*set_query, is_stripped);
+                stripNamesFromSetQuery(*set_query, setting_names);
                 if (isEmptySetQuery(*set_query))
                     insert_query->reset(insert_query->settings_ast);
             }
@@ -197,7 +196,7 @@ void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::st
         if (select_with_union->settings_ast)
             if (auto * set_query = select_with_union->settings_ast->as<ASTSetQuery>())
             {
-                stripNamesFromSetQuery(*set_query, is_stripped);
+                stripNamesFromSetQuery(*set_query, setting_names);
                 if (isEmptySetQuery(*set_query))
                     select_with_union->reset(select_with_union->settings_ast);
             }
@@ -221,7 +220,7 @@ void removeSettingsFromQueryTopLevel(const ASTPtr & ast, std::span<const std::st
         if (auto settings = select_query->settings())
             if (auto * set_query = settings->as<ASTSetQuery>())
             {
-                stripNamesFromSetQuery(*set_query, is_stripped);
+                stripNamesFromSetQuery(*set_query, setting_names);
                 if (isEmptySetQuery(*set_query))
                     select_query->setExpression(ASTSelectQuery::Expression::SETTINGS, {});
             }

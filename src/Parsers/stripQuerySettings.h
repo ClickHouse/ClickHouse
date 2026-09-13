@@ -8,6 +8,13 @@
 namespace DB
 {
 
+class ASTSetQuery;
+
+/// Remove the named settings from both carriers of one SETTINGS node: `changes` (`name = value`) and
+/// `default_settings` (`name = DEFAULT`). A caller that rebuilds a SETTINGS clause and re-injects a
+/// name must clear it from both, or the re-injected value would fight a surviving `name = DEFAULT`.
+void stripNamesFromSetQuery(ASTSetQuery & set_query, std::span<const std::string_view> setting_names);
+
 /// Remove the named settings (both the `name = value` and the `name = DEFAULT` forms) from the
 /// query-level SETTINGS carriers that InterpreterSetQuery::applySettingsFromQuery reads back onto the
 /// query context, and detach any of those SETTINGS nodes that becomes empty from its owner (so the

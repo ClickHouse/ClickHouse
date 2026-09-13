@@ -7,8 +7,10 @@
 #include <Parsers/ASTPartition.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ASTSnapshotQuery.h>
+#include <Parsers/stripQuerySettings.h>
 #include <base/EnumReflection.h>
 #include <Common/Exception.h>
+#include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 #include <Common/quoteString.h>
 
@@ -184,24 +186,23 @@ namespace
 
     ASTPtr rewriteSettingsWithoutOnCluster(ASTPtr settings, const WithoutOnClusterASTRewriteParams & params)
     {
-        SettingsChanges changes;
-        if (settings)
-            changes = assert_cast<ASTSetQuery *>(settings.get())->changes;
-
-        std::erase_if(
-            changes,
-            [](const SettingChange & change)
-            {
-                const String & name = change.name;
-                return (name == "internal") || (name == "async") || (name == "host_id");
-            });
-
-        changes.emplace_back("internal", true);
-        changes.emplace_back("async", true);
-        changes.emplace_back("host_id", params.host_id);
-
         auto out_settings = make_intrusive<ASTSetQuery>();
-        out_settings->changes = std::move(changes);
+        if (settings)
+        {
+            const auto & original = *assert_cast<ASTSetQuery *>(settings.get());
+            out_settings->changes = original.changes;
+            out_settings->default_settings = original.default_settings;
+        }
+
+        /// The three values injected below describe this rewrite, so they win over whatever the query
+        /// carried - in either carrier, or a surviving `name = DEFAULT` would reset one of them.
+        static constexpr std::string_view names_to_strip[] = {"internal", "async", "host_id"};
+        stripNamesFromSetQuery(*out_settings, names_to_strip);
+
+        out_settings->changes.emplace_back("internal", true);
+        out_settings->changes.emplace_back("async", true);
+        out_settings->changes.emplace_back("host_id", params.host_id);
+
         out_settings->is_standalone = false;
         return out_settings;
     }
@@ -631,7 +632,19 @@ void ASTBackupQuery::readJSON(const Poco::JSON::Object & json)
     /// `query.settings->as<const ASTSetQuery &>().changes`, so reject any other node type here.
     settings = r.readChildOfType<ASTSetQuery>("settings");
     if (settings)
+    {
+        /// `base_backup` and `cluster_host_ids` are parser-owned fields, not settings: `ParserBackupQuery`
+        /// resolves a `= DEFAULT` naming either one by clearing the field and dropping the name. Such an
+        /// entry would format as a `<field> = ..., <field> = DEFAULT` pair that reparses without the field.
+        for (const auto & name : settings->as<const ASTSetQuery &>().default_settings)
+            if (equalsCaseInsensitive(name, "base_backup") || equalsCaseInsensitive(name, "cluster_host_ids"))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "'{}' is a BACKUP/RESTORE field rather than a setting, so it must not appear in "
+                    "'default_settings' during AST JSON deserialization",
+                    name);
         children.push_back(settings);
+    }
     cluster_host_ids = r.readChild("cluster_host_ids");
     if (cluster_host_ids)
         children.push_back(cluster_host_ids);
