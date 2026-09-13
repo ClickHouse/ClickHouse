@@ -723,6 +723,42 @@ Setting `vector_search_index_fetch_multiplier` specifies how many candidates are
 Larger multipliers improve recall at the cost of more rescoring.
 The default is `1` (no oversampling), raising it (for example to `10`) is usually needed for good recall.
 
+#### Faster rescoring with block-aligned vectors {#quantized-codecs-rescore-block-alignment}
+
+The second phase of the two-phase scan - the *rescore* - reads the original full-precision vector of each shortlisted candidate and recomputes the exact distance.
+By default the full-precision vectors are read a whole granule (≈ `index_granularity` rows) at a time, even though only a few rows per granule are candidates, so most of the decompressed bytes are discarded.
+
+:::tip Set `max_compress_block_size` for fast rescoring
+**If you want fast rescoring, set the vector column's `max_compress_block_size` to the byte size of exactly one vector**, i.e. `dimensions * sizeof(element_type)`.
+This stores one vector per compressed block, so the rescore fetches each candidate's vector with a single-block point read instead of decompressing a whole granule - up to roughly an order of magnitude less I/O in the rescore phase.
+:::
+
+```sql
+CREATE TABLE vectors
+(
+    id UInt64,
+    -- 768 dimensions * 4 bytes per Float32 = 3072
+    vec Array(Float32) CODEC(Quantized('rabitq', 768)) SETTINGS (max_compress_block_size = 3072)
+)
+ENGINE = MergeTree
+ORDER BY id;
+```
+
+The value must be *exactly* one vector's byte size:
+
+| Column element type | `max_compress_block_size` | Example (768 dimensions) |
+|---------------------|---------------------------|--------------------------|
+| `Array(Float32)`    | `dimensions * 4`          | `3072`                   |
+| `Array(BFloat16)`   | `dimensions * 2`          | `1536`                   |
+| `Array(Float64)`    | `dimensions * 8`          | `6144`                   |
+
+Notes:
+
+- This optimization is effective only for `wide` parts. A large vector dataset with millions of vectors will naturally populate `wide` parts as the parts merge.
+- A multiple of the vector size (or any other value) silently disables the point read - the query still returns correct results, just without the I/O saving.
+- Storing one vector per block makes the vector column's blocks small, so a full *sequential* scan of that column (for example a brute-force search with the codec disabled) becomes somewhat slower. Set `max_compress_block_size` only on columns whose dominant access is quantized-codes rescoring.
+- Note that this setting should be specified when the table is created. If the setting is modified on an existing table, only newly written parts will be suitable for single-block point reads.
+
 ### Quantized Bit (QBit) {#approximate-nearest-neighbor-search-qbit}
 
 One common approach to speed up exact vector search is to use a lower-precision [float data type](/reference/data-types/float).
