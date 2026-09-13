@@ -2104,8 +2104,14 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
             return;
         }
+        /// Read the retry limit live from table metadata rather than the long-lived
+        /// file_metadata snapshot: s3queue_loading_retries is alterable at runtime via
+        /// ALTER TABLE ... MODIFY SETTING, and this wait can run for a while (no deadline
+        /// is passed from SYSTEM FLUSH OBJECT STORAGE QUEUE), so a stale threshold could
+        /// make this either hang forever against a now-terminal file (limit lowered) or
+        /// abort early on a still-retryable marker (limit raised).
         if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
-            && keeper_retries >= file_metadata->getMaxTries())
+            && keeper_retries >= metadata->getTableMetadata().loading_retries.load())
             throw Exception(ErrorCodes::ABORTED,
                 "Path '{}' failed to be processed by {}: {}",
                 path, getStorageID().getNameForLogs(), failure_message);
@@ -2190,8 +2196,9 @@ void StorageObjectStorageQueue::waitForPathToBeProcessed(
             LOG_DEBUG(log, "Path '{}' has been processed by {}", path, getStorageID().getNameForLogs());
             return;
         }
+        /// Same reasoning as above: read the live limit, not the stale file_metadata snapshot.
         if (state == ObjectStorageQueueIFileMetadata::PathState::Failed
-            && keeper_retries >= file_metadata->getMaxTries())
+            && keeper_retries >= metadata->getTableMetadata().loading_retries.load())
         {
             throw Exception(ErrorCodes::ABORTED,
                 "Path '{}' failed to be processed by {}: {}",
