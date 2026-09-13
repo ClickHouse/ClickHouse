@@ -76,3 +76,19 @@ SELECT '--- errors ---';
 SELECT groupArray(); -- { serverError NUMBER_OF_ARGUMENTS_DOESNT_MATCH }
 SELECT groupArraySample(-1)(x) FROM (SELECT 1 AS x); -- { serverError BAD_ARGUMENTS }
 SELECT groupArray('bad')(x) FROM (SELECT 1 AS x); -- { serverError BAD_ARGUMENTS }
+
+-- Coverage for AggregateFunctionGroupArrayInsertAt.cpp error paths and branch guards.
+-- Lines 77-78: more than two parameters → TOO_MANY_ARGUMENTS_FOR_FUNCTION
+SELECT groupArrayInsertAt(0, 10, 5)(x, pos) FROM VALUES('x Int32, pos UInt32', (1, 0)); -- { serverError TOO_MANY_ARGUMENTS_FOR_FUNCTION }
+
+-- Lines 85-87: length_to_resize (second param) exceeds 16777215 → TOO_LARGE_ARRAY_SIZE
+SELECT groupArrayInsertAt(0, 16777216)(x, pos) FROM VALUES('x Int32, pos UInt32', (1, 0)); -- { serverError TOO_LARGE_ARRAY_SIZE }
+
+-- Lines 91-92: position argument has non-UInt type → ILLEGAL_TYPE_OF_ARGUMENT
+SELECT groupArrayInsertAt(x, pos) FROM VALUES('x Int32, pos String', (1, 'a')); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+
+-- Lines 121-124: position value at runtime >= 16777215 → TOO_LARGE_ARRAY_SIZE
+SELECT groupArrayInsertAt(x, pos) FROM VALUES('x Int32, pos UInt32', (1, 16777215)); -- { serverError TOO_LARGE_ARRAY_SIZE }
+
+-- Lines 128-131: duplicate position — second write silently skipped; first wins.
+SELECT groupArrayInsertAt(val, pos) FROM VALUES('val String, pos UInt32', ('a', 0), ('b', 0), ('c', 1));
