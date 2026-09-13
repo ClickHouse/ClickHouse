@@ -114,6 +114,7 @@
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
 #include <Disks/registerDisks.h>
+#include <Disks/warnIfExt4CorruptionKernelBug.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
 #include <Common/Config/ConfigReloader.h>
@@ -3797,6 +3798,11 @@ try
             if (servers.empty())
                 throw Exception(ErrorCodes::NO_ELEMENTS_IN_CONFIG,
                     "No servers started (add valid listen_host and 'tcp_port' or 'http_port' to configuration file.)");
+
+            /// Everything constructed during startup has probed by now, and nothing here holds the
+            /// context lock, so the finding is logged as part of startup instead of waiting for
+            /// someone to read `system.warnings`.
+            flushExt4CorruptionKernelBugWarning(*global_context);
 
             global_context->setServerCompletelyStarted();
             LOG_INFO(log, "Ready for connections.");
