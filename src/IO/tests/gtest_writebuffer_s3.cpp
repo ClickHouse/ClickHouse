@@ -2082,7 +2082,7 @@ TEST_F(CopyS3FileRoutingTest, WholeCopyPinnedToAReplacedGenerationIsRefused)
 TEST_F(CopyS3FileRoutingTest, RangedCopyPinnedToAReplacedGenerationIsRefused)
 {
     const size_t source_size = min_source_size_for_range_copy + 1024;
-    const String source = putSource("src", source_size);
+    putSource("src", source_size);
     const String replaced_generation = generationAt("src");
     client->store->GetBucketStore(bucket).PutObject("src", String(source_size, 'x'));
 
