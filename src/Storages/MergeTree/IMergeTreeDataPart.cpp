@@ -1231,8 +1231,8 @@ UInt64 IMergeTreeDataPart::getMarksCount() const
 
 UInt64 IMergeTreeDataPart::getExistingBytesOnDisk() const
 {
-    if ((*storage.getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && supportLightweightDeleteMutate() && hasLightweightDelete()
-        && existing_rows_count.has_value() && existing_rows_count.value() < rows_count && rows_count > 0)
+    if (existing_rows_count.has_value() && existing_rows_count.value() < rows_count && rows_count > 0
+        && (*storage.getSettings())[MergeTreeSetting::exclude_deleted_rows_for_part_size_in_merge] && supportLightweightDeleteMutate() && hasLightweightDelete())
         return bytes_on_disk * existing_rows_count.value() / rows_count;
     return bytes_on_disk;
 }
